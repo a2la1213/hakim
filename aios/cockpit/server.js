@@ -1135,7 +1135,9 @@ function marquerCourrierLu(ids) {
    outils) : c'est ce qui use la jauge du forfait. Au-delà de CONTEXTE_MAX, le message suivant ouvre une
    conversation neuve avec le briefing et les 40 derniers échanges du journal brut ; rien n'est perdu (souvenirs
    automatiques, journal brut, chercher_dans_le_journal). ---- */
-const CONTEXTE_MAX = Number(process.env.JARVIS_CONTEXTE_MAX) || 200000;
+// 400 k depuis le 2026-10-21 (décision d'Ahmed, en connaissance du coût : relu à chaque étape, rechargé après une pause ;
+// 200 k avant). À comparer : jauge du forfait, délai du premier mot, fil gardé (jarvis/jetons.jsonl).
+const CONTEXTE_MAX = Number(process.env.JARVIS_CONTEXTE_MAX) || 400000;
 const JARVIS_CONTEXTES = path.join(JARVIS, 'contextes.json');
 let contextes = {};
 const toursParSession = {};                        // une conversation neuve n'est pas re-tournée avant 4 tours (gros documents)
