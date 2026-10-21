@@ -2322,7 +2322,7 @@ async function routeTranscrire(req, res, langue, contexte) {
 /* ---------- HTTP ---------- */
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml',
   '.json': 'application/json', '.wasm': 'application/wasm', '.task': 'application/octet-stream', '.png': 'image/png', '.jpg': 'image/jpeg',
-  '.webmanifest': 'application/manifest+json' };
+  '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2' };
 // Lot 0 (JarvisXAnamnèse, 2026-10-15) : le cockpit ne sert que cette machine. Il écoute sur la
 // boucle locale (IPv4 + IPv6, plus bas) et refuse tout en-tête Host qui ne la désigne pas
 // (parade au DNS rebinding : une page web ne peut pas lire la mémoire via un nom de domaine).

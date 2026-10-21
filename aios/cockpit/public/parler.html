@@ -75,6 +75,16 @@
     .vide b { color: var(--teal-hi); font-weight: 600; }
     .m { max-width: 86%; line-height: 1.6; font-size: 14px; }
     .m .txt { white-space: pre-wrap; word-break: break-word; unicode-bidi: plaintext; }
+    /* les formules (KaTeX, 2026-10-21) : de gauche à droite même dans un message en arabe ; un bloc trop large défile */
+    .m .txt .katex { direction: ltr; unicode-bidi: isolate; font-size: 1.08em; }
+    .m .txt .katex-display { margin: .45em 0; overflow-x: auto; overflow-y: hidden; padding: .1em 0; }
+    /* le code (2026-10-21) : police fixe, défilement horizontal, un bouton qui copie le code exact */
+    .m .txt code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; background: rgba(148,163,184,.14); padding: .05em .3em; border-radius: 4px; }
+    .m .txt .bloc-code { margin: .5em 0; border: 1px solid rgba(148,163,184,.25); border-radius: 8px; overflow: hidden; direction: ltr; unicode-bidi: isolate; }
+    .m .txt .entete-code { display: flex; justify-content: space-between; align-items: center; padding: .25em .6em; font-size: .78em; color: #94a3b8; background: rgba(148,163,184,.10); }
+    .m .txt .entete-code button { background: none; border: 0; color: #5eead4; cursor: pointer; font: inherit; padding: .2em .3em; }
+    .m .txt .bloc-code pre { margin: 0; padding: .6em .75em; overflow-x: auto; white-space: pre; tab-size: 4; line-height: 1.4; }
+    .m .txt .bloc-code pre code { background: none; padding: 0; font-size: .84em; }
     .m.u { align-self: flex-end; background: rgba(45,212,191,.08); border: 1px solid rgba(45,212,191,.22);
       border-radius: 14px 14px 4px 14px; padding: 9px 13px; color: var(--txt); }
     .m.u .oral { font-size: 10px; color: var(--teal); letter-spacing: 1px; display: block; margin-bottom: 2px; }
@@ -339,6 +349,8 @@
     <p class="aide"><kbd>⌥M</kbd> micro · <kbd>⌥C</kbd> conversation · <kbd>⌥X</kbd> muet · <kbd>⌥V</kbd> caméra · <kbd>⌥P</kbd> pause de sa voix · <kbd>Entrée</kbd> envoyer · <kbd>Maj+Entrée</kbd> à la ligne · <kbd>Échap</kbd> stop · glisse ou colle des fichiers</p>
   </main>
   <script src="/nav.js"></script>
+  <link rel="stylesheet" href="/vendor/katex/katex.min.css">
+  <script src="/vendor/katex/katex.min.js"></script>
   <script src="/voix.js"></script>
   <script src="/orbe.js"></script>
   <script src="/conversation.js"></script>

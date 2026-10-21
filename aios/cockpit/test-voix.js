@@ -75,3 +75,32 @@ test('découpeur : abréviations, listes et guillemets (relecture Opus, 2026-10-
 test('liens markdown : on dit le nom du site, pas l\'adresse', () => {
   assert.strictEqual(Voix.pourLaVoix('Source : [AccuWeather](https://www.accuweather.com/fr/ch/exempleville).'), 'Source : AccuWeather.');
 });
+
+test('formules de maths : la voix dit la version parlée, jamais le LaTeX (2026-10-21)', () => {
+  assert.strictEqual(Voix.pourLaVoix('Donc $$E=mc^2$$ [[voix: E égale m c au carré]].').replace(/\s+\./, '.'), 'Donc E égale m c au carré.');
+  assert.ok(!/\\|\^|\$\$/.test(Voix.pourLaVoix('Sans version parlée : $\\frac{a}{b}$ ici.')));
+  assert.ok(Voix.pourLaVoix('Sans version parlée : $\\frac{a}{b}$ ici.').includes('voir la formule'));
+  assert.ok(Voix.pourLaVoix('La variable $x$ suffit.').includes('variable x suffit'));
+  assert.ok(Voix.pourLaVoix('Ça coûte 5 $ ou 10 $.').includes('5 $ ou 10 $'));            // de l'argent, pas une formule
+});
+
+test('formules de maths : le découpeur ne coupe ni une formule ni sa version parlée qui arrive en retard', () => {
+  const txt = 'Voici.\n$$\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}.$$\n[[voix: la somme vaut n fois n plus 1 sur 2]]\nFin. Et $x^2$ [[voix: x au carré]] aussi.';
+  for (const n of [1, 2, 5, 9, 40]) {
+    const d = Voix.decoupeur(), out = [];
+    for (const c of txt.match(new RegExp(`[\\s\\S]{1,${n}}`, 'g'))) out.push(...d.ajouter(c));
+    out.push(...d.finir());
+    assert.deepStrictEqual(out.map(Voix.pourLaVoix),
+      ['Voici.', 'la somme vaut n fois n plus 1 sur 2', 'Fin.', 'Et x au carré aussi.'], `morceaux de ${n}`);
+  }
+});
+
+test('code : la voix dit « bloc de code » une fois, sans lire ses lignes, même en flux (2026-10-21)', () => {
+  const txt = 'Voici le code.\n```python\nprint("a. b")\nx = 1  # prix : 5 $\n```\nVoilà. Fin.';
+  for (const n of [1, 4, 11, 60]) {
+    const d = Voix.decoupeur(), out = [];
+    for (const c of txt.match(new RegExp(`[\\s\\S]{1,${n}}`, 'g'))) out.push(...d.ajouter(c));
+    out.push(...d.finir());
+    assert.deepStrictEqual(out.map(Voix.pourLaVoix), ['Voici le code.', '(bloc de code)', 'Voilà.', 'Fin.'], `morceaux de ${n}`);
+  }
+});

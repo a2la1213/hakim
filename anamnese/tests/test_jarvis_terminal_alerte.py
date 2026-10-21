@@ -1,4 +1,4 @@
-"""L'alerte de l'atelier vers 4 Go (demande de Hakim, 2026-10-20)."""
+"""L'alerte de l'atelier à 80 % (demande de Hakim, 2026-10-20) ; atelier porté de 5 à 10 Go (Ahmed, 2026-10-21)."""
 import sys
 from pathlib import Path
 
@@ -7,6 +7,6 @@ import terminal  # noqa: E402
 
 
 def test_alerte_atelier():
-    assert terminal.alerte_atelier(taille_ko=3 * 1024 * 1024) == ""
-    a = terminal.alerte_atelier(taille_ko=int(4.3 * 1024 * 1024))
-    assert "4,3 Go sur 5,0" in a and "arrêtée net" in a
+    assert terminal.alerte_atelier(taille_ko=7 * 1024 * 1024) == ""
+    a = terminal.alerte_atelier(taille_ko=int(8.3 * 1024 * 1024))
+    assert "8,3 Go sur 10,0" in a and "arrêtée net" in a

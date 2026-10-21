@@ -32,7 +32,7 @@ async def executer(commande: str, delai_s: int = 120, arriere_plan: bool = False
     Interdit par le bac à sable : ses projets, ses clés et le reste de son dossier personnel,
     toute adresse locale ou privée (cockpit, Ollama, réseau de la maison), toute écriture hors de
     l'atelier. Chaque appel est un nouveau shell : enchaîne avec && ou utilise des chemins absolus.
-    delai_s : de 1 à 1800 s (120 par défaut) ; mémoire 6 Go, atelier 5 Go au plus.
+    delai_s : de 1 à 1800 s (120 par défaut) ; mémoire 6 Go, atelier 10 Go au plus.
     arriere_plan=True pour TOUT ce qui peut durer plus de ~30 s (gros calcul, téléchargement,
     entraînement, compilation) : la commande devient une tâche de fond, tu reçois son numéro tout de suite
     et tu continues de parler avec Ahmed ; elle tourne jusqu'à 4 h (delai_s), survit à un Stop, et Ahmed

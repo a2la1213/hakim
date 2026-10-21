@@ -61,9 +61,45 @@
     return segs.map(s => ({ langue: s.langue, texte: s.texte.trim() })).filter(s => s.texte);
   }
 
+  /* ---- formules de maths (2026-10-21, demande d'Ahmed relayée par Hakim) ----
+     L'écran les dessine (KaTeX, parler.js) ; la voix ne lit JAMAIS le LaTeX : elle dit la version parlée que Hakim
+     écrit juste après la formule, [[voix: …]] (cachée à l'écran), sinon « voir la formule à l'écran ».
+     $…$ en ligne : le $ ouvrant est suivi d'un caractère, le fermant précédé d'un caractère et pas suivi d'un chiffre
+     (« 5 $ et 10 $ » n'est pas une formule). Aussi $$…$$, \[…\] et \(…\). */
+  const FORMULE = /(\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$(?=[^\s$])([^$\n]*?[^\s$\\])\$(?!\d))(?:\s*\[\[voix:\s*([^\]]*?)\s*\]\])?/g;
+  const VOIX_SEULE = /\[\[voix:\s*([^\]]*?)\s*\]\]/g;
+  const OUVRANT = /\$\$|\\\[|\\\(|\[\[voix:|\$(?=[^\s$\d])/;
+  const PREFIXE_VOIX = /^\s*(?:\[(?:\[(?:v(?:o(?:i(?:x:?)?)?)?)?)?)?$/;
+  function formuleParlee(tex, dit) {
+    if (dit) return dit;
+    const t = String(tex || '').trim();
+    return /^[\p{L}\d ]{1,12}$/u.test(t) ? t : 'voir la formule à l’écran';
+  }
+  // Les zones [début, fin) qu'on ne coupe pas en phrases : chaque formule complète avec sa version parlée, une formule
+  // encore ouverte, et une formule finie dont la version parlée n'est peut-être pas encore arrivée.
+  function zonesFormules(s) {
+    // (2026-10-21) un bloc de code aussi : la voix dit « bloc de code » une fois, elle ne lit pas ses lignes
+    const fences = [], fr = /```[\s\S]*?```/g;
+    let f;
+    while ((f = fr.exec(s))) fences.push([f.index, f.index + f[0].length]);
+    const ouvert = (s.slice(fences.length ? fences[fences.length - 1][1] : 0).match(/```/g) || []).length % 2;
+    if (ouvert) fences.push([s.lastIndexOf('```'), Infinity]);
+    const z = fences.slice(), re = new RegExp(FORMULE.source + '|' + VOIX_SEULE.source, 'g');
+    let m, fin = 0, derniere = null;
+    while ((m = re.exec(s))) { z.push([m.index, m.index + m[0].length]); fin = m.index + m[0].length; derniere = m; }
+    const reste = s.slice(fin), o = reste.search(OUVRANT);
+    // une ouverture juste après une formule (sa version parlée qui arrive) : la formule et l'entre-deux restent ensemble
+    if (o >= 0) z.push([/^\s*$/.test(reste.slice(0, o)) && derniere ? derniere.index : fin + o, Infinity]);
+    else if (derniere && derniere[1] !== undefined && derniere[6] === undefined && PREFIXE_VOIX.test(reste)) z[z.length - 1][1] = Infinity;
+    return z;
+  }
+  const dansZone = (z, i) => z.some(([a, b]) => i >= a && i < b);
+
   /* ---- texte lisible à voix haute ---- */
   function pourLaVoix(texte) {
     let t = String(texte || '')
+      .replace(FORMULE, (_t, _f, d1, d2, i1, i2, dit) => ' ' + formuleParlee(d1 ?? d2 ?? i1 ?? i2, dit) + ' ')
+      .replace(VOIX_SEULE, ' $1 ')
       .replace(/```[\s\S]*?```/g, ' (bloc de code) ')
       .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '$1')        // [site](adresse) → site
       .replace(/https?:\/\/\S+/g, 'un lien')
@@ -88,8 +124,10 @@
         tampon += x;
         const out = [];
         let m, dernier = 0;
+        const zones = zonesFormules(tampon);                      // jamais de coupe dans une formule
         FIN.lastIndex = 0;
         while ((m = FIN.exec(tampon))) {
+          if (dansZone(zones, m.index)) continue;
           const fin = m.index + m[0].length;
           const ph = tampon.slice(dernier, fin).trim();
           if (m[0] === '.' && ABREVIATION.test(ph)) continue;     // « M. Dupont » : on continue
@@ -98,9 +136,10 @@
         }
         tampon = tampon.slice(dernier);
         if (tampon.length > LONGUEUR_MAX) {     // phrase interminable : coupe à la dernière virgule, sinon au dernier espace
+          const z = zonesFormules(tampon);
           const virgule = tampon.lastIndexOf(', ', LONGUEUR_MAX);
           const i = virgule > 0 ? virgule + 1 : tampon.lastIndexOf(' ', LONGUEUR_MAX);
-          if (i > 0) { out.push(tampon.slice(0, i + 1).trim()); tampon = tampon.slice(i + 1); }
+          if (i > 0 && !dansZone(z, i)) { out.push(tampon.slice(0, i + 1).trim()); tampon = tampon.slice(i + 1); }
         }
         return out;
       },
@@ -142,7 +181,7 @@
     return lecteur;
   }
 
-  const Voix = { versArabe, segmenter, pourLaVoix, decoupeur, choisirVoix, creerLecteur };
+  const Voix = { versArabe, segmenter, pourLaVoix, decoupeur, choisirVoix, creerLecteur, FORMULE, VOIX_SEULE };
   racine.Voix = Voix;
   if (typeof module !== 'undefined' && module.exports) module.exports = Voix;
 })(typeof window !== 'undefined' ? window : globalThis);

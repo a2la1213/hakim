@@ -34,7 +34,7 @@ DELAI_S = 120
 DELAI_MAX_S = 1800
 SORTIE_MAX = 20_000
 MEMOIRE_MAX_KO = 6 * 1024 * 1024         # 6 Go : le Mac en a 16, la voix et Whisper en tiennent déjà ~6
-ATELIER_MAX_KO = 5 * 1024 * 1024         # 5 Go de téléchargements et de résultats au plus
+ATELIER_MAX_KO = 10 * 1024 * 1024        # 10 Go de téléchargements et de résultats au plus (5 Go jusqu'au 21/10, Ahmed)
 
 _proxy = None
 _verrou = threading.Lock()
@@ -123,6 +123,11 @@ PROGRAMMES_REFUSES = ["/usr/bin/open", "/bin/launchctl", "/usr/bin/osascript", "
                       "/usr/bin/plutil", "/usr/libexec/PlistBuddy", "/usr/sbin/networksetup", "/usr/bin/say", "/usr/bin/afplay"]
 
 
+XCODE_OUTILS = "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin"
+SDK_MACOS = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
+JDK = Path("/usr/local/opt/openjdk")      # Java (Homebrew, « keg-only » : pas dans /usr/local/bin)
+
+
 def profil(atelier, port, fichiers=FICHIERS):
     """TOUT est refusé par défaut (relecture JARVIS 2, C1, 2026-10-20 : « allow default » laissait joignables les
     services de macOS — ouvrir une app, soumettre une tâche à launchd, écrire des réglages — donc une sortie du bac à
@@ -145,7 +150,7 @@ def profil(atelier, port, fichiers=FICHIERS):
 (allow sysctl-read)
 (allow file-read-metadata)
 (allow file-read* (literal "/") (subpath "/usr") (subpath "/bin") (subpath "/sbin") (subpath "/System") (subpath "/Library")
-  (subpath "/opt") (subpath "/Applications/Xcode.app/Contents/Developer") (subpath "/private/etc")
+  (subpath "/opt") (subpath "/Applications/Xcode.app/Contents/Developer") (subpath "/Applications/Xcode.app/Contents/SharedFrameworks") (subpath "/private/etc")
   (subpath "/private/var/db/timezone") (subpath "/private/var/select") (subpath "/private/var/db/xcode_select_link")
   (literal "/dev") (literal "/dev/null") (literal "/dev/zero") (literal "/dev/random") (literal "/dev/urandom") (literal "/dev/tty") (literal "/dev/dtracehelper") (literal "/dev/autofs_nowait") (regex #"^/dev/fd/") (literal "/etc") (literal "/var") (literal "/tmp") (literal "/private") (literal "/private/var"){lectures})
 (deny file-read* (subpath "/Library/Keychains") (subpath "/Library/Application Support/com.apple.TCC"))
@@ -176,15 +181,15 @@ def _taille_ko(chemin):
         return 0
 
 
-ATELIER_ALERTE_KO = 4 * 1024 * 1024       # demande de Hakim (2026-10-20, accord d'Ahmed) : prévenu vers 4 Go
+ATELIER_ALERTE_KO = 8 * 1024 * 1024       # demande de Hakim (2026-10-20, accord d'Ahmed) : prévenu à 80 % (8 Go sur 10)
 
 
 _mesure_atelier = {"t": 0.0, "ko": 0}
 
 
 def alerte_atelier(atelier=None, taille_ko=None):
-    """Une phrase d'alerte si l'atelier dépasse 4 Go (à 5 Go, la commande en cours est tuée net) ; sinon ''.
-    La taille est mesurée au plus une fois par minute (du sur 5 Go prend du temps)."""
+    """Une phrase d'alerte si l'atelier dépasse 8 Go (à 10 Go, la commande en cours est tuée net) ; sinon ''.
+    La taille est mesurée au plus une fois par minute (du sur 10 Go prend du temps)."""
     if taille_ko is None:
         if time.time() - _mesure_atelier["t"] > 60:
             _mesure_atelier.update(t=time.time(), ko=_taille_ko(atelier or ATELIER))
@@ -212,13 +217,22 @@ def preparer(commande, atelier, port):
         # les outils de développement d'Xcode en direct (git, clang…) : le relais /usr/bin/git passe par xcrun, qui veut
         # écrire son cache dans /var/folders — refusé par le bac à sable « tout refusé par défaut » (C1, 2026-10-20)
         "PATH": ":".join([str(atelier / ".venv" / "bin"), str(VENV / "bin"), "/usr/local/bin", "/opt/homebrew/bin",
-                          "/Applications/Xcode.app/Contents/Developer/usr/bin",
+                          "/Applications/Xcode.app/Contents/Developer/usr/bin", XCODE_OUTILS, str(JDK / "bin"),
                           str(Path.home() / ".local" / "bin"), "/usr/bin", "/bin", "/usr/sbin", "/sbin"]),
         "HTTP_PROXY": mandataire, "HTTPS_PROXY": mandataire, "ALL_PROXY": mandataire,
         "http_proxy": mandataire, "https_proxy": mandataire, "all_proxy": mandataire, "NO_PROXY": "", "no_proxy": "",
         "PIP_CACHE_DIR": str(atelier / ".cache" / "pip"), "UV_CACHE_DIR": str(atelier / ".cache" / "uv"),
         "HF_HOME": str(atelier / ".cache" / "huggingface"), "MPLBACKEND": "Agg", "PYTHONUNBUFFERED": "1",
         "GIT_TERMINAL_PROMPT": "0",
+        # (2026-10-21, demande d'Ahmed : « écrire en LaTeX, en faire des PDF, coder dans tous les langages ») : clang,
+        # clang++, swift et l'éditeur de liens de Rust pris dans la chaîne d'Xcode en direct (le relais /usr/bin/clang
+        # passe par xcrun, qui ne trouve pas Xcode dans le bac à sable) ; le cache de Tectonic (LaTeX → PDF) dans
+        # l'atelier, pré-rempli des paquets courants, le reste téléchargé par la passerelle.
+        "DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer", "SDKROOT": SDK_MACOS,
+        "TECTONIC_CACHE_DIR": str(atelier / ".cache" / "tectonic"),
+        "CLANG_MODULE_CACHE_PATH": str(atelier / ".cache" / "clang-modules"),   # Swift et clang (sinon /var/folders, refusé)
+        "GOCACHE": str(atelier / ".cache" / "go-build"), "GOPATH": str(atelier / "go"),
+        "JAVA_HOME": str(JDK), "COMPOSER_HOME": str(atelier / ".cache" / "composer"),
     }
     return ["/usr/bin/sandbox-exec", "-p", regles, "/bin/zsh", "-f", "-c", commande], env
 
@@ -240,7 +254,7 @@ def surveiller(proc, t0, delai_s, atelier, raison):
             if not raison and time.time() - dernier_du > 10:
                 dernier_du = time.time()
                 if _taille_ko(atelier) > ATELIER_MAX_KO:
-                    raison.append("atelier plein (5 Go)")
+                    raison.append(f"atelier plein ({ATELIER_MAX_KO // (1024 * 1024)} Go)")
         if raison:
             try:
                 os.killpg(proc.pid, signal.SIGKILL)

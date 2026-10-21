@@ -484,6 +484,37 @@ function gras(html) {
 // « No response requested. » : la réponse vide de Claude (vu pendant un live le 18/10) n'est ni affichée ni dite
 const NON_REPONSE = /^\s*no response requested\.?\s*$/i;
 
+// Les formules de maths (2026-10-21, demande d'Ahmed) : dessinées par KaTeX, servi par le cockpit (aucun CDN) ;
+// la version parlée [[voix: …]] est cachée (seule la voix la lit, voix.js). Sans KaTeX : le LaTeX brut, échappé.
+function formule(tex, bloc) {
+  try {
+    if (window.katex) return katex.renderToString(tex, { displayMode: bloc, throwOnError: false, output: 'html',
+      strict: 'ignore', trust: false, maxSize: 20, maxExpand: 200 });
+  } catch (_) { /* rendu impossible : texte brut */ }
+  return `<code>${esc(tex)}</code>`;
+}
+// Le code (2026-10-21, demande d'Ahmed) : un bloc ```langage … ``` s'affiche tel quel, en police fixe, avec un bouton
+// qui copie EXACTEMENT le code (à coller au bon format) ; `code` dans la phrase aussi en police fixe. Le code est sorti
+// du texte AVANT les formules, le gras et les liens : un $, une * ou une adresse dans du code restent du code.
+function blocCode(langage, code) {
+  return `<div class="bloc-code"><div class="entete-code"><span>${esc(langage || 'code')}</span>`
+    + `<button data-copier-code="1" title="Copier ce code">📋 copier le code</button></div>`
+    + `<pre><code>${esc(code)}</code></pre></div>`;
+}
+function texteRiche(texte) {
+  const rendus = [];
+  const garder = (html, marque) => { rendus.push(html); return `${marque}${rendus.length - 1}\uE001`; };
+  const t = String(texte || '')
+    .replace(/```[ \t]*([\w+#.-]*)[^\n]*\n([\s\S]*?)\n?```/g, (_t, langage, code) => garder(blocCode(langage, code), '\uE002'))
+    .replace(/`([^`\n]+)`/g, (_t, code) => garder(`<code>${esc(code)}</code>`, '\uE000'))
+    .replace(Voix.FORMULE, (_t, _f, d1, d2, i1, i2) => {
+    const bloc = d1 != null || d2 != null;
+    return garder(formule(d1 ?? d2 ?? i1 ?? i2, bloc), bloc ? '\uE002' : '\uE000');
+  }).replace(Voix.VOIX_SEULE, '')
+    .replace(/[ \t]*\n?[ \t]*(\uE002\d+\uE001)[ \t]*\n?/g, '$1');    // une formule en bloc : pas de ligne vide autour
+  return liens(gras(esc(t))).replace(/[\uE000\uE002](\d+)\uE001/g, (_m, i) => rendus[Number(i)] || '');
+}
+
 function liens(html) {
   return html
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
@@ -498,7 +529,7 @@ function htmlMessage(m) {
   const outils = (m.outils || []).length
     ? `<div class="outils">${[...new Set(m.outils)].map(o => `<span class="badge muted">${esc(o)}</span>`).join('')}</div>` : '';
   const corps = m.texte && NON_REPONSE.test(m.texte) ? '<div class="attente">(il n’a rien répondu)</div>'
-    : m.texte ? `<div class="txt">${liens(gras(esc(m.texte)))}</div>`
+    : m.texte ? `<div class="txt">${texteRiche(m.texte)}</div>`
     : (m.enCours ? `<div class="attente">${m.outils && m.outils.length ? 'cherche…' : 'réfléchit…'}</div>` : '');
   const err = m.erreur ? `<div class="txt">${esc(m.erreur)}</div>` : '';
   const pieces = (m.pieces || []).filter(x => x && /^\d{8}-\d{6}-[0-9a-f]{6}$/.test(String(x.id))).map(x => {
@@ -589,10 +620,19 @@ $('fil').addEventListener('click', (e) => {
     fil.scrollTop = fil.scrollHeight - avant;
     return;
   }
+  const cc = e.target.closest('[data-copier-code]');
+  if (cc) {                                                     // le code seul, exactement tel qu'écrit
+    const code = cc.closest('.bloc-code')?.querySelector('pre code')?.textContent || '';
+    copierTexte(code).then((ok) => {
+      cc.textContent = ok ? '✓ copié' : 'copie impossible';
+      setTimeout(() => { cc.textContent = '📋 copier le code'; }, 1500);
+    });
+    return;
+  }
   const c = e.target.closest('[data-copier]');
   if (c) {
     const mc = etat.messages.find(x => String(x.id) === c.dataset.copier);
-    if (mc) copierTexte(mc.texte || '').then((ok) => {
+    if (mc) copierTexte((mc.texte || '').replace(Voix.VOIX_SEULE, '').replace(/[ \t]+\n/g, '\n')).then((ok) => {
       c.textContent = ok ? '✓ copié' : 'copie impossible';
       setTimeout(() => { c.textContent = '📋 copier'; }, 1500);
     });
