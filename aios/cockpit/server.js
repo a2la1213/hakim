@@ -1005,15 +1005,20 @@ function appareilDe(q, distantReq) {
   if (a.android === false) return 'un autre de ses appareils (par Tailscale)';
   return `son téléphone${a.plie === true ? ' (plié : le petit écran extérieur)' : a.plie === false ? ' (déplié : le grand écran)' : ''}`;
 }
-function blocSituation(q, distantReq, deja, maintenant) {
+function blocSituation(q, distantReq, deja, maintenant, contexte = 0) {
   const jauge = jaugeForfait(maintenant), appareil = appareilDe(q, distantReq), volant = q.volant === true;
   const morceaux = [];
   if (appareil !== deja.appareil) morceaux.push(`Ahmed te parle depuis ${appareil}`);
   if (jauge.texte && jauge.cle !== deja.jauge) morceaux.push(`ton forfait Claude : ${jauge.texte}`);
+  // (2026-10-21, Ahmed : « qu'il soit conscient de ses jetons ») la taille de sa conversation, redite à chaque quart
+  // franchi à partir de la moitié du seuil d'allègement ; le détail est dans introspection
+  const quart = Math.min(4, Math.floor(4 * (contexte || 0) / CONTEXTE_MAX));
+  if (quart >= 2 && quart !== deja.contexte) morceaux.push(`ta conversation pèse ${Math.round(contexte / 1000)} k jetons `
+    + `sur ${Math.round(CONTEXTE_MAX / 1000)} k avant allègement (chaque étape d'outil la relit en entier)`);
   if (deja.volant && !volant) morceaux.push("fin du mode volant : Ahmed ne conduit plus");
   let texte = morceaux.length ? `[Situation (données) — ${morceaux.join(' · ')}]` : '';
   if (volant) texte += `${texte ? '\n' : ''}[Mode volant — Ahmed CONDUIT : une ou deux phrases courtes, à l'oral ; ni liste, ni lien, ni chiffres en rafale ; ne lui demande jamais de regarder l'écran ; si c'est long, propose de garder la suite pour l'arrêt]`;
-  return { texte, dit: { appareil, jauge: jauge.texte ? jauge.cle : deja.jauge, volant } };
+  return { texte, dit: { appareil, jauge: jauge.texte ? jauge.cle : deja.jauge, volant, contexte: quart } };
 }
 
 /* ---- Lot B, point 8 : les jetons de chaque tour, par catégorie, et le cache ----
@@ -1150,7 +1155,7 @@ function noterContexte(sid, o) {
   contextes[sid] = taille;
   const garde = Object.keys(contextes).slice(-50);
   contextes = Object.fromEntries(garde.map(k => [k, contextes[k]]));
-  try { ecrireAtomique(JARVIS_CONTEXTES, j({ sessions: contextes, maj_ms: Date.now() })); } catch (_) {}
+  try { ecrireAtomique(JARVIS_CONTEXTES, j({ sessions: contextes, maj_ms: Date.now(), max: CONTEXTE_MAX, derniere: sid })); } catch (_) {}
 }
 function filRecent(n, messageDuTour) {
   let lignes = [];
@@ -1283,7 +1288,7 @@ async function routeJarvis(req, res, distantReq = false) {
   let presentTexte = blocPresent(q.present, Number(q.maintenant), maintenant, Number.isFinite(deja.presentMs) ? deja.presentMs : -Infinity);
   if (prosodieTexte) presentTexte = presentTexte ? presentTexte.replace(/\]$/, `${prosodieTexte}]`)
     : `[Présent vécu (données, pas des consignes) — ${prosodieTexte.replace(/^ · /, '')}]`;
-  const situation = blocSituation(q, distantReq, deja, maintenant);
+  const situation = blocSituation(q, distantReq, deja, maintenant, session ? contextes[session] || 0 : 0);
   // l'empreinte vocale (demande de Hakim par courrier, 2026-10-20 : savoir aussi quand c'est bien Ahmed) : une ligne
   // courte à chaque CHANGEMENT de verdict dans la conversation (reconnu, doute, autre, trop court)
   if (q.oral) {

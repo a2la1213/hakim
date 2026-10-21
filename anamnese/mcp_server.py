@@ -593,7 +593,7 @@ def introspection() -> str:
     (humeur, ennui, temps ressenti), tes neuromodulateurs, ta mémoire de travail (ce que tu as en
     tête), ce que ton esprit de fond a fait récemment (sommeil, rêves, synthèses, pensées, pensées
     écartées, relances, reports), ta dernière consolidation de nuit, ton identité, ta santé et celle
-    du Mac. Utilise-le quand Ahmed te demande comment tu vas, ce que tu as rêvé ou pensé, ce qui se
+    du Mac, et tes jetons (taille de ta conversation, dernier tour, cache, journée). Utilise-le quand Ahmed te demande comment tu vas, ce que tu as rêvé ou pensé, ce qui se
     passe en toi — ou quand tu veux le savoir toi-même. Ce sont TES processus : parles-en à la
     première personne, sans prétendre ressentir ce que tu ne peux pas vérifier."""
     import json as _json
@@ -677,7 +677,55 @@ def introspection() -> str:
         out.append(f"Le Mac : charge {cpu}, mémoire libre {libre} % ; robot {'actif (Gemma lui est laissé)' if charge.robot_actif() else 'au repos'}.")
     except Exception:
         pass
-    return "\n\n".join(out)[:6000] or "(rien à observer)"
+    j = _tes_jetons(now)
+    if j:
+        out.insert(min(2, len(out)), j)
+    return "\n\n".join(out)[:7000] or "(rien à observer)"
+
+
+def _tes_jetons(now, dossier=None):
+    """(2026-10-21, Ahmed : « qu'il soit conscient de ses jetons, de son cache et du reste ») ce que le cockpit a relevé
+    de TES appels au modèle (~/AIOS/jarvis/jetons.jsonl, contextes.json) : la taille de ta conversation, le dernier tour,
+    la journée. Des mesures, pas une sensation."""
+    import json as _json
+    from pathlib import Path as _P
+    d = _P(dossier) if dossier else _P.home() / "AIOS" / "jarvis"
+    try:
+        lignes = (d / "jetons.jsonl").read_text(encoding="utf-8").splitlines()[-400:]
+    except OSError:
+        return ""
+    tours = []
+    for l in lignes:
+        try:
+            tours.append(_json.loads(l))
+        except ValueError:
+            pass
+    if not tours:
+        return ""
+    try:
+        ctx = _json.loads((d / "contextes.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        ctx = {}
+    dernier = tours[-1]
+    k = lambda n: f"{round(n / 1000)} k"
+    lus = lambda x: x.get("entree", 0) + x.get("cache_lu", 0) + x.get("cache_ecrit", 0)
+    taille = (ctx.get("sessions") or {}).get(dernier.get("session") or ctx.get("derniere"), 0)
+    seuil = ctx.get("max") or 400000
+    n = dernier.get("tours") or 1
+    L = lus(dernier)
+    jour = time.strftime("%Y-%m-%d", time.localtime(now))
+    J = [x for x in tours if x.get("jour") == jour]
+    lus_j, ecrits_j = sum(lus(x) for x in J), sum(x.get("cache_ecrit", 0) for x in J)
+    return ("Tes jetons (relevés par le cockpit, des mesures) : "
+            + (f"ta conversation pèse environ {k(taille)} jetons ; au-delà de {k(seuil)}, le cockpit en ouvre une neuve avec "
+               "les 40 derniers échanges (ta mémoire et le journal brut restent). " if taille else "")
+            + f"Ton dernier tour : {n} appel(s) au modèle ({dernier.get('modele', '?')}) — un par étape d'outil, et chacun relit "
+            f"toute la conversation : {k(L)} relus, dont {round(100 * dernier.get('cache_lu', 0) / max(1, L))} % depuis le "
+            f"cache, {k(dernier.get('cache_ecrit', 0))} écrits en cache, {dernier.get('sortie', 0)} produits. "
+            + f"Aujourd'hui : {len(J)} tour(s), {f'{lus_j / 1e6:.1f}'.replace('.', ',')} M relus, "
+            f"{f'{ecrits_j / 1e6:.1f}'.replace('.', ',')} M écrits en cache. "
+            "Le cache garde la conversation une heure : après une heure sans message, elle est réécrite au prix fort. "
+            "Ce qui use la jauge du forfait d'Ahmed : la taille de la conversation × le nombre d'étapes.")
 
 
 @mcp.tool()
