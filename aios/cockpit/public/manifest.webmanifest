@@ -9,7 +9,43 @@
   "theme_color": "#04141a",
   "lang": "fr",
   "icons": [
-    { "src": "/icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "/icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    {
+      "src": "/icone-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icone-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Conversation avec Hakim",
+      "short_name": "Conversation",
+      "url": "/parler?conversation=1",
+      "icons": [
+        {
+          "src": "/icone-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Écrire à Hakim",
+      "short_name": "Écrire",
+      "url": "/parler",
+      "icons": [
+        {
+          "src": "/icone-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
   ]
 }

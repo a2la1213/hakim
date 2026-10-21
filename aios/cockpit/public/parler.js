@@ -476,7 +476,12 @@ function estSonEcho(texte) {
 }
 lecteurNeuronal.surSegment = (t) => { noterParole(t); sousTitre(t); };
 if (lecteurSysteme) { lecteurSysteme.surSegment = (t) => { noterParole(t); sousTitre(t); }; lecteurSysteme.surMot = () => pulser(0.35); }
+// (2026-10-21) « Conversation » depuis l'écran d'accueil (raccourci /parler?conversation=1) : la grande orbe s'ouvre,
+// un toucher démarre la conversation (le navigateur exige un geste pour ouvrir le son et le micro)
+etat.demarrerAuToucher = new URLSearchParams(location.search).get('conversation') === '1';
+if (etat.demarrerAuToucher) { try { history.replaceState(null, '', '/parler'); } catch (_) {} }
 $('scene').addEventListener('click', (e) => {
+  if (etat.demarrerAuToucher && !etat.conversation) { etat.demarrerAuToucher = false; basculerConversation(); return; }
   if (e.target.id === 'stopScene') { arreterMicro(false); arreterTout(); majBoutonsPause(); rendre(); humeur(); return; }
   if (e.target.id === 'pauseScene') { if (lecteur.enPause) reprendreVoix(); else pauseVoix(); return; }
   if (e.target.id === 'finConversation') return;
@@ -542,7 +547,8 @@ function humeur(texte) {
   $('pause').hidden = !(etat.conversation || (lecteur && (lecteur.actif || lecteur.enPause)));
   $('finConversation').hidden = !etat.conversation;
   if (!voixEnJeu) { etat.sceneMasquee = false; if (!parle) sousTitre(''); }
-  scene(!!(etat.reglages.scene && voixEnJeu && !etat.sceneMasquee));
+  scene(!!((etat.reglages.scene && voixEnJeu && !etat.sceneMasquee) || etat.demarrerAuToucher));
+  if (etat.demarrerAuToucher && !etat.conversation) sousTitre('touche l’orbe pour commencer la conversation');
   // (2026-10-21, Ahmed) la grande orbe masquée d'un toucher pendant une conversation : un bouton pour y revenir
   $('orbeRetour').hidden = !(etat.reglages.scene && etat.conversation && etat.sceneMasquee);
   if (ecoute && !$('sousTitre').textContent) sousTitre('je t’écoute…');
