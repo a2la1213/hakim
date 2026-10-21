@@ -96,3 +96,24 @@ def test_c_h6_pas_de_courrier_ni_de_mission_pendant_un_reveil(monkeypatch, tmp_p
     monkeypatch.setenv("ANAMNESE_SOURCE", "claude-code")
     (tmp_path / "tour-autonome.json").write_text("{}")
     assert envoyer("hakim", "Réponse de Claude Code.").startswith("Message ")      # la marque ne vise que Hakim
+
+
+def test_hakim_cree_ses_rubriques_mais_pas_dans_un_tour_sans_ahmed(tmp_path, monkeypatch):
+    """(2026-10-21, Ahmed) Hakim crée ses catégories et y range ses souvenirs ; pas pendant un tour sans Ahmed."""
+    import memory
+    import migrations
+    mem = memory.Memory(db_path=tmp_path / "m.db")
+    migrations.migrate(mem.db)
+    monkeypatch.setattr(memory, "Memory", lambda *a, **k: mem)
+    import mcp_server
+    monkeypatch.setattr(mcp_server, "_mem", mem)
+    monkeypatch.setattr(mcp_server, "MARQUE_AUTONOME", tmp_path / "tour-autonome.json")
+    monkeypatch.setenv("ANAMNESE_SOURCE", "hakim")
+    creer = mcp_server.mcp._tool_manager.get_tool("rubric_create").fn
+    ranger = mcp_server.mcp._tool_manager.get_tool("memory_reclassify").fn
+    eid = mem.add("episodic", "Nora est sa cousine", dedup=False)
+    (tmp_path / "tour-autonome.json").write_text("{}")
+    assert creer("personnes").startswith("Refusé pendant un tour") and ranger(eid, "personnes").startswith("Refusé pendant un tour")
+    (tmp_path / "tour-autonome.json").unlink()
+    assert "prête" in creer("personnes") and "prête" in creer("personnes/nora")
+    assert "personnes/nora" in ranger(eid, "personnes/nora")

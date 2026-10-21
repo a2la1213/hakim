@@ -787,6 +787,8 @@ def rubric_create(path: str, label: str = "", kind_hint: str = "",
     place ; force=True pour outrepasser).
     """
     import taxonomy
+    if _tour_sans_ahmed():                    # (2026-10-21) Hakim range lui-même, mais pas dans ses tours sans Ahmed
+        return REFUS_AUTONOME
     if seed_episode_id and not force:
         row = _mem.db.execute("SELECT embedding FROM episodes WHERE id=?",
                               (int(seed_episode_id),)).fetchone()
@@ -859,6 +861,8 @@ def rubric_merge(src_path: str, dst_path: str) -> str:
 def memory_reclassify(episode_id: int, new_path: str = "") -> str:
     """Déplace UNE mémoire vers une meilleure rubrique (conf 1.0). new_path vide = détacher."""
     import taxonomy
+    if _tour_sans_ahmed():
+        return REFUS_AUTONOME
     res = taxonomy.reclassify(_mem.db, int(episode_id), new_path or None, time.time())
     return f"Mémoire #{episode_id} → {res}."
 
