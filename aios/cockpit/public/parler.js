@@ -442,16 +442,25 @@ const sousTitre = (t) => { $('sousTitre').textContent = t || ''; };
    qu'un prochain bug se lise au lieu de se deviner. Que des nombres et des noms d'événements, jamais de texte. */
 const journalVoixFile = [];
 let journalVoixMinuteur = null;
-function journalVoix(e, d) {
-  journalVoixFile.push({ t: Date.now(), e, ...(d || {}) });
-  if (journalVoixFile.length > 100) journalVoixFile.splice(0, journalVoixFile.length - 100);
-  clearTimeout(journalVoixMinuteur);
-  journalVoixMinuteur = setTimeout(() => {
-    const lot = journalVoixFile.splice(0);
-    if (lot.length) fetch('/api/voix/journal', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
-      body: JSON.stringify(lot) }).catch(() => {});
-  }, 3000);
+const ANDROID = /Android/i.test(navigator.userAgent || '');
+function envoyerJournalVoix() {
+  const lot = journalVoixFile.splice(0);
+  try { localStorage.removeItem('jarvis.journalVoix'); } catch (_) {}
+  if (lot.length) fetch('/api/voix/journal', { method: 'POST', keepalive: true,
+    headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify(lot) }).catch(() => {});
 }
+function journalVoix(e, d) {
+  journalVoixFile.push({ t: Date.now(), e, appareil: ANDROID ? 'telephone' : 'mac', ...(d || {}) });
+  if (journalVoixFile.length > 100) journalVoixFile.splice(0, journalVoixFile.length - 100);
+  // (2026-10-21) gardé aussi dans le navigateur : une page tuée en arrière-plan ne perd plus ses derniers événements
+  try { localStorage.setItem('jarvis.journalVoix', JSON.stringify(journalVoixFile)); } catch (_) {}
+  clearTimeout(journalVoixMinuteur);
+  journalVoixMinuteur = setTimeout(envoyerJournalVoix, document.visibilityState === 'hidden' ? 0 : 3000);
+}
+try {                                             // ce qu'une page précédente n'a pas pu envoyer
+  const reste = JSON.parse(localStorage.getItem('jarvis.journalVoix') || '[]');
+  if (Array.isArray(reste) && reste.length) { journalVoixFile.push(...reste.slice(-100), { t: Date.now(), e: 'page_rechargee' }); setTimeout(envoyerJournalVoix, 2000); }
+} catch (_) {}
 // ce que sa voix vient de dire (2 min) : si « ta » phrase n'est que l'écho de la sienne, ce n'est pas toi
 const paroleRecente = [];
 function noterParole(texte) {
@@ -1112,6 +1121,7 @@ async function basculerConversation() {
   if (etat.conversation !== conv) { conv.capteur.arreter(); return; }    // arrêtée pendant l'ouverture
   noterPresent({ e: 'debut_conversation', t: Date.now() });
   sessionMedia(true);
+  garderEcranAllume(true);
   signalerPresence();                              // tout de suite : le subconscient se met en pause
   rendre(); humeur();
 }
@@ -1136,7 +1146,16 @@ function basculerMuet() {
    téléphone, avec Muet et Terminer) dit au navigateur qu'une conversation est en cours et l'aide à garder la page en
    vie. Ce que le navigateur permet vraiment (micro et voix en arrière-plan) se lit dans le diagnostic de la voix :
    combien de morceaux de micro sont arrivés pendant que la page était cachée. Navigateur fermé : impossible. */
-let micEnFond = 0, cacheeDepuis = 0;
+let micEnFond = 0, cacheeDepuis = 0, verrouEcran = null;
+async function garderEcranAllume(oui) {
+  try {
+    if (!oui) { if (verrouEcran) await verrouEcran.release(); verrouEcran = null; return; }
+    if ('wakeLock' in navigator && document.visibilityState === 'visible' && !verrouEcran) {
+      verrouEcran = await navigator.wakeLock.request('screen');
+      verrouEcran.addEventListener('release', () => { verrouEcran = null; });
+    }
+  } catch (_) { verrouEcran = null; }
+}
 function sessionMedia(active) {
   if (!('mediaSession' in navigator)) return;
   try {
@@ -1153,16 +1172,18 @@ function sessionMedia(active) {
 document.addEventListener('visibilitychange', () => {
   if (!etat.conversation) return;
   if (document.visibilityState === 'hidden') { cacheeDepuis = Date.now(); micEnFond = 0; journalVoix('conversation_cachee', { audio: actx ? actx.state : 'aucun' }); }
-  else if (cacheeDepuis) {
-    journalVoix('conversation_revenue', { cachee_ms: Date.now() - cacheeDepuis, micro_morceaux: micEnFond, audio: actx ? actx.state : 'aucun' });
+  else {
+    if (cacheeDepuis) journalVoix('conversation_revenue', { cachee_ms: Date.now() - cacheeDepuis, micro_morceaux: micEnFond, audio: actx ? actx.state : 'aucun' });
     cacheeDepuis = 0;
     contexteAudio();
+    garderEcranAllume(true);                       // le verrou d'écran tombe quand la page se cache : on le reprend
   }
 });
 function finirConversation(garderLeTour = true) {
   const conv = etat.conversation;
   if (!conv) return;
   sessionMedia(false);
+  garderEcranAllume(false);
   if (garderLeTour && conv.capteur && conv.capteur.enParole) { conv.fermeture = true; conv.capteur.finirTour(); }
   etat.conversation = null;
   if (conv.capteur) conv.capteur.arreter();
