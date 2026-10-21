@@ -336,9 +336,30 @@ function creerLecteurNeuronal() {
       URL.revokeObjectURL(element.src); element = null; pomper();
     };
     element.onended = fin; element.onerror = fin;
-    element.play().catch(fin);
+    // (2026-10-21) un lecteur bloqué par le navigateur (pas de geste récent, onglet en arrière-plan) : avant, le
+    // morceau était sauté et les sous-titres défilaient en silence ; maintenant il attend un toucher et le dit
+    element.play().catch((e) => {
+      if (g !== generation) return;
+      if (e && e.name === 'NotAllowedError') { sonBloque('lecteur'); return; }
+      fin();
+    });
   }
+  L.debloquer = () => { if (element && element.paused) element.play().catch(() => {}); };
   return L;
+}
+// (2026-10-21) quand le navigateur bloque le son (contexte audio suspendu, lecteur refusé) : on le dit, et le
+// prochain toucher le rend
+let sonBloqueDepuis = 0;
+function sonBloque(ou) {
+  if (!sonBloqueDepuis) { sonBloqueDepuis = Date.now(); journalVoix('son_bloque', { ou, etat: actx ? actx.state : 'aucun' }); }
+  humeur('le navigateur a coupé le son : touche l’écran pour entendre Hakim');
+}
+function debloquerSon() {
+  if (!sonBloqueDepuis) return;
+  journalVoix('son_rendu', { apres_ms: Date.now() - sonBloqueDepuis });
+  sonBloqueDepuis = 0;
+  lecteurNeuronal.debloquer();
+  humeur();
 }
 // Le contexte audio (créé au premier geste d'Ahmed, règle des navigateurs) et l'analyseur de la voix.
 let actx = null, analyseurVoix = null;
@@ -350,12 +371,30 @@ function contexteAudio() {
       analyseurVoix.fftSize = 256;
       analyseurVoix.smoothingTimeConstant = 0.55;
       analyseurVoix.connect(actx.destination);
+      // (2026-10-21) le contexte suspendu ou interrompu (écran verrouillé, casque Bluetooth qui bascule quand le
+      // micro s'ouvre) : la voix programmée ne joue plus et ne finit jamais — on tente de le relancer, sinon on le dit
+      actx.onstatechange = () => {
+        journalVoix('contexte_audio', { etat: actx.state, parle: !!(lecteurNeuronal && lecteurNeuronal.actif) });
+        if (actx.state !== 'running' && actx.state !== 'closed') {
+          actx.resume().then(() => { if (actx.state === 'running') debloquerSon(); })
+            .catch(() => {}).finally(() => { if (actx.state !== 'running' && lecteurNeuronal.actif) sonBloque('contexte'); });
+        } else if (actx.state === 'running') debloquerSon();
+      };
     }
-    if (actx.state === 'suspended') actx.resume().catch(() => {});
+    if (actx.state !== 'running' && actx.state !== 'closed') actx.resume().then(debloquerSon).catch(() => {});
+    else debloquerSon();
   } catch (_) {}
 }
 document.addEventListener('pointerdown', contexteAudio);
 document.addEventListener('keydown', contexteAudio);
+// le niveau de SA voix à l'instant (pour que le micro reconnaisse son écho : conversation.js)
+const tamponSortie = new Float32Array(256);
+function niveauSortie() {
+  if (!analyseurVoix || !lecteurNeuronal.joue) return 0;
+  analyseurVoix.getFloatTimeDomainData(tamponSortie);
+  let s = 0; for (let i = 0; i < tamponSortie.length; i++) s += tamponSortie[i] * tamponSortie[i];
+  return Math.sqrt(s / tamponSortie.length);
+}
 const freq = new Uint8Array(128);
 function niveauVoix() {
   if (!analyseurVoix || !lecteurNeuronal.joue) return null;
@@ -397,8 +436,37 @@ orbeTete.source(niveauCourant);
 orbeScene.source(niveauCourant);
 const pulser = (x) => { orbeTete.pulser(x); orbeScene.pulser(x); };
 const sousTitre = (t) => { $('sousTitre').textContent = t || ''; };
-lecteurNeuronal.surSegment = sousTitre;
-if (lecteurSysteme) { lecteurSysteme.surSegment = sousTitre; lecteurSysteme.surMot = () => pulser(0.35); }
+/* Diagnostic de la voix (2026-10-21, Ahmed : « la pause s'active toute seule », « il lit mais je n'entends rien ») :
+   les événements de la voix et du micro (coupure, écho reconnu, son bloqué, contexte audio, transcription trop
+   lente, attente de ton tour) sont gardés ici et envoyés au cockpit (~/AIOS/jarvis/voix-diagnostic.jsonl), pour
+   qu'un prochain bug se lise au lieu de se deviner. Que des nombres et des noms d'événements, jamais de texte. */
+const journalVoixFile = [];
+let journalVoixMinuteur = null;
+function journalVoix(e, d) {
+  journalVoixFile.push({ t: Date.now(), e, ...(d || {}) });
+  if (journalVoixFile.length > 100) journalVoixFile.splice(0, journalVoixFile.length - 100);
+  clearTimeout(journalVoixMinuteur);
+  journalVoixMinuteur = setTimeout(() => {
+    const lot = journalVoixFile.splice(0);
+    if (lot.length) fetch('/api/voix/journal', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify(lot) }).catch(() => {});
+  }, 3000);
+}
+// ce que sa voix vient de dire (2 min) : si « ta » phrase n'est que l'écho de la sienne, ce n'est pas toi
+const paroleRecente = [];
+function noterParole(texte) {
+  const t = Date.now();
+  paroleRecente.push({ t, mots: new Set(sansAccents(texte).split(' ').filter(m => m.length >= 3)) });
+  while (paroleRecente.length && t - paroleRecente[0].t > 120000) paroleRecente.shift();
+}
+function estSonEcho(texte) {
+  const mots = sansAccents(texte).split(' ').filter(m => m.length >= 3);
+  if (mots.length < 2) return false;
+  const recents = new Set(paroleRecente.filter(x => Date.now() - x.t < 45000).flatMap(x => [...x.mots]));
+  return mots.filter(m => recents.has(m)).length / mots.length >= 0.7;
+}
+lecteurNeuronal.surSegment = (t) => { noterParole(t); sousTitre(t); };
+if (lecteurSysteme) { lecteurSysteme.surSegment = (t) => { noterParole(t); sousTitre(t); }; lecteurSysteme.surMot = () => pulser(0.35); }
 $('scene').addEventListener('click', (e) => {
   if (e.target.id === 'stopScene') { arreterMicro(false); arreterTout(); majBoutonsPause(); rendre(); humeur(); return; }
   if (e.target.id === 'pauseScene') { if (lecteur.enPause) reprendreVoix(); else pauseVoix(); return; }
@@ -408,6 +476,9 @@ $('scene').addEventListener('click', (e) => {
   if (c && c.capteur && c.capteur.enParole) return c.capteur.finirTour();
   etat.sceneMasquee = true; scene(false);
 });
+function revenirOrbe() { if (!etat.conversation) return; etat.sceneMasquee = false; humeur(); }
+$('orbeRetour').addEventListener('click', revenirOrbe);
+document.addEventListener('keydown', (e) => { if (e.altKey && (e.code === 'KeyO')) { e.preventDefault(); revenirOrbe(); } });
 function scene(visible) {
   $('vision').classList.toggle('sur-scene', visible);
   const s = $('scene');
@@ -463,6 +534,8 @@ function humeur(texte) {
   $('finConversation').hidden = !etat.conversation;
   if (!voixEnJeu) { etat.sceneMasquee = false; if (!parle) sousTitre(''); }
   scene(!!(etat.reglages.scene && voixEnJeu && !etat.sceneMasquee));
+  // (2026-10-21, Ahmed) la grande orbe masquée d'un toucher pendant une conversation : un bouton pour y revenir
+  $('orbeRetour').hidden = !(etat.reglages.scene && etat.conversation && etat.sceneMasquee);
   if (ecoute && !$('sousTitre').textContent) sousTitre('je t’écoute…');
   // l'humeur seule (elle change rarement) : le lecteur d'écran n'est pas inondé ; l'ennui en infobulle
   const repos = etat.interieur && etat.interieur.humeur ? `humeur : ${etat.interieur.humeur}` : 'prêt · mémoire Anamnèse';
@@ -531,6 +604,7 @@ function htmlMessage(m) {
   const corps = m.texte && NON_REPONSE.test(m.texte) ? '<div class="attente">(il n’a rien répondu)</div>'
     : m.texte ? `<div class="txt">${texteRiche(m.texte)}</div>`
     : (m.enCours ? `<div class="attente">${m.outils && m.outils.length ? 'cherche…' : 'réfléchit…'}</div>` : '');
+  const suite = m.attenteServeur ? '<div class="attente">la connexion s’est coupée : il termine sa réponse sur le Mac, elle s’affichera ici</div>' : '';
   const err = m.erreur ? `<div class="txt">${esc(m.erreur)}</div>` : '';
   const pieces = (m.pieces || []).filter(x => x && /^\d{8}-\d{6}-[0-9a-f]{6}$/.test(String(x.id))).map(x => {
     const image = /^(png|jpe?g|gif|webp)$/.test(String(x.type));
@@ -553,7 +627,7 @@ function htmlMessage(m) {
   if (m.source === 'api') pied.push('<span title="Forfait à sa limite : réponse par l\'API Claude (payée à l\'usage)">via l\'API</span>');
   if (m.source === 'local') pied.push('<span title="Forfait et API indisponibles : cerveau local, sans outils">cerveau local</span>');
   const etiquette = m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '';
-  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : corps}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
+  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
 }
 
 /* Les pièces jointes de Hakim (2026-10-20) : récupérées avec le jeton, jamais ouvertes comme une page — une image
@@ -705,7 +779,7 @@ async function envoyer(texte, oral, dejaRelance) {
   etat.messages.push(m);
   sauver();                                              // la question survit à une fermeture de page
   const ctl = new AbortController();
-  etat.flux = ctl;
+  etat.flux = ctl; etat.fluxId = String(m.id);
   rendre(); humeur();
   const decoupe = Voix.decoupeur();
   const auto = (etat.reglages.lectureAuto || etat.conversation || etat.reglages.volant) && lecteur;
@@ -722,7 +796,7 @@ async function envoyer(texte, oral, dejaRelance) {
       body: JSON.stringify({ texte, oral: !!oral, modele: etat.conversation ? etat.reglages.modeleConversation : etat.reglages.modele, source: etat.reglages.source || 'auto', session: etat.session,
         t_precedent: tPrecedent, t_debut: tDebut, fichiers: joints.map(x => x.chemin), pensees_dites: dites,
         conversation: !!etat.conversation, present: presentEnvoye, maintenant: Date.now(), camera,
-        appareil: appareilPage(), volant: !!etat.reglages.volant }),
+        appareil: appareilPage(), volant: !!etat.reglages.volant, tour_id: String(m.id) }),
     });
     if (!r.ok) throw new Error(r.status === 403 ? 'jeton refusé : recharge la page (le cockpit a redémarré)' : `erreur ${r.status}`);
     const lecteurFlux = r.body.getReader();
@@ -760,7 +834,11 @@ async function envoyer(texte, oral, dejaRelance) {
     }
   } catch (e) {
     if (e.name === 'AbortError') m.coupe = true;
-    else { m.erreur = String(e.message || e); etat.dites.unshift(...dites); }   // à redire au prochain envoi
+    else if (!/jeton refusé|erreur \d/.test(String(e.message || ''))) {
+      // (2026-10-21) la connexion coupée (page en arrière-plan, téléphone en veille, réseau) : sur le Mac il termine
+      // sa réponse ; elle arrive ici dès que la page la retrouve dans la conversation partagée
+      m.attenteServeur = true;                    // la synchronisation (toutes les 5 s, et au retour sur la page) la ramène
+    } else { m.erreur = String(e.message || e); etat.dites.unshift(...dites); }   // à redire au prochain envoi
   }
   if (etat.flux === ctl) etat.flux = null;
   m.enCours = false;
@@ -781,7 +859,7 @@ async function envoyer(texte, oral, dejaRelance) {
     }
   }
   if (auto && !m.coupe) { decoupe.finir().forEach(p => { if (NON_REPONSE.test(p)) return; etat.lectureDe = m.id; lecteur.dire(p); }); lecteur.finFlux(); }
-  if (!m.texte && !m.erreur && !m.coupe) m.erreur = 'réponse vide';
+  if (!m.texte && !m.erreur && !m.coupe && !m.attenteServeur) m.erreur = 'réponse vide';
   sauver(); rendre(); humeur();
 }
 
@@ -792,7 +870,12 @@ function marquerCoupe() {
   if (lu) { lu.coupe = true; sauver(); rendre(); }
 }
 function arreterTout() {
-  if (etat.flux) { etat.flux.abort(); etat.flux = null; }
+  if (etat.flux) {
+    // (2026-10-21) Stop EXPLICITE : sans lui, le cockpit laisse la réponse aller au bout (page partie ≠ Stop)
+    if (etat.fluxId) fetch('/api/jarvis/stop', { method: 'POST', keepalive: true,
+      headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ tour_id: etat.fluxId }) }).catch(() => {});
+    etat.flux.abort(); etat.flux = null; etat.fluxId = null;
+  }
   if (etat.transcription) { etat.transcription.abort(); etat.transcription = null; }
   if (lecteur) lecteur.arreter();
   etat.lectureDe = null;
@@ -891,13 +974,19 @@ function phraseFinie(t) {
 async function transcrireVite(audio, type, contexte) {
   const langue = etat.reglages.langue === 'auto' ? '' : etat.reglages.langue.slice(0, 2);
   const ctx = contexte ? `&contexte=${encodeURIComponent(contexte.slice(-200))}` : '';
+  const ctl = new AbortController(), t0 = Date.now();
+  const minuteur = setTimeout(() => ctl.abort(), 25000);         // (2026-10-21) jamais d'attente sans fin
   try {
-    const r = await fetch(`/api/voix/transcrire?langue=${langue}${ctx}`, { method: 'POST', body: audio,
+    const r = await fetch(`/api/voix/transcrire?langue=${langue}${ctx}`, { method: 'POST', body: audio, signal: ctl.signal,
       headers: { 'Content-Type': type || 'audio/wav', 'X-Jeton': jeton() } });
     const o = await r.json().catch(() => null);
-    if (!r.ok || !o || o.erreur) return null;
+    if (!r.ok || !o || o.erreur) { journalVoix('transcription_echec', { statut: r.status, ms: Date.now() - t0 }); return null; }
+    if (Date.now() - t0 > 8000) journalVoix('transcription_lente', { ms: Date.now() - t0 });
     return (o.texte || '').trim();
-  } catch (_) { return null; }
+  } catch (e) {
+    journalVoix(e && e.name === 'AbortError' ? 'transcription_trop_longue' : 'transcription_erreur', { ms: Date.now() - t0 });
+    return null;
+  } finally { clearTimeout(minuteur); }
 }
 // Whisper, amorcé par ce qu'il a déjà compris, le répète parfois sur un morceau presque muet : un
 // morceau déjà contenu dans le texte compris est écarté (ainsi que ses inventions sur le silence).
@@ -1002,8 +1091,10 @@ async function basculerConversation() {
       // Ahmed (ou une autre voix) parle pendant que Hakim parle : Hakim se MET EN PAUSE (lot C, point 26) ; sa
       // réponse continue d'arriver. À la fin du tour : « continue » ou du bruit → il reprend à la phrase non
       // dite ; « stop » → il lâche tout ; une vraie question → il lâche le reste et y répond.
-      surInterruption: () => {
+      niveauSortie,
+      surInterruption: (mesure) => {
         etat.coupeParAhmed = true;
+        journalVoix('coupure', mesure || {});
         noterPresent({ e: 'coupure', t: Date.now() });
         if (!lecteur.pause()) { if (lecteur.actif) lecteur.arreter(); }
         majBoutonsPause();
@@ -1078,15 +1169,20 @@ async function tourDeParole(conv, wav, infos, extra) {
   conv.spec = null;
   conv.enAttente++;
   humeur('transcription…');
-  // fin anticipée : la phrase est déjà transcrite ; sinon, la partie déjà comprise + la queue
-  let texte = extra && extra.texte ? extra.texte
-    : (conv.ecrit && (conv.ecrit.confirme || conv.ecrit.partiel) ? await texteDuTour(conv) : await transcrireVite(wav, 'audio/wav'));
-  if (texte === null && conv.ecrit && conv.ecrit.confirme) texte = await transcrireVite(wav, 'audio/wav');   // un morceau a échoué : le tour entier
+  let texte = '';
+  try {                                   // (2026-10-21) toujours rendu : sinon sa voix attendait ton tour pour toujours
+    // fin anticipée : la phrase est déjà transcrite ; sinon, la partie déjà comprise + la queue
+    texte = extra && extra.texte ? extra.texte
+      : (conv.ecrit && (conv.ecrit.confirme || conv.ecrit.partiel) ? await texteDuTour(conv) : await transcrireVite(wav, 'audio/wav'));
+    if (texte === null && conv.ecrit && conv.ecrit.confirme) texte = await transcrireVite(wav, 'audio/wav');   // un morceau a échoué : le tour entier
+  } catch (e) { journalVoix('tour_erreur'); texte = ''; }
+  finally { conv.enAttente = Math.max(0, conv.enAttente - 1); }
   texte = texte || '';
-  conv.enAttente--;
   if (!vivante()) return;
   conv.fermeture = false;                                                   // ce dernier tour, une seule fois
-  if (!Conversation.utile(texte)) { if (!reprendreVoix()) humeur(); return; }      // bruit, une autre voix : il reprend
+  if (!Conversation.utile(texte)) { journalVoix('tour_bruit', { coupure: !!etat.coupeParAhmed }); if (!reprendreVoix()) humeur(); return; }      // bruit, une autre voix : il reprend
+  // (2026-10-21) sa propre voix revenue par le micro : ce n'est pas toi qui parles, il reprend
+  if (estSonEcho(texte)) { journalVoix('echo_reconnu', { mots: texte.split(/\s+/).length }); if (!reprendreVoix()) humeur(); return; }
   noterPresent({ e: 'ahmed', debut: infos.debut, fin: infos.fin, pauses: infos.pauses, ton: tonRelatif(infos, texte) });
   activite();
   if (COMMANDE_STOP.test(texte)) { marquerCoupe(); arreterTout(); rendre(); humeur(); return; }   // « stop » : il lâche tout

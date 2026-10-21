@@ -75,7 +75,7 @@
     const taux = ctx.sampleRate, parFenetre = Math.round(taux * FENETRE_MS / 1000);
     const preecoute = [];                                   // fenêtres récentes, hors parole
     let fenetre = new Float32Array(parFenetre), remplis = 0;
-    let bruit = 0.01, initFenetres = 0, echo = 0, jarvisDepuis = 0;
+    let bruit = 0.01, initFenetres = 0, echo = 0, jarvisDepuis = 0, enveloppe = 0, gainEcho = 0.2;
     let etatV = 'attente', tenue = 0, tour = [], debut = 0, derniereVoix = 0, voixMs = 0, pauseEnCours = 0, pauses = [];
     let energies = [], hauteurs = [];                       // le ton du tour (indices)
     const fortes = [];                                      // les 15 dernières fenêtres : fortes ou non
@@ -120,8 +120,16 @@
       if (!jarvis) jarvisDepuis = 0;
       if (initFenetres < 15) { bruit = Math.max(0.002, initFenetres ? Math.min(bruit, rms) : rms); initFenetres++; }
       const seuil = Math.max(0.012, bruit * 3.2);
+      // (2026-10-21, Ahmed : « la pause s'active toute seule ») l'écho suit SA voix à l'instant : l'enveloppe de ce
+      // qu'il dit (descente ~250 ms, le temps que l'écho de la pièce s'éteigne) × le gain du chemin haut-parleur → micro,
+      // appris quand il parle seul. Une syllabe forte de sa voix ne passe plus pour toi qui le coupes.
+      const sortie = o.niveauSortie ? o.niveauSortie() : 0;
+      enveloppe = Math.max(sortie, enveloppe * 0.93);
+      const echoInstant = gainEcho * enveloppe;
       // pendant que Jarvis parle : au-dessus de l'écho résiduel, et jamais dans ses 400 premières ms
-      const seuilBarge = Math.max(seuil * 2.5, echo * 2.4);
+      const seuilBarge = Math.max(seuil * 2.5, echo * 2.4, echoInstant * 3);
+      if (jarvis && etatV === 'attente' && enveloppe > 0.02 && rms < seuilBarge)
+        gainEcho = Math.min(1, Math.max(0.005, gainEcho * 0.98 + 0.02 * (rms / enveloppe)));
       if (o.surNiveau) o.surNiveau(Math.min(1, rms * 7));
       if (etatV === 'attente') {
         if (jarvis) { if (rms < seuilBarge) echo = echo * 0.97 + rms * 0.03; }   // l'écho appris hors des moments forts
@@ -133,7 +141,8 @@
         tenue = fort ? tenue + FENETRE_MS : 0;
         preecoute.push(f.slice(0)); if (preecoute.length > PREECOUTE_MS / FENETRE_MS) preecoute.shift();
         if (jarvis ? nFortes >= 12 : tenue >= 120) {
-          if (jarvis && o.surInterruption) o.surInterruption();
+          if (jarvis && o.surInterruption) o.surInterruption({ rms: +rms.toFixed(4), seuil: +seuilBarge.toFixed(4),
+            echo: +echo.toFixed(4), echo_instant: +echoInstant.toFixed(4), gain: +gainEcho.toFixed(3) });
           etatV = 'parole'; debut = maintenant - PREECOUTE_MS; derniereVoix = maintenant; voixMs = Math.max(tenue, nFortes * FENETRE_MS);
           pauses = []; pauseEnCours = 0; fortes.length = 0; energies = []; hauteurs = [];
           tour = preecoute.splice(0);

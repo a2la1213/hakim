@@ -955,5 +955,27 @@ h55d=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "X-Jeton: $JETON" --dat
 h55e=$(grep -c "Tes hormones : v" "$BANC/anamnese/data/courrier.jsonl")
 verifier "55. hormones : état, bascule v2 puis v1 d'un geste, Hakim prévenu, version invalide refusée" "v1 v2 v1 400 2" "$h55a $h55b $h55c $h55d $h55e"
 
+# 56. (2026-10-21) le diagnostic de la voix : des événements (nom, heure, nombres) gardés, le texte jamais ; jeton exigé
+d56a=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "X-Jeton: $JETON" -H 'Content-Type: application/json' \
+  --data '[{"t":1,"e":"coupure","rms":0.05,"seuil":0.03},{"t":2,"e":"echo_reconnu","texte":"un secret dit à voix haute"},{"x":1}]' "$U/api/voix/journal")
+d56b=$(curl -s -o /dev/null -w '%{http_code}' -X POST --data '[{"t":1,"e":"coupure"}]' "$U/api/voix/journal")
+d56c=$(grep -c '"e":"coupure"\|"e":"echo_reconnu"' "$BANC/jarvis/voix-diagnostic.jsonl" 2>/dev/null || echo 0)
+d56d=$(grep -c "secret" "$BANC/jarvis/voix-diagnostic.jsonl" 2>/dev/null || true)
+verifier "56. diagnostic de la voix : événements gardés, texte jamais, jeton exigé" "204 403 2 0" "$d56a $d56b $d56c ${d56d:-0}"
+
+# 57. (2026-10-21) la page part (téléphone en veille, onglet fermé) : la réponse va au bout et s'écrit dans la
+# conversation partagée sous l'identifiant du message en attente ; un Stop EXPLICITE l'arrête, lui
+echo 2 > "$BANC/claude_s"
+poster '{"texte":"pars en arriere-plan","modele":"sonnet","source":"abonnement","tour_id":"bg57"}' --max-time 1 >/dev/null 2>&1
+for i in $(seq 1 40); do grep -q '"id":"bg57"' "$BANC/jarvis/conversation.json" 2>/dev/null && break; sleep 0.25; done
+b57a=$(python3 -c "import json; m=[x for x in json.load(open('$BANC/jarvis/conversation.json'))['messages'] if str(x.get('id'))=='bg57']; print(bool(m) and m[0].get('complet') is True and 'Salut' in m[0].get('texte',''))")
+echo 30 > "$BANC/claude_s"
+( poster '{"texte":"arrete-moi","modele":"sonnet","source":"abonnement","tour_id":"st57"}' --max-time 3 >/dev/null 2>&1 & )
+sleep 1.2
+s57=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "X-Jeton: $JETON" --data '{"tour_id":"st57"}' "$U/api/jarvis/stop")
+sleep 3; echo 0 > "$BANC/claude_s"
+b57b=$(grep -c '"id":"st57"' "$BANC/jarvis/conversation.json" 2>/dev/null || true)
+verifier "57. page partie : la réponse va au bout et s'écrit dans la conversation ; Stop explicite : arrêtée" "True 204 0" "$b57a $s57 ${b57b:-0}"
+
 [ "$ECHECS" -eq 0 ] && echo "TOUT VERT" || echo "$ECHECS contrôle(s) en échec"
 exit "$ECHECS"

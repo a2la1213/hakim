@@ -1026,6 +1026,7 @@ function blocSituation(q, distantReq, deja, maintenant, contexte = 0) {
    cache écrit — en TTL 1 h —, sortie) ; total_cost_usd est CUMULÉ sur le processus (on garde l'écart). Sur le
    forfait, le coût est l'équivalent au tarif de l'API (rien n'est facturé) ; sur l'API, c'est le vrai coût. */
 const JARVIS_JETONS = path.join(JARVIS, 'jetons.jsonl');
+const JARVIS_VOIX_DIAGNOSTIC = path.join(JARVIS, 'voix-diagnostic.jsonl');   // (2026-10-21) /api/voix/journal
 /* ---- Lot G, point 37 : l'honnêteté de l'introspection (le cas « agacé » : il disait un état que ses variables ne
    montraient pas). Après chaque réponse, ce qu'il dit ressentir est comparé à ses neuromodulateurs ; un écart net
    lui est signalé au tour suivant, pour qu'il s'appuie sur introspection plutôt que sur une formule. ---- */
@@ -1247,13 +1248,28 @@ function bilanJetons(jour = jourLocal()) {
   return b;
 }
 
+// (2026-10-21, Ahmed : « que ça soit toujours actif, même en arrière-plan, même si je ferme le navigateur ») une
+// page qui part (téléphone en veille, onglet fermé, réseau coupé) n'arrête plus la réponse : elle va au bout, est
+// écrite dans la conversation partagée (même identifiant que le message en attente sur la page) et notifiée. Seul un
+// Stop EXPLICITE (/api/jarvis/stop) l'arrête ; une page d'avant cette version (sans tour_id) garde l'ancien comportement.
+const toursActifs = new Map();                     // tour_id → { arreter() }
 async function routeJarvis(req, res, distantReq = false) {
-  let parti = false, enfant = null;
+  let parti = false, enfant = null, arretDemande = false, tourId = null;
   // Enregistré AVANT le briefing : si le client part pendant ce temps, on ne lance rien.
   let tourCourant = null;
-  res.on('close', () => { parti = true; if (enfant && !res.writableFinished) lacher(enfant, tourCourant); });
+  const arreter = () => { arretDemande = true; if (enfant && !res.writableFinished) lacher(enfant, tourCourant); };
+  res.on('close', () => {
+    parti = true;
+    if (!tourId) return arreter();                 // une page d'avant : la fermer, c'était « Stop »
+    if (enfant && !res.writableFinished && !arretDemande) console.error('Jarvis : la page est partie — la réponse continue en arrière-plan');
+  });
   const corps = await lireCorps(req, 1 << 20);
   let q = null; try { q = JSON.parse(String(corps || '')); } catch (_) {}
+  if (q && typeof q.tour_id === 'string' && ID_MESSAGE.test(q.tour_id)) {
+    tourId = q.tour_id;                            // la page a pu partir pendant la lecture du corps : on répond quand même
+    toursActifs.set(tourId, { arreter });
+    while (toursActifs.size > 50) toursActifs.delete(toursActifs.keys().next().value);
+  }
   const texte = q && typeof q.texte === 'string' ? q.texte.trim() : '';
   const modeleDemande = (q && q.modele) || 'sonnet';
   let session = q && q.session ? String(q.session) : null;
@@ -1343,7 +1359,7 @@ async function routeJarvis(req, res, distantReq = false) {
       categories.fil = fil.length;
     }
   }
-  if (parti) return;                       // client parti pendant le briefing : rien à lancer
+  if (arretDemande || (parti && !tourId)) { if (tourId) toursActifs.delete(tourId); return; }   // Stop pendant le briefing (ou page d'avant partie) : rien à lancer
   couperJarvis();                          // une autre question a pu arriver pendant le briefing
   const choix = SOURCES.has(q.source) ? q.source : 'auto';
   let source = sourcePour(choix);
@@ -1358,7 +1374,7 @@ async function routeJarvis(req, res, distantReq = false) {
   const t0 = Date.now();
   res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff' });
-  const envoyer = (o) => { if (!res.writableEnded) res.write(j(o) + '\n'); };
+  const envoyer = (o) => { if (!res.writableEnded && !res.destroyed) { try { res.write(j(o) + '\n'); } catch (_) {} } };
   let sid = session, dejaTexte = false, reponse = '', fini = false, garde = null;
   const finir = (o) => {
     if (fini) return;
@@ -1379,7 +1395,16 @@ async function routeJarvis(req, res, distantReq = false) {
     if (!o.coupe && !o.erreur && source !== 'local' && nonVusDits.length) { for (const id of nonVusDits) delete nonVus[id]; sauverNonVus(); }
     if (!o.coupe && !o.erreur && source !== 'local' && courrierRecu.ids.length) marquerCourrierLu(courrierRecu.ids);
     envoyer({ t: 'fin', session: sid, ms: Date.now() - t0, source, ...o });
-    res.end();
+    try { res.end(); } catch (_) {}
+    if (tourId) toursActifs.delete(tourId);
+    // la page est partie : la réponse finie va dans la conversation partagée (elle s'y affichera au retour), et une
+    // notification part si aucune page n'est ouverte
+    if (parti && tourId && !arretDemande && !o.coupe) {
+      completerReponse(tourId, { qui: 'j', texte: reponse.trim(), ms: Date.now() - t0, enCours: false, complet: true,
+        erreur: o.erreur || null, jetons: o.jetons || undefined, source: source !== 'abonnement' ? source : undefined,
+        attenteServeur: undefined, ts: Date.now() });
+      if (reponse.trim()) notifier(reponse.trim(), 'reponse');
+    }
     if (c && source !== 'local' && cerveauVivant(c)) reposer(c);
   };
   // le dernier recours : le LLM local, en flux comme Claude
@@ -1387,7 +1412,7 @@ async function routeJarvis(req, res, distantReq = false) {
     source = 'local';
     envoyer({ t: 'source', source, raison });
     const ctl = new AbortController();
-    res.on('close', () => { if (!res.writableFinished) ctl.abort(); });
+    res.on('close', () => { if (!res.writableFinished && (arretDemande || !tourId)) ctl.abort(); });
     const marque = { pid: 0, local: true };
     jarvisVivants.add(marque);
     enLocal++;
@@ -1406,7 +1431,7 @@ async function routeJarvis(req, res, distantReq = false) {
   // passer à la source suivante (forfait → API → local) ; rend vrai si c'est fait
   const basculer = (raison) => {
     const suivante = sourceSuivante(source, choix);
-    if (!suivante || dejaTexte || parti) return false;
+    if (!suivante || dejaTexte || arretDemande || (parti && !tourId)) return false;
     clearTimeout(garde);
     if (c) tuer(c.enfant);
     if (enfant) jarvisVivants.delete(enfant);
@@ -1691,6 +1716,21 @@ function ajouterAConversation(m) {
     ecrireAtomique(fichier, j({ session: actuel.session || null, messages, debut_ms: Number(actuel.debut_ms) || 0,
       maj_ms: Math.max(Date.now(), (Number(actuel.maj_ms) || 0) + 1) }));
   } catch (e) { console.error('Jarvis : conversation partagée impossible à compléter', e.message); }
+}
+// (2026-10-21) la réponse finie en arrière-plan remplace le message en attente de même identifiant (ou s'ajoute)
+function completerReponse(id, champs) {
+  const fichier = path.join(JARVIS, 'conversation.json');
+  let actuel = {}; try { actuel = JSON.parse(fs.readFileSync(fichier, 'utf8')) || {}; } catch (_) {}
+  const messages = Array.isArray(actuel.messages) ? actuel.messages.slice() : [];
+  const i = messages.findIndex(m => m && String(m.id) === String(id));
+  const m = { ...(i >= 0 ? messages[i] : { id }), ...champs };
+  for (const k of Object.keys(m)) if (m[k] === undefined) delete m[k];
+  if (!messageSain(m)) return;
+  if (i >= 0) messages[i] = m; else messages.push(m);
+  try {
+    ecrireAtomique(fichier, j({ session: actuel.session || null, messages: messages.slice(-CONVERSATION_MAX),
+      debut_ms: Number(actuel.debut_ms) || 0, maj_ms: Math.max(Date.now(), (Number(actuel.maj_ms) || 0) + 1) }));
+  } catch (e) { console.error('Jarvis : réponse en arrière-plan impossible à écrire', e.message); }
 }
 // Ce qu'Ahmed n'a jamais vu (aucune page ne l'a affiché) depuis plus d'une minute et demie : dit à Hakim une fois.
 function blocNonVus(maintenant, dits) {
@@ -2899,6 +2939,12 @@ async function traiter(req, res) {
     return res.end(j(out));
   }
   if (p === '/api/jarvis' && req.method === 'POST') return routeJarvis(req, res, distantReq);
+  if (p === '/api/jarvis/stop' && req.method === 'POST') {          // (2026-10-21) Stop explicite d'une réponse
+    let q = null; try { q = JSON.parse(String(await lireCorps(req, 4096) || '')); } catch (_) {}
+    const t = q && typeof q.tour_id === 'string' ? toursActifs.get(q.tour_id) : null;
+    if (t) t.arreter();
+    res.writeHead(204); return res.end();
+  }
   if (p === '/api/jarvis/jetons') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(bilanJetons())); }
   if (p === '/api/jarvis/etat') {
     briefingFrais().catch(() => {});            // la page s'ouvre : on prépare le briefing d'avance
@@ -2990,7 +3036,14 @@ async function traiter(req, res) {
     const parId = new Map(messagesActuels.filter(m => m && m.id != null).map(m => [String(m.id), m]));
     // (audit du 2026-10-20, C-M3) : la FORME de chaque message est vérifiée avant d'entrer dans la conversation
     // partagée — un identifiant hors liste ou des jetons non numériques y installaient une XSS durable (Mac et téléphone)
-    for (const m of q.messages) if (messageSain(m)) parId.set(String(m.id), m);
+    // (2026-10-21) une réponse finie en arrière-plan (complet) n'est jamais remplacée par la version moins avancée
+    // d'une page qui l'avait laissée en cours
+    for (const m of q.messages) {
+      if (!messageSain(m)) continue;
+      const deja = parId.get(String(m.id));
+      if (deja && deja.complet && !m.complet) continue;
+      parId.set(String(m.id), m);
+    }
     const messages = [...parId.values()].filter(m => quand(m) >= debut || !debut)
       .map((m, i) => [m, i]).sort((x, y) => (quand(x[0]) - quand(y[0])) || (x[1] - y[1])).map(x => x[0]);
     const session = debutQ > debutActuel ? (q.session || null) : debutQ < debutActuel ? (actuel.session || null)
@@ -3232,6 +3285,31 @@ async function traiter(req, res) {
     return;
   }
   if (p === '/api/jarvis/fichier' && req.method === 'POST') return routeFichier(req, res);
+  // (2026-10-21) le diagnostic de la voix de Parler : des événements (nom, heure, nombres), jamais de texte
+  if (p === '/api/voix/journal' && req.method === 'POST') {
+    let lot = [];
+    try { lot = JSON.parse((await lireCorps(req, 64 << 10)).toString('utf8')); } catch (_) {}
+    const propre = (Array.isArray(lot) ? lot : []).slice(0, 100).map((x) => {
+      const o = {};
+      for (const [k, v] of Object.entries(x && typeof x === 'object' ? x : {}).slice(0, 12)) {
+        if (!/^[a-z_]{1,20}$/.test(k)) continue;
+        if (typeof v === 'number' && Number.isFinite(v)) o[k] = v;
+        else if (typeof v === 'boolean') o[k] = v;
+        else if (typeof v === 'string' && /^[a-z_]{1,30}$/.test(v)) o[k] = v;
+      }
+      return o.e ? o : null;
+    }).filter(Boolean);
+    if (propre.length) {
+      try {
+        if ((fs.statSync(JARVIS_VOIX_DIAGNOSTIC, { throwIfNoEntry: false }) || { size: 0 }).size > (1 << 20)) {
+          const garde = fs.readFileSync(JARVIS_VOIX_DIAGNOSTIC, 'utf8').split('\n').slice(-2000).join('\n');
+          fs.writeFileSync(JARVIS_VOIX_DIAGNOSTIC, garde, { mode: 0o600 });
+        }
+        fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, propre.map(x => j(x)).join('\n') + '\n', { mode: 0o600 });
+      } catch (_) {}
+    }
+    res.writeHead(204); return res.end();
+  }
   if (p === '/api/voix/transcrire' && req.method === 'POST')
     return routeTranscrire(req, res, new URL(req.url, 'http://x').searchParams.get('langue'),
       (new URL(req.url, 'http://x').searchParams.get('contexte') || '').replace(/[\x00-\x1f]/g, ' ').slice(0, 300));
