@@ -1,0 +1,5 @@
+#!/bin/bash
+# Lanceur CLI Anamnèse.
+# Usage : ./anamnese recall "ma requête"   (ou ajoute un alias / symlink dans ton PATH)
+DIR="$(cd "$(dirname "$0")" && pwd)"
+PYTHONPATH="$DIR" "$DIR/.venv/bin/python" "$DIR/cli.py" "$@"

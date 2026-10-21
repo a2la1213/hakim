@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AIOS — Chat modèles locaux</title>
+  <link rel="stylesheet" href="/theme.css">
+  <style>
+    .chat-wrap { max-width: 1200px; margin: 0 auto; padding: 1rem 1.2rem 3rem; }
+    .bar { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; margin-bottom: .9rem; }
+    .bar select, .bar button { font: inherit; padding: .45rem .7rem; border-radius: 8px;
+      border: 1px solid var(--line, #2a2f3a); background: var(--card, #151922); color: inherit; }
+    .bar button { cursor: pointer; }
+    .bar button:hover:not(:disabled) { border-color: var(--accent, #6ea8fe); }
+    .bar button:disabled { opacity: .5; cursor: default; }
+    .hint { font-size: .8rem; opacity: .65; margin-left: auto; }
+    .cols { display: grid; gap: .9rem; grid-template-columns: 1fr; }
+    .cols.two { grid-template-columns: 1fr 1fr; }
+    @media (max-width: 860px) { .cols.two { grid-template-columns: 1fr; } }
+    .panel { border: 1px solid var(--line, #2a2f3a); border-radius: 12px;
+      background: var(--card, #151922); display: flex; flex-direction: column; min-height: 220px; }
+    .panel h3 { margin: 0; padding: .6rem .8rem; font-size: .82rem; letter-spacing: .04em;
+      text-transform: uppercase; opacity: .8; border-bottom: 1px solid var(--line, #2a2f3a);
+      display: flex; justify-content: space-between; gap: .5rem; }
+    .panel .ms { opacity: .6; font-weight: 400; text-transform: none; letter-spacing: 0; }
+    .log { padding: .7rem .8rem; overflow-y: auto; max-height: 58vh; flex: 1; }
+    .msg { margin: 0 0 .8rem; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+    .msg.u { opacity: .78; border-left: 2px solid var(--accent, #6ea8fe); padding-left: .6rem; }
+    .msg.a { }
+    .msg.err { color: #ff8080; }
+    .msg .who { font-size: .72rem; opacity: .6; display: block; margin-bottom: .15rem;
+      text-transform: uppercase; letter-spacing: .05em; }
+    .tool { background: #0d1b2a; border: 1px solid #244; border-radius: 8px;
+      padding: .5rem .6rem; margin-top: .3rem; font-family: ui-monospace, Menlo, monospace;
+      font-size: .82rem; color: #8fd3ff; }
+    .ask { display: flex; gap: .5rem; margin-top: .9rem; }
+    .ask textarea { flex: 1; font: inherit; padding: .6rem .7rem; border-radius: 10px; resize: vertical;
+      min-height: 62px; border: 1px solid var(--line, #2a2f3a); background: var(--card, #151922); color: inherit; }
+    .ask button { padding: 0 1.2rem; border-radius: 10px; cursor: pointer; font: inherit;
+      border: 1px solid var(--accent, #6ea8fe); background: transparent; color: var(--accent, #6ea8fe); }
+    .ask button:disabled { opacity: .5; cursor: default; }
+    .note { font-size: .8rem; opacity: .7; margin: .4rem 0 0; }
+  </style>
+</head>
+<body>
+  <main class="chat-wrap">
+    <div class="bar">
+      <label>Modèle A <select id="mA"></select></label>
+      <label><input type="checkbox" id="cmp"> comparer avec</label>
+      <label><select id="mB" disabled></select></label>
+      <label title="Laisse le modele raisonner avant de repondre (beaucoup plus lent)"><input type="checkbox" id="think"> raisonnement</label>
+      <button id="clear">effacer</button>
+      <span class="hint" id="hint">…</span>
+    </div>
+    <div class="cols" id="cols">
+      <section class="panel"><h3><span id="tA">Modèle A</span><span class="ms" id="msA"></span></h3><div class="log" id="lA"></div></section>
+      <section class="panel" id="pB" hidden><h3><span id="tB">Modèle B</span><span class="ms" id="msB"></span></h3><div class="log" id="lB"></div></section>
+    </div>
+    <div class="ask">
+      <textarea id="q" placeholder="Pose ta question…  (Ctrl+Entrée pour envoyer)"></textarea>
+      <button id="send">Envoyer</button>
+    </div>
+    <p class="note">Modèles <strong>locaux</strong> uniquement (Ollama + MLX). Claude n'est pas
+      appelable ici : l'abonnement Max ne donne pas d'accès API programmatique.
+      Le serveur MLX ne garde <strong>qu'un modèle en mémoire</strong> — changer de modèle MLX
+      décharge le précédent (quelques secondes de rechargement).</p>
+  </main>
+  <script src="/nav.js"></script>
+  <script src="/chat.js"></script>
+</body>
+</html>

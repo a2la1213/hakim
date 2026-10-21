@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Hakim — verrouillé</title>
+  <link rel="stylesheet" href="/theme.css">
+  <style>
+    body.shell { display: grid; place-items: center; min-height: 100dvh; padding: 16px; }
+    main { position: relative; z-index: 1; width: min(420px, 100%); display: flex; flex-direction: column; gap: 18px;
+      padding: 28px 22px; text-align: center; }
+    h1 { font-size: 20px; font-weight: 600; color: var(--txt); letter-spacing: .02em; }
+    p { color: var(--txt-3); font-size: 14px; }
+    .empreinte { width: 96px; height: 96px; margin: 4px auto; border-radius: 50%; border: 1px solid var(--glass-bd);
+      display: grid; place-items: center; color: var(--teal); font-size: 44px; background: rgba(45,212,191,.06);
+      box-shadow: 0 0 24px rgba(45,212,191,.12); }
+    button { font: inherit; font-size: 16px; padding: 14px 18px; border-radius: 12px; border: 1px solid var(--glass-bd);
+      background: rgba(45,212,191,.14); color: var(--txt); cursor: pointer; min-height: 48px; }
+    button.secondaire { background: transparent; color: var(--txt-3); font-size: 14px; }
+    button:disabled { opacity: .5; }
+    input { font: inherit; font-size: 24px; letter-spacing: .4em; text-align: center; padding: 12px; border-radius: 12px;
+      border: 1px solid var(--glass-bd); background: rgba(0,0,0,.25); color: var(--txt); width: 100%; }
+    #message { min-height: 1.4em; font-size: 13px; }
+    #message.erreur { color: var(--err); }
+    section { display: flex; flex-direction: column; gap: 12px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body class="shell">
+  <main class="glass">
+    <div class="empreinte" aria-hidden="true">◉</div>
+    <h1 id="titre">Hakim est verrouillé</h1>
+    <p id="explication">Pose ton doigt pour l'ouvrir sur ce téléphone.</p>
+
+    <section id="blocDeverrouiller" hidden>
+      <button id="deverrouiller" type="button">Déverrouiller avec mon empreinte</button>
+    </section>
+
+    <section id="blocAssocier" hidden>
+      <p>Sur le Mac, dans Parler → réglages → « Verrou du téléphone », tire un code, puis tape-le ici (valable 10 min).</p>
+      <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" aria-label="Code affiché sur le Mac">
+      <button id="associer" type="button">Associer ce téléphone</button>
+    </section>
+
+    <p id="message" role="status" aria-live="polite"></p>
+    <button id="basculer" class="secondaire" type="button" hidden>Associer un autre téléphone</button>
+  </main>
+  <script src="/verrou.js"></script>
+</body>
+</html>

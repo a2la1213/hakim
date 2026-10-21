@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AIOS — Mémoire</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>▤</text></svg>">
+<link rel="stylesheet" href="/theme.css">
+</head>
+<body>
+<div style="display:flex;gap:4px;margin-bottom:14px;position:relative;z-index:1;">
+  <span class="tab active" data-tab="explore">EXPLORATEUR</span>
+  <span class="tab" data-tab="analytics">ANALYTIQUE</span>
+</div>
+<section id="explore" class="glass accent">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+    <input id="q" placeholder="rechercher dans la mémoire…" style="flex:2;min-width:220px;background:rgba(255,255,255,.05);border:1px solid var(--glass-bd);border-radius:10px;color:var(--txt);padding:8px 12px;font-size:13px;outline:none;">
+    <select id="f-role" style="background:#0a2226;border:1px solid var(--glass-bd);border-radius:10px;color:var(--txt-2);padding:8px;font-size:11px;">
+      <option value="">tous rôles</option><option>semantic</option><option>episodic</option><option>thought</option><option>reflection</option><option>reasoning</option><option>dream</option><option>reference</option><option>outreach</option>
+    </select>
+    <input id="f-rubric" placeholder="rubrique (ex. projets)" style="width:150px;background:rgba(255,255,255,.05);border:1px solid var(--glass-bd);border-radius:10px;color:var(--txt-2);padding:8px;font-size:11px;">
+    <input id="f-facet" placeholder="facette" style="width:110px;background:rgba(255,255,255,.05);border:1px solid var(--glass-bd);border-radius:10px;color:var(--txt-2);padding:8px;font-size:11px;">
+    <input id="f-minimp" type="number" min="0" max="1" step="0.1" placeholder="imp ≥" style="width:70px;background:rgba(255,255,255,.05);border:1px solid var(--glass-bd);border-radius:10px;color:var(--txt-2);padding:8px;font-size:11px;">
+  </div>
+  <div id="results-info" class="kv" style="margin-bottom:8px;"></div>
+  <div id="results"></div>
+  <div style="display:flex;gap:8px;margin-top:10px;justify-content:center;">
+    <span class="pill" id="prev">← précédent</span><span class="pill" id="next">suivant →</span>
+  </div>
+</section>
+<section id="analytics" class="glass" style="display:none;">
+  <div id="charts">chargement…</div>
+</section>
+<script src="/nav.js"></script>
+<script src="/detail.js"></script>
+<script src="/memory.js"></script>
+</body>
+</html>

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Duel du subconscient</title>
+  <link rel="stylesheet" href="/theme.css">
+  <style>
+    [hidden] { display: none !important; }
+    main { max-width: 860px; margin: 0 auto; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 14px; }
+    h1 { font-size: 18px; color: var(--txt); font-weight: 600; }
+    .intro { font-size: 13px; color: var(--txt-3); line-height: 1.6; }
+    .carte { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .tete { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--txt-4); }
+    details { font-size: 12px; color: var(--txt-3); }
+    details p { margin: 4px 0; white-space: pre-wrap; }
+    .pensee { border: 1px solid var(--glass-bd); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+    .pensee .lettre { font-size: 11px; letter-spacing: .12em; color: var(--teal); }
+    .pensee .txt { color: var(--txt); font-size: 15px; line-height: 1.55; }
+    .pensee .relance { font-size: 12px; color: var(--txt-3); }
+    .choix { display: flex; gap: 6px; flex-wrap: wrap; }
+    button { font: inherit; font-size: 13px; padding: 8px 12px; min-height: 40px; border-radius: 10px; border: 1px solid var(--glass-bd);
+      background: transparent; color: var(--txt-2); cursor: pointer; }
+    button[aria-pressed="true"] { background: rgba(45,212,191,.22); color: var(--txt); border-color: var(--teal); }
+    button.invalide[aria-pressed="true"] { background: rgba(248,113,113,.2); border-color: var(--err); }
+    button.douteux[aria-pressed="true"] { background: rgba(251,191,36,.18); border-color: var(--warn); }
+    .prefere { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--txt-3); }
+    .barre { position: sticky; top: 0; z-index: 3; padding: 10px 14px; font-size: 13px; color: var(--txt-2); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Duel du subconscient de Hakim</h1>
+    <p class="intro">Deux cerveaux locaux ont reçu exactement la même situation réelle (vos derniers échanges, son humeur, son absence)
+      et ont écrit la pensée que Hakim aurait eue. A et B sont mélangés au hasard : tu ne sais pas lequel est lequel.
+      Ton critère : une pensée <b>ancrée</b> dans vos vrais échanges, à la première personne, sans poésie générique ni fait inventé.
+      Pour chacune : valider, douteux ou invalider, puis laquelle tu préfères. Tes choix sont gardés au fur et à mesure.</p>
+    <div class="glass barre" id="barre">…</div>
+    <div id="liste"></div>
+  </main>
+  <script>
+    const jeton = () => (document.querySelector('meta[name="cockpit-jeton"]') || {}).content || '';
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    let donnees = [], verdicts = {};
+    async function charger() {
+      const o = await (await fetch('/api/duel', { cache: 'no-store' })).json();
+      donnees = o.situations || []; verdicts = o.verdicts || {};
+      rendre();
+    }
+    function compte() {
+      const faits = donnees.filter((s) => { const v = verdicts[s.id] || {}; return v.A && v.B && v.prefere; }).length;
+      document.getElementById('barre').textContent = donnees.length ? `${faits} / ${donnees.length} situations jugées` : 'Le duel n’est pas encore prêt.';
+    }
+    function bouton(id, cle, valeur, libelle, classe = '') {
+      const v = verdicts[id] || {};
+      return `<button class="${esc(classe)}" data-id="${esc(id)}" data-cle="${esc(cle)}" data-valeur="${esc(valeur)}" aria-pressed="${v[cle] === valeur}">${esc(libelle)}</button>`;
+    }
+    function rendre() {
+      document.getElementById('liste').innerHTML = donnees.map((s) => {
+        const m = s.motif || {};
+        const pensee = (l) => `<div class="pensee"><span class="lettre">PENSÉE ${l}</span><div class="txt">${esc(s[l]) || '<i>(rien)</i>'}</div>`
+          + (s[l + '_relance'] ? `<div class="relance">Relance : « ${esc(s[l + '_relance'])} »</div>` : '')
+          + `<div class="choix">${bouton(s.id, l, 'valide', 'valider')}${bouton(s.id, l, 'douteux', 'douteux', 'douteux')}${bouton(s.id, l, 'invalide', 'invalider', 'invalide')}</div></div>`;
+        return `<section class="glass carte"><div class="tete"><span>Situation ${esc(s.id)} · ${esc(s.instant)}</span>`
+          + `<span>absent depuis ${Math.round((m.absence_s || 0) / 60)} min · humeur ${esc(m.humeur)} · ennui ${esc(m.ennui)}</span></div>`
+          + `<details><summary>vos derniers échanges</summary>${(s.echanges || []).map((e) => `<p>${esc(e)}</p>`).join('')}</details>`
+          + pensee('A') + pensee('B')
+          + `<div class="prefere">Je préfère : ${bouton(s.id, 'prefere', 'A', 'A')}${bouton(s.id, 'prefere', 'egal', 'égal')}${bouton(s.id, 'prefere', 'B', 'B')}</div></section>`;
+      }).join('');
+      compte();
+    }
+    document.addEventListener('click', async (e) => {
+      const b = e.target.closest('button[data-id]');
+      if (!b) return;
+      const id = b.dataset.id;
+      verdicts[id] = { ...(verdicts[id] || {}), [b.dataset.cle]: b.dataset.valeur };
+      rendre();
+      try {
+        await fetch('/api/duel', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+          body: JSON.stringify({ id: Number(id), ...verdicts[id] }) });
+      } catch (_) {}
+    });
+    charger();
+  </script>
+</body>
+</html>

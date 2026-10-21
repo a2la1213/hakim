@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AIOS — Labo des rêves</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🌙</text></svg>">
+<link rel="stylesheet" href="/theme.css">
+<style>
+  /* spécifique labo des rêves — tout le reste vient de theme.css */
+  .dim{color:var(--txt-4)}
+  #summary{display:flex;gap:10px;margin:0 0 12px;flex-wrap:wrap;position:relative;z-index:1}
+  .chip{background:var(--glass-bg);border:1px solid var(--glass-bd);border-radius:99px;padding:6px 14px;font-size:11px;color:var(--txt-3)}
+  #layout{display:grid;grid-template-columns:280px 1fr;gap:12px;align-items:start;position:relative;z-index:1}
+  #curvewrap,#heatwrap{grid-column:1/-1}
+  #heatwrap{overflow-x:auto}
+  .night{padding:8px 10px;border-radius:10px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;font-size:12px;transition:background .15s}
+  .night:hover{background:rgba(45,212,191,.06)}
+  .night.sel{background:rgba(45,212,191,.12)}
+  .b-real{color:var(--teal)} .b-twin{color:var(--rose)} .b-sonnet{color:var(--warn)}
+  .badge.b-real{background:rgba(45,212,191,.08);border-color:rgba(45,212,191,.3)}
+  .badge.b-twin{background:rgba(249,168,212,.08);border-color:rgba(249,168,212,.3)}
+  .badge.b-sonnet{background:rgba(251,191,36,.08);border-color:rgba(251,191,36,.3)}
+  #detail .cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+  #detail>h3{color:var(--txt);font-size:13px;letter-spacing:1px}
+  .cellrow{margin-top:14px}
+  .rowlabel{font-size:12px;letter-spacing:.5px;margin-bottom:6px;font-weight:600}
+  .cells3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+  @media(max-width:900px){.cells3{grid-template-columns:1fr}}
+  .dreambox{border:1px solid var(--glass-bd);border-radius:12px;padding:12px;background:rgba(255,255,255,.02);min-width:0}
+  .dreambox .boxhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px}
+  .dreambox h3{font-size:12px;letter-spacing:.5px;margin:0 0 6px}
+  .dreambox .boxhead h3{margin:0}
+  .fs-btn{color:var(--rose);font-size:9px;letter-spacing:1px;cursor:pointer;white-space:nowrap;padding:2px 9px;border:1px solid rgba(249,168,212,.25);border-radius:99px;transition:background .15s}
+  .fs-btn:hover{background:rgba(249,168,212,.10)}
+  .seed{padding:2px 8px;margin:2px;display:inline-block;border-radius:8px;background:rgba(255,255,255,.05);font-size:11.5px;color:var(--txt-3)}
+  .seed.chosen{outline:1.5px solid var(--teal);color:var(--teal-hi);background:rgba(45,212,191,.10)}
+  pre{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px;color:var(--txt-3);margin-top:8px;overflow-x:auto}
+  table{border-collapse:collapse;font-size:11px}
+  td,th{padding:3px 7px;border:1px solid var(--glass-bd);color:var(--txt-3)}
+  th{color:var(--txt-2);font-weight:600}
+  #curvewrap h3,#heatwrap h3{font-size:12px;letter-spacing:.5px;color:var(--txt-2);margin-bottom:8px}
+  @media (max-width: 900px) { #layout { grid-template-columns: 1fr !important; } }
+</style>
+</head>
+<body>
+<section class="glass accent" id="verdict-card" style="margin-bottom:12px;">
+  <div class="sec-label">⚖ VERDICT — portes pré-enregistrées <span class="dim">· même source que ./anamnese dreams</span></div>
+  <div id="verdict-badge"></div>
+  <pre id="verdict-text" class="mono" style="font-size:10.5px;color:var(--txt-3);white-space:pre-wrap;margin-top:8px;"></pre>
+</section>
+<section class="glass accent" id="ablation-card" style="margin-bottom:12px;">
+  <div class="sec-label">🧪 ABLATION DU CORPUS — Portes A/B/C <span class="dim">· corpus vs archi · dream_ablation.report()</span></div>
+  <div id="ablation-badge"></div>
+  <div id="ablation-viz" style="margin-top:10px;"></div>
+  <div style="font-size:10.5px;color:var(--txt-3);margin-top:12px;">Écart ON−OFF par nuit <span class="dim">· <b style="color:#2dd4bf">qwen</b> · <b style="color:#fbbf24">sonnet</b> · au-dessus de 0 = le corpus façonne le rêve</span></div>
+  <canvas id="trend" width="620" height="96" style="width:100%;max-width:100%;margin-top:4px;"></canvas>
+  <div id="resemblance-viz" style="margin-top:14px;border-top:1px solid var(--glass-bd);padding-top:12px;"></div>
+  <pre id="ablation-text" class="mono" style="font-size:10.5px;color:var(--txt-3);white-space:pre-wrap;margin-top:12px;"></pre>
+</section>
+<section class="glass accent" id="insights-card" style="margin-bottom:12px;">
+  <div class="sec-label">💡 LIENS GÉNÉRATIFS <span class="dim">· hypothèses nées de souvenirs distants · synthesis</span></div>
+  <div id="insights"><div class="dim">chargement…</div></div>
+</section>
+<section class="glass accent" id="emerged-card" style="margin-bottom:12px;">
+  <div class="sec-label">🌱 RUBRIQUES ÉMERGÉES <span class="dim">· catégories nées de l'abduction · rubric_emergence</span></div>
+  <div id="emerged"><div class="dim">chargement…</div></div>
+</section>
+<div id="summary"></div>
+<div id="layout">
+  <section class="glass">
+    <div class="sec-label">🌙 NUITS</div>
+    <div id="nights"><div class="dim">chargement…</div></div>
+  </section>
+  <section class="glass rose">
+    <div class="sec-label rose">💭 RÊVE RÉEL VS JUMEAU FANTÔME <span class="dim">· préférences fonctionnelles</span></div>
+    <div id="detail"><div class="dim">— clique une nuit —</div></div>
+  </section>
+  <section class="glass" id="curvewrap">
+    <h3>Divergence réel−jumeau <span class="dim">(au-dessus de la bande = « c'est lui »)</span> · <span style="color:#7aa2ff">— divergence</span> · <span style="color:#4ade80">— appétit</span> · <span style="color:#ffb86b">— dopamine</span></h3>
+    <canvas id="curves" width="1200" height="160" style="width:100%;max-width:100%"></canvas>
+  </section>
+  <section class="glass" id="heatwrap">
+    <h3>Sur-choix par facette <span class="dim">(P choisie / P offerte)</span></h3>
+    <div id="heat"></div>
+  </section>
+</div>
+<script src="/nav.js"></script>
+<script src="/detail.js"></script>
+<script src="/dreams.js"></script>
+</body>
+</html>

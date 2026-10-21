@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>🧠 Cerveau d'Anamnèse — Cockpit</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🧠</text></svg>">
+<link rel="stylesheet" href="/theme.css">
+<style>
+/* spécifique cerveau 3D — tokens depuis theme.css ; les vars locales historiques
+   sont REMAPPÉES sur les tokens v2 pour que tout le CSS des panneaux suive le thème. */
+:root{
+  --line:var(--glass-bd); --line2:rgba(45,212,191,.30);
+  --dim:var(--txt-3); --dim2:var(--txt-4);
+  --cyan:var(--teal); --purple:var(--rose); --amber:var(--warn); --red:var(--err);
+  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+html,body{height:100%;overflow:hidden;background:#030a0c}
+/* canvas plein écran SOUS la nav (topnav z-index:2 dans theme.css) */
+#scene{position:fixed;inset:0;display:block;z-index:0}
+
+/* panneau latéral (verre v2, sous la topnav) */
+.panel{position:fixed;top:60px;left:16px;z-index:10;width:284px;max-height:calc(100vh - 76px);
+  display:flex;flex-direction:column;gap:12px;padding:14px 16px;border-radius:var(--radius);
+  background:var(--glass-bg);border:1px solid var(--glass-bd);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  box-shadow:0 0 40px rgba(45,212,191,.07) inset;overflow:hidden}
+.panel::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,var(--teal),var(--rose),transparent);opacity:.7}
+.panel h1{margin:0;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--txt)}
+.panel h1 .diamond{color:var(--teal);text-shadow:0 0 12px var(--teal)}
+.backlink{font-family:var(--mono);font-size:11px;color:var(--dim);text-decoration:none;border:1px solid var(--line);
+  border-radius:99px;padding:3px 8px;transition:.15s}
+.backlink:hover{color:var(--teal-hi);border-color:var(--line2);background:rgba(45,212,191,.08)}
+.head-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#counts{font-family:var(--mono);font-size:11px;color:var(--dim)}
+#counts b{color:var(--teal);font-weight:600}
+
+/* toggle affect */
+.toggle{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--dim);cursor:pointer;user-select:none}
+.toggle input{display:none}
+.tswitch{width:30px;height:16px;border-radius:999px;background:rgba(45,212,191,.12);border:1px solid var(--line2);position:relative;transition:.2s;flex:none}
+.tswitch::after{content:"";position:absolute;top:1.5px;left:2px;width:11px;height:11px;border-radius:50%;background:var(--dim);transition:.2s}
+.toggle input:checked + .tswitch{background:rgba(45,212,191,.30);border-color:var(--teal)}
+.toggle input:checked + .tswitch::after{left:15px;background:var(--teal);box-shadow:0 0 8px var(--teal)}
+/* toggle mémoire de travail (ambre = allumage) + compteur focus/halo */
+.toggle input:checked + .tswitch.amber{background:rgba(251,191,36,.28);border-color:var(--warn)}
+.toggle input:checked + .tswitch.amber::after{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+#wm-counts{font-family:var(--mono);font-size:10px;color:var(--dim2);margin-top:-8px;padding-left:38px}
+#wm-counts b{color:var(--warn);font-weight:600}
+
+/* légende (label de section aux tokens .sec-label) */
+.legend-head{font-family:var(--mono);font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--teal)}
+#legend{display:flex;flex-direction:column;gap:3px;overflow-y:auto;min-height:0;padding-right:4px}
+.lg{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--txt-2);
+  padding:4px 7px;border-radius:8px;cursor:pointer;border:1px solid transparent;transition:.12s}
+.lg:hover{background:rgba(45,212,191,.06);border-color:var(--line)}
+.lg.off{opacity:.32}
+.lg .sw{width:10px;height:10px;border-radius:50%;flex:none;box-shadow:0 0 7px currentColor}
+.lg .lp{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.lg .lc{color:var(--dim2);font-size:10px}
+#legend-reset{align-self:flex-start;font-family:var(--mono);font-size:10px;color:var(--teal);background:transparent;
+  border:1px solid var(--line);border-radius:99px;padding:3px 8px;cursor:pointer;display:none}
+#legend-reset:hover{background:rgba(45,212,191,.10)}
+.hint{font-family:var(--mono);font-size:9.5px;color:var(--dim2);line-height:1.6;border-top:1px solid var(--line);padding-top:9px}
+#empty-msg{font-family:var(--mono);font-size:11px;color:var(--warn);display:none}
+
+/* tooltip (suit le curseur au-dessus de nœuds lumineux → verre sombre lisible, recette overlay-panel) */
+#tooltip{position:fixed;z-index:20;max-width:330px;pointer-events:none;
+  background:rgba(8,26,28,.92);border:1px solid rgba(45,212,191,.25);
+  border-radius:12px;padding:10px 12px;font-size:12px;line-height:1.5;color:var(--txt-2);
+  box-shadow:0 0 40px rgba(45,212,191,.10);backdrop-filter:blur(8px)}
+#tooltip[hidden]{display:none}
+#tooltip.pinned{pointer-events:auto}
+#tooltip .tt-rubric{display:inline-block;font-family:var(--mono);font-size:10px;padding:1px 8px;border-radius:999px;
+  border:1px solid var(--line2);margin-bottom:6px}
+#tooltip .tt-snip{color:var(--txt-2);word-break:break-word}
+#tooltip .tt-meta{margin-top:6px;font-family:var(--mono);font-size:10px;color:var(--dim);display:flex;gap:10px;flex-wrap:wrap}
+#tooltip .tt-meta b{color:var(--teal);font-weight:600}
+#tooltip .tt-pin{margin-top:5px;font-family:var(--mono);font-size:9px;color:var(--dim2);letter-spacing:.5px;text-transform:uppercase}
+#tooltip .tt-date{margin-top:5px;font-family:var(--mono);font-size:10px;color:var(--dim)}
+#tooltip .tt-date b{color:var(--teal);font-weight:600}
+
+/* panneau de détail (clic sur un nœud → souvenir COMPLET via /api/memory) */
+#detail{position:fixed;top:60px;right:16px;bottom:16px;z-index:15;width:min(400px,calc(100vw - 32px));
+  display:flex;flex-direction:column;gap:10px;padding:14px 16px;border-radius:var(--radius);
+  background:rgba(8,26,28,.88);border:1px solid rgba(45,212,191,.25);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 0 60px rgba(45,212,191,.10)}
+#detail::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,var(--rose),var(--teal),transparent);opacity:.7}
+#detail[hidden]{display:none}
+.detail-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.detail-title{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--txt)}
+.detail-title .diamond{color:var(--rose);text-shadow:0 0 12px var(--rose)}
+.detail-title b{color:var(--teal)}
+#detail-close{font-family:var(--mono);font-size:11px;color:var(--dim);background:transparent;border:1px solid var(--line);
+  border-radius:99px;padding:3px 9px;cursor:pointer;transition:.15s}
+#detail-close:hover{color:var(--txt);border-color:var(--line2);background:rgba(45,212,191,.08)}
+#detail-body{display:flex;flex-direction:column;gap:9px;overflow-y:auto;min-height:0;padding-right:4px}
+.d-rubric{display:inline-block;font-family:var(--mono);font-size:10px;padding:1px 8px;border-radius:999px;
+  border:1px solid var(--line2);align-self:flex-start}
+.d-wm{display:inline-block;font-family:var(--mono);font-size:10px;color:var(--warn);
+  border:1px solid rgba(251,191,36,.4);border-radius:999px;padding:1px 8px;align-self:flex-start}
+.d-date{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.d-date b{color:var(--teal);font-weight:600}
+.d-text{font-size:12.5px;line-height:1.65;color:var(--txt-2);white-space:pre-wrap;word-break:break-word;
+  background:rgba(3,16,18,.6);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.d-sec{font-family:var(--mono);font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--teal);margin-top:2px}
+.d-facets{display:flex;flex-wrap:wrap;gap:5px}
+.d-facet{font-family:var(--mono);font-size:10px;color:var(--txt-3);border:1px solid var(--line2);border-radius:999px;padding:1px 8px}
+.d-none{font-family:var(--mono);font-size:10px;color:var(--dim2)}
+.d-meta{display:grid;grid-template-columns:1fr 1fr;gap:4px 14px}
+.d-kv{display:flex;justify-content:space-between;gap:8px;font-family:var(--mono);font-size:11px;color:var(--dim);
+  border-bottom:1px dashed var(--line);padding:3px 1px}
+.d-kv b{color:var(--teal);font-weight:600}
+.d-loading{font-family:var(--mono);font-size:11px;color:var(--dim)}
+.d-err{font-family:var(--mono);font-size:11px;color:var(--err)}
+
+@media(max-width:640px){.panel{width:calc(100vw - 32px)}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<script type="importmap">
+{ "imports": { "three": "/vendor/three/three.module.js" } }
+</script>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<aside class="panel" aria-label="Cerveau d'Anamnèse">
+  <div class="head-row">
+    <h1><span class="diamond">◆</span> Cerveau d'Anamnèse</h1>
+    <a class="backlink" href="/">← cockpit</a>
+  </div>
+  <div id="counts">chargement…</div>
+  <div id="empty-msg">Aucun nœud projeté (brain_layout vide).</div>
+  <label class="toggle" title="Colorer par affect (valence → teinte, arousal → éclat)">
+    <input type="checkbox" id="affect-toggle">
+    <span class="tswitch"></span>
+    <span>couleur par affect</span>
+  </label>
+  <label class="toggle" title="Allumer la mémoire de travail : focus vif, halo en lueur ténue, le reste en veille">
+    <input type="checkbox" id="wm-toggle">
+    <span class="tswitch amber"></span>
+    <span>mémoire de travail</span>
+  </label>
+  <div id="wm-counts">focus <b>–</b> · halo <b>–</b></div>
+  <div class="legend-head">Régions (cliquer = masquer)</div>
+  <div id="legend"></div>
+  <button id="legend-reset">tout réafficher</button>
+  <div class="hint">glisser · orbite&nbsp;&nbsp;&nbsp;molette · zoom&nbsp;&nbsp;&nbsp;clic droit · pan<br>survol · aperçu&nbsp;&nbsp;&nbsp;clic nœud · détail complet&nbsp;&nbsp;&nbsp;échap · fermer</div>
+</aside>
+
+<div id="tooltip" hidden></div>
+
+<aside id="detail" hidden aria-label="Détail du souvenir">
+  <div class="detail-head">
+    <span class="detail-title"><span class="diamond">◆</span> Souvenir <b id="detail-id"></b></span>
+    <button id="detail-close" aria-label="fermer le détail">✕ fermer</button>
+  </div>
+  <div id="detail-body"></div>
+</aside>
+
+<script src="/nav.js"></script>
+<script>initNav('brain');</script>
+<script type="module" src="/brain.js"></script>
+</body>
+</html>

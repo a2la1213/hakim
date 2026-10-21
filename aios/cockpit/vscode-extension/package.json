@@ -1,0 +1,16 @@
+{
+  "name": "aios-claude-cockpit",
+  "displayName": "AIOS — Claude Cockpit",
+  "description": "Cockpit live de Claude Code dans VSCode : CLI, MCP, skills, agents, sessions + humeur & pensées internes d'Anamnèse.",
+  "version": "0.1.0",
+  "publisher": "aios",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "cockpit.open", "title": "AIOS: Ouvrir le Claude Cockpit", "category": "AIOS" }
+    ]
+  }
+}

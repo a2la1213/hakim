@@ -1,0 +1,5 @@
+requests>=2.31
+numpy>=1.26
+mcp>=1.2
+model2vec>=0.3
+pytest>=8.3

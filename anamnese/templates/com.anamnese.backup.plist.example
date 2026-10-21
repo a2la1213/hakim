@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  TEMPLATE (non installé) : backup nocturne de la mémoire Anamnèse.
+
+  launchd n'expand PAS $HOME : remplacer chaque occurrence de $HOME par le
+  chemin réel (ex. /Users/admin) avant installation.
+
+  Installation en UNE ligne (depuis la racine du dépôt) :
+    sed "s|\$HOME|$HOME|g" templates/com.anamnese.backup.plist.example > ~/Library/LaunchAgents/com.anamnese.backup.plist && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.anamnese.backup.plist
+
+  (désinstaller : launchctl bootout gui/$(id -u)/com.anamnese.backup)
+
+  Pour un backup VRAIMENT hors-machine, pointer ANAMNESE_BACKUP_DIR
+  (EnvironmentVariables ci-dessous) vers un volume externe ou un dossier
+  synchronisé (iCloud/Drive/NAS) — sinon le script avertit « même volume ».
+  Equivalent CLI : l'option "dest" (deux tirets) de scripts/backup_memory.py.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.anamnese.backup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$HOME/Desktop/anamnese/.venv/bin/python</string>
+    <string>$HOME/Desktop/anamnese/scripts/backup_memory.py</string>
+  </array>
+  <!-- Nocturne : tous les jours à 03h15. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>3</integer>
+    <key>Minute</key><integer>15</integer>
+  </dict>
+  <!-- Rattrapage : si la machine dormait à 03h15, launchd relance au réveil. -->
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>$HOME/Desktop/anamnese/data/backup.log</string>
+  <key>StandardErrorPath</key><string>$HOME/Desktop/anamnese/data/backup.err</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- RECOMMANDÉ : remplacer par un dossier synchronisé / volume externe,
+         ex. $HOME/Library/Mobile Documents/com~apple~CloudDocs/anamnese-backups
+         (iCloud Drive). Tel quel = même disque => le script avertira. -->
+    <key>ANAMNESE_BACKUP_DIR</key><string>$HOME/anamnese-backups</string>
+  </dict>
+</dict>
+</plist>
