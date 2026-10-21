@@ -66,10 +66,10 @@
      écrit juste après la formule, [[voix: …]] (cachée à l'écran), sinon « voir la formule à l'écran ».
      $…$ en ligne : le $ ouvrant est suivi d'un caractère, le fermant précédé d'un caractère et pas suivi d'un chiffre
      (« 5 $ et 10 $ » n'est pas une formule). Aussi $$…$$, \[…\] et \(…\). */
-  const FORMULE = /(\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$(?=[^\s$])([^$\n]*?[^\s$\\])\$(?!\d))(?:\s*\[\[voix:\s*([^\]]*?)\s*\]\])?/g;
-  const VOIX_SEULE = /\[\[voix:\s*([^\]]*?)\s*\]\]/g;
-  const OUVRANT = /\$\$|\\\[|\\\(|\[\[voix:|\$(?=[^\s$\d])/;
-  const PREFIXE_VOIX = /^\s*(?:\[(?:\[(?:v(?:o(?:i(?:x:?)?)?)?)?)?)?$/;
+  const FORMULE = /(\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$(?=[^\s$])([^$\n]*?[^\s$\\])\$(?!\d))(?:\s*(?:\[\[|⟮⟮)voix:\s*([^\]⟯]*?)\s*(?:\]\]|⟯⟯))?/g;
+  const VOIX_SEULE = /(?:\[\[|⟮⟮)voix:\s*([^\]⟯]*?)\s*(?:\]\]|⟯⟯)/g;   // ⟮⟮…⟯⟯ : la forme vue dans un bloc de données
+  const OUVRANT = /\$\$|\\\[|\\\(|\[\[voix:|⟮⟮voix:|\$(?=[^\s$\d])/;
+  const PREFIXE_VOIX = /^\s*(?:[\[⟮](?:[\[⟮](?:v(?:o(?:i(?:x:?)?)?)?)?)?)?$/;
   function formuleParlee(tex, dit) {
     if (dit) return dit;
     const t = String(tex || '').trim();

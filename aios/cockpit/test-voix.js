@@ -104,3 +104,9 @@ test('code : la voix dit « bloc de code » une fois, sans lire ses lignes, mêm
     assert.deepStrictEqual(out.map(Voix.pourLaVoix), ['Voici le code.', '(bloc de code)', 'Voilà.', 'Fin.'], `morceaux de ${n}`);
   }
 });
+
+test('la version parlée sous la forme ⟮⟮voix: …⟯⟯ (vue dans un bloc de données) est comprise aussi', () => {
+  const t = 'Ici $\\frac{1}{2}+\\frac{1}{3}+\\frac{1}{6}=1$ ⟮⟮voix: un demi plus un tiers plus un sixième égale un⟯⟯. Fin.';
+  assert.ok(Voix.pourLaVoix(t).includes('un demi plus un tiers plus un sixième égale un'));
+  assert.ok(!/⟮|voir la formule|\\frac/.test(Voix.pourLaVoix(t)));
+});
