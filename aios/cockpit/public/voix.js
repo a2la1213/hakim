@@ -72,8 +72,112 @@
   const PREFIXE_VOIX = /^\s*(?:[\[⟮](?:[\[⟮](?:v(?:o(?:i(?:x:?)?)?)?)?)?)?$/;
   function formuleParlee(tex, dit) {
     if (dit) return dit;
-    const t = String(tex || '').trim();
-    return /^[\p{L}\d ]{1,12}$/u.test(t) ? t : 'voir la formule à l’écran';
+    return latexParle(tex) || 'voir la formule à l’écran';
+  }
+
+  /* ---- repli : une formule SANS version parlée lue en mots (2026-10-21, demande de Hakim : Ahmed entendait trop
+     souvent « voir la formule à l'écran » pour $x=5$ ou $\pi$). Le simple se dit : nombres, lettres, opérations,
+     puissances, fractions, racines, sommes, intégrales, limites, lettres grecques. Ce qui ne se convertit pas
+     proprement (commande inconnue, environnement, formule trop longue) rend null : la voix dit alors de regarder. */
+  const MOTS_LATEX = {
+    pi: 'pi', alpha: 'alpha', beta: 'bêta', gamma: 'gamma', Gamma: 'gamma', delta: 'delta', Delta: 'delta',
+    theta: 'thêta', lambda: 'lambda', mu: 'mu', sigma: 'sigma', Sigma: 'sigma', omega: 'oméga', Omega: 'oméga',
+    phi: 'phi', varphi: 'phi', psi: 'psi', epsilon: 'epsilon', varepsilon: 'epsilon', rho: 'rhô', tau: 'tau',
+    eta: 'êta', kappa: 'kappa', nu: 'nu', xi: 'ksi', chi: 'khi', zeta: 'dzêta', infty: "l'infini",
+    approx: 'environ', asymp: 'équilibre', simeq: 'environ', sim: 'équivalent à', equiv: 'équivalent à',
+    neq: 'différent de', ne: 'différent de', leq: 'inférieur ou égal à', le: 'inférieur ou égal à',
+    geq: 'supérieur ou égal à', ge: 'supérieur ou égal à', ll: 'très inférieur à', gg: 'très supérieur à',
+    pm: 'plus ou moins', mp: 'moins ou plus', times: 'fois', cdot: 'fois', div: 'divisé par',
+    to: 'tend vers', rightarrow: 'tend vers', longrightarrow: 'tend vers', mapsto: 'donne',
+    Rightarrow: 'donc', implies: 'donc', Leftrightarrow: 'équivaut à', iff: 'équivaut à',
+    in: 'appartient à', notin: "n'appartient pas à", subset: 'inclus dans', cup: 'union', cap: 'inter',
+    forall: 'pour tout', exists: 'il existe', partial: 'd rond', nabla: 'nabla', circ: 'rond', degree: 'degrés',
+    ldots: 'et ainsi de suite', cdots: 'et ainsi de suite', dots: 'et ainsi de suite',
+    sin: 'sinus', cos: 'cosinus', tan: 'tangente', ln: 'logarithme de', log: 'log', exp: 'exponentielle',
+    max: 'maximum', min: 'minimum', gcd: 'pgcd', det: 'déterminant', mod: 'modulo', bmod: 'modulo', percent: 'pour cent',
+  };
+  const LATEX_RIEN = new Set(['left', 'right', 'big', 'Big', 'bigg', 'Bigg', 'displaystyle', 'textstyle', 'limits',
+    'quad', 'qquad', ',', ';', ':', '!', ' ', '{', '}']);
+  const LATEX_TEXTE = new Set(['text', 'textrm', 'mathrm', 'mathbf', 'mathit', 'mathsf', 'operatorname', 'boldsymbol',
+    'mathbb', 'mathcal', 'vec', 'overline', 'bar', 'hat', 'tilde']);
+  const SIGNES = { '=': 'égale', '+': 'plus', '-': 'moins', '−': 'moins', '*': 'fois', '/': 'sur', '<': 'inférieur à',
+    '>': 'supérieur à', '!': 'factorielle', '%': 'pour cent', "'": 'prime', '×': 'fois', '·': 'fois', '≈': 'environ',
+    '≤': 'inférieur ou égal à', '≥': 'supérieur ou égal à', '≠': 'différent de', '∞': "l'infini" };
+  const FRACTIONS = { '1/2': 'un demi', '1/3': 'un tiers', '2/3': 'deux tiers', '1/4': 'un quart', '3/4': 'trois quarts',
+    '1/5': 'un cinquième', '1/6': 'un sixième', '1/8': 'un huitième', '1/10': 'un dixième', '1/100': 'un centième' };
+  function latexParle(tex) {
+    const s = String(tex || '');
+    if (!s.trim() || s.length > 240 || /\\begin|\\end/.test(s)) return null;
+    let i = 0;
+    const groupe = () => {                           // {…} équilibré, \commande, ou un caractère
+      while (s[i] === ' ') i++;
+      if (s[i] === '{') {
+        let n = 1, j = i + 1;
+        while (j < s.length && n) { if (s[j] === '{') n++; else if (s[j] === '}') n--; j++; }
+        if (n) throw new Error('accolade');
+        const g = s.slice(i + 1, j - 1); i = j; return g;
+      }
+      if (s[i] === '\\') { const m = /^\\([A-Za-z]+|.)/.exec(s.slice(i)); i += m[0].length; return m[0]; }
+      return s[i++] || '';
+    };
+    const sousParle = (g) => { const r = latexParle(g); if (r === null) throw new Error('sous'); return r; };
+    const bornes = () => {                           // _{bas}^{haut} dans n'importe quel ordre
+      let bas = null, haut = null;
+      for (let k = 0; k < 2; k++) {
+        while (s[i] === ' ') i++;
+        if (s[i] === '_') { i++; bas = groupe(); } else if (s[i] === '^') { i++; haut = groupe(); }
+      }
+      return { bas, haut };
+    };
+    const mots = [];
+    while (i < s.length) {
+      const c = s[i];
+      if (c === '(') {                               // f(x) : « f de x » ; 2(x+1), k(k+1) : « fois »
+        const avant = mots[mots.length - 1] || '';
+        if (/^[fghuvPQ]$/.test(avant)) mots.push('de'); else if (/^[\p{L}\d]+$/u.test(avant) && avant.length <= 3) mots.push('fois');
+        i++; continue;
+      }
+      if (c === ' ' || c === '&' || c === ')' || c === '[' || c === ']' || c === '|' || c === '{' || c === '}') { i++; continue; }
+      if (/\d/.test(c)) { const m = /^\d+(?:(?:\{,\}|[.,])\d+)?/.exec(s.slice(i)); mots.push(m[0].replace('{,}', ',')); i += m[0].length; continue; }
+      if (/\p{L}/u.test(c)) { mots.push(c); i++; continue; }
+      if (c === '^') {
+        i++; const g = groupe().trim();
+        mots.push(g === '2' ? 'au carré' : g === '3' ? 'au cube' : `puissance ${sousParle(g)}`); continue;
+      }
+      if (c === '_') { i++; const g = groupe().trim(); mots.push(g.length === 1 ? sousParle(g) : `indice ${sousParle(g)}`); continue; }
+      if (SIGNES[c]) { mots.push(SIGNES[c]); i++; continue; }
+      if (c === ',') { mots.push(','); i++; continue; }
+      if (c !== '\\') return null;
+      const m = /^\\([A-Za-z]+|.)/.exec(s.slice(i)); i += m[0].length;
+      const nom = m[1];
+      if (LATEX_RIEN.has(nom)) continue;
+      if (nom === '\\') { mots.push(','); continue; }
+      if (LATEX_TEXTE.has(nom)) { const g = groupe(); mots.push(/^text/.test(nom) ? g : sousParle(g)); continue; }
+      if (nom === 'frac' || nom === 'dfrac' || nom === 'tfrac') {
+        const a = groupe().trim(), b = groupe().trim();
+        mots.push(FRACTIONS[`${a}/${b}`] || `${sousParle(a)} sur ${sousParle(b)}`); continue;
+      }
+      if (nom === 'sqrt') {
+        let n = null;
+        if (s[i] === '[') { const j = s.indexOf(']', i); n = s.slice(i + 1, j).trim(); i = j + 1; }
+        const g = sousParle(groupe());
+        mots.push(n === null ? `racine de ${g}` : n === '3' ? `racine cubique de ${g}` : `racine ${n}-ième de ${g}`); continue;
+      }
+      if (nom === 'sum' || nom === 'prod') {
+        const { bas, haut } = bornes();
+        mots.push((nom === 'sum' ? 'la somme' : 'le produit') + (bas ? `, pour ${sousParle(bas)}` : '')
+          + (haut ? ` jusqu'à ${sousParle(haut)}` : '') + ', de'); continue;
+      }
+      if (nom === 'int') {
+        const { bas, haut } = bornes();
+        mots.push("l'intégrale" + (bas ? ` de ${sousParle(bas)}` : '') + (haut ? ` à ${sousParle(haut)}` : '') + ' de'); continue;
+      }
+      if (nom === 'lim') { const { bas } = bornes(); mots.push('la limite' + (bas ? ` quand ${sousParle(bas)}` : '') + ' de'); continue; }
+      if (MOTS_LATEX[nom]) { mots.push(MOTS_LATEX[nom]); continue; }
+      return null;                                    // une commande inconnue : on ne devine pas
+    }
+    const r = mots.join(' ').replace(/\s+,/g, ',').replace(/,\s*,/g, ',').replace(/\s+/g, ' ').trim();
+    return r && r.split(' ').length <= 45 ? r : null;
   }
   // Les zones [début, fin) qu'on ne coupe pas en phrases : chaque formule complète avec sa version parlée, une formule
   // encore ouverte, et une formule finie dont la version parlée n'est peut-être pas encore arrivée.
@@ -181,7 +285,7 @@
     return lecteur;
   }
 
-  const Voix = { versArabe, segmenter, pourLaVoix, decoupeur, choisirVoix, creerLecteur, FORMULE, VOIX_SEULE };
+  const Voix = { versArabe, segmenter, pourLaVoix, decoupeur, choisirVoix, creerLecteur, FORMULE, VOIX_SEULE, latexParle };
   racine.Voix = Voix;
   if (typeof module !== 'undefined' && module.exports) module.exports = Voix;
 })(typeof window !== 'undefined' ? window : globalThis);

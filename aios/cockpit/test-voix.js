@@ -79,7 +79,7 @@ test('liens markdown : on dit le nom du site, pas l\'adresse', () => {
 test('formules de maths : la voix dit la version parlée, jamais le LaTeX (2026-10-21)', () => {
   assert.strictEqual(Voix.pourLaVoix('Donc $$E=mc^2$$ [[voix: E égale m c au carré]].').replace(/\s+\./, '.'), 'Donc E égale m c au carré.');
   assert.ok(!/\\|\^|\$\$/.test(Voix.pourLaVoix('Sans version parlée : $\\frac{a}{b}$ ici.')));
-  assert.ok(Voix.pourLaVoix('Sans version parlée : $\\frac{a}{b}$ ici.').includes('voir la formule'));
+  assert.ok(Voix.pourLaVoix('Sans version parlée : $\\frac{a}{b}$ ici.').includes('a sur b'));          // le repli lit le simple
   assert.ok(Voix.pourLaVoix('La variable $x$ suffit.').includes('variable x suffit'));
   assert.ok(Voix.pourLaVoix('Ça coûte 5 $ ou 10 $.').includes('5 $ ou 10 $'));            // de l'argent, pas une formule
 });
@@ -109,4 +109,19 @@ test('la version parlée sous la forme ⟮⟮voix: …⟯⟯ (vue dans un bloc d
   const t = 'Ici $\\frac{1}{2}+\\frac{1}{3}+\\frac{1}{6}=1$ ⟮⟮voix: un demi plus un tiers plus un sixième égale un⟯⟯. Fin.';
   assert.ok(Voix.pourLaVoix(t).includes('un demi plus un tiers plus un sixième égale un'));
   assert.ok(!/⟮|voir la formule|\\frac/.test(Voix.pourLaVoix(t)));
+});
+
+test('repli : une formule sans version parlée est lue en mots, ou « voir la formule » si elle ne se convertit pas', () => {
+  const L = Voix.latexParle;
+  assert.strictEqual(L('x=5'), 'x égale 5');
+  assert.strictEqual(L('\\pi'), 'pi');
+  assert.strictEqual(L('E = mc^2'), 'E égale m c au carré');
+  assert.strictEqual(L('\\frac{1}{2}+\\frac{1}{3}+\\frac{1}{6}=1'), 'un demi plus un tiers plus un sixième égale 1');
+  assert.strictEqual(L('\\sqrt{2} \\approx 1{,}414'), 'racine de 2 environ 1,414');
+  assert.strictEqual(L('f(x) = 2(x+1)'), 'f de x égale 2 fois x plus 1');
+  assert.strictEqual(L('\\lim_{x \\to 0} \\frac{\\sin x}{x} = 1'), 'la limite quand x tend vers 0 de sinus x sur x égale 1');
+  assert.strictEqual(L('\\begin{pmatrix}1&2\\end{pmatrix}'), null);
+  assert.strictEqual(L('\\inconnue{x}'), null);
+  assert.ok(Voix.pourLaVoix('Donc $x=5$ et $\\begin{pmatrix}1\\end{pmatrix}$.').includes('x égale 5'));
+  assert.ok(Voix.pourLaVoix('Et $\\begin{pmatrix}1\\end{pmatrix}$.').includes('voir la formule'));
 });
