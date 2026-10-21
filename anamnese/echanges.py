@@ -29,7 +29,8 @@ import config
 FILE = Path.home() / "AIOS" / "jarvis" / "echanges-a-memoriser.jsonl"
 CLE_CURSEUR = "echanges_curseur"
 TEXTE_MAX = 600                       # par côté ; le texte entier reste dans le journal brut
-ROUTAGE_CONF_MIN = 0.55               # (2026-10-21) un échange mal reconnu reste sans rubrique (pas d'aimant)
+ROUTAGE_CONF_MIN = 0.70               # (2026-10-21) un échange mal reconnu reste sans rubrique (pas d'aimant) ; le
+                                      # rangement de nuit (ranger_nuit.py) le lit et le range au bon endroit
 PAR_PASSAGE = 200
 
 _EXPLICITE = re.compile(r"\b(retiens|retenir|n'?oublie (pas|jamais)|souviens[- ]toi|rappelle[- ]toi|m[ée]moris\w*|"

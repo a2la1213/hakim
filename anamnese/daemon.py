@@ -976,6 +976,25 @@ def battement_interieur(etat, arret=None, pas_s=15):
         arret.wait(pas_s)
 
 
+def _rangement_nuit_pass(mem, now=None):
+    """(2026-10-21) Le rangement de nuit (ranger_nuit.py) : les souvenirs vécus des 3 derniers jours restés sans rubrique
+    ou rangés sans assurance sont lus par Claude et rangés au bon endroit. Une fois par nuit, vers 5 h."""
+    now = now or time.time()
+    h = time.localtime(now).tm_hour
+    jour = time.strftime("%Y-%m-%d", time.localtime(now))
+    if not (5 <= h < 7) or mem.kv_get("rangement_nuit_jour") == jour:
+        return
+    mem.kv_set("rangement_nuit_jour", jour)
+    import subprocess
+    racine = Path(__file__).resolve().parent
+    try:
+        r = subprocess.run([sys.executable, str(racine / "ranger_nuit.py"), "--oui"], cwd=str(racine), capture_output=True,
+                           text=True, timeout=1200)
+        print("[daemon] rangement de nuit : " + ((r.stdout or r.stderr or "").strip().splitlines() or ["?"])[-1][:200])
+    except Exception as e:
+        print("[daemon] rangement de nuit impossible :", e)
+
+
 def _tests_de_nuit_pass(mem, now=None):
     """La batterie fixe rejouée chaque nuit (lot G, point 41) : la suite de tests d'Anamnèse et le banc des
     souvenirs périmés (eval/supersession_bench.py, sans modèle de langage). Une fois par nuit, vers 3 h 30 ;
@@ -1086,6 +1105,7 @@ def main():
             _index_fichiers_pass(mem)              # l'index par le sens des fichiers d'Ahmed (la nuit)
             _echanges_pass(mem)                    # chaque échange avec Ahmed devient un souvenir (2026-10-20)
             _tests_de_nuit_pass(mem)               # la batterie fixe, rejouée chaque nuit (lot G, 41)
+            _rangement_nuit_pass(mem)              # les souvenirs mal rangés, lus et rangés (2026-10-21)
             _audit_dependances_pass(mem)           # les failles connues des dépendances, chaque semaine
             time.sleep(config.DAEMON_TICK)
         except KeyboardInterrupt:
