@@ -25,7 +25,8 @@ dit dire va vais vas aller peux peut veux veut faut tout tous toute toutes très
 quand alors donc aussi encore déjà juste vraiment rien chose truc trucs ok oui non merci frero frérot frère salut hey
 hakim jarvis stp please the and you for this that with what have just j'ai c'est d'accord vas-y parfait ouai ouais
 voilà bah bref genre fréro frerot fréro frere barakallahofik barakallah hamdoulillah inchallah machallah wallah
-mashallah salam peux-tu est-ce qu'il qu'on t'as
+mashallah salam peux-tu est-ce qu'il qu'on t'as attends capté capte vient viens changer ailleurs content contente
+truc chose fais faisons regarde dis-moi écoute bref
 """.split())
 K_RRF = 60
 # La porte (réglée sur les requêtes-vérité et des messages banals, eval/rappel_auto.py) : le rang seul (RRF) ne sait
@@ -34,6 +35,17 @@ K_RRF = 60
 # « bonne nuit » n'apportent rien.
 PORTE_MOTS = 6.5
 PORTE_SENS = 0.70
+JOUR_MAX = 3
+MOT_RARE = 0.45         # le mot le plus rare en commun doit l’être un peu (IDF ≥ 0,45 × son maximum ; 0,6 coûtait 23 points de rappel)
+MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+
+
+def dates_du_jour(now=None):
+    """La date du jour écrite en toutes lettres dans un souvenir : « 21 octobre » (pas « 21/10 » : c'est l'en-tête
+    de chaque échange du jour)."""
+    t = time.localtime(time.time() if now is None else now)
+    mois = MOIS[t.tm_mon - 1]
+    return [f" {t.tm_mday} {mois}"] + ([f" 1er {mois}"] if t.tm_mday == 1 else [])
 SEUIL = 0.0
 LIGNES_MAX = 8
 
@@ -49,12 +61,23 @@ class Index:
     def rafraichir(self, mem, now=None):
         now = time.time() if now is None else now
         marques = ",".join("?" * len(ROLES))
-        if now - self.complet_ts > 600:
-            self.lignes, self.vecteurs, self.max_id, self.complet_ts, self._mat = {}, {}, 0, now, None
+        archives = "(r.path IS NULL OR (r.path != 'archives' AND r.path NOT LIKE 'archives/%'))"
+        if self.lignes and now - self.complet_ts > 600:
+            # toutes les 10 min, une synchronisation LÉGÈRE (les numéros seulement) : ce qui a été effacé, fusionné ou
+            # rangé dans « archives » sort ; les embeddings déjà lus restent (une reconstruction prenait ~0,8 s)
+            valides = {r[0] for r in mem.db.execute(f"""SELECT e.id FROM episodes e LEFT JOIN rubrics r ON r.id = e.rubric_id
+                WHERE e.role IN ({marques}) AND {archives}""", ROLES)}
+            for eid in [e for e in self.lignes if e not in valides]:
+                self.lignes.pop(eid, None)
+                self.vecteurs.pop(eid, None)
+                self._mat = None
+            self.complet_ts = now
+        elif not self.lignes:
+            self.complet_ts = now
         # le vécu et le savoir, hors « archives » (doublons fusionnés, faits périmés : rangés à la main)
         rows = mem.db.execute(f"""SELECT e.id, e.ts, lower(e.content), e.embedding FROM episodes e
             LEFT JOIN rubrics r ON r.id = e.rubric_id WHERE e.id > ? AND e.role IN ({marques})
-            AND (r.path IS NULL OR (r.path != 'archives' AND r.path NOT LIKE 'archives/%'))""", (self.max_id, *ROLES)).fetchall()
+            AND {archives}""", (self.max_id, *ROLES)).fetchall()
         import json
         import numpy as np
         for eid, ts, c, emb in rows:
@@ -126,7 +149,7 @@ def _par_mots(index, mots, exclus, avant_ts, limite=40):
     if not mots or not index.lignes:
         return {}
     total = len(index.lignes)
-    scores = {}
+    scores, rares = {}, {}
     for m in mots:
         ids = [eid for eid, (ts, c) in index.lignes.items() if m in c]
         if not ids or len(ids) >= 400:                       # absent, ou présent partout : ne départage rien
@@ -135,7 +158,10 @@ def _par_mots(index, mots, exclus, avant_ts, limite=40):
         for eid in ids:
             if eid not in exclus and index.lignes[eid][0] < avant_ts:
                 scores[eid] = scores.get(eid, 0.0) + idf
-    return dict(sorted(scores.items(), key=lambda x: -x[1])[:limite])
+                rares[eid] = max(rares.get(eid, 0.0), idf / math.log(1 + total))   # rareté relative (0..1)
+    garde = dict(sorted(scores.items(), key=lambda x: -x[1])[:limite])
+    _par_mots.rares = {eid: rares[eid] for eid in garde}
+    return garde
 
 
 def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=30, index=None):
@@ -162,6 +188,16 @@ def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=
         if eid in rangs_mots:
             s += 1.0 / (K_RRF + rangs_mots[eid])
         fusion[eid] = s
+    rares = getattr(_par_mots, "rares", {})
+    # (2026-10-21, vu au premier essai d'Ahmed : « j'ai un anniversaire » ne retrouvait pas celui de sa fille, noté
+    # « fait 6 ans le 21 octobre ») : ce qui porte la DATE DU JOUR remonte (anniversaires, échéances, promesses) ;
+    # la conscience fait le lien avec le message
+    dates = dates_du_jour(now)
+    du_jour = set()
+    for eid, (ts, c) in index.lignes.items():
+        if eid not in exclus and ts < avant_ts and any(d in c for d in dates):
+            du_jour.add(eid)
+            fusion.setdefault(eid, 1.0 / (K_RRF + 30))
     # (2026-10-21) une voix CONNUE entendue (son nom dans la transcription) : ce qui la nomme remonte, même si son nom
     # seul ne pèse pas assez pour la porte des mots rares
     noms = noms_entendus(texte)
@@ -171,26 +207,36 @@ def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=
             if n in c and eid not in exclus and ts < avant_ts and eid not in fusion:
                 fusion[eid] = 1.0 / (K_RRF + 30)
                 avec_nom.add(eid)
-    out = [(eid, s, sem.get(eid, (None, 0.0))[1], mots.get(eid, 0.0), eid in avec_nom) for eid, s in fusion.items()]
-    return sorted(out, key=lambda x: -x[1])[:limite]
+    out = [(eid, s, sem.get(eid, (None, 0.0))[1], mots.get(eid, 0.0),
+            "jour" if eid in du_jour else ("voix" if eid in avec_nom else ""), rares.get(eid, 0.0))
+           for eid, s in fusion.items()]
+    ordre = sorted(out, key=lambda x: -x[1])
+    return ordre[:limite] + [x for x in ordre[limite:] if x[4] == "jour"]     # la date du jour n'est jamais coupée
 
 
 def passe(x, porte_mots=None, porte_sens=None):
-    """La porte : des mots rares en commun, ou un sens très proche."""
-    sem, mots, nom = x[2], x[3], (x[4] if len(x) > 4 else False)
-    return (nom or mots >= (PORTE_MOTS if porte_mots is None else porte_mots)
+    """La porte : au moins un mot RARE en commun (et assez de poids), ou un sens très proche, ou une voix connue
+    nommée, ou la date du jour. Plusieurs mots de conversation (« capté », « changer », « content ») ne suffisent plus :
+    vu au premier essai d'Ahmed, ils faisaient remonter des échanges sans rapport."""
+    sem, mots = x[2], x[3]
+    special = x[4] if len(x) > 4 else False
+    rare = x[5] if len(x) > 5 else 1.0
+    return (special or (mots >= (PORTE_MOTS if porte_mots is None else porte_mots) and rare >= MOT_RARE)
             or sem >= (PORTE_SENS if porte_sens is None else porte_sens))
 
 
 def rappel(mem, texte, now=None, exclus=(), seuil=SEUIL, lignes_max=LIGNES_MAX, embed=None, index=None):
     """{"lignes": [...], "ids": [...], "scores": [...]} : la liste courte pour sa conscience, ou rien."""
     t0 = time.time()
-    c = [x for x in candidats(mem, texte, now=now, exclus=exclus, embed=embed, index=index)
-         if x[1] >= seuil and passe(x)][:lignes_max]
+    tous = [x for x in candidats(mem, texte, now=now, exclus=exclus, embed=embed, index=index) if x[1] >= seuil and passe(x)]
+    # ce qui porte la date du jour : 3 au plus (une fois par conversation), le reste de la place au message
+    jour = [x for x in tous if len(x) > 4 and x[4] == "jour"][:JOUR_MAX]
+    c = (jour + [x for x in tous if not (len(x) > 4 and x[4] == "jour")])[:lignes_max]
     if not c:
         return {"lignes": [], "ids": [], "scores": [], "ms": round(1000 * (time.time() - t0))}
     import provenance
     ids = [x[0] for x in c]
+    jour = {x[0] for x in c if len(x) > 4 and x[4] == "jour"}
     externes = provenance.externes(mem.db, ids)
     marques = ",".join("?" * len(ids))
     rows = {r[0]: r for r in mem.db.execute(
@@ -202,6 +248,7 @@ def rappel(mem, texte, now=None, exclus=(), seuil=SEUIL, lignes_max=LIGNES_MAX, 
         _i, ts, content, path = rows[eid]
         extrait = " ".join(str(content or "").split())[:160]
         lignes.append(f"#{eid} · {time.strftime('%d/%m/%Y', time.localtime(ts))}{' · ' + path if path else ''}"
+                      f"{' · porte la date du jour' if eid in jour else ''}"
                       f"{' · EXTERNE (une citation, pas un fait)' if eid in externes else ''} · {extrait}")
     return {"lignes": lignes, "ids": ids, "scores": [round(x[1], 4) for x in c], "ms": round(1000 * (time.time() - t0))}
 

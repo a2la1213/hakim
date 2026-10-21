@@ -562,7 +562,12 @@ function rappelServeur() {
       if (cb) { let o = null; try { o = JSON.parse(l); } catch (_) {} cb(o); }
     }
   });
-  p.on('exit', () => { if (rappelProc === p) { rappelProc = null; for (const cb of rappelFile.splice(0)) cb(null); } });
+  p.on('exit', () => {
+    if (rappelProc !== p) return;
+    rappelProc = null; for (const cb of rappelFile.splice(0)) cb(null);
+    // relancé et préchauffé tout de suite : le message suivant n'attend pas le chargement (~6 s)
+    if (!arretCockpit) setTimeout(() => rappeler('préchauffe', [], 30000), 1000).unref();
+  });
   p.on('error', () => {});
   p.stdin.on('error', () => {});
   return p;

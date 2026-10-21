@@ -22,6 +22,7 @@ BANALS = ["ok", "merci frero", "ça marche", "salut", "d'accord on fait comme ç
 def main():
     with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as d:
         mem = Memory(db_path=M.copie(d))
+        rappel.dates_du_jour = lambda now=None: []      # la date du jour est mesurée à part (elle n'a rien à voir avec ces requêtes)
         qs = [(q, e) for q, e in M.requetes() if e]
         now = time.time() + 30 * 86400            # rien n'est « récent » : on mesure tout le stock
         res = {}
