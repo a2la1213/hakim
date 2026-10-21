@@ -1402,7 +1402,7 @@ async function routeJarvis(req, res, distantReq = false) {
     if (parti && tourId && !arretDemande && !o.coupe) {
       completerReponse(tourId, { qui: 'j', texte: reponse.trim(), ms: Date.now() - t0, enCours: false, complet: true,
         erreur: o.erreur || null, jetons: o.jetons || undefined, source: source !== 'abonnement' ? source : undefined,
-        attenteServeur: undefined, ts: Date.now() });
+        attenteServeur: undefined, coupe: undefined, ts: Date.now() });
       if (reponse.trim()) notifier(reponse.trim(), 'reponse');
     }
     if (c && source !== 'local' && cerveauVivant(c)) reposer(c);

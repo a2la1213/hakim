@@ -869,10 +869,10 @@ function marquerCoupe() {
   const lu = etat.messages.find(m => m.id === etat.lectureDe) || [...etat.messages].reverse().find(m => m.qui === 'j');
   if (lu) { lu.coupe = true; sauver(); rendre(); }
 }
-function arreterTout() {
+function arreterTout(explicite = true) {
   if (etat.flux) {
     // (2026-10-21) Stop EXPLICITE : sans lui, le cockpit laisse la réponse aller au bout (page partie ≠ Stop)
-    if (etat.fluxId) fetch('/api/jarvis/stop', { method: 'POST', keepalive: true,
+    if (explicite && etat.fluxId) fetch('/api/jarvis/stop', { method: 'POST', keepalive: true,
       headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ tour_id: etat.fluxId }) }).catch(() => {});
     etat.flux.abort(); etat.flux = null; etat.fluxId = null;
   }
@@ -1084,7 +1084,7 @@ async function basculerConversation() {
       ctx: actx,
       patienceMs: patienceConversation,
       jarvisParle: () => lecteur.actif,
-      surNiveau: (n) => { etat.niveauMicro = n; },
+      surNiveau: (n) => { etat.niveauMicro = n; if (document.visibilityState === 'hidden') micEnFond++; },
       surDebut: () => { conv.finDemandee = false; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre('…'); humeur('je t’écoute…'); },
       surPause: (fenetre) => surPauseConversation(conv, fenetre),
       surSilence: (ms) => { if (conv.capteur && conv.capteur.enParole) { compteARebours(ms); anticiperConversation(conv, ms); } },
@@ -1111,6 +1111,7 @@ async function basculerConversation() {
   }
   if (etat.conversation !== conv) { conv.capteur.arreter(); return; }    // arrêtée pendant l'ouverture
   noterPresent({ e: 'debut_conversation', t: Date.now() });
+  sessionMedia(true);
   signalerPresence();                              // tout de suite : le subconscient se met en pause
   rendre(); humeur();
 }
@@ -1130,9 +1131,38 @@ function basculerMuet() {
 
 // garderLeTour (Ahmed, 2026-10-20) : fermer la conversation PENDANT qu'on parle (bouton du micro, « Fin ») envoie
 // quand même ce qui a été dit jusque-là ; Échap et la fermeture de la page, eux, abandonnent le tour.
+/* La conversation en ARRIÈRE-PLAN (2026-10-21, Ahmed : « continuer à converser quand je quitte la page ») : rien ne
+   la coupe quand la page passe derrière (autre appli, écran éteint) ; une session média (la notification du
+   téléphone, avec Muet et Terminer) dit au navigateur qu'une conversation est en cours et l'aide à garder la page en
+   vie. Ce que le navigateur permet vraiment (micro et voix en arrière-plan) se lit dans le diagnostic de la voix :
+   combien de morceaux de micro sont arrivés pendant que la page était cachée. Navigateur fermé : impossible. */
+let micEnFond = 0, cacheeDepuis = 0;
+function sessionMedia(active) {
+  if (!('mediaSession' in navigator)) return;
+  try {
+    if (!active) { navigator.mediaSession.playbackState = 'none'; return; }
+    navigator.mediaSession.metadata = new MediaMetadata({ title: 'Conversation avec Hakim', artist: 'Hakim',
+      artwork: [{ src: '/icone-192.png', sizes: '192x192', type: 'image/png' }, { src: '/icone-512.png', sizes: '512x512', type: 'image/png' }] });
+    navigator.mediaSession.playbackState = 'playing';
+    const muet = (veut) => { const c = etat.conversation; if (c && c.capteur && c.capteur.estMuet !== veut) basculerMuet(); };
+    navigator.mediaSession.setActionHandler('pause', () => { muet(true); navigator.mediaSession.playbackState = 'paused'; });
+    navigator.mediaSession.setActionHandler('play', () => { muet(false); navigator.mediaSession.playbackState = 'playing'; });
+    navigator.mediaSession.setActionHandler('stop', () => finirConversation(true));
+  } catch (_) {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (!etat.conversation) return;
+  if (document.visibilityState === 'hidden') { cacheeDepuis = Date.now(); micEnFond = 0; journalVoix('conversation_cachee', { audio: actx ? actx.state : 'aucun' }); }
+  else if (cacheeDepuis) {
+    journalVoix('conversation_revenue', { cachee_ms: Date.now() - cacheeDepuis, micro_morceaux: micEnFond, audio: actx ? actx.state : 'aucun' });
+    cacheeDepuis = 0;
+    contexteAudio();
+  }
+});
 function finirConversation(garderLeTour = true) {
   const conv = etat.conversation;
   if (!conv) return;
+  sessionMedia(false);
   if (garderLeTour && conv.capteur && conv.capteur.enParole) { conv.fermeture = true; conv.capteur.finirTour(); }
   etat.conversation = null;
   if (conv.capteur) conv.capteur.arreter();
@@ -2039,9 +2069,10 @@ $('muetScene').addEventListener('click', (e) => { e.stopPropagation(); basculerM
 window.addEventListener('pagehide', () => {
   finirConversation(false);
   arreterCamera();
-  for (const m of etat.messages) if (m.enCours) { m.enCours = false; m.coupe = true; }   // garder la réponse partielle
+  // (2026-10-21) la page se ferme : la réponse en cours continue sur le Mac et l'attendra dans la conversation
+  for (const m of etat.messages) if (m.enCours) { m.enCours = false; m.attenteServeur = true; }
   sauver();
-  arreterTout(); arreterMicro(false);
+  arreterTout(false); arreterMicro(false);
 });
 
 function afficherSecours(o) {
