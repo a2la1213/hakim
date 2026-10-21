@@ -29,6 +29,7 @@ import config
 FILE = Path.home() / "AIOS" / "jarvis" / "echanges-a-memoriser.jsonl"
 CLE_CURSEUR = "echanges_curseur"
 TEXTE_MAX = 600                       # par côté ; le texte entier reste dans le journal brut
+ROUTAGE_CONF_MIN = 0.55               # (2026-10-21) un échange mal reconnu reste sans rubrique (pas d'aimant)
 PAR_PASSAGE = 200
 
 _EXPLICITE = re.compile(r"\b(retiens|retenir|n'?oublie (pas|jamais)|souviens[- ]toi|rappelle[- ]toi|m[ée]moris\w*|"
@@ -195,7 +196,7 @@ def memoriser(mem, e, embed=None):
     if e.get("de_lui_meme"):
         imp = round(max(0.2, imp - 0.1), 2)
     imp = _emotion(mem, e, ahmed, texte, emb, imp, raisons)
-    eid = mem.add("episodic", texte, importance=imp, embedding=emb or [], dedup=False)
+    eid = mem.add("episodic", texte, importance=imp, embedding=emb or [], dedup=False, conf_min=ROUTAGE_CONF_MIN)
     if e.get("externe"):
         import provenance
         provenance.marquer(mem.db, eid)
@@ -221,8 +222,10 @@ def _emotion(mem, e, ahmed, texte, emb, imp, raisons):
             sujet = None
             try:
                 import routing
-                sujet, _conf = routing.route_episode(mem.db, {"role": "episodic", "content": texte,
-                                                              "embedding": json.dumps(emb or [])})
+                sujet, conf = routing.route_episode(mem.db, {"role": "episodic", "content": texte,
+                                                             "embedding": json.dumps(emb or [])})
+                if (conf or 0.0) < ROUTAGE_CONF_MIN:
+                    sujet = None                                   # un sujet mal reconnu : l'émotion compte par type
             except Exception:
                 pass
             try:

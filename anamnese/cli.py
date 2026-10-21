@@ -223,6 +223,14 @@ def main():
                 print(f"— {__import__('time').strftime('%d/%m %H:%M', __import__('time').localtime(e['ts']))} : {e['texte']}")
         else:
             print('usage : anamnese jardin ouvrir "<raison : urgence ou audit de sécurité>" (l\'ouverture est notée)')
+    elif cmd == "rappel-serveur":
+        # (2026-10-21) le rappel automatique, gardé ouvert par le cockpit : une requête JSON par ligne (rappel.py)
+        import rappel
+        rappel.serveur()
+    elif cmd == "rappel":
+        import json as _j
+        import rappel
+        print(_j.dumps(rappel.rappel(m, " ".join(rest)), ensure_ascii=False, indent=1))
     elif cmd == "courrier":
         # anamnese courrier [lire|nonlus|envoyer <destinataire> <texte>] — le courrier Hakim ↔ Claude Code
         import courrier

@@ -306,9 +306,19 @@ def scorer_centroides(embedding, rubriques, kind_hint_role=None, parmi=None, cen
     return None, 0.0  # racine sous seuil : NULL, jamais de « divers »
 
 
+# « archives » est une destination MANUELLE (doublons fusionnés, faits périmés : rangement d'Ahmed du 2026-10-20),
+# jamais un thème : vu le 2026-10-21, son centroïde, fait d'échanges rangés à la main, attirait 84 % des échanges
+# mémorisés automatiquement (1 265 depuis le 20/10), et le rappel les ignorait. Le routage automatique ne la propose plus.
+NON_ROUTABLES = ("archives",)
+
+
+def routable(path):
+    return not any(path == r or path.startswith(r + "/") for r in NON_ROUTABLES)
+
+
 def _rubriques(conn):
     return [(path, kind_hint, _parse_embedding(raw), n) for path, kind_hint, raw, n in conn.execute(
-        "SELECT path, kind_hint, centroid, centroid_n FROM rubrics WHERE centroid IS NOT NULL")]
+        "SELECT path, kind_hint, centroid, centroid_n FROM rubrics WHERE centroid IS NOT NULL") if routable(path)]
 
 
 def route_by_centroid(conn, embedding, kind_hint_role=None, parmi=None):
@@ -351,7 +361,7 @@ def route_episode(conn, episode_row):
     `episode_row` : mapping (sqlite3.Row ou dict) exposant au moins
     'role', 'content', 'embedding' (JSON brut).
     """
-    paths = [r[0] for r in conn.execute("SELECT path FROM rubrics")]
+    paths = [r[0] for r in conn.execute("SELECT path FROM rubrics") if routable(r[0])]
     return decider(episode_row["role"], episode_row["content"],
                    _parse_embedding(episode_row["embedding"]), paths, _rubriques(conn))
 

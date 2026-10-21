@@ -180,7 +180,7 @@ class Memory:
         return False
 
     def add(self, role, content, importance=0.5, embedding=None, dedup=False,
-            extract_facets=True):
+            extract_facets=True, conf_min=None):
         """Insère un épisode. Retourne son id (truthy), ou False si dedup l'écarte.
 
         extract_facets (3.5a) : tague automatiquement les facettes du contenu
@@ -299,7 +299,9 @@ class Memory:
                     {"id": episode_id, "role": role, "content": content,
                      "embedding": row[4]},  # JSON brut, contrat route_episode
                 )
-                if path is not None:
+                # conf_min (2026-10-21, échanges mémorisés) : sous ce seuil, le souvenir reste sans rubrique
+                # (un rangement faible faisait des aimants : « archives », puis un projet)
+                if path is not None and (conf_min is None or (conf or 0.0) >= conf_min):
                     rubrics.attach_episode(self.db, episode_id, path, conf,
                                            time.time())
             except Exception:

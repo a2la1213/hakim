@@ -20,6 +20,13 @@ echo 0 > "$BANC/briefing_s"; echo 0 > "$BANC/claude_s"; echo 0 > "$BANC/agent_s"
 
 cat > "$BANC/anamnese/anamnese" <<EOF
 #!/bin/bash
+if [ "\$1" = rappel-serveur ]; then                           # le rappel automatique (contrôle 58)
+  while read -r l; do
+    case "\$l" in *anniversaire*) echo '{"lignes": ["#7 · 16/10/2026 · profil · [Ahmed, sa fille] elle fête ses 6 ans le 21 octobre"], "ids": [7], "scores": [0.03], "ms": 1}' ;;
+      *) echo '{"lignes": [], "ids": [], "scores": [], "ms": 1}' ;; esac
+  done
+  exit 0
+fi
 if [ "\$1" = hormones ]; then                                  # l'interrupteur des hormones (contrôle 55)
   [ -n "\$2" ] && echo "\$2" > "$BANC/hormones"
   echo "{\"version\": \"\$(cat "$BANC/hormones" 2>/dev/null || echo v1)\", \"coincee\": null}"
@@ -976,6 +983,19 @@ s57=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "X-Jeton: $JETON" --data
 sleep 3; echo 0 > "$BANC/claude_s"
 b57b=$(grep -c '"id":"st57"' "$BANC/jarvis/conversation.json" 2>/dev/null || true)
 verifier "57. page partie : la réponse va au bout et s'écrit dans la conversation ; Stop explicite : arrêtée" "True 204 0" "$b57a $s57 ${b57b:-0}"
+
+# 58. (2026-10-21) le rappel automatique : les souvenirs proches arrivent avant le message, balisés ; jamais deux fois
+# dans la même conversation ; rien pour un message banal ; le journal du rappel n'a que des numéros
+echo 0 > "$BANC/claude_s"
+poster '{"texte":"j ai un anniversaire ce soir","modele":"sonnet","source":"abonnement","session":"11111111-2222-3333-4444-555555555555"}' >/dev/null
+r58a=$(grep -c "Souvenirs qui pourraient s'y rapporter" "$BANC/entree.$(dernier)")
+r58b=$(grep -c "#7 · 16/10/2026 · profil" "$BANC/entree.$(dernier)")
+poster '{"texte":"encore cet anniversaire","modele":"sonnet","source":"abonnement","session":"11111111-2222-3333-4444-555555555555"}' >/dev/null
+r58c=$(grep -c "#7 · 16/10/2026 · profil" "$BANC/entree.$(dernier)")
+poster '{"texte":"ok merci","modele":"sonnet","source":"abonnement","session":"11111111-2222-3333-4444-555555555555"}' >/dev/null
+r58d=$(grep -c "Souvenirs qui pourraient s'y rapporter" "$BANC/entree.$(dernier)")
+r58e=$(grep -c "fête" "$BANC/jarvis/rappel.jsonl" 2>/dev/null || true)
+verifier "58. rappel automatique : souvenir proche balisé, pas deux fois, rien pour « ok merci », journal sans texte" "1 1 1 1 0" "$r58a $r58b $r58c $r58d ${r58e:-0}"
 
 [ "$ECHECS" -eq 0 ] && echo "TOUT VERT" || echo "$ECHECS contrôle(s) en échec"
 exit "$ECHECS"
