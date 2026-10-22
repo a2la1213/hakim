@@ -968,12 +968,21 @@ function alimenterBulle(niveauMicro) {
 function afficherBulle(o) {
   if (!o) return;
   $('bulle').checked = !!o.active;
-  $('etatBulle').textContent = o.active && !o.permise ? '(donne la permission « afficher par-dessus les autres applications » dans l’écran qui s’ouvre, puis reviens)' : '';
+  $('bulleToujours').checked = !!o.toujours;
+  $('orbeVerrou').checked = o.verrou !== false;
+  $('etatBulle').textContent = (o.active || o.verrou) && !o.permise ? '(donne la permission « afficher par-dessus les autres applications » dans l’écran qui s’ouvre, puis reviens)' : '';
 }
 if (window.HakimApp && window.HakimApp.bulle) {
   $('groupeBulle').hidden = false;
   try { afficherBulle(JSON.parse(window.HakimApp.bulleEtat())); } catch (_) {}
   $('bulle').addEventListener('change', (e) => { try { afficherBulle(JSON.parse(window.HakimApp.bulle(e.target.checked))); } catch (_) {} });
+}
+// (2026-10-22, 15:28) appli 0.8 : la bulle aussi hors conversation, et l'orbe sur l'écran de verrouillage
+if (window.HakimApp && window.HakimApp.bulleOption) {
+  $('groupeBulleToujours').hidden = false;
+  $('groupeOrbeVerrou').hidden = false;
+  for (const [id, nom] of [['bulleToujours', 'toujours'], ['orbeVerrou', 'verrou']])
+    $(id).addEventListener('change', (e) => { try { afficherBulle(JSON.parse(window.HakimApp.bulleOption(nom, e.target.checked))); } catch (_) {} });
 }
 
 // « coupé » s'affiche sous la réponse qu'il n'a pas pu finir de dire
