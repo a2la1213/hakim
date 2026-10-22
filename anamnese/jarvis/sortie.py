@@ -153,7 +153,11 @@ def _demander(url, raison, demandes, maintenant):
         f.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(f, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
         try:
-            os.write(fd, (json.dumps({"id": i, "ts": maintenant, "url": str(url)[:2000], "raison": raison}, ensure_ascii=False) + "\n").encode())
+            # (Ahmed, 2026-10-22 : « afficher QUI la demande ») qui : Hakim, sauf si celui qui appelle le dit autrement
+            # (JARVIS_SORTIE_QUI, par exemple une session Claude Code) ; le cockpit précise les agents en cours
+            qui = os.environ.get("JARVIS_SORTIE_QUI") or "hakim"
+            os.write(fd, (json.dumps({"id": i, "ts": maintenant, "url": str(url)[:2000], "raison": raison, "qui": qui[:40]},
+                                     ensure_ascii=False) + "\n").encode())
         finally:
             os.close(fd)
     except OSError:

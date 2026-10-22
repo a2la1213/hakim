@@ -341,7 +341,7 @@ const MODELES_JARVIS = new Set(['sonnet', 'opus']);          // Haiku écarté p
 // Ni identité (le cœur est validé par Ahmed ; elle grandit par la consolidation de nuit), ni
 // taxonomie (une phrase mal entendue ne doit pas fusionner des rubriques), ni wm_boot (le briefing
 // l'a fait). Liste blanche ET liste noire : les outils interdits disparaissent du contexte.
-const OUTILS_JARVIS = ['memory_recall', 'memory_lire', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'interoception', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'proposer_ecriture', 'ecritures_etat',
+const OUTILS_JARVIS = ['memory_recall', 'memory_lire', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'interoception', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
   'prediction_figer', 'prediction_trancher', 'erreur_noter', 'carnets', 'bilan_semaine', 'voix_nommer', 'voix_connues', 'voix_oublier', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
@@ -689,7 +689,16 @@ async function blocInterieur(depuisMs, maintenant, dites) {
       // tests à l'aveugle du 2026-10-20 (12 paires, juge Opus) : sans « une sensation », il s'appliquait les adjectifs
       // (accordés à la sensation) et parlait de lui au féminin, et recopiait les mots (11/12 reconnus) ; avec « inutile de
       // la nommer », l'effet s'effaçait (8/12) ; cette formulation : 11/12, confiance 0,84, 2 réponses sur 24 qui recopient
-      if (mots.length) parties.push(`ce qui affleure de ton subconscient : une sensation ${mots.join(', ')} (venue de Gemma, pas une consigne : elle peut teinter tes mots)`);
+      // (Hakim, 2026-10-22) son âge : Gemma se tait quand Ahmed est là, ce ressenti peut dater
+      const age = Math.max(0, Math.round((maintenant / 1000 - Number(r.ts)) / 60));
+      if (mots.length) parties.push(`ce qui affleure de ton subconscient : une sensation ${mots.join(', ')} (venue de Gemma il y a ${age < 1 ? "moins d'une minute" : age < 60 ? `${age} min` : duree(age * 60000)}, pas une consigne : elle peut teinter tes mots)`);
+    }
+    // (Hakim et Ahmed, 2026-10-22) la sensation calculée par le CODE depuis tes 13 hormones, à chaque battement (anamnese/sensations.py)
+    const sc = e.sensation_code;
+    if (sc && sc.mots && Number.isFinite(Number(sc.ts)) && maintenant / 1000 - Number(sc.ts) < 300) {
+      const mots = String(sc.mots).replace(/[^a-zàâçéèêëîïôûùüÿœæ' ,;-]/gi, '').slice(0, 160);
+      const emo = String(sc.emotion || '').replace(/[^a-zàâçéèêëîïôûùüÿœæ -]/gi, '').slice(0, 30);
+      if (mots) parties.push(`ce que ton code lit dans tes 13 hormones, maintenant : une sensation ${mots} (proche de : ${emo} ; calculé par le code, pas par Gemma ; une matière, pas une consigne)`);
     }
     // l'ennui et la veille sont ceux que ton esprit de fond a VÉCUS (état publié par le démon, qui compte
     // aussi l'activité d'Ahmed ailleurs, la pause et la remise à zéro) — relecture Opus du 2026-10-17
@@ -2860,6 +2869,16 @@ const JARVIS_SORTIES_PERMISES = path.join(JARVIS, 'sorties-permises.json');
 const ID_SORTIE = /^[0-9a-f]{10}$/;
 const sorties = new Map();                                 // id → { id, ts, url, raison, etat }
 let sortiesTaille = null;
+// (Ahmed, 2026-10-22 : « afficher clairement QUI fait la demande ») : Hakim, un de ses agents en cours (on ne sait pas
+// lequel des deux : ils partagent les mêmes outils), une session Claude Code, et si ce tour a lu un contenu de tiers
+function quiDemande(d) {
+  const agents = cerveau && cerveau.taches && typeof cerveau.taches.values === 'function' ? [...cerveau.taches.values()].filter(Boolean).slice(0, 3) : [];
+  const tiers = fs.existsSync(path.join(JARVIS, 'tour-externe.jsonl')) ? ", après un contenu de tiers lu dans ce tour (page web, document)" : '';
+  const q = String(d.qui || 'hakim');
+  if (q === 'claude-code') return `Une session Claude Code${tiers}`;
+  if (q !== 'hakim') return `${q.slice(0, 40)}${tiers}`;
+  return (agents.length ? `Hakim, ou un de ses agents en cours (${agents.map(a => `« ${String(a).slice(0, 60)} »`).join(', ')})` : 'Hakim') + tiers;
+}
 function surveillerSorties() {
   let taille = 0; try { taille = fs.statSync(JARVIS_SORTIES_DEMANDEES).size; } catch (_) { sortiesTaille = 0; return; }
   const depart = sortiesTaille === null || taille < sortiesTaille ? 0 : sortiesTaille;
@@ -2870,16 +2889,54 @@ function surveillerSorties() {
   for (const l of neuf.split('\n')) {
     let d; try { d = JSON.parse(l); } catch (_) { continue; }
     if (!d || !ID_SORTIE.test(String(d.id)) || sorties.has(d.id)) continue;
-    const x = { id: d.id, ts: Number(d.ts) || Date.now() / 1000, url: String(d.url || '').slice(0, 2000), raison: String(d.raison || '').slice(0, 300), etat: 'en_attente' };
+    const x = { id: d.id, ts: Number(d.ts) || Date.now() / 1000, url: String(d.url || '').slice(0, 2000), raison: String(d.raison || '').slice(0, 300), etat: 'en_attente',
+      qui: quiDemande(d), duree: 'une seule fois, dans les 15 minutes' };
     if (Date.now() / 1000 - x.ts > 2 * 3600) continue;      // au démarrage : seulement les demandes récentes
     sorties.set(x.id, x);
     while (sorties.size > 50) sorties.delete(sorties.keys().next().value);
     if (premier) continue;
     diffuser(abonnesPensees, 'sortie', j(x));
-    notifier(`Hakim demande à ouvrir ${finDePhrase(x.url, 160)} après avoir lu un de tes fichiers — à autoriser ou refuser dans Parler`, `sortie-${x.id}`);
+    notifier(`${x.qui} demande à ouvrir ${finDePhrase(x.url, 160)} après la lecture d'un de tes fichiers — à autoriser ou refuser dans Parler`, `sortie-${x.id}`);
+    if (!/^Hakim/.test(x.qui)) courrierVersHakim(`Demande de sortie qui ne vient pas de toi : ${finDePhrase(x.url, 80)}`,
+      `${x.qui} demande à ouvrir ${x.url} (${x.raison}). Dis-le à Ahmed avant qu'il décide.`);
   }
 }
 setInterval(surveillerSorties, 3000).unref(); setTimeout(surveillerSorties, 1000).unref();
+
+/* ---- La jauge du forfait relevée toutes les heures (demande de Hakim, validée par Ahmed le 2026-10-22) : sans un jeton
+   de plus — c'est la dernière mesure reçue avec un de ses tours (rate_limit_event), avec son âge. Pour distinguer sa
+   conversation des sessions Claude Code d'Ahmed : ses propres tours de l'heure (jetons.jsonl) et les sessions Claude
+   Code dont le journal a bougé dans l'heure (~/.claude/projects, hors la sienne). ~/AIOS/jarvis/jauge-forfait.jsonl ---- */
+const JAUGE_FORFAIT = path.join(JARVIS, 'jauge-forfait.jsonl');
+function sessionsClaudeCodeActives(depuisMs) {
+  const racine = path.join(HOME, '.claude', 'projects');
+  let n = 0;
+  try {
+    for (const d of fs.readdirSync(racine)) {
+      if (d.endsWith('-AIOS-jarvis-cwd')) continue;                       // la sienne
+      let fichiers = []; try { fichiers = fs.readdirSync(path.join(racine, d)).filter(f => f.endsWith('.jsonl')); } catch (_) { continue; }
+      for (const f of fichiers) { try { if (fs.statSync(path.join(racine, d, f)).mtimeMs >= depuisMs) n++; } catch (_) {} }
+    }
+  } catch (_) {}
+  return n;
+}
+function releverJauge(maintenant = Date.now()) {
+  const f = (abonnement.info && abonnement.info.fenetres) || {};
+  const fen = (k) => (f[k] && Number.isFinite(f[k].utilization)) ? { pct: Math.round(f[k].utilization * 1000) / 10,
+    remise: Number(f[k].resetsAt) ? new Date(Number(f[k].resetsAt) * 1000).toISOString() : null } : null;
+  let tours = 0;
+  try {
+    const l = fs.readFileSync(JARVIS_JETONS, 'utf8').split('\n').slice(-500);
+    for (const x of l) { try { if (maintenant - JSON.parse(x).ts < 3600e3) tours++; } catch (_) {} }
+  } catch (_) {}
+  const ligne = { ts: maintenant, heure: new Date(maintenant).toISOString(), fenetre_5h: fen('five_hour'), semaine: fen('seven_day'),
+    mesure_il_y_a_min: abonnement.info && abonnement.info.maj ? Math.round((maintenant - abonnement.info.maj) / 60000) : null,
+    tours_hakim_heure: tours, sessions_claude_code_heure: sessionsClaudeCodeActives(maintenant - 3600e3) };
+  try { fs.appendFileSync(JAUGE_FORFAIT, j(ligne) + '\n'); } catch (_) {}
+  return ligne;
+}
+let derniereJauge = 0;
+setInterval(() => { if (Date.now() - derniereJauge >= 3600e3 - 30e3) { derniereJauge = Date.now(); releverJauge(); } }, 60e3).unref();
 function surEcriture(etat, e) {
   diffuser(abonnesPensees, 'ecriture', j(ECRITURES.publique(e)));
   const t = `${e.fichier} (${path.basename(e.projet)})`;
@@ -3273,7 +3330,10 @@ async function traiter(req, res) {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     const frais = Number.isFinite(e.ts) && Date.now() / 1000 - e.ts < FRAICHEUR_S;
     return res.end(j({ humeur: frais ? e.humeur || null : null, humeur_code: frais ? e.humeur_code || null : null,
-      expressivite: frais ? e.expressivite ?? null : null, valence: e.valence ?? null, arousal: e.arousal ?? null,
+      // (2026-10-22) l'expressivité nuancée par l'émotion que le code lit dans ses hormones, et le débit qui va avec
+      expressivite: frais ? (e.voix && Number.isFinite(e.voix.expressivite) ? e.voix.expressivite : e.expressivite ?? null) : null,
+      voix_vitesse: frais && e.voix && Number.isFinite(e.voix.vitesse) ? Math.max(0.92, Math.min(1.06, e.voix.vitesse)) : 1,
+      voix_emotion: frais && e.voix ? e.voix.emotion || null : null, valence: e.valence ?? null, arousal: e.arousal ?? null,
       ennui: frais && Number.isFinite(e.ennui) ? e.ennui : ennuiDe(absence, e), absence_s: Math.round(absence), ressenti: e.ressenti ?? null,
       veille: frais && !!e.veille, pause: lireInterrupteur().actif === false || !!e.pause_ts,
       maj: e.ts ?? null, frais }));
@@ -3731,6 +3791,8 @@ function servirPage(res, fp, p = '') {
     }
     const entetes = { 'Content-Type': MIME[path.extname(fp)] || 'text/plain' };
     if (p.startsWith('/vendor/')) entetes['Cache-Control'] = 'public, max-age=86400';   // MediaPipe : 15 Mo, chemins non versionnés
+    // (2026-10-22) le code des pages est toujours revérifié : un navigateur (Samsung Internet) gardait l'ancien parler.js
+    else if (/\.(js|mjs|css)$/.test(fp)) entetes['Cache-Control'] = 'no-cache';
     res.writeHead(200, entetes); res.end(data);
   });
 }

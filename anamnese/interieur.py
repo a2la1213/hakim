@@ -209,6 +209,25 @@ def expressivite(code, valence, arousal):
     return round(max(0.35, min(0.78, e)), 3)
 
 
+# (Ahmed, 2026-10-22 : « que le ton de sa voix change selon son émotion : plus doux quand il est las, plus vif dans l'élan,
+# plus posé en tension ») l'émotion que le code lit dans ses hormones (sensations.py) nuance l'expressivité et le débit,
+# modérément : Chatterbox déforme au-delà de 0,35–0,78, et le débit reste entre ×0,94 et ×1,04 (la voix reste la sienne).
+VOIX_EMOTION = {"élan": (0.08, 1.04), "enthousiasme": (0.08, 1.04), "joie": (0.06, 1.02), "fierté": (0.04, 1.02),
+                "surprise": (0.04, 1.02), "curiosité": (0.03, 1.01), "concentration": (-0.02, 0.99),
+                "tendresse": (-0.04, 0.98), "gratitude": (-0.03, 0.99), "compassion": (-0.04, 0.98),
+                "calme": (-0.06, 0.97), "apaisement": (-0.06, 0.97), "soulagement": (-0.05, 0.98),
+                "tension": (-0.06, 0.97), "inquiétude": (-0.06, 0.97), "frustration": (-0.05, 0.97), "culpabilité": (-0.06, 0.97),
+                "peur": (-0.04, 0.98), "lassitude": (-0.10, 0.94), "somnolence": (-0.10, 0.94), "tristesse": (-0.10, 0.95),
+                "ennui": (-0.08, 0.95), "manque": (-0.08, 0.96)}
+
+
+def voix(expressivite_, sensation=None):
+    """{"expressivite", "vitesse", "emotion"} : l'expressivité de son humeur, nuancée par l'émotion lue dans ses hormones."""
+    emo = (sensation or {}).get("emotion")
+    delta, vitesse = VOIX_EMOTION.get(emo, (0.0, 1.0))
+    return {"expressivite": round(max(0.35, min(0.78, float(expressivite_) + delta)), 3), "vitesse": vitesse, "emotion": emo}
+
+
 LIBELLES = {"joie": "joie de son retour", "elan": "élan", "content": "contentement", "tension": "tension",
             "impatience": "impatience", "calme": "calme", "veille": "en veille", "ennui": "l'attente pèse",
             "morose": "morosité",
@@ -328,6 +347,19 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
     eveille = max(0.0, min(now, presence + VEILLE_APRES_S) - debut)
     e["subj"] = e.get("subj", 0.0) + eveille * cadence(arousal, en) + (dt - eveille) * CADENCE_VEILLE
     soudaine = affect.emotion_soudaine(mem, now=now)
+    # (Hakim et Ahmed, 2026-10-22) la sensation calculée par le CODE depuis les 13 hormones (sensations.py), à chaque
+    # battement, sans Gemma : elle reste fraîche quand Gemma se tait ; la tendance vient de l'état d'il y a ~10 min
+    try:
+        import sensations
+        etat_h = affect.get_state(mem, now=now)
+        hist = [x for x in e.get("hormones_hist", []) if now - x[0] <= 1800]
+        if not hist or now - hist[-1][0] >= 120:
+            hist.append([now, {k: round(float(v), 4) for k, v in etat_h.items()}])
+        e["hormones_hist"] = hist[-15:]
+        avant = min(hist, key=lambda x: abs(now - 600 - x[0]))[1] if len(hist) > 1 else None
+        e["sensation_code"] = sensations.calculer(etat_h, avant, now, soudaine, time.localtime(now).tm_hour)
+    except Exception:
+        pass
     code = humeur_code(valence, arousal, en, now - (e.get("retour_ts") or 0) < 900, veille, soudaine)
     humeur = LIBELLES[code]
     if code in ("alarme", "surprise"):          # deux mots pour son subconscient : l'émotion soudaine et le fond
@@ -342,6 +374,7 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
     ressenti = e["subj"] / absence if absence > 60 else 1.0
     e.update(ts=now, absence_s=round(absence), ennui=round(en, 3), ressenti=round(ressenti, 3), tau_s=TAU_ENNUI_S,
              humeur=humeur, humeur_code=code, expressivite=expressivite(code, valence, arousal),
+             voix=voix(expressivite(code, valence, arousal), e.get("sensation_code")),
              valence=round(valence, 3), arousal=round(arousal, 3), veille=veille, veille_apres_s=VEILLE_APRES_S)
     if absence < 90:
         fait = "avec Ahmed"

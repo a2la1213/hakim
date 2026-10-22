@@ -87,6 +87,25 @@ def _vie_interieure_isolee(monkeypatch, tmp_path):
         monkeypatch.setattr(charge, "CALCUL_LOURD", str(d / "calcul-lourd.json"))
     except Exception:
         pass
+    try:                                      # la règle de sortie du web (2026-10-22 : un test lisait la vraie lecture privée)
+        import sys as _sys2
+        _jj = str(pathlib.Path(__file__).resolve().parent / "jarvis")
+        if _jj not in _sys2.path:
+            _sys2.path.append(_jj)
+        import sortie
+        for nom, f in (("PRIVEE", "lecture-privee.json"), ("CONNUS", "web-domaines.json"),
+                       ("DEMANDES", "sorties-demandees.jsonl"), ("PERMISES", "sorties-permises.json")):
+            if not str(getattr(sortie, nom)).startswith(str(tmp_path)):
+                monkeypatch.setattr(sortie, nom, d / f)
+    except Exception:
+        pass
+    try:                                      # la boucle de retour (2026-10-22)
+        import boucle_retour
+        monkeypatch.setattr(boucle_retour, "DOSSIER", d / "boucle")
+        monkeypatch.setattr(boucle_retour, "LECTURES", d / "boucle" / "lectures.jsonl")
+        monkeypatch.setattr(boucle_retour, "JARVIS", d)
+    except Exception:
+        pass
     try:                                      # la sagesse (2026-10-22)
         import sagesse
         for nom, f in (("PARAMETRE", "sagesse.json"), ("TOUR", "sagesse-tour.json"), ("JOURNAL", "sagesse.jsonl"),

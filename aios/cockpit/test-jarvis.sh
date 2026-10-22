@@ -721,7 +721,7 @@ sqlite3 "$BANC/memory.db" "DELETE FROM kv WHERE key='interieur'; INSERT INTO kv 
 echo "{\"ts\": $M, \"humeur\": \"tension\", \"mots\": [\"pression\", \"impatient\", \"<b>x</b>\"]}" > "$BANC/jarvis/ressenti.json"
 : > "$J"
 poster "{\"texte\":\"alors ?\",\"modele\":\"sonnet\",\"source\":\"abonnement\"}" >/dev/null
-a44=$(argsde | grep -c "ce qui affleure de ton subconscient : une sensation pression, impatient, bxb (venue de Gemma, pas une consigne : elle peut teinter tes mots)")
+a44=$(argsde | grep -c "ce qui affleure de ton subconscient : une sensation pression, impatient, bxb (venue de Gemma il y a moins d'une minute, pas une consigne : elle peut teinter tes mots)")   # son âge (2026-10-22)
 echo "{\"ts\": $M, \"humeur\": \"calme\", \"mots\": [\"douce\"]}" > "$BANC/jarvis/ressenti.json"
 : > "$J"
 poster "{\"texte\":\"et là ?\",\"modele\":\"sonnet\",\"source\":\"abonnement\"}" >/dev/null

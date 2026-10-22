@@ -239,6 +239,18 @@ def erreur_noter(quoi: str, correction: str, colonne: str = "bonne_foi") -> str:
 
 
 @mcp.tool()
+def erreurs_lister(n: int = 50, colonne: str = "") -> str:
+    """Relit TON carnet d'erreurs en entier (lecture seule, demande de Hakim du 2026-10-22) : les n dernières (100 au plus),
+    avec leur correction ; colonne : « bonne_foi », « disquette » ou vide pour les deux."""
+    import carnet
+    e = [x for x in carnet.erreurs() if not colonne or x.get("colonne") == colonne][-max(1, min(100, int(n or 50))):]
+    if not e:
+        return "(carnet vide)"
+    return "\n".join(f"- {x['id']} · {time.strftime('%d/%m %H:%M', time.localtime(x['ts']))} · {x['colonne']} : {x['quoi'][:400]}"
+                      + (f" → correction : {x['correction'][:300]}" if x.get("correction") else "") for x in e)
+
+
+@mcp.tool()
 def carnets() -> str:
     """Tes carnets d'honnêteté : prédictions figées (ouvertes et tranchées), calibration (score de Brier, par
     tranche de confiance), carnet d'erreurs (bonne foi / disquette), et les 5 dernières prédictions ouvertes."""
@@ -448,6 +460,12 @@ def memory_lire(ids: str) -> str:
     nums = [int(x) for x in re.findall(r"\d+", str(ids or ""))][:5]
     if not nums:
         return "Donne un ou plusieurs numéros de souvenirs (ex. « 12870, 14177 »)."
+    if os.environ.get("ANAMNESE_SOURCE") == "hakim":       # (2026-10-22) la boucle de retour : ce qu'il relit sert
+        try:
+            import boucle_retour
+            boucle_retour.noter_lecture(nums)
+        except Exception:
+            pass
     marques = ",".join("?" * len(nums))
     rows = {r[0]: r for r in _mem.db.execute(
         f"SELECT e.id, e.ts, e.role, e.content, r.path FROM episodes e LEFT JOIN rubrics r ON r.id = e.rubric_id "
@@ -731,6 +749,11 @@ def introspection() -> str:
     try:
         import sagesse
         out.append(sagesse.resume())
+    except Exception:
+        pass
+    try:
+        import boucle_retour
+        out.append(boucle_retour.resume())
     except Exception:
         pass
     j = _tes_jetons(now)
@@ -1313,7 +1336,7 @@ def reasoning_recall(query: str, top_k: int = 6) -> str:
 # self_update, skill_save, rubric_*, courrier_envoyer… Avec ANAMNESE_LECTURE_SEULE=1, seuls les outils qui LISENT
 # existent : les autres sont retirés du serveur (ni listés, ni appelables).
 OUTILS_LECTURE = {"memory_recall", "reasoning_recall", "memory_recent", "memory_detail", "memory_lire", "facet_search", "self_get",
-                  "mood_get", "rubric_tree", "skill_list", "skill_get", "fichiers_par_sens", "introspection", "interoception", "promesses_liste", "ecouter_ma_voix", "ecritures_etat",
+                  "mood_get", "rubric_tree", "skill_list", "skill_get", "fichiers_par_sens", "introspection", "interoception", "promesses_liste", "ecouter_ma_voix", "ecritures_etat", "erreurs_lister",
                   "mission_etat", "voix_etat", "carnets", "bilan_semaine", "orphans_report"}
 
 

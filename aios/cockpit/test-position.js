@@ -29,3 +29,45 @@ test('sans permission, périmée ou absurde : rien', () => {
     { lat: 46, lon: 6, t_ms: T - 31 * 60000 }, { lat: 46, lon: 6 }])
     assert.ok(!/position/.test(ctx.blocSituation({ position }, false, { appareil: 'le Mac' }, T).texte), JSON.stringify(position));
 });
+
+/* La page (bug d'Ahmed sous Samsung Internet, 2026-10-22) : une mesure datée par la page, un état clair, le GPS en secours. */
+function page({ secure = true, geo }) {
+  const src = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const debut = src.indexOf('let suiviPosition = null'), fin = src.indexOf("/* ---------- l'appareil (lot B, point 19)");
+  const el = { textContent: '' }, barre = [];
+  let t = 1_800_000_000_000;
+  const ctx = { Math, JSON, Date: class extends Date { constructor(...a) { super(...(a.length ? a : [t])); } static now() { return t; } },
+    window: { isSecureContext: secure }, navigator: { geolocation: geo }, $: () => el, humeur: (x) => barre.push(x),
+    etat: { reglages: { position: true } } };
+  vm.createContext(ctx);
+  vm.runInContext(src.slice(debut, fin).replace('let suiviPosition', 'var suiviPosition') + ';this.suivre = suivrePosition; this.aEnvoyer = positionAEnvoyer;', ctx);
+  return { ctx, el, barre, avancer: (ms) => { t += ms; } };
+}
+
+test('page : une mesure à l’horloge étrange part quand même, avec son heure de réception', () => {
+  const geo = { getCurrentPosition: (ok) => ok({ coords: { latitude: 46.51974, longitude: 6.63234, accuracy: 18 }, timestamp: 12345 }),
+    watchPosition: () => 7, clearWatch() {} };
+  const p = page({ geo });
+  p.ctx.suivre(true);
+  assert.match(p.el.textContent, /active : reçue à .* à 18 m près · partira avec ton prochain message/);
+  const pos = p.ctx.aEnvoyer();
+  assert.deepStrictEqual({ lat: pos.lat, lon: pos.lon }, { lat: 46.52, lon: 6.632 });
+  assert.strictEqual(pos.t_ms, 1_800_000_000_000);
+  assert.match(p.el.textContent, /envoyée à Hakim à/);
+  p.avancer(16 * 60000);
+  assert.strictEqual(p.ctx.aEnvoyer(), null);                              // trop vieille : rien
+});
+
+test('page : refus, délai puis GPS, et adresse non sécurisée sont dits clairement', () => {
+  const refus = page({ geo: { getCurrentPosition: (_ok, ko) => ko({ code: 1 }), watchPosition: () => 1, clearWatch() {} } });
+  refus.ctx.suivre(true);
+  assert.match(refus.el.textContent, /refusée : autorise la position pour ce site/);
+  assert.match(refus.barre[0], /^position refusée/);
+  const appels = [];
+  const lent = page({ geo: { getCurrentPosition: (_ok, ko) => ko({ code: 3 }), watchPosition: (_ok, _ko, o) => { appels.push(o.enableHighAccuracy); return appels.length; }, clearWatch() {} } });
+  lent.ctx.suivre(true);
+  assert.deepStrictEqual(appels, [false, true]);                           // le suivi, puis un nouvel essai au GPS
+  const http = page({ secure: false, geo: {} });
+  http.ctx.suivre(true);
+  assert.match(http.el.textContent, /exige une adresse en https/);
+});

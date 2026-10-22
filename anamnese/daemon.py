@@ -961,6 +961,22 @@ def _ressenti_pass(mem, now=None, lancer=None, journal=None, sortie=None):
     return ok
 
 
+def _boucle_pass(mem, now=None):
+    """(accord d'Ahmed, 2026-10-22) la nuit, une fois : la boucle de retour (niveau 1 minimal) NOTE ce qui a servi, ce qui
+    a été raté et corrigé (boucle_retour.py) ; elle ne modifie rien de la mémoire."""
+    now = time.time() if now is None else now
+    if not interieur.nuit(now) or now - float(mem.kv_get("boucle_nuit_ts", "0") or 0) < 12 * 3600:
+        return
+    mem.kv_set("boucle_nuit_ts", str(now))
+    try:
+        import boucle_retour
+        b = boucle_retour.nuit(mem, now)
+        interieur.noter(mem, "boucle", f"nuit {b['nuit']} : {b['utilises']}/{b['proposes']} souvenirs proposés utilisés, "
+                        f"{b['rates_hakim']} raté(s), {b['corrections']} correction(s) (rien n'est modifié)")
+    except Exception as e:
+        print("[daemon] boucle de retour en échec :", e)
+
+
 def _sagesse_pass(mem, now=None):
     """(accord d'Ahmed, 2026-10-22) la nuit, une fois : un juge à l'aveugle relit les décisions de sagesse de Hakim et
     règle son paramètre (sagesse.py)."""
@@ -1159,6 +1175,7 @@ def main():
             _index_fichiers_pass(mem)              # l'index par le sens des fichiers d'Ahmed (la nuit)
             _rappels_rates_pass(mem)               # les souvenirs ratés deviennent des alias (la nuit)
             _sagesse_pass(mem)                     # le juge de la sagesse (la nuit)
+            _boucle_pass(mem)                      # la boucle de retour, niveau 1 : elle note seulement (la nuit)
             _echanges_pass(mem)                    # chaque échange avec Ahmed devient un souvenir (2026-10-20)
             _tests_de_nuit_pass(mem)               # la batterie fixe, rejouée chaque nuit (lot G, 41)
             _rangement_nuit_pass(mem)              # les souvenirs mal rangés, lus et rangés (2026-10-21)

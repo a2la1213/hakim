@@ -111,7 +111,9 @@ const voixPour = (langue) => {
   if (!toutesVoix.length && synth) toutesVoix = synth.getVoices();      // liste parfois chargée tard
   return Voix.choisirVoix(toutesVoix, langue, langue === 'ar' ? etat.reglages.voixAr : etat.reglages.voixFr);
 };
-const lecteurSysteme = synth ? Voix.creerLecteur(synth, window.SpeechSynthesisUtterance, voixPour, () => etat.reglages.vitesse) : null;
+// (2026-10-22, Ahmed) le débit suit aussi son émotion, modérément (×0,94 à ×1,04, réglé par le démon) ; ton réglage reste la base
+const vitesseVoix = () => (etat.reglages.vitesse || 1) * Math.max(0.92, Math.min(1.06, Number(etat.interieur && etat.interieur.voix_vitesse) || 1));
+const lecteurSysteme = synth ? Voix.creerLecteur(synth, window.SpeechSynthesisUtterance, voixPour, vitesseVoix) : null;
 
 // Voix neuronale (Chatterbox, sur le Mac, étape 5 bis) : chaque morceau d'une seule langue est
 // calculé par le cockpit (/api/voix/dire) puis joué ; on précharge les deux suivants. Le calcul
@@ -231,7 +233,7 @@ function creerLecteurNeuronal() {
   function prochainLot() {
     const premier = !sources.size && !lots.length;
     const plafond = etat.conversation ? 160 : 400;
-    const vitesse = etat.reglages.vitesse || 1;
+    const vitesse = vitesseVoix();
     // l'avance en secondes RÉELLES : ce qui est programmé (déjà à la vitesse) + ce qui est prêt (à diviser)
     const enAvance = avance() + lots.reduce((t, x) => t + (x.pret && x.pret.duration ? x.pret.duration : 0), 0) / vitesse;
     const budget = premier ? 0 : Math.min(plafond, est.cps * Math.max(0, (enAvance - est.fixe - 0.3) / est.parSec));
@@ -273,7 +275,7 @@ function creerLecteurNeuronal() {
   }
 
   function programmer(x, t) {
-    const vitesse = etat.reglages.vitesse || 1;
+    const vitesse = vitesseVoix();
     const src = actx.createBufferSource();
     src.buffer = x.pret;
     src.playbackRate.value = vitesse;
@@ -305,7 +307,7 @@ function creerLecteurNeuronal() {
           const dans = fluide() ? Math.max(0, prochainDebut - actx.currentTime) : 0;
           const g = generation;
           setTimeout(() => { if (g === generation) lecteurSysteme.dire(x.texte); }, dans * 1000);
-          if (fluide()) prochainDebut = Math.max(prochainDebut, actx.currentTime) + x.texte.length / est.cps / (etat.reglages.vitesse || 1) + 0.3;
+          if (fluide()) prochainDebut = Math.max(prochainDebut, actx.currentTime) + x.texte.length / est.cps / vitesseVoix() + 0.3;
         }
         continue;
       }
@@ -320,7 +322,7 @@ function creerLecteurNeuronal() {
         const y = lots.find(l => l !== x && !l.pret && !l.erreur);
         const pretDans = y ? (y.t0 + prevoir(y.texte.length) * 1000 - performance.now()) / 1000
           : (unites.length ? prevoir(unites[0].texte.length) : 0);
-        const attente = pretDans - x.pret.duration / (etat.reglages.vitesse || 1) + 0.15;
+        const attente = pretDans - x.pret.duration / vitesseVoix() + 0.15;
         if (attente > 0) t += Math.min(0.5, attente);                 // au plus une demi-seconde : il parle tôt
       }
       lots.shift();
@@ -334,7 +336,7 @@ function creerLecteurNeuronal() {
     element = new Audio(URL.createObjectURL(x.pret));
     element.muted = !!etat.sonCoupe;
     elementTexte = x.texte;
-    element.playbackRate = etat.reglages.vitesse || 1;
+    element.playbackRate = vitesseVoix();
     if (L.surSegment) L.surSegment(x.texte);
     const g = generation, fin = () => {
       if (g !== generation) return;
@@ -847,6 +849,9 @@ async function envoyer(texte, oral, dejaRelance) {
           if (auto) decoupe.ajouter(o.x).forEach(p => { if (NON_REPONSE.test(p)) return; etat.lectureDe = m.id; lecteur.dire(p); });
           majMessage(m); humeur(m.texte.length < 2 ? undefined : 'répond…');
         } else if (o.t === 'outil') {
+          // (2026-10-22, Ahmed : « une réponse parlée AVANT l'outil ») la phrase qu'il a écrite avant d'appeler un outil part
+          // à la voix TOUT DE SUITE : sans espace après son point, le découpeur l'aurait gardée jusqu'au texte d'après
+          if (auto && !m.coupe) decoupe.finir().forEach(p => { if (NON_REPONSE.test(p)) return; etat.lectureDe = m.id; lecteur.dire(p); });
           const nom = String(o.nom || '').replace(/^mcp__anamnese__/, '');
           m.outils.push(NOMS_OUTILS[nom] || nom);
           majMessage(m); humeur(nom === 'WebSearch' ? 'cherche sur le web…' : 'cherche dans sa mémoire…');
@@ -1766,7 +1771,9 @@ function htmlSortie(o) {
     ? `<div class="mission-boutons"><button class="btn" data-sortie="${esc(o.id)}" data-action="autoriser">Autoriser une fois</button>`
       + `<button class="btn" data-sortie="${esc(o.id)}" data-action="refuser">Refuser</button></div>` : '';
   return `<div class="mission"><div><b>Une adresse après la lecture d'un de tes fichiers</b></div>`
-    + `<div class="diff">${esc(o.url)}</div><div class="mission-etat">${esc(o.raison || '')} — ${esc(ETATS_SORTIE[o.etat] || o.etat)}</div>${boutons}</div>`;
+    + `<div class="mission-etat"><b>Qui la demande :</b> ${esc(o.qui || 'Hakim')}</div>`
+    + `<div class="diff">${esc(o.url)}</div><div class="mission-etat"><b>Pourquoi elle est bloquée :</b> ${esc(o.raison || '')}</div>`
+    + `<div class="mission-etat"><b>Si tu autorises :</b> ${esc(o.duree || 'une seule fois, dans les 15 minutes')} — ${esc(ETATS_SORTIE[o.etat] || o.etat)}</div>${boutons}</div>`;
 }
 $('fil').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-sortie]');
@@ -1938,27 +1945,67 @@ $('btnReglages').addEventListener('click', () => {
 /* ---------- la position (accord d'Ahmed, 2026-10-22) : éteinte par défaut, coupable à tout moment. Arrondie à trois
    décimales (une centaine de mètres), gardée dans la mémoire de la page seulement (jamais dans le stockage du
    navigateur), jointe à chaque message tant que la mesure a moins de 15 min. ---------- */
-let suiviPosition = null, dernierePosition = null;
-function suivrePosition(actif) {
+// (2026-10-22, bug d'Ahmed sous Samsung Internet : rien n'arrivait) l'heure de la mesure est celle de la PAGE (certains
+// navigateurs Android datent la mesure sur une autre horloge, et elle passait pour périmée) ; une première mesure tout de
+// suite, puis le suivi ; sans réponse, un nouvel essai au GPS ; un état clair, erreurs comprises, ici et dans la barre.
+let suiviPosition = null, dernierePosition = null, positionEnvoyee = 0;
+const ERREURS_POSITION = {
+  1: 'refusée : autorise la position pour ce site (le cadenas à côté de l’adresse) et pour le navigateur lui-même (Réglages Android → Applications → le navigateur → Autorisations → Position)',
+  2: 'indisponible : active la localisation du téléphone',
+  3: 'pas de réponse du téléphone : nouvel essai avec le GPS',
+};
+const hhmm = (ms) => new Date(ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+function montrerPosition(t, alerte) {
   const el = $('etatPosition');
+  if (el) el.textContent = `(${t})`;
+  if (alerte) humeur(`position ${t}`);
+}
+function etatPosition() {
+  if (!dernierePosition) return;
+  montrerPosition(`active : reçue à ${hhmm(dernierePosition.t_ms)}, à ${dernierePosition.precision_m} m près`
+    + (positionEnvoyee ? ` · envoyée à Hakim à ${hhmm(positionEnvoyee)}` : ' · partira avec ton prochain message'));
+}
+function suivrePosition(actif) {
   if (!actif) {
     if (suiviPosition !== null && navigator.geolocation) navigator.geolocation.clearWatch(suiviPosition);
-    suiviPosition = null; dernierePosition = null;
-    if (el) el.textContent = '';
+    suiviPosition = null; dernierePosition = null; positionEnvoyee = 0;
+    montrerPosition('éteinte');
     return;
   }
   if (suiviPosition !== null) return;
-  if (!navigator.geolocation) { if (el) el.textContent = '(ce navigateur ne donne pas de position)'; return; }
-  suiviPosition = navigator.geolocation.watchPosition((p) => {
+  if (!window.isSecureContext) { montrerPosition('impossible ici : la position exige une adresse en https', true); return; }
+  if (!navigator.geolocation) { montrerPosition('ce navigateur ne donne pas de position', true); return; }
+  montrerPosition('demandée au téléphone…');
+  const recue = (p) => {
     dernierePosition = { lat: Math.round(p.coords.latitude * 1000) / 1000, lon: Math.round(p.coords.longitude * 1000) / 1000,
-      precision_m: Math.round(p.coords.accuracy || 0), t_ms: p.timestamp || Date.now() };
-    if (el) el.textContent = `(reçue, à ${dernierePosition.precision_m} m près)`;
-  }, (e) => {
-    if (el) el.textContent = e.code === 1 ? '(refusée par le navigateur ou l’appli)' : '(indisponible pour le moment)';
-  }, { enableHighAccuracy: false, maximumAge: 120000, timeout: 30000 });
+      precision_m: Math.round(p.coords.accuracy || 0), t_ms: Date.now() };
+    etatPosition();
+  };
+  let gps = false;
+  const erreur = (e) => {
+    if (dernierePosition && e.code === 3) return;                  // une mesure récente suffit : pas d'alarme
+    montrerPosition(ERREURS_POSITION[e.code] || `erreur ${e.code}`, true);
+    if ((e.code === 2 || e.code === 3) && !gps) {
+      gps = true;
+      if (suiviPosition !== null) navigator.geolocation.clearWatch(suiviPosition);
+      suiviPosition = navigator.geolocation.watchPosition(recue, (e2) => montrerPosition(ERREURS_POSITION[e2.code === 3 ? 2 : e2.code] || `erreur ${e2.code}`, true),
+        { enableHighAccuracy: true, maximumAge: 120000, timeout: 60000 });
+    }
+  };
+  suiviPosition = navigator.geolocation.watchPosition(recue, erreur, { enableHighAccuracy: false, maximumAge: 120000, timeout: 30000 });
+  navigator.geolocation.getCurrentPosition(recue, erreur, { enableHighAccuracy: false, maximumAge: 300000, timeout: 20000 });
 }
-const positionAEnvoyer = () => (etat.reglages.position && dernierePosition && Date.now() - dernierePosition.t_ms < 15 * 60000
-  ? dernierePosition : null);
+function positionAEnvoyer() {
+  if (!etat.reglages.position) return null;
+  if (!dernierePosition || Date.now() - dernierePosition.t_ms > 15 * 60000) {
+    humeur(dernierePosition ? 'position trop ancienne : pas envoyée (le téléphone ne la renouvelle pas)' : 'position pas encore reçue du téléphone : pas envoyée');
+    return null;
+  }
+  if (!positionEnvoyee) humeur(`position envoyée à Hakim (à ${dernierePosition.precision_m} m près)`);
+  positionEnvoyee = Date.now();
+  etatPosition();
+  return dernierePosition;
+}
 
 /* ---------- l'appareil (lot B, point 19) et le mode volant (point 27) ---------- */
 // Sur le Galaxy Z Fold : plié, l'écran extérieur est étroit (≈ 410 px CSS) ; déplié, ≈ 750 px et plus.

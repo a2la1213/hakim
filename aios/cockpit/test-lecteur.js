@@ -48,6 +48,7 @@ function simulateur({ fixe, parSec, cps, appris, conversation = true }) {
     },
   };
   cx.window = cx;
+  cx.vitesseVoix = () => (cx.etat.reglages.vitesse || 1) * (Number(cx.etat.interieur && cx.etat.interieur.voix_vitesse) || 1);   // (2026-10-22)
   vm.createContext(cx);
   vm.runInContext(corps + '\nthis.lecteur = creerLecteurNeuronal();', cx);
   async function avancer(jusqua) {
