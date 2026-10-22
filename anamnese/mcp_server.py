@@ -780,7 +780,8 @@ def promesse_poser(quand: str, raison: str) -> str:
     pour que tu fasses ce que tu t'étais promis (relancer un calcul, revenir vers Ahmed sur un point, vérifier un
     résultat). quand : « AAAA-MM-JJ HH:MM », « HH:MM » (aujourd'hui, ou demain si l'heure est passée), « +45 min »
     ou « +2 h ». De 8 h à 23 h seulement (jamais de rappel pour dormir), 30 jours au plus, 20 en attente au plus.
-    Elle sonne UNE fois, jamais d'insistance ; Ahmed voit la liste et peut l'effacer (page Parler)."""
+    Elle sonne UNE fois, jamais d'insistance ; Ahmed voit la liste et peut l'effacer (page Parler). Dès que tu traites
+    le sujet d'une promesse avant son heure, efface-la (promesse_effacer) : elle n'a plus d'objet."""
     import promesses as _p
     try:
         return "Promesse posée : " + _p.lisible(_p.poser(quand, raison))

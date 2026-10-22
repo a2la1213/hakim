@@ -653,8 +653,8 @@ function htmlMessage(m) {
   }
   if (m.source === 'api') pied.push('<span title="Forfait à sa limite : réponse par l\'API Claude (payée à l\'usage)">via l\'API</span>');
   if (m.source === 'local') pied.push('<span title="Forfait et API indisponibles : cerveau local, sans outils">cerveau local</span>');
-  const etiquette = m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '';
-  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
+  const etiquette = m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '';
+  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
 }
 
 /* Les pièces jointes de Hakim (2026-10-20) : récupérées avec le jeton, jamais ouvertes comme une page — une image
@@ -1583,6 +1583,7 @@ function ecouterPensees() {
   es.addEventListener('promotion', (ev) => { try { surPromotion(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('mission', (ev) => { try { surMission(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('ecriture', (ev) => { try { surEcriture(JSON.parse(ev.data)); } catch (_) {} });
+  es.addEventListener('regle', (ev) => { try { surRegle(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('identite', (ev) => { try { surIdentite(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('sortie', (ev) => { try { surSortie(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('spontane', (ev) => { try { surSpontane(JSON.parse(ev.data)); } catch (_) {} });
@@ -1638,6 +1639,56 @@ $('fil').addEventListener('click', async (e) => {
     const o = await r.json();
     if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
     surMission(o);
+  } catch (err) { b.disabled = false; humeur(String(err.message || err)); }
+});
+
+// Les règles tirées de ses erreurs, niveau 2 (2026-10-22) : tu acceptes ou refuses une à une ; acceptée, elle entre dans
+// ses règles de session après deux nuits témoins ; « Retirer » l'en sort.
+const ETATS_REGLE = { proposee: 'attend ta décision', acceptee: 'acceptée', refusee: 'refusée', retiree: 'retirée' };
+function surRegle(o) {
+  if (!o || !/^R-[0-9a-f]{6}$/.test(String(o.id))) return;
+  const id = 'regle-' + o.id;
+  let m = etat.messages.find(x => x.id === id);
+  if (!m) {
+    if (o.etat !== 'proposee') return;
+    m = { id, qui: 'j', spontane: 'regle', ts: o.recu || Date.now() };
+    etat.messages.push(m);
+    humeur('Hakim propose une règle tirée de ses erreurs');
+  }
+  m.regle = o;
+  m.texte = `Je propose une règle tirée de mes erreurs : « ${o.regle} » — ${ETATS_REGLE[o.etat] || o.etat}.`;
+  sauver(); rendre();
+}
+async function reglesAuChargement() {
+  try {
+    const r = await fetch('/api/regles', { headers: { 'X-Jeton': jeton() } });
+    if (r.ok) for (const o of (await r.json()).regles || []) surRegle(o);
+  } catch (_) {}
+}
+function htmlRegle(o) {
+  if (!o) return '';
+  const vigueur = o.etat === 'acceptee' && o.en_vigueur_ts ? (o.en_vigueur_ts > Date.now()
+    ? ` — en vigueur le ${new Date(o.en_vigueur_ts).toLocaleString('fr-FR', { weekday: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}, après deux nuits témoins`
+    : ' — en vigueur dans ses règles de session') : '';
+  const boutons = o.etat === 'proposee'
+    ? `<div class="mission-boutons"><button class="btn" data-regle="${esc(o.id)}" data-action="accepter">Accepter</button>`
+      + `<button class="btn" data-regle="${esc(o.id)}" data-action="refuser">Refuser</button></div>`
+    : o.etat === 'acceptee' ? `<div class="mission-boutons"><button class="btn" data-regle="${esc(o.id)}" data-action="retirer">Retirer</button></div>` : '';
+  return `<div class="mission"><div><b>« ${esc(o.regle)} »</b></div><div class="mission-etat">${esc(o.groupe || '')}${o.cause ? ' : ' + esc(o.cause) : ''}</div>`
+    + `<div class="mission-etat">${esc(ETATS_REGLE[o.etat] || o.etat)}${esc(vigueur)}</div>`
+    + `<details><summary>ses sources (${(o.sources || []).length} erreurs)</summary><div class="txt">${esc((o.sources_texte || o.sources || []).join('\n'))}</div></details>` + boutons + '</div>';
+}
+$('fil').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-regle]');
+  if (!b) return;
+  b.disabled = true;
+  try {
+    const presence = b.dataset.action === 'accepter' ? await preuvePresence(`regle:accepter:${b.dataset.regle.replace(/^R-/, '')}`) : undefined;
+    const r = await fetch('/api/regles', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ id: b.dataset.regle, action: b.dataset.action, presence }) });
+    const o = await r.json();
+    if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
+    surRegle(o);
   } catch (err) { b.disabled = false; humeur(String(err.message || err)); }
 });
 
@@ -1955,6 +2006,10 @@ const ERREURS_POSITION = {
   3: 'pas de réponse du téléphone : nouvel essai avec le GPS',
 };
 const hhmm = (ms) => new Date(ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+// (2026-10-22) l'état de la position va aussi au journal de diagnostic (jamais les coordonnées) : pour lire le bug au lieu
+// de le deviner quand le téléphone ne répond pas
+const NAVIGATEUR = /SamsungBrowser/i.test(navigator.userAgent || '') ? 'samsung' : /Chrome/i.test(navigator.userAgent || '') ? 'chrome' : 'autre';
+function diagPosition(etatPos, d) { try { journalVoix('position', { etat: etatPos, navigateur: NAVIGATEUR, securise: !!window.isSecureContext, ...(d || {}) }); } catch (_) {} }
 function montrerPosition(t, alerte) {
   const el = $('etatPosition');
   if (el) el.textContent = `(${t})`;
@@ -1973,16 +2028,19 @@ function suivrePosition(actif) {
     return;
   }
   if (suiviPosition !== null) return;
-  if (!window.isSecureContext) { montrerPosition('impossible ici : la position exige une adresse en https', true); return; }
+  if (!window.isSecureContext) { montrerPosition('impossible ici : la position exige une adresse en https', true); diagPosition('non_securise'); return; }
   if (!navigator.geolocation) { montrerPosition('ce navigateur ne donne pas de position', true); return; }
   montrerPosition('demandée au téléphone…');
+  diagPosition('demandee', { api: !!navigator.geolocation });
   const recue = (p) => {
+    if (!dernierePosition) diagPosition('recue', { precision: Math.round(p.coords.accuracy || 0) });
     dernierePosition = { lat: Math.round(p.coords.latitude * 1000) / 1000, lon: Math.round(p.coords.longitude * 1000) / 1000,
       precision_m: Math.round(p.coords.accuracy || 0), t_ms: Date.now() };
     etatPosition();
   };
   let gps = false;
   const erreur = (e) => {
+    diagPosition('erreur', { code: Number(e && e.code) || 0 });
     if (dernierePosition && e.code === 3) return;                  // une mesure récente suffit : pas d'alarme
     montrerPosition(ERREURS_POSITION[e.code] || `erreur ${e.code}`, true);
     if ((e.code === 2 || e.code === 3) && !gps) {
@@ -2001,7 +2059,7 @@ function positionAEnvoyer() {
     humeur(dernierePosition ? 'position trop ancienne : pas envoyée (le téléphone ne la renouvelle pas)' : 'position pas encore reçue du téléphone : pas envoyée');
     return null;
   }
-  if (!positionEnvoyee) humeur(`position envoyée à Hakim (à ${dernierePosition.precision_m} m près)`);
+  if (!positionEnvoyee) { humeur(`position envoyée à Hakim (à ${dernierePosition.precision_m} m près)`); diagPosition('envoyee'); }
   positionEnvoyee = Date.now();
   etatPosition();
   return dernierePosition;
@@ -2387,6 +2445,7 @@ document.addEventListener('visibilitychange', signalerPresence);
 ecouterPensees();
 missionsAuChargement();
 ecrituresAuChargement();
+reglesAuChargement();
 identiteAuChargement();
 sortiesAuChargement();
 $('q').focus();

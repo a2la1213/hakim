@@ -1065,8 +1065,9 @@ function reveillerPourPromesses() {
   const lignes = pretes.map(x => `${x.id}, posée ${heure(x.posee_ms || x.t_ms)} pour ${heure(x.t_ms)} : « ${neutraliser(x.raison).replace(/[«»]/g, ' ')} »`);
   const texte = `[Horloge — ${heure(maintenant)}${ahmed ? ` · dernier message d'Ahmed : il y a ${duree(maintenant - ahmed)}` : ''}]\n`
     + `[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : ${pretes.length > 1 ? 'tes promesses arrivent' : 'ta promesse arrive'} à l'heure]\n`
-    + `${lignes.join('\n')}\nFais maintenant ce que tu t'étais promis. Si c'est pour Ahmed, dis-le-lui en quelques phrases, une seule fois, `
-    + "sans insister. Si rien ne mérite d'être dit, réponds exactement « No response requested. »";
+    + `${lignes.join('\n')}\nD'abord, regarde vos derniers échanges : si ce sujet vient d'être traité avec Ahmed (idée d'Ahmed, 22/10), `
+    + "la promesse est sans objet : réponds exactement « No response requested. » Sinon, fais maintenant ce que tu t'étais promis ; si c'est "
+    + "pour Ahmed, dis-le-lui en quelques phrases, une seule fois, sans insister.";
   console.error(`Jarvis : réveil pour ${pretes.length} promesse(s) (${pretes.map(x => x.id).join(', ')})`);
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
   catch (e) { console.error('Jarvis : réveil de promesse impossible', e.message); }
@@ -2817,6 +2818,28 @@ const { Ecritures } = require('./ecritures.js');
 const ECRITURES = new Ecritures({ dossier: path.join(JARVIS, 'ecritures'), donnees: path.join(JARVIS, 'ecritures-cockpit'),
   maison: process.env.JARVIS_MISSIONS_MAISON || HOME, evenement: (etat, e) => surEcriture(etat, e) });
 setInterval(() => ECRITURES.scruter(), 4000).unref();
+// Les règles apprises des erreurs, niveau 2 (accord d'Ahmed, 2026-10-22) : voir regles.js
+const { Regles } = require('./regles.js');
+const REGLES_APPRISES = new Regles({ fichier: path.join(JARVIS, 'regles', 'propositions.json'), regles: path.join(JARVIS, 'regles-de-session.md'),
+  evenement: (etat, r) => surRegle(etat, r) });
+const reglesVues = new Set();
+function scruterRegles() {
+  for (const r of REGLES_APPRISES.liste()) {
+    if (r.etat !== 'proposee' || reglesVues.has(r.id)) continue;
+    reglesVues.add(r.id);
+    diffuser(abonnesPensees, 'regle', j(r));
+    notifier(`Hakim propose une règle tirée de ses erreurs : « ${finDePhrase(r.regle, 140)} » — à accepter ou refuser dans Parler`, `regle-${r.id}`);
+  }
+  try { REGLES_APPRISES.ecrireFichierRegles(); } catch (_) {}     // celles dont les deux nuits témoins sont passées
+}
+setInterval(scruterRegles, 60000).unref(); setTimeout(scruterRegles, 5000).unref();
+function surRegle(etat, r) {
+  diffuser(abonnesPensees, 'regle', j(r));
+  const quand = r.en_vigueur_ts ? new Date(r.en_vigueur_ts).toLocaleString('fr-FR', { weekday: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  if (etat === 'acceptee') courrierVersHakim(`Règle acceptée par Ahmed : ${finDePhrase(r.regle, 60)}`, `Ahmed a accepté « ${r.regle} » (sources : ${(r.sources || []).join(', ')}). Elle entre dans tes règles de session ${quand}, après deux nuits témoins.`);
+  else if (etat === 'refusee') courrierVersHakim(`Règle refusée par Ahmed : ${finDePhrase(r.regle, 60)}`, `Ahmed a refusé « ${r.regle} ».`);
+  else if (etat === 'retiree') courrierVersHakim(`Règle retirée par Ahmed : ${finDePhrase(r.regle, 60)}`, `Ahmed a retiré « ${r.regle} » de tes règles de session.`);
+}
 if (NOTIFS.vapidNeuve) console.error('Notifications : nouvelle paire VAPID — les abonnements existants devront être refaits');
 function pageVisible() {
   try { const d = JSON.parse(fs.readFileSync(JARVIS_PAGE, 'utf8')); return !!d.visible && Date.now() - d.battement_ms < 30000; }
@@ -3543,6 +3566,24 @@ async function traiter(req, res) {
       const o = VERROU.optionsPresence(distantReq ? distant.hote : 'localhost', action);
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o));
     } catch (e) { res.writeHead(409, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
+  }
+  if (p === '/api/regles') {
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    if (req.method === 'POST') {
+      if (distantReq && !VERROU.actif()) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'associe d’abord ton téléphone (passkey)' })); }
+      let q = {}; try { q = JSON.parse(String(await lireCorps(req, 4096) || '{}')); } catch (_) {}
+      if (q.action === 'accepter') {
+        const refus = exigerPresence(req, distantReq, q, `regle:accepter:${String(q.id || '').replace(/^R-/, '')}`);
+        if (refus) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: refus, presence: true })); }
+      }
+      try {
+        const r = REGLES_APPRISES.trancher(String(q.id || ''), String(q.action || ''));
+        auditer(`regle:${q.action}`, req, distantReq, { id: r.id });
+        res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(r));
+      } catch (e) { res.writeHead(409, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(j({ regles: REGLES_APPRISES.liste() }));
   }
   if (p === '/api/ecritures') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
