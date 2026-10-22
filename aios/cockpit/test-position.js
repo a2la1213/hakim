@@ -37,7 +37,7 @@ function page({ secure = true, geo }) {
   const el = { textContent: '' }, barre = [];
   let t = 1_800_000_000_000;
   const ctx = { Math, JSON, Date: class extends Date { constructor(...a) { super(...(a.length ? a : [t])); } static now() { return t; } },
-    window: { isSecureContext: secure }, navigator: { geolocation: geo }, $: () => el, humeur: (x) => barre.push(x),
+    window: { isSecureContext: secure }, navigator: { geolocation: geo }, $: () => el, humeur: (x) => barre.push(x), setInterval: () => 0,
     etat: { reglages: { position: true } } };
   vm.createContext(ctx);
   vm.runInContext(src.slice(debut, fin).replace('let suiviPosition', 'var suiviPosition') + ';this.suivre = suivrePosition; this.aEnvoyer = positionAEnvoyer;', ctx);

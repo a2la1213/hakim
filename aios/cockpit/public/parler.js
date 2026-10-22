@@ -486,7 +486,10 @@ function estSonEcho(texte) {
   const recents = new Set(paroleRecente.filter(x => Date.now() - x.t < 45000).flatMap(x => [...x.mots]));
   return mots.filter(m => recents.has(m)).length / mots.length >= 0.7;
 }
-lecteurNeuronal.surSegment = (t) => { noterParole(t); sousTitre(t); };
+lecteurNeuronal.surSegment = (t) => {
+  if (mesureTour && mesureTour.premier_texte && !mesureTour.premier_son) { mesureTour.premier_son = Date.now(); finMesureTour(); }
+  noterParole(t); sousTitre(t);
+};
 if (lecteurSysteme) { lecteurSysteme.surSegment = (t) => { noterParole(t); sousTitre(t); }; lecteurSysteme.surMot = () => pulser(0.35); }
 // (2026-10-21) « Conversation » depuis l'écran d'accueil (raccourci /parler?conversation=1) : la grande orbe s'ouvre,
 // un toucher démarre la conversation (le navigateur exige un geste pour ouvrir le son et le micro)
@@ -844,6 +847,7 @@ async function envoyer(texte, oral, dejaRelance) {
         const ligne = tampon.slice(0, i); tampon = tampon.slice(i + 1);
         let o; try { o = JSON.parse(ligne); } catch (_) { continue; }
         if (o.t === 'texte') {
+          if (mesureTour && !mesureTour.premier_texte && o.x.trim()) mesureTour.premier_texte = Date.now();
           m.texte += o.x;
           orbeTete.pulser(0.05);
           if (auto) decoupe.ajouter(o.x).forEach(p => { if (NON_REPONSE.test(p)) return; etat.lectureDe = m.id; lecteur.dire(p); });
@@ -1281,9 +1285,22 @@ function tonRelatif(infos, texte) {
   return rel;
 }
 
+// (2026-10-22, la « voix rapide » : mesurer avant de toucher) où passe le temps d'un tour oral, de la fin de ta parole à
+// son premier son : attente de la fin de tour, transcription, premier mot de Hakim, voix. Au journal de diagnostic.
+let mesureTour = null;
+function finMesureTour() {
+  const m = mesureTour;
+  mesureTour = null;
+  if (!m || !m.premier_texte) return;
+  const ms = (a, b) => (a && b ? Math.max(0, Math.round(a - b)) : -1);
+  journalVoix('tour_temps', { attente_fin_tour_ms: ms(m.debut, m.fin), transcription_ms: ms(m.transcrit, m.debut),
+    premier_mot_ms: ms(m.premier_texte, m.transcrit), voix_ms: ms(m.premier_son, m.premier_texte), total_ms: ms(m.premier_son || m.premier_texte, m.fin),
+    son: !!m.premier_son });
+}
 async function tourDeParole(conv, wav, infos, extra) {
   const vivante = () => etat.conversation === conv || conv.fermeture;     // le dernier tour d'une conversation fermée
   if (!vivante()) return;
+  const t0Tour = Date.now();
   conv.spec = null;
   conv.enAttente++;
   humeur('transcription…');
@@ -1312,7 +1329,9 @@ async function tourDeParole(conv, wav, infos, extra) {
   else if (COMMANDE_FIN_VOLANT.test(texte) && etat.reglages.volant) reglerVolant(false);
   if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(); }       // une vraie question : le reste est lâché
   sousTitre(texte);
+  mesureTour = { fin: Number(infos && (infos.derniere_voix || infos.fin)) || t0Tour, debut: t0Tour, transcrit: Date.now(), premier_texte: 0, premier_son: 0 };
   await envoyer(texte, true);
+  if (mesureTour && mesureTour.premier_texte) setTimeout(() => { if (mesureTour && !mesureTour.premier_son) finMesureTour(); }, 20000);
   if (COMMANDE_FIN.test(texte)) {                                         // il répond au revoir, puis on ferme
     conv.finDemandee = true;
     const attendre = () => {
@@ -2053,6 +2072,18 @@ function suivrePosition(actif) {
   suiviPosition = navigator.geolocation.watchPosition(recue, erreur, { enableHighAccuracy: false, maximumAge: 120000, timeout: 30000 });
   navigator.geolocation.getCurrentPosition(recue, erreur, { enableHighAccuracy: false, maximumAge: 300000, timeout: 20000 });
 }
+// (Ahmed, 2026-10-22 : « mettre à jour sa position chaque minute, sans attendre un message ») : tant que la case est
+// cochée et la page visible, une mesure par minute (précision moyenne, pour la batterie), envoyée au cockpit qui ne
+// garde que la DERNIÈRE, en mémoire seulement. Page cachée ou écran éteint : Android suspend la position et les minuteurs.
+setInterval(() => {
+  if (!etat.reglages.position || suiviPosition === null || document.visibilityState !== 'visible' || !navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition((p) => {
+    dernierePosition = { lat: Math.round(p.coords.latitude * 1000) / 1000, lon: Math.round(p.coords.longitude * 1000) / 1000,
+      precision_m: Math.round(p.coords.accuracy || 0), t_ms: Date.now() };
+    fetch('/api/position', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify(dernierePosition) })
+      .then(r => { if (r.ok) { positionEnvoyee = Date.now(); etatPosition(); } }).catch(() => {});
+  }, () => {}, { enableHighAccuracy: false, maximumAge: 55000, timeout: 20000 });
+}, 60000);
 function positionAEnvoyer() {
   if (!etat.reglages.position) return null;
   if (!dernierePosition || Date.now() - dernierePosition.t_ms > 15 * 60000) {

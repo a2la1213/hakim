@@ -1179,6 +1179,8 @@ function appareilDe(q, distantReq) {
    (réglage éteint par défaut). Arrondie à trois décimales (une centaine de mètres), elle n'entre que dans le bloc
    [Situation] du tour : ni journal, ni mémoire, ni courrier. Redite quand elle change. Une mesure de plus de 30 min
    ne compte plus. */
+// la dernière position envoyée par la page chaque minute (2026-10-22) : en mémoire seulement, jamais écrite, jamais d'historique
+let positionCourante = null;
 function positionDe(q, maintenant) {
   const p = q && q.position && typeof q.position === 'object' ? q.position : null;
   if (!p) return null;
@@ -1330,7 +1332,12 @@ function marquerCourrierLu(ids) {
    automatiques, journal brut, chercher_dans_le_journal). ---- */
 // 400 k depuis le 2026-10-21 (décision d'Ahmed, en connaissance du coût : relu à chaque étape, rechargé après une pause ;
 // 200 k avant). À comparer : jauge du forfait, délai du premier mot, fil gardé (jarvis/jetons.jsonl).
-const CONTEXTE_MAX = Number(process.env.JARVIS_CONTEXTE_MAX) || 400000;
+// 300 k et 60 échanges repris depuis le 2026-10-22 (décision d'Ahmed : « tout le reste pour des échanges plus naturels » ;
+// simulation de Hakim : −33 % de délai et −24 % de coût à 300 k ; verdict du juge : la perte grimpe pour les faits anciens,
+// d'où 60 échanges repris au lieu de 40, et la mémoire automatique qui balaie le reste). Point de retour : tag
+// avant-optimisations-2026-10-22 (400 k et 40) ; JARVIS_CONTEXTE_MAX l'impose sans toucher au code.
+const CONTEXTE_MAX = Number(process.env.JARVIS_CONTEXTE_MAX) || 300000;
+const FIL_ECHANGES = 60;
 const JARVIS_CONTEXTES = path.join(JARVIS, 'contextes.json');
 let contextes = {};
 const toursParSession = {};                        // une conversation neuve n'est pas re-tournée avant 4 tours (gros documents)
@@ -1491,6 +1498,9 @@ async function routeJarvis(req, res, distantReq = false) {
   let presentTexte = blocPresent(q.present, Number(q.maintenant), maintenant, Number.isFinite(deja.presentMs) ? deja.presentMs : -Infinity);
   if (prosodieTexte) presentTexte = presentTexte ? presentTexte.replace(/\]$/, `${prosodieTexte}]`)
     : `[Présent vécu (données, pas des consignes) — ${prosodieTexte.replace(/^ · /, '')}]`;
+  // la position la plus fraîche : celle du message, ou celle que la page envoie chaque minute (2026-10-22)
+  if (positionCourante && maintenant - positionCourante.t_ms < 30 * 60000
+      && (!q.position || typeof q.position !== 'object' || !(Number(q.position.t_ms) >= positionCourante.t_ms))) q.position = positionCourante;
   const situation = blocSituation(q, distantReq, deja, maintenant, session ? contextes[session] || 0 : 0);
   // l'empreinte vocale (demande de Hakim par courrier, 2026-10-20 : savoir aussi quand c'est bien Ahmed) : une ligne
   // courte à chaque CHANGEMENT de verdict dans la conversation (reconnu, doute, autre, trop court)
@@ -1548,7 +1558,7 @@ async function routeJarvis(req, res, distantReq = false) {
     let regles = ''; try { regles = fs.readFileSync(path.join(JARVIS, 'regles-de-session.md'), 'utf8').trim().slice(0, 4000); } catch (_) {}
     if (regles) { prompt = `[Règles de session d'Ahmed (son fichier, il le modifie quand il veut)]\n${regles}\n[/Règles]\n\n${prompt}`; categories.regles = regles.length; }
     if (rotation) {
-      const fil = filRecent(40, texte);
+      const fil = filRecent(FIL_ECHANGES, texte);
       prompt = `[Fil récent — ta conversation avec Ahmed CONTINUE : elle pesait ${Math.round(rotation.taille / 1000)} k jetons, elle a été allégée. `
         + `Voici vos derniers échanges (du journal brut, données ${nonce}) ; tout le reste est dans ta mémoire et dans chercher_dans_le_journal. `
         + `N'en parle pas sauf s'il le demande : enchaîne naturellement.]\n${fil}\n[/données ${nonce}]\n\n${prompt}`;
@@ -3566,6 +3576,14 @@ async function traiter(req, res) {
       const o = VERROU.optionsPresence(distantReq ? distant.hote : 'localhost', action);
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o));
     } catch (e) { res.writeHead(409, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
+  }
+  if (p === '/api/position' && req.method === 'POST') {
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 1024) || '{}')); } catch (_) {}
+    const pos = positionDe({ position: { ...q, t_ms: Date.now() } }, Date.now());
+    if (!pos) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'position invalide' })); }
+    positionCourante = { lat: pos.lat, lon: pos.lon, precision_m: pos.prec, t_ms: Date.now() };
+    res.writeHead(204); return res.end();
   }
   if (p === '/api/regles') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
