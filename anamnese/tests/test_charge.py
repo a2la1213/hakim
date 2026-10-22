@@ -206,3 +206,23 @@ def test_par_defaut_la_presence_vient_de_l_horloge_du_cockpit(monkeypatch):
     daemon._travaux_llm(None, None, etat, charge.GardeCharge(), lecture=lambda: (0.2, 80.0), robot=lambda: False,
                         conscience=lambda: False)
     assert appels == ["reve", "reflexion"]
+
+
+def test_un_calcul_lourd_tient_la_machine(monkeypatch, tmp_path):
+    """(2026-10-22) le duel du subconscient fait battre calcul-lourd.json : le démon lui laisse Gemma."""
+    import json
+    f = tmp_path / "lourd.json"
+    assert charge.calcul_lourd_actif(f) is None
+    f.write_text(json.dumps({"t_ms": time.time() * 1000, "quoi": "le duel du subconscient"}))
+    assert charge.calcul_lourd_actif(f) == "le duel du subconscient"
+    f.write_text(json.dumps({"t_ms": (time.time() - 120) * 1000}))
+    assert charge.calcul_lourd_actif(f) is None
+    appels = []
+    monkeypatch.setattr(daemon.interieur, "ACTIF", True)
+    monkeypatch.setattr(daemon, "dream_due", lambda mem: True)
+    monkeypatch.setattr(daemon, "dream", lambda eng, mem: appels.append("reve"))
+    monkeypatch.setattr(daemon.interieur, "noter", lambda *a, **k: None)
+    etat = {"last_reflect": 0.0}
+    daemon._travaux_llm(None, None, etat, charge.GardeCharge(), lecture=lambda: (0.2, 80.0), robot=lambda: False,
+                        conscience=lambda: False, present=lambda: False, calcul=lambda: "le duel")
+    assert appels == [] and etat["retrait_calcul"]

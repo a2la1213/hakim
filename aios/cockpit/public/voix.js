@@ -215,6 +215,167 @@
     return lignes.map((l, i) => (i < lignes.length - 1 && !/[.!?…:;,؟،]$/.test(l)) ? l + '.' : l).join(' ');
   }
 
+  /* ---- la diction (2026-10-22, bug signalé par Ahmed, relayé par Hakim : « chiffres et lettres isolées, la
+     prononciation déraille ; entre deux phrases, des sons qui n'existent pas, comme des incantations ») ----
+     La voix neuronale ne sait lire que des mots : un chiffre, un sigle, une lettre seule ou un mot en capitales
+     (lu avec un accent anglais) la font dérailler. Tout est donc écrit en toutes lettres AVANT la synthèse, en
+     français : nombres, décimales, pourcentages, heures, dates, versets, ordinaux, unités, signes, sigles épelés,
+     lettres seules, translittérations (ṣ, ḥ, ʿ). L'écran garde le texte d'origine. */
+  const UNITES = ['zéro', 'un', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf', 'dix', 'onze', 'douze',
+    'treize', 'quatorze', 'quinze', 'seize'];
+  const DIZAINES = ['', 'dix', 'vingt', 'trente', 'quarante', 'cinquante', 'soixante'];
+  function moins100(n) {
+    if (n <= 16) return UNITES[n];
+    if (n < 20) return 'dix-' + UNITES[n - 10];
+    if (n < 70) { const u = n % 10; return DIZAINES[Math.floor(n / 10)] + (u === 0 ? '' : u === 1 ? ' et un' : '-' + UNITES[u]); }
+    if (n < 80) return n === 71 ? 'soixante et onze' : 'soixante-' + moins100(n - 60);
+    return n === 80 ? 'quatre-vingts' : 'quatre-vingt-' + moins100(n - 80);
+  }
+  function moins1000(n) {
+    const c = Math.floor(n / 100), r = n % 100;
+    if (!c) return moins100(r);
+    const cent = c === 1 ? 'cent' : UNITES[c] + ' cent' + (r ? '' : 's');
+    return r ? cent + ' ' + moins100(r) : cent;
+  }
+  /* Un entier (jusqu'à 10^15) en toutes lettres ; au-delà, null (on n'invente pas). */
+  function enLettres(n) {
+    if (!Number.isSafeInteger(n) || n < 0 || n >= 1e15) return null;
+    if (n < 1000) return moins1000(n);
+    const parts = [];
+    for (const [v, nom] of [[1e12, 'billion'], [1e9, 'milliard'], [1e6, 'million']]) {
+      const q = Math.floor(n / v);
+      if (q) { parts.push(moins1000(q) + ' ' + nom + (q > 1 ? 's' : '')); n -= q * v; }
+    }
+    const m = Math.floor(n / 1000);
+    if (m) { parts.push(m === 1 ? 'mille' : moins1000(m).replace(/(cent|vingt)s$/, '$1') + ' mille'); n -= m * 1000; }
+    if (n) parts.push(moins1000(n));
+    return parts.join(' ');
+  }
+  function nombreParle(entier, decimales) {
+    const n = enLettres(Number(String(entier).replace(/[ \u00a0\u202f'’]/g, '')));
+    if (n === null) return null;
+    if (!decimales) return n;
+    const zeros = decimales.match(/^0*/)[0].length, reste = decimales.slice(zeros);
+    const apres = (reste.length > 3 ? reste.split('').map(c => UNITES[+c]).join(' ') : reste ? enLettres(+reste) : '');
+    return `${n} virgule ${'zéro '.repeat(zeros)}${apres}`.trim();
+  }
+  function ordinal(n, feminin) {
+    if (n === 1) return feminin ? 'première' : 'premier';
+    const mot = (enLettres(n) || '').replace(/s$/, '');
+    if (!mot) return null;
+    if (/(?:^|[ -])un$/.test(mot)) return mot + 'ième';               // vingt et unième
+    if (/cinq$/.test(mot)) return mot + 'uième';
+    if (/neuf$/.test(mot)) return mot.slice(0, -1) + 'vième';
+    return (/e$/.test(mot) ? mot.slice(0, -1) : mot) + 'ième';         // quatrième, onzième, millième, centième
+  }
+  const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  const dateParlee = (j, m, a) => `${+j === 1 ? 'premier' : enLettres(+j)} ${MOIS[+m - 1]}${a ? ' ' + enLettres(+a) : ''}`;
+  const dateValide = (j, m) => +j >= 1 && +j <= 31 && +m >= 1 && +m <= 12;
+  // unités et monnaies après un nombre : [singulier, pluriel]
+  const UNITES_MESURE = {
+    '%': ['pour cent', 'pour cent'], '€': ['euro', 'euros'], '$': ['dollar', 'dollars'], 'CHF': ['franc suisse', 'francs suisses'],
+    'km/h': ['kilomètre heure', 'kilomètres heure'], 'km': ['kilomètre', 'kilomètres'], 'cm': ['centimètre', 'centimètres'],
+    'mm': ['millimètre', 'millimètres'], 'm': ['mètre', 'mètres'], 'kg': ['kilo', 'kilos'], 'g': ['gramme', 'grammes'],
+    'To': ['téraoctet', 'téraoctets'], 'Go': ['gigaoctet', 'gigaoctets'], 'Mo': ['mégaoctet', 'mégaoctets'], 'Ko': ['kilooctet', 'kilooctets'],
+    'GHz': ['gigahertz', 'gigahertz'], 'MHz': ['mégahertz', 'mégahertz'], 'Hz': ['hertz', 'hertz'],
+    'kWh': ['kilowattheure', 'kilowattheures'], 'kW': ['kilowatt', 'kilowatts'], 'W': ['watt', 'watts'],
+    'ms': ['milliseconde', 'millisecondes'], 's': ['seconde', 'secondes'], 'min': ['minute', 'minutes'],
+    '°C': ['degré', 'degrés'], '°': ['degré', 'degrés'],
+  };
+  // (les nombres : « 12 000 », « 12 000 », « 1'000 » à la suisse ; décimales à la virgule ou au point)
+  const echapper = (u) => u.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+  const NOMBRE_UNITE = new RegExp("(?<![\\p{L}\\d.,])(\\d{1,3}(?:[ \\u00a0\\u202f'’]\\d{3})+|\\d+)(?:[.,](\\d+))?"
+    + `(?:\\s?(${Object.keys(UNITES_MESURE).sort((a, b) => b.length - a.length).map(echapper).join('|')})(?![\\p{L}\\d'’]))?(?!\\d)`, 'gu');
+  // les sigles qui se lisent comme des mots, et ceux qui s'épellent bien qu'ils aient une voyelle
+  const SIGLES_MOTS = new Set(['NASA', 'ONU', 'OTAN', 'UNESCO', 'UNICEF', 'SIDA', 'COVID', 'LASER', 'RAM', 'ROM', 'PIN', 'GIF',
+    'JSON', 'CAF', 'ZAD', 'ENA', 'INSEE', 'IKEA', 'FIFA', 'UEFA', 'OPEP', 'BIOS', 'MOOC']);
+  const SIGLES_EPELES = new Set(['IA', 'AI', 'GPU', 'CPU', 'API', 'UI', 'UX', 'USB', 'UE', 'USA', 'UK', 'ADN', 'ARN', 'OMS', 'ONG',
+    'PME', 'TVA', 'CEO', 'CTO', 'IP', 'ID', 'OS', 'IOS', 'PDG', 'RER', 'EPFL', 'UNIGE', 'IRM', 'VIH', 'SA', 'SARL', 'SAS', 'BD', 'DJ',
+    'QR', 'HD', 'TV', 'IUT', 'BAC', 'AVS', 'AI', 'OCR', 'IOT', 'AWS', 'LED', 'ETA', 'PIB', 'RIB', 'IBAN', 'CV', 'FAQ']);
+  const NOMS_LETTRES = { A: 'a', B: 'bé', C: 'cé', D: 'dé', E: 'e', F: 'èf', G: 'jé', H: 'ache', I: 'i', J: 'ji', K: 'ka', L: 'èl',
+    M: 'èm', N: 'èn', O: 'o', P: 'pé', Q: 'ku', R: 'èr', S: 'èss', T: 'té', U: 'u', V: 'vé', W: 'double vé', X: 'iks', Y: 'i grec', Z: 'zèd' };
+  const epeler = (s) => s.split('').map(c => NOMS_LETTRES[c.toUpperCase()] || c.toLowerCase()).join(' ');
+  const TRANSLIT = { 'ā': 'a', 'ī': 'i', 'ū': 'ou', 'ṣ': 's', 'ḥ': 'h', 'ṭ': 't', 'ḍ': 'd', 'ẓ': 'z', 'ġ': 'gh', 'ḏ': 'dh', 'ṯ': 'th',
+    'ẖ': 'kh', 'š': 'ch', 'ǧ': 'dj', 'ʿ': '', 'ʾ': '', 'ʻ': '', 'ʼ': '' };
+  const BORD_G = "(?<![\\p{L}\\d'’-])", BORD_D = "(?![\\p{L}\\d'’-])";
+
+  function diction(texte) {
+    let t = String(texte || '');
+    t = t.replace(/[āīūṣḥṭḍẓġḏṯẖšǧʿʾʻʼ]/giu, c => {             // les translittérations savantes de l'arabe
+      const r = TRANSLIT[c.toLowerCase()];
+      return r === undefined ? c : (c !== c.toLowerCase() && r ? r[0].toUpperCase() + r.slice(1) : r);
+    });
+    // numéros de version : 0.32.2 → zéro point trente-deux point deux
+    t = t.replace(/(?<![\d.])\d+(?:\.\d+){2,}(?!\.?\d)/g, (m) => m.split('.').map(x => enLettres(+x) ?? x).join(' point '));
+    // versets : Q6:76, Q 2:255-257, (2:286), « le verset 2:30 » ; une heure (14:30) reste une heure
+    t = t.replace(/(?<![\p{L}\d])(versets?\s+|sourates?\s+)?(Q\s?)?(\d{1,3}):(\d{1,3})(?:[-–](\d{1,3}))?(?![\d:])/giu,
+      (m, mot, q, s, v, v2, pos, tout) => {
+        const coran = mot || /(?:coran|ayat?|âya)\W{0,3}$/i.test(tout.slice(Math.max(0, pos - 14), pos));
+        if (!q && !v2 && !coran && +s <= 23 && v.length === 2 && +v <= 59)
+          return `${+s === 1 ? 'une' : enLettres(+s)} heure${+s > 1 ? 's' : ''}${+v ? ' ' + enLettres(+v) : ''}`;
+        if (+s < 1 || +s > 114) return m;
+        const versets = `${enLettres(+v)}${v2 ? ' à ' + enLettres(+v2) : ''}`;
+        if (mot && /^v/i.test(mot)) return `${mot.trim()} ${versets} de la sourate ${enLettres(+s)}`;
+        return `${mot ? mot.trim() : 'sourate'} ${enLettres(+s)}, verset${v2 ? 's' : ''} ${versets}`;
+      });
+    // heures : 14h30, 14 h 30, 8h, 8 h
+    t = t.replace(/(?<![\p{L}\d])(\d{1,2})\s?h\s?(\d{2})?(?![\p{L}\d])/gu, (m, h, mn) => (+h > 24 || (mn && +mn > 59)) ? m
+      : `${+h === 1 ? 'une' : enLettres(+h)} heure${+h > 1 ? 's' : ''}${mn && +mn ? ' ' + enLettres(+mn) : ''}`);
+    // dates : 2026-10-22, 22/10/2026, 22/10 (mois à deux chiffres : sinon c'est une fraction)
+    t = t.replace(/(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)/g, (m, a, mo, j) => dateValide(j, mo) ? dateParlee(j, mo, a) : m);
+    t = t.replace(/(?<![\d/])(\d{1,2})\/(\d{1,2})\/(\d{4})(?![\d/])/g, (m, j, mo, a) => dateValide(j, mo) ? dateParlee(j, mo, a) : m);
+    t = t.replace(/(?<![\d/])(\d{1,2})\/(\d{2})(?![\d/])/g, (m, j, mo, pos, tout) => dateValide(j, mo)
+      && (/(?:^|\s)(?:le|du|au|ce|dès le|depuis le|jusqu'au|jusqu’au)\s$/i.test(tout.slice(Math.max(0, pos - 12), pos)) || /^0/.test(j) || +j > +mo)
+      ? dateParlee(j, mo) : m);
+    // fractions simples et « n sur m »
+    t = t.replace(/(?<![\d/])(\d{1,3})\/(\d{1,3})(?![\d/])/g, (m, a, b) => ({ '1/2': 'un demi', '1/3': 'un tiers', '2/3': 'deux tiers',
+      '1/4': 'un quart', '3/4': 'trois quarts' })[`${a}/${b}`] || `${enLettres(+a)} sur ${enLettres(+b)}`);
+    // ordinaux : 1er, 1re, 2e, 3ème, 21e
+    t = t.replace(/(?<![\p{L}\d])(\d{1,6})\s?(ers?|res?|ères?|e|es|ème|èmes|nde?)(?![\p{L}\d])/gu, (m, n, s) => {
+      const r = /^nd/.test(s) ? (s === 'nde' ? 'seconde' : 'second') : ordinal(+n, /^(re|ère)/.test(s));
+      return r ? r + (/s$/.test(s) && !/^(e|ème)$/.test(s) ? 's' : '') : m;
+    });
+    // numéros et signes devant un nombre
+    t = t.replace(/(?:\b[nN]°|#)\s?(?=\d)/g, 'numéro ').replace(/§\s?(?=\d)/g, 'paragraphe ');
+    t = t.replace(/(?<![\p{L}\d])[xX×]\s?(?=\d)/gu, 'fois ').replace(/(?<=\d)\s?[xX×](?![\p{L}])/gu, ' fois');
+    t = t.replace(/(?<=^|[\s(])[~≈]\s?(?=\d)/g, 'environ ').replace(/(?<=^|[\s(])±\s?(?=\d)/g, 'plus ou moins ');
+    t = t.replace(/(?<=^|[\s(])[-−](?=\d)/g, 'moins ').replace(/(?<=^|[\s(])\+(?=\d)/g, 'plus ');
+    t = t.replace(/(?<=\d)\s?[–-]\s?(?=\d)/g, ' à ');                                  // 3-4 mois : de trois à quatre
+    t = t.replace(/(?<=\p{L})-(?=\d)|(?<=\d)-(?=\p{L})/gu, ' ');                      // GPT-4, 12-bit
+    // une espace entre lettres et chiffres (M4, 3D, 12km, Gemma3) ; la monnaie passe après le nombre ($12 → 12 $)
+    t = t.replace(/(?<=\p{L})(?=\d)|(?<=\d)(?=\p{L})/gu, ' ');
+    t = t.replace(/(?<![\p{L}\d])(\$|€|CHF)\s?(\d+(?:[ \u00a0\u202f'’]\d{3})*(?:[.,]\d+)?)(?!\d)/gu, '$2 $1');
+    // les nombres, avec leur unité accordée (un kilomètre, deux kilomètres)
+    t = t.replace(NOMBRE_UNITE, (m, entier, dec, unite) => {
+      const dit = nombreParle(entier, dec);
+      if (dit === null) return m;
+      if (!unite) return dit;
+      const un = Number(String(entier).replace(/\D/g, '')) <= 1 && !dec;
+      return `${dit} ${UNITES_MESURE[unite][un ? 0 : 1]}`;
+    });
+    // symboles restants
+    t = t.replace(/π/g, ' pi ').replace(/∞/g, " l'infini ").replace(/√\s?/g, ' racine de ').replace(/≠/g, ' différent de ')
+      .replace(/≤/g, ' inférieur ou égal à ').replace(/≥/g, ' supérieur ou égal à ');
+    t = t.replace(/\s&\s/g, ' et ').replace(/\s=\s/g, ' égale ').replace(/\s\+\s/g, ' plus ')
+      .replace(/\s?(?:→|⇒|->|=>|⟶)\s?/g, ', ').replace(/[|_#*~^\[\]{}<>]/g, ' ').replace(/(?<=\p{L})\/(?=\p{L})/gu, ' ');
+    // sigles épelés, mots en capitales remis en minuscules, lettres seules dites par leur nom
+    t = t.replace(/(?<![\p{L}\d-])([A-ZÀ-ÖØ-Ý]{2,})(?![\p{L}\d'’-])/gu, (m) => {
+      if (SIGLES_MOTS.has(m)) return m.toLowerCase();
+      if (m === 'OK') return 'okay';
+      if (SIGLES_EPELES.has(m) || (m.length <= 5 && !/[AEIOUYÀ-ÖØ-Ý]/.test(m))) return epeler(m);
+      return m.toLowerCase();
+    });
+    t = t.replace(new RegExp(BORD_G + '([B-HJ-XZb-hj-xz])' + BORD_D, 'gu'), (m) => NOMS_LETTRES[m.toUpperCase()]);
+    t = t.replace(new RegExp(BORD_G + '([AIY])' + BORD_D, 'gu'), (m) => NOMS_LETTRES[m]);
+    return t.replace(/\s+([,.])(?!\d)/g, '$1').replace(/,(\s*,)+/g, ',').replace(/\s{2,}/g, ' ').trim();
+  }
+
+  /* Ce que la voix prononce, morceau par morceau : le texte nettoyé, dit en toutes lettres, découpé par écriture.
+     Un morceau sans aucune lettre (ponctuation seule) n'est jamais envoyé. */
+  function prononcable(phrase) {
+    return segmenter(diction(pourLaVoix(versArabe(phrase)))).filter(s => /\p{L}/u.test(s.texte));
+  }
+
   /* ---- phrases complètes au fil du flux (pour parler pendant que le texte arrive) ---- */
   const LONGUEUR_MAX = 280;
   // Un point après une abréviation (M., Mme, p. ex.), une initiale ou un numéro de liste (1.)
@@ -266,7 +427,7 @@
     const lecteur = {
       surFin: null,
       dire(phrase) {
-        for (const seg of segmenter(pourLaVoix(versArabe(phrase)))) {
+        for (const seg of prononcable(phrase)) {
           const u = new Enonce(seg.texte);
           const v = voixPour(seg.langue);
           if (v) { u.voice = v; u.lang = v.lang; } else u.lang = seg.langue === 'ar' ? 'ar-SA' : 'fr-FR';
@@ -285,7 +446,8 @@
     return lecteur;
   }
 
-  const Voix = { versArabe, segmenter, pourLaVoix, decoupeur, choisirVoix, creerLecteur, FORMULE, VOIX_SEULE, latexParle };
+  const Voix = { versArabe, segmenter, pourLaVoix, decoupeur, choisirVoix, creerLecteur, FORMULE, VOIX_SEULE, latexParle,
+    diction, prononcable, enLettres };
   racine.Voix = Voix;
   if (typeof module !== 'undefined' && module.exports) module.exports = Voix;
 })(typeof window !== 'undefined' ? window : globalThis);

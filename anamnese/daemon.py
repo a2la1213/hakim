@@ -792,7 +792,7 @@ def _backup_pass(mem):
             pass
 
 
-def _travaux_llm(eng, mem, etat, garde, lecture=None, robot=None, conscience=None, present=None):
+def _travaux_llm(eng, mem, etat, garde, lecture=None, robot=None, conscience=None, present=None, calcul=None):
     """Rêve et réflexion, seulement si la machine n'est pas surchargée (charge.py), si le robot ne pense pas
     (il a Gemma pour lui tant que son signal bat, décision d'Ahmed du 2026-10-06), si Claude, la
     conscience de Jarvis, n'est pas en train de travailler (décision d'Ahmed du 2026-10-16 : « Gemma, c'est
@@ -825,6 +825,16 @@ def _travaux_llm(eng, mem, etat, garde, lecture=None, robot=None, conscience=Non
     if etat.get("retrait_robot"):
         print("[daemon] le robot ne pense plus : réflexion et rêve reprennent")
         etat["retrait_robot"] = False
+    lourd = (calcul or charge.calcul_lourd_actif)()
+    if lourd:
+        if not etat.get("retrait_calcul"):
+            print(f"[daemon] {lourd} tient la machine : réflexion et rêve reportés")
+            interieur.noter(mem, "report", f"{lourd} tient la machine : tes pensées et tes rêves attendent")
+        etat["retrait_calcul"] = True
+        return
+    if etat.get("retrait_calcul"):
+        print("[daemon] le calcul lourd est fini : réflexion et rêve reprennent")
+        etat["retrait_calcul"] = False
     pret_avant = not garde.en_pause
     charge_cpu, memoire = (lecture or charge.lire)()
     if not garde.permet(charge_cpu, memoire):
@@ -949,6 +959,40 @@ def _ressenti_pass(mem, now=None, lancer=None, journal=None, sortie=None):
     ok = getattr(r, "returncode", 1) == 0
     print(f"[daemon] ressenti ({humeur}) : " + ((r.stdout or "").strip().splitlines()[-1][:200] if ok and r.stdout else f"échec {(r.stderr or '')[-200:]}"))
     return ok
+
+
+def _sagesse_pass(mem, now=None):
+    """(accord d'Ahmed, 2026-10-22) la nuit, une fois : un juge à l'aveugle relit les décisions de sagesse de Hakim et
+    règle son paramètre (sagesse.py)."""
+    now = time.time() if now is None else now
+    if not interieur.nuit(now) or now - float(mem.kv_get("sagesse_nuit_ts", "0") or 0) < 12 * 3600:
+        return
+    mem.kv_set("sagesse_nuit_ts", str(now))
+    try:
+        import sagesse
+        b = sagesse.juger_la_nuit(now)
+        if b.get("juges"):
+            interieur.noter(mem, "sagesse", f"le juge a relu {b['juges']} décision(s), {b.get('lisibles', 0)} lisible(s) dans tes mots ; "
+                            f"ta sagesse : {b['sagesse']}")
+    except Exception as e:
+        print("[daemon] sagesse en échec :", e)
+
+
+def _rappels_rates_pass(mem, now=None):
+    """(accord d'Ahmed, 2026-10-22) la nuit, une fois : les souvenirs que le balayage automatique a ratés (notés par
+    Hakim avec rappel_rate) reçoivent des alias tirés du message d'Ahmed (rappels_rates.py)."""
+    now = time.time() if now is None else now
+    if not interieur.nuit(now) or now - float(mem.kv_get("rappels_rates_nuit_ts", "0") or 0) < 12 * 3600:
+        return
+    mem.kv_set("rappels_rates_nuit_ts", str(now))
+    try:
+        import rappels_rates
+        fait = rappels_rates.corriger(mem, now)
+        if fait:
+            interieur.noter(mem, "rappels_rates", f"{len(fait)} souvenir(s) raté(s) reçoivent des alias : "
+                            + " ; ".join(f"#{e} {', '.join(m)}" for e, m in fait[:5]))
+    except Exception as e:
+        print("[daemon] souvenirs ratés en échec :", e)
 
 
 def _index_fichiers_pass(mem, now=None):
@@ -1113,6 +1157,8 @@ def main():
                 _backup_pass(mem)                  # backup quotidien WAL-safe (rotation)
                 last_backup_check = time.time()
             _index_fichiers_pass(mem)              # l'index par le sens des fichiers d'Ahmed (la nuit)
+            _rappels_rates_pass(mem)               # les souvenirs ratés deviennent des alias (la nuit)
+            _sagesse_pass(mem)                     # le juge de la sagesse (la nuit)
             _echanges_pass(mem)                    # chaque échange avec Ahmed devient un souvenir (2026-10-20)
             _tests_de_nuit_pass(mem)               # la batterie fixe, rejouée chaque nuit (lot G, 41)
             _rangement_nuit_pass(mem)              # les souvenirs mal rangés, lus et rangés (2026-10-21)

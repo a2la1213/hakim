@@ -82,6 +82,31 @@ def _vie_interieure_isolee(monkeypatch, tmp_path):
     monkeypatch.setattr(interieur, "JOURNAL_TEMPS", d / "journal-du-temps.jsonl")
     monkeypatch.setattr(interieur, "CONSCIENCE_JARVIS", d / "claude-actif.json")
     monkeypatch.setattr(interieur, "HORLOGE_JARVIS", d / "horloge.json")     # le dernier message d'Ahmed (2026-10-22)
+    try:                                      # le signal d'un calcul lourd (2026-10-22)
+        import charge
+        monkeypatch.setattr(charge, "CALCUL_LOURD", str(d / "calcul-lourd.json"))
+    except Exception:
+        pass
+    try:                                      # la sagesse (2026-10-22)
+        import sagesse
+        for nom, f in (("PARAMETRE", "sagesse.json"), ("TOUR", "sagesse-tour.json"), ("JOURNAL", "sagesse.jsonl"),
+                       ("CONVERSATION", "conversation.json")):
+            monkeypatch.setattr(sagesse, nom, d / f)
+    except Exception:
+        pass
+    try:                                      # la trace des souvenirs ratés (2026-10-22)
+        import rappels_rates
+        monkeypatch.setattr(rappels_rates, "JOURNAL", d / "rappels-rates.jsonl")
+        monkeypatch.setattr(rappels_rates, "JOURNAL_BALAYAGE", d / "rappel.jsonl")
+        monkeypatch.setattr(rappels_rates, "CONVERSATION", d / "conversation.json")
+    except Exception:
+        pass
+    try:                                      # l'horloge à promesses (2026-10-22)
+        import promesses
+        monkeypatch.setattr(promesses, "FICHIER", d / "promesses.json")
+        monkeypatch.setattr(promesses, "ETATS", d / "promesses-etats.json")
+    except Exception:
+        pass
 
 
 @pytest.fixture

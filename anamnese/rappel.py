@@ -29,6 +29,7 @@ mashallah salam peux-tu est-ce qu'il qu'on t'as attends capté capte vient viens
 truc chose fais faisons regarde dis-moi écoute bref
 """.split())
 K_RRF = 60
+ALIAS_CLE, ALIAS_VERSION, SEP_ALIAS = "rappel_alias", "rappel_alias_v", "\n⟦alias⟧ "
 # La porte (réglée sur les requêtes-vérité et des messages banals, eval/rappel_auto.py) : le rang seul (RRF) ne sait
 # pas dire « rien de pertinent » — le premier du classement existe toujours. Un candidat passe s'il partage des mots
 # RARES avec le message (somme des IDF ≥ PORTE_MOTS), ou si son sens est très proche (≥ PORTE_SENS) ; « ok », « merci »,
@@ -56,6 +57,7 @@ class Index:
     pour les souvenirs neufs, et en entier toutes les 10 minutes (les souvenirs fusionnés, rangés, effacés)."""
     def __init__(self):
         self.lignes, self.max_id, self.complet_ts = {}, 0, 0.0
+        self.alias_v, self.avec_alias = None, set()
         self.vecteurs, self._mat, self._ids = {}, None, []
 
     def rafraichir(self, mem, now=None):
@@ -91,7 +93,30 @@ class Index:
             except (ValueError, TypeError):
                 pass
             self._mat = None
+        self._alias(mem)
         return self
+
+    def _alias(self, mem):
+        """(2026-10-22) les alias appris des ratés (rappels_rates.py) : des mots ajoutés au texte que le balayage par
+        mots consulte — jamais au souvenir lui-même. Relus quand leur version change."""
+        try:
+            v = mem.kv_get(ALIAS_VERSION, "") or ""
+        except Exception:
+            return
+        if v == self.alias_v:
+            return
+        import json
+        try:
+            a = json.loads(mem.kv_get(ALIAS_CLE, "") or "{}")
+            a = {int(k): [str(m).lower() for m in x] for k, x in a.items()} if isinstance(a, dict) else {}
+        except (ValueError, TypeError):
+            a = {}
+        for eid in self.avec_alias | set(a):
+            if eid in self.lignes:
+                ts, c = self.lignes[eid]
+                c = c.split(SEP_ALIAS)[0]
+                self.lignes[eid] = (ts, c + (SEP_ALIAS + " ".join(a[eid]) if a.get(eid) else ""))
+        self.avec_alias, self.alias_v = {e for e in a if a[e]}, v
 
     def sens(self, q, exclus, avant_ts, limite=30):
         """[(id, cosinus)] des plus proches par le sens (une multiplication de matrice sur ~4 000 souvenirs)."""

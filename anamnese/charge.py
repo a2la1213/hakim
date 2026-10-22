@@ -58,6 +58,24 @@ class GardeCharge:
         return not self.en_pause
 
 
+# (2026-10-22) un calcul lourd qui tient la machine (le duel du subconscient de la nuit) fait battre ce fichier ; le
+# démon lui laisse alors Gemma et la mémoire, comme au robot. Un signal sans battement depuis une minute ne compte plus.
+CALCUL_LOURD = os.path.expanduser("~/AIOS/jarvis/calcul-lourd.json")
+
+
+def calcul_lourd_actif(chemin=None, maintenant=None):
+    """(rend le libellé du calcul, ou None)"""
+    import json
+    import time
+    try:
+        with open(chemin or CALCUL_LOURD) as f:
+            d = json.load(f)
+        age = (maintenant or time.time)() - float(d["t_ms"]) / 1000
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return str(d.get("quoi") or "un calcul lourd") if 0 <= age <= ROBOT_PEREMPTION_S else None
+
+
 def robot_actif(chemin=ROBOT_SIGNAL, maintenant=None):
     """Le robot pense-t-il en ce moment (son signal bat) ? Un signal absent, abîmé ou périmé : non."""
     import json

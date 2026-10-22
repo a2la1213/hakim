@@ -18,7 +18,7 @@ const NOMS_OUTILS = {
 const etat = {
   session: null, messages: [], flux: null, micro: null, transcription: null, lectureDe: null, joints: [],
   reglages: { modele: 'opus', modeleConversation: 'sonnet', reconnaissance: 'navigateur', langue: 'auto', voix: 'neuronale', voixFr: '', voixAr: '',
-    vitesse: 1.05, lectureAuto: false, patience: 3.5, scene: true, rapide: true, source: 'auto', volant: false },
+    vitesse: 1.05, lectureAuto: false, patience: 3.5, scene: true, rapide: true, source: 'auto', volant: false, position: false },
   sttLocal: false, ttsLocal: false,
   interieur: null, derniereActivite: Date.now(), dites: [],
   conversation: null, present: [], parleDepuis: 0, coupeParAhmed: false, vision: null,
@@ -153,9 +153,9 @@ function creerLecteurNeuronal() {
     surFin: null, surSegment: null, fluxFini: true,
     appliquerSon() { if (element) element.muted = !!etat.sonCoupe; },
     dire(phrase) {
-      if (pause) { pause.textes.push(...Voix.segmenter(Voix.pourLaVoix(Voix.versArabe(phrase)))); pause.fluxFini = false; return; }
+      if (pause) { pause.textes.push(...Voix.prononcable(phrase)); pause.fluxFini = false; return; }
       L.fluxFini = false;
-      for (const seg of Voix.segmenter(Voix.pourLaVoix(Voix.versArabe(phrase)))) {
+      for (const seg of Voix.prononcable(phrase)) {
         // les phrases très longues sont coupées aux virgules : un morceau peut alors rester petit
         const parts = seg.texte.length > 160 ? seg.texte.split(/(?<=[,;:])\s+/) : [seg.texte];
         let cur = '';
@@ -242,6 +242,9 @@ function creerLecteurNeuronal() {
     while (n < unites.length && unites[n].langue === u0.langue && texte.length + unites[n].texte.length + 1 <= budget) {
       texte += ' ' + unites[n].texte; n++;
     }
+    // (2026-10-22, les « incantations » d'Ahmed) un morceau très court envoyé seul fait divaguer la voix neuronale :
+    // s'il en suit un de la même langue, il part avec lui, même au-delà du budget
+    while (texte.length < 24 && n < unites.length && unites[n].langue === u0.langue) { texte += ' ' + unites[n].texte; n++; }
     unites.splice(0, n);
     return { langue: u0.langue, texte };
   }
@@ -648,8 +651,8 @@ function htmlMessage(m) {
   }
   if (m.source === 'api') pied.push('<span title="Forfait à sa limite : réponse par l\'API Claude (payée à l\'usage)">via l\'API</span>');
   if (m.source === 'local') pied.push('<span title="Forfait et API indisponibles : cerveau local, sans outils">cerveau local</span>');
-  const etiquette = m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '';
-  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
+  const etiquette = m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '';
+  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
 }
 
 /* Les pièces jointes de Hakim (2026-10-20) : récupérées avec le jeton, jamais ouvertes comme une page — une image
@@ -824,7 +827,7 @@ async function envoyer(texte, oral, dejaRelance) {
       body: JSON.stringify({ texte, oral: !!oral, modele: etat.conversation ? etat.reglages.modeleConversation : etat.reglages.modele, source: etat.reglages.source || 'auto', session: etat.session,
         t_precedent: tPrecedent, t_debut: tDebut, fichiers: joints.map(x => x.chemin), pensees_dites: dites,
         conversation: !!etat.conversation, present: presentEnvoye, maintenant: Date.now(), camera,
-        appareil: appareilPage(), volant: !!etat.reglages.volant, tour_id: String(m.id) }),
+        appareil: appareilPage(), volant: !!etat.reglages.volant, position: positionAEnvoyer(), tour_id: String(m.id) }),
     });
     if (!r.ok) throw new Error(r.status === 403 ? 'jeton refusé : recharge la page (le cockpit a redémarré)' : `erreur ${r.status}`);
     const lecteurFlux = r.body.getReader();
@@ -1574,6 +1577,7 @@ function ecouterPensees() {
   es.addEventListener('tache', (ev) => { try { surTache(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('promotion', (ev) => { try { surPromotion(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('mission', (ev) => { try { surMission(JSON.parse(ev.data)); } catch (_) {} });
+  es.addEventListener('ecriture', (ev) => { try { surEcriture(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('identite', (ev) => { try { surIdentite(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('sortie', (ev) => { try { surSortie(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('spontane', (ev) => { try { surSpontane(JSON.parse(ev.data)); } catch (_) {} });
@@ -1629,6 +1633,55 @@ $('fil').addEventListener('click', async (e) => {
     const o = await r.json();
     if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
     surMission(o);
+  } catch (err) { b.disabled = false; humeur(String(err.message || err)); }
+});
+
+// Les écritures de Hakim dans tes projets (2026-10-22) : une proposition précise (ce qui est remplacé, par quoi, pourquoi) ;
+// rien ne s'écrit sans ton geste ; appliquée, c'est un commit à part, qu'« Annuler » défait par un git revert.
+const ETATS_ECRITURE = { proposee: 'attend ton geste', refusee: 'refusée : rien n’a été écrit', appliquee: 'appliquée', annulee: 'annulée (git revert)',
+  invalide: 'refusée par le cockpit' };
+function surEcriture(o) {
+  if (!o || !/^E-\d{8}-\d{6}-[0-9a-f]{4}$/.test(String(o.id))) return;
+  const id = 'ecriture-' + o.id;
+  let m = etat.messages.find(x => x.id === id);
+  if (!m) {
+    if (o.etat !== 'proposee') return;
+    m = { id, qui: 'j', spontane: 'ecriture', ts: o.recu || Date.now() };
+    etat.messages.push(m);
+    humeur('Hakim propose une écriture dans un de tes projets');
+  }
+  m.ecriture = o;
+  m.texte = `Je propose une écriture dans ${o.fichier} (${o.projet}) : ${o.raison} — ${ETATS_ECRITURE[o.etat] || o.etat}.`;
+  sauver(); rendre();
+}
+async function ecrituresAuChargement() {
+  try {
+    const r = await fetch('/api/ecritures', { headers: { 'X-Jeton': jeton() } });
+    if (r.ok) for (const o of (await r.json()).ecritures || []) surEcriture(o);
+  } catch (_) {}
+}
+function htmlEcriture(o) {
+  if (!o) return '';
+  const boutons = o.etat === 'proposee'
+    ? `<div class="mission-boutons"><button class="btn" data-ecriture="${esc(o.id)}" data-action="appliquer" data-empreinte="${esc(o.empreinte || '')}">Appliquer</button>`
+      + `<button class="btn" data-ecriture="${esc(o.id)}" data-action="refuser">Refuser</button></div>`
+    : o.etat === 'appliquee' ? `<div class="mission-boutons"><button class="btn" data-ecriture="${esc(o.id)}" data-action="annuler">Annuler (git revert)</button></div>` : '';
+  return `<div class="mission"><div><b>${esc(o.fichier)}</b> · ${esc(o.projet)}</div><div class="mission-etat">${esc(o.raison || '')}</div>`
+    + `<div class="mission-etat">${esc(ETATS_ECRITURE[o.etat] || o.etat)}${o.commit ? ' — commit ' + esc(o.commit) : ''}${o.raison_refus ? ' — ' + esc(o.raison_refus) : ''}</div>`
+    + `<details open><summary>ce qui change</summary>${o.ancien ? `<div class="txt"><b>avant :</b>\n${esc(o.ancien)}</div>` : '<div class="txt"><b>un fichier neuf</b></div>'}`
+    + `<div class="txt"><b>après :</b>\n${esc(o.nouveau)}</div></details>` + boutons + '</div>';
+}
+$('fil').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-ecriture]');
+  if (!b) return;
+  b.disabled = true;
+  try {
+    const presence = b.dataset.action !== 'refuser' ? await preuvePresence(`ecriture:${b.dataset.action}:${b.dataset.ecriture.replace(/^E-/, '')}`) : undefined;
+    const r = await fetch('/api/ecritures', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ id: b.dataset.ecriture, action: b.dataset.action, empreinte: b.dataset.empreinte || '', presence }) });
+    const o = await r.json();
+    if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
+    surEcriture(o);
   } catch (err) { b.disabled = false; humeur(String(err.message || err)); }
 });
 
@@ -1861,6 +1914,7 @@ function appliquerReglages() {
   $('vitesse').value = r.vitesse; $('lectureAuto').checked = !!r.lectureAuto; $('voix').value = r.voix;
   $('sceneActive').checked = r.scene !== false;
   $('rapide').checked = r.rapide !== false;
+  $('position').checked = !!r.position; suivrePosition(!!r.position);
   $('btnVolant').setAttribute('aria-pressed', String(!!r.volant)); $('btnVolant').classList.toggle('actif', !!r.volant);
   $('voixFr').disabled = $('voixAr').disabled = r.voix === 'neuronale' && etat.ttsLocal;
   // « auto » (le défaut depuis le 2026-10-18) : Whisper choisit entre français, arabe et anglais (jarvis/stt.py).
@@ -1871,14 +1925,40 @@ for (const [id, cle, val] of [['source', 'source', e => e.value], ['modele', 'mo
   ['langue', 'langue', e => e.value], ['voixFr', 'voixFr', e => e.value], ['voixAr', 'voixAr', e => e.value],
   ['vitesse', 'vitesse', e => parseFloat(e.value) || 1], ['lectureAuto', 'lectureAuto', e => e.checked],
   ['patience', 'patience', e => parseFloat(e.value)],
-  ['voix', 'voix', e => e.value], ['sceneActive', 'scene', e => e.checked], ['rapide', 'rapide', e => e.checked]]) {
+  ['voix', 'voix', e => e.value], ['sceneActive', 'scene', e => e.checked], ['rapide', 'rapide', e => e.checked],
+  ['position', 'position', e => e.checked]]) {
   $(id).addEventListener('change', (ev) => { etat.reglages[cle] = val(ev.target); appliquerReglages(); sauver(); });
 }
 $('btnReglages').addEventListener('click', () => {
   const s = $('reglages'); s.hidden = !s.hidden;
   $('btnReglages').setAttribute('aria-expanded', String(!s.hidden));
-  if (!s.hidden) { afficherVerrou(); afficherJetons(); afficherNotifs(); afficherEmpreinte(); }
+  if (!s.hidden) { afficherVerrou(); afficherJetons(); afficherNotifs(); afficherEmpreinte(); afficherPromesses(); }
 });
+
+/* ---------- la position (accord d'Ahmed, 2026-10-22) : éteinte par défaut, coupable à tout moment. Arrondie à trois
+   décimales (une centaine de mètres), gardée dans la mémoire de la page seulement (jamais dans le stockage du
+   navigateur), jointe à chaque message tant que la mesure a moins de 15 min. ---------- */
+let suiviPosition = null, dernierePosition = null;
+function suivrePosition(actif) {
+  const el = $('etatPosition');
+  if (!actif) {
+    if (suiviPosition !== null && navigator.geolocation) navigator.geolocation.clearWatch(suiviPosition);
+    suiviPosition = null; dernierePosition = null;
+    if (el) el.textContent = '';
+    return;
+  }
+  if (suiviPosition !== null) return;
+  if (!navigator.geolocation) { if (el) el.textContent = '(ce navigateur ne donne pas de position)'; return; }
+  suiviPosition = navigator.geolocation.watchPosition((p) => {
+    dernierePosition = { lat: Math.round(p.coords.latitude * 1000) / 1000, lon: Math.round(p.coords.longitude * 1000) / 1000,
+      precision_m: Math.round(p.coords.accuracy || 0), t_ms: p.timestamp || Date.now() };
+    if (el) el.textContent = `(reçue, à ${dernierePosition.precision_m} m près)`;
+  }, (e) => {
+    if (el) el.textContent = e.code === 1 ? '(refusée par le navigateur ou l’appli)' : '(indisponible pour le moment)';
+  }, { enableHighAccuracy: false, maximumAge: 120000, timeout: 30000 });
+}
+const positionAEnvoyer = () => (etat.reglages.position && dernierePosition && Date.now() - dernierePosition.t_ms < 15 * 60000
+  ? dernierePosition : null);
 
 /* ---------- l'appareil (lot B, point 19) et le mode volant (point 27) ---------- */
 // Sur le Galaxy Z Fold : plié, l'écran extérieur est étroit (≈ 410 px CSS) ; déplié, ≈ 750 px et plus.
@@ -1893,6 +1973,31 @@ function reglerVolant(actif) {
   humeur(actif ? 'mode volant : je te réponds à voix haute, court' : 'mode volant terminé');
 }
 $('btnVolant').addEventListener('click', () => reglerVolant(!etat.reglages.volant));
+/* ---------- les promesses de Hakim (2026-10-22) : visibles et effaçables par Ahmed ---------- */
+async function afficherPromesses() {
+  const ul = $('promesses');
+  let o; try { o = await (await fetch('/api/promesses', { cache: 'no-store' })).json(); } catch (_) { return; }
+  const l = (o && o.promesses) || [];
+  ul.textContent = '';
+  if (!l.length) { ul.textContent = 'aucune pour le moment'; return; }
+  const quand = (ms) => new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(ms));
+  const mot = { attente: 'attend', tenue: 'tenue', manquee: 'manquée', effacee: 'effacée' };
+  for (const p of l.sort((a, b) => a.t_ms - b.t_ms)) {
+    const li = document.createElement('li');
+    li.textContent = `${quand(p.t_ms)} · ${mot[p.etat] || p.etat} · ${p.raison} `;
+    if (p.etat === 'attente') {
+      const b = document.createElement('button');
+      b.className = 'btn'; b.type = 'button'; b.textContent = 'Effacer';
+      b.addEventListener('click', async () => {
+        try { await fetch('/api/promesses/effacer', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ id: p.id }) }); } catch (_) {}
+        afficherPromesses();
+      });
+      li.appendChild(b);
+    }
+    ul.appendChild(li);
+  }
+}
+
 async function afficherJetons() {
   let b; try { b = await (await fetch('/api/jarvis/jetons', { cache: 'no-store' })).json(); } catch (_) { return; }
   if (!b || !b.tours) { $('jetonsJour').textContent = "Jetons aujourd'hui : aucun tour mesuré."; return; }
@@ -2234,6 +2339,7 @@ signalerPresence(); setInterval(signalerPresence, 15000);
 document.addEventListener('visibilitychange', signalerPresence);
 ecouterPensees();
 missionsAuChargement();
+ecrituresAuChargement();
 identiteAuChargement();
 sortiesAuChargement();
 $('q').focus();

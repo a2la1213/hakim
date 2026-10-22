@@ -137,3 +137,18 @@ def test_rien_ne_reste_en_arriere_plan(run, tmp_path):
     time.sleep(0.5)
     vivants = os.popen("pgrep -f 'sleep 300' || true").read().split()
     assert not vivants, f"sleep orphelin : {vivants} — {r[-200:]}"
+
+
+def test_le_telephone_s_ecrit_mais_pas_le_reste_des_fichiers(run, tmp_path, monkeypatch):
+    """(Ahmed, 2026-10-22 : « lecture ET écriture » sur les fichiers de son téléphone, synchronisés par Syncthing) ;
+    le reste de ../fichiers reste en lecture seule."""
+    import terminal
+    fichiers = tmp_path / "fichiers"
+    tel = fichiers / "telephone" / "Z Fold 7"
+    tel.mkdir(parents=True)
+    (fichiers / "autre.txt").write_text("x")
+    monkeypatch.setattr(terminal, "FICHIERS", fichiers)
+    monkeypatch.setattr(terminal, "TELEPHONE", fichiers / "telephone")
+    r = run(f"echo note > '{tel}/note.txt' && cat '{tel}/note.txt'; echo y > '{fichiers}/autre.txt'; cat '{fichiers}/autre.txt'")
+    assert (tel / "note.txt").read_text().strip() == "note" and "note" in r
+    assert (fichiers / "autre.txt").read_text() == "x" and "not permitted" in r

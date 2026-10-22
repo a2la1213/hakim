@@ -23,6 +23,8 @@ from mlx_audio.tts.models.chatterbox.t3.cond_enc import T3Cond
 from mlx_audio.tts.utils import load_model
 from mlx_audio.utils import load_audio
 
+import tts_garde
+
 MODELE = "mlx-community/chatterbox-multilingual-v3"
 FICHIERS = ["model.safetensors", "tokenizer.json", "config.json", "Cangjie5_TC.json"]
 SR = 24000
@@ -83,13 +85,19 @@ class Voix:
             # conseil de Chatterbox : plus d'expressivité → moins de guidage (cfg), sinon le débit s'emballe ;
             # plus calme → un peu plus de guidage (diction posée). 0,5 → 0,5 ; 0,75 → 0,3 ; 0,35 → 0,55.
             reglages["cfg_weight"] = round(max(0.3, min(0.55, 0.5 - (reglages["exaggeration"] - 0.5) * 0.8)), 3)
-        res = next(self.modele.generate(texte, conds=self.conds, lang_code=langue, verbose=False, **reglages))
+        # (2026-10-22) un plafond de jetons proportionnel au texte : plus de parole inventée après la phrase
+        res = next(self.modele.generate(texte, conds=self.conds, lang_code=langue, verbose=False,
+                                        max_new_tokens=tts_garde.jetons_max(texte, langue), **reglages))
         return np.array(res.audio, dtype=np.float32).reshape(-1)
 
     def dire(self, texte, langue, fichier, exaggeration=None):
         """Écrit un WAV 24 kHz mono 16 bits ; rend sa durée en secondes."""
         self._suivre_reference()
-        audio = self._generer(texte.strip(), langue if langue in LANGUES else "fr", exaggeration)
+        texte = tts_garde.phrase_finie(texte)
+        if texte is None:                                         # rien à dire : un silence, jamais une invention
+            audio = np.zeros(int(0.05 * SR), dtype=np.float32)
+        else:
+            audio = self._generer(texte, langue if langue in LANGUES else "fr", exaggeration)
         audio = _rogner(audio)
         pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype("<i2")
         with wave.open(str(fichier), "wb") as w:

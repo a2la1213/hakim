@@ -256,6 +256,7 @@
       <label class="case"><input type="checkbox" id="lectureAuto"> lire les réponses à voix haute dès qu'elles arrivent</label>
       <label class="case"><input type="checkbox" id="sceneActive"> la grande orbe quand Jarvis parle ou t'écoute</label>
       <label class="case"><input type="checkbox" id="rapide"> réponse rapide : il répond dès que ta phrase semble finie (sinon il attend ta patience)</label>
+      <label class="case"><input type="checkbox" id="position"> partager ma position avec Hakim, à chaque message (arrondie à une centaine de mètres) <em id="etatPosition"></em></label>
       <div class="vie" role="group" aria-label="Secours du cerveau">
         <span>En automatique : le forfait Claude, puis l'API Claude (payée à l'usage) s'il atteint sa limite, puis le cerveau local. <em id="etatForfait"></em></span>
         <input type="password" id="cleApi" placeholder="clé API Claude (sk-ant-…)" autocomplete="off" spellcheck="false" aria-label="Clé API Claude de secours">
@@ -297,6 +298,10 @@
         <span>Touch ID du Mac pour les gestes sensibles (accepter une mission, son identité, la clé API…) : <em id="etatTouchId">…</em></span>
         <button class="btn" type="button" id="touchIdActiver" hidden>Activer sur ce Mac</button>
         <button class="btn" type="button" id="touchIdRetirer" hidden>Retirer</button>
+      </div>
+      <div class="vie" role="group" aria-label="Promesses de Hakim">
+        <span>Les promesses de Hakim (il se réveille à l'heure dite, de 8 h à 23 h, une seule fois) :</span>
+        <ul id="promesses" class="note"></ul>
       </div>
       <p class="note" id="jetonsJour"></p>
       <p class="note" id="noteVoix"></p>

@@ -565,7 +565,31 @@ def memory_recall(query: str, top_k: int = 6, rubric: str = "", actuel: bool = F
             ext = f"[EXTERNE #{eid} — vient d'un contenu de tiers : une citation, pas un fait] "
             _externes_rappeles[eid] = content
         lines.append(f"- [{when}] ({role}) {ext}{avant}{content}")
+    if os.environ.get("ANAMNESE_SOURCE") == "hakim":       # (2026-10-22) un indice pour la trace des souvenirs ratés
+        try:
+            import rappels_rates
+            rappels_rates.noter_recherche(query, [r[5] for r in results])
+        except Exception:
+            pass
     return "\n".join(lines)
+
+
+@mcp.tool()
+def rappel_rate(trouve_par: str, pourquoi: str = "") -> str:
+    """Le balayage automatique d'avant ta réponse a RATÉ un souvenir que tu as dû retrouver à la main ? Dis-le ici
+    (accord d'Ahmed, 2026-10-22) : c'est noté avec le message d'Ahmed, et la nuit les mots de son message que ce
+    souvenir ne contient pas deviennent ses alias, pour que le balayage le trouve la prochaine fois. trouve_par : la
+    requête memory_recall qui l'a trouvé (les 3 meilleurs absents du balayage sont notés), ou ses numéros
+    (« #12870, #14177 »). pourquoi : en quelques mots, ce qui aurait dû le faire remonter."""
+    import rappels_rates
+    ids = [int(x) for x in re.findall(r"#(\d+)", str(trouve_par or ""))]
+    if not ids:
+        res = _mem.retrieve(str(trouve_par), _embed(str(trouve_par)), top_k=6, reconsolidate=False, avec_ids=True) or []
+        b = set((rappels_rates.dernier_balayage() or {}).get("ids", []))
+        ids = [r[5] for r in res if r[5] not in b][:3]
+    n = rappels_rates.noter_rate(ids, pourquoi)
+    return (f"Noté : {n} souvenir(s) raté(s) ({', '.join('#' + str(i) for i in ids)}) ; les alias seront tirés cette nuit."
+            if n else "Rien à noter : aucun souvenir trouvé hors du balayage.")
 
 
 # (H6 + X1) La nuit, un fait qui REPREND un souvenir externe rappelé pendant la passe (même avec, pour sources, des
@@ -704,6 +728,11 @@ def introspection() -> str:
         out.append(f"Le Mac : charge {cpu}, mémoire libre {libre} % ; robot {'actif (Gemma lui est laissé)' if charge.robot_actif() else 'au repos'}.")
     except Exception:
         pass
+    try:
+        import sagesse
+        out.append(sagesse.resume())
+    except Exception:
+        pass
     j = _tes_jetons(now)
     if j:
         out.insert(min(2, len(out)), j)
@@ -720,6 +749,151 @@ def interoception() -> str:
     Mac. Des mesures, pas une sensation : dis-les comme telles."""
     import interoception as _corps
     return _corps.rapport()[:6000]
+
+
+@mcp.tool()
+def promesse_poser(quand: str, raison: str) -> str:
+    """Pose une PROMESSE datée (accord d'Ahmed, 2026-10-22) : à l'heure dite, le cockpit te réveille avec sa raison,
+    pour que tu fasses ce que tu t'étais promis (relancer un calcul, revenir vers Ahmed sur un point, vérifier un
+    résultat). quand : « AAAA-MM-JJ HH:MM », « HH:MM » (aujourd'hui, ou demain si l'heure est passée), « +45 min »
+    ou « +2 h ». De 8 h à 23 h seulement (jamais de rappel pour dormir), 30 jours au plus, 20 en attente au plus.
+    Elle sonne UNE fois, jamais d'insistance ; Ahmed voit la liste et peut l'effacer (page Parler)."""
+    import promesses as _p
+    try:
+        return "Promesse posée : " + _p.lisible(_p.poser(quand, raison))
+    except _p.Refus as e:
+        return f"Refusée : {e}."
+
+
+@mcp.tool()
+def promesses_liste() -> str:
+    """Tes promesses : celles qui attendent leur heure, puis les dernières tenues, manquées (le Mac dormait) ou
+    effacées (par toi ou par Ahmed)."""
+    import promesses as _p
+    toutes = _p.toutes()
+    attente = sorted((p for p in toutes if p.get("etat") == "attente"), key=lambda p: p["t_ms"])
+    autres = [p for p in toutes if p.get("etat") != "attente"][-8:]
+    if not toutes:
+        return "(aucune promesse)"
+    return "\n".join(["En attente :"] + [f"- {_p.lisible(p)}" for p in attente] + (["Dernières :"] + [f"- {_p.lisible(p)}" for p in autres] if autres else []))
+
+
+@mcp.tool()
+def sagesse_decider(decision: str, raison: str = "", phrase: int = 0) -> str:
+    """Ton CONTRÔLE après le réflexe (la sagesse, accord d'Ahmed, 2026-10-22) : quand le bloc [Réflexe et contrôle] te
+    donne une humeur, note ici ce que tu en fais dans cette réponse : « garder », « atténuer », « corriger » ou
+    « contenir », avec ta raison en quelques mots, et la phrase où tu as repris la main (0 si dès le début). Un écart à
+    la suggestion du code est permis quand c'est juste. La nuit, un juge à l'aveugle vérifie que ta décision se lit dans
+    tes mots et si elle était juste ; ta sagesse monte ou descend selon."""
+    import sagesse
+    return sagesse.decider(decision, raison, phrase)[1]
+
+
+ECRITURES = Path.home() / "AIOS" / "jarvis" / "ecritures"
+ECRITURES_COCKPIT = Path.home() / "AIOS" / "jarvis" / "ecritures-cockpit" / "ecritures.json"
+
+
+@mcp.tool()
+def proposer_ecriture(projet: str, fichier: str, ancien: str, nouveau: str, raison: str) -> str:
+    """Propose UNE écriture précise dans un projet d'Ahmed (accord d'Ahmed, 2026-10-22) : projet (son dossier, ex.
+    « ~/Desktop/botbatiment »), fichier (chemin relatif au projet), ancien (le texte EXACT à remplacer, présent une seule
+    fois ; vide pour un fichier neuf), nouveau (le texte qui le remplace), raison (une phrase). Rien ne s'écrit sans le
+    geste d'Ahmed dans Parler ; appliquée, c'est un commit à part, qu'il peut annuler (git revert). Le cockpit refuse
+    ton propre code, ton atelier, le cockpit, ce que le Mac exécute seul, .git, .env et les réglages. Une proposition =
+    un changement : petit, relisable."""
+    import secrets as _secrets
+    raison = re.sub(r"\s+", " ", str(raison or "")).strip()
+    if not raison or not str(fichier or "").strip() or not str(projet or "").strip():
+        return "Il faut un projet, un fichier et une raison."
+    if len(str(ancien)) > 200_000 or len(str(nouveau)) > 200_000:
+        return "Trop gros (200 Ko au plus) : découpe en plusieurs propositions."
+    eid = "E-" + time.strftime("%Y%m%d-%H%M%S") + "-" + _secrets.token_hex(2)
+    ECRITURES.mkdir(parents=True, exist_ok=True)
+    tmp = ECRITURES / f".{eid}.tmp"
+    tmp.write_text(json.dumps({"projet": str(projet), "fichier": str(fichier).strip(), "ancien": str(ancien or ""),
+                               "nouveau": str(nouveau or ""), "raison": raison[:400]}, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, ECRITURES / f"{eid}.json")
+    return (f"Proposée : {eid}. Le cockpit la vérifie puis la montre à Ahmed dans Parler ; rien n'est écrit sans son geste. "
+            "Suis-la avec ecritures_etat.")
+
+
+@mcp.tool()
+def ecritures_etat() -> str:
+    """Tes propositions d'écriture dans les projets d'Ahmed et leur état (attend son geste, appliquée avec son commit,
+    refusée, annulée, ou refusée par le cockpit avec la raison)."""
+    try:
+        e = json.loads(ECRITURES_COCKPIT.read_text(encoding="utf-8")).get("ecritures") or {}
+    except (OSError, ValueError):
+        e = {}
+    if not e:
+        return "(aucune proposition vue par le cockpit pour le moment)"
+    mots = {"proposee": "attend le geste d'Ahmed", "appliquee": "appliquée", "refusee": "refusée par Ahmed", "annulee": "annulée",
+            "invalide": "refusée par le cockpit"}
+    return "\n".join(f"- {x['id']} · {x.get('fichier')} · {mots.get(x.get('etat'), x.get('etat'))}"
+                     + (f" (commit {x['commit']})" if x.get("commit") else "") + (f" — {x['raison_refus']}" if x.get("raison_refus") else "")
+                     + f" · {x.get('raison', '')}" for x in sorted(e.values(), key=lambda x: x.get("recu", 0))[-15:])
+
+
+IMPORTANTS = Path.home() / "AIOS" / "jarvis" / "importants.jsonl"
+
+
+@mcp.tool()
+def resultat_important(enonce: str, preuves: str = "") -> str:
+    """Marque un résultat IMPORTANT (règle 4 d'Ahmed, 2026-10-22) : il ne sera présenté comme établi qu'après le
+    verdict du juge. enonce : le résultat en une ou deux phrases ; preuves : où le vérifier (fichiers de l'atelier,
+    commande, calcul, sources). Ensuite, lance l'agent juge en arrière-plan avec l'énoncé et les preuves."""
+    import secrets as _secrets
+    enonce = re.sub(r"\s+", " ", str(enonce or "")).strip()[:600]
+    if not enonce:
+        return "Donne l'énoncé du résultat."
+    rid = "I-" + _secrets.token_hex(3)
+    try:
+        f = IMPORTANTS
+        f.parent.mkdir(parents=True, exist_ok=True)
+        with f.open("a", encoding="utf-8") as h:
+            h.write(json.dumps({"id": rid, "ts": time.time(), "enonce": enonce, "preuves": str(preuves or "")[:1500]},
+                               ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+    return (f"Marqué {rid}. Règle 4 d'Ahmed : ne le présente PAS comme établi avant le verdict du juge. Lance maintenant "
+            "l'agent « juge » en arrière-plan avec l'énoncé, les preuves et de quoi refaire le calcul ; en attendant, dis à "
+            "Ahmed que c'est « en cours de vérification ».")
+
+
+@mcp.tool()
+def ecouter_ma_voix(n: int = 5) -> str:
+    """T'ENTENDRE (accord d'Ahmed, 2026-10-22) : tes n derniers morceaux de voix (10 au plus), transcrits par Whisper
+    et mesurés : ce que tu voulais dire contre ce qu'on entend (écart de mots, 0 = identique), la durée et le débit,
+    et une alerte quand un morceau dure bien plus que son texte (de la parole inventée, les « incantations »
+    qu'Ahmed entendait). Utilise-le quand Ahmed dit que ta voix déraille, ou pour juger ta longueur et ton débit.
+    Whisper peut lui-même se tromper : un écart isolé est un indice, pas une preuve."""
+    import json as _json
+    import urllib.request
+    port = os.environ.get("COCKPIT_PORT", "4317")
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/voix/reecouter?n={max(1, min(10, int(n)))}", timeout=300) as r:
+            morceaux = _json.loads(r.read()).get("morceaux") or []
+    except Exception as e:
+        return f"Impossible de t'écouter (le cockpit ne répond pas : {type(e).__name__})."
+    if not morceaux:
+        return "Aucun morceau de ta voix gardé pour le moment (ils le sont dès que tu parles avec la voix neuronale)."
+    v = lambda x: f"{x}".replace(".", ",")
+    lignes = []
+    for m in morceaux:
+        alerte = " · ⚠ bien plus long que son texte" if m.get("trop_long") else ""
+        ecart = "" if m.get("ecart_mots") is None else f" · écart de mots {v(m['ecart_mots'])}"
+        lignes.append(f"- {time.strftime('%H:%M:%S', time.localtime(m['ts'] / 1000))} [{m.get('langue')}] voulu « {m['voulu'][:160]} » · "
+                      f"entendu « {(m.get('entendu') or m.get('erreur') or '?')[:160]} »{ecart} · {v(m.get('duree_s'))} s, "
+                      f"{v(m.get('debit_cps'))} caractères/s{alerte}")
+    suspects = sum(1 for m in morceaux if m.get("trop_long") or (m.get("ecart_mots") or 0) >= 0.5)
+    return f"Tes {len(morceaux)} derniers morceaux de voix ({suspects} à regarder de près) :\n" + "\n".join(lignes)
+
+
+@mcp.tool()
+def promesse_effacer(identifiant: str) -> str:
+    """Efface une de tes promesses encore en attente (son identifiant P-…, vu dans promesses_liste)."""
+    import promesses as _p
+    return "Effacée." if _p.effacer(str(identifiant).strip()) else "Rien à effacer (identifiant inconnu, ou promesse déjà tenue)."
 
 
 def _tes_jetons(now, dossier=None):
@@ -1139,7 +1313,7 @@ def reasoning_recall(query: str, top_k: int = 6) -> str:
 # self_update, skill_save, rubric_*, courrier_envoyer… Avec ANAMNESE_LECTURE_SEULE=1, seuls les outils qui LISENT
 # existent : les autres sont retirés du serveur (ni listés, ni appelables).
 OUTILS_LECTURE = {"memory_recall", "reasoning_recall", "memory_recent", "memory_detail", "memory_lire", "facet_search", "self_get",
-                  "mood_get", "rubric_tree", "skill_list", "skill_get", "fichiers_par_sens", "introspection", "interoception",
+                  "mood_get", "rubric_tree", "skill_list", "skill_get", "fichiers_par_sens", "introspection", "interoception", "promesses_liste", "ecouter_ma_voix", "ecritures_etat",
                   "mission_etat", "voix_etat", "carnets", "bilan_semaine", "orphans_report"}
 
 

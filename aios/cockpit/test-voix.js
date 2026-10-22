@@ -125,3 +125,54 @@ test('repli : une formule sans version parlée est lue en mots, ou « voir la fo
   assert.ok(Voix.pourLaVoix('Donc $x=5$ et $\\begin{pmatrix}1\\end{pmatrix}$.').includes('x égale 5'));
   assert.ok(Voix.pourLaVoix('Et $\\begin{pmatrix}1\\end{pmatrix}$.').includes('voir la formule'));
 });
+
+/* La diction (2026-10-22, bug d'Ahmed relayé par Hakim : chiffres, lettres seules, capitales et arabe font dérailler la
+   voix neuronale, avec des « incantations » entre deux phrases). Les phrases-pièges : tout sort en mots français. */
+test('diction : nombres, décimales, unités, monnaies', () => {
+  const D = Voix.diction;
+  assert.strictEqual(D("J'ai 12 000 CHF et 2 000 €."), "J'ai douze mille francs suisses et deux mille euros.");
+  assert.strictEqual(D('45 % de 3,5 km.'), 'quarante-cinq pour cent de trois virgule cinq kilomètres.');
+  assert.strictEqual(D('1 km, 2 km, 0 euro, 1,5 Go, 300 Mo, -5 °C, $12.'),
+    'un kilomètre, deux kilomètres, zéro euro, un virgule cinq gigaoctets, trois cents mégaoctets, moins cinq degrés, douze dollars.');
+  assert.strictEqual(D('71, 80, 81, 91, 200, 1980, 21, 1 500 000'),
+    'soixante et onze, quatre-vingts, quatre-vingt-un, quatre-vingt-onze, deux cents, mille neuf cent quatre-vingts, vingt et un, un million cinq cent mille');
+  assert.strictEqual(D('p = 0,0002 et 0,226'), 'pé égale zéro virgule zéro zéro zéro deux et zéro virgule deux cent vingt-six');
+  assert.strictEqual(D('mlx-lm 0.32.2'), 'mlx-lm zéro point trente-deux point deux');
+  assert.strictEqual(D('Version 0.32.2.'), 'Version zéro point trente-deux point deux.');
+  assert.strictEqual(D('200 000 personnes'), 'deux cent mille personnes');       // « cent » sans s devant mille
+});
+
+test('diction : heures, dates, versets, scores, ordinaux', () => {
+  const D = Voix.diction;
+  assert.strictEqual(D('À 14h30, à 8 h et à 23:59.'), 'À quatorze heures trente, à huit heures et à vingt-trois heures cinquante-neuf.');
+  assert.strictEqual(D('Le 22/10/2026 et le 1/10.'), 'Le vingt-deux octobre deux mille vingt-six et le premier octobre.');
+  assert.strictEqual(D('Le 2026-10-22.'), 'Le vingt-deux octobre deux mille vingt-six.');
+  assert.strictEqual(D('Q6:76'), 'sourate six, verset soixante-seize');
+  assert.strictEqual(D('2:255-257'), 'sourate deux, versets deux cent cinquante-cinq à deux cent cinquante-sept');
+  assert.strictEqual(D('Le verset 2:30 parle du calife.'), 'Le verset trente de la sourate deux parle du calife.');
+  assert.strictEqual(D('Les versets 2:255-257 et la sourate 112:1.'), 'Les versets deux cent cinquante-cinq à deux cent cinquante-sept de la sourate deux et la sourate cent douze, verset un.');
+  assert.strictEqual(D('Rendez-vous à 9:45.'), 'Rendez-vous à neuf heures quarante-cinq.');
+  assert.strictEqual(D('Score : 11/12, puis 5/12 ; 1/2 et 3/4.'), 'Score : onze sur douze, puis cinq sur douze ; un demi et trois quarts.');
+  assert.strictEqual(D('La 1re fois, le 2e jour, le 21e siècle, le 5e, le 9e.'),
+    'La première fois, le deuxième jour, le vingt et unième siècle, le cinquième, le neuvième.');
+});
+
+test('diction : sigles, capitales, lettres seules, translittérations', () => {
+  const D = Voix.diction;
+  assert.strictEqual(D("Le GPU, l'IA, le MLX, une API, un PDF."), "Le jé pé u, l'i a, le èm èl iks, une a pé i, un pé dé èf.");
+  assert.strictEqual(D("C'est TRÈS important, ATTENTION."), "C'est très important, attention.");
+  assert.strictEqual(D("OK, la NASA et l'ONU."), "okay, la nasa et l'onu.");
+  assert.strictEqual(D('Plan A ou plan B, x = 3.'), 'Plan a ou plan bé, iks égale trois.');
+  assert.strictEqual(D("C'est l'ami, a-t-il dit, il y a."), "C'est l'ami, a-t-il dit, il y a.");      // aucune élision touchée
+  assert.strictEqual(D('ṣabr, ḥilm et ʿilm, Qurʾān'), 'sabr, hilm et ilm, Quran');
+  assert.strictEqual(D('Un Mac M4 de 16 Go, GPT-4, 3D.'), 'Un Mac èm quatre de seize gigaoctets, jé pé té quatre, trois dé.');
+  assert.strictEqual(D('π vaut 3,14 et x ≠ 2.'), 'pi vaut trois virgule quatorze et iks différent de deux.');
+  assert.strictEqual(D('morosité → pesante & grise'), 'morosité, pesante et grise');
+});
+
+test('ce que la voix prononce : jamais de chiffre, jamais un morceau sans lettre', () => {
+  const segs = Voix.prononcable('سبحان الله, et **255** versets. 1. un ; 2. deux.');
+  assert.deepStrictEqual(segs.map(s => s.langue), ['ar', 'fr']);
+  for (const s of segs) assert.ok(!/\d/.test(s.texte), s.texte);
+  assert.deepStrictEqual(Voix.prononcable(' … !! '), []);
+});

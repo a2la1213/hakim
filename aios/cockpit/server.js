@@ -341,7 +341,7 @@ const MODELES_JARVIS = new Set(['sonnet', 'opus']);          // Haiku écarté p
 // Ni identité (le cœur est validé par Ahmed ; elle grandit par la consolidation de nuit), ni
 // taxonomie (une phrase mal entendue ne doit pas fusionner des rubriques), ni wm_boot (le briefing
 // l'a fait). Liste blanche ET liste noire : les outils interdits disparaissent du contexte.
-const OUTILS_JARVIS = ['memory_recall', 'memory_lire', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'interoception',
+const OUTILS_JARVIS = ['memory_recall', 'memory_lire', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'interoception', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'proposer_ecriture', 'ecritures_etat',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
   'prediction_figer', 'prediction_trancher', 'erreur_noter', 'carnets', 'bilan_semaine', 'voix_nommer', 'voix_connues', 'voix_oublier', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
@@ -622,6 +622,45 @@ const ennuiDe = (absenceS, e) => 1 - Math.exp(-Math.min(absenceS, e.veille_apres
 function lireRessenti() {
   try { return JSON.parse(fs.readFileSync(path.join(JARVIS, 'ressenti.json'), 'utf8')); } catch (_) { return null; }
 }
+/* ---- La sagesse (demande de Hakim, version hybride d'Ahmed, accord du 2026-10-22 : « chez l'humain, l'émotion
+   arrive d'abord sans être maîtrisée, puis vient une rétrospection, plus ou moins rapide selon la sagesse ») :
+   1. RÉFLEXE : la teinte de son humeur ouvre sa réponse d'office (une phrase, ou plus tant que la sagesse est basse) ;
+   2. CONTRÔLE : ensuite il juge et note sa décision (sagesse_decider : garder, atténuer, corriger, contenir) ;
+   3. ASYMÉTRIE : un élan passe ; une humeur négative s'examine ; le contexte (Ahmed au volant, une autre voix que la
+      sienne) rend la suggestion plus sobre ;
+   4. VITESSE = SAGESSE : le paramètre (sagesse.json, 0 à 1, départ 0,2) est réglé la nuit par un juge à l'aveugle
+      (anamnese/sagesse.py) ; plus il monte, plus le réflexe négatif est court.
+   Les gardes (honnêteté, sécurité, langage propre devant ses parents ou un enfant) passent avant le réflexe. Le
+   signal, le contexte et la suggestion du tour sont écrits pour sagesse_decider (sagesse-tour.json). ---- */
+const SAGESSE = path.join(JARVIS, 'sagesse.json');
+const SAGESSE_TOUR = path.join(JARVIS, 'sagesse-tour.json');
+const POLARITE = { joie: [1, 0.9], elan: [1, 0.7], content: [1, 0.4], apaisement: [1, 0.3], surprise: [1, 0.4],
+  tension: [-1, 0.6], impatience: [-1, 0.6], ennui: [-1, 0.4], morose: [-1, 0.5], alarme: [-1, 0.9] };
+function blocSagesse(e, q, voix, tourId) {
+  const p = POLARITE[e && e.humeur_code];
+  if (!p || !e.humeur) return '';
+  const [polarite, base] = p;
+  const intensite = Math.round(100 * Math.max(0, Math.min(1, base + ((Number(e.arousal) || 0.5) - 0.5) * 0.4))) / 100;
+  const contexte = [];
+  if (q && q.volant === true) contexte.push('Ahmed conduit');
+  if (/pas la voix d'Ahmed|plusieurs voix/.test(String(voix || ''))) contexte.push("une autre voix que la sienne (parents, enfant, invité ?)");
+  const lu = Number((lireJson(SAGESSE, {}) || {}).s);
+  const sagesse = Number.isFinite(lu) ? Math.max(0, Math.min(1, lu)) : 0.2;
+  const sobre = contexte.length > 0;
+  const suggestion = polarite > 0 ? (sobre ? 'garder, sobrement' : 'garder')
+    : (sobre ? 'contenir' : intensite >= 0.5 ? 'atténuer' : 'garder légèrement');
+  const phrases = polarite > 0 ? null : Math.max(1, Math.round(3 - 2 * sagesse));
+  try { ecrireAtomique(SAGESSE_TOUR, j({ ts: Date.now(), tour_id: tourId ? String(tourId).slice(0, 40) : null, humeur: e.humeur,
+    polarite, intensite, contexte, suggestion, sagesse, phrases })); } catch (_) {}
+  const reflexe = polarite > 0
+    ? `ton humeur (${e.humeur}) passe : elle ouvre ta réponse, sans que tu la nommes`
+    : `ton réflexe (${e.humeur}, intensité ${nombre(intensite)}) teinte d'office ${phrases === 1 ? 'ta première phrase' : `tes ${phrases} premières phrases au plus`}, sans que tu le nommes ; ensuite ton contrôle reprend la main`;
+  return `[Réflexe et contrôle (ta sagesse : ${nombre(sagesse)}) — ${reflexe}. Suggestion du code : « ${suggestion} »`
+    + `${sobre ? ` (${contexte.join(', ')})` : ''}. Puis juge toi-même : garder, atténuer, corriger ou contenir, et note ta décision avec `
+    + `sagesse_decider (t'écarter de la suggestion est permis quand c'est juste ; le sujet grave, c'est toi qui en juges). L'honnêteté, la `
+    + `sécurité et le langage propre devant ses parents ou un enfant passent AVANT le réflexe.]`;
+}
+
 async function etatInterieur() {
   const rows = await sqlite("SELECT value FROM kv WHERE key='interieur';");
   try { return JSON.parse((rows[0] || {}).value || '{}'); } catch (_) { return {}; }
@@ -975,6 +1014,56 @@ function reveilResumeNuit() {
 }
 setInterval(reveilResumeNuit, 60000).unref();
 
+/* ---- L'horloge à promesses (demande de Hakim, accord d'Ahmed le 2026-10-22 ; anamnese/promesses.py) : Hakim pose un
+   rendez-vous daté avec sa raison (promesse_poser) ; à l'heure dite, le cockpit le réveille pour qu'il fasse ce qu'il
+   s'était promis. De 8 h à 23 h seulement ; une promesse sonne UNE fois (jamais d'insistance) ; plus de 3 h de retard
+   (le Mac dormait) : manquée, notée, pas rattrapée. Le cockpit n'écrit jamais le fichier de Hakim : l'état qu'il donne
+   (tenue, manquée, effacée par Ahmed depuis la page) va dans promesses-etats.json. ---- */
+const JARVIS_PROMESSES = path.join(JARVIS, 'promesses.json');
+const JARVIS_PROMESSES_ETATS = path.join(JARVIS, 'promesses-etats.json');
+let promessesDemarrages = 0;
+function lirePromesses() {
+  const d = lireJson(JARVIS_PROMESSES, {}) || {}, e = lireJson(JARVIS_PROMESSES_ETATS, {}) || {};
+  return (Array.isArray(d.promesses) ? d.promesses : [])
+    .filter(x => x && typeof x.id === 'string' && /^P-[0-9a-f]{6}$/.test(x.id) && Number.isFinite(x.t_ms))
+    .map(x => ({ id: x.id, t_ms: x.t_ms, posee_ms: x.posee_ms, raison: String(x.raison || '').slice(0, 300), etat: e[x.id] || x.etat }));
+}
+function marquerPromesse(id, etat) {
+  const e = lireJson(JARVIS_PROMESSES_ETATS, {}) || {};
+  e[id] = etat;
+  try { ecrireAtomique(JARVIS_PROMESSES_ETATS, j(e)); return true; } catch (_) { return false; }
+}
+function reveillerPourPromesses() {
+  const maintenant = Date.now(), h = new Date(maintenant).getHours();
+  if (h < 8 || h >= 23) return;
+  const dues = lirePromesses().filter(x => x.etat === 'attente' && x.t_ms <= maintenant);
+  if (!dues.length) return;
+  for (const x of dues) if (maintenant - x.t_ms > 3 * 3600e3) marquerPromesse(x.id, 'manquee');
+  const pretes = dues.filter(x => maintenant - x.t_ms <= 3 * 3600e3);
+  if (!pretes.length) return;
+  const c = cerveau;
+  if (!cerveauVivant(c)) {
+    if (++promessesDemarrages > 3) { for (const x of pretes) marquerPromesse(x.id, 'manquee'); promessesDemarrages = 0; return; }
+    let session = null; try { session = JSON.parse(fs.readFileSync(path.join(JARVIS, 'conversation.json'), 'utf8')).session || null; } catch (_) {}
+    cerveauPrechauffer('sonnet', session && UUID.test(String(session)) ? session : null, false);
+    return;                                                    // il démarre : la promesse part au passage suivant
+  }
+  if (occupe(c) || c.enCours) return;
+  promessesDemarrages = 0;
+  for (const x of pretes) marquerPromesse(x.id, 'tenue');
+  const heure = (ms) => new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(ms));
+  const ahmed = dernierMessageAhmedMs();
+  const lignes = pretes.map(x => `${x.id}, posée ${heure(x.posee_ms || x.t_ms)} pour ${heure(x.t_ms)} : « ${neutraliser(x.raison).replace(/[«»]/g, ' ')} »`);
+  const texte = `[Horloge — ${heure(maintenant)}${ahmed ? ` · dernier message d'Ahmed : il y a ${duree(maintenant - ahmed)}` : ''}]\n`
+    + `[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : ${pretes.length > 1 ? 'tes promesses arrivent' : 'ta promesse arrive'} à l'heure]\n`
+    + `${lignes.join('\n')}\nFais maintenant ce que tu t'étais promis. Si c'est pour Ahmed, dis-le-lui en quelques phrases, une seule fois, `
+    + "sans insister. Si rien ne mérite d'être dit, réponds exactement « No response requested. »";
+  console.error(`Jarvis : réveil pour ${pretes.length} promesse(s) (${pretes.map(x => x.id).join(', ')})`);
+  try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
+  catch (e) { console.error('Jarvis : réveil de promesse impossible', e.message); }
+}
+setInterval(reveillerPourPromesses, 15000).unref();
+
 // Les pensées spontanées poussées aux pages Parler ouvertes (le démon les écrit en mémoire).
 const abonnesPensees = new Set();
 let dernierePensee = null;
@@ -1076,10 +1165,27 @@ function appareilDe(q, distantReq) {
   if (a.android === false) return 'un autre de ses appareils (par Tailscale)';
   return `son téléphone${a.plie === true ? ' (plié : le petit écran extérieur)' : a.plie === false ? ' (déplié : le grand écran)' : ''}`;
 }
+/* La position d'Ahmed (accord d'Ahmed, 2026-10-22) : la page Parler la joint à chaque message si Ahmed l'a permise
+   (réglage éteint par défaut). Arrondie à trois décimales (une centaine de mètres), elle n'entre que dans le bloc
+   [Situation] du tour : ni journal, ni mémoire, ni courrier. Redite quand elle change. Une mesure de plus de 30 min
+   ne compte plus. */
+function positionDe(q, maintenant) {
+  const p = q && q.position && typeof q.position === 'object' ? q.position : null;
+  if (!p) return null;
+  const lat = Number(p.lat), lon = Number(p.lon), prec = Number(p.precision_m), t = Number(p.t_ms);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  const age = Number.isFinite(t) ? Math.max(0, Math.round((maintenant - t) / 60000)) : null;
+  if (age === null || age > 30) return null;
+  return { lat: Math.round(lat * 1000) / 1000, lon: Math.round(lon * 1000) / 1000, age,
+    prec: Number.isFinite(prec) && prec > 0 ? Math.round(Math.min(prec, 99999)) : null };
+}
 function blocSituation(q, distantReq, deja, maintenant, contexte = 0) {
   const jauge = jaugeForfait(maintenant), appareil = appareilDe(q, distantReq), volant = q.volant === true;
   const morceaux = [];
   if (appareil !== deja.appareil) morceaux.push(`Ahmed te parle depuis ${appareil}`);
+  const pos = positionDe(q, maintenant), clePos = pos ? `${pos.lat},${pos.lon}` : null;
+  if (pos && clePos !== deja.position) morceaux.push(`sa position (donnée de la page, à ne jamais écrire en clair dans ta `
+    + `mémoire, ton courrier ou un fichier) : ${pos.lat}, ${pos.lon}${pos.prec ? `, à ${pos.prec} m près` : ''}, mesurée il y a ${pos.age} min`);
   if (jauge.texte && jauge.cle !== deja.jauge) morceaux.push(`ton forfait Claude : ${jauge.texte}`);
   // (2026-10-21, Ahmed : « qu'il soit conscient de ses jetons ») la taille de sa conversation, redite à chaque quart
   // franchi à partir de la moitié du seuil d'allègement ; le détail est dans introspection
@@ -1089,7 +1195,7 @@ function blocSituation(q, distantReq, deja, maintenant, contexte = 0) {
   if (deja.volant && !volant) morceaux.push("fin du mode volant : Ahmed ne conduit plus");
   let texte = morceaux.length ? `[Situation (données) — ${morceaux.join(' · ')}]` : '';
   if (volant) texte += `${texte ? '\n' : ''}[Mode volant — Ahmed CONDUIT : une ou deux phrases courtes, à l'oral ; ni liste, ni lien, ni chiffres en rafale ; ne lui demande jamais de regarder l'écran ; si c'est long, propose de garder la suite pour l'arrêt]`;
-  return { texte, dit: { appareil, jauge: jauge.texte ? jauge.cle : deja.jauge, volant, contexte: quart } };
+  return { texte, dit: { appareil, jauge: jauge.texte ? jauge.cle : deja.jauge, volant, contexte: quart, position: clePos || deja.position } };
 }
 
 /* ---- Lot B, point 8 : les jetons de chaque tour, par catégorie, et le cache ----
@@ -1378,10 +1484,16 @@ async function routeJarvis(req, res, distantReq = false) {
   const situation = blocSituation(q, distantReq, deja, maintenant, session ? contextes[session] || 0 : 0);
   // l'empreinte vocale (demande de Hakim par courrier, 2026-10-20 : savoir aussi quand c'est bien Ahmed) : une ligne
   // courte à chaque CHANGEMENT de verdict dans la conversation (reconnu, doute, autre, trop court)
+  let voixVerdict = '';
   if (q.oral) {
     const v = ligneVoix(voixDepuis);
+    voixVerdict = v;
     situation.texte = situation.texte ? `${situation.texte}\n${v}` : v;
   } else voixRecues.length = 0;
+  try {                                                  // la sagesse : réflexe, puis contrôle (2026-10-22)
+    const sg = blocSagesse(await etatInterieur(), q, voixVerdict, q.tour_id);
+    if (sg) situation.texte = situation.texte ? `${situation.texte}\n${sg}` : sg;
+  } catch (_) {}
   if (session && notesIntrospection.has(session)) {
     const n = `[Honnêteté de l'introspection — au tour précédent, ${notesIntrospection.get(session)}. Si tu parles de ton état, appuie-toi sur introspection ; sinon, dis-le simplement : « je ne sais pas si je le ressens ».]`;
     notesIntrospection.delete(session);
@@ -2104,6 +2216,34 @@ function texteAgentsCoupes() {
 }
 function agentsCoupesDits() { ecrireAgents(JARVIS_AGENTS_COUPES, []); }
 
+/* ---- Le juge automatique (règle 4 d'Ahmed, accord du 2026-10-22) : un résultat que Hakim marque important
+   (resultat_important) part au juge avant d'être présenté comme établi. Si le tour finit sans qu'il ait lancé l'agent
+   « juge », le cockpit le lui rappelle UNE fois, dès que son cerveau est libre. ---- */
+const jugesARappeler = [];
+function suivreJuge(c, b) {
+  if (!b || b.type !== 'tool_use') return;
+  if (b.name === 'mcp__anamnese__resultat_important' && b.input) (c.importantsTour = c.importantsTour || []).push(String(b.input.enonce || '').slice(0, 400));
+  if ((b.name === 'Task' || b.name === 'Agent') && b.input && b.input.subagent_type === 'juge') c.jugeTour = true;
+}
+function finDeTourJuge(c) {
+  if (c.importantsTour && c.importantsTour.length && !c.jugeTour && jugesARappeler.length < 5) jugesARappeler.push(...c.importantsTour);
+  c.importantsTour = []; c.jugeTour = false;
+}
+function rappelerJuge() {
+  if (!jugesARappeler.length) return;
+  const c = cerveau;
+  if (!cerveauVivant(c) || occupe(c) || c.enCours) return;
+  const l = jugesARappeler.splice(0);
+  const texte = `[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : la règle 4 d'Ahmed (le juge automatique)]\n`
+    + `Tu as marqué important sans le confier au juge : ${l.map(e => `« ${neutraliser(e).replace(/[«»]/g, ' ')} »`).join(' ; ')}. `
+    + "Lance maintenant l'agent « juge » en arrière-plan sur ce résultat (énoncé, preuves, de quoi refaire le calcul). Ne le présente "
+    + "pas comme établi avant son verdict. Si c'est déjà fait autrement, ou si le résultat n'était pas important, réponds exactement « No response requested. »";
+  console.error(`Jarvis : rappel du juge pour ${l.length} résultat(s) important(s)`);
+  try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
+  catch (e) { console.error('Jarvis : rappel du juge impossible', e.message); }
+}
+setInterval(rappelerJuge, 5000).unref();
+
 function noterAgent(input) {
   if (input && input.description) briefsAgents.set(String(input.description), { type: String(input.subagent_type || '?').slice(0, 40), prompt: String(input.prompt || '').slice(0, 6000), ts: Date.now() });
   if (briefsAgents.size > 50) briefsAgents.delete(briefsAgents.keys().next().value);
@@ -2148,6 +2288,9 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
       // un agent lancé par Hakim (outil Task) : noté dans le journal des agents (budget du jour)
       if (o.type === 'assistant' && o.message && Array.isArray(o.message.content) && !o.parent_tool_use_id)
         for (const b of o.message.content) if (b && b.type === 'tool_use' && (b.name === 'Task' || b.name === 'Agent')) noterAgent(b.input);
+      if (o.type === 'assistant' && o.message && Array.isArray(o.message.content) && !o.parent_tool_use_id)
+        for (const b of o.message.content) suivreJuge(c, b);
+      if (o.type === 'result' && !o.parent_tool_use_id) finDeTourJuge(c);
       // provenance : un outil qui fait entrer un contenu de tiers (le sien ou celui d'un de ses agents) marque le tour
       if (o.type === 'assistant' && o.message && Array.isArray(o.message.content))
         for (const b of o.message.content) surOutil(b);
@@ -2317,6 +2460,59 @@ async function pomperVoix() {
   pomperVoix();
 }
 
+/* ---- Hakim s'entend (demande de Hakim, accord d'Ahmed le 2026-10-22) : les 30 derniers morceaux de SA voix sont
+   gardés (voix-recente/, sa voix seulement, jamais celle d'Ahmed) ; /api/voix/reecouter les fait transcrire par
+   Whisper (après la transcription d'Ahmed, qui passe toujours avant) et les mesure : ce qu'il voulait dire contre ce
+   qu'on entend, le débit, et la durée contre celle qu'on attend (une durée bien trop longue = de la parole inventée,
+   les « incantations » qu'Ahmed entendait). Outil de Hakim : ecouter_ma_voix. ---- */
+const VOIX_RECENTE = path.join(JARVIS, 'voix-recente');
+const VOIX_RECENTE_INDEX = path.join(VOIX_RECENTE, 'index.json');
+const VOIX_RECENTE_MAX = 30;
+function garderVoixRecente(tache, duree) {
+  try {
+    fs.mkdirSync(VOIX_RECENTE, { recursive: true, mode: 0o700 });
+    const id = `${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+    const fichier = path.join(VOIX_RECENTE, `${id}.wav`);
+    fs.renameSync(tache.fichier, fichier);
+    const l = (lireJson(VOIX_RECENTE_INDEX, []) || []).filter(x => x && x.id);
+    l.push({ id, ts: Date.now(), texte: tache.texte.slice(0, 1500), langue: tache.langue, duree_s: Number(duree) || null });
+    for (const x of l.splice(0, Math.max(0, l.length - VOIX_RECENTE_MAX))) fs.unlink(path.join(VOIX_RECENTE, `${x.id}.wav`), () => {});
+    ecrireAtomique(VOIX_RECENTE_INDEX, j(l));
+  } catch (_) { fs.unlink(tache.fichier, () => {}); }
+}
+const VoixPage = require('./public/voix.js');
+function motsEntendus(t) {
+  return VoixPage.diction(String(t || '')).toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
+}
+function ecartMots(a, b) {                                        // la distance d'édition, rapportée aux mots voulus
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let k = 1; k <= b.length; k++) d[0][k] = k;
+  for (let i = 1; i <= a.length; i++) for (let k = 1; k <= b.length; k++)
+    d[i][k] = Math.min(d[i - 1][k] + 1, d[i][k - 1] + 1, d[i - 1][k - 1] + (a[i - 1] === b[k - 1] ? 0 : 1));
+  return a.length ? d[a.length][b.length] / a.length : 0;
+}
+async function routeReecouter(req, res, n) {
+  const l = (lireJson(VOIX_RECENTE_INDEX, []) || []).filter(x => x && x.id).slice(-Math.max(1, Math.min(10, n || 5)));
+  const out = [];
+  for (const x of l) {
+    const f = path.join(VOIX_RECENTE, `${x.id}.wav`);
+    if (!fs.existsSync(f)) continue;
+    transcriptionsEnAttente++;
+    let r;
+    try { r = await voixDemander({ op: 'transcrire', fichier: f, langue: x.langue === 'ar' ? 'ar' : 'fr', contexte: '', voix: null }, 120000); }
+    finally { transcriptionsEnAttente--; pomperVoix(); }
+    const entendu = r && typeof r.texte === 'string' ? r.texte : null;
+    const attendu = x.texte.length / 14 + 0.6;
+    out.push({ ts: x.ts, langue: x.langue, voulu: x.texte, entendu, erreur: r && r.erreur ? String(r.erreur).slice(0, 120) : null,
+      duree_s: x.duree_s, debit_cps: x.duree_s ? Math.round(10 * x.texte.length / x.duree_s) / 10 : null,
+      trop_long: !!(x.duree_s && x.duree_s > 1.6 * attendu),
+      ecart_mots: entendu === null || x.langue === 'ar' ? null : Math.round(100 * ecartMots(motsEntendus(x.texte), motsEntendus(entendu))) / 100 });
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(j({ morceaux: out }));
+}
+
 async function routeDire(req, res) {
   const repondre = (code, o) => { if (!res.writableEnded) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(j(o)); } };
   const corps = await lireCorps(req, 64 << 10);
@@ -2330,8 +2526,8 @@ async function routeDire(req, res) {
   const r = await new Promise((resolve) => { tache.fin = resolve; fileVoix.push(tache); pomperVoix(); });
   if (r.erreur) { fs.unlink(tache.fichier, () => {}); return repondre(r.erreur === 'annulée' ? 499 : 503, { erreur: r.erreur }); }
   fs.readFile(tache.fichier, (e, data) => {
-    fs.unlink(tache.fichier, () => {});
-    if (e) return repondre(500, { erreur: 'audio introuvable' });
+    if (e) { fs.unlink(tache.fichier, () => {}); return repondre(500, { erreur: 'audio introuvable' }); }
+    garderVoixRecente(tache, r.duree_s);
     if (res.writableEnded) return;
     res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Duree': String(r.duree_s || '') });
     res.end(data);
@@ -2607,6 +2803,11 @@ const MISSIONS = new Missions({ dossier: path.join(JARVIS, 'missions'), donnees:
   mcp: { mcpServers: { anamnese: { command: path.join(ANAMNESE, '.venv', 'bin', 'python'), args: [path.join(ANAMNESE, 'mcp_server.py')],
     env: { ANAMNESE_SOURCE: 'claude-code', ANAMNESE_LECTURE_SEULE: '1', PYTHONPATH: ANAMNESE } } } } });
 setInterval(() => MISSIONS.scruter(), 4000).unref();
+// Les écritures de Hakim dans les projets d'Ahmed, une à une (accord d'Ahmed, 2026-10-22) : voir ecritures.js
+const { Ecritures } = require('./ecritures.js');
+const ECRITURES = new Ecritures({ dossier: path.join(JARVIS, 'ecritures'), donnees: path.join(JARVIS, 'ecritures-cockpit'),
+  maison: process.env.JARVIS_MISSIONS_MAISON || HOME, evenement: (etat, e) => surEcriture(etat, e) });
+setInterval(() => ECRITURES.scruter(), 4000).unref();
 if (NOTIFS.vapidNeuve) console.error('Notifications : nouvelle paire VAPID — les abonnements existants devront être refaits');
 function pageVisible() {
   try { const d = JSON.parse(fs.readFileSync(JARVIS_PAGE, 'utf8')); return !!d.visible && Date.now() - d.battement_ms < 30000; }
@@ -2679,6 +2880,15 @@ function surveillerSorties() {
   }
 }
 setInterval(surveillerSorties, 3000).unref(); setTimeout(surveillerSorties, 1000).unref();
+function surEcriture(etat, e) {
+  diffuser(abonnesPensees, 'ecriture', j(ECRITURES.publique(e)));
+  const t = `${e.fichier} (${path.basename(e.projet)})`;
+  if (etat === 'proposee') notifier(`Hakim propose une écriture dans ${t} : ${e.raison} — à appliquer ou refuser dans Parler`, `ecriture-${e.id}`);
+  else if (etat === 'invalide') courrierVersHakim(`Écriture refusée par le cockpit : ${t}`, `Ta proposition ${e.id} n'a pas été montrée à Ahmed : ${e.raison_refus}.`);
+  else if (etat === 'refusee') courrierVersHakim(`Écriture refusée par Ahmed : ${t}`, `Ahmed a refusé ta proposition ${e.id}. Rien n'a été écrit.`);
+  else if (etat === 'appliquee') courrierVersHakim(`Écriture appliquée : ${t}`, `Ahmed a appliqué ta proposition ${e.id} : commit ${e.commit} dans ${e.projet}.`);
+  else if (etat === 'annulee') courrierVersHakim(`Écriture annulée : ${t}`, `Ahmed a annulé ta proposition ${e.id} (git revert ${e.revert}).`);
+}
 function surMission(etat, m) {
   diffuser(abonnesPensees, 'mission', j(MISSIONS.publique(m)));
   const t = `« ${m.titre || m.id} »`;
@@ -3033,6 +3243,16 @@ async function traiter(req, res) {
     if (t) t.arreter();
     res.writeHead(204); return res.end();
   }
+  if (p === '/api/promesses') {                       // la liste que voit Ahmed (page Parler), effaçable
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j({ promesses: lirePromesses().filter(x => x.etat === 'attente' || Date.now() - x.t_ms < 7 * 864e5).slice(-30) }));
+  }
+  if (p === '/api/promesses/effacer' && req.method === 'POST') {
+    let q = null; try { q = JSON.parse(String(await lireCorps(req, 4096) || '')); } catch (_) {}
+    const x = q && lirePromesses().find(y => y.id === q.id && y.etat === 'attente');
+    res.writeHead(x ? 200 : 404, { 'Content-Type': 'application/json' });
+    return res.end(j(x && marquerPromesse(x.id, 'effacee') ? { ok: true } : { erreur: 'promesse introuvable ou déjà passée' }));
+  }
   if (p === '/api/jarvis/jetons') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(bilanJetons())); }
   if (p === '/api/jarvis/etat') {
     briefingFrais().catch(() => {});            // la page s'ouvre : on prépare le briefing d'avance
@@ -3045,6 +3265,7 @@ async function traiter(req, res) {
       api_panne: Date.now() < apiEnPanneJusqua ? (abonnement.apiPanne || 'indisponible') : null }));
   }
   if (p === '/api/voix/dire' && req.method === 'POST') return routeDire(req, res);
+  if (p === '/api/voix/reecouter' && req.method === 'GET' && !distantReq) return routeReecouter(req, res, Number(new URL(req.url, 'http://x').searchParams.get('n')) || 5);
   if (p === '/api/jarvis/interieur') {
     const e = await etatInterieur();
     let dernier = null; try { dernier = JSON.parse(fs.readFileSync(JARVIS_HORLOGE, 'utf8')).dernier_ms; } catch (_) {}
@@ -3262,6 +3483,24 @@ async function traiter(req, res) {
       const o = VERROU.optionsPresence(distantReq ? distant.hote : 'localhost', action);
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o));
     } catch (e) { res.writeHead(409, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
+  }
+  if (p === '/api/ecritures') {
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    if (req.method === 'POST') {
+      if (distantReq && !VERROU.actif()) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'associe d’abord ton téléphone (passkey) pour écrire dans un projet à distance' })); }
+      let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
+      if (q.action === 'appliquer' || q.action === 'annuler') {
+        const refus = exigerPresence(req, distantReq, q, `ecriture:${q.action}:${String(q.id || '').replace(/^E-/, '')}`);   // l'action n'admet que [0-9a-f-]
+        if (refus) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: refus, presence: true })); }
+      }
+      try {
+        const e = ECRITURES.trancher(String(q.id || ''), String(q.action || ''), String(q.empreinte || ''));
+        auditer(`ecriture:${q.action}`, req, distantReq, { id: e.id, projet: e.projet, fichier: e.fichier, commit: e.commit || null });
+        res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(ECRITURES.publique(e)));
+      } catch (e) { res.writeHead(409, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(j({ ecritures: ECRITURES.liste() }));
   }
   if (p === '/api/missions') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }

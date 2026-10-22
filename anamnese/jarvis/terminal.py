@@ -29,6 +29,9 @@ import groupes  # noqa: E402
 CWD = Path.home() / "AIOS" / "jarvis" / "cwd"
 ATELIER = CWD / "atelier"
 FICHIERS = CWD / "fichiers"
+# (Ahmed, 2026-10-22 : « lecture ET écriture ») les fichiers de son téléphone, synchronisés dans les deux sens par
+# Syncthing (dossier « Z Fold 7 », corbeille de 30 jours sur le Mac) : le seul endroit hors de l'atelier où Hakim écrit
+TELEPHONE = FICHIERS / "telephone"
 VENV = ICI / ".venv"
 DELAI_S = 120
 DELAI_MAX_S = 1800
@@ -128,13 +131,16 @@ SDK_MACOS = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platfor
 JDK = Path("/usr/local/opt/openjdk")      # Java (Homebrew, « keg-only » : pas dans /usr/local/bin)
 
 
-def profil(atelier, port, fichiers=FICHIERS):
+def profil(atelier, port, fichiers=None, telephone=None):
     """TOUT est refusé par défaut (relecture JARVIS 2, C1, 2026-10-20 : « allow default » laissait joignables les
     services de macOS — ouvrir une app, soumettre une tâche à launchd, écrire des réglages — donc une sortie du bac à
     sable). Sont permis : le socle système d'Apple (system.sb), l'exécution des programmes du système et de ses outils
     (sauf ceux qui pilotent le Mac : open, launchctl, osascript, defaults…), la lecture des dossiers système, de son
-    atelier, de ../fichiers et de ses outils ; l'écriture dans l'atelier seulement ; le réseau par la seule passerelle
+    atelier, de ../fichiers et de ses outils ; l'écriture dans l'atelier et dans les fichiers du téléphone seulement ; le réseau par la seule passerelle
     gardée ; les services Mach sauf ceux qui font sortir (SERVICES_REFUSES) ; le GPU (MLX, Metal)."""
+    fichiers = FICHIERS if fichiers is None else fichiers
+    telephone = TELEPHONE if telephone is None else telephone
+    ecritures = f' (subpath "{telephone.resolve()}")' if telephone.exists() else ""
     lectures = "".join(f' (subpath "{p}")' for p in [atelier, fichiers.resolve() if fichiers.exists() else fichiers]
                        + _chemins_outils())
     programmes = "".join(f' (literal "{p}")' for p in PROGRAMMES_REFUSES)
@@ -154,7 +160,7 @@ def profil(atelier, port, fichiers=FICHIERS):
   (subpath "/private/var/db/timezone") (subpath "/private/var/select") (subpath "/private/var/db/xcode_select_link")
   (literal "/dev") (literal "/dev/null") (literal "/dev/zero") (literal "/dev/random") (literal "/dev/urandom") (literal "/dev/tty") (literal "/dev/dtracehelper") (literal "/dev/autofs_nowait") (regex #"^/dev/fd/") (literal "/etc") (literal "/var") (literal "/tmp") (literal "/private") (literal "/private/var"){lectures})
 (deny file-read* (subpath "/Library/Keychains") (subpath "/Library/Application Support/com.apple.TCC"))
-(allow file-write* (subpath "{atelier}") (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/dtracehelper")
+(allow file-write* (subpath "{atelier}"){ecritures} (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (literal "/dev/dtracehelper")
   (regex #"^/dev/fd/"))
 (allow file-ioctl (literal "/dev/tty") (literal "/dev/dtracehelper"))
 (allow network-outbound (remote ip "localhost:{port}"))
