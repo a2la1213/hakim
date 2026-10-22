@@ -1,10 +1,14 @@
-"""Moteur GELÉ — wrapper local Ollama (chat + embeddings). 100 % hors-ligne.
+"""Moteur GELÉ — chat via Claude Code CLI (abonnement) ou Ollama local ;
+embeddings via Ollama (nomic-embed-text).
 
 Gelé = on ne ré-entraîne jamais ses poids en continu (sinon : oubli
 catastrophique). Tout l'apprentissage continu va dans la mémoire externe.
+Depuis 2026-08-18 : CHAT_MODEL "claude:<alias>" route vers `claude -p`
+(même pont éprouvé que dream_sonnet.py) ; tout autre nom reste Ollama.
 """
 import re
 import json
+import subprocess
 import requests
 
 import config
@@ -32,6 +36,8 @@ class Engine:
         et explose le temps de génération). Mettre think=None pour laisser le
         défaut du modèle.
         """
+        if self.chat_model.startswith("claude"):
+            return self._chat_claude(messages, stream=stream)
         url = f"{self.host}/api/chat"
         payload = {"model": self.chat_model, "messages": messages, "stream": stream}
         if think is not None:
@@ -53,6 +59,32 @@ class Engine:
                 if chunk.get("done"):
                     break
         print()
+        return text
+
+    def _chat_claude(self, messages, stream=True):
+        """Voie Claude Code CLI (abonnement, sans clé API), pont de dream_sonnet.
+
+        chat_model "claude:<alias>" → `claude -p --model <alias>`. Aucun outil
+        (--allowedTools "") : génération pure, comme la voie Ollama. En échec,
+        lève requests.RequestException pour conserver le contrat d'erreur des
+        appelants (rate_importance, daemon, loop).
+        """
+        alias = self.chat_model.split(":", 1)[1] if ":" in self.chat_model else "sonnet"
+        parts = [m["content"] if m.get("role") == "system"
+                 else f"[{m.get('role', 'user')}] {m['content']}" for m in messages]
+        try:
+            r = subprocess.run(
+                ["claude", "-p", "\n\n".join(parts), "--model", alias,
+                 "--max-turns", "2", "--allowedTools", ""],
+                capture_output=True, text=True, timeout=config.LLM_TIMEOUT)
+        except (subprocess.SubprocessError, OSError) as e:
+            raise requests.RequestException(f"claude CLI : {e}")
+        if r.returncode != 0:
+            raise requests.RequestException(
+                f"claude CLI rc={r.returncode} : {(r.stderr or '').strip()[:200]}")
+        text = (r.stdout or "").strip()
+        if stream:
+            print(text)
         return text
 
     def embed(self, text):

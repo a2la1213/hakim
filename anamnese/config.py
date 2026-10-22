@@ -11,7 +11,16 @@ ROOT = Path(__file__).resolve().parent
 
 # --- Moteur (Ollama, local & hors-ligne) ---
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-CHAT_MODEL  = os.environ.get("ANAMNESE_CHAT_MODEL", "huihui_ai/qwen3.5-abliterated:9b")  # cerveau local : Qwen3.5-9B abliterated (non-censuré), GPU Metal
+# 2026-08-18 : migré du parc Ollama (qwen3.5-9b supprimé, disque plein) vers Claude Sonnet.
+# 2026-08-25 : RETOUR AU LOCAL. La cause de la migration a disparu (87 Go libres), et la
+# migration avait un coût invisible : TOUT appel d'Anamnèse — synthèses, rêves, outreach,
+# réflexions, daemon battant toutes les 30 s — passait par l'abonnement, en continu et
+# HORS de toute sollicitation humaine. Rien ne le signalait.
+# Modèle retenu : un 12B en Q4 (~7,9 Go en mémoire). Un 27B a été évalué et ÉCARTÉ par
+# l'arithmétique : en Q4_K_M il demande 17,8 Go quand la machine en a 17,2 au TOTAL.
+# Les versions 2 bits tiennent, mais un 27B en IQ2 est moins bon qu'un 12B en Q4 — et il
+# faudrait tout fermer, alors que le daemon tourne PENDANT le travail.
+CHAT_MODEL  = os.environ.get("ANAMNESE_CHAT_MODEL", "huihui_ai/gemma-4-abliterated:12b")
 EMBED_MODEL = os.environ.get("ANAMNESE_EMBED_MODEL", "nomic-embed-text")  # (legacy Ollama, voie locale)
 EMBED_MODEL_M2V = os.environ.get("ANAMNESE_EMBED_M2V", "minishlab/potion-multilingual-128M")  # MCP : autonome, sans Ollama
 LLM_TIMEOUT = int(os.environ.get("ANAMNESE_LLM_TIMEOUT", "240"))  # timeout génération locale (s)
@@ -155,7 +164,12 @@ DAEMON_TICK   = 30   # s — battement de la boucle (léger)
 BRAIN_PROJ_EVERY = int(os.environ.get("ANAMNESE_BRAIN_PROJ_EVERY", "120"))  # s entre 2 rafraîchissements du cerveau 3D (projection incrémentale des nouveaux souvenirs)
 BACKUP_CHECK_EVERY = int(os.environ.get("ANAMNESE_BACKUP_CHECK_EVERY", "3600"))  # s entre 2 vérifs backup (le backup lui-même est 1×/jour)
 BACKUP_KEEP        = int(os.environ.get("ANAMNESE_BACKUP_KEEP", "7"))            # nb de backups quotidiens conservés (rotation)
-DAEMON_MODEL  = os.environ.get("ANAMNESE_DAEMON_MODEL", "huihui_ai/qwen3.5-abliterated:9b")  # daemon : même 9B non-censuré (GPU Metal actif depuis 2026-06-23, ~16 tok/s)
+# 2026-08-25 : RETOUR AU LOCAL (voir CHAT_MODEL). Le daemon est le plus gros consommateur
+# du système : il bat toutes les 30 s, rêve 1h30 après la dernière activité humaine et se
+# force toutes les 24 h. Sur `claude:sonnet` il facturait donc en continu, la nuit comprise.
+# Effet de bord BÉNÉFIQUE : le labo de rêve redevient valide. Sous Sonnet, le bras dit
+# « local » n'était plus qwen mais Sonnet lui aussi — l'ablation comparait SONNET À SONNET.
+DAEMON_MODEL  = os.environ.get("ANAMNESE_DAEMON_MODEL", "huihui_ai/gemma-4-abliterated:12b")
 
 # --- Identité / persona (source UNIQUE, utilisée par le chat interactif ET le daemon) ---
 PERSONA = (
@@ -223,7 +237,21 @@ DREAM_STATE_CORR_P = 0.05         # p (permutation), corrigé Bonferroni ×9 cô
 
 # --- Ablation du corpus 2×2 (portes gravées 2026-07-09) ---
 DREAM_ABLATION_ENABLED     = os.environ.get("ANAMNESE_DREAM_ABLATION", "1") == "1"
-DREAM_SONNET_ARM_ENABLED = os.environ.get("ANAMNESE_DREAM_SONNET_ARM", "1") == "1"  # bras sonnet contrôlé (3 conditions, nocturne)
+# DÉSACTIVÉ le 2026-08-21, pour DEUX raisons indépendantes.
+# (1) SCIENTIFIQUE : depuis la migration du 2026-08-18 (config.py:158), le bras dit
+#     "local" n'est PLUS généré par qwen mais par Sonnet lui aussi. Ce bras comparait
+#     donc SONNET À SONNET — l'appariement qui fondait toute l'ablation avait disparu,
+#     et le commentaire de la ligne 158 le disait déjà sans que personne n'en tire la
+#     conséquence. Les nuits produites depuis le 18/08 ne sont PAS comparables aux 24
+#     précédentes : les mélanger contaminerait le corpus.
+# (2) ÉCONOMIQUE : ce bras appelle `claude -p --model sonnet` à chaque cycle de rêve,
+#     déclenché 1h30 après la dernière activité humaine et FORCÉ toutes les 24h. Il
+#     tournait donc en continu, sur l'abonnement, hors de toute sollicitation.
+# Le verdict du labo est de toute façon TOMBÉ sur les 24 nuits valides : corpus->contenu
+# NON SOUTENU (porte A échouée), affect->rêves RÉFUTÉ. Il n'y avait plus rien à mesurer.
+# Pour le réactiver : ANAMNESE_DREAM_SONNET_ARM=1 — mais rétablir d'abord un modèle
+# local distinct, sans quoi les deux bras restent le même modèle.
+DREAM_SONNET_ARM_ENABLED = os.environ.get("ANAMNESE_DREAM_SONNET_ARM", "0") == "1"
 DREAM_SONNET_RETRIES     = 3     # tentatives par cellule sonnet manquante, PAR cycle de rêve (la durée importe peu ; l'important : que les 3 cellules se fassent)
 DREAM_SONNET_CALL_DELAY  = 5     # backoff (s) entre 2 tentatives d'une même cellule (récup d'un échec transitoire/rate-limit)
 DREAM_ABL_SEEDFOLLOW_MIN   = 0.60   # suivi des graines minimal (cosinus), par cellule
