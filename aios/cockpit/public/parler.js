@@ -18,7 +18,7 @@ const NOMS_OUTILS = {
 const etat = {
   session: null, messages: [], flux: null, micro: null, transcription: null, lectureDe: null, joints: [],
   reglages: { modele: 'opus', modeleConversation: 'sonnet', reconnaissance: 'navigateur', langue: 'auto', voix: 'neuronale', voixFr: '', voixAr: '',
-    vitesse: 1.05, lectureAuto: false, patience: 3.5, scene: true, rapide: true, source: 'auto', volant: false, position: false },
+    vitesse: 1.05, lectureAuto: false, patience: 3.5, scene: true, rapide: true, source: 'auto', volant: false, position: false, voixNeutre: false },
   sttLocal: false, ttsLocal: false,
   interieur: null, derniereActivite: Date.now(), dites: [],
   conversation: null, present: [], parleDepuis: 0, coupeParAhmed: false, vision: null,
@@ -112,7 +112,8 @@ const voixPour = (langue) => {
   return Voix.choisirVoix(toutesVoix, langue, langue === 'ar' ? etat.reglages.voixAr : etat.reglages.voixFr);
 };
 // (2026-10-22, Ahmed) le débit suit aussi son émotion, modérément (×0,94 à ×1,04, réglé par le démon) ; ton réglage reste la base
-const vitesseVoix = () => (etat.reglages.vitesse || 1) * Math.max(0.92, Math.min(1.06, Number(etat.interieur && etat.interieur.voix_vitesse) || 1));
+// (2026-10-22, 16:10, Ahmed) « voix neutre » : ni le débit ni l'expressivité de son émotion
+const vitesseVoix = () => (etat.reglages.vitesse || 1) * (etat.reglages.voixNeutre ? 1 : Math.max(0.92, Math.min(1.06, Number(etat.interieur && etat.interieur.voix_vitesse) || 1)));
 const lecteurSysteme = synth ? Voix.creerLecteur(synth, window.SpeechSynthesisUtterance, voixPour, vitesseVoix) : null;
 
 // Voix neuronale (Chatterbox, sur le Mac, étape 5 bis) : chaque morceau d'une seule langue est
@@ -257,7 +258,7 @@ function creerLecteurNeuronal() {
     const g = generation;
     fetch('/api/voix/dire', { method: 'POST', signal: x.ctl.signal,
       headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
-      body: JSON.stringify({ texte: x.texte, langue: x.langue, emotion: etat.interieur ? etat.interieur.expressivite : null }) })
+      body: JSON.stringify({ texte: x.texte, langue: x.langue, emotion: etat.interieur && !etat.reglages.voixNeutre ? etat.interieur.expressivite : null }) })
       .then(r => r.ok ? r.arrayBuffer() : r.json().catch(() => ({})).then(o => Promise.reject(new Error(o.erreur || `voix ${r.status}`))))
       .then(ab => (fluide() ? actx.decodeAudioData(ab) : new Blob([ab], { type: 'audio/wav' })))
       .then(res => {
@@ -962,7 +963,8 @@ function alimenterBulle(niveauMicro) {
     const c = etat.conversation;
     // personne ne parle : la palette de son humeur, comme l'orbe de la page au repos (15:55, Ahmed)
     const humeurCode = (etat.interieur && etat.interieur.humeur_code) || 'calme';
-    let mode = `repos:${humeurCode}`, n = 0, b = [0, 0, 0];
+    // (16:10) il réfléchit (sa réponse est demandée, pas encore dite) : « pense », l'orbe tourne plus vite, comme dans Parler
+    let mode = `${etat.flux ? 'pense' : 'repos'}:${humeurCode}`, n = 0, b = [0, 0, 0];
     const v = lecteurNeuronal.joue ? niveauVoix() : null;
     if (v) { mode = `parle:${humeurCode}`; n = v.niveau; b = v.bandes; }
     else if (c && c.capteur && c.capteur.enParole) { mode = 'ahmed'; n = niveauMicro; b = [n, n * 0.8, n * 0.6]; }
@@ -2098,6 +2100,7 @@ function appliquerReglages() {
   $('sceneActive').checked = r.scene !== false;
   $('rapide').checked = r.rapide !== false;
   $('position').checked = !!r.position; suivrePosition(!!r.position);
+  $('voixNeutre').checked = !!r.voixNeutre;
   $('btnVolant').setAttribute('aria-pressed', String(!!r.volant)); $('btnVolant').classList.toggle('actif', !!r.volant);
   $('voixFr').disabled = $('voixAr').disabled = r.voix === 'neuronale' && etat.ttsLocal;
   // « auto » (le défaut depuis le 2026-10-18) : Whisper choisit entre français, arabe et anglais (jarvis/stt.py).
@@ -2109,7 +2112,7 @@ for (const [id, cle, val] of [['source', 'source', e => e.value], ['modele', 'mo
   ['vitesse', 'vitesse', e => parseFloat(e.value) || 1], ['lectureAuto', 'lectureAuto', e => e.checked],
   ['patience', 'patience', e => parseFloat(e.value)],
   ['voix', 'voix', e => e.value], ['sceneActive', 'scene', e => e.checked], ['rapide', 'rapide', e => e.checked],
-  ['position', 'position', e => e.checked]]) {
+  ['position', 'position', e => e.checked], ['voixNeutre', 'voixNeutre', e => e.checked]]) {
   $(id).addEventListener('change', (ev) => { etat.reglages[cle] = val(ev.target); appliquerReglages(); sauver(); });
 }
 $('btnReglages').addEventListener('click', () => {
