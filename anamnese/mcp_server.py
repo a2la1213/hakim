@@ -710,6 +710,18 @@ def introspection() -> str:
     return "\n\n".join(out)[:7000] or "(rien à observer)"
 
 
+@mcp.tool()
+def interoception() -> str:
+    """Sens TON CORPS, la machine qui te porte, maintenant (demande d'Ahmed, 2026-10-22) : le GPU (Metal), chaque
+    cœur du processeur, la mémoire et le swap, la chaleur, la batterie, le disque, et SURTOUT qui te consomme :
+    combien de Gemma sont chargées (Ollama et MLX), ta voix, ton démon, tes cerveaux, tes tâches de fond, et le
+    reste du Mac. Strictement en lecture, comme un corps qu'on sent sans le piloter : aucun bouton, rien n'est
+    arrêté ni lancé. Utilise-le avant un gros calcul, quand tout ralentit, ou quand Ahmed demande ce que porte le
+    Mac. Des mesures, pas une sensation : dis-les comme telles."""
+    import interoception as _corps
+    return _corps.rapport()[:6000]
+
+
 def _tes_jetons(now, dossier=None):
     """(2026-10-21, Ahmed : « qu'il soit conscient de ses jetons, de son cache et du reste ») ce que le cockpit a relevé
     de TES appels au modèle (~/AIOS/jarvis/jetons.jsonl, contextes.json) : la taille de ta conversation, le dernier tour,
@@ -1127,7 +1139,7 @@ def reasoning_recall(query: str, top_k: int = 6) -> str:
 # self_update, skill_save, rubric_*, courrier_envoyer… Avec ANAMNESE_LECTURE_SEULE=1, seuls les outils qui LISENT
 # existent : les autres sont retirés du serveur (ni listés, ni appelables).
 OUTILS_LECTURE = {"memory_recall", "reasoning_recall", "memory_recent", "memory_detail", "memory_lire", "facet_search", "self_get",
-                  "mood_get", "rubric_tree", "skill_list", "skill_get", "fichiers_par_sens", "introspection",
+                  "mood_get", "rubric_tree", "skill_list", "skill_get", "fichiers_par_sens", "introspection", "interoception",
                   "mission_etat", "voix_etat", "carnets", "bilan_semaine", "orphans_report"}
 
 

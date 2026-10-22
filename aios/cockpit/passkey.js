@@ -143,6 +143,15 @@ class Verrou {
   }
 
   clesPour(rpId) { return this.d.cles.filter(k => (rpId === MAC ? estMac(k) : !estMac(k))); }
+  // (2026-10-21) les seules passkeys (WebAuthn) : les clés des applis Android (téléphone, montre) n'en sont pas — mises
+  // dans allowCredentials, elles faisaient échouer l'empreinte du navigateur pour les gestes sensibles
+  passkeysPour(rpId) { return this.clesPour(rpId).filter(k => k.type !== 'app'); }
+  // Les applis dont la clé exige l'empreinte à chaque usage (l'appli du téléphone ; pas la montre, gardée par son seul
+  // verrouillage) : elles peuvent prouver la présence d'Ahmed pour un geste sensible. Les clés associées avant le
+  // 2026-10-21 18:30 n'ont pas la marque : celles de l'appli du téléphone s'appellent « appli … » (créées par elle).
+  appsAvecEmpreinte() {
+    return this.d.cles.filter(k => k.type === 'app' && (k.empreinte === true || (k.empreinte === undefined && /^appli /.test(k.nom || ''))));
+  }
 
   sauver() {
     const t = Date.now();
@@ -189,7 +198,7 @@ class Verrou {
     return x && x.type === type && x.fin > this.maintenant() ? x : null;
   }
 
-  optionsAssociation(code, rpId) {
+  verifierCode(code) {
     if (this.bloque()) throw new Error('trop d’essais ratés : réessaie dans un quart d’heure');
     const c = this.code;
     if (!c || c.fin <= this.maintenant()) throw this.echec(new Error('pas de code en cours : tire-en un sur le Mac'));
@@ -200,13 +209,17 @@ class Verrou {
       throw this.echec(new Error('code faux'));
     }
     this.code = null;                                               // un code ne sert qu'une fois
+  }
+
+  optionsAssociation(code, rpId) {
+    this.verifierCode(code);
     return {
       challenge: this.defi('create'), rp: { id: rpId, name: 'Hakim' },
       user: { id: b64u(crypto.randomBytes(16)), name: 'ahmed', displayName: 'Ahmed' },
       pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
       authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'preferred', userVerification: 'required' },
       attestation: 'none', timeout: 120000,
-      excludeCredentials: this.clesPour(rpId).map(k => ({ type: 'public-key', id: k.id })),
+      excludeCredentials: this.passkeysPour(rpId).map(k => ({ type: 'public-key', id: k.id })),
     };
   }
 
@@ -233,19 +246,40 @@ class Verrou {
 
   // La preuve de présence : un défi lié à UNE action (« mission:accepter:<id> »…), à usage unique.
   optionsPresence(rpId, action) {
-    const cles = this.clesPour(rpId);
-    if (!cles.length) throw new Error(rpId === MAC ? 'aucun Touch ID associé sur ce Mac' : 'aucun téléphone associé');
+    const cles = this.passkeysPour(rpId);
+    if (!cles.length && (rpId === MAC || !this.appsAvecEmpreinte().length))
+      throw new Error(rpId === MAC ? 'aucun Touch ID associé sur ce Mac' : 'aucun téléphone associé');
     return { challenge: this.defi('presence', { action: String(action), rpId }), rpId, userVerification: 'required', timeout: 120000,
       allowCredentials: cles.map(k => ({ type: 'public-key', id: k.id })) };
   }
 
   verifierPresence(reponse, { origine, rpId, action }) {
+    if (reponse && reponse.app) return this.verifierPresenceApp(reponse, { rpId, action });
     let v; try { v = defiDe(reponse && reponse.clientDataJSON); } catch (_) { throw new Error('aucune preuve de présence'); }
     const x = this.prendreDefi(v, 'presence');
     if (!x || x.action !== String(action) || x.rpId !== rpId) throw new Error('preuve de présence périmée ou faite pour une autre action');
-    const cle = this.clesPour(rpId).find(k => k.id === reponse.id);
+    const cle = this.passkeysPour(rpId).find(k => k.id === reponse.id);
     const compteur = verifierDeverrouillage(reponse, cle, { defi: v, origine, rpId });
     cle.compteur = compteur; cle.dernier = this.maintenant();
+    this.sauver();
+    return true;
+  }
+
+  // (2026-10-21, accord d'Ahmed) la même preuve, signée par l'appli Android : son empreinte débloque sa clé, qui signe
+  // le défi de présence (lié à l'action, à usage unique, 2 min) — jamais pour le Mac, jamais par la montre
+  verifierPresenceApp(reponse, { rpId, action }) {
+    const defi = String(reponse.defi || '');
+    const x = this.prendreDefi(defi, 'presence');
+    if (!x || x.action !== String(action) || x.rpId !== rpId || rpId === MAC) throw new Error('preuve de présence périmée ou faite pour une autre action');
+    const cle = this.appsAvecEmpreinte().find(k => k.id === reponse.app);
+    if (!cle) throw new Error('cette appli ne peut pas prouver ta présence (clé inconnue ou sans empreinte)');
+    let ok = false;
+    try {
+      ok = crypto.verify('sha256', Buffer.from(defi), { key: Buffer.from(cle.spki, 'base64'), format: 'der', type: 'spki' },
+        Buffer.from(String(reponse.signature || ''), 'base64'));
+    } catch (_) { ok = false; }
+    if (!ok) throw new Error('signature refusée');
+    cle.dernier = this.maintenant();
     this.sauver();
     return true;
   }
@@ -263,9 +297,45 @@ class Verrou {
   }
 
   optionsDeverrouillage(rpId) {
-    if (!this.clesPour(rpId).length) throw new Error('aucun téléphone associé');
+    const passkeys = this.passkeysPour(rpId);
+    if (!passkeys.length) throw new Error('aucun téléphone associé');
     return { challenge: this.defi('get'), rpId, userVerification: 'required', timeout: 120000,
-      allowCredentials: this.clesPour(rpId).map(k => ({ type: 'public-key', id: k.id })) };
+      allowCredentials: passkeys.map(k => ({ type: 'public-key', id: k.id })) };
+  }
+
+  // L'appli Android de Hakim (2026-10-21) : une clé de signature EC P-256 gardée par Android (Keystore, empreinte exigée
+  // à chaque usage), associée avec le même code à 6 chiffres tiré sur le Mac ; le déverrouillage signe un défi à usage
+  // unique (2 min). Même session que le navigateur (cookie « verrou », 2 jours).
+  associerApp(code, spkiB64, nom, empreinte = false) {
+    this.verifierCode(code);
+    let cle;
+    try { cle = crypto.createPublicKey({ key: Buffer.from(String(spkiB64 || ''), 'base64'), format: 'der', type: 'spki' }); }
+    catch (_) { throw this.echec(new Error('clé illisible')); }
+    if (cle.asymmetricKeyType !== 'ec') throw this.echec(new Error('clé refusée (EC P-256 attendue)'));
+    const id = 'app-' + b64u(crypto.randomBytes(12));
+    this.d.cles.push({ id, type: 'app', spki: String(spkiB64), rpId: 'appli', nom: String(nom || 'appli Android').slice(0, 60),
+      empreinte: empreinte === true, cree: this.maintenant() });
+    this.illisible = false;
+    return { id, session: this.ouvrirSession() };
+  }
+
+  defiApp() {
+    if (!this.d.cles.some(k => k.type === 'app')) throw new Error('aucune appli associée');
+    return this.defi('app');
+  }
+
+  deverrouillerApp(id, defi, signatureB64) {
+    if (!this.prendreDefi(String(defi || ''), 'app')) throw new Error('défi inconnu ou périmé');
+    const cle = this.d.cles.find(k => k.type === 'app' && k.id === id);
+    if (!cle) throw new Error('appli inconnue : réassocie-la avec un code tiré sur le Mac');
+    let ok = false;
+    try {
+      ok = crypto.verify('sha256', Buffer.from(String(defi)), { key: Buffer.from(cle.spki, 'base64'), format: 'der', type: 'spki' },
+        Buffer.from(String(signatureB64 || ''), 'base64'));
+    } catch (_) { ok = false; }
+    if (!ok) throw new Error('signature refusée');
+    cle.dernier = this.maintenant();
+    return { session: this.ouvrirSession() };
   }
 
   // Relecture du 2026-10-20 : le gel après 10 échecs bloquait AUSSI le vrai téléphone (10 réponses vides
@@ -273,7 +343,7 @@ class Verrou {
   deverrouiller(reponse, { origine, rpId }) {
     let v; try { v = defiDe(reponse.clientDataJSON); } catch (_) { throw new Error('réponse illisible'); }
     if (!this.prendreDefi(v, 'get')) throw new Error('défi inconnu ou périmé');
-    const cle = this.clesPour(rpId).find(k => k.id === reponse.id);
+    const cle = this.passkeysPour(rpId).find(k => k.id === reponse.id);
     const compteur = verifierDeverrouillage(reponse, cle, { defi: v, origine, rpId });
     cle.compteur = compteur; cle.dernier = this.maintenant();
     return { session: this.ouvrirSession() };

@@ -151,6 +151,7 @@ function creerLecteurNeuronal() {
   const prevoir = (n) => est.fixe + est.parSec * (n / est.cps);   // temps de synthèse prévu pour n caractères
   const L = {
     surFin: null, surSegment: null, fluxFini: true,
+    appliquerSon() { if (element) element.muted = !!etat.sonCoupe; },
     dire(phrase) {
       if (pause) { pause.textes.push(...Voix.segmenter(Voix.pourLaVoix(Voix.versArabe(phrase)))); pause.fluxFini = false; return; }
       L.fluxFini = false;
@@ -328,6 +329,7 @@ function creerLecteurNeuronal() {
 
   function jouerElement(x) {
     element = new Audio(URL.createObjectURL(x.pret));
+    element.muted = !!etat.sonCoupe;
     elementTexte = x.texte;
     element.playbackRate = etat.reglages.vitesse || 1;
     if (L.surSegment) L.surSegment(x.texte);
@@ -362,7 +364,7 @@ function debloquerSon() {
   humeur();
 }
 // Le contexte audio (créé au premier geste d'Ahmed, règle des navigateurs) et l'analyseur de la voix.
-let actx = null, analyseurVoix = null;
+let actx = null, analyseurVoix = null, gainSortie = null;
 function contexteAudio() {
   try {
     if (!actx) {
@@ -370,7 +372,12 @@ function contexteAudio() {
       analyseurVoix = actx.createAnalyser();
       analyseurVoix.fftSize = 256;
       analyseurVoix.smoothingTimeConstant = 0.55;
-      analyseurVoix.connect(actx.destination);
+      // (2026-10-21) un volume juste avant la sortie : « couper le son » (widget de l'appli) laisse sa voix aller au
+      // bout sans bruit, l'orbe pulse toujours
+      gainSortie = actx.createGain();
+      gainSortie.gain.value = etat.sonCoupe ? 0 : 1;
+      analyseurVoix.connect(gainSortie);
+      gainSortie.connect(actx.destination);
       // (2026-10-21) le contexte suspendu ou interrompu (écran verrouillé, casque Bluetooth qui bascule quand le
       // micro s'ouvre) : la voix programmée ne joue plus et ne finit jamais — on tente de le relancer, sinon on le dit
       actx.onstatechange = () => {
@@ -668,6 +675,11 @@ $('fil').addEventListener('click', async (e) => {
   if (!b) return;
   try {
     const brut = await blobPiece(b.dataset.piece);
+    if (window.HakimApp) {                         // l'appli Android : le fichier va dans Téléchargements
+      const b64 = await new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] || ''); r.onerror = ko; r.readAsDataURL(brut); });
+      humeur(window.HakimApp.enregistrer(b64, b.dataset.nom || 'piece') || 'fichier enregistré dans Téléchargements');
+      return;
+    }
     const url = URL.createObjectURL(new Blob([brut], { type: 'application/octet-stream' }));
     const a = document.createElement('a');
     a.href = url; a.download = b.dataset.nom || 'piece'; document.body.appendChild(a); a.click(); a.remove();
@@ -795,6 +807,7 @@ async function envoyer(texte, oral, dejaRelance) {
   sauver();                                              // la question survit à une fermeture de page
   const ctl = new AbortController();
   etat.flux = ctl; etat.fluxId = String(m.id);
+  widgetApp('reflechit');
   rendre(); humeur();
   const decoupe = Voix.decoupeur();
   const auto = (etat.reglages.lectureAuto || etat.conversation || etat.reglages.volant) && lecteur;
@@ -875,7 +888,20 @@ async function envoyer(texte, oral, dejaRelance) {
   }
   if (auto && !m.coupe) { decoupe.finir().forEach(p => { if (NON_REPONSE.test(p)) return; etat.lectureDe = m.id; lecteur.dire(p); }); lecteur.finFlux(); }
   if (!m.texte && !m.erreur && !m.coupe && !m.attenteServeur) m.erreur = 'réponse vide';
+  widgetApp(etat.conversation ? 'conversation' : 'repos', m.texte);
   sauver(); rendre(); humeur();
+}
+
+// (2026-10-21) le widget de l'appli Android : ce que fait Hakim (« reflechit », « conversation », « repos ») et la fin de
+// sa dernière réponse en aperçu (sans les marques de mise en forme)
+function widgetApp(quoi, texte) {
+  try {
+    if (!window.HakimApp || !window.HakimApp.widget) return;
+    let t = String(texte || '').replace(/```[\s\S]*?```/g, ' ').replace(/\$\$[\s\S]*?\$\$/g, ' ').replace(/[*_`#>|]+/g, '')
+      .replace(/\s+/g, ' ').trim();
+    if (t.length > 140) t = '…' + t.slice(-140);
+    window.HakimApp.widget(quoi, t);
+  } catch (_) {}
 }
 
 // « coupé » s'affiche sous la réponse qu'il n'a pas pu finir de dire
@@ -1080,6 +1106,28 @@ function reprendreVoix() {
 function majBoutonsPause() {
   const p = lecteur.enPause;
   for (const id of ['pauseScene', 'pause']) { const b = $(id); if (b) { b.textContent = p ? 'Reprendre' : 'Pause'; b.setAttribute('aria-pressed', String(p)); } }
+  signalerWidget();
+}
+// (2026-10-21) couper / rendre le son de Hakim (bouton « haut-parleur » du widget de l'appli Android)
+function couperSon(oui = !etat.sonCoupe) {
+  etat.sonCoupe = !!oui;
+  if (gainSortie) gainSortie.gain.value = etat.sonCoupe ? 0 : 1;
+  lecteurNeuronal.appliquerSon();
+  humeur(etat.sonCoupe ? 'son coupé : je continue sans bruit' : 'son rétabli');
+  signalerWidget();
+}
+// l'état des boutons du widget (conversation, pause, son, micro), envoyé seulement quand il change
+let dernierEtatWidget = '';
+function signalerWidget() {
+  try {
+    if (!window.HakimApp || !window.HakimApp.boutons) return;
+    const c = etat.conversation;
+    const e = JSON.stringify({ conversation: !!c, pause: !!lecteur.enPause, son_coupe: !!etat.sonCoupe,
+      micro_coupe: !!(c && c.capteur && c.capteur.estMuet) });
+    if (e === dernierEtatWidget) return;
+    dernierEtatWidget = e;
+    window.HakimApp.boutons(e);
+  } catch (_) {}
 }
 const patienceConversation = () => (Number.isFinite(patienceMs()) ? patienceMs() : 3500);   // « jamais » : pas en conversation
 
@@ -1128,6 +1176,8 @@ async function basculerConversation() {
   noterPresent({ e: 'debut_conversation', t: Date.now() });
   sessionMedia(true);
   garderEcranAllume(true);
+  try { if (window.HakimApp) window.HakimApp.conversation(true); } catch (_) {}   // l'appli Android : micro gardé écran éteint
+  signalerWidget();
   signalerPresence();                              // tout de suite : le subconscient se met en pause
   rendre(); humeur();
 }
@@ -1143,6 +1193,7 @@ function basculerMuet() {
   }
   noterPresent({ e: oui ? 'muet' : 'micro_rouvert', t: Date.now() });
   humeur(oui ? 'micro coupé : je ne t’entends plus (⌥X pour rouvrir)' : 'je t’écoute…');
+  signalerWidget();
 }
 
 // garderLeTour (Ahmed, 2026-10-20) : fermer la conversation PENDANT qu'on parle (bouton du micro, « Fin ») envoie
@@ -1190,6 +1241,7 @@ function finirConversation(garderLeTour = true) {
   if (!conv) return;
   sessionMedia(false);
   garderEcranAllume(false);
+  try { if (window.HakimApp) window.HakimApp.conversation(false); } catch (_) {}
   if (garderLeTour && conv.capteur && conv.capteur.enParole) { conv.fermeture = true; conv.capteur.finirTour(); }
   etat.conversation = null;
   if (conv.capteur) conv.capteur.arreter();
@@ -1200,6 +1252,7 @@ function finirConversation(garderLeTour = true) {
   noterPresent({ e: 'fin_conversation', t: Date.now() });
   sousTitre('');
   humeur();
+  signalerWidget();
 }
 
 // Le ton de ta voix comparé à TON habitude (lot C, point 20) : hauteur, débit (mots par seconde de voix), énergie.
@@ -1696,6 +1749,7 @@ function surSpontane(m) {
   sauver(); rendre(); accuserReception();
   humeur('Hakim te donne un résultat');
   $('annonce').textContent = `Hakim, de lui-même : ${m.texte}`;
+  widgetApp(etat.conversation ? 'conversation' : 'repos', m.texte);
   if (etat.conversation || etat.reglages.volant || etat.reglages.lectureAuto) { aDire.push({ id: m.id, texte: m.texte, recu: Date.now() }); direSpontanes(); }
 }
 /* Ses résultats « de lui-même » DITS dans la conversation (demande d'Ahmed relayée par Hakim, 2026-10-20 : « il arrive à
@@ -1933,6 +1987,16 @@ const deb64uOctets = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_
 const b64uOctets = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 // La preuve de présence (audit du cockpit, C-H1) : une empreinte FRAÎCHE pour un geste sensible, liée à ce geste.
 // Sur le téléphone : sa passkey ; sur le Mac : Touch ID s'il est activé (sinon rien n'est demandé, comme avant).
+function presenceParAppli(defi, action) {
+  return new Promise((ok, ko) => {
+    window.__presenceApp = (r) => {
+      window.__presenceApp = null;
+      if (r && r.signature) ok({ app: r.app, defi, signature: r.signature });
+      else ko(new Error((r && r.erreur) || 'empreinte annulée ou non reconnue : rien n’a été fait'));
+    };
+    try { window.HakimApp.presence(defi, action); } catch (e) { window.__presenceApp = null; ko(e); }
+  });
+}
 async function preuvePresence(action) {
   const r = await fetch('/api/presence/options', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
     body: JSON.stringify({ action }) });
@@ -1940,6 +2004,8 @@ async function preuvePresence(action) {
   if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
   if (o.aucune) return undefined;
   humeur('pose ton doigt : ce geste demande ton empreinte');
+  // (2026-10-21) dans l'appli Android, la page n'a pas accès aux passkeys : l'appli demande l'empreinte et signe le défi
+  if (window.HakimApp && window.HakimApp.presence) return presenceParAppli(o.challenge, action);
   let cred;
   try {
     cred = await navigator.credentials.get({ publicKey: { challenge: deb64uOctets(o.challenge), rpId: o.rpId, userVerification: 'required',

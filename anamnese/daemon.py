@@ -792,11 +792,12 @@ def _backup_pass(mem):
             pass
 
 
-def _travaux_llm(eng, mem, etat, garde, lecture=None, robot=None, conscience=None):
+def _travaux_llm(eng, mem, etat, garde, lecture=None, robot=None, conscience=None, present=None):
     """Rêve et réflexion, seulement si la machine n'est pas surchargée (charge.py), si le robot ne pense pas
-    (il a Gemma pour lui tant que son signal bat, décision d'Ahmed du 2026-10-06) et si Claude, la
+    (il a Gemma pour lui tant que son signal bat, décision d'Ahmed du 2026-10-06), si Claude, la
     conscience de Jarvis, n'est pas en train de travailler (décision d'Ahmed du 2026-10-16 : « Gemma, c'est
-    son subconscient, il doit être en pause pendant que Claude est actif »). Sinon on reporte."""
+    son subconscient, il doit être en pause pendant que Claude est actif ») et si Ahmed n'a ni écrit ni parlé
+    depuis 30 min (décision d'Ahmed du 2026-10-22 : Gemma vit pendant ses absences et la nuit). Sinon on reporte."""
     if (conscience or interieur.conscience_active)():
         if not etat.get("retrait_conscience"):
             print("[daemon] Claude (la conscience) travaille : le subconscient se met en pause")
@@ -806,6 +807,15 @@ def _travaux_llm(eng, mem, etat, garde, lecture=None, robot=None, conscience=Non
     if etat.get("retrait_conscience"):
         print("[daemon] la conscience se repose : le subconscient reprend")
         etat["retrait_conscience"] = False
+    if (present or interieur.ahmed_present)():
+        if not etat.get("retrait_presence"):
+            print("[daemon] Ahmed est là (un message depuis moins de 30 min) : le subconscient se met en pause")
+            interieur.noter(mem, "report", "Ahmed est là : ton subconscient (Gemma) se tait jusqu'à 30 min sans message de sa part")
+        etat["retrait_presence"] = True
+        return
+    if etat.get("retrait_presence"):
+        print("[daemon] 30 min sans message d'Ahmed : le subconscient reprend")
+        etat["retrait_presence"] = False
     if (robot or charge.robot_actif)():
         if not etat.get("retrait_robot"):
             print("[daemon] le robot pense : réflexion et rêve reportés, Gemma lui est laissé")

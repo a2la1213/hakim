@@ -52,6 +52,9 @@ NUIT = (0, 7)                            # pas de pensée éveillée de minuit �
 RELANCE_INTERVALLE_S = 3 * 3600          # au plus une relance toutes les 3 h : jamais insistant
 JOURNAL_PAS_S = 600
 JOURNAL_MAX = 300
+# (Ahmed, 2026-10-22 : « Gemma en pause si j'ai écrit ou parlé dans les 30 dernières minutes ») le Mac est trop
+# chargé pendant qu'il est là (voix MLX, calculs), et la consolidation utile est celle de la nuit
+PRESENCE_PAUSE_S = 30 * 60
 HORLOGE_JARVIS = Path.home() / "AIOS" / "jarvis" / "horloge.json"
 JOURNAL_JARVIS = Path.home() / "AIOS" / "jarvis" / "journal.jsonl"
 PAGE_JARVIS = Path.home() / "AIOS" / "jarvis" / "page.json"
@@ -70,6 +73,13 @@ def presence_jarvis(horloge=None):
     d = _json(horloge or HORLOGE_JARVIS)
     t = (d or {}).get("dernier_ms")
     return t / 1000.0 if isinstance(t, (int, float)) else None
+
+
+def ahmed_present(now=None, horloge=None):
+    """Ahmed a-t-il écrit ou parlé à Hakim depuis moins de 30 min ? (son dernier message au cockpit)"""
+    now = time.time() if now is None else now
+    t = presence_jarvis(horloge)
+    return t is not None and now - t < PRESENCE_PAUSE_S
 
 
 def derniere_presence(mem, now, horloge=None):

@@ -180,3 +180,72 @@ test('C-M1 : un fichier du verrou illisible FERME le verrou (au lieu de l’ouvr
   const absent = new P.Verrou(path.join(path.dirname(f), 'absent.json'));
   assert.ok(!absent.illisible && !absent.actif());
 });
+
+test('appli Android : associée par le code du Mac, déverrouillée par une signature, défi à usage unique (2026-10-21)', () => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), crypto = require('node:crypto');
+  const { Verrou } = P;
+  const dossier = fs.mkdtempSync(path.join(os.tmpdir(), 'verrou-app-'));
+  const v = new Verrou(path.join(dossier, 'verrou.json'));
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const spki = publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
+  assert.throws(() => v.associerApp('000000', spki, 'x'), /pas de code|code faux/);
+  const { code } = v.nouveauCode();
+  const { id, session } = v.associerApp(code, spki, 'Galaxy');
+  assert.ok(v.sessionValide(session) && v.actif());
+  assert.throws(() => v.associerApp(code, spki, 'x'));                       // un code ne sert qu'une fois
+  const defi = v.defiApp();
+  const sig = crypto.sign('sha256', Buffer.from(defi), privateKey).toString('base64');
+  assert.throws(() => v.deverrouillerApp(id, defi, crypto.sign('sha256', Buffer.from('autre'), privateKey).toString('base64')), /signature/);
+  const defi2 = v.defiApp();
+  assert.ok(v.sessionValide(v.deverrouillerApp(id, defi2, crypto.sign('sha256', Buffer.from(defi2), privateKey).toString('base64')).session));
+  assert.throws(() => v.deverrouillerApp(id, defi2, sig), /défi/);           // à usage unique
+  assert.throws(() => v.optionsDeverrouillage('hote.ts.net'), /aucun téléphone/);   // une clé d'appli n'est pas une passkey
+  assert.throws(() => v.optionsPresence('hote.ts.net', 'cle-api'), /aucun téléphone/);
+});
+
+test('les clés des applis ne se mêlent pas aux passkeys du navigateur (empreinte des gestes sensibles, 2026-10-21)', () => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), crypto = require('node:crypto');
+  const v = new P.Verrou(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'verrou-mix-')), 'verrou.json'));
+  const ctx = { origine: ORIGINE, rpId: RP };
+  const t = telephone();
+  v.associer(t.creer(v.optionsAssociation(v.nouveauCode().code, RP).challenge), { ...ctx, nom: 'Fold' });
+  for (const nom of ['appli', 'montre']) {
+    const spki = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' }).publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
+    v.associerApp(v.nouveauCode().code, spki, nom);
+  }
+  const o = v.optionsPresence(RP, 'sortie:autoriser:abc123');
+  assert.strictEqual(o.allowCredentials.length, 1);                            // la seule passkey du navigateur
+  assert.ok(!o.allowCredentials[0].id.startsWith('app-'));
+  assert.ok(v.verifierPresence(t.signer(o.challenge), { ...ctx, action: 'sortie:autoriser:abc123' }));
+  assert.deepStrictEqual(v.optionsDeverrouillage(RP).allowCredentials.map(c => c.id), o.allowCredentials.map(c => c.id));
+  assert.ok(v.optionsAssociation(v.nouveauCode().code, RP).excludeCredentials.every(c => !c.id.startsWith('app-')));
+});
+
+test('appli Android : sa clé (empreinte à chaque usage) prouve la présence pour un geste sensible ; pas la montre (2026-10-21)', () => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), crypto = require('node:crypto');
+  const v = new P.Verrou(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'verrou-pres-')), 'verrou.json'));
+  const paire = () => { const k = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' }); return { prive: k.privateKey, spki: k.publicKey.export({ type: 'spki', format: 'der' }).toString('base64') }; };
+  const signer = (prive, defi) => crypto.sign('sha256', Buffer.from(defi), prive).toString('base64');
+  const appli = paire(), montre = paire(), ancienne = paire();
+  const { id } = v.associerApp(v.nouveauCode().code, appli.spki, 'appli Galaxy', true);
+  const { id: idMontre } = v.associerApp(v.nouveauCode().code, montre.spki, 'montre Watch', false);
+  const ctx = { origine: ORIGINE, rpId: RP };
+  // sans passkey, l'appli suffit pour demander une preuve
+  const o = v.optionsPresence(RP, 'sortie:autoriser:abc');
+  assert.deepStrictEqual(o.allowCredentials, []);
+  const preuve = { app: id, defi: o.challenge, signature: signer(appli.prive, o.challenge) };
+  assert.ok(v.verifierPresence(preuve, { ...ctx, action: 'sortie:autoriser:abc' }));
+  assert.throws(() => v.verifierPresence(preuve, { ...ctx, action: 'sortie:autoriser:abc' }), /périmée/);       // rejeu
+  const o2 = v.optionsPresence(RP, 'sortie:autoriser:abc');
+  assert.throws(() => v.verifierPresence({ app: id, defi: o2.challenge, signature: signer(appli.prive, o2.challenge) }, { ...ctx, action: 'mission:accepter:x' }), /autre action/);
+  const o3 = v.optionsPresence(RP, 'cle-api');
+  assert.throws(() => v.verifierPresence({ app: id, defi: o3.challenge, signature: signer(montre.prive, o3.challenge) }, { ...ctx, action: 'cle-api' }), /signature/);
+  const o4 = v.optionsPresence(RP, 'cle-api');                                  // la montre : pas d'empreinte, pas de geste
+  assert.throws(() => v.verifierPresence({ app: idMontre, defi: o4.challenge, signature: signer(montre.prive, o4.challenge) }, { ...ctx, action: 'cle-api' }), /ne peut pas prouver/);
+  // une clé de l'appli associée avant la marque (nom « appli … ») reste acceptée
+  v.d.cles.push({ id: 'app-ancienne', type: 'app', spki: ancienne.spki, rpId: 'appli', nom: 'appli SM-F966B', cree: 1 });
+  const o5 = v.optionsPresence(RP, 'cle-api');
+  assert.ok(v.verifierPresence({ app: 'app-ancienne', defi: o5.challenge, signature: signer(ancienne.prive, o5.challenge) }, { ...ctx, action: 'cle-api' }));
+  // jamais pour le Mac
+  assert.throws(() => v.optionsPresence(P.MAC, 'verrou:code'), /aucun Touch ID/);
+});

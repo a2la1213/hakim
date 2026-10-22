@@ -81,6 +81,7 @@ def _vie_interieure_isolee(monkeypatch, tmp_path):
     monkeypatch.setattr(interieur, "INTERRUPTEUR", d / "interieur-interrupteur.json")
     monkeypatch.setattr(interieur, "JOURNAL_TEMPS", d / "journal-du-temps.jsonl")
     monkeypatch.setattr(interieur, "CONSCIENCE_JARVIS", d / "claude-actif.json")
+    monkeypatch.setattr(interieur, "HORLOGE_JARVIS", d / "horloge.json")     # le dernier message d'Ahmed (2026-10-22)
 
 
 @pytest.fixture

@@ -341,7 +341,7 @@ const MODELES_JARVIS = new Set(['sonnet', 'opus']);          // Haiku écarté p
 // Ni identité (le cœur est validé par Ahmed ; elle grandit par la consolidation de nuit), ni
 // taxonomie (une phrase mal entendue ne doit pas fusionner des rubriques), ni wm_boot (le briefing
 // l'a fait). Liste blanche ET liste noire : les outils interdits disparaissent du contexte.
-const OUTILS_JARVIS = ['memory_recall', 'memory_lire', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection',
+const OUTILS_JARVIS = ['memory_recall', 'memory_lire', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'interoception',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
   'prediction_figer', 'prediction_trancher', 'erreur_noter', 'carnets', 'bilan_semaine', 'voix_nommer', 'voix_connues', 'voix_oublier', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
@@ -1072,6 +1072,7 @@ function jaugeForfait(maintenant) {
 function appareilDe(q, distantReq) {
   if (!distantReq) return 'le Mac';
   const a = q && q.appareil && typeof q.appareil === 'object' ? q.appareil : {};
+  if (a.montre === true) return 'sa montre (Galaxy Watch Ultra)';    // l'appli montre (2026-10-21) : une info, pas une consigne
   if (a.android === false) return 'un autre de ses appareils (par Tailscale)';
   return `son téléphone${a.plie === true ? ' (plié : le petit écran extérieur)' : a.plie === false ? ' (déplié : le grand écran)' : ''}`;
 }
@@ -2542,6 +2543,18 @@ async function routeVerrou(req, res, p, distantReq, parTelephone) {
     const q = await corps();
     if (p === '/api/verrou/options-association') return repondre(200, VERROU.optionsAssociation(q.code, distant.hote));
     if (p === '/api/verrou/options') return repondre(200, VERROU.optionsDeverrouillage(distant.hote));
+    // l'appli Android (2026-10-21) : associée par le code du Mac, déverrouillée par une signature d'empreinte
+    if (p === '/api/verrou/app/associer') {
+      const r = VERROU.associerApp(q.code, q.cle, q.nom, q.empreinte === true);
+      auditer('verrou:app-associee', req, distantReq);
+      console.error(`Verrou : appli Android associée (${req.headers['tailscale-user-login'] || '?'})`);
+      return repondre(200, { id: r.id }, { 'Set-Cookie': cookieSession(r.session) });
+    }
+    if (p === '/api/verrou/app/defi') return repondre(200, { defi: VERROU.defiApp() });
+    if (p === '/api/verrou/app/deverrouiller') {
+      const r = VERROU.deverrouillerApp(q.id, q.defi, q.signature);
+      return repondre(200, { ok: true }, { 'Set-Cookie': cookieSession(r.session) });
+    }
     if (p === '/api/verrou/associer' || p === '/api/verrou/deverrouiller') {
       const r = q.reponse || {};
       const { session: s } = p === '/api/verrou/associer'

@@ -159,3 +159,50 @@ def test_la_pause_et_le_zero_jettent_la_pensee_en_attente(monkeypatch, tmp_path)
     assert "penser" not in appels
     lancer({"last_reflect": 0.0, "motif": {"seuil": 0.25, "_ts": time.time() + 1}})
     assert appels[-1] == "penser"
+
+
+def test_le_subconscient_se_tait_quand_ahmed_est_la(monkeypatch):
+    """Décision d'Ahmed (2026-10-22) : Gemma en pause s'il a écrit ou parlé dans les 30 dernières minutes."""
+    appels, notes = [], []
+    monkeypatch.setattr(daemon.interieur, "ACTIF", True)
+    monkeypatch.setattr(daemon, "dream_due", lambda mem: True)
+    monkeypatch.setattr(daemon, "dream", lambda eng, mem: appels.append("reve"))
+    monkeypatch.setattr(daemon, "_ressenti_pass", lambda mem: appels.append("ressenti"))
+    monkeypatch.setattr(daemon.interieur, "noter", lambda mem, quoi, detail, **k: notes.append(quoi))
+    import occupations
+    monkeypatch.setattr(occupations, "peut_etre", lambda eng, mem, etat: appels.append("occupation"))
+    import spontaneite
+    monkeypatch.setattr(spontaneite, "solliciter", lambda mem: None)
+    etat = {"last_reflect": 0.0}
+    g = charge.GardeCharge()
+    lancer = lambda present: daemon._travaux_llm(None, None, etat, g, lecture=lambda: (0.2, 80.0), robot=lambda: False,
+                                                 conscience=lambda: False, present=lambda: present)
+    lancer(True)
+    lancer(True)
+    assert appels == [] and etat["retrait_presence"] and notes == ["report"]     # noté une seule fois
+    lancer(False)
+    assert appels == ["reve", "occupation", "ressenti"] and not etat["retrait_presence"]
+
+
+def test_present_veut_dire_un_message_depuis_moins_de_30_min(tmp_path):
+    import json
+    h = tmp_path / "horloge.json"
+    maintenant = 1_800_000_000.0
+    assert daemon.interieur.ahmed_present(maintenant, h) is False                 # aucune horloge : absent
+    h.write_text(json.dumps({"dernier_ms": (maintenant - 29 * 60) * 1000}))
+    assert daemon.interieur.ahmed_present(maintenant, h) is True
+    h.write_text(json.dumps({"dernier_ms": (maintenant - 31 * 60) * 1000}))
+    assert daemon.interieur.ahmed_present(maintenant, h) is False
+
+
+def test_par_defaut_la_presence_vient_de_l_horloge_du_cockpit(monkeypatch):
+    """Sans « present » injecté, la garde lit la vraie horloge (isolée dans les tests) : vide = Ahmed absent."""
+    appels = []
+    monkeypatch.setattr(daemon.interieur, "ACTIF", False)
+    monkeypatch.setattr(daemon, "dream_due", lambda mem: True)
+    monkeypatch.setattr(daemon, "dream", lambda eng, mem: appels.append("reve"))
+    monkeypatch.setattr(daemon, "reflect", lambda eng, mem: appels.append("reflexion"))
+    etat = {"last_reflect": 0.0}
+    daemon._travaux_llm(None, None, etat, charge.GardeCharge(), lecture=lambda: (0.2, 80.0), robot=lambda: False,
+                        conscience=lambda: False)
+    assert appels == ["reve", "reflexion"]
