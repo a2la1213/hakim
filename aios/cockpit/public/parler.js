@@ -851,7 +851,7 @@ async function envoyer(texte, oral, dejaRelance) {
       body: JSON.stringify({ texte, oral: !!oral, modele: etat.conversation ? etat.reglages.modeleConversation : etat.reglages.modele, source: etat.reglages.source || 'auto', session: etat.session,
         t_precedent: tPrecedent, t_debut: tDebut, fichiers: joints.map(x => x.chemin), pensees_dites: dites,
         conversation: !!etat.conversation, present: presentEnvoye, maintenant: Date.now(), camera,
-        appareil: appareilPage(), volant: !!etat.reglages.volant, position: positionAEnvoyer(), tour_id: String(m.id) }),
+        appareil: appareilPage(), volant: !!etat.reglages.volant, position: positionAEnvoyer(), ecran: imageEcran(), tour_id: String(m.id) }),
     });
     if (!r.ok) throw new Error(r.status === 403 ? 'jeton refusé : recharge la page (le cockpit a redémarré)' : `erreur ${r.status}`);
     const lecteurFlux = r.body.getReader();
@@ -936,7 +936,7 @@ function widgetApp(quoi, texte) {
 }
 
 // (2026-10-22, Ahmed : « l'orbe du widget mouvante quand je parle ou que Hakim parle ») qui parle, envoyé au widget de
-// l'appli quand ça change : « parle » (sa voix joue), « ahmed » (ta voix, gardée 0,8 s après ton dernier son), « » sinon
+// l'appli quand ça change : « parle » (sa voix joue), « ahmed » (ta voix, gardée 0,8 s après ton dernier son), « repos » sinon
 let orbeWidget = '', ahmedJusqua = 0;
 setInterval(() => {
   try {
@@ -944,8 +944,10 @@ setInterval(() => {
     const c = etat.conversation;
     if ((c && c.capteur && c.capteur.enParole) || (etat.micro && !c)) ahmedJusqua = Date.now() + 800;
     const joue = lecteurNeuronal.joue || !!(lecteurSysteme && lecteurSysteme.actif);
-    // sa voix : la palette de son humeur (comme l'orbe de la page) ; la tienne : le rose violet
-    const mode = joue ? `parle:${(etat.interieur && etat.interieur.humeur_code) || 'calme'}` : Date.now() < ahmedJusqua ? 'ahmed' : '';
+    // sa voix : la palette de son humeur (comme l'orbe de la page) ; la tienne : le rose violet ; personne (15:49) :
+    // l'orbe au repos du widget, dans la palette de son humeur
+    const humeurCode = (etat.interieur && etat.interieur.humeur_code) || 'calme';
+    const mode = joue ? `parle:${humeurCode}` : Date.now() < ahmedJusqua ? 'ahmed' : `repos:${humeurCode}`;
     if (mode !== orbeWidget) { orbeWidget = mode; window.HakimApp.orbe(mode); }
   } catch (_) {}
 }, 250);
@@ -958,9 +960,11 @@ function alimenterBulle(niveauMicro) {
   try {
     if (!window.HakimApp || !window.HakimApp.bulleNiveau || (++bulleCompte % 3)) return;
     const c = etat.conversation;
-    let mode = 'repos', n = 0, b = [0, 0, 0];
+    // personne ne parle : la palette de son humeur, comme l'orbe de la page au repos (15:55, Ahmed)
+    const humeurCode = (etat.interieur && etat.interieur.humeur_code) || 'calme';
+    let mode = `repos:${humeurCode}`, n = 0, b = [0, 0, 0];
     const v = lecteurNeuronal.joue ? niveauVoix() : null;
-    if (v) { mode = `parle:${(etat.interieur && etat.interieur.humeur_code) || 'calme'}`; n = v.niveau; b = v.bandes; }
+    if (v) { mode = `parle:${humeurCode}`; n = v.niveau; b = v.bandes; }
     else if (c && c.capteur && c.capteur.enParole) { mode = 'ahmed'; n = niveauMicro; b = [n, n * 0.8, n * 0.6]; }
     window.HakimApp.bulleNiveau(mode, n, b[0], b[1], b[2]);
   } catch (_) {}
@@ -977,6 +981,31 @@ if (window.HakimApp && window.HakimApp.bulle) {
   try { afficherBulle(JSON.parse(window.HakimApp.bulleEtat())); } catch (_) {}
   $('bulle').addEventListener('change', (e) => { try { afficherBulle(JSON.parse(window.HakimApp.bulle(e.target.checked))); } catch (_) {} });
 }
+// (2026-10-22, 15:45, Ahmed ; conception de Hakim) « Regarde l'écran » (appli Android) : Hakim voit l'écran du téléphone,
+// quelle que soit l'appli ; une image (réduite) part avec chacun de tes messages tant que c'est allumé. Android demande ton
+// accord à chaque fois ; l'appli dit quand ça commence ou s'arrête (ecranEtat), aussi quand Android l'arrête lui-même.
+etat.ecran = false;
+function ecranEtat(oui) {
+  oui = !!oui;
+  const change = oui !== etat.ecran;
+  etat.ecran = oui;
+  for (const id of ['ecran', 'ecranScene']) $(id).setAttribute('aria-pressed', oui ? 'true' : 'false');
+  $('ecran').textContent = oui ? '👁 Écran' : 'Écran';
+  $('ecranScene').textContent = oui ? '👁 Hakim regarde ton écran' : 'Regarde l’écran';
+  if (change) humeur(oui ? 'Hakim regarde ton écran : une image part avec chacun de tes messages' : 'Hakim ne regarde plus ton écran');
+}
+function imageEcran() {
+  if (!etat.ecran || !window.HakimApp || !window.HakimApp.ecranImage) return undefined;
+  try { const d = window.HakimApp.ecranImage(); return d ? { data: d } : undefined; } catch (_) { return undefined; }
+}
+if (window.HakimApp && window.HakimApp.ecran) {
+  for (const id of ['ecran', 'ecranScene']) {
+    $(id).hidden = false;
+    $(id).addEventListener('click', (e) => { e.stopPropagation(); try { window.HakimApp.ecran(!etat.ecran); } catch (_) {} });
+  }
+  try { ecranEtat(window.HakimApp.ecranEtat()); } catch (_) {}
+}
+
 // (2026-10-22, 15:28) appli 0.8 : la bulle aussi hors conversation, et l'orbe sur l'écran de verrouillage
 if (window.HakimApp && window.HakimApp.bulleOption) {
   $('groupeBulleToujours').hidden = false;

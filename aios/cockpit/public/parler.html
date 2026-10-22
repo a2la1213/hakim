@@ -122,6 +122,7 @@
     .vision.sur-scene video { width: 176px; height: 132px; }
     .btn.camera[aria-pressed=true] { color: #fff; border-color: #f87171; background: rgba(239,68,68,.3); }
     .btn.muet[aria-pressed=true], #muetScene[aria-pressed=true] { color: #fff; border-color: #fbbf24; background: rgba(251,191,36,.28); }
+    .btn.ecran[aria-pressed=true], #ecranScene[aria-pressed=true] { color: #fff; border-color: #f472b6; background: rgba(244,114,182,.30); }
     .btn.pause[aria-pressed=true], #pauseScene[aria-pressed=true] { color: #fff; border-color: #93c5fd; background: rgba(59,130,246,.28); }
     .btn.conversation[aria-pressed=true] { color: #fff; border-color: #f9a8d4;
       background: linear-gradient(135deg, rgba(219,39,119,.55), rgba(168,85,247,.55)); box-shadow: 0 0 18px rgba(236,72,153,.35); }
@@ -335,6 +336,7 @@
       <div class="scene-haut">
         <div class="scene-cote gauche">
           <button class="btn" id="muetScene" hidden aria-pressed="false">Couper mon micro</button>
+          <button class="btn" id="ecranScene" hidden aria-pressed="false">Regarde l’écran</button>
         </div>
         <canvas id="orbeScene"></canvas>
         <div class="scene-cote droite">
@@ -368,6 +370,7 @@
         <button class="btn stop" id="stop" hidden>Stop</button>
       </div>
       <button class="btn camera" id="camera" aria-pressed="false" title="Hakim te voit : analyse de ton visage sur le Mac, photo jointe à chaque message (⌥V)">Caméra</button>
+      <button class="btn ecran" id="ecran" hidden aria-pressed="false" title="Regarde l'écran : Hakim voit l'écran de ton téléphone, une image jointe à chacun de tes messages (Android demande ton accord ; touche encore pour arrêter)">Écran</button>
       <button class="btn muet" id="muet" hidden aria-pressed="false" title="Couper ou rouvrir ton micro sans quitter la conversation (⌥X)">Muet</button>
       <button class="btn pause" id="pause" hidden aria-pressed="false" title="Mettre sa voix en pause ; il reprend à la phrase non dite (⌥P, ou dis « attends » / « continue »)">Pause</button>
       <button class="btn" id="orbeRetour" hidden title="Revenir à la grande orbe pendant la conversation (⌥O)">Orbe</button>
