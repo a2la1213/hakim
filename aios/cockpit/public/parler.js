@@ -1,6 +1,6 @@
 /* Cockpit — PARLER À JARVIS (feuille de route JarvisXAnamnèse, étape 5 : le micro ponctuel).
    Un clic sur le micro : Ahmed parle, le micro se referme tout seul à la fin de la phrase, la
-   transcription part à Jarvis, la réponse s'affiche ÉCRITE au fil de l'eau, avec « écouter ».
+   transcription part à Hakim, la réponse s'affiche ÉCRITE au fil de l'eau, avec « écouter ».
    Cerveau : `claude -p` sur l'abonnement, avec la mémoire Anamnèse (route /api/jarvis).
    Voix : celles du système, une par langue (voix.js). Le mode Conversation viendra à l'étape 6. */
 initNav('parler');
@@ -128,7 +128,7 @@ const lecteurSysteme = synth ? Voix.creerLecteur(synth, window.SpeechSynthesisUt
 //   à temps, le départ est retardé juste assez (au plus 3 s) pour qu'il n'y ait plus de coupure ;
 // - les vitesses sont apprises en direct (la machine peut être chargée) ;
 // - lecture SANS TROU par Web Audio : chaque morceau est programmé à l'instant où finit le précédent.
-// Jarvis ne commence pas à parler pendant que tu parles (ou que ta phrase est transcrite) : relecture
+// Hakim ne commence pas à parler pendant que tu parles (ou que ta phrase est transcrite) : relecture
 // Opus du 2026-10-16 — sinon il parlait par-dessus ton tour et Whisper transcrivait son écho.
 function jarvisPeutParler() {
   const c = etat.conversation;
@@ -414,7 +414,7 @@ function niveauVoix() {
   const moy = (a, b) => { let t = 0; for (let i = a; i < b; i++) t += freq[i]; return t / (b - a) / 255; };
   const g = moy(1, 5), m = moy(5, 17), a = moy(17, 48);              // ~0,2–0,9 kHz, ~0,9–3 kHz, ~3–9 kHz
   // Les octets de l'analyseur sont en décibels : la voix est « forte » en permanence. Calibré sur la vraie
-  // voix de Jarvis (2026-10-16 : graves 0,4–1, médiums 0,2–0,8, aigus 0,2–0,7) — plancher retiré, puis étiré.
+  // voix de Hakim (2026-10-16 : graves 0,4–1, médiums 0,2–0,8, aigus 0,2–0,7) — plancher retiré, puis étiré.
   const etire = (x, plancher, plage) => Math.max(0, Math.min(1, (x - plancher) / plage));
   return { niveau: etire(0.5 * g + 0.3 * m + 0.2 * a, 0.25, 0.55), bandes: [etire(g, 0.3, 0.65), etire(m, 0.2, 0.6), etire(a, 0.2, 0.55)] };
 }
@@ -477,8 +477,27 @@ try {                                             // ce qu'une page précédente
 const paroleRecente = [];
 function noterParole(texte) {
   const t = Date.now();
-  paroleRecente.push({ t, mots: new Set(sansAccents(texte).split(' ').filter(m => m.length >= 3)) });
+  paroleRecente.push({ t, mots: new Set(sansAccents(texte).split(' ').filter(m => m.length >= 3)), suite: sansAccents(texte).split(' ').filter(Boolean) });
   while (paroleRecente.length && t - paroleRecente[0].t > 120000) paroleRecente.shift();
+}
+/* (2026-10-22, vu par Hakim à 14:49 : téléphone plié, haut-parleur, sa phrase revenue mot pour mot dans ta transcription,
+   collée à la tienne) les morceaux de SA voix dans ce que le micro a entendu : toute suite d'au moins 4 mots qu'il vient de
+   dire (45 s) est retirée ; le reste est ce que tu as dit. Rend { texte, retire } (retire = nombre de mots enlevés). */
+function retirerEcho(texte) {
+  const mots = String(texte || '').split(/\s+/).filter(Boolean);
+  const norm = mots.map(m => sansAccents(m));
+  const suites = paroleRecente.filter(x => Date.now() - x.t < 45000 && x.suite).map(x => ' ' + x.suite.join(' ') + ' ');
+  if (!suites.length || mots.length < 4) return { texte: String(texte || ''), retire: 0 };
+  const garde = new Array(mots.length).fill(true);
+  for (let i = 0; i < norm.length; i++) {
+    let j = i + 4;                                       // la plus longue suite à partir de i qu'il a dite
+    if (j > norm.length || !suites.some(s => s.includes(' ' + norm.slice(i, j).join(' ') + ' '))) continue;
+    while (j < norm.length && suites.some(s => s.includes(' ' + norm.slice(i, j + 1).join(' ') + ' '))) j++;
+    for (let k = i; k < j; k++) garde[k] = false;
+    i = j - 1;
+  }
+  const reste = mots.filter((_, k) => garde[k]);
+  return { texte: reste.join(' '), retire: mots.length - reste.length };
 }
 function estSonEcho(texte) {
   const mots = sansAccents(texte).split(' ').filter(m => m.length >= 3);
@@ -711,7 +730,7 @@ function rendre() {
   const enBas = fil.scrollHeight - fil.scrollTop - fil.clientHeight < 80;
   if (!etat.messages.length) {
     fil.innerHTML = `<div class="vide">Appuie sur le <b>micro</b> et parle : le micro se referme tout seul quand tu as fini,
-      et la réponse s'affiche ici, avec <b>écouter</b> pour l'entendre.<br>Jarvis connaît ta mémoire Anamnèse et la complète.</div>`;
+      et la réponse s'affiche ici, avec <b>écouter</b> pour l'entendre.<br>Hakim connaît ta mémoire Anamnèse et la complète.</div>`;
     return;
   }
   etat.fenetre = Math.max(etat.fenetre || FENETRE, FENETRE);
@@ -768,7 +787,7 @@ async function copierTexte(t) {
 const nouvelId = () => Date.now() + Math.floor(Math.random() * 1000);
 
 // Le présent vécu (demande d'Ahmed : « conscient de chaque seconde ») : qui a parlé, quand, combien de
-// temps, les pauses, les coupures ; envoyé à chaque message, Jarvis le perçoit à la seconde près.
+// temps, les pauses, les coupures ; envoyé à chaque message, Hakim le perçoit à la seconde près.
 function noterPresent(ev) {
   etat.present.push(ev);
   const limite = Date.now() - 10 * 60 * 1000;
@@ -914,6 +933,47 @@ function widgetApp(quoi, texte) {
     if (t.length > 140) t = '…' + t.slice(-140);
     window.HakimApp.widget(quoi, t);
   } catch (_) {}
+}
+
+// (2026-10-22, Ahmed : « l'orbe du widget mouvante quand je parle ou que Hakim parle ») qui parle, envoyé au widget de
+// l'appli quand ça change : « parle » (sa voix joue), « ahmed » (ta voix, gardée 0,8 s après ton dernier son), « » sinon
+let orbeWidget = '', ahmedJusqua = 0;
+setInterval(() => {
+  try {
+    if (!window.HakimApp || !window.HakimApp.orbe) return;
+    const c = etat.conversation;
+    if ((c && c.capteur && c.capteur.enParole) || (etat.micro && !c)) ahmedJusqua = Date.now() + 800;
+    const joue = lecteurNeuronal.joue || !!(lecteurSysteme && lecteurSysteme.actif);
+    // sa voix : la palette de son humeur (comme l'orbe de la page) ; la tienne : le rose violet
+    const mode = joue ? `parle:${(etat.interieur && etat.interieur.humeur_code) || 'calme'}` : Date.now() < ahmedJusqua ? 'ahmed' : '';
+    if (mode !== orbeWidget) { orbeWidget = mode; window.HakimApp.orbe(mode); }
+  } catch (_) {}
+}, 250);
+
+// (2026-10-22, Ahmed) la bulle flottante de l'appli Android : l'orbe vivante de Parler par-dessus les autres applis. Quand
+// l'appli est cachée, la page lui envoie le vrai niveau des voix, au rythme du micro (une fenêtre sur trois, ~16 par
+// seconde : ces messages de l'audio continuent page cachée, quand les minuteurs, eux, sont ralentis).
+let bulleCompte = 0;
+function alimenterBulle(niveauMicro) {
+  try {
+    if (!window.HakimApp || !window.HakimApp.bulleNiveau || (++bulleCompte % 3)) return;
+    const c = etat.conversation;
+    let mode = 'repos', n = 0, b = [0, 0, 0];
+    const v = lecteurNeuronal.joue ? niveauVoix() : null;
+    if (v) { mode = `parle:${(etat.interieur && etat.interieur.humeur_code) || 'calme'}`; n = v.niveau; b = v.bandes; }
+    else if (c && c.capteur && c.capteur.enParole) { mode = 'ahmed'; n = niveauMicro; b = [n, n * 0.8, n * 0.6]; }
+    window.HakimApp.bulleNiveau(mode, n, b[0], b[1], b[2]);
+  } catch (_) {}
+}
+function afficherBulle(o) {
+  if (!o) return;
+  $('bulle').checked = !!o.active;
+  $('etatBulle').textContent = o.active && !o.permise ? '(donne la permission « afficher par-dessus les autres applications » dans l’écran qui s’ouvre, puis reviens)' : '';
+}
+if (window.HakimApp && window.HakimApp.bulle) {
+  $('groupeBulle').hidden = false;
+  try { afficherBulle(JSON.parse(window.HakimApp.bulleEtat())); } catch (_) {}
+  $('bulle').addEventListener('change', (e) => { try { afficherBulle(JSON.parse(window.HakimApp.bulle(e.target.checked))); } catch (_) {} });
 }
 
 // « coupé » s'affiche sous la réponse qu'il n'a pas pu finir de dire
@@ -1159,7 +1219,7 @@ async function basculerConversation() {
       ctx: actx,
       patienceMs: patienceConversation,
       jarvisParle: () => lecteur.actif,
-      surNiveau: (n) => { etat.niveauMicro = n; if (document.visibilityState === 'hidden') micEnFond++; },
+      surNiveau: (n) => { etat.niveauMicro = n; if (document.visibilityState === 'hidden') { micEnFond++; alimenterBulle(n); } },
       surDebut: () => { conv.finDemandee = false; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre('…'); humeur('je t’écoute…'); },
       surPause: (fenetre) => surPauseConversation(conv, fenetre),
       surSilence: (ms) => { if (conv.capteur && conv.capteur.enParole) { compteARebours(ms); anticiperConversation(conv, ms); } },
@@ -1316,6 +1376,14 @@ async function tourDeParole(conv, wav, infos, extra) {
   if (!vivante()) return;
   conv.fermeture = false;                                                   // ce dernier tour, une seule fois
   if (!Conversation.utile(texte)) { journalVoix('tour_bruit', { coupure: !!etat.coupeParAhmed }); if (!reprendreVoix()) humeur(); return; }      // bruit, une autre voix : il reprend
+  // (2026-10-22) ses phrases revenues par le haut-parleur, collées à la tienne : retirées ; s'il ne reste presque rien,
+  // c'était son écho
+  const sansEcho = retirerEcho(texte);
+  if (sansEcho.retire) {
+    journalVoix('echo_retire', { mots: sansEcho.retire, reste: sansEcho.texte.split(/\s+/).filter(Boolean).length });
+    if (sansEcho.texte.split(/\s+/).filter(m => m.length >= 2).length < 2) { if (!reprendreVoix()) humeur(); return; }
+    texte = sansEcho.texte;
+  }
   // (2026-10-21) sa propre voix revenue par le micro : ce n'est pas toi qui parles, il reprend
   if (estSonEcho(texte)) { journalVoix('echo_reconnu', { mots: texte.split(/\s+/).length }); if (!reprendreVoix()) humeur(); return; }
   noterPresent({ e: 'ahmed', debut: infos.debut, fin: infos.fin, pauses: infos.pauses, ton: tonRelatif(infos, texte) });
@@ -1347,7 +1415,7 @@ function basculerMicro() {
   activite();
   if (etat.transcription) return;                        // transcription en cours : micro verrouillé
   if (etat.micro) return etat.micro.attente ? undefined : arreterMicro(true);   // re-clic : « j'ai fini »
-  arreterTout();                                         // on coupe Jarvis quand Ahmed reprend la parole
+  arreterTout();                                         // on coupe Hakim quand Ahmed reprend la parole
   if (etat.reglages.reconnaissance === 'locale' && etat.sttLocal) return ecouterLocal();
   return ecouterNavigateur();
 }
@@ -1541,7 +1609,7 @@ async function lireInterieur() {
   } catch (_) {}
 }
 
-/* L'interrupteur de sa vie intérieure (proposé par Jarvis, validé par Ahmed le 2026-10-17) : pause, reprise,
+/* L'interrupteur de sa vie intérieure (proposé par Hakim, validé par Ahmed le 2026-10-17) : pause, reprise,
    remise à zéro — ennui, humeur, pensées, occupations, journal du temps ; jamais sa mémoire. */
 function afficherVie(o) {
   const pause = !!(o && o.pause);
@@ -1562,7 +1630,7 @@ async function reglerVie(action) {
 }
 $('vieInterrupteur').addEventListener('click', () => reglerVie($('vieInterrupteur').getAttribute('aria-pressed') === 'true' ? 'marche' : 'arret'));
 $('vieZero').addEventListener('click', () => {
-  if (confirm("Remettre la vie intérieure de Jarvis à zéro ?\nSon ennui et son temps ressenti repartent de zéro, son humeur revient à sa base, son journal du temps est archivé. Sa mémoire n'est pas touchée.")) reglerVie('zero');
+  if (confirm("Remettre la vie intérieure de Hakim à zéro ?\nSon ennui et son temps ressenti repartent de zéro, son humeur revient à sa base, son journal du temps est archivé. Sa mémoire n'est pas touchée.")) reglerVie('zero');
 });
 
 function signalerPresence() {
@@ -1580,7 +1648,7 @@ function surPensee(o) {
   const m = { id, qui: 'j', spontane: o.role, texte: o.texte, ts: o.ts * 1000, episode: o.id };
   etat.messages.push(m);
   sauver(); rendre();
-  $('annonce').textContent = `${o.role === 'outreach' ? 'Jarvis te relance' : 'Pensée spontanée de Jarvis'} : ${o.texte}`;
+  $('annonce').textContent = `${o.role === 'outreach' ? 'Hakim te relance' : 'Pensée spontanée de Hakim'} : ${o.texte}`;
   const h = new Date().getHours();
   const silence = Date.now() - etat.derniereActivite > 120000;
   // une relance qui suit sa pensée se met à la suite de la lecture (elle n'était jamais dite)
@@ -2009,7 +2077,8 @@ for (const [id, cle, val] of [['source', 'source', e => e.value], ['modele', 'mo
 $('btnReglages').addEventListener('click', () => {
   const s = $('reglages'); s.hidden = !s.hidden;
   $('btnReglages').setAttribute('aria-expanded', String(!s.hidden));
-  if (!s.hidden) { afficherVerrou(); afficherJetons(); afficherNotifs(); afficherEmpreinte(); afficherPromesses(); }
+  if (!s.hidden) { afficherVerrou(); afficherJetons(); afficherNotifs(); afficherEmpreinte(); afficherPromesses();
+    try { if (window.HakimApp && window.HakimApp.bulleEtat) afficherBulle(JSON.parse(window.HakimApp.bulleEtat())); } catch (_) {} }
 });
 
 /* ---------- la position (accord d'Ahmed, 2026-10-22) : éteinte par défaut, coupable à tout moment. Arrondie à trois
@@ -2418,7 +2487,7 @@ function afficherSecours(o) {
   const pct = (x) => (x && Number.isFinite(x.utilization) ? Math.round(x.utilization * 100) + ' %' : '?');
   const quand = (t) => new Date(t * 1000).toLocaleString('fr-FR', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
   $('etatForfait').textContent = ab.limite_jusqua
-    ? `forfait à sa limite jusqu'à ${quand(ab.limite_jusqua / 1000)} : Jarvis passe par ${api.cle ? "l'API" : 'son cerveau local'}`
+    ? `forfait à sa limite jusqu'à ${quand(ab.limite_jusqua / 1000)} : Hakim passe par ${api.cle ? "l'API" : 'son cerveau local'}`
     : (f ? `forfait : ${pct(f.five_hour)} des 5 h, ${pct(f.seven_day)} de la semaine${f.seven_day && f.seven_day.resetsAt ? ' (remise à zéro ' + quand(f.seven_day.resetsAt) + ')' : ''}` : '');
 }
 async function enregistrerCle(cle) {
@@ -2464,7 +2533,7 @@ charger();
 appliquerReglages();
 if (window.top !== window) {
   $('bandeau').hidden = false;
-  $('bandeau').textContent = 'Dans le panneau de VS Code, le micro est bloqué : ouvre http://localhost:4317/parler dans Chrome ou Safari pour parler à Jarvis.';
+  $('bandeau').textContent = 'Dans le panneau de VS Code, le micro est bloqué : ouvre http://localhost:4317/parler dans Chrome ou Safari pour parler à Hakim.';
 }
 rendre(); humeur();
 verifierServeur();

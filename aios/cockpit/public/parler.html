@@ -2,8 +2,8 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Parler à Jarvis</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+  <title>Parler à Hakim</title>
   <link rel="stylesheet" href="/theme.css">
   <style>
     [hidden] { display: none !important; }
@@ -12,7 +12,7 @@
       display: flex; flex-direction: column; gap: 12px; min-height: calc(100vh - 80px); }
     .tete { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
     .orbe-tete { width: 64px; height: 64px; flex: none; margin: -9px -6px -9px -2px; }
-    /* La scène : la grande orbe quand Jarvis parle ou écoute, avec le sous-titre de ce qu'il dit. */
+    /* La scène : la grande orbe quand Hakim parle ou écoute, avec le sous-titre de ce qu'il dit. */
     .scene { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; align-content: center; gap: 8px;
       background: radial-gradient(ellipse at 50% 45%, rgba(3,14,16,.55), rgba(2,8,10,.88) 70%);
       backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
@@ -169,6 +169,23 @@
     }
     /* sur le téléphone (écran tactile) : pas de raccourcis clavier à afficher */
     @media (pointer: coarse) { .aide { display: none; } }
+    /* (2026-10-22, Ahmed) en haut, l'orbe et son nom restent visibles ; en bas, la zone de saisie aussi, et elle remonte avec
+       le clavier (la page tient exactement dans l'écran visible : interactive-widget=resizes-content dans le navigateur,
+       la WebView rétrécie par l'appli) ; seul le fil défile entre les deux ; les réglages défilent dans leur cadre. */
+    html, body { height: 100%; }
+    body { overflow: hidden; display: flex; flex-direction: column; box-sizing: border-box; height: 100vh; height: 100dvh; }
+    body > :not(.parler) { flex: none; }
+    .parler { flex: 1 1 auto; min-height: 0; width: 100%; box-sizing: border-box; }
+    .tete, .bandeau, .saisie, .aide { flex: none; }
+    .fil { flex: 1 1 auto; min-height: 0; max-height: none; }
+    .reglages { flex: none; max-height: 45vh; max-height: 45dvh; overflow-y: auto; }
+    /* clavier ouvert sur le téléphone (écran visible bas) : la barre AIOS et les boutons de l'en-tête s'effacent, l'orbe et
+       son nom restent, et le fil garde de la place entre l'en-tête et la zone de saisie */
+    @media (max-height: 560px) and (max-width: 900px) {
+      body > .topnav, .tete .actions, .tete .sous { display: none; }
+      body { padding-top: 8px; padding-bottom: 6px; }
+      .parler { gap: 8px; }
+    }
   </style>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#04141a">
@@ -180,11 +197,11 @@
     <header class="tete">
       <canvas class="orbe-tete" id="orbe" aria-hidden="true"></canvas>
       <div>
-        <h1>JARVIS</h1>
+        <h1>HAKIM</h1>
         <p class="sous" id="etat" role="status">prêt · mémoire Anamnèse</p>
       </div>
       <div class="vision" id="vision" hidden>
-        <video id="apercu" playsinline muted aria-label="Ce que la caméra de Jarvis voit"></video>
+        <video id="apercu" playsinline muted aria-label="Ce que la caméra de Hakim voit"></video>
         <span class="expression" id="expression">…</span>
       </div>
       <div class="actions">
@@ -237,6 +254,8 @@
       </label>
       <label>Patience du micro avant de fermer
         <select id="patience">
+          <option value="0.5">0,5 s de silence (à l'essai : tes hésitations font 0,6 à 1 s)</option>
+          <option value="1">1 s de silence</option>
           <option value="2">2 s de silence</option>
           <option value="3.5">3,5 s de silence</option>
           <option value="5">5 s de silence</option>
@@ -244,7 +263,7 @@
           <option value="0">jamais : je clique pour finir</option>
         </select>
       </label>
-      <label>Voix de Jarvis
+      <label>Voix de Hakim
         <select id="voix">
           <option value="neuronale">neuronale · Chatterbox (naturelle, locale)</option>
           <option value="systeme">système · voix du Mac</option>
@@ -254,8 +273,9 @@
       <label>Voix arabe (système) <select id="voixAr"></select></label>
       <label>Vitesse de la voix <input type="range" id="vitesse" min="0.8" max="1.4" step="0.05"></label>
       <label class="case"><input type="checkbox" id="lectureAuto"> lire les réponses à voix haute dès qu'elles arrivent</label>
-      <label class="case"><input type="checkbox" id="sceneActive"> la grande orbe quand Jarvis parle ou t'écoute</label>
+      <label class="case"><input type="checkbox" id="sceneActive"> la grande orbe quand Hakim parle ou t'écoute</label>
       <label class="case"><input type="checkbox" id="rapide"> réponse rapide : il répond dès que ta phrase semble finie (sinon il attend ta patience)</label>
+      <label class="case" id="groupeBulle" hidden><input type="checkbox" id="bulle"> la bulle flottante de Hakim par-dessus les autres applis, pendant une conversation (appli Android) <em id="etatBulle"></em></label>
       <label class="case"><input type="checkbox" id="position"> partager ma position avec Hakim, à chaque message (arrondie à une centaine de mètres) <em id="etatPosition"></em></label>
       <div class="vie" role="group" aria-label="Secours du cerveau">
         <span>En automatique : le forfait Claude, puis l'API Claude (payée à l'usage) s'il atteint sa limite, puis le cerveau local. <em id="etatForfait"></em></span>
@@ -264,8 +284,8 @@
         <button class="btn" type="button" id="effacerCle">Effacer</button>
         <span id="etatCle"></span>
       </div>
-      <div class="vie" role="group" aria-label="Vie intérieure de Jarvis">
-        <span>Vie intérieure de Jarvis : <em id="etatVie">…</em></span>
+      <div class="vie" role="group" aria-label="Vie intérieure de Hakim">
+        <span>Vie intérieure de Hakim : <em id="etatVie">…</em></span>
         <button class="btn" type="button" id="vieInterrupteur" aria-pressed="false">Mettre en pause</button>
         <button class="btn" type="button" id="vieZero">Remettre à zéro</button>
       </div>
@@ -339,13 +359,13 @@
       <input type="file" id="choix" multiple hidden>
       <div class="zone">
         <div class="joints" id="joints" hidden></div>
-        <textarea id="q" rows="1" placeholder="Écris à Jarvis, ou appuie sur le micro…" aria-label="Message à Jarvis"></textarea>
+        <textarea id="q" rows="1" placeholder="Écris à Hakim, ou appuie sur le micro…" aria-label="Message à Hakim"></textarea>
       </div>
       <div class="col">
         <button class="btn principal" id="envoyer">Envoyer</button>
         <button class="btn stop" id="stop" hidden>Stop</button>
       </div>
-      <button class="btn camera" id="camera" aria-pressed="false" title="Jarvis te voit : analyse de ton visage sur le Mac, photo jointe à chaque message (⌥V)">Caméra</button>
+      <button class="btn camera" id="camera" aria-pressed="false" title="Hakim te voit : analyse de ton visage sur le Mac, photo jointe à chaque message (⌥V)">Caméra</button>
       <button class="btn muet" id="muet" hidden aria-pressed="false" title="Couper ou rouvrir ton micro sans quitter la conversation (⌥X)">Muet</button>
       <button class="btn pause" id="pause" hidden aria-pressed="false" title="Mettre sa voix en pause ; il reprend à la phrase non dite (⌥P, ou dis « attends » / « continue »)">Pause</button>
       <button class="btn" id="orbeRetour" hidden title="Revenir à la grande orbe pendant la conversation (⌥O)">Orbe</button>
