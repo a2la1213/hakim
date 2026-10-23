@@ -1073,10 +1073,14 @@ if (window.HakimApp && window.HakimApp.ecran) {
 // (2026-10-23, 20:20, Ahmed : « aucune notification, ni sur le téléphone ni sur la montre ») l'appli est cachée et Hakim
 // dit quelque chose : une vraie notification Android, que la montre reçoit aussi (Galaxy Wearable relaie les applis permises)
 function notifierApp(titre, texte, id) {
+  if (!window.HakimApp || !window.HakimApp.notifier) return;
+  // (20:32, test de Hakim non reçu) chaque tentative laisse sa trace au diagnostic : page visible (pas de notification),
+  // ou ce que l'appli a répondu (envoyee, permission_refusee, notifications_coupees, canal_coupe, erreur)
+  if (document.visibilityState !== 'hidden') { journalVoix('notif_app', { resultat: 'page_visible' }); return; }
   try {
-    if (document.visibilityState !== 'hidden' || !window.HakimApp || !window.HakimApp.notifier) return;
-    window.HakimApp.notifier(titre, Voix.sansAffect(String(texte || '')).replace(Voix.VOIX_SEULE, '').trim(), String(id || ''));
-  } catch (_) {}
+    const r = window.HakimApp.notifier(titre, Voix.sansAffect(String(texte || '')).replace(Voix.VOIX_SEULE, '').trim(), String(id || ''));
+    journalVoix('notif_app', { resultat: typeof r === 'string' && /^[a-z_]{1,30}$/.test(r) ? r : 'appli_ancienne' });
+  } catch (_) { journalVoix('notif_app', { resultat: 'exception' }); }
 }
 if (window.HakimApp && window.HakimApp.notifsPermises) {
   const montrer = () => {
