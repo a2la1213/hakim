@@ -101,3 +101,12 @@ test("l'état interne du téléphone entre avec les capteurs ; un nom de Wi-Fi o
   for (const reseau of ['Wi-Fi MaBox-1234', 'réseau mobile, Orange F', 'Wi-Fi, 192.168.1.20'])
     assert.ok(!ctx.blocSituation({ capteurs: { reseau, t_ms: T } }, false, { appareil: 'le Mac' }, T).texte.includes(reseau), reseau);
 });
+
+test("appli 1.5 : chaleur d'après la température, Bluetooth et NFC, sans nom d'appareil", () => {
+  const capteurs = { chaleur: 'téléphone à 40 °C, tiède', bluetooth: 'Bluetooth activé, un appareil audio connecté', nfc: 'NFC désactivé',
+    energie: "économie d'énergie désactivée", t_ms: T };
+  const a = ctx.blocSituation({ capteurs }, false, { appareil: 'le Mac' }, T);
+  assert.match(a.texte, /économie d'énergie désactivée, téléphone à 40 °C, tiède, Bluetooth activé, un appareil audio connecté, NFC désactivé/);
+  for (const bluetooth of ['Bluetooth activé, AirPods de Ahmed', 'Bluetooth activé, un appareil audio connecté : JBL'])
+    assert.ok(!ctx.blocSituation({ capteurs: { bluetooth, t_ms: T } }, false, { appareil: 'le Mac' }, T).texte.includes('Bluetooth'), bluetooth);
+});

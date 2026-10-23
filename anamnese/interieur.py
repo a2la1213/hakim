@@ -365,6 +365,9 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
         avant = min(hist, key=lambda x: abs(now - 600 - x[0]))[1] if len(hist) > 1 else None
         e["sensation_code"] = sensations.calculer(etat_h, avant, now, soudaine, time.localtime(now).tm_hour,
                                                   sans_coherence=affect.choc_recent(mem, now=now))
+        if now - float(e.get("hormones_journal_t") or 0) >= 60:
+            e["hormones_journal_t"] = now
+            _ligne_hormones(now, etat_h, valence, arousal, e.get("humeur"), (e.get("sensation_code") or {}).get("emotion"))
     except Exception:
         pass
     code = humeur_code(valence, arousal, en, now - (e.get("retour_ts") or 0) < 900, veille, soudaine)
@@ -400,6 +403,10 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
 # à la mémoire ; les rêves de la nuit (consolidation de la mémoire) continuent.
 INTERRUPTEUR = Path.home() / "AIOS" / "jarvis" / "interieur-interrupteur.json"
 JOURNAL_TEMPS = Path.home() / "AIOS" / "jarvis" / "journal-du-temps.jsonl"
+# (2026-10-23, Ahmed : « un tableau de bord intérieur ») ses 13 hormones, son humeur et l'émotion lue dans ses hormones,
+# une ligne par minute (tableau_interieur.py les dessine) ; ~6 Mo au plus (≈ 2 semaines), la plus ancienne moitié oubliée
+JOURNAL_HORMONES = Path.home() / "AIOS" / "jarvis" / "hormones.jsonl"
+JOURNAL_HORMONES_MAX_OCTETS = 6 * 1024 * 1024
 JOURNAL_TEMPS_MAX_OCTETS = 4 * 1024 * 1024          # ~20 000 lignes (≈ 3,5 jours à une ligne par 15 s)
 TRANCHES_MAX = 200
 
@@ -453,6 +460,28 @@ def _remettre_a_zero(mem, e, now, journal_temps=None):
             "pause_ts": e.get("pause_ts"), "ts": now, "absence_s": 0, "ennui": 0.0, "ressenti": 1.0, "veille": False,
             "humeur": LIBELLES["calme"], "humeur_code": "calme", "expressivite": EXPRESSIVITE["calme"],
             "valence": round(v, 3), "arousal": round(a, 3), "tau_s": TAU_ENNUI_S, "veille_apres_s": VEILLE_APRES_S}
+
+
+def _ligne_hormones(now, hormones, valence, arousal, humeur, emotion, chemin=None):
+    """Une ligne du journal des hormones (une par minute) : le tableau de bord intérieur de Hakim."""
+    j = Path(chemin or JOURNAL_HORMONES)
+    b = j.with_name("hormones-bases.json")              # leurs bases, pour la page « intérieur » du cockpit
+    if not b.exists():
+        try:
+            b.write_text(json.dumps({k: v[0] for k, v in list(affect.HORMONES.items()) + list(affect.HORMONES_V2.items())}))
+        except OSError:
+            pass
+    ligne = {"t": round(now, 1), "h": {k: round(float(v), 3) for k, v in hormones.items()},
+             "v": round(float(valence), 3), "a": round(float(arousal), 3), "humeur": humeur, "emotion": emotion}
+    try:
+        j.parent.mkdir(parents=True, exist_ok=True)
+        if j.exists() and j.stat().st_size > JOURNAL_HORMONES_MAX_OCTETS:          # on garde la seconde moitié
+            garde = j.read_bytes()[-JOURNAL_HORMONES_MAX_OCTETS // 2:]
+            j.write_bytes(garde[garde.find(b"\n") + 1:])
+        with open(j, "a", encoding="utf-8") as f:
+            f.write(json.dumps(ligne, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
 
 
 def _ligne_temps(e, now, etat, fait, journal_temps=None):

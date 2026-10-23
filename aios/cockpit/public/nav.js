@@ -17,7 +17,7 @@ window.REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion
 
 window.initNav = function (active) {
   document.body.classList.add('shell');
-  const views = [['dashboard', '/', 'DASHBOARD'], ['brain', '/brain', 'CERVEAU 3D'], ['dreams', '/dreams', 'LABO DES RÊVES'], ['memory', '/memory', 'MÉMOIRE'], ['chat', '/chat', 'CHAT'], ['parler', '/parler', 'PARLER']];
+  const views = [['dashboard', '/', 'DASHBOARD'], ['brain', '/brain', 'CERVEAU 3D'], ['dreams', '/dreams', 'LABO DES RÊVES'], ['memory', '/memory', 'MÉMOIRE'], ['chat', '/chat', 'CHAT'], ['parler', '/parler', 'PARLER'], ['interieur', '/interieur', 'INTÉRIEUR']];
   const nav = document.createElement('nav');
   nav.className = 'topnav';
   nav.innerHTML = '<div class="beacon"></div><span class="brand">AIOS</span>'

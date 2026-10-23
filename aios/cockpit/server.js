@@ -1296,6 +1296,38 @@ function positionDe(q, maintenant) {
    joint à ses messages. En mémoire seulement, jamais écrit ni journalisé ; redit dans [Situation] quand il change ; plus
    vieux que 10 min : ignoré. Chaque champ est un texte court aux caractères comptés : rien d'autre n'entre dans le tour. */
 let capteursCourants = null;
+/* Le tableau de bord intérieur de Hakim (2026-10-23, demande d'Ahmed relayée par Hakim) : ses 13 hormones et son humeur,
+   une mesure par minute (interieur.py → hormones.jsonl), ses réponses et les messages d'Ahmed (journal.jsonl, sa fin
+   seulement). La page /interieur le redessine toutes les 15 s ; l'outil tableau_interieur de Hakim en fait une image. */
+function lignesDepuis(fichier, depuisS, octets = 0) {
+  let t = '';
+  try {
+    if (octets) {
+      const fd = fs.openSync(fichier, 'r'), taille = fs.fstatSync(fd).size, n = Math.min(taille, octets);
+      const b = Buffer.alloc(n); fs.readSync(fd, b, 0, n, taille - n); fs.closeSync(fd); t = b.toString('utf8');
+    } else t = fs.readFileSync(fichier, 'utf8');
+  } catch (_) { return []; }
+  const out = [];
+  for (const l of t.split('\n')) {
+    let o; try { o = JSON.parse(l); } catch (_) { continue; }
+    const ts = Number(o.t) || Number(o.ts) / 1000 || 0;
+    if (ts >= depuisS) out.push([ts, o]);
+  }
+  return out;
+}
+function tableauInterieur(heures, maintenant = Date.now()) {
+  const depuis = maintenant / 1000 - heures * 3600;
+  let bases = {}; try { bases = JSON.parse(fs.readFileSync(path.join(JARVIS, 'hormones-bases.json'), 'utf8')); } catch (_) {}
+  const points = lignesDepuis(path.join(JARVIS, 'hormones.jsonl'), depuis)
+    .map(([t, o]) => ({ t, v: o.v, a: o.a, h: o.h || {}, humeur: o.humeur || null, emotion: o.emotion || null }));
+  const reponses = [], messages = [];
+  for (const [t, o] of lignesDepuis(JARVIS_JOURNAL, depuis, 3 << 20)) {
+    const x = String(o.texte || '');
+    if (o.qui === 'jarvis' && x && !x.startsWith('(tour de lui-même, sans texte')) reponses.push({ t, x: finDePhrase(x.replace('[de lui-même]', ''), 90) });
+    else if (o.qui === 'ahmed') messages.push(t);
+  }
+  return { heures, t0: depuis, t1: maintenant / 1000, bases, points, reponses, messages };
+}
 // le vocabulaire exact de l'appli (Capteurs.java) : rien d'autre n'est accepté
 const CAPTEURS_CHAMPS = {
   posture: /^téléphone (plié|déplié|entrouvert \(\d{1,3}°\))$/,
@@ -1305,11 +1337,15 @@ const CAPTEURS_CHAMPS = {
   altitude: /^(monte|descend) de \d{1,4} m en \d{1,2} min$/,
   // (2026-10-23, Ahmed, 19:18) l'état interne du téléphone (EtatTelephone.java) : jamais de nom de réseau ni d'identifiant
   batterie: /^batterie \d{1,3} %(, en charge)?(, chaude \(\d{2} °C\))?$/,
+  // (19:27, Ahmed) appli 1.5 : la chaleur d'après la température (normal < 38 °C, tiède < 43, chaud < 48, très chaud au-delà),
+  // le Bluetooth et le NFC (jamais le nom d'un appareil), l'économie d'énergie activée OU désactivée
   reseau: /^(hors ligne|autre réseau|(Wi-Fi|réseau mobile)(, (signal excellent|bon signal|signal moyen|signal faible|signal très faible))?)$/,
   memoire: /^mémoire (basse|juste|confortable)$/,
   stockage: /^stockage libre \d{1,5} Go sur \d{1,5} Go$/,
-  energie: /^économie d'énergie activée$/,
-  chaleur: /^appareil (tiède|chaud|très chaud)$/,
+  energie: /^économie d'énergie (activée|désactivée)$/,
+  chaleur: /^(appareil (tiède|chaud|très chaud)|téléphone à \d{2} °C, (normal|tiède|chaud|très chaud)(, surchauffe signalée par Android)?)$/,
+  bluetooth: /^Bluetooth (désactivé|activé(, un appareil audio connecté)?)$/,
+  nfc: /^NFC (activé|désactivé)$/,
 };
 function capteursDe(c, maintenant) {
   if (!c || typeof c !== 'object') return null;
@@ -3013,7 +3049,7 @@ const { Verrou, lireCookie, DUREE_SESSION } = require('./passkey.js');
 const VERROU = new Verrou(process.env.JARVIS_VERROU || path.join(JARVIS, 'verrou.json'));
 const COOKIE_VERROU = 'verrou';
 const PAGES = { '/': 'index.html', '/brain': 'brain.html', '/dreams': 'dreams.html', '/memory': 'memory.html', '/chat': 'chat.html',
-  '/parler': 'parler.html', '/verrou': 'verrou.html', '/duel': 'duel.html' };
+  '/parler': 'parler.html', '/verrou': 'verrou.html', '/duel': 'duel.html', '/interieur': 'interieur.html' };
 const LIBRES_VERROUILLE = new Set(['/verrou.js', '/theme.css',        // ce que la page du verrou charge
   '/sw.js', '/manifest.webmanifest', '/icone-192.png', '/icone-512.png']);   // l'appli et ses notifications (sans secret)
 const cookieSession = (s) => `${COOKIE_VERROU}=${s}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(DUREE_SESSION / 1000)}`;
@@ -3907,6 +3943,12 @@ async function traiter(req, res) {
       const o = VERROU.optionsPresence(distantReq ? distant.hote : 'localhost', action);
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o));
     } catch (e) { res.writeHead(409, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
+  }
+  if (p === '/api/jarvis/tableau' && req.method === 'GET') {        // (2026-10-23) le tableau de bord intérieur, en direct
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    const heures = Math.max(0.25, Math.min(72, Number(new URL(req.url, 'http://x').searchParams.get('heures')) || 6));
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j(tableauInterieur(heures)));
   }
   if (p === '/api/capteurs' && req.method === 'POST') {             // (2026-10-23) le dernier résumé des capteurs du téléphone
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }

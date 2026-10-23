@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Intérieur de Hakim</title>
+  <link rel="stylesheet" href="/theme.css">
+  <!-- (2026-10-23, demande d'Ahmed relayée par Hakim) le tableau de bord intérieur de Hakim, en direct : ses 13 hormones (avec
+       leur base en pointillés), son humeur (valence, éveil), ses réponses et les messages d'Ahmed sur la ligne du temps.
+       Redessiné toutes les 15 s ; une mesure par minute (interieur.py → hormones.jsonl). -->
+  <style>
+    [hidden] { display: none !important; }
+    main { max-width: 1400px; margin: 0 auto; padding: 0 16px 24px; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 14px; }
+    h1 { font-size: 18px; color: var(--txt); font-weight: 600; margin: 4px 0 0; }
+    .sous { font-size: 13px; color: var(--txt-3); }
+    .barre { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .barre button { font: inherit; font-size: 13px; padding: 8px 12px; min-height: 40px; border-radius: 10px; border: 1px solid var(--glass-bd);
+      background: transparent; color: var(--txt-2); cursor: pointer; }
+    .barre button[aria-pressed="true"] { background: rgba(45,212,191,.22); color: var(--txt); border-color: var(--teal); }
+    .carte { padding: 12px; }
+    .legende { font-size: 12px; color: var(--txt-3); display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
+    canvas { width: 100%; display: block; }
+    #humeur { height: 240px; }
+    .grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 10px; }
+    .hormone { padding: 10px; }
+    .hormone .nom { font-size: 13px; margin-bottom: 4px; }
+    .hormone canvas { height: 110px; }
+    ol { margin: 0; padding-left: 22px; font-size: 13px; color: var(--txt-2); line-height: 1.6; }
+    .vide { font-size: 14px; color: var(--txt-3); padding: 20px; text-align: center; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Hakim — sa vie intérieure, en direct</h1>
+    <div class="sous" id="etat">…</div>
+    <div class="barre" id="periodes">
+      <button data-h="1">1 h</button><button data-h="6" aria-pressed="true">6 h</button><button data-h="24">24 h</button><button data-h="72">3 jours</button>
+    </div>
+    <section class="glass carte">
+      <div class="legende"><span style="color:#2dd4bf">— valence (agréable ↔ désagréable)</span><span style="color:#fbbf24">— éveil</span>
+        <span>▼ ses réponses (numérotées en bas)</span><span style="color:#f472b6">▲ messages d'Ahmed</span></div>
+      <canvas id="humeur"></canvas>
+    </section>
+    <div class="grille" id="hormones"></div>
+    <section class="glass carte"><div class="legende">Ses dernières réponses</div><ol id="reponses"></ol></section>
+    <div class="vide" id="vide" hidden>Pas encore de mesures sur cette période : le journal des hormones commence le 23/10 au soir.</div>
+  </main>
+  <script src="/nav.js"></script>
+  <script>
+  initNav('interieur');
+  const COULEURS = ['#2dd4bf', '#f472b6', '#fbbf24', '#60a5fa', '#a78bfa', '#34d399', '#fb7185', '#93c5fd', '#fde68a', '#f97316', '#a3e635', '#e879f9', '#94a3b8'];
+  const NOMS = ['dopamine', 'serotonine', 'noradrenaline', 'cortisol', 'ocytocine', 'acetylcholine', 'endorphine', 'melatonine',
+    'endocannabinoides', 'adrenaline', 'gaba', 'crh', 'acth'];
+  let heures = 6, donnees = null;
+  const $ = (id) => document.getElementById(id);
+  const hhmm = (t) => new Date(t * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+  // une toile nette sur tous les écrans, et la fonction qui place un instant / une valeur (0 à 1) dedans
+  function preparer(c) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1), w = c.clientWidth, h = c.clientHeight;
+    c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+    const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    const m = { g: 6, d: 6, h: 14, b: 18 };
+    const X = (t) => m.g + (t - donnees.t0) / (donnees.t1 - donnees.t0) * (w - m.g - m.d);
+    const Y = (v) => m.h + (1 - Math.max(0, Math.min(1, v))) * (h - m.h - m.b);
+    g.strokeStyle = 'rgba(127,169,164,.18)'; g.lineWidth = 1;
+    for (const k of [0, .25, .5, .75, 1]) { g.beginPath(); g.moveTo(m.g, Y(k)); g.lineTo(w - m.d, Y(k)); g.stroke(); }
+    const span = donnees.t1 - donnees.t0, pas = span > 24 * 3600 ? 6 * 3600 : span > 4 * 3600 ? 3600 : span > 2 * 3600 ? 1800 : 900;
+    g.fillStyle = 'rgba(127,169,164,.8)'; g.font = '10px system-ui'; g.textAlign = 'center';
+    for (let t = Math.ceil(donnees.t0 / pas) * pas; t < donnees.t1; t += pas) {
+      g.beginPath(); g.moveTo(X(t), m.h); g.lineTo(X(t), h - m.b); g.stroke(); g.fillText(hhmm(t), X(t), h - 4);
+    }
+    return { g, X, Y, w, h, m };
+  }
+  function courbe(t, serie, couleur, epaisseur = 2) {
+    const { g, X, Y } = t;
+    g.strokeStyle = couleur; g.lineWidth = epaisseur; g.lineJoin = 'round'; g.beginPath();
+    serie.forEach(([ts, v], i) => (i ? g.lineTo(X(ts), Y(v)) : g.moveTo(X(ts), Y(v)))); g.stroke();
+  }
+  function dessiner() {
+    if (!donnees) return;
+    const pts = donnees.points, rep = donnees.reponses, derniers = rep.slice(-8);
+    $('vide').hidden = pts.length > 0;
+    const d = pts[pts.length - 1] || {};
+    $('etat').textContent = `humeur : ${d.humeur || '—'} · émotion lue dans ses hormones : ${d.emotion || '—'} · `
+      + `${rep.length} réponse(s), ${donnees.messages.length} message(s) d'Ahmed · de ${hhmm(donnees.t0)} à ${hhmm(donnees.t1)}`;
+    // valence, éveil, réponses (en haut), messages d'Ahmed (en bas)
+    const t = preparer($('humeur'));
+    rep.forEach(({ t: ts }) => { t.g.fillStyle = '#2dd4bf'; t.g.beginPath(); t.g.moveTo(t.X(ts) - 5, 2); t.g.lineTo(t.X(ts) + 5, 2); t.g.lineTo(t.X(ts), 11); t.g.fill(); });
+    derniers.forEach(({ t: ts }, k) => { t.g.fillStyle = '#d8f3f0'; t.g.font = '10px system-ui'; t.g.fillText(String(k + 1), t.X(ts), 24); });
+    donnees.messages.forEach((ts) => { t.g.fillStyle = '#f472b6'; t.g.beginPath(); t.g.moveTo(t.X(ts) - 5, t.h - t.m.b); t.g.lineTo(t.X(ts) + 5, t.h - t.m.b); t.g.lineTo(t.X(ts), t.h - t.m.b - 9); t.g.fill(); });
+    courbe(t, pts.map(p => [p.t, p.v]), '#2dd4bf', 2.5);
+    courbe(t, pts.map(p => [p.t, p.a]), '#fbbf24', 2.5);
+    // les 13 hormones
+    const grille = $('hormones');
+    if (!grille.children.length) grille.innerHTML = NOMS.map((n, i) => `<section class="glass hormone"><div class="nom" id="n-${n}" style="color:${COULEURS[i]}">${n}</div><canvas id="c-${n}"></canvas></section>`).join('');
+    NOMS.forEach((n, i) => {
+      const serie = pts.filter(p => p.h[n] !== undefined).map(p => [p.t, p.h[n]]);
+      const base = donnees.bases[n], v = serie.length ? serie[serie.length - 1][1] : null;
+      $(`n-${n}`).textContent = v === null ? n : `${n} ${v.toFixed(2)}${base !== undefined ? ` (${v >= base ? '+' : '−'}${Math.abs(v - base).toFixed(2)})` : ''}`;
+      const h = preparer($(`c-${n}`));
+      if (base !== undefined) { h.g.setLineDash([4, 4]); h.g.strokeStyle = 'rgba(127,169,164,.7)'; h.g.beginPath(); h.g.moveTo(h.m.g, h.Y(base)); h.g.lineTo(h.w - h.m.d, h.Y(base)); h.g.stroke(); h.g.setLineDash([]); }
+      courbe(h, serie, COULEURS[i]);
+    });
+    $('reponses').innerHTML = derniers.map(({ t: ts, x }) => `<li>${hhmm(ts)} — « ${esc(x)} »</li>`).join('') || '<li>aucune sur cette période</li>';
+  }
+  async function charger() {
+    try {
+      const r = await fetch(`/api/jarvis/tableau?heures=${heures}`, { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+      if (r.ok) { donnees = await r.json(); dessiner(); }
+    } catch (_) {}
+  }
+  $('periodes').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-h]'); if (!b) return;
+    heures = Number(b.dataset.h);
+    for (const x of $('periodes').querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b));
+    charger();
+  });
+  window.addEventListener('resize', dessiner);
+  charger(); setInterval(charger, 15000);
+  </script>
+</body>
+</html>

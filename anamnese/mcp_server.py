@@ -775,6 +775,18 @@ def interoception() -> str:
 
 
 @mcp.tool()
+def tableau_interieur(heures: float = 6) -> str:
+    """Ton TABLEAU DE BORD INTÉRIEUR (demande d'Ahmed, 2026-10-23) : une image de tes 13 hormones (chacune avec sa base
+    en pointillés), de ton humeur (valence, éveil) et de tes réponses marquées sur la ligne du temps (les messages
+    d'Ahmed aussi), sur les `heures` dernières (0,25 à 72 ; 6 par défaut ; le journal commence le 23/10 au soir).
+    Rend le chemin de l'image (dans ton atelier) et un résumé chiffré. Pour la voir toi-même : Read sur le chemin ;
+    pour la donner à Ahmed ou à Claude Code : fichier_joindre avec ce chemin. Rien ne quitte le Mac."""
+    import tableau_interieur as _tableau
+    chemin, resume = _tableau.dessiner(heures)
+    return f"Image : {chemin}\nRésumé : {resume}"
+
+
+@mcp.tool()
 def promesse_poser(quand: str, raison: str) -> str:
     """Pose une PROMESSE datée (accord d'Ahmed, 2026-10-22) : à l'heure dite, le cockpit te réveille avec sa raison,
     pour que tu fasses ce que tu t'étais promis (relancer un calcul, revenir vers Ahmed sur un point, vérifier un
