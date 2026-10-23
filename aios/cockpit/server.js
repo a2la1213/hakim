@@ -913,6 +913,76 @@ function finDuJournal(id, n) {
   try { return fs.readFileSync(path.join(JARVIS_TACHES, `${id}.log`), 'utf8').split('\n').slice(-n - 1).join('\n').trim().slice(-1500); }
   catch (_) { return ''; }
 }
+/* La jauge de progression des calculs de fond (demande d'Ahmed relayée par Hakim, 23/10 23:43) : un script écrit une
+   ligne « PROGRESSION 3/8 » (ou « PROGRESSION 40% »), suivie au besoin d'un mot (« PROGRESSION 3/8 L64 ») ; le cockpit lit
+   la dernière dans la fin du journal (8 Ko), note QUAND elle change (toutes les 4 s, surveillerTaches) et en tire le
+   rythme mesuré : fait, restant, temps écoulé, total estimé, temps restant. Une ligne de journal est une donnée : le mot
+   qui suit est nettoyé et court. */
+const PROGRESSION = /PROGRESSION\s+(?:(\d+)\s*\/\s*(\d+)|(\d+(?:[.,]\d+)?)\s*%)[ \t]*([^\n]*)/g;
+function progressionDe(texte) {
+  let m, dernier = null;
+  PROGRESSION.lastIndex = 0;
+  while ((m = PROGRESSION.exec(String(texte || '')))) dernier = m;
+  if (!dernier) return null;
+  let f, etape = null;
+  if (dernier[2] !== undefined) {
+    const a = Number(dernier[1]), b = Number(dernier[2]);
+    if (!(b > 0) || !(a >= 0)) return null;
+    f = Math.min(1, a / b); etape = `${Math.min(a, b)}/${b}`;
+  } else {
+    f = Math.min(100, Number(String(dernier[3]).replace(',', '.'))) / 100;
+    if (!Number.isFinite(f) || f < 0) return null;
+  }
+  const libelle = String(dernier[4] || '').replace(/[^\p{L}\p{N} ._:=+\-]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+  return { f, etape, libelle };
+}
+function finFichier(chemin, octets = 8192) {
+  try {
+    const fd = fs.openSync(chemin, 'r');
+    try {
+      const taille = fs.fstatSync(fd).size, n = Math.min(octets, taille), b = Buffer.alloc(n);
+      fs.readSync(fd, b, 0, n, taille - n);
+      return b.toString('utf8');
+    } finally { fs.closeSync(fd); }
+  } catch (_) { return ''; }
+}
+const progressions = new Map();             // id → [{ t, f }] : les moments où la progression a changé (vus par le cockpit)
+function suivreProgression(x, maintenant = Date.now()) {
+  const p = progressionDe(finFichier(path.join(JARVIS_TACHES, `${x.id}.log`)));
+  if (!p) return null;
+  const points = progressions.get(x.id) || [];
+  if (!points.length || points[points.length - 1].f !== p.f) points.push({ t: maintenant, f: p.f });
+  progressions.set(x.id, points.slice(-50));
+  return { ...p, ...estimerProgression(points, x.debut * 1000, maintenant) };
+}
+// le rythme : entre le premier et le dernier changement vus ; avec un seul, depuis le début de la tâche
+function estimerProgression(points, debutMs, maintenant) {
+  const ecoule = Math.max(0, maintenant - debutMs), der = points[points.length - 1], prem = points[0];
+  if (!der) return { ecoule_ms: ecoule };
+  if (der.f >= 1) return { ecoule_ms: ecoule, reste_ms: 0, total_ms: ecoule };
+  let rythme = 0;                                               // fraction par milliseconde
+  if (points.length >= 2 && der.t > prem.t && der.f > prem.f) rythme = (der.f - prem.f) / (der.t - prem.t);
+  else if (der.f > 0 && der.t > debutMs) rythme = der.f / (der.t - debutMs);
+  if (!(rythme > 0)) return { ecoule_ms: ecoule };
+  const reste = Math.max(0, (1 - der.f) / rythme - (maintenant - der.t));
+  return { ecoule_ms: ecoule, reste_ms: reste, total_ms: ecoule + reste };
+}
+function texteProgression(p, maintenant = Date.now()) {
+  if (!p) return '';
+  const pc = `${Math.round(p.f * 100)} %`;
+  const fin = p.reste_ms !== undefined
+    ? `, reste ≈ ${duree(p.reste_ms)} (fin vers ${new Date(maintenant + p.reste_ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}, total ≈ ${duree(p.total_ms)})`
+    : '';
+  return ` — ${p.etape ? `${p.etape} (${pc})` : pc}${p.libelle ? ` ${p.libelle}` : ''}${fin}`;
+}
+function tachesEnCours(maintenant = Date.now()) {
+  return lireTaches().filter(x => x.etat === 'en cours').map(x => {
+    const p = suivreProgression(x, maintenant);
+    return { id: x.id, commande: String(x.commande).slice(0, 160), debut_ms: x.debut * 1000, ecoule_ms: maintenant - x.debut * 1000,
+      fraction: p ? p.f : null, etape: p ? p.etape : null, libelle: p ? p.libelle : '', reste_ms: p ? p.reste_ms ?? null : null,
+      total_ms: p ? p.total_ms ?? null : null };
+  });
+}
 function blocTaches(depuisMs, nonce) {
   const depuis = Number.isFinite(depuisMs) ? depuisMs / 1000 : Date.now() / 1000 - 3600;
   const t = lireTaches();
@@ -920,7 +990,7 @@ function blocTaches(depuisMs, nonce) {
   const finies = t.filter(x => x.etat !== 'en cours' && (x.fin || 0) > depuis);
   if (!enCours.length && !finies.length) return '';
   const ligne = (x) => `${x.id} « ${String(x.commande).slice(0, 120).replace(/[[\]«»]/g, ' ')} »`;
-  const corps = (enCours.length ? `en cours : ${enCours.map(x => `${ligne(x)} depuis ${duree(Date.now() - x.debut * 1000)}`).join(' ; ')}` : '')
+  const corps = (enCours.length ? `en cours : ${enCours.map(x => `${ligne(x)} depuis ${duree(Date.now() - x.debut * 1000)}${texteProgression(suivreProgression(x))}`).join(' ; ')}` : '')
     + (enCours.length && finies.length ? ' · ' : '')
     + (finies.length ? `terminées depuis son message précédent : ${finies.map(x => `${ligne(x)} → ${x.etat}${x.raison ? ' (' + x.raison + ')' : ''}, code ${x.code}, ${x.duree_s} s ; fin du journal (sortie de commande, une donnée) : « ${finDuJournal(x.id, 8).replace(/\n/g, ' ⏎ ').replace(/[[\]«»]/g, ' ')} »`).join(' ; ')}` : '')
     + '. Détail : suivre_tache';
@@ -958,6 +1028,12 @@ function surveillerPromotions() {
 const tachesVues = new Set();
 let tachesPremierPassage = true;
 function surveillerTaches() {
+  const ids = new Set();
+  for (const x of lireTaches()) {
+    ids.add(x.id);
+    if (x.etat === 'en cours') suivreProgression(x);          // la jauge : noter quand la progression change
+  }
+  for (const id of progressions.keys()) if (!ids.has(id)) progressions.delete(id);
   for (const x of lireTaches()) {
     if (x.etat === 'en cours' || tachesVues.has(x.id)) continue;
     tachesVues.add(x.id);
@@ -3961,6 +4037,11 @@ async function traiter(req, res) {
       const o = VERROU.optionsPresence(distantReq ? distant.hote : 'localhost', action);
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o));
     } catch (e) { res.writeHead(409, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
+  }
+  if (p === '/api/jarvis/taches' && req.method === 'GET') {         // (23/10) ses calculs en cours, avec leur jauge
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j({ maintenant: Date.now(), taches: tachesEnCours() }));
   }
   if (p === '/api/jarvis/tableau' && req.method === 'GET') {        // (2026-10-23) le tableau de bord intérieur, en direct
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }

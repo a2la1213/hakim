@@ -2995,3 +2995,39 @@ reglesAuChargement();
 identiteAuChargement();
 sortiesAuChargement();
 $('q').focus();
+
+/* ---------- ses calculs de fond, avec leur jauge (23/10, demande d'Ahmed relayée par Hakim) : le cockpit lit les lignes
+   « PROGRESSION 3/8 » de leurs journaux et mesure le rythme ; la page montre fait, restant, écoulé, total estimé. Toutes
+   les 10 s quand la page est visible ; rien ne s'affiche quand rien ne tourne. ---------- */
+function dureeCourte(ms) {
+  const m = Math.round(Math.max(0, ms) / 60000);
+  return m < 1 ? 'moins d’1 min' : m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
+}
+function htmlCalcul(x) {
+  const connu = typeof x.fraction === 'number', pc = connu ? Math.round(x.fraction * 100) : null;
+  const quoi = (x.libelle ? `${x.libelle} · ` : '') + String(x.commande || '').replace(/^cd \S+ && /, '');
+  const fait = connu ? `${x.etape ? `${x.etape} · ` : ''}${pc} %` : 'en cours';
+  const details = [`depuis ${dureeCourte(x.ecoule_ms)}`];
+  if (typeof x.reste_ms === 'number') {
+    details.push(`reste ≈ ${dureeCourte(x.reste_ms)}`, `total ≈ ${dureeCourte(x.total_ms)}`,
+      `fin vers ${new Date(Date.now() + x.reste_ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`);
+  } else if (!connu) details.push('pas de jauge (le script n’écrit pas de ligne PROGRESSION)');
+  return `<div class="calcul"><div class="ligne"><span class="quoi" title="${esc(x.commande)}">${esc(quoi)}</span>`
+    + `<span class="chiffres">${esc(fait)}</span></div>`
+    + `<div class="barre${connu ? '' : ' inconnue'}" role="progressbar" aria-label="${esc(quoi)}" aria-valuemin="0" aria-valuemax="100"${connu ? ` aria-valuenow="${pc}"` : ''}>`
+    + `<span${connu ? ` style="width:${pc}%"` : ''}></span></div><div class="details">${esc(details.join(' · '))}</div></div>`;
+}
+async function chargerCalculs() {
+  if (document.visibilityState !== 'visible') return;
+  try {
+    let r = await fetch('/api/jarvis/taches', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+    if (r.status === 403 && await rafraichirJeton()) r = await fetch('/api/jarvis/taches', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+    if (!r.ok) return;
+    const { taches } = await r.json();
+    const b = $('calculs');
+    b.hidden = !(taches || []).length;
+    if (!b.hidden) b.innerHTML = `<div class="titre">Calculs de Hakim en cours</div>${taches.map(htmlCalcul).join('')}`;
+  } catch (_) {}
+}
+chargerCalculs(); setInterval(chargerCalculs, 10000);
+document.addEventListener('visibilitychange', chargerCalculs);

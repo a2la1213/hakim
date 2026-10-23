@@ -106,6 +106,18 @@
     .m .pied button:hover { color: var(--teal-hi); }
     .m.u .pied { justify-content: flex-end; margin-top: 4px; }
 
+    .calculs { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+    .calculs .titre { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--txt-4); }
+    .calcul .ligne { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--txt-2); }
+    .calcul .quoi { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .calcul .chiffres { flex: none; color: var(--txt-3); font-variant-numeric: tabular-nums; }
+    .calcul .barre { height: 6px; border-radius: 3px; background: rgba(127,169,164,.18); overflow: hidden; margin-top: 4px; }
+    .calcul .barre span { display: block; height: 100%; background: var(--teal); border-radius: 3px; transition: width .6s ease; }
+    .calcul .barre.inconnue span { width: 30%; opacity: .45; animation: va-vient 1.6s ease-in-out infinite alternate; }
+    @keyframes va-vient { from { margin-left: 0; } to { margin-left: 70%; } }
+    @media (prefers-reduced-motion: reduce) { .calcul .barre.inconnue span { animation: none; } }
+    .calcul .details { font-size: 11px; color: var(--txt-4); margin-top: 3px; font-variant-numeric: tabular-nums; }
+
     .saisie { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
     .saisie .rang { display: flex; align-items: center; gap: 8px; }
     .saisie .rang.ecrire { align-items: flex-end; }
@@ -352,6 +364,8 @@
       <p class="note" id="noteVoix"></p>
     </section>
 
+    <!-- (23/10, demande d'Ahmed relayée par Hakim) ses calculs de fond en cours, avec leur jauge -->
+    <section class="glass calculs" id="calculs" aria-label="Calculs en cours" hidden></section>
     <section class="glass fil" id="fil" aria-label="Conversation"></section>
     <div id="annonce" class="sr" aria-live="polite"></div>
     <div id="horsLigne" class="hors-ligne" role="status" aria-live="polite" hidden></div>
