@@ -25,3 +25,7 @@ d823991f18a9f602f2c8801759f21e9f1b49cf290f98d6271f2c52b2a2427252  ../voix_mots/c
 302067ce79639d0b4f152da0c8d89bada99a619b6fc4bdcc9db19efa07037d25  predictions-3.md
 d9349645dc9b1fe706dbfa5c1f7ed3a42fd34e14838053a6658858746594e04a  ../../style.py
 amendements figés le 2026-10-23 12:03:21, avant la fenêtre du 24/10
+766c68b04b07b704ff460240ed5ed1c79269ab8905e123c96938e146d601f09a  ../voix_mots/criteres.md
+9d8376d35e8220d7d76b8854ff270a8e31e514c397bcac42f726d6d1fb8a7a2c  ../voix_mots/mesure.py
+4416231b0e6eaca97ec209ade1faf11f55060bb29c6aad7eced09ea83b8a3ff6  ../../style.py
+style v2 et mesure amendée figés le 2026-10-23 12:17:32, avant la fenêtre du 24/10

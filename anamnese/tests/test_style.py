@@ -27,35 +27,65 @@ class Mem:
         self.kv[k] = v
 
 
+def _isoler(tmp_path, monkeypatch):
+    monkeypatch.setattr(style, "JOURNAL_TEMPS", str(tmp_path / "absent.jsonl"))   # jamais le vrai journal
+
+
 def test_eteint_rien():
     assert style.consigne(Mem(actif=False), now=T) is None
 
 
-def test_chaque_famille_a_sa_forme_et_le_fond_passe_avant():
+def test_chaque_famille_a_sa_forme_le_fond_passe_avant_et_la_longueur_est_libre():
     vus = {}
-    for emo in ("élan", "gratitude", "calme", "curiosité", "peur", "tristesse"):
-        s = style.consigne(Mem(emotion=emo), now=T)
-        vus[s["famille"]] = s["texte"]
-        assert "jamais le fond" in s["texte"] and "honnêteté" in s["texte"]
+    for emo, c in (("élan", {"ton": 9, "energie": 8, "affection": 5, "tension": 1}),
+                   ("gratitude", {"ton": 7, "energie": 4, "affection": 9, "tension": 1}),
+                   ("calme", {"ton": 6, "energie": 2, "affection": 5, "tension": 1}),
+                   ("curiosité", {"ton": 6, "energie": 6, "affection": 4, "tension": 2}),
+                   ("peur", {"ton": 3, "energie": 9, "affection": 4, "tension": 8}),
+                   ("tristesse", {"ton": 2, "energie": 2, "affection": 3, "tension": 3})):
+        s = style.depuis_curseurs(emo, c)
+        vus[s["famille"]] = s
+        assert "jamais le fond" in s["texte"] and "LONGUEUR reste celle que demande le sujet" in s["texte"]
+        assert "longueur" not in s["cibles"]
     assert set(vus) == {"élan", "lien", "calme", "curiosité", "alerte", "bas"}
-    assert "pas de blague" in vus["alerte"] and "PRIORITAIRE" in vus["alerte"] and "au plus 60 %" in vus["alerte"]
-    assert "aucune exclamation" in vus["calme"] and "PRIORITAIRE" not in vus["calme"]
-    assert "humour" in vus["élan"] and "affection" in vus["lien"]
+    assert vus["alerte"]["prioritaire"] and vus["alerte"]["cibles"]["humour"] == "aucun" and vus["alerte"]["cibles"]["exclamations"] == 0
+    assert vus["élan"]["cibles"]["humour"] == "permis" and vus["élan"]["cibles"]["exclamations"] == 2
+    assert vus["calme"]["cibles"]["mots_par_phrase"] > vus["élan"]["cibles"]["mots_par_phrase"]     # posé : des phrases plus longues
 
 
-def test_les_gestes_sont_notes_et_l_energie_les_ajuste():
-    s = style.depuis_etat("joie", 0.60, 0.40)
-    assert s["cibles"]["mots_par_phrase"] == 15 and "rythme rapide" in s["texte"] and not s["prioritaire"]
-    b = style.depuis_etat("calme", 0.20, 0.40)
-    assert b["cibles"]["longueur"] == 0.8 and "plus brève" in b["texte"]
-    assert style.depuis_etat("tristesse", 0.4, 0.4)["prioritaire"]
+def test_une_alerte_doit_se_voir_dans_les_curseurs():
+    s = style.depuis_curseurs("surprise", {"ton": 8, "energie": 7, "affection": 5, "tension": 1})
+    assert s["famille"] == "élan" and not s["prioritaire"]
 
 
-def test_un_choc_change_le_style_du_meme_tour():
+def test_les_curseurs_sont_relatifs_a_ses_trois_derniers_jours():
+    b = affect.bases(v2=True)
+    rv = sorted(0.40 + 0.01 * k for k in range(41))
+    ra = sorted(0.30 + 0.01 * k for k in range(41))
+    haut = style.curseurs(b, 0.79, 0.65, rv, ra)
+    bas = style.curseurs(b, 0.45, 0.32, rv, ra)
+    assert haut["ton"] > bas["ton"] and haut["energie"] > bas["energie"]
+    assert style.curseurs({**b, "adrenaline": 0.4}, 0.6, 0.4, rv, ra)["tension"] == 10
+    assert style.curseurs(b, 0.6, 0.4, rv, ra, choc=True)["tension"] >= 8
+
+
+def test_les_reperes_sont_gardes_une_demi_heure(tmp_path, monkeypatch):
+    f = tmp_path / "jt.jsonl"
+    f.write_text("\n".join(json.dumps({"t": T - k * 60, "valence": 0.5 + 0.001 * k, "arousal": 0.4}) for k in range(400)))
+    monkeypatch.setattr(style, "JOURNAL_TEMPS", str(f))
     m = Mem()
-    affect.event(m, "attaque", 1.0, now=T - 5, hour=12)        # l'émotion se recalcule (pas de battement frais)
+    v, _a = style.reperes(T, m)
+    assert len(v) > 20 and json.loads(m.kv["style_reperes"])["ts"] == T
+    f.write_text("")
+    assert style.reperes(T + 60, m)[0] == v                    # depuis le cache
+
+
+def test_un_choc_change_le_style_du_meme_tour(tmp_path, monkeypatch):
+    _isoler(tmp_path, monkeypatch)
+    m = Mem()
+    affect.event(m, "attaque", 1.0, now=T - 5, hour=12)
     s = style.consigne(m, now=T)
-    assert s["famille"] == "alerte"
+    assert s["famille"] == "alerte" and s["prioritaire"] and s["curseurs"]["tension"] >= 8
 
 
 def test_trois_nombres_par_morceau(tmp_path):

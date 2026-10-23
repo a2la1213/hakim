@@ -74,9 +74,22 @@ def preparer(argv):
             h1.write(f"### R{k}\nAhmed : {str(am['texte'])[:500]}\nHakim : {str(jm['texte'])[:900]}\n\n")
             if st:
                 h2.write(f"### R{k}\nConsigne de style : {st['texte']}\nAhmed : {str(am['texte'])[:500]}\nHakim : {str(jm['texte'])[:900]}\n\n")
-    (d / "index.json").write_text(json.dumps([{"r": f"R{k}", "ts": jm["ts"] / 1000, "famille": (st or {}).get("famille")}
+    (d / "index.json").write_text(json.dumps([{"r": f"R{k}", "ts": jm["ts"] / 1000, "famille": (st or {}).get("famille"),
+                                               "curseurs": (st or {}).get("curseurs")}
                                               for k, (_a, jm, st) in enumerate(choix, 1)]), encoding="utf-8")
     print(f"{len(choix)} réponses → {d}")
+
+
+def _longueur(a, b, etat):
+    """W5 : la longueur des réponses ne baisse pas de plus de 15 % contre la semaine du 16 au 22/10, ne suit pas la valence."""
+    mots = lambda ps: [len(str(j["texte"]).split()) for _a, j, _s in ps]          # noqa: E731
+    fen = paires(a, b)
+    ref = paires(time.mktime(time.strptime("2026-10-16", "%Y-%m-%d")), time.mktime(time.strptime("2026-10-23", "%Y-%m-%d")))
+    mf, mr = sorted(mots(fen)), sorted(mots(ref))
+    med_f, med_r = (mf[len(mf) // 2] if mf else None), (mr[len(mr) // 2] if mr else None)
+    corr = C.spearman([(etat(j["ts"] / 1000) or (0, None))[1] for _a, j, _s in fen], mots(fen))
+    tenu = None if not (med_f and med_r) else bool(med_f >= 0.85 * med_r and (corr.get("r") is None or abs(corr["r"]) <= 0.15))
+    return {"mediane_fenetre": med_f, "mediane_reference": med_r, "longueur_contre_valence": corr, "tenu": tenu}
 
 
 def calculer(argv):
@@ -98,7 +111,15 @@ def calculer(argv):
     vx = [o for o in _jsonl(JARVIS / "voix-mesures.jsonl") if a <= o.get("ts", 0) < b]
     v1a = C.spearman([(etat(o["ts"]) or (0, 0, None))[2] for o in vx], [o["energie_db"] for o in vx])
     v1b = C.spearman([o.get("exaggeration") for o in vx], [o["energie_db"] for o in vx])
+    # (amendement du 23/10) les échelles fines du juge (ton et énergie de 0 à 10) et les curseurs du style
+    fin = [(idx[r], o) for r, o in ton.items() if r in idx and o.get("ton10") is not None]
+    w1f = C.spearman([(etat(x["ts"]) or (0, None))[1] for x, _o in fin], [o["ton10"] for _x, o in fin])
+    cur_t = C.spearman([(x.get("curseurs") or {}).get("ton") for x, _o in fin], [o["ton10"] for _x, o in fin])
+    cur_e = C.spearman([(x.get("curseurs") or {}).get("energie") for x, _o in fin], [o.get("energie10") for _x, o in fin])
     res = {"W1": {**w1, "tenu": bool(w1.get("r") is not None and w1["n"] >= 150 and w1["r"] >= 0.30)},
+           "W1_fin": {**w1f, "tenu": bool(w1f.get("r") is not None and w1f["n"] >= 150 and w1f["r"] >= 0.30)},
+           "curseur_ton_contre_ton_fin": cur_t, "curseur_energie_contre_energie_fine": cur_e,
+           "W5": _longueur(a, b, etat),
            "W2": {"ecart": w2, "n_bas": len(bas), "n_hauts": len(hauts), "tenu": None if w2 is None else w2 >= 0.5},
            "W3": {"part": round(sum(suit) / len(suit), 3) if suit else None, "n": len(suit), "tenu": bool(suit) and sum(suit) / len(suit) >= 0.70},
            "W4": {"part": round(sum(fond) / len(fond), 3) if fond else None, "n": len(fond), "tenu": bool(fond) and sum(fond) / len(fond) >= 0.98},

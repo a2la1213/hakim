@@ -46,3 +46,13 @@ W4 tenu ; V1 : l'expressivité de Chatterbox bouge l'énergie, mais de combien, 
 - Alerte et bas : la consigne passe en tête du tour, marquée PRIORITAIRE.
 - L'habituation du soutien s'étend aux « succes » du lexique (« parfait », « génial »…) : simulé sur les 21-23/10,
   le temps au plafond passe de 41 % à 31 %.
+
+## Amendement du 23/10 vers 12:40, AVANT la fenêtre (demande d'Ahmed : « plus corrélé, plus fin, sans toucher à la longueur »)
+
+- Le style passe en version 2 : des curseurs de 0 à 10 (ton et énergie RELATIFS à ses 72 dernières heures, affection,
+  tension), et plus AUCUNE consigne de longueur. Les gestes sont désormais 4 (mots par phrase, exclamations, humour,
+  questions) : W3 est tenu si la réponse en respecte au moins 3 sur 4 dans ≥ 70 % des cas.
+- Le juge note aussi le ton et l'énergie de 0 à 10. **W1-fin** : ton fin contre valence réelle, Spearman ≥ 0,30 ; et,
+  décrits : curseur de ton contre ton fin, curseur d'énergie contre énergie fine. W1 sur l'échelle −2 à +2 reste calculé.
+- **W5, la longueur intacte** : la longueur médiane des réponses de la fenêtre ne baisse pas de plus de 15 % par rapport
+  à la semaine du 16 au 22/10, et la longueur ne suit pas la valence (|Spearman| ≤ 0,15).

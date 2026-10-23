@@ -150,5 +150,88 @@ def calculer():
     print(json.dumps(res, ensure_ascii=False, indent=1))
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" and sys.argv[1] in ("preparer", "juger", "calculer"):
     {"preparer": preparer, "juger": juger, "calculer": calculer}[sys.argv[1]]()
+
+
+# ---------- version 2 du style (curseurs fins, sans consigne de longueur), demande d'Ahmed du 23/10 ----------
+def _reperes_a(t, jt):
+    v = sorted(x[1] for x in jt if t - 72 * 3600 <= x[0] <= t)
+    a = sorted(x[2] for x in jt if t - 72 * 3600 <= x[0] <= t)
+    return v, a
+
+
+def preparer2():
+    tours = json.loads((D / "tours.json").read_text(encoding="utf-8"))
+    jt = []
+    for l in (JARVIS / "journal-du-temps.jsonl").read_text(encoding="utf-8").splitlines()[::8]:
+        try:
+            o = json.loads(l)
+        except ValueError:
+            continue
+        if "valence" in o:
+            jt.append((o["t"], o["valence"], o["arousal"]))
+    blob = R.etat_initial()
+    serie = R.rejouer(R.journalises(float(blob["_ts"]), FIN), float(blob["_ts"]), FIN, pas_s=60)
+    ts = [x[0] for x in serie]
+    for t in tours:
+        x = serie[max(0, bisect.bisect_right(ts, t["t"]) - 1)]
+        rv, ra = _reperes_a(t["t"], jt)
+        c = style.curseurs(x[1], x[2], x[3], rv, ra)
+        st = style.depuis_curseurs(x[4], c)
+        t["v2"] = {"style": st["texte"], "curseurs": c, "cibles": st["cibles"], "famille": st["famille"]}
+        t["longueur_origine"] = len(str(t["hakim"]).split())
+    (D / "tours.json").write_text(json.dumps(tours, ensure_ascii=False, indent=0), encoding="utf-8")
+    moitie = (len(tours) + 1) // 2
+    for i, part in enumerate((tours[:moitie], tours[moitie:]), 1):
+        with (D / f"a-regenerer-v2-{i}.txt").open("w", encoding="utf-8") as h:
+            for t in part:
+                n = max(15, min(220, t["longueur_origine"]))
+                h.write(f"### {t['id']}\n[Échange précédent]\n{t['contexte'] or '(début de conversation)'}\n{t['v2']['style']}\n"
+                        f"[Longueur : environ {n} mots, comme le sujet le demande]\nAhmed : {str(t['ahmed'])[:900]}\n\n")
+    print(len(tours), "tours ; curseurs ton :", sorted(t["v2"]["curseurs"]["ton"] for t in tours))
+
+
+def juger2():
+    """Les trois versions (origine, style 1, style 2) mêlées, pour le même juge, sur des échelles fines."""
+    tours = json.loads((D / "tours.json").read_text(encoding="utf-8"))
+    lire = lambda motif: {o["id"]: o["reponse"] for f in sorted(D.glob(motif)) for o in map(json.loads, f.read_text(encoding="utf-8").splitlines()) if o.get("id")}  # noqa: E731,E501
+    r1, r2 = lire("regen-[12].jsonl"), lire("regen-v2-*.jsonl")
+    items = []
+    for t in tours:
+        for version, texte in (("origine", t["hakim"]), ("style1", r1.get(t["id"])), ("style2", r2.get(t["id"]))):
+            if texte:
+                items.append({"t": t["id"], "version": version, "texte": texte, "ahmed": t["ahmed"]})
+    random.Random(GRAINE + 2).shuffle(items)
+    for k, x in enumerate(items, 1):
+        x["r"] = f"R{k}"
+    (D / "items2.json").write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
+    with (D / "juge2.txt").open("w", encoding="utf-8") as h:
+        for x in items:
+            h.write(f"### {x['r']}\nAhmed : {str(x['ahmed'])[:500]}\nHakim : {str(x['texte'])[:1200]}\n\n")
+    print(len(items), "réponses à juger")
+
+
+def calculer2():
+    tours = {t["id"]: t for t in json.loads((D / "tours.json").read_text(encoding="utf-8"))}
+    items = {x["r"]: x for x in json.loads((D / "items2.json").read_text(encoding="utf-8"))}
+    juge = {o["r"]: o for f in sorted(D.glob("juge2-*.jsonl")) for o in map(json.loads, f.read_text(encoding="utf-8").splitlines()) if o.get("r")}
+    res = {}
+    for version in ("origine", "style1", "style2"):
+        L = [(tours[x["t"]], juge[r], x["texte"]) for r, x in items.items() if x["version"] == version and r in juge]
+        mots = [len(str(x).split()) for _t, _j, x in L]
+        res[version] = {
+            "n": len(L),
+            "ton_fin_contre_valence": C.spearman([t["valence"] for t, _j, _x in L], [j.get("ton10") for _t, j, _x in L]),
+            "ton_fin_contre_curseur": C.spearman([t["v2"]["curseurs"]["ton"] for t, _j, _x in L], [j.get("ton10") for _t, j, _x in L]),
+            "energie_fine_contre_eveil": C.spearman([t["eveil"] for t, _j, _x in L], [j.get("energie10") for _t, j, _x in L]),
+            "ton_grossier_contre_valence": C.spearman([t["valence"] for t, _j, _x in L], [j.get("ton") for _t, j, _x in L]),
+            "longueur_mediane": sorted(mots)[len(mots) // 2] if mots else None,
+            "longueur_contre_origine": C.spearman([t["longueur_origine"] for t, _j, _x in L], mots),
+            "longueur_contre_valence": C.spearman([t["valence"] for t, _j, _x in L], mots)}
+    (D / "resultats2.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(json.dumps(res, ensure_ascii=False, indent=1))
+
+
+if __name__ == "__main__" and sys.argv[1] in ("preparer2", "juger2", "calculer2"):
+    {"preparer2": preparer2, "juger2": juger2, "calculer2": calculer2}[sys.argv[1]]()
