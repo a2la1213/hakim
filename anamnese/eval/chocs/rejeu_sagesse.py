@@ -188,7 +188,8 @@ def rejouer(evs, debut, fin, opts, fond_fixe=None, regle=None):
                         seq += 1
                 else:
                     i = e["i"]
-                    if opts.get("habit") and nom in ("soutien", "chaleur_user"):
+                    if opts.get("habit") and nom in (("soutien", "chaleur_user", "succes") if opts.get("habit_succes")
+                                                      else ("soutien", "chaleur_user")):
                         i *= 1 - jauge(affect.get_state(m, now=ts), ts)
                     affect.event(m, nom, i, now=ts, sujet=e.get("sujet"))
             etat = affect.get_state(m, now=t)

@@ -79,8 +79,8 @@ def test_preparer_ton_retour_une_fois_puis_25_min_d_intervalle(mem, tmp_path):
 
 def test_ranger_sa_memoire_propose_sans_rien_modifier(mem):
     now = time.time()
-    a = mem.add("semantic", "Le robot-ia est à l'étape 1, relecture en cours par Alla cette semaine.", embedding=[])
-    b = mem.add("semantic", "Le robot-ia est à l'étape 1, relecture en cours par Alla cette semaine encore.", embedding=[])
+    a = mem.add("semantic", "Le robot-ia est à l'étape 1, relecture en cours par [prénom] cette semaine.", embedding=[])
+    b = mem.add("semantic", "Le robot-ia est à l'étape 1, relecture en cours par [prénom] cette semaine encore.", embedding=[])
     mem.add("semantic", "Ahmed préfère Sonnet au minimum pour Jarvis.", embedding=[])
     avant = mem.db.execute("SELECT id, content, rubric_id, importance FROM episodes ORDER BY id").fetchall()
     g = Gemma(f"#{a} #{b} : PÉRIMÉ — la seconde est plus récente")

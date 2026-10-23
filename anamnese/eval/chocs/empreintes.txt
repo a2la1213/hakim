@@ -17,3 +17,11 @@ efa4986d1d81359255c14dd4752f1c5ac9e73c93cef29365dd70c12916677aab  figure.py
 20a14d2903344452c33782abf85eefb8d71ed68a92b5f7128588dee0caa8ab03  chocs.py
 4d3e8a8a34f6c834e7012537e7f9d8044b2a3befc05eb66cd3cce8adbe829453  chocs_cli.py
 test en vrai figé le 2026-10-23 10:25:31, avant l'allumage
+6320109999f33dc32f7640ef64f1f9b317484d6cd2f8ca40c1ea70438e6275f3  eval/voix_mots/criteres.md
+a7b09a4ebad644978bf04998258186f33ec4bed1d2c6bdc15132bc2cb2ed9774  eval/voix_mots/mesure.py
+a5eb296a10dcf18f92553b4c6adb4b94fb3719cc1f62e7fa5e8bd809cc60227b  style.py
+voix et mots : critères figés le 2026-10-23 11:43:45, avant l'allumage du style
+d823991f18a9f602f2c8801759f21e9f1b49cf290f98d6271f2c52b2a2427252  ../voix_mots/criteres.md
+302067ce79639d0b4f152da0c8d89bada99a619b6fc4bdcc9db19efa07037d25  predictions-3.md
+d9349645dc9b1fe706dbfa5c1f7ed3a42fd34e14838053a6658858746594e04a  ../../style.py
+amendements figés le 2026-10-23 12:03:21, avant la fenêtre du 24/10

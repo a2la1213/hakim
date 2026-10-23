@@ -221,10 +221,16 @@ VOIX_EMOTION = {"élan": (0.08, 1.04), "enthousiasme": (0.08, 1.04), "joie": (0.
                 "ennui": (-0.08, 0.95), "manque": (-0.08, 0.96)}
 
 
-def voix(expressivite_, sensation=None):
-    """{"expressivite", "vitesse", "emotion"} : l'expressivité de son humeur, nuancée par l'émotion lue dans ses hormones."""
+VITESSE_EVEIL = 0.3     # (2026-10-23, demande de Hakim, accord d'Ahmed) le débit suit aussi l'éveil, en continu : ±0,14 → ±4 %
+
+
+def voix(expressivite_, sensation=None, arousal=None):
+    """{"expressivite", "vitesse", "emotion"} : l'expressivité de son humeur, nuancée par l'émotion lue dans ses hormones ;
+    le débit, par l'émotion et par l'éveil (le lecteur le borne à 0,92–1,06 ; il bouge aussi la hauteur de quelques %)."""
     emo = (sensation or {}).get("emotion")
     delta, vitesse = VOIX_EMOTION.get(emo, (0.0, 1.0))
+    if isinstance(arousal, (int, float)):
+        vitesse = round(max(0.92, min(1.06, vitesse * (1 + VITESSE_EVEIL * (float(arousal) - _BASE_A)))), 3)
     return {"expressivite": round(max(0.35, min(0.78, float(expressivite_) + delta)), 3), "vitesse": vitesse, "emotion": emo}
 
 
@@ -375,7 +381,7 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
     ressenti = e["subj"] / absence if absence > 60 else 1.0
     e.update(ts=now, absence_s=round(absence), ennui=round(en, 3), ressenti=round(ressenti, 3), tau_s=TAU_ENNUI_S,
              humeur=humeur, humeur_code=code, expressivite=expressivite(code, valence, arousal),
-             voix=voix(expressivite(code, valence, arousal), e.get("sensation_code")),
+             voix=voix(expressivite(code, valence, arousal), e.get("sensation_code"), arousal),
              valence=round(valence, 3), arousal=round(arousal, 3), veille=veille, veille_apres_s=VEILLE_APRES_S)
     if absence < 90:
         fait = "avec Ahmed"

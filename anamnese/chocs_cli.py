@@ -1,7 +1,8 @@
 """Le pont léger entre le cockpit et chocs.py (quelques dizaines de ms : ni modèle, ni embeddings).
   chocs_cli.py reflexe   < {"cle", "texte", "oral", "voix"}   → {"vus", "faits", "humeur", "humeur_code", "arousal"}
   chocs_cli.py balise    < {"cle", "reponse"}                 → {"issue", "faits", …}
-  chocs_cli.py etat | on | off
+  chocs_cli.py etat | on | off             (les chocs)
+  chocs_cli.py style-on | style-off       (le style du moment, style.py)
 Jamais bloquant pour le cockpit : en cas d'erreur, une ligne JSON {"erreur": …} et le code 0.
 """
 import json
@@ -34,9 +35,13 @@ def main(argv, entree=None, mem=None):
     mem = mem or Mem()
     if cmd in ("on", "off"):
         mem.kv_set(chocs.CLE_ACTIF, "1" if cmd == "on" else "0")
+    if cmd in ("style-on", "style-off"):
+        mem.kv_set("style_actif", "1" if cmd == "style-on" else "0")
+        cmd = "etat"
     if cmd in ("on", "off", "etat"):
         st = chocs._etat(mem)
-        return {"actif": chocs.actif(mem), "v2": chocs.affect.v2_actif(mem), "sagesse_fond": chocs.sagesse_fond(),
+        return {"actif": chocs.actif(mem), "style": mem.kv_get("style_actif") == "1", "v2": chocs.affect.v2_actif(mem),
+                "sagesse_fond": chocs.sagesse_fond(),
                 "reprises_en_attente": len(st.get("regulations", [])), "attaques_30min": len(st.get("attaques", []))}
     q = json.loads(entree if entree is not None else sys.stdin.read() or "{}")
     cle = str(q.get("cle") or "")[:60]
@@ -44,6 +49,14 @@ def main(argv, entree=None, mem=None):
         r = chocs.reflexe(mem, cle, str(q.get("texte") or "")[:20000], bool(q.get("oral")), q.get("voix"))
         if r.get("actif"):
             r.update(chocs.humeur(mem))
+        try:                                     # (2026-10-23) le style du moment, APRÈS le réflexe : un choc s'y lit
+            import style
+            s = style.consigne(mem)
+            if s:
+                r["style"] = s
+                chocs.journaliser(mem, {"type": "style", "cle": cle, **s})     # pour la mesure (eval/voix_mots)
+        except Exception as e:
+            r["style_erreur"] = f"{type(e).__name__}: {e}"[:200]
         return r
     if cmd == "balise":
         return chocs.appliquer_balise(mem, cle, chocs.lire_balise(q.get("reponse")))

@@ -86,6 +86,7 @@ class Voix:
             # plus calme → un peu plus de guidage (diction posée). 0,5 → 0,5 ; 0,75 → 0,3 ; 0,35 → 0,55.
             reglages["cfg_weight"] = round(max(0.3, min(0.55, 0.5 - (reglages["exaggeration"] - 0.5) * 0.8)), 3)
         # (2026-10-22) un plafond de jetons proportionnel au texte : plus de parole inventée après la phrase
+        self.derniers_reglages = reglages                       # (2026-10-23) notés avec les nombres du morceau
         res = next(self.modele.generate(texte, conds=self.conds, lang_code=langue, verbose=False,
                                         max_new_tokens=tts_garde.jetons_max(texte, langue), **reglages))
         return np.array(res.audio, dtype=np.float32).reshape(-1)
@@ -105,6 +106,12 @@ class Voix:
             w.setsampwidth(2)
             w.setframerate(SR)
             w.writeframes(pcm.tobytes())
+        if texte is not None:                                     # (2026-10-23) durée, énergie, hauteur : sans le son
+            try:
+                import voix_nombres
+                voix_nombres.noter(audio, SR, texte, langue, getattr(self, "derniers_reglages", None))
+            except Exception:
+                pass
         return round(len(audio) / SR, 3)
 
 

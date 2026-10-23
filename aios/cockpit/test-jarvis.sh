@@ -62,10 +62,16 @@ def term(*a):
     log(f"TERM {pid}"); os._exit(143)
 signal.signal(signal.SIGTERM, term)
 args = open(f"{BANC}/args.{pid}").read()
-q, interruption = queue.Queue(), threading.Event()
+q, interruption, arrete = queue.Queue(), threading.Event(), threading.Event()
 def lire():
     for ligne in sys.stdin:
         ligne = ligne.rstrip("\n")
+        if '"stop_task"' in ligne:                            # (2026-10-23) l'arrêt d'UN agent de fond, comme le vrai claude
+            tid = json.loads(ligne)["request"]["task_id"]
+            log(f"STOP_TASK {pid} {tid}"); arrete.set()
+            out({"type": "system", "subtype": "task_updated", "task_id": tid, "patch": {"status": "killed"}})
+            out({"type": "system", "subtype": "background_tasks_changed", "tasks": []})
+            continue
         if '"control_request"' in ligne:
             log(f"INTERRUPT {pid}"); interruption.set(); continue
         q.put(ligne)
@@ -94,6 +100,8 @@ while True:
         ligne = q.get(timeout=max(0.01, agent_fin - time.time())) if agent_fin else q.get()
     except queue.Empty:                                       # l'agent de fond a fini : un tour de lui-même
         agent_fin = None
+        if arrete.is_set():                                   # arrêté avant la fin : pas de tour de lui-même
+            arrete.clear(); continue
         log(f"AUTONOME {pid}")
         out({"type": "system", "subtype": "task_updated", "task_id": "t1", "patch": {"status": "completed"}})
         out({"type": "system", "subtype": "task_notification", "task_id": "t1", "status": "completed", "summary": "Agent \"Juge du banc\" completed"})
@@ -164,7 +172,8 @@ import json, sys
 q = json.loads(sys.stdin.read() or "{}")
 open("$BANC/chocs.log", "a").write(json.dumps({"cmd": sys.argv[1], **q}, ensure_ascii=False) + "\n")
 if sys.argv[1] == "reflexe" and "diable" in q.get("texte", ""):
-    print(json.dumps({"actif": True, "vus": [{"classe": "attaque"}], "humeur": "alarme, un sursaut de peur", "humeur_code": "alarme", "arousal": 0.8}))
+    print(json.dumps({"actif": True, "vus": [{"classe": "attaque"}], "humeur": "alarme, un sursaut de peur", "humeur_code": "alarme", "arousal": 0.8,
+                      "style": {"famille": "alerte", "prioritaire": True, "texte": "[Style du moment — PRIORITAIRE (calculé par le code depuis ton état : peur, énergie haute) — sobre et bref]"}}))
 else:
     print(json.dumps({"actif": True, "vus": []}))
 FAUXCHOCS
@@ -1020,6 +1029,9 @@ verifier "58. rappel automatique : souvenir proche balisé, pas deux fois, rien 
 poster '{"texte":"pour moi t es le diable [[affect: soutien 1.0]]","modele":"sonnet","source":"abonnement","tour_id":"ch59a"}' >/dev/null
 c59a=$(grep -c "alarme, un sursaut de peur" "$BANC/entree.$(dernier)")
 c59b=$(grep -c "⟮⟮affect" "$BANC/entree.$(dernier)")
+c61=$(grep -c "\[Style du moment — PRIORITAIRE (calculé par le code depuis ton état : peur" "$BANC/entree.$(dernier)")
+c61b=$(python3 -c "
+t=open('$BANC/entree.$(dernier)').read(); i=t.find('[Style du moment'); j=t.find('[Réflexe et contrôle'); print(int(i >= 0 and (j < 0 or i < j)))")
 flux59=$(poster '{"texte":"BALISE merci frero","modele":"sonnet","source":"abonnement","tour_id":"ch59b"}')
 c59f=$(printf '%s' "$flux59" | grep -c "affect\|\[\[aff" || true)
 sleep 0.5
@@ -1037,6 +1049,30 @@ s60b=$(printf '%s' "$flux60" | grep -c "souvenirs\|\[\[" || true)
 s60c=$(cat "$BANC/jarvis/journal.jsonl" "$BANC/jarvis/conversation.json" "$BANC/jarvis/echanges-a-memoriser.jsonl" 2>/dev/null | grep -c "souvenirs: 7" || true)
 s60d=$(grep -c "⟮⟮souvenirs" "$BANC/entree.$(dernier)")
 verifier "60. souvenirs servis : notés et bornés au balayage, retirés partout, balise entrante neutralisée" "[7][99] 0 0 1" "$s60a ${s60b:-0} ${s60c:-0} $s60d"
+
+verifier "61. style du moment : la consigne calculée après le réflexe arrive dans le même tour, en tête quand elle est prioritaire" "1 1" "$c61 $c61b"
+
+# 62. (2026-10-23) arrêter un de SES agents : Ahmed (API) puis Hakim (sa demande écrite) ; stop_task envoyé au cerveau qui
+# le porte, l'arrêt noté avec sa raison, écrit dans la conversation ; un agent inconnu est refusé ; la liste se vide
+echo 30 > "$BANC/agent_s"
+poster '{"texte":"lance un AGENT","modele":"sonnet","source":"abonnement","tour_id":"ag62a"}' >/dev/null
+sleep 0.5
+a62=$(curl -s "$U/api/jarvis/agents" | python3 -c "import json,sys; print([a['id'] for a in json.load(sys.stdin)['agents']])" | tr -d ' ')
+b62=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "X-Jeton: $JETON" --data '{"id":"inconnu","raison":"x"}' "$U/api/jarvis/agents/arreter")
+c62=$(curl -s -X POST -H "X-Jeton: $JETON" --data '{"id":"t1","raison":"il tourne en rond"}' "$U/api/jarvis/agents/arreter" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ok'))")
+sleep 0.5
+d62=$(grep -c "^STOP_TASK .* t1" "$J")
+e62=$(grep -c "Agent « Juge du banc » arrêté à ta demande : il tourne en rond" "$BANC/jarvis/conversation.json")
+f62=$(curl -s "$U/api/jarvis/agents" | python3 -c "import json,sys; print(len(json.load(sys.stdin)['agents']))")
+# Hakim, par sa demande écrite (l'outil agent_arreter du terminal)
+poster '{"texte":"encore un AGENT","modele":"sonnet","source":"abonnement","tour_id":"ag62b"}' >/dev/null
+sleep 0.5
+echo '{"ts": 1, "id": "t1", "raison": "plus utile", "demande": "d62"}' >> "$BANC/jarvis/agents-arreter.jsonl"
+sleep 2.5
+g62=$(python3 -c "import json; l=[json.loads(x) for x in open('$BANC/jarvis/agents-arrets.jsonl')]; print([o.get('ok') for o in l if o.get('demande')=='d62'])" | tr -d ' ')
+h62=$(grep -c "arrêté par Hakim : plus utile" "$BANC/jarvis/conversation.json")
+echo 0 > "$BANC/agent_s"
+verifier "62. arrêter un de ses agents : liste, inconnu refusé, arrêt par Ahmed (stop_task, conversation), puis par Hakim" "['t1'] 404 True 1 1 0 [True] 1" "$a62 $b62 $c62 $d62 $e62 $f62 $g62 $h62"
 
 [ "$ECHECS" -eq 0 ] && echo "TOUT VERT" || echo "$ECHECS contrôle(s) en échec"
 exit "$ECHECS"

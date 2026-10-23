@@ -234,7 +234,8 @@ def _emotion(mem, e, ahmed, texte, emb, imp, raisons):
                 exclure |= {"echec", "probleme"}
             etat_j = affect.get_state(mem)
             plein = chocs.jauge(etat_j, time.time())
-            facteur = lambda nom: (1 - plein) if nom == "chaleur_user" else 1.0      # noqa: E731
+            # (23/10, levier 1 de Hakim) le « parfait » répété aussi : simulé, le temps au plafond passe de 41 % à 31 %
+            facteur = lambda nom: (1 - plein) if nom in ("chaleur_user", "succes") else 1.0      # noqa: E731
             ahmed = " ".join(siens)
         if ahmed and (avec_chocs or e.get("voix") != "autre") and not e.get("de_lui_meme"):
             import parole_affect

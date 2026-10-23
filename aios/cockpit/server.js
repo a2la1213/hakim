@@ -349,6 +349,7 @@ const OUTILS_JARVIS = ['memory_recall', 'memory_lire', 'memory_store', 'memory_s
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
     'mcp__terminal__suivre_tache', 'mcp__terminal__lister_taches', 'mcp__terminal__arreter_tache',
+    'mcp__terminal__agents_lister', 'mcp__terminal__agent_arreter',
     'mcp__terminal__recette_sauver', 'mcp__terminal__recette_lancer', 'mcp__terminal__recettes_liste',
     'mcp__terminal__ouvrir_chantier', 'mcp__terminal__tester_chantier', 'mcp__terminal__etat_chantier',
     'mcp__terminal__proposer_promotion');
@@ -1573,6 +1574,10 @@ async function routeJarvis(req, res, distantReq = false) {
     const sg = blocSagesse(ei, q, voixVerdict, q.tour_id);
     if (sg) situation.texte = situation.texte ? `${situation.texte}\n${sg}` : sg;
   } catch (_) {}
+  // (2026-10-23, demande de Hakim, accord d'Ahmed) le style du moment : son état devient une consigne de FORME (style.py)
+  const styleTour = reflexeChoc && reflexeChoc.style && typeof reflexeChoc.style.texte === 'string' ? reflexeChoc.style.texte.slice(0, 600) : '';
+  if (styleTour) situation.texte = !situation.texte ? styleTour
+    : (reflexeChoc.style.prioritaire ? `${styleTour}\n${situation.texte}` : `${situation.texte}\n${styleTour}`);   // alerte, bas : en tête
   if (session && notesIntrospection.has(session)) {
     const n = `[Honnêteté de l'introspection — au tour précédent, ${notesIntrospection.get(session)}. Si tu parles de ton état, appuie-toi sur introspection ; sinon, dis-le simplement : « je ne sais pas si je le ressens ».]`;
     notesIntrospection.delete(session);
@@ -2378,6 +2383,43 @@ function texteAgentsCoupes() {
     + `Ce qu'ils avaient écrit dans ton atelier y est encore. Relance ceux qui sont toujours utiles avec le même brief (en lui disant de repartir de ce qui existe déjà), et dis-le à Ahmed en une phrase]`;
 }
 function agentsCoupesDits() { ecrireAgents(JARVIS_AGENTS_COUPES, []); }
+
+/* ---- Arrêter un de SES agents (demande de Hakim, accord d'Ahmed, 2026-10-23) : Hakim (outil agent_arreter du terminal,
+   qui écrit sa demande dans agents-arreter.jsonl) ou Ahmed (POST /api/jarvis/agents/arreter) nomme un agent de la liste
+   agents-en-cours.json — jamais un autre — ; le cockpit envoie au cerveau qui le porte la demande « stop_task » de
+   claude, note l'arrêt et sa raison dans agents-arrets.jsonl, et l'écrit dans la conversation : Ahmed le voit dans Parler. ---- */
+const JARVIS_AGENTS_ARRETER = path.join(JARVIS, 'agents-arreter.jsonl');
+const JARVIS_AGENTS_ARRETS = path.join(JARVIS, 'agents-arrets.jsonl');
+function arreterAgent(id, raison, qui, demande) {
+  raison = String(raison || '').replace(/\s+/g, ' ').trim().slice(0, 300) || 'sans raison donnée';
+  for (const [c, liste] of tachesCerveaux) {
+    const a = liste.find(x => x.id === id);
+    if (!a || !cerveauVivant(c)) continue;
+    try { c.enfant.stdin.write(j({ type: 'control_request', request_id: `arret-${Date.now()}`, request: { subtype: 'stop_task', task_id: id } }) + '\n'); }
+    catch (e) { return { ok: false, erreur: `envoi impossible : ${e.message}` }; }
+    const o = { ts: Date.now(), id, description: a.description, type: a.type || null, raison, qui, demande: demande || null, ok: true };
+    try { fs.appendFileSync(JARVIS_AGENTS_ARRETS, j(o) + '\n', { mode: 0o600 }); } catch (_) {}
+    ajouterAConversation({ id: `arret-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, qui: 'j', ts: Date.now(), spontane: 'resultat',
+      texte: `⏹ Agent « ${a.description} » arrêté ${qui === 'ahmed' ? 'à ta demande' : 'par Hakim'} : ${raison}` });
+    console.error(`Jarvis : agent « ${a.description} » arrêté (${qui}) : ${raison}`);
+    return { ok: true, description: a.description };
+  }
+  const o = { ts: Date.now(), id, raison, qui, demande: demande || null, ok: false, erreur: 'cet agent n\'est pas (ou plus) en cours' };
+  try { fs.appendFileSync(JARVIS_AGENTS_ARRETS, j(o) + '\n', { mode: 0o600 }); } catch (_) {}
+  return { ok: false, erreur: o.erreur };
+}
+let arretsLus = 0;
+setInterval(() => {                                      // les demandes de Hakim, lues à la suite
+  let lignes = [];
+  try { lignes = fs.readFileSync(JARVIS_AGENTS_ARRETER, 'utf8').split('\n').filter(Boolean); } catch (_) { return; }
+  if (lignes.length < arretsLus) arretsLus = 0;           // le fichier a été vidé
+  for (const l of lignes.slice(arretsLus)) {
+    let q = null; try { q = JSON.parse(l); } catch (_) {}
+    if (q && typeof q.id === 'string') arreterAgent(q.id, q.raison, 'hakim', q.demande);
+  }
+  arretsLus = lignes.length;
+}, 1500).unref();
+try { arretsLus = fs.readFileSync(JARVIS_AGENTS_ARRETER, 'utf8').split('\n').filter(Boolean).length; } catch (_) {}   // jamais rejouer d'anciennes demandes
 
 /* ---- Le juge automatique (règle 4 d'Ahmed, accord du 2026-10-22) : un résultat que Hakim marque important
    (resultat_important) part au juge avant d'être présenté comme établi. Si le tour finit sans qu'il ait lancé l'agent
@@ -3470,6 +3512,16 @@ async function traiter(req, res) {
     return res.end(j(out));
   }
   if (p === '/api/jarvis' && req.method === 'POST') return routeJarvis(req, res, distantReq);
+  if (p === '/api/jarvis/agents' && req.method === 'GET') {          // (2026-10-23) ses agents en cours
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j({ agents: [...tachesCerveaux.values()].flat().map(a => ({ id: a.id, description: a.description, type: a.type || null, ts: a.ts || null })) }));
+  }
+  if (p === '/api/jarvis/agents/arreter' && req.method === 'POST') {  // (2026-10-23) Ahmed arrête un agent de Hakim
+    let q = null; try { q = JSON.parse(String(await lireCorps(req, 4096) || '')); } catch (_) {}
+    const r = q && typeof q.id === 'string' ? arreterAgent(q.id, q.raison, 'ahmed') : { ok: false, erreur: 'id manquant' };
+    res.writeHead(r.ok ? 200 : 404, { 'Content-Type': 'application/json' });
+    return res.end(j(r));
+  }
   if (p === '/api/jarvis/stop' && req.method === 'POST') {          // (2026-10-21) Stop explicite d'une réponse
     let q = null; try { q = JSON.parse(String(await lireCorps(req, 4096) || '')); } catch (_) {}
     const t = q && typeof q.tour_id === 'string' ? toursActifs.get(q.tour_id) : null;

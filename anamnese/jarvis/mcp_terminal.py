@@ -9,6 +9,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 
+import agents_hakim  # noqa: E402
 import chantiers  # noqa: E402
 import groupes  # noqa: E402
 import recettes  # noqa: E402
@@ -71,6 +72,19 @@ def lister_taches() -> str:
 def arreter_tache(tache: str) -> str:
     """Arrête une tâche de fond (son groupe de processus entier)."""
     return f"Arrêt demandé pour {tache}." if taches.arreter(tache) else f"{tache} n'est pas en cours."
+
+
+@mcp.tool()
+def agents_lister() -> str:
+    """Tes agents en cours (architecte, codeur, juge… lancés avec Task) : numéro, description, type, depuis quand."""
+    return agents_hakim.lister()
+
+
+@mcp.tool()
+async def agent_arreter(agent: str, raison: str) -> str:
+    """Arrête UN de tes agents en cours (son numéro ou sa description, voir agents_lister), quand tu l'estimes nécessaire
+    ou qu'Ahmed le demande. La raison est notée dans le journal et Ahmed voit l'arrêt dans Parler. Seuls tes agents."""
+    return await asyncio.to_thread(agents_hakim.demander_arret, agent, raison)
 
 
 @mcp.tool()

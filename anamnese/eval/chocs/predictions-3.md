@@ -44,3 +44,8 @@ les règles d'etiqueter.py. Clé = attaque ou soutien d'intensité ≥ 2 qui vis
 - L4, L6 : tenus. L7 : tenu (l'habituation du soutien).
 
 Variables calculées, pas un ressenti prouvé.
+
+## Amendement du 23/10 à 12:05, AVANT la fenêtre
+
+L'habituation s'étend aux « succes » du lexique (simulé : plafond 41 % → 31 %) ; le style du moment (style.py) est
+branché depuis 11:45 (critères à part : eval/voix_mots/criteres.md). Les critères L1 à L7 sont inchangés.
