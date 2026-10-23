@@ -885,7 +885,8 @@ async function envoyer(texte, oral, dejaRelance) {
       body: JSON.stringify({ texte, oral: !!oral, modele: etat.conversation ? etat.reglages.modeleConversation : etat.reglages.modele, source: etat.reglages.source || 'auto', session: etat.session,
         t_precedent: tPrecedent, t_debut: tDebut, fichiers: joints.map(x => x.chemin), pensees_dites: dites,
         conversation: !!etat.conversation, present: presentEnvoye, maintenant: Date.now(), camera,
-        appareil: appareilPage(), volant: !!etat.reglages.volant, position: positionAEnvoyer(), ecran: imageEcran(), tour_id: String(m.id) }),
+        appareil: appareilPage(), volant: !!etat.reglages.volant, position: positionAEnvoyer(), ecran: imageEcran(),
+        capteurs: capteursDuTelephone(), tour_id: String(m.id) }),
     });
     if (!r.ok) throw new Error(r.status === 403 ? 'jeton refusé : recharge la page (le cockpit a redémarré)' : `erreur ${r.status}`);
     const lecteurFlux = r.body.getReader();
@@ -1055,6 +1056,29 @@ if (window.HakimApp && window.HakimApp.ecran) {
     $(id).addEventListener('click', (e) => { e.stopPropagation(); try { window.HakimApp.ecran(!etat.ecran); } catch (_) {} });
   }
   try { ecranEtat(window.HakimApp.ecranEtat()); } catch (_) {}
+}
+
+// (2026-10-23, Ahmed : « qu'il sente ce qui se passe dans le téléphone ») les capteurs du téléphone (appli Android) : le
+// téléphone fait lui-même un résumé de la dernière minute ; la page l'envoie au cockpit chaque minute et le joint à chaque
+// message. Éteint par défaut. Rien d'autre que ce résumé (aucune mesure brute) ne quitte le téléphone.
+function capteursDuTelephone() {
+  try { const t = window.HakimApp && window.HakimApp.capteurs ? window.HakimApp.capteurs() : ''; return t ? JSON.parse(t) : undefined; }
+  catch (_) { return undefined; }
+}
+function afficherCapteurs(o) {
+  if (!o) return;
+  $('capteurs').checked = !!o.actifs;
+  const l = Array.isArray(o.disponibles) ? o.disponibles : [];
+  $('etatCapteurs').textContent = l.length ? `(ce téléphone a : ${l.join(', ')})` : '';
+}
+if (window.HakimApp && window.HakimApp.capteursEtat) {
+  $('groupeCapteurs').hidden = false;
+  try { afficherCapteurs(JSON.parse(window.HakimApp.capteursEtat())); } catch (_) {}
+  $('capteurs').addEventListener('change', (e) => { try { afficherCapteurs(JSON.parse(window.HakimApp.capteursActiver(e.target.checked))); } catch (_) {} });
+  setInterval(() => {
+    const c = capteursDuTelephone();
+    if (c) fetch('/api/capteurs', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify(c) }).catch(() => {});
+  }, 60000);
 }
 
 // (2026-10-22, 15:28) appli 0.8 : la bulle aussi hors conversation, et l'orbe sur l'écran de verrouillage

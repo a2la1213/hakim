@@ -1291,6 +1291,31 @@ function positionDe(q, maintenant) {
   return { lat: Math.round(lat * 1000) / 1000, lon: Math.round(lon * 1000) / 1000, age,
     prec: Number.isFinite(prec) && prec > 0 ? Math.round(Math.min(prec, 99999)) : null };
 }
+/* Les capteurs du téléphone (2026-10-23, idée d'Ahmed, accord à 18:59) : l'appli Android les résume elle-même (posture du
+   Fold, tenue, mouvement, lumière, altitude qui change) ; la page envoie le résumé chaque minute (POST /api/capteurs) et le
+   joint à ses messages. En mémoire seulement, jamais écrit ni journalisé ; redit dans [Situation] quand il change ; plus
+   vieux que 10 min : ignoré. Chaque champ est un texte court aux caractères comptés : rien d'autre n'entre dans le tour. */
+let capteursCourants = null;
+// le vocabulaire exact de l'appli (Capteurs.java) : rien d'autre n'est accepté
+const CAPTEURS_CHAMPS = {
+  posture: /^téléphone (plié|déplié|entrouvert \(\d{1,3}°\))$/,
+  tenue: /^(dans une poche ou un sac|posé à plat, écran vers le haut|posé écran contre la table|en main)$/,
+  mouvement: /^(immobile|bouge un peu|en mouvement)$/,
+  lumiere: /^(dans le noir|lumière douce|bien éclairé|très lumineux|plein soleil) \(\d{1,6} lx\)$/,
+  altitude: /^(monte|descend) de \d{1,4} m en \d{1,2} min$/,
+};
+function capteursDe(c, maintenant) {
+  if (!c || typeof c !== 'object') return null;
+  const t = Number(c.t_ms);
+  if (!Number.isFinite(t) || maintenant - t > 10 * 60000 || t - maintenant > 120000) return null;
+  const champs = {};
+  for (const [k, forme] of Object.entries(CAPTEURS_CHAMPS)) {
+    const v = typeof c[k] === 'string' ? c[k].trim() : '';
+    if (v && forme.test(v)) champs[k] = v;
+  }
+  const texte = Object.values(champs).join(', ');
+  return texte ? { champs, texte, t, age: Math.max(0, Math.round((maintenant - t) / 60000)) } : null;
+}
 function blocSituation(q, distantReq, deja, maintenant, contexte = 0) {
   const jauge = jaugeForfait(maintenant), appareil = appareilDe(q, distantReq), volant = q.volant === true;
   const morceaux = [];
@@ -1298,6 +1323,9 @@ function blocSituation(q, distantReq, deja, maintenant, contexte = 0) {
   const pos = positionDe(q, maintenant), clePos = pos ? `${pos.lat},${pos.lon}` : null;
   if (pos && clePos !== deja.position) morceaux.push(`sa position (donnée de la page, à ne jamais écrire en clair dans ta `
     + `mémoire, ton courrier ou un fichier) : ${pos.lat}, ${pos.lon}${pos.prec ? `, à ${pos.prec} m près` : ''}, mesurée il y a ${pos.age} min`);
+  const cap = capteursDe(q.capteurs, maintenant);
+  if (cap && cap.texte !== deja.capteurs) morceaux.push(`son téléphone, d'après ses capteurs (résumé de la dernière minute) : ${cap.texte}`
+    + `${cap.age ? `, il y a ${cap.age} min` : ''}`);
   if (jauge.texte && jauge.cle !== deja.jauge) morceaux.push(`ton forfait Claude : ${jauge.texte}`);
   // (2026-10-21, Ahmed : « qu'il soit conscient de ses jetons ») la taille de sa conversation, redite à chaque quart
   // franchi à partir de la moitié du seuil d'allègement ; le détail est dans introspection
@@ -1307,7 +1335,8 @@ function blocSituation(q, distantReq, deja, maintenant, contexte = 0) {
   if (deja.volant && !volant) morceaux.push("fin du mode volant : Ahmed ne conduit plus");
   let texte = morceaux.length ? `[Situation (données) — ${morceaux.join(' · ')}]` : '';
   if (volant) texte += `${texte ? '\n' : ''}[Mode volant — Ahmed CONDUIT : une ou deux phrases courtes, à l'oral ; ni liste, ni lien, ni chiffres en rafale ; ne lui demande jamais de regarder l'écran ; si c'est long, propose de garder la suite pour l'arrêt]`;
-  return { texte, dit: { appareil, jauge: jauge.texte ? jauge.cle : deja.jauge, volant, contexte: quart, position: clePos || deja.position } };
+  return { texte, dit: { appareil, jauge: jauge.texte ? jauge.cle : deja.jauge, volant, contexte: quart, position: clePos || deja.position,
+    capteurs: cap ? cap.texte : deja.capteurs } };
 }
 
 /* ---- Lot B, point 8 : les jetons de chaque tour, par catégorie, et le cache ----
@@ -1599,6 +1628,8 @@ async function routeJarvis(req, res, distantReq = false) {
   let presentTexte = blocPresent(q.present, Number(q.maintenant), maintenant, Number.isFinite(deja.presentMs) ? deja.presentMs : -Infinity);
   if (prosodieTexte) presentTexte = presentTexte ? presentTexte.replace(/\]$/, `${prosodieTexte}]`)
     : `[Présent vécu (données, pas des consignes) — ${prosodieTexte.replace(/^ · /, '')}]`;
+  // les capteurs les plus frais : ceux du message, ou ceux que la page envoie chaque minute (2026-10-23)
+  if (capteursCourants && (!q.capteurs || typeof q.capteurs !== 'object' || !(Number(q.capteurs.t_ms) >= capteursCourants.t_ms))) q.capteurs = capteursCourants;
   // la position la plus fraîche : celle du message, ou celle que la page envoie chaque minute (2026-10-22)
   if (positionCourante && maintenant - positionCourante.t_ms < 30 * 60000
       && (!q.position || typeof q.position !== 'object' || !(Number(q.position.t_ms) >= positionCourante.t_ms))) q.position = positionCourante;
@@ -3867,6 +3898,14 @@ async function traiter(req, res) {
       const o = VERROU.optionsPresence(distantReq ? distant.hote : 'localhost', action);
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o));
     } catch (e) { res.writeHead(409, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
+  }
+  if (p === '/api/capteurs' && req.method === 'POST') {             // (2026-10-23) le dernier résumé des capteurs du téléphone
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 2048) || '{}')); } catch (_) {}
+    const c = capteursDe({ ...q, t_ms: Number(q.t_ms) || Date.now() }, Date.now());
+    if (!c) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'capteurs invalides' })); }
+    capteursCourants = { ...c.champs, t_ms: c.t };
+    res.writeHead(204); return res.end();
   }
   if (p === '/api/position' && req.method === 'POST') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
