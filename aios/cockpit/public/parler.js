@@ -1064,8 +1064,8 @@ if (window.HakimApp && window.HakimApp.ecran) {
 function capteursDuTelephone() {
   // (2026-10-23, 19:18) avec l'état interne du téléphone, s'il l'a allumé : un seul résumé pour le cockpit
   const lire = (f) => { try { const t = window.HakimApp && window.HakimApp[f] ? window.HakimApp[f]() : ''; return t ? JSON.parse(t) : null; } catch (_) { return null; } };
-  const c = lire('capteurs'), e = lire('etatTelephone');
-  return c || e ? { ...(e || {}), ...(c || {}), t_ms: Date.now() } : undefined;
+  const c = lire('capteurs'), e = lire('etatTelephone'), m = lire('sante');          // (19:59) et sa montre, s'il l'a allumée
+  return c || e || m ? { ...(m || {}), ...(e || {}), ...(c || {}), t_ms: Date.now() } : undefined;
 }
 function afficherCapteurs(o) {
   if (!o) return;
@@ -1078,6 +1078,15 @@ if (window.HakimApp && window.HakimApp.capteursEtat) {
   $('groupeCapteurs').hidden = false;
   try { afficherCapteurs(JSON.parse(window.HakimApp.capteursEtat())); } catch (_) {}
   $('capteurs').addEventListener('change', (e) => { try { afficherCapteurs(JSON.parse(window.HakimApp.capteursActiver(e.target.checked))); } catch (_) {} });
+  if (window.HakimApp.santeActiver) {                               // appli 1.9 : sa montre
+    const montrer = (o) => { $('sante').checked = !!o.actif; $('etatSante').textContent = o.possible ? '' : '(Android 14 ou plus nécessaire)'; };
+    $('groupeSante').hidden = false;
+    try { montrer(JSON.parse(window.HakimApp.santeEtat())); } catch (_) {}
+    $('sante').addEventListener('change', (e) => {
+      try { montrer(JSON.parse(window.HakimApp.santeActiver(e.target.checked))); } catch (_) {}
+      if (e.target.checked) $('etatSante').textContent = '(Android va demander les permissions de Health Connect ; dans Samsung Health, autorise aussi le partage vers Health Connect)';
+    });
+  }
   if (window.HakimApp.etatTelephoneActiver) {                      // appli 1.4
     $('groupeEtatTel').hidden = false;
     $('etatTel').addEventListener('change', (e) => { try { afficherCapteurs(JSON.parse(window.HakimApp.etatTelephoneActiver(e.target.checked))); } catch (_) {} });

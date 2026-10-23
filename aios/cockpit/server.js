@@ -1346,7 +1346,15 @@ const CAPTEURS_CHAMPS = {
   chaleur: /^(appareil (tiède|chaud|très chaud)|téléphone à \d{2} °C, (normal|tiède|chaud|très chaud)(, surchauffe signalée par Android)?)$/,
   bluetooth: /^Bluetooth (désactivé|activé(, un appareil audio connecté)?)$/,
   nfc: /^NFC (activé|désactivé)$/,
+  // (19:59, Ahmed) sa montre (Samsung Health → Health Connect, appli 1.9) : des mesures avec leur heure et leur contexte
+  coeur: /^cœur \d{2,3} bpm il y a \d{1,2} (min|h), (pendant l'exercice|juste après l'exercice|en marchant \(\d{1,5} pas en 15 min\)|en bougeant un peu|au repos)$/,
+  coeur_repos: /^cœur au repos \d{2,3} bpm$/,
+  oxygene: /^oxygène \d{2,3} % il y a \d{1,2} (min|h)$/,
+  pas: /^\d{1,6} pas aujourd'hui$/,
+  exercice: /^(exercice en cours : [a-zéè]+, depuis \d{1,4} min|exercice récent : [a-zéè]+ de \d{1,4} min, fini il y a \d{1,3} (min|h))$/,
+  sommeil: /^sommeil de la nuit \d{1,2} h \d{2}$/,
 };
+const CHAMPS_MONTRE = new Set(['coeur', 'coeur_repos', 'oxygene', 'pas', 'exercice', 'sommeil']);
 function capteursDe(c, maintenant) {
   if (!c || typeof c !== 'object') return null;
   const t = Number(c.t_ms);
@@ -1356,8 +1364,10 @@ function capteursDe(c, maintenant) {
     const v = typeof c[k] === 'string' ? c[k].trim() : '';
     if (v && forme.test(v)) champs[k] = v;
   }
-  const texte = Object.values(champs).join(', ');
-  return texte ? { champs, texte, t, age: Math.max(0, Math.round((maintenant - t) / 60000)) } : null;
+  const tel = Object.keys(champs).filter(k => !CHAMPS_MONTRE.has(k)).map(k => champs[k]).join(', ');
+  const montre = Object.keys(champs).filter(k => CHAMPS_MONTRE.has(k)).map(k => champs[k]).join(', ');
+  const texte = [tel, montre].filter(Boolean).join(' | ');
+  return texte ? { champs, texte, tel, montre, t, age: Math.max(0, Math.round((maintenant - t) / 60000)) } : null;
 }
 function blocSituation(q, distantReq, deja, maintenant, contexte = 0) {
   const jauge = jaugeForfait(maintenant), appareil = appareilDe(q, distantReq), volant = q.volant === true;
@@ -1367,8 +1377,11 @@ function blocSituation(q, distantReq, deja, maintenant, contexte = 0) {
   if (pos && clePos !== deja.position) morceaux.push(`sa position (donnée de la page, à ne jamais écrire en clair dans ta `
     + `mémoire, ton courrier ou un fichier) : ${pos.lat}, ${pos.lon}${pos.prec ? `, à ${pos.prec} m près` : ''}, mesurée il y a ${pos.age} min`);
   const cap = capteursDe(q.capteurs, maintenant);
-  if (cap && cap.texte !== deja.capteurs) morceaux.push(`son téléphone, d'après ses capteurs (résumé de la dernière minute) : ${cap.texte}`
-    + `${cap.age ? `, il y a ${cap.age} min` : ''}`);
+  if (cap && cap.texte !== deja.capteurs) {
+    if (cap.tel) morceaux.push(`son téléphone, d'après ses capteurs (résumé de la dernière minute) : ${cap.tel}${cap.age ? `, il y a ${cap.age} min` : ''}`);
+    if (cap.montre) morceaux.push(`sa montre (Samsung Health ; des mesures avec leur heure et leur contexte, à ne jamais lire comme un `
+      + `diagnostic) : ${cap.montre}`);
+  }
   if (jauge.texte && jauge.cle !== deja.jauge) morceaux.push(`ton forfait Claude : ${jauge.texte}`);
   // (2026-10-21, Ahmed : « qu'il soit conscient de ses jetons ») la taille de sa conversation, redite à chaque quart
   // franchi à partir de la moitié du seuil d'allègement ; le détail est dans introspection

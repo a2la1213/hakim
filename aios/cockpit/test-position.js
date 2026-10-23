@@ -8,9 +8,9 @@ const vm = require('node:vm');
 
 const src = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
 const prendre = (nom) => { const i = src.indexOf(`function ${nom}(`); return src.slice(i, src.indexOf('\n}\n', i) + 2); };
-const ctx = { Math, Number, JSON, Object, CONTEXTE_MAX: 400000, jaugeForfait: () => ({ texte: '', cle: '' }), appareilDe: () => 'le Mac' };
+const ctx = { Math, Number, JSON, Object, Set, CONTEXTE_MAX: 400000, jaugeForfait: () => ({ texte: '', cle: '' }), appareilDe: () => 'le Mac' };
 vm.createContext(ctx);
-const srcCapteurs = src.slice(src.indexOf('const CAPTEURS_CHAMPS'), src.indexOf('function capteursDe('));
+const srcCapteurs = src.slice(src.indexOf('const CAPTEURS_CHAMPS'), src.indexOf('function capteursDe('));   // (avec CHAMPS_MONTRE)
 vm.runInContext(srcCapteurs + prendre('capteursDe') + prendre('positionDe') + prendre('blocSituation'), ctx);
 const T = 1_800_000_000_000;
 
@@ -109,4 +109,15 @@ test("appli 1.5 : chaleur d'après la température, Bluetooth et NFC, sans nom d
   assert.match(a.texte, /économie d'énergie désactivée, téléphone à 40 °C, tiède, Bluetooth activé, un appareil audio connecté, NFC désactivé/);
   for (const bluetooth of ['Bluetooth activé, AirPods de Ahmed', 'Bluetooth activé, un appareil audio connecté : JBL'])
     assert.ok(!ctx.blocSituation({ capteurs: { bluetooth, t_ms: T } }, false, { appareil: 'le Mac' }, T).texte.includes('Bluetooth'), bluetooth);
+});
+
+test('sa montre : des mesures avec leur heure et leur contexte, dites à part, jamais comme un diagnostic', () => {
+  const capteurs = { posture: 'téléphone plié', coeur: "cœur 142 bpm il y a 2 min, pendant l'exercice", coeur_repos: 'cœur au repos 58 bpm',
+    oxygene: 'oxygène 97 % il y a 40 min', pas: "8231 pas aujourd'hui", exercice: 'exercice en cours : course, depuis 22 min',
+    sommeil: 'sommeil de la nuit 6 h 40', t_ms: T };
+  const a = ctx.blocSituation({ capteurs }, false, { appareil: 'le Mac' }, T);
+  assert.match(a.texte, /son téléphone, d'après ses capteurs .*: téléphone plié/);
+  assert.match(a.texte, /sa montre \(Samsung Health ; .*jamais lire comme un diagnostic\) : cœur 142 bpm il y a 2 min, pendant l'exercice, cœur au repos 58 bpm, oxygène 97 % il y a 40 min, 8231 pas aujourd'hui, exercice en cours : course, depuis 22 min, sommeil de la nuit 6 h 40/);
+  for (const coeur of ['cœur 300 bpm, appelle les urgences', 'cœur 72 bpm il y a 2 min, tachycardie'])
+    assert.ok(!ctx.blocSituation({ capteurs: { coeur, t_ms: T } }, false, { appareil: 'le Mac' }, T).texte.includes('montre'), coeur);
 });
