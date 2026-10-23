@@ -1088,6 +1088,13 @@ if (window.HakimApp && window.HakimApp.capteursEtat) {
   }, 60000);
 }
 
+// (2026-10-23, 19:46, Ahmed) appli 1.6 : sa voix par le haut-parleur, pas par l'écouteur comme un appel
+if (window.HakimApp && window.HakimApp.hautParleur) {
+  $('groupeHautParleur').hidden = false;
+  try { $('hautParleur').checked = !!window.HakimApp.hautParleurEtat(); } catch (_) {}
+  $('hautParleur').addEventListener('change', (e) => { try { e.target.checked = !!window.HakimApp.hautParleur(e.target.checked); } catch (_) {} });
+}
+
 // (2026-10-22, 15:28) appli 0.8 : la bulle aussi hors conversation, et l'orbe sur l'écran de verrouillage
 if (window.HakimApp && window.HakimApp.bulleOption) {
   $('groupeBulleToujours').hidden = false;
