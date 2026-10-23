@@ -826,9 +826,17 @@ function noterPresent(ev) {
   const limite = Date.now() - 10 * 60 * 1000;
   etat.present = etat.present.filter(x => (x.fin || x.t || 0) > limite).slice(-60);
 }
+// les moments où SA voix a joué (2 min) : un écho ne peut venir que de là (la pièce résonne ~1,5 s après)
+const voixJouee = [];
+function voixPendant(debut, fin) {
+  if (etat.parleDepuis && etat.parleDepuis <= fin + 500) return true;
+  return voixJouee.some(v => v.debut <= fin + 500 && v.fin + 1500 >= debut);
+}
 function noterParoleJarvis(parle) {
   if (parle && !etat.parleDepuis) { etat.parleDepuis = Date.now(); etat.coupeParAhmed = false; }
   else if (!parle && etat.parleDepuis) {
+    voixJouee.push({ debut: etat.parleDepuis, fin: Date.now() });
+    while (voixJouee.length && Date.now() - voixJouee[0].fin > 120000) voixJouee.shift();
     noterPresent({ e: 'jarvis', debut: etat.parleDepuis, fin: Date.now(), coupe: etat.coupeParAhmed });
     etat.parleDepuis = 0;
   }
@@ -1569,14 +1577,18 @@ async function tourDeParole(conv, wav, infos, extra) {
   if (!Conversation.utile(texte)) { journalVoix('tour_bruit', { coupure: !!etat.coupeParAhmed }); if (!reprendreVoix()) humeur(); return; }      // bruit, une autre voix : il reprend
   // (2026-10-22) ses phrases revenues par le haut-parleur, collées à la tienne : retirées ; s'il ne reste presque rien,
   // c'était son écho
-  const sansEcho = retirerEcho(texte);
+  // (2026-10-23, 20:05 : Ahmed pris pour l'écho de Hakim, depuis le mode « normal » de l'appli 1.8) un écho n'existe que
+  // si SA voix jouait pendant ton tour : sinon, tes mots sont les tiens, même s'ils reprennent les siens
+  const echoPossible = voixPendant(Number(infos && infos.debut) || t0Tour - 5000, Number(infos && (infos.derniere_voix || infos.fin)) || t0Tour);
+  if (!echoPossible && estSonEcho(texte)) journalVoix('echo_evite', { mots: texte.split(/\s+/).length });
+  const sansEcho = echoPossible ? retirerEcho(texte) : { texte, retire: 0 };
   if (sansEcho.retire) {
     journalVoix('echo_retire', { mots: sansEcho.retire, reste: sansEcho.texte.split(/\s+/).filter(Boolean).length });
     if (sansEcho.texte.split(/\s+/).filter(m => m.length >= 2).length < 2) { if (!reprendreVoix()) humeur(); return; }
     texte = sansEcho.texte;
   }
   // (2026-10-21) sa propre voix revenue par le micro : ce n'est pas toi qui parles, il reprend
-  if (estSonEcho(texte)) { journalVoix('echo_reconnu', { mots: texte.split(/\s+/).length }); if (!reprendreVoix()) humeur(); return; }
+  if (echoPossible && estSonEcho(texte)) { journalVoix('echo_reconnu', { mots: texte.split(/\s+/).length }); if (!reprendreVoix()) humeur(); return; }
   noterPresent({ e: 'ahmed', debut: infos.debut, fin: infos.fin, pauses: infos.pauses, ton: tonRelatif(infos, texte) });
   activite();
   if (COMMANDE_STOP.test(texte)) { marquerCoupe(); arreterTout(); rendre(); humeur(); return; }   // « stop » : il lâche tout

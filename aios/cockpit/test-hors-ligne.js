@@ -288,3 +288,18 @@ test('25 s sans réponse : le Mac est dit « débordé », pas « sans connexion
   assert.equal(await ctx.transcrire('wav'), null);
   assert.equal(ctx.horsLigne.panne, 'lent');
 });
+
+/* l'écho (2026-10-23, 20:05 : Ahmed pris pour l'écho de Hakim) : seulement si SA voix jouait pendant le tour */
+test('écho possible seulement pendant sa voix (ou 1,5 s après) ; sinon les mots d’Ahmed sont les siens', () => {
+  let t = 1_000_000;
+  const ctx = { Date: class extends Date { static now() { return t; } }, etat: { parleDepuis: 0 }, noterPresent() {} };
+  vm.createContext(ctx);
+  const d = src.indexOf('const voixJouee = [];'), f = src.indexOf('\n}\n', src.indexOf('function noterParoleJarvis')) + 2;
+  vm.runInContext(src.slice(d, f) + 'this.pendant = voixPendant; this.noter = noterParoleJarvis;', ctx);
+  ctx.noter(true); t += 4000; ctx.noter(false);                      // il a parlé de 1 000 000 à 1 004 000
+  assert.equal(ctx.pendant(1_003_000, 1_005_000), true);            // pendant sa voix
+  assert.equal(ctx.pendant(1_005_000, 1_007_000), true);            // juste après (la pièce résonne)
+  assert.equal(ctx.pendant(1_010_000, 1_013_000), false);           // 6 s après : c'est Ahmed
+  ctx.noter(true);                                                   // il reparle maintenant
+  assert.equal(ctx.pendant(t - 200, t + 2000), true);
+});
