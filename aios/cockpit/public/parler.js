@@ -676,11 +676,22 @@ function liens(html) {
     .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
 }
 
+// (2026-10-23, Ahmed : « les heures de chaque message, et la date ») l'heure d'un message : la sienne, ou celle de son
+// identifiant (il est fait de l'heure de sa création) ; 0 si on ne la connaît pas
+function quandMessage(m) {
+  const t = Number(m && m.ts) || 0;
+  if (t > 1e12) return t;
+  const id = Number(m && m.id);
+  return Number.isFinite(id) && id > 1e12 ? id : 0;
+}
+const heureMessage = (t) => (t ? `<span class="heure" title="${esc(new Date(t).toLocaleString('fr-FR'))}">${new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
+const jourMessage = (t) => new Date(t).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 function htmlMessage(m) {
+  const heure = heureMessage(quandMessage(m));
   if (m.qui === 'u') return `<div class="m u" data-id="${esc(m.id)}">${m.oral ? '<span class="oral">À L’ORAL</span>' : ''}`
     + ((m.joints || []).length ? `<div class="pj">${m.joints.map(n => `<span>📎 ${esc(n)}</span>`).join('')}</div>` : '')
     + `<div class="txt">${esc(m.texte)}</div>`
-    + (m.texte ? `<div class="pied"><button data-copier="${esc(m.id)}" title="Copier ce message">📋 copier</button></div>` : '') + '</div>';
+    + (m.texte ? `<div class="pied">${heure}<button data-copier="${esc(m.id)}" title="Copier ce message">📋 copier</button></div>` : '') + '</div>';
   const outils = (m.outils || []).length
     ? `<div class="outils">${[...new Set(m.outils)].map(o => `<span class="badge muted">${esc(o)}</span>`).join('')}</div>` : '';
   const corps = m.texte && NON_REPONSE.test(m.texte) ? '<div class="attente">(il n’a rien répondu)</div>'
@@ -695,6 +706,7 @@ function htmlMessage(m) {
       + `${x.titre ? `<span class="titre-piece">${esc(x.titre)}</span>` : ''}</div>`;
   }).join('');
   const pied = [];
+  if (heure && !m.spontane) pied.push(heure);                  // (un message spontané a déjà son heure dans l'étiquette)
   if (m.texte && !m.enCours && lecteur) pied.push(`<button data-lire="${esc(m.id)}">${etat.lectureDe === m.id ? '⏹ arrêter' : '🔊 écouter'}</button>`);
   if (m.texte && !m.enCours) pied.push(`<button data-copier="${esc(m.id)}" title="Copier ce message">📋 copier</button>`);
   if (m.coupe) pied.push('<span>coupé</span>');
@@ -708,7 +720,7 @@ function htmlMessage(m) {
   }
   if (m.source === 'api') pied.push('<span title="Forfait à sa limite : réponse par l\'API Claude (payée à l\'usage)">via l\'API</span>');
   if (m.source === 'local') pied.push('<span title="Forfait et API indisponibles : cerveau local, sans outils">cerveau local</span>');
-  const etiquette = m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '';
+  const etiquette = m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '';
   return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
 }
 
@@ -768,8 +780,14 @@ function rendre() {
   }
   etat.fenetre = Math.max(etat.fenetre || FENETRE, FENETRE);
   const caches = Math.max(0, etat.messages.length - etat.fenetre);
+  let jourPrecedent = '';
   fil.innerHTML = (caches ? `<button class="btn plus" data-plus="1">messages précédents (${caches})</button>` : '')
-    + etat.messages.slice(-etat.fenetre).map(htmlMessage).join('');
+    + etat.messages.slice(-etat.fenetre).map((m) => {
+      const t = quandMessage(m), jour = t ? jourMessage(t) : '';
+      const separation = jour && jour !== jourPrecedent ? `<div class="jour">${esc(jour)}</div>` : '';
+      if (jour) jourPrecedent = jour;
+      return separation + htmlMessage(m);
+    }).join('');
   if (enBas) fil.scrollTop = fil.scrollHeight;
   chargerApercus();
 }
@@ -949,6 +967,7 @@ async function envoyer(texte, oral, dejaRelance) {
   }
   if (etat.flux === ctl) etat.flux = null;
   m.enCours = false;
+  if (m.texte && !m.ts) m.ts = Date.now();                       // (23/10) son heure : quand la réponse est finie
   if (m.texte) m.texte = Voix.sansAffect(m.texte).trimEnd();     // la balise [[affect: …]] ne reste pas dans la conversation
   if (m.texte && !auto && !NON_REPONSE.test(m.texte)) notifierApp('Hakim te répond', m.texte, String(m.id));   // (23/10) appli cachée
   if (fin) {
@@ -2204,12 +2223,16 @@ const sauverADire = () => { try { localStorage.setItem('jarvis.aDire', JSON.stri
 let parlaitA = 0;
 function garderNonDit() {
   if (!(etat.conversation || etat.reglages.volant || etat.reglages.lectureAuto)) return;   // voix éteinte : il lit à l'écran
+  // (21:26, la boucle vue par Hakim) d'où vient ce qui est coupé : d'une réponse (son heure) ou d'une reprise déjà redite
+  const source = etat.messages.find(x => x.id === etat.lectureDe);
+  const redite = !!(source && source.spontane === 'reprise');
+  const origine = redite ? Number(source.origine_ts) || quandMessage(source) : quandMessage(source) || Date.now();
   const morceaux = lecteurNeuronal.restant().map(x => x.texte);
   if (etat.decoupeFlux) morceaux.push(...etat.decoupeFlux.finir());          // la phrase qui arrivait encore
   // (une reprise coupée à son tour ne redit pas « Je reprends… » deux fois)
-  const texte = morceaux.join(' ').replace(/\s+/g, ' ').trim().replace(/^(je reprends ce que je disais\s*:\s*)+/i, '');
+  const texte = morceaux.join(' ').replace(/\s+/g, ' ').trim().replace(/^(je reprends ce que je disais( à \d{1,2} h \d{2})?\s*:\s*)+/i, '');
   if (!/\p{L}{2,}/u.test(texte) || NON_REPONSE.test(texte)) return;
-  aDire.push({ id: etat.lectureDe || `nondit-${Date.now()}`, texte, recu: Date.now(), coupe: true });
+  aDire.push({ id: etat.lectureDe || `nondit-${Date.now()}`, texte, recu: Date.now(), coupe: true, origine_ts: origine, redite });
   sauverADire();
   journalVoix('non_dit_garde', { car: texte.length, en_attente: aDire.length });
 }
@@ -2238,12 +2261,23 @@ function direSpontanes() {
   const calme = aDire.some(x => x.coupe) ? 3000 : 1500;
   if (!lecteur || etat.flux || etat.micro || etat.transcription || !jarvisPeutParler() || lecteur.actif || lecteur.enPause
       || Date.now() - Math.max(parlaitA, etat.finVoixA || 0) < calme) return;
-  if (aDire.length > 2) { synthetiser(); return; }
+  // plus de deux en attente, ou un morceau déjà redit puis recoupé (il tournait en boucle) : sa synthèse, rien de jeté
+  if (aDire.length > 2 || aDire.some(x => x.redite)) { synthetiser(); return; }
   const m = aDire.shift();
   sauverADire();
   if (NON_REPONSE.test(m.texte)) return;
-  etat.lectureDe = m.id;
-  lecteur.dire(m.coupe ? `Je reprends ce que je disais : ${m.texte}` : m.texte); lecteur.finFlux();
+  if (m.coupe) {
+    // (21:26) la reprise se VOIT dans le fil, datée : sinon on entend une phrase sans message
+    const h = m.origine_ts ? new Date(m.origine_ts) : null;
+    const reprise = { id: `reprise-${Date.now()}`, qui: 'j', spontane: 'reprise', texte: m.texte, ts: Date.now(), origine_ts: m.origine_ts || undefined };
+    etat.messages.push(reprise); sauver(); rendre();
+    etat.lectureDe = reprise.id;
+    lecteur.dire(`Je reprends ce que je disais${h ? ` à ${h.getHours()} h ${String(h.getMinutes()).padStart(2, '0')}` : ''} : ${m.texte}`);
+  } else {
+    etat.lectureDe = m.id;
+    lecteur.dire(m.texte);
+  }
+  lecteur.finFlux();
   humeur();
 }
 setInterval(direSpontanes, 500);

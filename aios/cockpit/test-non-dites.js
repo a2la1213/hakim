@@ -12,6 +12,7 @@ const vm = require('node:vm');
 function page({ voix = true, fetchOk = true } = {}) {
   const src = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
   const debut = src.indexOf('const aDire = [];'), fin = src.indexOf('setInterval(direSpontanes, 500);');
+  const quand = src.slice(src.indexOf('function quandMessage('), src.indexOf('const heureMessage'));
   let t = 1_800_000_000_000;
   const dits = [], envois = [], stock = {};
   const lecteur = { actif: false, enPause: false, dire: (p) => dits.push(p), finFlux() {} };
@@ -19,31 +20,67 @@ function page({ voix = true, fetchOk = true } = {}) {
     Math, JSON, String, Array, Promise, Error,
     Date: class extends Date { constructor(...a) { super(...(a.length ? a : [t])); } static now() { return t; } },
     etat: { conversation: voix ? { capteur: { enParole: false } } : null, reglages: {}, flux: null, micro: null, transcription: null,
-      lectureDe: 7, decoupeFlux: null, finVoixA: 0 },
+      lectureDe: 7, decoupeFlux: null, finVoixA: 0, messages: [] },
+    sauver() {}, rendre() {},
     lecteur, lecteurNeuronal: { restant: () => [] }, jarvisPeutParler: () => true, NON_REPONSE: /^\s*no response requested\.?\s*$/i,
     journalVoix() {}, humeur() {}, jeton: () => 'j',
     localStorage: { getItem: (k) => stock[k] || null, setItem: (k, v) => { stock[k] = v; } },
     fetch: async (url, o) => { envois.push({ url, corps: JSON.parse(o.body) }); return { ok: fetchOk, status: fetchOk ? 202 : 500 }; },
   };
   vm.createContext(ctx);
-  vm.runInContext(src.slice(debut, fin) + 'this.aDire = aDire; this.garder = garderNonDit; this.dire = direSpontanes;', ctx);
+  vm.runInContext(quand + src.slice(debut, fin) + 'this.quand = quandMessage; this.aDire = aDire; this.garder = garderNonDit; this.dire = direSpontanes;', ctx);
   return { ctx, dits, envois, avancer: (ms) => { t += ms; }, maintenant: () => t, stock };
 }
 const attendre = () => new Promise(r => setImmediate(r));
 
-test('coupé : le reste est gardé, puis dit au premier calme de 3 s, avec « Je reprends »', () => {
+test('coupé : le reste est gardé, puis dit au premier calme de 3 s, avec « Je reprends ce que je disais à <heure> »', () => {
   const p = page();
+  const origine = p.maintenant() - 7 * 60 * 1000;
+  p.ctx.etat.messages.push({ id: 7, qui: 'j', texte: 'Ma réponse entière.', ts: origine });
   p.ctx.lecteurNeuronal.restant = () => [{ langue: 'fr', texte: 'La suite de ma réponse,' }, { langue: 'fr', texte: 'et la fin.' }];
   p.ctx.etat.decoupeFlux = { finir: () => ['une phrase qui arrivait'] };
   p.ctx.garder();
   assert.equal(p.ctx.aDire.length, 1);
   assert.equal(p.ctx.aDire[0].texte, 'La suite de ma réponse, et la fin. une phrase qui arrivait');
+  assert.equal(p.ctx.aDire[0].origine_ts, origine);
   p.ctx.etat.finVoixA = p.maintenant();                              // sa voix vient de s'arrêter
   p.avancer(2000); p.ctx.dire();
   assert.equal(p.dits.length, 0, 'pas avant 3 s de calme');
   p.avancer(1500); p.ctx.dire();
-  assert.deepEqual(p.dits, ['Je reprends ce que je disais : La suite de ma réponse, et la fin. une phrase qui arrivait']);
+  const h = new Date(origine), heure = `${h.getHours()} h ${String(h.getMinutes()).padStart(2, '0')}`;
+  assert.deepEqual(p.dits, [`Je reprends ce que je disais à ${heure} : La suite de ma réponse, et la fin. une phrase qui arrivait`]);
   assert.equal(p.ctx.aDire.length, 0);
+  // (21:26) ce qu'on entend se VOIT : une ligne datée dans le fil, et c'est elle qu'on lit
+  const r = p.ctx.etat.messages[1];
+  assert.equal(r.spontane, 'reprise');
+  assert.equal(r.texte, 'La suite de ma réponse, et la fin. une phrase qui arrivait');
+  assert.equal(r.origine_ts, origine);
+  assert.equal(r.ts, p.maintenant());
+  assert.equal(p.ctx.etat.lectureDe, r.id);
+});
+
+test('la boucle est cassée : une reprise coupée à son tour part en synthèse, elle n’est pas redite telle quelle', async () => {
+  const p = page();
+  p.ctx.etat.messages.push({ id: 'reprise-1', qui: 'j', spontane: 'reprise', texte: 'la fin.', ts: p.maintenant(), origine_ts: 1_799_999_000_000 });
+  p.ctx.etat.lectureDe = 'reprise-1';
+  p.ctx.lecteurNeuronal.restant = () => [{ langue: 'fr', texte: 'Je reprends ce que je disais à 21 h 14 : la fin.' }];
+  p.ctx.garder();
+  assert.equal(p.ctx.aDire[0].texte, 'la fin.');
+  assert.equal(p.ctx.aDire[0].redite, true);
+  assert.equal(p.ctx.aDire[0].origine_ts, 1_799_999_000_000, 'l’heure de la réponse d’origine, pas celle de la reprise');
+  p.avancer(10000); p.ctx.dire(); await attendre();
+  assert.equal(p.dits.length, 0, 'pas redit mot pour mot');
+  assert.equal(p.envois.length, 1);
+  assert.equal(p.envois[0].url, '/api/jarvis/non-dites');
+});
+
+test('l’heure d’un message : la sienne, sinon celle de son identifiant, sinon rien', () => {
+  const p = page();
+  assert.equal(p.ctx.quand({ id: 5, ts: 1_800_000_000_000 }), 1_800_000_000_000);
+  assert.equal(p.ctx.quand({ id: 1_800_000_000_123 }), 1_800_000_000_123);
+  assert.equal(p.ctx.quand({ id: 'reprise-x' }), 0);
+  assert.equal(p.ctx.quand({ id: 'x', ts: 1_800_000_000 }), 0, 'des secondes ne sont pas une date en ms');
+  assert.equal(p.ctx.quand(undefined), 0);
 });
 
 test('jamais pendant qu’il parle, ni pendant une autre réponse', () => {
@@ -89,7 +126,10 @@ test('une reprise coupée à son tour ne redit pas « Je reprends » ; gardée a
   p.ctx.lecteurNeuronal.restant = () => [{ langue: 'fr', texte: 'Je reprends ce que je disais : la fin.' }];
   p.ctx.garder();
   assert.equal(p.ctx.aDire[0].texte, 'la fin.');
-  assert.ok(JSON.parse(p.stock['jarvis.aDire']).length === 1);
+  p.ctx.lecteurNeuronal.restant = () => [{ langue: 'fr', texte: 'Je reprends ce que je disais à 9 h 05 : encore.' }];
+  p.ctx.garder();
+  assert.equal(p.ctx.aDire[1].texte, 'encore.');
+  assert.ok(JSON.parse(p.stock['jarvis.aDire']).length === 2);
 });
 
 /* ---- le cockpit : recevoir, garder sur le disque, réveiller Hakim pour UNE réponse orale ---- */
