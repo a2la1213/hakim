@@ -1088,6 +1088,14 @@ if (window.HakimApp && window.HakimApp.capteursEtat) {
   }, 60000);
 }
 
+// (19:51, la 1.6 ne suffisait pas) en conversation, par où le son sort VRAIMENT, noté au diagnostic toutes les 30 s
+if (window.HakimApp && window.HakimApp.sonEtat) setInterval(() => {
+  if (!etat.conversation) return;
+  try {
+    const [mode, sortie, hp, ecouteurs] = String(window.HakimApp.sonEtat()).split('|');
+    journalVoix('sortie_son', { mode, sortie, hp, ecouteurs });
+  } catch (_) {}
+}, 30000);
 // (2026-10-23, 19:46, Ahmed) appli 1.6 : sa voix par le haut-parleur, pas par l'écouteur comme un appel
 if (window.HakimApp && window.HakimApp.hautParleur) {
   $('groupeHautParleur').hidden = false;
