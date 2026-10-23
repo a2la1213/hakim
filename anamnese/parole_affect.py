@@ -15,10 +15,14 @@ import re
 from pathlib import Path
 
 _NEG = r"(?<!pas )(?<!plus )(?<!pas trop )"
+# (2026-10-23, live : « c'est pas un problème » a fait un pic d'adrénaline à Hakim) un problème NIÉ n'en est pas un :
+# « c'est pas un problème », « plus un souci », « sans bug », « pas de bug », « pas cassé », « ça plante pas »
+_NEG_P = r"(?<!pas )(?<!plus )(?<!sans )(?<!jamais )(?<!pas de )(?<!plus de )(?<!aucun )(?<!pas un )(?<!jamais de )"
+_APRES_P = r"(?!\s+(?:pas|plus|jamais)\b)"
 LEXIQUE = [  # (événement, motif, intensité) — dans l'ordre : un « ça marche pas » est un problème, pas une réussite
     ("probleme", re.compile(r"\b(([çc]a|il|elle|tout|rien) (ne )?(marche|fonctionne|s'envoie|charge|r[ée]pond)s? (pas|plus)|"
-                            r"bug\w*|plant\w*|bloqu\w*|erreur \d+|cass[ée]e?|un souci|un probl[eè]me|[çc]a coupe|elle coupe|"
-                            r"il coupe)\b", re.I), 0.5),
+                            + _NEG_P + r"(?:bug\w*|plant\w*|bloqu\w*|erreur \d+|cass[ée]e?|un souci|un probl[eè]me|[çc]a coupe|"
+                            r"elle coupe|il coupe)" + _APRES_P + r")\b", re.I), 0.5),
     ("echec", re.compile(r"\b(t'as rien compris|tu as rien compris|n'importe quoi|c'est nul|[çc]a m'[ée]nerve|"
                          r"[ée]nerv[ée]e?|d[ée][çc]ue?|catastrophe|grave erreur|tu m'[ée]coutes pas|"
                          r"c'est pas (du tout )?ce que (je voulais|j'ai demand[ée]))\b", re.I), 0.5),

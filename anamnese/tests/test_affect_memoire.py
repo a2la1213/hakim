@@ -43,6 +43,18 @@ def test_la_parole_evaluee():
     assert len(parole_affect.evaluer("génial merci et si on ajoutait une idée, ça bug")) <= 2
 
 
+def test_un_probleme_nie_n_en_est_pas_un():
+    """(2026-10-23, le live) « c'est pas un problème » a donné à Hakim un pic d'adrénaline et de CRH : la négation était
+    ignorée. « Il y a un problème », dit dix minutes plus tard, en reste un."""
+    for nie in ("Mais vas-y, je te lis en commentaire, c'est pas un problème.", "ce n'est plus un souci", "c'est pas cassé",
+                "ça plante pas", "il y a pas de bug", "sans bug cette fois", "ça coupe pas", "jamais bloqué"):
+        assert parole_affect.evaluer(nie) == [], nie
+    for vrai in ("Il y a un problème.", "ça plante encore", "c'est cassé", "un souci avec le micro", "ça marche pas",
+                 "il y a un bug d'affichage", "ça coupe", "le cockpit est bloqué", "erreur 403",
+                 "pas de problème, un bug quand même"):
+        assert [n for n, _ in parole_affect.evaluer(vrai)] == ["probleme"], vrai
+
+
 def test_la_parole_v2_seulement_et_sans_double_compte(mem, tmp_path):
     assert parole_affect.appliquer(mem, "merci frero", "projets/anamnese", time.time()) == []      # v1 : rien
     _v2(mem)
