@@ -40,7 +40,7 @@ function charger() {
   // Haiku écarté par Ahmed : un ancien réglage repasse à Sonnet ou Opus
   if (!['sonnet', 'opus', 'auto'].includes(etat.reglages.modele)) etat.reglages.modele = 'opus';
   if (!['sonnet', 'opus', 'auto'].includes(etat.reglages.modeleConversation)) etat.reglages.modeleConversation = 'sonnet';
-  if (!['auto', 'abonnement', 'api', 'local'].includes(etat.reglages.source)) etat.reglages.source = 'auto';
+  if (!['auto', 'abonnement', 'api', 'local', 'gemma'].includes(etat.reglages.source)) etat.reglages.source = 'auto';
   // Ahmed (2026-10-18) : par défaut, la langue est DÉTECTÉE parmi le français, l'arabe et l'anglais (plus
   // jamais l'islandais) ; l'ancien défaut « français » passe une fois à ce mode, son choix reste libre ensuite
   try {
@@ -87,6 +87,7 @@ function sauver() {
       }).catch(() => {});
   }, 600);
 }
+let synchroEnAttente = 0;
 async function synchroniser() {
   if (etat.flux || lecteur.actif || (etat.conversation && etat.conversation.enAttente)) return;   // jamais au milieu d'une réponse
   try {
@@ -96,7 +97,18 @@ async function synchroniser() {
     // des messages d'ici que le cockpit n'a jamais vus (cet appareil n'avait pas encore partagé) : fusion, pas remplacement
     const vus = new Set(o.messages.map(m => m && m.id));
     const quand = (m) => Number(m.ts) || Number(m.id) || 0;
-    if (etat.messages.some(m => !m.enCours && !vus.has(m.id) && quand(m) >= (Number(o.debut_ms) || 0))) return sauver();
+    // (2026-10-23, bug : ses tours « de lui-même » entendus mais jamais affichés) passé 1 000 messages, le cockpit oublie
+    // les plus anciens ; la page les gardait, les croyait « jamais vus », les renvoyait (sans y arriver : seuls les 150
+    // derniers partent) et ne prenait PLUS JAMAIS la conversation du cockpit. Un message plus ancien que le plus ancien
+    // du cockpit n'est pas neuf : c'est de l'histoire qu'il a rangée.
+    const plusAncien = o.messages.length ? Math.min(...o.messages.map(quand).filter(x => x > 0)) : 0;
+    const neufs = etat.messages.filter(m => !m.enCours && !vus.has(m.id) && quand(m) >= (Number(o.debut_ms) || 0) && quand(m) > plusAncien);
+    if (neufs.length && ++synchroEnAttente < 3) return sauver();
+    if (neufs.length) {                       // toujours refusés après trois essais : fusionnés ici, rien n'est perdu
+      journalVoix('synchro_fusion_locale', { n: neufs.length });
+      o.messages = o.messages.concat(neufs).map((m, i) => [m, i]).sort((x, y) => (quand(x[0]) - quand(y[0])) || (x[1] - y[1])).map(x => x[0]);
+    }
+    synchroEnAttente = 0;
     majConversation = Number(o.maj_ms);
     debutConversation = Number(o.debut_ms) || 0;
     etat.session = o.session || null;
@@ -1318,6 +1330,7 @@ async function basculerConversation() {
         if (!lecteur.pause()) { if (lecteur.actif) lecteur.arreter(); }
         majBoutonsPause();
         humeur('je t’écoute…');
+        surveillerCoupure(conv);
       },
       surFin: (wav, infos, extra) => tourDeParole(conv, wav, infos, extra),
       surPiste: (rendue) => journalVoix(rendue ? 'piste_rendue' : 'piste_prise'),     // (2026-10-23) un appel prend le micro
@@ -1442,13 +1455,40 @@ function finMesureTour() {
     premier_mot_ms: ms(m.premier_texte, m.transcrit), voix_ms: ms(m.premier_son, m.premier_texte), total_ms: ms(m.premier_son || m.premier_texte, m.fin),
     son: !!m.premier_son });
 }
+// (2026-10-23, 18:47, Ahmed dans un lieu bruyant : « ce n'était pas moi ») coupé par un BRUIT, pas par sa voix : il
+// reprend tout de suite, là où il s'était arrêté. Critère : 1,2 s après la coupure, moins de 0,2 s de son voisé (une
+// voix a une hauteur, un bruit non). Une vraie voix arrivée avant : comportement d'avant (il t'écoute).
+function surveillerCoupure(conv) {
+  const t0 = Date.now();
+  clearInterval(conv.veilleBruit);
+  conv.veilleBruit = setInterval(() => {
+    const cap = conv.capteur;
+    if (etat.conversation !== conv || !cap || !lecteur.enPause || !cap.enParole) { clearInterval(conv.veilleBruit); return; }
+    if ((cap.tonTour || 0) >= 10) { clearInterval(conv.veilleBruit); return; }          // c'est lui : on l'écoute
+    if (Date.now() - t0 < 1200) return;
+    clearInterval(conv.veilleBruit);
+    conv.bruitDuTour = true;
+    journalVoix('coupure_bruit', { ms: Date.now() - t0 });
+    reprendreVoix();
+  }, 150);
+}
+// un tour sans voix (aucune hauteur) : du bruit ; jamais transcrit, jamais gardé pour plus tard
+const tourSansVoix = (infos) => !(infos && infos.ton);
 async function tourDeParole(conv, wav, infos, extra) {
   const vivante = () => etat.conversation === conv || conv.fermeture;     // le dernier tour d'une conversation fermée
   if (!vivante()) return;
   const t0Tour = Date.now();
   conv.spec = null;
+  if (conv.bruitDuTour) {                    // la coupure était un bruit, il a déjà repris : ce tour-là n'est rien
+    conv.bruitDuTour = false;
+    if (tourSansVoix(infos) && !(extra && extra.texte)) { journalVoix('tour_bruit', { rapide: true }); return; }
+  }
   // (2026-10-23) le Mac déjà injoignable : le tour est gardé tel quel, sans attendre 25 s une transcription impossible
-  if (horsLigne.depuis && !(extra && extra.texte)) { garderHorsLigne(wav, t0Tour); return; }
+  // (un bruit, lui, n'est pas gardé : il reprend sa parole)
+  if (horsLigne.depuis && !(extra && extra.texte)) {
+    if (tourSansVoix(infos)) { if (!reprendreVoix()) humeur(); return; }
+    garderHorsLigne(wav, t0Tour); return;
+  }
   conv.enAttente++;
   humeur('transcription…');
   let texte = '';
@@ -1461,7 +1501,10 @@ async function tourDeParole(conv, wav, infos, extra) {
   finally { conv.enAttente = Math.max(0, conv.enAttente - 1); }
   // (2026-10-23, Ahmed en voiture : 9 min à parler sans que rien n'arrive) une transcription RATÉE n'est pas du silence :
   // avant, elle passait pour du bruit et ta phrase disparaissait sans un mot. Elle est gardée et part au retour du Mac.
-  if (texte === null && wav) { garderHorsLigne(wav, t0Tour); return; }
+  if (texte === null && wav) {
+    if (tourSansVoix(infos)) { journalVoix('tour_bruit', { hors_ligne: true }); if (!reprendreVoix()) humeur(); return; }
+    garderHorsLigne(wav, t0Tour); return;
+  }
   texte = texte || '';
   if (!vivante()) return;
   conv.fermeture = false;                                                   // ce dernier tour, une seule fois
@@ -2292,7 +2335,7 @@ function appliquerReglages() {
   const r = etat.reglages;
   $('modele').value = r.modele; $('modeleConversation').value = r.modeleConversation || 'sonnet';
   $('source').value = r.source || 'auto';
-  $('modele').disabled = $('modeleConversation').disabled = r.source === 'local';      // le local n'a qu'un modèle
+  $('modele').disabled = $('modeleConversation').disabled = r.source === 'local' || r.source === 'gemma';   // le local n'a qu'un modèle
   $('reconnaissance').value = r.reconnaissance; $('langue').value = r.langue;
   $('patience').value = String(r.patience);
   $('vitesse').value = r.vitesse; $('lectureAuto').checked = !!r.lectureAuto; $('voix').value = r.voix;

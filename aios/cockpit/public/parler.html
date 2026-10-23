@@ -104,7 +104,18 @@
     .m .pied button:hover { color: var(--teal-hi); }
     .m.u .pied { justify-content: flex-end; margin-top: 4px; }
 
-    .saisie { display: flex; align-items: flex-end; gap: 10px; padding: 10px; }
+    .saisie { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+    .saisie .rang { display: flex; align-items: center; gap: 8px; }
+    .saisie .rang.ecrire { align-items: flex-end; }
+    .saisie .zone { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+    .saisie .rang.voix { flex-wrap: wrap; }
+    .saisie .groupe { display: flex; align-items: center; gap: 8px; }
+    .saisie .groupe.sa-parole { flex: 1 1 auto; justify-content: center; }
+    .saisie .groupe.sa-parole:not(:has(> :not([hidden]))) { display: none; }   /* rien à contrôler : le groupe s'efface */
+    .saisie .btn.conversation { margin-left: auto; }
+    .saisie .rang.capture { justify-content: center; }
+    .saisie .rang.capture .btn { font-size: 12px; opacity: .85; }
+    .saisie .btn, .saisie .trombone { min-height: 44px; }                    /* assez grand pour le doigt (Fold plié) */
     .micro { flex: none; width: 52px; height: 52px; border-radius: 50%; cursor: pointer;
       border: 1px solid rgba(45,212,191,.45); background: radial-gradient(circle at 35% 30%, rgba(94,234,212,.25), rgba(13,148,136,.12));
       color: var(--teal-hi); display: grid; place-items: center; transition: transform .08s linear, background .2s; }
@@ -114,7 +125,6 @@
     .micro.occupe { opacity: .6; cursor: progress; }
     .saisie textarea { flex: 1; font: inherit; font-size: 14px; color: var(--txt); resize: none; max-height: 180px;
       background: rgba(0,0,0,.22); border: 1px solid var(--glass-bd); border-radius: 12px; padding: 13px 14px; line-height: 1.45; }
-    .saisie .col { display: flex; flex-direction: column; gap: 6px; }
     .btn.principal { border-color: rgba(45,212,191,.55); color: var(--teal-hi); }
     .btn.stop { border-color: rgba(248,113,113,.5); color: var(--err); }
     .vision { position: relative; display: flex; align-items: center; gap: 8px; }
@@ -168,10 +178,8 @@
       background: rgba(251,191,36,.06); border-radius: 10px; padding: 8px 12px; }
     @media (max-width: 640px) {
       .m { max-width: 100%; }
-      .saisie { flex-wrap: wrap; }
-      /* la zone d'écriture prend toute la ligne (le textarea est dans .zone : c'est elle l'élément flex) */
-      .saisie .zone { flex: 1 1 100%; order: -1; }
-      .saisie .col { flex-direction: row; }
+      /* sur le téléphone : Pause, Stop et Orbe passent sur leur propre ligne, sous le micro et Conversation */
+      .saisie .groupe.sa-parole { order: 3; flex-basis: 100%; }
     }
     /* sur le téléphone (écran tactile) : pas de raccourcis clavier à afficher */
     @media (pointer: coarse) { .aide { display: none; } }
@@ -225,7 +233,8 @@
           <option value="auto">automatique : forfait → API → local</option>
           <option value="abonnement">forfait Claude (Max)</option>
           <option value="api">API Claude (clé, payée à l'usage)</option>
-          <option value="local">local hors ligne (Gemma, sans outils)</option>
+          <option value="local">local hors ligne (petit modèle Qwen, sans outils)</option>
+          <option value="gemma">essai : Gemma seule, son subconscient (local, sans outils)</option>
         </select>
       </label>
       <label>Cerveau à l'écrit et au micro
@@ -356,33 +365,44 @@
       <span class="indice" id="indice">clic : masquer (ou « j'ai fini » quand il t'écoute) · Échap : arrêter</span>
     </div>
 
+    <!-- (2026-10-23, Ahmed : « un agencement cohérent, logique et élégant », maquette validée) les boutons rangés par usage :
+         écrire (trombone, zone, Envoyer à droite) ; ta voix (Muet à gauche du micro, Conversation de l'autre côté) et sa
+         parole (Pause, Stop, Orbe, visibles seulement quand ils servent) ; ce qu'il voit (Caméra, Écran), en bas -->
     <footer class="glass saisie">
-      <button class="micro" id="micro" aria-pressed="false" aria-label="Parler (Option+M)" title="Parler (⌥M)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v5"/>
-        </svg>
-      </button>
-      <button class="trombone" id="joindre" aria-label="Joindre des fichiers" title="Joindre des fichiers (ou glisse-les sur la page)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <div class="rang ecrire">
+        <button class="trombone" id="joindre" aria-label="Joindre des fichiers" title="Joindre des fichiers (ou glisse-les sur la page)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9"/>
-        </svg>
-      </button>
-      <input type="file" id="choix" multiple hidden>
-      <div class="zone">
-        <div class="joints" id="joints" hidden></div>
-        <textarea id="q" rows="1" placeholder="Écris à Hakim, ou appuie sur le micro…" aria-label="Message à Hakim"></textarea>
-      </div>
-      <div class="col">
+          </svg>
+          </button>
+        <input type="file" id="choix" multiple hidden>
+        <div class="zone">
+          <div class="joints" id="joints" hidden></div>
+          <textarea id="q" rows="1" placeholder="Écris à Hakim, ou appuie sur le micro…" aria-label="Message à Hakim"></textarea>
+          </div>
         <button class="btn principal" id="envoyer">Envoyer</button>
-        <button class="btn stop" id="stop" hidden>Stop</button>
       </div>
-      <button class="btn camera" id="camera" aria-pressed="false" title="Hakim te voit : analyse de ton visage sur le Mac, photo jointe à chaque message (⌥V)">Caméra</button>
-      <button class="btn ecran" id="ecran" hidden aria-pressed="false" title="Regarde l'écran : Hakim voit l'écran de ton téléphone, une image jointe à chacun de tes messages (Android demande ton accord ; touche encore pour arrêter)">Écran</button>
-      <button class="btn muet" id="muet" hidden aria-pressed="false" title="Couper ou rouvrir ton micro sans quitter la conversation (⌥X)">Muet</button>
-      <button class="btn pause" id="pause" hidden aria-pressed="false" title="Mettre sa voix en pause ; il reprend à la phrase non dite (⌥P, ou dis « attends » / « continue »)">Pause</button>
-      <button class="btn" id="orbeRetour" hidden title="Revenir à la grande orbe pendant la conversation (⌥O)">Orbe</button>
-      <button class="btn conversation" id="conversation" aria-pressed="false"
-        title="Mode Conversation : il t'écoute en continu, répond à voix haute, et s'arrête dès que tu reprends la parole (⌥C)">Conversation</button>
+      <div class="rang voix">
+        <div class="groupe ta-voix">
+          <button class="btn muet" id="muet" hidden aria-pressed="false" title="Couper ou rouvrir ton micro sans quitter la conversation (⌥X)">Muet</button>
+          <button class="micro" id="micro" aria-pressed="false" aria-label="Parler (Option+M)" title="Parler (⌥M)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v5"/>
+            </svg>
+            </button>
+        </div>
+        <div class="groupe sa-parole">
+          <button class="btn pause" id="pause" hidden aria-pressed="false" title="Mettre sa voix en pause ; il reprend à la phrase non dite (⌥P, ou dis « attends » / « continue »)">Pause</button>
+          <button class="btn stop" id="stop" hidden>Stop</button>
+          <button class="btn" id="orbeRetour" hidden title="Revenir à la grande orbe pendant la conversation (⌥O)">Orbe</button>
+        </div>
+        <button class="btn conversation" id="conversation" aria-pressed="false"
+          title="Mode Conversation : il t'écoute en continu, répond à voix haute, et s'arrête dès que tu reprends la parole (⌥C)">Conversation</button>
+      </div>
+      <div class="rang capture">
+        <button class="btn camera" id="camera" aria-pressed="false" title="Hakim te voit : analyse de ton visage sur le Mac, photo jointe à chaque message (⌥V)">Caméra</button>
+        <button class="btn ecran" id="ecran" hidden aria-pressed="false" title="Regarde l'écran : Hakim voit l'écran de ton téléphone, une image jointe à chacun de tes messages (Android demande ton accord ; touche encore pour arrêter)">Écran</button>
+      </div>
     </footer>
     <p class="aide"><kbd>⌥M</kbd> micro · <kbd>⌥C</kbd> conversation · <kbd>⌥X</kbd> muet · <kbd>⌥V</kbd> caméra · <kbd>⌥P</kbd> pause de sa voix · <kbd>Entrée</kbd> envoyer · <kbd>Maj+Entrée</kbd> à la ligne · <kbd>Échap</kbd> stop · glisse ou colle des fichiers</p>
   </main>

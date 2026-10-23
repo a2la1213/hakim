@@ -206,6 +206,7 @@
       },
       get enParole() { return etatV === 'parole'; },
       get derniereTrame() { return derniereTrame; },
+      get tonTour() { return hauteurs.length; },          // (2026-10-23) les trames voisées du tour : une voix, pas un bruit
       get pisteMuette() { return pisteMuette; },
       // Couper le micro sans quitter la conversation (demande d'Ahmed) : la piste est désactivée,
       // le navigateur n'envoie plus rien. (Ahmed, 2026-10-20 : « si je coupe le micro pendant que je parle, rien

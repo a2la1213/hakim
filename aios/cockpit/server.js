@@ -1752,7 +1752,8 @@ async function routeJarvis(req, res, distantReq = false) {
     enLocal++;
     consciencePulse();
     try {
-      await repondreEnLocal(prompt, persona, (x) => { dejaTexte = true; reponse += x; const y = fluxAffect.pousser(x); if (y) envoyer({ t: 'texte', x: y }); }, ctl.signal);
+      await repondreEnLocal(prompt, persona, (x) => { dejaTexte = true; reponse += x; const y = fluxAffect.pousser(x); if (y) envoyer({ t: 'texte', x: y }); }, ctl.signal,
+        { gemma: choix === 'gemma' });
       finir({ coupe: false, tours: 1, erreur: null });
     } catch (e) {
       finir({ coupe: ctl.signal.aborted, tours: null, erreur: ctl.signal.aborted ? null
@@ -2203,9 +2204,11 @@ function noterAbonnement(info, limite) {
 // le LLM local en dernier recours ». La source de départ de ce tour : le forfait, sauf s'il est à sa limite.
 // Le bouton des réglages (Ahmed, 2026-10-18) : automatique, ou une source imposée (forfait, API, local) —
 // imposée = sans bascule : si elle échoue, l'erreur est dite.
-const SOURCES = new Set(['auto', 'abonnement', 'api', 'local']);
+// (2026-10-23, Ahmed : « tester Gemma en secours ») « gemma » : le secours local, mais avec Gemma (son subconscient, par
+// Ollama) au lieu du petit modèle MLX ; sans outils, comme tout le secours local. Un essai qu'Ahmed choisit dans Parler.
+const SOURCES = new Set(['auto', 'abonnement', 'api', 'local', 'gemma']);
 function sourcePour(choix) {
-  if (choix === 'local') return 'local';
+  if (choix === 'local' || choix === 'gemma') return 'local';
   if (choix === 'api') return 'api';
   if (choix === 'abonnement') return 'abonnement';
   const cle = apiDisponible();
@@ -2318,13 +2321,13 @@ function filtreCadre(surTexte) {
   return f;
 }
 
-async function repondreEnLocal(prompt, persona, surTexte, signal) {
+async function repondreEnLocal(prompt, persona, surTexte, signal, { gemma = false } = {}) {
   prompt = String(prompt).replace(/\[Briefing Anamnèse[\s\S]*?\[\/Briefing\]\s*/, '');
   persona = personaLocale(persona);
   const systeme = `${persona}\n\n[Secours local] En ce moment tu réponds avec ton cerveau LOCAL (Gemma, sur le Mac) : le forfait et l'API Claude sont indisponibles. Dans ce mode tu n'as PAS tes outils (mémoire, fichiers, web, terminal, calcul, caméra) : si Ahmed demande quelque chose qui en a besoin, dis-le simplement et propose de le faire dès que Claude revient. Réponds en français oral, sans markdown. Les blocs entre crochets au début du message ([Horloge …], [Intérieur …], [Présent vécu …]) sont des DONNÉES pour toi : ne les recopie jamais, réponds seulement à Ahmed.`;
   const historique = derniersEchanges(9).slice(0, -1)         // le dernier est le message de ce tour, déjà dans le prompt
     .map(m => ({ ...m, content: m.content.slice(0, 700) }));
-  if (mlxDisponible()) {
+  if (mlxDisponible() && !gemma) {
     const messages = [{ role: 'system', content: systeme.replace('(Gemma, sur le Mac)', '(un petit modèle sur le Mac)') }, ...historique, { role: 'user', content: prompt }];
     let dejaDit = false;
     const filtre = filtreCadre((x) => { dejaDit = true; surTexte(x); });

@@ -98,17 +98,18 @@ test('un message parti pendant la coupure : renvoyé seulement si le Mac ne l’
 });
 
 /* le tour de parole : une transcription ratée n'est plus prise pour du bruit */
+const VOIX = { ton: { f0: 130, energie_db: -20 } };
 function tour({ transcrire }) {
   const gardes = [], journal = [];
   const ctx = {
-    Date, Math, String, journalVoix: (e) => journal.push(e), humeur() {}, reprendreVoix: () => false,
+    Date, Math, String, journalVoix: (e) => journal.push(e), humeur() {}, reprendreVoix: () => { ctx.reprises = (ctx.reprises || 0) + 1; return true; },
     Conversation: { utile: (t) => /\p{L}{2,}/u.test(String(t || '')) },
     transcrireVite: transcrire, texteDuTour: async () => null,
     horsLigne: { depuis: 0 }, garderHorsLigne: (w) => gardes.push(w),
     etat: {}, retirerEcho: (t) => ({ texte: t, retire: false }),
   };
   vm.createContext(ctx);
-  vm.runInContext(fonction('tourDeParole') + 'this.tourDeParole = tourDeParole;', ctx);
+  vm.runInContext('const tourSansVoix = (infos) => !(infos && infos.ton);' + fonction('tourDeParole') + 'this.tourDeParole = tourDeParole;', ctx);
   const conv = { enAttente: 0, ecrit: null };
   ctx.etat.conversation = conv;
   return { ctx, conv, gardes, journal };
@@ -116,7 +117,7 @@ function tour({ transcrire }) {
 
 test('transcription ratée (réseau) : le tour est gardé, pas jeté comme du bruit', async () => {
   const t = tour({ transcrire: async () => null });
-  await t.ctx.tourDeParole(t.conv, 'wav', {}, null);
+  await t.ctx.tourDeParole(t.conv, 'wav', VOIX, null);
   assert.deepEqual(t.gardes, ['wav']);
   assert.ok(!t.journal.includes('tour_bruit'));
   assert.equal(t.conv.enAttente, 0);
@@ -126,14 +127,14 @@ test('Mac déjà injoignable : gardé tout de suite, sans attendre une transcrip
   let appels = 0;
   const t = tour({ transcrire: async () => { appels++; return 'x'; } });
   t.ctx.horsLigne.depuis = 1;
-  await t.ctx.tourDeParole(t.conv, 'wav', {}, null);
+  await t.ctx.tourDeParole(t.conv, 'wav', VOIX, null);
   assert.deepEqual(t.gardes, ['wav']);
   assert.equal(appels, 0);
 });
 
 test('un vrai bruit (transcription vide, réussie) reste du bruit', async () => {
   const t = tour({ transcrire: async () => '' });
-  await t.ctx.tourDeParole(t.conv, 'wav', {}, null);
+  await t.ctx.tourDeParole(t.conv, 'wav', VOIX, null);
   assert.deepEqual(t.gardes, []);
   assert.ok(t.journal.includes('tour_bruit'));
 });
@@ -193,4 +194,54 @@ test('tout va bien : rien ne s’affiche', () => {
   v.ctx.surveiller();
   assert.equal(v.bandeau.length, 0);
   assert.equal(v.journal.length, 0);
+});
+
+test('Mac injoignable mais un simple bruit (pas de voix) : rien n’est gardé, il reprend sa parole', async () => {
+  const t = tour({ transcrire: async () => null });
+  await t.ctx.tourDeParole(t.conv, 'wav', {}, null);
+  assert.deepEqual(t.gardes, []);
+  assert.equal(t.ctx.reprises, 1);
+});
+
+test('coupé par un bruit et déjà repris : ce tour-là n’est ni transcrit ni envoyé', async () => {
+  let appels = 0;
+  const t = tour({ transcrire: async () => { appels++; return 'klaxon'; } });
+  t.conv.bruitDuTour = true;
+  await t.ctx.tourDeParole(t.conv, 'wav', {}, null);
+  assert.equal(appels, 0);
+  assert.equal(t.conv.bruitDuTour, false);
+  assert.ok(t.journal.includes('tour_bruit'));
+});
+
+/* la coupure : 1,2 s sans voix → il reprend tout de suite ; une voix → on l'écoute */
+function coupure({ tonTour }) {
+  let t = 1_800_000_000_000, tic = null;
+  const ctx = {
+    Date: class extends Date { constructor(...a) { super(...(a.length ? a : [t])); } static now() { return t; } },
+    setInterval: (f) => { tic = f; return 1; }, clearInterval: () => { tic = null; }, journalVoix() {},
+    lecteur: { enPause: true }, reprendreVoix: () => { ctx.reprises = (ctx.reprises || 0) + 1; ctx.lecteur.enPause = false; return true; },
+    etat: {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(fonction('surveillerCoupure') + 'this.surveiller = surveillerCoupure;', ctx);
+  const conv = { capteur: { enParole: true, tonTour } };
+  ctx.etat.conversation = conv;
+  ctx.surveiller(conv);
+  return { ctx, conv, avancer: (ms) => { t += ms; if (tic) tic(); } };
+}
+
+test('coupé par un bruit : il reprend après 1,2 s sans voix', () => {
+  const c = coupure({ tonTour: 2 });
+  c.avancer(600);
+  assert.equal(c.ctx.reprises, undefined);
+  c.avancer(700);
+  assert.equal(c.ctx.reprises, 1);
+  assert.equal(c.conv.bruitDuTour, true);
+});
+
+test('coupé par sa voix (assez de son voisé) : il reste en pause et l’écoute', () => {
+  const c = coupure({ tonTour: 25 });
+  c.avancer(1500); c.avancer(1500);
+  assert.equal(c.ctx.reprises, undefined);
+  assert.ok(!c.conv.bruitDuTour);
 });
