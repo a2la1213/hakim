@@ -170,9 +170,9 @@ function creerLecteurNeuronal() {
       pomper();
     },
     finFlux() { if (pause) { pause.fluxFini = true; return; } L.fluxFini = true; pomper(); },
-    // met en pause ; rend vrai si quelque chose restait à dire
-    pause() {
-      if (pause || !L.actif) return false;
+    // ce qui n'a pas encore été dit, la phrase en cours comprise (reprise du début), sans rien arrêter
+    restant() {
+      if (pause) return pause.textes.slice();
       const maintenant = fluide() ? actx.currentTime : 0;
       const restants = [];
       if (element && elementTexte) restants.push({ langue: 'fr', texte: elementTexte });
@@ -180,6 +180,12 @@ function creerLecteurNeuronal() {
         if (src._texte && src._fin > maintenant + 0.05) restants.push({ langue: src._langue, texte: src._texte });
       for (const x of lots) restants.push({ langue: x.langue, texte: x.texte });
       for (const u of unites) restants.push(u);
+      return restants;
+    },
+    // met en pause ; rend vrai si quelque chose restait à dire
+    pause() {
+      if (pause || !L.actif) return false;
+      const restants = L.restant();
       const fluxFini = L.fluxFini;
       L.arreter();
       pause = { textes: restants, fluxFini };
@@ -434,7 +440,7 @@ const lecteur = {
   reprendre() { return lecteurNeuronal.reprendre(); },
   get enPause() { return lecteurNeuronal.enPause; },
 };
-const finLecture = () => { if (!lecteur.actif) { etat.lectureDe = null; rendre(); humeur(); } };
+const finLecture = () => { if (!lecteur.actif) { etat.lectureDe = null; etat.finVoixA = Date.now(); rendre(); humeur(); } };
 lecteurNeuronal.surFin = finLecture;
 if (lecteurSysteme) lecteurSysteme.surFin = finLecture;
 
@@ -827,7 +833,7 @@ async function envoyer(texte, oral, dejaRelance) {
   etat.dernierOral = !!oral;
   const dites = etat.dites.splice(0);
   if (!dejaRelance) { etat.joints.forEach(x => x.url && URL.revokeObjectURL(x.url)); etat.joints = []; rendreJoints(); }
-  arreterTout();
+  arreterTout(true, { garder: true });
   $('q').value = ''; ajuster();
   const avant = etat.messages.filter(x => x.qui === 'u' && x.ts);
   const tPrecedent = etat.session && avant.length ? avant[avant.length - (dejaRelance ? 2 : 1)]?.ts : null;
@@ -842,6 +848,7 @@ async function envoyer(texte, oral, dejaRelance) {
   rendre(); humeur();
   const decoupe = Voix.decoupeur();
   const auto = (etat.reglages.lectureAuto || etat.conversation || etat.reglages.volant) && lecteur;
+  if (auto) etat.decoupeFlux = decoupe;                  // (23/10) sa phrase en cours d'arrivée, si on le coupe
   const camera = etat.vision ? await photoCamera() : null;
   const presentEnvoye = etat.present.slice(-40);
   if (etat.vision && etat.vision.courant)                                  // l'expression en cours, encore ouverte
@@ -1036,7 +1043,12 @@ function marquerCoupe() {
   const lu = etat.messages.find(m => m.id === etat.lectureDe) || [...etat.messages].reverse().find(m => m.qui === 'j');
   if (lu) { lu.coupe = true; sauver(); rendre(); }
 }
-function arreterTout(explicite = true) {
+// (2026-10-23, Ahmed : « rien n'est jamais jeté ») garder : Ahmed reprend la parole ou envoie un autre message — ce que
+// Hakim n'a pas pu dire part dans la file d'attente (aDire) et sera dit au premier moment calme. Un « stop » explicite
+// (le mot, le bouton, Échap) ne garde rien : c'est Ahmed qui le veut.
+function arreterTout(explicite = true, { garder = false } = {}) {
+  if (garder) garderNonDit();
+  etat.decoupeFlux = null;
   if (etat.flux) {
     // (2026-10-21) Stop EXPLICITE : sans lui, le cockpit laisse la réponse aller au bout (page partie ≠ Stop)
     if (explicite && etat.fluxId) fetch('/api/jarvis/stop', { method: 'POST', keepalive: true,
@@ -1449,7 +1461,8 @@ async function tourDeParole(conv, wav, infos, extra) {
   if (COMMANDE_PAUSE.test(texte)) { if (!lecteur.enPause) pauseVoix(); else humeur('en pause : « continue » pour que je reprenne'); return; }
   if (COMMANDE_VOLANT.test(texte) && !etat.reglages.volant) reglerVolant(true);             // puis il le lui dit (envoyé)
   else if (COMMANDE_FIN_VOLANT.test(texte) && etat.reglages.volant) reglerVolant(false);
-  if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(); }       // une vraie question : le reste est lâché
+  // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
+  if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(true, { garder: true }); }
   sousTitre(texte);
   mesureTour = { fin: Number(infos && (infos.derniere_voix || infos.fin)) || t0Tour, debut: t0Tour, transcrit: Date.now(), premier_texte: 0, premier_son: 0 };
   await envoyer(texte, true);
@@ -1469,7 +1482,7 @@ function basculerMicro() {
   activite();
   if (etat.transcription) return;                        // transcription en cours : micro verrouillé
   if (etat.micro) return etat.micro.attente ? undefined : arreterMicro(true);   // re-clic : « j'ai fini »
-  arreterTout();                                         // on coupe Hakim quand Ahmed reprend la parole
+  arreterTout(true, { garder: true });                   // on coupe Hakim quand Ahmed reprend la parole (le reste est gardé)
   if (etat.reglages.reconnaissance === 'locale' && etat.sttLocal) return ecouterLocal();
   return ecouterNavigateur();
 }
@@ -2007,22 +2020,57 @@ function surSpontane(m) {
 /* Ses résultats « de lui-même » DITS dans la conversation (demande d'Ahmed relayée par Hakim, 2026-10-20 : « il arrive à
    l'écran mais je ne l'entends pas ») : avant, le message n'était dit que si TOUT était libre à l'instant même où il
    arrivait (Ahmed se taisait, Hakim ne répondait pas déjà…) — sinon il était perdu pour l'oreille. Désormais il attend
-   son tour : dit dès qu'Ahmed s'est tu depuis 1,5 s et que rien d'autre ne parle ; jamais par-dessus sa parole ;
-   oublié après 10 min, ou si la voix n'est plus active. */
+   son tour : dit dès qu'Ahmed s'est tu depuis 1,5 s et que rien d'autre ne parle ; jamais par-dessus sa parole.
+   (2026-10-23, Ahmed : « rien n'est jamais jeté ») la même file garde aussi ce qu'il n'a pas pu dire quand Ahmed l'a
+   coupé ou a enchaîné (garderNonDit) : dit au premier moment calme (3 s sans voix, ni la sienne ni celle d'Ahmed ; micro
+   coupé, c'est le silence) ; plus de deux en attente : Hakim en fait une synthèse et la dit en entier (synthetiser).
+   Plus d'oubli après 10 min ; voix éteinte, la file attend ; gardée dans le navigateur si la page se recharge. */
 const aDire = [];
+try { for (const x of JSON.parse(localStorage.getItem('jarvis.aDire') || '[]')) if (x && typeof x.texte === 'string') aDire.push(x); } catch (_) {}
+const sauverADire = () => { try { localStorage.setItem('jarvis.aDire', JSON.stringify(aDire.slice(-20))); } catch (_) {} };
 let parlaitA = 0;
+function garderNonDit() {
+  if (!(etat.conversation || etat.reglages.volant || etat.reglages.lectureAuto)) return;   // voix éteinte : il lit à l'écran
+  const morceaux = lecteurNeuronal.restant().map(x => x.texte);
+  if (etat.decoupeFlux) morceaux.push(...etat.decoupeFlux.finir());          // la phrase qui arrivait encore
+  // (une reprise coupée à son tour ne redit pas « Je reprends… » deux fois)
+  const texte = morceaux.join(' ').replace(/\s+/g, ' ').trim().replace(/^(je reprends ce que je disais\s*:\s*)+/i, '');
+  if (!/\p{L}{2,}/u.test(texte) || NON_REPONSE.test(texte)) return;
+  aDire.push({ id: etat.lectureDe || `nondit-${Date.now()}`, texte, recu: Date.now(), coupe: true });
+  sauverADire();
+  journalVoix('non_dit_garde', { car: texte.length, en_attente: aDire.length });
+}
+let synthese = { enCours: false, reessaiA: 0 };
+async function synthetiser() {
+  if (synthese.enCours || Date.now() < synthese.reessaiA) return;
+  synthese.enCours = true;
+  const lot = aDire.splice(0);
+  sauverADire();
+  try {
+    const r = await fetch('/api/jarvis/non-dites', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ textes: lot.map(x => ({ texte: x.texte, coupe: !!x.coupe })) }) });
+    if (!r.ok) throw new Error(`non-dites ${r.status}`);
+    journalVoix('non_dits_synthese', { n: lot.length });
+    humeur('Hakim rassemble ce qu’il n’a pas pu te dire…');
+  } catch (_) {
+    aDire.unshift(...lot); sauverADire();               // rien n'est jeté : au prochain moment calme, dans 30 s au plus tôt
+    synthese.reessaiA = Date.now() + 30000;
+  } finally { synthese.enCours = false; }
+}
 function direSpontanes() {
   const c = etat.conversation;
   if (c && c.capteur && c.capteur.enParole) parlaitA = Date.now();
   const voix = c || etat.reglages.volant || etat.reglages.lectureAuto;
-  if (!voix) { aDire.length = 0; return; }
-  while (aDire.length && Date.now() - aDire[0].recu > 10 * 60 * 1000) aDire.shift();
-  if (!aDire.length || !lecteur || etat.flux || etat.micro || etat.transcription || !jarvisPeutParler()
-      || lecteur.actif || lecteur.enPause || Date.now() - parlaitA < 1500) return;
+  if (!voix || !aDire.length) return;
+  const calme = aDire.some(x => x.coupe) ? 3000 : 1500;
+  if (!lecteur || etat.flux || etat.micro || etat.transcription || !jarvisPeutParler() || lecteur.actif || lecteur.enPause
+      || Date.now() - Math.max(parlaitA, etat.finVoixA || 0) < calme) return;
+  if (aDire.length > 2) { synthetiser(); return; }
   const m = aDire.shift();
+  sauverADire();
   if (NON_REPONSE.test(m.texte)) return;
   etat.lectureDe = m.id;
-  lecteur.dire(m.texte); lecteur.finFlux();
+  lecteur.dire(m.coupe ? `Je reprends ce que je disais : ${m.texte}` : m.texte); lecteur.finFlux();
   humeur();
 }
 setInterval(direSpontanes, 500);

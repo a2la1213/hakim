@@ -1126,6 +1126,54 @@ function reveillerPourPromesses() {
 }
 setInterval(reveillerPourPromesses, 15000).unref();
 
+/* ---- Ce qu'il n'a pas pu dire (2026-10-23, Ahmed : « rien n'est jamais jeté ; s'il y en a plus de deux, il synthétise
+   ce qu'il veut et dit complètement ce qu'il veut ») : la page Parler garde ses réponses coupées ou non dites et les dit
+   elle-même au premier moment calme ; au-delà de deux en attente, elle les envoie ici (POST /api/jarvis/non-dites), et
+   Hakim est réveillé (tour « pas d'Ahmed ») pour en faire UNE réponse orale. Elle revient aux pages comme ses tours de
+   lui-même, et y est dite. Gardées sur le disque jusqu'à ce réveil : un redémarrage du cockpit ne les perd pas. ---- */
+const JARVIS_NON_DITES = path.join(JARVIS, 'non-dites.json');
+let nonDitesAttente = [];
+try { const d = JSON.parse(fs.readFileSync(JARVIS_NON_DITES, 'utf8')); if (Array.isArray(d.textes)) nonDitesAttente = d.textes; } catch (_) {}
+let nonDitesPrechauffe = 0;
+function sauverNonDites() { try { ecrireAtomique(JARVIS_NON_DITES, j({ textes: nonDitesAttente, maj_ms: Date.now() })); } catch (_) {} }
+function recevoirNonDites(q, maintenant = Date.now()) {
+  const textes = (q && Array.isArray(q.textes) ? q.textes : []).slice(0, 12)
+    .map(x => ({ texte: String((x && x.texte) || '').replace(/\s+/g, ' ').trim(), coupe: !!(x && x.coupe) }))
+    .filter(x => x.texte && !x.texte.includes('\0'));
+  for (const x of textes)                                   // une très longue réponse : son début et sa fin
+    nonDitesAttente.push({ ...x, texte: x.texte.length > 4000 ? `${x.texte.slice(0, 2400)} […] ${x.texte.slice(-1400)}` : x.texte, recu: maintenant });
+  if (textes.length) sauverNonDites();
+  return textes.length;
+}
+function texteNonDites(lot, maintenant, nonce) {
+  const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(maintenant));
+  return `[Horloge — ${quand}]\n`
+    + `[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : ${lot.length} de tes réponses n'ont pas été dites à voix haute `
+    + `(il t'a coupé pour parler, ou ses messages se sont suivis)]\n`
+    + blocDonnees("Ce que tu n'as pas pu lui dire, dans l'ordre (tes propres mots)",
+      lot.map((x, i) => `${i + 1}. ${x.coupe ? '(coupée) ' : ''}${x.texte}`).join('\n'), nonce)
+    + "\nRègle d'Ahmed (23/10) : rien n'est jamais jeté. Fais-en maintenant UNE réponse orale : la synthèse de ce que tu veux "
+    + "qu'il entende, dite en entier. Ne redis pas ce que vous avez déjà traité ensemble depuis ; ce qui compte encore, dis-le complètement.";
+}
+function reveillerPourNonDites() {
+  if (!nonDitesAttente.length) return;
+  const c = cerveau;
+  if (!cerveauVivant(c)) {
+    if (Date.now() - nonDitesPrechauffe < 60000) return;    // il démarre : au passage suivant
+    nonDitesPrechauffe = Date.now();
+    let session = null; try { session = JSON.parse(fs.readFileSync(path.join(JARVIS, 'conversation.json'), 'utf8')).session || null; } catch (_) {}
+    cerveauPrechauffer('sonnet', session && UUID.test(String(session)) ? session : null, false);
+    return;
+  }
+  if (occupe(c) || c.enCours) return;
+  const lot = nonDitesAttente.splice(0);
+  const texte = texteNonDites(lot, Date.now(), crypto.randomBytes(4).toString('hex'));
+  console.error(`Jarvis : réveil pour ${lot.length} réponse(s) non dite(s), à synthétiser`);
+  try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); sauverNonDites(); }
+  catch (e) { nonDitesAttente.unshift(...lot); console.error('Jarvis : réveil des non-dites impossible', e.message); }
+}
+setInterval(reveillerPourNonDites, 3000).unref();
+
 // Les pensées spontanées poussées aux pages Parler ouvertes (le démon les écrit en mémoire).
 const abonnesPensees = new Set();
 let dernierePensee = null;
@@ -3541,6 +3589,12 @@ async function traiter(req, res) {
     const r = q && typeof q.id === 'string' ? arreterAgent(q.id, q.raison, 'ahmed') : { ok: false, erreur: 'id manquant' };
     res.writeHead(r.ok ? 200 : 404, { 'Content-Type': 'application/json' });
     return res.end(j(r));
+  }
+  if (p === '/api/jarvis/non-dites' && req.method === 'POST') {     // (2026-10-23) ce qu'il n'a pas pu dire, à synthétiser
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    let q = null; try { q = JSON.parse(String(await lireCorps(req, 200000) || '')); } catch (_) {}
+    const n = recevoirNonDites(q);
+    res.writeHead(n ? 202 : 400, { 'Content-Type': 'application/json' }); return res.end(j(n ? { recues: n } : { erreur: 'aucun texte' }));
   }
   if (p === '/api/jarvis/stop' && req.method === 'POST') {          // (2026-10-21) Stop explicite d'une réponse
     let q = null; try { q = JSON.parse(String(await lireCorps(req, 4096) || '')); } catch (_) {}
