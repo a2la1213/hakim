@@ -148,3 +148,49 @@ test('le cockpit retient les messages arrivés, 500 au plus', () => {
   assert.equal(ctx.recus.size, 500);
   assert.ok(ctx.recus.has('t519') && !ctx.recus.has('t0'));
 });
+
+/* le micro bloqué par le téléphone (un appel) : dit, noté, le son relancé */
+function veille({ trameIlYa = 0, prise = false } = {}) {
+  let t = 1_800_000_000_000;
+  const bandeau = [], journal = [], relances = [];
+  const capteur = { derniereTrame: t - trameIlYa, pisteMuette: prise };
+  const ctx = {
+    Math, Promise, journalVoix: (e) => journal.push(e), montrerHorsLigne: (x) => bandeau.push(x),
+    Date: class extends Date { constructor(...a) { super(...(a.length ? a : [t])); } static now() { return t; } },
+    etat: { conversation: { capteur } }, horsLigne: { depuis: 0 }, document: { visibilityState: 'hidden' },
+    actx: { state: 'running', suspend: async () => { relances.push('s'); }, resume: async () => { relances.push('r'); } },
+    $: () => ({ addEventListener() {} }), setInterval() {}, finirConversation() {}, basculerConversation() {}, setTimeout() {},
+  };
+  vm.createContext(ctx);
+  const d = src.indexOf('const veilleMicro'), f = src.indexOf("$('horsLigne').addEventListener('click'");
+  vm.runInContext(src.slice(d, f) + 'this.surveiller = surveillerMicro; this.veille = veilleMicro;', ctx);
+  return { ctx, capteur, bandeau, journal, relances, avancer: (ms) => { t += ms; }, maintenant: () => t };
+}
+
+test('micro qui ne reçoit plus rien (2,5 s) : bandeau, trace, son relancé — une fois toutes les 3 s', async () => {
+  const v = veille({ trameIlYa: 3000 });
+  v.ctx.surveiller(); await new Promise(r => setImmediate(r));
+  assert.match(v.bandeau.at(-1), /Le micro ne reçoit plus rien/);
+  assert.deepEqual(v.journal, ['micro_bloque']);
+  assert.deepEqual(v.relances, ['s', 'r']);
+  v.avancer(1000); v.ctx.surveiller(); await new Promise(r => setImmediate(r));
+  assert.equal(v.relances.length, 2, 'pas avant 3 s');
+  v.capteur.derniereTrame = v.maintenant();                              // les trames reviennent
+  v.ctx.surveiller();
+  assert.deepEqual(v.journal, ['micro_bloque', 'micro_repris']);
+  assert.equal(v.bandeau.at(-1), '');
+});
+
+test('le téléphone a pris le micro (un appel) : dit, sans relancer le son', async () => {
+  const v = veille({ prise: true });
+  v.ctx.surveiller(); await new Promise(r => setImmediate(r));
+  assert.match(v.bandeau.at(-1), /Le téléphone a pris le micro/);
+  assert.equal(v.relances.length, 0);
+});
+
+test('tout va bien : rien ne s’affiche', () => {
+  const v = veille({ trameIlYa: 100 });
+  v.ctx.surveiller();
+  assert.equal(v.bandeau.length, 0);
+  assert.equal(v.journal.length, 0);
+});

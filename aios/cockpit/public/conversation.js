@@ -81,6 +81,15 @@
     const fortes = [];                                      // les 15 dernières fenêtres : fortes ou non
     let precedent = [];
     let actif = true, micCoupe = false;
+    // (2026-10-23, Ahmed : un appel de sa mère, puis 9 min où rien ne passait) la dernière trame reçue du micro (un flux
+    // bloqué par le téléphone ne se voit pas autrement : plus aucune trame, aucun événement), et la piste prise par le
+    // système (un appel) : la page s'en sert pour le dire et relancer le son
+    let derniereTrame = Date.now(), pisteMuette = false;
+    const piste = flux.getAudioTracks()[0];
+    if (piste) {
+      piste.addEventListener('mute', () => { pisteMuette = true; if (o.surPiste) o.surPiste(false); });
+      piste.addEventListener('unmute', () => { pisteMuette = false; if (o.surPiste) o.surPiste(true); });
+    }
 
     function assembler(morceaux) {
       let n = 0; for (const m of morceaux) n += m.length;
@@ -167,6 +176,7 @@
 
     noeud.port.onmessage = (ev) => {
       if (!actif) return;
+      derniereTrame = Date.now();
       const x = ev.data;
       let i = 0;
       while (i < x.length) {
@@ -195,6 +205,8 @@
         URL.revokeObjectURL(url);
       },
       get enParole() { return etatV === 'parole'; },
+      get derniereTrame() { return derniereTrame; },
+      get pisteMuette() { return pisteMuette; },
       // Couper le micro sans quitter la conversation (demande d'Ahmed) : la piste est désactivée,
       // le navigateur n'envoie plus rien. (Ahmed, 2026-10-20 : « si je coupe le micro pendant que je parle, rien
       // n'est envoyé ») un tour EN COURS n'est plus abandonné : ce qui a été dit jusque-là part à Hakim.

@@ -1320,6 +1320,7 @@ async function basculerConversation() {
         humeur('je t’écoute…');
       },
       surFin: (wav, infos, extra) => tourDeParole(conv, wav, infos, extra),
+      surPiste: (rendue) => journalVoix(rendue ? 'piste_rendue' : 'piste_prise'),     // (2026-10-23) un appel prend le micro
     });
   } catch (e) {
     if (etat.conversation !== conv) return;
@@ -2172,6 +2173,44 @@ async function reprendreHorsLigne() {
   } finally { horsLigne.enCours = false; }
 }
 setInterval(reprendreHorsLigne, 5000);
+
+/* ---------- le micro bloqué par le téléphone (2026-10-23, 18:08 : un appel de sa mère, puis 9 min où rien ne passait,
+   sans un événement) : pendant un appel, Android prend le micro et le son ; au retour, le flux de la page peut rester
+   arrêté sans que rien ne le signale. La page surveille les trames du micro : plus rien depuis 2,5 s en conversation →
+   c'est dit (bandeau), noté au diagnostic, et le son est relancé (suspendre puis reprendre le contexte audio) toutes les
+   3 s ; un toucher sur le bandeau relance la conversation entière. ---------- */
+const veilleMicro = { bloqueDepuis: 0, relance: 0 };
+function finBlocageMicro() {
+  journalVoix('micro_repris', { apres_ms: Date.now() - veilleMicro.bloqueDepuis });
+  veilleMicro.bloqueDepuis = 0;
+  if (!horsLigne.depuis) montrerHorsLigne('');
+}
+function surveillerMicro() {
+  const c = etat.conversation;
+  if (!c || !c.capteur || !actx || c.capteur.derniereTrame === undefined) { if (veilleMicro.bloqueDepuis) finBlocageMicro(); return; }
+  const muet = Date.now() - c.capteur.derniereTrame, prise = !!c.capteur.pisteMuette;
+  if (muet < 2500 && !prise) { if (veilleMicro.bloqueDepuis) finBlocageMicro(); return; }
+  if (!veilleMicro.bloqueDepuis) {
+    veilleMicro.bloqueDepuis = Date.now();
+    journalVoix('micro_bloque', { etat: actx.state, piste_muette: !!c.capteur.pisteMuette, cachee: document.visibilityState === 'hidden' });
+  }
+  if (muet < 2500) {                                     // le téléphone a pris le micro (un appel) : il le rendra
+    montrerHorsLigne('Le téléphone a pris le micro (un appel ?) — je t’écoute dès qu’il le rend. Touche ce bandeau si ça dure.');
+    return;
+  }
+  montrerHorsLigne('Le micro ne reçoit plus rien — je relance le son… Touche ce bandeau si ça dure.');
+  if (Date.now() - veilleMicro.relance > 3000) {
+    veilleMicro.relance = Date.now();
+    actx.suspend().catch(() => {}).finally(() => actx.resume().catch(() => {}));
+  }
+}
+setInterval(surveillerMicro, 1000);
+$('horsLigne').addEventListener('click', () => {
+  if (!veilleMicro.bloqueDepuis || !etat.conversation) return;
+  journalVoix('micro_relance_main', { apres_ms: Date.now() - veilleMicro.bloqueDepuis });
+  finirConversation(false);
+  setTimeout(() => { if (!etat.conversation) basculerConversation(); }, 400);
+});
 const accuses = new Set();
 async function accuserReception() {
   if (document.visibilityState !== 'visible') return;      // « vu » = affiché sur un écran visible, pas reçu en fond
