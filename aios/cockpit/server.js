@@ -25,7 +25,7 @@ function ecrireAtomique(f, contenu, mode) {
   if (!s.trim() || s === '{}' || s === '[]' || s === 'null') throw new Error(`refus d'écrire du vide dans ${path.basename(f)}`);
   const tmp = `${f}.${process.pid}.${Date.now()}.${crypto.randomBytes(3).toString('hex')}.tmp`;
   try {
-    const fd = fs.openSync(tmp, 'w', mode || 0o644);
+    const fd = fs.openSync(tmp, 'w', mode || 0o600);       // (audit du 2026-10-23) ses fichiers ne sont lisibles que par Ahmed
     try { fs.writeSync(fd, s); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
     fs.renameSync(tmp, f);
   }
@@ -1391,8 +1391,9 @@ function blocSituation(q, distantReq, deja, maintenant, contexte = 0) {
   if (deja.volant && !volant) morceaux.push("fin du mode volant : Ahmed ne conduit plus");
   let texte = morceaux.length ? `[Situation (données) — ${morceaux.join(' · ')}]` : '';
   if (volant) texte += `${texte ? '\n' : ''}[Mode volant — Ahmed CONDUIT : une ou deux phrases courtes, à l'oral ; ni liste, ni lien, ni chiffres en rafale ; ne lui demande jamais de regarder l'écran ; si c'est long, propose de garder la suite pour l'arrêt]`;
-  return { texte, dit: { appareil, jauge: jauge.texte ? jauge.cle : deja.jauge, volant, contexte: quart, position: clePos || deja.position,
-    capteurs: cap ? cap.texte : deja.capteurs } };
+  // (audit du 2026-10-23) sa position, ses capteurs, sa montre dans le contexte : une lecture privée (la porte du web se ferme)
+  return { texte, prive: !!(pos || (cap && (cap.tel || cap.montre))), dit: { appareil, jauge: jauge.texte ? jauge.cle : deja.jauge, volant,
+    contexte: quart, position: clePos || deja.position, capteurs: cap ? cap.texte : deja.capteurs } };
 }
 
 /* ---- Lot B, point 8 : les jetons de chaque tour, par catégorie, et le cache ----
@@ -1575,6 +1576,9 @@ function surOutil(b) {                            // un appel d'outil vu passer 
   if (OUTILS_EXTERNES.has(b.name)) noterExterne(b.name);
   const prive = LECTURES_PRIVEES.has(b.name) || (b.name === 'Read' && /\/cwd\/fichiers\//.test(String((b.input || {}).file_path || '')));
   if (prive) { const nom = b.name === 'Read' ? 'Read(fichiers)' : b.name; noterExterne(nom); noterLecturePrivee(nom); }
+  // (audit de sécurité du 2026-10-23, élevé 2, accord d'Ahmed) toute lecture de sa mémoire, de son courrier, de son
+  // jardin, de ses carnets ferme aussi la porte du web (sans marquer le tour « externe » : ce n'est pas un contenu de tiers)
+  else if (/^mcp__(anamnese|fichiers)__/.test(String(b.name))) noterLecturePrivee(b.name);
 }
 function noterExterne(outil) {
   try { fs.appendFileSync(JARVIS_MARQUE_EXTERNE, j({ outil: String(outil).slice(0, 120), ts: Date.now() / 1000 }) + '\n', { mode: 0o600 }); } catch (_) {}
@@ -1690,6 +1694,7 @@ async function routeJarvis(req, res, distantReq = false) {
   if (positionCourante && maintenant - positionCourante.t_ms < 30 * 60000
       && (!q.position || typeof q.position !== 'object' || !(Number(q.position.t_ms) >= positionCourante.t_ms))) q.position = positionCourante;
   const situation = blocSituation(q, distantReq, deja, maintenant, session ? contextes[session] || 0 : 0);
+  if (situation.prive) noterLecturePrivee('situation(téléphone)');
   // l'empreinte vocale (demande de Hakim par courrier, 2026-10-20 : savoir aussi quand c'est bien Ahmed) : une ligne
   // courte à chaque CHANGEMENT de verdict dans la conversation (reconnu, doute, autre, trop court)
   let voixVerdict = '';

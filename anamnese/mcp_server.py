@@ -846,8 +846,10 @@ def proposer_ecriture(projet: str, fichier: str, ancien: str, nouveau: str, rais
     eid = "E-" + time.strftime("%Y%m%d-%H%M%S") + "-" + _secrets.token_hex(2)
     ECRITURES.mkdir(parents=True, exist_ok=True)
     tmp = ECRITURES / f".{eid}.tmp"
-    tmp.write_text(json.dumps({"projet": str(projet), "fichier": str(fichier).strip(), "ancien": str(ancien or ""),
-                               "nouveau": str(nouveau or ""), "raison": raison[:400]}, ensure_ascii=False), encoding="utf-8")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)          # (audit du 2026-10-23) Ahmed seul
+    with os.fdopen(fd, "w", encoding="utf-8") as h:
+        h.write(json.dumps({"projet": str(projet), "fichier": str(fichier).strip(), "ancien": str(ancien or ""),
+                            "nouveau": str(nouveau or ""), "raison": raison[:400]}, ensure_ascii=False))
     os.replace(tmp, ECRITURES / f"{eid}.json")
     return (f"Proposée : {eid}. Le cockpit la vérifie puis la montre à Ahmed dans Parler ; rien n'est écrit sans son geste. "
             "Suis-la avec ecritures_etat.")

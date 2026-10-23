@@ -368,3 +368,52 @@ def test_masquage_des_formes_oubliees():
     assert F.masquer("PGPASSWORD=Hunter2xyz psql -h db") == "PGPASSWORD=[MASQUÉ] psql -h db"
     assert "AbCdEfGh12345678" not in F.masquer('{"keys":{"auth":"AbCdEfGh12345678","p256dh":"BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4"}}')
     assert F.masquer("MONKEY=banane ; la clé de voûte") == "MONKEY=banane ; la clé de voûte"
+
+
+# ---- audit de sécurité du 2026-10-23 (corrigé avec l'accord d'Ahmed) ----
+
+def _pdf(texte):
+    """Un PDF minimal d'une page avec ce texte (ASCII)."""
+    flux = f"BT /F1 12 Tf 20 100 Td ({texte}) Tj ET".encode()
+    objets = [b"<< /Type /Catalog /Pages 2 0 R >>", b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+              b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 600 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+              b"<< /Length " + str(len(flux)).encode() + b" >>\nstream\n" + flux + b"\nendstream",
+              b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    out, pos = b"%PDF-1.4\n", []
+    for i, o in enumerate(objets, 1):
+        pos.append(len(out))
+        out += f"{i} 0 obj\n".encode() + o + b"\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objets) + 1}\n0000000000 65535 f \n".encode() + b"".join(f"{p:010d} 00000 n \n".encode() for p in pos)
+    return out + f"trailer\n<< /Size {len(objets) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+
+
+def test_un_pdf_avec_un_secret_n_est_lu_qu_en_texte_masque(racine, tmp_path):
+    """(audit du 2026-10-23, moyen 5) le PDF n'était jamais masqué."""
+    (racine / "acces.pdf").write_bytes(_pdf("ANTHROPIC_API_KEY=sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789 fin"))
+    if not fichiers._pdf_texte(racine / "acces.pdf", tmp_path):
+        pytest.skip("pdftotext indisponible ici")
+    r = _prep(racine / "acces.pdf", racine, tmp_path)
+    lu = Path(r["lire"][0])
+    assert lu.name == "acces.pdf.texte-masque.txt" and "secrets" in r["note"]
+    assert "sk-ant-api03" not in lu.read_text(encoding="utf-8") and "fin" in lu.read_text(encoding="utf-8")
+    assert not list((tmp_path / "prepares").rglob("acces.pdf")), "le PDF brut ne reste pas dans le dossier de Hakim"
+    assert _prep(racine / "acces.pdf", racine, tmp_path)["lire"] == r["lire"]          # la deuxième fois aussi
+    (racine / "article.pdf").write_bytes(_pdf("Un article sans rien de secret."))
+    assert Path(_prep(racine / "article.pdf", racine, tmp_path)["lire"][0]).name == "article.pdf"   # lu tel quel
+
+
+def test_masquage_audit_2026_10_23():
+    """(moyen 5) jetons Google et npm, clé secrète AWS sans libellé, mot de passe court sans chiffre."""
+    import fichiers as F
+    assert "ya29.a0AfH6SMBx" not in F.masquer("Authorization ya29.a0AfH6SMBxQwErTyUiOp_asdfghjkl1234")
+    assert "npm_" not in F.masquer("//registry.npmjs.org/:_authToken=npm_abcdefghijklmnopqrstuvwxyz0123456789")
+    aws = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    assert aws not in F.masquer(f"la clé : {aws} et la suite")
+    assert F.masquer("pwd: soleilbleu") == "pwd: [MASQUÉ]"
+    assert F.masquer("mot de passe = framboise") == "mot de passe = [MASQUÉ]"
+    # ce qui n'est pas un secret reste lisible
+    sha = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b"
+    assert F.masquer(f"commit {sha}") == f"commit {sha}"
+    assert F.masquer("les jetons : beaucoup") == "les jetons : beaucoup"
+    assert F.masquer("password: court") == "password: court"

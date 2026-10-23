@@ -16,8 +16,10 @@ le robot) ; le cockpit le relance à la demande.
 import contextlib
 import json
 import os
+import re
 import select
 import sys
+import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -41,6 +43,17 @@ def _charger_tts():
     return _tts or None
 
 
+def sortie_permise(fichier):
+    """(audit du 2026-10-23) la voix n'écrit que là où le cockpit la fait écrire : un « jarvis-voix-….wav » du dossier
+    temporaire, jamais un chemin choisi par quelqu'un d'autre."""
+    try:
+        f = os.path.realpath(str(fichier or ""))
+        return (re.fullmatch(r"jarvis-voix-[A-Za-z0-9_.-]{1,120}\.wav", os.path.basename(f)) is not None
+                and os.path.dirname(f) == os.path.realpath(tempfile.gettempdir()))
+    except (OSError, ValueError):
+        return False
+
+
 def traiter(req):
     op = req.get("op")
     if op == "etat":                     # sans charger la voix (4,7 Go en mémoire) : est-elle installée ?
@@ -55,6 +68,8 @@ def traiter(req):
         import empreinte_vocale
         return empreinte_vocale.reinitialiser(str(req.get("portee") or "tout"))
     if op == "dire":
+        if not sortie_permise(req.get("fichier")):
+            return {"erreur": "fichier de sortie refusé (seulement un jarvis-voix-….wav du dossier temporaire)"}
         voix = _charger_tts()
         if voix is None:
             return {"erreur": "synthèse neuronale indisponible"}

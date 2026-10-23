@@ -45,6 +45,7 @@ GARDE_PREPARES_J = 7                     # les préparations sont purgées aprè
 GARDE_PIECES_J = 30                      # les pièces jointes, après 30 jours
 FFMPEG = shutil.which("ffmpeg") or "/usr/local/bin/ffmpeg"
 FFPROBE = shutil.which("ffprobe") or "/usr/local/bin/ffprobe"
+PDFTOTEXT = shutil.which("pdftotext") or "/usr/local/bin/pdftotext"
 
 DIRECTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf", ".txt", ".md", ".markdown", ".csv", ".tsv",
            ".json", ".yaml", ".yml", ".xml", ".py", ".js", ".ts", ".tsx", ".jsx", ".swift", ".html", ".css",
@@ -266,6 +267,15 @@ def _decoder(args, lecture, ecriture, timeout=120, texte=False):
                                                                            "TMPDIR": str(ecriture), "LANG": "fr_FR.UTF-8"})
 
 
+def _pdf_texte(pdf, d):
+    """Le texte d'un PDF (pdftotext, sous bac à sable), ou « » s'il n'en a pas ou si l'outil manque."""
+    try:
+        r = _decoder([PDFTOTEXT, "-q", "-enc", "UTF-8", str(pdf), "-"], pdf, d, timeout=60)
+        return r.stdout.decode("utf-8", "replace") if r.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
 def _duree(reel):
     r = _decoder([FFPROBE, "-v", "error", "-show_entries", "format=duration", "-of", "json", str(reel)], reel, Path(reel).parent,
                  timeout=60, texte=True)
@@ -305,7 +315,10 @@ def preparer(chemin, racines=None, sortie=None, transcrire=None, accueil=None):
         if reel.stat().st_size > COPIE_MAX:
             raise Refus(f"trop lourd pour être copié ({reel.stat().st_size // (1024 * 1024)} Mo, {COPIE_MAX // (1024 * 1024)} Mo au plus)")
         copie = d / reel.name
-        if not copie.exists():
+        masque = d / (reel.name + ".texte-masque.txt")
+        if ext == ".pdf" and masque.exists():
+            copie = masque
+        elif not copie.exists():
             source = _instantane(reel, d, racines, accueil)        # (H2) lu par le descripteur vérifié
             if ext in TEXTES_A_MASQUER:                    # le texte arrive à Jarvis avec ses secrets masqués
                 brut = source.read_bytes()
@@ -317,10 +330,20 @@ def preparer(chemin, racines=None, sortie=None, transcrire=None, accueil=None):
                     copie.write_text(masquer(texte), encoding="utf-8")
                 finally:
                     source.unlink(missing_ok=True)
+            elif ext == ".pdf" and (texte := _pdf_texte(source, d)) and masquer(texte) != texte:
+                # (audit du 2026-10-23) un PDF n'était jamais masqué : s'il contient un secret, Hakim n'en lit que le
+                # texte, masqué ; un PDF sans secret (ou scanné, sans texte) reste lisible tel quel
+                try:
+                    masque.write_text(masquer(texte), encoding="utf-8")
+                finally:
+                    source.unlink(missing_ok=True)
+                copie = masque
             else:
                 os.replace(source, copie)
         res["lire"] = [str(copie)]
         res["note"] = "copié dans le dossier de Jarvis pour être lu" + (" (secrets masqués)" if ext in TEXTES_A_MASQUER else "")
+        if copie.name.endswith(".texte-masque.txt"):
+            res["note"] = "ce PDF contient des secrets : seul son texte est lisible, secrets masqués"
         return res
     fait = d / "preparation.json"
     if fait.exists():
@@ -412,8 +435,14 @@ _MASQUES = [
     (re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----", re.S), "[CLÉ PRIVÉE MASQUÉE]"),
     (re.compile(r"\b(sk-ant-[A-Za-z0-9_-]{20,}|sk-(?:proj-)?[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}"
                 r"|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{16,}"
-                r"|glpat-[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9]{30,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})"),
+                r"|glpat-[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9]{30,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
+                # (audit du 2026-10-23) jetons Google OAuth, jetons npm
+                r"|ya29\.[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{30,})"),
      "[SECRET MASQUÉ]"),
+    # (audit du 2026-10-23) une clé secrète AWS sans libellé : 40 caractères base64, avec majuscule, minuscule, chiffre et
+    # un « / » ou un « + » (une empreinte git, en hexadécimal, n'en a pas)
+    (re.compile(r"(?<![A-Za-z0-9/+=])(?=[A-Za-z0-9/+]{0,39}[/+])(?=[A-Za-z0-9/+]{0,39}[A-Z])(?=[A-Za-z0-9/+]{0,39}[a-z])"
+                r"(?=[A-Za-z0-9/+]{0,39}[0-9])[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+=])"), "[SECRET MASQUÉ]"),
     # (relecture Opus du 2026-10-20) une valeur ENTRE GUILLEMETS, même avec des espaces ou des virgules
     # (« "password": "correct horse battery" »), les variables d'environnement (PGPASSWORD=…) et les clés Web Push
     (re.compile(r"(?i)\b((?:[a-z0-9_]*_)?(?:(?:api[_-]?key|secret|token|jeton|password|passwd|pwd|mot[_ ]de[_ ]passe|access[_-]?key"
@@ -426,6 +455,10 @@ _MASQUES = [
                 r"|private[_-]?key|client[_-]?secret|cl[eé][_ -]?(?:api|secr[eè]te|priv[ée]e)|passkey|credential)"
                 r"[a-z0-9_]*[\"']?|(?<=[\"'])cl[eé][\"'])\s*[:=]\s*)([\"']?)((?=[^\s\"',;]*\d)[^\s\"',;]{6,}|[^\s\"',;]{12,})\2"),
      r"\1\2[MASQUÉ]\2"),                      # une valeur sans chiffre doit être longue : « les tokens : quelques » n'est pas un secret
+    # (audit du 2026-10-23) un MOT DE PASSE court sans chiffre (8 caractères suffisent ; les autres libellés, « jetons :
+    # beaucoup » dans un texte, gardent le seuil de 12)
+    (re.compile(r"(?i)\b((?:[a-z0-9_]*_)?(?:password|passwd|pwd|passphrase|mot[_ ]de[_ ]passe)[a-z0-9_]*[\"']?\s*[:=]\s*)"
+                r"([\"']?)([^\s\"',;\[]{8,})\2"), r"\1\2[MASQUÉ]\2"),
     (re.compile(r"(?i)(\b[a-z][a-z0-9+.-]*://[^:/\s@]+:)([^@\s/]+)(@)"), r"\1[MASQUÉ]\3"),
     (re.compile(r"(?i)\b(bearer\s+)[A-Za-z0-9._~+/-]{16,}=*"), r"\1[MASQUÉ]"),
 ]

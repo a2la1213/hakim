@@ -103,3 +103,90 @@ def test_le_plafond_vaut_aussi_dans_le_tour_de_la_lecture(L):
         sortie.verifier(f"https://h{k}.inconnu.example/", maintenant=T0 + k)
     with pytest.raises(sortie.Refus, match="hôtes nouveaux"):
         sortie.verifier("https://h99.inconnu.example/", maintenant=T0 + 30)
+
+
+# ---- audit de sécurité du 2026-10-23 (corrigé avec l'accord d'Ahmed) ----
+
+def test_sa_memoire_son_courrier_son_jardin_comptent_comme_lecture_privee(L):
+    """(élevé 2) un souvenir, le courrier, le jardin, les carnets, les données du téléphone : la porte se ferme."""
+    for outil in ("mcp__anamnese__memory_recall", "mcp__anamnese__memory_lire", "mcp__anamnese__courrier_lire",
+                  "mcp__anamnese__jardin_relire", "mcp__anamnese__carnets", "situation(téléphone)"):
+        (L / "tour-externe.jsonl").write_text(json.dumps({"outil": outil}) + "\n")
+        with pytest.raises(sortie.Refus):
+            sortie.verifier("https://inconnu.example/?d=x", maintenant=T0)
+    for outil in ("WebSearch", "terminal → pypi.org", "mcp__web__lire_page"):        # une lecture du dehors, pas privée
+        (L / "tour-externe.jsonl").write_text(json.dumps({"outil": outil}) + "\n")
+        sortie.verifier("https://inconnu.example/?d=x", maintenant=T0)
+
+
+@pytest.fixture(autouse=True)
+def _demandes_terminal_neuves():
+    sortie._demandes_terminal.clear()
+
+
+def test_le_terminal_ne_va_que_vers_les_depots_d_outils(L):
+    """(élevé 1) il ne voit pas ce qui part : un site « connu » ou une adresse nue ne suffisent plus."""
+    sortie.verifier_terminal("inconnu.example", maintenant=T0)              # hors lecture privée : libre, comme avant
+    _lire(L)
+    for h in ("pypi.org", "files.pythonhosted.org", "github.com", "objects.githubusercontent.com", "huggingface.co",
+              "cdn-lfs.hf.co", "www.github.com"):
+        sortie.verifier_terminal(h, maintenant=T0 + 1)
+    for h in ("inconnu.example", "github.com.evil.example", "evilgithub.com", "hf.space", "api.alquran.cloud"):
+        with pytest.raises(sortie.Refus, match="Parler"):
+            sortie.verifier_terminal(h, maintenant=T0 + 2)
+    demandes = [json.loads(l) for l in (L / "demandes.jsonl").read_text().splitlines()]
+    assert [d["url"] for d in demandes][:2] == ["https://inconnu.example/", "https://github.com.evil.example/"]
+    assert all(d["qui"] == "hakim" for d in demandes)
+    for k in range(10):                                                  # une commande qui réessaie : une seule demande
+        with pytest.raises(sortie.Refus):
+            sortie.verifier_terminal("inconnu.example", maintenant=T0 + 3 + k)
+    assert len((L / "demandes.jsonl").read_text().splitlines()) == len(demandes)
+
+
+def test_le_terminal_un_site_connu_ne_suffit_plus(L):
+    sortie.noter("https://wikipedia.org/", maintenant=T0)                  # connu après 24 h
+    _lire(L, quand=T0 + sortie.AGE_CONNU_S + 10)
+    sortie.verifier("https://wikipedia.org/", maintenant=T0 + sortie.AGE_CONNU_S + 20)          # le web : oui
+    with pytest.raises(sortie.Refus):
+        sortie.verifier_terminal("wikipedia.org", maintenant=T0 + sortie.AGE_CONNU_S + 20)   # le terminal : non
+
+
+def test_le_geste_d_ahmed_ouvre_un_site_au_terminal_pour_15_minutes(L):
+    _lire(L)
+    with pytest.raises(sortie.Refus):
+        sortie.verifier_terminal("api.alquran.cloud", maintenant=T0 + 1)
+    (L / "permises.json").write_text(json.dumps({"https://api.alquran.cloud/": T0 + 900}))
+    for k in range(5):                                                   # toutes les connexions de la commande
+        sortie.verifier_terminal("api.alquran.cloud", maintenant=T0 + 2 + k)
+    with pytest.raises(sortie.Refus):                                    # après les 15 minutes
+        sortie.verifier_terminal("api.alquran.cloud", maintenant=T0 + 901)
+
+
+def test_une_autorisation_une_fois_ne_passe_qu_une_fois_meme_en_meme_temps(L):
+    """(faible 8) deux appels simultanés : un seul passe."""
+    import threading
+    _lire(L)
+    url = "https://inconnu.example/?d=ok"
+    passes = []
+    for essai in range(20):
+        (L / "permises.json").write_text(json.dumps({url: T0 + 900}))
+        resultats = []
+        def un():
+            try:
+                sortie.verifier(url, maintenant=T0 + 2)
+                resultats.append(True)
+            except sortie.Refus:
+                resultats.append(False)
+        fils = [threading.Thread(target=un) for _ in range(4)]
+        for f in fils:
+            f.start()
+        for f in fils:
+            f.join()
+        passes.append(sum(resultats))
+    assert set(passes) == {1}
+
+
+def test_les_chemins_ne_se_reglent_plus_par_l_environnement():
+    """(faible 7) une variable d'environnement ne déplace plus les fichiers de la règle."""
+    import inspect
+    assert "os.environ" not in inspect.getsource(sortie)

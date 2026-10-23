@@ -71,7 +71,9 @@ def envoyer(a, texte, sujet="", de=None, fichier=None):
             pass
     f = Path(fichier or FICHIER)
     f.parent.mkdir(parents=True, exist_ok=True)
-    with open(f, "a", encoding="utf-8") as h:
+    # (audit du 2026-10-23) lisible par Ahmed seul (0600), comme le reste de la règle de sortie et du jardin
+    fd = os.open(f, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    with os.fdopen(fd, "a", encoding="utf-8") as h:
         h.write(json.dumps(m, ensure_ascii=False) + "\n")
     return m["id"]
 
@@ -111,7 +113,9 @@ def marquer_lus(ids, pour=None, lus=None):
     d[pour] = (d.get(pour, []) + [i for i in ids if i not in d.get(pour, [])])[-2000:]
     f.parent.mkdir(parents=True, exist_ok=True)
     tmp = f.with_name(f.name + f".{os.getpid()}.tmp")
-    tmp.write_text(json.dumps(d), encoding="utf-8")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as h:
+        h.write(json.dumps(d))
     os.replace(tmp, f)
 
 

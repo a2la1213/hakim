@@ -7,7 +7,7 @@ Serveur stdlib (zéro dépendance web). Lancer : python dashboard.py → http://
 import hmac
 import json
 import secrets
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 import memory
@@ -111,6 +111,8 @@ refresh();setInterval(refresh,5000);
 
 
 class Handler(BaseHTTPRequestHandler):
+    timeout = 15          # (audit du 2026-10-23) un client lent ne bloque plus le tableau de bord
+
     def _send(self, code, ctype, body):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
@@ -142,4 +144,4 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"Anamnèse dashboard → http://localhost:{PORT}  (Ctrl-C pour arrêter)")
-    HTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()     # (audit du 2026-10-23) un client à la fois ne bloque plus les autres

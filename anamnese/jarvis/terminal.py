@@ -47,7 +47,7 @@ _verrou = threading.Lock()
 # Provenance (H6 + X1, 2026-10-20) : une sortie réseau du terminal fait entrer un contenu de tiers dans le tour de
 # Hakim. La passerelle le note dans la marque du tour (provenance.py : une ligne en ajout seul, que le cockpit lit
 # et retire à la fin du tour) — une ligne par hôte et par minute au plus.
-MARQUE_EXTERNE = Path(os.environ.get("ANAMNESE_MARQUE_EXTERNE") or Path.home() / "AIOS" / "jarvis" / "tour-externe.jsonl")
+MARQUE_EXTERNE = Path.home() / "AIOS" / "jarvis" / "tour-externe.jsonl"   # (audit du 2026-10-23) pas de variable d'environnement
 _sorties_notees = {}
 
 
@@ -76,12 +76,12 @@ def noter_sortie(hote, marque=None):
 
 
 def avant_connexion(hote):
-    """(relecture Opus du 2026-10-20) la règle de sortie à la passerelle, AVANT la résolution du nom : après la lecture
-    d'un fichier privé, un nom à rallonge ou en cascade, ou trop d'hôtes nouveaux, sont refusés (jarvis/sortie.py)."""
+    """(relecture Opus du 2026-10-20) la règle de sortie à la passerelle, AVANT la résolution du nom ; depuis l'audit
+    du 2026-10-23, pendant une lecture privée, seuls les dépôts d'outils passent sans le geste d'Ahmed (jarvis/sortie.py)."""
     import sortie
     import web
     try:
-        sortie.verifier(f"https://{hote}/")
+        sortie.verifier_terminal(hote)          # (audit du 2026-10-23) sites d'outils seulement, ou le geste d'Ahmed
     except sortie.Refus as e:
         raise web.Refus(str(e))
 

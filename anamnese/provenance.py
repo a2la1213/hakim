@@ -22,7 +22,7 @@ import os
 from pathlib import Path
 
 EXTERNE = "externe"
-MARQUE = Path(os.environ.get("ANAMNESE_MARQUE_EXTERNE") or Path.home() / "AIOS" / "jarvis" / "tour-externe.jsonl")
+MARQUE = Path.home() / "AIOS" / "jarvis" / "tour-externe.jsonl"   # (audit du 2026-10-23) pas de variable d'environnement
 CITATION = "(citation externe, non vérifiée) "
 LU = "(d'après un contenu externe) "
 
