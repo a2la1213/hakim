@@ -245,3 +245,46 @@ test('coupé par sa voix (assez de son voisé) : il reste en pause et l’écout
   assert.equal(c.ctx.reprises, undefined);
   assert.ok(!c.conv.bruitDuTour);
 });
+
+/* le jeton change à chaque démarrage du cockpit (journal du 23/10, 18:56 : onze transcriptions refusées « 403 ») */
+test('transcription refusée « 403 » : le jeton est repris et la même demande repart', async () => {
+  const appels = [];
+  let jetonCourant = 'ancien';
+  const ctx = {
+    Date, Math, encodeURIComponent, setTimeout: () => 1, clearTimeout() {}, journalVoix() {},
+    AbortController: class { constructor() { this.signal = {}; } abort() {} },
+    etat: { reglages: { langue: 'fr' } }, horsLigne: { panne: '' }, jeton: () => jetonCourant,
+    rafraichirJeton: async () => { jetonCourant = 'neuf'; return true; },
+    fetch: async (url, o) => { appels.push(o.headers['X-Jeton']);
+      return o.headers['X-Jeton'] === 'neuf' ? { ok: true, status: 200, json: async () => ({ texte: 'bonjour' }) } : { ok: false, status: 403, json: async () => ({}) }; },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(fonction('transcrireVite') + 'this.transcrire = transcrireVite;', ctx);
+  assert.equal(await ctx.transcrire('wav', 'audio/wav'), 'bonjour');
+  assert.deepEqual(appels, ['ancien', 'neuf']);
+});
+
+test('le nouveau jeton est lu dans la page Parler redemandée au cockpit', async () => {
+  const meta = { content: 'a'.repeat(48) };
+  const ctx = { journalVoix() {}, setTimeout: () => 1,
+    document: { querySelector: () => meta },
+    fetch: async () => ({ text: async () => `<head>\n  <meta name="cockpit-jeton" content="${'b'.repeat(48)}">\n</head>` }) };
+  vm.createContext(ctx);
+  const d = src.indexOf('let jetonEnCours'), f = src.indexOf('// la réponse du Mac');
+  vm.runInContext(src.slice(d, f) + 'this.rafraichir = rafraichirJeton;', ctx);
+  assert.equal(await ctx.rafraichir(), true);
+  assert.equal(meta.content, 'b'.repeat(48));
+});
+
+test('25 s sans réponse : le Mac est dit « débordé », pas « sans connexion »', async () => {
+  const ctx = {
+    Date, Math, encodeURIComponent, setTimeout: () => 1, clearTimeout() {}, journalVoix() {},
+    AbortController: class { constructor() { this.signal = {}; } abort() {} },
+    etat: { reglages: { langue: 'fr' } }, horsLigne: { panne: '' }, jeton: () => 'j', rafraichirJeton: async () => false,
+    fetch: async () => { const e = new Error('délai'); e.name = 'AbortError'; throw e; },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(fonction('transcrireVite') + 'this.transcrire = transcrireVite;', ctx);
+  assert.equal(await ctx.transcrire('wav'), null);
+  assert.equal(ctx.horsLigne.panne, 'lent');
+});

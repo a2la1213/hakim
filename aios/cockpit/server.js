@@ -1303,6 +1303,13 @@ const CAPTEURS_CHAMPS = {
   mouvement: /^(immobile|bouge un peu|en mouvement)$/,
   lumiere: /^(dans le noir|lumière douce|bien éclairé|très lumineux|plein soleil) \(\d{1,6} lx\)$/,
   altitude: /^(monte|descend) de \d{1,4} m en \d{1,2} min$/,
+  // (2026-10-23, Ahmed, 19:18) l'état interne du téléphone (EtatTelephone.java) : jamais de nom de réseau ni d'identifiant
+  batterie: /^batterie \d{1,3} %(, en charge)?(, chaude \(\d{2} °C\))?$/,
+  reseau: /^(hors ligne|autre réseau|(Wi-Fi|réseau mobile)(, (signal excellent|bon signal|signal moyen|signal faible|signal très faible))?)$/,
+  memoire: /^mémoire (basse|juste|confortable)$/,
+  stockage: /^stockage libre \d{1,5} Go sur \d{1,5} Go$/,
+  energie: /^économie d'énergie activée$/,
+  chaleur: /^appareil (tiède|chaud|très chaud)$/,
 };
 function capteursDe(c, maintenant) {
   if (!c || typeof c !== 'object') return null;
@@ -2372,7 +2379,9 @@ async function repondreEnLocal(prompt, persona, surTexte, signal, { gemma = fals
     }
   }
   const r = await fetch(`${OLLAMA}/api/chat`, { method: 'POST', signal, headers: { 'Content-Type': 'application/json' },
-    body: j({ model: MODELE_LOCAL, stream: true, keep_alive: '30m', options: { num_ctx: 8192 },
+    // (2026-10-23) l'essai « Gemma seule » : déchargée 3 min après sa dernière réponse (7,6 Go : le Mac saturait, la
+    // transcription de la voix d'Ahmed passait à 25 s et plus)
+    body: j({ model: MODELE_LOCAL, stream: true, keep_alive: gemma ? '3m' : '30m', options: { num_ctx: 8192 },
       messages: [{ role: 'system', content: systeme }, ...historique, { role: 'user', content: prompt }] }) });
   if (!r.ok || !r.body) throw new Error(`Ollama ${r.status}`);
   const dec = new TextDecoder();

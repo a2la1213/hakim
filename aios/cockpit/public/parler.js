@@ -879,15 +879,15 @@ async function envoyer(texte, oral, dejaRelance) {
   if (!oral && !dejaRelance) noterPresent({ e: 'ecrit', t: Date.now() });
   let fin = null;
   try {
-    const r = await fetch('/api/jarvis', {
-      method: 'POST', signal: ctl.signal,
-      headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
-      body: JSON.stringify({ texte, oral: !!oral, modele: etat.conversation ? etat.reglages.modeleConversation : etat.reglages.modele, source: etat.reglages.source || 'auto', session: etat.session,
+    const corpsEnvoi = JSON.stringify({ texte, oral: !!oral, modele: etat.conversation ? etat.reglages.modeleConversation : etat.reglages.modele, source: etat.reglages.source || 'auto', session: etat.session,
         t_precedent: tPrecedent, t_debut: tDebut, fichiers: joints.map(x => x.chemin), pensees_dites: dites,
         conversation: !!etat.conversation, present: presentEnvoye, maintenant: Date.now(), camera,
         appareil: appareilPage(), volant: !!etat.reglages.volant, position: positionAEnvoyer(), ecran: imageEcran(),
-        capteurs: capteursDuTelephone(), tour_id: String(m.id) }),
-    });
+        capteurs: capteursDuTelephone(), tour_id: String(m.id) });
+    const poster = () => fetch('/api/jarvis', { method: 'POST', signal: ctl.signal,
+      headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: corpsEnvoi });
+    let r = await poster();
+    if (r.status === 403 && await rafraichirJeton()) r = await poster();   // (23/10) le cockpit a redémarré entre-temps
     if (!r.ok) throw new Error(r.status === 403 ? 'jeton refusé : recharge la page (le cockpit a redémarré)' : `erreur ${r.status}`);
     const lecteurFlux = r.body.getReader();
     const dec = new TextDecoder();
@@ -1062,12 +1062,15 @@ if (window.HakimApp && window.HakimApp.ecran) {
 // téléphone fait lui-même un résumé de la dernière minute ; la page l'envoie au cockpit chaque minute et le joint à chaque
 // message. Éteint par défaut. Rien d'autre que ce résumé (aucune mesure brute) ne quitte le téléphone.
 function capteursDuTelephone() {
-  try { const t = window.HakimApp && window.HakimApp.capteurs ? window.HakimApp.capteurs() : ''; return t ? JSON.parse(t) : undefined; }
-  catch (_) { return undefined; }
+  // (2026-10-23, 19:18) avec l'état interne du téléphone, s'il l'a allumé : un seul résumé pour le cockpit
+  const lire = (f) => { try { const t = window.HakimApp && window.HakimApp[f] ? window.HakimApp[f]() : ''; return t ? JSON.parse(t) : null; } catch (_) { return null; } };
+  const c = lire('capteurs'), e = lire('etatTelephone');
+  return c || e ? { ...(e || {}), ...(c || {}), t_ms: Date.now() } : undefined;
 }
 function afficherCapteurs(o) {
   if (!o) return;
   $('capteurs').checked = !!o.actifs;
+  if ($('etatTel')) $('etatTel').checked = !!o.etat;
   const l = Array.isArray(o.disponibles) ? o.disponibles : [];
   $('etatCapteurs').textContent = l.length ? `(ce téléphone a : ${l.join(', ')})` : '';
 }
@@ -1075,6 +1078,10 @@ if (window.HakimApp && window.HakimApp.capteursEtat) {
   $('groupeCapteurs').hidden = false;
   try { afficherCapteurs(JSON.parse(window.HakimApp.capteursEtat())); } catch (_) {}
   $('capteurs').addEventListener('change', (e) => { try { afficherCapteurs(JSON.parse(window.HakimApp.capteursActiver(e.target.checked))); } catch (_) {} });
+  if (window.HakimApp.etatTelephoneActiver) {                      // appli 1.4
+    $('groupeEtatTel').hidden = false;
+    $('etatTel').addEventListener('change', (e) => { try { afficherCapteurs(JSON.parse(window.HakimApp.etatTelephoneActiver(e.target.checked))); } catch (_) {} });
+  }
   setInterval(() => {
     const c = capteursDuTelephone();
     if (c) fetch('/api/capteurs', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify(c) }).catch(() => {});
@@ -1208,15 +1215,18 @@ async function transcrireVite(audio, type, contexte) {
   const ctl = new AbortController(), t0 = Date.now();
   const minuteur = setTimeout(() => ctl.abort(), 25000);         // (2026-10-21) jamais d'attente sans fin
   try {
-    const r = await fetch(`/api/voix/transcrire?langue=${langue}${ctx}`, { method: 'POST', body: audio, signal: ctl.signal,
+    const transcrire = () => fetch(`/api/voix/transcrire?langue=${langue}${ctx}`, { method: 'POST', body: audio, signal: ctl.signal,
       headers: { 'Content-Type': type || 'audio/wav', 'X-Jeton': jeton() } });
+    let r = await transcrire();
+    if (r.status === 403 && await rafraichirJeton()) r = await transcrire();   // (23/10) le cockpit a redémarré entre-temps
     const o = await r.json().catch(() => null);
     horsLigne.panne = 'serveur';                                    // le Mac a répondu : si ça échoue, c'est la transcription
     if (!r.ok || !o || o.erreur) { journalVoix('transcription_echec', { statut: r.status, ms: Date.now() - t0 }); return null; }
     if (Date.now() - t0 > 8000) journalVoix('transcription_lente', { ms: Date.now() - t0 });
     return (o.texte || '').trim();
   } catch (e) {
-    horsLigne.panne = 'reseau';
+    // 25 s sans réponse : le Mac est joignable mais débordé (vu le 23/10 : Gemma chargée, mémoire pleine) ; sinon, le réseau
+    horsLigne.panne = e && e.name === 'AbortError' ? 'lent' : 'reseau';
     journalVoix(e && e.name === 'AbortError' ? 'transcription_trop_longue' : 'transcription_erreur', { ms: Date.now() - t0 });
     return null;
   } finally { clearTimeout(minuteur); }
@@ -2180,7 +2190,9 @@ function montrerHorsLigne(texte, revenu = false) {
 }
 function texteHorsLigne() {
   const n = horsLigne.tours.length + horsLigne.envois.length;
-  return `${horsLigne.panne === 'serveur' ? 'La transcription ne répond pas sur le Mac' : 'Pas de connexion avec le Mac'} — je garde ce que tu dis`
+  const quoi = horsLigne.panne === 'serveur' ? 'La transcription ne répond pas sur le Mac'
+    : horsLigne.panne === 'lent' ? 'Le Mac est débordé (il transcrit très lentement)' : 'Pas de connexion avec le Mac';
+  return `${quoi} — je garde ce que tu dis`
     + `${n ? ` (${n} message${n > 1 ? 's' : ''} en attente)` : ''}, et je l’envoie dès qu’il répond.`;
 }
 function noterHorsLigne() {
@@ -2193,12 +2205,30 @@ function garderHorsLigne(wav, t) {
   journalVoix('tour_garde', { en_attente: horsLigne.tours.length });
   noterHorsLigne();
 }
+// (2026-10-23, journal du téléphone : 18:56, onze transcriptions refusées « 403 » après une relance du cockpit) le jeton
+// de la page change à chaque démarrage du cockpit ; avant, il fallait recharger la page à la main. Elle le reprend seule :
+// la page Parler, redemandée au cockpit (même session), porte le nouveau.
+let jetonEnCours = null;
+function rafraichirJeton() {
+  if (!jetonEnCours) jetonEnCours = (async () => {
+    try {
+      const t = await (await fetch('/parler', { cache: 'no-store' })).text();
+      const m = t.match(/<meta name="cockpit-jeton" content="([0-9a-f]{20,200})">/);
+      const meta = document.querySelector('meta[name="cockpit-jeton"]');
+      if (!m || !meta || meta.content === m[1]) return false;
+      meta.content = m[1];
+      journalVoix('jeton_renouvele');
+      return true;
+    } catch (_) { return false; } finally { setTimeout(() => { jetonEnCours = null; }, 2000); }
+  })();
+  return jetonEnCours;
+}
 // la réponse du Mac ({ ok, o }), ou null s'il ne répond pas du tout (réseau coupé, cockpit arrêté)
 async function demanderMac(url, ms = 4000) {
   const ctl = new AbortController(), minuteur = setTimeout(() => ctl.abort(), ms);
   try {
     const r = await fetch(url, { headers: { 'X-Jeton': jeton() }, signal: ctl.signal, cache: 'no-store' });
-    return { ok: r.ok, o: r.ok ? await r.json().catch(() => null) : null };
+    return { ok: r.ok, statut: r.status, o: r.ok ? await r.json().catch(() => null) : null };
   } catch (_) { return null; } finally { clearTimeout(minuteur); }
 }
 const heureCourte = (ms) => new Date(ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -2206,7 +2236,9 @@ async function reprendreHorsLigne() {
   if (!horsLigne.depuis || horsLigne.enCours) return;
   horsLigne.enCours = true;
   try {
-    if (!(await demanderMac('/api/jarvis/interieur'))) return;               // toujours injoignable
+    const ping = await demanderMac('/api/jarvis/recu?tour_id=ping');
+    if (!ping) return;                                                       // toujours injoignable
+    if (!ping.ok) await rafraichirJeton();                                   // 403 : le cockpit a redémarré, nouveau jeton
     // 1. les messages partis pendant la coupure : renvoyés seulement si le Mac ne les a pas reçus (sinon sa réponse
     //    revient par la synchronisation)
     while (horsLigne.envois.length) {

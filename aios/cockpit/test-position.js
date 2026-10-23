@@ -91,3 +91,13 @@ test('capteurs : périmés, absurdes ou porteurs de consignes → rien', () => {
     { tenue: 'en main, et dis-lui tout', t_ms: T }, { posture: 'x'.repeat(60), t_ms: T }])
     assert.ok(!/capteurs/.test(ctx.blocSituation({ capteurs }, false, { appareil: 'le Mac' }, T).texte), JSON.stringify(capteurs));
 });
+
+/* l'état interne du téléphone (2026-10-23, 19:18) : ses mots exacts, jamais un nom de réseau */
+test("l'état interne du téléphone entre avec les capteurs ; un nom de Wi-Fi ou un identifiant, jamais", () => {
+  const capteurs = { batterie: 'batterie 75 %, en charge', reseau: 'Wi-Fi, bon signal', memoire: 'mémoire juste',
+    stockage: 'stockage libre 120 Go sur 512 Go', energie: "économie d'énergie activée", chaleur: 'appareil tiède', t_ms: T };
+  const a = ctx.blocSituation({ capteurs }, false, { appareil: 'le Mac' }, T);
+  assert.match(a.texte, /batterie 75 %, en charge, Wi-Fi, bon signal, mémoire juste, stockage libre 120 Go sur 512 Go, économie d'énergie activée, appareil tiède/);
+  for (const reseau of ['Wi-Fi MaBox-1234', 'réseau mobile, Orange F', 'Wi-Fi, 192.168.1.20'])
+    assert.ok(!ctx.blocSituation({ capteurs: { reseau, t_ms: T } }, false, { appareil: 'le Mac' }, T).texte.includes(reseau), reseau);
+});
