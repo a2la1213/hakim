@@ -996,9 +996,19 @@ function ecranEtat(oui) {
   $('ecranScene').textContent = oui ? '👁 Hakim regarde ton écran' : 'Regarde l’écran';
   if (change) humeur(oui ? 'Hakim regarde ton écran : une image part avec chacun de tes messages' : 'Hakim ne regarde plus ton écran');
 }
+// (16:15, bug : Hakim ne recevait rien) l'état est relu dans l'appli au moment d'envoyer (un ecranEtat(true) perdu ne
+// coupe plus l'image), et chaque envoi écran allumé laisse une trace au diagnostic (taille, raison) — jamais l'image
 function imageEcran() {
-  if (!etat.ecran || !window.HakimApp || !window.HakimApp.ecranImage) return undefined;
-  try { const d = window.HakimApp.ecranImage(); return d ? { data: d } : undefined; } catch (_) { return undefined; }
+  if (!window.HakimApp || !window.HakimApp.ecranImage) return undefined;
+  let actif = etat.ecran;
+  try { if (!actif && window.HakimApp.ecranEtat && window.HakimApp.ecranEtat()) { actif = true; ecranEtat(true); } } catch (_) {}
+  if (!actif) return undefined;
+  let d = '', raison = '';
+  try { d = window.HakimApp.ecranImage() || ''; } catch (_) { raison = 'exception'; }
+  // la raison est un code court (le diagnostic n'accepte que [a-z_]) : pas_de_service, verrouille, pas_d_image, erreur…
+  if (!d && !raison) try { raison = window.HakimApp.ecranRaison ? String(window.HakimApp.ecranRaison()) : 'image_vide'; } catch (_) {}
+  journalVoix('ecran', { taille: d.length, raison: raison || undefined });
+  return d ? { data: d } : undefined;
 }
 if (window.HakimApp && window.HakimApp.ecran) {
   for (const id of ['ecran', 'ecranScene']) {

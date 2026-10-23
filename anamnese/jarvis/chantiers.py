@@ -262,8 +262,11 @@ def tester(nom, chantiers=None, python=None, delai_s=DELAI_TESTS_S, projets=None
            "PYTHONDONTWRITEBYTECODE": "1", "LANG": "fr_FR.UTF-8",
            "HF_HOME": str(Path.home() / ".cache" / "huggingface"), "HF_HUB_OFFLINE": "1"}
     # -P : le dossier courant n'est pas mis en tête de sys.path (un pytest.py de la copie ne remplace pas pytest)
-    p = subprocess.Popen(["/usr/bin/sandbox-exec", "-p", regles, str(python), "-P", "-m", "pytest", "-q",
-                          "-p", "no:cacheprovider", "-x"], cwd=str(essai), env=env, stdout=subprocess.PIPE,
+    # (2026-10-23) en priorité basse : sa voix et Whisper passent devant (priorite.py)
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import priorite
+    p = subprocess.Popen(priorite.basse(["/usr/bin/sandbox-exec", "-p", regles, str(python), "-P", "-m", "pytest", "-q",
+                          "-p", "no:cacheprovider", "-x"]), cwd=str(essai), env=env, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, text=True, start_new_session=True)
     try:
         sortie, _ = p.communicate(timeout=delai_s)

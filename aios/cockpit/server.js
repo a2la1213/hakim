@@ -1539,6 +1539,7 @@ async function routeJarvis(req, res, distantReq = false) {
   // (2026-10-22, 15:45, Ahmed) « Regarde l'écran » : l'image de l'écran de son téléphone, jointe à CE message seulement,
   // directement dans le tour (aucun fichier) ; purgerImagesEcran l'efface ensuite du journal de session sur le disque
   const ecran = imageEcranDe(q.ecran, maintenant);
+  if (q.ecran && !ecran) console.error(`Regarde l'écran : image refusée (${typeof q.ecran.data === 'string' ? `${q.ecran.data.length} caractères, début « ${q.ecran.data.slice(0, 4)} »` : 'pas de données'})`);
   const pj = joints.length ? `\n[Fichiers joints par Ahmed — à ouvrir avec preparer_fichier, puis Read sur les chemins rendus :\n${joints.map(f => '- ' + f).join('\n')}]` : '';
   const tachesTexte = blocTaches(depuisMs, nonce) + blocAtelier();
   if (/terminées depuis son message précédent/.test(tachesTexte)) noterExterne('sortie de commande');

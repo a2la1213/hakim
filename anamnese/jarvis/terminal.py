@@ -26,6 +26,7 @@ from pathlib import Path
 ICI = Path(__file__).resolve().parent
 sys.path.insert(0, str(ICI))
 import groupes  # noqa: E402
+import priorite  # noqa: E402
 CWD = Path.home() / "AIOS" / "jarvis" / "cwd"
 ATELIER = CWD / "atelier"
 FICHIERS = CWD / "fichiers"
@@ -240,7 +241,8 @@ def preparer(commande, atelier, port):
         "GOCACHE": str(atelier / ".cache" / "go-build"), "GOPATH": str(atelier / "go"),
         "JAVA_HOME": str(JDK), "COMPOSER_HOME": str(atelier / ".cache" / "composer"),
     }
-    return ["/usr/bin/sandbox-exec", "-p", regles, "/bin/zsh", "-f", "-c", commande], env
+    # (2026-10-23) en priorité basse : sa voix et Whisper passent devant (priorite.py)
+    return priorite.basse(["/usr/bin/sandbox-exec", "-p", regles, "/bin/zsh", "-f", "-c", commande]), env
 
 
 def surveiller(proc, t0, delai_s, atelier, raison):

@@ -23,6 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import groupes  # noqa: E402
+import priorite  # noqa: E402
 
 DOSSIER = Path.home() / "AIOS" / "jarvis" / "cwd" / "calculs"
 VENV_PYTHON = Path(__file__).resolve().parent / ".venv" / "bin" / "python"
@@ -90,8 +91,9 @@ def executer(code, delai_s=DELAI_S, dossier=None, python=None):
     t0 = time.time()
     # Groupe de processus à lui (tué en entier au dépassement), et une garde qui surveille la mémoire
     # et la taille du dossier : macOS n'applique pas de plafond de mémoire par rlimit.
-    proc = subprocess.Popen(["/usr/bin/sandbox-exec", "-p", regles, str(python.absolute()), "-I", "-B",
-                             str(travail / "calcul.py")], cwd=str(travail), env=env, stdout=subprocess.PIPE,
+    # (2026-10-23) en priorité basse : sa voix et Whisper passent devant (priorite.py)
+    proc = subprocess.Popen(priorite.basse(["/usr/bin/sandbox-exec", "-p", regles, str(python.absolute()), "-I", "-B",
+                             str(travail / "calcul.py")]), cwd=str(travail), env=env, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True, preexec_fn=limites, stdin=subprocess.DEVNULL,
                             start_new_session=True)
     groupes.ajouter(proc.pid)            # tué avec le serveur s'il meurt (Stop) : jamais sans garde
