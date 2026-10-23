@@ -85,6 +85,13 @@
      souvent « voir la formule à l'écran » pour $x=5$ ou $\pi$). Le simple se dit : nombres, lettres, opérations,
      puissances, fractions, racines, sommes, intégrales, limites, lettres grecques. Ce qui ne se convertit pas
      proprement (commande inconnue, environnement, formule trop longue) rend null : la voix dit alors de regarder. */
+  // les lettres grecques (Unicode) et leur nom français, minuscules et majuscules (2026-10-23)
+  const GREC = {};
+  for (const [noms, minus, majus] of [['alpha', 'α', 'Α'], ['bêta', 'β', 'Β'], ['gamma', 'γ', 'Γ'], ['delta', 'δ', 'Δ'],
+    ['epsilon', 'εϵ', 'Ε'], ['dzêta', 'ζ', 'Ζ'], ['êta', 'η', 'Η'], ['thêta', 'θϑ', 'Θ'], ['iota', 'ι', 'Ι'], ['kappa', 'κ', 'Κ'],
+    ['lambda', 'λ', 'Λ'], ['mu', 'μ', 'Μ'], ['nu', 'ν', 'Ν'], ['ksi', 'ξ', 'Ξ'], ['omicron', 'ο', 'Ο'], ['pi', 'π', 'Π'],
+    ['rhô', 'ρ', 'Ρ'], ['sigma', 'σς', 'Σ'], ['tau', 'τ', 'Τ'], ['upsilon', 'υ', 'Υ'], ['phi', 'φϕ', 'Φ'], ['khi', 'χ', 'Χ'],
+    ['psi', 'ψ', 'Ψ'], ['oméga', 'ω', 'Ω']]) for (const c of minus + majus) GREC[c] = noms;
   const MOTS_LATEX = {
     pi: 'pi', alpha: 'alpha', beta: 'bêta', gamma: 'gamma', Gamma: 'gamma', delta: 'delta', Delta: 'delta',
     theta: 'thêta', lambda: 'lambda', mu: 'mu', sigma: 'sigma', Sigma: 'sigma', omega: 'oméga', Omega: 'oméga',
@@ -372,6 +379,10 @@
     // symboles restants
     t = t.replace(/π/g, ' pi ').replace(/∞/g, " l'infini ").replace(/√\s?/g, ' racine de ').replace(/≠/g, ' différent de ')
       .replace(/≤/g, ' inférieur ou égal à ').replace(/≥/g, ' supérieur ou égal à ');
+    // (2026-10-23, Ahmed : « il prononce bizarrement les lettres grecques ») une lettre grecque SEULE (pas un mot grec) est
+    // dite par son nom français : γ « gamma », Δ « delta », ω « oméga »…
+    t = t.replace(/(?<![\u0370-\u03FF\u1F00-\u1FFF])([\u0391-\u03A9\u03B1-\u03C9\u03C2\u03D1\u03D5\u03F5])(?![\u0370-\u03FF\u1F00-\u1FFF])/g,
+      (m) => ` ${GREC[m] || m} `);
     t = t.replace(/\s&\s/g, ' et ').replace(/\s=\s/g, ' égale ').replace(/\s\+\s/g, ' plus ')
       .replace(/\s?(?:→|⇒|->|=>|⟶)\s?/g, ', ').replace(/[|_#*~^\[\]{}<>]/g, ' ').replace(/(?<=\p{L})\/(?=\p{L})/gu, ' ');
     // sigles épelés, mots en capitales remis en minuscules, lettres seules dites par leur nom

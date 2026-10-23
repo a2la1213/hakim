@@ -202,3 +202,12 @@ test("les prononciations : un mot écrit en arabe se dit à la française, avec 
   assert.strictEqual(Voix.pourLaVoix('سماء'), 'سماء');                 // un autre mot ne bouge pas
   Voix.definirPrononciations({});
 });
+
+// (2026-10-23, Ahmed : « il prononce bizarrement les lettres grecques ») une lettre grecque seule est dite par son nom
+test('lettres grecques seules : leur nom français, minuscules et majuscules ; un mot grec reste un mot', () => {
+  const dit = (x) => Voix.prononcable(x).map(s => s.texte).join(' ');
+  assert.match(dit('La pente γ vaut 0,5 et ω tend vers 1.'), /pente gamma vaut .* et oméga tend/);
+  assert.match(dit('ΔT augmente, Σ des forces nulle.'), /^delta té augmente, sigma des forces/);
+  assert.match(dit('α et β, puis φ, ψ, χ, θ, λ, μ.'), /alpha et bêta, puis phi, psi, khi, thêta, lambda, mu/);
+  assert.match(dit('Le mot λόγος reste un mot.'), /λόγος/);
+});
