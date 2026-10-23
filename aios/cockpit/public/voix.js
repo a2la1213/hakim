@@ -206,8 +206,18 @@
   const dansZone = (z, i) => z.some(([a, b]) => i >= a && i < b);
 
   /* ---- texte lisible à voix haute ---- */
+  // (2026-10-23, demande d'Ahmed relayée par Hakim) les PRONONCIATIONS : un mot écrit d'une façon à l'écran (un prénom en
+  // écriture arabe) que la voix dit autrement (à la française). Le dictionnaire vient du cockpit (un fichier local, jamais
+  // dans le code public) ; un mot arabe s'y reconnaît avec ou sans ses voyelles et signes.
+  let prononciations = [];
+  function definirPrononciations(dico) {
+    prononciations = Object.entries(dico || {}).filter(([m, d]) => m && typeof d === 'string').map(([m, d]) => [
+      new RegExp([...m].map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\\u064B-\\u0652\\u0670]*').join(''), 'g'), d]);
+  }
   function pourLaVoix(texte) {
-    let t = sansAffect(texte)
+    let t = sansAffect(texte);
+    for (const [motif, dit] of prononciations) t = t.replace(motif, dit);
+    t = t
       .replace(FORMULE, (_t, _f, d1, d2, i1, i2, dit) => ' ' + formuleParlee(d1 ?? d2 ?? i1 ?? i2, dit) + ' ')
       .replace(VOIX_SEULE, ' $1 ')
       .replace(/```[\s\S]*?```/g, ' (bloc de code) ')
@@ -453,6 +463,7 @@
   }
 
   const Voix = { versArabe, segmenter, pourLaVoix, decoupeur, choisirVoix, creerLecteur, FORMULE, VOIX_SEULE, AFFECT, sansAffect, latexParle,
+    definirPrononciations,
     diction, prononcable, enLettres };
   racine.Voix = Voix;
   if (typeof module !== 'undefined' && module.exports) module.exports = Voix;

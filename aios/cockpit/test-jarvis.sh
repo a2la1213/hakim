@@ -1074,5 +1074,10 @@ h62=$(grep -c "arrêté par Hakim : plus utile" "$BANC/jarvis/conversation.json"
 echo 0 > "$BANC/agent_s"
 verifier "62. arrêter un de ses agents : liste, inconnu refusé, arrêt par Ahmed (stop_task, conversation), puis par Hakim" "['t1'] 404 True 1 1 0 [True] 1" "$a62 $b62 $c62 $d62 $e62 $f62 $g62 $h62"
 
+# 63. (2026-10-23) les prononciations : le dictionnaire LOCAL (jamais dans le code) servi à la page
+printf '{"سمير": "Samir"}' > "$BANC/jarvis/prononciations.json"
+p63=$(curl -s "$U/api/voix/prononciations" | python3 -c "import json,sys; print(json.load(sys.stdin).get('سمير'))")
+verifier "63. prononciations : le dictionnaire local est servi à la page" "Samir" "$p63"
+
 [ "$ECHECS" -eq 0 ] && echo "TOUT VERT" || echo "$ECHECS contrôle(s) en échec"
 exit "$ECHECS"

@@ -194,3 +194,11 @@ test("la balise [[souvenirs: …]] non plus", () => {
   assert.strictEqual(Voix.sansAffect('Ok. [[souven', true), 'Ok.');
   assert.strictEqual(Voix.sansAffect('Ok. [[souvenirs: 12', true), 'Ok.');
 });
+
+test("les prononciations : un mot écrit en arabe se dit à la française, avec ou sans ses voyelles", () => {
+  Voix.definirPrononciations({ 'سمير': 'Samir' });
+  assert.deepStrictEqual(Voix.segmenter(Voix.pourLaVoix('Salut سمير, ça va ?')), [{ langue: 'fr', texte: 'Salut Samir, ça va ?' }]);
+  assert.strictEqual(Voix.pourLaVoix('يا سَمِيرُ'), 'يا Samir');
+  assert.strictEqual(Voix.pourLaVoix('سماء'), 'سماء');                 // un autre mot ne bouge pas
+  Voix.definirPrononciations({});
+});

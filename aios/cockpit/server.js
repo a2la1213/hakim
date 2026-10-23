@@ -2718,11 +2718,31 @@ async function routeReecouter(req, res, n) {
   res.end(j({ morceaux: out }));
 }
 
+/* ---- Les prononciations (2026-10-23, demande d'Ahmed relayée par Hakim) : un mot écrit d'une façon à l'écran (son prénom en
+   écriture arabe) que la voix dit autrement. Un fichier LOCAL (~/AIOS/jarvis/prononciations.json, jamais dans le code
+   public) ; la page le charge pour sa voix (voix.js), et la route de la voix l'applique pour la montre. ---- */
+const PRONONCIATIONS = path.join(JARVIS, 'prononciations.json');
+let prononciationsCache = { mtime: -1, liste: [] };
+function lirePrononciations() {
+  let mtime = 0; try { mtime = fs.statSync(PRONONCIATIONS).mtimeMs; } catch (_) { return {}; }
+  if (mtime !== prononciationsCache.mtime) {
+    const d = lireJson(PRONONCIATIONS, {});
+    prononciationsCache = { mtime, dico: d && typeof d === 'object' ? d : {}, liste: Object.entries(d || {}).filter(([m, v]) => m && typeof v === 'string')
+      .map(([m, v]) => [new RegExp([...m].map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\\u064B-\\u0652\\u0670]*').join(''), 'g'), v]) };
+  }
+  return prononciationsCache.dico || {};
+}
+function prononcer(texte) {
+  lirePrononciations();
+  let t = String(texte || '');
+  for (const [motif, dit] of prononciationsCache.liste) t = t.replace(motif, dit);
+  return t;
+}
 async function routeDire(req, res) {
   const repondre = (code, o) => { if (!res.writableEnded) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(j(o)); } };
   const corps = await lireCorps(req, 64 << 10);
   let q = null; try { q = JSON.parse(String(corps || '')); } catch (_) {}
-  const texte = q && typeof q.texte === 'string' ? q.texte.trim() : '';
+  const texte = q && typeof q.texte === 'string' ? prononcer(q.texte.trim()) : '';     // (2026-10-23) aussi pour la montre
   if (!texte || texte.length > 1500 || texte.includes('\0')) return repondre(400, { erreur: 'texte invalide (≤ 1 500 caractères)' });
   const emotion = q && Number.isFinite(Number(q.emotion)) ? Math.max(0, Math.min(1, Number(q.emotion))) : null;
   const tache = { texte, langue: /^[a-z]{2}$/.test((q && q.langue) || '') ? q.langue : 'fr', annulee: false, emotion,
@@ -3550,6 +3570,10 @@ async function traiter(req, res) {
       api_panne: Date.now() < apiEnPanneJusqua ? (abonnement.apiPanne || 'indisponible') : null }));
   }
   if (p === '/api/voix/dire' && req.method === 'POST') return routeDire(req, res);
+  if (p === '/api/voix/prononciations' && req.method === 'GET') {     // (2026-10-23) le dictionnaire local, pour la page
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j(lirePrononciations()));
+  }
   if (p === '/api/voix/reecouter' && req.method === 'GET' && !distantReq) return routeReecouter(req, res, Number(new URL(req.url, 'http://x').searchParams.get('n')) || 5);
   if (p === '/api/jarvis/interieur') {
     const e = await etatInterieur();

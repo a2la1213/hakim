@@ -113,6 +113,8 @@ const voixPour = (langue) => {
 };
 // (2026-10-22, Ahmed) le débit suit aussi son émotion, modérément (×0,94 à ×1,04, réglé par le démon) ; ton réglage reste la base
 // (2026-10-22, 16:10, Ahmed) « voix neutre » : ni le débit ni l'expressivité de son émotion
+// (2026-10-23) les prononciations locales (son prénom écrit en arabe, dit à la française) : chargées une fois
+fetch('/api/voix/prononciations', { cache: 'no-store' }).then(r => r.json()).then(d => Voix.definirPrononciations(d)).catch(() => {});
 const vitesseVoix = () => (etat.reglages.vitesse || 1) * (etat.reglages.voixNeutre ? 1 : Math.max(0.92, Math.min(1.06, Number(etat.interieur && etat.interieur.voix_vitesse) || 1)));
 const lecteurSysteme = synth ? Voix.creerLecteur(synth, window.SpeechSynthesisUtterance, voixPour, vitesseVoix) : null;
 
