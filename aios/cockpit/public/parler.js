@@ -950,6 +950,7 @@ async function envoyer(texte, oral, dejaRelance) {
   if (etat.flux === ctl) etat.flux = null;
   m.enCours = false;
   if (m.texte) m.texte = Voix.sansAffect(m.texte).trimEnd();     // la balise [[affect: …]] ne reste pas dans la conversation
+  if (m.texte && !auto && !NON_REPONSE.test(m.texte)) notifierApp('Hakim te répond', m.texte, String(m.id));   // (23/10) appli cachée
   if (fin) {
     m.ms = fin.ms;
     if (fin.source && fin.source !== 'abonnement') m.source = fin.source;
@@ -1069,7 +1070,37 @@ if (window.HakimApp && window.HakimApp.ecran) {
 // (2026-10-23, Ahmed : « qu'il sente ce qui se passe dans le téléphone ») les capteurs du téléphone (appli Android) : le
 // téléphone fait lui-même un résumé de la dernière minute ; la page l'envoie au cockpit chaque minute et le joint à chaque
 // message. Éteint par défaut. Rien d'autre que ce résumé (aucune mesure brute) ne quitte le téléphone.
+// (2026-10-23, 20:20, Ahmed : « aucune notification, ni sur le téléphone ni sur la montre ») l'appli est cachée et Hakim
+// dit quelque chose : une vraie notification Android, que la montre reçoit aussi (Galaxy Wearable relaie les applis permises)
+function notifierApp(titre, texte, id) {
+  try {
+    if (document.visibilityState !== 'hidden' || !window.HakimApp || !window.HakimApp.notifier) return;
+    window.HakimApp.notifier(titre, Voix.sansAffect(String(texte || '')).replace(Voix.VOIX_SEULE, '').trim(), String(id || ''));
+  } catch (_) {}
+}
+if (window.HakimApp && window.HakimApp.notifsPermises) {
+  const montrer = () => {
+    let ok = false; try { ok = !!window.HakimApp.notifsPermises(); } catch (_) {}
+    $('etatNotifsApp').textContent = ok ? 'autorisées — pour la montre : Galaxy Wearable → Notifications → active « Hakim »' : 'bloquées';
+    $('btnNotifsApp').hidden = ok;
+  };
+  $('groupeNotifsApp').hidden = false;
+  $('btnNotifsApp').addEventListener('click', () => { try { window.HakimApp.notifsReglages(); } catch (_) {} });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') montrer(); });
+  montrer();
+}
+// ce que la lecture de la montre a trouvé (combien de mesures, de quand), au diagnostic toutes les 5 min
+let santeNotee = 0;
+function noterSanteVue() {
+  if (!window.HakimApp || !window.HakimApp.santeVu || Date.now() - santeNotee < 300000) return;
+  try {
+    const d = {};
+    for (const p of String(window.HakimApp.santeVu()).split(';')) { const [k, v] = p.split('='); if (/^[a-z_]{1,20}$/.test(k || '') && Number.isFinite(Number(v))) d[k] = Number(v); }
+    if (Object.keys(d).length) { santeNotee = Date.now(); journalVoix('sante_lu', d); }
+  } catch (_) {}
+}
 function capteursDuTelephone() {
+  noterSanteVue();
   // (2026-10-23, 19:18) avec l'état interne du téléphone, s'il l'a allumé : un seul résumé pour le cockpit
   const lire = (f) => { try { const t = window.HakimApp && window.HakimApp[f] ? window.HakimApp[f]() : ''; return t ? JSON.parse(t) : null; } catch (_) { return null; } };
   const c = lire('capteurs'), e = lire('etatTelephone'), m = lire('sante');          // (19:59) et sa montre, s'il l'a allumée
@@ -2152,6 +2183,7 @@ function surSpontane(m) {
   humeur('Hakim te donne un résultat');
   $('annonce').textContent = `Hakim, de lui-même : ${m.texte}`;
   widgetApp(etat.conversation ? 'conversation' : 'repos', m.texte);
+  if (!NON_REPONSE.test(m.texte)) notifierApp('Hakim, de lui-même', m.texte, m.id);
   if (etat.conversation || etat.reglages.volant || etat.reglages.lectureAuto) { aDire.push({ id: m.id, texte: m.texte, recu: Date.now() }); direSpontanes(); }
 }
 /* Ses résultats « de lui-même » DITS dans la conversation (demande d'Ahmed relayée par Hakim, 2026-10-20 : « il arrive à
@@ -2368,6 +2400,7 @@ function surTache(o) {
   etat.messages.push({ id, qui: 'j', spontane: 'tache', texte, ts: Date.now() });
   sauver(); rendre();
   humeur(fini ? 'une tâche de fond est terminée' : 'une tâche de fond s’est arrêtée');
+  notifierApp(fini ? 'Tâche de fond terminée' : 'Tâche de fond arrêtée', texte, id);
   if (!etat.flux && !lecteur.actif && jarvisPeutParler()) { lecteur.dire(fini ? 'Ma tâche de fond est terminée.' : 'Ma tâche de fond s’est arrêtée.'); lecteur.finFlux(); }
 }
 
