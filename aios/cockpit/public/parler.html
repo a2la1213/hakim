@@ -36,6 +36,11 @@
     .scene .sous-titre { max-width: min(760px, 88vw); min-height: 3.2em; margin: 0; text-align: center; color: var(--txt);
       font-size: clamp(16px, 2.3vw, 22px); line-height: 1.45; text-shadow: 0 2px 18px rgba(0,0,0,.6); unicode-bidi: plaintext; }
     .scene .indice { font-size: 11px; color: var(--txt-4); letter-spacing: 1px; }
+    /* (2026-10-23) le Mac injoignable : dit en clair, au-dessus de tout (même de la grande orbe) */
+    .hors-ligne { position: fixed; z-index: 1000; top: calc(env(safe-area-inset-top, 0px) + 10px); left: 0; right: 0; margin-inline: auto;
+      width: max-content; max-width: min(560px, calc(100vw - 32px)); box-sizing: border-box; padding: 9px 16px; border-radius: 14px; background: rgba(251,191,36,.94); color: #1c1400;
+      font-size: 14px; font-weight: 600; line-height: 1.35; text-align: center; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+    .hors-ligne.revenu { background: rgba(45,212,191,.94); color: #02201c; }
     .tete h1 { color: var(--txt); font-size: 16px; letter-spacing: 4px; font-weight: 700; }
     .tete .sous { font-size: 12px; color: var(--txt-3); }
     .tete .actions { margin-left: auto; display: flex; gap: 8px; }
@@ -333,6 +338,7 @@
 
     <section class="glass fil" id="fil" aria-label="Conversation"></section>
     <div id="annonce" class="sr" aria-live="polite"></div>
+    <div id="horsLigne" class="hors-ligne" role="status" aria-live="polite" hidden></div>
     <div class="scene" id="scene" aria-hidden="true">
       <div class="scene-haut">
         <div class="scene-cote gauche">

@@ -1561,6 +1561,7 @@ async function routeJarvis(req, res, distantReq = false) {
   let q = null; try { q = JSON.parse(String(corps || '')); } catch (_) {}
   if (q && typeof q.tour_id === 'string' && ID_MESSAGE.test(q.tour_id)) {
     tourId = q.tour_id;                            // la page a pu partir pendant la lecture du corps : on répond quand même
+    noterTourRecu(tourId);                         // (2026-10-23) la page peut demander s'il est bien arrivé
     toursActifs.set(tourId, { arreter });
     while (toursActifs.size > 50) toursActifs.delete(toursActifs.keys().next().value);
   }
@@ -1837,6 +1838,8 @@ async function routeJarvis(req, res, distantReq = false) {
   tour.texte = prompt;
   c.attente.push(tour);
   tourCourant = tour;
+  // (2026-10-23, Hakim) il finit d'abord un tour à lui (un réveil, un résultat d'agent) : la page le dit à Ahmed
+  if (c.enCours && c.enCours.autonome) envoyer({ t: 'statut', x: 'Reçu — Hakim finit un travail, il te répond juste après.' });
   const contenu = [{ type: 'text', text: prompt }];
   if (ecran) contenu.push({ type: 'text', text: ecran.marque }, { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: ecran.data } });
   enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: contenu } }) + '\n');
@@ -1916,6 +1919,12 @@ function piecesDeLigne(o) {
 }
 
 function occupe(c) { return c.attente.length > 0 || (!!c.enCours && !c.enCours.autonome); }
+// (2026-10-23) les messages bien arrivés (leur tour_id) : une page coupée du réseau demande au retour s'il faut renvoyer
+const toursRecus = new Set();
+function noterTourRecu(id) {
+  toursRecus.add(id);
+  if (toursRecus.size > 500) toursRecus.delete(toursRecus.values().next().value);
+}
 
 /* ---- « Regarde l'écran » (2026-10-22, 15:45, Ahmed ; conception de Hakim) : l'appli Android joint à chaque message
    d'Ahmed UNE image de l'écran de son téléphone (JPEG, grand côté 1 024 px au plus, ~1 000 à 1 400 jetons), tant qu'il
@@ -3589,6 +3598,12 @@ async function traiter(req, res) {
     const r = q && typeof q.id === 'string' ? arreterAgent(q.id, q.raison, 'ahmed') : { ok: false, erreur: 'id manquant' };
     res.writeHead(r.ok ? 200 : 404, { 'Content-Type': 'application/json' });
     return res.end(j(r));
+  }
+  if (p === '/api/jarvis/recu' && req.method === 'GET') {           // (2026-10-23) ce message est-il arrivé ? (et le Mac répond-il)
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    const id = new URL(req.url, 'http://x').searchParams.get('tour_id') || '';
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j({ recu: ID_MESSAGE.test(id) && toursRecus.has(id) }));
   }
   if (p === '/api/jarvis/non-dites' && req.method === 'POST') {     // (2026-10-23) ce qu'il n'a pas pu dire, à synthétiser
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }

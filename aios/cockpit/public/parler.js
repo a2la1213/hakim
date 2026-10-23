@@ -23,6 +23,9 @@ const etat = {
   interieur: null, derniereActivite: Date.now(), dites: [],
   conversation: null, present: [], parleDepuis: 0, coupeParAhmed: false, vision: null,
 };
+// (2026-10-23) le Mac injoignable : ce qui attend son retour (voir reprendreHorsLigne) ; panne : « reseau » (rien ne
+// répond) ou « serveur » (le Mac répond, la transcription non)
+const horsLigne = { depuis: 0, tours: [], envois: [], enCours: false, panne: 'reseau' };
 function charger() {
   try {
     const s = JSON.parse(localStorage.getItem(CLE) || 'null');
@@ -467,8 +470,16 @@ const ANDROID = /Android/i.test(navigator.userAgent || '');
 function envoyerJournalVoix() {
   const lot = journalVoixFile.splice(0);
   try { localStorage.removeItem('jarvis.journalVoix'); } catch (_) {}
+  // (2026-10-23) un envoi raté (Mac injoignable) remet le lot dans la file : avant, il était perdu, et une coupure de
+  // 9 min ne laissait aucune trace
   if (lot.length) fetch('/api/voix/journal', { method: 'POST', keepalive: true,
-    headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify(lot) }).catch(() => {});
+    headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify(lot) })
+    .then((r) => { if (!r.ok) throw new Error(`journal ${r.status}`); })
+    .catch(() => {
+      journalVoixFile.unshift(...lot);
+      if (journalVoixFile.length > 100) journalVoixFile.splice(0, journalVoixFile.length - 100);
+      try { localStorage.setItem('jarvis.journalVoix', JSON.stringify(journalVoixFile)); } catch (_) {}
+    });
 }
 function journalVoix(e, d) {
   journalVoixFile.push({ t: Date.now(), e, appareil: ANDROID ? 'telephone' : 'mac', ...(d || {}) });
@@ -889,6 +900,8 @@ async function envoyer(texte, oral, dejaRelance) {
           const nom = String(o.nom || '').replace(/^mcp__anamnese__/, '');
           m.outils.push(NOMS_OUTILS[nom] || nom);
           majMessage(m); humeur(nom === 'WebSearch' ? 'cherche sur le web…' : 'cherche dans sa mémoire…');
+        } else if (o.t === 'statut' && typeof o.x === 'string') {   // (2026-10-23) reçu, il finit d'abord un travail
+          humeur(o.x.slice(0, 160)); $('annonce').textContent = o.x.slice(0, 160);
         } else if (o.t === 'debut') {
           if (o.modele) { m.modele = o.modele; majMessage(m); }        // le routeur a choisi (Sonnet ou Opus)
         } else if (o.t === 'source') {                        // le forfait à sa limite : l'API, puis le local
@@ -908,6 +921,9 @@ async function envoyer(texte, oral, dejaRelance) {
       // (2026-10-21) la connexion coupée (page en arrière-plan, téléphone en veille, réseau) : sur le Mac il termine
       // sa réponse ; elle arrive ici dès que la page la retrouve dans la conversation partagée
       m.attenteServeur = true;                    // la synchronisation (toutes les 5 s, et au retour sur la page) la ramène
+      // (2026-10-23) … si le Mac l'a reçu : sinon, elle repart dès qu'il répond (reprendreHorsLigne)
+      horsLigne.envois.push({ tourId: String(m.id), texte, oral: !!oral, m });
+      noterHorsLigne();
     } else { m.erreur = String(e.message || e); etat.dites.unshift(...dites); }   // à redire au prochain envoi
   }
   if (etat.flux === ctl) etat.flux = null;
@@ -1159,10 +1175,12 @@ async function transcrireVite(audio, type, contexte) {
     const r = await fetch(`/api/voix/transcrire?langue=${langue}${ctx}`, { method: 'POST', body: audio, signal: ctl.signal,
       headers: { 'Content-Type': type || 'audio/wav', 'X-Jeton': jeton() } });
     const o = await r.json().catch(() => null);
+    horsLigne.panne = 'serveur';                                    // le Mac a répondu : si ça échoue, c'est la transcription
     if (!r.ok || !o || o.erreur) { journalVoix('transcription_echec', { statut: r.status, ms: Date.now() - t0 }); return null; }
     if (Date.now() - t0 > 8000) journalVoix('transcription_lente', { ms: Date.now() - t0 });
     return (o.texte || '').trim();
   } catch (e) {
+    horsLigne.panne = 'reseau';
     journalVoix(e && e.name === 'AbortError' ? 'transcription_trop_longue' : 'transcription_erreur', { ms: Date.now() - t0 });
     return null;
   } finally { clearTimeout(minuteur); }
@@ -1428,6 +1446,8 @@ async function tourDeParole(conv, wav, infos, extra) {
   if (!vivante()) return;
   const t0Tour = Date.now();
   conv.spec = null;
+  // (2026-10-23) le Mac déjà injoignable : le tour est gardé tel quel, sans attendre 25 s une transcription impossible
+  if (horsLigne.depuis && !(extra && extra.texte)) { garderHorsLigne(wav, t0Tour); return; }
   conv.enAttente++;
   humeur('transcription…');
   let texte = '';
@@ -1436,8 +1456,11 @@ async function tourDeParole(conv, wav, infos, extra) {
     texte = extra && extra.texte ? extra.texte
       : (conv.ecrit && (conv.ecrit.confirme || conv.ecrit.partiel) ? await texteDuTour(conv) : await transcrireVite(wav, 'audio/wav'));
     if (texte === null && conv.ecrit && conv.ecrit.confirme) texte = await transcrireVite(wav, 'audio/wav');   // un morceau a échoué : le tour entier
-  } catch (e) { journalVoix('tour_erreur'); texte = ''; }
+  } catch (e) { journalVoix('tour_erreur'); texte = null; }
   finally { conv.enAttente = Math.max(0, conv.enAttente - 1); }
+  // (2026-10-23, Ahmed en voiture : 9 min à parler sans que rien n'arrive) une transcription RATÉE n'est pas du silence :
+  // avant, elle passait pour du bruit et ta phrase disparaissait sans un mot. Elle est gardée et part au retour du Mac.
+  if (texte === null && wav) { garderHorsLigne(wav, t0Tour); return; }
   texte = texte || '';
   if (!vivante()) return;
   conv.fermeture = false;                                                   // ce dernier tour, une seule fois
@@ -2074,6 +2097,81 @@ function direSpontanes() {
   humeur();
 }
 setInterval(direSpontanes, 500);
+
+/* ---------- le Mac injoignable (2026-10-23, Ahmed en voiture : il a parlé 9 min sans que rien n'arrive ni ne s'affiche)
+   Réseau coupé, cockpit qui redémarre : l'écran le dit en clair ; ce que tu dis est gardé (l'audio de chaque tour), les
+   messages partis sans arriver aussi ; toutes les 5 s, la page regarde si le Mac répond. Dès qu'il répond : les messages
+   non reçus repartent, puis ce que tu as dit pendant la coupure est transcrit dans l'ordre et part en UN message.
+   Rien n'est jeté : un tour transcrit garde son texte même si la suite échoue encore. ---------- */
+// hors de .parler (son z-index 1 la mettrait sous la barre du cockpit) : au-dessus de tout
+try { document.body.appendChild($('horsLigne')); } catch (_) {}
+function montrerHorsLigne(texte, revenu = false) {
+  const b = $('horsLigne');
+  if (!texte) { b.hidden = true; return; }
+  b.textContent = texte; b.classList.toggle('revenu', revenu); b.hidden = false;
+}
+function texteHorsLigne() {
+  const n = horsLigne.tours.length + horsLigne.envois.length;
+  return `${horsLigne.panne === 'serveur' ? 'La transcription ne répond pas sur le Mac' : 'Pas de connexion avec le Mac'} — je garde ce que tu dis`
+    + `${n ? ` (${n} message${n > 1 ? 's' : ''} en attente)` : ''}, et je l’envoie dès qu’il répond.`;
+}
+function noterHorsLigne() {
+  if (!horsLigne.depuis) { horsLigne.depuis = Date.now(); journalVoix('hors_ligne'); }
+  montrerHorsLigne(texteHorsLigne());
+  humeur('pas de connexion avec le Mac : je garde ce que tu dis');
+}
+function garderHorsLigne(wav, t) {
+  if (horsLigne.tours.length < 60) horsLigne.tours.push({ wav, t, texte: null });   // (une heure de parole, au plus)
+  journalVoix('tour_garde', { en_attente: horsLigne.tours.length });
+  noterHorsLigne();
+}
+// la réponse du Mac ({ ok, o }), ou null s'il ne répond pas du tout (réseau coupé, cockpit arrêté)
+async function demanderMac(url, ms = 4000) {
+  const ctl = new AbortController(), minuteur = setTimeout(() => ctl.abort(), ms);
+  try {
+    const r = await fetch(url, { headers: { 'X-Jeton': jeton() }, signal: ctl.signal, cache: 'no-store' });
+    return { ok: r.ok, o: r.ok ? await r.json().catch(() => null) : null };
+  } catch (_) { return null; } finally { clearTimeout(minuteur); }
+}
+const heureCourte = (ms) => new Date(ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+async function reprendreHorsLigne() {
+  if (!horsLigne.depuis || horsLigne.enCours) return;
+  horsLigne.enCours = true;
+  try {
+    if (!(await demanderMac('/api/jarvis/interieur'))) return;               // toujours injoignable
+    // 1. les messages partis pendant la coupure : renvoyés seulement si le Mac ne les a pas reçus (sinon sa réponse
+    //    revient par la synchronisation)
+    while (horsLigne.envois.length) {
+      const e = horsLigne.envois[0];
+      const r = await demanderMac(`/api/jarvis/recu?tour_id=${encodeURIComponent(e.tourId)}`);
+      if (!r) return;
+      horsLigne.envois.shift();
+      if (r.ok && r.o && r.o.recu) continue;                                 // dans le doute, renvoyé : rien n'est perdu
+      if (!e.m.texte) { const i = etat.messages.indexOf(e.m); if (i >= 0) etat.messages.splice(i, 1); }
+      montrerHorsLigne('Connexion revenue — je renvoie ton message', true);
+      await envoyer(e.texte, e.oral, { joints: [] });
+    }
+    // 2. ce que tu as dit pendant la coupure : transcrit dans l'ordre (chaque texte gardé dès qu'il est compris)
+    for (const t of horsLigne.tours) {
+      if (t.texte !== null) continue;
+      montrerHorsLigne('Connexion revenue — je transcris ce que tu as dit…', true);
+      const x = await transcrireVite(t.wav, 'audio/wav');
+      if (x === null) return;                                                // coupé de nouveau : on reprendra ici
+      t.texte = x;
+    }
+    const tours = horsLigne.tours.splice(0);
+    const dit = tours.map(t => t.texte).filter(x => Conversation.utile(x));
+    journalVoix('retour_en_ligne', { duree_ms: Date.now() - horsLigne.depuis, tours: tours.length });
+    horsLigne.depuis = 0;
+    envoyerJournalVoix();
+    if (dit.length) {
+      montrerHorsLigne('Connexion revenue — j’envoie ce que tu as dit', true);
+      setTimeout(() => { if (!horsLigne.depuis) montrerHorsLigne(''); }, 4000);
+      await envoyer(`(dit pendant la coupure, de ${heureCourte(tours[0].t)} à ${heureCourte(tours[tours.length - 1].t)}) ${dit.join(' … ')}`, true);
+    } else { montrerHorsLigne('Connexion revenue', true); setTimeout(() => { if (!horsLigne.depuis) montrerHorsLigne(''); }, 3000); }
+  } finally { horsLigne.enCours = false; }
+}
+setInterval(reprendreHorsLigne, 5000);
 const accuses = new Set();
 async function accuserReception() {
   if (document.visibilityState !== 'visible') return;      // « vu » = affiché sur un écran visible, pas reçu en fond
