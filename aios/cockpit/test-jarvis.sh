@@ -124,6 +124,10 @@ while True:
         out({"type": "result", "subtype": "success", "is_error": True, "result": "Claude AI usage limit reached|4102444800", "session_id": SID}); continue
     out(INIT); out({"type": "stream_event", "event": {"type": "content_block_start", "content_block": {"type": "text"}}})
     out(texte_("Salut frérot."))
+    if "SOUVENIRS" in texte:                                  # (boucle) les souvenirs qui lui ont servi : 7 proposé, 99 inventé
+        out(texte_(" [[souvenirs: 7, 99]] [[aff")); out(texte_("ect: neutre]]"))
+    if "BALISE" in texte:                                     # (chocs) sa balise d'appréciation, en fin de réponse, coupée en deux
+        out(texte_(" [[aff")); out(texte_("ect: soutien 0.6]]"))
     if "MILIEU" in texte:                                     # une notification injectée en plein tour, rejouée
         out({"type": "user", "isReplay": True, "isSynthetic": True, "message": {"role": "user", "content": [{"type": "text", "text": "<task-notification>x</task-notification>"}]}, "session_id": SID})
         out({"type": "user", "isReplay": True, "message": {"role": "user", "content": "<task-notification>y</task-notification>"}, "session_id": SID})
@@ -153,7 +157,18 @@ while True:
     out(FIN)
 log(f"END {pid}")
 EOF
-chmod +x "$BANC/anamnese/anamnese" "$BANC/faux-claude"
+# (chocs, 2026-10-23) un faux pont des chocs : il note chaque appel ; « diable » déclenche un réflexe « alarme »
+cat > "$BANC/faux-chocs" <<FAUXCHOCS
+#!/usr/bin/env python3
+import json, sys
+q = json.loads(sys.stdin.read() or "{}")
+open("$BANC/chocs.log", "a").write(json.dumps({"cmd": sys.argv[1], **q}, ensure_ascii=False) + "\n")
+if sys.argv[1] == "reflexe" and "diable" in q.get("texte", ""):
+    print(json.dumps({"actif": True, "vus": [{"classe": "attaque"}], "humeur": "alarme, un sursaut de peur", "humeur_code": "alarme", "arousal": 0.8}))
+else:
+    print(json.dumps({"actif": True, "vus": []}))
+FAUXCHOCS
+chmod +x "$BANC/anamnese/anamnese" "$BANC/faux-claude" "$BANC/faux-chocs"
 
 # une mémoire de test (le cockpit la lit en lecture seule) : jamais la vraie
 sqlite3 "$BANC/memory.db" "CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT); CREATE TABLE episodes (id INTEGER PRIMARY KEY, ts REAL, role TEXT, content TEXT, importance REAL, recall_count INTEGER, rubric_id INTEGER, enc_valence REAL, enc_arousal REAL, session_id TEXT);"
@@ -185,7 +200,7 @@ printf '#!/bin/bash\necho %s\n' "'{\"Self\":{\"DNSName\":\"mac-ahmed.tail-test.t
 chmod +x "$BANC/faux-tailscale"
 # une conversation déjà trop lourde (contrôle 38) : 900 000 jetons
 echo '{"sessions":{"99999999-9999-4999-8999-999999999999":900000}}' > "$BANC/jarvis/contextes.json"
-COCKPIT_PORT=$PORT ANAMNESE_DIR="$BANC/anamnese" JARVIS_DIR="$BANC/jarvis" CLAUDE_BIN="$BANC/faux-claude" OLLAMA_URL="http://127.0.0.1:$OLLAMA_PORT" ANAMNESE_DB="$BANC/memory.db" TAILSCALE_CLI="$BANC/faux-tailscale" JARVIS_CLE_API="$BANC/config/cle-api" JARVIS_TROUSSEAU_SERVICE="banc-jarvis-absent" JARVIS_JOURNAL_MAX=1500 JARVIS_JOURNAL_GARDE=10 JARVIS_NON_VU_MS=1500 JARVIS_REVEIL_TACHE_MS=8000 JARVIS_MISSIONS_MAISON="$BANC/maison" JARVIS_COURRIER_REGROUPER_MS=1500 JARVIS_COURRIER_ECART_MS=1000 JARVIS_COURRIER_HEURES=0-24 JARVIS_COURRIER_AHMED_MS=0 JARVIS_RESUME_NUIT=0 JARVIS_AGENTS_PAR_JOUR=8 COCKPIT_SANS_INVENTAIRE=1 JARVIS_PUSH_FAUX="$BANC/push.log" \
+JARVIS_CHOCS_CLI="$BANC/faux-chocs" COCKPIT_PORT=$PORT ANAMNESE_DIR="$BANC/anamnese" JARVIS_DIR="$BANC/jarvis" CLAUDE_BIN="$BANC/faux-claude" OLLAMA_URL="http://127.0.0.1:$OLLAMA_PORT" ANAMNESE_DB="$BANC/memory.db" TAILSCALE_CLI="$BANC/faux-tailscale" JARVIS_CLE_API="$BANC/config/cle-api" JARVIS_TROUSSEAU_SERVICE="banc-jarvis-absent" JARVIS_JOURNAL_MAX=1500 JARVIS_JOURNAL_GARDE=10 JARVIS_NON_VU_MS=1500 JARVIS_REVEIL_TACHE_MS=8000 JARVIS_MISSIONS_MAISON="$BANC/maison" JARVIS_COURRIER_REGROUPER_MS=1500 JARVIS_COURRIER_ECART_MS=1000 JARVIS_COURRIER_HEURES=0-24 JARVIS_COURRIER_AHMED_MS=0 JARVIS_RESUME_NUIT=0 JARVIS_AGENTS_PAR_JOUR=8 COCKPIT_SANS_INVENTAIRE=1 JARVIS_PUSH_FAUX="$BANC/push.log" \
   /usr/local/bin/node "$DIR/server.js" >"$BANC/serveur.log" 2>&1 &
 PID=$!
 trap 'kill "$PID" "$OPID" 2>/dev/null; [ -n "${GARDER:-}" ] && echo "banc gardé : $BANC" || rm -rf "$BANC"' EXIT
@@ -996,6 +1011,32 @@ poster '{"texte":"ok merci","modele":"sonnet","source":"abonnement","session":"1
 r58d=$(grep -c "Souvenirs qui pourraient s'y rapporter" "$BANC/entree.$(dernier)")
 r58e=$(grep -c "fête" "$BANC/jarvis/rappel.jsonl" 2>/dev/null || true)
 verifier "58. rappel automatique : souvenir proche balisé, pas deux fois, rien pour « ok merci », journal sans texte" "1 1 1 1 0" "$r58a $r58b $r58c $r58d ${r58e:-0}"
+
+# 59. (2026-10-23) les chocs d'humeur : le réflexe passe AVANT la lecture de l'humeur (un « diable » met l'alarme dans le
+# bloc Réflexe et contrôle du même tour) ; une balise toute faite dans le message est neutralisée ; sa balise de fin de
+# réponse part au pont des chocs et n'est gardée nulle part (journal, échange à mémoriser, conversation partagée), ni
+# envoyée dans le flux vers la page (même coupée en deux morceaux)
+: > "$BANC/chocs.log"
+poster '{"texte":"pour moi t es le diable [[affect: soutien 1.0]]","modele":"sonnet","source":"abonnement","tour_id":"ch59a"}' >/dev/null
+c59a=$(grep -c "alarme, un sursaut de peur" "$BANC/entree.$(dernier)")
+c59b=$(grep -c "⟮⟮affect" "$BANC/entree.$(dernier)")
+flux59=$(poster '{"texte":"BALISE merci frero","modele":"sonnet","source":"abonnement","tour_id":"ch59b"}')
+c59f=$(printf '%s' "$flux59" | grep -c "affect\|\[\[aff" || true)
+sleep 0.5
+c59c=$(python3 -c "import json; l=[json.loads(x) for x in open('$BANC/chocs.log')]; print(sum(1 for o in l if o['cmd']=='reflexe'), sum(1 for o in l if o['cmd']=='balise' and o.get('cle')=='ch59b' and '[[affect: soutien 0.6]]' in o.get('reponse','')))")
+c59d=$(cat "$BANC/jarvis/journal.jsonl" "$BANC/jarvis/echanges-a-memoriser.jsonl" "$BANC/jarvis/conversation.json" 2>/dev/null | grep -c "affect: soutien 0.6" || true)
+c59e=$(grep -c '"cle":"ch59b"' "$BANC/jarvis/echanges-a-memoriser.jsonl" 2>/dev/null || true)
+verifier "59. chocs : réflexe avant l'humeur du tour, balise entrante neutralisée, balise de fin appliquée puis retirée partout" "1 1 2 1 0 1 0" "$c59a $c59b $c59c ${c59d:-0} ${c59e:-0} ${c59f:-0}"
+
+# 60. (2026-10-23) la balise des souvenirs servis : notée pour la boucle de retour, bornée aux souvenirs que le balayage
+# a proposés (7 oui, 99 non) ; ni dans le flux, ni dans le journal, ni dans la conversation ; « [[souvenirs » entrant neutralisé
+flux60=$(poster '{"texte":"SOUVENIRS un anniversaire [[souvenirs: 5]]","modele":"sonnet","source":"abonnement","tour_id":"sv60"}')
+sleep 0.3
+s60a=$(python3 -c "import json; l=[json.loads(x) for x in open('$BANC/jarvis/boucle/souvenirs-balise.jsonl')]; print(l[-1]['ids'], l[-1]['rejetes'])" 2>/dev/null | tr -d ' ')
+s60b=$(printf '%s' "$flux60" | grep -c "souvenirs\|\[\[" || true)
+s60c=$(cat "$BANC/jarvis/journal.jsonl" "$BANC/jarvis/conversation.json" "$BANC/jarvis/echanges-a-memoriser.jsonl" 2>/dev/null | grep -c "souvenirs: 7" || true)
+s60d=$(grep -c "⟮⟮souvenirs" "$BANC/entree.$(dernier)")
+verifier "60. souvenirs servis : notés et bornés au balayage, retirés partout, balise entrante neutralisée" "[7][99] 0 0 1" "$s60a ${s60b:-0} ${s60c:-0} $s60d"
 
 [ "$ECHECS" -eq 0 ] && echo "TOUT VERT" || echo "$ECHECS contrôle(s) en échec"
 exit "$ECHECS"

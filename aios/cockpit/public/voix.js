@@ -68,7 +68,13 @@
      (« 5 $ et 10 $ » n'est pas une formule). Aussi $$…$$, \[…\] et \(…\). */
   const FORMULE = /(\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$(?=[^\s$])([^$\n]*?[^\s$\\])\$(?!\d))(?:\s*(?:\[\[|⟮⟮)voix:\s*([^\]⟯]*?)\s*(?:\]\]|⟯⟯))?/g;
   const VOIX_SEULE = /(?:\[\[|⟮⟮)voix:\s*([^\]⟯]*?)\s*(?:\]\]|⟯⟯)/g;   // ⟮⟮…⟯⟯ : la forme vue dans un bloc de données
-  const OUVRANT = /\$\$|\\\[|\\\(|\[\[voix:|⟮⟮voix:|\$(?=[^\s$\d])/;
+  const OUVRANT = /\$\$|\\\[|\\\(|\[\[voix:|⟮⟮voix:|\[\[\s*(?:affect|souvenirs)|\$(?=[^\s$\d])/;
+  /* (2026-10-23, chocs d'humeur) la balise d'appréciation de Hakim, [[affect: …]], à la fin de sa réponse : ni lue, ni
+     affichée ; pendant le flux, un début de balise en fin de texte (« [[aff ») est caché lui aussi. */
+  const AFFECT = /\s*(?:\[\[|⟮⟮)\s*(?:affect|souvenirs)\s*:[^\]⟯]{0,300}(?:\]\]|⟯⟯)/gi;   // et [[souvenirs: …]] (boucle de retour)
+  const prefixeBalise = (mot, i = 0) => i === mot.length ? '(?:\\s*:[^\\]\\n]{0,300})?' : `${mot[i]}(?:${prefixeBalise(mot, i + 1)})?`;
+  const AFFECT_OUVERT = new RegExp(`\\s*\\[(?:\\[\\s*(?:${prefixeBalise('affect')}|${prefixeBalise('souvenirs')})?)?$`, 'i');
+  const sansAffect = (t, flux) => { const x = String(t == null ? '' : t).replace(AFFECT, ''); return flux ? x.replace(AFFECT_OUVERT, '') : x; };
   const PREFIXE_VOIX = /^\s*(?:[\[⟮](?:[\[⟮](?:v(?:o(?:i(?:x:?)?)?)?)?)?)?$/;
   function formuleParlee(tex, dit) {
     if (dit) return dit;
@@ -188,7 +194,7 @@
     while ((f = fr.exec(s))) fences.push([f.index, f.index + f[0].length]);
     const ouvert = (s.slice(fences.length ? fences[fences.length - 1][1] : 0).match(/```/g) || []).length % 2;
     if (ouvert) fences.push([s.lastIndexOf('```'), Infinity]);
-    const z = fences.slice(), re = new RegExp(FORMULE.source + '|' + VOIX_SEULE.source, 'g');
+    const z = fences.slice(), re = new RegExp(FORMULE.source + '|' + VOIX_SEULE.source + '|' + AFFECT.source, 'gi');
     let m, fin = 0, derniere = null;
     while ((m = re.exec(s))) { z.push([m.index, m.index + m[0].length]); fin = m.index + m[0].length; derniere = m; }
     const reste = s.slice(fin), o = reste.search(OUVRANT);
@@ -201,7 +207,7 @@
 
   /* ---- texte lisible à voix haute ---- */
   function pourLaVoix(texte) {
-    let t = String(texte || '')
+    let t = sansAffect(texte)
       .replace(FORMULE, (_t, _f, d1, d2, i1, i2, dit) => ' ' + formuleParlee(d1 ?? d2 ?? i1 ?? i2, dit) + ' ')
       .replace(VOIX_SEULE, ' $1 ')
       .replace(/```[\s\S]*?```/g, ' (bloc de code) ')
@@ -446,7 +452,7 @@
     return lecteur;
   }
 
-  const Voix = { versArabe, segmenter, pourLaVoix, decoupeur, choisirVoix, creerLecteur, FORMULE, VOIX_SEULE, latexParle,
+  const Voix = { versArabe, segmenter, pourLaVoix, decoupeur, choisirVoix, creerLecteur, FORMULE, VOIX_SEULE, AFFECT, sansAffect, latexParle,
     diction, prononcable, enLettres };
   racine.Voix = Voix;
   if (typeof module !== 'undefined' && module.exports) module.exports = Voix;

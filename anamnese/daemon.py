@@ -1039,6 +1039,11 @@ def battement_interieur(etat, arret=None, pas_s=15):
     mem_fil = Memory()
     while not arret.is_set():
         try:
+            import chocs                                    # (2026-10-23) les reprises en main arrivées à échéance
+            chocs.echeances(mem_fil)
+        except Exception as e:
+            print("[daemon] chocs : reprise en main en erreur :", e)
+        try:
             interieur.tick(mem_fil, penser=lambda m: etat.__setitem__("motif", dict(m, _ts=time.time())),
                            activite=etat.get("activite"))
         except Exception as e:

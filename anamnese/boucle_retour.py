@@ -13,6 +13,11 @@ Une ligne JSON par événement (format de Hakim, dossier du 22/10) :
 - correction : le message suivant d'Ahmed commence par une correction (motifs figés ci-dessous) : chaque souvenir
   utilisé dans la réponse corrigée ;
 - juge : un résultat marqué important (importants.jsonl) ; le verdict du juge n'est pas encore structuré.
+- (2026-10-23, accord d'Ahmed, série 2) utilise aussi par la BALISE de Hakim, [[souvenirs: 13476, 9705]] en fin de
+  réponse quand un souvenir proposé lui a vraiment servi (le cockpit la retire de partout et l'écrit dans
+  souvenirs-balise.jsonl, bornée aux souvenirs que le balayage de la conversation lui a proposés) : la relecture
+  seule n'en voyait que 3 par jour. Et les tours se lisent dans le JOURNAL BRUT et ses archives, plus dans
+  conversation.json, plafonnée à 1 000 messages (la nuit 1 n'avait rien vu de minuit à midi le 22/10).
 SEUILS et motifs FIGÉS avant la première nuit (empreinte dans nuits.jsonl). Fichiers : ~/AIOS/jarvis/boucle/.
 """
 import hashlib
@@ -26,13 +31,16 @@ import rappel
 JARVIS = Path.home() / "AIOS" / "jarvis"
 DOSSIER = JARVIS / "boucle"
 LECTURES = DOSSIER / "lectures.jsonl"           # écrit par mcp_server.memory_lire (Hakim seulement)
+BALISES = DOSSIER / "souvenirs-balise.jsonl"    # écrit par le cockpit : la balise [[souvenirs: …]] de Hakim
+_SPONTANE = re.compile(r"^\(tour de lui-même|\[de lui-même[^\]]*\]\s*$")
 # « mots » : au moins 2 mots RARES du souvenir (présents dans au plus 1 % des souvenirs, 3 au moins) repris dans la réponse
 # sans être dans le message d'Ahmed. Essai à blanc du 22/10 : avec tous les mots de 5 lettres, 948 « utilisés » sur 1 745
 # proposés (54 %, bien trop : les mots du métier reviennent partout) ; d'où la rareté.
 # Puis un juge à l'aveugle (Sonnet, 60 cas tirés de la journée) : le souvenir sert-il VRAIMENT à la réponse ? Mots rares
 # repris : 2 vrais sur 20 ; mots de 5 lettres : 0 sur 20 ; aucun mot : 0 sur 20. Le recouvrement de mots n'est donc PAS
 # un signal d'usage : « utilise » ne vient que de la relecture (memory_lire) ; le recouvrement est noté à part, « indice ».
-SEUILS = {"mots": 2, "longueur_mot": 5, "rare_part": 0.01, "rare_min": 3, "fenetre_balayage_s": 120, "debut_correction": 80}
+SEUILS = {"mots": 2, "longueur_mot": 5, "rare_part": 0.01, "rare_min": 3, "fenetre_balayage_s": 120, "debut_correction": 80,
+          "source": "journal", "balise_souvenirs": 1}            # série 2 (2026-10-23) : nouvelle empreinte, compteurs à zéro
 CORRECTION = re.compile(r"\b(non,? c'?est pas (ça|ca|ce que)|c'?est faux|t'?as faux|tu as faux|tu te trompes|pas du tout|"
                         r"n'?importe quoi|c'?est pas vrai|tu confonds|pas exactement|t'?as rien compris|mais non)\b", re.I)
 
@@ -66,6 +74,27 @@ def noter_lecture(ids, maintenant=None, fichier=None):
         h.write(json.dumps({"ts": time.time() if maintenant is None else maintenant, "ids": [int(i) for i in ids][:10]}) + "\n")
 
 
+def journal_brut(depuis, jusqua, dossier=None):
+    """Les messages d'Ahmed et de Hakim, du journal brut ET de ses archives (le cockpit fait tourner journal.jsonl à
+    4 Mo et range le reste dans archives/journal-AAAA-MM.jsonl), au format de conversation.json ; sans les tours de
+    lui-même (ce ne sont pas des réponses)."""
+    d = Path(dossier or JARVIS)
+    fichiers = sorted((d / "archives").glob("journal-*.jsonl")) + [d / "journal.jsonl"]
+    a, b = (depuis - 6 * 3600) * 1000, (jusqua + 6 * 3600) * 1000     # de la marge : la réponse, le message suivant
+    vus, out = set(), []
+    for f in fichiers:
+        for o in _jsonl(f):
+            t = o.get("ts")
+            if not isinstance(t, (int, float)) or not (a <= t <= b) or (t, o.get("qui")) in vus:
+                continue
+            vus.add((t, o.get("qui")))
+            texte = str(o.get("texte") or "")
+            if o.get("qui") != "ahmed" and _SPONTANE.search(texte):
+                continue
+            out.append({"id": t, "ts": t, "qui": "u" if o.get("qui") == "ahmed" else "j", "texte": texte})
+    return {"messages": sorted(out, key=lambda m: m["ts"])}
+
+
 def tours(conversation):
     """[(message d'Ahmed, réponse de Hakim, ts du message, ts du message suivant d'Ahmed, texte suivant)]"""
     msgs = [m for m in conversation.get("messages", []) if isinstance(m, dict)]
@@ -80,9 +109,11 @@ def tours(conversation):
     return out
 
 
-def evenements(mem, depuis, jusqua, conversation=None, balayages=None, lectures=None, rates=None, importants=None):
+def evenements(mem, depuis, jusqua, conversation=None, balayages=None, lectures=None, rates=None, importants=None,
+               balises=None):
     """Les événements de la période [depuis, jusqua[ (secondes)."""
-    conv = conversation if conversation is not None else _lire_json(JARVIS / "conversation.json")
+    conv = conversation if conversation is not None else journal_brut(depuis, jusqua)
+    bh = balises if balises is not None else _jsonl(BALISES)
     bal = balayages if balayages is not None else _jsonl(JARVIS / "rappel.jsonl")
     lec = lectures if lectures is not None else _jsonl(LECTURES)
     rat = rates if rates is not None else _jsonl(JARVIS / "rappels-rates.jsonl")
@@ -105,6 +136,7 @@ def evenements(mem, depuis, jusqua, conversation=None, balayages=None, lectures=
         proposes = [int(i) for i in (b or {}).get("ids", [])]
         fin_tour = t_suiv if t_suiv else t + 3600
         lus = {int(i) for x in lec if t - 5 <= x.get("ts", 0) < fin_tour for i in x.get("ids", [])}
+        servis = {int(i) for x in bh if t <= x.get("ts", 0) < fin_tour for i in x.get("ids", [])}
         r_mots, a_mots = mots((rep or {}).get("texte", "")), mots(m.get("texte", ""))
         utilises = []
         for eid in proposes:
@@ -112,11 +144,15 @@ def evenements(mem, depuis, jusqua, conversation=None, balayages=None, lectures=
             sm = {w for w in mots(contenu(eid)) if rares(w)}
             repris = (sm & r_mots) - a_mots
             score = round(len(repris) / len(sm), 3) if sm else 0.0
-            if eid in lus:
+            if eid in lus or eid in servis:
                 utilises.append(eid)
-                out.append({"t": t, "type": "utilise", "souvenir": eid, "message": mid, "source": "lecture", "score_recouvrement": score})
+                out.append({"t": t, "type": "utilise", "souvenir": eid, "message": mid,
+                            "source": "lecture" if eid in lus else "balise", "score_recouvrement": score})
             elif len(repris) >= SEUILS["mots"]:                  # un INDICE seulement (juge du 22/10 : 2 vrais sur 20)
                 out.append({"t": t, "type": "indice", "souvenir": eid, "message": mid, "source": "recouvrement", "score_recouvrement": score})
+        for eid in sorted(servis - set(proposes)):             # proposé plus tôt dans la conversation, servi maintenant
+            utilises.append(eid)
+            out.append({"t": t, "type": "utilise", "souvenir": eid, "message": mid, "source": "balise", "score_recouvrement": None})
         if utilises and t_suiv and CORRECTION.search(str(texte_suiv)[:SEUILS["debut_correction"]]):
             for eid in utilises:
                 out.append({"t": t_suiv, "type": "correction", "souvenir": eid, "message": mid, "source": "ahmed", "score_recouvrement": None})
@@ -170,9 +206,11 @@ def nuit(mem, maintenant=None, dossier=None, **sources):
     p, u = compte("propose"), compte("utilise")
     b = {"nuit": len(nuits) + 1, "date": time.strftime("%Y-%m-%d", time.localtime(maintenant)), "depuis": depuis, "jusqua": maintenant,
          "messages": len({e["message"] for e in ev if e["type"] == "propose"}), "proposes": p, "utilises": u,
-         "utilises_lecture": compte("utilise", "lecture"), "indices_recouvrement": compte("indice", "recouvrement"),
+         "utilises_lecture": compte("utilise", "lecture"), "utilises_balise": compte("utilise", "balise"),
+         "indices_recouvrement": compte("indice", "recouvrement"),
          "rates_hakim": compte("rate", "hakim"), "rates_indices": compte("rate", "recall_manuel"), "corrections": compte("correction"),
-         "juge": compte("juge"), "taux_utilise": round(u / p, 3) if p else None, "regles": empreinte_regles()}
+         "juge": compte("juge"), "taux_utilise": round(u / p, 3) if p else None, "regles": empreinte_regles(),
+         "nuit_de_la_serie": 1 + sum(1 for x in nuits if x.get("regles") == empreinte_regles())}
     with (d / "nuits.jsonl").open("a", encoding="utf-8") as h:
         h.write(json.dumps(b, ensure_ascii=False) + "\n")
     return b

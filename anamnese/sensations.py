@@ -88,14 +88,16 @@ def ecarts(etat, base):
     return out
 
 
-def calculer(etat, avant=None, now=0.0, soudaine=None, hour=None, n=2):
-    """{"emotion", "mots", "scores", "ts"} : 2 (ou 3) formulations pour les émotions dominantes."""
+def calculer(etat, avant=None, now=0.0, soudaine=None, hour=None, n=2, sans_coherence=False):
+    """{"emotion", "mots", "scores", "ts"} : 2 (ou 3) formulations pour les émotions dominantes.
+    sans_coherence (chocs, 2026-10-23) : juste après une attaque, le négatif n'est pas divisé par deux sous une valence
+    haute — un choc passe outre la bonne humeur de fond."""
     base = bases(hour)
     d = ecarts(etat, base)
     t = {h: (float(etat.get(h, base[h])) - float((avant or {}).get(h, etat.get(h, base[h])))) for h in base}
     v, _a = affect.valence_arousal(etat)
     v0, _a0 = affect.valence_arousal(base)
-    sens = 1 if v - v0 > 0.08 else -1 if v - v0 < -0.08 else 0
+    sens = 0 if sans_coherence else 1 if v - v0 > 0.08 else -1 if v - v0 < -0.08 else 0
     scores = {}
     for nom, signe, regle, _f in REGLES:
         s = regle(d, t)

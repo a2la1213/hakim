@@ -71,16 +71,22 @@ def deja_note(journal, nom, ts, fenetre_s=DOUBLON_S):
     return False
 
 
-def appliquer(mem, texte, sujet, ts, journal=None):
-    """Évalue les mots d'Ahmed et applique les événements (v2 seulement). Rend la liste appliquée."""
+def appliquer(mem, texte, sujet, ts, journal=None, exclure=(), facteur=None):
+    """Évalue les mots d'Ahmed et applique les événements (v2 seulement). Rend la liste appliquée.
+    exclure : les événements que ce message ne doit pas déclencher (chocs.py : une attaque n'est pas une réussite ; la
+    colère d'Ahmed qui défend Hakim n'est pas un échec) ; facteur(nom) : un multiplicateur (l'habituation du soutien)."""
     import affect
     if not affect.v2_actif(mem):
         return []
     journal = journal or affect.chemin_journal(mem)
     faits = []
     for nom, intensite in evaluer(texte):
-        if journal and deja_note(journal, nom, ts):
+        if nom in exclure or (journal and deja_note(journal, nom, ts)):
             continue
+        if facteur:
+            intensite = round(intensite * facteur(nom), 3)
+            if intensite <= 0:
+                continue
         affect.event(mem, nom, intensite, sujet=sujet, source="parole")
         faits.append((nom, intensite))
     return faits

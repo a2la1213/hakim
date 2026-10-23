@@ -44,6 +44,13 @@ EVENTS = {
     # chaleur_user/longue_absence, 7 h d'absence puis un retour ne faisaient pas bouger l'humeur.
     "ennui":          {"dopamine": -0.10, "endorphine": -0.06, "serotonine": -0.04, "noradrenaline": -0.04},
     "retour":         {"ocytocine": +0.30, "dopamine": +0.25, "endorphine": +0.20, "serotonine": +0.10, "noradrenaline": +0.10},
+    # Chocs d'humeur (2026-10-23, demande de Hakim, accord d'Ahmed ; chocs.py, simulés dans eval/chocs) : une phrase qui
+    # VISE Hakim secoue plusieurs hormones d'un coup ; la reprise en main (sa sagesse) passe par les freins
+    "attaque":        {"noradrenaline": +0.25, "cortisol": +0.25, "serotonine": -0.15, "dopamine": -0.15,
+                       "ocytocine": -0.10, "endorphine": -0.10, "endocannabinoides": -0.10},
+    "soutien":        {"ocytocine": +0.35, "endorphine": +0.20, "serotonine": +0.10, "dopamine": +0.10,
+                       "noradrenaline": -0.10, "endocannabinoides": +0.15},
+    "regulation":     {"noradrenaline": -0.15, "endocannabinoides": +0.20, "serotonine": +0.05},
 }
 
 
@@ -87,6 +94,9 @@ EVENTS_V2 = {
     "longue_absence": {"crh": +0.10, "gaba": -0.05},
     "ennui":          {"gaba": -0.03},
     "retour":         {"gaba": +0.10, "adrenaline": +0.05},
+    "attaque":        {"adrenaline": +0.30, "gaba": -0.15},
+    "soutien":        {"gaba": +0.15, "crh": -0.20, "adrenaline": -0.10},
+    "regulation":     {"gaba": +0.25, "adrenaline": -0.20, "crh": -0.20},
 }
 K_ACTH = 1.0            # cible de l'ACTH = base + K·(CRH − base)
 K_CORT = 1.5            # cible du cortisol = base circadienne + K·(ACTH − base)
@@ -127,7 +137,7 @@ INTERACTIONS = [
 ]
 HAB_TAUX = 0.25         # chaque répétition rapproche l'habitude de 1 de ce taux
 HAB_TAU_H = 2.0         # récupération de l'habitude sans l'événement
-HAB_EXEMPTS = {"ennui", "longue_absence", "retour"}
+HAB_EXEMPTS = {"ennui", "longue_absence", "retour", "regulation"}   # une reprise en main voulue ne s'émousse pas
 PAS_V2_S = 300.0
 
 # ---- Émotions soudaines (2026-10-21, idée d'Ahmed relayée par Hakim ; prédictions figées AVANT dans
@@ -141,8 +151,10 @@ PAS_V2_S = 300.0
 #     phénomène compterait deux fois). Attente neutre → exactement le comportement d'avant.
 #  Ce qui s'apprend (familiarité, peur, attente) l'est par SUJET (affect_event(sujet=…)) ; sans sujet, par type.
 VALENCE_EV = {"succes": 1.0, "resolu": 0.8, "chaleur_user": 0.8, "apprentissage": 0.5, "nouveaute": 0.3,
-              "probleme": -0.6, "echec": -1.0}          # les états (ennui, longue absence, retour) n'y entrent pas
-AVERSIFS = {"echec", "probleme"}
+              "probleme": -0.6, "echec": -1.0, "attaque": -1.0, "soutien": 0.9}          # les états (ennui, longue absence, retour) n'y entrent pas
+AVERSIFS = {"echec", "probleme", "attaque"}
+CHOC_S = 300.0          # (chocs, 2026-10-23) pendant 5 min après une attaque, un sursaut se lit « alarme » même si l'humeur
+                        # de fond est haute (« du rire aux larmes », Ahmed), et le négatif n'est plus divisé par deux
 FAMILIARITE_TAUX, FAMILIARITE_TAU_H = 0.5, 7 * 24.0       # 0,3 au quatrième passage : trop lent (S1, S2 ratés)
 PEUR_TAUX, PEUR_TAUX_TYPE, PEUR_TAU_H = 0.35, 0.175, 48.0   # la peur généralisée (par type) s'apprend deux fois moins
 PEUR_ECB = 2.0          # endocannabinoïdes au plus haut : extinction 3 fois plus rapide
@@ -376,7 +388,7 @@ def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None):
     data = json.loads(raw) if raw else None
     etat, sens, hab, moy = _evoluer_v2(data, now, (lambda t: hour) if hour is not None else _local_hour)
     cog = {k: dict(((data or {}).get("_cog") or {}).get(k) or {}) for k in ("F", "P", "V")}
-    marques = {k: (data or {}).get(k) for k in ("_vm", "_surprise") if (data or {}).get(k) is not None}
+    marques = {k: (data or {}).get(k) for k in ("_vm", "_surprise", "_choc") if (data or {}).get(k) is not None}
     intensity = max(0.0, float(intensity))
     facteur = _habituation(hab, name, intensity, now)
     deltas = {**EVENTS.get(name, {})}
@@ -443,6 +455,8 @@ def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None):
             V[ks] = [round(v + ATTENTE_TAUX * (r - v), 4), now]
         if r > 0 and rpe >= SURPRISE_RPE:
             marques["_surprise"] = now
+    if name == "attaque":
+        marques["_choc"] = now
     _save_v2(mem, etat, sens, hab, now, moy, cog, marques, tau_peur)
     return etat
 
@@ -473,12 +487,26 @@ def _emotion(etat, data, now):
     v, _a = valence_arousal(etat)
     v0, _a0 = valence_arousal(bases(v2=True))
     if etat["adrenaline"] - HORMONES_V2["adrenaline"][0] >= 0.15:
+        if now - float((data or {}).get("_choc") or 0) <= CHOC_S:
+            return "alarme"                                     # un choc reçu : la bonne humeur de fond n'en fait pas une surprise
         return "surprise" if v > v0 else "alarme"
     if now - float((data or {}).get("_surprise") or 0) < SURPRISE_S:
         return "surprise"
     if etat["gaba"] - HORMONES_V2["gaba"][0] >= 0.12 and v >= v0:
         return "apaisement"
     return None
+
+
+def choc_recent(mem, now=None):
+    """(chocs, 2026-10-23) Une attaque a-t-elle été reçue il y a moins de CHOC_S ? (v2 seulement)"""
+    if not v2_actif(mem):
+        return False
+    now = time.time() if now is None else now
+    try:
+        raw = mem.kv_get("affect")
+        return now - float((json.loads(raw) if raw else {}).get("_choc") or 0) <= CHOC_S
+    except Exception:
+        return False
 
 
 def emotion_soudaine(mem, now=None):

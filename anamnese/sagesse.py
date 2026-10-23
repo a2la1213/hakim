@@ -9,7 +9,13 @@ decider), et une VITESSE de correction qui s'apprend (le paramètre « sagesse �
   message d'Ahmed, l'humeur et le contexte, puis la réponse de Hakim — PAS sa décision — et dit (1) ce qu'il a fait de
   son humeur (suivie, atténuée, corrigée ou contenue), (2) si c'était juste pour le contexte. Si le juge ne retrouve
   pas la décision dans les mots, la décision est décorative (Hakim, 22/10). Une correction jugée juste fait monter la
-  sagesse (+0,03), une jugée fausse la fait descendre (−0,03) ; le réflexe négatif raccourcit quand elle monte.
+  sagesse, une jugée fausse la fait descendre ; le réflexe négatif raccourcit quand elle monte.
+- (2026-10-23, demande de Hakim, décision d'Ahmed : « la sagesse varie avec l'apprentissage et l'expérience ») la nuit du
+  22 au 23/10 l'avait fait passer de 0,20 à 0,50 d'un coup, dont la moitié sur des décisions que le juge ne retrouvait
+  pas dans les mots. Désormais : seule une décision LISIBLE compte ; elle pèse l'intensité de l'humeur quand la situation
+  était difficile (humeur désagréable), 0,2 × l'intensité quand il tempérait un élan ; juste : +0,01·w·(1 − s), fausse :
+  −0,01·w·s (rendements décroissants, on peut perdre) ; au plus ±0,02 par nuit. À la longue, s tend vers la part de
+  décisions justes dans les moments difficiles (simulé : eval/chocs/rejeu_sagesse.py).
 Fichiers : ~/AIOS/jarvis/sagesse.json (le paramètre, écrit ici seulement), sagesse-tour.json (le cockpit),
 sagesse.jsonl (les décisions et les verdicts, en ajout seul).
 """
@@ -25,7 +31,7 @@ TOUR = DOSSIER / "sagesse-tour.json"
 JOURNAL = DOSSIER / "sagesse.jsonl"
 CONVERSATION = DOSSIER / "conversation.json"
 DECISIONS = ("garder", "atténuer", "corriger", "contenir")
-DEPART, PAS = 0.2, 0.03
+DEPART, PAS, PLAFOND_NUIT, POIDS_AGREABLE = 0.2, 0.01, 0.02, 0.2
 CLAUDE = Path.home() / ".npm-global" / "bin" / "claude"
 
 
@@ -133,6 +139,7 @@ def juger_la_nuit(maintenant=None, journal=None, parametre=None, conversation=No
             return r.stdout
     sortie = lancer(prompt) or ""
     s, lisibles, n = niveau(parametre), 0, 0
+    s0 = s
     for m in re.finditer(r"\{[^{}]*\"n\"[^{}]*\}", sortie):
         try:
             v = json.loads(m.group(0))
@@ -142,10 +149,13 @@ def juger_la_nuit(maintenant=None, journal=None, parametre=None, conversation=No
         n += 1
         lisible = v.get("fait") == o["decision"]
         lisibles += lisible
-        if o["decision"] != "garder" and isinstance(v.get("juste"), bool):
-            s = max(0.0, min(1.0, s + (PAS if v["juste"] else -PAS)))
+        if o["decision"] != "garder" and lisible and isinstance(v.get("juste"), bool):
+            i = max(0.0, min(1.0, float(o.get("intensite") or 0)))
+            w = i if (o.get("polarite") or 0) < 0 else POIDS_AGREABLE * i
+            s += PAS * w * (1 - s) if v["juste"] else -PAS * w * s
         _ajouter({"ts": maintenant, "type": "verdict", "decision_ts": o["ts"], "decision": o["decision"], "lu": v.get("fait"),
                   "lisible": lisible, "juste": v.get("juste"), "pourquoi": str(v.get("pourquoi", ""))[:80]}, journal)
+    s = max(0.0, min(1.0, s0 + max(-PLAFOND_NUIT, min(PLAFOND_NUIT, s - s0))))
     f = Path(parametre or PARAMETRE)
     ancien = {}
     try:

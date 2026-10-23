@@ -218,7 +218,25 @@ def _emotion(mem, e, ahmed, texte, emb, imp, raisons):
         import affect
         if not affect.v2_actif(mem):
             return imp
-        if ahmed and e.get("voix") != "autre" and not e.get("de_lui_meme"):
+        import chocs
+        exclure, facteur, avec_chocs = set(), None, chocs.actif(mem)
+        if avec_chocs and ahmed and not e.get("de_lui_meme"):
+            # (chocs, 2026-10-23) seule la VOIX d'Ahmed nourrit le lexique (le « merci » d'un invité n'est pas le sien) ;
+            # ce que la balise de Hakim a vu (attaque, soutien) écarte les lectures contraires ; la colère d'Ahmed qui
+            # le défend n'est pas un échec ; un « merci » de plus pèse moins quand la jauge est déjà pleine
+            siens = [x["texte"] for x in chocs.segments(ahmed, bool(e.get("oral")), e.get("voix")) if x["qui"] == "ahmed"]
+            vus = chocs.classes_du_tour(mem, e.get("cle")) if e.get("cle") else set()
+            if any(chocs.evaluer(x)["soutien"] for x in siens):
+                vus.add("soutien")
+            if "attaque" in vus:
+                exclure |= {"succes", "chaleur_user", "nouveaute"}
+            if "soutien" in vus:
+                exclure |= {"echec", "probleme"}
+            etat_j = affect.get_state(mem)
+            plein = chocs.jauge(etat_j, time.time())
+            facteur = lambda nom: (1 - plein) if nom == "chaleur_user" else 1.0      # noqa: E731
+            ahmed = " ".join(siens)
+        if ahmed and (avec_chocs or e.get("voix") != "autre") and not e.get("de_lui_meme"):
             import parole_affect
             sujet = None
             try:
@@ -233,7 +251,7 @@ def _emotion(mem, e, ahmed, texte, emb, imp, raisons):
                 ts = float(e.get("ts") or time.time() * 1000) / 1000
             except (TypeError, ValueError):
                 ts = time.time()
-            faits = parole_affect.appliquer(mem, ahmed, sujet, ts)
+            faits = parole_affect.appliquer(mem, ahmed, sujet, ts, exclure=exclure, facteur=facteur)
             if faits:
                 raisons.append("ses mots : " + ", ".join(n for n, _i in faits))
         charge = affect.trace(mem)["c"]

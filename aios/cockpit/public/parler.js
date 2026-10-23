@@ -625,6 +625,7 @@ function blocCode(langage, code) {
     + `<pre><code>${esc(code)}</code></pre></div>`;
 }
 function texteRiche(texte) {
+  texte = Voix.sansAffect(texte, true);              // (2026-10-23) la balise d'appréciation de Hakim n'est jamais affichée
   const rendus = [];
   const garder = (html, marque) => { rendus.push(html); return `${marque}${rendus.length - 1}\uE001`; };
   const t = String(texte || '')
@@ -902,6 +903,7 @@ async function envoyer(texte, oral, dejaRelance) {
   }
   if (etat.flux === ctl) etat.flux = null;
   m.enCours = false;
+  if (m.texte) m.texte = Voix.sansAffect(m.texte).trimEnd();     // la balise [[affect: …]] ne reste pas dans la conversation
   if (fin) {
     m.ms = fin.ms;
     if (fin.source && fin.source !== 'abonnement') m.source = fin.source;
@@ -929,7 +931,7 @@ async function envoyer(texte, oral, dejaRelance) {
 function widgetApp(quoi, texte) {
   try {
     if (!window.HakimApp || !window.HakimApp.widget) return;
-    let t = String(texte || '').replace(/```[\s\S]*?```/g, ' ').replace(/\$\$[\s\S]*?\$\$/g, ' ').replace(/[*_`#>|]+/g, '')
+    let t = Voix.sansAffect(texte).replace(/```[\s\S]*?```/g, ' ').replace(/\$\$[\s\S]*?\$\$/g, ' ').replace(/[*_`#>|]+/g, '')
       .replace(/\s+/g, ' ').trim();
     if (t.length > 140) t = '…' + t.slice(-140);
     window.HakimApp.widget(quoi, t);

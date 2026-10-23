@@ -90,7 +90,7 @@ def test_fresh_banner_is_green(tmp_path, daemon_up):
     assert line1.startswith("✅")
     assert "daemon up" in line1
     assert "consolidation (Sonnet) 6h" in line1
-    assert "rêve daemon 3h" in line1
+    assert "rêve de Gemma (secondaire) 3h" in line1
     assert "backup 26h" in line1
     conn.close()
 
@@ -152,15 +152,15 @@ def test_stale_dream_with_fresh_consolidation_no_headline_warning(tmp_path, daem
     rep = health.health_report(conn, now=NOW, backup_dir=bdir)
     assert rep["warnings"] == []                       # AUCUNE alarme en titre
     assert len(rep["notes"]) == 1
-    assert "rêve daemon" in rep["notes"][0] and "secondaire" in rep["notes"][0]
+    assert "rêve de Gemma" in rep["notes"][0] and "secondaire" in rep["notes"][0]
 
     banner = health.health_banner(rep)
     lines = banner.splitlines()
     assert lines[0].startswith("✅")                   # les notes ne passent PAS l'icône au ⚠️
     assert "consolidation (Sonnet) 6h" in lines[0]
-    assert "rêve daemon 9j" in lines[0]
+    assert "rêve de Gemma (secondaire) 9j" in lines[0]
     assert not any(l.startswith("⚠️") for l in lines)
-    assert any(l.startswith("ℹ️") and "rêve daemon" in l for l in lines[1:])
+    assert any(l.startswith("ℹ️") and "rêve de Gemma" in l for l in lines[1:])
     conn.close()
 
 
@@ -172,7 +172,7 @@ def test_stale_dream_alone_legacy_db_no_warning(tmp_path, daemon_up):
     rep = health.health_report(conn, now=NOW, backup_dir=bdir)
     assert rep["warnings"] == []
     assert rep["dream_age_h"] == pytest.approx(9 * 24.0)
-    assert any("rêve daemon" in n for n in rep["notes"])
+    assert any("rêve de Gemma" in n for n in rep["notes"])
     assert health.health_banner(rep).splitlines()[0].startswith("✅")
     conn.close()
 
@@ -207,7 +207,7 @@ def test_stale_everything_warns(tmp_path, daemon_down):
     assert "backup" in joined and ">7j" in joined
     assert len(rep["warnings"]) == 3
     # le rêve stale reste une NOTE, pas un 4e warning
-    assert any("rêve daemon" in n for n in rep["notes"])
+    assert any("rêve de Gemma" in n for n in rep["notes"])
     conn.close()
 
 
@@ -248,7 +248,7 @@ def test_missing_kv_rows_unknown_no_warning(tmp_path, daemon_up):
     assert rep["notes"] == []
     banner = health.health_banner(rep)
     assert "consolidation (Sonnet) ?" in banner
-    assert "rêve daemon ?" in banner
+    assert "rêve de Gemma (secondaire) ?" in banner
     assert "MDT ?" in banner
     conn.close()
 

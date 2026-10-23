@@ -164,7 +164,7 @@ def health_report(conn, now=None, backup_dir=None):
     dream_age_h = _age_h(last_dream_ts, now)
     if dream_age_h is not None and dream_age_h > DREAM_NOTE_H:
         notes.append(
-            f"rêve daemon (secondaire, Ollama) inactif depuis {_fmt_age(dream_age_h)} — "
+            f"rêve de Gemma (secondaire, Ollama) inactif depuis {_fmt_age(dream_age_h)} — "
             "sans impact tant que la consolidation Sonnet tourne"
         )
 
@@ -268,7 +268,7 @@ def health_banner(report):
     parts = [
         daemon,
         "consolidation (Sonnet) " + _fmt_age(report.get("consolidation_age_h")),
-        "rêve daemon " + _fmt_age(report.get("dream_age_h")),
+        "rêve de Gemma (secondaire) " + _fmt_age(report.get("dream_age_h")),   # (23/10, Ahmed) pas le vrai sommeil
         "MDT " + _fmt_age(report.get("wm_age_h")),
         "backup " + ("aucun" if report.get("last_backup_ts") is None
                      else _fmt_age(report.get("backup_age_h"))),

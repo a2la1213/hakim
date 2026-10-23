@@ -357,7 +357,8 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
             hist.append([now, {k: round(float(v), 4) for k, v in etat_h.items()}])
         e["hormones_hist"] = hist[-15:]
         avant = min(hist, key=lambda x: abs(now - 600 - x[0]))[1] if len(hist) > 1 else None
-        e["sensation_code"] = sensations.calculer(etat_h, avant, now, soudaine, time.localtime(now).tm_hour)
+        e["sensation_code"] = sensations.calculer(etat_h, avant, now, soudaine, time.localtime(now).tm_hour,
+                                                  sans_coherence=affect.choc_recent(mem, now=now))
     except Exception:
         pass
     code = humeur_code(valence, arousal, en, now - (e.get("retour_ts") or 0) < 900, veille, soudaine)

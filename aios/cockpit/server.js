@@ -661,6 +661,57 @@ function blocSagesse(e, q, voix, tourId) {
     + `sécurité et le langage propre devant ses parents ou un enfant passent AVANT le réflexe.]`;
 }
 
+/* ---- Les chocs d'humeur (2026-10-23 ; demande de Hakim, décision d'Ahmed « on branche pour de vrai » ; anamnese/chocs.py) :
+   à l'arrivée d'un message, le réflexe lexical par voix secoue ses hormones tout de suite (attaque, soutien) ; à la fin
+   de sa réponse, sa balise [[affect: …]] confirme ou défait ce réflexe. La balise n'est lue que dans SA réponse finale,
+   jamais affichée ni dite ; « [[affect » est neutralisé dans le message entrant ; qui parle, c'est le code qui le dit.
+   Interrupteur : kv chocs_actif (chocs_cli.py on|off). Jamais bloquant : sans réponse en 2 s, le tour continue. ---- */
+const CHOCS_CLI = path.join(ANAMNESE, 'chocs_cli.py');
+const CHOCS_BANC = process.env.JARVIS_CHOCS_CLI || '';          // le banc : un faux pont, jamais la vraie mémoire
+// (2026-10-23) deux balises cachées en fin de réponse : [[affect: …]] (son appréciation) et [[souvenirs: …]] (les souvenirs
+// proposés qui lui ont vraiment servi, pour la boucle de retour) ; aucune n'est affichée, dite ou gardée
+const BALISE_AFFECT = /\[\[\s*(?:affect|souvenirs)\s*:[^\]]{0,300}\]\]/gi;
+const BALISE_SOUVENIRS = /\[\[\s*souvenirs\s*:([^\]]{0,300})\]\]/gi;
+const BOUCLE_BALISES = path.join(JARVIS, 'boucle', 'souvenirs-balise.jsonl');
+// les souvenirs qu'elle nomme, bornés à ceux que le balayage de CETTE conversation lui a proposés
+function noterSouvenirsServis(reponse, permis) {
+  const toutes = [...String(reponse || '').matchAll(BALISE_SOUVENIRS)];
+  if (!toutes.length) return null;
+  const ids = [...new Set((toutes[toutes.length - 1][1].match(/\d{1,9}/g) || []).map(Number))].slice(0, 20);
+  const gardes = ids.filter(i => permis.has(i)).slice(0, 10), rejetes = ids.filter(i => !permis.has(i));
+  try { fs.mkdirSync(path.dirname(BOUCLE_BALISES), { recursive: true });
+    fs.appendFileSync(BOUCLE_BALISES, j({ ts: Date.now() / 1000, ids: gardes, rejetes }) + '\n'); } catch (_) {}
+  return { ids: gardes, rejetes };
+}
+const sansBaliseAffect = (t) => String(t || '').replace(BALISE_AFFECT, '').replace(/[ \t]+\n/g, '\n').trimEnd();
+// Le flux vers les pages : la balise n'y passe jamais, même coupée entre deux morceaux (une page ancienne, pas encore
+// rechargée, ne sait pas la cacher) ; un début possible (« [[aff ») est retenu jusqu'au morceau suivant.
+const prefixeBalise = (mot, i = 0) => i === mot.length ? '(?:\\s*:[^\\]\\n]{0,300})?' : `${mot[i]}(?:${prefixeBalise(mot, i + 1)})?`;
+const DEBUT_AFFECT = new RegExp(`\\[(?:\\[\\s*(?:${prefixeBalise('affect')}|${prefixeBalise('souvenirs')})?)?$`, 'i');
+function filtreAffect() {
+  let tampon = '';
+  return {
+    pousser(x) {
+      const propre = (tampon + String(x || '')).replace(BALISE_AFFECT, '');
+      const m = propre.match(DEBUT_AFFECT);
+      tampon = m ? propre.slice(m.index) : '';
+      return m ? propre.slice(0, m.index) : propre;
+    },
+    finir() { const r = tampon.replace(BALISE_AFFECT, ''); tampon = ''; return /^\s*\[\[\s*(?:affect|souvenirs)/i.test(r) ? '' : r; },
+  };
+}
+function chocsAppel(cmd, donnees, delaiMs = 2000) {
+  return new Promise((resolve) => {
+    let p = null;
+    try {
+      p = execFile(CHOCS_BANC || PYTHON, CHOCS_BANC ? [cmd] : [CHOCS_CLI, cmd], { timeout: delaiMs, maxBuffer: 1 << 20, env: { ...process.env, PYTHONPATH: ANAMNESE } },
+        (e, so) => { let o = null; try { o = JSON.parse(String(so || '').trim().split('\n').pop()); } catch (_) {} resolve(o); });
+      p.stdin.on('error', () => {});
+      p.stdin.end(j(donnees || {}));
+    } catch (_) { resolve(null); }
+  });
+}
+
 async function etatInterieur() {
   const rows = await sqlite("SELECT value FROM kv WHERE key='interieur';");
   try { return JSON.parse((rows[0] || {}).value || '{}'); } catch (_) { return {}; }
@@ -1510,8 +1561,16 @@ async function routeJarvis(req, res, distantReq = false) {
     voixVerdict = v;
     situation.texte = situation.texte ? `${situation.texte}\n${v}` : v;
   } else voixRecues.length = 0;
+  // (2026-10-23) les chocs d'humeur : le réflexe lexical, tout de suite, avant que son humeur soit lue pour ce tour
+  const cleChoc = tourId || `t${maintenant}`;
+  const voixChoc = q.oral && derniereVoix && Date.now() - derniereVoix.ts < 120000 ? derniereVoix.verdict : null;
+  const reflexeChoc = await chocsAppel('reflexe', { cle: cleChoc, texte, oral: !!q.oral, voix: voixChoc }).catch(() => null);
+  if (reflexeChoc && reflexeChoc.erreur) console.error(`Chocs : ${reflexeChoc.erreur}`);
   try {                                                  // la sagesse : réflexe, puis contrôle (2026-10-22)
-    const sg = blocSagesse(await etatInterieur(), q, voixVerdict, q.tour_id);
+    const ei = await etatInterieur();
+    if (reflexeChoc && reflexeChoc.actif && (reflexeChoc.vus || []).length && reflexeChoc.humeur_code)
+      Object.assign(ei, { humeur: reflexeChoc.humeur, humeur_code: reflexeChoc.humeur_code, arousal: reflexeChoc.arousal });
+    const sg = blocSagesse(ei, q, voixVerdict, q.tour_id);
     if (sg) situation.texte = situation.texte ? `${situation.texte}\n${sg}` : sg;
   } catch (_) {}
   if (session && notesIntrospection.has(session)) {
@@ -1548,7 +1607,7 @@ async function routeJarvis(req, res, distantReq = false) {
   const rappelBloc = await blocRappel(session, texte, nonce).catch(() => ({ texte: '', ids: [] }));
   let prompt = `${horlogeTexte}${situation.texte ? '\n' + situation.texte : ''}${interieurTexte ? '\n' + interieurTexte : ''}`
     + `${tachesTexte ? '\n' + tachesTexte : ''}${presentTexte ? '\n' + presentTexte : ''}${rappelBloc.texte ? '\n' + rappelBloc.texte : ''}`
-    + `\n${qui} : ${texte}${pj}${cameraTexte}`;
+    + `\n${qui} : ${texte.replace(/\[\[\s*(affect|souvenirs)/gi, '⟮⟮$1')}${pj}${cameraTexte}`;   // (chocs) aucune balise toute faite à recopier
   const categories = { horloge: horlogeTexte.length, situation: situation.texte.length, interieur: interieurTexte.length,
     taches: tachesTexte.length, present: presentTexte.length, rappel: rappelBloc.texte.length, message: texte.length,
     joints: pj.length + cameraTexte.length + (ecran ? ecran.marque.length : 0), briefing: 0 };
@@ -1586,17 +1645,26 @@ async function routeJarvis(req, res, distantReq = false) {
     'X-Content-Type-Options': 'nosniff' });
   const envoyer = (o) => { if (!res.writableEnded && !res.destroyed) { try { res.write(j(o) + '\n'); } catch (_) {} } };
   let sid = session, dejaTexte = false, reponse = '', fini = false, garde = null;
+  const fluxAffect = filtreAffect();                 // (chocs) la balise ne part jamais vers les pages
   const finir = (o) => {
     if (fini) return;
     fini = true;
     clearTimeout(garde);
+    // (2026-10-23) sa balise [[affect: …]] : appliquée (elle confirme ou défait le réflexe), puis retirée de partout
+    if (!o.coupe && !o.erreur && source !== 'local')
+      chocsAppel('balise', { cle: cleChoc, reponse }).then(r => { if (r && r.erreur) console.error(`Chocs : ${r.erreur}`); });
+    if (!o.coupe && !o.erreur && source !== 'local')         // la boucle de retour : ce qui lui a vraiment servi
+      noterSouvenirsServis(reponse, new Set([...(rappelBloc.ids || []), ...(rappelDejaDits.get(session || '') || [])].map(Number)));
+    reponse = sansBaliseAffect(reponse);
+    const resteFlux = fluxAffect.finir();
+    if (resteFlux) envoyer({ t: 'texte', x: resteFlux });
     if (enfant && !(enfant.cerveau && occupe(enfant.cerveau))) jarvisVivants.delete(enfant);   // un autre tour attend : il reste vivant
     journaliser('jarvis', reponse.trim() + (o.coupe ? ' [coupé]' : '') + (source === 'api' ? ' [API]' : source === 'local' ? ' [local]' : ''));
     if (o.jetons) noterJetons({ session: sid, modele, source, ms: Date.now() - t0, tours: o.tours, ...o.jetons, categories });
     // chaque échange devient un souvenir, sans que personne ait à le demander (le démon l'encre selon l'attention)
     if (!o.coupe && !o.erreur) verifierRessenti(sid, reponse);
     const externe = retirerExterne();
-    deposerEchange({ ahmed: texte, hakim: reponse.trim() + (o.coupe ? ' [coupé]' : ''), oral: !!q.oral,
+    deposerEchange({ ahmed: texte, hakim: reponse.trim() + (o.coupe ? ' [coupé]' : ''), oral: !!q.oral, cle: cleChoc,
       appareil: appareilDe(q, distantReq), session: sid, source, externe: externe.length ? externe : undefined,
       voix: q.oral && derniereVoix && Date.now() - derniereVoix.ts < 120000 ? derniereVoix.verdict : undefined });
     // ce que ce tour lui a dit (situation, présent) : retenu pour ne pas le redire — seulement s'il l'a bien reçu
@@ -1630,7 +1698,7 @@ async function routeJarvis(req, res, distantReq = false) {
     enLocal++;
     consciencePulse();
     try {
-      await repondreEnLocal(prompt, persona, (x) => { dejaTexte = true; reponse += x; envoyer({ t: 'texte', x }); }, ctl.signal);
+      await repondreEnLocal(prompt, persona, (x) => { dejaTexte = true; reponse += x; const y = fluxAffect.pousser(x); if (y) envoyer({ t: 'texte', x: y }); }, ctl.signal);
       finir({ coupe: false, tours: 1, erreur: null });
     } catch (e) {
       finir({ coupe: ctl.signal.aborted, tours: null, erreur: ctl.signal.aborted ? null
@@ -1679,7 +1747,8 @@ async function routeJarvis(req, res, distantReq = false) {
         } else if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') {
           dejaTexte = true;
           reponse += ev.delta.text;
-          envoyer({ t: 'texte', x: ev.delta.text });
+          const x = fluxAffect.pousser(ev.delta.text);
+          if (x) envoyer({ t: 'texte', x });
         }
       } else if (o.type === 'result') {
         c.tours++;
@@ -1959,7 +2028,7 @@ let nonVus = {};
 try { const d = JSON.parse(fs.readFileSync(JARVIS_NON_VUS, 'utf8')) || {}; nonVus = d.non_vus || d; } catch (_) {}
 function sauverNonVus() { try { ecrireAtomique(JARVIS_NON_VUS, j({ non_vus: nonVus, maj_ms: Date.now() })); } catch (_) {} }
 function livrerAutonome(c, texte, notifs, outils, issue, pieces = []) {
-  texte = String(texte || '').trim();
+  texte = sansBaliseAffect(texte).trim();                // (chocs) une balise d'appréciation n'a rien à faire ici
   const externe = retirerExterne();
   const quoi = notifs.map(n => n.resume).filter(Boolean).join(' ; ').slice(0, 300);
   if (!texte || NON_REPONSE_SERVEUR.test(texte)) {

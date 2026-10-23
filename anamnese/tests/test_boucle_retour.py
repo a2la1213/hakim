@@ -48,3 +48,40 @@ def test_la_nuit_ecrit_ses_evenements_et_compte_les_nuits(tmp_path):
     b2 = B.nuit(m, T + 90000, tmp_path / "boucle", **sources)
     assert b2["nuit"] == 2 and b2["proposes"] == 0                     # la période suivante : rien de neuf
     assert "2 nuit(s)" in B.resume(tmp_path / "boucle")
+
+
+def test_les_tours_viennent_du_journal_brut_et_de_ses_archives(tmp_path):
+    (tmp_path / "archives").mkdir()
+    ligne = lambda t, qui, texte: json.dumps({"ts": t * 1000, "qui": qui, "texte": texte}) + "\n"   # noqa: E731
+    (tmp_path / "archives" / "journal-2027-01.jsonl").write_text(ligne(T, "ahmed", "le matin") + ligne(T + 5, "jarvis", "réponse du matin"))
+    (tmp_path / "journal.jsonl").write_text(ligne(T + 5, "jarvis", "réponse du matin")                     # en double : gardé une fois
+                                            + ligne(T + 50, "jarvis", "(tour de lui-même, sans texte)")
+                                            + ligne(T + 60, "ahmed", "le soir") + ligne(T + 61, "jarvis", "Voilà. [de lui-même : courrier]")
+                                            + ligne(T + 62, "jarvis", "réponse du soir"))
+    c = B.journal_brut(T - 10, T + 100, tmp_path)
+    assert [(m["qui"], m["texte"]) for m in c["messages"]] == [("u", "le matin"), ("j", "réponse du matin"), ("u", "le soir"),
+                                                               ("j", "réponse du soir")]
+    assert [(m["texte"], r["texte"]) for m, r, *_ in B.tours(c)] == [("le matin", "réponse du matin"), ("le soir", "réponse du soir")]
+
+
+def test_la_balise_souvenirs_compte_comme_usage(tmp_path):
+    m = _mem(tmp_path)
+    a = m.add("episodic", "Ahmed prépare un live le vendredi matin", embedding=[])
+    b = m.add("episodic", "Le carnet bleu est rangé dans le tiroir du bureau", embedding=[])
+    conv = {"messages": [{"id": T * 1000, "ts": T * 1000, "qui": "u", "texte": "on fait quoi demain ?"},
+                         {"id": T * 1000 + 300, "qui": "j", "texte": "Ton live du vendredi."}]}
+    ev = B.evenements(m, T - 10, T + 3600, conversation=conv, balayages=[{"ts": T * 1000, "ids": [a]}], lectures=[],
+                      rates=[], importants=[], balises=[{"ts": T + 20, "ids": [a, b]}])
+    types = {(e["type"], e["souvenir"], e["source"]) for e in ev}
+    assert ("utilise", a, "balise") in types and ("utilise", b, "balise") in types   # b : proposé plus tôt dans la conversation
+
+
+def test_une_nouvelle_serie_repart_de_zero(tmp_path):
+    m = _mem(tmp_path)
+    vide = dict(conversation={"messages": []}, balayages=[], lectures=[], rates=[], importants=[], balises=[])
+    d = tmp_path / "boucle"
+    d.mkdir()
+    (d / "nuits.jsonl").write_text(json.dumps({"nuit": 1, "jusqua": T, "regles": "ancienne"}) + "\n")
+    b = B.nuit(m, T + 86400, d, **vide)
+    assert b["nuit"] == 2 and b["nuit_de_la_serie"] == 1 and b["utilises_balise"] == 0
+    assert B.nuit(m, T + 2 * 86400, d, **vide)["nuit_de_la_serie"] == 2

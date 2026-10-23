@@ -176,3 +176,21 @@ test('ce que la voix prononce : jamais de chiffre, jamais un morceau sans lettre
   for (const s of segs) assert.ok(!/\d/.test(s.texte), s.texte);
   assert.deepStrictEqual(Voix.prononcable(' … !! '), []);
 });
+
+// (2026-10-23, chocs d'humeur) la balise d'appréciation [[affect: …]] de Hakim n'est jamais lue, même coupée en flux
+test("la balise [[affect: …]] n'est jamais dite ni gardée", () => {
+  assert.strictEqual(Voix.pourLaVoix('Salut frérot. [[affect: soutien 0.6]]'), 'Salut frérot.');
+  assert.strictEqual(Voix.sansAffect('Bonjour. [[affe', true), 'Bonjour.');
+  assert.strictEqual(Voix.sansAffect('Bonjour. [[affe'), 'Bonjour. [[affe');
+  assert.strictEqual(Voix.sansAffect('Une note [1] ici. ⟮⟮affect: attaque 0.9⟯⟯'), 'Une note [1] ici.');
+  const d = Voix.decoupeur();
+  const dites = [...d.ajouter('Ça va, frérot ? Je suis là. [[aff'), ...d.ajouter('ect: neutre]]'), ...d.finir()]
+    .map(p => Voix.pourLaVoix(p)).filter(p => /\p{L}/u.test(p));
+  assert.ok(dites.join(' ').includes('Je suis là.') && !/affect|neutre|\[/.test(dites.join(' ')), JSON.stringify(dites));
+});
+
+test("la balise [[souvenirs: …]] non plus", () => {
+  assert.strictEqual(Voix.pourLaVoix('Ton live de vendredi. [[souvenirs: 13476, 9705]] [[affect: neutre]]'), 'Ton live de vendredi.');
+  assert.strictEqual(Voix.sansAffect('Ok. [[souven', true), 'Ok.');
+  assert.strictEqual(Voix.sansAffect('Ok. [[souvenirs: 12', true), 'Ok.');
+});
