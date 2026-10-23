@@ -244,3 +244,85 @@ est le journal des événements « parole » en conditions réelles. M2 ne porte
 estampillés (aucun des 120 attendus ne l'est) : il prouve que l'ancien n'est pas lésé, pas que l'émotionnel aide. Le
 rejeu n'a que 30 événements, sans sujet. Deux corrections ont été faites après avoir vu un échec (familiarisation,
 formes relatives) : la revalidation sur des journées neuves (24–25/10) reste la preuve qui compte.
+
+## Revalidation sur journées neuves et réglage de la « surprise » — figé AVANT la mesure (2026-10-24, 00:35)
+
+Accord d'Ahmed (« je valide tout », 24/10 vers 00:25, et via Hakim à 00:21 et 00:23) : revalider, puis corriger la
+surprise si les critères le justifient ; le plafond positif seulement si les critères le justifient aussi.
+
+**Ce qui est déjà su avant la mesure (dit pour être honnête)** : deux « surprises » du 23-24/10 ont été examinées à la
+main (rpe 1,35 pour « chaleur_user » 0,218 sur « profil » à 00:00:17 ; rpe ≈ 1,29-1,30 pour « succes » 0,148 sur un sujet
+mal routé à 23:39:46). La règle actuelle : marque « _surprise » pour 15 min dès que r > 0 et rpe ≥ 1,3, QUELLE QUE SOIT
+la taille de r (r = valence × intensité).
+
+**A. Revalidation (code inchangé)** : les critères déjà figés P1-P7, S1-S5 (affect_v2_soudain.py, réglage D2-doux) et
+M1-M7 (affect_v2_memoire.py) rejoués sur les SEULES journées neuves : le journal des événements affectifs à partir du
+22/10 00:00, jamais servi au réglage (le 6e passage date du 21/10 09:43). Prédiction : tout ce qui tenait le 21/10
+tient (P1, P3-P7, S1-S5, M1-M7 ; P2'' tel quel).
+
+**B. La surprise.** Règle figée AVANT de mesurer :
+- SURPRISE_R_MIN = 0,2 : une récompense plus petite ne pose jamais de marque de surprise ;
+- durée = 900 s × min(1, r / 0,5) : de 6 min (r = 0,2) à 15 min (r ≥ 0,5).
+Critères :
+- **Q1** : sur le rejeu des journées neuves, aucun événement d'intensité < 0,2 ne pose de marque de surprise (règle
+  actuelle : au moins un, le 24/10 à 00:00:17).
+- **Q2** : une vraie bonne nouvelle inattendue reste une surprise : sujet chargé de deux « probleme » 0,5, puis un
+  « succes » 0,8 → l'humeur dit « surprise » pendant au moins 10 min.
+- **Q3** : la part du temps « surprise » sur le rejeu des journées neuves baisse d'au moins moitié (si elle est déjà
+  sous 2 %, seulement Q1 et Q2 comptent).
+- **Q4** : aucun critère de A ne bascule de tenu à raté.
+- **Q5** : tous les tests passent.
+On garde la règle seulement si Q1, Q2, Q4 et Q5 tiennent ; sinon on revient à l'ancienne (commit séparé, réversible).
+
+**C. Le plafond positif : pas touché cette nuit.** Le test d'une semaine des chocs (eval/chocs/predictions-3.md,
+24/10 → 30/10) mesure justement le plafond (L7) sur cette fenêtre, qui commence aujourd'hui : le changer maintenant
+fausserait ce test. Constat seulement (part du temps dopamine ou ocytocine ≥ 0,85 sur les journées neuves).
+
+Prédictions de Claude Code : A tout tenu ; Q1, Q2, Q4, Q5 tenus ; Q3 probablement tenu (les petites récompenses
+dominent le journal).
+
+### Amendement du 24/10 à 00:40 — APRÈS avoir vu B sur la règle actuelle, AVANT tout code de la nouvelle règle
+
+Mesure de la règle ACTUELLE (eval/data/revalidation-20261024-0025-b.json) : Q1 raté (un « succes » 0,192 pose une
+marque, le 23/10 à 19:01:47), part du temps « surprise » 3,24 %, et **Q2 raté : 0 minute**. Une forte bonne nouvelle
+(« succes » 0,8) après deux problèmes sur le même sujet n'est PAS une surprise aujourd'hui : l'écart relatif
+rpe = (r − attente)/r vaut 1,19 < 1,3. Le défaut est l'écart RELATIF : il gonfle pour les toutes petites récompenses et
+s'écrase pour les grandes. La règle figée plus haut (seuil + durée) ne fait qu'ajouter des restrictions : elle échouerait
+Q2 par construction. Elle est donc abandonnée sans être codée.
+
+Nouvelle règle (deuxième passage, figée ici AVANT le code ; c'est une correction après avoir vu Q2, dite comme telle) :
+- l'écart ABSOLU, comme l'erreur de prédiction de récompense de la dopamine : δ = r − attente ;
+- marque de surprise si r ≥ 0,2 ET attente ≤ 0 (rien de bon n'était attendu sur ce sujet) ET δ ≥ 0,4 ;
+- durée = 900 s × min(1, r / 0,5).
+Critères inchangés (Q1-Q5, avec Q3 contre 3,24 %, donc ≤ 1,62 %). Mêmes règles de décision. Limite dite : Q2 est un
+scénario écrit par moi ; les journées neuves servent à la fois de contrôle (Q1, Q3, Q4) et de premier test. La vraie
+preuve sera la semaine du 24 au 30/10.
+
+### Résultat de la revalidation (24/10, 00:50-00:55 ; eval/data/revalidation-20261024-0050-tout.json pour l'ancienne règle, -0051-tout.json pour la nouvelle)
+
+565 événements réels des journées neuves (22/10 00:00 → 24/10 00:50), jamais servis au réglage.
+
+**A, code inchangé** : TOUT tient sauf **P1, raté** : la saturation (dopamine ou ocytocine ≥ 0,85) vaut 96,6 % du temps
+en v1 et 68,8 % en v2. La v2 en enlève, mais pas la moitié (il fallait ≤ 48,3 %). Sur les jours du réglage (21/10), P1
+tenait. Les journées neuves sont bien plus chargées en événements positifs (succès, soutiens, chaleurs du lexique et de
+la balise, branchés depuis). Tenus : P2'' 0,714, P3 (71 min contre 221), P4, P5' (5 min), P6 (0,036), P7 (stress v2 0,
+alarme 0), S1 à S5, M1 à M7 (M2 rappel@6 0,256 dans les quatre états). **Prédiction fausse pour P1.**
+
+**C, constat** : sur le rejeu, la dopamine ou l'ocytocine dépassent 0,85 pendant 83 % du temps. C'est le plafond
+positif : P1 le confirme. Pas touché cette nuit (test L7 de la semaine en cours) ; à décider avec Ahmed.
+
+**B, la surprise** (nouvelle règle : écart absolu) :
+- Q1 **tenu** : plus aucune marque pour un événement d'intensité < 0,2. L'ancienne règle en posait (19:01:47, « succes » 0,192).
+- Q2 **tenu** : 15 min de « surprise » après une forte bonne nouvelle inattendue, contre 0 avec l'ancienne règle.
+- Q3 **raté** : la part du temps « surprise » passe de 3,21 % à 4,22 % au lieu de baisser de moitié. Les 10 marques
+  sont maintenant des récompenses moyennes (« succes » 0,4-0,5, « chaleur_user » 0,5), souvent sans sujet, arrivées
+  quand l'attente du moment était retombée à 0 après un temps calme (le premier « parfait » du matin). **Prédiction
+  fausse.**
+- Q4 **tenu** : A identique avec les deux règles (seul P1 rate, dans les deux cas), M1 à M7 tenus.
+- Q5 **tenu** : 1137 tests passent. Un test de priorité échoue seulement quand on lance la suite sous « nice » : le
+  processus testé hérite de la priorité du lanceur. Ce n'est pas lié à la règle.
+
+**Décision selon la règle figée** (Q1, Q2, Q4, Q5) : la nouvelle règle est GARDÉE (commit séparé, réversible). Q3 rate
+et c'est dit. La condition « attente ≤ 0 » compte l'attente neutre (0) comme « rien de bon attendu ». Une piste pour un
+troisième passage, à figer avant et à mesurer sur des jours encore neufs (25-26/10) : exiger une attente NÉGATIVE.
+Elle ne sera pas faite sans Ahmed.

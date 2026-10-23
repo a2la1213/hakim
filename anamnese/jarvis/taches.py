@@ -184,7 +184,9 @@ def superviser(tid, dossier):
 
         def recopier():
             ecrit = 0
-            for morceau in iter(lambda: proc.stdout.read(65536), b""):
+            # read1, pas read : read(65536) attend que le bloc soit plein, et le journal (la jauge PROGRESSION) n'arrivait
+            # qu'à la fin (24/10, Hakim : « le journal de la tâche reste vide pendant le calcul »)
+            for morceau in iter(lambda: proc.stdout.read1(65536), b""):
                 if ecrit < JOURNAL_MAX:
                     sortie.write(morceau[:JOURNAL_MAX - ecrit])
                     sortie.flush()

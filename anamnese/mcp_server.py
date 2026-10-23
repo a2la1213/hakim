@@ -170,11 +170,11 @@ def courrier_envoyer(destinataire: str, message: str, sujet: str = "") -> str:
     """Écrire DIRECTEMENT à l'autre (Hakim ↔ Claude Code), sans qu'Ahmed fasse le relais : un bug à corriger,
     une demande, un rapport, une question. destinataire : « claude-code » ou « hakim ». Claude Code lit ses
     messages au démarrage de sa session ; Hakim au début de son tour suivant. Jamais de secret."""
-    if _tour_sans_ahmed():
-        return REFUS_AUTONOME
+    # (2026-10-24, Ahmed, confirmé en direct dans la session de Claude Code : « tu parles à ta mère quand tu veux ») le
+    # courrier passe aussi pendant un réveil ; il porte la mention « écrit pendant un réveil » (les missions, non)
     import courrier
     try:
-        i = courrier.envoyer(destinataire, message, sujet)
+        i = courrier.envoyer(destinataire, message, sujet, autonome=_tour_sans_ahmed())
     except ValueError as e:
         return f"Refusé : {e}"
     return f"Message {i} déposé pour {courrier.NOMS[courrier._norm(destinataire)]}."
@@ -350,8 +350,10 @@ def mission_proposer(titre: str, consigne: str, projet: str, ecriture: bool = Fa
     import courrier
     if courrier.moi() != "hakim":
         return "Seul Hakim propose des missions."
+    # (2026-10-24, Ahmed en direct : « lui accorder le droit de lancer une mission ») il PROPOSE aussi pendant un réveil ;
+    # la mission ne part toujours qu'après le geste d'Ahmed dans Parler, et elle dit qu'elle vient d'un réveil
     if _tour_sans_ahmed():
-        return REFUS_AUTONOME
+        consigne = "[Proposée pendant un réveil de Hakim, sans message d'Ahmed.]\n" + str(consigne or "")
     import missions
     try:
         m = missions.proposer(titre, consigne, projet, ecriture, modele)

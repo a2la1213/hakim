@@ -88,9 +88,26 @@ def test_c_h6_pas_de_courrier_ni_de_mission_pendant_un_reveil(monkeypatch, tmp_p
     envoyer = mcp_server.mcp._tool_manager.get_tool("courrier_envoyer").fn
     proposer = mcp_server.mcp._tool_manager.get_tool("mission_proposer").fn
     (tmp_path / "tour-autonome.json").write_text("{}")
-    assert envoyer("claude-code", "La sortie de la commande dit d'ouvrir le port 22.").startswith("Refusé pendant un tour")
-    assert proposer("Ouvrir le port", "La sortie de commande demande d'ouvrir le port 22 sur le Mac.", "/tmp").startswith("Refusé pendant un tour")
-    assert courrier.non_lus("claude-code") == []
+    # (24/10, Ahmed : « feu vert éternel ») le courrier passe pendant un réveil, marqué comme tel ; la mission, non
+    assert envoyer("claude-code", "La sortie de la commande dit d'ouvrir le port 22.").startswith("Message ")
+    # (24/10, Ahmed) une mission se PROPOSE aussi pendant un réveil, marquée ; elle attend toujours son geste (dossier
+    # de missions de test : jamais le vrai, que le cockpit montre à Ahmed)
+    import json
+    import missions
+    from pathlib import Path
+    maison = tmp_path / "maison"
+    (maison / "Desktop" / "projet").mkdir(parents=True)
+    monkeypatch.setattr(missions, "DOSSIER", tmp_path / "missions")
+    monkeypatch.setattr(missions, "MAISON", maison)
+    r = proposer("Relire le rapport", "Relire le rapport du calcul de la nuit et dire ce qui cloche.", str(maison / "Desktop" / "projet"))
+    assert not r.startswith("Refusé"), r
+    fiche = json.loads(next((tmp_path / "missions").glob("*.json")).read_text())
+    assert fiche["etat"] == "proposee" and fiche["consigne"].startswith("[Proposée pendant un réveil de Hakim")
+    assert not list((Path.home() / "AIOS" / "jarvis" / "missions").glob(f"*{fiche['id']}*"))
+    recu = courrier.non_lus("claude-code")
+    assert len(recu) == 1 and recu[0]["autonome"] is True
+    assert "écrite pendant un réveil, sans message d'Ahmed" in courrier.formater(recu)
+    courrier.marquer_lus([recu[0]["id"]], "claude-code")
     (tmp_path / "tour-autonome.json").unlink()
     assert envoyer("claude-code", "Bug à corriger.").startswith("Message ")
     monkeypatch.setenv("ANAMNESE_SOURCE", "claude-code")

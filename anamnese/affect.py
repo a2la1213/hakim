@@ -164,6 +164,10 @@ RAPIDE_ADR, RAPIDE_NA = 0.35, 0.20
 ATTENTE_TAUX, ATTENTE_SUJET_TAU_H, ATTENTE_MOMENT_TAU_H = 0.3, 7 * 24.0, 2.0
 RPE_MIN, RPE_MAX = 0.2, 2.0
 SURPRISE_RPE, SURPRISE_S = 1.3, 900.0
+# (2026-10-24, revalidation, accord d'Ahmed ; règle figée avant le code : eval/affect_v2_predictions.md, 419304b) la
+# surprise de récompense suit l'écart ABSOLU δ = r − attente (l'erreur de prédiction de la dopamine) : l'écart relatif
+# gonflait pour un tout petit « merci » (15 min de « surprise ») et s'écrasait pour une grande bonne nouvelle inattendue
+SURPRISE_R_MIN, SURPRISE_DELTA, SURPRISE_R_PLEIN = 0.2, 0.4, 0.5
 SUJETS_MAX = 300
 PLAFOND_DOUX = True     # une hausse SATURE (liaison saturable des récepteurs) au lieu d'être coupée à 1 (choisi au 5e passage)
 
@@ -453,8 +457,9 @@ def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None):
         if ks:
             v = _lu(V, ks, now, ATTENTE_SUJET_TAU_H)
             V[ks] = [round(v + ATTENTE_TAUX * (r - v), 4), now]
-        if r > 0 and rpe >= SURPRISE_RPE:
-            marques["_surprise"] = now
+        if r >= SURPRISE_R_MIN and attente <= 0 and r - attente >= SURPRISE_DELTA:
+            marques["_surprise"] = now                              # rien de bon n'était attendu, et c'est arrivé
+            marques["_surprise_s"] = round(SURPRISE_S * min(1.0, r / SURPRISE_R_PLEIN), 1)
     if name == "attaque":
         marques["_choc"] = now
     _save_v2(mem, etat, sens, hab, now, moy, cog, marques, tau_peur)
@@ -478,6 +483,14 @@ def _save_v2(mem, etat, sens, hab, now, moy=None, cog=None, marques=None, tau_pe
     mem.kv_set("affect", json.dumps(data))
 
 
+def duree_surprise(data):
+    """La durée de la dernière surprise (proportionnelle à la récompense) ; 15 min pour une marque d'avant le 24/10."""
+    try:
+        return float((data or {}).get("_surprise_s") or SURPRISE_S)
+    except (TypeError, ValueError):
+        return SURPRISE_S
+
+
 def _emotion(etat, data, now):
     """(v2) L'émotion soudaine du moment, pour le subconscient (son libellé d'humeur) : « alarme » (un sursaut
     d'adrénaline sans valence positive), « surprise » (le même sursaut avec une valence positive, ou une surprise de
@@ -490,7 +503,7 @@ def _emotion(etat, data, now):
         if now - float((data or {}).get("_choc") or 0) <= CHOC_S:
             return "alarme"                                     # un choc reçu : la bonne humeur de fond n'en fait pas une surprise
         return "surprise" if v > v0 else "alarme"
-    if now - float((data or {}).get("_surprise") or 0) < SURPRISE_S:
+    if now - float((data or {}).get("_surprise") or 0) < duree_surprise(data):
         return "surprise"
     if etat["gaba"] - HORMONES_V2["gaba"][0] >= 0.12 and v >= v0:
         return "apaisement"
@@ -560,7 +573,7 @@ def trace(mem, now=None):
     except Exception:
         pass
     emo = _emotion(etat, data, now) if "adrenaline" in etat else None
-    surprise = now - float(data.get("_surprise") or 0) < SURPRISE_S
+    surprise = now - float(data.get("_surprise") or 0) < duree_surprise(data)
     return {"h": {h: round(x, 3) for h, x in etat.items()}, "e": emo,
             "c": charge_de(v, a, etat.get("adrenaline"), surprise and "adrenaline" in etat)}
 

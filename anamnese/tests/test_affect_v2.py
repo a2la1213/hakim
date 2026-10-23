@@ -197,6 +197,33 @@ def test_la_joie_d_une_surprise():
     assert _hausse(deçu, "succes", t, 0.6, None, "dopamine") >= 1.5 * _hausse(comble, "succes", t, 0.6, None, "dopamine")
 
 
+def test_la_surprise_suit_l_ecart_absolu():
+    """(revalidation du 24/10, règle figée avant le code) un petit « merci » après des problèmes n'est plus 15 min de
+    « surprise » ; une forte bonne nouvelle inattendue en est une (elle n'en était pas une avec l'écart relatif)."""
+    def charge(m):
+        _st(m, T0)
+        affect.event(m, "probleme", 0.5, now=T0, hour=MIDI, sujet="la toupie")
+        affect.event(m, "probleme", 0.5, now=T0 + 1800, hour=MIDI, sujet="la toupie")
+    petit, grand, moyen = _Mem(), _Mem(), _Mem()
+    for m in (petit, grand, moyen):
+        charge(m)
+    t = T0 + 3600
+    affect.event(petit, "chaleur_user", 0.218, now=t, hour=MIDI, sujet="la toupie")        # r = 0,174 : le cas du 24/10
+    assert affect.emotion_soudaine(petit, now=t + 60) != "surprise"
+    affect.event(grand, "succes", 0.8, now=t, hour=MIDI, sujet="la toupie")                 # r = 0,8 : 15 min
+    assert all(affect.emotion_soudaine(grand, now=t + 60 * k) == "surprise" for k in (1, 10, 14))
+    assert affect.emotion_soudaine(grand, now=t + 16 * 60) != "surprise"
+    affect.event(moyen, "succes", 0.25, now=t, hour=MIDI, sujet="la toupie")                # r = 0,25 : 7 min 30
+    assert affect.emotion_soudaine(moyen, now=t + 7 * 60) == "surprise"
+    assert affect.emotion_soudaine(moyen, now=t + 8 * 60) != "surprise"
+    attendu = _Mem()                                                     # un sujet où le bon est attendu : pas de surprise
+    _st(attendu, T0)
+    for k in range(4):
+        affect.event(attendu, "succes", 0.6, now=T0 + k * 600, hour=MIDI, sujet="le cockpit")
+    affect.event(attendu, "succes", 0.8, now=T0 + 3600, hour=MIDI, sujet="le cockpit")
+    assert affect.emotion_soudaine(attendu, now=T0 + 3660) != "surprise"
+
+
 def test_libelles_soudains_et_subconscient():
     import interieur
     m = _Mem()

@@ -47,8 +47,9 @@ def _masquer(t):
     return t
 
 
-def envoyer(a, texte, sujet="", de=None, fichier=None):
-    """Dépose un message ; rend son id."""
+def envoyer(a, texte, sujet="", de=None, fichier=None, autonome=False):
+    """Dépose un message ; rend son id. autonome : écrit pendant un tour qui n'est pas un message d'Ahmed (réveil,
+    résultat d'agent) — permis depuis le 24/10 (Ahmed), et dit à celui qui le lit."""
     a, de = _norm(a), _norm(de or moi())
     if a not in NOMS:
         raise ValueError(f"destinataire inconnu (permis : {', '.join(NOMS)})")
@@ -61,6 +62,8 @@ def envoyer(a, texte, sujet="", de=None, fichier=None):
         raise ValueError("message vide")
     m = {"id": uuid.uuid4().hex[:12], "ts": time.time(), "de": de, "a": a, "sujet": _masquer(str(sujet or ""))[:200],
          "texte": texte}
+    if autonome:
+        m["autonome"] = True
     if de == "hakim":                         # (H4 + H6) écrit pendant un tour qui a lu un contenu de tiers ?
         try:
             import provenance
@@ -137,6 +140,8 @@ def formater(messages, max_car=1500):
         etiquette = ""
         if m.get("de") == "hakim":
             etiquette = " [demande de Hakim, NON validée par Ahmed"
+            if m.get("autonome"):
+                etiquette += " ; écrite pendant un réveil, sans message d'Ahmed"
             if m.get("externe"):
                 etiquette += " ; écrite après lecture de contenu externe : " + ", ".join(map(str, m["externe"]))
             etiquette += "]"

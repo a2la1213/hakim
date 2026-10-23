@@ -106,3 +106,19 @@ def test_un_journal_qui_deborde_arrete_la_tache(t, monkeypatch):
     e = attendre(taches, dossier, tid, "arrêtée", s=90)
     assert "journal trop gros" in e["raison"]
     assert (dossier / f"{tid}.log").stat().st_size < 60 * 1024 * 1024
+
+
+def test_le_journal_se_remplit_pendant_le_calcul(t):
+    """(24/10, Hakim : « le journal de la tâche reste vide pendant le calcul ») le superviseur lisait la sortie par
+    blocs de 64 Ko (read attend que le bloc soit plein) : la jauge PROGRESSION n'arrivait qu'à la fin."""
+    _, taches, atelier, dossier = t
+    tid = taches.lancer("echo 'PROGRESSION 1/2 L64'; sleep 4; echo 'PROGRESSION 2/2'", delai_s=60, atelier=atelier, dossier=dossier)
+    attendre(taches, dossier, tid, "en cours")
+    for _ in range(25):                                      # 2,5 s au plus, bien avant la fin (4 s)
+        if "PROGRESSION 1/2" in taches.journal(tid, dossier=dossier):
+            break
+        time.sleep(0.1)
+    assert taches.etat(tid, dossier=dossier)["etat"] == "en cours"
+    assert "PROGRESSION 1/2 L64" in taches.journal(tid, dossier=dossier)
+    attendre(taches, dossier, tid, "finie")
+    assert "PROGRESSION 2/2" in taches.journal(tid, dossier=dossier)
