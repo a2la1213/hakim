@@ -49,14 +49,17 @@
     video.muted = true;
     try { await video.play(); }
     catch (e) { flux.getTracks().forEach(p => p.stop()); video.srcObject = null; throw e; }   // jamais de caméra allumée orpheline
-    let lm = null;
+    let lm = null, delegue = 'aucune';
+    // (24/10, Hakim : « personne dans le cadre » alors qu'Ahmed est bien visible) ce que l'analyse voit vraiment, pour le
+    // diagnostic : images analysées, visages trouvés (points du visage), dont avec coefficients d'expression
+    const stats = { images: 0, visages: 0, avec_expressions: 0 };
     if (face === 'user') try {
       const { FilesetResolver, FaceLandmarker } = await import(`${BASE}/vision_bundle.mjs`);
       const fichiers = await FilesetResolver.forVisionTasks(`${BASE}/wasm`);
       const options = (delegue) => ({ baseOptions: { modelAssetPath: `${BASE}/face_landmarker.task`, delegate: delegue },
         runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true });
-      try { lm = await FaceLandmarker.createFromOptions(fichiers, options('GPU')); }
-      catch (_) { lm = await FaceLandmarker.createFromOptions(fichiers, options('CPU')); }
+      try { lm = await FaceLandmarker.createFromOptions(fichiers, options('GPU')); delegue = 'gpu'; }
+      catch (_) { lm = await FaceLandmarker.createFromOptions(fichiers, options('CPU')); delegue = 'cpu'; }
     } catch (e) {
       if (o.surErreur) o.surErreur(`analyse du visage indisponible : ${e.message || e}`);
     }
@@ -74,7 +77,10 @@
         const bs = {};
         const cat = r && r.faceBlendshapes && r.faceBlendshapes[0];
         if (cat) for (const c of cat.categories) bs[c.categoryName] = c.score;
-        const present = cat ? 1 : 0;
+        // présent = des POINTS du visage trouvés (les coefficients d'expression peuvent manquer seuls, sur le GPU d'un
+        // téléphone : ce n'était pas une absence)
+        const present = (r && r.faceLandmarks && r.faceLandmarks.length) || cat ? 1 : 0;
+        stats.images++; if (present) stats.visages++; if (cat) stats.avec_expressions++;
         const ori = orientation(r && r.facialTransformationMatrixes && r.facialTransformationMatrixes[0]);
         const brut = {
           present,
@@ -115,6 +121,8 @@
         video.srcObject = null;
       },
       get analyse() { return !!lm; },
+      get delegue() { return delegue; },
+      get stats() { return { ...stats }; },
       face,
     };
   }

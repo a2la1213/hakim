@@ -1248,7 +1248,7 @@ async function demarrerCapteurVision(v) {
 async function basculerCamera() {
   activite();
   if (etat.vision) return arreterCamera();
-  const v = { capteur: null, courant: null, depuis: 0, candidat: null, candidatDepuis: 0, face: reglageCamera('face', 'user'), absentDepuis: 0 };
+  const v = { capteur: null, courant: null, depuis: 0, candidat: null, candidatDepuis: 0, face: reglageCamera('face', 'user'), absentDepuis: 0, visageVu: false };
   etat.vision = v;
   $('camera').setAttribute('aria-pressed', 'true');
   $('vision').hidden = false;
@@ -1268,6 +1268,14 @@ async function basculerCamera() {
   if (etat.vision !== v) { v.capteur.arreter(); return; }
   noterPresent({ e: 'camera', t: Date.now() });
   humeur();
+  // (24/10) ce que l'analyse voit, au diagnostic, chaque minute tant que la caméra est allumée
+  const diag = setInterval(() => {
+    if (etat.vision !== v) { clearInterval(diag); return; }
+    if (!v.capteur || !v.capteur.stats) return;
+    const st = v.capteur.stats;
+    journalVoix('vision_etat', { analyse: v.capteur.delegue || 'aucune', face: v.face === 'environment' ? 'arriere' : 'avant',
+      images: st.images, visages: st.visages, expressions: st.avec_expressions, vu: !!v.visageVu });
+  }, 60000);
 }
 
 function arreterCamera() {
@@ -1341,12 +1349,15 @@ function placerVision() {
 function surVisage(v, m) {
   const maintenant = Date.now();
   // personne dans le cadre : dit dans l'aperçu après 30 s, caméra éteinte après 3 min
+  // (24/10, 07:37-07:40 : faux « personne » pendant 3 min, caméra éteinte à tort) l'extinction n'agit que si l'analyse
+  // a déjà VU son visage depuis l'allumage : un détecteur qui ne le trouve jamais n'éteint rien
+  if (m.expression !== 'absent') v.visageVu = true;
   if (m.expression === 'absent') {
     if (!v.absentDepuis) v.absentDepuis = maintenant;
     const absent = maintenant - v.absentDepuis;
     $('vision').classList.toggle('absent', absent >= CAMERA_ABSENT_AVERTIR_MS);
-    if (absent >= CAMERA_ABSENT_AVERTIR_MS) $('expression').textContent = 'personne dans le cadre';
-    if (absent >= CAMERA_ABSENT_COUPER_MS && etat.vision === v) {
+    if (absent >= CAMERA_ABSENT_AVERTIR_MS) $('expression').textContent = v.visageVu ? 'personne dans le cadre' : 'visage non trouvé';
+    if (v.visageVu && absent >= CAMERA_ABSENT_COUPER_MS && etat.vision === v) {
       journalVoix('camera_auto_coupee', { absent_s: Math.round(absent / 1000) });
       arreterCamera();
       humeur('caméra éteinte : personne devant depuis 3 min'); setTimeout(() => humeur(), 6000);

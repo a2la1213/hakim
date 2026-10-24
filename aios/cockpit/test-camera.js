@@ -42,7 +42,8 @@ test('personne dans le cadre : dit après 30 s, caméra éteinte après 3 min ; 
   const v = { courant: null, candidat: null, candidatDepuis: 0, depuis: 0, absentDepuis: 0 };
   p.ctx.etat.vision = v;
   const vu = (expression) => p.ctx.vu(v, { expression });
-  vu('absent'); p.avancer(29000); vu('absent');
+  vu('neutre'); p.avancer(1000);                                        // l'analyse l'a vu une fois
+  vu('absent'); p.avancer(2000); vu('absent'); p.avancer(27000); vu('absent');
   assert.ok(!p.classes.has('absent'));
   p.avancer(2000); vu('absent');
   assert.ok(p.classes.has('absent')); assert.equal(p.el.textContent, 'personne dans le cadre');
@@ -59,4 +60,16 @@ test('la caméra arrière n’analyse aucun visage ; la photo dit de quelle cam�
   assert.match(vision, /facingMode: face/);
   assert.match(vision, /if \(face === 'user'\) try \{\s*const \{ FilesetResolver, FaceLandmarker \}/);
   assert.match(src, /camera-\$\{v\.face === 'environment' \? 'arriere-' : ''\}/);
+});
+
+test('(24/10, faux « personne ») un détecteur qui n’a jamais vu le visage n’éteint rien ; la présence vient des points du visage', () => {
+  const p = page();
+  const v = { courant: null, candidat: null, candidatDepuis: 0, depuis: 0, absentDepuis: 0, visageVu: false };
+  p.ctx.etat.vision = v;
+  p.ctx.vu(v, { expression: 'absent' }); p.avancer(2000); p.ctx.vu(v, { expression: 'absent' });
+  p.avancer(200000); p.ctx.vu(v, { expression: 'absent' });
+  assert.equal(p.arrets.length, 0, 'jamais vu : pas d’extinction');
+  assert.equal(p.el.textContent, 'visage non trouvé');
+  const vision = fs.readFileSync(path.join(__dirname, 'public', 'vision.js'), 'utf8');
+  assert.match(vision, /const present = \(r && r\.faceLandmarks && r\.faceLandmarks\.length\) \|\| cat \? 1 : 0;/);
 });
