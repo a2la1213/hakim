@@ -402,9 +402,11 @@ function preparerJarvis() {
 }
 
 // Coupe UN claude et tout son groupe de processus (claude + serveur MCP) ; SIGKILL s'il résiste.
-function tuer(enfant) {
+const hmsCerveau = () => new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+function tuer(enfant, raison) {
   if (!enfant || enfant.exitCode !== null || enfant.signalCode !== null) return;
   enfant.coupeParNous = true;
+  enfant.raisonArret = raison || enfant.raisonArret;
   try { process.kill(-enfant.pid, 'SIGTERM'); } catch (_) { try { enfant.kill('SIGTERM'); } catch (_) {} }
   setTimeout(() => {
     if (enfant.exitCode === null && enfant.signalCode === null) { try { process.kill(-enfant.pid, 'SIGKILL'); } catch (_) {} }
@@ -416,25 +418,25 @@ function couperJarvis() {
     // des agents ou des commandes de fond tournent dans ce cerveau, ou il dit de lui-même un résultat : le tuer
     // les perdrait (vu le 2026-10-19 : « Juge du nombre d'or didn't finish before the previous session ended »)
     // → les tours en attente sont abandonnés, celui d'Ahmed en cours est interrompu en douceur
-    if (c && cerveauVivant(c) && (c.taches.size || (c.enCours && c.enCours.autonome))) {
+    if (c && cerveauVivant(c) && (tachesDe(c).size || (c.enCours && c.enCours.autonome))) {
       for (const t of c.attente) t.abandonne = true;
       interrompre(c);
-    } else tuer(e);
+    } else tuer(e, 'Stop de la page');
   }
 }
 // la page a lâché ce tour (Stop, nouvelle question) : pas encore commencé → coupé dès son début
 function lacher(enfant, tour) {
   const c = enfant.cerveau;
   if (c && tour && c.attente.includes(tour)) { tour.abandonne = true; return; }
-  if (c && cerveauVivant(c) && (c.taches.size || (c.enCours && c.enCours.autonome))) return interrompre(c);
-  tuer(enfant);
+  if (c && cerveauVivant(c) && (tachesDe(c).size || (c.enCours && c.enCours.autonome))) return interrompre(c);
+  tuer(enfant, 'la page a lâché le tour (Stop, ou Ahmed a reparlé)');
 }
 function interrompre(c) {
   const t = c.enCours;
   if (!t || t.autonome || t.interrompu) return;              // son propre tour (un résultat d'agent) va au bout
   t.interrompu = true;
   try { c.enfant.stdin.write(j({ type: 'control_request', request_id: `stop-${Date.now()}`, request: { subtype: 'interrupt' } }) + '\n'); }
-  catch (_) { tuer(c.enfant); }
+  catch (_) { tuer(c.enfant, 'interruption douce impossible'); }
 }
 
 // Le briefing d'Anamnèse en début de conversation (le hook SessionStart est absent en --restricted).
@@ -1936,7 +1938,7 @@ async function routeJarvis(req, res, distantReq = false) {
     const suivante = sourceSuivante(source, choix);
     if (!suivante || dejaTexte || arretDemande || (parti && !tourId)) return false;
     clearTimeout(garde);
-    if (c) tuer(c.enfant);
+    if (c) tuer(c.enfant, `bascule de source (${raison})`);
     if (enfant) jarvisVivants.delete(enfant);
     if (suivante === 'local') { repondreLocal(raison); return true; }
     source = suivante;
@@ -1952,7 +1954,7 @@ async function routeJarvis(req, res, distantReq = false) {
   enfant = c.enfant;
   jarvisVivants.add(enfant);                      // un tour en cours (pas un cerveau au repos)
   consciencePulse();                              // la conscience travaille : le subconscient se tait
-  garde = setTimeout(() => tuer(enfant), JARVIS_DUREE_MAX);
+  garde = setTimeout(() => tuer(enfant, 'durée maximale d’un tour'), JARVIS_DUREE_MAX);
   envoyer({ t: 'debut', briefing: !session, pid: enfant.pid, chaud: c.tours > 0 || Date.now() - c.ne > 1500, source,
     modele: modeleDemande === 'auto' ? c.modele : undefined });
   const tour = {
@@ -2166,8 +2168,8 @@ function reposer(c) {
   clearTimeout(c.repos);
   const fin = Date.now() + TACHES_ATTENTE_MAX;
   const verifier = () => {
-    if (occupe(c) || (c.taches.size && Date.now() < fin)) { c.repos = setTimeout(verifier, 60000); return; }
-    tuer(c.enfant);
+    if (occupe(c) || (tachesDe(c).size && Date.now() < fin)) { c.repos = setTimeout(verifier, 60000); return; }
+    tuer(c.enfant, 'au repos');
   };
   c.repos = setTimeout(verifier, JARVIS_REPOS_MAX);
 }
@@ -2591,8 +2593,46 @@ function lireJson(f, defaut) { try { return JSON.parse(fs.readFileSync(f, 'utf8'
 const lireAgents = (f) => { const d = lireJson(f, {}); return Array.isArray(d && d.agents) ? d.agents : []; };
 const ecrireAgents = (f, l) => { try { ecrireAtomique(f, j({ agents: l, maj_ms: Date.now() })); } catch (e) { console.error('Jarvis : agents non notés', e.message); } };
 const tachesCerveaux = new Map();                // cerveau → ses agents (un cerveau détaché peut en avoir aussi)
+/* (24/10, 01:55 : un codeur de Hakim est mort avec son cerveau quand Ahmed lui a coupé la parole ; le cockpit ne le
+   savait pas en cours, car sa liste ne venait que du signal « background_tasks_changed » de claude, absent ou remis à
+   zéro autour de l'interruption) le cockpit suit AUSSI lui-même chaque agent : lancé (outil Agent ou Task, dont le
+   résultat dit « agentId: … »), fini (sa notification, quel qu'en soit l'état), oublié après 3 h sans nouvelles. Tant
+   qu'un agent vit dans un cerveau, ni une coupure de parole ni un changement de modèle ne l'arrêtent. */
+const AGENT_OUBLI_MS = 3 * 3600 * 1000;
+function tachesDe(c, maintenant = Date.now()) {
+  const m = new Map(c.taches || []);
+  for (const [id, a] of c.agentsLances || []) {
+    if (maintenant - a.ts > AGENT_OUBLI_MS) { c.agentsLances.delete(id); continue; }
+    if (!m.has(id)) m.set(id, a.description);
+  }
+  return m;
+}
+function suivreAgents(c, o, maintenant = Date.now()) {
+  if (!c.agentsLances) c.agentsLances = new Map();
+  if (!c.lancements) c.lancements = new Map();
+  if (o.parent_tool_use_id) return false;                       // l'agent d'un agent : son affaire
+  const brut = o.message ? o.message.content : null, contenu = Array.isArray(brut) ? brut : [];
+  let change = false;
+  if (o.type === 'assistant')
+    for (const b of contenu) if (b && b.type === 'tool_use' && (b.name === 'Agent' || b.name === 'Task'))
+      c.lancements.set(b.id, String((b.input || {}).description || '?').slice(0, 200));
+  if (o.type === 'user')
+    for (const b of contenu) {
+      if (!b || b.type !== 'tool_result' || !c.lancements.has(b.tool_use_id)) continue;
+      const texte = typeof b.content === 'string' ? b.content : Array.isArray(b.content) ? b.content.map(x => (x && x.text) || '').join(' ') : '';
+      const m = texte.match(/agentId:\s*([\w-]+)/);           // lancé en arrière-plan (sinon il a déjà fini)
+      if (m) { c.agentsLances.set(m[1], { description: c.lancements.get(b.tool_use_id), ts: maintenant }); change = true; }
+      c.lancements.delete(b.tool_use_id);
+    }
+  const fins = [];
+  if (o.type === 'system' && o.subtype === 'task_notification' && o.task_id) fins.push(String(o.task_id));
+  if (o.type === 'user') for (const m of (typeof brut === 'string' ? brut : JSON.stringify(contenu)).matchAll(/<task-id>([\w-]+)<\/task-id>/g)) fins.push(m[1]);
+  for (const id of fins) if (c.agentsLances.delete(id)) change = true;
+  return change;
+}
 function noterAgentsEnCours(c) {
-  if (c.taches.size) tachesCerveaux.set(c, [...c.taches.entries()].map(([id, d]) => ({ id, description: d, ...(briefsAgents.get(d) || {}) })));
+  const t = tachesDe(c);
+  if (t.size) tachesCerveaux.set(c, [...t.entries()].map(([id, d]) => ({ id, description: d, ...(briefsAgents.get(d) || {}) })));
   else tachesCerveaux.delete(c);
   ecrireAgents(JARVIS_AGENTS_EN_COURS, [...tachesCerveaux.values()].flat());
 }
@@ -2708,7 +2748,8 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
   }
   const enfant = spawn(CLAUDE_BIN, args, { cwd: JARVIS_CWD, stdio: ['pipe', 'pipe', 'pipe'], detached: true, env });
   const c = { enfant, modele, persona, session, reprise: session, source, agents, tours: 0, repos: null, erreurs: '', ne: Date.now(),
-    attente: [], enCours: null, taches: new Map(), notifs: [], rejoue: false };
+    attente: [], enCours: null, taches: new Map(), agentsLances: new Map(), lancements: new Map(), notifs: [], rejoue: false };
+  console.error(`Jarvis ${hmsCerveau()} : cerveau ${modele} lancé${session ? ' (reprise de la même conversation)' : ''}`);
   enfant.cerveau = c;
   let tampon = '';
   enfant.stdout.setEncoding('utf8');
@@ -2741,6 +2782,7 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
       }
       if (o.type === 'system' && o.subtype === 'background_tasks_changed')
         { c.taches = new Map((o.tasks || []).map(t => [t.task_id, String(t.description || '')])); noterAgentsEnCours(c); }
+      if (suivreAgents(c, o)) noterAgentsEnCours(c);
       const t = tourDeLigne(c, o);
       if (t) t.surLigne(o);
     }
@@ -2751,9 +2793,12 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
   enfant.on('error', (e) => { c.erreurs = String(e.message || e); });
   enfant.on('close', (code, signal) => {
     clearTimeout(c.repos);
-    if (c.taches.size && !arretCockpit) agentsCoupes([...c.taches.entries()].map(([id, d]) => ({ id, description: d, ...(briefsAgents.get(d) || {}) })),
+    const enCours = tachesDe(c);
+    // (24/10) daté dans le journal du cockpit : qui s'arrête, pourquoi, avec combien d'agents
+    console.error(`Jarvis ${hmsCerveau()} : cerveau ${c.modele} fermé (${signal || `code ${code}`}${enfant.coupeParNous ? `, arrêté par le cockpit : ${enfant.raisonArret || '?'}` : ''}${enCours.size ? `, ${enCours.size} agent(s) en cours` : ''})`);
+    if (enCours.size && !arretCockpit) agentsCoupes([...enCours.entries()].map(([id, d]) => ({ id, description: d, ...(briefsAgents.get(d) || {}) })),
       signal ? `son cerveau a été arrêté (${signal})` : `son cerveau s'est arrêté (code ${code})`);
-    if (!arretCockpit) { c.taches = new Map(); noterAgentsEnCours(c); }   // à l'arrêt du cockpit, le fichier reste : relu au démarrage
+    if (!arretCockpit) { c.taches = new Map(); c.agentsLances = new Map(); noterAgentsEnCours(c); }   // à l'arrêt du cockpit, le fichier reste : relu au démarrage
     try { process.kill(-enfant.pid, 'SIGTERM'); } catch (_) {}      // un serveur MCP resté seul dans le groupe
     if (cerveau === c) cerveau = null;
     const tours = [c.enCours, ...c.attente];
@@ -2778,14 +2823,14 @@ function cerveauPour(modele, session, persona, source = 'abonnement') {
       && memeConversation) return c;
   // des tâches de fond tournent en lui, ou il dit de lui-même un résultat : le remplacer les perdrait → on garde
   // ce cerveau (et son modèle) ; le message d'Ahmed attend la fin de son tour à lui
-  if (cerveauVivant(c) && (c.taches.size || (c.enCours && c.enCours.autonome)) && c.source === source && memeConversation) {
+  if (cerveauVivant(c) && (tachesDe(c).size || (c.enCours && c.enCours.autonome)) && c.source === source && memeConversation) {
     console.error(`Jarvis : tâche de fond ou tour de lui-même en cours — je garde le cerveau ${c.modele} (au lieu de ${modele})`);
     return c;
   }
-  if (c && cerveauVivant(c) && c.taches.size && c.source === source && !memeConversation) {
+  if (c && cerveauVivant(c) && tachesDe(c).size && c.source === source && !memeConversation) {
     console.error('Jarvis : nouvelle conversation, mais un agent tourne encore : l’ancien cerveau finit à part');
     c.detache = true; reposer(c);
-  } else if (c) tuer(c.enfant);
+  } else if (c) tuer(c.enfant, `changement (${c.modele} → ${modele}${memeConversation ? '' : ', autre conversation'}${c.persona !== persona ? ', consigne' : ''})`);
   return cerveauLancer(modele, session, persona, source);
 }
 
@@ -3855,7 +3900,7 @@ async function traiter(req, res) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       return res.end(j({ erreur: `clé impossible à enregistrer (${e.code || e.message})` }));
     }
-    if (cerveau && cerveau.source === 'api' && !occupe(cerveau) && !cerveau.taches.size) tuer(cerveau.enfant);    // l'ancienne clé ne sert plus
+    if (cerveau && cerveau.source === 'api' && !occupe(cerveau) && !tachesDe(cerveau).size) tuer(cerveau.enfant, 'clé API changée');    // l'ancienne clé ne sert plus
     apiEnPanneJusqua = 0; delete abonnement.apiPanne; trousseauVu.ts = 0;               // une clé neuve : on réessaie
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(j({ cle: !!cle, fin: cle ? cle.slice(-4) : null }));
