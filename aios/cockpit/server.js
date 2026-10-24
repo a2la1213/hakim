@@ -1414,7 +1414,8 @@ const CAPTEURS_CHAMPS = {
   lumiere: /^(dans le noir|lumière douce|bien éclairé|très lumineux|plein soleil) \(\d{1,6} lx\)$/,
   altitude: /^(monte|descend) de \d{1,4} m en \d{1,2} min$/,
   // (2026-10-23, Ahmed, 19:18) l'état interne du téléphone (EtatTelephone.java) : jamais de nom de réseau ni d'identifiant
-  batterie: /^batterie \d{1,3} %(, en charge)?(, chaude \(\d{2} °C\))?$/,
+  // (24/10, appli 1.12) branchée ou non, la prise, l'état, et le temps avant la charge complète ; l'ancienne forme reste lue
+  batterie: /^batterie \d{1,3} %(, en charge|, sur batterie|, branchée \((secteur|USB|sans fil|station)\), (en charge|pleine|ne charge pas)(, pleine dans ≈ (moins de 30 min|30 min|\d{1,2} h( 30)?))?)?(, chaude \(\d{2} °C\))?$/,
   // (19:27, Ahmed) appli 1.5 : la chaleur d'après la température (normal < 38 °C, tiède < 43, chaud < 48, très chaud au-delà),
   // le Bluetooth et le NFC (jamais le nom d'un appareil), l'économie d'énergie activée OU désactivée
   reseau: /^(hors ligne|autre réseau|(Wi-Fi|réseau mobile)(, (signal excellent|bon signal|signal moyen|signal faible|signal très faible))?)$/,

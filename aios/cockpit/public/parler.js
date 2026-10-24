@@ -1122,11 +1122,21 @@ function noterSanteVue() {
     if (Object.keys(d).length) { santeNotee = Date.now(); journalVoix('sante_lu', d); }
   } catch (_) {}
 }
+// (24/10, appli 1.12) branché ou non, l'état de la batterie : au diagnostic, à chaque changement (des mots, pas de valeur)
+let batterieNotee = '';
+function noterBatterie(e) {
+  if (!e || !e.branche) return;
+  const cle = `${e.branche}|${e.statut}|${e.charging}`;
+  if (cle === batterieNotee) return;
+  batterieNotee = cle;
+  journalVoix('batterie_etat', { branche: String(e.branche), statut: String(e.statut), charging: String(e.charging) });
+}
 function capteursDuTelephone() {
   noterSanteVue();
   // (2026-10-23, 19:18) avec l'état interne du téléphone, s'il l'a allumé : un seul résumé pour le cockpit
   const lire = (f) => { try { const t = window.HakimApp && window.HakimApp[f] ? window.HakimApp[f]() : ''; return t ? JSON.parse(t) : null; } catch (_) { return null; } };
   const c = lire('capteurs'), e = lire('etatTelephone'), m = lire('sante');          // (19:59) et sa montre, s'il l'a allumée
+  noterBatterie(e);
   return c || e || m ? { ...(m || {}), ...(e || {}), ...(c || {}), t_ms: Date.now() } : undefined;
 }
 function afficherCapteurs(o) {
