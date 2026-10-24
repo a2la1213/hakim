@@ -2577,6 +2577,21 @@ const AGENTS = {
     prompt: "Tu es le Juge de Hakim : tu n'as rien fait de ce que tu relis. Tu cherches les erreurs (calculs refaits, sources vérifiées, hypothèses cachées), tu distingues le prouvé du plausible, et tu tranches : VALIDE ou À CORRIGER, avec les raisons. Tu peux exécuter dans l'atelier pour vérifier, jamais modifier ce qui est jugé.",
     tools: [...LECTURE, 'mcp__terminal__executer', 'mcp__calcul__executer_python'], model: 'opus' },
 };
+/* (24/10, demande d'Ahmed relayée par Hakim : « toujours repartir de la dernière version ancrée ») le préambule des maths
+   et de la physique du réel (atelier/ancrage/PREAMBULE_AGENTS.md, écrit par Hakim avec Ahmed) entre dans la consigne de
+   CHAQUE agent (codeur, architecte, juge) au lancement du cerveau : Hakim n'a plus à penser à le recopier. Lu à chaque
+   lancement (une mise à jour du préambule vaut dès le cerveau suivant), borné à 4 000 caractères ; il ne s'applique que
+   si la mission touche à ce sujet. */
+const PREAMBULE_MATHS = path.join(JARVIS_CWD, 'atelier', 'ancrage', 'PREAMBULE_AGENTS.md');
+const REFERENCE_MATHS = path.join(JARVIS_CWD, 'atelier', 'ancrage', 'MATHS_DU_REEL_MERE.md');
+function agentsPourCerveau() {
+  let p = ''; try { p = fs.readFileSync(PREAMBULE_MATHS, 'utf8').trim().slice(0, 4000); } catch (_) {}
+  if (!p) return AGENTS;
+  const ajout = `\n\n[Maths et physique du réel — préambule d'Ahmed et de Hakim, lu dans ${PREAMBULE_MATHS} ; la référence complète : `
+    + `${REFERENCE_MATHS}] Si ta mission touche aux maths ou à la physique du réel (unification, gravité, ondes, sable, briques, sondes, `
+    + `tourbillon, plafond M…), applique ce préambule AVANT tout le reste ; sinon, ignore-le.\n${p}`;
+  return Object.fromEntries(Object.entries(AGENTS).map(([k, a]) => [k, { ...a, prompt: a.prompt + ajout }]));
+}
 const jourLocal = () => new Date().toLocaleDateString('sv-SE');        // AAAA-MM-JJ, à l'heure du Mac
 function agentsDuJour() {
   const jour = jourLocal();
@@ -2741,7 +2756,7 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
     '--strict-mcp-config', '--mcp-config', JARVIS_MCP, '--allowedTools', OUTILS_JARVIS.concat(agents ? ['Task'] : []).join(','),
     '--disallowedTools', outilsInterdits().join(','), '--max-turns', '40'];
   if (persona) args.push('--append-system-prompt', persona);
-  if (agents) args.push('--agents', j(AGENTS));
+  if (agents) args.push('--agents', j(agentsPourCerveau()));
   if (session) args.push('--resume', session);
   const env = { ...process.env };
   delete env.ANTHROPIC_API_KEY;                                   // l'abonnement : jamais une clé par mégarde
