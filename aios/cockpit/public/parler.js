@@ -1240,6 +1240,7 @@ async function demarrerCapteurVision(v) {
   v.capteur = await Vision.demarrer({
     video: $('apercu'),
     face: v.face,
+    delegue: window.HakimApp ? 'CPU' : 'GPU',                  // (24/10) sur le téléphone, le GPU de la WebView ne trouvait presque aucun visage
     surMesure: (m) => surVisage(v, m),
     surErreur: (msg) => { $('expression').textContent = 'caméra seule'; humeur(msg); },
   });

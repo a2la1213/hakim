@@ -58,8 +58,11 @@
       const fichiers = await FilesetResolver.forVisionTasks(`${BASE}/wasm`);
       const options = (delegue) => ({ baseOptions: { modelAssetPath: `${BASE}/face_landmarker.task`, delegate: delegue },
         runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true });
-      try { lm = await FaceLandmarker.createFromOptions(fichiers, options('GPU')); delegue = 'gpu'; }
-      catch (_) { lm = await FaceLandmarker.createFromOptions(fichiers, options('CPU')); delegue = 'cpu'; }
+      // (24/10, vision_etat du Fold : sur le GPU de la WebView, 7 visages trouvés sur 321 images, quand Android en trouvait
+      // 61 sur 66) o.delegue = « CPU » pour commencer par le processeur ; le GPU reste le premier choix ailleurs
+      const ordre = o.delegue === 'CPU' ? ['CPU', 'GPU'] : ['GPU', 'CPU'];
+      try { lm = await FaceLandmarker.createFromOptions(fichiers, options(ordre[0])); delegue = ordre[0].toLowerCase(); }
+      catch (_) { lm = await FaceLandmarker.createFromOptions(fichiers, options(ordre[1])); delegue = ordre[1].toLowerCase(); }
     } catch (e) {
       if (o.surErreur) o.surErreur(`analyse du visage indisponible : ${e.message || e}`);
     }
