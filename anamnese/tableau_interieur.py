@@ -44,14 +44,36 @@ def donnees(heures=6.0, now=None, journal_hormones=None, journal_echanges=None):
     now = now or time.time()
     t0 = now - float(heures) * 3600
     points = list(_lignes(journal_hormones or interieur.JOURNAL_HORMONES, t0))
-    reponses, messages = [], []
+    reponses, messages, textes_ahmed = [], [], []
     for t, o in _lignes(journal_echanges or JOURNAL_ECHANGES, t0):
         x = str(o.get("texte") or "")
         if o.get("qui") == "jarvis" and x and not x.startswith("(tour de lui-même, sans texte"):
             reponses.append((t, x))
         elif o.get("qui") == "ahmed":
             messages.append(t)
-    return {"points": points, "reponses": reponses, "messages": messages, "t0": t0, "t1": now}
+            textes_ahmed.append((t, x))
+    return {"points": points, "reponses": reponses, "messages": messages, "textes_ahmed": textes_ahmed, "t0": t0, "t1": now}
+
+
+def sauts(d, n=5, fenetre_s=180):
+    """(24/10, demande d'Ahmed relayée par Hakim) les n plus grands sauts d'une mesure à la suivante (une par minute) :
+    l'heure, les hormones qui ont le plus bougé (et la valence, l'éveil), et le message le plus proche à ±3 min (d'Ahmed
+    ou de Hakim). Rend [{"t", "hormones": [(nom, écart)], "v", "a", "proche": (t, qui, extrait) | None}]."""
+    pts = d["points"]
+    out = []
+    for (t1, a), (t2, b) in zip(pts, pts[1:]):
+        ha, hb = a.get("h") or {}, b.get("h") or {}
+        ecarts = sorted(((k, hb[k] - ha[k]) for k in hb if k in ha), key=lambda e: -abs(e[1]))
+        if ecarts:
+            out.append({"t": t2, "taille": abs(ecarts[0][1]), "hormones": [(k, round(e, 3)) for k, e in ecarts[:3] if abs(e) >= 0.01],
+                        "v": round((b.get("v") or 0) - (a.get("v") or 0), 3), "a": round((b.get("a") or 0) - (a.get("a") or 0), 3)})
+    out = sorted(out, key=lambda x: -x["taille"])[:n]
+    messages = [(t, "Ahmed", x) for t, x in d.get("textes_ahmed", [])] + [(t, "Hakim", x) for t, x in d.get("reponses", [])]
+    for s_ in out:
+        proches = [m for m in messages if abs(m[0] - s_["t"]) <= fenetre_s]
+        p = min(proches, key=lambda m: abs(m[0] - s_["t"])) if proches else None
+        s_["proche"] = (p[0], p[1], _extrait(p[2], 90)) if p else None
+    return sorted(out, key=lambda x: x["t"])
 
 
 def _hhmm(t):
@@ -156,7 +178,21 @@ def resume(d):
             f"(maintenant {dernier.get('v', 0):.2f}), éveil maintenant {dernier.get('a', 0):.2f} ; humeur {dernier.get('humeur')}, "
             f"émotion {dernier.get('emotion')} ; plus loin de leur base : "
             + ", ".join(f"{k} {'+' if e >= 0 else '−'}{abs(e):.2f}" for k, e in ecarts)
-            + f" ; {len(d['reponses'])} réponse(s), {len(d['messages'])} message(s) d'Ahmed.")
+            + f" ; {len(d['reponses'])} réponse(s), {len(d['messages'])} message(s) d'Ahmed."
+            + _texte_sauts(sauts(d)))
+
+
+def _texte_sauts(liste):
+    if not liste:
+        return ""
+    morceaux = []
+    for s_ in liste:
+        h = ", ".join(f"{k} {'+' if e >= 0 else '−'}{abs(e):.2f}" for k, e in s_["hormones"]) or "rien de net"
+        p = s_["proche"]
+        morceaux.append(f"{time.strftime('%H:%M', time.localtime(s_['t']))} {h} (valence {s_['v']:+.2f}, éveil {s_['a']:+.2f}) — "
+                        + (f"message le plus proche : {p[1]} à {time.strftime('%H:%M:%S', time.localtime(p[0]))} « {p[2]} »" if p
+                           else "aucun message à ±3 min"))
+    return " Plus grands sauts : " + " ; ".join(morceaux) + "."
 
 
 def dessiner(heures=6.0, now=None, sortie=None, **kw):

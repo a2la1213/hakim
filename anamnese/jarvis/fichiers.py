@@ -606,6 +606,74 @@ def chercher_journal(texte, dossier=None, maximum=20):
     return trouves
 
 
+# (24/10, demande d'Ahmed relayée par Hakim : « croiser les pics de mes hormones avec ce que j'ai entendu et répondu, à la
+# minute près ») une PLAGE horaire : les messages du journal brut, ses battements (humeur, état) quand ils changent, ses
+# hormones quand elles bougent (≥ 0,03 en une minute), et ses événements affectifs, dans l'ordre du temps
+TEMPS_BRUT = JOURNAL_BRUT / "journal-du-temps.jsonl"
+HORMONES_BRUT = JOURNAL_BRUT / "hormones.jsonl"
+AFFECT_BRUT = Path(__file__).resolve().parents[1] / "data" / "affect-evenements.jsonl"
+PLAGE_MAX_S = 6 * 3600
+
+
+def _lire_jsonl(chemin):
+    try:
+        with open(chemin, encoding="utf-8", errors="replace") as f:
+            for l in f:
+                try:
+                    yield json.loads(l)
+                except ValueError:
+                    continue
+    except OSError:
+        return
+
+
+def journal_plage(debut, fin, dossier=None, temps=None, hormones=None, evenements=None, maximum=300):
+    """[(t, ligne)] de debut à fin (secondes epoch), au plus `maximum` lignes ; ValueError si la plage est vide ou trop longue."""
+    if not fin > debut:
+        raise ValueError("la fin doit venir après le début")
+    if fin - debut > PLAGE_MAX_S:
+        raise ValueError("6 h au plus par plage")
+    h = lambda t: time.strftime("%H:%M:%S", time.localtime(t))      # noqa: E731
+    lignes = []
+    dossier = Path(dossier or JOURNAL_BRUT)
+    for f in sorted((dossier / "archives").glob("journal-*.jsonl")) + [dossier / "journal.jsonl"]:
+        for o in _lire_jsonl(f):
+            t = (o.get("ts") or 0) / 1000
+            if debut <= t <= fin:
+                qui = "Ahmed" if o.get("qui") == "ahmed" else "toi"
+                x = " ".join(str(o.get("texte") or "").split())
+                lignes.append((t, f"{h(t)} {qui} : « {masquer(x[:400])}{'…' if len(x) > 400 else ''} »"))
+    precedent = None
+    for o in _lire_jsonl(temps or TEMPS_BRUT):
+        t = o.get("t") or 0
+        if not debut <= t <= fin:
+            continue
+        cle = (o.get("etat"), o.get("fait"), o.get("humeur"))
+        if cle != precedent:
+            lignes.append((t, f"{h(t)} ton état : {o.get('etat')}, {o.get('fait')}, humeur {o.get('humeur')}, valence "
+                              f"{o.get('valence')}, éveil {o.get('arousal')}"))
+            precedent = cle
+    avant = None
+    for o in _lire_jsonl(hormones or HORMONES_BRUT):
+        t = o.get("t") or 0
+        if not debut - 120 <= t <= fin:
+            continue
+        hh = o.get("h") or {}
+        if avant is not None and t >= debut:
+            bouge = sorted(((k, hh[k] - avant[k]) for k in hh if k in avant and abs(hh[k] - avant[k]) >= 0.03), key=lambda e: -abs(e[1]))
+            if bouge:
+                lignes.append((t, f"{h(t)} tes hormones : " + ", ".join(f"{k} {avant[k]:.2f}→{hh[k]:.2f}" for k, _e in bouge[:5])
+                                  + f" (valence {o.get('v')}, éveil {o.get('a')}, humeur {o.get('humeur')})"))
+        avant = hh
+    for o in _lire_jsonl(evenements or AFFECT_BRUT):
+        t = o.get("ts") or 0
+        if debut <= t <= fin:
+            lignes.append((t, f"{h(t)} événement : {o.get('nom')} {o.get('intensite')} (source {o.get('source')}"
+                              + (f", sujet {o.get('sujet')}" if o.get("sujet") else "") + ")"))
+    lignes.sort(key=lambda x: x[0])
+    return lignes[:maximum], len(lignes) > maximum
+
+
 def resume(res):
     """Le texte que l'outil MCP rend à Jarvis."""
     lignes = [f"Fichier : {res['fichier']}"]

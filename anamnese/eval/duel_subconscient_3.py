@@ -26,7 +26,14 @@ def main():
     a = argparse.ArgumentParser()
     a.add_argument("--phase", choices=("generer", "juger", "bilan"), required=True)
     a.add_argument("--sortie", default=str(Path.home() / "AIOS" / "jarvis" / "duel3"))
+    a.add_argument("--silence-min", type=float, default=10.0, help="minutes de silence d'Ahmed avant de générer")
+    a.add_argument("--memoire-min", type=float, default=10.0, help="mémoire libre minimale (%%), modèle du duel chargé")
+    a.add_argument("--situations", type=int, default=30, help="les N premières situations (par numéro)")
     args = a.parse_args()
+    D2.SILENCE_S = args.silence_min * 60
+    # (24/10, 10:03-10:06) le seuil de 25 % de mémoire libre se mesurait AVEC le modèle du duel déjà chargé : Gemma (7,6 Go)
+    # le faisait passer dessous, le duel le déchargeait, la mémoire remontait, il le rechargeait… (3 pensées en 5 min)
+    D2.MEMOIRE_LIBRE_MIN = args.memoire_min
     sortie = Path(args.sortie).expanduser()
     sortie.mkdir(parents=True, exist_ok=True)
 
@@ -36,10 +43,18 @@ def main():
         print(t, flush=True)
     r = json.loads((Path.home() / "AIOS" / "jarvis" / "duel" / "resultats.json").read_text(encoding="utf-8"))
     sits = sorted((x["situation"] for x in r.values()), key=lambda s: s["id"])
+    sits = sits[:args.situations]                    # (24/10, 10:16, Ahmed) 15 : Gemma les a déjà faites, les petits suivent
     journal(f"{args.phase} : {len(sits)} situations, {len(D2.MODELES)} modèles")
     try:
         if args.phase == "generer":
             D2.generer_tout(sits, sortie, journal, False)
+            try:                                              # Hakim le sait tout de suite (son calcul peut repartir)
+                import courrier
+                courrier.envoyer("hakim", "La génération du duel n°3 est finie : plus aucun modèle du duel n'est chargé, ton "
+                                 "calcul peut repartir. Le juge passera lundi soir (forfait). Détail : ~/AIOS/jarvis/duel3/.",
+                                 "Duel n°3 : génération finie", de="claude-code")
+            except Exception as e:
+                journal(f"courrier impossible : {e}")
         elif args.phase == "juger":
             D2.juger(sits, sortie, journal, False)
         b = D2.bilan(sits, sortie)

@@ -417,3 +417,31 @@ def test_masquage_audit_2026_10_23():
     assert F.masquer(f"commit {sha}") == f"commit {sha}"
     assert F.masquer("les jetons : beaucoup") == "les jetons : beaucoup"
     assert F.masquer("password: court") == "password: court"
+
+
+def test_le_journal_par_plage_horaire(tmp_path):
+    """(24/10, demande d'Ahmed relayée par Hakim) messages, état qui change, hormones qui bougent, événements, dans l'ordre."""
+    import json as J
+    import fichiers as F
+    t0 = 1_800_000_000.0
+    (tmp_path / "journal.jsonl").write_text("\n".join(J.dumps(x) for x in [
+        {"ts": (t0 + 10) * 1000, "qui": "ahmed", "texte": "N'importe quoi mon frère, password: soleilbleu"},
+        {"ts": (t0 + 20) * 1000, "qui": "jarvis", "texte": "Haha, d'accord."},
+        {"ts": (t0 + 9000) * 1000, "qui": "ahmed", "texte": "hors plage"}]))
+    temps = tmp_path / "t.jsonl"
+    temps.write_text("\n".join(J.dumps({"t": t0 + k * 15, "etat": "eveil", "fait": "avec Ahmed", "humeur": "élan" if k < 3 else "surprise",
+                                        "valence": 0.7, "arousal": 0.4}) for k in range(6)))
+    hormones = tmp_path / "h.jsonl"
+    hormones.write_text("\n".join(J.dumps({"t": t0 + 60 * k, "h": {"crh": 0.1 if k < 1 else 0.3, "dopamine": 0.6}, "v": 0.7, "a": 0.4}) for k in range(3)))
+    evts = tmp_path / "e.jsonl"
+    evts.write_text(J.dumps({"ts": t0 + 15, "nom": "echec", "intensite": 0.6, "source": "parole", "sujet": "profil"}))
+    lignes, coupe = F.journal_plage(t0, t0 + 120, dossier=tmp_path, temps=temps, hormones=hormones, evenements=evts)
+    texte = [x for _t, x in lignes]
+    assert not coupe and len(texte) == 6
+    assert all(any(c) for c in zip(*[[("ton état" in x and "élan" in x), ("N'importe quoi mon frère, password: [MASQUÉ]" in x),
+                                        ("événement : echec 0.6 (source parole, sujet profil)" in x), ("toi : « Haha" in x)] for x in texte]))
+    assert [i for i, x in enumerate(texte) if "N'importe quoi" in x] < [i for i, x in enumerate(texte) if "événement : echec" in x], "dans l'ordre du temps"
+    assert any("humeur surprise" in x for x in texte) and any("crh 0.10→0.30" in x for x in texte)
+    assert not any("hors plage" in x for x in texte)
+    with pytest.raises(ValueError):
+        F.journal_plage(t0, t0 + 7 * 3600, dossier=tmp_path)
