@@ -883,6 +883,7 @@ async function envoyer(texte, oral, dejaRelance) {
   const dites = etat.dites.splice(0);
   if (!dejaRelance) { etat.joints.forEach(x => x.url && URL.revokeObjectURL(x.url)); etat.joints = []; rendreJoints(); }
   arreterTout(true, { garder: true });
+  if (!dejaRelance) dejaLu(texte);                      // (24/10) « je l'ai lu » : sa suite non dite ne sera pas redite
   $('q').value = ''; ajuster();
   const avant = etat.messages.filter(x => x.qui === 'u' && x.ts);
   const tPrecedent = etat.session && avant.length ? avant[avant.length - (dejaRelance ? 2 : 1)]?.ts : null;
@@ -1222,26 +1223,45 @@ function erreurMicro(msg) {
   setTimeout(() => humeur(), 5000);
 }
 
-/* ---------- la vision (caméra) ---------- */
+/* ---------- la vision (caméra) ----------
+   (24/10, idées de Hakim, accord d'Ahmed : « optimiser la caméra ») l'aperçu FLOTTE au-dessus de tout, même sur le petit
+   écran du Fold plié, pour qu'Ahmed voie ce que Hakim voit et se cadre ; il se déplace au doigt et garde sa place ; le
+   point rouge dit que la caméra est allumée ; ⟲ passe à la caméra arrière (montrer un objet, un document : aucune analyse
+   de visage) et le choix est gardé ; personne dans le cadre depuis 30 s : l'aperçu le dit ; depuis 3 min : la caméra
+   s'éteint seule (batterie, vie privée). */
+const CAMERA_ABSENT_AVERTIR_MS = 30000, CAMERA_ABSENT_COUPER_MS = 180000;
+const reglageCamera = (cle, defaut) => { try { return localStorage.getItem(`jarvis.camera.${cle}`) || defaut; } catch (_) { return defaut; } };
+const garderReglageCamera = (cle, valeur) => { try { localStorage.setItem(`jarvis.camera.${cle}`, valeur); } catch (_) {} };
+async function demarrerCapteurVision(v) {
+  v.absentDepuis = 0;
+  $('vision').classList.toggle('arriere', v.face === 'environment');
+  $('vision').classList.remove('absent');
+  $('expression').textContent = 'ouverture…';
+  v.capteur = await Vision.demarrer({
+    video: $('apercu'),
+    face: v.face,
+    surMesure: (m) => surVisage(v, m),
+    surErreur: (msg) => { $('expression').textContent = 'caméra seule'; humeur(msg); },
+  });
+  if (v.face === 'environment') $('expression').textContent = 'caméra arrière';
+}
 async function basculerCamera() {
   activite();
   if (etat.vision) return arreterCamera();
-  const v = { capteur: null, courant: null, depuis: 0, candidat: null, candidatDepuis: 0 };
+  const v = { capteur: null, courant: null, depuis: 0, candidat: null, candidatDepuis: 0, face: reglageCamera('face', 'user'), absentDepuis: 0 };
   etat.vision = v;
   $('camera').setAttribute('aria-pressed', 'true');
   $('vision').hidden = false;
-  $('expression').textContent = 'ouverture…';
+  $('vision').classList.add('flottante');
+  placerVision();
   try {
-    v.capteur = await Vision.demarrer({
-      video: $('apercu'),
-      surMesure: (m) => surVisage(v, m),
-      surErreur: (msg) => { $('expression').textContent = 'caméra seule'; humeur(msg); },
-    });
+    await demarrerCapteurVision(v);
   } catch (e) {
     if (etat.vision !== v) return;
     etat.vision = null;
     $('camera').setAttribute('aria-pressed', 'false');
     $('vision').hidden = true;
+    $('vision').classList.remove('flottante', 'absent', 'arriere');
     humeur('caméra refusée ou indisponible : autorise-la pour localhost'); setTimeout(() => humeur(), 5000);   // sans toucher au micro
     return;
   }
@@ -1258,12 +1278,81 @@ function arreterCamera() {
   if (v.capteur) v.capteur.arreter();
   $('camera').setAttribute('aria-pressed', 'false');
   $('vision').hidden = true;
+  $('vision').classList.remove('flottante', 'absent', 'arriere');
   noterPresent({ e: 'camera_fin', t: Date.now() });
 }
+// ⟲ : l'autre caméra ; l'expression en cours se ferme (l'arrière ne lit aucun visage)
+async function changerCamera() {
+  const v = etat.vision;
+  if (!v || !v.capteur || v.change) return;
+  v.change = true;
+  fermerExpression(v, Date.now());
+  v.courant = null; v.candidat = null;
+  try { v.capteur.arreter(); } catch (_) {}
+  v.face = v.face === 'environment' ? 'user' : 'environment';
+  garderReglageCamera('face', v.face);
+  try { await demarrerCapteurVision(v); }
+  catch (_) { humeur('cette caméra est indisponible'); setTimeout(() => humeur(), 4000); if (etat.vision === v) arreterCamera(); }
+  finally { v.change = false; }
+  if (etat.vision !== v && v.capteur) v.capteur.arreter();
+  journalVoix('camera_face', { face: v.face === 'environment' ? 'arriere' : 'avant' });
+}
+// la place de l'aperçu : en fractions de l'écran (le Fold plié et déplié n'ont pas la même taille) ; en haut à droite d'abord
+function placerVision() {
+  const b = $('vision');
+  if (!b.classList.contains('flottante')) return;
+  let p = null; try { p = JSON.parse(reglageCamera('place', 'null')); } catch (_) {}
+  const w = b.offsetWidth || 110, h = b.offsetHeight || 110, W = window.innerWidth, H = window.innerHeight;
+  const fx = p && Number.isFinite(p.fx) ? p.fx : 1, fy = p && Number.isFinite(p.fy) ? p.fy : 0;
+  b.style.left = `${Math.round(8 + fx * Math.max(0, W - w - 16))}px`;
+  b.style.top = `${Math.round(8 + fy * Math.max(0, H - h - 16))}px`;
+  b.style.right = 'auto'; b.style.bottom = 'auto';
+}
+(() => {
+  const b = $('vision');
+  let prise = null;
+  b.addEventListener('pointerdown', (e) => {
+    if (!b.classList.contains('flottante') || e.target.closest('button')) return;
+    const r = b.getBoundingClientRect();
+    prise = { dx: e.clientX - r.left, dy: e.clientY - r.top, id: e.pointerId };
+    b.classList.add('tenue');
+    try { b.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  b.addEventListener('pointermove', (e) => {
+    if (!prise || e.pointerId !== prise.id) return;
+    const W = window.innerWidth, H = window.innerHeight, w = b.offsetWidth, h = b.offsetHeight;
+    b.style.left = `${Math.round(Math.min(Math.max(8, e.clientX - prise.dx), W - w - 8))}px`;
+    b.style.top = `${Math.round(Math.min(Math.max(8, e.clientY - prise.dy), H - h - 8))}px`;
+  });
+  const lacher = (e) => {
+    if (!prise || e.pointerId !== prise.id) return;
+    prise = null; b.classList.remove('tenue');
+    const W = window.innerWidth, H = window.innerHeight, w = b.offsetWidth, h = b.offsetHeight;
+    const fx = (parseFloat(b.style.left) - 8) / Math.max(1, W - w - 16), fy = (parseFloat(b.style.top) - 8) / Math.max(1, H - h - 16);
+    garderReglageCamera('place', JSON.stringify({ fx: Math.min(1, Math.max(0, fx)), fy: Math.min(1, Math.max(0, fy)) }));
+  };
+  b.addEventListener('pointerup', lacher); b.addEventListener('pointercancel', lacher);
+  window.addEventListener('resize', placerVision);
+  $('cameraFace').addEventListener('click', changerCamera);
+  $('cameraCouper').addEventListener('click', () => { activite(); arreterCamera(); });
+})();
 
 // Une expression ne compte que si elle tient 1,2 s ; le présent vécu garde celles d'au moins 1,5 s.
 function surVisage(v, m) {
   const maintenant = Date.now();
+  // personne dans le cadre : dit dans l'aperçu après 30 s, caméra éteinte après 3 min
+  if (m.expression === 'absent') {
+    if (!v.absentDepuis) v.absentDepuis = maintenant;
+    const absent = maintenant - v.absentDepuis;
+    $('vision').classList.toggle('absent', absent >= CAMERA_ABSENT_AVERTIR_MS);
+    if (absent >= CAMERA_ABSENT_AVERTIR_MS) $('expression').textContent = 'personne dans le cadre';
+    if (absent >= CAMERA_ABSENT_COUPER_MS && etat.vision === v) {
+      journalVoix('camera_auto_coupee', { absent_s: Math.round(absent / 1000) });
+      arreterCamera();
+      humeur('caméra éteinte : personne devant depuis 3 min'); setTimeout(() => humeur(), 6000);
+      return;
+    }
+  } else if (v.absentDepuis) { v.absentDepuis = 0; $('vision').classList.remove('absent'); }
   if (m.expression !== v.candidat) { v.candidat = m.expression; v.candidatDepuis = maintenant; }
   if (v.candidat !== v.courant && maintenant - v.candidatDepuis >= 1200) {
     fermerExpression(v, v.candidatDepuis);
@@ -1282,7 +1371,7 @@ async function photoCamera() {
   try {
     const jpeg = await v.capteur.capturer();
     if (!jpeg) return null;
-    const nom = `camera-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}.jpg`;
+    const nom = `camera-${v.face === 'environment' ? 'arriere-' : ''}${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}.jpg`;
     const r = await fetch('/api/jarvis/fichier', { method: 'POST', body: jpeg,
       headers: { 'X-Jeton': jeton(), 'X-Nom': nom, 'Content-Type': 'image/jpeg' } });
     const o = await r.json();
@@ -2245,6 +2334,27 @@ function garderNonDit() {
   aDire.push({ id: etat.lectureDe || `nondit-${Date.now()}`, texte, recu: Date.now(), coupe: true, origine_ts: origine, redite });
   sauverADire();
   journalVoix('non_dit_garde', { car: texte.length, en_attente: aDire.length });
+}
+/* (24/10, 07:29, Ahmed via Hakim : « s'il me dit qu'il a lu, il ne répète pas ») la suite non dite d'une réponse est
+   déjà à l'écran : si le message d'Ahmed dit qu'il l'a lue (« j'ai lu », « je viens de lire », « pas besoin de
+   répéter »…) ou en cite un bout (5 mots de suite), elle ne sera pas redite, et Hakim le sait par le présent vécu. */
+const AHMED_A_LU = /\b(j'?ai (bien |déjà |deja )?(lu|vu à l'écran|vu a l'ecran)|je (l'?ai|viens de|vien de) (le |la )?(lu|lire)|déjà lu|deja lu|c'est bon,? j'?ai (lu|vu)|pas (besoin|la peine) de (le |la )?(répéter|repeter|redire|relire)|je l'?ai lu|lu à l'écran|lu a l'ecran|lu sur l'écran)\b/i;
+const motsDe = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[a-z0-9]+/g) || [];
+function citeUnBout(message, texte, n = 5) {
+  const m = ` ${motsDe(message).join(' ')} `, mots = motsDe(texte);
+  for (let i = 0; i + n <= mots.length; i++) if (m.includes(` ${mots.slice(i, i + n).join(' ')} `)) return true;
+  return false;
+}
+function dejaLu(message) {
+  const lu = AHMED_A_LU.test(String(message || ''));
+  const restants = aDire.filter(x => !(x.coupe && (lu || citeUnBout(message, x.texte))));
+  const n = aDire.length - restants.length;
+  if (!n) return 0;
+  aDire.splice(0, aDire.length, ...restants);
+  sauverADire();
+  noterPresent({ e: 'lu', t: Date.now() });
+  journalVoix('non_dit_lu', { n, cite: !lu });
+  return n;
 }
 let synthese = { enCours: false, reessaiA: 0 };
 async function synthetiser() {

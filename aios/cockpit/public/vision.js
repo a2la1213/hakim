@@ -39,15 +39,18 @@
     return 'neutre';
   }
 
+  // (24/10, idée de Hakim, accord d'Ahmed) o.face : « user » (avant, par défaut) ou « environment » (arrière, pour montrer
+  // un objet ou un document) ; avec l'arrière, AUCUNE analyse de visage (ce n'est pas Ahmed qu'on filme)
   async function demarrer(o) {
-    const flux = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }, audio: false });
+    const face = o.face === 'environment' ? 'environment' : 'user';
+    const flux = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: face }, audio: false });
     const video = o.video;
     video.srcObject = flux;
     video.muted = true;
     try { await video.play(); }
     catch (e) { flux.getTracks().forEach(p => p.stop()); video.srcObject = null; throw e; }   // jamais de caméra allumée orpheline
     let lm = null;
-    try {
+    if (face === 'user') try {
       const { FilesetResolver, FaceLandmarker } = await import(`${BASE}/vision_bundle.mjs`);
       const fichiers = await FilesetResolver.forVisionTasks(`${BASE}/wasm`);
       const options = (delegue) => ({ baseOptions: { modelAssetPath: `${BASE}/face_landmarker.task`, delegate: delegue },
@@ -112,6 +115,7 @@
         video.srcObject = null;
       },
       get analyse() { return !!lm; },
+      face,
     };
   }
 

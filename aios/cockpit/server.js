@@ -815,7 +815,7 @@ async function blocInterieur(depuisMs, maintenant, dites) {
 // Le présent vécu envoyé par la page : la chronologie des dernières minutes, à la seconde.
 const EVENEMENTS_PRESENT = new Set(['ahmed', 'jarvis', 'coupure', 'ecrit', 'debut_conversation', 'fin_conversation', 'muet', 'micro_rouvert',
   'pause_voix', 'reprise_voix',
-  'visage', 'camera', 'camera_fin']);
+  'visage', 'camera', 'camera_fin', 'lu']);
 const EXPRESSIONS = new Set(['souriant', 'rit', 'sourcils froncés', 'surpris', 'yeux fermés', 'regarde ailleurs', 'absent']);
 function blocPresent(evs, maintenantClient, maintenant, depuisClient = -Infinity) {
   if (!Array.isArray(evs) || !evs.length) return '';
@@ -856,6 +856,8 @@ function blocPresent(evs, maintenantClient, maintenant, depuisClient = -Infinity
     else if (x.e === 'camera') morceaux.push(`${hms(x.debut)} Ahmed a allumé la caméra`);
     else if (x.e === 'camera_fin') morceaux.push(`${hms(x.debut)} Ahmed a éteint la caméra`);
     else if (x.e === 'micro_rouvert') morceaux.push(`${hms(x.debut)} Ahmed a rouvert son micro`);
+    // (24/10, demande d'Ahmed relayée par Hakim) il a lu à l'écran la suite que la voix n'avait pas dite
+    else if (x.e === 'lu') morceaux.push(`${hms(x.debut)} Ahmed a lu à l'écran la suite que ta voix n'avait pas dite : elle ne sera pas redite, ne la répète pas`);
     finPrec = Math.max(finPrec || 0, x.fin);
   }
   morceaux.push(`maintenant ${hms(maintenant - decal)}`);

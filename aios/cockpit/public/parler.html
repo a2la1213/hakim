@@ -148,6 +148,16 @@
       background: #ef4444; box-shadow: 0 0 6px #ef4444; z-index: 1; }
     .vision .expression { font-size: 11px; color: var(--txt-3); max-width: 110px; }
     .vision.sur-scene { position: fixed; right: 20px; bottom: 20px; z-index: 31; flex-direction: column; align-items: flex-end; }
+    .vision.flottante { position: fixed; z-index: 40; flex-direction: column; align-items: flex-end; gap: 4px; padding: 4px;
+      border-radius: 12px; background: rgba(4,12,12,.55); touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+    .vision.flottante.tenue { cursor: grabbing; }
+    .vision.arriere video { transform: none; }
+    .vision.absent video { border-color: rgba(251,191,36,.8); box-shadow: 0 0 0 2px rgba(251,191,36,.25); }
+    .vision.absent .expression { color: #fbbf24; }
+    .vision .boutons-vision { display: none; gap: 4px; }
+    .vision.flottante .boutons-vision { display: flex; }
+    .vision .boutons-vision button { font: inherit; font-size: 14px; min-width: 32px; min-height: 32px; border-radius: 8px; cursor: pointer;
+      border: 1px solid var(--glass-bd); background: rgba(0,0,0,.35); color: var(--txt-2); }
     .vision.sur-scene video { width: 176px; height: 132px; }
     .btn.camera[aria-pressed=true] { color: #fff; border-color: #f87171; background: rgba(239,68,68,.3); }
     .btn.muet[aria-pressed=true], #muetScene[aria-pressed=true] { color: #fff; border-color: #fbbf24; background: rgba(251,191,36,.28); }
@@ -228,9 +238,15 @@
         <h1>HAKIM</h1>
         <p class="sous" id="etat" role="status">prêt · mémoire Anamnèse</p>
       </div>
-      <div class="vision" id="vision" hidden>
+      <!-- (24/10, idées de Hakim, accord d'Ahmed) l'aperçu flotte au-dessus de tout, se déplace au doigt, et garde sa place ;
+           ⟲ passe de la caméra avant à l'arrière ; ✕ l'éteint -->
+      <div class="vision" id="vision" hidden role="group" aria-label="Caméra allumée : ce que Hakim voit">
         <video id="apercu" playsinline muted aria-label="Ce que la caméra de Hakim voit"></video>
         <span class="expression" id="expression">…</span>
+        <span class="boutons-vision">
+          <button type="button" id="cameraFace" title="Caméra avant / arrière" aria-label="Passer à l'autre caméra">⟲</button>
+          <button type="button" id="cameraCouper" title="Éteindre la caméra" aria-label="Éteindre la caméra">✕</button>
+        </span>
       </div>
       <div class="actions">
         <button class="btn" id="nouvelle" title="Oublie le fil de cette conversation (la mémoire reste)">nouvelle conversation</button>

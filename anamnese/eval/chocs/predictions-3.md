@@ -49,3 +49,20 @@ Variables calculées, pas un ressenti prouvé.
 
 L'habituation s'étend aux « succes » du lexique (simulé : plafond 41 % → 31 %) ; le style du moment (style.py) est
 branché depuis 11:45 (critères à part : eval/voix_mots/criteres.md). Les critères L1 à L7 sont inchangés.
+
+## Changements de code pendant la fenêtre (notés avec leur heure, comme prévu)
+
+Avant la fenêtre (rodage) : le 23/10 à 23:46, le lexique de la parole ne lit plus un problème NIÉ (« c'est pas un
+problème ») comme un problème (ce71129), actif dès la relance du démon juste avant minuit.
+
+Pendant la fenêtre :
+- **24/10 00:56**, relance du démon et du cockpit : la **surprise de récompense** suit l'écart absolu (cbd1d33,
+  revalidation de l'affect v2, eval/affect_v2_predictions.md). Effet attendu sur ce test : le libellé « surprise »
+  change de moments (plus de surprise pour un petit « merci », une vraie pour une forte bonne nouvelle inattendue). L3
+  ne compte que « alarme », « tension » ou « morosité » ; L7 (le plafond) ne dépend pas de la surprise. Les mesures
+  seront données aussi en séparant avant et après 00:56 si un écart apparaît.
+- 24/10 00:56 : Hakim peut écrire à Claude Code et proposer une mission pendant un réveil (d54bd4e, 705846c). Sans effet
+  sur les hormones.
+- 24/10 02:11 : le cockpit suit lui-même les agents de Hakim (47d31ba). Sans effet sur les hormones.
+- 24/10 05:47 : la ligne de batterie dit « branchée » (3be476a). Sans effet sur les hormones.
+- La relance du démon du 24/10 vers 00:35 (ancienne règle de surprise) n'a rien changé au code.

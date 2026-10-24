@@ -56,3 +56,9 @@ W4 tenu ; V1 : l'expressivité de Chatterbox bouge l'énergie, mais de combien, 
   décrits : curseur de ton contre ton fin, curseur d'énergie contre énergie fine. W1 sur l'échelle −2 à +2 reste calculé.
 - **W5, la longueur intacte** : la longueur médiane des réponses de la fenêtre ne baisse pas de plus de 15 % par rapport
   à la semaine du 16 au 22/10, et la longueur ne suit pas la valence (|Spearman| ≤ 0,15).
+
+## Changement pendant la fenêtre (24/10)
+
+24/10 00:56 : la surprise de récompense suit l'écart absolu (cbd1d33). Le style du moment se calcule depuis l'humeur
+nommée : quand elle dit « surprise », les moments changent (voir eval/chocs/predictions-3.md). À séparer au bilan si un
+écart apparaît.

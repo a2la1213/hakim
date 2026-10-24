@@ -14,7 +14,7 @@ function page({ voix = true, fetchOk = true } = {}) {
   const debut = src.indexOf('const aDire = [];'), fin = src.indexOf('setInterval(direSpontanes, 500);');
   const quand = src.slice(src.indexOf('function quandMessage('), src.indexOf('const heureMessage'));
   let t = 1_800_000_000_000;
-  const dits = [], envois = [], stock = {};
+  const dits = [], envois = [], stock = {}, presents = [];
   const lecteur = { actif: false, enPause: false, dire: (p) => dits.push(p), finFlux() {} };
   const ctx = {
     Math, JSON, String, Array, Promise, Error,
@@ -23,12 +23,12 @@ function page({ voix = true, fetchOk = true } = {}) {
       lectureDe: 7, decoupeFlux: null, finVoixA: 0, messages: [] },
     sauver() {}, rendre() {},
     lecteur, lecteurNeuronal: { restant: () => [] }, jarvisPeutParler: () => true, NON_REPONSE: /^\s*no response requested\.?\s*$/i,
-    journalVoix() {}, humeur() {}, jeton: () => 'j',
+    journalVoix() {}, humeur() {}, jeton: () => 'j', presents, noterPresent: (ev) => presents.push(ev),
     localStorage: { getItem: (k) => stock[k] || null, setItem: (k, v) => { stock[k] = v; } },
     fetch: async (url, o) => { envois.push({ url, corps: JSON.parse(o.body) }); return { ok: fetchOk, status: fetchOk ? 202 : 500 }; },
   };
   vm.createContext(ctx);
-  vm.runInContext(quand + src.slice(debut, fin) + 'this.quand = quandMessage; this.aDire = aDire; this.garder = garderNonDit; this.dire = direSpontanes;', ctx);
+  vm.runInContext(quand + src.slice(debut, fin) + 'this.quand = quandMessage; this.dejaLu = dejaLu; this.aDire = aDire; this.garder = garderNonDit; this.dire = direSpontanes;', ctx);
   return { ctx, dits, envois, avancer: (ms) => { t += ms; }, maintenant: () => t, stock };
 }
 const attendre = () => new Promise(r => setImmediate(r));
@@ -185,4 +185,35 @@ test('une très longue réponse garde son début et sa fin', () => {
   c.ctx.recevoir({ textes: [{ texte: 'début ' + 'x'.repeat(6000) + ' fin' }] });
   const x = c.ctx.attente()[0].texte;
   assert.ok(x.startsWith('début') && x.endsWith('fin') && x.includes('[…]') && x.length < 4000);
+});
+
+/* (24/10, 07:29, Ahmed via Hakim) « je l'ai lu » : la suite non dite ne sera pas redite */
+test('Ahmed dit qu’il a lu, ou cite un bout : la suite non dite n’est pas redite, et Hakim le sait', () => {
+  for (const message of ['Je viens de lire ce que tu m\'as dit, frérot', 'c\'est bon j\'ai lu', 'pas besoin de répéter']) {
+    const p = page();
+    p.ctx.aDire.push({ id: 1, texte: 'La suite de ma réponse sur la toupie et son aimant.', coupe: true, recu: 0 });
+    assert.equal(p.ctx.dejaLu(message), 1, message);
+    assert.equal(p.ctx.aDire.length, 0);
+    assert.equal(p.ctx.presents[0].e, 'lu');
+    assert.equal(JSON.parse(p.stock['jarvis.aDire']).length, 0, 'gardé aussi au rechargement');
+  }
+  const q = page();
+  q.ctx.aDire.push({ id: 1, texte: 'La suite de ma réponse sur la toupie et son aimant.', coupe: true, recu: 0 });
+  assert.equal(q.ctx.dejaLu('oui « sur la toupie et son aimant », j\'ai compris'), 1, 'il en cite un bout');
+  const r = page();
+  r.ctx.aDire.push({ id: 1, texte: 'La suite de ma réponse sur la toupie et son aimant.', coupe: true, recu: 0 });
+  r.ctx.aDire.push({ id: 2, texte: 'Un résultat de calcul.', recu: 0 });                 // un résultat de lui-même, pas une suite coupée
+  assert.equal(r.ctx.dejaLu('et pour la gravité, on fait quoi ?'), 0, 'un autre sujet : rien ne change');
+  assert.equal(r.ctx.dejaLu('j\'ai lu'), 1);
+  assert.deepEqual(r.ctx.aDire.map(x => x.id), [2], 'seule la suite coupée part');
+});
+
+
+test('le cockpit dit à Hakim qu’Ahmed a lu la suite (présent vécu)', () => {
+  const ctx = { Math, Number, Array, Date, String, Set, JSON };
+  vm.createContext(ctx);
+  vm.runInContext(srv.slice(srv.indexOf('const EVENEMENTS_PRESENT'), srv.indexOf('function tonDe(')) + prendre('tonDe') + 'this.bloc = blocPresent;', ctx);
+  const t = Date.now();
+  const b = ctx.bloc([{ e: 'lu', t: t - 5000 }], t, t);
+  assert.match(b, /Ahmed a lu à l'écran la suite que ta voix n'avait pas dite : elle ne sera pas redite, ne la répète pas/);
 });
