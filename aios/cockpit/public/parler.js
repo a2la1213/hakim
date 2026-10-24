@@ -1244,6 +1244,32 @@ async function demarrerCapteurVision(v) {
     surErreur: (msg) => { $('expression').textContent = 'caméra seule'; humeur(msg); },
   });
   if (v.face === 'environment') $('expression').textContent = 'caméra arrière';
+  else visageNatif(v);
+}
+/* (24/10, appli 1.13 ; idée de Hakim, accord d'Ahmed) sur le Fold, l'analyse du navigateur disait « personne » alors
+   qu'Ahmed était dans le cadre : l'appli cherche AUSSI le visage avec le détecteur d'Android, sur une petite image par
+   seconde (gardée nulle part). Un visage vu par Android dans les 2,5 dernières secondes compte comme présent. */
+function visageNatif(v) {
+  if (!window.HakimApp || !window.HakimApp.visage || v.natif) return;
+  v.natif = { images: 0, visages: 0, dernierVu: 0, enCours: false, minuterie: null };
+  const n = v.natif;
+  n.minuterie = setInterval(async () => {
+    if (etat.vision !== v || v.face !== 'user' || !v.capteur) { clearInterval(n.minuterie); if (v.natif === n) v.natif = null; return; }
+    if (n.enCours || document.visibilityState === 'hidden') return;
+    n.enCours = true;
+    try {
+      const blob = await v.capteur.capturer(320);
+      if (!blob) return;
+      const b64 = await new Promise((ok) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] || ''); r.onerror = () => ok(''); r.readAsDataURL(blob); });
+      if (!b64) return;
+      const o = JSON.parse(window.HakimApp.visage(b64) || '{}');
+      if (o.erreur) return;
+      n.images++;
+      const vu = o.visages > 0 && o.confiance >= 0.3;
+      if (vu) { n.visages++; n.dernierVu = Date.now(); }
+      if (!v.capteur.analyse) surVisage(v, { expression: vu ? 'neutre' : 'absent' });     // sans analyse du navigateur : celle-ci seule
+    } catch (_) {} finally { n.enCours = false; }
+  }, 900);
 }
 async function basculerCamera() {
   activite();
@@ -1274,7 +1300,8 @@ async function basculerCamera() {
     if (!v.capteur || !v.capteur.stats) return;
     const st = v.capteur.stats;
     journalVoix('vision_etat', { analyse: v.capteur.delegue || 'aucune', face: v.face === 'environment' ? 'arriere' : 'avant',
-      images: st.images, visages: st.visages, expressions: st.avec_expressions, vu: !!v.visageVu });
+      images: st.images, visages: st.visages, expressions: st.avec_expressions, vu: !!v.visageVu,
+      natif_images: v.natif ? v.natif.images : 0, natif_visages: v.natif ? v.natif.visages : 0 });
   }, 60000);
 }
 
@@ -1284,6 +1311,7 @@ function arreterCamera() {
   fermerExpression(v, Date.now());
   etat.vision = null;
   if (v.capteur) v.capteur.arreter();
+  if (v.natif) { clearInterval(v.natif.minuterie); v.natif = null; }
   $('camera').setAttribute('aria-pressed', 'false');
   $('vision').hidden = true;
   $('vision').classList.remove('flottante', 'absent', 'arriere');
@@ -1296,6 +1324,7 @@ async function changerCamera() {
   v.change = true;
   fermerExpression(v, Date.now());
   v.courant = null; v.candidat = null;
+  if (v.natif) { clearInterval(v.natif.minuterie); v.natif = null; }
   try { v.capteur.arreter(); } catch (_) {}
   v.face = v.face === 'environment' ? 'user' : 'environment';
   garderReglageCamera('face', v.face);
@@ -1348,6 +1377,8 @@ function placerVision() {
 // Une expression ne compte que si elle tient 1,2 s ; le présent vécu garde celles d'au moins 1,5 s.
 function surVisage(v, m) {
   const maintenant = Date.now();
+  // le détecteur d'Android l'a vu à l'instant : il est là, même si l'analyse du navigateur ne le trouve pas
+  if (m.expression === 'absent' && v.natif && maintenant - v.natif.dernierVu < 2500) m = { ...m, expression: 'neutre' };
   // personne dans le cadre : dit dans l'aperçu après 30 s, caméra éteinte après 3 min
   // (24/10, 07:37-07:40 : faux « personne » pendant 3 min, caméra éteinte à tort) l'extinction n'agit que si l'analyse
   // a déjà VU son visage depuis l'allumage : un détecteur qui ne le trouve jamais n'éteint rien

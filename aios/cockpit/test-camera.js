@@ -73,3 +73,13 @@ test('(24/10, faux « personne ») un détecteur qui n’a jamais vu le visage n
   const vision = fs.readFileSync(path.join(__dirname, 'public', 'vision.js'), 'utf8');
   assert.match(vision, /const present = \(r && r\.faceLandmarks && r\.faceLandmarks\.length\) \|\| cat \? 1 : 0;/);
 });
+
+test('(appli 1.13) le détecteur d’Android l’a vu à l’instant : « absent » du navigateur ne compte pas', () => {
+  const p = page();
+  const v = { courant: null, candidat: null, candidatDepuis: 0, depuis: 0, absentDepuis: 0, visageVu: true, natif: { dernierVu: 0 } };
+  p.ctx.etat.vision = v;
+  for (let k = 0; k < 40; k++) { v.natif.dernierVu = p.ctx.Date.now(); p.ctx.vu(v, { expression: 'absent' }); p.avancer(5000); }
+  assert.ok(!p.classes.has('absent') && v.absentDepuis === 0, '200 s « absent » pour le navigateur, mais vu par Android');
+  p.avancer(3000); p.ctx.vu(v, { expression: 'absent' });                         // Android ne le voit plus non plus
+  assert.ok(v.absentDepuis > 0);
+});
