@@ -23,7 +23,12 @@ LEXIQUE = [  # (événement, motif, intensité) — dans l'ordre : un « ça mar
     ("probleme", re.compile(r"\b(([çc]a|il|elle|tout|rien) (ne )?(marche|fonctionne|s'envoie|charge|r[ée]pond)s? (pas|plus)|"
                             + _NEG_P + r"(?:bug\w*|plant\w*|bloqu\w*|erreur \d+|cass[ée]e?|un souci|un probl[eè]me|[çc]a coupe|"
                             r"elle coupe|il coupe)" + _APRES_P + r")\b", re.I), 0.5),
-    ("echec", re.compile(r"\b(t'as rien compris|tu as rien compris|n'importe quoi|c'est nul|[çc]a m'[ée]nerve|"
+    # (24/10, accord d'Ahmed) « n'importe quoi » n'est un échec que s'il VISE Hakim (« tu dis n'importe quoi », « c'est
+    # n'importe quoi ce que tu… ») : en blague (« n'importe quoi mon frère ») ou à propos d'un autre, ce n'en est pas un
+    ("echec", re.compile(r"\b(t'as rien compris|tu as rien compris|"
+                         r"(tu|t') ?(as |a )?(dis|dit|fais|fait|racontes?|raconté|écris|écrit|réponds|répondu|proposes?|proposé|"
+                         r"mets?|mis|calcules?|calculé) (encore |vraiment |que )?n'importe quoi|"
+                         r"c'est n'importe quoi ce que tu|n'importe quoi,? (ta|ton|tes|cette|ce|ces) (réponse|calcul|code|idée|résultat|explication)s?|c'est nul|[çc]a m'[ée]nerve|"
                          r"[ée]nerv[ée]e?|d[ée][çc]ue?|catastrophe|grave erreur|tu m'[ée]coutes pas|"
                          r"c'est pas (du tout )?ce que (je voulais|j'ai demand[ée]))\b", re.I), 0.5),
     ("succes", re.compile(_NEG + r"\b(parfait\w*|g[ée]nial\w*|super|top|nickel|excellent\w*|magnifique|incroyable|"

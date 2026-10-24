@@ -159,3 +159,13 @@ def test_gemma_recoit_l_emotion_et_le_fond(mem, tmp_path, monkeypatch):
     monkeypatch.setattr(interieur, "JOURNAL_TEMPS", tmp_path / "temps.jsonl")
     e = interieur.tick(mem, penser=lambda *a, **k: None, interrupteur_={"actif": True})
     assert e["humeur"].startswith(interieur.LIBELLES["alarme"]) and "(fond : " in e["humeur"]
+
+
+def test_n_importe_quoi_n_est_un_echec_que_s_il_vise_hakim():
+    """(24/10, live : « N'importe quoi mon frère » en blague, puis à propos d'un spammeur, ont donné deux pics de stress)."""
+    for pas_lui in ("N'importe quoi mon frère, n'importe quoi. Une blague comme ça", "il ne fait que spammer n'importe quoi",
+                    "c'est ma fille qui me dit n'importe quoi", "Petro Marón, n'importe quoi frérot."):
+        assert "echec" not in [n for n, _ in parole_affect.evaluer(pas_lui)], pas_lui
+    for lui in ("tu dis n'importe quoi", "t'as fait n'importe quoi avec le calcul", "c'est n'importe quoi ce que tu m'as répondu",
+                "n'importe quoi cette réponse", "tu racontes n'importe quoi frérot"):
+        assert "echec" in [n for n, _ in parole_affect.evaluer(lui)], lui

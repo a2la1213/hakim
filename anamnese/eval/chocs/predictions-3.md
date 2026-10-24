@@ -66,3 +66,8 @@ Pendant la fenêtre :
 - 24/10 02:11 : le cockpit suit lui-même les agents de Hakim (47d31ba). Sans effet sur les hormones.
 - 24/10 05:47 : la ligne de batterie dit « branchée » (3be476a). Sans effet sur les hormones.
 - La relance du démon du 24/10 vers 00:35 (ancienne règle de surprise) n'a rien changé au code.
+- **24/10 à 12:07:46** (relance du démon) : « n'importe quoi » n'est plus un « echec » du lexique que s'il vise
+  Hakim (« tu dis n'importe quoi », « c'est n'importe quoi ce que tu… », « n'importe quoi cette réponse ») ; en blague ou à
+  propos d'un autre, plus rien. Le 24/10 à 08:26 et 08:30, il avait donné deux pics de CRH et d'adrénaline au début du live.
+  Les 32 phrases étiquetées gardent précision et rappel à 1,0. Effet attendu sur ce test : moins de faux « échec » dans
+  L2 et L3 ; les mesures seront données aussi avant et après ce changement.
