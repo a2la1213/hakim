@@ -941,14 +941,18 @@ def _ressenti_pass(mem, now=None, lancer=None, journal=None, sortie=None):
     if now - float(avant.get("ts") or 0) < RESSENTI_ECART_S:
         return False
     if lancer is None:
-        try:                                           # une seule Gemma en mémoire : celle d'Ollama s'en va
+        # (24/10, piste 3) le ressenti tourne sur la Gemma d'OLLAMA : on ne la décharge plus. Seul le repli MLX (moteur
+        # « mlx ») en charge une deuxième : alors, et alors seulement, celle d'Ollama s'en va d'abord
+        try:
+            if os.environ.get("JARVIS_RESSENTI_MOTEUR", "ollama") == "ollama":
+                raise StopIteration
             import urllib.request
             ps = json.loads(urllib.request.urlopen(f"{config.OLLAMA_HOST}/api/ps", timeout=3).read())
             for m in ps.get("models") or []:
                 if "gemma" in str(m.get("name", "")).lower():
                     urllib.request.urlopen(urllib.request.Request(f"{config.OLLAMA_HOST}/api/generate", method="POST",
                         data=json.dumps({"model": m["name"], "keep_alive": 0}).encode(), headers={"Content-Type": "application/json"}), timeout=10)
-        except Exception:
+        except (Exception, StopIteration):
             pass
         racine = Path(__file__).resolve().parent
         py = racine / "jarvis" / ".venv" / "bin" / "python"

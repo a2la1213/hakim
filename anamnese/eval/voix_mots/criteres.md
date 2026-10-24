@@ -62,3 +62,6 @@ W4 tenu ; V1 : l'expressivité de Chatterbox bouge l'énergie, mais de combien, 
 24/10 00:56 : la surprise de récompense suit l'écart absolu (cbd1d33). Le style du moment se calcule depuis l'humeur
 nommée : quand elle dit « surprise », les moments changent (voir eval/chocs/predictions-3.md). À séparer au bilan si un
 écart apparaît.
+24/10 à 18:14:20 (relance du démon) : le « ressenti en réserve » (mots de sensation donnés à Hakim) passe de la Gemma MLX
+(vocabulaire entier) à la Gemma d'Ollama (20 jetons suivants, 6 sondes) ; sur 4 cas, palette comparable pour la morosité
+et l'élan, plus pauvre pour le contentement et la tension. À séparer au bilan si un écart apparaît.

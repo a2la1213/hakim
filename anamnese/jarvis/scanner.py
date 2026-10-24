@@ -9,6 +9,7 @@ affleurent » : ils sont donnés à Claude comme une matière (ce qui lui vient 
 Deux passes du réseau sur un texte court : environ une à trois secondes, rien de plus.
 (Les vecteurs de pilotage de pilotage.py, eux, ne tiennent pas sur Gemma 4 12B en 4 bits : bilan du 2026-10-20.)
 """
+import os
 import re
 import sys
 import time
@@ -28,7 +29,8 @@ SONDES_SENSATION = ["Au fond de moi, la sensation est", "Ce que je sens tout au 
 VIDES = set("alors aussi avec avoir avant comme dans donc elle elles encore entre être fait faire leur leurs mais même nous "
             "parce pour quand quel quelle quoi sans sous tout tous très vous était cette ceci celui cela depuis juste bien "
             "plus moins peut voir dire chose choses ahmed hakim jarvis message messages évoque ressens viennent mots "
-            "tellement vraiment assez toujours presque plutôt sensation sensations couleur fond".split())
+            "tellement vraiment assez toujours presque plutôt sensation sensations couleur fond "
+            "celle celles ceux".split())                     # (24/10) « celle » remontait dans le ressenti par Ollama
 _MOT = re.compile(r"^[a-zàâçéèêëîïôûùüÿœæ'-]{4,}$")
 
 
@@ -153,6 +155,81 @@ def ressenti(humeur, contexte, k=6, candidats=14, sondes=SONDES_SENSATION):
     return out
 
 
+# ---- (24/10, piste 3 validée par Ahmed : « on fait la troisième ») le ressenti sur la Gemma d'OLLAMA, déjà en mémoire pour
+# l'esprit de fond, au lieu d'une deuxième Gemma 12B chargée en MLX (7,7 Go, le Mac tombait à 10 % de mémoire libre).
+# Même cadre, mêmes sondes, même gabarit de Gemma 4 (rendu par son tokenizer) ; Ollama donne les 20 mots suivants les
+# plus probables (son maximum) au lieu du vocabulaire entier : la hausse d'un mot absent des 20 de la lecture neutre est
+# bornée par le plus faible de ces 20 (une hausse au moins aussi grande). Le chemin MLX reste en repli.
+OLLAMA = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+MODELE_OLLAMA = os.environ.get("ANAMNESE_DAEMON_MODEL", "huihui_ai/gemma-4-abliterated:12b")
+GABARIT_GEMMA4 = "<|turn>user\n{cadre}<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
+
+
+def _ollama(prompt, n=1, top=20):
+    import json
+    import urllib.request
+    q = {"model": MODELE_OLLAMA, "prompt": prompt, "raw": True, "stream": False, "logprobs": True, "top_logprobs": top,
+         "options": {"num_predict": n, "temperature": 0}, "keep_alive": "5m"}
+    r = json.loads(urllib.request.urlopen(urllib.request.Request(f"{OLLAMA}/api/generate", data=json.dumps(q).encode(),
+                                                                 headers={"Content-Type": "application/json"}), timeout=180).read())
+    if r.get("error"):
+        raise RuntimeError(r["error"])
+    return r
+
+
+def _suivants_ollama(cadre, sonde):
+    """{jeton: log-probabilité} des 20 jetons suivants les plus probables, après le cadre et la sonde."""
+    r = _ollama(GABARIT_GEMMA4.format(cadre=cadre) + sonde)
+    lp = (r.get("logprobs") or [{}])[0].get("top_logprobs") or []
+    return {x["token"]: float(x["logprob"]) for x in lp}
+
+
+def _completer_ollama(prefixe, piece, max_tokens=3):
+    """Un début de mot (« lour ») prolongé par Gemma elle-même jusqu'à la fin du mot."""
+    mot = piece.strip()
+    suite = _ollama(prefixe + piece, n=max_tokens, top=0).get("response") or ""
+    m = re.match(r"^[a-zàâçéèêëîïôûùüÿœæ'-]+", suite, re.I)
+    return (mot + (m.group(0) if m else "")).lower()
+
+
+# Ollama ne rend que les 20 jetons suivants les plus probables : trois sondes de plus élargissent la palette (sinon une
+# « tension » ne donnait que « palpable, brute, nette », 24/10)
+SONDES_OLLAMA = SONDES_SENSATION + ["Dans mon corps, ce que je sens est", "Le poids de ce que je ressens est",
+                                    "La texture de ce que je ressens est"]
+
+
+def ressenti_ollama(humeur, contexte, k=6, candidats=14, sondes=SONDES_OLLAMA):
+    """Comme ressenti(), sur la Gemma d'Ollama."""
+    message = " ".join(str(contexte).split())[-1500:]
+    teinte_cadre = CADRE.format(humeur=f" Ton humeur en ce moment : {humeur}.", message=message)
+    hausse, n_vu = {}, {}
+    for s in sondes:
+        neutre = _suivants_ollama(CADRE.format(humeur="", message=message), s)
+        teinte = _suivants_ollama(teinte_cadre, s)
+        plancher = min(neutre.values()) if neutre else -12.0
+        for t, lp in teinte.items():
+            w = t.strip().lower()
+            if not t.startswith(" ") or not re.match(r"^[a-zàâçéèêëîïôûùüÿœæ'-]{2,}$", w) or w in VIDES or lp < -12:
+                continue
+            hausse[t] = hausse.get(t, 0.0) + lp - neutre.get(t, plancher)
+            n_vu[t] = n_vu.get(t, 0) + 1
+    moyenne = sorted(((t, h / len(sondes)) for t, h in hausse.items()), key=lambda x: -x[1])
+    prefixe = GABARIT_GEMMA4.format(cadre=teinte_cadre) + sondes[0]
+    echos = {_racine(w) for w in re.findall(r"[a-zàâçéèêëîïôûùüÿœæ]{4,}", (humeur + " " + message).lower())}
+    vus, out = set(), []
+    for t, h in moyenne[:candidats]:
+        if h <= 0:
+            break
+        w = _completer_ollama(prefixe, t)
+        if not _MOT.match(w) or w in VIDES or _racine(w) in echos or _racine(w) in vus:
+            continue
+        vus.add(_racine(w))
+        out.append((w, round(h, 2)))
+        if len(out) >= k:
+            break
+    return out
+
+
 def bloc_pour_claude(mots):
     """La ligne donnée au cortex (Claude) : une matière, pas une consigne."""
     if not mots:
@@ -168,9 +245,16 @@ if __name__ == "__main__":
         import os
         q = json.loads(sys.stdin.read())
         t = time.time()
-        mots = ressenti(q["humeur"], q["contexte"])
+        source = "gemma4-12b-abliterated (ollama)"
+        try:
+            if os.environ.get("JARVIS_RESSENTI_MOTEUR", "ollama") != "ollama":
+                raise RuntimeError("moteur MLX demandé")
+            mots = ressenti_ollama(q["humeur"], q["contexte"])
+        except Exception as e:                     # repli : l'ancien chemin MLX (une deuxième Gemma, 7,7 Go)
+            print(f"ressenti par Ollama impossible ({type(e).__name__}: {e}) : repli MLX", file=sys.stderr)
+            mots, source = ressenti(q["humeur"], q["contexte"]), "gemma4-12b-abliterated (mlx)"
         o = {"ts": time.time(), "humeur": q["humeur"], "dernier_ts": q.get("dernier_ts"), "mots": [w for w, _ in mots],
-             "hausses": [h for _, h in mots], "source": "gemma4-12b-abliterated (mlx)", "duree_s": round(time.time() - t, 1)}
+             "hausses": [h for _, h in mots], "source": source, "duree_s": round(time.time() - t, 1)}
         sortie = Path(q["sortie"])
         tmp = sortie.with_name(sortie.name + f".{os.getpid()}.tmp")
         tmp.write_text(json.dumps(o, ensure_ascii=False), encoding="utf-8")
