@@ -26,6 +26,26 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stt  # noqa: E402
 
 INACTIVITE_S = float(os.environ.get("JARVIS_VOIX_INACTIVITE_S", "900"))
+# (24/10, 17:43, Hakim : sa voix tenait 10 Go sans rien faire, le Mac swappait à 14,6 Go) : 9,4 Go étaient des tampons
+# Metal que MLX GARDE en cache après chaque synthèse ou transcription (« IOAccelerator » de footprint). Le cache est borné,
+# vidé après chaque demande ; les modèles chargés restent (pas de rechargement).
+CACHE_MAX_OCTETS = int(os.environ.get("JARVIS_VOIX_CACHE_MO", "512")) * 1024 * 1024
+
+
+def borner_cache():
+    try:
+        import mlx.core as mx
+        mx.set_cache_limit(CACHE_MAX_OCTETS)
+    except Exception:
+        pass
+
+
+def vider_cache():
+    try:
+        import mlx.core as mx
+        mx.clear_cache()
+    except Exception:
+        pass
 _SORTIE = sys.stdout                # les réponses ; tout le reste (barres de progression…) va sur stderr
 _tts = None
 
@@ -85,6 +105,7 @@ def repondre(obj):
 
 
 def main():
+    borner_cache()
     dernier = time.time()
     while True:
         prets, _, _ = select.select([sys.stdin], [], [], 5.0)
@@ -107,6 +128,7 @@ def main():
             rep = {"erreur": f"{type(e).__name__}: {e}"[:300]}
         rep["id"] = req.get("id")
         repondre(rep)
+        vider_cache()                       # (24/10) les tampons de cette demande ne restent pas en mémoire
 
 
 if __name__ == "__main__":
