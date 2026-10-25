@@ -67,8 +67,10 @@ def test_journal_au_battement_et_bases_a_la_minute(tmp_path):
     """(26/10, Ahmed : un pas plus fin) une ligne par battement, avec la famille de l'humeur (couleur de l'orbe) et la base
     de l'adénosine ; les bases sur 72 h gardent une mesure par minute : le journal plus fin ne pèse pas plus lourd."""
     j = tmp_path / "hormones.jsonl"
-    interieur._ligne_hormones(1000.0, {"dopamine": 0.5}, 0.6, 0.4, "fatigue", "fatigue", chemin=j, code="morose")
-    assert json.loads(j.read_text())["code"] == "morose"
+    interieur._ligne_hormones(1000.0, {"dopamine": 0.5}, 0.6, 0.4, "fatigue", "fatigue", chemin=j, code="morose",
+                              scores={"fatigue": 1.234, "calme": 0.9})
+    o = json.loads(j.read_text())
+    assert o["code"] == "morose" and o["s"] == {"fatigue": 1.23, "calme": 0.9}
     assert json.loads((tmp_path / "hormones-bases.json").read_text())["adenosine"] == 0.15
     t0 = 1_800_000_000.0
     lignes = [{"t": t0 + 60 * i, "h": {"dopamine": 0.4}} for i in range(13 * 60)]           # 13 h à la minute, à 0,4

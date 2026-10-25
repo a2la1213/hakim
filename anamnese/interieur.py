@@ -481,7 +481,7 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
         if now - float(e.get("hormones_journal_t") or 0) >= HORMONES_JOURNAL_PAS_S:
             e["hormones_journal_t"] = now
             _ligne_hormones(now, etat_h, valence, arousal, e.get("humeur"), (e.get("sensation_code") or {}).get("emotion"),
-                            code=e.get("humeur_code"))
+                            code=e.get("humeur_code"), scores=(e.get("sensation_code") or {}).get("scores"))
     except Exception:
         pass
     emotion_h = humeur_hormonale(e.get("sensation_code"), e.get("emotion_humeur"))
@@ -579,9 +579,9 @@ def _remettre_a_zero(mem, e, now, journal_temps=None):
             "valence": round(v, 3), "arousal": round(a, 3), "tau_s": TAU_ENNUI_S, "veille_apres_s": VEILLE_APRES_S}
 
 
-def _ligne_hormones(now, hormones, valence, arousal, humeur, emotion, chemin=None, code=None):
+def _ligne_hormones(now, hormones, valence, arousal, humeur, emotion, chemin=None, code=None, scores=None):
     """Une ligne du journal des hormones (une par battement) : le tableau de bord intérieur de Hakim. code : la famille de
-    son humeur, la couleur de l'orbe (26/10)."""
+    son humeur, la couleur de l'orbe ; scores : ses 5 émotions les plus fortes, le graphique de l'humeur (26/10)."""
     j = Path(chemin or JOURNAL_HORMONES)
     b = j.with_name("hormones-bases.json")              # leurs bases, pour la page « intérieur » du cockpit
     try:
@@ -595,6 +595,8 @@ def _ligne_hormones(now, hormones, valence, arousal, humeur, emotion, chemin=Non
              "v": round(float(valence), 3), "a": round(float(arousal), 3), "humeur": humeur, "emotion": emotion}
     if code:
         ligne["code"] = code
+    if scores:
+        ligne["s"] = {k: round(float(v), 2) for k, v in scores.items()}
     try:
         j.parent.mkdir(parents=True, exist_ok=True)
         if j.exists() and j.stat().st_size > JOURNAL_HORMONES_MAX_OCTETS:          # on garde la seconde moitié

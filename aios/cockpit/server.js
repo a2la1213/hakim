@@ -1404,7 +1404,7 @@ function tableauInterieur(heures, maintenant = Date.now()) {
   const tous = lignesDepuis(path.join(JARVIS, 'hormones.jsonl'), depuis, Math.ceil(heures * 3600 / 15) * 700 + (1 << 16));
   const pas = Math.max(1, Math.ceil(tous.length / TABLEAU_POINTS_MAX));
   const points = tous.filter((_, i) => i % pas === 0 || i === tous.length - 1)
-    .map(([t, o]) => ({ t, v: o.v, a: o.a, h: o.h || {}, humeur: o.humeur || null, emotion: o.emotion || null, code: o.code || null }));
+    .map(([t, o]) => ({ t, v: o.v, a: o.a, h: o.h || {}, humeur: o.humeur || null, emotion: o.emotion || null, code: o.code || null, s: o.s || null }));
   const reponses = [], messages = [];
   for (const [t, o] of lignesDepuis(JARVIS_JOURNAL, depuis, 3 << 20)) {
     const x = String(o.texte || '');

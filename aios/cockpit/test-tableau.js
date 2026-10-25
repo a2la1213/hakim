@@ -38,7 +38,7 @@ test('(26/10) une mesure par battement : au plus 2000 mesures vers la page, la d
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tableau-'));
   const T = 1_800_000_000, n = 72 * 240;
   const lignes = [];
-  for (let i = 0; i < n; i++) lignes.push(JSON.stringify({ t: T - (n - 1 - i) * 15, h: { dopamine: 0.5, adenosine: i / n }, v: 0.5, a: 0.5, humeur: 'fatigue', code: 'morose' }));
+  for (let i = 0; i < n; i++) lignes.push(JSON.stringify({ t: T - (n - 1 - i) * 15, h: { dopamine: 0.5, adenosine: i / n }, v: 0.5, a: 0.5, humeur: 'fatigue', code: 'morose', s: { fatigue: 1.2, calme: 0.8 } }));
   fs.writeFileSync(path.join(dir, 'hormones.jsonl'), lignes.join('\n') + '\n');
   fs.writeFileSync(path.join(dir, 'journal.jsonl'), '');
   const ctx = { fs, path, JSON, Number, String, Math, Buffer, JARVIS: dir, JARVIS_JOURNAL: path.join(dir, 'journal.jsonl'), TABLEAU_POINTS_MAX: 2000 };
@@ -50,4 +50,5 @@ test('(26/10) une mesure par battement : au plus 2000 mesures vers la page, la d
   assert.ok(long.points.length <= 2001 && long.points.length > 1500, `3 jours : ${long.points.length}`);
   assert.equal(long.points[long.points.length - 1].t, T);
   assert.equal(long.points[0].code, 'morose');
+  assert.deepEqual(long.points[0].s, { fatigue: 1.2, calme: 0.8 });
 });
