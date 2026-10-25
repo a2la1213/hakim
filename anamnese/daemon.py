@@ -1033,6 +1033,23 @@ def _index_fichiers_pass(mem, now=None):
         print("[daemon] index des fichiers en échec :", e)
 
 
+def hormones_en_direct(arret=None, pas_s=1.0):
+    """(26/10, Ahmed) ses hormones chaque seconde pour le cockpit (interieur.ligne_directe), dans SON fil, avec SA
+    connexion : rien ne s'y décide, il ne fait que lire et noter."""
+    import threading
+    arret = arret or threading.Event()
+    mem_fil, dit = Memory(), False
+    while not arret.is_set():
+        debut = time.time()
+        try:
+            interieur.ligne_directe(mem_fil, now=debut)
+        except Exception as e:
+            if not dit:                                      # une fois, pas chaque seconde
+                print("[daemon] hormones en direct en erreur :", e)
+                dit = True
+        arret.wait(max(0.05, pas_s - (time.time() - debut)))          # une par seconde, sans dériver
+
+
 def battement_interieur(etat, arret=None, pas_s=15):
     """Le battement intérieur dans SON fil, avec SA connexion à la base (vu le 2026-10-16 : un rêve
     tenait la boucle principale ~50 min, le battement s'arrêtait, et Jarvis disait à juste titre
@@ -1165,6 +1182,7 @@ def main():
     if interieur.ACTIF:
         import threading
         threading.Thread(target=battement_interieur, args=(etat,), daemon=True, name="battement").start()
+        threading.Thread(target=hormones_en_direct, daemon=True, name="hormones-direct").start()
     garde = charge.GardeCharge()
     last_brain_proj = 0.0
     last_backup_check = 0.0

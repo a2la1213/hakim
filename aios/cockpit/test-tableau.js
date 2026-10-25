@@ -52,3 +52,17 @@ test('(26/10) une mesure par battement : au plus 2000 mesures vers la page, la d
   assert.equal(long.points[0].code, 'morose');
   assert.deepEqual(long.points[0].s, { fatigue: 1.2, calme: 0.8 });
 });
+
+test('(26/10) ses hormones chaque seconde : seulement la suite après « depuis », une heure au plus', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'direct-'));
+  const T = 1_800_000_000, lignes = [];
+  for (let i = 0; i < 7200; i++) lignes.push(JSON.stringify({ t: T - 7199 + i, h: { dopamine: 0.5 + i / 1e5 } }));
+  fs.writeFileSync(path.join(dir, 'hormones-direct.jsonl'), lignes.join('\n') + '\n');
+  const ctx = { fs, path, JSON, Number, String, Math, Buffer, JARVIS: dir };
+  vm.createContext(ctx);
+  vm.runInContext(prendre('lignesDepuis') + prendre('hormonesDirect') + 'this.direct = hormonesDirect;', ctx);
+  const suite = ctx.direct(T - 3, T * 1000);
+  assert.deepEqual(suite.map(x => x.t), [T - 2, T - 1, T]);
+  const tout = ctx.direct(0, T * 1000);
+  assert.ok(tout.length >= 3599 && tout.length <= 3601, `une heure : ${tout.length}`);
+});

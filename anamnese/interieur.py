@@ -579,6 +579,33 @@ def _remettre_a_zero(mem, e, now, journal_temps=None):
             "valence": round(v, 3), "arousal": round(a, 3), "tau_s": TAU_ENNUI_S, "veille_apres_s": VEILLE_APRES_S}
 
 
+# (26/10, Ahmed : « voir le déroulement seconde par seconde, comme un EEG ») ses hormones lues CHAQUE SECONDE, dans un
+# journal à part qui ne garde que les dernières heures : les vues de 1 min à 1 h du cockpit. Lecture seule (affect.get_state
+# ne sauve rien, 0,1 ms) ; l'adénosine est celle du dernier battement : elle ne se recalcule que toutes les 15 s.
+JOURNAL_DIRECT = Path.home() / "AIOS" / "jarvis" / "hormones-direct.jsonl"
+JOURNAL_DIRECT_MAX_OCTETS = 4 * 1024 * 1024          # ≈ 3 h à une ligne par seconde ; on en garde la seconde moitié
+
+
+def ligne_directe(mem, now=None, chemin=None):
+    now = now or time.time()
+    h = {k: round(float(v), 4) for k, v in affect.get_state(mem, now=now).items()}
+    try:
+        ad = json.loads(mem.kv_get(CLE) or "{}").get("adenosine")
+    except ValueError:
+        ad = None
+    if isinstance(ad, (int, float)):
+        h["adenosine"] = round(float(ad), 4)
+    j = Path(chemin or JOURNAL_DIRECT)
+    try:
+        if j.exists() and j.stat().st_size > JOURNAL_DIRECT_MAX_OCTETS:
+            garde = j.read_bytes()[-JOURNAL_DIRECT_MAX_OCTETS // 2:]
+            j.write_bytes(garde[garde.find(b"\n") + 1:])
+        with open(j, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"t": round(now, 1), "h": h}) + "\n")
+    except OSError:
+        pass
+
+
 def _ligne_hormones(now, hormones, valence, arousal, humeur, emotion, chemin=None, code=None, scores=None):
     """Une ligne du journal des hormones (une par battement) : le tableau de bord intérieur de Hakim. code : la famille de
     son humeur, la couleur de l'orbe ; scores : ses 5 émotions les plus fortes, le graphique de l'humeur (26/10)."""

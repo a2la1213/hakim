@@ -1398,6 +1398,14 @@ function lignesDepuis(fichier, depuisS, octets = 0) {
   }
   return out;
 }
+/* (26/10, Ahmed : « voir le déroulement seconde par seconde, comme un EEG ») ses hormones chaque seconde
+   (interieur.ligne_directe → hormones-direct.jsonl) : les mesures après `depuis`, une heure au plus. La page des vues
+   courtes (1 min à 1 h) en demande la suite chaque seconde. */
+function hormonesDirect(depuis, maintenant = Date.now()) {
+  const d = Math.max(Number(depuis) || 0, maintenant / 1000 - 3600);
+  return lignesDepuis(path.join(JARVIS, 'hormones-direct.jsonl'), d + 0.05, Math.ceil(maintenant / 1000 - d + 5) * 450 + (1 << 14))
+    .map(([t, o]) => ({ t, h: o.h || {} }));
+}
 function tableauInterieur(heures, maintenant = Date.now()) {
   const depuis = maintenant / 1000 - heures * 3600;
   let bases = {}; try { bases = JSON.parse(fs.readFileSync(path.join(JARVIS, 'hormones-bases.json'), 'utf8')); } catch (_) {}
@@ -4113,9 +4121,14 @@ async function traiter(req, res) {
   }
   if (p === '/api/jarvis/tableau' && req.method === 'GET') {        // (2026-10-23) le tableau de bord intérieur, en direct
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
-    const heures = Math.max(0.25, Math.min(72, Number(new URL(req.url, 'http://x').searchParams.get('heures')) || 6));
+    const heures = Math.max(1 / 60, Math.min(72, Number(new URL(req.url, 'http://x').searchParams.get('heures')) || 6));
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     return res.end(j(tableauInterieur(heures)));
+  }
+  if (p === '/api/jarvis/direct' && req.method === 'GET') {         // (26/10) ses hormones chaque seconde, la suite seulement
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j(hormonesDirect(new URL(req.url, 'http://x').searchParams.get('depuis'))));
   }
   if (p === '/api/capteurs' && req.method === 'POST') {             // (2026-10-23) le dernier résumé des capteurs du téléphone
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }

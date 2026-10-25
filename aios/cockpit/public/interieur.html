@@ -11,7 +11,9 @@
        (interieur.py → hormones.jsonl). Le 26/10 aussi : la bande de son humeur (l'émotion lue dans ses hormones, à la
        couleur de l'orbe) et l'adénosine, sa fatigue. Puis (26/10, Ahmed : « un graphique plus parlant pour comprendre
        l'humeur ») la force de ses émotions à la place de la valence et de l'éveil : la plus haute est son humeur ; et la part
-       du temps passée dans chaque humeur. -->
+       du temps passée dans chaque humeur. Puis (26/10, Ahmed : « comme un EEG ») les vues de 1, 5, 15 et 30 min : ses
+       hormones lues chaque seconde (hormones-direct.jsonl), la page qui avance chaque seconde, et l'échelle de chaque
+       hormone resserrée sur ce qu'elle a fait dans la fenêtre (ses bornes écrites à gauche). -->
   <style>
     [hidden] { display: none !important; }
     main { max-width: 1400px; margin: 0 auto; padding: 0 16px 24px; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 14px; }
@@ -41,7 +43,8 @@
     <h1>Hakim — sa vie intérieure, en direct</h1>
     <div class="sous" id="etat">…</div>
     <div class="barre" id="periodes">
-      <button data-h="1">1 h</button><button data-h="6" aria-pressed="true">6 h</button><button data-h="24">24 h</button><button data-h="72">3 jours</button>
+      <button data-min="1">1 min</button><button data-min="5">5 min</button><button data-min="15">15 min</button><button data-min="30">30 min</button>
+      <button data-min="60">1 h</button><button data-min="360" aria-pressed="true">6 h</button><button data-min="1440">24 h</button><button data-min="4320">3 jours</button>
     </div>
     <section class="glass carte">
       <div class="legende"><span>▬ son humeur : l'émotion lue dans ses hormones, à la couleur de l'orbe (gris : avant le 26/10)</span></div>
@@ -66,24 +69,35 @@
   const FAMILLE_COULEUR = { joie: '#fde68a', elan: '#5eead4', content: '#99f6e4', calme: '#2dd4bf', tension: '#f97316',
     impatience: '#a78bfa', ennui: '#94a3b8', morose: '#64748b', veille: '#3b4a7a', alarme: '#ef4444', surprise: '#fde047',
     apaisement: '#a7f3d0', ecoute: '#f9a8d4' };
-  let heures = 6, donnees = null;
+  let heures = 6, donnees = null, direct = [], directDepuis = 0;
+  const court = () => heures <= 1;                    // 1 min à 1 h : chaque seconde, et l'échelle resserrée
   const $ = (id) => document.getElementById(id);
   const hhmm = (t) => new Date(t * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const hhmmss = (t) => new Date(t * 1000).toLocaleTimeString('fr-FR');
 
   // une toile nette sur tous les écrans, et la fonction qui place un instant / une valeur (0 à 1) dedans
-  function preparer(c) {
+  // lo, hi : l'échelle verticale (0 à 1 par défaut ; resserrée sur la fenêtre dans les vues courtes, bornes écrites à gauche)
+  function preparer(c, lo = 0, hi = 1) {
     const dpr = Math.min(2, window.devicePixelRatio || 1), w = c.clientWidth, h = c.clientHeight;
     c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
     const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
     const m = { g: 6, d: 6, h: 14, b: 18 };
     const X = (t) => m.g + (t - donnees.t0) / (donnees.t1 - donnees.t0) * (w - m.g - m.d);
-    const Y = (v) => m.h + (1 - Math.max(0, Math.min(1, v))) * (h - m.h - m.b);
+    const Y = (v) => m.h + (1 - Math.max(0, Math.min(1, (v - lo) / (hi - lo)))) * (h - m.h - m.b);
     g.strokeStyle = 'rgba(127,169,164,.18)'; g.lineWidth = 1;
-    for (const k of [0, .25, .5, .75, 1]) { g.beginPath(); g.moveTo(m.g, Y(k)); g.lineTo(w - m.d, Y(k)); g.stroke(); }
-    const span = donnees.t1 - donnees.t0, pas = span > 24 * 3600 ? 6 * 3600 : span > 4 * 3600 ? 3600 : span > 2 * 3600 ? 1800 : 900;
+    for (const k of [0, .25, .5, .75, 1]) { const y = Y(lo + k * (hi - lo)); g.beginPath(); g.moveTo(m.g, y); g.lineTo(w - m.d, y); g.stroke(); }
+    const span = donnees.t1 - donnees.t0;
+    const pas = span > 24 * 3600 ? 6 * 3600 : span > 4 * 3600 ? 3600 : span > 2 * 3600 ? 1800 : span > 1800 ? 900
+      : span > 900 ? 300 : span > 300 ? 180 : span > 120 ? 60 : 15;
+    const fmt = span <= 900 ? hhmmss : hhmm, sauter = Math.max(1, Math.ceil((span <= 900 ? 52 : 36) / (X(donnees.t0 + pas) - X(donnees.t0))));
     g.fillStyle = 'rgba(127,169,164,.8)'; g.font = '10px system-ui'; g.textAlign = 'center';
-    for (let t = Math.ceil(donnees.t0 / pas) * pas; t < donnees.t1; t += pas) {
-      g.beginPath(); g.moveTo(X(t), m.h); g.lineTo(X(t), h - m.b); g.stroke(); g.fillText(hhmm(t), X(t), h - 4);
+    for (let t = Math.ceil(donnees.t0 / pas) * pas, k = 0; t < donnees.t1; t += pas, k++) {
+      g.beginPath(); g.moveTo(X(t), m.h); g.lineTo(X(t), h - m.b); g.stroke();
+      const demi = span <= 900 ? 23 : 15;            // une heure coupée au bord ne s'écrit pas
+      if (k % sauter === 0 && X(t) >= demi && X(t) <= w - demi) g.fillText(fmt(t), X(t), h - 4);
+    }
+    if (lo !== 0 || hi !== 1) {
+      g.textAlign = 'left'; g.fillText(hi.toFixed(3), m.g + 2, m.h + 9); g.fillText(lo.toFixed(3), m.g + 2, h - m.b - 3);
     }
     return { g, X, Y, w, h, m };
   }
@@ -174,31 +188,60 @@
     // les 13 hormones et l’adénosine (sa fatigue)
     const grille = $('hormones');
     if (!grille.children.length) grille.innerHTML = NOMS.map((n, i) => `<section class="glass hormone"><div class="nom" id="n-${n}" style="color:${COULEURS[i]}">${LIBELLES[n] || n}</div><canvas id="c-${n}"></canvas></section>`).join('');
+    const source = court() && direct.length ? direct : pts;
     NOMS.forEach((n, i) => {
-      const serie = pts.filter(p => p.h[n] !== undefined).map(p => [p.t, p.h[n]]);
+      const serie = source.filter(p => p.h[n] !== undefined && p.t >= donnees.t0).map(p => [p.t, p.h[n]]);
       const base = donnees.bases[n], v = serie.length ? serie[serie.length - 1][1] : null;
+      let lo = 0, hi = 1;
+      if (court() && serie.length) {                  // l'échelle resserrée : ce que l'hormone a fait dans la fenêtre
+        const vs = serie.map(x => x[1]), a = Math.min(...vs), b = Math.max(...vs), marge = Math.max(0.002, (b - a) * 0.15);
+        lo = Math.max(0, a - marge); hi = Math.min(1, b + marge);
+      }
       const nom = LIBELLES[n] || n;
-      $(`n-${n}`).textContent = v === null ? nom : `${nom} ${v.toFixed(2)}${base !== undefined ? ` (${v >= base ? '+' : '−'}${Math.abs(v - base).toFixed(2)})` : ''}`;
-      const h = preparer($(`c-${n}`));
-      if (base !== undefined) { h.g.setLineDash([4, 4]); h.g.strokeStyle = 'rgba(127,169,164,.7)'; h.g.beginPath(); h.g.moveTo(h.m.g, h.Y(base)); h.g.lineTo(h.w - h.m.d, h.Y(base)); h.g.stroke(); h.g.setLineDash([]); }
+      $(`n-${n}`).textContent = v === null ? nom : `${nom} ${v.toFixed(court() ? 3 : 2)}${base !== undefined ? ` (${v >= base ? '+' : '−'}${Math.abs(v - base).toFixed(2)})` : ''}`;
+      const h = preparer($(`c-${n}`), lo, hi);
+      if (base !== undefined && base >= lo && base <= hi) { h.g.setLineDash([4, 4]); h.g.strokeStyle = 'rgba(127,169,164,.7)'; h.g.beginPath(); h.g.moveTo(h.m.g, h.Y(base)); h.g.lineTo(h.w - h.m.d, h.Y(base)); h.g.stroke(); h.g.setLineDash([]); }
       courbe(h, serie, COULEURS[i]);
     });
     $('reponses').innerHTML = derniers.map(({ t: ts, x }) => `<li>${hhmm(ts)} — « ${esc(x)} »</li>`).join('') || '<li>aucune sur cette période</li>';
   }
+  // la fenêtre suit l'heure : dans les vues courtes, elle avance chaque seconde
+  function glisser() {
+    if (!donnees || !court()) return;
+    donnees.t1 = Date.now() / 1000; donnees.t0 = donnees.t1 - heures * 3600;
+  }
   async function charger() {
     try {
       const r = await fetch(`/api/jarvis/tableau?heures=${heures}`, { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
-      if (r.ok) { donnees = await r.json(); dessiner(); }
+      if (r.ok) { donnees = await r.json(); glisser(); dessiner(); }
     } catch (_) {}
   }
+  // chaque seconde, la suite de ses hormones (seulement ce qui est arrivé depuis la dernière fois)
+  let enCours = false;
+  async function seconde() {
+    if (!court() || !donnees || enCours || document.hidden) return;
+    enCours = true;
+    try {
+      const r = await fetch(`/api/jarvis/direct?depuis=${directDepuis}`, { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+      if (r.ok) {
+        const neuves = await r.json();
+        if (neuves.length) { direct.push(...neuves); directDepuis = neuves[neuves.length - 1].t; }
+        const t0 = Date.now() / 1000 - heures * 3600 - 5;
+        if (direct.length && direct[0].t < t0) direct = direct.filter(p => p.t >= t0);
+      }
+    } catch (_) {}
+    enCours = false;
+    glisser(); dessiner();
+  }
   $('periodes').addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-h]'); if (!b) return;
-    heures = Number(b.dataset.h);
+    const b = e.target.closest('button[data-min]'); if (!b) return;
+    heures = Number(b.dataset.min) / 60;
+    direct = []; directDepuis = Date.now() / 1000 - heures * 3600;
     for (const x of $('periodes').querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b));
     charger();
   });
   window.addEventListener('resize', dessiner);
-  charger(); setInterval(charger, 15000);
+  charger(); setInterval(charger, 15000); setInterval(seconde, 1000);
   </script>
 </body>
 </html>

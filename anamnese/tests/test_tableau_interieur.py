@@ -79,3 +79,25 @@ def test_journal_au_battement_et_bases_a_la_minute(tmp_path):
     j2.write_text("".join(json.dumps(o) + "\n" for o in lignes))
     b = interieur.bases_72h(t0 + 14 * 3600, chemin=j2)
     assert abs(b["dopamine"] - (0.4 * 13 + 0.8) / 14) < 0.01          # pondéré par le temps, pas par le nombre de lignes
+
+
+def test_hormones_en_direct_chaque_seconde(tmp_path):
+    """(26/10, Ahmed : « comme un EEG ») une ligne par lecture, l'adénosine du dernier battement, l'état jamais modifié."""
+    import affect
+
+    class Mem:
+        def __init__(self):
+            self.kv = {interieur.CLE: json.dumps({"adenosine": 0.21})}
+
+        def kv_get(self, k):
+            return self.kv.get(k)
+
+        def kv_set(self, k, v):
+            raise AssertionError("la lecture en direct n'écrit jamais l'état")
+
+    m, j = Mem(), tmp_path / "direct.jsonl"
+    for k in range(3):
+        interieur.ligne_directe(m, now=1_800_000_000.0 + k, chemin=j)
+    lignes = [json.loads(l) for l in j.read_text().splitlines()]
+    assert [o["t"] for o in lignes] == [1_800_000_000.0, 1_800_000_001.0, 1_800_000_002.0]
+    assert lignes[0]["h"]["adenosine"] == 0.21 and set(affect.HORMONES) <= set(lignes[0]["h"])
