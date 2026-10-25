@@ -231,7 +231,8 @@ def test_l_humeur_varie_et_s_entend(mem, tmp_path):
     assert e["humeur_code"] == "veille" and e["expressivite"] <= 0.55            # 7 h : il est en veille
     _horloge(tmp_path, t0 + 7 * 3600)                                           # retour d'Ahmed
     e = interieur.tick(mem, now=t0 + 7 * 3600 + 20, horloge=h)
-    assert e["humeur_code"] == "joie" and e["expressivite"] >= 0.7
+    # (25/10) l'humeur vient des hormones : le retour se lit comme une joie, un élan ou une surprise, et s'entend vif
+    assert e["humeur_code"] in ("joie", "elan", "surprise") and e["expressivite"] >= 0.7
     assert len({j[1] for j in e["journal"]}) >= 2                                 # la trajectoire est notée
 
 

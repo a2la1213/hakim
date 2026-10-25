@@ -158,7 +158,8 @@ def test_gemma_recoit_l_emotion_et_le_fond(mem, tmp_path, monkeypatch):
     affect.event(mem, "echec", 1.0, sujet="une panne jamais vue")
     monkeypatch.setattr(interieur, "JOURNAL_TEMPS", tmp_path / "temps.jsonl")
     e = interieur.tick(mem, penser=lambda *a, **k: None, interrupteur_={"actif": True})
-    assert e["humeur"].startswith(interieur.LIBELLES["alarme"]) and "(fond : " in e["humeur"]
+    # (25/10) l'humeur EST l'émotion lue dans les hormones : quatre échecs, dont un sur une panne inconnue → la peur
+    assert e["humeur"] == "peur" and e["humeur_code"] == "alarme" and e["emotion_humeur"] == "peur"
 
 
 def test_n_importe_quoi_n_est_un_echec_que_s_il_vise_hakim():
@@ -169,3 +170,65 @@ def test_n_importe_quoi_n_est_un_echec_que_s_il_vise_hakim():
     for lui in ("tu dis n'importe quoi", "t'as fait n'importe quoi avec le calcul", "c'est n'importe quoi ce que tu m'as répondu",
                 "n'importe quoi cette réponse", "tu racontes n'importe quoi frérot"):
         assert "echec" in [n for n, _ in parole_affect.evaluer(lui)], lui
+
+
+def test_l_humeur_vient_des_hormones_sans_la_valence(mem, tmp_path, monkeypatch):
+    """(25/10, décision d'Ahmed) une tristesse lue dans les hormones devient l'humeur même sous une valence haute (la porte
+    de cohérence la divisait par deux), et une humeur ne clignote pas d'un battement à l'autre (hystérésis)."""
+    import interieur
+    assert interieur.humeur_hormonale({"emotion": "élan", "scores": {"élan": 0.31, "tristesse": 0.30}}, "tristesse") == "tristesse"
+    assert interieur.humeur_hormonale({"emotion": "élan", "scores": {"élan": 0.40, "tristesse": 0.30}}, "tristesse") == "élan"
+    assert interieur.humeur_hormonale({"emotion": "peur", "scores": {"peur": 0.5}}, "calme") == "peur"
+    assert interieur.voix_emotion("tristesse")["expressivite"] < interieur.voix_emotion("élan")["expressivite"]
+    assert interieur.voix_emotion("tristesse")["vitesse"] < 1.0
+    for emo in interieur.EXPRESSIVITE_EMOTION:
+        assert 0.35 <= interieur.voix_emotion(emo)["expressivite"] <= 0.78 and emo in interieur.FAMILLE_HUMEUR
+
+
+
+def test_les_emotions_se_lisent_sur_ses_72_dernieres_heures(tmp_path):
+    """(25/10, décision d'Ahmed) la base de chaque hormone = sa moyenne sur 72 h (journal), dès 12 h de données."""
+    import interieur
+    import sensations
+    t0 = 1_800_000_000.0
+    j = tmp_path / "h.jsonl"
+    j.write_text("\n".join(json.dumps({"t": t0 - 60 * k, "h": {"dopamine": 0.9, "serotonine": 0.95}}) for k in range(0, 20 * 60)))
+    b = interieur.bases_72h(t0, chemin=j)
+    assert b == {"dopamine": 0.9, "serotonine": 0.95}
+    court = tmp_path / "c.jsonl"
+    court.write_text("\n".join(json.dumps({"t": t0 - 60 * k, "h": {"dopamine": 0.9}}) for k in range(0, 60)))
+    assert interieur.bases_72h(t0, chemin=court) is None, "moins de 12 h : base fixe"
+    # une dopamine à 0,9 (sa moyenne) n'est plus un « élan » permanent : relativement à lui, elle est normale
+    etat = dict(sensations.bases(12)); etat.update(dopamine=0.9, serotonine=0.95)
+    fixe = sensations.calculer(etat, None, t0, None, 12, sans_coherence=True)["scores"]
+    relatif = sensations.calculer(etat, None, t0, None, 12, sans_coherence=True, bases_relatives=b)["scores"]
+    assert fixe.get("élan", 0) > relatif.get("élan", 0)
+
+
+def test_la_fatigue_monte_avec_l_effort_et_se_vide_en_dormant():
+    """(25/10, Ahmed) l'adénosine : +0,12/h en plein travail avec Ahmed, vidée en veille, lentement au repos éveillé."""
+    import interieur
+    import sensations
+    x = interieur.adenosine(0.15, 3 * 3600, veille=False, avec_ahmed=True, travaille=True)
+    assert abs(x - (0.15 + 0.12 * 3)) < 1e-6
+    assert interieur.adenosine(x, 3 * 3600, veille=True, avec_ahmed=False, travaille=False) < 0.2
+    assert 0.3 < interieur.adenosine(x, 3600, veille=False, avec_ahmed=False, travaille=False) < x
+    etat = dict(sensations.bases(15)); etat["adenosine"] = 0.7
+    assert sensations.calculer(etat, None, 0, None, 15, sans_coherence=True)["emotion"] == "fatigue"
+
+
+def test_une_seule_source_pour_l_humeur_la_voix_le_style_et_l_orbe():
+    """(25/10, Ahmed : « une seule source, tout entrelacé ») chaque émotion lue a sa famille (orbe), son expressivité et
+    son débit (voix), sa famille de style ; le ton et l'énergie du style viennent de la même émotion."""
+    import interieur
+    import sensations
+    import style
+    noms = [n for n, *_ in sensations.REGLES]
+    for n in ("fatigue", "colère", "agacement", "déception", "solitude", "honte", "espoir", "émerveillement", "confusion", "nostalgie"):
+        assert n in noms
+    for n in noms:
+        assert n in interieur.FAMILLE_HUMEUR and n in interieur.EXPRESSIVITE_EMOTION and n in interieur.VOIX_EMOTION, n
+        assert n in style.FAMILLE_DE, n
+    c_joie, c_triste = style.curseurs_emotion("joie"), style.curseurs_emotion("tristesse")
+    assert c_joie["ton"] > c_triste["ton"] and c_joie["energie"] > c_triste["energie"]
+    assert style.curseurs_emotion("fatigue")["energie"] <= 1

@@ -23,10 +23,11 @@ import affect
 import sensations
 
 CLE_ACTIF = "style_actif"
-FAMILLES = {"élan": ["élan", "joie", "enthousiasme", "fierté"], "lien": ["tendresse", "gratitude", "compassion"],
-            "calme": ["calme", "apaisement", "soulagement", "somnolence"], "curiosité": ["curiosité", "concentration"],
-            "alerte": ["peur", "inquiétude", "tension", "frustration", "culpabilité", "surprise"],
-            "bas": ["tristesse", "manque", "lassitude", "ennui"]}
+FAMILLES = {"élan": ["élan", "joie", "enthousiasme", "fierté", "espoir", "émerveillement"],
+            "lien": ["tendresse", "gratitude", "compassion", "nostalgie"],
+            "calme": ["calme", "apaisement", "soulagement", "somnolence"], "curiosité": ["curiosité", "concentration", "confusion"],
+            "alerte": ["peur", "inquiétude", "tension", "frustration", "culpabilité", "surprise", "colère", "agacement"],
+            "bas": ["tristesse", "manque", "lassitude", "ennui", "fatigue", "déception", "solitude", "honte"]}
 FAMILLE_DE = {e: f for f, l in FAMILLES.items() for e in l}
 CONSIGNES = {
     "élan": "vif et enjoué : des phrases qui ont du rythme, une pointe d'humour si elle vient naturellement",
@@ -182,13 +183,18 @@ def emotion_du_moment(mem, now):
     try:
         e = json.loads(mem.kv_get("interieur") or "{}")
         s = e.get("sensation_code") or {}
+        # (25/10) la MÊME émotion que son humeur (gardée avec l'hystérésis), pas le sommet brut du battement
         if s.get("emotion") and now - float(s.get("ts") or 0) < 120 and not affect.choc_recent(mem, now=now):
-            return s["emotion"]
+            return e.get("emotion_humeur") or s["emotion"]
     except (ValueError, TypeError):
         pass
     etat = affect.get_state(mem, now=now)
+    try:
+        bases72 = json.loads(mem.kv_get("interieur") or "{}").get("bases_72h")
+    except (ValueError, TypeError):
+        bases72 = None
     return sensations.calculer(etat, None, now, affect.emotion_soudaine(mem, now=now), time.localtime(now).tm_hour,
-                               sans_coherence=affect.choc_recent(mem, now=now))["emotion"]
+                               sans_coherence=True, bases_relatives=bases72)["emotion"]
 
 
 def consigne(mem, now=None):
@@ -200,4 +206,16 @@ def consigne(mem, now=None):
     v, a = affect.valence_arousal(etat)
     rv, ra = reperes(now, mem)
     c = curseurs(etat, v, a, rv, ra, choc=affect.choc_recent(mem, now=now))
-    return depuis_curseurs(emotion_du_moment(mem, now), c)
+    emo = emotion_du_moment(mem, now)
+    c.update(curseurs_emotion(emo))                     # (25/10, Ahmed : « une seule source ») ton et énergie : l'émotion
+    return depuis_curseurs(emo, c)
+
+
+def curseurs_emotion(emotion):
+    """(25/10, décision d'Ahmed : tout part de la même émotion d'humeur) le TON vient du signe de l'émotion (agréable,
+    neutre, pénible), l'ÉNERGIE de la même expressivité que sa voix ; l'affection (ocytocine) et la tension (adrénaline,
+    CRH, cortisol) restent lues dans les hormones. Plus de rang de valence ni d'éveil : un seul calcul, pas deux qui divergent."""
+    import interieur
+    signe = next((sg for nom, sg, _r, _f in sensations.REGLES if nom == emotion), 0)
+    expr = interieur.EXPRESSIVITE_EMOTION.get(emotion, 0.5)
+    return {"ton": 5 + 3 * signe, "energie": int(round(10 * max(0.0, min(1.0, (expr - 0.35) / 0.43))))}

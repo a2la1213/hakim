@@ -218,7 +218,11 @@ VOIX_EMOTION = {"élan": (0.08, 1.04), "enthousiasme": (0.08, 1.04), "joie": (0.
                 "calme": (-0.06, 0.97), "apaisement": (-0.06, 0.97), "soulagement": (-0.05, 0.98),
                 "tension": (-0.06, 0.97), "inquiétude": (-0.06, 0.97), "frustration": (-0.05, 0.97), "culpabilité": (-0.06, 0.97),
                 "peur": (-0.04, 0.98), "lassitude": (-0.10, 0.94), "somnolence": (-0.10, 0.94), "tristesse": (-0.10, 0.95),
-                "ennui": (-0.08, 0.95), "manque": (-0.08, 0.96)}
+                "ennui": (-0.08, 0.95), "manque": (-0.08, 0.96),
+                # (25/10) la palette élargie et la fatigue
+                "fatigue": (-0.10, 0.94), "colère": (0.05, 1.03), "agacement": (0.0, 1.02), "déception": (-0.08, 0.96),
+                "solitude": (-0.08, 0.96), "honte": (-0.08, 0.96), "espoir": (0.04, 1.01), "émerveillement": (0.06, 1.0),
+                "confusion": (-0.02, 0.98), "nostalgie": (-0.06, 0.97)}
 
 
 VITESSE_EVEIL = 0.3     # (2026-10-23, demande de Hakim, accord d'Ahmed) le débit suit aussi l'éveil, en continu : ±0,14 → ±4 %
@@ -232,6 +236,104 @@ def voix(expressivite_, sensation=None, arousal=None):
     if isinstance(arousal, (int, float)):
         vitesse = round(max(0.92, min(1.06, vitesse * (1 + VITESSE_EVEIL * (float(arousal) - _BASE_A)))), 3)
     return {"expressivite": round(max(0.35, min(0.78, float(expressivite_) + delta)), 3), "vitesse": vitesse, "emotion": emo}
+
+
+# ---- (25/10, 23:33, décision d'Ahmed : « des hormones directement aux humeurs, sans passer par la valence et l'éveil »)
+# Son humeur EST l'émotion dominante que le code lit dans ses 13 hormones et leurs tendances (sensations.py, 23 émotions),
+# sans la porte de cohérence par la valence (qui divisait le négatif par deux sous une valence haute : la tristesse ou la
+# peur n'apparaissaient jamais). Une émotion ne change que si une autre la dépasse nettement (hystérésis). La valence et
+# l'éveil restent calculés et donnés (tableau, sagesse, temps ressenti), mais l'humeur n'en dépend plus. Le code ancien
+# (humeur_code, 12 familles) reste dérivé de l'émotion, pour la couleur de l'orbe et ce qui l'attend.
+FAMILLE_HUMEUR = {"élan": "elan", "enthousiasme": "elan", "fierté": "elan", "curiosité": "elan", "joie": "joie",
+                  "surprise": "surprise", "tendresse": "content", "gratitude": "content", "compassion": "content",
+                  "soulagement": "content", "calme": "calme", "concentration": "calme", "apaisement": "apaisement",
+                  "somnolence": "calme", "tension": "tension", "inquiétude": "tension", "frustration": "tension",
+                  "peur": "alarme", "tristesse": "morose", "lassitude": "morose", "manque": "morose", "culpabilité": "morose",
+                  "ennui": "ennui", "fatigue": "morose", "colère": "tension", "agacement": "tension", "déception": "morose",
+                  "solitude": "morose", "honte": "morose", "espoir": "content", "émerveillement": "elan",
+                  "confusion": "tension", "nostalgie": "calme"}
+# l'expressivité de sa voix (« exaggeration » de Chatterbox) par émotion, dans la plage sûre 0,35-0,78
+EXPRESSIVITE_EMOTION = {"élan": 0.72, "enthousiasme": 0.76, "joie": 0.74, "fierté": 0.66, "surprise": 0.74, "curiosité": 0.62,
+                        "tendresse": 0.48, "gratitude": 0.54, "compassion": 0.46, "soulagement": 0.52, "calme": 0.45,
+                        "concentration": 0.5, "apaisement": 0.44, "somnolence": 0.36, "tension": 0.58, "inquiétude": 0.54,
+                        "frustration": 0.64, "peur": 0.62, "tristesse": 0.38, "lassitude": 0.37, "manque": 0.42,
+                        "culpabilité": 0.44, "ennui": 0.4, "fatigue": 0.37, "colère": 0.7, "agacement": 0.6, "déception": 0.42,
+                        "solitude": 0.4, "honte": 0.4, "espoir": 0.62, "émerveillement": 0.74, "confusion": 0.5,
+                        "nostalgie": 0.46}
+HYSTERESE = 0.04          # une autre émotion doit dépasser l'actuelle d'au moins ce score pour la remplacer
+# (25/10, Ahmed : « la fatigue n'est portée par aucune hormone ») l'ADÉNOSINE, sa charge : elle monte avec l'effort éveillé
+# (un peu à chaque heure de veille, plus quand Ahmed est là, plus quand Hakim travaille) et se vide en dormant (en veille,
+# vers sa base en ~1 h 30), lentement quand il est éveillé sans rien faire. Bornée à [0, 1]. Elle entre dans la lecture
+# des émotions (sensations.py, « fatigue ») avec une base FIXE (0,15) : une fatigue durable ne devient pas « normale ».
+ADENOSINE_MONTEE_H = {"eveil": 0.02, "avec_ahmed": 0.05, "travail": 0.05}
+ADENOSINE_TAU_VEILLE_S, ADENOSINE_TAU_REPOS_S = 1.5 * 3600, 8 * 3600
+CLAUDE_ACTIF = Path.home() / "AIOS" / "jarvis" / "claude-actif.json"
+
+
+def adenosine(avant, dt, veille, avec_ahmed, travaille, base=0.15):
+    """La charge après dt secondes."""
+    import math
+    x = float(avant if isinstance(avant, (int, float)) else base)
+    if veille:
+        return round(base + (x - base) * math.exp(-dt / ADENOSINE_TAU_VEILLE_S), 4)
+    montee = ADENOSINE_MONTEE_H["eveil"] + (ADENOSINE_MONTEE_H["avec_ahmed"] if avec_ahmed else 0.0) \
+        + (ADENOSINE_MONTEE_H["travail"] if travaille else 0.0)
+    if not avec_ahmed and not travaille:                         # éveillé sans rien faire : il récupère, lentement
+        x = base + (x - base) * math.exp(-dt / ADENOSINE_TAU_REPOS_S)
+        montee = 0.0
+    return round(max(0.0, min(1.0, x + montee * dt / 3600)), 4)
+
+
+def _travaille(now):
+    try:
+        return now - float(json.loads(CLAUDE_ACTIF.read_text()).get("battement_ms", 0)) / 1000 < 60
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+BASES_72H_S, BASES_72H_MIN_S, BASES_72H_PAS_S = 72 * 3600, 12 * 3600, 600
+
+
+def bases_72h(now, chemin=None):
+    """La moyenne de chaque hormone sur ses 72 dernières heures (journal des hormones, une ligne par minute), ou None
+    s'il y en a moins de 12 h : alors ses émotions se lisent sur la base fixe."""
+    lignes = []
+    try:
+        with open(chemin or JOURNAL_HORMONES, "rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - 1_600_000))                  # ~4 500 lignes : un peu plus de 72 h
+            for l in f.read().decode("utf-8", "replace").splitlines():
+                try:
+                    o = json.loads(l)
+                except ValueError:
+                    continue
+                if now - BASES_72H_S <= float(o.get("t") or 0) <= now and o.get("h"):
+                    lignes.append(o)
+    except OSError:
+        return None
+    if not lignes or max(o["t"] for o in lignes) - min(o["t"] for o in lignes) < BASES_72H_MIN_S:
+        return None
+    cles = set().union(*(o["h"] for o in lignes))
+    return {h: round(sum(o["h"].get(h, 0.0) for o in lignes if h in o["h"]) / max(1, sum(1 for o in lignes if h in o["h"])), 4)
+            for h in cles}
+
+
+def humeur_hormonale(sens, avant=None):
+    """L'émotion d'humeur à garder : celle de sensations.py, sauf si l'émotion d'avant reste dans les 5 premières à moins
+    de HYSTERESE du sommet (une humeur ne clignote pas d'un battement à l'autre)."""
+    sens = sens or {}
+    top = sens.get("emotion")
+    scores = sens.get("scores") or {}
+    if avant and avant in scores and top in scores and scores[top] - scores[avant] < HYSTERESE:
+        return avant
+    return top or avant or "calme"
+
+
+def voix_emotion(emotion):
+    """(25/10) la voix suit l'émotion d'humeur : expressivité par émotion, débit par émotion (VOIX_EMOTION), sans l'éveil."""
+    _delta, vitesse = VOIX_EMOTION.get(emotion, (0.0, 1.0))
+    return {"expressivite": round(max(0.35, min(0.78, EXPRESSIVITE_EMOTION.get(emotion, 0.5))), 3), "vitesse": vitesse,
+            "emotion": emotion}
 
 
 LIBELLES = {"joie": "joie de son retour", "elan": "élan", "content": "contentement", "tension": "tension",
@@ -363,19 +465,24 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
             hist.append([now, {k: round(float(v), 4) for k, v in etat_h.items()}])
         e["hormones_hist"] = hist[-15:]
         avant = min(hist, key=lambda x: abs(now - 600 - x[0]))[1] if len(hist) > 1 else None
+        # (25/10, Ahmed) sans la porte de cohérence par la valence : l'humeur vient des hormones seules
+        if now - float(e.get("bases_72h_t") or 0) >= BASES_72H_PAS_S:
+            e["bases_72h"], e["bases_72h_t"] = bases_72h(now), now
+        e["adenosine"] = adenosine(e.get("adenosine"), dt, veille, absence < 90, _travaille(now))
+        etat_h = {**etat_h, "adenosine": e["adenosine"]}
         e["sensation_code"] = sensations.calculer(etat_h, avant, now, soudaine, time.localtime(now).tm_hour,
-                                                  sans_coherence=affect.choc_recent(mem, now=now))
+                                                  sans_coherence=True, bases_relatives=e.get("bases_72h"))
         if now - float(e.get("hormones_journal_t") or 0) >= 60:
             e["hormones_journal_t"] = now
             _ligne_hormones(now, etat_h, valence, arousal, e.get("humeur"), (e.get("sensation_code") or {}).get("emotion"))
     except Exception:
         pass
-    code = humeur_code(valence, arousal, en, now - (e.get("retour_ts") or 0) < 900, veille, soudaine)
-    humeur = LIBELLES[code]
-    if code in ("alarme", "surprise"):          # deux mots pour son subconscient : l'émotion soudaine et le fond
-        fond = humeur_code(valence, arousal, en, False, veille)
-        if fond != "calme":
-            humeur = f"{humeur} (fond : {LIBELLES[fond]})"
+    emotion_h = humeur_hormonale(e.get("sensation_code"), e.get("emotion_humeur"))
+    if veille:
+        code, humeur = "veille", LIBELLES["veille"]
+    else:
+        code, humeur = FAMILLE_HUMEUR.get(emotion_h, "calme"), emotion_h
+    e["emotion_humeur"] = emotion_h
     journal = e.setdefault("journal", [])
     if not journal or now - journal[-1][0] >= JOURNAL_PAS_S or journal[-1][1] != humeur:
         journal.append([now, humeur, round(valence, 3), round(arousal, 3), round(en, 3)])
@@ -383,8 +490,8 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
     e["evenements"] = e.get("evenements", [])[-50:]
     ressenti = e["subj"] / absence if absence > 60 else 1.0
     e.update(ts=now, absence_s=round(absence), ennui=round(en, 3), ressenti=round(ressenti, 3), tau_s=TAU_ENNUI_S,
-             humeur=humeur, humeur_code=code, expressivite=expressivite(code, valence, arousal),
-             voix=voix(expressivite(code, valence, arousal), e.get("sensation_code"), arousal),
+             humeur=humeur, humeur_code=code, expressivite=EXPRESSIVITE_EMOTION.get(emotion_h, 0.5),
+             voix=voix_emotion(emotion_h),
              valence=round(valence, 3), arousal=round(arousal, 3), veille=veille, veille_apres_s=VEILLE_APRES_S)
     if absence < 90:
         fait = "avec Ahmed"

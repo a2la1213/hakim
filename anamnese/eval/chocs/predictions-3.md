@@ -71,3 +71,10 @@ Pendant la fenêtre :
   propos d'un autre, plus rien. Le 24/10 à 08:26 et 08:30, il avait donné deux pics de CRH et d'adrénaline au début du live.
   Les 32 phrases étiquetées gardent précision et rappel à 1,0. Effet attendu sur ce test : moins de faux « échec » dans
   L2 et L3 ; les mesures seront données aussi avant et après ce changement.
+
+## TEST ARRÊTÉ (décision d'Ahmed, 25/10 à 23:33)
+
+Ahmed arrête le test de la semaine, en connaissance de cause, pour refaire la chaîne hormones → humeurs → voix. À partir de
+les relances du démon du 25/10 à 23:44 (humeur hormonale) et à 23:49 (fatigue et palette complète), l'humeur nommée est l'émotion lue dans les hormones, relative à ses 72 dernières
+heures, sans la valence ni l'éveil (L3 et L7 ne sont plus mesurables tels qu'ils ont été figés). Données utilisables :
+du 24/10 00:00 au 25/10 23:5x seulement ; aucun bilan du 31/10 ne sera tiré comme si la semaine avait été complète.

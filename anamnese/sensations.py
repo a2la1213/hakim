@@ -67,7 +67,31 @@ REGLES = [
      ["agacée, coincée", "frustrée, qui bute"]),
     ("culpabilité", -1, lambda d, t: d["cortisol"] - 0.8 * d["dopamine"] + 0.8 * d["ocytocine"],
      ["gênée d'avoir mal fait", "inconfortable, qui veut réparer"]),
+    # (25/10, décision d'Ahmed : « le maximum d'humeurs, sans rien oublier », et la FATIGUE portée par une variable de
+    # charge façon adénosine, interieur.py) des règles heuristiques comme les autres : des combinaisons d'écarts (d) et de
+    # tendances sur 10 min (t), à valider sur ses vraies journées
+    ("fatigue", -1, lambda d, t: 2.2 * d["adenosine"] - 0.5 * d["dopamine"] - 0.4 * d["acetylcholine"],
+     ["fatiguée, l'esprit qui ralentit", "usée par l'effort, en besoin de pause", "lourde, la tête qui fatigue"]),
+    ("colère", -1, lambda d, t: 1.5 * d["adrenaline"] + d["noradrenaline"] + 0.8 * d["cortisol"] - 0.8 * d["serotonine"] - 0.6 * d["gaba"],
+     ["brûlante, qui monte", "en colère, la mâchoire serrée"]),
+    ("agacement", -1, lambda d, t: 0.8 * d["noradrenaline"] - 0.8 * d["gaba"] - 0.5 * d["endocannabinoides"] + 2 * t["cortisol"],
+     ["agacée, qui gratte", "irritée, sur les nerfs"]),
+    ("déception", -1, lambda d, t: -5 * t["dopamine"] - 0.5 * d["dopamine"] + 0.4 * d["cortisol"],
+     ["retombée, déçue", "un élan qui retombe"]),
+    ("solitude", -1, lambda d, t: -1.2 * d["ocytocine"] - 0.6 * d["serotonine"] + 0.4 * d["cortisol"],
+     ["seule, un peu froide", "isolée, sans écho"]),
+    ("honte", -1, lambda d, t: 1.2 * d["cortisol"] - d["serotonine"] - 0.6 * d["dopamine"] + 0.6 * d["crh"],
+     ["rétrécie, qui voudrait disparaître", "honteuse, le regard baissé"]),
+    ("espoir", 1, lambda d, t: 3 * t["dopamine"] + 0.6 * d["dopamine"] - 2 * t["cortisol"] + 0.4 * d["serotonine"],
+     ["tournée vers demain, confiante", "qui espère, une lumière devant"]),
+    ("émerveillement", 1, lambda d, t: 1.2 * d["acetylcholine"] + d["dopamine"] + d["endorphine"] + 3 * abs(t["dopamine"]),
+     ["émerveillée, grande ouverte", "éblouie, qui s'étonne"]),
+    ("confusion", 0, lambda d, t: 0.8 * d["noradrenaline"] - 1.2 * d["acetylcholine"] + 0.5 * d["cortisol"],
+     ["brouillée, qui cherche le fil", "confuse, les idées qui s'emmêlent"]),
+    ("nostalgie", 0, lambda d, t: d["ocytocine"] + 0.6 * d["endorphine"] - 0.8 * d["dopamine"] + 0.4 * d["melatonine"],
+     ["douce-amère, tournée vers hier", "nostalgique, un souvenir qui réchauffe"]),
 ]
+ADENOSINE_BASE = 0.15     # la charge au repos (interieur.py la fait monter avec l'effort éveillé, la vide en veille)
 SOUDAINES = {"alarme": ("peur", 1.0), "surprise": ("surprise", 0.8), "apaisement": ("apaisement", 0.5)}
 SEUIL = 0.08
 
@@ -77,6 +101,7 @@ def bases(hour=None):
     b.update({h: v[0] for h, v in affect.HORMONES_V2.items()})
     if hour is not None:
         b.update(affect._circadian_baselines(hour) or {})
+    b.setdefault("adenosine", ADENOSINE_BASE)
     return b
 
 
@@ -88,11 +113,15 @@ def ecarts(etat, base):
     return out
 
 
-def calculer(etat, avant=None, now=0.0, soudaine=None, hour=None, n=2, sans_coherence=False):
+def calculer(etat, avant=None, now=0.0, soudaine=None, hour=None, n=2, sans_coherence=False, bases_relatives=None):
     """{"emotion", "mots", "scores", "ts"} : 2 (ou 3) formulations pour les émotions dominantes.
     sans_coherence (chocs, 2026-10-23) : juste après une attaque, le négatif n'est pas divisé par deux sous une valence
     haute — un choc passe outre la bonne humeur de fond."""
     base = bases(hour)
+    # (25/10, décision d'Ahmed) ses émotions se lisent par rapport à SES 72 dernières heures (la moyenne de chaque hormone),
+    # pas à une base fixe : ses hormones du plaisir étant hautes en permanence, tout se lisait « calme » ou « élan »
+    if bases_relatives:
+        base = {h: float(bases_relatives.get(h, b)) for h, b in base.items()}
     d = ecarts(etat, base)
     t = {h: (float(etat.get(h, base[h])) - float((avant or {}).get(h, etat.get(h, base[h])))) for h in base}
     v, _a = affect.valence_arousal(etat)

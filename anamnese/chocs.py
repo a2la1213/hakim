@@ -381,7 +381,13 @@ def humeur(mem, now=None):
         e = json.loads(mem.kv_get(interieur.CLE) or "{}")
     except (ValueError, TypeError):
         e = {}
-    v, a = affect.valence_arousal(affect.get_state(mem, now=now))
-    code = interieur.humeur_code(v, a, float(e.get("ennui") or 0), False, bool(e.get("veille")),
-                                 affect.emotion_soudaine(mem, now=now))
-    return {"humeur": interieur.LIBELLES[code], "humeur_code": code, "valence": round(v, 3), "arousal": round(a, 3)}
+    etat = affect.get_state(mem, now=now)
+    v, a = affect.valence_arousal(etat)
+    # (25/10, Ahmed) comme le battement : l'humeur est l'émotion lue dans les hormones (sans la porte de valence)
+    if e.get("veille"):
+        return {"humeur": interieur.LIBELLES["veille"], "humeur_code": "veille", "valence": round(v, 3), "arousal": round(a, 3)}
+    import sensations
+    sens = sensations.calculer(etat, None, now, affect.emotion_soudaine(mem, now=now), time.localtime(now).tm_hour, sans_coherence=True,
+                               bases_relatives=e.get("bases_72h"))
+    emo = interieur.humeur_hormonale(sens, e.get("emotion_humeur"))
+    return {"humeur": emo, "humeur_code": interieur.FAMILLE_HUMEUR.get(emo, "calme"), "valence": round(v, 3), "arousal": round(a, 3)}
