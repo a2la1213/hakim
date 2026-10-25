@@ -653,11 +653,13 @@ def journal_plage(debut, fin, dossier=None, temps=None, hormones=None, evenement
             lignes.append((t, f"{h(t)} ton état : {o.get('etat')}, {o.get('fait')}, humeur {o.get('humeur')}, valence "
                               f"{o.get('valence')}, éveil {o.get('arousal')}"))
             precedent = cle
-    avant = None
+    avant, avant_t = None, 0
     for o in _lire_jsonl(hormones or HORMONES_BRUT):
         t = o.get("t") or 0
-        if not debut - 120 <= t <= fin:
+        # (26/10) le journal bat toutes les 15 s : on compare toujours d'une minute à l'autre
+        if not debut - 120 <= t <= fin or t - avant_t < 55:
             continue
+        avant_t = t
         hh = o.get("h") or {}
         if avant is not None and t >= debut:
             bouge = sorted(((k, hh[k] - avant[k]) for k in hh if k in avant and abs(hh[k] - avant[k]) >= 0.03), key=lambda e: -abs(e[1]))

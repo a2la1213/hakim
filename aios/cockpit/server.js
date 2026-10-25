@@ -1377,8 +1377,11 @@ function positionDe(q, maintenant) {
    vieux que 10 min : ignoré. Chaque champ est un texte court aux caractères comptés : rien d'autre n'entre dans le tour. */
 let capteursCourants = null;
 /* Le tableau de bord intérieur de Hakim (2026-10-23, demande d'Ahmed relayée par Hakim) : ses 13 hormones et son humeur,
-   une mesure par minute (interieur.py → hormones.jsonl), ses réponses et les messages d'Ahmed (journal.jsonl, sa fin
-   seulement). La page /interieur le redessine toutes les 15 s ; l'outil tableau_interieur de Hakim en fait une image. */
+   une mesure par battement du démon, 15 s, depuis le 26/10 (interieur.py → hormones.jsonl), ses réponses et les messages
+   d'Ahmed (journal.jsonl, sa fin seulement). La page /interieur le redessine toutes les 15 s ; l'outil tableau_interieur de
+   Hakim en fait une image. On ne lit que la fin du journal qu'il faut, et au plus TABLEAU_POINTS_MAX mesures partent vers
+   la page : sur 1 h ou 6 h, chaque battement ; sur 24 h ou 3 jours, une mesure sur quelques-unes. */
+const TABLEAU_POINTS_MAX = 2000;
 function lignesDepuis(fichier, depuisS, octets = 0) {
   let t = '';
   try {
@@ -1398,8 +1401,10 @@ function lignesDepuis(fichier, depuisS, octets = 0) {
 function tableauInterieur(heures, maintenant = Date.now()) {
   const depuis = maintenant / 1000 - heures * 3600;
   let bases = {}; try { bases = JSON.parse(fs.readFileSync(path.join(JARVIS, 'hormones-bases.json'), 'utf8')); } catch (_) {}
-  const points = lignesDepuis(path.join(JARVIS, 'hormones.jsonl'), depuis)
-    .map(([t, o]) => ({ t, v: o.v, a: o.a, h: o.h || {}, humeur: o.humeur || null, emotion: o.emotion || null }));
+  const tous = lignesDepuis(path.join(JARVIS, 'hormones.jsonl'), depuis, Math.ceil(heures * 3600 / 15) * 700 + (1 << 16));
+  const pas = Math.max(1, Math.ceil(tous.length / TABLEAU_POINTS_MAX));
+  const points = tous.filter((_, i) => i % pas === 0 || i === tous.length - 1)
+    .map(([t, o]) => ({ t, v: o.v, a: o.a, h: o.h || {}, humeur: o.humeur || null, emotion: o.emotion || null, code: o.code || null }));
   const reponses = [], messages = [];
   for (const [t, o] of lignesDepuis(JARVIS_JOURNAL, depuis, 3 << 20)) {
     const x = String(o.texte || '');

@@ -18,3 +18,9 @@ Critères (les données : journal du temps toutes les 15 s, journal des hormones
 
 Prédictions de Claude Code : U1 tenu ; U2 tenu de peu ; U3 INSUFFISANT ou tenu ; U4 tenu ; U5 tenu.
 Variables calculées, pas un ressenti prouvé.
+
+## Changements pendant la fenêtre
+
+- 26/10 à 00:13 (demande d'Ahmed : des graphiques plus fins) : le journal des hormones prend une ligne à chaque battement
+  (15 s) au lieu d'une par minute, avec la famille de l'humeur. Le calcul de l'humeur ne change pas : les bases sur 72 h et
+  le journal brut gardent une mesure par minute.

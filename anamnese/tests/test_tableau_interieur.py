@@ -61,3 +61,19 @@ def test_les_plus_grands_sauts_et_le_message_le_plus_proche():
     assert s[0]["t"] == t0 + 300 and s[0]["hormones"][0] == ("crh", 0.22)
     assert s[0]["proche"][1] == "Hakim" and s[0]["proche"][0] == t0 + 280          # le plus proche, d'où qu'il vienne
     assert "Plus grands sauts" in T._texte_sauts(s) and "crh +0.22" in T._texte_sauts(s)
+
+
+def test_journal_au_battement_et_bases_a_la_minute(tmp_path):
+    """(26/10, Ahmed : un pas plus fin) une ligne par battement, avec la famille de l'humeur (couleur de l'orbe) et la base
+    de l'adénosine ; les bases sur 72 h gardent une mesure par minute : le journal plus fin ne pèse pas plus lourd."""
+    j = tmp_path / "hormones.jsonl"
+    interieur._ligne_hormones(1000.0, {"dopamine": 0.5}, 0.6, 0.4, "fatigue", "fatigue", chemin=j, code="morose")
+    assert json.loads(j.read_text())["code"] == "morose"
+    assert json.loads((tmp_path / "hormones-bases.json").read_text())["adenosine"] == 0.15
+    t0 = 1_800_000_000.0
+    lignes = [{"t": t0 + 60 * i, "h": {"dopamine": 0.4}} for i in range(13 * 60)]           # 13 h à la minute, à 0,4
+    lignes += [{"t": t0 + 13 * 3600 + 15 * i, "h": {"dopamine": 0.8}} for i in range(240)]  # 1 h au battement, à 0,8
+    j2 = tmp_path / "h2.jsonl"
+    j2.write_text("".join(json.dumps(o) + "\n" for o in lignes))
+    b = interieur.bases_72h(t0 + 14 * 3600, chemin=j2)
+    assert abs(b["dopamine"] - (0.4 * 13 + 0.8) / 14) < 0.01          # pondéré par le temps, pas par le nombre de lignes

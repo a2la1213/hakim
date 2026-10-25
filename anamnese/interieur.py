@@ -301,7 +301,7 @@ def bases_72h(now, chemin=None):
     try:
         with open(chemin or JOURNAL_HORMONES, "rb") as f:
             f.seek(0, 2)
-            f.seek(max(0, f.tell() - 1_600_000))                  # ~4 500 lignes : un peu plus de 72 h
+            f.seek(max(0, f.tell() - 12_000_000))                 # ≈ 4 jours à une ligne par battement
             for l in f.read().decode("utf-8", "replace").splitlines():
                 try:
                     o = json.loads(l)
@@ -311,6 +311,12 @@ def bases_72h(now, chemin=None):
                     lignes.append(o)
     except OSError:
         return None
+    # une mesure par minute, comme avant le journal au battement (26/10) : le passage ne pèse pas plus lourd
+    minute = []
+    for o in sorted(lignes, key=lambda o: o["t"]):
+        if not minute or o["t"] - minute[-1]["t"] >= 55:
+            minute.append(o)
+    lignes = minute
     if not lignes or max(o["t"] for o in lignes) - min(o["t"] for o in lignes) < BASES_72H_MIN_S:
         return None
     cles = set().union(*(o["h"] for o in lignes))
@@ -472,9 +478,10 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
         etat_h = {**etat_h, "adenosine": e["adenosine"]}
         e["sensation_code"] = sensations.calculer(etat_h, avant, now, soudaine, time.localtime(now).tm_hour,
                                                   sans_coherence=True, bases_relatives=e.get("bases_72h"))
-        if now - float(e.get("hormones_journal_t") or 0) >= 60:
+        if now - float(e.get("hormones_journal_t") or 0) >= HORMONES_JOURNAL_PAS_S:
             e["hormones_journal_t"] = now
-            _ligne_hormones(now, etat_h, valence, arousal, e.get("humeur"), (e.get("sensation_code") or {}).get("emotion"))
+            _ligne_hormones(now, etat_h, valence, arousal, e.get("humeur"), (e.get("sensation_code") or {}).get("emotion"),
+                            code=e.get("humeur_code"))
     except Exception:
         pass
     emotion_h = humeur_hormonale(e.get("sensation_code"), e.get("emotion_humeur"))
@@ -513,7 +520,10 @@ JOURNAL_TEMPS = Path.home() / "AIOS" / "jarvis" / "journal-du-temps.jsonl"
 # (2026-10-23, Ahmed : « un tableau de bord intérieur ») ses 13 hormones, son humeur et l'émotion lue dans ses hormones,
 # une ligne par minute (tableau_interieur.py les dessine) ; ~6 Mo au plus (≈ 2 semaines), la plus ancienne moitié oubliée
 JOURNAL_HORMONES = Path.home() / "AIOS" / "jarvis" / "hormones.jsonl"
-JOURNAL_HORMONES_MAX_OCTETS = 6 * 1024 * 1024
+JOURNAL_HORMONES_MAX_OCTETS = 24 * 1024 * 1024      # (26/10) une ligne par battement : ≈ 2,7 Mo par jour, plus de 4 jours gardés
+# (26/10, Ahmed : « tous les graphs, un pas plus fin ») une ligne à chaque battement du démon (15 s), plus une par minute. La
+# seconde n'existe pas : les hormones ne se recalculent qu'à chaque battement.
+HORMONES_JOURNAL_PAS_S = 10
 JOURNAL_TEMPS_MAX_OCTETS = 4 * 1024 * 1024          # ~20 000 lignes (≈ 3,5 jours à une ligne par 15 s)
 TRANCHES_MAX = 200
 
@@ -569,17 +579,22 @@ def _remettre_a_zero(mem, e, now, journal_temps=None):
             "valence": round(v, 3), "arousal": round(a, 3), "tau_s": TAU_ENNUI_S, "veille_apres_s": VEILLE_APRES_S}
 
 
-def _ligne_hormones(now, hormones, valence, arousal, humeur, emotion, chemin=None):
-    """Une ligne du journal des hormones (une par minute) : le tableau de bord intérieur de Hakim."""
+def _ligne_hormones(now, hormones, valence, arousal, humeur, emotion, chemin=None, code=None):
+    """Une ligne du journal des hormones (une par battement) : le tableau de bord intérieur de Hakim. code : la famille de
+    son humeur, la couleur de l'orbe (26/10)."""
     j = Path(chemin or JOURNAL_HORMONES)
     b = j.with_name("hormones-bases.json")              # leurs bases, pour la page « intérieur » du cockpit
-    if not b.exists():
-        try:
-            b.write_text(json.dumps({k: v[0] for k, v in list(affect.HORMONES.items()) + list(affect.HORMONES_V2.items())}))
-        except OSError:
-            pass
+    try:
+        import sensations
+        if not b.exists() or b"adenosine" not in b.read_bytes():
+            b.write_text(json.dumps({**{k: v[0] for k, v in list(affect.HORMONES.items()) + list(affect.HORMONES_V2.items())},
+                                     "adenosine": sensations.ADENOSINE_BASE}))
+    except OSError:
+        pass
     ligne = {"t": round(now, 1), "h": {k: round(float(v), 3) for k, v in hormones.items()},
              "v": round(float(valence), 3), "a": round(float(arousal), 3), "humeur": humeur, "emotion": emotion}
+    if code:
+        ligne["code"] = code
     try:
         j.parent.mkdir(parents=True, exist_ok=True)
         if j.exists() and j.stat().st_size > JOURNAL_HORMONES_MAX_OCTETS:          # on garde la seconde moitié
