@@ -743,8 +743,8 @@ function htmlMessage(m) {
   if (m.source === 'local') pied.push('<span title="Forfait et API indisponibles : cerveau local, sans outils">cerveau local</span>');
   // (26/10, Hakim et Ahmed : une réponse du local était passée pour la sienne) le secours se voit en tête, pas en petit en bas
   const secours = m.source === 'local' ? '<span class="etiquette secours" title="Forfait et API indisponibles à ce moment : c’est son cerveau local qui répond, sans ses outils ni sa mémoire complète">CERVEAU LOCAL · SECOURS, SANS SES OUTILS</span>' : '';
-  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
-  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'carnet' ? htmlCarnet(m.carnet) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
+  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
+  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'carnet' ? htmlCarnet(m.carnet) : m.spontane === 'retractation' ? htmlRetractation(m.retractation) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
 }
 
 /* Les pièces jointes de Hakim (2026-10-20) : récupérées avec le jeton, jamais ouvertes comme une page — une image
@@ -803,14 +803,21 @@ function rendre() {
   }
   etat.fenetre = Math.max(etat.fenetre || FENETRE, FENETRE);
   const caches = Math.max(0, etat.messages.length - etat.fenetre);
+  const vus = etat.messages.slice(-etat.fenetre);
+  // (26/10) des éléments montrés dans le fil sans être des messages de la conversation (etat.aCote : [{ ts, html }], fournis
+  // par un bloc plus bas) : chacun à son heure, jamais enregistré dans la conversation
+  const debut = caches ? quandMessage(vus[0]) : 0;
+  const aCote = (etat.aCote || []).filter(x => x.ts >= debut).sort((a, b) => a.ts - b.ts);
+  let k = 0;
+  const avant = (t) => { let h = ''; while (t && k < aCote.length && aCote[k].ts <= t) h += aCote[k++].html; return h; };
   let jourPrecedent = '';
   fil.innerHTML = (caches ? `<button class="btn plus" data-plus="1">messages précédents (${caches})</button>` : '')
-    + etat.messages.slice(-etat.fenetre).map((m) => {
+    + vus.map((m) => {
       const t = quandMessage(m), jour = t ? jourMessage(t) : '';
       const separation = jour && jour !== jourPrecedent ? `<div class="jour">${esc(jour)}</div>` : '';
       if (jour) jourPrecedent = jour;
-      return separation + htmlMessage(m);
-    }).join('');
+      return separation + avant(t) + htmlMessage(m);
+    }).join('') + aCote.slice(k).map(x => x.html).join('');
   if (enBas) fil.scrollTop = fil.scrollHeight;
   chargerApercus();
 }
@@ -2100,6 +2107,7 @@ function ecouterPensees() {
   es.addEventListener('ecriture', (ev) => { try { surEcriture(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('regle', (ev) => { try { surRegle(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('carnet', (ev) => { try { surCarnet(JSON.parse(ev.data)); } catch (_) {} });
+  es.addEventListener('retractation', (ev) => { try { surRetractation(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('identite', (ev) => { try { surIdentite(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('sortie', (ev) => { try { surSortie(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('spontane', (ev) => { try { surSpontane(JSON.parse(ev.data)); } catch (_) {} });
@@ -2216,6 +2224,51 @@ $('fil').addEventListener('click', async (e) => {
     surCarnet(o);
   } catch (err) { b.disabled = false; humeur(String(err.message || err)); }
 });
+/* (26/10, banc de rétractation) Hakim propose de rétracter un souvenir faux : rien n'est supprimé ; accepté, lui et tout
+   ce qui en dérive portent « source rétractée » dans son rappel. Accepter demande ton empreinte. */
+const ETATS_RETRACTATION = { en_attente: 'attend ta décision', acceptee: 'acceptée : marqué faux, rien n’est supprimé', refusee: 'refusée : rien ne change' };
+function surRetractation(o) {
+  if (!o || !/^[0-9a-f]{12}$/.test(String(o.id))) return;
+  const id = 'retractation-' + o.id;
+  let m = etat.messages.find(x => x.id === id);
+  if (!m) {
+    if (o.etat !== 'en_attente') return;
+    m = { id, qui: 'j', spontane: 'retractation', ts: (o.ts || Date.now() / 1000) * 1000 };
+    etat.messages.push(m);
+    humeur('Hakim propose de rétracter un souvenir faux');
+  }
+  m.retractation = o;
+  m.texte = `Je propose de rétracter ${(o.ids || []).length} souvenir(s) faux — ${ETATS_RETRACTATION[o.etat] || o.etat}.`;
+  sauver(); rendre();
+}
+function htmlRetractation(o) {
+  if (!o) return '';
+  const souvenirs = (o.apercu || []).map(a => `<div class="mission-etat">#${esc(a.id)} · ${esc(a.debut)}</div>`).join('');
+  const boutons = o.etat === 'en_attente' ? `<div class="mission-boutons"><button class="btn" data-retractation="${esc(o.id)}" data-action="accepter">Accepter</button>`
+    + `<button class="btn" data-retractation="${esc(o.id)}" data-action="refuser">Refuser</button></div>` : '';
+  return `<div class="mission"><div><b>Pourquoi c’est faux :</b> ${esc(o.raison || '')}</div>${souvenirs}`
+    + `<div class="mission-etat">${(o.descendance || []).length} souvenir(s) en dérivent et seront marqués aussi${o.correction ? ` · la correction : #${esc(o.correction)}` : ''} · rien n’est supprimé</div>`
+    + `<div class="mission-etat">${esc(ETATS_RETRACTATION[o.etat] || o.etat)}</div>${boutons}</div>`;
+}
+$('fil').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-retractation]');
+  if (!b) return;
+  b.disabled = true;
+  try {
+    const presence = b.dataset.action === 'accepter' ? await preuvePresence(`retractation:accepter:${b.dataset.retractation}`) : undefined;
+    const r = await fetch('/api/retractations', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ id: b.dataset.retractation, action: b.dataset.action, presence }) });
+    const o = await r.json();
+    if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
+    surRetractation(o);
+  } catch (err) { b.disabled = false; humeur(String(err.message || err)); }
+});
+async function retractationsAuChargement() {
+  try {
+    const r = await fetch('/api/retractations', { headers: { 'X-Jeton': jeton() } });
+    if (r.ok) for (const o of (await r.json()).propositions || []) surRetractation(o);
+  } catch (_) {}
+}
 async function carnetsAuChargement() {
   try {
     const r = await fetch('/api/carnets-types', { headers: { 'X-Jeton': jeton() } });
@@ -3230,7 +3283,7 @@ document.addEventListener('visibilitychange', signalerPresence);
 ecouterPensees();
 missionsAuChargement();
 ecrituresAuChargement();
-reglesAuChargement(); carnetsAuChargement();
+reglesAuChargement(); carnetsAuChargement(); retractationsAuChargement();
 identiteAuChargement();
 sortiesAuChargement();
 $('q').focus();

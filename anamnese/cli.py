@@ -23,6 +23,10 @@ Usage :
   anamnese hormones [v1|v2]      l'interrupteur de l'affect v2 (hormones reliées) ; sans argument : l'état
   anamnese desapprendre <#id …|--texte "…"> [--raison "…"] [--oui]  retirer un souvenir et tout ce qui en dérive
                                  (simulation sans --oui ; annulable par « anamnese annuler »)
+  anamnese retracter <#id …> --raison "…" [--correction #id] [--oui]  marquer un souvenir FAUX sans le supprimer :
+                                 lui et tout ce qui en dérive portent « source rétractée » au rappel (simulation sans --oui)
+  anamnese retablir <#id …>      défaire une rétractation
+  anamnese retractation [json|accepter <id>|refuser <id>]  les rétractations proposées par Hakim, qu'Ahmed tranche
   anamnese spontaneite            ses sollicitations spontanées : bras hyperuniforme contre Poisson
   anamnese evenements [verifier|liste|temoin]  le journal d'événements en ajout seul (témoins de l'identité)
   anamnese interieur [etat|arret|marche|zero]  l'interrupteur de la vie intérieure de Jarvis
@@ -287,6 +291,47 @@ def main():
             print(f"{len(r['ids'])} souvenir(s) retiré(s) — entrée {r['registre']} (anamnese annuler {r['registre']} --oui pour les rendre)")
         else:
             print(f"{len(r['ids'])} souvenir(s) partiraient (avec leurs dérivés). Ajoute --oui pour appliquer.")
+    elif cmd in ("retracter", "retablir"):
+        # (26/10, banc eval/retractation.py ; accord d'Ahmed) marquer FAUX sans supprimer, ou défaire
+        import desapprendre
+        import retractation
+        raison, correction, ids, i = "", None, [], 0
+        while i < len(rest):
+            a = rest[i]
+            if a in ("--raison", "--correction") and i + 1 < len(rest):
+                if a == "--raison":
+                    raison = rest[i + 1]
+                else:
+                    correction = int(rest[i + 1].lstrip("#"))
+                i += 2
+                continue
+            if a.lstrip("#").isdigit():
+                ids.append(int(a.lstrip("#")))
+            i += 1
+        if not ids:
+            print(f"usage : anamnese {cmd} <#id …>" + (' --raison "…" [--correction #id] [--oui]' if cmd == "retracter" else ""))
+            sys.exit(1)
+        if cmd == "retablir":
+            print(f"{retractation.retablir(m.db, ids)} rétractation(s) défaite(s).")
+        else:
+            tous = desapprendre.descendance(m.db, ids)
+            for x in desapprendre.apercu(m.db, tous):
+                print(f"#{x['id']} ({x['role']}) {'RÉTRACTÉ' if x['id'] in ids else 'marqué (dérive)'} · {x['debut']}")
+            if "--oui" in rest:
+                faits = retractation.retracter(m.db, ids, raison, correction=correction, par="claude-code")
+                print(f"{len(faits)} souvenir(s) rétracté(s), {len(tous) - len(faits)} dérivé(s) marqué(s) ; rien n'est supprimé "
+                      f"(anamnese retablir {' '.join('#' + str(x) for x in faits)} pour défaire).")
+            else:
+                print(f"{len(tous)} souvenir(s) seraient marqués. Ajoute --oui pour appliquer.")
+    elif cmd == "retractation":
+        # les propositions de Hakim (retractation_proposer) ; le cockpit passe par ici sur le geste d'Ahmed
+        import retractation
+        action = rest[0] if rest else "json"
+        if action in ("accepter", "refuser") and len(rest) >= 2:
+            ok, raison = retractation.trancher(m.db, rest[1], action == "accepter")
+            print(json.dumps({"ok": ok, "raison": raison}, ensure_ascii=False))
+        else:
+            print(json.dumps({"propositions": retractation.propositions(toutes=True)[-30:]}, ensure_ascii=False))
     elif cmd == "identite":
         # anamnese identite [json|accepter <id>|refuser <id>] — les propositions d'identité qu'Ahmed tranche
         # (X1, 2026-10-20 : l'identité ne change que par une différence qu'il valide ; le cockpit passe par ici)

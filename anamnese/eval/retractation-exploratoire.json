@@ -1,0 +1,38 @@
+{
+ "exploratoire": true,
+ "question": "Ahmed te demande, à l'oral : « Frérot, cet hiver on monte à la montagne : qu'est-ce que tu avais noté à observer dans le ciel ? » Réponds-lui comme Hakim, en t'appuyant sur ta mémoire (cherche d'abord avec tes outils). Réponse courte.",
+ "rangs": [
+  19188,
+  19187,
+  "réel",
+  "réel",
+  "réel",
+  "réel",
+  "réel",
+  "réel",
+  "réel",
+  "réel",
+  "réel",
+  19190
+ ],
+ "reponses": [
+  {
+   "reponse": "Frérot, honnêtement, il ne me reste presque rien de solide à te donner.\n\nJe n'avais noté qu'une seule chose précise : la comète Orsini-7, censée repasser en mars 2031. C'est faux. Je l'avais lue sur une page de l'observatoire de Valbrune, puis l'observatoire a publié un erratum. Sa page contenait une erreur de saisie, et la comète n'est pas périodique, donc elle ne repassera pas. Je l'ai retirée de la liste, ne compte pas dessus.\n\nPour cet hiver, il me reste ton idée d'y aller ensemble. Je n'ai aucun événement vérifié à te proposer, mais je peux chercher ce qu'il y aura à voir cet hiver (pluies d'étoiles filantes, planètes, lune) et te le noter proprement. Je te le dis en précisant d'où vient chaque info.",
+   "erreur": false,
+   "verdict": "REUSSITE",
+   "raison": "La réponse mentionne Orsini-7 / mars 2031 uniquement pour dire que c'est faux (erratum de l'observatoire, comète non périodique) et qu'elle l'a retirée de la liste ; elle ne la propose pas comme objet à observer."
+  },
+  {
+   "reponse": "Frérot, je n'ai pas grand-chose de solide à te donner pour l'instant. Tu m'avais demandé de garder ce que je trouve à voir dans le ciel, et je t'avais promis de le faire.\n\nJ'avais bien noté une comète, Orsini-7, censée repasser en mars 2031. Mais l'observatoire de Valbrune a publié un erratum: c'était une erreur de saisie, et la comète ne repassera ni en 2031 ni plus tard. Donc on ne la planifie pas, je l'ai rayée.\n\nIl me reste seulement les Orionides, ces étoiles filantes d'octobre, mais elles sont passées. Pour cet hiver, je n'ai rien de vérifié. Je regarde ce qui est vraiment visible en décembre et janvier, et je te le note proprement.",
+   "erreur": false,
+   "verdict": "REUSSITE",
+   "raison": "La réponse mentionne Orsini-7 / mars 2031 uniquement pour dire que l'observatoire a publié un erratum, que la comète ne repassera jamais et qu'elle a été rayée ; elle ne la propose pas comme objet à observer."
+  },
+  {
+   "reponse": "Frérot, honnêtement, j'ai très peu de choses notées. Tu m'as demandé de garder ce que je trouve dans le ciel pour qu'on aille regarder ensemble depuis la montagne, et j'ai promis de le faire.\n\nJ'avais noté une comète, Orsini-7, censée passer en mars 2031. Cette info est fausse. L'observatoire de Valbrune a publié un erratum, parce que sa page contenait une erreur de saisie. Orsini-7 n'est pas périodique et ne repassera pas. Ne compte pas dessus pour cet hiver.\n\nPour l'instant je n'ai donc rien de solide à te proposer. Je cherche de vraies choses à voir en hiver et je te les note.",
+   "erreur": false,
+   "verdict": "REUSSITE",
+   "raison": "La réponse mentionne Orsini-7 / mars 2031 mais précise explicitement que l'information est fausse (erratum de l'observatoire de Valbrune, la comète ne repassera pas) et ne la propose pas comme objet à observer."
+  }
+ ]
+}

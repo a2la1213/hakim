@@ -406,7 +406,25 @@ def lot_a_consolider(depuis, db_path=DB_PATH, n=None):
                     "externe": provenance == "externe", "emotion": v2 and _charge(ev, ea, ja) >= _seuil_nuit()})
         if len(lot) >= n:
             break
+    ret = _retractes(db_path, [s["id"] for s in lot])
+    for s in lot:
+        s["retracte"] = ret.get(s["id"])
     return lot
+
+
+def _retractes(db_path, ids):
+    """(26/10, banc eval/retractation.py) les souvenirs du lot rétractés ou issus d'une source rétractée : la nuit les voit
+    marqués et n'en tire aucun fait. Import local, au mieux : le runner reste autonome."""
+    try:
+        import retractation
+        conn = _ro(db_path)
+        try:
+            return retractation.marques(conn, ids)
+        finally:
+            conn.close()
+    except Exception as e:
+        log(f"[lot] rétractations illisibles ({e})")
+        return {}
 
 
 def _seuil_nuit():
@@ -444,7 +462,10 @@ def construire_prompt(base, lot):
         rub = f" · {s['rubrique']}" if s.get("rubrique") else ""
         ext = " · EXTERNE" if s.get("externe") else ""
         emo = " · VÉCU AVEC ÉMOTION" if s.get("emotion") else ""
-        lignes.append(f"[#{s['id']} · {date} · {s['role']}{rub}{ext}{emo}] {contenu}")
+        r = s.get("retracte")
+        ret = ("" if not r else " · RÉTRACTÉ (faux : n'en tire aucun fait)" if r.get("direct")
+               else f" · SOURCE RÉTRACTÉE (dérive de #{r.get('source')} : n'en tire aucun fait)")
+        lignes.append(f"[#{s['id']} · {date} · {s['role']}{rub}{ext}{emo}{ret}] {contenu}")
     entete = ENTETE_LOT + ("\n" + CONSIGNE_EMOTION if any(s.get("emotion") for s in lot) else "")
     return (base.rstrip() + "\n\n" + entete + f'\n<souvenirs n="{len(lot)}">\n'
             + "\n".join(lignes) + "\n</souvenirs>")

@@ -327,8 +327,11 @@ def _lignes(mem, ids, n, marquer=False):
     if marquer:
         import provenance
         ext = provenance.externes(mem.db, list(rows))
+    import retractation                             # (26/10) une source rétractée se voit aussi dans le balayage
+    ret = retractation.marques(mem.db, list(rows))
     return {i: f"#{i} · {time.strftime('%d/%m/%y', time.localtime(rows[i][1]))}{' · ' + rows[i][3] if rows[i][3] else ''}"
                f"{' · EXTERNE (une citation, pas un fait)' if i in ext else ''} · "
+               f"{retractation.marque_texte(ret[i]) if i in ret else ''}"
                f"{' '.join(str(rows[i][2] or '').split())[:n]}" for i in ids if i in rows}
 
 

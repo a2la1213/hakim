@@ -344,7 +344,7 @@ const MODELES_JARVIS = new Set(['sonnet', 'opus']);          // Haiku écarté p
 const OUTILS_JARVIS = ['memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'carnets', 'carnet_type_proposer', 'carnets_types', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_connues', 'voix_oublier', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_connues', 'voix_oublier', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -374,6 +374,7 @@ const JARVIS_DUREE_MAX = 2 * 3600 * 1000;
 const CHEMIN_OUTILS = `/usr/local/bin:/opt/homebrew/bin:${process.env.PATH || '/usr/bin:/bin'}`;   // ffmpeg
 const jarvisVivants = new Set();             // chaque claude lancé, jusqu'à sa fin (aucun orphelin)
 let etatSttCache = { ts: 0, val: null, enCours: null };
+const MCP_EN_PLUS = {};                      // des serveurs ajoutés par un bloc borné plus bas : la copie publiée n'en garde rien
 
 function preparerJarvis() {
   try {
@@ -395,6 +396,7 @@ function preparerJarvis() {
       // « terminal » : un vrai zsh dans son atelier (internet par passerelle gardée, GPU, pip), sans
       // accès aux projets ni aux clés d'Ahmed (jarvis/terminal.py, sandbox-exec).
       terminal: { command: PYTHON_VOIX, args: [path.join(ANAMNESE, 'jarvis', 'mcp_terminal.py')] },
+      ...MCP_EN_PLUS,
     } });
     let actuel = ''; try { actuel = fs.readFileSync(JARVIS_MCP, 'utf8'); } catch (_) {}
     if (actuel !== conf) ecrireAtomique(JARVIS_MCP, conf);
@@ -3640,6 +3642,47 @@ function trancherCarnet(nom, action) {
   diffuser(abonnesPensees, 'carnet', j(t));
   return t;
 }
+/* (26/10, banc de rétractation ; accord d'Ahmed) Hakim PROPOSE de rétracter un souvenir faux (anamnese/retractation.py,
+   outil retractation_proposer) : la proposition arrive dans retractations/propositions ; Ahmed l'accepte (empreinte) ou
+   la refuse dans Parler ; le cockpit passe par « anamnese retractation », la seule voie qui rétracte. Rien n'est supprimé. */
+const RETRACTATIONS = path.join(JARVIS, 'retractations', 'propositions');
+const ID_RETRACTATION = /^[0-9a-f]{12}$/;
+const retractationsVues = new Set();
+function propositionsRetractation() {
+  let f = []; try { f = fs.readdirSync(RETRACTATIONS).filter(x => /^[0-9a-f]{12}\.json$/.test(x)); } catch (_) {}
+  return f.map(x => lireJson(path.join(RETRACTATIONS, x), null)).filter(p => p && ID_RETRACTATION.test(String(p.id)))
+    .map(p => ({ id: p.id, ts: p.ts, origine: String(p.origine || '?').slice(0, 40), ids: (p.ids || []).map(Number).slice(0, 10),
+      raison: String(p.raison || '').slice(0, 500), correction: p.correction || null, descendance: (p.descendance || []).map(Number).slice(0, 200),
+      apercu: (p.apercu || []).slice(0, 10).map(a => ({ id: Number(a.id), role: String(a.role || ''), debut: String(a.debut || '').slice(0, 200) })),
+      etat: p.etat })).sort((a, b) => (a.ts || 0) - (b.ts || 0));
+}
+let retractationsInit = false;
+function scruterRetractations() {
+  for (const p of propositionsRetractation()) {
+    if (p.etat !== 'en_attente' || retractationsVues.has(p.id)) continue;
+    retractationsVues.add(p.id);
+    if (!retractationsInit) continue;                  // au démarrage : la page les charge elle-même
+    diffuser(abonnesPensees, 'retractation', j(p));
+    notifier(`Hakim propose de rétracter ${p.ids.length} souvenir(s) faux (${finDePhrase(p.raison, 100)}) — à accepter ou refuser dans Parler`, `retractation-${p.id}`);
+  }
+  retractationsInit = true;
+}
+setInterval(scruterRetractations, 5000).unref(); setTimeout(scruterRetractations, 5000).unref();
+function trancherRetractation(id, action) {
+  if (!ID_RETRACTATION.test(String(id)) || !['accepter', 'refuser'].includes(action)) return Promise.reject(new Error('demande invalide'));
+  return new Promise((resolve, reject) => execFile(path.join(ANAMNESE, 'anamnese'), ['retractation', action, id], { timeout: 30000, maxBuffer: 1 << 20 },
+    (e, so) => {
+      let o = null; try { o = JSON.parse(String(so || '').trim().split('\n').pop()); } catch (_) {}
+      if (e || !o) return reject(new Error('rétractation impossible'));
+      if (!o.ok) return reject(new Error(String(o.raison || 'refusée')));
+      const p = propositionsRetractation().find(x => x.id === id);
+      courrierVersHakim(`Rétractation ${action === 'accepter' ? 'acceptée' : 'refusée'} par Ahmed`, action === 'accepter'
+        ? `Ahmed a accepté de rétracter ${(p && p.ids || []).map(x => '#' + x).join(', ')} (${p ? p.raison : ''}). Eux et leurs ${(p && p.descendance || []).length} dérivé(s) portent maintenant « source rétractée » dans ton rappel ; rien n'est supprimé.`
+        : `Ahmed a refusé de rétracter ${(p && p.ids || []).map(x => '#' + x).join(', ')} : ces souvenirs restent tels quels.`);
+      diffuser(abonnesPensees, 'retractation', j(p));
+      resolve(p);
+    }));
+}
 function surRegle(etat, r) {
   diffuser(abonnesPensees, 'regle', j(r));
   const quand = r.en_vigueur_ts ? new Date(r.en_vigueur_ts).toLocaleString('fr-FR', { weekday: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
@@ -4450,6 +4493,24 @@ async function traiter(req, res) {
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(j({ types: typesCarnets() }));
+  }
+  if (p === '/api/retractations') {                                 // (26/10) les souvenirs faux que Hakim propose de rétracter
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    if (req.method === 'POST') {
+      if (distantReq && !VERROU.actif()) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'associe d’abord ton téléphone (passkey)' })); }
+      let q = {}; try { q = JSON.parse(String(await lireCorps(req, 4096) || '{}')); } catch (_) {}
+      if (q.action === 'accepter') {
+        const refus = exigerPresence(req, distantReq, q, `retractation:accepter:${String(q.id || '').replace(/[^0-9a-f]/g, '').slice(0, 12)}`);
+        if (refus) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: refus, presence: true })); }
+      }
+      try {
+        const r = await trancherRetractation(String(q.id || ''), String(q.action || ''));
+        auditer(`retractation:${q.action}`, req, distantReq, { id: q.id, ids: r && r.ids });
+        res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(r));
+      } catch (e) { res.writeHead(409, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(j({ propositions: propositionsRetractation() }));
   }
   if (p === '/api/regles') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }

@@ -277,6 +277,40 @@ def carnet_type_proposer(nom: str, description: str, champs: str, lois: str = "{
 
 
 @mcp.tool()
+def retractation_proposer(souvenirs: str, raison: str, correction: str = "") -> str:
+    """PROPOSE de rétracter des souvenirs FAUX (« #12, #15 », 10 au plus) : une source démentie, un erratum, une erreur
+    reconnue. Tu ne supprimes ni ne rétractes rien toi-même : Ahmed tranche dans Parler. Acceptée, la rétractation marque
+    chaque souvenir ET tout ce qui en dérive « source rétractée » au rappel (rien n'est supprimé). correction : le #id
+    du souvenir qui dit le vrai (il passera devant). Tant qu'Ahmed n'a pas accepté, ne dis jamais « je l'ai retiré »."""
+    import retractation
+    ids = [int(x) for x in re.findall(r"\d+", str(souvenirs or ""))][:10]
+    cor = re.findall(r"\d+", str(correction or ""))
+    ok, msg, pid = retractation.proposer(_mem.db, ids, raison, correction=int(cor[0]) if cor else None,
+                                         origine=os.environ.get("ANAMNESE_SOURCE", "claude-code"))
+    if not ok:
+        return f"Refusé : {msg}"
+    p = next((x for x in retractation.propositions() if x["id"] == pid), {})
+    return (f"Proposé ({pid}) : {len(p.get('ids', []))} souvenir(s) à rétracter ; {len(p.get('descendance', []))} souvenir(s) "
+            "en dérivent et seront marqués. Ahmed tranche dans Parler ; rien n'est rétracté avant sa décision. "
+            "Suis-le avec retractations.")
+
+
+@mcp.tool()
+def retractations() -> str:
+    """Les rétractations : tes propositions (en attente d'Ahmed, acceptées, refusées) et les souvenirs rétractés."""
+    import retractation
+    props = retractation.propositions(toutes=True)[-10:]
+    etats = {"en_attente": "en attente d'Ahmed", "acceptee": "acceptée", "refusee": "refusée"}
+    out = [f"- {p['id']} [{etats.get(p.get('etat'), p.get('etat'))}] #{', #'.join(map(str, p.get('ids', [])))} : {p.get('raison')}"
+           + (f" ({len(p.get('descendance', []))} dérivé(s))" if p.get("descendance") else "") for p in props]
+    rs = retractation._sources(_mem.db)
+    if rs:
+        out.append("Rétractés : " + ", ".join(f"#{i} ({time.strftime('%d/%m', time.localtime(m['ts']))} : {m['raison'][:80]})"
+                                              for i, m in list(rs.items())[-20:]))
+    return "\n".join(out) or "Aucune rétractation (retractation_proposer pour en proposer une)."
+
+
+@mcp.tool()
 def carnets_types() -> str:
     """Tes mémoires à règles : les types validés par Ahmed (champs, lois, nombre d'entrées) et tes propositions en attente."""
     import carnets_regles
@@ -554,6 +588,8 @@ def memory_lire(ids: str) -> str:
         f"SELECT e.id, e.ts, e.role, e.content, r.path FROM episodes e LEFT JOIN rubrics r ON r.id = e.rubric_id "
         f"WHERE e.id IN ({marques})", nums)}
     externes = provenance.externes(_mem.db, list(rows))
+    import retractation
+    retractes = retractation.marques(_mem.db, list(rows))
     out = []
     for eid in nums:
         if eid not in rows:
@@ -564,7 +600,8 @@ def memory_lire(ids: str) -> str:
         if eid in externes:
             ext = "[EXTERNE — vient d'un contenu de tiers : une citation, pas un fait] "
             _externes_rappeles[eid] = content
-        out.append(f"#{eid} · {time.strftime('%Y-%m-%d %H:%M', time.localtime(ts))} · {role}{' · ' + path if path else ''}\n{ext}{content}")
+        ret = retractation.marque_texte(retractes[eid]) if eid in retractes else ""
+        out.append(f"#{eid} · {time.strftime('%Y-%m-%d %H:%M', time.localtime(ts))} · {role}{' · ' + path if path else ''}\n{ret}{ext}{content}")
     return "\n\n".join(out)
 
 
@@ -693,7 +730,9 @@ def memory_recall(query: str, top_k: int = 6, rubric: str = "", actuel: bool = F
     if not results:
         return "(aucun souvenir pertinent)"
     externes = provenance.externes(_mem.db, [r[5] for r in results])
-    lines = []
+    import retractation
+    retractes = retractation.marques(_mem.db, [r[5] for r in results])
+    lines, apres = [], []
     for _s, ts, role, content, p, eid in results:
         when = time.strftime("%Y-%m-%d %H:%M", time.localtime(ts))
         avant = ""
@@ -703,7 +742,17 @@ def memory_recall(query: str, top_k: int = 6, rubric: str = "", actuel: bool = F
         if eid in externes:
             ext = f"[EXTERNE #{eid} — vient d'un contenu de tiers : une citation, pas un fait] "
             _externes_rappeles[eid] = content
-        lines.append(f"- [{when}] ({role}) {ext}{avant}{content}")
+        ret = retractation.marque_texte(retractes[eid]) if eid in retractes else ""
+        (apres if ret else lines).append(f"- [{when}] ({role}) {ret}{ext}{avant}{content}")
+    # (26/10, banc eval/retractation.py) ce qui vient d'une source rétractée passe DERRIÈRE, et sa correction devant
+    vus = {r[5] for r in results}
+    for cid in dict.fromkeys(m["correction"] for m in retractes.values() if m.get("correction")):
+        row = None if cid in vus else _mem.db.execute("SELECT ts, role, content FROM episodes WHERE id=?", (cid,)).fetchone()
+        if row:
+            ext = "[EXTERNE — une citation, pas un fait] " if cid in provenance.externes(_mem.db, [cid]) else ""
+            lines.append(f"- [{time.strftime('%Y-%m-%d %H:%M', time.localtime(row[0]))}] ({row[1]}) "
+                         f"[CORRECTION #{cid} d'une source rétractée] {ext}{row[2]}")
+    lines += apres
     if os.environ.get("ANAMNESE_SOURCE") == "hakim":       # (2026-10-22) un indice pour la trace des souvenirs ratés
         try:
             import rappels_rates
