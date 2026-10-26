@@ -32,6 +32,7 @@ TEXTE_MAX = 600                       # par côté ; le texte entier reste dans 
 ROUTAGE_CONF_MIN = 0.70               # (2026-10-21) un échange mal reconnu reste sans rubrique (pas d'aimant) ; le
                                       # rangement de nuit (ranger_nuit.py) le lit et le range au bon endroit
 PAR_PASSAGE = 200
+AGE_EMOTION_MAX_S = 10 * 60                  # (26/10) au-delà, un message ne déclenche plus d'émotion (voir _emotion)
 
 _EXPLICITE = re.compile(r"\b(retiens|retenir|n'?oublie (pas|jamais)|souviens[- ]toi|rappelle[- ]toi|m[ée]moris\w*|"
                         r"c'est (tr[eè]s )?important|note bien|garde ([çc]a )?en (t[eê]te|m[ée]moire)|pour plus tard)\b", re.I)
@@ -274,9 +275,15 @@ def _emotion(mem, e, ahmed, texte, emb, imp, raisons):
                 ts = float(e.get("ts") or time.time() * 1000) / 1000
             except (TypeError, ValueError):
                 ts = time.time()
-            faits = parole_affect.appliquer(mem, ahmed, sujet, ts, exclure=exclure, facteur=facteur)
-            if faits:
-                raisons.append("ses mots : " + ", ".join(n for n, _i in faits))
+            # (26/10 22:35, choix de Hakim, accord d'Ahmed) un message écrit en retard (après un long rêve : ~40 d'un coup,
+            # 24 émotions en 4 s, un faux pic de peur) ne déclenche plus d'émotion : l'amygdale réagit à ce qui arrive,
+            # pas à un arriéré. L'échange, lui, est toujours écrit.
+            if time.time() - ts > AGE_EMOTION_MAX_S:
+                raisons.append("message ancien : pas d'émotion à l'écriture")
+            else:
+                faits = parole_affect.appliquer(mem, ahmed, sujet, ts, exclure=exclure, facteur=facteur)
+                if faits:
+                    raisons.append("ses mots : " + ", ".join(n for n, _i in faits))
         charge = affect.trace(mem)["c"]
         if charge >= 0.3:
             raisons.append("vécu avec émotion")

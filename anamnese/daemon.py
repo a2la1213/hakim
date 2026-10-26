@@ -526,13 +526,24 @@ def dream(eng, mem):
                                             f"{n.get('insight', 0)} synthèses")
 
 
-def _attendre_conscience(conscience=None, dormir=time.sleep, noter=None, pas_s=15, max_s=3 * 3600):
+def _attendre_conscience(conscience=None, dormir=time.sleep, noter=None, pas_s=15, max_s=3 * 3600, present=None, pendant=None):
     """Un rêve commencé se SUSPEND tant que Claude, la conscience, travaille (relecture Opus du
     2026-10-16 : le contrôle n'avait lieu qu'à l'entrée, et un rêve de ~50 min rappelait Gemma — donc
     le rechargeait — pendant qu'Ahmed parlait à Jarvis). Le rêve n'est pas abandonné : il reprend où il
     en était (le jumeau fantôme garde le même menu). Rend False si la conscience n'a pas dormi en
-    max_s : l'appel est alors sauté, comme un Ollama tombé."""
+    max_s : l'appel est alors sauté, comme un Ollama tombé.
+    (26/10, faux pic de peur de 22:35 : choix de Hakim, accord d'Ahmed) mais si Ahmed est là (present), le rêve
+    s'ARRÊTE (False) : suspendu seulement, il reprenait entre ses messages (138 min, Gemma rechargé, boucle du démon
+    bloquée) ; et pendant une attente, pendant() laisse passer ce que la boucle ferait (l'écriture des échanges)."""
     conscience = conscience or interieur.conscience_active
+    present = present or (lambda: False)
+
+    def _arret():
+        if noter:
+            noter("reve_interrompu", "Ahmed est là : ton rêve s'arrête, il reprendra à ton prochain sommeil")
+        return False
+    if present():
+        return _arret()
     if not conscience():
         return True
     if noter:
@@ -541,11 +552,35 @@ def _attendre_conscience(conscience=None, dormir=time.sleep, noter=None, pas_s=1
     while attendu < max_s:
         dormir(pas_s)
         attendu += pas_s
+        if pendant:
+            pendant()
+        if present():
+            return _arret()
         if not conscience():
             if noter:
                 noter("reve_repris", f"après {round(attendu / 60)} min de pause")
             return True
     return False
+
+
+def _appel_du_reve(eng, prompt, arret, noter, present=None, conscience=None, pendant=None):
+    """Un appel du rêve à Gemma, après l'attente de la conscience. Ahmed revenu (« reve_interrompu »), arret["ahmed"]
+    passe à True et tous les appels suivants de ce rêve sont sautés : le rêve finit vite, la boucle du démon reprend."""
+    if arret.get("ahmed"):
+        return None
+
+    def _noter(quoi, detail):
+        if quoi == "reve_interrompu":
+            arret["ahmed"] = True
+        noter(quoi, detail)
+    if not _attendre_conscience(conscience=conscience, noter=_noter, present=present, pendant=pendant):
+        print("[dream] Ahmed est là : le rêve s'arrête" if arret.get("ahmed") else "[dream] la conscience n'a pas dormi en 3 h : appel sauté")
+        return None
+    try:
+        return eng.chat([{"role": "user", "content": prompt}], stream=False, think=False)
+    except Exception as e:
+        print("[dream] appel 9B échoué:", e)
+        return None
 
 
 def _rever(eng, mem):
@@ -601,15 +636,11 @@ def _rever(eng, mem):
             mem.kv_set("last_dream", str(now))
             return
 
+        arret = {}                         # (26/10) Ahmed revenu : la suite du rêve est sautée
+
         def _call(prompt):
-            if not _attendre_conscience(noter=lambda quoi, detail: interieur.noter(mem, quoi, detail)):
-                print("[dream] la conscience n'a pas dormi en 3 h : appel sauté")
-                return None
-            try:
-                return eng.chat([{"role": "user", "content": prompt}], stream=False, think=False)
-            except Exception as e:
-                print("[dream] appel 9B échoué:", e)
-                return None
+            return _appel_du_reve(eng, prompt, arret, lambda quoi, detail: interieur.noter(mem, quoi, detail),
+                                  present=interieur.ahmed_present, pendant=lambda: _echanges_pass(mem))
 
         # ---------- RÊVE RÉEL (état complet, ÉCRIT en mémoire) ----------
         out = _call(dream_lab.prompt_rem(dream_lab.state_block(seed_state), menu))
@@ -706,7 +737,7 @@ def _rever(eng, mem):
                                           "parse": "engine_failed"})
 
         # ---------- CELLULE qwen-OFF (ablation du corpus, JOURNAL-SEUL) ----------
-        if config.DREAM_ABLATION_ENABLED:
+        if config.DREAM_ABLATION_ENABLED and not arret.get("ahmed"):
             try:
                 neutral_menu = dream_lab.build_neutral_menu(
                     dream_lab.load_neutral_seeds(), night_id)
@@ -724,7 +755,8 @@ def _rever(eng, mem):
                 print("[dream] cellule ablation sautée (rêve non bloqué):", e)
 
         _synthesis_pass(mem, lambda p: _call(p))   # liens génératifs locaux (9B, gratuit)
-        _synthesis_claude_pass(mem)                # + étage sonnet (même fréquence, abonnement Max)
+        if not arret.get("ahmed"):
+            _synthesis_claude_pass(mem)            # + étage sonnet (même fréquence, abonnement Max)
 
         mem.kv_set("last_dream_maxid", str(cur_max_id))    # curseur EN DERNIER (idempotence)
         mem.kv_set("last_dream", str(now))

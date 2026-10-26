@@ -226,3 +226,37 @@ def test_un_calcul_lourd_tient_la_machine(monkeypatch, tmp_path):
     daemon._travaux_llm(None, None, etat, charge.GardeCharge(), lecture=lambda: (0.2, 80.0), robot=lambda: False,
                         conscience=lambda: False, present=lambda: False, calcul=lambda: "le duel")
     assert appels == [] and etat["retrait_calcul"]
+
+
+def test_un_reve_s_arrete_quand_ahmed_revient_et_laisse_passer_les_echanges():
+    """(26/10, faux pic de peur de 22:35, choix de Hakim et accord d'Ahmed) le rêve commencé pendant une absence d'Ahmed s'est
+    seulement SUSPENDU pendant chaque tour, puis a repris entre ses messages : 138 min, Gemma rechargé, et aucun échange écrit
+    en mémoire (la boucle était dans le rêve). Ahmed revenu, le rêve s'arrête ; pendant une attente, les échanges passent."""
+    presence = iter([False, False, False, True])
+    attentes, notes, passes = [], [], []
+    libre = daemon._attendre_conscience(conscience=lambda: True, dormir=attentes.append, noter=lambda quoi, d: notes.append(quoi),
+                                        present=lambda: next(presence), pendant=lambda: passes.append(1))
+    assert libre is False and len(attentes) == 3, "il s'arrête dès qu'Ahmed est là, pas au bout de 3 h"
+    assert passes == [1, 1, 1], "les échanges sont écrits à chaque pas de l'attente"
+    assert notes == ["reve_suspendu", "reve_interrompu"]
+
+
+def test_ahmed_deja_la_aucun_appel_du_reve_a_gemma():
+    appels, notes, arret = [], [], {}
+
+    class Moteur:
+        def chat(self, *a, **k):
+            appels.append(1)
+            return "rêve"
+    noter = lambda quoi, d: notes.append(quoi)                                       # noqa: E731
+    assert daemon._appel_du_reve(Moteur(), "p", arret, noter, present=lambda: True, conscience=lambda: False) is None
+    assert daemon._appel_du_reve(Moteur(), "p", arret, noter, present=lambda: False, conscience=lambda: False) is None
+    assert appels == [] and notes == ["reve_interrompu"] and arret["ahmed"] is True, "arrêté pour la suite du rêve, noté une fois"
+    assert daemon._appel_du_reve(Moteur(), "p", {}, noter, present=lambda: False, conscience=lambda: False) == "rêve", "le témoin"
+
+
+def test_le_reve_arrete_saute_aussi_ses_etages_sonnet():
+    import inspect
+    src = inspect.getsource(daemon._rever)
+    assert 'if not arret.get("ahmed"):\n            _synthesis_claude_pass(mem)' in src
+    assert 'if config.DREAM_ABLATION_ENABLED and not arret.get("ahmed"):' in src

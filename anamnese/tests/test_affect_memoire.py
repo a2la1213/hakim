@@ -346,3 +346,19 @@ def test_la_crainte_d_ahmed_sur_un_calcul_n_est_pas_un_coup_dur_et_le_sujet_nomm
     assert p.get("probleme", 0) <= 0.1
     assert dict(P.evaluer("j'ai peur que tu sois bloqué"))["probleme"] >= 0.5
     assert "evidemment" not in echanges.sujet_par_les_mots("évidemment que les résultats du calcul sont bloqués")
+
+
+def test_un_message_ancien_garde_son_souvenir_mais_pas_son_emotion(mem):
+    """(26/10 22:35, choix de Hakim et accord d'Ahmed) ~40 échanges écrits d'un coup après un rêve de 138 min ont déclenché
+    24 émotions « parole » en 4 s, sur des messages vieux de 2 h : un faux pic de peur. Un message de plus de ~10 min ne
+    déclenche plus d'émotion à l'écriture ; l'échange, lui, est TOUJOURS écrit (demande de Hakim)."""
+    _v2(mem)
+    journal = affect.chemin_journal(mem)
+    paroles = lambda: [l for l in open(journal) if '"source": "parole"' in l] if __import__("os").path.exists(journal) else []  # noqa: E731
+    maintenant = time.time()
+    echanges.memoriser(mem, {"ahmed": "parfait frero merci", "hakim": "Avec plaisir.", "ts": (maintenant - 2 * 3600) * 1000},
+                       embed=faux_embed)
+    assert mem.db.execute("SELECT COUNT(*) FROM episodes WHERE role='episodic'").fetchone()[0] == 1, "l'échange est écrit"
+    assert paroles() == [], "un message vieux de 2 h ne déclenche pas d'émotion"
+    echanges.memoriser(mem, {"ahmed": "génial ça marche, merci", "hakim": "Top.", "ts": (maintenant - 30) * 1000}, embed=faux_embed)
+    assert len(paroles()) >= 1, "le témoin : un message récent, si"
