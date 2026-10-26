@@ -261,6 +261,80 @@ def carnets() -> str:
 
 
 @mcp.tool()
+def carnet_type_proposer(nom: str, description: str, champs: str, lois: str = "{}", raison: str = "") -> str:
+    """Propose un NOUVEAU TYPE de mémoire à règles (demande d'Ahmed, 25/10), sur le modèle du carnet d'erreurs : nom
+    (minuscules, chiffres, _), description, champs (JSON : [{"nom": "trace", "type": "texte|nombre|date|choix|oui_non",
+    "requis": true, "choix": [...]}], 20 au plus), lois (JSON : {"chaine": true, "echeance": "<un champ date>",
+    "relu_au_demarrage": true, "bilan": true} ; ajout_seul est toujours vraie), raison (pourquoi ce carnet). Ahmed le
+    valide ou le refuse d'un geste dans Parler ; tu ne peux y écrire qu'une fois validé."""
+    import carnets_regles
+    try:
+        d = carnets_regles.proposer({"nom": nom, "description": description, "champs": json.loads(champs or "[]"),
+                                     "lois": json.loads(lois or "{}"), "raison": raison})
+    except (ValueError, carnets_regles.Refus) as e:
+        return f"Refusé : {e}"
+    return f"Proposé : {d['nom']} ({d['id']}). Ahmed le voit dans Parler ; suis-le avec carnets_types."
+
+
+@mcp.tool()
+def carnets_types() -> str:
+    """Tes mémoires à règles : les types validés par Ahmed (champs, lois, nombre d'entrées) et tes propositions en attente."""
+    import carnets_regles
+    t = carnets_regles.types()
+    if not t:
+        return "Aucun carnet à règles pour l'instant (carnet_type_proposer pour en proposer un)."
+    out = []
+    for nom, d in t.items():
+        n = len([e for e in carnets_regles._lire(nom) if "valeurs" in e]) if d.get("etat") == "validee" else 0
+        lois = ", ".join(k for k, v in (d.get("lois") or {}).items() if v)
+        out.append(f"- {nom} [{ {'validee': 'validé', 'proposee': 'en attente d’Ahmed', 'refusee': 'refusé'}.get(d.get('etat'), d.get('etat')) }] "
+                   f"{d.get('description', '')} — champs : {', '.join(c['nom'] + ':' + c['type'] + ('*' if c['requis'] else '') for c in d.get('champs', []))}"
+                   f" — lois : {lois}" + (f" — {n} entrée(s)" if d.get("etat") == "validee" else ""))
+    return "\n".join(out)
+
+
+@mcp.tool()
+def carnet_ecrire(nom: str, valeurs: str) -> str:
+    """Ajoute une entrée dans un carnet à règles VALIDÉ : valeurs (JSON {champ: valeur}). Rien ne s'efface ni ne se
+    modifie ensuite : une entrée se clôt par carnet_clore."""
+    import carnets_regles
+    import courrier
+    try:
+        e = carnets_regles.ecrire(nom, json.loads(valeurs or "{}"), auteur=courrier.moi())
+    except (ValueError, carnets_regles.Refus) as ex:
+        return f"Refusé : {ex}"
+    return f"Écrit dans « {nom} » : {e['id']}" + (f" (chaîné : {e['empreinte']})" if e.get("empreinte") else "")
+
+
+@mcp.tool()
+def carnet_lire(nom: str, n: int = 20, filtre: str = "") -> str:
+    """Les dernières entrées d'un carnet à règles (n au plus, filtre : un mot), et si sa chaîne tient."""
+    import carnets_regles
+    try:
+        tout = carnets_regles.lire(nom, n=max(1, min(int(n or 20), 200)), filtre=filtre)
+        casse = carnets_regles.verifier_chaine(nom)
+    except carnets_regles.Refus as e:
+        return f"Refusé : {e}"
+    lignes = [f"- {e['id']} · {time.strftime('%d/%m %H:%M', time.localtime(e['ts']))} · "
+              + (f"clôt {e['clot']} : {e.get('note', '')}" if "clot" in e else json.dumps(e.get("valeurs", {}), ensure_ascii=False))
+              for e in tout]
+    etat = "" if casse is None else f"\nATTENTION : la chaîne est rompue à l'entrée n° {casse + 1} (le fichier a été retouché)."
+    return ("\n".join(lignes) or "Vide.") + etat
+
+
+@mcp.tool()
+def carnet_clore(nom: str, id: str, note: str = "") -> str:
+    """Clôt une entrée d'un carnet à règles (son échéance cesse de sonner) en AJOUTANT une entrée de clôture."""
+    import carnets_regles
+    import courrier
+    try:
+        e = carnets_regles.clore(nom, id, note, auteur=courrier.moi())
+    except carnets_regles.Refus as ex:
+        return f"Refusé : {ex}"
+    return f"Close : {id} (par {e['id']})."
+
+
+@mcp.tool()
 def bilan_semaine(jours: int = 7) -> str:
     """Les DONNÉES du bilan de la semaine (lot G, point 42) : échanges avec Ahmed, souvenirs, agents et tâches,
     sollicitations (et leurs réponses), prédictions et calibration, carnet d'erreurs, jetons et forfait, tests de
@@ -303,6 +377,13 @@ def bilan_semaine(jours: int = 7) -> str:
                                                     if isinstance(x.get("batterie"), dict) and "reussis" in x["batterie"] else "")
                                                  for x in nuit[-7:]) or "pas encore"),
               carnet.resume()]
+    try:                                                   # (26/10) les mémoires à règles qui comptent au bilan
+        import carnets_regles
+        b = carnets_regles.bilan(depuis)
+        if b:
+            sortie.append("Tes carnets à règles : " + ", ".join(f"{n} {k} entrée(s)" for n, k in b.items()))
+    except Exception:
+        pass
     return "\n".join(sortie)
 
 
@@ -1354,7 +1435,7 @@ def reasoning_recall(query: str, top_k: int = 6) -> str:
 # existent : les autres sont retirés du serveur (ni listés, ni appelables).
 OUTILS_LECTURE = {"memory_recall", "reasoning_recall", "memory_recent", "memory_detail", "memory_lire", "facet_search", "self_get",
                   "mood_get", "rubric_tree", "skill_list", "skill_get", "fichiers_par_sens", "introspection", "interoception", "promesses_liste", "ecouter_ma_voix", "ecritures_etat", "erreurs_lister",
-                  "mission_etat", "voix_etat", "carnets", "bilan_semaine", "orphans_report"}
+                  "mission_etat", "voix_etat", "carnets", "bilan_semaine", "orphans_report", "carnets_types", "carnet_lire"}
 
 
 def lecture_seule():

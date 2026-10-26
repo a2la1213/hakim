@@ -730,8 +730,8 @@ function htmlMessage(m) {
   if (m.source === 'local') pied.push('<span title="Forfait et API indisponibles : cerveau local, sans outils">cerveau local</span>');
   // (26/10, Hakim et Ahmed : une réponse du local était passée pour la sienne) le secours se voit en tête, pas en petit en bas
   const secours = m.source === 'local' ? '<span class="etiquette secours" title="Forfait et API indisponibles à ce moment : c’est son cerveau local qui répond, sans ses outils ni sa mémoire complète">CERVEAU LOCAL · SECOURS, SANS SES OUTILS</span>' : '';
-  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
-  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
+  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
+  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'carnet' ? htmlCarnet(m.carnet) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
 }
 
 /* Les pièces jointes de Hakim (2026-10-20) : récupérées avec le jeton, jamais ouvertes comme une page — une image
@@ -2086,6 +2086,7 @@ function ecouterPensees() {
   es.addEventListener('mission', (ev) => { try { surMission(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('ecriture', (ev) => { try { surEcriture(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('regle', (ev) => { try { surRegle(JSON.parse(ev.data)); } catch (_) {} });
+  es.addEventListener('carnet', (ev) => { try { surCarnet(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('identite', (ev) => { try { surIdentite(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('sortie', (ev) => { try { surSortie(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('spontane', (ev) => { try { surSpontane(JSON.parse(ev.data)); } catch (_) {} });
@@ -2160,6 +2161,53 @@ function surRegle(o) {
   m.regle = o;
   m.texte = `Je propose une règle tirée de mes erreurs : « ${o.regle} » — ${ETATS_REGLE[o.etat] || o.etat}.`;
   sauver(); rendre();
+}
+// (26/10) les mémoires à règles que Hakim propose : un nom, des champs, des lois ; ton geste les valide
+const ETATS_CARNET = { proposee: 'attend ta décision', validee: 'validée : il peut y écrire', refusee: 'refusée' };
+const LOIS_CARNET = { chaine: 'chaîné (une retouche se voit)', echeance: 'échéance qui sonne', relu_au_demarrage: 'relu au début de chaque conversation', bilan: 'compté au bilan' };
+function surCarnet(o) {
+  if (!o || !/^[a-z][a-z0-9_]{2,30}$/.test(String(o.nom))) return;
+  const id = 'carnet-' + o.nom;
+  let m = etat.messages.find(x => x.id === id);
+  if (!m) {
+    if (o.etat !== 'proposee') return;
+    m = { id, qui: 'j', spontane: 'carnet', ts: (o.propose_ts || Date.now() / 1000) * 1000 };
+    etat.messages.push(m);
+    humeur('Hakim propose une mémoire à règles');
+  }
+  m.carnet = o;
+  m.texte = `Je propose une mémoire à règles : « ${o.nom} » — ${ETATS_CARNET[o.etat] || o.etat}.`;
+  sauver(); rendre();
+}
+function htmlCarnet(o) {
+  if (!o) return '';
+  const champs = (o.champs || []).map(c => `${c.nom} (${c.type}${c.requis ? ', requis' : ''}${c.choix ? ' : ' + c.choix.join(' / ') : ''})`).join(' · ');
+  const lois = ['toujours en ajout seul', ...Object.entries(o.lois || {}).filter(([k, v]) => v && LOIS_CARNET[k]).map(([k, v]) => k === 'echeance' ? `${LOIS_CARNET[k]} (${v})` : LOIS_CARNET[k])];
+  const boutons = o.etat === 'proposee' ? `<div class="mission-boutons"><button class="btn" data-carnet="${esc(o.nom)}" data-action="valider">Valider</button>`
+    + `<button class="btn" data-carnet="${esc(o.nom)}" data-action="refuser">Refuser</button></div>` : '';
+  return `<div class="mission"><div><b>« ${esc(o.nom)} »</b> — ${esc(o.description || '')}</div><div class="mission-etat">champs : ${esc(champs)}</div>`
+    + `<div class="mission-etat">lois : ${esc(lois.join(', '))}</div>${o.raison ? `<div class="mission-etat">pourquoi : ${esc(o.raison)}</div>` : ''}`
+    + `<div class="mission-etat">${esc(ETATS_CARNET[o.etat] || o.etat)}</div>${boutons}</div>`;
+}
+$('fil').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-carnet]');
+  if (!b) return;
+  b.disabled = true;
+  try {
+    const hex = Array.from(new TextEncoder().encode(b.dataset.carnet), x => x.toString(16).padStart(2, '0')).join('').slice(0, 40);
+    const presence = b.dataset.action === 'valider' ? await preuvePresence(`carnet:valider:${hex}`) : undefined;
+    const r = await fetch('/api/carnets-types', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ nom: b.dataset.carnet, action: b.dataset.action, presence }) });
+    const o = await r.json();
+    if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
+    surCarnet(o);
+  } catch (err) { b.disabled = false; humeur(String(err.message || err)); }
+});
+async function carnetsAuChargement() {
+  try {
+    const r = await fetch('/api/carnets-types', { headers: { 'X-Jeton': jeton() } });
+    if (r.ok) for (const o of (await r.json()).types || []) surCarnet(o);
+  } catch (_) {}
 }
 async function reglesAuChargement() {
   try {
@@ -3169,7 +3217,7 @@ document.addEventListener('visibilitychange', signalerPresence);
 ecouterPensees();
 missionsAuChargement();
 ecrituresAuChargement();
-reglesAuChargement();
+reglesAuChargement(); carnetsAuChargement();
 identiteAuChargement();
 sortiesAuChargement();
 $('q').focus();

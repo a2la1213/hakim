@@ -373,6 +373,12 @@ def serveur(entree=None, sortie=None):
                 r.update(erreurs=e["lignes"], erreurs_ids=e["ids"], erreurs_scores=e["scores"])
             except Exception as ex:
                 r["erreur_carnet"] = f"{type(ex).__name__}: {ex}"[:200]
+            if q.get("demarrage"):                     # (26/10) le 1er message d'une conversation : ses carnets à règles
+                try:
+                    import carnets_regles
+                    r["carnets"] = carnets_regles.demarrage()[:3000]
+                except Exception:
+                    pass
         except Exception as e:
             r = {"lignes": [], "ids": [], "erreur": f"{type(e).__name__}: {e}"[:200]}
         sortie.write(json.dumps(r, ensure_ascii=False) + "\n")

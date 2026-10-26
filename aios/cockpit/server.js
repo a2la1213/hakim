@@ -344,7 +344,7 @@ const MODELES_JARVIS = new Set(['sonnet', 'opus']);          // Haiku écarté p
 const OUTILS_JARVIS = ['memory_recall', 'memory_lire', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'carnets', 'bilan_semaine', 'voix_nommer', 'voix_connues', 'voix_oublier', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'carnets', 'carnet_type_proposer', 'carnets_types', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_connues', 'voix_oublier', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -576,12 +576,12 @@ function rappelServeur() {
   p.stdin.on('error', () => {});
   return p;
 }
-function rappeler(texte, exclus, delaiMs = 900, exclusErreurs = []) {
+function rappeler(texte, exclus, delaiMs = 900, exclusErreurs = [], demarrage = false) {
   return new Promise((resolve) => {
     if (!RAPPEL_ACTIF) return resolve(null);
     let fini = false;
     const cb = (r) => { if (!fini) { fini = true; resolve(r); } };
-    try { const p = rappelServeur(); rappelFile.push(cb); p.stdin.write(j({ texte, exclus: [...exclus].slice(-500), exclus_erreurs: [...exclusErreurs].slice(-500) }) + '\n'); }
+    try { const p = rappelServeur(); rappelFile.push(cb); p.stdin.write(j({ texte, exclus: [...exclus].slice(-500), exclus_erreurs: [...exclusErreurs].slice(-500), demarrage }) + '\n'); }
     catch (_) { return resolve(null); }
     setTimeout(() => cb(null), delaiMs);           // trop lent : rien ce tour-ci (la réponse tardive est jetée, dans l'ordre)
   });
@@ -591,7 +591,7 @@ async function blocRappel(session, texte, nonce) {
   const deja = rappelDejaDits.get(session || '') || new Set();
   const dejaErreurs = erreursDejaDites.get(session || '') || new Set();
   const t0 = Date.now();
-  const r = await rappeler(texte, deja, 900, dejaErreurs);
+  const r = await rappeler(texte, deja, 900, dejaErreurs, !session);
   const lignes = [], ids = [];
   for (const [k, l] of ((r && r.lignes) || []).entries()) {
     const id = (r.ids || [])[k];
@@ -613,6 +613,8 @@ async function blocRappel(session, texte, nonce) {
     + 'et relis le détail d\'un souvenir avec memory_lire si tu en as besoin', lignes.map(l => '- ' + l).join('\n'), nonce));
   if (erreurs.length) blocs.push(blocDonnees('Erreurs à ne pas refaire — ton carnet d\'erreurs, balayé avant ta réponse : celles qui touchent '
     + 'son message, avec leur correction ; applique la correction si la situation est la même, ignore-les sinon', erreurs.map(l => '- ' + l).join('\n'), nonce));
+  // (26/10) ses mémoires à règles « relues au démarrage » et leurs échéances passées : au 1er message d'une conversation
+  if (r && r.carnets) blocs.push(blocDonnees('Tes carnets à règles — relus au début de la conversation (dernières entrées, échéances passées)', String(r.carnets), nonce));
   return { ids, erreurs: erreursIds, texte: blocs.join('\n') };
 }
 function retenirRappel(session, ids, erreurs = []) {
@@ -2663,7 +2665,7 @@ const LECTURE = ['Read', 'WebSearch', 'mcp__anamnese__memory_recall', 'mcp__anam
 // (25/10, Ahmed : « mes agents avec toute ma mémoire, comme moi ») sa mémoire en LECTURE pour ses agents : souvenirs, journal
 // brut, carnet d'erreurs et prédictions (carnets), facettes, bilan. Le juge n'a ni sa mémoire de travail (ce qu'il pense en ce
 // moment, sa conclusion) ni son humeur : il garde son indépendance.
-const MEMOIRE_LECTURE = ['memory_detail', 'memory_recent', 'facet_search', 'erreurs_lister', 'carnets', 'bilan_semaine']
+const MEMOIRE_LECTURE = ['memory_detail', 'memory_recent', 'facet_search', 'erreurs_lister', 'carnets', 'carnets_types', 'carnet_lire', 'bilan_semaine']
   .map(n => 'mcp__anamnese__' + n).concat('mcp__fichiers__chercher_dans_le_journal');
 const AGENTS = {
   architecte: { description: "Conçoit avant de faire : découpe un travail en étapes, compare des approches, repère les risques. Lit (mémoire, fichiers, web), n'écrit rien.",
@@ -3494,6 +3496,47 @@ function scruterRegles() {
   try { REGLES_APPRISES.ecrireFichierRegles(); } catch (_) {}     // celles dont les deux nuits témoins sont passées
 }
 setInterval(scruterRegles, 60000).unref(); setTimeout(scruterRegles, 5000).unref();
+/* (25/10, Ahmed : « des mémoires à règles », proposées par Hakim) un TYPE de carnet que Hakim propose (anamnese/
+   carnets_regles.py, outil carnet_type_proposer) arrive dans propositions/ ; Ahmed le valide ou le refuse d'un geste dans
+   Parler ; validé, le cockpit le copie dans valides/, le seul dossier qui fait foi pour l'écriture. */
+const CARNETS_TYPES = path.join(JARVIS, 'carnets-types');
+const NOM_CARNET = /^[a-z][a-z0-9_]{2,30}$/;
+const carnetsVus = new Set();
+function typesCarnets() {
+  const out = {};
+  for (const sous of ['propositions', 'valides']) {
+    let f = []; try { f = fs.readdirSync(path.join(CARNETS_TYPES, sous)).filter(x => x.endsWith('.json')); } catch (_) {}
+    for (const x of f) { const d = lireJson(path.join(CARNETS_TYPES, sous, x), null); if (d && NOM_CARNET.test(String(d.nom))) out[d.nom] = d; }
+  }
+  return Object.values(out).map(d => ({ id: d.id, nom: d.nom, description: d.description, champs: d.champs, lois: d.lois, raison: d.raison,
+    etat: d.etat, propose_ts: d.propose_ts, valide_ts: d.valide_ts || null }));
+}
+function scruterCarnets() {
+  for (const t of typesCarnets()) {
+    if (t.etat !== 'proposee' || carnetsVus.has(t.id)) continue;
+    carnetsVus.add(t.id);
+    diffuser(abonnesPensees, 'carnet', j(t));
+    notifier(`Hakim propose une mémoire à règles : « ${t.nom} » (${finDePhrase(t.description || '', 100)}) — à valider ou refuser dans Parler`, `carnet-${t.nom}`);
+  }
+}
+setInterval(scruterCarnets, 10000).unref(); setTimeout(scruterCarnets, 6000).unref();
+function trancherCarnet(nom, action) {
+  if (!NOM_CARNET.test(String(nom)) || !['valider', 'refuser'].includes(action)) throw new Error('demande invalide');
+  const prop = path.join(CARNETS_TYPES, 'propositions', `${nom}.json`), d = lireJson(prop, null);
+  if (!d || d.etat !== 'proposee') throw new Error('aucune proposition en attente sous ce nom');
+  const maj = { ...d, etat: action === 'valider' ? 'validee' : 'refusee', [action === 'valider' ? 'valide_ts' : 'refuse_ts']: Date.now() / 1000 };
+  if (action === 'valider') {
+    fs.mkdirSync(path.join(CARNETS_TYPES, 'valides'), { recursive: true });
+    fs.writeFileSync(path.join(CARNETS_TYPES, 'valides', `${nom}.json`), JSON.stringify(maj, null, 1));
+  }
+  fs.writeFileSync(prop, JSON.stringify(maj, null, 1));
+  courrierVersHakim(`Mémoire à règles ${action === 'valider' ? 'validée' : 'refusée'} par Ahmed : ${nom}`, action === 'valider'
+    ? `Ahmed a validé ton carnet « ${nom} ». Tu peux y écrire (carnet_ecrire) et le lire (carnet_lire).`
+    : `Ahmed a refusé ton carnet « ${nom} ».`);
+  const t = typesCarnets().find(x => x.nom === nom);
+  diffuser(abonnesPensees, 'carnet', j(t));
+  return t;
+}
 function surRegle(etat, r) {
   diffuser(abonnesPensees, 'regle', j(r));
   const quand = r.en_vigueur_ts ? new Date(r.en_vigueur_ts).toLocaleString('fr-FR', { weekday: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
@@ -4285,6 +4328,25 @@ async function traiter(req, res) {
     if (!pos) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'position invalide' })); }
     positionCourante = { lat: pos.lat, lon: pos.lon, precision_m: pos.prec, t_ms: Date.now() };
     res.writeHead(204); return res.end();
+  }
+  if (p === '/api/carnets-types') {                                 // (26/10) les mémoires à règles proposées par Hakim
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    if (req.method === 'POST') {
+      if (distantReq && !VERROU.actif()) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'associe d’abord ton téléphone (passkey)' })); }
+      let q = {}; try { q = JSON.parse(String(await lireCorps(req, 4096) || '{}')); } catch (_) {}
+      if (q.action === 'valider') {
+        // l'action d'une preuve de présence n'admet que de l'hexadécimal après « carnet:valider: » : le nom, en hexadécimal
+        const refus = exigerPresence(req, distantReq, q, `carnet:valider:${Buffer.from(String(q.nom || ''), 'utf8').toString('hex').slice(0, 40)}`);
+        if (refus) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: refus, presence: true })); }
+      }
+      try {
+        const t = trancherCarnet(String(q.nom || ''), String(q.action || ''));
+        auditer(`carnet:${q.action}`, req, distantReq, { nom: t.nom });
+        res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(t));
+      } catch (e) { res.writeHead(409, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(j({ types: typesCarnets() }));
   }
   if (p === '/api/regles') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
