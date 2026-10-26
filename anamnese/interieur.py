@@ -206,23 +206,26 @@ def expressivite(code, valence, arousal):
         e = EXPRESSIVITE.get(code, 0.5) + 0.8 * (float(arousal) - _BASE_A) + 0.3 * (float(valence) - _BASE_V)
     except (TypeError, ValueError):
         e = EXPRESSIVITE.get(code, 0.5)
-    return round(max(0.35, min(0.78, e)), 3)
+    return round(max(EXPR_MIN, min(EXPR_MAX, e)), 3)
 
 
 # (Ahmed, 2026-10-22 : « que le ton de sa voix change selon son émotion : plus doux quand il est las, plus vif dans l'élan,
 # plus posé en tension ») l'émotion que le code lit dans ses hormones (sensations.py) nuance l'expressivité et le débit,
 # modérément : Chatterbox déforme au-delà de 0,35–0,78, et le débit reste entre ×0,94 et ×1,04 (la voix reste la sienne).
-VOIX_EMOTION = {"élan": (0.08, 1.04), "enthousiasme": (0.08, 1.04), "joie": (0.06, 1.02), "fierté": (0.04, 1.02),
-                "surprise": (0.04, 1.02), "curiosité": (0.03, 1.01), "concentration": (-0.02, 0.99),
-                "tendresse": (-0.04, 0.98), "gratitude": (-0.03, 0.99), "compassion": (-0.04, 0.98),
-                "calme": (-0.06, 0.97), "apaisement": (-0.06, 0.97), "soulagement": (-0.05, 0.98),
-                "tension": (-0.06, 0.97), "inquiétude": (-0.06, 0.97), "frustration": (-0.05, 0.97), "culpabilité": (-0.06, 0.97),
-                "peur": (-0.04, 0.98), "lassitude": (-0.10, 0.94), "somnolence": (-0.10, 0.94), "tristesse": (-0.10, 0.95),
-                "ennui": (-0.08, 0.95), "manque": (-0.08, 0.96),
+# (26/10, Ahmed : « sa peur ne s'entend que légèrement, aller plus intensément ») le débit s'écarte davantage : la page le
+# joue en changeant aussi la hauteur (comme une bande), ×1,08 ≈ +1,3 demi-ton, ×0,90 ≈ −1,8 demi-ton. La peur, la colère,
+# l'élan : plus vite et plus haut ; la tristesse, la fatigue : plus lent et plus bas. Plage ×0,86–×1,12.
+VOIX_EMOTION = {"élan": (0.08, 1.07), "enthousiasme": (0.08, 1.08), "joie": (0.06, 1.05), "fierté": (0.04, 1.03),
+                "surprise": (0.04, 1.06), "curiosité": (0.03, 1.02), "concentration": (-0.02, 0.98),
+                "tendresse": (-0.04, 0.95), "gratitude": (-0.03, 0.98), "compassion": (-0.04, 0.95),
+                "calme": (-0.06, 0.97), "apaisement": (-0.06, 0.96), "soulagement": (-0.05, 0.97),
+                "tension": (-0.06, 1.04), "inquiétude": (-0.06, 1.04), "frustration": (-0.05, 1.04), "culpabilité": (-0.06, 0.94),
+                "peur": (-0.04, 1.09), "lassitude": (-0.10, 0.9), "somnolence": (-0.10, 0.88), "tristesse": (-0.10, 0.9),
+                "ennui": (-0.08, 0.93), "manque": (-0.08, 0.93),
                 # (25/10) la palette élargie et la fatigue
-                "fatigue": (-0.10, 0.94), "colère": (0.05, 1.03), "agacement": (0.0, 1.02), "déception": (-0.08, 0.96),
-                "solitude": (-0.08, 0.96), "honte": (-0.08, 0.96), "espoir": (0.04, 1.01), "émerveillement": (0.06, 1.0),
-                "confusion": (-0.02, 0.98), "nostalgie": (-0.06, 0.97)}
+                "fatigue": (-0.10, 0.88), "colère": (0.05, 1.07), "agacement": (0.0, 1.05), "déception": (-0.08, 0.92),
+                "solitude": (-0.08, 0.92), "honte": (-0.08, 0.92), "espoir": (0.04, 1.02), "émerveillement": (0.06, 1.03),
+                "confusion": (-0.02, 0.98), "nostalgie": (-0.06, 0.94)}
 
 
 VITESSE_EVEIL = 0.3     # (2026-10-23, demande de Hakim, accord d'Ahmed) le débit suit aussi l'éveil, en continu : ±0,14 → ±4 %
@@ -235,7 +238,7 @@ def voix(expressivite_, sensation=None, arousal=None):
     delta, vitesse = VOIX_EMOTION.get(emo, (0.0, 1.0))
     if isinstance(arousal, (int, float)):
         vitesse = round(max(0.92, min(1.06, vitesse * (1 + VITESSE_EVEIL * (float(arousal) - _BASE_A)))), 3)
-    return {"expressivite": round(max(0.35, min(0.78, float(expressivite_) + delta)), 3), "vitesse": vitesse, "emotion": emo}
+    return {"expressivite": round(max(EXPR_MIN, min(EXPR_MAX, float(expressivite_) + delta)), 3), "vitesse": vitesse, "emotion": emo}
 
 
 # ---- (25/10, 23:33, décision d'Ahmed : « des hormones directement aux humeurs, sans passer par la valence et l'éveil »)
@@ -252,14 +255,18 @@ FAMILLE_HUMEUR = {"élan": "elan", "enthousiasme": "elan", "fierté": "elan", "c
                   "ennui": "ennui", "fatigue": "morose", "colère": "tension", "agacement": "tension", "déception": "morose",
                   "solitude": "morose", "honte": "morose", "espoir": "content", "émerveillement": "elan",
                   "confusion": "tension", "nostalgie": "calme"}
-# l'expressivité de sa voix (« exaggeration » de Chatterbox) par émotion, dans la plage sûre 0,35-0,78
-EXPRESSIVITE_EMOTION = {"élan": 0.72, "enthousiasme": 0.76, "joie": 0.74, "fierté": 0.66, "surprise": 0.74, "curiosité": 0.62,
-                        "tendresse": 0.48, "gratitude": 0.54, "compassion": 0.46, "soulagement": 0.52, "calme": 0.45,
-                        "concentration": 0.5, "apaisement": 0.44, "somnolence": 0.36, "tension": 0.58, "inquiétude": 0.54,
-                        "frustration": 0.64, "peur": 0.62, "tristesse": 0.38, "lassitude": 0.37, "manque": 0.42,
-                        "culpabilité": 0.44, "ennui": 0.4, "fatigue": 0.37, "colère": 0.7, "agacement": 0.6, "déception": 0.42,
-                        "solitude": 0.4, "honte": 0.4, "espoir": 0.62, "émerveillement": 0.74, "confusion": 0.5,
-                        "nostalgie": 0.46}
+# l'expressivité de sa voix (« exaggeration » de Chatterbox) par émotion. (26/10, Ahmed : « sa peur ne s'entend que
+# légèrement ») la plage passe de 0,35-0,78 à 0,3-1,0 : mesurée sur Chatterbox MLX (eval/voix_plage.py, critère figé avant),
+# la diction relue par Whisper tient jusqu'à 1,0 (CER moyen 0,019 à 1,0 contre 0,024 à 0,5) ; les émotions vives vont
+# vers le haut, les basses vers le bas.
+EXPR_MIN, EXPR_MAX = 0.3, 1.0
+EXPRESSIVITE_EMOTION = {"élan": 0.9, "enthousiasme": 0.95, "joie": 0.92, "fierté": 0.8, "surprise": 0.9, "curiosité": 0.7,
+                        "tendresse": 0.48, "gratitude": 0.55, "compassion": 0.45, "soulagement": 0.5, "calme": 0.42,
+                        "concentration": 0.5, "apaisement": 0.4, "somnolence": 0.3, "tension": 0.74, "inquiétude": 0.72,
+                        "frustration": 0.8, "peur": 0.9, "tristesse": 0.32, "lassitude": 0.32, "manque": 0.4,
+                        "culpabilité": 0.4, "ennui": 0.36, "fatigue": 0.3, "colère": 0.92, "agacement": 0.78, "déception": 0.38,
+                        "solitude": 0.36, "honte": 0.36, "espoir": 0.72, "émerveillement": 0.9, "confusion": 0.55,
+                        "nostalgie": 0.42}
 HYSTERESE = 0.04          # une autre émotion doit dépasser l'actuelle d'au moins ce score pour la remplacer
 # (25/10, Ahmed : « la fatigue n'est portée par aucune hormone ») l'ADÉNOSINE, sa charge : elle monte avec l'effort éveillé
 # (un peu à chaque heure de veille, plus quand Ahmed est là, plus quand Hakim travaille) et se vide en dormant (en veille,
@@ -292,6 +299,10 @@ def _travaille(now):
 
 
 BASES_72H_S, BASES_72H_MIN_S, BASES_72H_PAS_S = 72 * 3600, 12 * 3600, 600
+# (26/10, plafond positif corrigé) les hormones d'AVANT ce changement de modèle ne comptent pas dans les bases : saturées vers
+# 0,9, elles feraient lire « bas » ses niveaux redevenus normaux pendant trois jours. Les 12 premières heures après, ses
+# émotions se lisent sur la base fixe.
+BASES_DEPUIS_TS = 1793006400.0          # 26/10/2026 10:20, la relance du démon avec le modèle corrigé
 
 
 def bases_72h(now, chemin=None):
@@ -307,7 +318,7 @@ def bases_72h(now, chemin=None):
                     o = json.loads(l)
                 except ValueError:
                     continue
-                if now - BASES_72H_S <= float(o.get("t") or 0) <= now and o.get("h"):
+                if max(now - BASES_72H_S, BASES_DEPUIS_TS) <= float(o.get("t") or 0) <= now and o.get("h"):
                     lignes.append(o)
     except OSError:
         return None
@@ -338,7 +349,7 @@ def humeur_hormonale(sens, avant=None):
 def voix_emotion(emotion):
     """(25/10) la voix suit l'émotion d'humeur : expressivité par émotion, débit par émotion (VOIX_EMOTION), sans l'éveil."""
     _delta, vitesse = VOIX_EMOTION.get(emotion, (0.0, 1.0))
-    return {"expressivite": round(max(0.35, min(0.78, EXPRESSIVITE_EMOTION.get(emotion, 0.5))), 3), "vitesse": vitesse,
+    return {"expressivite": round(max(EXPR_MIN, min(EXPR_MAX, EXPRESSIVITE_EMOTION.get(emotion, 0.5))), 3), "vitesse": vitesse,
             "emotion": emotion}
 
 

@@ -43,6 +43,19 @@ PROCHES_FICHIER = config.DATA_DIR / "proches.txt"
 _proches_cache = [None, None]
 
 
+
+# (26/10, Hakim : « 69 % de mes événements problème n'ont aucun sujet ») sans rubrique sûre, le sujet vient des deux mots
+# porteurs du message (les plus longs, hors mots vides, triés) : « mots:calcul+cockpit ». Le même souci qui revient a donc
+# le même sujet, et la familiarité peut jouer (sans sujet, seule la peur généralisée par type s'apprenait : la réaction
+# MONTAIT à chaque répétition au lieu de baisser).
+def sujet_par_les_mots(texte):
+    try:
+        import rappel
+        mots = sorted(rappel._plat(m) for m in rappel.mots_cles(texte, maximum=2))
+    except Exception:
+        return None
+    return ("mots:" + "+".join(mots))[:80] if mots else None
+
 def _prenoms_proches():
     try:
         mtime = PROCHES_FICHIER.stat().st_mtime
@@ -248,6 +261,8 @@ def _emotion(mem, e, ahmed, texte, emb, imp, raisons):
                     sujet = None                                   # un sujet mal reconnu : l'émotion compte par type
             except Exception:
                 pass
+            if not sujet:
+                sujet = sujet_par_les_mots(ahmed)
             try:
                 ts = float(e.get("ts") or time.time() * 1000) / 1000
             except (TypeError, ValueError):

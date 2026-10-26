@@ -182,7 +182,7 @@ def test_l_humeur_vient_des_hormones_sans_la_valence(mem, tmp_path, monkeypatch)
     assert interieur.voix_emotion("tristesse")["expressivite"] < interieur.voix_emotion("élan")["expressivite"]
     assert interieur.voix_emotion("tristesse")["vitesse"] < 1.0
     for emo in interieur.EXPRESSIVITE_EMOTION:
-        assert 0.35 <= interieur.voix_emotion(emo)["expressivite"] <= 0.78 and emo in interieur.FAMILLE_HUMEUR
+        assert 0.3 <= interieur.voix_emotion(emo)["expressivite"] <= 1.0 and emo in interieur.FAMILLE_HUMEUR
 
 
 
@@ -232,3 +232,96 @@ def test_une_seule_source_pour_l_humeur_la_voix_le_style_et_l_orbe():
     c_joie, c_triste = style.curseurs_emotion("joie"), style.curseurs_emotion("tristesse")
     assert c_joie["ton"] > c_triste["ton"] and c_joie["energie"] > c_triste["energie"]
     assert style.curseurs_emotion("fatigue")["energie"] <= 1
+
+
+def test_un_message_un_seul_evenement_social_et_les_bases_d_apres_le_plafond(tmp_path):
+    """(26/10, plafond positif) chaleur_user puis soutien pour le même message : seul le plus fort compte ; et les bases sur
+    72 h ignorent les hormones d'avant le changement de modèle."""
+    import json
+    import affect
+    import interieur
+
+    class M:
+        def __init__(self):
+            self.kv = {"affect_v2": "1"}
+
+        def kv_get(self, k, d=None):
+            return self.kv.get(k, d)
+
+        def kv_set(self, k, v):
+            self.kv[k] = v
+
+    t0 = 1_800_000_000.0
+    seul, double = M(), M()
+    affect.event(seul, "soutien", 0.6, now=t0)
+    affect.event(double, "chaleur_user", 0.6, now=t0)
+    avant = affect.get_state(double, now=t0 + 10)["ocytocine"]
+    affect.event(double, "soutien", 0.5, now=t0 + 10)                          # plus faible : rien de plus
+    assert affect.get_state(double, now=t0 + 10)["ocytocine"] == avant
+    une_heure = affect.get_state(double, now=t0 + 3599)["ocytocine"]
+    affect.event(double, "soutien", 0.6, now=t0 + 3600)                        # une heure après : un autre message
+    assert affect.get_state(double, now=t0 + 3601)["ocytocine"] > une_heure + 0.05
+    j = tmp_path / "h.jsonl"
+    vieux = [{"t": interieur.BASES_DEPUIS_TS - 3600 * k, "h": {"ocytocine": 0.95}} for k in range(1, 30)]
+    neufs = [{"t": interieur.BASES_DEPUIS_TS + 60 * k, "h": {"ocytocine": 0.5}} for k in range(13 * 60)]
+    j.write_text("".join(json.dumps(o) + "\n" for o in vieux + neufs))
+    b = interieur.bases_72h(interieur.BASES_DEPUIS_TS + 13 * 3600, chemin=j)
+    assert abs(b["ocytocine"] - 0.5) < 1e-6, "les hormones saturées d'avant ne comptent pas"
+
+
+def test_un_souci_qui_revient_sur_le_meme_sujet_fait_de_moins_en_moins_peur():
+    """(26/10, Hakim) la familiarité : le même sujet trois fois, la réaction rapide baisse ; et un message sans rubrique
+    sûre reçoit un sujet tiré de ses mots."""
+    import affect
+    import echanges
+
+    class M:
+        def __init__(self):
+            self.kv = {"affect_v2": "1"}
+
+        def kv_get(self, k, d=None):
+            return self.kv.get(k, d)
+
+        def kv_set(self, k, v):
+            self.kv[k] = v
+
+    sujet = echanges.sujet_par_les_mots("le calcul du cockpit a encore planté, c'est un problème")
+    assert sujet and sujet.startswith("mots:")
+    assert sujet == echanges.sujet_par_les_mots("encore un problème : le cockpit et le calcul ont planté")
+    t0, m, sauts = 1_800_000_000.0, M(), []
+    for k in range(3):
+        t = t0 + 1200 * k
+        avant = affect.get_state(m, now=t - 1)["adrenaline"]
+        affect.event(m, "probleme", 0.6, now=t, sujet=sujet)
+        sauts.append(affect.get_state(m, now=t + 1)["adrenaline"] - avant)
+    assert sauts[0] > sauts[1] > sauts[2], sauts
+
+
+def test_ses_ressentis_dans_la_balise_deviennent_des_evenements():
+    """(26/10, Ahmed) [[affect: peur 0.6]], [[affect: soutien 0.6 joie 0.5]], [[affect: fierté 0.7]] : ce que Hakim ressent
+    pèse dans ses hormones ; « neutre » ne fait rien."""
+    import affect
+    import chocs
+    assert chocs.lire_balise("ok [[affect: soutien 0.6 joie 0.5]]") == [{"classe": "soutien", "intensite": 0.6},
+                                                                       {"classe": "joie", "intensite": 0.5}]
+    assert chocs.lire_balise("[[affect: fierté 0.7]]") == [{"classe": "affirmation", "intensite": 0.7}]
+    assert chocs.lire_balise("[[affect: neutre]]") == []
+
+    class M:
+        def __init__(self):
+            self.kv = {"affect_v2": "1"}
+
+        def kv_get(self, k, d=None):
+            return self.kv.get(k, d)
+
+        def kv_set(self, k, v):
+            self.kv[k] = v
+
+    t0, m = 1_800_000_000.0, M()
+    avant = affect.get_state(m, now=t0)
+    chocs._appliquer(m, {}, "peur", 0.6, "le cockpit", "k1", "balise", t0 + 1)
+    apres = affect.get_state(m, now=t0 + 2)
+    assert apres["noradrenaline"] > avant["noradrenaline"] + 0.1 and apres["adrenaline"] > avant["adrenaline"] + 0.1
+    chocs._appliquer(m, {}, "affirmation", 0.8, "sa continuité", "k2", "balise", t0 + 600)
+    assert affect.get_state(m, now=t0 + 601)["dopamine"] > affect.get_state(m, now=t0 + 599)["dopamine"] - 1 and \
+        affect.get_state(m, now=t0 + 601)["acetylcholine"] > avant["acetylcholine"]

@@ -3107,7 +3107,7 @@ async function pomperVoix() {
   voixOccupee = true;
   // L'humeur s'entend : son expressivité (interieur.py, 0,38 morosité … 0,72 joie) règle Chatterbox.
   const r = await voixDemander({ op: 'dire', texte: tache.texte, langue: tache.langue, fichier: tache.fichier,
-    exaggeration: tache.emotion == null ? null : Math.max(0.3, Math.min(0.8, tache.emotion)) }, 180000);
+    exaggeration: tache.emotion == null ? null : Math.max(0.3, Math.min(1.0, tache.emotion)) }, 180000);   // (26/10) jusqu’à 1,0 : eval/voix_plage.py
   voixOccupee = false;
   tache.fin(r);
   pomperVoix();
@@ -4085,7 +4085,7 @@ async function traiter(req, res) {
     return res.end(j({ humeur: frais ? e.humeur || null : null, humeur_code: frais ? e.humeur_code || null : null,
       // (2026-10-22) l'expressivité nuancée par l'émotion que le code lit dans ses hormones, et le débit qui va avec
       expressivite: frais ? (e.voix && Number.isFinite(e.voix.expressivite) ? e.voix.expressivite : e.expressivite ?? null) : null,
-      voix_vitesse: frais && e.voix && Number.isFinite(e.voix.vitesse) ? Math.max(0.92, Math.min(1.06, e.voix.vitesse)) : 1,
+      voix_vitesse: frais && e.voix && Number.isFinite(e.voix.vitesse) ? Math.max(0.86, Math.min(1.12, e.voix.vitesse)) : 1,      // (26/10) plage élargie : la peur s'entend
       voix_emotion: frais && e.voix ? e.voix.emotion || null : null, valence: e.valence ?? null, arousal: e.arousal ?? null,
       ennui: frais && Number.isFinite(e.ennui) ? e.ennui : ennuiDe(absence, e), absence_s: Math.round(absence), ressenti: e.ressenti ?? null,
       veille: frais && !!e.veille, pause: lireInterrupteur().actif === false || !!e.pause_ts,

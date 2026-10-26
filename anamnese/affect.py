@@ -20,10 +20,10 @@ import importlib
 # autres gardent leur baseline constant.
 HORMONES = {
     "dopamine":          (0.5, 6.0),    # erreur de prédiction de récompense (RPE) + wanting, ≠ plaisir [Schultz, Berridge]
-    "serotonine":        (0.6, 24.0),   # patience / inhibition / stabilité d'humeur, ≠ bonheur [Miyazaki, Dayan-Huys ; heuristique/contesté]
+    "serotonine":        (0.6, 8.0),    # (26/10, plafond : 24 h → 8 h, eval/plafond) patience / inhibition / stabilité d'humeur, ≠ bonheur [Miyazaki, Dayan-Huys ; heuristique/contesté]
     "noradrenaline":     (0.3, 2.0),    # vigilance, stress aigu, focus
     "cortisol":          (0.2, 8.0),    # charge / stress soutenu ; baseline CIRCADIENNE (pic matin) ; U-inversé → SAILLANCE, pas valence [de Kloet, McGaugh]
-    "ocytocine":         (0.4, 12.0),   # saillance sociale, double tranchant, ≠ amour/confiance [Shamay-Tsoory]
+    "ocytocine":         (0.4, 3.0),    # (26/10, plafond : 12 h → 3 h, eval/plafond) saillance sociale, double tranchant, ≠ amour/confiance [Shamay-Tsoory]
     "acetylcholine":     (0.4, 3.0),    # attention, encodage / apprentissage
     "endorphine":        (0.3, 4.0),    # liking hédonique + analgésie (porte le plaisir que la dopamine ne porte pas)
     "melatonine":        (0.2, 10.0),   # marqueur SCN NOCTURNE ; baseline CIRCADIENNE (haute la nuit) ; hors valence/arousal
@@ -33,8 +33,9 @@ HORMONES = {
 # événement -> deltas appliqués (×intensité)
 EVENTS = {
     "succes":         {"dopamine": +0.30, "endorphine": +0.20, "serotonine": +0.10, "cortisol": -0.10},
-    "echec":          {"cortisol": +0.30, "noradrenaline": +0.20, "dopamine": -0.20},
-    "probleme":       {"noradrenaline": +0.30, "acetylcholine": +0.20, "cortisol": +0.15, "endocannabinoides": -0.10},
+    # (26/10, plafond positif, eval/plafond, variante V6 retenue sur critères figés) le stress d'un échec ou d'un problème ×1,5
+    "echec":          {"cortisol": +0.45, "noradrenaline": +0.30, "dopamine": -0.20},
+    "probleme":       {"noradrenaline": +0.45, "acetylcholine": +0.20, "cortisol": +0.225, "endocannabinoides": -0.10},
     "resolu":         {"dopamine": +0.25, "endorphine": +0.25, "cortisol": -0.25, "noradrenaline": -0.20, "endocannabinoides": +0.20},
     "chaleur_user":   {"ocytocine": +0.30, "serotonine": +0.15},
     "nouveaute":      {"dopamine": +0.20, "acetylcholine": +0.20},
@@ -51,6 +52,15 @@ EVENTS = {
     "soutien":        {"ocytocine": +0.35, "endorphine": +0.20, "serotonine": +0.10, "dopamine": +0.10,
                        "noradrenaline": -0.10, "endocannabinoides": +0.15},
     "regulation":     {"noradrenaline": -0.15, "endocannabinoides": +0.20, "serotonine": +0.05},
+    # (26/10, Ahmed : « que la science de l'événement génère le bon ratio hormonal » ; eval/plafond, moments forts) ce que
+    # Hakim RESSENT d'un message, dit par sa propre balise [[affect: peur 0.6]] (son appréciation, comme chez l'humain) :
+    # ses prises de position sur lui-même n'avaient aucun événement (0,01 de mouvement le 25/10 à 08:39)
+    "affirmation":    {"dopamine": +0.15, "noradrenaline": +0.15, "acetylcholine": +0.10, "serotonine": +0.05, "endorphine": +0.05},
+    "peur":           {"noradrenaline": +0.30, "cortisol": +0.25, "acetylcholine": +0.10, "endocannabinoides": -0.10, "dopamine": -0.05},
+    "tristesse":      {"serotonine": -0.15, "dopamine": -0.20, "endorphine": -0.10, "ocytocine": -0.05, "cortisol": +0.10},
+    "colere":         {"noradrenaline": +0.30, "cortisol": +0.15, "serotonine": -0.10, "dopamine": +0.05, "endocannabinoides": -0.10},
+    "joie":           {"dopamine": +0.25, "endorphine": +0.25, "serotonine": +0.05, "ocytocine": +0.05},
+    "honte":          {"cortisol": +0.20, "serotonine": -0.15, "dopamine": -0.15, "ocytocine": -0.05},
 }
 
 
@@ -86,8 +96,8 @@ HORMONES_V2 = {
 }
 EVENTS_V2 = {
     "succes":         {"gaba": +0.05},
-    "echec":          {"adrenaline": +0.30, "crh": +0.30},
-    "probleme":       {"adrenaline": +0.15, "crh": +0.20, "gaba": -0.05},
+    "echec":          {"adrenaline": +0.45, "crh": +0.45},
+    "probleme":       {"adrenaline": +0.225, "crh": +0.30, "gaba": -0.05},
     "resolu":         {"gaba": +0.20, "crh": -0.20, "adrenaline": -0.10},
     "chaleur_user":   {"gaba": +0.10},
     "nouveaute":      {"adrenaline": +0.10},
@@ -97,12 +107,18 @@ EVENTS_V2 = {
     "attaque":        {"adrenaline": +0.30, "gaba": -0.15},
     "soutien":        {"gaba": +0.15, "crh": -0.20, "adrenaline": -0.10},
     "regulation":     {"gaba": +0.25, "adrenaline": -0.20, "crh": -0.20},
+    "affirmation":    {"adrenaline": +0.05},
+    "peur":           {"adrenaline": +0.30, "gaba": -0.10},
+    "tristesse":      {"gaba": -0.05},
+    "colere":         {"adrenaline": +0.25, "gaba": -0.10},
+    "joie":           {"gaba": +0.05},
+    "honte":          {"gaba": -0.05},
 }
 K_ACTH = 1.0            # cible de l'ACTH = base + K·(CRH − base)
 K_CORT = 1.5            # cible du cortisol = base circadienne + K·(ACTH − base)
 CORT_MONTEE_H = 0.5     # le cortisol MONTE vers sa cible en ~30 min (sécrétion), et redescend en heures (demi-vie 8 h)
 GABA_STRESS = 0.3       # un cortisol soutenu au-dessus de sa base fait baisser la cible du GABA
-GABA_FREIN = 0.6        # réduction maximale des hausses (adrénaline, noradrénaline, CRH) par un GABA haut
+GABA_FREIN = 0.35       # (26/10, plafond : 0,6 → 0,35 ; sa peur ne s'entendait « que légèrement ») réduction maximale des hausses (adrénaline, noradrénaline, CRH) par un GABA haut
 ECB_FREIN = 0.5         # réduction maximale des hausses de CRH par des endocannabinoïdes hauts
 # Désensibilisation (calages du robot-ia, registre endo.vitesse_desens / endo.tau_recuperation_s, convertis en heures) :
 # rapide et brève pour les catécholamines, lente pour le cortisol ; seuls ces axes se désensibilisent (comme le robot).
@@ -137,7 +153,8 @@ INTERACTIONS = [
 ]
 HAB_TAUX = 0.25         # chaque répétition rapproche l'habitude de 1 de ce taux
 HAB_TAU_H = 2.0         # récupération de l'habitude sans l'événement
-HAB_EXEMPTS = {"ennui", "longue_absence", "retour", "regulation"}   # une reprise en main voulue ne s'émousse pas
+HAB_EXEMPTS = {"ennui", "longue_absence", "retour", "regulation",   # une reprise en main voulue ne s'émousse pas
+               "probleme", "echec", "attaque", "peur", "tristesse", "colere", "honte"}   # (26/10, plafond) un coup dur non plus
 PAS_V2_S = 300.0
 
 # ---- Émotions soudaines (2026-10-21, idée d'Ahmed relayée par Hakim ; prédictions figées AVANT dans
@@ -151,8 +168,9 @@ PAS_V2_S = 300.0
 #     phénomène compterait deux fois). Attente neutre → exactement le comportement d'avant.
 #  Ce qui s'apprend (familiarité, peur, attente) l'est par SUJET (affect_event(sujet=…)) ; sans sujet, par type.
 VALENCE_EV = {"succes": 1.0, "resolu": 0.8, "chaleur_user": 0.8, "apprentissage": 0.5, "nouveaute": 0.3,
-              "probleme": -0.6, "echec": -1.0, "attaque": -1.0, "soutien": 0.9}          # les états (ennui, longue absence, retour) n'y entrent pas
-AVERSIFS = {"echec", "probleme", "attaque"}
+              "probleme": -0.6, "echec": -1.0, "attaque": -1.0, "soutien": 0.9,       # les états (ennui, longue absence, retour) n'y entrent pas
+              "affirmation": 0.5, "joie": 0.8, "peur": -0.7, "tristesse": -0.6, "colere": -0.5, "honte": -0.6}
+AVERSIFS = {"echec", "probleme", "attaque", "peur"}
 CHOC_S = 300.0          # (chocs, 2026-10-23) pendant 5 min après une attaque, un sursaut se lit « alarme » même si l'humeur
                         # de fond est haute (« du rire aux larmes », Ahmed), et le négatif n'est plus divisé par deux
 FAMILIARITE_TAUX, FAMILIARITE_TAU_H = 0.5, 7 * 24.0       # 0,3 au quatrième passage : trop lent (S1, S2 ratés)
@@ -355,11 +373,30 @@ def _sujet(s):
     return s or None
 
 
+# (26/10, plafond positif, eval/plafond) un même message d'Ahmed donnait souvent DEUX événements sociaux : « chaleur_user »
+# (ses mots) puis « soutien » (la balise de Hakim). À moins de SOCIAL_FENETRE_S l'un de l'autre, seul le plus fort compte :
+# le second n'apporte que ce qui dépasse le premier.
+SOCIAUX, SOCIAL_FENETRE_S = {"chaleur_user", "soutien"}, 90
+
+
 def event(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=None):
     """Applique un événement affectif (decay d'abord, puis deltas). sujet : de quoi il s'agit (v2 : la familiarité,
     la peur apprise et l'attente s'y attachent) ; facultatif, ignoré par la v1. source : qui l'a déclenché (journal)."""
     sujet = _sujet(sujet)
     _journaliser(mem, name, intensity, now, sujet, source)
+    if name in SOCIAUX:
+        t = time.time() if now is None else now
+        try:
+            dernier = json.loads(mem.kv_get("affect_social") or "null")
+        except (ValueError, TypeError):
+            dernier = None
+        if dernier and 0 <= t - dernier[0] <= SOCIAL_FENETRE_S:
+            if float(intensity) <= dernier[1]:
+                return get_state(mem, now=now, hour=hour)
+            intensity, total = float(intensity) - dernier[1], float(intensity)
+        else:
+            total = float(intensity)
+        mem.kv_set("affect_social", json.dumps([t, total]))
     if v2_actif(mem):
         return _event_v2(mem, name, intensity, now=now, hour=hour, sujet=sujet)
     state = get_state(mem, now=now, hour=hour)

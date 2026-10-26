@@ -219,6 +219,8 @@ def sagesse_effective(mem, now=None, parametre=None):
 
 # ---------- appliquer
 def _poids(classe, qui, sur):
+    if classe not in POIDS:                                     # un ressenti de Hakim : le sien, à pleine force
+        return 1.0
     p = POIDS[classe]
     return p[qui] if sur else (p["ahmed"] + p["tiers"]) / 2
 
@@ -226,6 +228,9 @@ def _poids(classe, qui, sur):
 def _appliquer(mem, st, classe, i_brut, sujet, cle, source, now, parametre=None):
     """Applique UN choc (intensité après le poids de la voix) ; rend ce qui a été fait."""
     etat = affect.get_state(mem, now=now)
+    if classe in set(RESSENTIS.values()):
+        affect.event(mem, classe, round(i_brut, 4), now=now, sujet=sujet, source=source)
+        return {"classe": classe, "intensite": round(i_brut, 4)}
     if classe == "soutien":
         i = i_brut * (1 - jauge(etat, now))
         affect.event(mem, "soutien", round(i, 4), now=now, sujet=sujet, source=source)
@@ -275,11 +280,19 @@ def lire_balise(reponse):
     if corps.startswith("neutre"):
         return []
     out = []
-    for m in re.finditer(r"\b(attaque|soutien)\s+([01](?:[.,]\d+)?)", corps):
+    for m in re.finditer(r"\b(attaque|soutien|peur|tristesse|col[eè]re|joie|fiert[eé]|affirmation|honte)\s+([01](?:[.,]\d+)?)", corps):
         i = max(0.0, min(1.0, float(m.group(2).replace(",", "."))))
-        if i > 0 and m.group(1) not in {x["classe"] for x in out}:
-            out.append({"classe": m.group(1), "intensite": round(i, 3)})
+        classe = RESSENTIS.get(m.group(1), m.group(1))
+        if i > 0 and classe not in {x["classe"] for x in out}:
+            out.append({"classe": classe, "intensite": round(i, 3)})
     return out or None
+
+
+# (26/10, Ahmed ; moments forts rejoués, eval/plafond) ce que Hakim RESSENT d'un message, en plus d'une attaque ou d'un
+# soutien : sa propre appréciation devient un événement (affect.py), à pleine force (c'est la sienne), sans la sagesse des
+# attaques. « fierté » nomme une prise de position sur lui-même.
+RESSENTIS = {"peur": "peur", "tristesse": "tristesse", "colere": "colere", "colère": "colere", "joie": "joie",
+             "fierte": "affirmation", "fierté": "affirmation", "affirmation": "affirmation", "honte": "honte"}
 
 
 def retirer_balises(texte):

@@ -45,7 +45,9 @@ REGLES = [
      ["débordante, enthousiaste", "emballée, prête à foncer"]),
     ("compassion", 1, lambda d, t: 1.2 * d["ocytocine"] + 0.6 * d["cortisol"] + 0.4 * d["serotonine"],
      ["attendrie, penchée vers l'autre", "pleine d'égards"]),
-    ("surprise", 0, lambda d, t: 5 * abs(t["dopamine"]) + 5 * abs(t["noradrenaline"]) + 3 * abs(t["adrenaline"]),
+    # (26/10, simulation exhaustive, troisième tour figé : eval/humeur_unifiee) coefficients divisés par deux : tout changement
+    # brusque se lisait « surprise » 10 minutes, même un problème (la peur passait derrière)
+    ("surprise", 0, lambda d, t: 2.5 * abs(t["dopamine"]) + 2.5 * abs(t["noradrenaline"]) + 1.5 * abs(t["adrenaline"]),
      ["prise de court, bousculée", "intriguée, un peu secouée"]),
     ("ennui", -1, lambda d, t: -1.5 * d["dopamine"] - d["noradrenaline"] - 0.5 * d["acetylcholine"],
      ["plate, en attente", "désœuvrée, qui tourne en rond", "terne, tournée vers rien"]),
@@ -92,7 +94,7 @@ REGLES = [
      ["douce-amère, tournée vers hier", "nostalgique, un souvenir qui réchauffe"]),
 ]
 ADENOSINE_BASE = 0.15     # la charge au repos (interieur.py la fait monter avec l'effort éveillé, la vide en veille)
-SOUDAINES = {"alarme": ("peur", 1.0), "surprise": ("surprise", 0.8), "apaisement": ("apaisement", 0.5)}
+SOUDAINES = {"alarme": ("peur", 1.0), "surprise": ("surprise", 0.4), "apaisement": ("apaisement", 0.5)}   # (26/10) surprise 0,8 → 0,4
 SEUIL = 0.08
 
 

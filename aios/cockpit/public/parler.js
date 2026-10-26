@@ -136,7 +136,17 @@ const voixPour = (langue) => {
 // (2026-10-22, 16:10, Ahmed) « voix neutre » : ni le débit ni l'expressivité de son émotion
 // (2026-10-23) les prononciations locales (son prénom écrit en arabe, dit à la française) : chargées une fois
 fetch('/api/voix/prononciations', { cache: 'no-store' }).then(r => r.json()).then(d => Voix.definirPrononciations(d)).catch(() => {});
-const vitesseVoix = () => (etat.reglages.vitesse || 1) * (etat.reglages.voixNeutre ? 1 : Math.max(0.92, Math.min(1.06, Number(etat.interieur && etat.interieur.voix_vitesse) || 1)));
+// (26/10, Ahmed : « que la voix suive mieux ») le SENS de chaque phrase nuance l'expressivité de son humeur : une victoire ou
+// une exclamation un peu plus vive, une mauvaise nouvelle ou une excuse un peu plus douce, une question à peine relevée.
+// Le cockpit borne ensuite à la plage sûre de Chatterbox.
+const PHRASE_VIVE = /!\s*$|\b(g[ée]nial|super|enfin|bravo|incroyable|trop bien|magnifique|r[ée]ussi|[çc]a marche)\b/i;
+const PHRASE_DOUCE = /\b(d[ée]sol[ée]|pardon|malheureusement|dommage|triste|perdu|rat[ée]|[ée]chou[ée]|je regrette|h[ée]las)\b/i;
+function expressivitePhrase(base, texte) {
+  if (!Number.isFinite(base)) return base;
+  const t = String(texte || '');
+  return base + (PHRASE_VIVE.test(t) ? 0.08 : 0) - (PHRASE_DOUCE.test(t) ? 0.06 : 0) + (/\?\s*$/.test(t) ? 0.03 : 0);
+}
+const vitesseVoix = () => (etat.reglages.vitesse || 1) * (etat.reglages.voixNeutre ? 1 : Math.max(0.86, Math.min(1.12, Number(etat.interieur && etat.interieur.voix_vitesse) || 1)));
 const lecteurSysteme = synth ? Voix.creerLecteur(synth, window.SpeechSynthesisUtterance, voixPour, vitesseVoix) : null;
 
 // Voix neuronale (Chatterbox, sur le Mac, étape 5 bis) : chaque morceau d'une seule langue est
@@ -287,7 +297,7 @@ function creerLecteurNeuronal() {
     const g = generation;
     fetch('/api/voix/dire', { method: 'POST', signal: x.ctl.signal,
       headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
-      body: JSON.stringify({ texte: x.texte, langue: x.langue, emotion: etat.interieur && !etat.reglages.voixNeutre ? etat.interieur.expressivite : null }) })
+      body: JSON.stringify({ texte: x.texte, langue: x.langue, emotion: etat.interieur && !etat.reglages.voixNeutre ? expressivitePhrase(etat.interieur.expressivite, x.texte) : null }) })
       .then(r => r.ok ? r.arrayBuffer() : r.json().catch(() => ({})).then(o => Promise.reject(new Error(o.erreur || `voix ${r.status}`))))
       .then(ab => (fluide() ? actx.decodeAudioData(ab) : new Blob([ab], { type: 'audio/wav' })))
       .then(res => {

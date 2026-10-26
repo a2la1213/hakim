@@ -27,7 +27,8 @@ def test_stable_quinze_minutes_et_jamais_vide():
 
 def test_la_voix_suit_l_emotion_moderement():
     import interieur as I
-    assert I.voix(0.6, {"emotion": "lassitude"}) == {"expressivite": 0.5, "vitesse": 0.94, "emotion": "lassitude"}
-    assert I.voix(0.76, {"emotion": "élan"})["expressivite"] == 0.78                    # jamais au-delà de 0,78
-    assert I.voix(0.36, {"emotion": "tristesse"})["expressivite"] == 0.35               # ni en dessous de 0,35
+    assert I.voix(0.6, {"emotion": "lassitude"}) == {"expressivite": 0.5, "vitesse": 0.9, "emotion": "lassitude"}
+    assert I.voix(0.96, {"emotion": "élan"})["expressivite"] == 1.0                     # (26/10) jamais au-delà de 1,0
+    assert I.voix(0.36, {"emotion": "tristesse"})["expressivite"] == 0.3                # ni en dessous de 0,3
+    assert I.voix_emotion("peur")["vitesse"] > 1.05 and I.voix_emotion("peur")["expressivite"] >= 0.85   # la peur s'entend
     assert I.voix(0.5, None) == {"expressivite": 0.5, "vitesse": 1.0, "emotion": None}

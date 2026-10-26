@@ -81,10 +81,10 @@ class Voix:
     def _generer(self, texte, langue, exaggeration=None):
         reglages = dict(REGLAGES)
         if isinstance(exaggeration, (int, float)):               # l'humeur s'entend (éveil → expressivité)
-            reglages["exaggeration"] = max(0.3, min(0.8, float(exaggeration)))
+            reglages["exaggeration"] = max(0.3, min(1.0, float(exaggeration)))       # (26/10) jusqu'à 1,0 : eval/voix_plage.py
             # conseil de Chatterbox : plus d'expressivité → moins de guidage (cfg), sinon le débit s'emballe ;
             # plus calme → un peu plus de guidage (diction posée). 0,5 → 0,5 ; 0,75 → 0,3 ; 0,35 → 0,55.
-            reglages["cfg_weight"] = round(max(0.3, min(0.55, 0.5 - (reglages["exaggeration"] - 0.5) * 0.8)), 3)
+            reglages["cfg_weight"] = round(max(0.2, min(0.55, 0.5 - (reglages["exaggeration"] - 0.5) * 0.8)), 3)
         # (2026-10-22) un plafond de jetons proportionnel au texte : plus de parole inventée après la phrase
         self.derniers_reglages = reglages                       # (2026-10-23) notés avec les nombres du morceau
         res = next(self.modele.generate(texte, conds=self.conds, lang_code=langue, verbose=False,
