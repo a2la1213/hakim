@@ -346,7 +346,7 @@ const OUTILS_JARVIS = ['memory_recall', 'memory_lire', 'memory_store', 'memory_s
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
   'prediction_figer', 'prediction_trancher', 'erreur_noter', 'carnets', 'bilan_semaine', 'voix_nommer', 'voix_connues', 'voix_oublier', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
-    'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal',
+    'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
     'mcp__terminal__suivre_tache', 'mcp__terminal__lister_taches', 'mcp__terminal__arreter_tache',
     'mcp__terminal__agents_lister', 'mcp__terminal__agent_arreter',
@@ -550,6 +550,7 @@ const JARVIS_RAPPEL_JOURNAL = path.join(JARVIS, 'rappel.jsonl');
 let rappelProc = null, rappelTampon = '';
 const rappelFile = [];
 const rappelDejaDits = new Map();                  // session → Set des souvenirs déjà proposés
+const erreursDejaDites = new Map();                // (26/10) session → Set des erreurs du carnet déjà proposées
 function rappelServeur() {
   if (rappelProc && rappelProc.exitCode === null && !rappelProc.killed) return rappelProc;
   rappelTampon = '';
@@ -575,12 +576,12 @@ function rappelServeur() {
   p.stdin.on('error', () => {});
   return p;
 }
-function rappeler(texte, exclus, delaiMs = 900) {
+function rappeler(texte, exclus, delaiMs = 900, exclusErreurs = []) {
   return new Promise((resolve) => {
     if (!RAPPEL_ACTIF) return resolve(null);
     let fini = false;
     const cb = (r) => { if (!fini) { fini = true; resolve(r); } };
-    try { const p = rappelServeur(); rappelFile.push(cb); p.stdin.write(j({ texte, exclus: [...exclus].slice(-500) }) + '\n'); }
+    try { const p = rappelServeur(); rappelFile.push(cb); p.stdin.write(j({ texte, exclus: [...exclus].slice(-500), exclus_erreurs: [...exclusErreurs].slice(-500) }) + '\n'); }
     catch (_) { return resolve(null); }
     setTimeout(() => cb(null), delaiMs);           // trop lent : rien ce tour-ci (la réponse tardive est jetée, dans l'ordre)
   });
@@ -588,22 +589,39 @@ function rappeler(texte, exclus, delaiMs = 900) {
 if (RAPPEL_ACTIF) setTimeout(() => rappeler('préchauffe', [], 30000).catch?.(() => {}), 3000).unref();
 async function blocRappel(session, texte, nonce) {
   const deja = rappelDejaDits.get(session || '') || new Set();
+  const dejaErreurs = erreursDejaDites.get(session || '') || new Set();
   const t0 = Date.now();
-  const r = await rappeler(texte, deja);
+  const r = await rappeler(texte, deja, 900, dejaErreurs);
   const lignes = [], ids = [];
   for (const [k, l] of ((r && r.lignes) || []).entries()) {
     const id = (r.ids || [])[k];
     if (id == null || deja.has(id)) continue;
     lignes.push(l); ids.push(id);
   }
+  // (25/10, Ahmed : « TOUTES les erreurs pertinentes ») son carnet d'erreurs passe au même balayage (anamnese/rappel.py)
+  const erreurs = [], erreursIds = [];
+  for (const [k, l] of ((r && r.erreurs) || []).entries()) {
+    const id = String((r.erreurs_ids || [])[k] ?? '');
+    if (!id || dejaErreurs.has(id)) continue;
+    erreurs.push(l); erreursIds.push(id);
+  }
   try { fs.appendFileSync(JARVIS_RAPPEL_JOURNAL, j({ ts: Date.now(), session: session || null, n: ids.length, ids,
-    scores: (r && r.scores) || [], ms: Date.now() - t0, delai: !r }) + '\n'); } catch (_) {}
-  if (!lignes.length) return { texte: '', ids };
-  return { ids, texte: blocDonnees('Souvenirs qui pourraient s\'y rapporter — un balayage de toute ta mémoire (mots et sens) avant ta réponse ; '
+    scores: (r && r.scores) || [], erreurs: erreursIds, scores_erreurs: (r && r.erreurs_scores) || [], ms: Date.now() - t0, delai: !r }) + '\n'); } catch (_) {}
+  const blocs = [];
+  if (lignes.length) blocs.push(blocDonnees('Souvenirs qui pourraient s\'y rapporter — un balayage de toute ta mémoire (mots et sens) avant ta réponse ; '
     + 'garde ce qui compte vraiment pour son message (la date d\'aujourd\'hui est dans l\'horloge), ignore le reste sans le citer, '
-    + 'et relis le détail d\'un souvenir avec memory_lire si tu en as besoin', lignes.map(l => '- ' + l).join('\n'), nonce) };
+    + 'et relis le détail d\'un souvenir avec memory_lire si tu en as besoin', lignes.map(l => '- ' + l).join('\n'), nonce));
+  if (erreurs.length) blocs.push(blocDonnees('Erreurs à ne pas refaire — ton carnet d\'erreurs, balayé avant ta réponse : celles qui touchent '
+    + 'son message, avec leur correction ; applique la correction si la situation est la même, ignore-les sinon', erreurs.map(l => '- ' + l).join('\n'), nonce));
+  return { ids, erreurs: erreursIds, texte: blocs.join('\n') };
 }
-function retenirRappel(session, ids) {
+function retenirRappel(session, ids, erreurs = []) {
+  if (session && erreurs.length) {
+    const e = erreursDejaDites.get(session) || new Set();
+    for (const id of erreurs) e.add(id);
+    erreursDejaDites.delete(session); erreursDejaDites.set(session, e);
+    while (erreursDejaDites.size > 20) erreursDejaDites.delete(erreursDejaDites.keys().next().value);
+  }
   if (!session || !ids.length) return;
   const s = rappelDejaDits.get(session) || new Set();
   for (const id of ids) s.add(id);
@@ -673,7 +691,7 @@ const CHOCS_CLI = path.join(ANAMNESE, 'chocs_cli.py');
 const CHOCS_BANC = process.env.JARVIS_CHOCS_CLI || '';          // le banc : un faux pont, jamais la vraie mémoire
 // (2026-10-23) deux balises cachées en fin de réponse : [[affect: …]] (son appréciation) et [[souvenirs: …]] (les souvenirs
 // proposés qui lui ont vraiment servi, pour la boucle de retour) ; aucune n'est affichée, dite ou gardée
-const BALISE_AFFECT = /\[\[\s*(?:affect|souvenirs)\s*:[^\]]{0,300}\]\]/gi;
+const BALISE_AFFECT = /\[\[\s*(?:affect|souvenirs|modele)\s*:[^\]]{0,300}\]\]/gi;     // (26/10) et [[modele: opus]]
 const BALISE_SOUVENIRS = /\[\[\s*souvenirs\s*:([^\]]{0,300})\]\]/gi;
 const BOUCLE_BALISES = path.join(JARVIS, 'boucle', 'souvenirs-balise.jsonl');
 // les souvenirs qu'elle nomme, bornés à ceux que le balayage de CETTE conversation lui a proposés
@@ -690,7 +708,7 @@ const sansBaliseAffect = (t) => String(t || '').replace(BALISE_AFFECT, '').repla
 // Le flux vers les pages : la balise n'y passe jamais, même coupée entre deux morceaux (une page ancienne, pas encore
 // rechargée, ne sait pas la cacher) ; un début possible (« [[aff ») est retenu jusqu'au morceau suivant.
 const prefixeBalise = (mot, i = 0) => i === mot.length ? '(?:\\s*:[^\\]\\n]{0,300})?' : `${mot[i]}(?:${prefixeBalise(mot, i + 1)})?`;
-const DEBUT_AFFECT = new RegExp(`\\[(?:\\[\\s*(?:${prefixeBalise('affect')}|${prefixeBalise('souvenirs')})?)?$`, 'i');
+const DEBUT_AFFECT = new RegExp(`\\[(?:\\[\\s*(?:${prefixeBalise('affect')}|${prefixeBalise('souvenirs')}|${prefixeBalise('modele')})?)?$`, 'i');
 function filtreAffect() {
   let tampon = '';
   return {
@@ -700,7 +718,7 @@ function filtreAffect() {
       tampon = m ? propre.slice(m.index) : '';
       return m ? propre.slice(0, m.index) : propre;
     },
-    finir() { const r = tampon.replace(BALISE_AFFECT, ''); tampon = ''; return /^\s*\[\[\s*(?:affect|souvenirs)/i.test(r) ? '' : r; },
+    finir() { const r = tampon.replace(BALISE_AFFECT, ''); tampon = ''; return /^\s*\[\[\s*(?:affect|souvenirs|modele)/i.test(r) ? '' : r; },
   };
 }
 function chocsAppel(cmd, donnees, delaiMs = 2000) {
@@ -1317,9 +1335,30 @@ function lireCorps(req, max) {
 // Le routeur de modèles (lot C, point 10, liste du 2026-10-19 : « rapide pour converser, fort pour
 // travailler ») : Opus quand le message demande un vrai travail (calculer, coder, analyser, chercher, lire
 // un document, un fichier joint, un long message), Sonnet pour discuter. Haiku n'est jamais choisi (Ahmed).
-const TRAVAIL = /\b(calcul\w*|code[rsz]?|programm\w*|script|analys\w*|compar\w*|d[ée]montr\w*|prouv\w*|v[ée]rifi\w*|cherch\w*|recherch\w*|lis\b|lire|relis|r[ée]sum\w*|tradui\w*|plan\b|teste[rz]?|lance[rz]?|optimis\w*|corrig\w*|d[ée]bogu\w*|fichiers?|terminal|donn[ée]es|statisti\w*|simul\w*|mesur\w*|estim\w*|[ée]cris|r[ée]dig\w*|explique[- ]moi en d[ée]tail|en d[ée]tail|t[ée]l[ée]charg\w*|entra[iî]n\w*|formule|[ée]quation|preuve|th[ée]or[èe]me)\b/i;
+const TRAVAIL = /\b(calcul\w*|code[rsz]?|programm\w*|script|analys\w*|compar\w*|d[ée]montr\w*|prouv\w*|v[ée]rifi\w*|cherch\w*|recherch\w*|lis\b|lire|relis|r[ée]sum\w*|tradui\w*|plan\b|teste[rz]?|lance[rz]?|optimis\w*|corrig\w*|d[ée]bogu\w*|fichiers?|terminal|donn[ée]es|statisti\w*|simul\w*|mesur\w*|estim\w*|[ée]cris|r[ée]dig\w*|explique[- ]moi en d[ée]tail|en d[ée]tail|t[ée]l[ée]charg\w*|entra[iî]n\w*|formule|[ée]quation|preuve|th[ée]or[èe]me|jug\w*|relire|relis\w*|interpr[ée]t\w*|[ée]valu\w*|approfondi\w*|courbes?|graphiques?|tableau int[ée]rieur|maths?|math[ée]matiques?|physique|complexe|difficile|rigoureu\w*)\b/i;          // (26/10) et les analyses difficiles (relire ses courbes, juger les maths)
 function modelePour(texte, joints) {
   return joints || String(texte).length > 280 || TRAVAIL.test(String(texte)) ? 'opus' : 'sonnet';
+}
+/* (26/10, Ahmed : « le passage Sonnet ↔ Opus plus cohérent et efficace ») en automatique, par conversation :
+   - Opus dès qu'un message demande un travail (TRAVAIL), et il RESTE MODELE_COLLANT_MS sur la conversation : changer de
+     modèle relance son cerveau (le contexte est gardé, la conversation reprise, mais quelques secondes passent) ;
+   - « passe en Opus » / « mode Sonnet » d'Ahmed, ou la balise [[modele: opus]] de Hakim (il ne pouvait pas changer de
+     modèle lui-même), le fixent pour MODELE_VOULU_MS. */
+const MODELE_COLLANT_MS = 15 * 60 * 1000, MODELE_VOULU_MS = 3600 * 1000;
+const DEMANDE_MODELE = /\b(?:passe|reste|mets?[- ]toi|bascule)\s+(?:en\s+|sur\s+)?(?:mode\s+)?(opus|sonnet)\b|\bmode\s+(opus|sonnet)\b/i;
+const modeleDeSession = new Map();                 // conversation → { modele, jusqua, voulu }
+function noterModele(session, modele, dureeMs, voulu, maintenant = Date.now()) {
+  if (!session) return;
+  modeleDeSession.delete(session); modeleDeSession.set(session, { modele, jusqua: maintenant + dureeMs, voulu });
+  while (modeleDeSession.size > 50) modeleDeSession.delete(modeleDeSession.keys().next().value);
+}
+function modeleAuto(session, texte, joints, maintenant = Date.now()) {
+  const d = String(texte).match(DEMANDE_MODELE);
+  if (d) { const m = (d[1] || d[2]).toLowerCase(); noterModele(session, m, MODELE_VOULU_MS, true, maintenant); return m; }
+  const s = modeleDeSession.get(session || '');
+  if (s && s.voulu && s.jusqua > maintenant) return s.modele;
+  if (modelePour(texte, joints) === 'opus') { noterModele(session, 'opus', MODELE_COLLANT_MS, false, maintenant); return 'opus'; }
+  return s && s.modele === 'opus' && s.jusqua > maintenant ? 'opus' : 'sonnet';
 }
 
 /* ---- Lot B (liste du 2026-10-19) : ce que Hakim sait de sa situation, sans le répéter ----
@@ -1337,7 +1376,7 @@ const quandCourt = (ms) => new Intl.DateTimeFormat('fr-FR', { weekday: 'short', 
 function jaugeForfait(maintenant) {
   const f = (abonnement.info && abonnement.info.fenetres) || {};
   const morceaux = [], cle = [];
-  if ((abonnement.limiteJusqua || 0) > maintenant) { morceaux.push(`à sa limite jusqu'à ${quandCourt(abonnement.limiteJusqua)}`); cle.push('L'); }
+  if (forfaitALaLimite(maintenant)) { morceaux.push(`à sa limite jusqu'à ${quandCourt(abonnement.limiteJusqua)}`); cle.push('L'); }
   for (const [k, nom] of [['five_hour', 'fenêtre de 5 h'], ['seven_day', 'semaine']]) {
     const w = f[k];
     if (!w || !Number.isFinite(w.utilization)) continue;
@@ -1658,7 +1697,7 @@ const OUTILS_EXTERNES = new Set(['WebSearch', 'WebFetch', 'mcp__web__lire_page',
 // (audit JARVIS 2, H1b) les lectures PRIVÉES (fichiers d'Ahmed, son journal, le détail d'un souvenir) : l'état « lecture
 // privée » dure 6 h (jarvis/sortie.py) ; le serveur web y refuse les adresses qui peuvent porter des données.
 const LECTURES_PRIVEES = new Set(['mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_dans_fichiers',
-  'mcp__fichiers__chercher_dans_le_journal', 'mcp__anamnese__fichiers_par_sens', 'mcp__anamnese__memory_detail']);
+  'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal', 'mcp__anamnese__fichiers_par_sens', 'mcp__anamnese__memory_detail']);
 const JARVIS_LECTURE_PRIVEE = path.join(JARVIS, 'lecture-privee.json');
 function noterLecturePrivee(outil) {
   let d = {}; try { d = JSON.parse(fs.readFileSync(JARVIS_LECTURE_PRIVEE, 'utf8')) || {}; } catch (_) {}
@@ -1767,7 +1806,7 @@ async function routeJarvis(req, res, distantReq = false) {
     session = null;
   }
   // le routeur (lot C, point 10) : « auto » = Sonnet pour discuter, Opus dès que c'est du travail
-  const modele = modeleDemande === 'auto' ? modelePour(texte, Array.isArray(q.fichiers) && q.fichiers.length > 0) : modeleDemande;
+  const modele = modeleDemande === 'auto' ? modeleAuto(session, texte, Array.isArray(q.fichiers) && q.fichiers.length > 0) : modeleDemande;
   couperJarvis();
   let persona = ''; try { persona = fs.readFileSync(PERSONA, 'utf8'); } catch (_) {}
   let dernierAvant = null; try { dernierAvant = JSON.parse(fs.readFileSync(JARVIS_HORLOGE, 'utf8')).dernier_ms; } catch (_) {}
@@ -1895,6 +1934,8 @@ async function routeJarvis(req, res, distantReq = false) {
       chocsAppel('balise', { cle: cleChoc, reponse }).then(r => { if (r && r.erreur) console.error(`Chocs : ${r.erreur}`); });
     if (!o.coupe && !o.erreur && source !== 'local')         // la boucle de retour : ce qui lui a vraiment servi
       noterSouvenirsServis(reponse, new Set([...(rappelBloc.ids || []), ...(rappelDejaDits.get(session || '') || [])].map(Number)));
+    const voulu = reponse.match(/\[\[\s*modele\s*:\s*(opus|sonnet)\s*\]\]/i);     // (26/10) Hakim demande son modèle
+    if (voulu && !o.coupe && source !== 'local') noterModele(sid, voulu[1].toLowerCase(), MODELE_VOULU_MS, true);
     reponse = sansBaliseAffect(reponse);
     const resteFlux = fluxAffect.finir();
     if (resteFlux) envoyer({ t: 'texte', x: resteFlux });
@@ -1910,7 +1951,7 @@ async function routeJarvis(req, res, distantReq = false) {
     // ce que ce tour lui a dit (situation, présent) : retenu pour ne pas le redire — seulement s'il l'a bien reçu
     if (!o.coupe && !o.erreur && sid && source !== 'local') {
       retenir(sid, { ...situation.dit, presentMs: Number.isFinite(presentMs) ? presentMs : deja.presentMs });
-      retenirRappel(sid, rappelBloc.ids);
+      retenirRappel(sid, rappelBloc.ids, rappelBloc.erreurs || []);
     }
     if (!o.coupe && !o.erreur && source !== 'local' && nonVusDits.length) { for (const id of nonVusDits) delete nonVus[id]; sauverNonVus(); }
     if (!o.coupe && !o.erreur && source !== 'local' && courrierRecu.ids.length) marquerCourrierLu(courrierRecu.ids);
@@ -1972,7 +2013,7 @@ async function routeJarvis(req, res, distantReq = false) {
   consciencePulse();                              // la conscience travaille : le subconscient se tait
   garde = setTimeout(() => tuer(enfant, 'durée maximale d’un tour'), JARVIS_DUREE_MAX);
   envoyer({ t: 'debut', briefing: !session, pid: enfant.pid, chaud: c.tours > 0 || Date.now() - c.ne > 1500, source,
-    modele: modeleDemande === 'auto' ? c.modele : undefined });
+    modele: c.modele });                         // (26/10) l'étiquette du modèle, toujours
   const tour = {
     surLigne(o) {
       if (o.session_id && o.session_id !== sid) {          // dès qu'elle est connue : un « stop » ne la perd pas
@@ -1996,10 +2037,14 @@ async function routeJarvis(req, res, distantReq = false) {
         if (tour.interrompu) return finir({ coupe: true, tours: o.num_turns, erreur: null, jetons: jetonsDe(c, o) });   // Stop doux
         const limite = source === 'abonnement' ? limiteAbonnement(o) : 0;
         if (limite) noterAbonnement(null, limite);
+        else if (source === 'abonnement' && !o.is_error && abonnement.limiteJusqua) {        // il a répondu : plus de limite
+          abonnement.limiteJusqua = 0; delete abonnement.limiteVu;
+          try { ecrireAtomique(ABONNEMENT, j(abonnement)); } catch (_) {}
+        }
         // le forfait à sa limite (ou une source en panne) : le MÊME tour repart aussitôt sur la suivante
         const texteErreur = String(o.result || o.subtype || '');
         if (o.is_error && source === 'api' && /credit|balance|api key|authenticat|unauthori[sz]ed|\b40[13]\b/i.test(texteErreur)) {
-          apiEnPanneJusqua = Date.now() + 30 * 60 * 1000;
+          apiEnPanneJusqua = Date.now() + 10 * 60 * 1000;          // (26/10) réessayée après 10 min : Ahmed recharge
           abonnement.apiPanne = texteErreur.slice(0, 160);
         }
         if (o.is_error && (limite || ERREUR_DE_SOURCE.test(texteErreur)) && !/No conversation found/i.test(texteErreur)
@@ -2381,10 +2426,20 @@ function noterAbonnement(info, limite) {
   if (info && typeof info === 'object') {
     abonnement.info = { statut: info.status, type: info.rateLimitType, utilisation: info.utilization, jusqua: info.resetsAt,
       fenetres: info.unifiedWindows || null, maj: Date.now() };
-    if (info.status === 'rejected' && info.resetsAt) abonnement.limiteJusqua = info.resetsAt * 1000;
+    if (info.status === 'rejected' && info.resetsAt) { abonnement.limiteJusqua = info.resetsAt * 1000; abonnement.limiteVu = Date.now(); }
+    // (26/10, Ahmed) le forfait répond : il n'est plus à sa limite, quoi qu'on ait noté avant (sinon « API » restait affiché)
+    else if (/^allowed/.test(String(info.status || ''))) { abonnement.limiteJusqua = 0; delete abonnement.limiteVu; }
   }
-  if (limite) abonnement.limiteJusqua = Math.max(abonnement.limiteJusqua || 0, limite);
+  if (limite) { abonnement.limiteJusqua = Math.max(abonnement.limiteJusqua || 0, limite); abonnement.limiteVu = Date.now(); }
   try { ecrireAtomique(ABONNEMENT, j(abonnement)); } catch (_) {}
+}
+/* (26/10, Ahmed : « on ne bascule JAMAIS d'après un pourcentage, seulement sur une VRAIE erreur ») le forfait n'est tenu pour
+   épuisé que pendant FORFAIT_REESSAI_MS après l'erreur qui l'a dit ; ensuite le tour suivant le réessaie (s'il répond,
+   la limite s'efface ; s'il refuse encore, le même tour bascule sur l'API, puis le local). Une limite notée avant cette
+   règle (sans limiteVu) est réessayée tout de suite. */
+const FORFAIT_REESSAI_MS = 10 * 60 * 1000;
+function forfaitALaLimite(maintenant = Date.now()) {
+  return (abonnement.limiteJusqua || 0) > maintenant && maintenant - (abonnement.limiteVu || 0) < FORFAIT_REESSAI_MS;
 }
 // L'ordre voulu par Ahmed (2026-10-18) : « le forfait Claude en priorité, puis l'API Claude en backup, et
 // le LLM local en dernier recours ». La source de départ de ce tour : le forfait, sauf s'il est à sa limite.
@@ -2397,8 +2452,7 @@ function sourcePour(choix) {
   if (choix === 'local' || choix === 'gemma') return 'local';
   if (choix === 'api') return 'api';
   if (choix === 'abonnement') return 'abonnement';
-  const cle = apiDisponible();
-  if ((abonnement.limiteJusqua || 0) > Date.now()) return cle ? 'api' : 'local';
+  if (forfaitALaLimite()) return apiDisponible() ? 'api' : 'local';
   return 'abonnement';
 }
 // la source suivante quand celle-ci échoue avant d'avoir répondu
@@ -3884,7 +3938,7 @@ async function traiter(req, res) {
     const cle = lireCleApi();
     return res.end(j({ stt_local: !!stt.disponible, stt_modele: stt.modele || null, tts_local: !!stt.tts, modeles: [...MODELES_JARVIS],
       en_cours: jarvisVivants.size > 0, api: { cle: apiDisponible(), fin: cle ? cle.slice(-4) : null, trousseau: !cle && cleDansTrousseau() },
-      abonnement: { info: abonnement.info || null, limite_jusqua: (abonnement.limiteJusqua || 0) > Date.now() ? abonnement.limiteJusqua : null },
+      abonnement: { info: abonnement.info || null, limite_jusqua: forfaitALaLimite() ? abonnement.limiteJusqua : null },
       api_panne: Date.now() < apiEnPanneJusqua ? (abonnement.apiPanne || 'indisponible') : null }));
   }
   if (p === '/api/voix/dire' && req.method === 'POST') return routeDire(req, res);

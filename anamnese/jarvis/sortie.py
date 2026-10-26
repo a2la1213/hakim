@@ -42,7 +42,7 @@ CONNUS = _J / "web-domaines.json"
 DEMANDES = _J / "sorties-demandees.jsonl"
 PERMISES = _J / "sorties-permises.json"
 LECTURES_PRIVEES = {"mcp__fichiers__preparer_fichier", "mcp__fichiers__chercher_dans_fichiers",
-                    "mcp__fichiers__chercher_dans_le_journal", "mcp__anamnese__fichiers_par_sens",
+                    "mcp__fichiers__chercher_dans_le_journal", "mcp__fichiers__exporter_le_journal", "mcp__anamnese__fichiers_par_sens",
                     "mcp__anamnese__memory_detail", "Read(fichiers)"}
 # (audit du 2026-10-23, élevé 2) tout ce que rendent sa mémoire et les fichiers d'Ahmed : souvenirs, courrier, jardin,
 # carnets… ; et les données du téléphone (position, capteurs, montre) que le cockpit lui donne

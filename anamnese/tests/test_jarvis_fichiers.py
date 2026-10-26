@@ -445,3 +445,29 @@ def test_le_journal_par_plage_horaire(tmp_path):
     assert not any("hors plage" in x for x in texte)
     with pytest.raises(ValueError):
         F.journal_plage(t0, t0 + 7 * 3600, dossier=tmp_path)
+
+
+def test_messages_entiers_sur_une_plage_courte_et_export_brut(tmp_path):
+    """(26/10, Ahmed : réponses longues tronquées ; export pour les agents de contrôle) une plage de 30 min rend les messages
+    entiers, une plage plus longue leur début (sauf entier=True) ; l'export écrit les messages entiers, positions masquées."""
+    import json
+    import fichiers as F
+    t0 = 1_800_000_000.0
+    long = "Point par point : " + "Einstein, Musk, la libraire. " * 40
+    (tmp_path / "journal.jsonl").write_text("\n".join(json.dumps(o) for o in [
+        {"ts": (t0 - 7200) * 1000, "qui": "ahmed", "texte": "avant, très avant"},
+        {"ts": t0 * 1000, "qui": "ahmed", "texte": "je suis à 46.20441, 6.14321 frérot"},
+        {"ts": (t0 + 60) * 1000, "qui": "jarvis", "texte": long}]) + "\n")
+    vide = tmp_path / "vide.jsonl"
+    court, _ = F.journal_plage(t0 - 60, t0 + 600, dossier=tmp_path, temps=vide, hormones=vide, evenements=vide)
+    assert long.strip() in court[-1][1] and "…" not in court[-1][1]
+    assert "[POSITION MASQUÉE]" in court[0][1] and "46.20441" not in court[0][1]
+    large, _ = F.journal_plage(t0 - 3600, t0 + 600, dossier=tmp_path, temps=vide, hormones=vide, evenements=vide)
+    assert large[-1][1].endswith("… »")
+    entier, _ = F.journal_plage(t0 - 3600, t0 + 600, dossier=tmp_path, temps=vide, hormones=vide, evenements=vide, entier=True)
+    assert long.strip() in entier[-1][1]
+    r = F.exporter_journal(debut=t0 - 10, fin=t0 + 100, dossier=tmp_path, sortie=tmp_path / "x.txt")
+    texte = (tmp_path / "x.txt").read_text()
+    assert r["messages"] == 2 and long.strip() in texte and "46.20441" not in texte
+    r2 = F.exporter_journal(avant=t0 + 30, jetons=10, dossier=tmp_path, sortie=tmp_path / "y.txt")
+    assert r2["messages"] == 1 and "46.20441" not in (tmp_path / "y.txt").read_text()     # le seul message qui tient

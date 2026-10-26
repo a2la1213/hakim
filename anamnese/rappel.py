@@ -14,6 +14,7 @@ Lecture seule ; rien n'est renforcé par ce balayage (reconsolidate=False).
 import math
 import re
 import time
+from pathlib import Path
 
 
 ROLES = ("episodic", "semantic", "user", "reference", "project", "reasoning")
@@ -278,6 +279,81 @@ def rappel(mem, texte, now=None, exclus=(), seuil=SEUIL, lignes_max=LIGNES_MAX, 
     return {"lignes": lignes, "ids": ids, "scores": [round(x[1], 4) for x in c], "ms": round(1000 * (time.time() - t0))}
 
 
+# (25/10, Ahmed : « balayer aussi le carnet d'erreurs avant chaque réponse, TOUTES les erreurs pertinentes, pas 2-3 ») le
+# carnet passe au même balayage : le sens (model2vec) et les mots du message rares dans le carnet (IDF), score = cosinus
+# + 0,35 × mots ; tout ce qui passe la porte remonte, sans nombre fixe, sous un garde-fou de taille. Porte réglée le 26/10
+# sur des messages types : « une barre de progression pour ton calcul » sort les 5 erreurs de barre (≥ 0,80), « t'es
+# fatigué après ce live » celle du 25/10 (0,93), « bonne nuit » celle du repos imposé (0,65) ; « salam ça va » rien (0,32).
+PORTE_ERREURS = 0.65
+POIDS_MOTS_ERREURS = 0.35
+ERREURS_MAX, ERREURS_CARACTERES_MAX = 12, 3500
+
+
+def _plat(s):
+    import unicodedata
+    return unicodedata.normalize("NFKD", str(s).lower()).encode("ascii", "ignore").decode()
+
+
+class IndexErreurs:
+    """Le carnet d'erreurs en mémoire : relu (et ses nouvelles lignes vectorisées) quand le fichier change."""
+    def __init__(self, fichier=None):
+        self.fichier, self.signature, self.items, self.mat, self.mots = fichier, None, [], None, []
+
+    def rafraichir(self, embed):
+        import numpy as np
+        import carnet
+        f = Path(self.fichier or carnet.ERREURS)
+        try:
+            sig = (f.stat().st_mtime, f.stat().st_size)
+        except OSError:
+            self.items, self.mat, self.mots = [], None, []
+            return self
+        if sig != self.signature:
+            self.items = [e for e in carnet.erreurs(f) if e.get("quoi")]
+            textes = [f"{e.get('quoi', '')} {e.get('correction', '')}" for e in self.items]
+            m = np.array([embed(t) for t in textes], dtype=np.float32) if textes else np.zeros((0, 1), np.float32)
+            n = np.linalg.norm(m, axis=1, keepdims=True) if len(m) else None
+            self.mat = m / np.where(n == 0, 1, n) if len(m) else m
+            self.mots = [set(re.findall(r"[a-z0-9]{4,}", _plat(t))) for t in textes]
+            self.signature = sig
+        return self
+
+
+def erreurs_pertinentes(texte, embed=None, index=None, exclus=()):
+    """{"lignes", "ids", "scores"} : toutes les erreurs du carnet qui passent la porte, de la plus proche à la moins
+    proche, sans celles déjà dites dans la conversation (exclus), au plus ERREURS_MAX et ERREURS_CARACTERES_MAX."""
+    import numpy as np
+    if embed is None:
+        import embeddings
+        embed = embeddings.embed
+    index = (index or IndexErreurs()).rafraichir(embed)
+    if not index.items:
+        return {"lignes": [], "ids": [], "scores": []}
+    q = np.asarray(embed(texte), dtype=np.float32)
+    if not q.size or q.size != index.mat.shape[1] or not np.linalg.norm(q):
+        return {"lignes": [], "ids": [], "scores": []}
+    cos = index.mat @ (q / np.linalg.norm(q))
+    n = len(index.items)
+    mots = {_plat(w) for w in mots_cles(texte)}
+    idf = {w: math.log((n + 1) / (1 + sum(w in d for d in index.mots))) for w in mots}
+    norme = math.log(n + 1) or 1.0
+    exclus = set(exclus or ())
+    scores = sorted(((float(cos[i]) + POIDS_MOTS_ERREURS * sum(idf[w] for w in mots if w in index.mots[i]) / norme, i)
+                     for i in range(n) if str(index.items[i].get("id")) not in exclus), reverse=True)
+    lignes, ids, gardes, taille = [], [], [], 0
+    for s, i in scores:
+        if s < PORTE_ERREURS or len(lignes) >= ERREURS_MAX:
+            break
+        e = index.items[i]
+        quand = time.strftime("%d/%m", time.localtime(float(e.get("ts") or 0)))
+        ligne = (f"{quand} · {'de mauvaise foi' if e.get('colonne') == 'disquette' else 'de bonne foi'} · "
+                 f"{' '.join(str(e.get('quoi', '')).split())[:260]} → correction : {' '.join(str(e.get('correction', '')).split())[:260]}")
+        if taille + len(ligne) > ERREURS_CARACTERES_MAX and lignes:
+            break
+        lignes.append(ligne); ids.append(str(e.get("id"))); gardes.append(round(s, 3)); taille += len(ligne)
+    return {"lignes": lignes, "ids": ids, "scores": gardes}
+
+
 def serveur(entree=None, sortie=None):
     """Le processus que le cockpit garde ouvert : une requête JSON par ligne {texte, exclus, now}, une réponse par
     ligne. Le modèle d'embeddings et la base restent chargés : quelques dizaines de millisecondes par message."""
@@ -286,12 +362,17 @@ def serveur(entree=None, sortie=None):
     from memory import Memory
     entree, sortie = entree or sys.stdin, sortie or sys.stdout
     mem = Memory()
-    index = Index()
+    index, index_erreurs = Index(), IndexErreurs()
     for ligne in entree:
         try:
             q = json.loads(ligne)
-            r = rappel(mem, str(q.get("texte") or "")[:4000], now=q.get("now"), exclus=[int(x) for x in (q.get("exclus") or [])][:500],
-                       index=index)
+            texte = str(q.get("texte") or "")[:4000]
+            r = rappel(mem, texte, now=q.get("now"), exclus=[int(x) for x in (q.get("exclus") or [])][:500], index=index)
+            try:
+                e = erreurs_pertinentes(texte, index=index_erreurs, exclus=[str(x) for x in (q.get("exclus_erreurs") or [])][:500])
+                r.update(erreurs=e["lignes"], erreurs_ids=e["ids"], erreurs_scores=e["scores"])
+            except Exception as ex:
+                r["erreur_carnet"] = f"{type(ex).__name__}: {ex}"[:200]
         except Exception as e:
             r = {"lignes": [], "ids": [], "erreur": f"{type(e).__name__}: {e}"[:200]}
         sortie.write(json.dumps(r, ensure_ascii=False) + "\n")

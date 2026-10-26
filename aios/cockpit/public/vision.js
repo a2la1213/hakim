@@ -53,20 +53,33 @@
     // (24/10, Hakim : « personne dans le cadre » alors qu'Ahmed est bien visible) ce que l'analyse voit vraiment, pour le
     // diagnostic : images analysées, visages trouvés (points du visage), dont avec coefficients d'expression
     const stats = { images: 0, visages: 0, avec_expressions: 0 };
-    if (face === 'user') try {
-      const { FilesetResolver, FaceLandmarker } = await import(`${BASE}/vision_bundle.mjs`);
-      const fichiers = await FilesetResolver.forVisionTasks(`${BASE}/wasm`);
-      const options = (delegue) => ({ baseOptions: { modelAssetPath: `${BASE}/face_landmarker.task`, delegate: delegue },
-        runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true });
-      // (24/10, vision_etat du Fold : sur le GPU de la WebView, 7 visages trouvés sur 321 images, quand Android en trouvait
-      // 61 sur 66) o.delegue = « CPU » pour commencer par le processeur ; le GPU reste le premier choix ailleurs
-      const ordre = o.delegue === 'CPU' ? ['CPU', 'GPU'] : ['GPU', 'CPU'];
-      try { lm = await FaceLandmarker.createFromOptions(fichiers, options(ordre[0])); delegue = ordre[0].toLowerCase(); }
-      catch (_) { lm = await FaceLandmarker.createFromOptions(fichiers, options(ordre[1])); delegue = ordre[1].toLowerCase(); }
-    } catch (e) {
-      if (o.surErreur) o.surErreur(`analyse du visage indisponible : ${e.message || e}`);
-    }
     let actif = true, dernier = 0, minuterie = null;
+    // (26/10, Ahmed sur le Fold plié : « ouverture en cours » alors que la caméra était ouverte, rien ne se passait) l'analyse
+    // (15 Mo à charger, puis le modèle à préparer) se charge EN FOND : la caméra rend la main dès que l'image tourne, les
+    // photos et le détecteur d'Android marchent tout de suite, les expressions arrivent quand l'analyse est prête
+    // (o.surAnalyse dit quand, et en combien de temps, ou pourquoi elle a échoué).
+    if (face === 'user') (async () => {
+      const t0 = performance.now();
+      try {
+        const { FilesetResolver, FaceLandmarker } = await import(`${BASE}/vision_bundle.mjs`);
+        const fichiers = await FilesetResolver.forVisionTasks(`${BASE}/wasm`);
+        const options = (delegue) => ({ baseOptions: { modelAssetPath: `${BASE}/face_landmarker.task`, delegate: delegue },
+          runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true });
+        // (24/10, vision_etat du Fold : sur le GPU de la WebView, 7 visages trouvés sur 321 images, quand Android en trouvait
+        // 61 sur 66) o.delegue = « CPU » pour commencer par le processeur ; le GPU reste le premier choix ailleurs
+        const ordre = o.delegue === 'CPU' ? ['CPU', 'GPU'] : ['GPU', 'CPU'];
+        let pret, d;
+        try { pret = await FaceLandmarker.createFromOptions(fichiers, options(ordre[0])); d = ordre[0]; }
+        catch (_) { pret = await FaceLandmarker.createFromOptions(fichiers, options(ordre[1])); d = ordre[1]; }
+        if (!actif) { try { pret.close(); } catch (_) {} return; }          // éteinte pendant le chargement
+        lm = pret; delegue = d.toLowerCase();
+        if (o.surAnalyse) o.surAnalyse({ pret: true, delegue, ms: Math.round(performance.now() - t0) });
+      } catch (e) {
+        if (!actif) return;
+        if (o.surAnalyse) o.surAnalyse({ pret: false, ms: Math.round(performance.now() - t0), erreur: String(e.message || e).slice(0, 160) });
+        if (o.surErreur) o.surErreur(`analyse du visage indisponible : ${e.message || e}`);
+      }
+    })();
     const lisse = { sourire: 0, froncement: 0, surprise: 0, bouche: 0, yeux: 0, lacet: 0, tangage: 0, present: 0 };
     const neutre = { sourire: 0, froncement: 0, surprise: 0, yeux: 0 }, RELATIFS = Object.keys(neutre);
     let nNeutre = 0;                                        // visage de repos, appris sur ~30 images

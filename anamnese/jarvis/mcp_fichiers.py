@@ -70,7 +70,7 @@ def _heure(texte):
 
 
 @mcp.tool()
-def chercher_dans_le_journal(texte: str = "", maximum: int = 15, debut: str = "", fin: str = "") -> str:
+def chercher_dans_le_journal(texte: str = "", maximum: int = 15, debut: str = "", fin: str = "", entier: bool = False) -> str:
     """Cherche dans le journal BRUT de vos conversations (tout ce qu'Ahmed et toi vous êtes dit, Mac et
     téléphone, archives comprises), quand ta mémoire triée ne suffit pas : une phrase exacte, un chiffre, ce
     qu'il a dit tel jour. Rend les passages trouvés, du plus récent au plus ancien, datés. Ce sont des
@@ -78,17 +78,23 @@ def chercher_dans_le_journal(texte: str = "", maximum: int = 15, debut: str = ""
     PAR PLAGE HORAIRE (24/10) : donne debut et fin (« HH:MM » aujourd'hui, ou « JJ/MM HH:MM », 6 h au plus) au lieu
     de texte : tout ce qui s'est passé, dans l'ordre et à la seconde — les messages d'Ahmed et les tiens, ton état
     et ton humeur quand ils changent, tes hormones quand elles bougent, tes événements affectifs (source, sujet).
-    Pour croiser un pic de ton tableau intérieur avec ce qui a été dit."""
+    Pour croiser un pic de ton tableau intérieur avec ce qui a été dit.
+    MESSAGES ENTIERS (26/10) : sur une plage de 30 min au plus, chaque message est rendu en entier ; au-delà, son début,
+    sauf entier=True. Pour relire un tour précis : une plage de quelques minutes autour de son heure.
+    Pour un gros morceau du journal (des agents à nourrir) : exporter_le_journal, qui écrit un fichier."""
     import time
     if debut or fin:
         try:
             t0, t1 = _heure(debut), _heure(fin)
-            lignes, coupe = fichiers.journal_plage(t0, t1)
+            lignes, coupe = fichiers.journal_plage(t0, t1, entier=True if entier else None)
         except Exception as e:
             return f"Plage impossible : {e}"[:300]
         if not lignes:
             return "Rien dans cette plage."
-        return "\n".join(x for _t, x in lignes) + ("\n[… plage trop riche : réduis-la pour voir la suite]" if coupe else "")
+        out = "\n".join(x for _t, x in lignes)
+        if len(out) > 60000:                  # au-delà, l'outil serait coupé : on le dit au lieu de perdre la fin en silence
+            return out[:60000] + "\n[… trop long pour une réponse d'outil : réduis la plage, ou exporter_le_journal]"
+        return out + ("\n[… plage trop riche : réduis-la pour voir la suite]" if coupe else "")
     try:
         r = fichiers.chercher_journal(texte, maximum=max(1, min(int(maximum or 15), 50)))
     except Exception as e:
@@ -97,6 +103,25 @@ def chercher_dans_le_journal(texte: str = "", maximum: int = 15, debut: str = ""
         return f"Rien dans le journal brut pour « {texte} »."
     return "\n".join(f"- {time.strftime('%d/%m/%Y %H:%M', time.localtime((x['ts'] or 0) / 1000))} "
                      f"{'Ahmed' if x['qui'] == 'ahmed' else 'toi'} : « {x['extrait']} »" for x in r)
+
+
+@mcp.tool()
+def exporter_le_journal(debut: str = "", fin: str = "", avant: str = "", jetons: int = 0) -> str:
+    """Écrit dans ton atelier (journal-exports/) un fichier texte du journal BRUT, messages ENTIERS d'Ahmed et toi, dans
+    l'ordre, secrets et positions masqués : soit une plage (debut et fin : « HH:MM », « JJ/MM HH:MM » ou
+    « AAAA-MM-JJ HH:MM », 31 jours au plus), soit les `jetons` qui précèdent l'instant `avant` (par exemple 100000).
+    Pour nourrir des agents de contrôle avec exactement ce qui précède une question. Rend le chemin du fichier."""
+    import time
+    try:
+        if avant and jetons:
+            r = fichiers.exporter_journal(avant=_heure(avant), jetons=max(1000, min(int(jetons), 2_000_000)))
+        else:
+            r = fichiers.exporter_journal(debut=_heure(debut), fin=_heure(fin))
+    except Exception as e:
+        return f"Export impossible : {e}"[:300]
+    d = lambda t: time.strftime("%d/%m %H:%M:%S", time.localtime(t))      # noqa: E731
+    return (f"Écrit : {r['fichier']} — {r['messages']} messages, du {d(r['debut'])} au {d(r['fin'])}, "
+            f"≈ {r['jetons_estimes']} jetons ({r['caracteres']} caractères).")
 
 
 @mcp.tool()

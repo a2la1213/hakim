@@ -58,7 +58,8 @@ test('personne dans le cadre : dit après 30 s, caméra éteinte après 3 min ; 
 test('la caméra arrière n’analyse aucun visage ; la photo dit de quelle caméra elle vient', () => {
   const vision = fs.readFileSync(path.join(__dirname, 'public', 'vision.js'), 'utf8');
   assert.match(vision, /facingMode: face/);
-  assert.match(vision, /if \(face === 'user'\) try \{\s*const \{ FilesetResolver, FaceLandmarker \}/);
+  // (26/10) l'analyse du visage se charge en fond, pour la seule caméra avant : demarrer() rend la main dès que l'image tourne
+  assert.match(vision, /if \(face === 'user'\) \(async \(\) => \{[\s\S]{0,200}const \{ FilesetResolver, FaceLandmarker \}/);
   assert.match(src, /camera-\$\{v\.face === 'environment' \? 'arriere-' : ''\}/);
 });
 

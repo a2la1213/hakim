@@ -60,3 +60,31 @@ def test_des_mots_de_conversation_ne_suffisent_pas(tmp_path):
     m.db.commit()
     r = rappel.rappel(m, "attends t'as capté ce qui vient de changer ? je suis trop content", embed=faux_embed)
     assert not any("capté ce qui change" in l for l in r["lignes"])
+
+
+def test_le_carnet_d_erreurs_passe_au_balayage(tmp_path):
+    """(25/10, Ahmed : TOUTES les erreurs pertinentes avant chaque réponse) au-dessus de la porte, sans nombre fixe ; rien
+    pour un message banal ; jamais deux fois dans la même conversation."""
+    import json
+    import zlib
+    import rappel as R
+
+    def embed(t):                                   # un sac de mots haché : le sens vient des mots partagés
+        v = [0.0] * 64
+        for w in R.mots_cles(t, maximum=50):
+            v[zlib.crc32(R._plat(w).encode()) % 64] += 1.0
+        return v or [0.0] * 64
+
+    f = tmp_path / "erreurs.jsonl"
+    f.write_text("\n".join(json.dumps(o) for o in [
+        {"id": "a1", "ts": 1792900000, "colonne": "bonne_foi", "quoi": "La barre de progression du calcul écrivait dans un fichier à part",
+         "correction": "Écrire la ligne PROGRESSION dans le journal de la tâche"},
+        {"id": "b2", "ts": 1792900000, "colonne": "bonne_foi", "quoi": "Barre de progression du calcul absente de mon texte",
+         "correction": "Afficher la barre de progression à chaque suivi du calcul"},
+        {"id": "c3", "ts": 1792900000, "colonne": "bonne_foi", "quoi": "Atelier plein : supprimé un résultat avant de mesurer",
+         "correction": "Lister et mesurer avant tout effacement"}]) + "\n")
+    idx = R.IndexErreurs(fichier=f)
+    r = R.erreurs_pertinentes("Tu peux me faire une barre de progression pour ton calcul ?", embed=embed, index=idx)
+    assert set(r["ids"]) == {"a1", "b2"} and all("correction" in l for l in r["lignes"])
+    assert R.erreurs_pertinentes("Salam ça va ?", embed=embed, index=idx)["ids"] == []
+    assert R.erreurs_pertinentes("une barre de progression pour ton calcul", embed=embed, index=idx, exclus=["a1"])["ids"] == ["b2"]

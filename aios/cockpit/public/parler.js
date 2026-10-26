@@ -17,7 +17,7 @@ const NOMS_OUTILS = {
 /* ---------- état ---------- */
 const etat = {
   session: null, messages: [], flux: null, micro: null, transcription: null, lectureDe: null, joints: [],
-  reglages: { modele: 'opus', modeleConversation: 'sonnet', reconnaissance: 'navigateur', langue: 'auto', voix: 'neuronale', voixFr: '', voixAr: '',
+  reglages: { modele: 'opus', modeleConversation: 'auto', reconnaissance: 'navigateur', langue: 'auto', voix: 'neuronale', voixFr: '', voixAr: '',
     vitesse: 1.05, lectureAuto: false, patience: 3.5, scene: true, rapide: true, source: 'auto', volant: false, position: false, voixNeutre: false },
   sttLocal: false, ttsLocal: false,
   interieur: null, derniereActivite: Date.now(), dites: [],
@@ -47,6 +47,12 @@ function charger() {
     if (!localStorage.getItem(CLE + '.langues3')) {
       if (etat.reglages.langue === 'fr-FR') etat.reglages.langue = 'auto';
       localStorage.setItem(CLE + '.langues3', '1');
+    }
+    // (26/10, Ahmed : « Sonnet ↔ Opus selon la difficulté ») en conversation, l'automatique devient le défaut : l'ancien
+    // « Sonnet » passe une fois en automatique, son choix reste libre ensuite
+    if (!localStorage.getItem(CLE + '.modeleAuto')) {
+      if (etat.reglages.modeleConversation === 'sonnet') etat.reglages.modeleConversation = 'auto';
+      localStorage.setItem(CLE + '.modeleAuto', '1');
     }
   } catch (_) {}
 }
@@ -711,7 +717,7 @@ function htmlMessage(m) {
   if (m.texte && !m.enCours) pied.push(`<button data-copier="${esc(m.id)}" title="Copier ce message">📋 copier</button>`);
   if (m.coupe) pied.push('<span>coupé</span>');
   if (m.ms) pied.push(`<span>${(m.ms / 1000).toFixed(1).replace('.', ',')} s</span>`);
-  if (m.modele) pied.push(`<span title="Choisi par le routeur : Sonnet pour discuter, Opus pour travailler">${m.modele === 'opus' ? 'Opus' : 'Sonnet'}</span>`);
+  if (m.modele) pied.push(`<span title="Le modèle de cette réponse (en automatique : Opus dès qu'il y a un vrai travail, il reste 15 min ; « passe en Opus » le fixe pour 1 h)">${m.modele === 'opus' ? 'Opus' : 'Sonnet'}</span>`);
   if (m.jetons) {
     const J = (k) => Number(m.jetons[k]) || 0;                  // (C-M3) toujours des nombres
     const lu = J('entree') + J('cache_lu') + J('cache_ecrit');
@@ -720,7 +726,9 @@ function htmlMessage(m) {
   }
   if (m.source === 'api') pied.push('<span title="Forfait à sa limite : réponse par l\'API Claude (payée à l\'usage)">via l\'API</span>');
   if (m.source === 'local') pied.push('<span title="Forfait et API indisponibles : cerveau local, sans outils">cerveau local</span>');
-  const etiquette = m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '';
+  // (26/10, Hakim et Ahmed : une réponse du local était passée pour la sienne) le secours se voit en tête, pas en petit en bas
+  const secours = m.source === 'local' ? '<span class="etiquette secours" title="Forfait et API indisponibles à ce moment : c’est son cerveau local qui répond, sans ses outils ni sa mémoire complète">CERVEAU LOCAL · SECOURS, SANS SES OUTILS</span>' : '';
+  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
   return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
 }
 
@@ -1243,9 +1251,14 @@ async function demarrerCapteurVision(v) {
     delegue: window.HakimApp ? 'CPU' : 'GPU',                  // (24/10) sur le téléphone, le GPU de la WebView ne trouvait presque aucun visage
     surMesure: (m) => surVisage(v, m),
     surErreur: (msg) => { $('expression').textContent = 'caméra seule'; humeur(msg); },
+    // (26/10) l'analyse se charge en fond : combien de temps elle a pris (ou pourquoi elle a échoué), au diagnostic
+    surAnalyse: (r) => journalVoix('vision_analyse', { pret: r.pret, analyse: r.delegue || 'aucune', ms: r.ms, erreur: r.erreur || undefined }),
   });
   if (v.face === 'environment') $('expression').textContent = 'caméra arrière';
-  else visageNatif(v);
+  else {
+    if ($('expression').textContent === 'ouverture…') $('expression').textContent = 'caméra allumée · analyse en chargement';
+    visageNatif(v);
+  }
 }
 /* (24/10, appli 1.13 ; idée de Hakim, accord d'Ahmed) sur le Fold, l'analyse du navigateur disait « personne » alors
    qu'Ahmed était dans le cadre : l'appli cherche AUSSI le visage avec le détecteur d'Android, sur une petite image par
