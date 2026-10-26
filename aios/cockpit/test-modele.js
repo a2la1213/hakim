@@ -1,4 +1,4 @@
-/* (26/10, Ahmed : « Sonnet ↔ Opus plus cohérent et efficace ») : node --test test-modele.js */
+/* (26/10 soir, Ahmed : « un seul modèle par conversation ») : node --test test-modele.js */
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
@@ -12,26 +12,40 @@ const ligne = (debut) => { const i = src.indexOf(debut); return src.slice(i, src
 function monde() {
   const ctx = { Date, String, Map };
   vm.createContext(ctx);
-  vm.runInContext(ligne('const TRAVAIL = ') + ligne('const MODELE_COLLANT_MS') + ligne('const DEMANDE_MODELE')
-    + 'const modeleDeSession = new Map();\n' + ['modelePour', 'noterModele', 'modeleAuto'].map(prendre).join('\n')
-    + 'this.f = { modeleAuto, noterModele };', ctx);
+  vm.runInContext(ligne('const MODELE_CONVERSATION') + ligne('const DEMANDE_MODELE')
+    + 'const modeleDeSession = new Map();\n' + ['noterModele', 'modeleDeConversation', 'modeleAuto'].map(prendre).join('\n')
+    + 'this.f = { modeleAuto, noterModele, modeleDeConversation };', ctx);
   return ctx.f;
 }
 
-test('Opus pour un travail, et il reste 15 min ; puis Sonnet', () => {
-  const f = monde(), t = 1_800_000_000_000;
-  assert.equal(f.modeleAuto('s', 'salut frérot ça va', false, t), 'sonnet');
-  assert.equal(f.modeleAuto('s', 'relis mes courbes d’hormones de cette nuit', false, t), 'opus');
-  assert.equal(f.modeleAuto('s', 'ok merci', false, t + 5 * 60000), 'opus', 'collant : pas de relance pour un merci');
-  assert.equal(f.modeleAuto('s', 'ok merci', false, t + 16 * 60000), 'sonnet');
+test('une conversation garde un seul modèle, Opus : un « salut » ne fait plus basculer en Sonnet', () => {
+  const f = monde();
+  assert.equal(f.modeleAuto('s', 'salut frérot ça va', false), 'opus');
+  assert.equal(f.modeleAuto('s', 'relis mes courbes d’hormones de cette nuit', false), 'opus');
+  assert.equal(f.modeleAuto('s', 'ok merci', false), 'opus');
+  assert.equal(f.modeleAuto(null, 'coucou', false), 'opus', 'une conversation neuve aussi');
 });
 
-test('« passe en Opus » le fixe ; la balise de Hakim aussi', () => {
-  const f = monde(), t = 1_800_000_000_000;
-  assert.equal(f.modeleAuto('a', 'passe en opus stp', false, t), 'opus');
-  assert.equal(f.modeleAuto('a', 'mdr', false, t + 40 * 60000), 'opus');
-  assert.equal(f.modeleAuto('a', 'mode sonnet', false, t + 41 * 60000), 'sonnet');
-  assert.equal(f.modeleAuto('a', 'juge ce calcul', false, t + 42 * 60000), 'sonnet', 'Ahmed a fixé Sonnet');
-  f.noterModele('b', 'opus', 3600000, true, t);
-  assert.equal(f.modeleAuto('b', 'coucou', false, t + 1000), 'opus');
+test('« passe en Sonnet » change le modèle pour le reste de cette conversation seulement', () => {
+  const f = monde();
+  assert.equal(f.modeleAuto('a', 'passe en sonnet stp', false), 'sonnet');
+  assert.equal(f.modeleAuto('a', 'juge ce calcul en détail', false), 'sonnet', 'un travail ne le refait pas basculer');
+  assert.equal(f.modeleAuto('b', 'salut', false), 'opus', 'une autre conversation garde Opus');
+  assert.equal(f.modeleAuto('a', 'mode opus', false), 'opus');
+  assert.equal(f.modeleAuto('a', 'mdr', false), 'opus');
+});
+
+test('la balise de Hakim fixe le modèle de sa conversation ; le préchauffage prend ce modèle', () => {
+  const f = monde();
+  f.noterModele('c', 'sonnet');
+  assert.equal(f.modeleAuto('c', 'coucou', false), 'sonnet');
+  assert.equal(f.modeleDeConversation('c'), 'sonnet');
+  assert.equal(f.modeleDeConversation('inconnue'), 'opus');
+  assert.equal(f.modeleDeConversation(null), 'opus');
+});
+
+test('aucun préchauffage ne force Sonnet : il démarre sur le modèle de la conversation (sinon une bascule au message suivant)', () => {
+  const appels = src.match(/cerveauPrechauffer\([^;]*\);/g) || [];
+  assert.ok(appels.length >= 7, `préchauffages trouvés : ${appels.length}`);
+  for (const a of appels) assert.ok(!/cerveauPrechauffer\(\s*'sonnet'/.test(a) && !/\?\s*'sonnet'/.test(a), a);
 });

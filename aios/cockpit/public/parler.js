@@ -732,7 +732,7 @@ function htmlMessage(m) {
   if (m.texte && !m.enCours) pied.push(`<button data-copier="${esc(m.id)}" title="Copier ce message">📋 copier</button>`);
   if (m.coupe) pied.push('<span>coupé</span>');
   if (m.ms) pied.push(`<span>${(m.ms / 1000).toFixed(1).replace('.', ',')} s</span>`);
-  if (m.modele) pied.push(`<span title="Le modèle de cette réponse (en automatique : Opus dès qu'il y a un vrai travail, il reste 15 min ; « passe en Opus » le fixe pour 1 h)">${m.modele === 'opus' ? 'Opus' : 'Sonnet'}</span>`);
+  if (m.modele) pied.push(`<span title="Le modèle qui a vraiment répondu (en automatique : un seul modèle par conversation, Opus ; « passe en Sonnet » le change pour le reste de la conversation). Opus 4.8 au lieu d'Opus 5.5 : la protection d'Opus 5.5 a bloqué la conversation et claude l'a remplacé">${esc(nomModele(m))}</span>`);
   if (m.jetons) {
     const J = (k) => Number(m.jetons[k]) || 0;                  // (C-M3) toujours des nombres
     const lu = J('entree') + J('cache_lu') + J('cache_ecrit');
@@ -749,6 +749,12 @@ function htmlMessage(m) {
 
 /* Les pièces jointes de Hakim (2026-10-20) : récupérées avec le jeton, jamais ouvertes comme une page — une image
    en aperçu, le reste téléchargé (un blob « octet-stream » + download : rien ne s'exécute dans l'origine du cockpit). */
+// (26/10 soir) la version qui a répondu (« Opus 4.8 », « Opus 5.5 ») : Opus 5.5 remplacé en silence doit se voir
+function nomModele(m) {
+  const v = String(m.modeleReel || '').match(/^claude-(opus|sonnet|haiku)-(\d{1,2})-(\d{1,2})(?:-|$)/);
+  if (!v) return m.modele === 'opus' ? 'Opus' : 'Sonnet';
+  return `${v[1][0].toUpperCase()}${v[1].slice(1)} ${v[2]}.${v[3]}`;
+}
 function tailleLisible(n) { return n < 1024 ? `${n} o` : n < 1048576 ? `${Math.round(n / 1024)} Ko` : `${(n / 1048576).toFixed(1).replace('.', ',')} Mo`; }
 var apercus = new Map();
 async function blobPiece(id) {
@@ -1006,6 +1012,7 @@ async function envoyer(texte, oral, dejaRelance) {
     if (fin.source && fin.source !== 'abonnement') m.source = fin.source;
     if (fin.coupe) m.coupe = true;
     if (fin.jetons) m.jetons = fin.jetons;
+    if (fin.modele_reel) m.modeleReel = fin.modele_reel;
     if (fin.session && etat.flux === null) etat.session = fin.session;
     if (fin.erreur) {
       // conversation introuvable (session effacée) : on repart d'une nouvelle, une seule fois

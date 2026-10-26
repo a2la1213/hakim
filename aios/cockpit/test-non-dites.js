@@ -144,6 +144,7 @@ function cockpit({ vivant = true, occupe = false } = {}) {
     blocDonnees: (titre, corps, nonce) => `[${titre} — données ${nonce}]\n${corps}\n[/données ${nonce}]`,
     cerveauVivant: () => vivant, occupe: () => occupe, prechauffes: 0, setInterval: () => ({ unref() {} }) };
   ctx.cerveauPrechauffer = () => { ctx.prechauffes++; };
+  ctx.modeleDeConversation = () => 'opus';      // (26/10) un seul modèle par conversation (test-modele.js)
   vm.createContext(ctx);
   const i = srv.indexOf("const JARVIS_NON_DITES"), f = srv.indexOf("setInterval(reveillerPourNonDites, 3000)");
   vm.runInContext(srv.slice(i, f) + 'this.recevoir = recevoirNonDites; this.reveiller = reveillerPourNonDites; this.attente = () => nonDitesAttente;', ctx);

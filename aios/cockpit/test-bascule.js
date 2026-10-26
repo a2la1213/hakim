@@ -13,7 +13,7 @@ function monde(api = true) {
   const ctx = { Date, String, Math, JSON, abonnement: { limiteJusqua: 0 }, ecrits: 0, FORFAIT_REESSAI_MS: 10 * 60 * 1000,
     ABONNEMENT: '/dev/null', j: JSON.stringify };
   ctx.ecrireAtomique = () => { ctx.ecrits++; };
-  ctx.apiDisponible = () => api;
+  ctx.apiPermise = () => api;                    // (26/10) la clé ET le plafond du jour (test-api-payante.js)
   vm.createContext(ctx);
   vm.runInContext(['noterAbonnement', 'forfaitALaLimite', 'sourcePour', 'sourceSuivante'].map(prendre).join('\n')
     + 'this.f = { noterAbonnement, forfaitALaLimite, sourcePour, sourceSuivante };', ctx);

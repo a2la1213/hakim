@@ -1242,7 +1242,7 @@ function reveillerPourTaches() {
     if (session && !UUID.test(String(session))) session = null;
     // relecture Opus (C2) : sans forcer (au plus un démarrage toutes les 20 s), et trois essais au plus
     if (++reveilDemarrages > 3) { console.error('Jarvis : réveil abandonné (son cerveau ne démarre pas)'); reveilsTaches.clear(); reveilDemarrages = 0; return; }
-    cerveauPrechauffer('sonnet', session, false);
+    cerveauPrechauffer(modeleDeConversation(session), session, false);
     return;                                                    // il démarre : le réveil part au passage suivant
   }
   if (occupe(c) || c.enCours) return;
@@ -1283,7 +1283,7 @@ function reveilResumeNuit() {
     if (resumeEssais.jour !== jour) resumeEssais = { jour, n: 0 };
     if (++resumeEssais.n > 3) return;                         // son cerveau ne démarre pas : pas d'acharnement
     let session = null; try { session = JSON.parse(fs.readFileSync(path.join(JARVIS, 'conversation.json'), 'utf8')).session || null; } catch (_) {}
-    cerveauPrechauffer('sonnet', session && UUID.test(String(session)) ? session : null, false);
+    cerveauPrechauffer(modeleDeConversation(session), session && UUID.test(String(session)) ? session : null, false);
     return;
   }
   if (occupe(c) || c.enCours) return;
@@ -1334,7 +1334,7 @@ function reveillerPourPromesses() {
   if (!cerveauVivant(c)) {
     if (++promessesDemarrages > 3) { for (const x of pretes) marquerPromesse(x.id, 'manquee'); promessesDemarrages = 0; return; }
     let session = null; try { session = JSON.parse(fs.readFileSync(path.join(JARVIS, 'conversation.json'), 'utf8')).session || null; } catch (_) {}
-    cerveauPrechauffer('sonnet', session && UUID.test(String(session)) ? session : null, false);
+    cerveauPrechauffer(modeleDeConversation(session), session && UUID.test(String(session)) ? session : null, false);
     return;                                                    // il démarre : la promesse part au passage suivant
   }
   if (occupe(c) || c.enCours) return;
@@ -1390,7 +1390,7 @@ function reveillerPourNonDites() {
     if (Date.now() - nonDitesPrechauffe < 60000) return;    // il démarre : au passage suivant
     nonDitesPrechauffe = Date.now();
     let session = null; try { session = JSON.parse(fs.readFileSync(path.join(JARVIS, 'conversation.json'), 'utf8')).session || null; } catch (_) {}
-    cerveauPrechauffer('sonnet', session && UUID.test(String(session)) ? session : null, false);
+    cerveauPrechauffer(modeleDeConversation(session), session && UUID.test(String(session)) ? session : null, false);
     return;
   }
   if (occupe(c) || c.enCours) return;
@@ -1462,33 +1462,26 @@ function lireCorps(req, max) {
   });
 }
 
-// Le routeur de modèles (lot C, point 10, liste du 2026-10-19 : « rapide pour converser, fort pour
-// travailler ») : Opus quand le message demande un vrai travail (calculer, coder, analyser, chercher, lire
-// un document, un fichier joint, un long message), Sonnet pour discuter. Haiku n'est jamais choisi (Ahmed).
-const TRAVAIL = /\b(calcul\w*|code[rsz]?|programm\w*|script|analys\w*|compar\w*|d[ée]montr\w*|prouv\w*|v[ée]rifi\w*|cherch\w*|recherch\w*|lis\b|lire|relis|r[ée]sum\w*|tradui\w*|plan\b|teste[rz]?|lance[rz]?|optimis\w*|corrig\w*|d[ée]bogu\w*|fichiers?|terminal|donn[ée]es|statisti\w*|simul\w*|mesur\w*|estim\w*|[ée]cris|r[ée]dig\w*|explique[- ]moi en d[ée]tail|en d[ée]tail|t[ée]l[ée]charg\w*|entra[iî]n\w*|formule|[ée]quation|preuve|th[ée]or[èe]me|jug\w*|relire|relis\w*|interpr[ée]t\w*|[ée]valu\w*|approfondi\w*|courbes?|graphiques?|tableau int[ée]rieur|maths?|math[ée]matiques?|physique|complexe|difficile|rigoureu\w*)\b/i;          // (26/10) et les analyses difficiles (relire ses courbes, juger les maths)
-function modelePour(texte, joints) {
-  return joints || String(texte).length > 280 || TRAVAIL.test(String(texte)) ? 'opus' : 'sonnet';
-}
-/* (26/10, Ahmed : « le passage Sonnet ↔ Opus plus cohérent et efficace ») en automatique, par conversation :
-   - Opus dès qu'un message demande un travail (TRAVAIL), et il RESTE MODELE_COLLANT_MS sur la conversation : changer de
-     modèle relance son cerveau (le contexte est gardé, la conversation reprise, mais quelques secondes passent) ;
-   - « passe en Opus » / « mode Sonnet » d'Ahmed, ou la balise [[modele: opus]] de Hakim (il ne pouvait pas changer de
-     modèle lui-même), le fixent pour MODELE_VOULU_MS. */
-const MODELE_COLLANT_MS = 15 * 60 * 1000, MODELE_VOULU_MS = 3600 * 1000;
+// Le modèle de Hakim (lot C, point 10, liste du 2026-10-19 ; Haiku n'est jamais choisi, Ahmed). (26/10 soir, Ahmed :
+// « un seul modèle par conversation ») le routeur Sonnet pour discuter / Opus pour travailler faisait basculer sans
+// cesse, et chaque bascule fait tout relire au nouveau modèle (son cache est à part) : ~14 s de plus au message
+// suivant, le tiers de la facture. Une conversation garde donc UN modèle, Opus ; seuls « passe en Sonnet » / « mode
+// Opus » d'Ahmed, ou la balise [[modele: …]] de Hakim, le changent, pour le reste de cette conversation.
+const MODELE_CONVERSATION = 'opus';
 const DEMANDE_MODELE = /\b(?:passe|reste|mets?[- ]toi|bascule)\s+(?:en\s+|sur\s+)?(?:mode\s+)?(opus|sonnet)\b|\bmode\s+(opus|sonnet)\b/i;
-const modeleDeSession = new Map();                 // conversation → { modele, jusqua, voulu }
-function noterModele(session, modele, dureeMs, voulu, maintenant = Date.now()) {
+const modeleDeSession = new Map();                 // conversation → le modèle qu'Ahmed ou Hakim y a choisi
+function noterModele(session, modele) {
   if (!session) return;
-  modeleDeSession.delete(session); modeleDeSession.set(session, { modele, jusqua: maintenant + dureeMs, voulu });
+  modeleDeSession.delete(session); modeleDeSession.set(session, modele);
   while (modeleDeSession.size > 50) modeleDeSession.delete(modeleDeSession.keys().next().value);
 }
-function modeleAuto(session, texte, joints, maintenant = Date.now()) {
+function modeleDeConversation(session) {
+  return modeleDeSession.get(session || '') || MODELE_CONVERSATION;
+}
+function modeleAuto(session, texte) {
   const d = String(texte).match(DEMANDE_MODELE);
-  if (d) { const m = (d[1] || d[2]).toLowerCase(); noterModele(session, m, MODELE_VOULU_MS, true, maintenant); return m; }
-  const s = modeleDeSession.get(session || '');
-  if (s && s.voulu && s.jusqua > maintenant) return s.modele;
-  if (modelePour(texte, joints) === 'opus') { noterModele(session, 'opus', MODELE_COLLANT_MS, false, maintenant); return 'opus'; }
-  return s && s.modele === 'opus' && s.jusqua > maintenant ? 'opus' : 'sonnet';
+  if (d) { const m = (d[1] || d[2]).toLowerCase(); noterModele(session, m); return m; }
+  return modeleDeConversation(session);
 }
 
 /* ---- Lot B (liste du 2026-10-19) : ce que Hakim sait de sa situation, sans le répéter ----
@@ -1751,7 +1744,7 @@ function reveillerPourCourrier() {
   if (!cerveauVivant(c)) {
     let session = null; try { session = JSON.parse(fs.readFileSync(path.join(JARVIS, 'conversation.json'), 'utf8')).session || null; } catch (_) {}
     if (++reveilCourrierDemarrages > 3) { courrierArrive = 0; reveilCourrierDemarrages = 0; return; }
-    cerveauPrechauffer('sonnet', session && UUID.test(String(session)) ? session : null, false);
+    cerveauPrechauffer(modeleDeConversation(session), session && UUID.test(String(session)) ? session : null, false);
     return;                                                                   // il démarre : au passage suivant
   }
   if (occupe(c) || c.enCours) return;
@@ -1874,6 +1867,7 @@ function jetonsDe(c, o) {
 }
 function noterJetons(x) {
   try { fs.appendFileSync(JARVIS_JETONS, j({ ts: Date.now(), jour: jourLocal(), ...x }) + '\n'); } catch (_) {}
+  if (x.source === 'api') prevenirPlafond();
 }
 function bilanJetons(jour = jourLocal()) {
   const b = { jour, tours: 0, entree: 0, cache_lu: 0, cache_ecrit: 0, sortie: 0, cout_api_usd: 0, cout_forfait_equiv_usd: 0,
@@ -1936,7 +1930,8 @@ async function routeJarvis(req, res, distantReq = false) {
     session = null;
   }
   // le routeur (lot C, point 10) : « auto » = Sonnet pour discuter, Opus dès que c'est du travail
-  const modele = modeleDemande === 'auto' ? modeleAuto(session, texte, Array.isArray(q.fichiers) && q.fichiers.length > 0) : modeleDemande;
+  // (26/10) une conversation allégée (rotation) garde le modèle qu'Ahmed ou Hakim y avait choisi
+  const modele = modeleDemande === 'auto' ? modeleAuto(session || (rotation && rotation.ancienne), texte) : modeleDemande;
   couperJarvis();
   let persona = ''; try { persona = fs.readFileSync(PERSONA, 'utf8'); } catch (_) {}
   let dernierAvant = null; try { dernierAvant = JSON.parse(fs.readFileSync(JARVIS_HORLOGE, 'utf8')).dernier_ms; } catch (_) {}
@@ -2066,13 +2061,15 @@ async function routeJarvis(req, res, distantReq = false) {
     if (!o.coupe && !o.erreur && source !== 'local')         // la boucle de retour : ce qui lui a vraiment servi
       noterSouvenirsServis(reponse, new Set([...(rappelBloc.ids || []), ...(rappelDejaDits.get(session || '') || [])].map(Number)));
     const voulu = reponse.match(/\[\[\s*modele\s*:\s*(opus|sonnet)\s*\]\]/i);     // (26/10) Hakim demande son modèle
-    if (voulu && !o.coupe && source !== 'local') noterModele(sid, voulu[1].toLowerCase(), MODELE_VOULU_MS, true);
+    if (voulu && !o.coupe && source !== 'local') noterModele(sid, voulu[1].toLowerCase());
+    else if (!session && sid && modeleDemande === 'auto' && modele !== MODELE_CONVERSATION) noterModele(sid, modele);   // sa conversation neuve le garde
     reponse = sansBaliseAffect(reponse);
     const resteFlux = fluxAffect.finir();
     if (resteFlux) envoyer({ t: 'texte', x: resteFlux });
     if (enfant && !(enfant.cerveau && occupe(enfant.cerveau))) jarvisVivants.delete(enfant);   // un autre tour attend : il reste vivant
     journaliser('jarvis', reponse.trim() + (o.coupe ? ' [coupé]' : '') + (source === 'api' ? ' [API]' : source === 'local' ? ' [local]' : ''));
-    if (o.jetons) noterJetons({ session: sid, modele, source, ms: Date.now() - t0, tours: o.tours, ...o.jetons, categories });
+    const modeleReel = (source !== 'local' && c && c.modeleReel) || undefined;
+    if (o.jetons) noterJetons({ session: sid, modele, modele_reel: modeleReel, source, ms: Date.now() - t0, tours: o.tours, ...o.jetons, categories });
     // chaque échange devient un souvenir, sans que personne ait à le demander (le démon l'encre selon l'attention)
     if (!o.coupe && !o.erreur) verifierRessenti(sid, reponse);
     const externe = retirerExterne();
@@ -2086,7 +2083,7 @@ async function routeJarvis(req, res, distantReq = false) {
     }
     if (!o.coupe && !o.erreur && source !== 'local' && nonVusDits.length) { for (const id of nonVusDits) delete nonVus[id]; sauverNonVus(); }
     if (!o.coupe && !o.erreur && source !== 'local' && courrierRecu.ids.length) marquerCourrierLu(courrierRecu.ids);
-    envoyer({ t: 'fin', session: sid, ms: Date.now() - t0, source, ...o });
+    envoyer({ t: 'fin', session: sid, ms: Date.now() - t0, source, modele_reel: modeleReel, ...o });
     try { res.end(); } catch (_) {}
     if (tourId) toursActifs.delete(tourId);
     // la page est partie : la réponse finie va dans la conversation partagée (elle s'y affichera au retour), et une
@@ -2094,6 +2091,7 @@ async function routeJarvis(req, res, distantReq = false) {
     if (parti && tourId && !arretDemande && !o.coupe) {
       completerReponse(tourId, { qui: 'j', texte: reponse.trim(), ms: Date.now() - t0, enCours: false, complet: true,
         erreur: o.erreur || null, jetons: o.jetons || undefined, source: source !== 'abonnement' ? source : undefined,
+        modele: source !== 'local' ? modele : undefined, modeleReel,
         attenteServeur: undefined, coupe: undefined, ts: Date.now() });
       if (reponse.trim()) notifier(reponse.trim(), 'reponse');
     }
@@ -2137,8 +2135,9 @@ async function routeJarvis(req, res, distantReq = false) {
     return true;
   };
   const lancerTour = () => {
-  if (!c) return repondreLocal('forfait à sa limite, pas de clé API');
+  if (!c) return repondreLocal(plafondApiAtteint() ? `plafond de l'API atteint (${PLAFOND_API_JOUR_USD} $ aujourd'hui)` : 'forfait à sa limite, pas de clé API');
   clearTimeout(c.repos);
+  c.modeleReel = null;                            // le modèle de CE tour (noterModeleReel)
   enfant = c.enfant;
   jarvisVivants.add(enfant);                      // un tour en cours (pas un cerveau au repos)
   consciencePulse();                              // la conscience travaille : le subconscient se tait
@@ -2481,7 +2480,7 @@ function messageSain(m) {
   if (m.texte != null && typeof m.texte !== 'string') return false;
   if (m.jetons != null && (typeof m.jetons !== 'object' || Object.values(m.jetons).some(v => v != null && !Number.isFinite(Number(v))))) return false;
   for (const k of ['ms', 'ts']) if (m[k] != null && !Number.isFinite(Number(m[k]))) return false;
-  for (const k of ['modele', 'source', 'spontane']) if (m[k] != null && !/^[\w -]{0,30}$/.test(String(m[k]))) return false;
+  for (const k of ['modele', 'modeleReel', 'source', 'spontane']) if (m[k] != null && !/^[\w -]{0,30}$/.test(String(m[k]))) return false;
   return true;
 }
 function ajouterAConversation(m) {
@@ -2546,6 +2545,23 @@ function cleDansTrousseau() {                                   // présence seu
 // essayée pendant 30 min : sinon chaque tour perdrait 2 s à échouer avant le cerveau local
 let apiEnPanneJusqua = 0;
 function apiDisponible() { return Date.now() > apiEnPanneJusqua && (!!lireCleApi() || cleDansTrousseau()); }
+// (26/10 soir, Ahmed : « plafond à 50 ») l'API payante n'avait aucune limite. Au plus
+// PLAFOND_API_JOUR_USD par jour ; au-delà, en automatique, elle n'est plus un relais (forfait → local, l'ordre d'Ahmed du
+// 18/10). L'API imposée dans les réglages reste permise : c'est son geste.
+const PLAFOND_API_JOUR_USD = 50;
+function plafondApiAtteint(jour = jourLocal()) {
+  return bilanJetons(jour).cout_api_usd >= PLAFOND_API_JOUR_USD;
+}
+function apiPermise() {
+  return apiDisponible() && !plafondApiAtteint();
+}
+let plafondPrevenu = '';                               // le jour où Ahmed a été prévenu
+function prevenirPlafond(jour = jourLocal()) {
+  if (plafondPrevenu === jour || !plafondApiAtteint(jour)) return;
+  plafondPrevenu = jour;
+  notifier(`Plafond de l'API atteint : ${PLAFOND_API_JOUR_USD} $ aujourd'hui. Hakim passe sur son cerveau local (sans ses outils) `
+    + `jusqu'au retour du forfait ou jusqu'à minuit. Pour continuer quand même sur l'API, choisis « API » dans les réglages de Parler.`, 'plafond');
+}
 // la commande que claude exécute pour lire la clé : celle de la page si Ahmed en a collé une, sinon le trousseau
 function aideCle() {
   return lireCleApi() ? `/bin/cat '${CLE_API.replace(/'/g, "'\\''")}'` : `/usr/bin/security find-generic-password -s ${SERVICE_TROUSSEAU} -w`;
@@ -2583,13 +2599,13 @@ function sourcePour(choix) {
   if (choix === 'local' || choix === 'gemma') return 'local';
   if (choix === 'api') return 'api';
   if (choix === 'abonnement') return 'abonnement';
-  if (forfaitALaLimite()) return apiDisponible() ? 'api' : 'local';
+  if (forfaitALaLimite()) return apiPermise() ? 'api' : 'local';
   return 'abonnement';
 }
 // la source suivante quand celle-ci échoue avant d'avoir répondu
 function sourceSuivante(source, choix) {
   if (choix !== 'auto') return null;                            // source imposée par Ahmed : pas de bascule
-  if (source === 'abonnement') return apiDisponible() ? 'api' : 'local';
+  if (source === 'abonnement') return apiPermise() ? 'api' : 'local';
   if (source === 'api') return 'local';
   return null;
 }
@@ -3016,8 +3032,7 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
   if (persona) args.push('--append-system-prompt', persona);
   if (agents) args.push('--agents', j(agentsPourCerveau()));
   if (session) args.push('--resume', session);
-  const env = { ...process.env };
-  delete env.ANTHROPIC_API_KEY;                                   // l'abonnement : jamais une clé par mégarde
+  const env = envDuCerveau(source);
   if (source === 'api') {
     if (!lireCleApi() && !cleDansTrousseau()) throw new Error('aucune clé API (réglages › clé API Claude)');
     args.push('--settings', j({ apiKeyHelper: aideCle() }));
@@ -3043,6 +3058,7 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
       if (o.type === 'assistant' && o.message && Array.isArray(o.message.content) && !o.parent_tool_use_id)
         for (const b of o.message.content) suivreJuge(c, b);
       if (o.type === 'result' && !o.parent_tool_use_id) finDeTourJuge(c);
+      noterModeleReel(c, o);
       // provenance : un outil qui fait entrer un contenu de tiers (le sien ou celui d'un de ses agents) marque le tour
       if (o.type === 'assistant' && o.message && Array.isArray(o.message.content))
         for (const b of o.message.content) surOutil(b);
@@ -3083,6 +3099,23 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
   });
   cerveau = c;
   return c;
+}
+
+// (26/10 soir) le modèle qui a VRAIMENT répondu : quand la protection d'Opus 5.5 bloque une conversation, claude fait
+// répondre Opus 4.8 à sa place sans rien dire (vu de 18:51 à 21:06 le 26/10). Ni un agent, ni un message synthétique.
+function noterModeleReel(c, o) {
+  if (o.type !== 'assistant' || o.parent_tool_use_id || !o.message) return;
+  const m = String(o.message.model || '');
+  if (/^claude-[a-z0-9-]{1,40}$/.test(m)) c.modeleReel = m;
+}
+
+function envDuCerveau(source) {
+  const env = { ...process.env };
+  delete env.ANTHROPIC_API_KEY;                                   // l'abonnement : jamais une clé par mégarde
+  // (26/10, levier accepté par Ahmed) sur une clé API, claude ne garde son cache que 5 min (1 h sur le forfait) : une
+  // pause de plus de 5 min faisait tout réécrire, au prix fort. 1 h : l'écriture coûte un peu plus, mais une seule fois.
+  if (source === 'api') env.CLAUDE_CODE_PROMPT_CACHE_TTL = '1h';
+  return env;
 }
 
 function cerveauVivant(c) {
@@ -4356,7 +4389,7 @@ async function traiter(req, res) {
       conversationPage = Date.now(); consciencePulse();
       // en Conversation, le cerveau attend déjà la prochaine phrase d'Ahmed
       if ((MODELES_JARVIS.has(q.modele) || q.modele === 'auto') && (q.session == null || UUID.test(String(q.session))))
-        cerveauPrechauffer(q.modele === 'auto' ? 'sonnet' : q.modele, q.session || null, false, SOURCES.has(q.source) ? q.source : 'auto');
+        cerveauPrechauffer(q.modele === 'auto' ? modeleDeConversation(q.session) : q.modele, q.session || null, false, SOURCES.has(q.source) ? q.source : 'auto');
     }
     if (Date.now() - briefingCache.ts > 8 * 60 * 1000) briefingFrais(0).catch(() => {});   // toujours prêt
     res.writeHead(204); return res.end();
