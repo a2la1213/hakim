@@ -611,6 +611,8 @@ function humeur(texte) {
   const coupe = !!(etat.conversation && etat.conversation.capteur && etat.conversation.capteur.estMuet);
   const mode = ecoute && !coupe ? 'ecoute' : (parle ? 'parle' : (pense ? 'pense' : 'repos'));
   for (const o of [orbeTete, orbeScene]) { o.humeur(code); o.mode(mode); }
+  const mot = (etat.interieur && etat.interieur.humeur) || '';          // (26/10, Ahmed) son émotion, en un mot
+  if ($('emotionMot').textContent !== mot) { $('emotionMot').textContent = mot; $('emotionScene').textContent = mot; }
   // la scène : pendant qu'il parle, qu'il t'écoute, ou qu'il réfléchit à une question dite à l'oral
   const voixEnJeu = ecoute || parle || (pense && etat.dernierOral) || !!etat.conversation;
   $('muet').hidden = $('muetScene').hidden = !(etat.conversation && etat.conversation.capteur);
@@ -3182,12 +3184,15 @@ function dureeCourte(ms) {
 function htmlCalcul(x) {
   const connu = typeof x.fraction === 'number', pc = connu ? Math.round(x.fraction * 100) : null;
   const quoi = (x.libelle ? `${x.libelle} · ` : '') + String(x.commande || '').replace(/^cd \S+ && /, '');
-  const fait = connu ? `${x.etape ? `${x.etape} · ` : ''}${pc} %` : 'en cours';
+  const fait = connu ? `${x.etape ? `${x.etape} · ` : ''}${x.devinee ? '≈ ' : ''}${pc} %` : 'en cours';
   const details = [`depuis ${dureeCourte(x.ecoule_ms)}`];
   if (typeof x.reste_ms === 'number') {
     details.push(`reste ≈ ${dureeCourte(x.reste_ms)}`, `total ≈ ${dureeCourte(x.total_ms)}`,
       `fin vers ${new Date(Date.now() + x.reste_ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`);
-  } else if (!connu) details.push('pas de jauge (le script n’écrit pas de ligne PROGRESSION)');
+  }
+  // (25/10, Ahmed) sans jauge lisible : la dernière ligne de son journal, telle quelle
+  if (!connu && x.derniere) details.push(`dernière ligne : « ${x.derniere} »`);
+  else if (!connu) details.push('pas encore de sortie');
   return `<div class="calcul"><div class="ligne"><span class="quoi" title="${esc(x.commande)}">${esc(quoi)}</span>`
     + `<span class="chiffres">${esc(fait)}</span></div>`
     + `<div class="barre${connu ? '' : ' inconnue'}" role="progressbar" aria-label="${esc(quoi)}" aria-valuemin="0" aria-valuemax="100"${connu ? ` aria-valuenow="${pc}"` : ''}>`

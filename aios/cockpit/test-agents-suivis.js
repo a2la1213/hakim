@@ -13,7 +13,7 @@ function cockpit() {
   const ctx = { Map, String, JSON, Date, Array, tues, ecrits, j: JSON.stringify,
     process: { kill: (pid, sig) => tues.push([pid, sig]) }, setTimeout: () => ({ unref() {} }), console: { error() {} } };
   vm.createContext(ctx);
-  vm.runInContext(`const AGENT_OUBLI_MS = 3 * 3600 * 1000; const hmsCerveau = () => '00:00:00';`
+  vm.runInContext(`const AGENT_OUBLI_MS = 3 * 3600 * 1000; const AGENTS_PARALLELE_MAX = 10; const hmsCerveau = () => '00:00:00';`
     + prendre('tachesDe') + prendre('suivreAgents') + prendre('tuer') + prendre('cerveauVivant') + prendre('interrompre') + prendre('lacher')
     + 'this.tachesDe = tachesDe; this.suivre = suivreAgents; this.lacher = lacher;', ctx);
   const enfant = { pid: 42, exitCode: null, signalCode: null, stdin: { write: (l) => ecrits.push(JSON.parse(l)) } };
@@ -60,4 +60,15 @@ test('Ahmed coupe la parole pendant qu’un agent tourne : interruption douce, l
   d.ctx.lacher(d.enfant, null);
   assert.deepEqual(d.tues[0], [-42, 'SIGTERM']);
   assert.match(d.enfant.raisonArret, /a lâché le tour/);
+});
+
+test('(25/10) au-delà de 10 agents en parallèle, le dernier lancé est arrêté aussitôt', () => {
+  const { ctx, c, ecrits } = cockpit();
+  ctx.fs = { appendFileSync() {} }; ctx.JARVIS_AGENTS_ARRETS = '/dev/null';
+  for (let i = 0; i < 11; i++) {
+    ctx.suivre(c, { type: 'assistant', message: { content: [{ type: 'tool_use', id: `t${i}`, name: 'Agent', input: { description: `agent ${i}` } }] } });
+    ctx.suivre(c, { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: `t${i}`, content: `lancé. agentId: a${i}` }] } });
+  }
+  assert.equal(c.agentsLances.size, 10);
+  assert.deepEqual(ecrits.filter(e => e.request && e.request.subtype === 'stop_task').map(e => e.request.task_id), ['a10']);
 });

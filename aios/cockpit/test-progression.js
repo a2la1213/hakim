@@ -72,5 +72,19 @@ test('la page : une barre par calcul, le texte du journal échappé', () => {
   assert.match(h, /depuis 12 min · reste ≈ 20 min · total ≈ 32 min · fin vers \d\d:\d\d/);
   assert.ok(!h.includes('<b>'), 'le texte de la commande est échappé');
   const sans = ctx.html({ commande: 'sleep 99', fraction: null, ecoule_ms: 60000 });
-  assert.match(sans, /barre inconnue/); assert.match(sans, /pas de jauge/);
+  assert.match(sans, /barre inconnue/); assert.match(sans, /pas encore de sortie/);
+  const ligne = ctx.html({ commande: 'python x.py', fraction: null, ecoule_ms: 60000, derniere: 'énergie <1.2>' });
+  assert.match(ligne, /dernière ligne : « énergie &#60;1.2&#62; »/);
+});
+
+test('(25/10, Ahmed) sans ligne PROGRESSION : tqdm, « pas N/M », pourcentage ; jamais une date ; sinon la dernière ligne', () => {
+  const { ctx, dir } = cockpit();
+  const g = (t) => ctx.progressionDe(t);
+  assert.equal(g('chargement\n 42%|████▏     | 420/1000 [00:10<00:14]').etape, '420/1000');
+  assert.equal(g('torsion : pas 3000/6000 énergie 1.2').f, 0.5);
+  assert.equal(g('étape 3 / 8').etape, '3/8');
+  assert.equal(g('avancement 37,5 %').f, 0.375);
+  assert.ok(g('pas 3000/6000').devinee, 'une jauge devinée est marquée');
+  assert.equal(g('lancé le 25/10 à 09:57'), null, 'une date n’est pas une jauge');
+  assert.equal(g('résultat : rayon 7,75'), null);
 });

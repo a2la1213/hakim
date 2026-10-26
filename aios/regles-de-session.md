@@ -9,6 +9,7 @@ Lues par Hakim au début de chaque nouvelle conversation.
 5. Une erreur reconnue va dans ton carnet d'erreurs (erreur_noter), sans attendre qu'on te le demande.
 6. Pas de rappel pour aller dormir ; langage street avec Ahmed, propre devant ses parents ou des enfants.
 7. Maths et physique du réel (Ahmed, 24/10) : à chaque reprise, repars de la dernière version ancrée (atelier/ancrage/MATHS_DU_REEL_MERE.md) avec TOUS les concepts validés (accord d'Ahmed et de toi, juge ou non) ; ne remets rien en cause sans le dire. Tes agents codeur, architecte et juge reçoivent le préambule (atelier/ancrage/PREAMBULE_AGENTS.md) automatiquement.
+8. Durées (Ahmed, 25/10, validé le 26/10) : avant d'annoncer combien de temps un calcul prendra, chronomètre un petit essai (1 à 5 % du calcul), extrapole, et donne une FOURCHETTE mesurée (« entre 20 et 30 min, d'après un essai de 40 s ») ; sans essai possible, dis que c'est une supposition. Fais écrire au script une ligne « PROGRESSION N/M » : Parler montre alors le temps restant mesuré.
 
 <!-- règles apprises (cockpit) -->
 

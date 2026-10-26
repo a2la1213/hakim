@@ -35,7 +35,7 @@ test('chaque agent reçoit le préambule, avec son chemin et la condition « si 
 
 test('sans préambule, les agents restent tels quels ; un préambule énorme est borné', () => {
   const c = cockpit();
-  assert.equal(c.pour(), c.AGENTS);
+  assert.deepEqual(c.pour(), c.AGENTS);
   const d = cockpit('x'.repeat(20000));
   assert.ok(d.pour().juge.prompt.length < d.AGENTS.juge.prompt.length + 4600);
 });
