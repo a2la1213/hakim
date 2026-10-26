@@ -11,6 +11,7 @@ balayée — sans rien lire en entier — pour retrouver ce qui peut s'y rapport
 
 Lecture seule ; rien n'est renforcé par ce balayage (reconsolidate=False).
 """
+import json
 import math
 import re
 import time
@@ -190,7 +191,12 @@ def _par_mots(index, mots, exclus, avant_ts, limite=40):
     return garde
 
 
-def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=30, index=None):
+# (26/10, Ahmed : « balayer large, puis choisir ») 150 candidats par le sens et 100 par les mots au lieu de 30 et 40 :
+# gratuit (eval/rappel_large.py : même bruit, +0,7 point de rappel, le temps ne bouge pas) ; la porte reste celle réglée
+LIMITE_SENS, LIMITE_MOTS = 150, 100
+
+
+def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=LIMITE_SENS, index=None, limite_mots=None):
     """[(id, score_fusion, sem, mots)] : le balayage large, fusionné par rang. Rien de plus récent que recent_h heures
     (c'est déjà dans la conversation), rien de ce qui a déjà été proposé (exclus)."""
     now = time.time() if now is None else now
@@ -204,7 +210,7 @@ def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=
         sem = {eid: (rang, cos) for rang, (eid, cos) in enumerate(index.sens(embed(texte), exclus, avant_ts, limite))}
     except Exception:
         sem = {}
-    mots = _par_mots(index, mots_cles(texte), exclus, avant_ts)
+    mots = _par_mots(index, mots_cles(texte), exclus, avant_ts, limite=limite_mots or LIMITE_MOTS)
     rangs_mots = {eid: i for i, eid in enumerate(mots)}
     fusion = {}
     for eid in set(sem) | set(mots):
@@ -251,15 +257,115 @@ def passe(x, porte_mots=None, porte_sens=None):
             or sem >= (PORTE_SENS if porte_sens is None else porte_sens))
 
 
-def rappel(mem, texte, now=None, exclus=(), seuil=SEUIL, lignes_max=LIGNES_MAX, embed=None, index=None):
-    """{"lignes": [...], "ids": [...], "scores": [...]} : la liste courte pour sa conscience, ou rien."""
+# (26/10, Ahmed : « montre-lui 200 souvenirs détaillés minimum ; c'est à lui de trier le hors-sujet ») en plus de la liste
+# courte (8, au-dessus de la porte), LE DOSSIER DU THÈME : les 200 souvenirs suivants dans l'ordre du balayage (sens + mots),
+# SANS porte, quel que soit leur âge, détaillés comme la liste courte ; Hakim trie. Seulement pour un message qui porte
+# quelque chose (la liste courte a trouvé, ou au moins 3 mots porteurs) : un « ok » n'ouvre pas de dossier. Mesuré à la
+# porte (26/10) : 0,72 → 0,87 de rappel avec ~75 lignes ; sans porte, tout ce que le balayage trouve est là.
+# (26/10, 14:21, Ahmed : « 100 souvenirs, pour protéger mon budget de jetons ; on ajuste à l'usage ») et LE TRI À PART :
+# le dossier ne va plus dans sa conversation, un Sonnet à part le trie (cockpit, trierSouvenirs) et Hakim ne reçoit que
+# les souvenirs gardés, en DÉTAIL (DETAIL caractères). Les mots balaient aussi large que le dossier : mesuré le 26/10
+# (eval/rappel_taille.py), le plafond de 100 candidats par les mots coûtait 5 points de rappel à 500 souvenirs.
+THEME_CANDIDATS, THEME_MAX = 600, 100
+DETAIL = 450
+
+# (26/10, Ahmed : « modulaire et intelligent selon le besoin : pas de temps perdu sur les petits trucs ; s'il s'agit
+# d'interactions avec des gens, il doit vraiment réfléchir ; sur des maths en cours, il a déjà dans sa conversation ce qu'il
+# faut, sauf demande explicite de chercher profondément ; et il considère d'abord ce qui est déjà dans son espace »)
+# LA PROFONDEUR, décidée SANS appel de modèle (quelques millisecondes : le balayage lui-même prend ~60 ms, c'est le tri
+# par Sonnet qui coûte ~4 s, et un Sonnet de plus pour décider coûterait autant que le tri) :
+#   leger   — la liste courte seule (au-dessus de la porte), aucun tri, aucune attente ;
+#   normal  — la liste courte + THEME_MAX souvenirs, triés à part (~4 s) ;
+#   profond — la liste courte + THEME_PROFOND souvenirs (mesuré le 26/10 : 96 % des bons gardés à 500), triés à part (~5 s).
+THEME_PROFOND = 500
+_B = r"(?<![a-z0-9])"
+DEMANDE_PROFONDE = re.compile(_B + r"(rappelle[- ]?toi|tu te (rappelles|souviens)|souviens[- ]?toi|cherche (bien|profond|partout|"
+                              r"dans ta memoire)|fouille|en profondeur|profondement|la derniere fois|tu m.avais (dit|parle)|"
+                              r"on (avait|s.etait) dit|on en avait parle|ta memoire|tes souvenirs|qu.est.ce que tu sais)")
+# (vu sur ses 300 derniers messages : « frère / frérot » est sa façon de parler à Hakim, « ta mère / ta maman » c'est
+# Claude Code, « j'aimerais » une envie : aucun ne parle de gens)
+GENS = re.compile(_B + r"(famille|femme|mari|epou|fille|fils|enfant|bebe|(?<!ta )(?<!ta )(mere|maman)|pere|papa|soeur|cousin|"
+                  r"oncle|tante|neveu|niece|ami|amie|pote|copain|copine|collegue|voisin|client|patron|relation|dispute|"
+                  r"conflit|fache|amour|triste|tristesse|peur|colere|jalou|blesse|ressen|sentiment|emotion|pardon|confiance|mariage|"
+                  r"rencontr|invite|les gens|quelqu.un|rancune|decu|souffr|pleur|heureu|anniversaire|naissance|deces|enterrement)")
+TECHNIQUE = re.compile(_B + r"(calcul|equation|formule|derive|integrale|matrice|vecteur|theoreme|demonstr|maths?|mathematique|"
+                       r"fonction|variable|code|script|python|javascript|bug|serveur|api|requete|compil|courbe|algorithme|"
+                       r"simulation|parametre|commit|github|fichier|terminal|commande|graphe?)")
+NOUVEAUTE_MIN, HAUT = 0.3, 30
+
+
+def profondeur(texte, suite=False, haut=(), espace=()):
+    """(niveau, raison) : « profond » sur demande explicite ou quand il s'agit de gens (une personne connue nommée, la
+    famille, les émotions, une relation) ; « leger » pour un message court (« ok merci frero »), un sujet technique dans
+    une conversation en cours (c'est déjà dans son contexte), ou quand presque tout le haut du balayage est déjà dans son
+    espace ; « normal » sinon."""
+    t = _plat(texte)
+    if DEMANDE_PROFONDE.search(t):
+        return "profond", "demande explicite de chercher dans sa mémoire"
+    if GENS.search(t) or personnes_nommees(re.sub(r"(?i)\bta (m[eè]re|maman)\b", "", texte or "")):
+        return "profond", "il s'agit de gens (personnes, relations, émotions)"
+    if len(mots_cles(texte)) < 3:
+        return "leger", "message court : la liste courte suffit"
+    if suite and TECHNIQUE.search(t):
+        return "leger", "sujet technique dans une conversation en cours : c'est déjà dans son contexte"
+    haut = list(haut)[:HAUT]
+    espace = set(espace or ())
+    if suite and haut and espace and sum(1 for i in haut if i not in espace) / len(haut) < NOUVEAUTE_MIN:
+        return "leger", "presque tout le haut du balayage est déjà dans son espace de conversation"
+    return "normal", "sujet ordinaire"
+
+
+def _lignes(mem, ids, n, marquer=False):
+    """{id: « #id · date · rubrique · extrait »}, l'extrait coupé à n caractères ; marquer : la marque EXTERNE (un
+    contenu de tiers, une citation) pour le détail que Hakim reçoit."""
+    if not ids:
+        return {}
+    marques = ",".join("?" * len(ids))
+    rows = {r[0]: r for r in mem.db.execute(
+        f"SELECT e.id, e.ts, e.content, r.path FROM episodes e LEFT JOIN rubrics r ON r.id = e.rubric_id WHERE e.id IN ({marques})", ids)}
+    ext = set()
+    if marquer:
+        import provenance
+        ext = provenance.externes(mem.db, list(rows))
+    return {i: f"#{i} · {time.strftime('%d/%m/%y', time.localtime(rows[i][1]))}{' · ' + rows[i][3] if rows[i][3] else ''}"
+               f"{' · EXTERNE (une citation, pas un fait)' if i in ext else ''} · "
+               f"{' '.join(str(rows[i][2] or '').split())[:n]}" for i in ids if i in rows}
+
+
+def lignes_courtes(mem, ids, n=90):
+    d = _lignes(mem, ids, n)
+    return [d[i] for i in ids if i in d]
+
+
+def rappel(mem, texte, now=None, exclus=(), seuil=SEUIL, lignes_max=LIGNES_MAX, embed=None, index=None, recent_h=3.0,
+           suite=False, espace=()):
+    """{"lignes": [...], "ids": [...], "scores": [...], "theme": [...], "theme_ids": [...], "details": {id: ligne},
+    "profondeur": {niveau, raison}} : la liste courte pour sa conscience et le dossier du thème (à la taille du niveau),
+    ou rien. suite : la conversation est en cours ; espace : les souvenirs déjà dans son espace de conversation."""
     t0 = time.time()
-    tous = [x for x in candidats(mem, texte, now=now, exclus=exclus, embed=embed, index=index) if x[1] >= seuil and passe(x)]
+    niveau, raison = profondeur(texte, suite=suite)
+    taille = THEME_PROFOND if niveau == "profond" else THEME_MAX
+
+    def balayer(n):
+        return candidats(mem, texte, now=now, exclus=exclus, embed=embed, index=index, recent_h=recent_h,
+                         limite=max(THEME_CANDIDATS, n + LIGNES_MAX), limite_mots=max(LIMITE_MOTS, n))
+    larges = balayer(taille)
+    if niveau == "normal":
+        niveau, raison = profondeur(texte, suite=suite, haut=[x[0] for x in larges][:taille], espace=espace)
+    if niveau == "leger":
+        taille = 0
+    prof = {"niveau": niveau, "raison": raison}
+    tous = [x for x in larges if x[1] >= seuil and passe(x)]
     # ce qui porte la date du jour : 3 au plus (une fois par conversation), le reste de la place au message
     jour = [x for x in tous if len(x) > 4 and x[4] == "jour"][:JOUR_MAX]
     c = (jour + [x for x in tous if not (len(x) > 4 and x[4] == "jour")])[:lignes_max]
     if not c:
-        return {"lignes": [], "ids": [], "scores": [], "ms": round(1000 * (time.time() - t0))}
+        if len(mots_cles(texte)) >= 3 and taille:            # rien au-dessus de la porte, mais un vrai message : le dossier
+            theme = [x[0] for x in larges][:taille]
+            return {"lignes": [], "ids": [], "scores": [], "theme": lignes_courtes(mem, theme, 160), "theme_ids": theme,
+                    "details": _lignes(mem, theme, DETAIL, marquer=True), "profondeur": prof,
+                    "ms": round(1000 * (time.time() - t0))}
+        return {"lignes": [], "ids": [], "scores": [], "profondeur": prof, "ms": round(1000 * (time.time() - t0))}
     import provenance
     ids = [x[0] for x in c]
     jour = {x[0] for x in c if len(x) > 4 and x[4] == "jour"}
@@ -276,7 +382,11 @@ def rappel(mem, texte, now=None, exclus=(), seuil=SEUIL, lignes_max=LIGNES_MAX, 
         lignes.append(f"#{eid} · {time.strftime('%d/%m/%Y', time.localtime(ts))}{' · ' + path if path else ''}"
                       f"{' · porte la date du jour' if eid in jour else ''}"
                       f"{' · EXTERNE (une citation, pas un fait)' if eid in externes else ''} · {extrait}")
-    return {"lignes": lignes, "ids": ids, "scores": [round(x[1], 4) for x in c], "ms": round(1000 * (time.time() - t0))}
+    pris = set(ids)
+    theme = [x[0] for x in larges if x[0] not in pris][:taille]
+    return {"lignes": lignes, "ids": ids, "scores": [round(x[1], 4) for x in c], "theme": lignes_courtes(mem, theme, 160),
+            "theme_ids": theme, "details": _lignes(mem, ids + theme, DETAIL, marquer=True), "profondeur": prof,
+            "ms": round(1000 * (time.time() - t0))}
 
 
 # (25/10, Ahmed : « balayer aussi le carnet d'erreurs avant chaque réponse, TOUTES les erreurs pertinentes, pas 2-3 ») le
@@ -354,6 +464,63 @@ def erreurs_pertinentes(texte, embed=None, index=None, exclus=()):
     return {"lignes": lignes, "ids": ids, "scores": gardes}
 
 
+# (26/10, Ahmed : « le balayage est trop étroit » ; à 13:17 Hakim a nié devant Nora ce qu'il avait dit d'elle à 08:37) quand
+# un message NOMME une personne connue (une voix enregistrée, ou une voix nommée dans la transcription), une section « ce que
+# tu sais d'elle » : ses souvenirs les plus récents (même du jour) et les passages du journal brut du jour qui la nomment.
+VOIX_CONNUES = Path.home() / "AIOS" / "jarvis" / "voix-connues.json"
+JOURNAL_DU_JOUR = Path.home() / "AIOS" / "jarvis" / "journal.jsonl"
+PERSONNE_SOUVENIRS, PERSONNE_JOURNAL = 4, 3
+
+
+def personnes_nommees(texte, voix=None):
+    """Les personnes connues nommées dans le message (leur nom, ou une voix nommée « [Nora] ») ; jamais Ahmed."""
+    noms = []
+    try:
+        noms = [str(v.get("nom") or "") for v in json.loads(Path(voix or VOIX_CONNUES).read_text())]
+    except (OSError, ValueError, AttributeError):
+        pass
+    plat_t = " " + _plat(texte) + " "
+    out, vus = [], set()
+    for n in noms:                                           # leur nom tel qu'enregistré (« Nora », « Légendaire »)
+        pn = _plat(n).strip()
+        if pn and pn != "ahmed" and pn not in vus and re.search(r"(?<![a-z0-9])" + re.escape(pn) + r"(?![a-z0-9])", plat_t):
+            out.append(n.strip()); vus.add(pn)
+    for n in noms_entendus(texte):                           # une voix nommée dans la transcription, hors de la liste
+        if _plat(n) not in vus:
+            out.append(n); vus.add(_plat(n))
+    return out[:3]
+
+
+def ce_que_je_sais(mem, nom, now=None, journal=None):
+    """[lignes] : souvenirs (les plus récents d'abord) et passages du journal du jour qui nomment cette personne."""
+    now = time.time() if now is None else now
+    lignes = []
+    try:
+        rows = mem.db.execute("SELECT id, ts, content FROM episodes WHERE content LIKE ? ORDER BY ts DESC LIMIT ?",
+                              (f"%{nom}%", PERSONNE_SOUVENIRS)).fetchall()
+    except Exception:
+        rows = []
+    for eid, ts, c in rows:
+        lignes.append(f"souvenir #{eid} · {time.strftime('%d/%m %H:%M', time.localtime(ts))} · {' '.join(str(c).split())[:180]}")
+    debut_jour = time.mktime(time.localtime(now)[:3] + (0, 0, 0, 0, 0, -1))
+    trouves = []
+    try:
+        with open(journal or JOURNAL_DU_JOUR, encoding="utf-8") as f:
+            for l in f:
+                try:
+                    o = json.loads(l)
+                except ValueError:
+                    continue
+                t = (o.get("ts") or 0) / 1000
+                if debut_jour <= t <= now - 60 and _plat(nom) in _plat(o.get("texte", "")):
+                    trouves.append((t, o.get("qui"), " ".join(str(o.get("texte", "")).split())))
+    except OSError:
+        pass
+    for t, qui, x in trouves[-PERSONNE_JOURNAL:][::-1]:
+        lignes.append(f"journal · {time.strftime('%H:%M', time.localtime(t))} · {'Ahmed' if qui == 'ahmed' else 'toi'} : « {x[:220]} »")
+    return lignes
+
+
 def serveur(entree=None, sortie=None):
     """Le processus que le cockpit garde ouvert : une requête JSON par ligne {texte, exclus, now}, une réponse par
     ligne. Le modèle d'embeddings et la base restent chargés : quelques dizaines de millisecondes par message."""
@@ -367,7 +534,16 @@ def serveur(entree=None, sortie=None):
         try:
             q = json.loads(ligne)
             texte = str(q.get("texte") or "")[:4000]
-            r = rappel(mem, texte, now=q.get("now"), exclus=[int(x) for x in (q.get("exclus") or [])][:500], index=index)
+            # (26/10) au 1er message d'une conversation, rien n'est encore dans son contexte : les souvenirs récents comptent aussi
+            r = rappel(mem, texte, now=q.get("now"), exclus=[int(x) for x in (q.get("exclus") or [])][-3000:], index=index,
+                       recent_h=0.0 if q.get("demarrage") else 3.0, suite=not q.get("demarrage"),
+                       espace={int(x) for x in (q.get("espace") or [])[-5000:]})
+            try:
+                personnes = {n: ce_que_je_sais(mem, n) for n in personnes_nommees(texte)
+                             if n not in set(q.get("exclus_personnes") or [])}
+                r["personnes"] = {n: l for n, l in personnes.items() if l}
+            except Exception as ex:
+                r["erreur_personnes"] = f"{type(ex).__name__}: {ex}"[:200]
             try:
                 e = erreurs_pertinentes(texte, index=index_erreurs, exclus=[str(x) for x in (q.get("exclus_erreurs") or [])][:500])
                 r.update(erreurs=e["lignes"], erreurs_ids=e["ids"], erreurs_scores=e["scores"])

@@ -94,7 +94,7 @@ def traiter(req):
         if voix is None:
             return {"erreur": "synthèse neuronale indisponible"}
         t0 = time.time()
-        duree = voix.dire(str(req["texte"]), req.get("langue") or "fr", req["fichier"], req.get("exaggeration"))
+        duree = voix.dire(str(req["texte"]), req.get("langue") or "fr", req["fichier"], req.get("exaggeration"), req.get("tempo"))
         return {"fichier": req["fichier"], "ms": int((time.time() - t0) * 1000), "duree_s": duree}
     return {"erreur": f"opération inconnue : {op}"}
 

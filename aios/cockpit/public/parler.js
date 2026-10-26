@@ -146,7 +146,10 @@ function expressivitePhrase(base, texte) {
   const t = String(texte || '');
   return base + (PHRASE_VIVE.test(t) ? 0.08 : 0) - (PHRASE_DOUCE.test(t) ? 0.06 : 0) + (/\?\s*$/.test(t) ? 0.03 : 0);
 }
-const vitesseVoix = () => (etat.reglages.vitesse || 1) * (etat.reglages.voixNeutre ? 1 : Math.max(0.86, Math.min(1.12, Number(etat.interieur && etat.interieur.voix_vitesse) || 1)));
+// (26/10, 13:30, Ahmed : « fatigué, il sonne comme un ogre ») le rythme de son état ne passe plus par la vitesse de lecture
+// (elle changeait aussi la hauteur, comme une bande) : la voix l'applique elle-même, à hauteur constante (tempo, ci-dessous)
+const vitesseVoix = () => (etat.reglages.vitesse || 1);
+const tempoVoix = () => etat.reglages.voixNeutre ? 1 : Math.max(0.86, Math.min(1.12, Number(etat.interieur && etat.interieur.voix_vitesse) || 1));
 const lecteurSysteme = synth ? Voix.creerLecteur(synth, window.SpeechSynthesisUtterance, voixPour, vitesseVoix) : null;
 
 // Voix neuronale (Chatterbox, sur le Mac, étape 5 bis) : chaque morceau d'une seule langue est
@@ -297,7 +300,7 @@ function creerLecteurNeuronal() {
     const g = generation;
     fetch('/api/voix/dire', { method: 'POST', signal: x.ctl.signal,
       headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
-      body: JSON.stringify({ texte: x.texte, langue: x.langue, emotion: etat.interieur && !etat.reglages.voixNeutre ? expressivitePhrase(etat.interieur.expressivite, x.texte) : null }) })
+      body: JSON.stringify({ texte: x.texte, langue: x.langue, emotion: etat.interieur && !etat.reglages.voixNeutre ? expressivitePhrase(etat.interieur.expressivite, x.texte) : null, tempo: tempoVoix() }) })
       .then(r => r.ok ? r.arrayBuffer() : r.json().catch(() => ({})).then(o => Promise.reject(new Error(o.erreur || `voix ${r.status}`))))
       .then(ab => (fluide() ? actx.decodeAudioData(ab) : new Blob([ab], { type: 'audio/wav' })))
       .then(res => {

@@ -568,6 +568,44 @@ def memory_lire(ids: str) -> str:
     return "\n\n".join(out)
 
 
+# (26/10, Ahmed : « un espace de stockage temporaire : il reprend ce dont il a besoin, et chaque balayage n'ajoute que le
+# neuf ») l'espace de conversation, écrit par le cockpit à chaque message (tri à part : seuls les souvenirs gardés entrent
+# dans la conversation, les autres attendent ici). Jamais le jardin secret : seuls les souvenirs du balayage y sont.
+ESPACE = Path(os.environ.get("ANAMNESE_ESPACE") or Path.home() / "AIOS" / "jarvis" / "espace-conversation.json")
+
+
+def _sans_accents(t):
+    import unicodedata
+    return unicodedata.normalize("NFKD", str(t).lower()).encode("ascii", "ignore").decode()
+
+
+@mcp.tool()
+def espace_conversation(chercher: str = "") -> str:
+    """Ton espace de conversation : TOUS les souvenirs balayés depuis le début de cette conversation. Avant chaque message
+    d'Ahmed, toute ta mémoire est balayée ; un tri à part t'en donne les plus utiles (« déjà reçu »), les autres attendent
+    ici. chercher : des mots (accents et majuscules sans importance) — les lignes qui en portent le plus d'abord ; vide =
+    les plus récentes. 60 lignes au plus ; relis le détail avec memory_lire."""
+    try:
+        e = json.loads(ESPACE.read_text(encoding="utf-8"))
+        lignes = [x for x in e.get("lignes") or [] if isinstance(x, dict) and x.get("l")]
+    except (OSError, ValueError):
+        lignes, e = [], {}
+    if not lignes:
+        return "Ton espace de conversation est vide pour l'instant (rien n'a encore été balayé)."
+    age = max(0, time.time() - float(e.get("maj") or 0) / 1000)
+    tete = (f"Espace de conversation : {len(lignes)} souvenirs balayés, {sum(1 for x in lignes if x.get('choisi'))} déjà reçu(s) ; "
+            f"mis à jour il y a {round(age / 60)} min.")
+    mots = {m for m in re.findall(r"[a-z0-9]{3,}", _sans_accents(chercher))}
+    if mots:
+        notes = [(sum(1 for m in mots if m in _sans_accents(x["l"])), k, x) for k, x in enumerate(lignes)]
+        choix = [x for n, _k, x in sorted((t for t in notes if t[0]), key=lambda t: (-t[0], -t[1]))]
+        if not choix:
+            return f"{tete}\nAucune ligne ne porte « {chercher} » : essaie d'autres mots, ou memory_recall pour toute ta mémoire."
+    else:
+        choix = list(reversed(lignes))
+    return tete + "\n" + "\n".join(f"- {x['l']}{' · déjà reçu' if x.get('choisi') else ''}" for x in choix[:60])
+
+
 @mcp.tool()
 def memory_detail(ref: str) -> str:
     """Le texte ENTIER d'un souvenir raccourci (ses dernières lignes disent « suite : memory_detail('D-…') »)."""
@@ -1433,7 +1471,7 @@ def reasoning_recall(query: str, top_k: int = 6) -> str:
 # ---- Lecture seule (audit JARVIS 2, H5, 2026-10-20) : une mission « lecture seule » recevait aussi memory_store,
 # self_update, skill_save, rubric_*, courrier_envoyer… Avec ANAMNESE_LECTURE_SEULE=1, seuls les outils qui LISENT
 # existent : les autres sont retirés du serveur (ni listés, ni appelables).
-OUTILS_LECTURE = {"memory_recall", "reasoning_recall", "memory_recent", "memory_detail", "memory_lire", "facet_search", "self_get",
+OUTILS_LECTURE = {"memory_recall", "reasoning_recall", "memory_recent", "memory_detail", "memory_lire", "espace_conversation", "facet_search", "self_get",
                   "mood_get", "rubric_tree", "skill_list", "skill_get", "fichiers_par_sens", "introspection", "interoception", "promesses_liste", "ecouter_ma_voix", "ecritures_etat", "erreurs_lister",
                   "mission_etat", "voix_etat", "carnets", "bilan_semaine", "orphans_report", "carnets_types", "carnet_lire"}
 

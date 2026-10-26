@@ -91,7 +91,7 @@ class Voix:
                                         max_new_tokens=tts_garde.jetons_max(texte, langue), **reglages))
         return np.array(res.audio, dtype=np.float32).reshape(-1)
 
-    def dire(self, texte, langue, fichier, exaggeration=None):
+    def dire(self, texte, langue, fichier, exaggeration=None, tempo=None):
         """Écrit un WAV 24 kHz mono 16 bits ; rend sa durée en secondes."""
         self._suivre_reference()
         texte = tts_garde.phrase_finie(texte)
@@ -100,6 +100,9 @@ class Voix:
         else:
             audio = self._generer(texte, langue if langue in LANGUES else "fr", exaggeration)
         audio = _rogner(audio)
+        if isinstance(tempo, (int, float)) and abs(float(tempo) - 1.0) >= 0.01:   # (26/10) le rythme de l'état, sa voix intacte
+            import etirement
+            audio = etirement.etirer(audio, max(0.85, min(1.15, float(tempo))), SR)
         pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype("<i2")
         with wave.open(str(fichier), "wb") as w:
             w.setnchannels(1)

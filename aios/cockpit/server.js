@@ -341,7 +341,7 @@ const MODELES_JARVIS = new Set(['sonnet', 'opus']);          // Haiku écarté p
 // Ni identité (le cœur est validé par Ahmed ; elle grandit par la consolidation de nuit), ni
 // taxonomie (une phrase mal entendue ne doit pas fusionner des rubriques), ni wm_boot (le briefing
 // l'a fait). Liste blanche ET liste noire : les outils interdits disparaissent du contexte.
-const OUTILS_JARVIS = ['memory_recall', 'memory_lire', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
+const OUTILS_JARVIS = ['memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
   'prediction_figer', 'prediction_trancher', 'erreur_noter', 'carnets', 'carnet_type_proposer', 'carnets_types', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_connues', 'voix_oublier', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
@@ -551,6 +551,7 @@ let rappelProc = null, rappelTampon = '';
 const rappelFile = [];
 const rappelDejaDits = new Map();                  // session → Set des souvenirs déjà proposés
 const erreursDejaDites = new Map();                // (26/10) session → Set des erreurs du carnet déjà proposées
+const personnesDejaDites = new Map();              // (26/10) session → Set des personnes déjà présentées
 function rappelServeur() {
   if (rappelProc && rappelProc.exitCode === null && !rappelProc.killed) return rappelProc;
   rappelTampon = '';
@@ -576,28 +577,106 @@ function rappelServeur() {
   p.stdin.on('error', () => {});
   return p;
 }
-function rappeler(texte, exclus, delaiMs = 900, exclusErreurs = [], demarrage = false) {
+function rappeler(texte, exclus, delaiMs = 900, exclusErreurs = [], demarrage = false, exclusPersonnes = [], espace = []) {
   return new Promise((resolve) => {
     if (!RAPPEL_ACTIF) return resolve(null);
     let fini = false;
     const cb = (r) => { if (!fini) { fini = true; resolve(r); } };
-    try { const p = rappelServeur(); rappelFile.push(cb); p.stdin.write(j({ texte, exclus: [...exclus].slice(-500), exclus_erreurs: [...exclusErreurs].slice(-500), demarrage }) + '\n'); }
+    try { const p = rappelServeur(); rappelFile.push(cb); p.stdin.write(j({ texte, exclus: [...exclus].slice(-3000), exclus_erreurs: [...exclusErreurs].slice(-500), demarrage, exclus_personnes: [...exclusPersonnes], espace: [...espace].slice(-5000) }) + '\n'); }
     catch (_) { return resolve(null); }
     setTimeout(() => cb(null), delaiMs);           // trop lent : rien ce tour-ci (la réponse tardive est jetée, dans l'ordre)
   });
 }
 if (RAPPEL_ACTIF) setTimeout(() => rappeler('préchauffe', [], 30000).catch?.(() => {}), 3000).unref();
+/* ---- Le tri à part (26/10, Ahmed : « Claude cherche, l'algo balaie, Claude élague » ; validé à 14:21 avec 100 souvenirs
+   pour protéger son budget de jetons, puis « modulaire et intelligent selon le besoin ») : le dossier balayé n'entre plus
+   dans sa conversation (collé tel quel, 200 souvenirs pesaient ~25 k jetons par message : elle repartait à neuf tous les
+   ~10 messages). Le niveau (léger / normal / profond) est décidé par anamnese/rappel.py sans appel de modèle ; aux niveaux
+   normal et profond, un Sonnet à part (aucun outil, aucune mémoire, aucun réglage) lit son message, le dernier échange et
+   les lignes, et rend les numéros utiles : Hakim ne reçoit que ceux-là, EN DÉTAIL. Tout le balayage reste dans son espace
+   de conversation (outil espace_conversation). Mesuré le 26/10 (anamnese/eval/rappel_taille.py) : le tri garde 100 % des
+   bons souvenirs montrés à 50 et 200 lignes, 98,9 % à 500 ; ~4 à 5 s. Trop lent ou en panne : la liste courte, comme
+   avant. JARVIS_TRI=0 l'éteint. ---- */
+const TRI_ACTIF = process.env.JARVIS_TRI !== '0';
+const TRI_DELAI_MS = 12000, TRI_MAX = 25;
+const JARVIS_ESPACE = path.join(JARVIS, 'espace-conversation.json');
+const espaces = new Map();                         // session ('' : la conversation qui commence) → { lignes: Map(id → {l, choisi}) }
+function espaceDe(session) {
+  return espaces.get(session || '') || { lignes: new Map() };
+}
+function espaceAjouter(session, lignesParId, choisis) {
+  const cle = session || '';
+  const e = espaces.get(cle) || { lignes: new Map() };
+  for (const [id, l] of lignesParId) if (!e.lignes.has(id)) e.lignes.set(id, { l, choisi: false });
+  for (const id of choisis || []) { const x = e.lignes.get(id); if (x) x.choisi = true; }
+  while (e.lignes.size > 5000) e.lignes.delete(e.lignes.keys().next().value);
+  espaces.delete(cle); espaces.set(cle, e);
+  while (espaces.size > 20) espaces.delete(espaces.keys().next().value);
+  // pour son outil espace_conversation (anamnese/mcp_server.py) : la conversation en cours, lisible par Ahmed seul
+  try { ecrireAtomique(JARVIS_ESPACE, j({ session: session || null, maj: Date.now(), lignes: [...e.lignes].map(([id, x]) => ({ id, l: x.l, choisi: x.choisi })) })); } catch (_) {}
+}
+function promptTri(texte, contexte, courte, theme) {
+  return (contexte ? `[Le dernier échange, pour le contexte]\n${contexte}\n\n` : '')
+    + `[Message d'Ahmed] « ${texte} »\n\n`
+    + (courte.length ? `[Souvenirs qui pourraient s'y rapporter — un balayage de toute ta mémoire (mots et sens) avant ta réponse ; garde ce qui `
+      + `compte vraiment pour son message, ignore le reste sans le citer]\n${courte.map(l => '- ' + l).join('\n')}\n\n` : '')
+    + `[Le dossier du thème — les ${theme.length} souvenirs suivants du balayage, du plus proche au plus lointain, quel que soit leur âge, `
+    + `SANS tri : à toi de trier, garde ce qui sert à son message, ignore le hors-sujet sans le citer]\n${theme.map(l => '- ' + l).join('\n')}\n\n`
+    + `Tu es Hakim. Avant de répondre à Ahmed, fais le tri : écris UNIQUEMENT les numéros (#…) des souvenirs qui servent à lui `
+    + `répondre, séparés par des virgules, du plus utile au moins utile (${TRI_MAX} au plus ; « aucun » si aucun ne sert). Rien d'autre.`;
+}
+function lireTri(sortie, permis) {
+  const out = [];
+  for (const m of String(sortie || '').matchAll(/#?(\d{1,9})/g)) {
+    const id = Number(m[1]);
+    if (permis.has(id) && !out.includes(id)) out.push(id);
+    if (out.length >= TRI_MAX) break;
+  }
+  return out;
+}
+function trierSouvenirs(prompt, permis) {
+  return new Promise((resolve) => {
+    const t0 = Date.now();
+    const env = { ...process.env }; delete env.ANTHROPIC_API_KEY;
+    try {
+      const enfant = execFile(CLAUDE_BIN, ['-p', '--model', 'sonnet', '--max-turns', '2', '--tools', '', '--restricted',
+        '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence'],
+      { timeout: TRI_DELAI_MS, maxBuffer: 1 << 20, env },
+      (e, so) => resolve(e ? { ids: null, ms: Date.now() - t0, erreur: e.killed ? 'délai dépassé' : String(e.message || e).slice(0, 200) }
+        : { ids: lireTri(so, permis), ms: Date.now() - t0 }));
+      enfant.stdin.on('error', () => {});
+      enfant.stdin.end(prompt);
+    } catch (e) { resolve({ ids: null, ms: Date.now() - t0, erreur: String(e.message || e).slice(0, 200) }); }
+  });
+}
 async function blocRappel(session, texte, nonce) {
   const deja = rappelDejaDits.get(session || '') || new Set();
   const dejaErreurs = erreursDejaDites.get(session || '') || new Set();
   const t0 = Date.now();
-  const r = await rappeler(texte, deja, 900, dejaErreurs, !session);
+  const dejaPersonnes = personnesDejaDites.get(session || '') || new Set();
+  if (!session) espaces.delete('');                 // une conversation qui commence : un espace neuf
+  const r = await rappeler(texte, deja, 900, dejaErreurs, !session, dejaPersonnes, [...espaceDe(session).lignes.keys()]);
   const lignes = [], ids = [];
   for (const [k, l] of ((r && r.lignes) || []).entries()) {
     const id = (r.ids || [])[k];
     if (id == null || deja.has(id)) continue;
     lignes.push(l); ids.push(id);
   }
+  // (26/10, Ahmed : « 200 souvenirs, voire plus : le maximum de sujets dans le thème ») le dossier du thème, en lignes courtes
+  const theme = [], themeIds = [];
+  for (const [k, l] of ((r && r.theme) || []).entries()) {
+    const id = (r.theme_ids || [])[k];
+    if (id == null || deja.has(id)) continue;
+    theme.push(l); themeIds.push(id);
+  }
+  // le tri à part (niveaux normal et profond : le dossier existe) ; tout le balayage va dans l'espace de conversation
+  const details = (r && r.details) || {};
+  const prof = (r && r.profondeur) || null;
+  let tri = null;
+  if (theme.length && TRI_ACTIF) tri = await trierSouvenirs(promptTri(texte, session ? filRecent(1, texte) : '', lignes, theme), new Set([...ids, ...themeIds]));
+  const choisis = tri && Array.isArray(tri.ids) ? tri.ids : null;
+  if (lignes.length || theme.length)
+    espaceAjouter(session, [...ids.map((id, k) => [id, lignes[k]]), ...themeIds.map((id, k) => [id, theme[k]])], choisis || ids);
   // (25/10, Ahmed : « TOUTES les erreurs pertinentes ») son carnet d'erreurs passe au même balayage (anamnese/rappel.py)
   const erreurs = [], erreursIds = [];
   for (const [k, l] of ((r && r.erreurs) || []).entries()) {
@@ -606,24 +685,45 @@ async function blocRappel(session, texte, nonce) {
     erreurs.push(l); erreursIds.push(id);
   }
   try { fs.appendFileSync(JARVIS_RAPPEL_JOURNAL, j({ ts: Date.now(), session: session || null, n: ids.length, ids,
-    scores: (r && r.scores) || [], erreurs: erreursIds, scores_erreurs: (r && r.erreurs_scores) || [], ms: Date.now() - t0, delai: !r }) + '\n'); } catch (_) {}
+    scores: (r && r.scores) || [], erreurs: erreursIds, scores_erreurs: (r && r.erreurs_scores) || [], ms: Date.now() - t0, delai: !r,
+    profondeur: prof, tri: tri ? { montres: ids.length + themeIds.length, gardes: choisis ? choisis : null, ms: tri.ms, erreur: tri.erreur } : null }) + '\n'); } catch (_) {}
   const blocs = [];
-  if (lignes.length) blocs.push(blocDonnees('Souvenirs qui pourraient s\'y rapporter — un balayage de toute ta mémoire (mots et sens) avant ta réponse ; '
+  const balayes = ids.length + themeIds.length;
+  if (choisis && choisis.length) {
+    const parId = new Map([...ids.map((id, k) => [id, lignes[k]]), ...themeIds.map((id, k) => [id, theme[k]])]);
+    blocs.push(blocDonnees(`Souvenirs choisis pour son message — un balayage ${prof && prof.niveau === 'profond' ? 'PROFOND' : 'normal'} de toute ta mémoire `
+      + `(${balayes} souvenirs, mots et sens, quel que soit leur âge), trié à part ; les ${balayes - choisis.length} autres attendent dans ton espace `
+      + `de conversation (espace_conversation). Garde ce qui compte vraiment pour son message (la date d'aujourd'hui est dans l'horloge), `
+      + `ignore le reste sans le citer, relis le détail avec memory_lire`, choisis.map(id => '- ' + (details[id] || parId.get(id))).join('\n'), nonce));
+  } else if (!choisis && lignes.length) blocs.push(blocDonnees('Souvenirs qui pourraient s\'y rapporter — un balayage de toute ta mémoire (mots et sens) avant ta réponse ; '
     + 'garde ce qui compte vraiment pour son message (la date d\'aujourd\'hui est dans l\'horloge), ignore le reste sans le citer, '
-    + 'et relis le détail d\'un souvenir avec memory_lire si tu en as besoin', lignes.map(l => '- ' + l).join('\n'), nonce));
+    + `et relis le détail d'un souvenir avec memory_lire si tu en as besoin${theme.length ? ` (le reste du balayage, ${theme.length} souvenirs, est dans ton espace de conversation : espace_conversation)` : ''}`,
+    lignes.map(l => '- ' + l).join('\n'), nonce));
   if (erreurs.length) blocs.push(blocDonnees('Erreurs à ne pas refaire — ton carnet d\'erreurs, balayé avant ta réponse : celles qui touchent '
     + 'son message, avec leur correction ; applique la correction si la situation est la même, ignore-les sinon', erreurs.map(l => '- ' + l).join('\n'), nonce));
+  // (26/10, Ahmed : « le balayage est trop étroit ») une personne connue nommée : ce qu'il sait d'elle, une fois par conversation
+  const personnes = Object.entries((r && r.personnes) || {}).filter(([n, l]) => !dejaPersonnes.has(n) && Array.isArray(l) && l.length);
+  for (const [n, l] of personnes)
+    blocs.push(blocDonnees(`Ce que tu sais de ${n} — ses souvenirs les plus récents et le journal du jour qui la nomment ; relis-les avant de dire ce que tu as dit ou pas`,
+      l.map(x => '- ' + x).join('\n'), nonce));
   // (26/10) ses mémoires à règles « relues au démarrage » et leurs échéances passées : au 1er message d'une conversation
   if (r && r.carnets) blocs.push(blocDonnees('Tes carnets à règles — relus au début de la conversation (dernières entrées, échéances passées)', String(r.carnets), nonce));
-  return { ids, erreurs: erreursIds, texte: blocs.join('\n') };
+  return { ids: choisis || ids, theme: themeIds, erreurs: erreursIds, personnes: personnes.map(([n]) => n), texte: blocs.join('\n') };
 }
-function retenirRappel(session, ids, erreurs = []) {
+function retenirRappel(session, ids, erreurs = [], personnes = []) {
+  if (session && personnes.length) {
+    const e = personnesDejaDites.get(session) || new Set();
+    for (const n of personnes) e.add(n);
+    personnesDejaDites.delete(session); personnesDejaDites.set(session, e);
+    while (personnesDejaDites.size > 20) personnesDejaDites.delete(personnesDejaDites.keys().next().value);
+  }
   if (session && erreurs.length) {
     const e = erreursDejaDites.get(session) || new Set();
     for (const id of erreurs) e.add(id);
     erreursDejaDites.delete(session); erreursDejaDites.set(session, e);
     while (erreursDejaDites.size > 20) erreursDejaDites.delete(erreursDejaDites.keys().next().value);
   }
+  if (session && espaces.has('') && !espaces.has(session)) { espaces.set(session, espaces.get('')); espaces.delete(''); }
   if (!session || !ids.length) return;
   const s = rappelDejaDits.get(session) || new Set();
   for (const id of ids) s.add(id);
@@ -1980,7 +2080,7 @@ async function routeJarvis(req, res, distantReq = false) {
     // ce que ce tour lui a dit (situation, présent) : retenu pour ne pas le redire — seulement s'il l'a bien reçu
     if (!o.coupe && !o.erreur && sid && source !== 'local') {
       retenir(sid, { ...situation.dit, presentMs: Number.isFinite(presentMs) ? presentMs : deja.presentMs });
-      retenirRappel(sid, rappelBloc.ids, rappelBloc.erreurs || []);
+      retenirRappel(sid, rappelBloc.ids || [], rappelBloc.erreurs || [], rappelBloc.personnes || []);   // (26/10) le reste est dans son espace
     }
     if (!o.coupe && !o.erreur && source !== 'local' && nonVusDits.length) { for (const id of nonVusDits) delete nonVus[id]; sauverNonVus(); }
     if (!o.coupe && !o.erreur && source !== 'local' && courrierRecu.ids.length) marquerCourrierLu(courrierRecu.ids);
@@ -3108,7 +3208,7 @@ async function pomperVoix() {
   voixOccupee = true;
   // L'humeur s'entend : son expressivité (interieur.py, 0,38 morosité … 0,72 joie) règle Chatterbox.
   const r = await voixDemander({ op: 'dire', texte: tache.texte, langue: tache.langue, fichier: tache.fichier,
-    exaggeration: tache.emotion == null ? null : Math.max(0.3, Math.min(1.0, tache.emotion)) }, 180000);   // (26/10) jusqu’à 1,0 : eval/voix_plage.py
+    exaggeration: tache.emotion == null ? null : Math.max(0.3, Math.min(1.0, tache.emotion)), tempo: tache.tempo }, 180000);   // (26/10) jusqu’à 1,0 : eval/voix_plage.py
   voixOccupee = false;
   tache.fin(r);
   pomperVoix();
@@ -3194,7 +3294,9 @@ async function routeDire(req, res) {
   const texte = q && typeof q.texte === 'string' ? prononcer(q.texte.trim()) : '';     // (2026-10-23) aussi pour la montre
   if (!texte || texte.length > 1500 || texte.includes('\0')) return repondre(400, { erreur: 'texte invalide (≤ 1 500 caractères)' });
   const emotion = q && Number.isFinite(Number(q.emotion)) ? Math.max(0, Math.min(1, Number(q.emotion))) : null;
-  const tache = { texte, langue: /^[a-z]{2}$/.test((q && q.langue) || '') ? q.langue : 'fr', annulee: false, emotion,
+  // (26/10, Ahmed : « garde SA voix ») le rythme de son état, appliqué par la voix elle-même, à hauteur constante
+  const tempo = q && Number.isFinite(Number(q.tempo)) ? Math.max(0.85, Math.min(1.15, Number(q.tempo))) : null;
+  const tache = { texte, langue: /^[a-z]{2}$/.test((q && q.langue) || '') ? q.langue : 'fr', annulee: false, emotion, tempo,
     fichier: path.join(os.tmpdir(), `jarvis-voix-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.wav`) };
   res.on('close', () => { if (!res.writableFinished) tache.annulee = true; });
   const r = await new Promise((resolve) => { tache.fin = resolve; fileVoix.push(tache); pomperVoix(); });

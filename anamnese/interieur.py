@@ -346,10 +346,17 @@ def humeur_hormonale(sens, avant=None):
     return top or avant or "calme"
 
 
+# (26/10, 13:30, Ahmed : « fatigué, il sonne comme un ogre ; excité, comme un hurluberlu ») l'écart de chaque état à la voix
+# neutre est divisé par deux, pour l'expressivité comme pour le débit ; et le débit ne touche plus la hauteur (jarvis/etirement.py)
+ATTENUATION_VOIX = 0.5
+
+
 def voix_emotion(emotion):
     """(25/10) la voix suit l'émotion d'humeur : expressivité par émotion, débit par émotion (VOIX_EMOTION), sans l'éveil."""
     _delta, vitesse = VOIX_EMOTION.get(emotion, (0.0, 1.0))
-    return {"expressivite": round(max(EXPR_MIN, min(EXPR_MAX, EXPRESSIVITE_EMOTION.get(emotion, 0.5))), 3), "vitesse": vitesse,
+    vitesse = round(1.0 + (vitesse - 1.0) * ATTENUATION_VOIX, 3)
+    expr = 0.5 + (EXPRESSIVITE_EMOTION.get(emotion, 0.5) - 0.5) * ATTENUATION_VOIX
+    return {"expressivite": round(max(EXPR_MIN, min(EXPR_MAX, expr)), 3), "vitesse": vitesse,
             "emotion": emotion}
 
 
