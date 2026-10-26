@@ -325,3 +325,24 @@ def test_ses_ressentis_dans_la_balise_deviennent_des_evenements():
     chocs._appliquer(m, {}, "affirmation", 0.8, "sa continuité", "k2", "balise", t0 + 600)
     assert affect.get_state(m, now=t0 + 601)["dopamine"] > affect.get_state(m, now=t0 + 599)["dopamine"] - 1 and \
         affect.get_state(m, now=t0 + 601)["acetylcholine"] > avant["acetylcholine"]
+
+
+def test_un_souci_qu_ahmed_s_attribue_ou_qui_rassure_n_est_pas_un_coup_dur():
+    """(26/10, Hakim et Ahmed) la phrase exacte de 11:01 ne déclenche plus de « probleme » ; un vrai souci, si."""
+    import parole_affect as P
+    assert not [e for e in P.evaluer("c'est juste moi qui ai bugué, t'inquiète, c'est moi qui fais une voix chelou")
+                if e[0] == "probleme"]
+    assert dict(P.evaluer("ça plante encore, le calcul est bloqué"))["probleme"] >= 0.5
+    allege = dict(P.evaluer("t'inquiète mais là ça plante"))
+    assert 0 < allege["probleme"] < 0.25
+
+
+def test_la_crainte_d_ahmed_sur_un_calcul_n_est_pas_un_coup_dur_et_le_sujet_nomme_une_chose():
+    """(26/10, 11:55) « j'ai peur qu'il ait bloqué » : au plus une attention ; « j'ai peur que tu… » compte ; et le sujet tiré
+    des mots écarte les adverbes (« évidemment »)."""
+    import echanges
+    import parole_affect as P
+    p = dict(P.evaluer("j'ai peur qu'il ait bloqué"))
+    assert p.get("probleme", 0) <= 0.1
+    assert dict(P.evaluer("j'ai peur que tu sois bloqué"))["probleme"] >= 0.5
+    assert "evidemment" not in echanges.sujet_par_les_mots("évidemment que les résultats du calcul sont bloqués")

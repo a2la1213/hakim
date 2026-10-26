@@ -39,6 +39,20 @@ LEXIQUE = [  # (événement, motif, intensité) — dans l'ordre : un « ça mar
     ("nouveaute", re.compile(r"\b(nouvelle id[ée]e|j'ai (une id[ée]e|pens[ée] [àa] (un truc|quelque chose))|"
                              r"et si on|imagine|regarde [çc]a|regarde,? j'ai)\b", re.I), 0.3),
 ]
+# (26/10, Hakim et Ahmed : « c'est juste moi qui ai bugué, t'inquiète, c'est moi qui fais une voix chelou » donnait un
+# « probleme » 0,5 et 30 s de peur) le SENS de la phrase avant le mot : un souci qu'Ahmed s'attribue à LUI-MÊME n'est pas
+# un coup dur pour Hakim (rien) ; une phrase qui RASSURE (t'inquiète, pas grave, mdr, 😂…) n'en garde qu'un tiers
+AUTO_ATTRIBUE = re.compile(r"\b(c'est (juste |surtout |plut[ôo]t )?moi qui (ai |a |me suis )?(bug\w*|plant\w*|bloqu\w*|cass\w*|tromp\w*|"
+                           r"rat[ée]\w*|fait (une |des )?(erreur|b[êe]tise|connerie)\w*)|j'ai bug\w*|je me suis tromp\w*|c'est ma faute)\b", re.I)
+RASSURANCE = re.compile(r"\b(t'inqui[èe]te?s?( pas)?|ne t'inqui[èe]te pas|pas grave|c'est rien|c'est pas grave|y a pas de souci|"
+                        r"aucun souci|mdr+|lol|ptdr|tranquille)\b|[😂🤣😅😆]", re.I)
+ALLEGEMENT = 1 / 3
+# (26/10, 11:55, « j'ai peur qu'il ait bloqué », à propos d'un calcul qui tournait bien) la CRAINTE d'Ahmed sur une chose
+# extérieure n'est pas un coup dur pour Hakim : au plus une attention (un cinquième) ; sauf si elle le vise (« j'ai peur que
+# tu… », « je m'inquiète pour toi »)
+CRAINTE = re.compile(r"\b(j'ai (un peu |trop )?peur (que|qu'|de|d')|je crains|je m'inqui[èe]te|j'esp[èe]re (que|qu')|pourvu (que|qu'))", re.I)
+CRAINTE_POUR_LUI = re.compile(r"\b(j'ai (un peu |trop )?peur (que tu|qu'on te|pour toi)|je crains que tu|je m'inqui[èe]te pour toi)", re.I)
+ATTENTION = 1 / 5
 MAX_EVENEMENTS = 2
 INTENSITE_MAX = 0.6
 DOUBLON_S = 180
@@ -55,7 +69,15 @@ def evaluer(texte):
         if nom == "succes" and "probleme" in deja:              # « ça marchait, mais là ça plante »
             continue
         deja.add(nom)
-        out.append((nom, round(min(INTENSITE_MAX, intensite + 0.1 * (n - 1)), 2)))
+        i = min(INTENSITE_MAX, intensite + 0.1 * (n - 1))
+        if nom in ("probleme", "echec"):
+            if AUTO_ATTRIBUE.search(t):                         # son souci à lui, pas un coup dur pour Hakim
+                continue
+            if RASSURANCE.search(t):
+                i *= ALLEGEMENT
+            if CRAINTE.search(t) and not CRAINTE_POUR_LUI.search(t):
+                i *= ATTENTION
+        out.append((nom, round(i, 2)))
         if len(out) >= MAX_EVENEMENTS:
             break
     return out

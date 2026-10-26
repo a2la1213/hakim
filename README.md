@@ -33,6 +33,12 @@ Ce dépôt publie **le code**. Les **données** n'y sont pas : la mémoire, les 
 3. **Le cockpit** : `cd aios/cockpit && npm install && node server.js`. Il écoute sur le port 4317, en local. La commande `bash test-jarvis.sh` lance le banc de test avec un faux `claude`.
 4. **Les chemins** sont ceux du Mac d'origine (`~/Desktop/anamnese`, `~/AIOS`) : adapte-les à ta machine.
 
+## L'appli Android « Hakim (libre) »
+
+Une appli Android neutre est jointe aux [Releases](https://github.com/a2la1213/hakim/releases) : `Hakim-libre.apk` (paquet
+`app.hakim.libre`, avec son empreinte SHA-256). Elle ne contient aucune adresse et ne fait **rien sans un cockpit** installé
+depuis ce dépôt : au premier lancement, elle demande l'adresse de TON cockpit (celle que tu ouvres dans ton navigateur).
+
 ## Sécurité
 
 Security review and tips provided by [Jiab77](https://github.com/jiab77) and the [AI-Pipeline](https://github.com/jiab77/ai-pipeline) project.

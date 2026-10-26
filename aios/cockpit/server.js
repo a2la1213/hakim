@@ -1912,9 +1912,10 @@ async function routeJarvis(req, res, distantReq = false) {
   if (courrierRecu.texte) noterExterne('courrier');
   const horlogeTexte = horloge(maintenant, Number(q.t_precedent), Number(q.t_debut));
   const rappelBloc = await blocRappel(session, texte, nonce).catch(() => ({ texte: '', ids: [] }));
+  const pairsTexte = typeof blocPairsDistants === 'function' ? blocPairsDistants(nonce) : '';   // (absent d'une copie publiée)
   let prompt = `${horlogeTexte}${situation.texte ? '\n' + situation.texte : ''}${interieurTexte ? '\n' + interieurTexte : ''}`
-    + `${tachesTexte ? '\n' + tachesTexte : ''}${presentTexte ? '\n' + presentTexte : ''}${rappelBloc.texte ? '\n' + rappelBloc.texte : ''}`
-    + `\n${qui} : ${texte.replace(/\[\[\s*(affect|souvenirs)/gi, '⟮⟮$1')}${pj}${cameraTexte}`;   // (chocs) aucune balise toute faite à recopier
+    + `${tachesTexte ? '\n' + tachesTexte : ''}${presentTexte ? '\n' + presentTexte : ''}${rappelBloc.texte ? '\n' + rappelBloc.texte : ''}${pairsTexte ? '\n' + pairsTexte : ''}`
+    + `\n${qui} : ${texte.replace(/\[\[\s*(affect|souvenirs|modele)/gi, '⟮⟮$1')}${pj}${cameraTexte}`;   // (chocs) aucune balise toute faite à recopier
   const categories = { horloge: horlogeTexte.length, situation: situation.texte.length, interieur: interieurTexte.length,
     taches: tachesTexte.length, present: presentTexte.length, rappel: rappelBloc.texte.length, message: texte.length,
     joints: pj.length + cameraTexte.length + (ecran ? ecran.marque.length : 0), briefing: 0 };
@@ -4635,6 +4636,7 @@ setInterval(surveillerPromotions, 5000);
 setInterval(consciencePulse, 5000);
 let arretCockpit = false;
 const toutCouper = () => { arretCockpit = true; couperJarvis(); if (cerveau) tuer(cerveau.enfant); try { MISSIONS.couper(); } catch (_) {} if (voixProc) { try { voixProc.kill('SIGTERM'); } catch (_) {} }
-  if (mlxProc) { try { mlxProc.kill('SIGTERM'); } catch (_) {} } };
+  if (mlxProc) { try { mlxProc.kill('SIGTERM'); } catch (_) {} }
+};
 process.on('exit', toutCouper);
 for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { toutCouper(); process.exit(0); });

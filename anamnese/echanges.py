@@ -48,10 +48,17 @@ _proches_cache = [None, None]
 # porteurs du message (les plus longs, hors mots vides, triés) : « mots:calcul+cockpit ». Le même souci qui revient a donc
 # le même sujet, et la familiarité peut jouer (sans sujet, seule la peur généralisée par type s'apprenait : la réaction
 # MONTAIT à chaque répétition au lieu de baisser).
+REMPLISSAGE = {"toujours", "encore", "jamais", "quand", "alors", "apres", "avant", "pourquoi", "comment", "quelque", "chose",
+               "truc", "trucs", "machin", "genre", "voila", "frerot", "frero", "wesh", "inchallah", "nchallah", "aussi", "plutot",
+               "juste", "deja", "maintenant", "aujourd", "demain", "pense", "crois", "faire", "avoir", "etre", "dire"}
+
+
 def sujet_par_les_mots(texte):
     try:
         import rappel
-        mots = sorted(rappel._plat(m) for m in rappel.mots_cles(texte, maximum=2))
+        # (26/10, « mots:evidemment+resultats ») pas les adverbes en -ment ni les mots de remplissage : un sujet nomme une chose
+        mots = [rappel._plat(m) for m in rappel.mots_cles(texte, maximum=10)]
+        mots = sorted([m for m in mots if not m.endswith("ment") and m not in REMPLISSAGE][:2])
     except Exception:
         return None
     return ("mots:" + "+".join(mots))[:80] if mots else None
