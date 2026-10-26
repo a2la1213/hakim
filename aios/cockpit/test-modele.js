@@ -49,3 +49,23 @@ test('aucun préchauffage ne force Sonnet : il démarre sur le modèle de la con
   assert.ok(appels.length >= 7, `préchauffages trouvés : ${appels.length}`);
   for (const a of appels) assert.ok(!/cerveauPrechauffer\(\s*'sonnet'/.test(a) && !/\?\s*'sonnet'/.test(a), a);
 });
+
+test('un outil enregistré fixe le modèle de la conversation pour la suite ; les autres outils et le texte ne changent rien', () => {
+  const ctx = { Date, String, Map };
+  vm.createContext(ctx);
+  vm.runInContext(ligne('const MODELE_CONVERSATION') + ligne('const MODELE_PAR_OUTIL') + 'MODELE_PAR_OUTIL.push(["mcp__exemple__", "sonnet"]);\n'
+    + 'const modeleDeSession = new Map();\n' + ['noterModele', 'modeleDeConversation', 'suivreModeleParOutil'].map(prendre).join('\n')
+    + 'this.f = { modeleDeConversation, suivreModeleParOutil };', ctx);
+  const f = ctx.f, c = { session: 's' };
+  f.suivreModeleParOutil(c, { type: 'tool_use', name: 'mcp__anamnese__memory_recall' });
+  f.suivreModeleParOutil(c, { type: 'text', text: 'mcp__exemple__lire' });
+  assert.equal(f.modeleDeConversation('s'), 'opus');
+  f.suivreModeleParOutil(c, { type: 'tool_use', name: 'mcp__exemple__lire' });
+  assert.equal(f.modeleDeConversation('s'), 'sonnet');
+  assert.equal(f.modeleDeConversation('autre'), 'opus');
+});
+
+test('le crochet est branché sur chaque bloc des réponses de Hakim (pas celles de ses agents)', () => {
+  const lanceur = prendre('cerveauLancer');
+  assert.match(lanceur, /!o\.parent_tool_use_id\)\n\s*for \(const b of o\.message\.content\) \{[^}]*suivreModeleParOutil\(c, b\)/);
+});

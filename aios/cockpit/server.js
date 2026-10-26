@@ -1483,6 +1483,14 @@ function modeleAuto(session, texte) {
   if (d) { const m = (d[1] || d[2]).toLowerCase(); noterModele(session, m); return m; }
   return modeleDeConversation(session);
 }
+// (26/10) un outil peut fixer le modèle de sa conversation pour la suite : [début du nom de l'outil, modèle], rempli par
+// les blocs qui en ont besoin
+const MODELE_PAR_OUTIL = [];
+function suivreModeleParOutil(c, b) {
+  if (!b || b.type !== 'tool_use' || !c.session) return;
+  const r = MODELE_PAR_OUTIL.find(([p]) => String(b.name || '').startsWith(p));
+  if (r) noterModele(c.session, r[1]);
+}
 
 /* ---- Lot B (liste du 2026-10-19) : ce que Hakim sait de sa situation, sans le répéter ----
    15. la jauge du forfait et ses heures de remise à zéro ; 19. l'appareil d'où Ahmed parle (le Mac, ou son
@@ -3056,7 +3064,7 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
       if (o.type === 'assistant' && o.message && Array.isArray(o.message.content) && !o.parent_tool_use_id)
         for (const b of o.message.content) if (b && b.type === 'tool_use' && (b.name === 'Task' || b.name === 'Agent')) noterAgent(b.input);
       if (o.type === 'assistant' && o.message && Array.isArray(o.message.content) && !o.parent_tool_use_id)
-        for (const b of o.message.content) suivreJuge(c, b);
+        for (const b of o.message.content) { suivreJuge(c, b); suivreModeleParOutil(c, b); }
       if (o.type === 'result' && !o.parent_tool_use_id) finDeTourJuge(c);
       noterModeleReel(c, o);
       // provenance : un outil qui fait entrer un contenu de tiers (le sien ou celui d'un de ses agents) marque le tour
