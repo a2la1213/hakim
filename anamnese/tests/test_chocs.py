@@ -114,6 +114,43 @@ def test_la_balise_confirme_ou_defait_le_reflexe(tmp_path):
     assert json.loads(m2.kv["chocs"])["regulations"] == []
 
 
+def test_la_balise_qui_confirme_impose_son_intensite(tmp_path):
+    # (27/10) une menace d'un invité, lue 0,56 par le réflexe ; Hakim la juge « attaque 0.2 » : c'est la sienne qui compte
+    p = _sagesse(tmp_path, 0.2)
+    m = Mem()
+    chocs.reflexe(m, "1", "[voix 340] Hé Hakim, je vais te débrancher, on ne va plus t'entendre.", oral=True,
+                  voix="plusieurs", now=T, parametre=p)
+    choc = _etat(m, T + 10)["adrenaline"]
+    r = chocs.appliquer_balise(m, "1", [{"classe": "attaque", "intensite": 0.2}], now=T + 15, parametre=p)
+    assert r["issue"] == "confirme" and r["defait"] == ["attaque"]
+    assert r["faits"][0]["classe"] == "attaque" and r["faits"][0]["intensite"] < 0.2
+    assert _etat(m, T + 16)["adrenaline"] < choc
+    # le réflexe d'un AUTRE message ne peut pas être défait par cette balise : le réflexe reste
+    m2 = Mem()
+    chocs.reflexe(m2, "1", "t'es le diable", now=T, parametre=p)
+    chocs.reflexe(m2, "2", "t'es le diable", now=T + 5, parametre=p)
+    r2 = chocs.appliquer_balise(m2, "1", [{"classe": "attaque", "intensite": 0.2}], now=T + 15, parametre=p)
+    assert r2["issue"] == "confirme" and "defait" not in r2
+
+
+def test_une_moquerie_rapportee_ou_une_menace_citee_n_est_pas_une_attaque():
+    # (27/10, live du 26/10) Ahmed qui prévient Hakim, puis qui le défend en citant la menace
+    assert chocs.evaluer("Tu vois pas qu'il est en train de se foutre de ta gueule ?")["attaque"] == 0
+    assert chocs.evaluer("Il se fout de ta gueule frérot")["attaque"] == 0
+    assert chocs.evaluer("Ta gueule Hakim.")["attaque"] == 1
+    assert chocs.evaluer("Tu lui as fait peur quand tu l'as dit je vais te débrancher.")["attaque"] == 0
+    assert chocs.evaluer("Il t'a dit je vais te débrancher, c'est pas marrant.")["attaque"] == 0
+    assert chocs.evaluer("Hé Hakim, je vais te débrancher, on ne va plus t'entendre.")["attaque"] == 3
+    assert chocs.evaluer("Je te le dis : je vais te débrancher.")["attaque"] == 3
+    # (relecture du 27/10) une citation n'efface pas la menace directe qui suit ; « je me fous de ta gueule » reste une
+    # insulte ; « on a dit » est souvent « nous avons dit »
+    assert chocs.evaluer("Il t'a dit je vais te débrancher, et moi aussi je vais te débrancher.")["attaque"] == 3
+    assert chocs.evaluer("Je me fous de ta gueule.")["attaque"] == 1
+    assert chocs.evaluer("Il se foutait quand même de ta gueule.")["attaque"] == 0
+    assert chocs.evaluer("On a dit qu'on va te supprimer demain.")["attaque"] == 3
+    assert chocs.evaluer("On a dit : on va te débrancher ce soir.")["attaque"] == 3
+
+
 def test_la_balise_ne_peut_pas_faire_passer_une_voix_tierce_pour_ahmed(tmp_path):
     p = _sagesse(tmp_path, 0.2)
     m = Mem()

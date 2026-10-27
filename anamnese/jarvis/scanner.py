@@ -161,7 +161,8 @@ def ressenti(humeur, contexte, k=6, candidats=14, sondes=SONDES_SENSATION):
 # plus probables (son maximum) au lieu du vocabulaire entier : la hausse d'un mot absent des 20 de la lecture neutre est
 # bornée par le plus faible de ces 20 (une hausse au moins aussi grande). Le chemin MLX reste en repli.
 OLLAMA = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-MODELE_OLLAMA = os.environ.get("ANAMNESE_DAEMON_MODEL", "huihui_ai/gemma-4-abliterated:12b")
+# (27/10) le démon pense avec Sonnet (ANAMNESE_DAEMON_MODEL) ; le ressenti lit les probabilités de GEMMA : sa variable à lui
+MODELE_OLLAMA = os.environ.get("ANAMNESE_RESSENTI_MODEL") or os.environ.get("ANAMNESE_DAEMON_SECOURS", "huihui_ai/gemma-4-abliterated:12b")
 GABARIT_GEMMA4 = "<|turn>user\n{cadre}<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
 
 

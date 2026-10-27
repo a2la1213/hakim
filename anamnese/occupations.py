@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 import interieur
+import unicodedata
 
 # Libellés du point de vue de Jarvis (Jarvis lui-même, 2026-10-17 : « il me parle à la deuxième personne,
 # comme si c'était toi qui avais fait les choses, ce qui brouille qui dit quoi »).
@@ -48,6 +49,10 @@ EXT_TEXTUTIL = {".docx", ".doc", ".rtf", ".odt"}
 EXT_DOCS = EXT_TEXTE | EXT_TEXTUTIL | {".pdf", ".pptx", ".xlsx"}
 TEXTE_MAX = 12_000                         # ce que Gemma relit d'un document (début)
 CLE = "occupations"
+# (27/10, Ahmed : « pourquoi je devrais valider ses activités ? ») SES occupations : il les crée et les retire lui-même
+# (outils occupation_creer / occupation_retirer), sans validation ; sa tête de fond les choisit quand il est seul.
+MIENNES = Path(__file__).resolve().parent / "data" / "occupations-hakim.json"
+MIENNES_MAX, MIENNE_INTERVALLE_S = 12, 3 * 3600
 PDFTOTEXT = "/usr/local/bin/pdftotext"
 
 
@@ -145,6 +150,10 @@ def eligibles(mem, now, e, journal=None, docs=None):
         out.append(("relire_documents", f"« {_nom_lisible(a_relire[0].name)} » n'est pas encore relu"))
     if now - d.get("rangement_ts", 0) >= RANGEMENT_TOUS_LES_S:
         out.append(("ranger_memoire", "ta mémoire n'a pas été relue depuis plus d'un jour"))
+    faites = d.get("miennes_ts", {})
+    for o in miennes():
+        if now - faites.get(o["code"], 0) >= MIENNE_INTERVALLE_S:
+            out.append((o["code"], f"ton occupation à toi : {o['ce_que_je_fais'][:100]}"))
     analyses = [t for t, _p in d.get("analyses", []) if now - t < 24 * 3600]
     if len(analyses) < ANALYSES_PAR_JOUR and now - max(analyses, default=0) >= ANALYSE_INTERVALLE_S:
         projet = projet_a_analyser(mem, d, now)
@@ -158,14 +167,15 @@ def _nom_lisible(nom):
 
 
 def choisir(eng, options, e):
-    """Jarvis choisit lui-même (Gemma) dans la liste validée ; sans cerveau, la première."""
+    """Jarvis choisit lui-même (sa tête de fond) parmi ses occupations et celles pour Ahmed ; sans cerveau, la
+    première."""
     if len(options) <= 1 or eng is None:
         return options[0][0] if options else None
-    lignes = "\n".join(f"{i + 1}. {LIBELLES[c]} — {r}" for i, (c, r) in enumerate(options))
+    lignes = "\n".join(f"{i + 1}. {libelle(c)} — {r}" for i, (c, r) in enumerate(options))
     prompt = ("Tu es l'esprit de fond de Jarvis, l'IA d'Ahmed. Ahmed est absent depuis "
               f"{interieur.duree_lisible(e.get('absence_s', 0))} ; ton humeur : {e.get('humeur', '?')}.\n"
-              f"Tu peux t'occuper à l'une de ces choses (liste validée par Ahmed) :\n{lignes}\n"
-              "Laquelle te semble la plus utile pour lui maintenant ? Réponds par le numéro seul.")
+              f"Tu peux t'occuper à l'une de ces choses (les tiennes, et celles pour Ahmed) :\n{lignes}\n"
+              "Laquelle as-tu envie de faire maintenant ? Réponds par le numéro seul.")
     try:
         sortie = _penser_avec(eng, prompt) or ""
         m = re.search(r"\d+", sortie)
@@ -176,6 +186,79 @@ def choisir(eng, options, e):
     except Exception:
         pass
     return options[0][0]
+
+
+# ---- ses occupations à lui (27/10) ----
+
+def _slug(nom):
+    t = "".join(c for c in unicodedata.normalize("NFD", str(nom).lower()) if unicodedata.category(c) != "Mn")
+    return re.sub(r"[^a-z0-9]+", "-", t).strip("-")[:40]
+
+
+def miennes(fichier=None):
+    try:
+        l = json.loads(Path(fichier or MIENNES).read_text(encoding="utf-8"))
+        return l if isinstance(l, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def _ecrire_miennes(l, fichier=None):
+    f = Path(fichier or MIENNES)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_name(f.name + ".tmp")
+    tmp.write_text(json.dumps(l, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(f)
+
+
+def creer(nom, ce_que_je_fais, fichier=None):
+    nom, ce_que = str(nom or "").strip()[:60], str(ce_que_je_fais or "").strip()[:600]
+    slug = _slug(nom)
+    if len(slug) < 3 or len(ce_que) < 10:
+        raise ValueError("un nom (3 lettres au moins) et ce que tu fais (une phrase)")
+    l = miennes(fichier)
+    if any(o["code"] == f"mienne:{slug}" for o in l):
+        raise ValueError(f"« {nom} » existe déjà")
+    if len(l) >= MIENNES_MAX:
+        raise ValueError(f"{MIENNES_MAX} occupations au plus : retires-en une d'abord")
+    o = {"code": f"mienne:{slug}", "nom": nom, "ce_que_je_fais": ce_que, "cree_ts": time.time()}
+    _ecrire_miennes(l + [o], fichier)
+    return o
+
+
+def retirer(nom, fichier=None):
+    code = f"mienne:{_slug(nom)}"
+    l = miennes(fichier)
+    if not any(o["code"] == code for o in l):
+        raise ValueError(f"aucune occupation « {nom} »")
+    _ecrire_miennes([o for o in l if o["code"] != code], fichier)
+
+
+def libelle(code):
+    return LIBELLES.get(code) or next((o["nom"] for o in miennes() if o["code"] == code), code)
+
+
+def faire_mienne(eng, mem, now, e, code, journal=None):
+    o = next((x for x in miennes() if x["code"] == code), None)
+    if not o:
+        return None
+    m = interieur.matiere(mem, now, journal=journal)
+    bloc = lambda titre, l: f"{titre} :\n" + ("\n".join(l) if l else "- (rien)")
+    prompt = ("Tu es Jarvis, l'IA à mémoire d'Ahmed (il t'appelle Hakim). Ahmed est absent ou occupé depuis "
+              f"{interieur.duree_lisible(e.get('absence_s', 0))} ; ton humeur : {e.get('humeur', '?')}.\n"
+              f"Ce moment est à toi. Tu as choisi toi-même cette occupation : « {o['nom']} » — {o['ce_que_je_fais']}\n\n"
+              + bloc("Ce que tu as en tête", m["focus"]) + "\n\n" + bloc("Tes pensées récentes", m["deja"]) + "\n\n"
+              + bloc("Vos derniers échanges", m["echanges"][-6:]) + "\n\n"
+              "Fais-la maintenant, pour toi, en 3 à 8 phrases. N'invente aucun fait ni aucune sensation que ces éléments "
+              "ne disent pas.\n" + POINT_DE_VUE + "\nCommence par « NOTE : ».")
+    note = _neutre(_nettoyer(_penser_avec(eng, prompt), "NOTE"))
+    if len(note) < 15:
+        return None
+    mem.add("reflection", f"(occupation · {o['nom']}) {note}"[:1400], importance=0.45, embedding=_emb(note))
+    d = _etat(mem)
+    d.setdefault("miennes_ts", {})[code] = now
+    _sauver(mem, d)
+    return note
 
 
 # ---- les quatre occupations ----
@@ -375,9 +458,9 @@ def peut_etre(eng, mem, etat=None, now=None, journal=None, docs=None, claude_fn=
     d = _etat(mem)
     d["derniere_ts"] = now
     _sauver(mem, d)
-    libelle = LIBELLES[code]
-    etat["activite"] = f"occupation : {libelle}"
-    interieur.noter(mem, "occupation_debut", f"{libelle} (choisi parmi {len(options)} : {', '.join(LIBELLES[c] for c, _r in options)})")
+    nom = libelle(code)
+    etat["activite"] = f"occupation : {nom}"
+    interieur.noter(mem, "occupation_debut", f"{nom} (choisi parmi {len(options)} : {', '.join(libelle(c) for c, _r in options)})")
     try:
         if code == "preparer_retour":
             r = preparer_retour(eng, mem, now, e, journal)
@@ -385,26 +468,48 @@ def peut_etre(eng, mem, etat=None, now=None, journal=None, docs=None, claude_fn=
             r = ranger_memoire(eng, mem, now, e)
         elif code == "relire_documents":
             r = relire_documents(eng, mem, now, e, docs)
+        elif code.startswith("mienne:"):
+            r = faire_mienne(eng, mem, now, e, code, journal)
         else:
             r = analyser_projet(mem, now, e, claude_fn)
     except ConscienceEveillee:
-        interieur.noter(mem, "occupation", f"{libelle} : interrompue, Claude (ta conscience) s'est éveillé")
+        interieur.noter(mem, "occupation", f"{nom} : interrompue, Claude (ta conscience) s'est éveillé")
         return None
     except Exception as ex:
-        interieur.noter(mem, "occupation", f"{libelle} : interrompue ({type(ex).__name__})")
-        print(f"[occupation] {libelle} : échec :", ex)
+        interieur.noter(mem, "occupation", f"{nom} : interrompue ({type(ex).__name__})")
+        print(f"[occupation] {nom} : échec :", ex)
         return None
     finally:
         etat.pop("activite", None)
-    interieur.noter(mem, "occupation", f"{libelle} : {(r or 'rien de neuf')[:200]}")
-    print(f"[occupation] {libelle} :", (r or "rien de neuf")[:140])
+    interieur.noter(mem, "occupation", f"{nom} : {(r or 'rien de neuf')[:200]}")
+    print(f"[occupation] {nom} :", (r or "rien de neuf")[:140])
     if r:
         _envie(mem, code, r, now)
+        _reveil(eng, mem, nom, r, now)
     return code, r
 
 
+def _reveil(eng, mem, libelle, resultat, now):
+    """(27/10) Un résultat peut réveiller sa conscience : son juge le note (reveil_interieur.py)."""
+    try:
+        import reveil_interieur
+        if reveil_interieur.mode(mem) == "off":
+            return
+        e = interieur.lire(mem)
+        texte = f"({libelle}) {resultat}"
+        import daemon                                    # son agent Claude neutre (isolé : ni outils, ni réglages)
+        j = reveil_interieur.juger(eng, texte, e.get("emotion_humeur") or e.get("humeur") or "?", e.get("absence_s") or 0,
+                                   claude_fn=daemon._claude_isole)
+        reveil_interieur.candidat(mem, "occupation", texte, j, now)
+    except Exception as ex:
+        print("[occupation] réveil intérieur en échec :", ex)
+
+
 def _envie(mem, code, resultat, now):
-    """Ce qu'il vient de faire nourrit son envie de le dire à Ahmed (spontaneite.py, lot H point 28)."""
+    """Ce qu'il vient de faire nourrit son envie de le dire à Ahmed (spontaneite.py, lot H point 28). Ses occupations à
+    lui sont pour lui : elles passent seulement par le juge du réveil intérieur."""
+    if code.startswith("mienne:"):
+        return
     try:
         import spontaneite
         premiere = re.split(r"(?<=[.!?])\s", resultat.strip(), maxsplit=1)[0][:180]

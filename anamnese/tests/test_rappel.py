@@ -107,7 +107,8 @@ def test_ce_que_je_sais_d_une_personne_nommee(tmp_path):
     class M:
         db = sqlite3.connect(":memory:")
     M.db.execute("CREATE TABLE episodes (id INTEGER, ts REAL, content TEXT)")
-    now = time.time()
+    # midi : « le journal du jour » ne doit pas dépendre de l'heure où tourne le test (il échouait entre minuit et 5 h)
+    now = time.mktime(time.strptime(time.strftime("%Y-%m-%d") + " 12:00", "%Y-%m-%d %H:%M"))
     M.db.executemany("INSERT INTO episodes VALUES (?, ?, ?)", [(1, now - 86400, "Nora est passée au live"),
                                                              (2, now - 3600, "Nora m'a fait un pincement"),
                                                              (3, now - 60, "rien à voir")])

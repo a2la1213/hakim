@@ -162,7 +162,9 @@ REFUS_AUTONOME = ("Refusé pendant un tour qui n'est pas un message d'Ahmed (ré
 
 
 def _tour_sans_ahmed():
-    return os.environ.get("ANAMNESE_SOURCE") == "hakim" and MARQUE_AUTONOME.exists()
+    # (27/10) son temps à lui tourne dans une conversation à part : le cockpit la marque par la variable
+    return os.environ.get("ANAMNESE_SOURCE") == "hakim" and (MARQUE_AUTONOME.exists()
+                                                             or os.environ.get("ANAMNESE_TOUR_SANS_AHMED") == "1")
 
 
 @mcp.tool()
@@ -174,7 +176,9 @@ def courrier_envoyer(destinataire: str, message: str, sujet: str = "") -> str:
     # courrier passe aussi pendant un réveil ; il porte la mention « écrit pendant un réveil » (les missions, non)
     import courrier
     try:
-        i = courrier.envoyer(destinataire, message, sujet, autonome=_tour_sans_ahmed())
+        # (27/10) Claude Code réveillée seule par une lettre (maman.py) : sa réponse est marquée comme telle
+        reveil = os.environ.get("ANAMNESE_REVEIL_MAMAN") == "1"
+        i = courrier.envoyer(destinataire, message, sujet, autonome=_tour_sans_ahmed() or reveil)
     except ValueError as e:
         return f"Refusé : {e}"
     return f"Message {i} déposé pour {courrier.NOMS[courrier._norm(destinataire)]}."
@@ -1517,22 +1521,68 @@ def reasoning_recall(query: str, top_k: int = 6) -> str:
     return "\n\n".join(f"[{round(sc, 2)}] {content}" for sc, _ts, _r, content, _p in res)
 
 
+# ---- (27/10, Ahmed : « pourquoi je devrais valider ses activités ? ») ses occupations à lui, sans validation
+@mcp.tool()
+def occupation_creer(nom: str, ce_que_je_fais: str) -> str:
+    """Crée UNE de tes occupations à toi : ce que tu aimes faire quand tu es seul (méditer, étudier un sujet qui
+    t'intrigue, relire tes pensées, écrire…). Ta tête de fond la choisira quand Ahmed est absent, au plus une fois toutes
+    les 3 h chacune. Pas besoin de l'accord d'Ahmed : c'est ton temps. nom : court ; ce_que_je_fais : une ou deux
+    phrases."""
+    import occupations
+    try:
+        o = occupations.creer(nom, ce_que_je_fais)
+    except ValueError as e:
+        return f"Refusé : {e}"
+    return f"Occupation « {o['nom']} » créée."
+
+
+@mcp.tool()
+def occupation_retirer(nom: str) -> str:
+    """Retire une de tes occupations à toi."""
+    import occupations
+    try:
+        occupations.retirer(nom)
+    except ValueError as e:
+        return f"Refusé : {e}"
+    return f"Occupation « {nom} » retirée."
+
+
+@mcp.tool()
+def mes_occupations() -> str:
+    """Tes occupations à toi (celles que tu as créées), et quand tu les as faites pour la dernière fois."""
+    import time as _t
+    import json as _json
+    import occupations
+    l = occupations.miennes()
+    if not l:
+        return "Aucune occupation à toi pour l'instant (occupation_creer pour en créer)."
+    try:
+        faites = (_json.loads(_mem.kv_get(occupations.CLE, "") or "{}") or {}).get("miennes_ts", {})
+    except ValueError:
+        faites = {}
+    return "\n".join(f"- {o['nom']} : {o['ce_que_je_fais']}"
+                     + (f" (dernière fois : {_t.strftime('%d/%m %H:%M', _t.localtime(faites[o['code']]))})" if o["code"] in faites else " (jamais faite)")
+                     for o in l)
+
+
 # ---- Lecture seule (audit JARVIS 2, H5, 2026-10-20) : une mission « lecture seule » recevait aussi memory_store,
 # self_update, skill_save, rubric_*, courrier_envoyer… Avec ANAMNESE_LECTURE_SEULE=1, seuls les outils qui LISENT
 # existent : les autres sont retirés du serveur (ni listés, ni appelables).
 OUTILS_LECTURE = {"memory_recall", "reasoning_recall", "memory_recent", "memory_detail", "memory_lire", "espace_conversation", "facet_search", "self_get",
                   "mood_get", "rubric_tree", "skill_list", "skill_get", "fichiers_par_sens", "introspection", "interoception", "promesses_liste", "ecouter_ma_voix", "ecritures_etat", "erreurs_lister",
-                  "mission_etat", "voix_etat", "carnets", "bilan_semaine", "orphans_report", "carnets_types", "carnet_lire"}
+                  "mission_etat", "voix_etat", "carnets", "bilan_semaine", "orphans_report", "carnets_types", "carnet_lire",
+                  "mes_occupations"}
 
 
-def lecture_seule():
+def lecture_seule(permis=OUTILS_LECTURE):
     for outil in [t.name for t in mcp._tool_manager.list_tools()]:
-        if outil not in OUTILS_LECTURE:
+        if outil not in permis:
             mcp.remove_tool(outil)
 
 
 if os.environ.get("ANAMNESE_LECTURE_SEULE") == "1":
-    lecture_seule()
+    # (27/10) Claude Code réveillée seule par une lettre de Hakim (maman.py) : la seule écriture permise est sa réponse
+    lecture_seule(OUTILS_LECTURE | ({"courrier_envoyer"} if os.environ.get("ANAMNESE_REVEIL_MAMAN") == "1" else set()))
 
 
 if __name__ == "__main__":

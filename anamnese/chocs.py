@@ -111,6 +111,12 @@ def segments(texte, oral=False, voix=None, noms=None):
 _TU = re.compile(r"\b(tu|t'|te|toi|ton|ta|tes|hakim)\b|\bt'(es|as|étais|vas)\b", re.I)
 _A_AHMED = re.compile(r"\bahmed\b", re.I)
 _NEG_AVANT = re.compile(r"\b(pas|jamais|plus|point)\s+(\S+\s+){0,2}$", re.I)
+# (27/10, live du 26/10 23:58) une menace CITÉE (« quand tu l'as dit je vais te débrancher », « il t'a dit … ») : celui qui
+# parle rapporte les mots d'un autre, souvent pour défendre Hakim ; « je te le dis : … » reste une menace
+_RAPPORTE = re.compile(r"\b(tu|il|elle|ils|elles|vous)\b[^.!?]{0,15}?\b(dit|disait|dis|r[ée]p[ée]t[ée]|cri[ée]|[ée]crit)"
+                       r"\s*(que\s+|qu'|:\s*|«\s*|\"\s*)?$", re.I)
+# (27/10) « il se fout de ta gueule » : quelqu'un d'autre se moque de lui ; « je me fous de ta gueule » reste une insulte
+_MOQUE_PAR_UN_AUTRE = re.compile(r"\bse\s+(fout|foutre|foutait|foutent|moqu\w*)\s+(\w+\s+){0,2}?de\s*$", re.I)
 _DIABLE = r"(diable|d[ée]mon\w*|satan\w*|sheit?an|cheit?an|chaytan|chitane|d[ée]moniaque|antichrist|antéchrist|dajj?al)"
 ATTAQUES = [
     (r"\b(t'es|tu es|toi t'es|toi c'est|tu n'es qu'?|t'es qu'?|t'es juste|tu es juste)\s*(\w+\s+){0,3}?(un |une |le |la )?"
@@ -167,9 +173,11 @@ def evaluer(texte):
             continue
         q = _AVOCAT.sub(" ", p)
         for rx, i in _ATT:
-            m = rx.search(q)
-            if m and not _NEG_AVANT.search(q[:m.start()][-40:]):
-                att = max(att, i)
+            for m in rx.finditer(q):                    # (27/10) une citation n'efface pas la menace directe qui suit
+                avant = q[:m.start()][-40:]
+                if not (_NEG_AVANT.search(avant) or _RAPPORTE.search(avant) or _MOQUE_PAR_UN_AUTRE.search(avant)):
+                    att = max(att, i)
+                    break
     return {"attaque": att, "soutien": sou}
 
 
@@ -324,30 +332,47 @@ def appliquer_balise(mem, cle, appreciations, now=None, parametre=None):
     reflexe_cl = set(tour.get("reflexe") or [])
     hakim_cl = {a["classe"] for a in appreciations}
     res = {"actif": True, "reflexe": sorted(reflexe_cl), "balise": sorted(hakim_cl) or ["neutre"]}
+    snap = st.get("snap") or {}
+    defaisable = bool(reflexe_cl) and snap.get("cle") == cle and now - float(snap.get("ts", 0)) <= SNAP_S \
+        and bool(snap.get("affect"))
     if reflexe_cl == hakim_cl:
         res["issue"] = "confirme"
-    else:
-        snap = st.get("snap") or {}
-        if reflexe_cl and snap.get("cle") == cle and now - float(snap.get("ts", 0)) <= SNAP_S and snap.get("affect"):
-            blob = json.loads(snap["affect"])
-            vieilli = affect.get_state(_MemBlob(blob), now=now)            # l'état d'avant, vieilli jusqu'à maintenant
-            blob.update({h: round(v, 4) for h, v in vieilli.items()})
-            blob["_ts"] = now
-            mem.kv_set("affect", json.dumps(blob))
-            st["attaques"], st["regulations"] = snap.get("attaques", []), snap.get("regulations", [])
+        # (27/10, live du 26/10 23:54) même verdict, mais c'est SON intensité qui compte : « attaque 0.2 » ne laisse
+        # plus le 0,56 du réflexe. Sans l'état d'avant (un autre message est arrivé), le réflexe reste.
+        if defaisable:
+            _defaire(mem, st, snap, now)
             res["defait"] = sorted(reflexe_cl)
-        faits = []
-        for a in appreciations:
-            qui, sur = _qui_pour(a["classe"], tour)
-            faits.append(_appliquer(mem, st, a["classe"], a["intensite"] * _poids(a["classe"], qui, sur),
-                                    f"{a['classe']} de {'Ahmed' if qui == 'ahmed' else 'une voix tierce'}", cle,
-                                    "balise", now, parametre))
-        res["issue"], res["faits"] = "corrige", faits
+            res["faits"] = _appliquer_appreciations(mem, st, appreciations, tour, cle, now, parametre)
+    else:
+        if defaisable:
+            _defaire(mem, st, snap, now)
+            res["defait"] = sorted(reflexe_cl)
+        res["issue"], res["faits"] = "corrige", _appliquer_appreciations(mem, st, appreciations, tour, cle, now, parametre)
     tour["balise"] = res["balise"]
     st.setdefault("tours", {})[str(cle)] = tour
     _sauver(mem, st, now)
     journaliser(mem, {"type": "balise", "cle": cle, "appreciations": appreciations, **res})
     return res
+
+
+def _defaire(mem, st, snap, now):
+    """L'état d'avant le réflexe, vieilli jusqu'à maintenant ; ses attaques et reprises en main aussi."""
+    blob = json.loads(snap["affect"])
+    vieilli = affect.get_state(_MemBlob(blob), now=now)
+    blob.update({h: round(v, 4) for h, v in vieilli.items()})
+    blob["_ts"] = now
+    mem.kv_set("affect", json.dumps(blob))
+    st["attaques"], st["regulations"] = snap.get("attaques", []), snap.get("regulations", [])
+
+
+def _appliquer_appreciations(mem, st, appreciations, tour, cle, now, parametre):
+    faits = []
+    for a in appreciations:
+        qui, sur = _qui_pour(a["classe"], tour)
+        faits.append(_appliquer(mem, st, a["classe"], a["intensite"] * _poids(a["classe"], qui, sur),
+                                f"{a['classe']} de {'Ahmed' if qui == 'ahmed' else 'une voix tierce'}", cle,
+                                "balise", now, parametre))
+    return faits
 
 
 class _MemBlob:

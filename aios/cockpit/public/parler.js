@@ -976,7 +976,8 @@ async function envoyer(texte, oral, dejaRelance) {
           const nom = String(o.nom || '').replace(/^mcp__anamnese__/, '');
           m.outils.push(NOMS_OUTILS[nom] || nom);
           majMessage(m); humeur(nom === 'WebSearch' ? 'cherche sur le web…' : 'cherche dans sa mémoire…');
-        } else if (o.t === 'statut' && typeof o.x === 'string') {   // (2026-10-23) reçu, il finit d'abord un travail
+        } else if (o.t === 'efface') { m.texte = ''; if (auto) decoupe.finir(); majMessage(m); }   // (27/10) sa non-réponse effacée, à l'écran et dans la voix
+        else if (o.t === 'statut' && typeof o.x === 'string') {   // (2026-10-23) reçu, il finit d'abord un travail
           humeur(o.x.slice(0, 160)); $('annonce').textContent = o.x.slice(0, 160);
         } else if (o.t === 'debut') {
           if (o.modele) { m.modele = o.modele; majMessage(m); }        // le routeur a choisi (Sonnet ou Opus)
@@ -1757,7 +1758,7 @@ function finMesureTour() {
   const ms = (a, b) => (a && b ? Math.max(0, Math.round(a - b)) : -1);
   journalVoix('tour_temps', { attente_fin_tour_ms: ms(m.debut, m.fin), transcription_ms: ms(m.transcrit, m.debut),
     premier_mot_ms: ms(m.premier_texte, m.transcrit), voix_ms: ms(m.premier_son, m.premier_texte), total_ms: ms(m.premier_son || m.premier_texte, m.fin),
-    son: !!m.premier_son });
+    son: !!m.premier_son, pauses_ms: m.pauses || [], anticipe: !!m.anticipe, patience_ms: Number.isFinite(m.patience) ? m.patience : null });
 }
 // (2026-10-23, 18:47, Ahmed dans un lieu bruyant : « ce n'était pas moi ») coupé par un BRUIT, pas par sa voix : il
 // reprend tout de suite, là où il s'était arrêté. Critère : 1,2 s après la coupure, moins de 0,2 s de son voisé (une
@@ -1839,7 +1840,8 @@ async function tourDeParole(conv, wav, infos, extra) {
   // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
   if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(true, { garder: true }); }
   sousTitre(texte);
-  mesureTour = { fin: Number(infos && (infos.derniere_voix || infos.fin)) || t0Tour, debut: t0Tour, transcrit: Date.now(), premier_texte: 0, premier_son: 0 };
+  mesureTour = { fin: Number(infos && (infos.derniere_voix || infos.fin)) || t0Tour, debut: t0Tour, transcrit: Date.now(), premier_texte: 0, premier_son: 0,
+    pauses: ((infos && infos.pauses) || []).slice(0, 30), anticipe: extra != null, patience: patienceConversation() };   // (27/10) pour rejouer la fin de tour
   await envoyer(texte, true);
   if (mesureTour && mesureTour.premier_texte) setTimeout(() => { if (mesureTour && !mesureTour.premier_son) finMesureTour(); }, 20000);
   if (COMMANDE_FIN.test(texte)) {                                         // il répond au revoir, puis on ferme
@@ -2055,7 +2057,9 @@ async function lireInterieur() {
    remise à zéro — ennui, humeur, pensées, occupations, journal du temps ; jamais sa mémoire. */
 function afficherVie(o) {
   const pause = !!(o && o.pause);
-  $('etatVie').textContent = pause ? 'en pause' : (o && o.veille ? 'en veille (son ennui a atteint son plafond)' : 'en marche');
+  const r = o && o.reveils_interieurs;                    // (27/10) ses réveils intérieurs du jour, pour l'observation
+  $('etatVie').textContent = (pause ? 'en pause' : (o && o.veille ? 'en veille (son ennui a atteint son plafond)' : 'en marche'))
+    + (r && r.n ? ` · réveils intérieurs aujourd'hui : ${r.n}${r.rien ? ` (${r.rien} sans suite)` : ''}` : '');
   $('vieInterrupteur').textContent = pause ? 'Remettre en marche' : 'Mettre en pause';
   $('vieInterrupteur').setAttribute('aria-pressed', String(pause));
 }

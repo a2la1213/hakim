@@ -28,6 +28,9 @@ Usage :
   anamnese retablir <#id …>      défaire une rétractation
   anamnese retractation [json|accepter <id>|refuser <id>]  les rétractations proposées par Hakim, qu'Ahmed tranche
   anamnese spontaneite            ses sollicitations spontanées : bras hyperuniforme contre Poisson
+  anamnese situations             ses erreurs par situation : les leçons et les récidives avant / après
+  anamnese reveil-interieur [etat|off|observe|on|seuil <x>]  le réveil intérieur de Hakim (27/10) : une pensée de fond
+                                 qui réveille sa conscience ; « observe » juge et note sans réveiller
   anamnese evenements [verifier|liste|temoin]  le journal d'événements en ajout seul (témoins de l'identité)
   anamnese interieur [etat|arret|marche|zero]  l'interrupteur de la vie intérieure de Jarvis
                                  (ennui, humeur, pensées, occupations, journal du temps — jamais la mémoire)
@@ -97,7 +100,7 @@ def briefing(m, source, now, session=None):
             import courrier
             recus = courrier.non_lus("claude-code")
             if recus:
-                texte = f"{texte}\n\n{courrier.annonce(recus)}"
+                texte = f"{texte}\n\n{courrier.annonce(recus, deja=courrier.traites_par_reveil(recus))}"
         except Exception:
             pass
     contenu = "\n".join(l for l in texte.splitlines() if not l.startswith(_VARIABLE))
@@ -242,7 +245,7 @@ def main():
         if sous == "nonlus":                         # pour un hook UserPromptSubmit : une ligne s'il y a du courrier
             recus = courrier.non_lus("claude-code")
             if recus:
-                print(courrier.annonce(recus))
+                print(courrier.annonce(recus, deja=courrier.traites_par_reveil(recus)))
         elif sous == "envoyer" and len(sys.argv) >= 5:
             print(courrier.envoyer(sys.argv[3], " ".join(sys.argv[4:]), de=os.environ.get("ANAMNESE_SOURCE") or "claude-code"))
         else:
@@ -359,6 +362,41 @@ def main():
         for arm, b in spontaneite.bilan(m).items():
             med = f"{b['delai_median_s'] // 60} min" if b["delai_median_s"] is not None else "—"
             print(f"{arm:14s} : {b['n']} sollicitation(s), {b['reponses_30min']} réponse(s) en moins de 30 min, délai médian {med}")
+    elif cmd == "situations":
+        # (27/10) ses erreurs par situation : les leçons, et les récidives avant / après chaque leçon
+        import carnet
+        import situations as S
+        L = (S._lire(S.LECONS, {}) or {}).get("situations", [])
+        if not L:
+            print("Aucune leçon de situation pour l'instant (la passe de nuit les écrit vers 4 h).")
+        r = {x["slug"]: x for x in S.recidives(carnet.erreurs(), S._lire(S.CLASSEMENT, {}), L)}
+        for x in L:
+            y = r.get(x["slug"], {})
+            print(f"- {x['libelle']} [{x['declencheur']}] : {x['n']} erreur(s) ; avant la leçon {y.get('avant', 0)} "
+                  f"en {y.get('jours_avant', 0):.1f} j, après {y.get('apres', 0)} en {y.get('jours_apres', 0):.1f} j\n  {x['regle']}")
+    elif cmd == "reveil-interieur":
+        # (27/10) le réveil intérieur de Hakim : off | observe (juge et note « aurait réveillé ») | on
+        import time as _t
+        import reveil_interieur as RI
+        action = (rest[0] if rest else "etat").lower()
+        if action in RI.MODES:
+            RI.regler(m, action)
+        elif action == "seuil" and len(rest) > 1:
+            with RI._VERROU:
+                d = RI.etat(m)
+                d["seuil"] = max(RI.SEUIL_MIN, min(RI.SEUIL_MAX, float(rest[1].replace(",", "."))))
+                RI._sauver(m, d)
+        elif action != "etat":
+            print("usage : anamnese reveil-interieur [etat|off|observe|on|seuil <x>]")
+            sys.exit(2)
+        d, maintenant = RI.etat(m), _t.time()
+        jour = _t.strftime("%Y-%m-%d")
+        du_jour = [i for i in RI.lire_issues() if _t.strftime("%Y-%m-%d", _t.localtime(i["ts"])) == jour]
+        compte = {k: sum(1 for i in du_jour if i["issue"] == k) for k in ("message", "outils", "rien", "expiree", "erreur")}
+        dernier = _t.strftime("%d/%m %H:%M", _t.localtime(d["dernier_ts"])) if d["dernier_ts"] else "jamais"
+        print(f"mode : {RI.mode(m)} · seuil : {d['seuil']} (effectif {RI.seuil_effectif(m, maintenant, RI.lire_issues())}) · "
+              f"dernier réveil : {dernier}")
+        print("aujourd'hui : " + ", ".join(f"{k} {n}" for k, n in compte.items()))
     elif cmd == "evenements":
         # Lot E, point 7 (2026-10-19) : chaque changement d'identité laisse un témoin chaîné, vérifiable.
         import evenements

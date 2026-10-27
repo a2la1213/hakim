@@ -175,3 +175,63 @@ def test_une_note_n_est_jamais_coupee_au_milieu_d_une_phrase():
     assert len(b) <= 300 and b.endswith(".") and not b.endswith("en.")
     assert occupations.borner("Court.", 300) == "Court."
     assert occupations._nettoyer("NOTE :\n* **Ahmed** veut finir.\n* Je proposerai la suite.", "NOTE") == "Ahmed veut finir. Je proposerai la suite."
+
+
+# ---------- (27/10, Ahmed : « pourquoi je devrais valider ses activités ? ») ses propres occupations, sans validation
+@pytest.fixture
+def miennes(tmp_path, monkeypatch):
+    monkeypatch.setattr(occupations, "MIENNES", tmp_path / "occupations-hakim.json")
+    return occupations.MIENNES
+
+
+def test_il_cree_et_retire_ses_occupations_lui_meme(miennes):
+    o = occupations.creer("Méditer", "Regarder mon état intérieur sans agir, et l'écrire.")
+    assert o["code"] == "mienne:mediter" and [x["nom"] for x in occupations.miennes()] == ["Méditer"]
+    with pytest.raises(ValueError):
+        occupations.creer("Méditer", "une autre description assez longue")       # même nom
+    with pytest.raises(ValueError):
+        occupations.creer("ab", "trop court")
+    occupations.retirer("méditer")
+    assert occupations.miennes() == []
+    for k in range(occupations.MIENNES_MAX):
+        occupations.creer(f"occupation {k}", "une description assez longue pour passer")
+    with pytest.raises(ValueError):
+        occupations.creer("une de trop", "une description assez longue pour passer")
+
+
+def test_ses_occupations_entrent_dans_le_choix_et_reviennent_apres_trois_heures(mem, miennes, tmp_path):
+    occupations.creer("Méditer", "Regarder mon état intérieur sans agir, et l'écrire.")
+    now = _jour(15)
+    vide = tmp_path / "docs"; vide.mkdir()
+    j = _journal(tmp_path, now - 3 * 86400, [("ahmed", "vieux")])
+    _absent(mem, now, 30 * 60)
+    assert ("mienne:mediter" in [c for c, _r in occupations.eligibles(mem, now, interieur.lire(mem), j, vide)])
+    g = Gemma("2", "NOTE : Mon calme est revenu après la nuit agitée ; je le note.")   # 1. ranger sa mémoire, 2. la sienne
+    code, r = occupations.peut_etre(g, mem, {}, now=now, journal=j, docs=vide)
+    assert code == "mienne:mediter" and "calme" in r
+    assert "Méditer" in g.prompts[1] and "Regarder mon état intérieur" in g.prompts[1] and "à toi" in g.prompts[1]
+    textes = [c for (c,) in mem.db.execute("SELECT content FROM episodes WHERE role='reflection'")]
+    assert any(t.startswith("(occupation · Méditer)") for t in textes)
+    assert "mienne:mediter" not in [c for c, _r in occupations.eligibles(mem, now + 3600, interieur.lire(mem), j, vide)]
+    assert "mienne:mediter" in [c for c, _r in occupations.eligibles(mem, now + 3 * 3600, interieur.lire(mem), j, vide)]
+
+
+def test_le_choix_est_le_sien_pas_une_liste_validee_par_ahmed(miennes):
+    occupations.creer("Méditer", "Regarder mon état intérieur sans agir, et l'écrire.")
+    g = Gemma("2")
+    opts = [("preparer_retour", "a"), ("mienne:mediter", "b")]
+    assert occupations.choisir(g, opts, {"absence_s": 1800}) == "mienne:mediter"
+    assert "Méditer" in g.prompts[0] and "validée par Ahmed" not in g.prompts[0] and "envie" in g.prompts[0]
+
+
+def test_les_outils_de_hakim_pour_ses_occupations(tmp_path, monkeypatch, miennes):
+    m = memory.Memory(db_path=tmp_path / "m2.db")
+    monkeypatch.setattr(memory, "Memory", lambda *a, **k: m)
+    import mcp_server
+    monkeypatch.setattr(mcp_server, "_mem", m)
+    outil = lambda n: mcp_server.mcp._tool_manager.get_tool(n).fn
+    assert "créée" in outil("occupation_creer")("Étudier", "Creuser un sujet qui m'intrigue, pour moi.")
+    assert "Étudier" in outil("mes_occupations")()
+    assert "retirée" in outil("occupation_retirer")("Étudier")
+    assert "Refusé" in outil("occupation_creer")("x", "y")
+    m.db.close()

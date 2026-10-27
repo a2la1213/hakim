@@ -20,7 +20,7 @@ function monter(heure) {
     j: JSON.stringify, lireJson: (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_) { return d; } },
     ecrireAtomique: (f, s) => fs.writeFileSync(f, s), neutraliser: (t) => String(t).replace(/\[/g, '⟮').replace(/\]/g, '⟯'),
     duree: () => '5 min', dernierMessageAhmedMs: () => 0, NONCE_REVEIL: 'n0nce', UUID: /x/, cerveau,
-    cerveauVivant: () => true, occupe: () => false, cerveauPrechauffer() {}, setInterval: () => ({ unref() {} }) };
+    cerveauVivant: () => true, occupe: () => false, cerveauPrechauffer() {}, setInterval: () => ({ unref() {} }), blocLecons: () => '' };
   vm.createContext(ctx);
   vm.runInContext(`const JARVIS_PROMESSES = path.join(JARVIS, 'promesses.json');
     const JARVIS_PROMESSES_ETATS = path.join(JARVIS, 'promesses-etats.json'); let promessesDemarrages = 0;`

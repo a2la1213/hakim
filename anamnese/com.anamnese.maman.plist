@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.anamnese.maman</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/admin/Desktop/anamnese/.venv/bin/python</string>
+    <string>/Users/admin/Desktop/anamnese/maman.py</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/admin/Desktop/anamnese</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/Users/admin/.npm-global/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartInterval</key><integer>60</integer>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>/Users/admin/Desktop/anamnese/data/maman.log</string>
+  <key>StandardErrorPath</key><string>/Users/admin/Desktop/anamnese/data/maman.log</string>
+</dict>
+</plist>

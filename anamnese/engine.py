@@ -8,21 +8,74 @@ Depuis 2026-08-18 : CHAT_MODEL "claude:<alias>" route vers `claude -p`
 """
 import re
 import json
+import os
 import subprocess
+import tempfile
+import time
+from pathlib import Path
+
 import requests
 
 import config
+
+# (27/10, Ahmed : « on remplace Gemma par Sonnet, même les rêves ») la voie Claude est ISOLÉE : --restricted (ni réglages
+# ni hooks de l'utilisateur : le SessionStart ferait décroître sa mémoire de travail), aucun outil, aucun serveur MCP,
+# un dossier vide, le forfait (jamais la clé API). Chaque appel est journalisé ; au-delà de CLAUDE_MAX_JOUR appels par
+# jour (un emballement, un bug), le modèle de secours (Gemma) prend la main.
+CLAUDE = os.environ.get("ANAMNESE_CLAUDE_BIN") or str(Path.home() / ".npm-global" / "bin" / "claude")
+JOURNAL_APPELS = config.DATA_DIR / "llm-appels.jsonl"
+CLAUDE_MAX_JOUR = int(os.environ.get("ANAMNESE_CLAUDE_MAX_JOUR", "400"))
+_appels_du_jour = {"jour": "", "n": 0}
+
+
+def _journaliser_appel(o):
+    try:
+        fd = os.open(JOURNAL_APPELS, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        with os.fdopen(fd, "a", encoding="utf-8") as h:
+            h.write(json.dumps({"ts": time.time(), **o}, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def _compter_aujourdhui(jour):
+    """Les appels à Claude du jour, relus dans le journal (relecture du 27/10 : un redémarrage du démon remettait le
+    compte à zéro)."""
+    n = 0
+    try:
+        with open(JOURNAL_APPELS, encoding="utf-8") as h:
+            for l in h:
+                try:
+                    o = json.loads(l)
+                except ValueError:
+                    continue
+                if time.strftime("%Y-%m-%d", time.localtime(o.get("ts", 0))) == jour and not str(o.get("modele", "")).startswith("gemma"):
+                    n += 1
+    except OSError:
+        pass
+    return n
+
+
+def _plafond_atteint():
+    jour = time.strftime("%Y-%m-%d")
+    if _appels_du_jour["jour"] != jour:
+        _appels_du_jour.update(jour=jour, n=_compter_aujourdhui(jour))
+    return _appels_du_jour["n"] >= CLAUDE_MAX_JOUR
 
 
 class Engine:
     def __init__(self, host=config.OLLAMA_HOST,
                  chat_model=config.CHAT_MODEL,
-                 embed_model=config.EMBED_MODEL):
+                 embed_model=config.EMBED_MODEL,
+                 secours_model=None):
         self.host = host.rstrip("/")
         self.chat_model = chat_model
         self.embed_model = embed_model
+        self.secours_model = secours_model      # Ollama, quand la voie Claude échoue ou a atteint son plafond
+        self.dernier = None                     # « sonnet », « gemma »… : qui a répondu au dernier appel
 
     def health(self):
+        if self.chat_model.startswith("claude"):
+            return True                         # la voie Claude ne dépend pas d'Ollama (l'échec retombe sur le secours)
         try:
             return requests.get(f"{self.host}/api/tags", timeout=3).ok
         except requests.RequestException:
@@ -37,9 +90,22 @@ class Engine:
         défaut du modèle.
         """
         if self.chat_model.startswith("claude"):
-            return self._chat_claude(messages, stream=stream)
+            if not (self.secours_model and _plafond_atteint()):
+                try:
+                    return self._chat_claude(messages, stream=stream)
+                except requests.RequestException:
+                    if not self.secours_model:
+                        raise
+            texte = self._chat_ollama(messages, stream, think, self.secours_model)
+            _journaliser_appel({"modele": "gemma (secours)", "entree_car": sum(len(m["content"]) for m in messages),
+                                "sortie_car": len(texte or ""), "erreur": None})
+            return texte
+        return self._chat_ollama(messages, stream, think, self.chat_model)
+
+    def _chat_ollama(self, messages, stream, think, modele):
+        self.dernier = "gemma" if "gemma" in str(modele).lower() else str(modele)
         url = f"{self.host}/api/chat"
-        payload = {"model": self.chat_model, "messages": messages, "stream": stream}
+        payload = {"model": modele, "messages": messages, "stream": stream}
         if think is not None:
             payload["think"] = think
         if not stream:
@@ -72,17 +138,29 @@ class Engine:
         alias = self.chat_model.split(":", 1)[1] if ":" in self.chat_model else "sonnet"
         parts = [m["content"] if m.get("role") == "system"
                  else f"[{m.get('role', 'user')}] {m['content']}" for m in messages]
+        prompt = "\n\n".join(parts)
+        env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}   # le forfait, jamais l'API payante
+        env["ANAMNESE_HEADLESS"] = "1"
+        debut, trace = time.monotonic(), {"modele": alias, "entree_car": len(prompt)}
+        _appels_du_jour["n"] += 1
         try:
-            r = subprocess.run(
-                ["claude", "-p", "\n\n".join(parts), "--model", alias,
-                 "--max-turns", "2", "--allowedTools", ""],
-                capture_output=True, text=True, timeout=config.LLM_TIMEOUT)
-        except (subprocess.SubprocessError, OSError) as e:
+            with tempfile.TemporaryDirectory(prefix="tete-de-fond-") as vide:
+                r = subprocess.run(
+                    [CLAUDE, "-p", prompt, "--model", alias, "--restricted", "--tools", "", "--strict-mcp-config",
+                     "--no-session-persistence", "--max-turns", "1", "--output-format", "json"],
+                    capture_output=True, text=True, timeout=config.LLM_TIMEOUT, cwd=vide, env=env,
+                    stdin=subprocess.DEVNULL)
+            o = json.loads(r.stdout or "{}")
+        except (subprocess.SubprocessError, OSError, ValueError) as e:
+            _journaliser_appel({**trace, "erreur": type(e).__name__, "duree_s": round(time.monotonic() - debut, 1)})
             raise requests.RequestException(f"claude CLI : {e}")
-        if r.returncode != 0:
-            raise requests.RequestException(
-                f"claude CLI rc={r.returncode} : {(r.stderr or '').strip()[:200]}")
-        text = (r.stdout or "").strip()
+        text = str(o.get("result") or "").strip()
+        erreur = r.returncode != 0 or bool(o.get("is_error")) or not text or text.startswith("API Error")
+        _journaliser_appel({**trace, "sortie_car": len(text), "cout_usd": o.get("total_cost_usd"),
+                            "duree_s": round(time.monotonic() - debut, 1), "erreur": text[:120] if erreur else None})
+        if erreur:
+            raise requests.RequestException(f"claude CLI rc={r.returncode} : {text[:200] or (r.stderr or '')[:200]}")
+        self.dernier = alias
         if stream:
             print(text)
         return text

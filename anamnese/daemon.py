@@ -157,6 +157,13 @@ def penser(eng, mem, motif, claude_fn=None, now=None):
             importance=0.45, embedding=[])
     interieur.noter(mem, "pensee", f"({cerveau}) {pensee[:160]}")
     print("[daemon] pensée :", pensee[:140])
+    try:                                         # (27/10) une pensée peut réveiller sa conscience (reveil_interieur.py)
+        import reveil_interieur
+        if reveil_interieur.mode(mem) != "off":
+            reveil_interieur.candidat(mem, "pensee", pensee, reveil_interieur.juger(
+                eng, pensee, motif.get("humeur", "?"), motif.get("absence_s", 0), claude_fn=_claude_isole), now)
+    except Exception as e:
+        print("[daemon] réveil intérieur en échec :", e)
     if relance and not matiere["echanges"]:      # pas d'échange récent : rien de concret à relancer
         relance = None
     if relance and interieur.relance_permise(mem, now, relance):
@@ -201,7 +208,12 @@ def _une_pensee(eng, prompt, motif, claude_fn):
         if not eng.health():
             print("[daemon] pas de cerveau (Ollama absent) — pensée sautée")
             return None
-        sortie = eng.chat([{"role": "user", "content": prompt}], stream=False, think=False)
+        try:
+            sortie = eng.chat([{"role": "user", "content": prompt}], stream=False, think=False)
+        except Exception as e:                                  # (relecture du 27/10) Sonnet et Gemma tombés : la pensée
+            print("[daemon] pensée sautée : aucun cerveau n'a répondu :", e)   # est sautée, la boucle continue
+            return None
+        cerveau = getattr(eng, "dernier", None) or "gemma"      # (27/10) Sonnet, ou Gemma en secours
     pensee, relance = interieur.lire_pensee(sortie)
     return pensee, relance, cerveau
 
@@ -952,6 +964,19 @@ def _derniers_mots_d_ahmed(journal=None, n=4, maintenant=None):
     return (" … ".join(str(o["texte"])[:400] for o in msgs), msgs[-1]["ts"]) if msgs else ("", None)
 
 
+def _decharger_gemma():
+    """Libère la mémoire tenue par Gemma dans Ollama (keep_alive 0) ; ne lève jamais."""
+    try:
+        import urllib.request
+        ps = json.loads(urllib.request.urlopen(f"{config.OLLAMA_HOST}/api/ps", timeout=3).read())
+        for m in ps.get("models") or []:
+            if "gemma" in str(m.get("name", "")).lower():
+                urllib.request.urlopen(urllib.request.Request(f"{config.OLLAMA_HOST}/api/generate", method="POST",
+                    data=json.dumps({"model": m["name"], "keep_alive": 0}).encode(), headers={"Content-Type": "application/json"}), timeout=10)
+    except Exception:
+        pass
+
+
 def _ressenti_pass(mem, now=None, lancer=None, journal=None, sortie=None):
     now = now or time.time()
     sortie = Path(sortie or RESSENTI)
@@ -972,26 +997,22 @@ def _ressenti_pass(mem, now=None, lancer=None, journal=None, sortie=None):
         return False                                   # rien de neuf à ressentir
     if now - float(avant.get("ts") or 0) < RESSENTI_ECART_S:
         return False
+    par_ollama = os.environ.get("JARVIS_RESSENTI_MOTEUR", "ollama") == "ollama"
+    reel = lancer is None                              # le vrai scanner (un test injecte le sien : rien à décharger)
     if lancer is None:
-        # (24/10, piste 3) le ressenti tourne sur la Gemma d'OLLAMA : on ne la décharge plus. Seul le repli MLX (moteur
-        # « mlx ») en charge une deuxième : alors, et alors seulement, celle d'Ollama s'en va d'abord
-        try:
-            if os.environ.get("JARVIS_RESSENTI_MOTEUR", "ollama") == "ollama":
-                raise StopIteration
-            import urllib.request
-            ps = json.loads(urllib.request.urlopen(f"{config.OLLAMA_HOST}/api/ps", timeout=3).read())
-            for m in ps.get("models") or []:
-                if "gemma" in str(m.get("name", "")).lower():
-                    urllib.request.urlopen(urllib.request.Request(f"{config.OLLAMA_HOST}/api/generate", method="POST",
-                        data=json.dumps({"model": m["name"], "keep_alive": 0}).encode(), headers={"Content-Type": "application/json"}), timeout=10)
-        except (Exception, StopIteration):
-            pass
+        # le repli MLX (moteur « mlx ») charge sa propre Gemma : celle d'Ollama s'en va d'abord
+        if not par_ollama:
+            _decharger_gemma()
         racine = Path(__file__).resolve().parent
         py = racine / "jarvis" / ".venv" / "bin" / "python"
         lancer = lambda q: subprocess.run([str(py), str(racine / "jarvis" / "scanner.py"), "--ressenti"], input=json.dumps(q),
                                           capture_output=True, text=True, timeout=400, cwd=str(racine / "jarvis"),
                                           env={**os.environ, "HF_HUB_OFFLINE": "1"})
     r = lancer({"humeur": humeur, "contexte": contexte, "dernier_ts": dernier, "sortie": str(sortie)})
+    if reel and par_ollama:
+        # (27/10, Ahmed : « c'est LA solution ») Gemma (7,6 Go sur 16) restait 5 min en mémoire « au cas où » ; si
+        # Ahmed parlait à Hakim pendant ce temps, la transcription et la voix ralentissaient. Elle part tout de suite.
+        _decharger_gemma()
     ok = getattr(r, "returncode", 1) == 0
     print(f"[daemon] ressenti ({humeur}) : " + ((r.stdout or "").strip().splitlines()[-1][:200] if ok and r.stdout else f"échec {(r.stderr or '')[-200:]}"))
     return ok
@@ -1101,7 +1122,52 @@ def battement_interieur(etat, arret=None, pas_s=15):
                            activite=etat.get("activite"))
         except Exception as e:
             print("[daemon] battement intérieur en erreur :", e)
+        try:
+            import reveil_interieur                         # (27/10) une peur, un manque qui dure : il peut se réveiller
+            reveil_interieur.ressenti(mem_fil)
+        except Exception as e:
+            print("[daemon] réveil intérieur : ressenti en erreur :", e)
+        try:
+            reveil_interieur.apprendre(mem_fil, reveil_interieur.lire_issues())   # ce que ses réveils ont donné
+        except Exception as e:
+            print("[daemon] réveil intérieur : apprentissage en erreur :", e)
         arret.wait(pas_s)
+
+
+def _situations_pass(eng, mem, now=None):
+    """(27/10, idée d'Ahmed) Une fois par nuit, vers 4 h : les nouvelles erreurs du carnet rangées par situation, et une
+    leçon par situation qui en a au moins deux (situations.py) ; le cockpit la rappelle selon ce que Hakim fait."""
+    now = now or time.time()
+    h = time.localtime(now).tm_hour
+    jour = time.strftime("%Y-%m-%d", time.localtime(now))
+    if not (4 <= h < 7) or mem.kv_get("situations_jour") == jour:
+        return
+    mem.kv_set("situations_jour", jour)
+    try:
+        import situations
+        n, lecons = situations.passe_nuit(eng, now)
+        print(f"[daemon] situations : {n} erreur(s) rangée(s), {len(lecons)} leçon(s)")
+        interieur.noter(mem, "situations", f"{n} erreur(s) rangée(s) par situation ; {len(lecons)} leçon(s)")
+    except Exception as e:
+        print("[daemon] situations en échec :", e)
+
+
+def _noyau_pass(eng, mem, now=None):
+    """(27/10) Une fois par semaine, la nuit du dimanche vers 4 h : ce qui revient vraiment dans ses choix entre dans son
+    carnet « noyau » (noyau.py) ; un trait qui ne revient plus descend. Rien ne s'efface."""
+    now = now or time.time()
+    lt = time.localtime(now)
+    semaine = time.strftime("%G-%V", lt)
+    if lt.tm_wday != 6 or not (4 <= lt.tm_hour < 7) or mem.kv_get("noyau_semaine") == semaine:
+        return
+    mem.kv_set("noyau_semaine", semaine)
+    try:
+        import noyau
+        e = noyau.passe(eng, now)
+        print(f"[daemon] noyau : {len(e)} entrée(s) dans son carnet")
+        interieur.noter(mem, "noyau", f"{len(e)} entrée(s) dans son carnet noyau")
+    except Exception as ex:
+        print("[daemon] noyau en échec :", ex)
 
 
 def _rangement_nuit_pass(mem, now=None):
@@ -1202,7 +1268,7 @@ def _echanges_pass(mem):
 
 def main():
     mem = Memory()
-    eng = Engine(chat_model=config.DAEMON_MODEL)
+    eng = Engine(chat_model=config.DAEMON_MODEL, secours_model=config.DAEMON_SECOURS)
     mem.kv_set("daemon_started", str(time.time()))
     if mem.kv_get("last_dream") is None:   # 1er boot : ne pas rêver sur de vieux épisodes pré-existants
         mem.kv_set("last_dream", str(time.time()))
@@ -1238,6 +1304,8 @@ def main():
             _echanges_pass(mem)                    # chaque échange avec Ahmed devient un souvenir (2026-10-20)
             _tests_de_nuit_pass(mem)               # la batterie fixe, rejouée chaque nuit (lot G, 41)
             _rangement_nuit_pass(mem)              # les souvenirs mal rangés, lus et rangés (2026-10-21)
+            _situations_pass(eng, mem)             # ses erreurs rangées par situation, et leurs leçons (27/10)
+            _noyau_pass(eng, mem)                  # son noyau : ce qui revient dans ses choix, chaque semaine (27/10)
             _audit_dependances_pass(mem)           # les failles connues des dépendances, chaque semaine
             time.sleep(config.DAEMON_TICK)
         except KeyboardInterrupt:

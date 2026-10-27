@@ -78,6 +78,16 @@ def _vie_interieure_isolee(monkeypatch, tmp_path):
         monkeypatch.setattr(echanges, "FILE", d / "echanges.jsonl")
     except Exception:
         pass
+    # (27/10) les fichiers des chantiers de la nuit : jamais les vrais pendant les tests
+    for module, noms in (("occupations", ("MIENNES",)), ("noyau", ("PREUVES",)), ("situations", ("CLASSEMENT", "LECONS")),
+                         ("reveil_interieur", ("FICHIER", "ISSUES", "JOURNAL")), ("engine", ("JOURNAL_APPELS",))):
+        try:
+            m = __import__(module)
+            for nom in noms:
+                if not str(getattr(m, nom)).startswith(str(tmp_path)):
+                    monkeypatch.setattr(m, nom, d / f"{module}-{nom.lower()}")
+        except Exception:
+            pass
     monkeypatch.setattr(interieur, "INTERRUPTEUR", d / "interieur-interrupteur.json")
     monkeypatch.setattr(interieur, "JOURNAL_TEMPS", d / "journal-du-temps.jsonl")
     monkeypatch.setattr(interieur, "JOURNAL_HORMONES", d / "hormones.jsonl")      # (2026-10-23) le tableau de bord

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "anamnese": {
+      "command": "/Users/admin/Desktop/anamnese/.venv/bin/python",
+      "args": ["/Users/admin/Desktop/anamnese/mcp_server.py"],
+      "env": {"ANAMNESE_SOURCE": "claude-code", "ANAMNESE_REVEIL_MAMAN": "1", "ANAMNESE_LECTURE_SEULE": "1"}
+    }
+  }
+}

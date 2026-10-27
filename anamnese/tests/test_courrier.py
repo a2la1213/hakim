@@ -134,3 +134,63 @@ def test_hakim_cree_ses_rubriques_mais_pas_dans_un_tour_sans_ahmed(tmp_path, mon
     (tmp_path / "tour-autonome.json").unlink()
     assert "prête" in creer("personnes") and "prête" in creer("personnes/nora")
     assert "personnes/nora" in ranger(eid, "personnes/nora")
+
+
+# ---------- (27/10) Claude Code réveillée seule par une lettre de Hakim : son propre marqueur de lecture
+def test_un_reveil_ne_vole_pas_le_courrier_de_la_session():
+    i = courrier.envoyer("claude-code", "un doute sur mon seuil", de="hakim")
+    courrier.marquer_lus([i], pour=courrier.LECTEUR_REVEIL)
+    recus = courrier.non_lus("claude-code")
+    assert [m["id"] for m in recus] == [i]                                 # la session ouverte par Ahmed la voit encore
+    assert courrier.traites_par_reveil(recus) == 1
+
+
+def test_annonce_dit_ce_que_le_reveil_a_deja_traite():
+    m = [{"id": "a", "sujet": "x", "texte": "x"}]
+    assert "dont 1 déjà traité" in courrier.annonce(m, deja=1)
+    assert "déjà traité" not in courrier.annonce(m)
+
+
+def test_le_hook_et_le_briefing_disent_ce_que_le_reveil_a_traite(tmp_path, capsys, monkeypatch):
+    import cli
+    import memory
+    import migrations
+    m = memory.Memory(db_path=tmp_path / "m.db")
+    migrations.migrate(m.db)
+    i = courrier.envoyer("claude-code", "un doute sur mon seuil", "doute", de="hakim")
+    courrier.marquer_lus([i], pour=courrier.LECTEUR_REVEIL)
+    assert "dont 1 déjà traité" in (cli.briefing(m, "startup", 1792440000.0, session="abc") or "")
+    m.db.close()
+
+
+def test_lettre_ecrite_par_un_reveil_est_etiquetee():
+    m = {"id": "b", "ts": 0, "de": "claude-code", "a": "hakim", "sujet": "", "texte": "ok", "autonome": True}
+    assert "réveillée seule, en lecture seule" in courrier.formater([m])
+    assert "réveillée seule" not in courrier.formater([{**m, "autonome": False}])
+
+
+def test_courrier_envoyer_pendant_un_reveil_de_claude_code_est_autonome(monkeypatch, tmp_path):
+    import json
+    import memory
+    mem = memory.Memory(db_path=tmp_path / "m.db")
+    import mcp_server
+    monkeypatch.setattr(mcp_server, "_mem", mem)
+    monkeypatch.setenv("ANAMNESE_SOURCE", "claude-code")
+    envoyer = mcp_server.mcp._tool_manager.get_tool("courrier_envoyer").fn
+    envoyer("hakim", "Je t'ai lu, voici mon avis.")
+    monkeypatch.setenv("ANAMNESE_REVEIL_MAMAN", "1")
+    envoyer("hakim", "Réponse d'un réveil.")
+    lignes = [json.loads(l) for l in courrier.FICHIER.read_text().splitlines()]
+    assert [x.get("autonome", False) for x in lignes] == [False, True]
+    mem.db.close()
+
+
+def test_son_temps_a_lui_compte_comme_un_tour_sans_ahmed(monkeypatch, tmp_path):
+    # (27/10) sa conversation à part (son temps à lui) n'a pas la marque du cockpit : elle porte la variable
+    import mcp_server
+    monkeypatch.setattr(mcp_server, "MARQUE_AUTONOME", tmp_path / "absente.json")
+    monkeypatch.setenv("ANAMNESE_SOURCE", "hakim")
+    monkeypatch.delenv("ANAMNESE_TOUR_SANS_AHMED", raising=False)
+    assert mcp_server._tour_sans_ahmed() is False
+    monkeypatch.setenv("ANAMNESE_TOUR_SANS_AHMED", "1")
+    assert mcp_server._tour_sans_ahmed() is True

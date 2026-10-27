@@ -169,7 +169,12 @@ BACKUP_KEEP        = int(os.environ.get("ANAMNESE_BACKUP_KEEP", "7"))           
 # force toutes les 24 h. Sur `claude:sonnet` il facturait donc en continu, la nuit comprise.
 # Effet de bord BÉNÉFIQUE : le labo de rêve redevient valide. Sous Sonnet, le bras dit
 # « local » n'était plus qwen mais Sonnet lui aussi — l'ablation comparait SONNET À SONNET.
-DAEMON_MODEL  = os.environ.get("ANAMNESE_DAEMON_MODEL", "huihui_ai/gemma-4-abliterated:12b")
+# 2026-10-27 (Ahmed : « on remplace Gemma par Sonnet, c'est mieux, même les rêves ; l'expérience, on la refera ») :
+# le juge du réveil intérieur a montré cette nuit que Gemma ne départage pas les pensées. Sonnet, isolé et au forfait
+# (engine.py), Gemma en SECOURS (hors ligne, échec, ou plafond d'appels du jour). Le labo de rêve compare de nouveau
+# Sonnet à Sonnet : l'expérience sera refaite. Chaque appel est journalisé (data/llm-appels.jsonl) pour suivre le coût.
+DAEMON_MODEL  = os.environ.get("ANAMNESE_DAEMON_MODEL", "claude:sonnet")
+DAEMON_SECOURS = os.environ.get("ANAMNESE_DAEMON_SECOURS", "huihui_ai/gemma-4-abliterated:12b")
 
 # --- Identité / persona (source UNIQUE, utilisée par le chat interactif ET le daemon) ---
 PERSONA = (

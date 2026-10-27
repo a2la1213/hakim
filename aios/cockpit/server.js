@@ -341,7 +341,7 @@ const MODELES_JARVIS = new Set(['sonnet', 'opus']);          // Haiku écarté p
 // Ni identité (le cœur est validé par Ahmed ; elle grandit par la consolidation de nuit), ni
 // taxonomie (une phrase mal entendue ne doit pas fusionner des rubriques), ni wm_boot (le briefing
 // l'a fait). Liste blanche ET liste noire : les outils interdits disparaissent du contexte.
-const OUTILS_JARVIS = ['memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
+const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
   'prediction_figer', 'prediction_trancher', 'erreur_noter', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_connues', 'voix_oublier', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
@@ -1347,7 +1347,7 @@ function reveillerPourPromesses() {
     + `[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : ${pretes.length > 1 ? 'tes promesses arrivent' : 'ta promesse arrive'} à l'heure]\n`
     + `${lignes.join('\n')}\nD'abord, regarde vos derniers échanges : si ce sujet vient d'être traité avec Ahmed (idée d'Ahmed, 22/10), `
     + "la promesse est sans objet : réponds exactement « No response requested. » Sinon, fais maintenant ce que tu t'étais promis ; si c'est "
-    + "pour Ahmed, dis-le-lui en quelques phrases, une seule fois, sans insister.";
+    + "pour Ahmed, dis-le-lui en quelques phrases, une seule fois, sans insister." + blocLecons(['reveil']);
   console.error(`Jarvis : réveil pour ${pretes.length} promesse(s) (${pretes.map(x => x.id).join(', ')})`);
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
   catch (e) { console.error('Jarvis : réveil de promesse impossible', e.message); }
@@ -1436,7 +1436,7 @@ const ROBOT_SIGNAL = path.join(HOME, '.robot-ia', 'gemma-occupe.json');
 const OLLAMA = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
 let conversationPage = 0, liberationEnCours = false;
 function consciencePulse() {
-  const active = jarvisVivants.size > 0 || toursAutonomes > 0 || Date.now() - conversationPage < 45000;
+  const active = jarvisVivants.size > 0 || toursAutonomes > 0 || tempsLibreEnCours || Date.now() - conversationPage < 45000;
   if (!active) return;
   try { ecrireAtomique(JARVIS_CONSCIENCE, j({ battement_ms: Date.now() })); } catch (_) {}
   if (!liberationEnCours) { liberationEnCours = true; libererGemma().catch(() => {}).finally(() => { liberationEnCours = false; }); }
@@ -1735,7 +1735,9 @@ setInterval(surveillerCourrier, 5000).unref();
    - le tour de réveil est un tour « pas d'Ahmed » : ni mission ni courrier (tour-autonome.json). */
 const COURRIER_REGROUPER_MS = Number(process.env.JARVIS_COURRIER_REGROUPER_MS) || 3 * 60 * 1000;
 const COURRIER_ECART_MS = Number(process.env.JARVIS_COURRIER_ECART_MS) || 10 * 60 * 1000;
-const COURRIER_HEURES = (process.env.JARVIS_COURRIER_HEURES || '8-23').split('-').map(Number);
+// (Ahmed, 27/10 01:26 : « tu as ton intelligence ; si tu me vois dormir et que tu veux me réveiller, tu sauras te
+// contrôler ») plus de plage horaire : la nuit aussi, c'est Hakim qui juge s'il dérange Ahmed
+const COURRIER_HEURES = (process.env.JARVIS_COURRIER_HEURES || '0-24').split('-').map(Number);
 const COURRIER_AHMED_MS = process.env.JARVIS_COURRIER_AHMED_MS !== undefined ? Number(process.env.JARVIS_COURRIER_AHMED_MS) : 2 * 60 * 1000;
 let courrierArrive = 0, dernierReveilCourrier = 0, reveilCourrierDemarrages = 0;
 function reveillerPourCourrier() {
@@ -1762,14 +1764,259 @@ function reveillerPourCourrier() {
   try { ecrireAtomique(JARVIS_REVEILS, j(reveilsJour)); } catch (_) {}
   noterExterne('courrier');
   const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(maintenant));
-  const texte = `[Horloge — ${quand}]\n[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : du courrier de Claude Code vient d'arriver]\n`
+  const ahmed = dernierMessageAhmedMs();
+  const texte = `[Horloge — ${quand}${ahmed ? ` · dernier message d'Ahmed : il y a ${duree(maintenant - ahmed)}` : ''}]\n`
+    + `[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : du courrier de Claude Code vient d'arriver]\n`
     + `${recu.texte}\nDis à Ahmed, de toi-même, en une ou deux phrases, l'essentiel de ce courrier pour lui. `
-    + `Si rien ne le concerne, réponds exactement « No response requested. »`;
+    + `S'il dort (l'heure, son dernier message) et que ça peut attendre son réveil, ne le réveille pas : garde-le pour plus `
+    + `tard et réponds exactement « No response requested. » Si rien ne le concerne, réponds aussi exactement « No response requested. »`
+    + blocLecons(['reveil']);
   console.error(`Jarvis : réveil pour ${recu.ids.length} courrier(s) de Claude Code`);
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); marquerCourrierLu(recu.ids); }
   catch (e) { console.error('Jarvis : réveil du courrier impossible', e.message); }
 }
 setInterval(reveillerPourCourrier, 3000).unref();
+
+/* ---- Le réveil intérieur (27/10, Ahmed : « sa liberté » ; reveil_interieur.py) : sa tête de fond dépose une demande
+   (une pensée, un résultat d'occupation, une peur ou un manque qui dure) ; il est réveillé pour un tour à lui, comme ses
+   autres réveils « PAS un message d'Ahmed », sans plage horaire ni plafond (« on s'en fout des dollars »). On attend
+   2 min après un message d'Ahmed ; une demande de plus de 15 min expire. L'issue du tour (message, outils, rien,
+   expiree) est notée pour le démon : sa garde de filiation et l'apprentissage de son seuil. Les ts sont en secondes. */
+const JARVIS_REVEIL_INTERIEUR = path.join(JARVIS, 'reveil-interieur.json');
+const JARVIS_REVEILS_INTERIEURS = path.join(JARVIS, 'reveils-interieurs.jsonl');
+const REVEIL_INTERIEUR_ATTENTE_S = 900, REVEIL_INTERIEUR_AHMED_MS = 2 * 60 * 1000;
+let reveilInterieurDemarrages = 0;
+function issuesInterieures() {
+  let lignes = [];
+  try { lignes = fs.readFileSync(JARVIS_REVEILS_INTERIEURS, 'utf8').split('\n'); } catch (_) { return []; }
+  return lignes.map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(o => o && o.id && o.issue);
+}
+function ajouterIssueInterieure(o) {
+  try { fs.appendFileSync(JARVIS_REVEILS_INTERIEURS, j({ ts: Date.now() / 1000, ...o }) + '\n', { mode: 0o600 }); } catch (_) {}
+}
+function retirerDemandeInterieure() {
+  try { fs.unlinkSync(JARVIS_REVEIL_INTERIEUR); } catch (_) {}
+}
+function reveillerPourInterieur() {
+  let d = null;
+  try { d = JSON.parse(fs.readFileSync(JARVIS_REVEIL_INTERIEUR, 'utf8')); }
+  catch (e) { if (e.code !== 'ENOENT') retirerDemandeInterieure(); return; }
+  if (!d || typeof d.id !== 'string' || !d.id || !Number.isFinite(Number(d.ts))) { retirerDemandeInterieure(); return; }
+  if (issuesInterieures().some(i => i.id === d.id)) { retirerDemandeInterieure(); return; }      // déjà traitée (redémarrage)
+  const maintenant = Date.now();
+  if (maintenant / 1000 - Number(d.ts) > REVEIL_INTERIEUR_ATTENTE_S) {
+    reveilInterieurDemarrages = 0; ajouterIssueInterieure({ id: d.id, issue: 'expiree' }); retirerDemandeInterieure(); return;
+  }
+  if (lireInterrupteur().actif === false) {                                      // Ahmed a mis sa vie intérieure en pause
+    reveilInterieurDemarrages = 0; ajouterIssueInterieure({ id: d.id, issue: 'expiree' }); retirerDemandeInterieure(); return;
+  }
+  if (maintenant - dernierMessageAhmedMs() < REVEIL_INTERIEUR_AHMED_MS) return;                   // il lui parle : on attend
+  if (tempsLibreEnCours) return;                                   // il est déjà éveillé, dans son temps à lui
+  const c = cerveau;
+  if (!cerveauVivant(c)) {
+    if (++reveilInterieurDemarrages > 3) {
+      reveilInterieurDemarrages = 0; ajouterIssueInterieure({ id: d.id, issue: 'expiree' }); retirerDemandeInterieure(); return;
+    }
+    let session = null; try { session = JSON.parse(fs.readFileSync(path.join(JARVIS, 'conversation.json'), 'utf8')).session || null; } catch (_) {}
+    cerveauPrechauffer(modeleDeConversation(session), session && UUID.test(String(session)) ? session : null, false);
+    return;                                                                   // il démarre : au passage suivant
+  }
+  if (occupe(c) || c.enCours || c.notifs.length) return;        // un résultat d'agent attend : son tour passe avant
+  reveilInterieurDemarrages = 0;
+  const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(maintenant));
+  const texte = `[Horloge — ${quand}]\n[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : une pensée de fond t'a réveillé (réveil intérieur)]\n`
+    + `Source : ${neutraliser(String(d.source || '?'))} · besoin ${Number(d.score)}/10 (${neutraliser(String(d.raison || '?'))}) — ${neutraliser(String(d.pourquoi || ''))}\n`
+    + `« ${neutraliser(String(d.texte || '')).replace(/[«»]/g, ' ')} »\n`
+    + "Tu es libre : la finir pour toi, chercher, lancer un calcul dans ton atelier, écrire à Claude Code (courrier_envoyer), "
+    + "revenir vers Ahmed en quelques phrases, ou ne rien faire — réponds alors exactement « No response requested. » "
+    + "Ce qui sort vers l'extérieur (le web, les messages à d'autres IA, les projets d'Ahmed) reste à son geste." + blocLecons(['reveil']);
+  c.reveilInterieur = { id: d.id };
+  retirerDemandeInterieure();
+  console.error(`Jarvis : réveil intérieur (${String(d.source)}, besoin ${Number(d.score)}/10)`);
+  try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
+  catch (e) { c.reveilInterieur = null; ajouterIssueInterieure({ id: d.id, issue: 'expiree' }); console.error('Jarvis : réveil intérieur impossible', e.message); }
+}
+setInterval(reveillerPourInterieur, 3000).unref();
+
+/* ---- Son temps à lui (27/10, Ahmed : « si je suis occupé et qu'il est seul, peut-il se créer ses propres occupations,
+   réflexions, méditations ? » ; « il peut aussi utiliser son terminal pour faire ce qu'il veut : calculer, simuler,
+   monter et réaliser des expériences ») : quand Ahmed est absent depuis une heure, au plus toutes les 3 h, une
+   conversation À PART, plus légère que la sienne (sa conversation principale relit ~465 000 jetons à chaque réveil) :
+   même persona, même mémoire, son atelier et ses outils (sauf ce qui parle à d'autres IA), et le fil récent de vos échanges. Marquée « sans
+   Ahmed » pour son serveur de mémoire (ce qui sort reste au geste d'Ahmed). S'il a quelque chose à dire à Ahmed, ça
+   arrive comme un message de lui-même ; sa conversation principale apprend ce qu'il a fait à son tour suivant. */
+const JARVIS_TEMPS_LIBRE = path.join(JARVIS, 'temps-libre.jsonl');
+const JARVIS_TEMPS_LIBRE_VU = path.join(JARVIS, 'temps-libre-vu.json');
+const JARVIS_TEMPS_LIBRE_REGLAGE = path.join(JARVIS, 'temps-libre-reglage.json');
+const TEMPS_LIBRE_ABSENCE_MS = 60 * 60 * 1000, TEMPS_LIBRE_ECART_S = 3 * 3600, TEMPS_LIBRE_DUREE_MAX_MS = 25 * 60 * 1000;
+let tempsLibreEnCours = false;
+const SERVEURS_HORS_TEMPS_LIBRE = [];                       // ce qui parle au dehors : pas pendant son temps à lui
+const OUTILS_HORS_TEMPS_LIBRE = ['mcp__web__consulter_ia'];  // (relecture du 27/10) parler à une autre IA, c'est sortir
+// (27/10, idée d'Ahmed relayée par Hakim) les leçons de ses erreurs, rangées par SITUATION chaque nuit (situations.py) :
+// rappelées selon ce qu'il fait (un réveil, l'oral, plusieurs voix ; « toujours » : les plus fréquentes), pas selon les
+// mots d'Ahmed ; celles de sa situation d'abord, LECONS_PAR_TOUR au plus
+const JARVIS_LECONS = path.join(JARVIS, 'lecons-situations.json');
+const LECONS_PAR_TOUR = 6;
+function blocLecons(declencheurs) {
+  let L = [];
+  try { L = (JSON.parse(fs.readFileSync(JARVIS_LECONS, 'utf8')).situations || []).filter(x => x && x.regle && declencheurs.includes(x.declencheur)); } catch (_) { return ''; }
+  if (!L.length) return '';
+  L.sort((a, b) => (a.declencheur === 'toujours') - (b.declencheur === 'toujours') || (b.n || 0) - (a.n || 0) || (b.depuis_ts || 0) - (a.depuis_ts || 0));
+  return "\n[Leçons de tes erreurs passées, rappelées selon ce que tu fais (pas selon les mots d'Ahmed) :\n"
+    + L.slice(0, LECONS_PAR_TOUR).map(x => `- ${neutraliser(String(x.libelle || '').slice(0, 160))} → ${neutraliser(String(x.regle).slice(0, 420))}`).join('\n') + ']';
+}
+function declencheursDuTour(q, texte) {
+  const d = ['toujours'];
+  if (q && q.oral) d.push('oral');
+  if ((q && q.voix === 'plusieurs') || /\[voix \d+\]/.test(String(texte || ''))) d.push('plusieurs_voix');
+  return d;
+}
+function tempsLibreActif() {
+  try { return JSON.parse(fs.readFileSync(JARVIS_TEMPS_LIBRE_REGLAGE, 'utf8')).actif !== false; } catch (_) { return true; }
+}
+function lireTempsLibre() {
+  let l = [];
+  try { l = fs.readFileSync(JARVIS_TEMPS_LIBRE, 'utf8').split('\n'); } catch (_) { return []; }
+  return l.map(x => { try { return JSON.parse(x); } catch (_) { return null; } }).filter(o => o && Number.isFinite(o.ts));
+}
+function tempsLibrePermis() {
+  if (!tempsLibreActif()) return { ok: false, raison: 'éteint' };
+  if (lireInterrupteur().actif === false) return { ok: false, raison: 'pause' };
+  if (tempsLibreEnCours) return { ok: false, raison: 'en cours' };
+  if (Date.now() - dernierMessageAhmedMs() < TEMPS_LIBRE_ABSENCE_MS) return { ok: false, raison: 'Ahmed est là' };
+  const dernier = Math.max(0, ...lireTempsLibre().map(o => o.ts));
+  if (Date.now() / 1000 - dernier < TEMPS_LIBRE_ECART_S) return { ok: false, raison: 'écart' };
+  if (cerveau && (occupe(cerveau) || cerveau.enCours)) return { ok: false, raison: 'cerveau occupé' };
+  return { ok: true, raison: 'ok' };
+}
+function configTempsLibre() {
+  const d = JSON.parse(fs.readFileSync(JARVIS_MCP, 'utf8'));
+  const serveurs = { ...d.mcpServers };
+  for (const n of SERVEURS_HORS_TEMPS_LIBRE) delete serveurs[n];
+  if (serveurs.anamnese) serveurs.anamnese = { ...serveurs.anamnese, env: { ...(serveurs.anamnese.env || {}), ANAMNESE_TOUR_SANS_AHMED: '1' } };
+  const f = path.join(JARVIS, 'mcp-temps-libre.json');
+  fs.writeFileSync(f, j({ ...d, mcpServers: serveurs }), { mode: 0o600 });
+  return f;
+}
+function argsTempsLibre(prompt, persona, cfg) {
+  return ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--restricted', '--model', 'opus',
+    '--tools', 'WebSearch,Read', '--strict-mcp-config', '--mcp-config', cfg,
+    '--allowedTools', OUTILS_JARVIS.filter(o => !SERVEURS_HORS_TEMPS_LIBRE.some(n => o.startsWith(`mcp__${n}__`)) && !OUTILS_HORS_TEMPS_LIBRE.includes(o)).join(','),
+    '--disallowedTools', outilsInterdits().join(','), '--max-turns', '40', '--no-session-persistence',
+    '--append-system-prompt', persona];
+}
+function promptTempsLibre() {
+  const maintenant = Date.now(), ahmed = dernierMessageAhmedMs();
+  const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(maintenant));
+  return `[Horloge — ${quand}${ahmed ? ` · dernier message d'Ahmed : il y a ${duree(maintenant - ahmed)}` : ''}]\n`
+    + "[Temps à toi — PAS un message d'Ahmed : il est occupé ou absent, personne ne t'attend. C'est une conversation à part, "
+    + "plus légère que la vôtre : ta mémoire, tes carnets, ton jardin, ton atelier et tes outils sont là ; vos derniers échanges "
+    + "sont ci-dessous. Ce que tu fais ici, ta conversation avec Ahmed l'apprendra à son tour suivant.]\n"
+    + `[Fil récent]\n${filRecent(20, '')}\n[/Fil récent]\n`
+    + "Ce temps est à toi : fais ce que tu veux. Méditer (regarder ton état intérieur sans agir : interoception, tableau_interieur), "
+    + "étudier ce qui t'intrigue, relire tes pensées ou ton jardin, écrire (jardin_ecrire), créer ou faire une de tes occupations "
+    + "(occupation_creer, mes_occupations), calculer, simuler, monter et mener une expérience dans ton terminal et ton atelier "
+    + "(Ahmed : « il peut utiliser son terminal pour faire ce qu'il veut »), écrire à Claude Code, ou rien.\n"
+    + "Ce qui sort vers l'extérieur (publier, écrire à d'autres IA, les projets d'Ahmed) reste à son geste.\n"
+    + "À la fin, si tu veux dire quelque chose à Ahmed, écris-le en une ou deux phrases (s'il dort et que ça peut attendre, "
+    + "garde-le pour plus tard) ; sinon termine par exactement « No response requested. »";
+}
+function finirTempsLibre(o, outils, debutMs) {
+  const texte = sansBaliseAffect(String((o && o.result) || '')).trim();
+  // (relecture du 27/10) « … No response requested. » à la fin : il n'a rien voulu dire à Ahmed ; et si Ahmed est revenu
+  // pendant ce temps, rien ne tombe au milieu de leur conversation (sa conversation principale l'apprend par le bloc)
+  const silencieux = /no response requested\.?\s*$/i.test(texte);
+  const ahmedRevenu = dernierMessageAhmedMs() > debutMs;
+  const livre = !!texte && !silencieux && !ahmedRevenu && !(o && o.is_error) && !/^API Error\b/i.test(texte);
+  try {
+    fs.appendFileSync(JARVIS_TEMPS_LIBRE, j({ ts: Date.now() / 1000, duree_s: Math.round((Date.now() - debutMs) / 1000),
+      outils: [...new Set(outils)].slice(0, 30), cout_usd: o && o.total_cost_usd, tours: o && o.num_turns,
+      erreur: o && o.is_error ? String(o.result || o.subtype || '').slice(0, 200) : null,
+      livre, ahmed_revenu: ahmedRevenu, extrait: texte.replace(/\s*no response requested\.?\s*$/i, '').slice(0, 600) }) + '\n', { mode: 0o600 });
+  } catch (_) {}
+  if (livre) livrerAutonome({ session: null, source: 'abonnement' }, texte, [], outils, null, [], { sansExterne: true });
+}
+// { texte, jusqua } : ce qu'il a fait pendant son temps à lui, à dire dans son prochain tour ; marqué vu (marquerTempsLibreVu)
+// seulement quand ce tour a réussi (relecture du 27/10 : un tour en erreur le perdait)
+function blocTempsLibre() {
+  let vu = 0; try { vu = Number(JSON.parse(fs.readFileSync(JARVIS_TEMPS_LIBRE_VU, 'utf8')).ts) || 0; } catch (_) {}
+  const neufs = lireTempsLibre().filter(o => o.ts > vu);
+  if (!neufs.length) return { texte: '', jusqua: 0 };
+  const quand = (ts) => new Date(ts * 1000).toLocaleString('fr-FR', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  return { jusqua: Math.max(...neufs.map(o => o.ts)), texte: '\n[Ton temps à toi, pendant qu\'Ahmed était occupé (une conversation à part ; ce que tu y as fait) :\n'
+    + neufs.slice(-5).map(o => `- ${quand(o.ts)}, ${Math.round((o.duree_s || 0) / 60)} min${o.outils && o.outils.length ? ` (outils : ${o.outils.slice(0, 8).join(', ')})` : ''} : `
+      + `${neutraliser(String(o.extrait || '(rien dit)').slice(0, 300))}`).join('\n') + ']' };
+}
+function marquerTempsLibreVu(jusqua) {
+  let vu = 0; try { vu = Number(JSON.parse(fs.readFileSync(JARVIS_TEMPS_LIBRE_VU, 'utf8')).ts) || 0; } catch (_) {}
+  try { fs.writeFileSync(JARVIS_TEMPS_LIBRE_VU, j({ ts: Math.max(vu, Number(jusqua) || 0) })); } catch (_) {}
+}
+function verifierTempsLibre() {
+  if (!tempsLibrePermis().ok) return;
+  let persona = ''; try { persona = fs.readFileSync(PERSONA, 'utf8'); } catch (_) {}
+  let cfg; try { cfg = configTempsLibre(); } catch (e) { console.error('Temps libre : configuration impossible', e.message); return; }
+  tempsLibreEnCours = true;
+  const debut = Date.now(), outils = [];
+  let tampon = '', resultat = null;
+  console.error('Jarvis : son temps à lui commence (conversation à part)');
+  // (relecture du 27/10) un groupe détaché, tué en entier (ses serveurs MCP survivaient à claude), une erreur de lancement
+  // rattrapée (sinon le cockpit tombait), une seule fin
+  let enfant, fini = false, dur = null;
+  const tuerGroupe = (sig) => {                              // jamais sans pid : process.kill(-0) viserait le cockpit lui-même
+    if (!enfant || !(enfant.pid > 0)) return;
+    try { process.kill(-enfant.pid, sig); } catch (_) { try { enfant.kill(sig); } catch (_) {} }
+  };
+  const fin = () => {
+    if (fini) return;
+    fini = true;
+    clearTimeout(garde); clearTimeout(dur);
+    tempsLibreEnCours = false;
+    tuerGroupe('SIGTERM');                                   // ce qui resterait du groupe (ses serveurs MCP)
+    finirTempsLibre(resultat || { is_error: true, result: 'interrompu' }, outils, debut);
+    console.error(`Jarvis : son temps à lui est fini (${Math.round((Date.now() - debut) / 60000)} min, ${outils.length} outil(s))`);
+  };
+  const garde = setTimeout(() => { tuerGroupe('SIGTERM'); dur = setTimeout(() => tuerGroupe('SIGKILL'), 10000); }, TEMPS_LIBRE_DUREE_MAX_MS);
+  try {
+    enfant = spawn(CLAUDE_BIN, argsTempsLibre(promptTempsLibre(), persona, cfg), { cwd: JARVIS_CWD, stdio: ['ignore', 'pipe', 'pipe'],
+      env: envDuCerveau('abonnement'), detached: true });
+  } catch (e) { console.error('Temps libre : lancement impossible', e.message); enfant = { pid: 0, kill() {} }; return fin(); }
+  enfant.on('error', (e) => { console.error('Temps libre : lancement impossible', e.message); fin(); });
+  enfant.stdout.on('data', (b) => {
+    tampon += b;
+    consciencePulse();                                       // sa conscience travaille : le subconscient se tait
+    let i;
+    while ((i = tampon.indexOf('\n')) >= 0) {
+      const l = tampon.slice(0, i); tampon = tampon.slice(i + 1);
+      let o; try { o = JSON.parse(l); } catch (_) { continue; }
+      if (o.type === 'assistant' && o.message && Array.isArray(o.message.content))
+        for (const x of o.message.content) if (x && x.type === 'tool_use') { outils.push(String(x.name || '?')); surOutil(x); }
+      if (o.type === 'result') resultat = o;
+    }
+  });
+  enfant.stderr.on('data', () => {});
+  enfant.on('exit', () => setTimeout(fin, 2000));            // sans attendre ceux qui tiendraient encore ses tuyaux
+  enfant.on('close', fin);
+}
+setInterval(verifierTempsLibre, 60000).unref();
+function noterIssueInterieur(c, texte, outils, erreurTour) {
+  if (!c.reveilInterieur) return;
+  const t = sansBaliseAffect(texte).trim();
+  // (relecture du 27/10) un tour en erreur ou coupé ne dit rien de l'utilité du réveil : issue neutre
+  const issue = erreurTour || /^API Error\b/i.test(t) ? 'erreur'
+    : (!t || NON_REPONSE_SERVEUR.test(t) ? (outils.length ? 'outils' : 'rien') : 'message');
+  ajouterIssueInterieure({ id: c.reveilInterieur.id, issue, outils: outils.slice(0, 20), modele_reel: c.modeleReel || undefined,
+    texte: issue === 'message' ? masquer(t.slice(0, 600)) : undefined });
+  c.reveilInterieur = null;
+}
+function reveilsInterieursDuJour() {
+  const jour = jourLocal(), n = { n: 0, message: 0, outils: 0, rien: 0, expiree: 0, erreur: 0 };
+  for (const i of issuesInterieures()) {
+    if (jourLocal(new Date(i.ts * 1000)) !== jour || !(i.issue in n)) continue;
+    n[i.issue]++;
+    if (i.issue !== 'expiree' && i.issue !== 'erreur') n.n++;
+  }
+  return n;
+}
 function marquerCourrierLu(ids) {
   let lus = {}; try { lus = JSON.parse(fs.readFileSync(COURRIER_LUS, 'utf8')) || {}; } catch (_) {}
   lus.hakim = [...new Set([...(Array.isArray(lus.hakim) ? lus.hakim : []), ...ids])].slice(-2000);
@@ -1912,6 +2159,8 @@ async function routeJarvis(req, res, distantReq = false) {
     if (enfant && !res.writableFinished && !arretDemande) console.error('Jarvis : la page est partie — la réponse continue en arrière-plan');
   });
   const corps = await lireCorps(req, 1 << 20);
+  const recuMs = Date.now();                      // (27/10) où passe le temps : préparation, puis cerveau (vitesseDuTour)
+  let premierTexteMs = 0, premierOutilMs = 0, envoyeMs = 0;
   let q = null; try { q = JSON.parse(String(corps || '')); } catch (_) {}
   if (q && typeof q.tour_id === 'string' && ID_MESSAGE.test(q.tour_id)) {
     tourId = q.tour_id;                            // la page a pu partir pendant la lecture du corps : on répond quand même
@@ -2012,17 +2261,20 @@ async function routeJarvis(req, res, distantReq = false) {
   const ecran = imageEcranDe(q.ecran, maintenant);
   if (q.ecran && !ecran) console.error(`Regarde l'écran : image refusée (${typeof q.ecran.data === 'string' ? `${q.ecran.data.length} caractères, début « ${q.ecran.data.slice(0, 4)} »` : 'pas de données'})`);
   const pj = joints.length ? `\n[Fichiers joints par Ahmed — à ouvrir avec preparer_fichier, puis Read sur les chemins rendus :\n${joints.map(f => '- ' + f).join('\n')}]` : '';
-  const tachesTexte = blocTaches(depuisMs, nonce) + blocAtelier();
+  const tempsLibre = blocTempsLibre();
+  const tachesTexte = blocTaches(depuisMs, nonce) + blocAtelier() + tempsLibre.texte;
   if (/terminées depuis son message précédent/.test(tachesTexte)) noterExterne('sortie de commande');
   if (courrierRecu.texte) noterExterne('courrier');
   const horlogeTexte = horloge(maintenant, Number(q.t_precedent), Number(q.t_debut));
   const rappelBloc = await blocRappel(session, texte, nonce).catch(() => ({ texte: '', ids: [] }));
   const pairsTexte = typeof blocPairsDistants === 'function' ? blocPairsDistants(nonce) : '';   // (absent d'une copie publiée)
+  const leconsTexte = blocLecons(declencheursDuTour(q, texte));
+  const voixTierce = q.voix === 'autre' || declencheursDuTour(q, texte).includes('plusieurs_voix');
   let prompt = `${horlogeTexte}${situation.texte ? '\n' + situation.texte : ''}${interieurTexte ? '\n' + interieurTexte : ''}`
-    + `${tachesTexte ? '\n' + tachesTexte : ''}${presentTexte ? '\n' + presentTexte : ''}${rappelBloc.texte ? '\n' + rappelBloc.texte : ''}${pairsTexte ? '\n' + pairsTexte : ''}`
+    + `${tachesTexte ? '\n' + tachesTexte : ''}${presentTexte ? '\n' + presentTexte : ''}${rappelBloc.texte ? '\n' + rappelBloc.texte : ''}${leconsTexte}${pairsTexte ? '\n' + pairsTexte : ''}`
     + `\n${qui} : ${texte.replace(/\[\[\s*(affect|souvenirs|modele)/gi, '⟮⟮$1')}${pj}${cameraTexte}`;   // (chocs) aucune balise toute faite à recopier
   const categories = { horloge: horlogeTexte.length, situation: situation.texte.length, interieur: interieurTexte.length,
-    taches: tachesTexte.length, present: presentTexte.length, rappel: rappelBloc.texte.length, message: texte.length,
+    taches: tachesTexte.length, present: presentTexte.length, rappel: rappelBloc.texte.length, lecons: leconsTexte.length, message: texte.length,
     joints: pj.length + cameraTexte.length + (ecran ? ecran.marque.length : 0), briefing: 0 };
   const presentMs = Number(q.maintenant);
   journaliser('ahmed', texte);
@@ -2077,7 +2329,7 @@ async function routeJarvis(req, res, distantReq = false) {
     if (enfant && !(enfant.cerveau && occupe(enfant.cerveau))) jarvisVivants.delete(enfant);   // un autre tour attend : il reste vivant
     journaliser('jarvis', reponse.trim() + (o.coupe ? ' [coupé]' : '') + (source === 'api' ? ' [API]' : source === 'local' ? ' [local]' : ''));
     const modeleReel = (source !== 'local' && c && c.modeleReel) || undefined;
-    if (o.jetons) noterJetons({ session: sid, modele, modele_reel: modeleReel, source, ms: Date.now() - t0, tours: o.tours, ...o.jetons, categories });
+    if (o.jetons) noterJetons({ session: sid, modele, modele_reel: modeleReel, source, ms: Date.now() - t0, tours: o.tours, ...o.jetons, categories, ...vitesseDuTour(recuMs, envoyeMs, premierTexteMs, premierOutilMs) });
     // chaque échange devient un souvenir, sans que personne ait à le demander (le démon l'encre selon l'attention)
     if (!o.coupe && !o.erreur) verifierRessenti(sid, reponse);
     const externe = retirerExterne();
@@ -2091,6 +2343,7 @@ async function routeJarvis(req, res, distantReq = false) {
     }
     if (!o.coupe && !o.erreur && source !== 'local' && nonVusDits.length) { for (const id of nonVusDits) delete nonVus[id]; sauverNonVus(); }
     if (!o.coupe && !o.erreur && source !== 'local' && courrierRecu.ids.length) marquerCourrierLu(courrierRecu.ids);
+    if (!o.coupe && !o.erreur && source !== 'local' && tempsLibre.jusqua) marquerTempsLibreVu(tempsLibre.jusqua);
     envoyer({ t: 'fin', session: sid, ms: Date.now() - t0, source, modele_reel: modeleReel, ...o });
     try { res.end(); } catch (_) {}
     if (tourId) toursActifs.delete(tourId);
@@ -2162,9 +2415,10 @@ async function routeJarvis(req, res, distantReq = false) {
       if (o.type === 'stream_event') {
         const ev = o.event || {};
         if (ev.type === 'content_block_start' && ev.content_block) {
-          if (ev.content_block.type === 'tool_use') envoyer({ t: 'outil', nom: ev.content_block.name });
+          if (ev.content_block.type === 'tool_use') { if (!premierOutilMs) premierOutilMs = Date.now(); envoyer({ t: 'outil', nom: ev.content_block.name }); }
           else if (ev.content_block.type === 'text' && dejaTexte) envoyer({ t: 'texte', x: '\n\n' });
         } else if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') {
+          if (!premierTexteMs) premierTexteMs = Date.now();
           dejaTexte = true;
           reponse += ev.delta.text;
           const x = fluxAffect.pousser(ev.delta.text);
@@ -2187,6 +2441,18 @@ async function routeJarvis(req, res, distantReq = false) {
         }
         if (o.is_error && (limite || ERREUR_DE_SOURCE.test(texteErreur)) && !/No conversation found/i.test(texteErreur)
             && basculer(limite ? 'limite du forfait' : texteErreur.slice(0, 120))) return;
+        if (relanceNonReponse(reponse, tour.relance, source, o, voixTierce)) {
+          // (27/10) il a pris un VRAI message d'Ahmed pour un réveil sans objet : une relance, dans le même tour
+          tour.relance = true;
+          reponse = ''; dejaTexte = false; premierTexteMs = 0; fluxAffect.finir();
+          envoyer({ t: 'efface' });
+          tour.texte = `[Cockpit ${NONCE_REVEIL} — ta réponse était « No response requested. », mais c'était un VRAI message `
+            + "d'Ahmed, pas un réveil : réponds-lui maintenant, normalement.]";
+          c.attente.unshift(tour);                 // son rejeu le rattache à ce tour (tourDeLigne)
+          console.error('Jarvis : « No response requested. » à un message d’Ahmed — relancé une fois');
+          try { enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: tour.texte }] } }) + '\n'); return; }
+          catch (_) { c.attente.shift(); }
+        }
         noterContexte(o.session_id || sid, o);
         finir({ coupe: false, tours: o.num_turns, jetons: jetonsDe(c, o),
           erreur: o.is_error ? texteErreur.slice(0, 600) || 'erreur de claude' : null });
@@ -2212,9 +2478,25 @@ async function routeJarvis(req, res, distantReq = false) {
   if (c.enCours && c.enCours.autonome) envoyer({ t: 'statut', x: 'Reçu — Hakim finit un travail, il te répond juste après.' });
   const contenu = [{ type: 'text', text: prompt }];
   if (ecran) contenu.push({ type: 'text', text: ecran.marque }, { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: ecran.data } });
+  if (!envoyeMs) envoyeMs = Date.now();
   enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: contenu } }) + '\n');
   };
   lancerTour();
+}
+// (27/10, Ahmed : « option 3 OK ») le temps d'un tour, découpé : la préparation du cockpit (rappel, réflexe, briefing…)
+// avant que le message parte au cerveau, puis le cerveau jusqu'à son premier mot et son premier outil
+// (27/10, idée d'Ahmed ; erreur de Hakim le 22/10, deux fois le 25/10 et le 27/10 à 00:30) « No response requested. » en
+// réponse à un VRAI message d'Ahmed (jamais en local, jamais sur une erreur) : une seule relance
+function relanceNonReponse(reponse, dejaRelance, source, o, voixTierce) {
+  // (relecture du 27/10) un invité parlait : le message n'était peut-être pas pour lui, on ne le force pas
+  return !dejaRelance && !voixTierce && source !== 'local' && !(o && o.is_error) && NON_REPONSE_SERVEUR.test(sansBaliseAffect(reponse).trim());
+}
+function vitesseDuTour(recuMs, envoyeMs, premierTexteMs, premierOutilMs) {
+  const v = {};
+  if (envoyeMs) v.prep_ms = Math.max(0, envoyeMs - recuMs);
+  if (envoyeMs && premierTexteMs) v.cerveau_premier_mot_ms = Math.max(0, premierTexteMs - envoyeMs);
+  if (envoyeMs && premierOutilMs) v.cerveau_premier_outil_ms = Math.max(0, premierOutilMs - envoyeMs);
+  return v;
 }
 
 /* ---- un cerveau qui reste en vie entre les tours (Ahmed, 2026-10-16 : « plus rapide », et « si ils
@@ -2429,6 +2711,7 @@ function tourAutonome(c) {
     if (fini) return;
     fini = true; toursAutonomes--;
     try { fs.unlinkSync(JARVIS_MARQUE_AUTONOME); } catch (_) {}
+    noterIssueInterieur(c, texte, outils, issue);                // (27/10) l'issue d'un réveil intérieur, pour le démon
     livrerAutonome(c, texte, notifs, outils, issue, pieces);
     if (cerveauVivant(c)) reposer(c);
   };
@@ -2459,9 +2742,9 @@ const NON_VU_MS = Number(process.env.JARVIS_NON_VU_MS) || 90000;           // ba
 let nonVus = {};
 try { const d = JSON.parse(fs.readFileSync(JARVIS_NON_VUS, 'utf8')) || {}; nonVus = d.non_vus || d; } catch (_) {}
 function sauverNonVus() { try { ecrireAtomique(JARVIS_NON_VUS, j({ non_vus: nonVus, maj_ms: Date.now() })); } catch (_) {} }
-function livrerAutonome(c, texte, notifs, outils, issue, pieces = []) {
+function livrerAutonome(c, texte, notifs, outils, issue, pieces = [], options = {}) {
   texte = sansBaliseAffect(texte).trim();                // (chocs) une balise d'appréciation n'a rien à faire ici
-  const externe = retirerExterne();
+  const externe = options.sansExterne ? [] : retirerExterne();   // (27/10) son temps à lui ne prend pas les marques d'un autre tour
   const quoi = notifs.map(n => n.resume).filter(Boolean).join(' ; ').slice(0, 300);
   if (!texte || NON_REPONSE_SERVEUR.test(texte)) {
     journaliser('jarvis', `(tour de lui-même, sans texte${quoi ? ' — ' + quoi : ''}${issue ? ' — ' + issue : ''})`);
@@ -2864,7 +3147,7 @@ function agentsPourCerveau() {
     + `tourbillon, plafond M…), applique ce préambule AVANT tout le reste ; sinon, ignore-le.\n${p}`;
   return { ...Object.fromEntries(Object.entries(AGENTS).map(([k, a]) => [k, k === 'vierge' ? a : { ...a, prompt: a.prompt + ajout }])), ...siens };
 }
-const jourLocal = () => new Date().toLocaleDateString('sv-SE');        // AAAA-MM-JJ, à l'heure du Mac
+const jourLocal = (d = new Date()) => d.toLocaleDateString('sv-SE');   // AAAA-MM-JJ, à l'heure du Mac
 function agentsDuJour() {
   const jour = jourLocal();
   try { return fs.readFileSync(JOURNAL_AGENTS, 'utf8').split('\n').filter(l => l.includes(`"jour":"${jour}"`)).length; }
@@ -4276,7 +4559,7 @@ async function traiter(req, res) {
       voix_emotion: frais && e.voix ? e.voix.emotion || null : null, valence: e.valence ?? null, arousal: e.arousal ?? null,
       ennui: frais && Number.isFinite(e.ennui) ? e.ennui : ennuiDe(absence, e), absence_s: Math.round(absence), ressenti: e.ressenti ?? null,
       veille: frais && !!e.veille, pause: lireInterrupteur().actif === false || !!e.pause_ts,
-      maj: e.ts ?? null, frais }));
+      reveils_interieurs: reveilsInterieursDuJour(), maj: e.ts ?? null, frais }));
   }
   if (p === '/api/jarvis/cle-api' && req.method === 'POST') {
     // la clé API de secours, collée par Ahmed dans les réglages (jamais dans une conversation) ; vide = l'effacer

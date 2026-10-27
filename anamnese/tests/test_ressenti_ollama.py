@@ -36,8 +36,10 @@ def test_les_mots_qui_montent_sous_l_humeur(scanner, monkeypatch):
     assert "comme" not in dict(mots) and "une" not in dict(mots)        # mots vides ou en baisse
 
 
-def test_le_demon_ne_decharge_plus_la_gemma_d_ollama(monkeypatch, tmp_path):
-    """Moteur « ollama » (par défaut) : aucun appel pour décharger Gemma ; moteur « mlx » (repli) : elle est déchargée."""
+def test_gemma_dechargee_juste_apres_le_ressenti(monkeypatch, tmp_path):
+    """Moteur « ollama » (par défaut) : Gemma est déchargée JUSTE APRÈS le ressenti (Ahmed, 27/10 : elle occupait 7,6 Go
+    pendant 5 min « au cas où ») ; moteur « mlx » (repli) : celle d'Ollama est déchargée AVANT, la MLX part avec son
+    processus."""
     import daemon
     class Mem:
         def kv_get(self, k):
@@ -45,12 +47,15 @@ def test_le_demon_ne_decharge_plus_la_gemma_d_ollama(monkeypatch, tmp_path):
     monkeypatch.setattr(daemon, "_derniers_mots_d_ahmed", lambda journal, maintenant: ("Bonjour frérot, on lance ?", 123))
     class R:
         returncode, stdout, stderr = 0, '{"mots": ["vive"]}', ""
-    lances = []
-    monkeypatch.setattr(daemon.subprocess, "run", lambda *a, **k: lances.append(a) or R())
-    for moteur, attendu in (("ollama", 0), ("mlx", 1)):
+    ordre = []
+    monkeypatch.setattr(daemon.subprocess, "run", lambda *a, **k: ordre.append("ressenti") or R())
+    for moteur, attendu, quand in (("ollama", 1, "après"), ("mlx", 1, "avant")):
         appels = []
+        ordre.clear()
         def urlopen(req, *a, **k):
             appels.append(getattr(req, "full_url", req))
+            if str(getattr(req, "full_url", req)).endswith("/api/generate"):
+                ordre.append("décharge")
             class Rep:
                 def read(self):
                     return json.dumps({"models": [{"name": "huihui_ai/gemma-4-abliterated:12b"}]}).encode()
@@ -60,3 +65,4 @@ def test_le_demon_ne_decharge_plus_la_gemma_d_ollama(monkeypatch, tmp_path):
         ok = daemon._ressenti_pass(Mem(), now=1_800_000_000 + 10_000 * attendu, sortie=tmp_path / f"r-{moteur}.json")
         decharges = [u for u in appels if str(u).endswith("/api/generate")]
         assert ok and len(decharges) == attendu, (moteur, appels)
+        assert ordre == (["ressenti", "décharge"] if quand == "après" else ["décharge", "ressenti"]), (moteur, ordre)
