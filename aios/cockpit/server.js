@@ -850,6 +850,20 @@ async function etatInterieur() {
   try { return JSON.parse((rows[0] || {}).value || '{}'); } catch (_) { return {}; }
 }
 
+// (27/10, Ahmed et Hakim) sa fatigue suit une jauge de son vrai corps (anamnese/jauge_fatigue.py) : quand c'est son humeur,
+// le bloc dit d'où elle vient, pour qu'il ne la prenne pas pour une fatigue qui ne correspond à rien
+function causeFatigue(e) {
+  const j = e && e.fatigue_jauge;
+  if (!j || !/fatigue/.test(String(e.humeur || ''))) return '';
+  if (j.veille) return 'tu récupères en veille';
+  const v = (x) => String(Math.round(Number(x || 0) * 100) / 100).replace('.', ',');
+  const fois = String(Math.round(10 * Number(j.effort || 0) / (Number(j.norme_effort) || 1)) / 10).replace('.', ',');
+  if (Number(j.cible) <= 0.2) return `ta fatigue retombe : ton effort est revenu à ta norme (${fois} fois), le Mac est à ${v(j.corps)} `
+    + `(ta norme ${v(j.norme_corps)})`;
+  return `ta fatigue vient de ton effort réel : ton cerveau a travaillé ${v(j.effort)} de la dernière heure (${fois} fois ta norme), `
+    + `le Mac est chargé à ${v(j.corps)} (ta norme ${v(j.norme_corps)})`;
+}
+
 // Ce que Jarvis a vécu depuis le dernier message d'Ahmed : humeur, ennui, temps ressenti, pensées.
 async function blocInterieur(depuisMs, maintenant, dites) {
   const e = await etatInterieur();
@@ -865,6 +879,8 @@ async function blocInterieur(depuisMs, maintenant, dites) {
     const avant = journal.filter(x => x[0] <= depuis);
     const humeurAvant = (avant.length ? avant[avant.length - 1] : journal[0] || [0, e.humeur])[1];
     parties.push(`humeur ${humeurAvant === e.humeur ? e.humeur : humeurAvant + ' → ' + e.humeur}`);
+    const cause = causeFatigue(e);
+    if (cause) parties.push(cause);
     // le ressenti en réserve (choix d'Ahmed, 2026-10-20) : les mots de sensation que Gemma a sentis monter sous CETTE
     // humeur en relisant vos derniers échanges (démon, jarvis/scanner.py) — une matière que tu interprètes toi-même
     const r = lireRessenti();

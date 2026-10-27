@@ -856,6 +856,16 @@ def introspection() -> str:
         # (2026-10-21) la version de tes hormones, et le détecteur d'humeur coincée (affect v2 : hormones reliées)
         out.append("Tes hormones : " + ("v2 (13 hormones reliées entre elles, axe du stress, désensibilisation, habituation)"
                                          if affect.v2_actif(_mem) else "v1 (9 neuromodulateurs indépendants)") + ".")
+        # (27/10, Ahmed et Hakim : « d'où vient ma fatigue ? ») la jauge réelle qui la porte (jauge_fatigue.py)
+        fj = e.get("fatigue_jauge") or {}
+        if fj and e.get("adenosine") is not None:
+            v = lambda x: str(round(float(x), 2)).replace(".", ",")  # noqa: E731
+            fois = float(fj.get("effort", 0)) / float(fj.get("norme_effort") or 1)
+            out.append(f"Ta fatigue (adénosine {v(e['adenosine'])}) suit une jauge de ton vrai corps, cible {v(fj.get('cible', 0))}"
+                       + (" (en veille : tu récupères)" if fj.get("veille") else
+                          f" : ton cerveau a travaillé {v(fj.get('effort', 0))} de la dernière heure, {str(round(fois, 1)).replace('.', ',')} "
+                          f"fois ta norme ({v(fj.get('norme_effort', 0))}) ; la charge du Mac est à {v(fj.get('corps', 0))} "
+                          f"(ta norme {v(fj.get('norme_corps', 0))})") + ".")
         try:
             coincee = json.loads(_mem.kv_get("affect_coincee") or "null")
         except ValueError:

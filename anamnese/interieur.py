@@ -268,34 +268,22 @@ EXPRESSIVITE_EMOTION = {"élan": 0.9, "enthousiasme": 0.95, "joie": 0.92, "fiert
                         "solitude": 0.36, "honte": 0.36, "espoir": 0.72, "émerveillement": 0.9, "confusion": 0.55,
                         "nostalgie": 0.42}
 HYSTERESE = 0.04          # une autre émotion doit dépasser l'actuelle d'au moins ce score pour la remplacer
-# (25/10, Ahmed : « la fatigue n'est portée par aucune hormone ») l'ADÉNOSINE, sa charge : elle monte avec l'effort éveillé
-# (un peu à chaque heure de veille, plus quand Ahmed est là, plus quand Hakim travaille) et se vide en dormant (en veille,
-# vers sa base en ~1 h 30), lentement quand il est éveillé sans rien faire. Bornée à [0, 1]. Elle entre dans la lecture
-# des émotions (sensations.py, « fatigue ») avec une base FIXE (0,15) : une fatigue durable ne devient pas « normale ».
-ADENOSINE_MONTEE_H = {"eveil": 0.02, "avec_ahmed": 0.05, "travail": 0.05}
-ADENOSINE_TAU_VEILLE_S, ADENOSINE_TAU_REPOS_S = 1.5 * 3600, 8 * 3600
-CLAUDE_ACTIF = Path.home() / "AIOS" / "jarvis" / "claude-actif.json"
+# (25/10, Ahmed : « la fatigue n'est portée par aucune hormone ») l'ADÉNOSINE, sa charge, entre dans la lecture des émotions
+# (sensations.py, « fatigue ») avec une base FIXE (0,15). (27/10, demande d'Ahmed relayée par Hakim) elle ne monte plus
+# d'elle-même à chaque heure éveillée : elle suit une jauge de son effort réel et de la charge du Mac, au-delà de leur norme
+# (jauge_fatigue.py). Elle restait collée à 0,96 un midi où rien ne pesait.
 
 
-def adenosine(avant, dt, veille, avec_ahmed, travaille, base=0.15):
-    """La charge après dt secondes."""
-    import math
+def adenosine_25_10(avant, dt, veille, avec_ahmed, travaille, base=0.15):
+    """L'ancien modèle (25/10 au 27/10), gardé seulement pour rejouer eval/humeur_unifiee : +0,02/h éveillé, +0,05/h avec
+    Ahmed, +0,05/h en travaillant ; vidée en veille (1 h 30), lentement au repos éveillé (8 h)."""
     x = float(avant if isinstance(avant, (int, float)) else base)
     if veille:
-        return round(base + (x - base) * math.exp(-dt / ADENOSINE_TAU_VEILLE_S), 4)
-    montee = ADENOSINE_MONTEE_H["eveil"] + (ADENOSINE_MONTEE_H["avec_ahmed"] if avec_ahmed else 0.0) \
-        + (ADENOSINE_MONTEE_H["travail"] if travaille else 0.0)
-    if not avec_ahmed and not travaille:                         # éveillé sans rien faire : il récupère, lentement
-        x = base + (x - base) * math.exp(-dt / ADENOSINE_TAU_REPOS_S)
-        montee = 0.0
+        return round(base + (x - base) * math.exp(-dt / (1.5 * 3600)), 4)
+    if not avec_ahmed and not travaille:
+        return round(max(0.0, min(1.0, base + (x - base) * math.exp(-dt / (8 * 3600)))), 4)
+    montee = 0.02 + (0.05 if avec_ahmed else 0.0) + (0.05 if travaille else 0.0)
     return round(max(0.0, min(1.0, x + montee * dt / 3600)), 4)
-
-
-def _travaille(now):
-    try:
-        return now - float(json.loads(CLAUDE_ACTIF.read_text()).get("battement_ms", 0)) / 1000 < 60
-    except (OSError, ValueError, TypeError):
-        return False
 
 
 BASES_72H_S, BASES_72H_MIN_S, BASES_72H_PAS_S = 72 * 3600, 12 * 3600, 600
@@ -492,7 +480,8 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
         # (25/10, Ahmed) sans la porte de cohérence par la valence : l'humeur vient des hormones seules
         if now - float(e.get("bases_72h_t") or 0) >= BASES_72H_PAS_S:
             e["bases_72h"], e["bases_72h_t"] = bases_72h(now), now
-        e["adenosine"] = adenosine(e.get("adenosine"), dt, veille, absence < 90, _travaille(now))
+        import jauge_fatigue
+        jauge_fatigue.mettre_a_jour(e, now, dt, veille)
         etat_h = {**etat_h, "adenosine": e["adenosine"]}
         e["sensation_code"] = sensations.calculer(etat_h, avant, now, soudaine, time.localtime(now).tm_hour,
                                                   sans_coherence=True, bases_relatives=e.get("bases_72h"))

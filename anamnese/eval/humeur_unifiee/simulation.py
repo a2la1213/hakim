@@ -52,7 +52,7 @@ def jouer(nom):
             affect.event(m, evs[k][1], evs[k][2], now=t, sujet="scenario")
             k += 1
         etat = affect.get_state(m, now=t)
-        ade = interieur.adenosine(ade, 60, False, nom == "S10", nom == "S10")
+        ade = interieur.adenosine_25_10(ade, 60, False, nom == "S10", nom == "S10")
         etat = {**etat, "adenosine": ade}
         hist.append(etat)
         passe = hist[-11] if len(hist) > 10 else hist[0]

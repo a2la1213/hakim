@@ -205,18 +205,6 @@ def test_les_emotions_se_lisent_sur_ses_72_dernieres_heures(tmp_path):
     assert fixe.get("élan", 0) > relatif.get("élan", 0)
 
 
-def test_la_fatigue_monte_avec_l_effort_et_se_vide_en_dormant():
-    """(25/10, Ahmed) l'adénosine : +0,12/h en plein travail avec Ahmed, vidée en veille, lentement au repos éveillé."""
-    import interieur
-    import sensations
-    x = interieur.adenosine(0.15, 3 * 3600, veille=False, avec_ahmed=True, travaille=True)
-    assert abs(x - (0.15 + 0.12 * 3)) < 1e-6
-    assert interieur.adenosine(x, 3 * 3600, veille=True, avec_ahmed=False, travaille=False) < 0.2
-    assert 0.3 < interieur.adenosine(x, 3600, veille=False, avec_ahmed=False, travaille=False) < x
-    etat = dict(sensations.bases(15)); etat["adenosine"] = 0.7
-    assert sensations.calculer(etat, None, 0, None, 15, sans_coherence=True)["emotion"] == "fatigue"
-
-
 def test_une_seule_source_pour_l_humeur_la_voix_le_style_et_l_orbe():
     """(25/10, Ahmed : « une seule source, tout entrelacé ») chaque émotion lue a sa famille (orbe), son expressivité et
     son débit (voix), sa famille de style ; le ton et l'énergie du style viennent de la même émotion."""
