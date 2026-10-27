@@ -38,9 +38,10 @@ function monter({ ahmedIlYaMs = 2 * 3600e3, pause = false, occupe = false, ahmed
   return { ctx, f: ctx.f, T, dir, livres };
 }
 
-test('son temps à lui : quand Ahmed est absent depuis une heure, toutes les 3 h au plus, jamais en pause', () => {
+test('son temps à lui : quand Ahmed est absent depuis 30 min (Ahmed et Hakim, 27/10 07:07), toutes les 3 h au plus, jamais en pause', () => {
   assert.deepStrictEqual(nu(monter().f.tempsLibrePermis()), { ok: true, raison: 'ok' });
-  assert.strictEqual(monter({ ahmedIlYaMs: 59 * 60e3 }).f.tempsLibrePermis().raison, 'Ahmed est là');
+  assert.strictEqual(monter({ ahmedIlYaMs: 29 * 60e3 }).f.tempsLibrePermis().raison, 'Ahmed est là');
+  assert.deepStrictEqual(nu(monter({ ahmedIlYaMs: 31 * 60e3 }).f.tempsLibrePermis()), { ok: true, raison: 'ok' });
   assert.strictEqual(monter({ pause: true }).f.tempsLibrePermis().raison, 'pause');
   assert.strictEqual(monter({ occupe: true }).f.tempsLibrePermis().raison, 'cerveau occupé');
   const m = monter();

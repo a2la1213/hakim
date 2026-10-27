@@ -139,7 +139,7 @@ test('le compteur du jour additionne les issues du jour seulement', () => {
   const hier = m.T / 1000 - 86400;
   fs.writeFileSync(m.issues, [{ id: 'h', ts: hier, issue: 'message' }, { id: 'a', ts: m.T / 1000 - 60, issue: 'message' },
     { id: 'b', ts: m.T / 1000 - 30, issue: 'rien' }, { id: 'c', ts: m.T / 1000 - 10, issue: 'expiree' }].map(o => JSON.stringify(o)).join('\n') + '\n');
-  assert.deepStrictEqual(nu(m.f.reveilsInterieursDuJour()), { n: 2, message: 1, outils: 0, rien: 1, expiree: 1, erreur: 0 });
+  assert.deepStrictEqual(nu(m.f.reveilsInterieursDuJour()), { n: 2, message: 1, outils: 0, rien: 1, expiree: 1, erreur: 0, perimee: 0 });
 });
 
 test('le crochet d’issue est branché dans finir de tourAutonome, et l’état intérieur porte le compteur', () => {
@@ -179,7 +179,7 @@ test('un tour en erreur ou coupé : issue « erreur », neutre pour le seuil et 
   const i = m.f.issuesInterieures();
   assert.deepStrictEqual(nu(i.map(x => [x.id, x.issue])), [['a', 'erreur'], ['b', 'erreur'], ['c', 'message']]);
   assert.strictEqual(i[1].texte, undefined);
-  assert.deepStrictEqual(nu(m.f.reveilsInterieursDuJour()), { n: 1, message: 1, outils: 0, rien: 0, expiree: 0, erreur: 2 });
+  assert.deepStrictEqual(nu(m.f.reveilsInterieursDuJour()), { n: 1, message: 1, outils: 0, rien: 0, expiree: 0, erreur: 2, perimee: 0 });
 });
 
 test('le crochet d’issue reçoit l’issue du tour', () => {
@@ -200,4 +200,36 @@ test('(relecture du 27/10) pendant son temps à lui, pas de réveil intérieur e
   m.f.reveillerPourInterieur();
   assert.strictEqual(m.ecrits.length, 0);
   assert.ok(fs.existsSync(m.demande));
+});
+
+// ---- (27/10, la nuit de son premier réveil) une demande déposée avant le retour d'Ahmed est périmée
+test('la nuit du 27/10 rejouée : demande à 04:42:36, Ahmed écrit 3 s plus tard, passage à 04:44:56 : aucun réveil', () => {
+  const m = monter({ ahmedIlYaMs: 137e3 });                       // il a écrit il y a 2 min 17 s : l'attente de 2 min est passée
+  m.deposer({ ...m.D(140), source: 'ressenti', texte: 'Je ressens de la tristesse depuis 10 min, et Ahmed est absent depuis 3 h 00.' });
+  m.f.reveillerPourInterieur();
+  assert.strictEqual(m.ecrits.length, 0);
+  assert.ok(!fs.existsSync(m.demande));
+  assert.deepStrictEqual(nu(m.f.issuesInterieures().map(x => [x.id, x.issue])), [['abc123def456', 'perimee']]);
+});
+
+test('une demande déposée moins d’une minute après un message d’Ahmed est périmée aussi (le démon ne l’avait pas encore vu)', () => {
+  const m = monter({ ahmedIlYaMs: 210e3 });
+  m.deposer(m.D(180));                                             // déposée 30 s après son message
+  m.f.reveillerPourInterieur();
+  assert.strictEqual(m.ecrits.length, 0);
+  assert.deepStrictEqual(nu(m.f.issuesInterieures().map(x => x.issue)), ['perimee']);
+});
+
+test('une demande déposée plus d’une minute après le dernier message d’Ahmed réveille (passé ses 2 min d’attente)', () => {
+  const m = monter({ ahmedIlYaMs: 300e3 });
+  m.deposer(m.D(150));                                             // 2 min 30 s après son message
+  m.f.reveillerPourInterieur();
+  assert.strictEqual(m.ecrits.length, 1);
+});
+
+test('le compteur du jour montre les demandes périmées, sans les compter comme réveils', () => {
+  const m = monter();
+  fs.writeFileSync(m.issues, [{ id: 'a', ts: m.T / 1000 - 60, issue: 'message' }, { id: 'b', ts: m.T / 1000 - 30, issue: 'perimee' }]
+    .map(o => JSON.stringify(o)).join('\n') + '\n');
+  assert.deepStrictEqual(nu(m.f.reveilsInterieursDuJour()), { n: 1, message: 1, outils: 0, rien: 0, expiree: 0, erreur: 0, perimee: 1 });
 });

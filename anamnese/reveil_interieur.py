@@ -32,7 +32,7 @@ ATTENTE_MAX_S = 900                        # une demande non consommée expire (
 # par FILIATION : une pensée qui recouvre la lignée d'un réveil (la pensée qui l'a déclenché, ce qu'il a dit) en descend
 FILIATION_MIN, FILIATION_MOTS, LIGNEE_S, LIGNEE_MAX = 0.5, 3, 6 * 3600, 200
 FATIGUE_S = 3600                           # fatigue d'éveil : le seuil monte de 1 par réveil de la dernière heure
-EVEILS = ("message", "outils", "rien")     # les issues d'un vrai réveil (« expiree » n'a réveillé personne)
+EVEILS = ("message", "outils", "rien")     # les issues d'un vrai réveil (« expiree », « perimee » : personne de réveillé)
 _VERROU = threading.RLock()                # la boucle du démon (pensées) et le battement (ressentis, apprentissage)
 
 
@@ -284,7 +284,8 @@ def candidat(mem, source, texte, jugement, now=None, fichier=None, issues=None):
 
 # ---------- l'apprentissage par l'expérience
 def apprendre(mem, issues):
-    """Les issues pas encore vues ajustent le seuil : « rien » +0,5 ; « message » ou « outils » −0,25 ; borné. Un
+    """Les issues pas encore vues ajustent le seuil : « rien » +0,5 ; « message » ou « outils » −0,25 ; les autres
+    (« expiree », « erreur », « perimee » : Ahmed revenu après la demande, 27/10) ne comptent pas ; borné. Un
     filigrane (l'instant de la dernière issue apprise) : un journal qui grandit n'est jamais réappris (relecture du
     27/10 : une liste d'ids tronquée à 500 faisait réapprendre les plus anciennes)."""
     with _VERROU:

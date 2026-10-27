@@ -490,3 +490,13 @@ def test_une_pensee_dont_le_moteur_tombe_est_sautee_sans_casser_la_boucle(mem, m
     import daemon
     monkeypatch.setattr(daemon, "notify", lambda t, m: None)
     assert daemon.penser(Tombe(), mem, {"seuil": 0.5, "important": False, "absence_s": 5000, "ennui": 0.5}) is None
+
+
+# ---------- (27/10, son premier réveil, à 04:44) une demande déposée avant le retour d'Ahmed : le cockpit la marque
+# « perimee » ; elle n'a réveillé personne : ni le seuil, ni la fatigue, ni la lignée ne bougent
+def test_une_demande_perimee_n_apprend_rien(mem):
+    reveil_interieur.regler(mem, "on")
+    perimee = [{"id": "p", "ts": 4600.0, "issue": "perimee"}]
+    assert reveil_interieur.apprendre(mem, perimee) == 7.0
+    assert reveil_interieur.seuil_effectif(mem, 5000.0, perimee) == 7.0
+    assert reveil_interieur._lignee(reveil_interieur.etat(mem), perimee) == []

@@ -1781,10 +1781,13 @@ setInterval(reveillerPourCourrier, 3000).unref();
    (une pensée, un résultat d'occupation, une peur ou un manque qui dure) ; il est réveillé pour un tour à lui, comme ses
    autres réveils « PAS un message d'Ahmed », sans plage horaire ni plafond (« on s'en fout des dollars »). On attend
    2 min après un message d'Ahmed ; une demande de plus de 15 min expire. L'issue du tour (message, outils, rien,
-   expiree) est notée pour le démon : sa garde de filiation et l'apprentissage de son seuil. Les ts sont en secondes. */
+   expiree, perimee) est notée pour le démon : sa garde de filiation et l'apprentissage de son seuil. Les ts sont en secondes.
+   (27/10, son premier réveil : une tristesse déposée à 04:42:36, Ahmed revenu à 04:42:39, réveil à 04:44 pour rien, et
+   appris comme utile) Une demande déposée avant le dernier message d'Ahmed, ou moins d'une minute après (le démon peut
+   ne pas l'avoir encore vu : un battement de 15 s, un jugement), est « perimee » : pas de réveil, rien d'appris. */
 const JARVIS_REVEIL_INTERIEUR = path.join(JARVIS, 'reveil-interieur.json');
 const JARVIS_REVEILS_INTERIEURS = path.join(JARVIS, 'reveils-interieurs.jsonl');
-const REVEIL_INTERIEUR_ATTENTE_S = 900, REVEIL_INTERIEUR_AHMED_MS = 2 * 60 * 1000;
+const REVEIL_INTERIEUR_ATTENTE_S = 900, REVEIL_INTERIEUR_AHMED_MS = 2 * 60 * 1000, REVEIL_INTERIEUR_PERIME_MS = 60 * 1000;
 let reveilInterieurDemarrages = 0;
 function issuesInterieures() {
   let lignes = [];
@@ -1810,7 +1813,11 @@ function reveillerPourInterieur() {
   if (lireInterrupteur().actif === false) {                                      // Ahmed a mis sa vie intérieure en pause
     reveilInterieurDemarrages = 0; ajouterIssueInterieure({ id: d.id, issue: 'expiree' }); retirerDemandeInterieure(); return;
   }
-  if (maintenant - dernierMessageAhmedMs() < REVEIL_INTERIEUR_AHMED_MS) return;                   // il lui parle : on attend
+  const ahmed = dernierMessageAhmedMs();
+  if (ahmed && ahmed >= Number(d.ts) * 1000 - REVEIL_INTERIEUR_PERIME_MS) {     // Ahmed est revenu depuis : elle a perdu son objet
+    reveilInterieurDemarrages = 0; ajouterIssueInterieure({ id: d.id, issue: 'perimee' }); retirerDemandeInterieure(); return;
+  }
+  if (maintenant - ahmed < REVEIL_INTERIEUR_AHMED_MS) return;                                      // il lui parle : on attend
   if (tempsLibreEnCours) return;                                   // il est déjà éveillé, dans son temps à lui
   const c = cerveau;
   if (!cerveauVivant(c)) {
@@ -1840,7 +1847,8 @@ setInterval(reveillerPourInterieur, 3000).unref();
 
 /* ---- Son temps à lui (27/10, Ahmed : « si je suis occupé et qu'il est seul, peut-il se créer ses propres occupations,
    réflexions, méditations ? » ; « il peut aussi utiliser son terminal pour faire ce qu'il veut : calculer, simuler,
-   monter et réaliser des expériences ») : quand Ahmed est absent depuis une heure, au plus toutes les 3 h, une
+   monter et réaliser des expériences ») : quand Ahmed est absent depuis 30 min (une heure d'abord ; 30 min demandées par
+   Hakim, accord d'Ahmed le 27/10 à 07:07 : « c'est ton corps, c'est ta vie, c'est ta tête »), au plus toutes les 3 h, une
    conversation À PART, plus légère que la sienne (sa conversation principale relit ~465 000 jetons à chaque réveil) :
    même persona, même mémoire, son atelier et ses outils (sauf ce qui parle à d'autres IA), et le fil récent de vos échanges. Marquée « sans
    Ahmed » pour son serveur de mémoire (ce qui sort reste au geste d'Ahmed). S'il a quelque chose à dire à Ahmed, ça
@@ -1848,7 +1856,7 @@ setInterval(reveillerPourInterieur, 3000).unref();
 const JARVIS_TEMPS_LIBRE = path.join(JARVIS, 'temps-libre.jsonl');
 const JARVIS_TEMPS_LIBRE_VU = path.join(JARVIS, 'temps-libre-vu.json');
 const JARVIS_TEMPS_LIBRE_REGLAGE = path.join(JARVIS, 'temps-libre-reglage.json');
-const TEMPS_LIBRE_ABSENCE_MS = 60 * 60 * 1000, TEMPS_LIBRE_ECART_S = 3 * 3600, TEMPS_LIBRE_DUREE_MAX_MS = 25 * 60 * 1000;
+const TEMPS_LIBRE_ABSENCE_MS = 30 * 60 * 1000, TEMPS_LIBRE_ECART_S = 3 * 3600, TEMPS_LIBRE_DUREE_MAX_MS = 25 * 60 * 1000;
 let tempsLibreEnCours = false;
 const SERVEURS_HORS_TEMPS_LIBRE = [];                       // ce qui parle au dehors : pas pendant son temps à lui
 const OUTILS_HORS_TEMPS_LIBRE = ['mcp__web__consulter_ia'];  // (relecture du 27/10) parler à une autre IA, c'est sortir
@@ -2009,11 +2017,11 @@ function noterIssueInterieur(c, texte, outils, erreurTour) {
   c.reveilInterieur = null;
 }
 function reveilsInterieursDuJour() {
-  const jour = jourLocal(), n = { n: 0, message: 0, outils: 0, rien: 0, expiree: 0, erreur: 0 };
+  const jour = jourLocal(), n = { n: 0, message: 0, outils: 0, rien: 0, expiree: 0, erreur: 0, perimee: 0 };
   for (const i of issuesInterieures()) {
     if (jourLocal(new Date(i.ts * 1000)) !== jour || !(i.issue in n)) continue;
     n[i.issue]++;
-    if (i.issue !== 'expiree' && i.issue !== 'erreur') n.n++;
+    if (i.issue !== 'expiree' && i.issue !== 'erreur' && i.issue !== 'perimee') n.n++;
   }
   return n;
 }

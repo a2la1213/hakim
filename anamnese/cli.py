@@ -392,7 +392,7 @@ def main():
         d, maintenant = RI.etat(m), _t.time()
         jour = _t.strftime("%Y-%m-%d")
         du_jour = [i for i in RI.lire_issues() if _t.strftime("%Y-%m-%d", _t.localtime(i["ts"])) == jour]
-        compte = {k: sum(1 for i in du_jour if i["issue"] == k) for k in ("message", "outils", "rien", "expiree", "erreur")}
+        compte = {k: sum(1 for i in du_jour if i["issue"] == k) for k in ("message", "outils", "rien", "expiree", "erreur", "perimee")}
         dernier = _t.strftime("%d/%m %H:%M", _t.localtime(d["dernier_ts"])) if d["dernier_ts"] else "jamais"
         print(f"mode : {RI.mode(m)} · seuil : {d['seuil']} (effectif {RI.seuil_effectif(m, maintenant, RI.lire_issues())}) · "
               f"dernier réveil : {dernier}")
