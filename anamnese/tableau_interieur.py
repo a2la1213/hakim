@@ -200,18 +200,34 @@ def dessiner(heures=6.0, now=None, sortie=None, **kw):
     heures = max(0.25, min(72.0, float(heures or 6)))
     d = donnees(heures, now, **kw)
     dossier = Path(sortie or SORTIE)
-    dossier.mkdir(parents=True, exist_ok=True)
     nom = "tableau-interieur-" + time.strftime("%Y%m%d-%H%M", time.localtime(d["t1"]))
-    f_svg = dossier / f"{nom}.svg"
-    f_svg.write_text(svg(d), encoding="utf-8")
-    chemin = f_svg
+    # (27/10, relecture du dépôt public ; Ahmed : « boucher toutes les failles ») le nom est prévisible et le dossier est
+    # dans son atelier, écrit par son terminal : l'image est faite dans un dossier privé, puis posée sans suivre de lien
+    import shutil
+    import tempfile
+    prive = Path(tempfile.mkdtemp(prefix="tableau-"))
     try:
-        subprocess.run(["/usr/bin/qlmanage", "-t", "-s", "1400", "-o", str(dossier), str(f_svg)],
-                       capture_output=True, timeout=30)
-        png = dossier / f"{nom}.svg.png"
-        if png.exists():
-            chemin = png.rename(dossier / f"{nom}.png")
-            f_svg.unlink(missing_ok=True)
-    except (OSError, subprocess.SubprocessError):
-        pass
+        f_svg = prive / f"{nom}.svg"
+        f_svg.write_text(svg(d), encoding="utf-8")
+        final, octets = f"{nom}.svg", f_svg.read_bytes()
+        try:
+            subprocess.run(["/usr/bin/qlmanage", "-t", "-s", "1400", "-o", str(prive), str(f_svg)],
+                           capture_output=True, timeout=30)
+            png = prive / f"{nom}.svg.png"
+            if png.exists():
+                final, octets = f"{nom}.png", png.read_bytes()
+        except (OSError, subprocess.SubprocessError):
+            pass
+        chemin = _fichiers().ecrire_sans_lien(dossier / final, octets, dossier.parent)
+    finally:
+        shutil.rmtree(prive, ignore_errors=True)
     return chemin, resume(d)
+
+
+def _fichiers():
+    import sys
+    ici = str(Path(__file__).resolve().parent / "jarvis")
+    if ici not in sys.path:
+        sys.path.append(ici)
+    import fichiers
+    return fichiers

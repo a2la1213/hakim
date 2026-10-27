@@ -95,8 +95,12 @@ def _secret(nom):
 def _texte(p):
     import occupations
     try:
-        return occupations.texte_document(p) if p.suffix.lower() not in {".py", ".js", ".ts", ".tsx", ".sh"} \
-            else _fichiers().masquer(p.read_bytes()[:EXTRAIT * 2].decode("utf-8", errors="replace"))
+        if p.suffix.lower() not in {".py", ".js", ".ts", ".tsx", ".sh"}:
+            return occupations.texte_document(p)
+        # (relecture indépendante du 27/10, B) dans ses dossiers, une copie privée vérifiée, jamais le chemin énuméré
+        # des minutes plus tôt (un dossier échangé entre-temps contre un lien faisait indexer ce qui est fermé)
+        with _fichiers().copie_privee(p, TAILLE_MAX) as q:
+            return _fichiers().masquer(q.read_bytes()[:EXTRAIT * 2].decode("utf-8", errors="replace"))
     except Exception:
         return ""
 

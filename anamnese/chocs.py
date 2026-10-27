@@ -18,6 +18,7 @@ Interrupteur : kv « chocs_actif » (`anamnese chocs on|off|etat`, ou chocs_cli.
 Variables calculées, pas un ressenti prouvé.
 """
 import json
+import math
 import re
 import time
 from pathlib import Path
@@ -236,12 +237,28 @@ def _poids(classe, qui, sur):
 def _appliquer(mem, st, classe, i_brut, sujet, cle, source, now, parametre=None):
     """Applique UN choc (intensité après le poids de la voix) ; rend ce qui a été fait."""
     etat = affect.get_state(mem, now=now)
+    if classe == "apaisement":
+        return _apaiser(mem, st, i_brut, cle, now)
     if classe in set(RESSENTIS.values()):
         affect.event(mem, classe, round(i_brut, 4), now=now, sujet=sujet, source=source)
+        # (27/10) gardés 2 h : ses règles de choix (regles_emotion.py) les lisent au tour suivant ; un ressenti pénible
+        # garde aussi ce qui n'en a pas encore été repris (« reste »)
+        penible = classe in RESSENTIS_PENIBLES
+        st["ressentis"] = [r for r in st.get("ressentis", []) if now - r["ts"] < RESSENTIS_GARDE_S][-50:] \
+            + [{"ts": now, "classe": classe, "i": round(i_brut, 4), **({"cle": cle, "reste": round(i_brut, 4)} if penible else {})}]
+        # (27/10, plan de Hakim validé par Ahmed : le self-control) de l'intérieur, la rétrospection : un ressenti pénible
+        # garde toute sa force (décision du 26/10), puis sa sagesse le reprend en main, plus ou moins vite, comme une attaque
+        s = sagesse_fond(parametre)
+        if penible and s > 0:
+            st.setdefault("regulations", []).append({"ts": now + 60 * REGULATION_DELAI_MIN * (1 - s), "i": round(s * i_brut, 4),
+                                                     "cle": cle, "source": "ressenti", "classe": classe, "de": now})
         return {"classe": classe, "intensite": round(i_brut, 4)}
     if classe == "soutien":
         i = i_brut * (1 - jauge(etat, now))
         affect.event(mem, "soutien", round(i, 4), now=now, sujet=sujet, source=source)
+        if source == "balise":                    # (27/10) SON appréciation : la règle de la joie la lit
+            st["ressentis"] = [r for r in st.get("ressentis", []) if now - r["ts"] < RESSENTIS_GARDE_S][-50:] \
+                + [{"ts": now, "classe": "soutien", "i": round(i_brut, 4)}]
         return {"classe": "soutien", "intensite": round(i, 4)}
     s = sagesse_fond(parametre) * (1 - MOMENT_K * surcharge(etat, now, st.get("attaques", [])))
     amp = i_brut * (1 - SAGESSE_AMPLITUDE * s)
@@ -263,8 +280,10 @@ def reflexe(mem, cle, texte, oral=False, voix=None, now=None, parametre=None):
     faits = []
     if vus:
         avant = mem.kv_get("affect") or json.dumps({**affect.get_state(mem, now=now), "_ts": now})
+        # (relecture du 27/10) la fenêtre des gestes sociaux aussi : sans elle, un soutien du réflexe défait effaçait
+        # celui de la balise (dédoublonné contre lui, 90 s)
         st["snap"] = {"cle": cle, "ts": now, "affect": avant, "attaques": list(st.get("attaques", [])),
-                      "regulations": list(st.get("regulations", []))}
+                      "regulations": list(st.get("regulations", [])), "social": mem.kv_get("affect_social")}
         for v in vus:
             faits.append(_appliquer(mem, st, v["classe"], NIVEAUX[v["niveau"]] * _poids(v["classe"], v["qui"], v["sur"]),
                                     f"{v['classe']} de {v['voix']}", cle, "reflexe", now, parametre))
@@ -288,9 +307,10 @@ def lire_balise(reponse):
     if corps.startswith("neutre"):
         return []
     out = []
-    for m in re.finditer(r"\b(attaque|soutien|peur|tristesse|col[eè]re|joie|fiert[eé]|affirmation|honte)\s+([01](?:[.,]\d+)?)", corps):
+    for m in re.finditer(r"\b(attaque|soutien|peur|tristesse|col[eè]re|joie|fiert[eé]|affirmation|honte|apais[eé]e?)\s+([01](?:[.,]\d+)?)",
+                         corps):
         i = max(0.0, min(1.0, float(m.group(2).replace(",", "."))))
-        classe = RESSENTIS.get(m.group(1), m.group(1))
+        classe = "apaisement" if m.group(1).startswith("apais") else RESSENTIS.get(m.group(1), m.group(1))
         if i > 0 and classe not in {x["classe"] for x in out}:
             out.append({"classe": classe, "intensite": round(i, 3)})
     return out or None
@@ -299,6 +319,12 @@ def lire_balise(reponse):
 # (26/10, Ahmed ; moments forts rejoués, eval/plafond) ce que Hakim RESSENT d'un message, en plus d'une attaque ou d'un
 # soutien : sa propre appréciation devient un événement (affect.py), à pleine force (c'est la sienne), sans la sagesse des
 # attaques. « fierté » nomme une prise de position sur lui-même.
+RESSENTIS_PENIBLES = {"peur", "tristesse", "colere", "honte"}
+# (27/10, Ahmed : « parfois ça prend des années ») aucune fenêtre pour être convaincu : ce qui reste d'un ressenti dans
+# ses hormones s'efface comme elles (demi-vie du cortisol, 8 h) ; au-delà de deux jours il n'en reste rien à défaire, et
+# revenir sur un moment ancien passe par l'outil revenir_sur (revenir_sur.py)
+RESSENTIS_GARDE_S = 2 * 86400
+RESTE_DEMI_VIE_S = 8 * 3600
 RESSENTIS = {"peur": "peur", "tristesse": "tristesse", "colere": "colere", "colère": "colere", "joie": "joie",
              "fierte": "affirmation", "fierté": "affirmation", "affirmation": "affirmation", "honte": "honte"}
 
@@ -362,6 +388,7 @@ def _defaire(mem, st, snap, now):
     blob.update({h: round(v, 4) for h, v in vieilli.items()})
     blob["_ts"] = now
     mem.kv_set("affect", json.dumps(blob))
+    mem.kv_set("affect_social", snap.get("social") or "null")
     st["attaques"], st["regulations"] = snap.get("attaques", []), snap.get("regulations", [])
 
 
@@ -369,8 +396,12 @@ def _appliquer_appreciations(mem, st, appreciations, tour, cle, now, parametre):
     faits = []
     for a in appreciations:
         qui, sur = _qui_pour(a["classe"], tour)
-        faits.append(_appliquer(mem, st, a["classe"], a["intensite"] * _poids(a["classe"], qui, sur),
-                                f"{a['classe']} de {'Ahmed' if qui == 'ahmed' else 'une voix tierce'}", cle,
+        voix = "Ahmed" if qui == "ahmed" else "une voix tierce"
+        # (27/10, Hakim ; accord d'Ahmed) un ressenti est le SIEN : sa honte sur ses propres silences était rangée en
+        # « honte de Ahmed », comme un soutien. Le message n'en est que l'occasion.
+        sujet = f"{a['classe']} de Hakim, au message d'{voix}" if a["classe"] in set(RESSENTIS.values()) \
+            else f"{a['classe']} de {voix}"
+        faits.append(_appliquer(mem, st, a["classe"], a["intensite"] * _poids(a["classe"], qui, sur), sujet, cle,
                                 "balise", now, parametre))
     return faits
 
@@ -386,6 +417,31 @@ class _MemBlob:
         self.kv[k] = v
 
 
+def _apaiser(mem, st, conviction, cle, now):
+    """(27/10, Ahmed : « Hakim n'est pas influençable à ce point : l'effet externe n'a d'effet que s'il réussit à le
+    convaincre ; sinon il doit tenter tout seul de se calmer, mais il peut reprendre, méditer la logique entendue, et la
+    considérer après coup ») « apaisé » dans SA balise : une explication l'a convaincu que ses ressentis pénibles d'avant
+    n'étaient pas fondés, sur le coup ou en y repensant. Elle en défait la part dont il est convaincu, sur ce qui n'a pas
+    déjà été repris ; ce que CE message lui fait garde sa force (quel que soit l'ordre des mots de la balise)."""
+    faits = 0
+    for r in st.get("ressentis", []):
+        if r.get("reste", 0) <= 0 or r.get("cle") == cle:
+            continue
+        part = round(conviction * r["reste"], 4)                # la part du ressenti dont il est convaincu
+        d = round(part * math.exp(-max(0.0, now - r["ts"]) * math.log(2) / RESTE_DEMI_VIE_S), 4)   # ce qu'il en reste en lui
+        r["reste"] = round(r["reste"] - part, 4)
+        if d > 0:
+            affect.event(mem, f"reprise_{r['classe']}", d, now=now, source="apaisement")
+            faits += 1
+    return {"classe": "apaisement", "intensite": round(conviction, 4), "ressentis_apaises": faits}
+
+
+def _reprise(r):
+    """L'événement d'une reprise en main : celle d'un ressenti défait une part de ce ressenti (affect « reprise_… ») ;
+    celle d'une attaque reste la « regulation »."""
+    return f"reprise_{r['classe']}" if r.get("source") == "ressenti" and r.get("classe") in RESSENTIS_PENIBLES else "regulation"
+
+
 def echeances(mem, now=None):
     """Au battement du démon : les reprises en main arrivées à échéance (la sagesse qui reprend la main)."""
     if not actif(mem):
@@ -396,7 +452,14 @@ def echeances(mem, now=None):
     if not dues:
         return 0
     for r in dues:
-        affect.event(mem, "regulation", r["i"], now=now, source="sagesse")
+        i = r["i"]
+        if r.get("source") == "ressenti":         # jamais au-delà de ce qui reste du ressenti (un apaisement a pu passer)
+            x = next((x for x in st.get("ressentis", []) if x.get("ts") == r.get("de") and x.get("classe") == r.get("classe")), None)
+            if x is not None:
+                i = min(i, x.get("reste", 0))
+                x["reste"] = round(x.get("reste", 0) - i, 4)
+        if i > 0:
+            affect.event(mem, _reprise(r), i, now=now, source="sagesse")
     st["regulations"] = [r for r in st.get("regulations", []) if r["ts"] > now]
     _sauver(mem, st, now)
     journaliser(mem, {"type": "reprise_en_main", "n": len(dues), "intensites": [r["i"] for r in dues]})

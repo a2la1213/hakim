@@ -59,3 +59,15 @@ def test_memoire_plafonnee(run, monkeypatch):
     monkeypatch.setattr(calcul, "MEMOIRE_MAX_KO", 300 * 1024)               # 300 Mo pour l'essai
     r = run("import numpy as np\na = np.ones((80_000_000,))\nimport time\ntime.sleep(5)\nprint('fini')", delai_s=20)
     assert "arrêté (mémoire)" in r and "fini" not in r
+
+
+def test_pas_de_lien_dur_vers_un_fichier_du_dehors(run, tmp_path):
+    """(27/10, relecture du dépôt public) comme son terminal : un lien dur vers un fichier du dehors serait lu comme un
+    fichier de ses calculs ; sa création est refusée par le bac à sable."""
+    dehors = tmp_path.parent / f"{tmp_path.name}-dehors.txt"
+    dehors.write_text("SECRET")
+    try:
+        r = run(f"import os\ntry:\n    os.link({str(dehors)!r}, 'dur.txt'); print(open('dur.txt').read())\nexcept OSError as e:\n    print('refusé', e.errno)")
+        assert "SECRET" not in r and "refusé" in r
+    finally:
+        dehors.unlink()

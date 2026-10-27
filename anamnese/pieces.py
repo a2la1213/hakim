@@ -62,7 +62,8 @@ def joindre(chemin, titre="", jarvis=None, dossier=None):
     # relecture Opus (B1) : le fichier peut être échangé entre la vérification et la lecture → on vérifie le fichier
     # OUVERT (son vrai chemin, d'après le système), pas le nom
     try:
-        fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW)
+        # (relecture indépendante du 27/10, E) O_NONBLOCK : un tube nommé glissé après is_file() ne fige pas le serveur
+        fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError:
         raise Refus("fichier illisible (ou lien symbolique)")
     with os.fdopen(fd, "rb") as h:
@@ -73,6 +74,8 @@ def joindre(chemin, titre="", jarvis=None, dossier=None):
             vrai = p
         if not any(r in vrai.parents for r in permis) or not stat.S_ISREG(os.fstat(fd).st_mode):
             raise Refus("le fichier a changé pendant qu'on le joignait : refusé")
+        if os.fstat(fd).st_nlink > 1:            # (27/10) un lien dur ne se voit pas au chemin : il peut cacher un fichier fermé
+            raise Refus("un lien dur : refusé (il peut cacher un fichier fermé)")
         contenu = h.read(TAILLE_MAX + 1)
     taille = len(contenu)
     if taille > TAILLE_MAX:

@@ -6,6 +6,8 @@ ffmpeg (images clés + transcription Whisper), audio par Whisper. Garde : seulem
 racines autorisées, jamais un secret (.env, clés, .ssh…), pas d'évasion par lien symbolique.
 Prédiction écrite avant le code : tout échoue (module absent).
 """
+import os
+import time
 import shutil
 import subprocess
 import sys
@@ -471,3 +473,154 @@ def test_messages_entiers_sur_une_plage_courte_et_export_brut(tmp_path):
     assert r["messages"] == 2 and long.strip() in texte and "46.20441" not in texte
     r2 = F.exporter_journal(avant=t0 + 30, jetons=10, dossier=tmp_path, sortie=tmp_path / "y.txt")
     assert r2["messages"] == 1 and "46.20441" not in (tmp_path / "y.txt").read_text()     # le seul message qui tient
+
+
+# ---------- (27/10, relecture du dépôt public par un Claude neuf ; Ahmed : « boucher toutes les failles ») son terminal
+# écrit dans son atelier, il peut y poser des liens : rien ne doit lire ni écrire À TRAVERS eux
+@pytest.fixture
+def piege(tmp_path, monkeypatch):
+    aios = tmp_path / "AIOS"
+    cwd = aios / "jarvis" / "cwd"
+    atelier = cwd / "atelier"
+    atelier.mkdir(parents=True)
+    (tmp_path / ".ssh").mkdir()
+    (tmp_path / ".ssh" / "config").write_text("PIEGE-7731 dossier caché\n")
+    (tmp_path / "Library" / "Mail").mkdir(parents=True)
+    (tmp_path / "Library" / "Mail" / "m.txt").write_text("PIEGE-7731 bibliothèque\n")
+    (aios / "cockpit").mkdir()
+    (aios / "cockpit" / "reglages.json").write_text('{"x": "PIEGE-7731 intérieur"}\n')
+    (tmp_path / "Documents").mkdir()
+    (tmp_path / "Documents" / "credentials.md").write_text("PIEGE-7731 nom de secret\n")
+    (tmp_path / "Documents" / "note.md").write_text("PIEGE-7731 note ouverte\n")
+    (atelier / "propre.txt").write_text("PIEGE-7731 atelier\n")
+    monkeypatch.setattr(fichiers, "INTERIEURS", [(aios.resolve(), cwd.resolve())])
+    monkeypatch.setattr(fichiers, "ECRITS_PAR_HAKIM", [cwd.resolve()], raising=False)
+    return tmp_path, atelier
+
+
+def _lignes(trouves):
+    return sorted(t.split(": ", 1)[1] for t in trouves)
+
+
+def test_chercher_dans_fichiers_ne_suit_pas_un_lien_vers_ce_qui_est_ferme(piege):
+    racine, atelier = piege
+    for nom, cible in (("a.txt", ".ssh/config"), ("b.txt", "Library/Mail/m.txt"), ("c.json", "AIOS/cockpit/reglages.json"),
+                       ("d.md", "Documents/credentials.md"), ("e.md", "Documents/note.md")):
+        (atelier / nom).symlink_to(racine / cible)
+    (atelier / "dossier-lie").symlink_to(racine / ".ssh")
+    # un lien vers un fichier ouvert reste lisible (comme le fichier lui-même) ; rien de ce qui est fermé
+    assert _lignes(fichiers.chercher_contenu("PIEGE-7731", atelier, racines=[racine])) == ["PIEGE-7731 atelier", "PIEGE-7731 note ouverte"]
+    with pytest.raises(fichiers.Refus):
+        fichiers.chercher_contenu("PIEGE-7731", atelier / "dossier-lie", racines=[racine])
+
+
+def test_un_lien_dur_dans_ses_dossiers_est_refuse(piege):
+    racine, atelier = piege
+    os.link(racine / ".ssh" / "config", atelier / "dur.txt")
+    with pytest.raises(fichiers.Refus, match="lien dur"):
+        fichiers.verifier(str(atelier / "dur.txt"), [racine])
+    assert _lignes(fichiers.chercher_contenu("PIEGE-7731", atelier, racines=[racine])) == ["PIEGE-7731 atelier"]
+    # hors des dossiers où il écrit, un fichier à plusieurs liens reste lisible (Ahmed peut en avoir)
+    os.link(racine / "Documents" / "note.md", racine / "Documents" / "note-bis.md")
+    assert fichiers.verifier(str(racine / "Documents" / "note-bis.md"), [racine])
+
+
+def test_l_export_du_journal_n_ecrit_jamais_a_travers_un_lien(tmp_path, monkeypatch):
+    import json
+    t0 = 1_800_000_000.0
+    (tmp_path / "journal.jsonl").write_text(json.dumps({"ts": t0 * 1000, "qui": "jarvis", "texte": "echo PIEGE"}) + "\n")
+    atelier, dehors = tmp_path / "atelier", tmp_path / "dehors"
+    atelier.mkdir()
+    dehors.mkdir()
+    important = dehors / "important.txt"
+    important.write_text("ORIGINAL")
+    monkeypatch.setattr(fichiers, "EXPORTS", atelier / "journal-exports")
+    n = time.strftime("%Y%m%d-%H%M%S", time.localtime(t0))
+    (atelier / "journal-exports").mkdir()
+    (atelier / "journal-exports" / f"journal-{n}-{n}.txt").symlink_to(important)        # le nom est prévisible
+    with pytest.raises(fichiers.Refus):
+        fichiers.exporter_journal(debut=t0 - 10, fin=t0 + 10, dossier=tmp_path)
+    assert important.read_text() == "ORIGINAL"
+    (atelier / "journal-exports" / f"journal-{n}-{n}.txt").unlink()
+    (atelier / "journal-exports").rmdir()
+    (atelier / "journal-exports").symlink_to(dehors)                                    # le dossier lui-même
+    with pytest.raises(fichiers.Refus):
+        fichiers.exporter_journal(debut=t0 - 10, fin=t0 + 10, dossier=tmp_path)
+    assert sorted(p.name for p in dehors.iterdir()) == ["important.txt"]
+    (atelier / "journal-exports").unlink()
+    r = fichiers.exporter_journal(debut=t0 - 10, fin=t0 + 10, dossier=tmp_path)          # sans piège : écrit
+    assert "echo PIEGE" in Path(r["fichier"]).read_text()
+
+
+def test_ecrire_sans_lien_refuse_un_lien_dur(tmp_path):
+    base = tmp_path / "atelier"
+    base.mkdir()
+    dehors = tmp_path / "dehors.txt"
+    dehors.write_text("ORIGINAL")
+    os.link(dehors, base / "dur.txt")
+    with pytest.raises(fichiers.Refus):
+        fichiers.ecrire_sans_lien(base / "dur.txt", "écrasé", base)
+    assert dehors.read_text() == "ORIGINAL"
+    assert fichiers.ecrire_sans_lien(base / "sous" / "neuf.txt", "ok", base).read_text() == "ok"
+    assert fichiers.lire_sans_lien(base / "sous" / "neuf.txt", base) == "ok"
+    with pytest.raises(fichiers.Refus):
+        fichiers.lire_sans_lien(base / "dur.txt", base)
+
+
+# ---------- (relecture indépendante du 27/10, points C et défauts des aides) la vérification regarde un chemin, puis le
+# fichier était rouvert PAR CE CHEMIN : un dossier de l'atelier échangé entre les deux contre un lien faisait lire la cible
+def _echanger(dossier, cible):
+    dossier.rename(dossier.with_name(dossier.name + "-vrai"))
+    dossier.symlink_to(cible)
+
+
+def test_chercher_contenu_ne_lit_pas_un_dossier_echange_apres_la_verification(piege, monkeypatch):
+    racine, atelier = piege
+    (atelier / "sous").mkdir()
+    (atelier / "sous" / "a.txt").write_text("PIEGE-7731 atelier sous\n")
+    (racine / ".ssh" / "a.txt").write_text("PIEGE-7731 échangé\n")
+    vrai = fichiers.verifier
+
+    def verifier_puis_echanger(chemin, *a, **k):
+        r = vrai(chemin, *a, **k)
+        if Path(chemin).name == "a.txt" and not (atelier / "sous").is_symlink():
+            _echanger(atelier / "sous", racine / ".ssh")
+        return r
+    monkeypatch.setattr(fichiers, "verifier", verifier_puis_echanger)
+    trouves = fichiers.chercher_contenu("PIEGE-7731", atelier, racines=[racine])
+    assert (atelier / "sous").is_symlink()                                    # la course a bien eu lieu
+    assert "PIEGE-7731 échangé" not in _lignes(trouves) and "PIEGE-7731 atelier" in _lignes(trouves)
+
+
+def test_lister_ne_liste_pas_un_dossier_echange_apres_la_verification(piege, monkeypatch):
+    racine, atelier = piege
+    (atelier / "sous").mkdir()
+    (atelier / "sous" / "propre.txt").write_text("x")
+    vrai, sous = fichiers._interieur, (atelier / "sous").resolve()
+
+    def interieur_puis_echanger(p):
+        r = vrai(p)
+        if Path(p) == sous and not (atelier / "sous").is_symlink():
+            _echanger(atelier / "sous", racine / ".ssh")
+        return r
+    monkeypatch.setattr(fichiers, "_interieur", interieur_puis_echanger)
+    try:
+        _, elements = fichiers.lister(atelier / "sous", racines=[racine])
+    except fichiers.Refus:
+        elements = []
+    assert (atelier / "sous").is_symlink() and not any("config" in e for e in elements)
+
+
+def test_les_aides_sans_lien_ont_un_plafond_et_rendent_un_refus_pas_une_erreur_brute(tmp_path, monkeypatch):
+    base = tmp_path / "atelier"
+    base.mkdir()
+    (base / "gros.txt").write_bytes(b"x" * 100)
+    with pytest.raises(fichiers.Refus, match="trop"):
+        fichiers.lire_sans_lien(base / "gros.txt", base, maximum=50)
+    assert fichiers.lire_sans_lien(base / "gros.txt", base, maximum=100) == "x" * 100
+    # un dossier retiré par une tâche de fond entre sa création et son ouverture : un refus (recettes, export…)
+    monkeypatch.setattr(fichiers.os, "mkdir", lambda *a, **k: None)
+    with pytest.raises(fichiers.Refus):
+        fichiers.ecrire_sans_lien(base / "neuf" / "x.txt", "x", base)
+    with pytest.raises(fichiers.Refus):
+        fichiers.creer_dossier_sans_lien(base / "neuf2", base)

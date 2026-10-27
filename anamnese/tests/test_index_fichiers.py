@@ -93,3 +93,32 @@ def test_la_garde_des_secrets_par_le_nom_vaut_aussi_pour_l_index(idx):
                "devis secret", struct.pack("64f", *faux_embed("devis")), 1))
     db.commit(); db.close()
     assert not any("token" in x["chemin"] for x in index_fichiers.chercher("devis", base=base, n=20))
+
+
+def test_un_dossier_de_ses_zones_echange_contre_un_lien_n_est_pas_lu(idx, tmp_path, monkeypatch):
+    """(relecture indépendante du 27/10, B) le lien n'était regardé qu'à l'énumération ; la lecture venait des minutes
+    plus tard, par le chemin : un dossier de son atelier échangé entre-temps contre un lien vers un dossier fermé y faisait
+    lire (et indexer, sous un nom d'atelier) ce qui est fermé."""
+    import sqlite3
+    racine, base = idx
+    zone = racine / "atelier"
+    (zone / "sous").mkdir(parents=True)
+    (zone / "sous" / "plan.md").write_text("Plan de travail pour la semaine, lisible.", encoding="utf-8")
+    (zone / "sous" / "outil.py").write_text("print('outil lisible')", encoding="utf-8")
+    ferme = tmp_path / "ferme"
+    ferme.mkdir()
+    (ferme / "plan.md").write_text("SECRET-FERME 4471 contenu d'un dossier fermé", encoding="utf-8")
+    (ferme / "outil.py").write_text("SECRET_FERME = 4471", encoding="utf-8")
+    monkeypatch.setattr(index_fichiers._fichiers(), "ECRITS_PAR_HAKIM", [zone.resolve()])
+    vrai = index_fichiers._candidats
+
+    def candidats_puis_echanger(racines):
+        tous = list(vrai(racines))
+        (zone / "sous").rename(zone / "sous-vrai")
+        (zone / "sous").symlink_to(ferme)
+        return tous
+    monkeypatch.setattr(index_fichiers, "_candidats", candidats_puis_echanger)
+    index_fichiers.indexer([racine], base=base, budget_s=60)
+    extraits = " ".join(e for (e,) in sqlite3.connect(base).execute("SELECT extrait FROM fichiers"))
+    assert "SECRET" not in extraits and "4471" not in extraits
+    assert "Devis Exemplia" in extraits                                     # le reste est indexé

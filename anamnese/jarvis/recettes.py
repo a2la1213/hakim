@@ -15,6 +15,7 @@ import shlex
 import time
 from pathlib import Path
 
+import fichiers
 import terminal
 
 DOSSIER = terminal.ATELIER / "recettes"
@@ -30,6 +31,22 @@ def _fichier(nom, dossier=None):
     if not NOM.match(str(nom or "")):
         raise Refus("nom de recette : minuscules, chiffres, - et _ (2 à 41 caractères)")
     return Path(dossier or DOSSIER) / f"{nom}.json"
+
+
+# (27/10, relecture du dépôt public ; Ahmed : « boucher toutes les failles ») son atelier est écrit par son terminal : une
+# recette (ou le dossier des recettes) remplacée par un lien ne fait jamais lire ni écrire ailleurs
+def _lire(f):
+    try:
+        return fichiers.lire_sans_lien(f, f.parent.parent)
+    except fichiers.Refus as e:
+        raise Refus(str(e))
+
+
+def _ecrire(f, r):
+    try:
+        fichiers.ecrire_sans_lien(f, json.dumps(r, ensure_ascii=False, indent=1), f.parent.parent)
+    except fichiers.Refus as e:
+        raise Refus(str(e))
 
 
 def _entre_guillemets_doubles(commande):
@@ -70,11 +87,10 @@ def sauver(nom, commande, description="", parametres=None, dossier=None):
     r = {"nom": nom, "description": str(description or "")[:500], "commande": commande, "parametres": parametres,
          "sauvee": time.strftime("%Y-%m-%d %H:%M"), "lancements": 0}
     try:
-        r["lancements"] = json.loads(f.read_text(encoding="utf-8")).get("lancements", 0)
+        r["lancements"] = json.loads(_lire(f)).get("lancements", 0)
     except (OSError, ValueError):
         pass
-    f.parent.mkdir(parents=True, exist_ok=True)
-    f.write_text(json.dumps(r, ensure_ascii=False, indent=1), encoding="utf-8")
+    _ecrire(f, r)
     manquants = sorted(attendus - set(parametres))
     return r, manquants
 
@@ -95,7 +111,7 @@ def remplir(recette, params=None):
 
 def lire(nom, dossier=None):
     try:
-        return json.loads(_fichier(nom, dossier).read_text(encoding="utf-8"))
+        return json.loads(_lire(_fichier(nom, dossier)))
     except OSError:
         raise Refus(f"recette inconnue : {nom}")
     except ValueError:
@@ -109,7 +125,7 @@ def lancer(nom, params=None, delai_s=3600, dossier=None, lanceur=None):
     tid = (lanceur or taches.lancer)(commande, delai_s)
     r["lancements"] = int(r.get("lancements", 0)) + 1
     r["dernier"] = {"quand": time.strftime("%Y-%m-%d %H:%M"), "params": {str(k): str(v) for k, v in (params or {}).items()}, "tache": tid}
-    _fichier(nom, dossier).write_text(json.dumps(r, ensure_ascii=False, indent=1), encoding="utf-8")
+    _ecrire(_fichier(nom, dossier), r)
     return tid, commande
 
 
@@ -118,8 +134,8 @@ def liste(dossier=None):
     out = []
     for f in sorted(d.glob("*.json")) if d.exists() else []:
         try:
-            r = json.loads(f.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            r = json.loads(_lire(f))
+        except (OSError, ValueError, Refus):
             continue
         p = ", ".join(f"{k}={v}" for k, v in r.get("parametres", {}).items())
         out.append(f"- {r.get('nom')} : {r.get('description') or '(sans description)'}" + (f" — paramètres : {p}" if p else "")

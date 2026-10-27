@@ -114,6 +114,12 @@ EVENTS_V2 = {
     "joie":           {"gaba": +0.05},
     "honte":          {"gaba": -0.05},
 }
+# (27/10, plan de Hakim validé par Ahmed ; relecture indépendante) la reprise en main d'un ressenti pénible (sa
+# rétrospection, ou l'apaisement par l'autre) défait une part du ressenti LUI-MÊME : son profil, en négatif. Le profil
+# « regulation » est fait pour une attaque : sur une tristesse, il ne rendait ni la dopamine ni l'endorphine.
+for _r in ("peur", "tristesse", "colere", "honte"):
+    EVENTS["reprise_" + _r] = {h: -d for h, d in EVENTS[_r].items()}
+    EVENTS_V2["reprise_" + _r] = {h: -d for h, d in EVENTS_V2.get(_r, {}).items()}
 K_ACTH = 1.0            # cible de l'ACTH = base + K·(CRH − base)
 K_CORT = 1.5            # cible du cortisol = base circadienne + K·(ACTH − base)
 CORT_MONTEE_H = 0.5     # le cortisol MONTE vers sa cible en ~30 min (sécrétion), et redescend en heures (demi-vie 8 h)
@@ -155,6 +161,7 @@ HAB_TAUX = 0.25         # chaque répétition rapproche l'habitude de 1 de ce ta
 HAB_TAU_H = 2.0         # récupération de l'habitude sans l'événement
 HAB_EXEMPTS = {"ennui", "longue_absence", "retour", "regulation",   # une reprise en main voulue ne s'émousse pas
                "probleme", "echec", "attaque", "peur", "tristesse", "colere", "honte"}   # (26/10, plafond) un coup dur non plus
+HAB_EXEMPTS |= {"reprise_peur", "reprise_tristesse", "reprise_colere", "reprise_honte"}   # (27/10) la reprise d'un ressenti non plus
 PAS_V2_S = 300.0
 
 # ---- Émotions soudaines (2026-10-21, idée d'Ahmed relayée par Hakim ; prédictions figées AVANT dans

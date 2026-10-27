@@ -25,6 +25,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import signal
 import subprocess
 import sys
@@ -161,11 +162,54 @@ def ouvrir(nom, projet="anamnese", projets=None, chantiers=None):
     return copie
 
 
+def _copier_par_descripteurs(fd, dest, rel=""):
+    """Le dossier ouvert `fd` recopié dans `dest`, maillon par maillon (O_NOFOLLOW) : un lien est recopié COMME lien
+    (git le montre, jamais suivi), un tube ou un lien dur est refusé ; ferme `fd`."""
+    dest.mkdir(parents=True, exist_ok=True)
+    try:
+        for nom in sorted(os.listdir(fd)):
+            if nom in (".tmp", "__pycache__", ".pytest_cache"):
+                continue
+            if nom == ".git":
+                raise Refus(f"un .git est apparu dans la copie ({rel or '.'}/.git) : retire-le")
+            st = os.stat(nom, dir_fd=fd, follow_symlinks=False)
+            if stat.S_ISLNK(st.st_mode):
+                os.symlink(os.readlink(nom, dir_fd=fd), dest / nom)
+            elif stat.S_ISDIR(st.st_mode):
+                _copier_par_descripteurs(os.open(nom, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd),
+                                         dest / nom, f"{rel}/{nom}")
+            elif stat.S_ISREG(st.st_mode):
+                with os.fdopen(os.open(nom, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd), "rb") as h:
+                    s2 = os.fstat(h.fileno())
+                    if not stat.S_ISREG(s2.st_mode) or s2.st_nlink > 1:
+                        raise Refus(f"{rel}/{nom} : un lien dur ou un fichier échangé dans la copie : refusé")
+                    with open(dest / nom, "wb") as o:
+                        shutil.copyfileobj(h, o)
+                os.chmod(dest / nom, s2.st_mode & 0o755)
+    except OSError as e:
+        raise Refus(f"copie illisible ({rel or '.'}) : {e.strerror}") from e
+    finally:
+        os.close(fd)
+
+
 def _arbre(copie, gitdir):
-    """L'empreinte de l'état de la copie (tout ce qui irait dans le patch) : git add -A puis write-tree."""
-    _sans_git_imbrique(copie)
-    _git(["add", "-A"], gitdir, travail=copie)
-    return _git(["write-tree"], gitdir).strip()
+    """L'empreinte de l'état de la copie (tout ce qui irait dans le patch) : git add -A puis write-tree.
+    (27/10, relecture indépendante) git ne travaille JAMAIS sur le chemin de l'atelier : une tâche de fond pouvait échanger
+    la copie contre un lien vers un dossier fermé entre la vérification et git (le contenu entrait dans l'arbre, puis dans
+    le patch). La copie est d'abord recopiée par descripteurs dans un instantané privé, que rien de l'atelier n'atteint."""
+    import fichiers
+    instant = Path(gitdir).parent / f".{Path(gitdir).stem}-instantane"
+    shutil.rmtree(instant, ignore_errors=True)
+    try:
+        fd = fichiers._dossier_sans_lien(copie.parent.parent, (copie.parent.name, copie.name), creer=False)
+    except (fichiers.Refus, OSError):
+        raise Refus("la copie est un lien symbolique, ou introuvable : refusé")
+    try:
+        _copier_par_descripteurs(fd, instant)
+        _git(["add", "-A"], gitdir, travail=instant)
+        return _git(["write-tree"], gitdir).strip()
+    finally:
+        shutil.rmtree(instant, ignore_errors=True)
 
 
 def _ports_locaux():

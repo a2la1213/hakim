@@ -3,6 +3,7 @@
   chocs_cli.py balise    < {"cle", "reponse"}                 → {"issue", "faits", …}
   chocs_cli.py etat | on | off             (les chocs)
   chocs_cli.py style-on | style-off       (le style du moment, style.py)
+  chocs_cli.py regles-on | regles-off     (ce que son émotion pèse sur ses choix, regles_emotion.py)
 Jamais bloquant pour le cockpit : en cas d'erreur, une ligne JSON {"erreur": …} et le code 0.
 """
 import json
@@ -38,9 +39,13 @@ def main(argv, entree=None, mem=None):
     if cmd in ("style-on", "style-off"):
         mem.kv_set("style_actif", "1" if cmd == "style-on" else "0")
         cmd = "etat"
+    if cmd in ("regles-on", "regles-off"):
+        mem.kv_set("regles_actif", "1" if cmd == "regles-on" else "0")
+        cmd = "etat"
     if cmd in ("on", "off", "etat"):
         st = chocs._etat(mem)
-        return {"actif": chocs.actif(mem), "style": mem.kv_get("style_actif") == "1", "v2": chocs.affect.v2_actif(mem),
+        return {"actif": chocs.actif(mem), "style": mem.kv_get("style_actif") == "1", "regles": mem.kv_get("regles_actif") != "0",
+                "v2": chocs.affect.v2_actif(mem),
                 "sagesse_fond": chocs.sagesse_fond(),
                 "reprises_en_attente": len(st.get("regulations", [])), "attaques_30min": len(st.get("attaques", []))}
     q = json.loads(entree if entree is not None else sys.stdin.read() or "{}")
@@ -57,6 +62,13 @@ def main(argv, entree=None, mem=None):
                 chocs.journaliser(mem, {"type": "style", "cle": cle, **s})     # pour la mesure (eval/voix_mots)
         except Exception as e:
             r["style_erreur"] = f"{type(e).__name__}: {e}"[:200]
+        try:                                     # (27/10) ce que son émotion pèse sur ses choix, après le style
+            import regles_emotion
+            g = regles_emotion.du_moment(mem)
+            if g:
+                r["regles"] = g
+        except Exception as e:
+            r["regles_erreur"] = f"{type(e).__name__}: {e}"[:200]
         return r
     if cmd == "balise":
         return chocs.appliquer_balise(mem, cle, chocs.lire_balise(q.get("reponse")))

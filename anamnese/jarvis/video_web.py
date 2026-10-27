@@ -99,7 +99,11 @@ def preparer(url, images=False, atelier=None, verifier=None, preparer_fichier=No
     atelier = Path(atelier or terminal.ATELIER)
     dossier_rel = Path("videos-web") / f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:4]}"
     dossier = atelier / dossier_rel
-    dossier.mkdir(parents=True, exist_ok=True)
+    import fichiers                              # (27/10) videos-web remplacé par un lien : rien n'est créé au dehors
+    try:
+        fichiers.creer_dossier_sans_lien(dossier, atelier)
+    except fichiers.Refus as e:
+        raise Refus(str(e))
     y = shlex.quote(str(YTDLP))
     u = shlex.quote(url)
     try:

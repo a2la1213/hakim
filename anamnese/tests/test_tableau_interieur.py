@@ -101,3 +101,23 @@ def test_hormones_en_direct_chaque_seconde(tmp_path):
     lignes = [json.loads(l) for l in j.read_text().splitlines()]
     assert [o["t"] for o in lignes] == [1_800_000_000.0, 1_800_000_001.0, 1_800_000_002.0]
     assert lignes[0]["h"]["adenosine"] == 0.21 and set(affect.HORMONES) <= set(lignes[0]["h"])
+
+
+def test_l_image_ne_s_ecrit_jamais_a_travers_un_lien(tmp_path):
+    """(27/10, Ahmed : « boucher toutes les failles ») le nom de l'image est prévisible (à la minute) et son dossier est
+    dans l'atelier : un lien posé d'avance n'est jamais suivi, ni par l'écriture ni par la conversion en PNG."""
+    import os
+    import pytest
+    now = time.time()
+    h, e = _journaux(tmp_path, now)
+    sortie = tmp_path / "atelier" / "pour_ahmed"
+    sortie.mkdir(parents=True)
+    dehors = tmp_path / "dehors.txt"
+    dehors.write_text("ORIGINAL")
+    nom = "tableau-interieur-" + time.strftime("%Y%m%d-%H%M", time.localtime(t.donnees(2, now, journal_hormones=h, journal_echanges=e)["t1"]))
+    for ext in (".svg", ".png", ".svg.png"):
+        (sortie / (nom + ext)).symlink_to(dehors)
+    with pytest.raises(Exception, match="lien"):
+        t.dessiner(2, now, sortie=sortie, journal_hormones=h, journal_echanges=e)
+    assert dehors.read_text() == "ORIGINAL"
+    assert all(os.path.islink(sortie / (nom + ext)) for ext in (".svg", ".png", ".svg.png"))

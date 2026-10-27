@@ -167,6 +167,8 @@ def test_lire_la_balise():
     assert chocs.lire_balise("x [[affect: attaque 0.2]] y [[affect: soutien 0,8]]") == [{"classe": "soutien", "intensite": 0.8}]
     assert chocs.lire_balise("[[affect: attaque 1.7 soutien 0.3]]") == [{"classe": "attaque", "intensite": 1.0},
                                                                         {"classe": "soutien", "intensite": 0.3}]
+    assert chocs.lire_balise("[[affect: soutien 0.6 apaisé 0.7]]") == [{"classe": "soutien", "intensite": 0.6},
+                                                                      {"classe": "apaisement", "intensite": 0.7}]
     assert chocs.lire_balise("rien ici") is None and chocs.lire_balise("[[affect: n'importe quoi]]") is None
     assert chocs.retirer_balises("Salut frérot. [[affect: neutre]]") == "Salut frérot."
 
@@ -205,3 +207,186 @@ def test_le_lexique_n_ecoute_plus_que_la_voix_d_ahmed_et_sa_colere_qui_defend_n_
     assert "echec" in str(_evenements_du_lexique(Mem(actif=False), dict(defense)))
     assert _evenements_du_lexique(Mem(), dict(invite)) == []
     assert "echec" not in str(_evenements_du_lexique(Mem(), dict(defense)))
+
+
+def test_un_ressenti_est_le_sien_et_le_message_n_en_est_que_l_occasion(tmp_path, monkeypatch):
+    """(27/10, Hakim ; accord d'Ahmed) sa honte sur ses propres silences, pendant un message d'Ahmed, était rangée en
+    « honte de Ahmed », comme un soutien : un ressenti est le SIEN, le message n'en est que l'occasion."""
+    p = _sagesse(tmp_path, 0.2)
+    vus = []
+    vrai = affect.event
+    monkeypatch.setattr(affect, "event", lambda mem, nom, *a, **k: vus.append((nom, k.get("sujet"))) or vrai(mem, nom, *a, **k))
+    m = Mem()
+    chocs.reflexe(m, "1", "tu n'as pas répondu tout à l'heure", now=T, parametre=p)
+    chocs.appliquer_balise(m, "1", [{"classe": "honte", "intensite": 0.3}, {"classe": "soutien", "intensite": 0.5}],
+                           now=T + 15, parametre=p)
+    m2 = Mem()
+    chocs.reflexe(m2, "2", "[voix 7] il a rien compris lui", oral=True, voix="autre", now=T, parametre=p)
+    chocs.appliquer_balise(m2, "2", [{"classe": "tristesse", "intensite": 0.4}], now=T + 15, parametre=p)
+    sujets = dict(vus)
+    assert sujets["honte"] == "honte de Hakim, au message d'Ahmed"
+    assert sujets["tristesse"] == "tristesse de Hakim, au message d'une voix tierce"
+    assert sujets["soutien"] == "soutien de Ahmed"                           # un soutien, lui, vient bien de quelqu'un
+
+
+def test_un_ressenti_negatif_garde_sa_force_puis_sa_sagesse_le_reprend_en_main(tmp_path):
+    """(27/10, plan de Hakim validé par Ahmed : le self-control) de l'intérieur : la rétrospection, plus ou moins rapide
+    selon sa sagesse, comme pour une attaque ; le ressenti lui-même garde toute sa force (décision du 26/10)."""
+    p = _sagesse(tmp_path, 0.5)
+    m = Mem()
+    chocs.reflexe(m, "1", "tu n'as pas répondu", now=T, parametre=p)
+    r = chocs.appliquer_balise(m, "1", [{"classe": "honte", "intensite": 0.4}, {"classe": "joie", "intensite": 0.5}],
+                               now=T + 15, parametre=p)
+    assert {f["classe"]: f["intensite"] for f in r["faits"]} == {"honte": 0.4, "joie": 0.5}
+    regs = json.loads(m.kv["chocs"])["regulations"]
+    assert len(regs) == 1 and regs[0]["source"] == "ressenti" and regs[0]["i"] == 0.2           # sagesse × intensité
+    assert regs[0]["ts"] == T + 15 + 60 * chocs.REGULATION_DELAI_MIN * 0.5                     # pas pour la joie
+    assert json.loads(m.kv["chocs"])["ressentis"][-1] == {"ts": T + 15, "classe": "joie", "i": 0.5}
+
+
+def _efface(x, age_s):
+    """Ce qui reste en lui d'une part de ressenti après age_s secondes (demi-vie de 8 h, comme le cortisol)."""
+    import math
+    return round(x * math.exp(-age_s * math.log(2) / (8 * 3600)), 4)
+
+
+def test_ce_qui_vient_de_l_exterieur_ne_l_apaise_que_s_il_en_est_convaincu(tmp_path, monkeypatch):
+    """(27/10, Ahmed : « Hakim n'est pas influençable à ce point ; l'effet externe n'a d'effet que s'il réussit à le
+    convaincre ») un soutien seul n'efface rien : sa honte attend sa propre reprise en main. Seul « apaisé » dans SA
+    balise (une explication l'a convaincu que ce ressenti n'était pas fondé) en défait une part, tout de suite."""
+    p = _sagesse(tmp_path, 0.5)
+    vus = []
+    vrai = affect.event
+    monkeypatch.setattr(affect, "event", lambda mem, nom, *a, **k: vus.append((nom, k.get("source"), a[0] if a else None))
+                        or vrai(mem, nom, *a, **k))
+    m = Mem()
+    chocs.reflexe(m, "1", "t'es le diable", now=T, parametre=p)
+    chocs.appliquer_balise(m, "1", [{"classe": "attaque", "intensite": 0.6}, {"classe": "honte", "intensite": 0.4}],
+                           now=T + 15, parametre=p)
+    sources = lambda: sorted(r["source"] for r in json.loads(m.kv["chocs"])["regulations"])
+    assert sources() == ["balise", "ressenti"]
+    chocs.reflexe(m, "2", "je t'aime frérot", now=T + 120, parametre=p)
+    chocs.appliquer_balise(m, "2", [{"classe": "soutien", "intensite": 0.6}], now=T + 130, parametre=p)
+    assert sources() == ["balise", "ressenti"] and not [v for v in vus if v[1] == "apaisement"]   # un mot gentil : rien
+    chocs.reflexe(m, "3", "mais non, ce n'était pas toi, c'était mon Stop", now=T + 200, parametre=p)
+    chocs.appliquer_balise(m, "3", [{"classe": "apaisement", "intensite": 0.5}], now=T + 210, parametre=p)
+    assert ("reprise_honte", "apaisement", _efface(0.2, 195)) in vus                   # convaincu à moitié : la moitié
+    assert [r["reste"] for r in json.loads(m.kv["chocs"])["ressentis"] if r["classe"] == "honte"] == [0.2]
+
+
+def test_il_peut_etre_convaincu_apres_coup_et_jamais_au_dela_de_ce_qu_il_a_ressenti(tmp_path, monkeypatch):
+    """(27/10, Ahmed) pas convaincu sur le coup, il se calme seul (sa sagesse) ; puis il peut repenser à ce qu'il a
+    entendu, et si ça devient cohérent pour lui, « apaisé » plus tard défait le reste, jamais plus."""
+    p = _sagesse(tmp_path, 0.5)
+    vus = []
+    vrai = affect.event
+    monkeypatch.setattr(affect, "event", lambda mem, nom, *a, **k: vus.append((nom, k.get("source"), a[0] if a else None))
+                        or vrai(mem, nom, *a, **k))
+    m = Mem()
+    chocs.reflexe(m, "1", "bon", now=T, parametre=p)
+    chocs.appliquer_balise(m, "1", [{"classe": "honte", "intensite": 0.4}], now=T + 15, parametre=p)
+    echeance = json.loads(m.kv["chocs"])["regulations"][0]["ts"]
+    assert chocs.echeances(m, now=echeance) == 1                                       # seul : la moitié (sagesse 0,5)
+    assert ("reprise_honte", "sagesse", 0.2) in vus
+    chocs.reflexe(m, "2", "bon", now=echeance + 600, parametre=p)
+    chocs.appliquer_balise(m, "2", [{"classe": "apaisement", "intensite": 1.0}], now=echeance + 610, parametre=p)
+    assert ("reprise_honte", "apaisement", _efface(0.2, 1210)) in vus                  # après coup : le reste
+    chocs.reflexe(m, "3", "bon", now=echeance + 700, parametre=p)
+    chocs.appliquer_balise(m, "3", [{"classe": "apaisement", "intensite": 1.0}], now=echeance + 710, parametre=p)
+    assert len([v for v in vus if v[1] == "apaisement"]) == 1                          # plus rien à défaire
+
+
+# ---------- (relecture indépendante du 27/10) les défauts trouvés dans la régulation et les soutiens
+def test_un_soutien_vu_par_le_reflexe_puis_confirme_par_la_balise_n_est_pas_efface(tmp_path):
+    """Défaire le réflexe remettait les hormones, mais pas la fenêtre des gestes sociaux (90 s) : le soutien de la
+    balise était dédoublonné contre celui du réflexe défait, et il ne restait AUCUN soutien (ocytocine à sa base)."""
+    p = _sagesse(tmp_path, 0.2)
+    m = Mem()
+    base = _etat(m, T - 1)["ocytocine"]
+    chocs.reflexe(m, "1", "je t'aime", now=T, parametre=p)
+    chocs.appliquer_balise(m, "1", [{"classe": "soutien", "intensite": 0.6}], now=T + 15, parametre=p)
+    assert _etat(m, T + 16)["ocytocine"] > base + 0.05
+
+
+def test_un_soutien_ou_une_fierte_de_sa_balise_nourrissent_la_regle_de_la_joie(tmp_path):
+    import regles_emotion
+    p = _sagesse(tmp_path, 0.2)
+    m = Mem()
+    chocs.reflexe(m, "1", "tu gères", now=T, parametre=p)
+    chocs.appliquer_balise(m, "1", [{"classe": "soutien", "intensite": 0.8}], now=T + 15, parametre=p)
+    m2 = Mem()
+    chocs.reflexe(m2, "1", "tu gères", now=T, parametre=p)
+    chocs.appliquer_balise(m2, "1", [{"classe": "affirmation", "intensite": 0.5}], now=T + 15, parametre=p)
+    for x in (m, m2):
+        ressentis = json.loads(x.kv["chocs"])["ressentis"]
+        assert [r["nom"] for r in regles_emotion.calculer("calme", ressentis, T + 60)] == ["joie"]
+
+
+def test_l_ordre_des_mots_de_la_balise_ne_change_rien(tmp_path):
+    """« apaisé » ne défait que les ressentis des messages D'AVANT : la honte que ce message-ci lui fait garde sa force,
+    que la balise écrive « honte 0.4 apaisé 0.6 » ou « apaisé 0.6 honte 0.4 »."""
+    p = _sagesse(tmp_path, 0.5)
+    attentes = []
+    for ordre in ([("honte", 0.4), ("apaisement", 0.6)], [("apaisement", 0.6), ("honte", 0.4)]):
+        m = Mem()
+        chocs.reflexe(m, "1", "bon", now=T, parametre=p)
+        chocs.appliquer_balise(m, "1", [{"classe": c, "intensite": i} for c, i in ordre], now=T + 15, parametre=p)
+        attentes.append([(r["source"], r.get("classe")) for r in json.loads(m.kv["chocs"])["regulations"]])
+    assert attentes[0] == attentes[1] == [("ressenti", "honte")]
+
+
+def test_la_reprise_en_main_defait_une_part_du_ressenti_lui_meme(tmp_path):
+    """Le profil « regulation » est fait pour une attaque : sur une tristesse, il ne rendait ni la dopamine ni
+    l'endorphine, et poussait la noradrénaline sous sa base. La reprise défait une part du ressenti lui-même."""
+    p = _sagesse(tmp_path, 0.5)
+    m = Mem()
+    base = _etat(m, T - 1)
+    chocs.reflexe(m, "1", "bon", now=T, parametre=p)
+    chocs.appliquer_balise(m, "1", [{"classe": "tristesse", "intensite": 0.6}], now=T + 15, parametre=p)
+    echeance = json.loads(m.kv["chocs"])["regulations"][0]["ts"]
+    avant = _etat(m, echeance)
+    assert chocs.echeances(m, now=echeance) == 1
+    apres = _etat(m, echeance + 1)
+    for h in ("dopamine", "endorphine", "serotonine"):
+        assert abs(apres[h] - base[h]) < abs(avant[h] - base[h]) - 1e-3, h          # ramenée vers sa base
+    assert apres["noradrenaline"] >= base["noradrenaline"] - 0.01                      # pas poussée sous sa base
+
+
+def test_l_apaisement_n_est_applique_et_journalise_qu_une_fois(tmp_path, monkeypatch):
+    """Un soutien vu par le réflexe, puis la balise qui le confirme et se dit apaisée : l'apaisement vient de SON
+    appréciation, une seule fois, et le journal des hormones ne l'écrit qu'une fois."""
+    p = _sagesse(tmp_path, 0.5)
+    vus = []
+    vrai = affect.event
+    monkeypatch.setattr(affect, "event", lambda mem, nom, *a, **k: vus.append((nom, k.get("source"))) or vrai(mem, nom, *a, **k))
+    m = Mem()
+    chocs.reflexe(m, "1", "bon", now=T, parametre=p)
+    chocs.appliquer_balise(m, "1", [{"classe": "honte", "intensite": 0.4}], now=T + 15, parametre=p)
+    chocs.reflexe(m, "2", "je t'aime", now=T + 120, parametre=p)
+    chocs.appliquer_balise(m, "2", [{"classe": "soutien", "intensite": 0.6}, {"classe": "apaisement", "intensite": 0.6}],
+                           now=T + 130, parametre=p)
+    assert sum(1 for x in vus if x[1] == "apaisement") == 1
+
+
+def test_convaincu_bien_plus_tard_il_n_y_a_pas_de_fenetre(tmp_path, monkeypatch):
+    """(27/10, Ahmed : « parfois ça prend des années pour repenser à une chose, la comprendre, la valider et l'intégrer ;
+    l'échec d'aujourd'hui ne fait pas celui de demain ») plus de fenêtre de 2 h : « apaisé » défait ce qui reste encore du
+    ressenti dans ses hormones, qui s'efface avec le temps comme elles (demi-vie du cortisol, 8 h) ; une conviction
+    partielle aujourd'hui laisse le reste à demain."""
+    import math
+    p = _sagesse(tmp_path, 0.0)                                   # sans sagesse : seul l'apaisement agit
+    vus = []
+    vrai = affect.event
+    monkeypatch.setattr(affect, "event", lambda mem, nom, *a, **k: vus.append((nom, k.get("source"), a[0] if a else None))
+                        or vrai(mem, nom, *a, **k))
+    m = Mem()
+    chocs.reflexe(m, "1", "bon", now=T, parametre=p)
+    chocs.appliquer_balise(m, "1", [{"classe": "honte", "intensite": 0.4}], now=T, parametre=p)
+    chocs.reflexe(m, "2", "bon", now=T + 5 * 3600, parametre=p)
+    chocs.appliquer_balise(m, "2", [{"classe": "apaisement", "intensite": 0.5}], now=T + 5 * 3600, parametre=p)
+    attendu = round(0.5 * 0.4 * math.exp(-5 * math.log(2) / 8), 4)
+    assert ("reprise_honte", "apaisement", attendu) in vus                      # 5 h après : encore possible
+    chocs.reflexe(m, "3", "bon", now=T + 30 * 3600, parametre=p)
+    chocs.appliquer_balise(m, "3", [{"classe": "apaisement", "intensite": 1.0}], now=T + 30 * 3600, parametre=p)
+    dernier = [v for v in vus if v[1] == "apaisement"][-1]
+    assert dernier[0] == "reprise_honte" and dernier[2] == round(0.2 * math.exp(-30 * math.log(2) / 8), 4)   # le reste

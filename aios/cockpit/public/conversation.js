@@ -117,7 +117,9 @@
       energies = []; hauteurs = [];
       if (voixMs < 350) return;                           // un claquement, un souffle : pas un tour
       const ton = h.length >= 10 && en.length ? { f0: h[h.length >> 1], energie_db: 20 * Math.log10(en.reduce((a, b) => a + b, 0) / en.length) } : null;
-      o.surFin(assembler(morceaux), { debut, fin: Date.now(), derniere_voix: derniereVoix, duree_ms: duree, voix_ms: voixMs, pauses: pauses.slice(), ton }, extra);
+      // (27/10, Hakim) arrêté par la limite des 5 min, pas par un silence : la parole continuait peut-être
+      o.surFin(assembler(morceaux), { debut, fin: Date.now(), derniere_voix: derniereVoix, duree_ms: duree, voix_ms: voixMs, pauses: pauses.slice(), ton,
+        ecoute_max: duree >= PAROLE_MAX_MS }, extra);
     }
 
     function analyser(f) {

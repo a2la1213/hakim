@@ -210,3 +210,31 @@ def test_profil_du_projet_d_origine_ne_laisse_lire_que_son_code():
     assert '(subpath "/private/tmp")' not in sb.split("(deny file-read*")[0]          # /tmp n'est pas lisible
     for d in ("", "jarvis/", "tests/"):                                       # ni data/, ni dataset/, ni .git
         assert f'(regex #"^{orig}/{d}[^./][^/]*\\.(py|txt|md)$")' in sb
+
+
+def test_git_ne_travaille_jamais_sur_le_chemin_de_l_atelier(projet, tmp_path, monkeypatch):
+    """(27/10, relecture indépendante ; Ahmed : « boucher toutes les failles ») une tâche de fond peut échanger la copie
+    contre un lien vers un dossier fermé ENTRE la vérification et git : git travaille sur un instantané privé, pris par
+    descripteurs, et ce qui est fermé n'entre jamais dans l'arbre (ni dans le patch)."""
+    import chantiers
+    c = chantiers.ouvrir("essai-course", "x", projets={"x": projet}, chantiers=tmp_path / "chantiers")
+    ferme = tmp_path / "ferme"
+    ferme.mkdir()
+    (ferme / "id_ferme.txt").write_text("CONTENU-FERME-7731")
+    vrai_git = chantiers._git
+
+    def git_et_course(args, gitdir, travail=None, **k):
+        if args[:1] == ["add"] and not (tmp_path / "copie-cachee").exists():   # la course, gagnée au pire moment
+            c.rename(tmp_path / "copie-cachee")
+            c.symlink_to(ferme)
+        return vrai_git(args, gitdir, travail=travail, **k)
+
+    monkeypatch.setattr(chantiers, "_git", git_et_course)
+    copie, prive = chantiers._lieux("essai-course", tmp_path / "chantiers")
+    gitdir = prive / "essai-course.git"
+    try:
+        arbre = chantiers._arbre(copie, gitdir)
+    except chantiers.Refus:
+        return                                                                     # refusé : rien n'est entré
+    fichiers = vrai_git(["ls-tree", "-r", "--name-only", arbre], gitdir)
+    assert "id_ferme.txt" not in fichiers and "calc.py" in fichiers

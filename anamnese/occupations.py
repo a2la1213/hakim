@@ -351,8 +351,22 @@ def ranger_memoire(eng, mem, now, e):
     return note
 
 
+DOCUMENT_MAX = 200 * 1024 * 1024
+
+
 def texte_document(f):
-    """Le texte d'un document, secrets masqués (jarvis/fichiers.masquer), début seulement."""
+    """Le texte d'un document, secrets masqués (jarvis/fichiers.masquer), début seulement. (relecture indépendante du
+    27/10, B) Un document de ses dossiers est lu par une copie privée vérifiée (fichiers.copie_privee) : jamais à travers
+    un dossier échangé contre un lien, et les décodeurs ne lisent jamais un chemin qu'il peut échanger."""
+    fx = _fichiers_module()
+    try:
+        with fx.copie_privee(f, DOCUMENT_MAX) as copie:
+            return _texte_document(copie)
+    except fx.Refus:
+        return ""
+
+
+def _texte_document(f):
     ext = f.suffix.lower()
     brut = ""
     if ext in EXT_TEXTE:

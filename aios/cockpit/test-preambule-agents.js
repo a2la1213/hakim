@@ -14,7 +14,7 @@ function cockpit(preambule) {
     fs.mkdirSync(path.join(cwd, 'atelier', 'ancrage'), { recursive: true });
     fs.writeFileSync(path.join(cwd, 'atelier', 'ancrage', 'PREAMBULE_AGENTS.md'), preambule);
   }
-  const ctx = { fs, path, Object, String, JARVIS_CWD: cwd };
+  const ctx = { fs, path, Object, String, Buffer, JARVIS_CWD: cwd };
   vm.createContext(ctx);
   const i = srv.indexOf('const LECTURE = '), lecture = srv.slice(i, srv.indexOf('const AGENTS = {'));
   vm.runInContext(lecture + srv.slice(srv.indexOf('const AGENTS = {'), srv.indexOf('const jourLocal')) + 'this.AGENTS = AGENTS; this.pour = agentsPourCerveau;', ctx);

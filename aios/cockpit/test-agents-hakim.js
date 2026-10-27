@@ -12,7 +12,7 @@ const prendre = (nom) => { const i = src.indexOf(`function ${nom}(`); return src
 const bloc = (debut, fin) => src.slice(src.indexOf(debut), src.indexOf(fin));
 
 function monde() {
-  const ctx = { fs, path, JSON, String, Object, Set, RegExp, JARVIS: '/x', JARVIS_CWD: '/x/cwd', PREAMBULE_MATHS: '/nulle/part' };
+  const ctx = { fs, path, JSON, String, Object, Set, RegExp, Buffer, JARVIS: '/x', JARVIS_CWD: '/x/cwd', PREAMBULE_MATHS: '/nulle/part' };
   vm.createContext(ctx);
   vm.runInContext(bloc('const LECTURE = [', 'const PREAMBULE_MATHS') + prendre('agentsRefuses') + prendre('agentsPourCerveau')
     + 'this.f = { AGENTS, agentsDeHakim, agentsPourCerveau };', ctx);

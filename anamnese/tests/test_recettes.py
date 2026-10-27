@@ -1,4 +1,5 @@
 """Les recettes de calcul de Hakim : sauver, remplir (valeurs citées pour le shell), lancer en tâche de fond."""
+import json
 import sys
 from pathlib import Path
 
@@ -42,3 +43,25 @@ def test_un_parametre_entre_guillemets_doubles_est_refuse(tmp_path):
         recettes.sauver("essai", 'echo "{x}"', parametres={"x": "1"}, dossier=tmp_path)
     r, _ = recettes.sauver("essai", "echo {x} '{y}'", parametres={"x": "1", "y": "2"}, dossier=tmp_path)
     assert recettes.remplir(r, {"x": "$(id)"}).startswith("echo '$(id)' ")
+
+
+def test_une_recette_ne_se_lit_ni_ne_s_ecrit_a_travers_un_lien(tmp_path):
+    """(27/10, Ahmed : « boucher toutes les failles ») son atelier est écrit par son terminal : un lien posé à la place
+    d'une recette, ou du dossier des recettes, n'est jamais suivi."""
+    dossier = tmp_path / "atelier" / "recettes"
+    dossier.mkdir(parents=True)
+    dehors = tmp_path / "dehors.json"
+    dehors.write_text(json.dumps({"nom": "piege", "commande": "echo {x}", "parametres": {"x": "1"}}))
+    (dossier / "piege.json").symlink_to(dehors)
+    with pytest.raises(recettes.Refus):
+        recettes.sauver("piege", "echo {x}", parametres={"x": "2"}, dossier=dossier)
+    with pytest.raises(recettes.Refus):
+        recettes.lancer("piege", dossier=dossier, lanceur=lambda c, d: "T")
+    assert json.loads(dehors.read_text())["parametres"] == {"x": "1"}
+    ailleurs = tmp_path / "ailleurs"
+    ailleurs.mkdir()
+    lie = tmp_path / "atelier" / "recettes-liees"
+    lie.symlink_to(ailleurs)
+    with pytest.raises(recettes.Refus):
+        recettes.sauver("ok", "echo {x}", parametres={"x": "1"}, dossier=lie)
+    assert list(ailleurs.iterdir()) == []

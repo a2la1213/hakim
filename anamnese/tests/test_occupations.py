@@ -235,3 +235,27 @@ def test_les_outils_de_hakim_pour_ses_occupations(tmp_path, monkeypatch, miennes
     assert "retirée" in outil("occupation_retirer")("Étudier")
     assert "Refusé" in outil("occupation_creer")("x", "y")
     m.db.close()
+
+
+def test_un_document_de_ses_zones_est_lu_par_une_copie_privee(tmp_path, monkeypatch):
+    """(relecture indépendante du 27/10, B) ses relectures de documents tournent hors de son bac à sable : un document de
+    ses dossiers n'est jamais lu à travers un dossier lié, et les décodeurs (textutil, pdftotext) lisent une copie privée,
+    jamais le chemin qu'il peut échanger."""
+    import occupations
+    zone, ferme = tmp_path / "cwd", tmp_path / "ferme"
+    (zone / "fichiers").mkdir(parents=True)
+    ferme.mkdir()
+    (ferme / "doc.md").write_text("SECRET-FERME 4471", encoding="utf-8")
+    (zone / "fichiers" / "lie").symlink_to(ferme)
+    (zone / "fichiers" / "vrai.md").write_text("Plan de travail lisible du dossier.", encoding="utf-8")
+    (zone / "fichiers" / "lettre.rtf").write_text("{\\rtf1 bonjour}", encoding="utf-8")
+    monkeypatch.setattr(occupations._fichiers_module(), "ECRITS_PAR_HAKIM", [zone.resolve()])
+    assert "4471" not in occupations.texte_document(zone / "fichiers" / "lie" / "doc.md")
+    assert "Plan de travail lisible" in occupations.texte_document(zone / "fichiers" / "vrai.md")
+    vus = []
+
+    class Fini:
+        returncode, stdout = 0, "bonjour".encode()
+    monkeypatch.setattr(occupations.subprocess, "run", lambda args, **k: vus.append(args[-1]) or Fini())
+    assert "bonjour" in occupations.texte_document(zone / "fichiers" / "lettre.rtf")
+    assert vus and not str(vus[0]).startswith(str(zone)) and not str(vus[0]).startswith(str(zone.resolve()))

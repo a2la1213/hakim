@@ -75,3 +75,18 @@ def test_refus(tmp_path, monkeypatch):
     monkeypatch.setattr(V, "_lancer", faux_lancer({"title": "Direct", "is_live": True}))
     with pytest.raises(V.Refus):
         V.preparer("https://www.youtube.com/watch?v=z", atelier=tmp_path / "atelier", verifier=lambda h, p: None)
+
+
+def test_le_dossier_des_videos_ne_suit_pas_un_lien(tmp_path, monkeypatch):
+    """(27/10, Ahmed : « boucher toutes les failles ») atelier/videos-web remplacé par un lien vers le dehors : rien n'y
+    est créé."""
+    monkeypatch.setattr(V, "YTDLP", tmp_path / "yt-dlp"); (tmp_path / "yt-dlp").write_text("")
+    monkeypatch.setattr(V, "_lancer", faux_lancer({"title": "Cours", "duration": 60, "subtitles": {"fr": []}}))
+    dehors = tmp_path / "dehors"
+    dehors.mkdir()
+    (tmp_path / "atelier").mkdir()
+    (tmp_path / "atelier" / "videos-web").symlink_to(dehors)
+    with pytest.raises(V.Refus):
+        V.preparer("https://www.youtube.com/watch?v=x", atelier=tmp_path / "atelier", verifier=lambda h, p: None,
+                   preparer_fichier=lambda *a, **k: {})
+    assert list(dehors.iterdir()) == []

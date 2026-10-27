@@ -41,3 +41,35 @@ def test_fichier_d_ahmed_et_image(jarvis):
     (jarvis / "cwd/fichiers/photo.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 20)
     f = pieces.joindre(str(jarvis / "cwd/fichiers/photo.png"), jarvis=jarvis)
     assert f["type"] == "png" and (jarvis / "pieces" / f["id"] / "photo.png").exists()
+
+
+def test_un_lien_dur_dans_l_atelier_n_est_pas_joint(jarvis):
+    """(27/10, Ahmed : « boucher toutes les failles ») un lien dur ne se voit pas au chemin : il est refusé."""
+    import os
+    (jarvis / "journal/j.txt").write_text("le journal brut")
+    os.link(jarvis / "journal/j.txt", jarvis / "cwd/atelier/pour_ahmed/dur.txt")
+    with pytest.raises(pieces.Refus, match="lien dur"):
+        pieces.joindre("atelier/pour_ahmed/dur.txt", jarvis=jarvis)
+
+
+def test_un_tube_glisse_apres_la_verification_ne_fige_pas_le_serveur(jarvis, monkeypatch):
+    """(relecture indépendante du 27/10, E) is_file() puis os.open sans O_NONBLOCK : un tube nommé substitué entre les
+    deux figeait le serveur anamnese à l'ouverture (personne n'écrit dedans)."""
+    import os
+    import signal
+    os.mkfifo(jarvis / "cwd/atelier/pour_ahmed/t.txt")
+    monkeypatch.setattr(pieces.Path, "is_file", lambda self: True)          # la course gagnée : on a vu un fichier
+
+    class Fige(Exception):                                                  # pas un OSError : rien ne le rattrape
+        pass
+
+    def fige(*_):
+        raise Fige("l'ouverture du tube a figé le serveur")
+    ancien = signal.signal(signal.SIGALRM, fige)
+    signal.alarm(3)
+    try:
+        with pytest.raises(pieces.Refus):
+            pieces.joindre("atelier/pour_ahmed/t.txt", jarvis=jarvis)
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, ancien)

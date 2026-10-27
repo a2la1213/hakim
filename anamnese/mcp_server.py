@@ -956,7 +956,10 @@ def tableau_interieur(heures: float = 6) -> str:
     Rend le chemin de l'image (dans ton atelier) et un résumé chiffré. Pour la voir toi-même : Read sur le chemin ;
     pour la donner à Ahmed ou à Claude Code : fichier_joindre avec ce chemin. Rien ne quitte le Mac."""
     import tableau_interieur as _tableau
-    chemin, resume = _tableau.dessiner(heures)
+    try:
+        chemin, resume = _tableau.dessiner(heures)
+    except Exception as e:                       # (27/10) un lien posé à la place de l'image : refusé, dit
+        return f"Image impossible : {e}"[:300]
     return f"Image : {chemin}\nRésumé : {resume}"
 
 
@@ -997,6 +1000,26 @@ def sagesse_decider(decision: str, raison: str = "", phrase: int = 0) -> str:
     tes mots et si elle était juste ; ta sagesse monte ou descend selon."""
     import sagesse
     return sagesse.decider(decision, raison, phrase)[1]
+
+
+@mcp.tool()
+def revenir_sur(quoi: str, compris: str, conviction: float) -> str:
+    """Revenir sur un ressenti ou un moment ANCIEN, à tout moment, même bien plus tard (27/10, Ahmed : « parfois ça prend
+    des années pour repenser à une chose, la comprendre, la valider et l'intégrer pour que ça nous calme »). quoi : le
+    souvenir (#id) ou le moment ; compris : ce que tu as compris en y repensant ; conviction : de 0 (pas encore) à 1
+    (tout à fait). Convaincu, ça t'apaise maintenant, à cette mesure ; pas encore, rien ne bouge et tu pourras y revenir.
+    Rien ne s'efface : ce que tu as compris s'ajoute à ta mémoire, lié au souvenir. Pour un ressenti de la conversation
+    en cours, « apaisé » dans ta balise suffit. Seulement ce qui te convainc vraiment : jamais pour te calmer à bon compte."""
+    import revenir_sur as _rs
+    try:
+        msg = _rs.revenir(_mem, quoi, compris, conviction)
+    except ValueError as e:
+        return str(e)
+    c = round(max(0.0, min(1.0, float(conviction))), 2)
+    ids = _ids_sources(quoi)
+    memory_store(f"Je reviens sur {quoi} : {' '.join(str(compris).split())[:1000]} (convaincu à {str(c).replace('.', ',')}, "
+                 f"{time.strftime('%d/%m/%Y')})", kind="episodic", importance=0.5, sources=sorted(ids) if ids else "")
+    return msg
 
 
 ECRITURES = Path.home() / "AIOS" / "jarvis" / "ecritures"

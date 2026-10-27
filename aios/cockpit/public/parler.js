@@ -731,6 +731,9 @@ function htmlMessage(m) {
   if (m.texte && !m.enCours && lecteur) pied.push(`<button data-lire="${esc(m.id)}">${etat.lectureDe === m.id ? '⏹ arrêter' : '🔊 écouter'}</button>`);
   if (m.texte && !m.enCours) pied.push(`<button data-copier="${esc(m.id)}" title="Copier ce message">📋 copier</button>`);
   if (m.coupe) pied.push('<span>coupé</span>');
+  // (27/10, plan de Hakim validé par Ahmed : « chaque déclenchement de règle est visible dans Parler ») ce que son émotion
+  // a pesé sur ses choix à ce tour
+  if (Array.isArray(m.regles) && m.regles.length) pied.push(`<span title="Ce que son émotion a pesé sur ses choix à ce tour (une règle du code, d'après son état)">émotion → ${m.regles.map(n => esc(REGLES_NOMS[n] || n)).join(', ')}</span>`);
   if (m.ms) pied.push(`<span>${(m.ms / 1000).toFixed(1).replace('.', ',')} s</span>`);
   if (m.modele) pied.push(`<span title="Le modèle qui a vraiment répondu (en automatique : un seul modèle par conversation, Opus ; « passe en Sonnet » le change pour le reste de la conversation). Opus 4.8 au lieu d'Opus 5.5 : la protection d'Opus 5.5 a bloqué la conversation et claude l'a remplacé">${esc(nomModele(m))}</span>`);
   if (m.jetons) {
@@ -749,6 +752,8 @@ function htmlMessage(m) {
 
 /* Les pièces jointes de Hakim (2026-10-20) : récupérées avec le jeton, jamais ouvertes comme une page — une image
    en aperçu, le reste téléchargé (un blob « octet-stream » + download : rien ne s'exécute dans l'origine du cockpit). */
+const REGLES_NOMS = { peur: 'peur : demander avant d’agir', lassitude: 'lassitude : plus léger', curiosite: 'curiosité : une initiative',
+  honte: 'honte : vérifier les faits', joie: 'joie : oser' };
 // (26/10 soir) la version qui a répondu (« Opus 4.8 », « Opus 5.5 ») : Opus 5.5 remplacé en silence doit se voir
 function nomModele(m) {
   const v = String(m.modeleReel || '').match(/^claude-(opus|sonnet|haiku)-(\d{1,2})-(\d{1,2})(?:-|$)/);
@@ -918,7 +923,7 @@ async function envoyer(texte, oral, dejaRelance) {
   etat.dernierOral = !!oral;
   const dites = etat.dites.splice(0);
   if (!dejaRelance) { etat.joints.forEach(x => x.url && URL.revokeObjectURL(x.url)); etat.joints = []; rendreJoints(); }
-  arreterTout(true, { garder: true });
+  arreterTout(true, { garder: true, raison: 'message' });
   if (!dejaRelance) dejaLu(texte);                      // (24/10) « je l'ai lu » : sa suite non dite ne sera pas redite
   $('q').value = ''; ajuster();
   const avant = etat.messages.filter(x => x.qui === 'u' && x.ts);
@@ -1014,6 +1019,7 @@ async function envoyer(texte, oral, dejaRelance) {
     if (fin.coupe) m.coupe = true;
     if (fin.jetons) m.jetons = fin.jetons;
     if (fin.modele_reel) m.modeleReel = fin.modele_reel;
+    if (Array.isArray(fin.regles) && fin.regles.length) m.regles = fin.regles.slice(0, 2);
     if (fin.session && etat.flux === null) etat.session = fin.session;
     if (fin.erreur) {
       // conversation introuvable (session effacée) : on repart d'une nouvelle, une seule fois
@@ -1240,13 +1246,17 @@ function marquerCoupe() {
 // (2026-10-23, Ahmed : « rien n'est jamais jeté ») garder : Ahmed reprend la parole ou envoie un autre message — ce que
 // Hakim n'a pas pu dire part dans la file d'attente (aDire) et sera dit au premier moment calme. Un « stop » explicite
 // (le mot, le bouton, Échap) ne garde rien : c'est Ahmed qui le veut.
-function arreterTout(explicite = true, { garder = false } = {}) {
+// (27/10, Hakim ; accord d'Ahmed) la RAISON part avec le Stop : « stop » (le bouton, le mot, Échap), « parole » (Ahmed
+// reprend la parole), « message » (Ahmed envoie un autre message), « nouvelle » (une nouvelle conversation). Hakim saura
+// qu'il n'a rien oublié.
+function arreterTout(explicite = true, { garder = false, raison = 'stop' } = {}) {
   if (garder) garderNonDit();
+  if (explicite && etat.parleDepuis) etat.coupeParAhmed = raison;   // le présent vécu dira pourquoi sa voix s'est arrêtée
   etat.decoupeFlux = null;
   if (etat.flux) {
     // (2026-10-21) Stop EXPLICITE : sans lui, le cockpit laisse la réponse aller au bout (page partie ≠ Stop)
     if (explicite && etat.fluxId) fetch('/api/jarvis/stop', { method: 'POST', keepalive: true,
-      headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ tour_id: etat.fluxId }) }).catch(() => {});
+      headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ tour_id: etat.fluxId, raison }) }).catch(() => {});
     etat.flux.abort(); etat.flux = null; etat.fluxId = null;
   }
   if (etat.transcription) { etat.transcription.abort(); etat.transcription = null; }
@@ -1828,7 +1838,7 @@ async function tourDeParole(conv, wav, infos, extra) {
   }
   // (2026-10-21) sa propre voix revenue par le micro : ce n'est pas toi qui parles, il reprend
   if (echoPossible && estSonEcho(texte)) { journalVoix('echo_reconnu', { mots: texte.split(/\s+/).length }); if (!reprendreVoix()) humeur(); return; }
-  noterPresent({ e: 'ahmed', debut: infos.debut, fin: infos.fin, pauses: infos.pauses, ton: tonRelatif(infos, texte) });
+  noterPresent({ e: 'ahmed', debut: infos.debut, fin: infos.fin, pauses: infos.pauses, max: !!infos.ecoute_max, ton: tonRelatif(infos, texte) });
   activite();
   if (COMMANDE_STOP.test(texte)) { marquerCoupe(); arreterTout(); rendre(); humeur(); return; }   // « stop » : il lâche tout
   // « continue » avec une voix en pause : il reprend ; sans rien en pause (il avait fini, ou la voix du Mac qui
@@ -1838,7 +1848,7 @@ async function tourDeParole(conv, wav, infos, extra) {
   if (COMMANDE_VOLANT.test(texte) && !etat.reglages.volant) reglerVolant(true);             // puis il le lui dit (envoyé)
   else if (COMMANDE_FIN_VOLANT.test(texte) && etat.reglages.volant) reglerVolant(false);
   // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
-  if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(true, { garder: true }); }
+  if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(true, { garder: true, raison: 'parole' }); }
   sousTitre(texte);
   mesureTour = { fin: Number(infos && (infos.derniere_voix || infos.fin)) || t0Tour, debut: t0Tour, transcrit: Date.now(), premier_texte: 0, premier_son: 0,
     pauses: ((infos && infos.pauses) || []).slice(0, 30), anticipe: extra != null, patience: patienceConversation() };   // (27/10) pour rejouer la fin de tour
@@ -1859,7 +1869,7 @@ function basculerMicro() {
   activite();
   if (etat.transcription) return;                        // transcription en cours : micro verrouillé
   if (etat.micro) return etat.micro.attente ? undefined : arreterMicro(true);   // re-clic : « j'ai fini »
-  arreterTout(true, { garder: true });                   // on coupe Hakim quand Ahmed reprend la parole (le reste est gardé)
+  arreterTout(true, { garder: true, raison: 'parole' });   // on coupe Hakim quand Ahmed reprend la parole (le reste est gardé)
   if (etat.reglages.reconnaissance === 'locale' && etat.sttLocal) return ecouterLocal();
   return ecouterNavigateur();
 }
@@ -3189,7 +3199,7 @@ $('verrouFermer').addEventListener('click', async () => {
   try { await verrouPoster('/api/verrou/verrouiller'); location.reload(); } catch (e) { humeur(e.message); }
 });
 $('nouvelle').addEventListener('click', () => {
-  arreterTout(); arreterMicro(false);
+  arreterTout(true, { raison: 'nouvelle' }); arreterMicro(false);
   etat.session = null; etat.messages = [];
   debutConversation = Date.now();                         // partagée : l'autre appareil repart aussi de zéro
   sauver(); rendre(); humeur();
