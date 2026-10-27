@@ -48,7 +48,9 @@ def _compter_aujourdhui(jour):
                     o = json.loads(l)
                 except ValueError:
                     continue
-                if time.strftime("%Y-%m-%d", time.localtime(o.get("ts", 0))) == jour and not str(o.get("modele", "")).startswith("gemma"):
+                # (27/10) les petites questions des silences, journalisées ici par le cockpit, ont leur propre plafond
+                if (time.strftime("%Y-%m-%d", time.localtime(o.get("ts", 0))) == jour and not str(o.get("modele", "")).startswith("gemma")
+                        and o.get("source") != "cockpit"):
                     n += 1
     except OSError:
         pass

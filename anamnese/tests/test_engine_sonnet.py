@@ -125,3 +125,17 @@ def test_le_plafond_survit_a_un_redemarrage_du_demon(monkeypatch):
     monkeypatch.setattr(engine.requests, "post", _Ollama())
     assert engine.Engine(chat_model="claude:sonnet", secours_model="gemma-local").chat([{"role": "user", "content": "x"}], stream=False) == "pensée de Gemma"
     assert run.appels == []
+
+
+def test_les_questions_des_silences_ne_comptent_pas_dans_le_plafond_du_demon(monkeypatch):
+    # (27/10, meubler les silences) le cockpit journalise ses petites questions à Sonnet au même endroit (étiquette
+    # « silence », source « cockpit ») : elles ont leur propre plafond, et ne retirent rien à la tête de fond du démon
+    import time as _t
+    engine.JOURNAL_APPELS.write_text("".join(json.dumps({"ts": _t.time(), "modele": "sonnet", "etiquette": "silence", "source": "cockpit"}) + "\n"
+                                             for _ in range(5)))
+    monkeypatch.setattr(engine, "CLAUDE_MAX_JOUR", 3)
+    run = _Run({"result": "ok", "is_error": False})
+    monkeypatch.setattr(engine.subprocess, "run", run)
+    monkeypatch.setattr(engine.requests, "post", _Ollama())
+    assert engine.Engine(chat_model="claude:sonnet", secours_model="gemma-local").chat([{"role": "user", "content": "x"}], stream=False) == "ok"
+    assert len(run.appels) == 1

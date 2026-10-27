@@ -731,6 +731,8 @@ function htmlMessage(m) {
   if (m.texte && !m.enCours && lecteur) pied.push(`<button data-lire="${esc(m.id)}">${etat.lectureDe === m.id ? '⏹ arrêter' : '🔊 écouter'}</button>`);
   if (m.texte && !m.enCours) pied.push(`<button data-copier="${esc(m.id)}" title="Copier ce message">📋 copier</button>`);
   if (m.coupe) pied.push('<span>coupé</span>');
+  // (27/10, meubler les silences) sa relance dans un silence : Ahmed peut dire « pas maintenant » d'un geste
+  if (m.spontane === 'silence' && m.texte && !NON_REPONSE.test(m.texte)) pied.push(`<button data-relance="${esc(m.id)}" title="Il se tait pendant 30 min, et apprend à patienter">✋ pas maintenant</button>`);
   // (27/10, plan de Hakim validé par Ahmed : « chaque déclenchement de règle est visible dans Parler ») ce que son émotion
   // a pesé sur ses choix à ce tour
   if (Array.isArray(m.regles) && m.regles.length) pied.push(`<span title="Ce que son émotion a pesé sur ses choix à ce tour (une règle du code, d'après son état)">émotion → ${m.regles.map(n => esc(REGLES_NOMS[n] || n)).join(', ')}</span>`);
@@ -746,7 +748,7 @@ function htmlMessage(m) {
   if (m.source === 'local') pied.push('<span title="Forfait et API indisponibles : cerveau local, sans outils">cerveau local</span>');
   // (26/10, Hakim et Ahmed : une réponse du local était passée pour la sienne) le secours se voit en tête, pas en petit en bas
   const secours = m.source === 'local' ? '<span class="etiquette secours" title="Forfait et API indisponibles à ce moment : c’est son cerveau local qui répond, sans ses outils ni sa mémoire complète">CERVEAU LOCAL · SECOURS, SANS SES OUTILS</span>' : '';
-  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
+  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'silence' ? 'IL REPREND LA PAROLE' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
   return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'carnet' ? htmlCarnet(m.carnet) : m.spontane === 'retractation' ? htmlRetractation(m.retractation) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
 }
 
@@ -2492,14 +2494,29 @@ function surPromotion(o) {
 // l'accusé de réception part au cockpit (un message jamais affiché est signalé à Hakim).
 function surSpontane(m) {
   if (!m || !m.id || etat.messages.some(x => x.id === m.id)) return;
-  etat.messages.push({ id: m.id, qui: 'j', spontane: 'resultat', texte: m.texte, ts: m.ts, source: m.source,
+  const silence = m.spontane === 'silence';
+  // (27/10) sa relance dans un silence n'est dite que si le silence a tenu : une voix, une frappe ou un message depuis
+  // son début, et elle reste à l'écran sans être dite par-dessus ce qui a repris
+  // seule la page qui a signalé ce silence le reconnaît (son repère est à SON horloge) et peut le dire
+  const notre = silence && nosSilences.has(Number(m.silence_debut_ms));
+  const repris = notre && debutDuSilence() > Number(m.silence_debut_ms) + 1000;
+  // (relecture du 27/10) une relance de silence n'est dite que par une page en Conversation, micro ouvert, hors volant :
+  // ailleurs (à l'écrit, au volant, une autre page), elle s'affiche seulement
+  const dire = silence ? notre && !!(etat.conversation && etat.conversation.capteur && !etat.conversation.capteur.estMuet && !etat.reglages.volant) && !repris
+    : !!(etat.conversation || etat.reglages.volant || etat.reglages.lectureAuto);
+  etat.messages.push({ id: m.id, qui: 'j', spontane: silence ? 'silence' : 'resultat', texte: m.texte, ts: m.ts, source: m.source,
     pieces: Array.isArray(m.pieces) ? m.pieces.filter(x => x && /^\d{8}-\d{6}-[0-9a-f]{6}$/.test(String(x.id))) : undefined });
   sauver(); rendre(); accuserReception();
   humeur('Hakim te donne un résultat');
   $('annonce').textContent = `Hakim, de lui-même : ${m.texte}`;
   widgetApp(etat.conversation ? 'conversation' : 'repos', m.texte);
   if (!NON_REPONSE.test(m.texte)) notifierApp('Hakim, de lui-même', m.texte, m.id);
-  if (etat.conversation || etat.reglages.volant || etat.reglages.lectureAuto) { aDire.push({ id: m.id, texte: m.texte, recu: Date.now() }); direSpontanes(); }
+  if (repris && etat.conversation) {                       // la conversation avait repris : ni comptée, ni apprise
+    journalVoix('silence_repris', {});
+    fetch('/api/jarvis/silence/non-dite', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ id: m.id }) }).catch(() => {});
+  }
+  if (dire) { aDire.push({ id: m.id, texte: m.texte, recu: Date.now() }); direSpontanes(); }
 }
 /* Ses résultats « de lui-même » DITS dans la conversation (demande d'Ahmed relayée par Hakim, 2026-10-20 : « il arrive à
    l'écran mais je ne l'entends pas ») : avant, le message n'était dit que si TOUT était libre à l'instant même où il
@@ -2517,6 +2534,8 @@ function garderNonDit() {
   if (!(etat.conversation || etat.reglages.volant || etat.reglages.lectureAuto)) return;   // voix éteinte : il lit à l'écran
   // (21:26, la boucle vue par Hakim) d'où vient ce qui est coupé : d'une réponse (son heure) ou d'une reprise déjà redite
   const source = etat.messages.find(x => x.id === etat.lectureDe);
+  // (relecture du 27/10) une relance de silence coupée n'est pas redite : Ahmed a repris, c'était un « non »
+  if (source && source.spontane === 'silence') return;
   const redite = !!(source && source.spontane === 'reprise');
   const origine = redite ? Number(source.origine_ts) || quandMessage(source) : quandMessage(source) || Date.now();
   const morceaux = lecteurNeuronal.restant().map(x => x.texte);
@@ -2594,6 +2613,84 @@ function direSpontanes() {
   humeur();
 }
 setInterval(direSpontanes, 500);
+
+/* ---------- Meubler les silences (27/10 ; idée d'Ahmed, portée par Hakim ; serveur et silences.js) : la page compte le
+   silence, elle seule entend. Il part de la plus récente activité : la fin de sa parole, toute voix au micro (même un
+   invité, la télé), un message envoyé ou reçu, une frappe. À l'oral (Conversation), ou à l'écrit page visible pendant une
+   conversation (un message d'Ahmed de moins de 30 min). Rien en mode volant, micro coupé, pendant qu'il parle ou qu'un
+   message attend d'être dit. Au seuil donné par le cockpit, elle le signale ; le cockpit dit quand revenir, ou plus. ---------- */
+function debutDuSilence() {
+  const c = etat.conversation;
+  const voix = c && c.capteur ? Number(c.capteur.derniereVoix) || 0 : 0;
+  const dernier = etat.messages.length ? quandMessage(etat.messages[etat.messages.length - 1]) : 0;
+  return Math.max(etat.finVoixA || 0, voix, parlaitA || 0, etat.derniereActivite || 0, dernier || 0);
+}
+function modeDuSilence() {
+  const voix = etat.conversation || etat.reglages.volant || etat.reglages.lectureAuto;   // voix éteinte : la file ne se vide pas, elle ne compte pas
+  if (etat.reglages.volant || etat.flux || etat.micro || etat.transcription || !lecteur || lecteur.actif || lecteur.enPause || (voix && aDire.length)) return null;
+  const c = etat.conversation;
+  if (c) return c.capteur && !c.capteur.estMuet && !c.capteur.enParole && !c.capteur.pisteMuette ? 'oral' : null;
+  if (document.visibilityState !== 'visible') return null;
+  const u = etat.messages.filter(m => m.qui === 'u').slice(-1)[0];
+  return u && Date.now() - quandMessage(u) < 30 * 60000 ? 'ecrit' : null;
+}
+let signalSilence = { debut: 0, prochain: 0, fini: false, envoiA: 0 };
+const nosSilences = new Set();                                  // les repères des silences que CETTE page a signalés
+setInterval(() => {
+  const mode = modeDuSilence();
+  if (!mode) return;
+  const debut = debutDuSilence();
+  if (!debut) return;
+  if (debut !== signalSilence.debut) signalSilence = { debut, prochain: mode === 'oral' ? 30000 : 90000, fini: false, envoiA: 0 };
+  const s = signalSilence;
+  if (s.fini || Date.now() - debut < s.prochain || Date.now() - s.envoiA < 5000) return;
+  s.envoiA = Date.now();
+  nosSilences.add(debut); if (nosSilences.size > 20) nosSilences.delete(nosSilences.values().next().value);
+  fetch('/api/jarvis/silence', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+    body: JSON.stringify({ debut_ms: debut, silence_ms: Date.now() - debut, mode }) })
+    .then(r => (r.ok ? r.json() : null)).then((o) => {
+      if (!o || signalSilence !== s) return;
+      if (o.revenir_ms == null) s.fini = true;
+      else s.prochain = Math.max(s.prochain, Number(o.revenir_ms) || 0);
+    }).catch(() => {});
+}, 2000);
+$('fil').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-relance]');
+  if (!b) return;
+  b.disabled = true;
+  const k = aDire.findIndex(x => x.id === b.dataset.relance);      // pas encore dite : elle ne le sera pas
+  if (k >= 0) { aDire.splice(k, 1); sauverADire(); }
+  if (etat.lectureDe === b.dataset.relance) lecteur.arreter();
+  try {
+    const r = await fetch('/api/jarvis/silence/pas-maintenant', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ id: b.dataset.relance }) });
+    if (!r.ok) throw new Error(`erreur ${r.status}`);
+    b.textContent = '✋ compris : il se tait 30 min';
+    humeur('Hakim se tait pendant 30 min');
+    lireSilencesEtat();
+  } catch (_) { b.disabled = false; humeur('« pas maintenant » n’a pas pu partir'); }
+});
+async function lireSilencesEtat() {
+  try {
+    const o = await (await fetch('/api/jarvis/silence')).json();
+    const suspendu = o.suspendu_jusqua_ms ? ` · en silence jusqu'à ${new Date(o.suspendu_jusqua_ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : '';
+    $('etatSilences').textContent = (o.actif ? 'oui' : 'coupé') + suspendu
+      + ` · patience apprise ${String(o.patience).replace('.', ',')}` + (o.questions ? ` · aujourd'hui : ${o.questions} silence(s) pesé(s), ${o.relances} relance(s)` : '');
+    $('silencesInterrupteur').textContent = o.actif ? 'Couper' : 'Remettre';
+    $('silencesInterrupteur').setAttribute('aria-pressed', String(!o.actif));
+  } catch (_) {}
+}
+$('silencesInterrupteur').addEventListener('click', async () => {
+  const actif = $('silencesInterrupteur').getAttribute('aria-pressed') === 'true';
+  try {
+    const r = await fetch('/api/jarvis/silence/reglage', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ actif }) });
+    if (!r.ok) throw new Error();
+    humeur(actif ? 'Hakim peut de nouveau reprendre la parole dans les silences' : 'Hakim ne reprend plus la parole dans les silences');
+  } catch (_) { humeur('réglage des silences indisponible'); }
+  lireSilencesEtat();
+});
+lireSilencesEtat(); setInterval(lireSilencesEtat, 60000);
 
 /* ---------- le Mac injoignable (2026-10-23, Ahmed en voiture : il a parlé 9 min sans que rien n'arrive ni ne s'affiche)
    Réseau coupé, cockpit qui redémarre : l'écran le dit en clair ; ce que tu dis est gardé (l'audio de chaque tour), les

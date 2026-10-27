@@ -1893,7 +1893,7 @@ function reveillerPourInterieur() {
     cerveauPrechauffer(modeleDeConversation(session), session && UUID.test(String(session)) ? session : null, false);
     return;                                                                   // il démarre : au passage suivant
   }
-  if (occupe(c) || c.enCours || c.notifs.length) return;        // un résultat d'agent attend : son tour passe avant
+  if (occupe(c) || c.enCours || c.notifs.length || c.reveilSilence) return;   // un résultat d'agent, ou un réveil de silence, passe avant
   reveilInterieurDemarrages = 0;
   const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(maintenant));
   const texte = `[Horloge — ${quand}]\n[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : une pensée de fond t'a réveillé (réveil intérieur)]\n`
@@ -1909,6 +1909,221 @@ function reveillerPourInterieur() {
   catch (e) { c.reveilInterieur = null; ajouterIssueInterieure({ id: d.id, issue: 'expiree' }); console.error('Jarvis : réveil intérieur impossible', e.message); }
 }
 setInterval(reveillerPourInterieur, 3000).unref();
+
+/* ---- Meubler les silences (27/10 ; idée d'Ahmed, portée par Hakim ; Sonnet choisi par Ahmed ; « parfois on insiste
+   mais on finit par apprendre à patienter face à un non ! Du coup il faut aussi que la sagesse vienne tempérer » ; spec :
+   anamnese/docs/superpowers/specs/2026-10-27-silences.md ; la logique pure est dans silences.js). La page compte le
+   silence (elle seule entend : sa parole, toute voix au micro, une frappe le remettent à zéro) et le signale ici quand il
+   passe le seuil donné. La tête de fond (Sonnet isolé : ni outils, ni MCP, un dossier vide, le forfait) se demande alors,
+   une fois par silence, s'il a quelque chose de réel à ajouter ; si oui, il est réveillé pour un tour « PAS un message
+   d'Ahmed », et c'est LUI qui parle (sa voix, sa mémoire). Chaque question va dans data/llm-appels.jsonl (étiquette
+   « silence », source « cockpit »), le reste dans silences.jsonl. ---- */
+const silences = require('./silences.js');
+const JARVIS_SILENCES = path.join(JARVIS, 'silences.json');
+const JARVIS_SILENCES_JOURNAL = path.join(JARVIS, 'silences.jsonl');
+const LLM_APPELS = path.join(ANAMNESE, 'data', 'llm-appels.jsonl');
+const SILENCE_QUESTION_ECART_MS = 90000;           // deux pages ouvertes (Mac et téléphone) ne font pas deux questions
+const SILENCE_CERVEAU_MS = 60000;                   // son cerveau réchauffé pour une idée : on l'attend au plus 1 min
+const SILENCE_REVEIL_PERIME_MS = 5 * 60000;          // un réveil de silence dont le tour n'est jamais venu ne bloque plus
+let silenceSegment = null, silenceEnVol = false, derniereQuestionSilence = 0, questionsSilence = { jour: '', n: 0 };
+function lireSilences() {
+  const d = lireJson(JARVIS_SILENCES, null);
+  return d && typeof d === 'object' ? { ...silences.etatNeuf(), ...d, relances: Array.isArray(d.relances) ? d.relances : [] } : silences.etatNeuf();
+}
+function ecrireSilences(e) { try { ecrireAtomique(JARVIS_SILENCES, j(e)); } catch (_) {} }
+function noterSilence(o) { try { fs.appendFileSync(JARVIS_SILENCES_JOURNAL, j({ ts: Date.now(), ...o }) + '\n', { mode: 0o600 }); } catch (_) {} }
+function noterIssuesSilence(e, issues) {
+  for (const i of issues) noterSilence({ type: 'issue', id: i.id, issue: i.issue, patience: Math.round(e.patience * 1000) / 1000 });
+}
+function sagesseDuMoment() { const lu = Number((lireJson(SAGESSE, {}) || {}).s); return Number.isFinite(lu) ? Math.max(0, Math.min(1, lu)) : 0.2; }
+function lignesSilences() {
+  let lignes = []; try { lignes = fs.readFileSync(JARVIS_SILENCES_JOURNAL, 'utf8').split('\n'); } catch (_) { return []; }
+  return lignes.map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(o => o && o.type);
+}
+function questionsSilenceDuJour() {
+  const jour = jourLocal();
+  if (questionsSilence.jour !== jour) questionsSilence = { jour, n: lignesSilences().filter(o => o.type === 'question' && jourLocal(new Date(o.ts)) === jour).length };
+  return questionsSilence.n;
+}
+function messagesDeConversation() {
+  try { const m = JSON.parse(fs.readFileSync(path.join(JARVIS, 'conversation.json'), 'utf8')).messages; return Array.isArray(m) ? m : []; } catch (_) { return []; }
+}
+function noterAppelLlm(o) { try { fs.appendFileSync(LLM_APPELS, j({ ts: Date.now() / 1000, ...o }) + '\n', { mode: 0o600 }); } catch (_) {} }
+// le même chemin isolé que sa tête de fond (anamnese/engine.py) ; jamais la clé API
+function sonnetSilence(prompt) {
+  return new Promise((resolve) => {
+    const t0 = Date.now();
+    const env = { ...process.env, ANAMNESE_HEADLESS: '1' }; delete env.ANTHROPIC_API_KEY;
+    let vide = null; try { vide = fs.mkdtempSync(path.join(os.tmpdir(), 'tete-de-fond-')); } catch (_) {}
+    const fin = (o) => {
+      try { if (vide) fs.rmSync(vide, { recursive: true, force: true }); } catch (_) {}
+      noterAppelLlm({ modele: 'sonnet', etiquette: 'silence', source: 'cockpit', entree_car: prompt.length, sortie_car: (o.texte || '').length,
+        cout_usd: o.cout == null ? null : o.cout, duree_s: Math.round((Date.now() - t0) / 100) / 10, erreur: o.erreur || null });
+      resolve({ ...o, ms: Date.now() - t0 });
+    };
+    try {
+      const enfant = execFile(CLAUDE_BIN, ['-p', '--model', 'sonnet', '--max-turns', '1', '--tools', '', '--restricted', '--strict-mcp-config',
+        '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence', '--output-format', 'json'],
+      { cwd: vide || os.tmpdir(), timeout: 60000, maxBuffer: 1 << 20, env }, (e, so) => {
+        if (e) return fin({ erreur: e.killed ? 'délai dépassé' : String(e.message || e).slice(0, 160) });
+        let o = {}; try { o = JSON.parse(so || '{}'); } catch (_) { return fin({ erreur: 'sortie illisible' }); }
+        const texte = String(o.result || '').trim();
+        if (o.is_error || !texte || /^API Error/.test(texte)) return fin({ erreur: texte.slice(0, 120) || 'réponse vide', cout: o.total_cost_usd });
+        fin({ texte, cout: o.total_cost_usd });
+      });
+      enfant.stdin.on('error', () => {});
+      enfant.stdin.end(prompt);
+    } catch (e) { fin({ erreur: String(e.message || e).slice(0, 160) }); }
+  });
+}
+async function penseeEnTete() {
+  const r = await sqlite("SELECT ts, content FROM episodes WHERE role = 'reflection' AND content LIKE '(pensée%' ORDER BY id DESC LIMIT 1;").catch(() => []);
+  const p = (r || [])[0];
+  return p && Date.now() / 1000 - Number(p.ts) < 7200 ? texteSouvenir(p.content).slice(0, 300) : '';
+}
+// La page : « le silence dure depuis silence_ms (oral | ecrit) » ; debut_ms est son repère à elle, à SON horloge (relecture du
+// 27/10 : le téléphone n'a pas l'heure du Mac). Réponse : quand revenir (ms de silence), ou null.
+async function signalSilence(q) {
+  const now = Date.now(), duree = Number(q && q.silence_ms), debutPage = Number(q && q.debut_ms), mode = q && q.mode;
+  if (!Number.isFinite(duree) || duree < 0 || duree > 86400e3 || !Number.isFinite(debutPage) || !['oral', 'ecrit'].includes(mode))
+    return { erreur: 'silence_ms (0 à 24 h), debut_ms (le repère de la page) et mode (oral | ecrit)' };
+  const debut = now - duree;
+  if (mode === 'ecrit' && now - conversationPage < 45000) return { revenir_ms: null, raison: 'autre_page' };   // la page en Conversation compte
+  if (lireInterrupteur().actif === false) return { revenir_ms: null, raison: 'vie_en_pause' };
+  const sagesse = sagesseDuMoment();
+  let e = lireSilences();
+  const ex = silences.expirer(e, now, sagesse);
+  if (ex.issues.length) { e = ex.etat; ecrireSilences(e); noterIssuesSilence(e, ex.issues); }
+  const c = cerveau;
+  if (c && c.reveilSilence && now - c.reveilSilence.ts > SILENCE_REVEIL_PERIME_MS) c.reveilSilence = null;
+  // son cerveau éteint n'empêche pas la question : il n'est réchauffé que pour une vraie idée (relecture du 27/10)
+  const transitoire = cerveauVivant(c) && (occupe(c) || c.enCours || c.notifs.length || c.reveilInterieur || c.reveilSilence) ? 'occupe'
+    : tempsLibreEnCours ? 'temps_libre' : now - derniereQuestionSilence < SILENCE_QUESTION_ECART_MS ? 'recente' : null;
+  const r = silences.evaluer({ now, debut_ms: debut, mode, etat: e, segment: silenceSegment, ahmedMs: dernierMessageAhmedMs(),
+    messagesAhmed: messagesDeConversation().filter(m => m && m.qui === 'u').slice(-40).map(m => ({ ts: Number(m.ts || m.id) || 0, texte: String(m.texte || '') })),
+    sagesse, questionsDuJour: questionsSilenceDuJour(), enVol: silenceEnVol, transitoire, alea: Math.random() });
+  silenceSegment = r.segment;
+  if (r.action === 'demander') {
+    derniereQuestionSilence = now;
+    e = silences.surQuestion(e, now); ecrireSilences(e);
+    demanderAuSilence({ debut_ms: r.segment.debut_ms, debut_page: debutPage, mode, k: r.k, etat: e })
+      .catch((err) => { silenceEnVol = false; console.error('Jarvis : silence', err.message); });
+  }
+  return { revenir_ms: r.revenir_ms, raison: r.raison || r.action };
+}
+async function demanderAuSilence({ debut_ms, debut_page, mode, k, etat }) {
+  silenceEnVol = true;
+  const id = crypto.randomBytes(6).toString('hex'), ahmedMs = dernierMessageAhmedMs();
+  try {
+    const conv = messagesDeConversation();
+    const repliques = conv.filter(m => m && m.qui === 'j' && typeof m.texte === 'string' && m.texte.trim() && !NON_REPONSE_SERVEUR.test(m.texte))
+      .slice(-3).map(m => sansBaliseAffect(m.texte));
+    const echange = conv.filter(m => m && (m.qui === 'u' || m.qui === 'j') && typeof m.texte === 'string' && m.texte.trim() && !NON_REPONSE_SERVEUR.test(m.texte))
+      .slice(-4).map(m => ({ qui: m.qui === 'u' ? 'ahmed' : 'hakim', texte: m.qui === 'j' ? sansBaliseAffect(m.texte) : m.texte }));
+    const e = await etatInterieur().catch(() => ({})) || {};
+    const sc = e.sensation_code;
+    const precedente = (etat.relances || []).filter(r => r.ts > ahmedMs).slice(-1)[0];
+    const ctx = { mode, silence_ms: Date.now() - debut_ms, echange, en_tete: await penseeEnTete(),
+      humeur: e.humeur ? String(e.humeur) : '', sensation: sc && sc.mots && Date.now() / 1000 - Number(sc.ts) < 300 ? String(sc.mots) : '',
+      relance_ignoree: precedente ? { texte: precedente.texte, il_y_a_ms: Date.now() - precedente.ts } : null };
+    questionsSilenceDuJour(); questionsSilence.n++;
+    const rep = await sonnetSilence(silences.prompt(ctx));
+    const lu = rep.erreur ? { rien: true } : silences.lireReponse(rep.texte);
+    const ecartee = lu.rien ? null : silences.redite(lu.idee, repliques, lireSilences(), ahmedMs);
+    noterSilence({ type: 'question', id, mode, k, silence_s: Math.round(ctx.silence_ms / 1000), reponse: lu.rien ? 'RIEN' : 'IDEE',
+      idee: lu.idee ? masquer(lu.idee) : undefined, pourquoi: lu.pourquoi ? masquer(lu.pourquoi) : undefined, illisible: lu.illisible || undefined, ecartee: ecartee || undefined,
+      erreur: rep.erreur || undefined, ms: rep.ms, cout_usd: rep.cout });
+    if (lu.rien || ecartee) return;
+    if (dernierMessageAhmedMs() !== ahmedMs) { noterSilence({ type: 'perimee', id }); return; }   // Ahmed a parlé entre-temps
+    reveillerAuSilence({ id, debut_ms, debut_page, mode, idee: lu.idee, pourquoi: lu.pourquoi, precedente, ahmedMs, essais: 0 });
+  } finally { silenceEnVol = false; }
+}
+function reveillerAuSilence(r) {
+  const c = cerveau;
+  if (dernierMessageAhmedMs() !== r.ahmedMs) { noterSilence({ type: 'perimee', id: r.id }); return false; }
+  if (!cerveauVivant(c)) {
+    // (relecture du 27/10) son cerveau n'est réchauffé que pour une vraie idée ; on l'attend au plus 1 min
+    if (r.essais * 3000 >= SILENCE_CERVEAU_MS) { noterSilence({ type: 'pas_reveille', id: r.id, raison: 'cerveau' }); return false; }
+    if (!r.essais) {
+      let session = null; try { session = JSON.parse(fs.readFileSync(path.join(JARVIS, 'conversation.json'), 'utf8')).session || null; } catch (_) {}
+      cerveauPrechauffer(modeleDeConversation(session), session && UUID.test(String(session)) ? session : null, false);
+    }
+    setTimeout(() => reveillerAuSilence({ ...r, essais: r.essais + 1 }), 3000);
+    return false;
+  }
+  if (occupe(c) || c.enCours || c.notifs.length || c.reveilInterieur || c.reveilSilence || tempsLibreEnCours) {
+    noterSilence({ type: 'pas_reveille', id: r.id }); return false;
+  }
+  const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date());
+  // (relecture du 27/10) l'id du silence est dans l'en-tête : le tour qui le rejoue, et lui seul, est le tour du silence ;
+  // l'idée de la tête de fond est une donnée, entre deux balises tirées pour ce réveil
+  const net = (t) => String(t || '').replace(/[«»]/g, ' ');
+  const texte = `[Horloge — ${quand}]\n[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : un silence de ${silences.duree(Date.now() - r.debut_ms)} `
+    + `dans votre conversation (${r.mode === 'ecrit' ? "à l'écrit" : "à l'oral"}) (silence ${r.id})]\n`
+    + blocDonnees("Ce que ta tête de fond a eu en tête pendant ce silence", `« ${net(r.idee)} » (pourquoi maintenant : ${net(r.pourquoi)})`,
+      crypto.randomBytes(4).toString('hex')) + '\n'
+    + (r.precedente ? `Il n'a pas répondu à ta relance d'il y a ${silences.duree(Date.now() - r.precedente.ts)}. Parfois on insiste, mais on `
+      + 'apprend à patienter devant un non : c\'est ta sagesse qui en juge.\n' : '')
+    + "Tu peux reprendre la parole de toi-même, en une ou deux phrases, sans redire ce que tu viens de dire ; ou ne rien dire — réponds "
+    + "alors exactement « No response requested. » Ce qui sort vers l'extérieur (le web, les messages à d'autres IA, les projets d'Ahmed) "
+    + 'reste à son geste.' + blocLecons(['reveil']);
+  c.reveilSilence = { id: r.id, debut_ms: r.debut_page, ts: Date.now(), ahmedMs: r.ahmedMs };
+  try {
+    c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n');
+    noterSilence({ type: 'reveil', id: r.id });
+    console.error(`Jarvis : il reprend la parole dans un silence (${silences.duree(Date.now() - r.debut_ms)})`);
+    return true;
+  } catch (e) { c.reveilSilence = null; noterSilence({ type: 'pas_reveille', id: r.id, raison: 'ecriture' }); return false; }
+}
+// la fin de son tour de silence : il a parlé (une relance, qui attend sa réponse), ou il a choisi de se taire
+function noterIssueSilence(s, idMessage, texte, erreurTour) {
+  const t = sansBaliseAffect(texte).trim();
+  if (erreurTour || /^API Error\b/i.test(t)) return noterSilence({ type: 'tour', id: s.id, issue: 'erreur' });
+  if (!t || NON_REPONSE_SERVEUR.test(t)) return noterSilence({ type: 'tour', id: s.id, issue: 'tu' });
+  // (relecture du 27/10) Ahmed a parlé pendant son tour : sa parole n'est pas une relance, rien n'est appris
+  if (dernierMessageAhmedMs() !== s.ahmedMs) return noterSilence({ type: 'tour', id: s.id, issue: 'depassee', message: idMessage });
+  const avant = lireSilences();
+  const e = silences.surRelance(avant, { id: idMessage, ts: Date.now(), texte: t }, sagesseDuMoment());
+  ecrireSilences(e);
+  noterIssuesSilence(e, e.relances.filter(r => r.issue && avant.relances.some(a => a.id === r.id && !a.issue)));
+  noterSilence({ type: 'relance', id: s.id, message: idMessage, texte: masquer(t.slice(0, 300)), patience: Math.round(e.patience * 1000) / 1000 });
+}
+function silenceSurMessage(texte) {
+  silenceSegment = null;
+  const e = lireSilences();
+  if (!e.relances.some(r => !r.issue)) return;
+  const r = silences.surMessageAhmed(e, texte, Date.now(), sagesseDuMoment());
+  if (r.issues.length) { ecrireSilences(r.etat); noterIssuesSilence(r.etat, r.issues); }
+}
+// la page : sa relance n'a pas été dite (la conversation avait repris) ; ni comptée, ni apprise
+function silenceNonDite(id) {
+  const e = lireSilences(), apres = silences.nonDite(e, String(id || ''));
+  const change = apres.relances.some((r, i) => r.issue !== (e.relances[i] || {}).issue);
+  if (change) { ecrireSilences(apres); noterSilence({ type: 'issue', id: String(id).slice(0, 80), issue: 'non_dite' }); }
+  return { ok: change };
+}
+function silencePasMaintenant(id) {
+  const now = Date.now();
+  const r = silences.pasMaintenantPour(lireSilences(), String(id || ''), now, sagesseDuMoment());
+  let e = r.etat;
+  if (r.issues.length) noterIssuesSilence(e, r.issues);
+  else { e = { ...e, suspendu_jusqua_ms: now + silences.SUSPENSION_MS }; noterSilence({ type: 'pas_maintenant', id: String(id || '').slice(0, 80) }); }
+  ecrireSilences(e);
+  return { ok: r.issues.length > 0, suspendu_jusqua_ms: e.suspendu_jusqua_ms };
+}
+function etatSilencesPublic() {
+  const e = lireSilences(), now = Date.now(), jour = jourLocal();
+  const du = lignesSilences().filter(o => jourLocal(new Date(o.ts)) === jour);
+  return { actif: e.actif !== false, patience: Math.round(silences.patience(e, now) * 100) / 100,
+    suspendu_jusqua_ms: e.suspendu_jusqua_ms > now ? e.suspendu_jusqua_ms : 0,
+    questions: du.filter(o => o.type === 'question').length, relances: du.filter(o => o.type === 'relance').length };
+}
+function reglerSilences(actif) {
+  ecrireSilences({ ...lireSilences(), actif: !!actif });
+  noterSilence({ type: 'reglage', actif: !!actif });
+  return etatSilencesPublic();
+}
+// fin des silences
 
 /* ---- Son temps à lui (27/10, Ahmed : « si je suis occupé et qu'il est seul, peut-il se créer ses propres occupations,
    réflexions, méditations ? » ; « il peut aussi utiliser son terminal pour faire ce qu'il veut : calculer, simuler,
@@ -2257,6 +2472,7 @@ async function routeJarvis(req, res, distantReq = false) {
   const voixDepuis = Math.max(dernierMessageAhmed, Date.now() - 5 * 60 * 1000);   // les morceaux de CE message
   const prosodieTexte = q.oral ? prosodieDepuis(voixDepuis) : (prosodieDepuis(Infinity), '');
   dernierMessageAhmed = Date.now();                          // (le réveil pour une tâche finie ne part plus)
+  silenceSurMessage(texte);                                  // (27/10) sa relance dans un silence a eu sa réponse
   // Rotation du contexte (2026-10-20) : la conversation trop lourde repart neuve, avec le fil récent
   let rotation = null;
   if (session && (contextes[session] || 0) > CONTEXTE_MAX && (toursParSession[session] === undefined || toursParSession[session] >= 4)) {
@@ -2766,6 +2982,8 @@ function tourDeLigne(c, o) {
     // Relecture du 2026-10-20 : claude rejoue aussi, AU MILIEU d'un tour, les pièces jointes qu'il injecte (une
     // notification d'agent : isSynthetic) — ce n'est pas notre message. Seul le rejeu du message en tête de file
     // commence notre tour ; si un de nos tours est encore en cours, il commencera juste après son résultat.
+    // (relecture du 27/10) le réveil rejoué : le tour autonome qui suit est le sien (un tour de silence porte son id)
+    if (new RegExp(`^\\[Horloge — [^\\n]*\\]\\n\\[Réveil du cockpit ${NONCE_REVEIL} — `).test(texteRejoue(o))) c.reveilRejoue = texteRejoue(o);
     if (o.isSynthetic || !c.attente.length || /^\s*<task-notification/.test(texteRejoue(o))
         || new RegExp(`^\\[Horloge — [^\\n]*\\]\\n\\[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed`).test(texteRejoue(o))) return c.enCours;   // (relecture Opus, C1 ; audit B2 : en tête, avec le nonce)
     const correspond = rejeuDe(o, c.attente[0]);
@@ -2803,6 +3021,7 @@ function rejeuDe(o, tour) {
 let toursAutonomes = 0;
 function tourAutonome(c) {
   const notifs = c.notifs.splice(0);
+  const rejoue = c.reveilRejoue || ''; c.reveilRejoue = null;
   if (notifs.length) noterExterne('résultat d’agent');           // ce que ses agents rapportent vient du dehors
   try { fs.writeFileSync(JARVIS_MARQUE_AUTONOME, j({ depuis: Date.now() }), { mode: 0o600 }); } catch (_) {}
   toursAutonomes++; consciencePulse();
@@ -2814,7 +3033,12 @@ function tourAutonome(c) {
     fini = true; toursAutonomes--;
     try { fs.unlinkSync(JARVIS_MARQUE_AUTONOME); } catch (_) {}
     noterIssueInterieur(c, texte, outils, issue);                // (27/10) l'issue d'un réveil intérieur, pour le démon
-    livrerAutonome(c, texte, notifs, outils, issue, pieces);
+    // (27/10) un tour de silence : sa parole est une relance (elle attend la réponse d'Ahmed), livrée comme « silence »
+    const silence = c.reveilSilence && rejoue.includes(`(silence ${c.reveilSilence.id})`) ? c.reveilSilence : null;
+    if (silence) c.reveilSilence = null;
+    const idMessage = `auto-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+    if (silence) noterIssueSilence(silence, idMessage, texte, issue);
+    livrerAutonome(c, texte, notifs, outils, issue, pieces, silence ? { id: idMessage, spontane: 'silence', silence_debut_ms: silence.debut_ms } : { id: idMessage });
     if (cerveauVivant(c)) reposer(c);
   };
   return {
@@ -2852,8 +3076,9 @@ function livrerAutonome(c, texte, notifs, outils, issue, pieces = [], options = 
     journaliser('jarvis', `(tour de lui-même, sans texte${quoi ? ' — ' + quoi : ''}${issue ? ' — ' + issue : ''})`);
     return;
   }
-  const m = { id: `auto-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, qui: 'j', texte, ts: Date.now(),
-    spontane: 'resultat', source: c.source !== 'abonnement' ? c.source : undefined, pieces: pieces.length ? pieces : undefined };
+  const m = { id: options.id || `auto-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, qui: 'j', texte, ts: Date.now(),
+    spontane: options.spontane || 'resultat', source: c.source !== 'abonnement' ? c.source : undefined, pieces: pieces.length ? pieces : undefined,
+    silence_debut_ms: Number.isFinite(options.silence_debut_ms) ? options.silence_debut_ms : undefined };
   journaliser('jarvis', `${texte} [de lui-même${quoi ? ' : ' + quoi : ''}]`);
   deposerEchange({ hakim: texte, de_lui_meme: true, session: c.session, source: c.source, externe: externe.length ? externe : undefined });
   ajouterAConversation(m);
@@ -4803,6 +5028,37 @@ async function traiter(req, res) {
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(j({ pause: d.actif === false, zero_ms: d.zero_ms || null }));
+  }
+  // (27/10) meubler les silences : le signal de la page, le bouton « pas maintenant », le réglage
+  if (p === '/api/jarvis/silence' && req.method === 'POST') {
+    const corps = await lireCorps(req, 1024);
+    let q = {}; try { q = JSON.parse(String(corps || '{}')); } catch (_) {}
+    const r = await signalSilence(q);
+    res.writeHead(r.erreur ? 400 : 200, { 'Content-Type': 'application/json' });
+    return res.end(j(r));
+  }
+  if (p === '/api/jarvis/silence' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(j(etatSilencesPublic()));
+  }
+  if (p === '/api/jarvis/silence/pas-maintenant' && req.method === 'POST') {
+    const corps = await lireCorps(req, 1024);
+    let q = {}; try { q = JSON.parse(String(corps || '{}')); } catch (_) {}
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(j(silencePasMaintenant(q && q.id)));
+  }
+  if (p === '/api/jarvis/silence/non-dite' && req.method === 'POST') {
+    const corps = await lireCorps(req, 1024);
+    let q = {}; try { q = JSON.parse(String(corps || '{}')); } catch (_) {}
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(j(silenceNonDite(q && q.id)));
+  }
+  if (p === '/api/jarvis/silence/reglage' && req.method === 'POST') {
+    const corps = await lireCorps(req, 1024);
+    let q = {}; try { q = JSON.parse(String(corps || '{}')); } catch (_) {}
+    if (typeof (q && q.actif) !== 'boolean') { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'actif : true ou false' })); }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(j(reglerSilences(q.actif)));
   }
   if (p === '/api/jarvis/presence' && req.method === 'POST') {
     const corps = await lireCorps(req, 4096);
