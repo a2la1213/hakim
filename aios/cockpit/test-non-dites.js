@@ -142,7 +142,8 @@ function cockpit({ vivant = true, occupe = false } = {}) {
   const ctx = { fs, path, JSON, Number, String, Array, Math, Intl, Date, console: { error() {} }, JARVIS: dir, j: JSON.stringify,
     ecrireAtomique: (f, s) => fs.writeFileSync(f, s), NONCE_REVEIL: 'n0nce', UUID: /x/, cerveau, crypto: require('node:crypto'),
     blocDonnees: (titre, corps, nonce) => `[${titre} — données ${nonce}]\n${corps}\n[/données ${nonce}]`,
-    cerveauVivant: () => vivant, occupe: () => occupe, prechauffes: 0, setInterval: () => ({ unref() {} }) };
+    cerveauVivant: () => vivant, occupe: () => occupe, prechauffes: 0, setInterval: () => ({ unref() {} }),
+    blocReveilDejaRecu: () => '', lireDejaRecu: () => ctx.registre || ({ items: [] }), dejaRecu: require('./deja-recu.js'), noterDejaRecu: () => {} };
   ctx.cerveauPrechauffer = () => { ctx.prechauffes++; };
   ctx.modeleDeConversation = () => 'opus';      // (26/10) un seul modèle par conversation (test-modele.js)
   vm.createContext(ctx);

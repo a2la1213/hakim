@@ -116,6 +116,8 @@ function prompt(ctx) {
     ...(ctx.echange || []).slice(-4).map(x => `${x.qui === 'ahmed' ? 'Ahmed' : 'Hakim'} : « ${extrait(x.texte, x.qui === 'ahmed' ? 500 : 900)} »`),
   ];
   if (ctx.en_tete) lignes.push(`Ce que Hakim a en tête : « ${donnee(ctx.en_tete, 300)} »`);
+  if (ctx.deja_recu && ctx.deja_recu.length)            // (27/10) le registre du subconscient : jamais le redire
+    lignes.push(`Ce qu'Ahmed a déjà reçu (Hakim ne le lui redit pas) : ${ctx.deja_recu.slice(-12).map(x => donnee(x, 160)).join(' ; ')}`);
   if (ctx.humeur || ctx.sensation)
     lignes.push(`Son humeur : ${donnee(ctx.humeur, 40) || 'non dite'}${ctx.sensation ? ` ; ce qu'il sent : ${donnee(ctx.sensation, 160)}` : ''}`);
   if (ctx.relance_ignoree) {

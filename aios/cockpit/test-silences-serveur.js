@@ -33,7 +33,7 @@ function monter({ vivant = true, occupe = false, ahmedIlYaMs = 10 * 60e3, pause 
     cerveau, dernierMessageAhmedMs: () => ctx.ahmedMs, cerveauVivant: () => ctx.vivant, occupe: () => occupe,
     cerveauPrechauffer: () => { ctx.prechauffes++; }, prechauffes: 0, modeleDeConversation: () => 'opus',
     lireInterrupteur: () => ({ actif: !pause }), jourLocal: (d) => (d || new FausseDate()).toLocaleDateString('sv-SE'),
-    blocLecons: () => '', tempsLibreEnCours: false, conversationPage: 0, vivant,
+    blocReveilDejaRecu: () => '', lireDejaRecu: () => ({ items: [] }), dejaRecu: require('./deja-recu.js'), noterDejaRecu: () => {}, blocLecons: () => '', tempsLibreEnCours: false, conversationPage: 0, vivant,
     etatInterieur: async () => ({ humeur: 'curiosité', sensation_code: { mots: 'vive, en éveil', ts: T / 1000 } }),
     sqlite: async () => [{ ts: T / 1000 - 600, content: '(pensée) je repense au hasard quantique' }],
     texteSouvenir: (c) => String(c || '').replace(/^\((?:pensée|relance)[^)]*\)\s*/, ''),

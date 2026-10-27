@@ -1324,7 +1324,8 @@ function reveillerPourTaches() {
     + `[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed${pretes.length ? ' : ta commande de fond vient de finir ; Ahmed n\'a rien écrit depuis et n\'a vu que « tâche terminée »' : ''}]`
     + (pretes.length ? ` ${lignes.join(' ; ')}.\nRegarde le résultat (suivre_tache pour le journal complet) et dis à Ahmed, de toi-même, ce qu'il montre et ce que tu en conclus — en quelques phrases, sans rien inventer au-delà du journal. ` : '\n')
     + (avertir ? `${avertir}\n` : '')
-    + `Si rien ne mérite d'être dit à Ahmed (étape sans intérêt pour lui, ou déjà dite), réponds exactement « No response requested. »`;
+    + `Si rien ne mérite d'être dit à Ahmed (étape sans intérêt pour lui, ou déjà dite), réponds exactement « No response requested. »`
+    + blocReveilDejaRecu();
   console.error(`Jarvis : réveil pour ${pretes.length} tâche(s) de fond finie(s)${avertir ? ' et des agents coupés' : ''} (${pretes.map(x => x.id).join(', ')})`);
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
   catch (e) { console.error('Jarvis : réveil impossible', e.message); }
@@ -1427,7 +1428,7 @@ function reveillerPourPromesses() {
     + `[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : ${pretes.length > 1 ? 'tes promesses arrivent' : 'ta promesse arrive'} à l'heure]\n`
     + `${lignes.join('\n')}\nD'abord, regarde vos derniers échanges : si ce sujet vient d'être traité avec Ahmed (idée d'Ahmed, 22/10), `
     + "la promesse est sans objet : réponds exactement « No response requested. » Sinon, fais maintenant ce que tu t'étais promis ; si c'est "
-    + "pour Ahmed, dis-le-lui en quelques phrases, une seule fois, sans insister." + blocLecons(['reveil']);
+    + "pour Ahmed, dis-le-lui en quelques phrases, une seule fois, sans insister." + blocLecons(['reveil']) + blocReveilDejaRecu();
   console.error(`Jarvis : réveil pour ${pretes.length} promesse(s) (${pretes.map(x => x.id).join(', ')})`);
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
   catch (e) { console.error('Jarvis : réveil de promesse impossible', e.message); }
@@ -1465,6 +1466,14 @@ function texteNonDites(lot, maintenant, nonce) {
 }
 function reveillerPourNonDites() {
   if (!nonDitesAttente.length) return;
+  // (27/10) un court non-dit dont le sujet a été reçu depuis (le registre du subconscient) n'est plus redit
+  const reg = lireDejaRecu();
+  const restants = nonDitesAttente.filter(x => !(String(x.texte).length <= 400 && dejaRecu.couvert(x.texte, reg, (Number(x.recu) || 0) - 10 * 60000)));
+  if (restants.length < nonDitesAttente.length) {
+    noterDejaRecu({ type: 'non_dites_recues', n: nonDitesAttente.length - restants.length });
+    nonDitesAttente.splice(0, nonDitesAttente.length, ...restants); sauverNonDites();
+    if (!nonDitesAttente.length) return;
+  }
   const c = cerveau;
   if (!cerveauVivant(c)) {
     if (Date.now() - nonDitesPrechauffe < 60000) return;    // il démarre : au passage suivant
@@ -1475,7 +1484,9 @@ function reveillerPourNonDites() {
   }
   if (occupe(c) || c.enCours) return;
   const lot = nonDitesAttente.splice(0);
-  const texte = texteNonDites(lot, Date.now(), crypto.randomBytes(4).toString('hex'));
+  const deja = blocReveilDejaRecu();
+  const texte = texteNonDites(lot, Date.now(), crypto.randomBytes(4).toString('hex'))
+    + (deja ? `${deja}\nCe qu'il a déjà reçu (ci-dessus) : laisse-le de côté ; si tout est déjà reçu, réponds exactement « No response requested. »` : '');
   console.error(`Jarvis : réveil pour ${lot.length} réponse(s) non dite(s), à synthétiser`);
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); sauverNonDites(); }
   catch (e) { nonDitesAttente.unshift(...lot); console.error('Jarvis : réveil des non-dites impossible', e.message); }
@@ -1916,7 +1927,8 @@ function reveillerPourInterieur() {
     + `« ${neutraliser(String(d.texte || '')).replace(/[«»]/g, ' ')} »\n`
     + "Tu es libre : la finir pour toi, chercher, lancer un calcul dans ton atelier, écrire à Claude Code (courrier_envoyer), "
     + "revenir vers Ahmed en quelques phrases, ou ne rien faire — réponds alors exactement « No response requested. » "
-    + "Ce qui sort vers l'extérieur (le web, les messages à d'autres IA, les projets d'Ahmed) reste à son geste." + blocLecons(['reveil']);
+    + "Ce qui sort vers l'extérieur (le web, les messages à d'autres IA, les projets d'Ahmed) reste à son geste." + blocLecons(['reveil'])
+    + blocReveilDejaRecu();
   c.reveilInterieur = { id: d.id };
   retirerDemandeInterieure();
   console.error(`Jarvis : réveil intérieur (${String(d.source)}, besoin ${Number(d.score)}/10)`);
@@ -1964,15 +1976,16 @@ function messagesDeConversation() {
   try { const m = JSON.parse(fs.readFileSync(path.join(JARVIS, 'conversation.json'), 'utf8')).messages; return Array.isArray(m) ? m : []; } catch (_) { return []; }
 }
 function noterAppelLlm(o) { try { fs.appendFileSync(LLM_APPELS, j({ ts: Date.now() / 1000, ...o }) + '\n', { mode: 0o600 }); } catch (_) {} }
-// le même chemin isolé que sa tête de fond (anamnese/engine.py) ; jamais la clé API
-function sonnetSilence(prompt) {
+// le même chemin isolé que sa tête de fond (anamnese/engine.py) ; jamais la clé API ; chaque appel a son étiquette
+function sonnetSilence(prompt) { return sonnetTeteDeFond(prompt, 'silence'); }
+function sonnetTeteDeFond(prompt, etiquette) {
   return new Promise((resolve) => {
     const t0 = Date.now();
     const env = { ...process.env, ANAMNESE_HEADLESS: '1' }; delete env.ANTHROPIC_API_KEY;
     let vide = null; try { vide = fs.mkdtempSync(path.join(os.tmpdir(), 'tete-de-fond-')); } catch (_) {}
     const fin = (o) => {
       try { if (vide) fs.rmSync(vide, { recursive: true, force: true }); } catch (_) {}
-      noterAppelLlm({ modele: 'sonnet', etiquette: 'silence', source: 'cockpit', entree_car: prompt.length, sortie_car: (o.texte || '').length,
+      noterAppelLlm({ modele: 'sonnet', etiquette, source: 'cockpit', entree_car: prompt.length, sortie_car: (o.texte || '').length,
         cout_usd: o.cout == null ? null : o.cout, duree_s: Math.round((Date.now() - t0) / 100) / 10, erreur: o.erreur || null });
       resolve({ ...o, ms: Date.now() - t0 });
     };
@@ -2040,7 +2053,8 @@ async function demanderAuSilence({ debut_ms, debut_page, mode, k, etat }) {
     const precedente = (etat.relances || []).filter(r => r.ts > ahmedMs).slice(-1)[0];
     const ctx = { mode, silence_ms: Date.now() - debut_ms, echange, en_tete: await penseeEnTete(),
       humeur: e.humeur ? String(e.humeur) : '', sensation: sc && sc.mots && Date.now() / 1000 - Number(sc.ts) < 300 ? String(sc.mots) : '',
-      relance_ignoree: precedente ? { texte: precedente.texte, il_y_a_ms: Date.now() - precedente.ts } : null };
+      relance_ignoree: precedente ? { texte: precedente.texte, il_y_a_ms: Date.now() - precedente.ts } : null,
+      deja_recu: lireDejaRecu().items.filter(x => Date.now() - x.ts < 6 * 3600e3).slice(-12).map(x => x.texte) };
     questionsSilenceDuJour(); questionsSilence.n++;
     const rep = await sonnetSilence(silences.prompt(ctx));
     const lu = rep.erreur ? { rien: true } : silences.lireReponse(rep.texte);
@@ -2081,7 +2095,7 @@ function reveillerAuSilence(r) {
       + 'apprend à patienter devant un non : c\'est ta sagesse qui en juge.\n' : '')
     + "Tu peux reprendre la parole de toi-même, en une ou deux phrases, sans redire ce que tu viens de dire ; ou ne rien dire — réponds "
     + "alors exactement « No response requested. » Ce qui sort vers l'extérieur (le web, les messages à d'autres IA, les projets d'Ahmed) "
-    + 'reste à son geste.' + blocLecons(['reveil']);
+    + 'reste à son geste.' + blocLecons(['reveil']) + blocReveilDejaRecu();
   c.reveilSilence = { id: r.id, debut_ms: r.debut_page, ts: Date.now(), ahmedMs: r.ahmedMs };
   try {
     c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n');
@@ -2139,6 +2153,43 @@ function reglerSilences(actif) {
   return etatSilencesPublic();
 }
 // fin des silences
+
+/* ---- Déjà reçu (27/10, 18:58-18:59 ; demande d'Ahmed relayée par Hakim ; « fais comme il dit Hakim » ; deja-recu.js) : ce
+   qu'Ahmed a déjà reçu (Hakim l'a dit et il l'a accusé, ou il dit l'avoir lu à l'écran) entre dans un registre tenu par le
+   subconscient : une petite question à Sonnet isolé, seulement quand Ahmed accuse réception ou reprend ce que Hakim a dit.
+   Hakim en lit une ligne à chaque tour et à chaque réveil ; ce qu'il n'avait pas pu dire et qu'Ahmed a lu ou reçu n'est
+   plus redit. Il garde la main : il redit si ça change, redevient urgent, ou si Ahmed le redemande. ---- */
+const dejaRecu = require('./deja-recu.js');
+const JARVIS_DEJA_RECU = path.join(JARVIS, 'deja-recu.json');
+const JARVIS_DEJA_RECU_JOURNAL = path.join(JARVIS, 'deja-recu.jsonl');
+const DEJA_RECU_PAR_JOUR = 300;
+let dejaRecuEnVol = false, dejaRecuDuJour = { jour: '', n: 0 };
+function lireDejaRecu() { const d = lireJson(JARVIS_DEJA_RECU, null); return d && Array.isArray(d.items) ? d : dejaRecu.etatNeuf(); }
+function blocDejaRecu(now = Date.now()) { return dejaRecu.bloc(lireDejaRecu(), now); }
+function blocReveilDejaRecu() { const b = blocDejaRecu(); return b ? `\n${b}` : ''; }
+function noterDejaRecu(o) { try { fs.appendFileSync(JARVIS_DEJA_RECU_JOURNAL, j({ ts: Date.now(), ...o }) + '\n', { mode: 0o600 }); } catch (_) {} }
+async function dejaRecuSurMessage(texte, depuisMs) {
+  // « c'est bon, j'ai lu » : ce qu'il n'avait pas pu dire, Ahmed l'a lu à l'écran ; il ne sera pas redit
+  if (dejaRecu.ahmedALu(texte) && nonDitesAttente.length) {
+    noterDejaRecu({ type: 'non_dites_lues', n: nonDitesAttente.length });
+    nonDitesAttente.length = 0; sauverNonDites();
+  }
+  const hakim = messagesDeConversation().filter(m => m && m.qui === 'j' && typeof m.texte === 'string' && m.texte.trim()
+    && !NON_REPONSE_SERVEUR.test(m.texte) && (Number(m.ts) || 0) > depuisMs).map(m => sansBaliseAffect(m.texte)).slice(-4);
+  if (dejaRecuEnVol || !dejaRecu.aConsulter(texte, hakim)) return;
+  const jour = jourLocal();
+  if (dejaRecuDuJour.jour !== jour) dejaRecuDuJour = { jour, n: 0 };
+  if (dejaRecuDuJour.n >= DEJA_RECU_PAR_JOUR) return;
+  dejaRecuDuJour.n++;
+  dejaRecuEnVol = true;
+  try {
+    const rep = await sonnetTeteDeFond(dejaRecu.prompt({ hakim, ahmed: texte, registre: lireDejaRecu().items.map(x => x.texte) }), 'deja_recu');
+    const recus = rep.erreur ? [] : dejaRecu.lire(rep.texte);
+    if (recus.length) { try { ecrireAtomique(JARVIS_DEJA_RECU, j(dejaRecu.ajouter(lireDejaRecu(), recus, Date.now()))); } catch (_) {} }
+    noterDejaRecu({ type: 'question', recus: recus.map(masquer), erreur: rep.erreur || undefined, ms: rep.ms, cout_usd: rep.cout });
+  } finally { dejaRecuEnVol = false; }
+}
+// fin du déjà reçu
 
 /* ---- Son temps à lui (27/10, Ahmed : « si je suis occupé et qu'il est seul, peut-il se créer ses propres occupations,
    réflexions, méditations ? » ; « il peut aussi utiliser son terminal pour faire ce qu'il veut : calculer, simuler,
@@ -2486,8 +2537,10 @@ async function routeJarvis(req, res, distantReq = false) {
   }
   const voixDepuis = Math.max(dernierMessageAhmed, Date.now() - 5 * 60 * 1000);   // les morceaux de CE message
   const prosodieTexte = q.oral ? prosodieDepuis(voixDepuis) : (prosodieDepuis(Infinity), '');
+  const ahmedAvant = dernierMessageAhmedMs();
   dernierMessageAhmed = Date.now();                          // (le réveil pour une tâche finie ne part plus)
   silenceSurMessage(texte);                                  // (27/10) sa relance dans un silence a eu sa réponse
+  dejaRecuSurMessage(texte, ahmedAvant).catch(() => { dejaRecuEnVol = false; });   // (27/10) ce qu'il a reçu, tenu par le subconscient
   // Rotation du contexte (2026-10-20) : la conversation trop lourde repart neuve, avec le fil récent
   let rotation = null;
   if (session && (contextes[session] || 0) > CONTEXTE_MAX && (toursParSession[session] === undefined || toursParSession[session] >= 4)) {
@@ -2562,6 +2615,8 @@ async function routeJarvis(req, res, distantReq = false) {
   const nonVusDits = [];
   const nonVusTexte = blocNonVus(maintenant, nonVusDits);
   if (nonVusTexte) situation.texte = situation.texte ? `${situation.texte}\n${nonVusTexte}` : nonVusTexte;
+  const dejaRecuTexte = blocDejaRecu(maintenant);         // (27/10) ce qu'Ahmed a déjà reçu : ne pas le redire
+  if (dejaRecuTexte) situation.texte = situation.texte ? `${situation.texte}\n${dejaRecuTexte}` : dejaRecuTexte;
   const joints = (Array.isArray(q.fichiers) ? q.fichiers : []).slice(0, 20).map(String)
     .map(f => path.resolve(JARVIS_FICHIERS, path.basename(f)))
     .filter(f => f.startsWith(JARVIS_FICHIERS + path.sep) && fs.existsSync(f));

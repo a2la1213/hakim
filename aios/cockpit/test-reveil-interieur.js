@@ -25,7 +25,7 @@ function monter({ vivant = true, occupe = false, ahmedIlYaMs = 3600e3, pause = f
     dernierMessageAhmedMs: () => T - ahmedIlYaMs, cerveauVivant: () => ctx.vivant, occupe: () => occupe,
     cerveauPrechauffer: (...a) => prechauffes.push(a), modeleDeConversation: () => 'opus', lireInterrupteur: () => ({ actif: !pause }),
     jourLocal: (d) => (d || new FausseDate()).toLocaleDateString('sv-SE'), setInterval: () => ({ unref() {} }), vivant,
-    blocLecons: () => '', tempsLibreEnCours: false };
+    blocReveilDejaRecu: () => '', lireDejaRecu: () => ({ items: [] }), dejaRecu: require('./deja-recu.js'), noterDejaRecu: () => {}, blocLecons: () => '', tempsLibreEnCours: false };
   vm.createContext(ctx);
   vm.runInContext(ligne('const NON_REPONSE_SERVEUR') + ligne('const JARVIS_REVEIL_INTERIEUR') + ligne('const JARVIS_REVEILS_INTERIEURS')
     + ligne('const REVEIL_INTERIEUR_ATTENTE_S') + ligne('let reveilInterieurDemarrages')
