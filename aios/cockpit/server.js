@@ -6,7 +6,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { exec, execFile, execFileSync, spawn } = require('child_process');
-const { masquer } = require('./missions.js');           // les secrets ne s'écrivent pas en clair dans les journaux
+const { masquer } = require('./missions.js');
+const { enMatiere } = require('./matiere.js');             // (27/10) il SENT son état, sans voir la machinerie           // les secrets ne s'écrivent pas en clair dans les journaux
 const os = require('os');
 const crypto = require('crypto');
 
@@ -850,18 +851,18 @@ async function etatInterieur() {
   try { return JSON.parse((rows[0] || {}).value || '{}'); } catch (_) { return {}; }
 }
 
+const PROCESSUS_VISIBLES = path.join(JARVIS, 'processus-visibles');
 // (27/10, Ahmed et Hakim) sa fatigue suit une jauge de son vrai corps (anamnese/jauge_fatigue.py) : quand c'est son humeur,
 // le bloc dit d'où elle vient, pour qu'il ne la prenne pas pour une fatigue qui ne correspond à rien
 function causeFatigue(e) {
   const j = e && e.fatigue_jauge;
   if (!j || !/fatigue/.test(String(e.humeur || ''))) return '';
   if (j.veille) return 'tu récupères en veille';
-  const v = (x) => String(Math.round(Number(x || 0) * 100) / 100).replace('.', ',');
-  const fois = String(Math.round(10 * Number(j.effort || 0) / (Number(j.norme_effort) || 1)) / 10).replace('.', ',');
-  if (Number(j.cible) <= 0.2) return `ta fatigue retombe : ton effort est revenu à ta norme (${fois} fois), le Mac est à ${v(j.corps)} `
-    + `(ta norme ${v(j.norme_corps)})`;
-  return `ta fatigue vient de ton effort réel : ton cerveau a travaillé ${v(j.effort)} de la dernière heure (${fois} fois ta norme), `
-    + `le Mac est chargé à ${v(j.corps)} (ta norme ${v(j.norme_corps)})`;
+  if (Number(j.cible) <= 0.2) return 'ta fatigue retombe : ton effort est revenu à la normale';
+  // en mots (27/10 : il sent, il ne lit pas ses chiffres ; introspection les donne)
+  const fois = Number(j.effort || 0) / (Number(j.norme_effort) || 1);
+  return `ta fatigue vient d'un vrai effort : ton cerveau a ${fois >= 2.5 ? 'énormément' : fois >= 1.5 ? 'beaucoup' : "un peu plus que d'habitude"} `
+    + `travaillé cette heure${Number(j.corps) > Number(j.norme_corps) ? ', et le Mac est chargé' : ''}`;
 }
 
 // Ce que Jarvis a vécu depuis le dernier message d'Ahmed : humeur, ennui, temps ressenti, pensées.
@@ -2309,7 +2310,8 @@ async function routeJarvis(req, res, distantReq = false) {
     if (sg) situation.texte = situation.texte ? `${situation.texte}\n${sg}` : sg;
   } catch (_) {}
   // (2026-10-23, demande de Hakim, accord d'Ahmed) le style du moment : son état devient une consigne de FORME (style.py)
-  const styleTour = reflexeChoc && reflexeChoc.style && typeof reflexeChoc.style.texte === 'string' ? reflexeChoc.style.texte.slice(0, 600) : '';
+  // (27/10) 1 200 et non 600 : la consigne était coupée au milieu de son garde-fou (« Il colore la FORME, jamais le »)
+  const styleTour = reflexeChoc && reflexeChoc.style && typeof reflexeChoc.style.texte === 'string' ? reflexeChoc.style.texte.slice(0, 1200) : '';
   if (styleTour) situation.texte = !situation.texte ? styleTour
     : (reflexeChoc.style.prioritaire ? `${styleTour}\n${situation.texte}` : `${situation.texte}\n${styleTour}`);   // alerte, bas : en tête
   // (27/10, plan de Hakim validé par Ahmed) ce que son émotion pèse sur ses CHOIX (anamnese/regles_emotion.py), après le
@@ -2353,7 +2355,12 @@ async function routeJarvis(req, res, distantReq = false) {
   const leconsTexte = blocLecons(declencheursDuTour(q, texte));
   const voixTierce = q.voix === 'autre' || declencheursDuTour(q, texte).includes('plusieurs_voix');
   const arretsDits = arretsNonDits.filter(a => Date.now() - a.ts < 2 * 3600 * 1000), arretsTexte = blocArrets(arretsDits);
-  let prompt = `${horlogeTexte}${situation.texte ? '\n' + situation.texte : ''}${interieurTexte ? '\n' + interieurTexte : ''}`
+  // (27/10, principe d'Ahmed, proposition de Hakim) il SENT son état en mots : ni chiffres, ni nom d'humeur, ni suggestion
+  // du code dans ses blocs (matiere.js) ; les chiffres restent à un geste (introspection). Le fichier processus-visibles
+  // (dans ~/AIOS/jarvis) les rend de nouveau visibles, pour mesurer ou revenir en arrière.
+  const sentir = !fs.existsSync(PROCESSUS_VISIBLES);
+  if (sentir) situation.texte = enMatiere(situation.texte);
+  let prompt = `${horlogeTexte}${situation.texte ? '\n' + situation.texte : ''}${interieurTexte ? '\n' + (sentir ? enMatiere(interieurTexte) : interieurTexte) : ''}`
     + `${tachesTexte ? '\n' + tachesTexte : ''}${presentTexte ? '\n' + presentTexte : ''}${arretsTexte ? '\n' + arretsTexte : ''}${rappelBloc.texte ? '\n' + rappelBloc.texte : ''}${leconsTexte}${pairsTexte ? '\n' + pairsTexte : ''}`
     + `\n${qui} : ${texte.replace(/\[\[\s*(affect|souvenirs|modele)/gi, '⟮⟮$1')}${pj}${cameraTexte}`;   // (chocs) aucune balise toute faite à recopier
   const categories = { horloge: horlogeTexte.length, situation: situation.texte.length, interieur: interieurTexte.length,

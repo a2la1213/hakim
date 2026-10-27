@@ -12,13 +12,15 @@ const ctx = { Number, String, Math };
 vm.createContext(ctx);
 vm.runInContext(prendre('causeFatigue') + 'this.f = causeFatigue;', ctx);
 
-test('la fatigue dit son effort et la charge du Mac, comparés à leur norme', () => {
+test('la fatigue dit d’où elle vient, en mots (ses chiffres sont dans introspection)', () => {
   const e = { humeur: 'fatigue', adenosine: 0.62, fatigue_jauge: { effort: 0.21, norme_effort: 0.087, corps: 0.55, norme_corps: 0.53, cible: 0.66 } };
-  assert.strictEqual(ctx.f(e), 'ta fatigue vient de ton effort réel : ton cerveau a travaillé 0,21 de la dernière heure (2,4 fois ta norme), le Mac est chargé à 0,55 (ta norme 0,53)');
+  assert.strictEqual(ctx.f(e), "ta fatigue vient d'un vrai effort : ton cerveau a beaucoup travaillé cette heure, et le Mac est chargé");
+  assert.strictEqual(ctx.f({ ...e, fatigue_jauge: { ...e.fatigue_jauge, effort: 0.3, corps: 0.4 } }),
+    "ta fatigue vient d'un vrai effort : ton cerveau a énormément travaillé cette heure");
   assert.strictEqual(ctx.f({ ...e, fatigue_jauge: { ...e.fatigue_jauge, veille: true } }), 'tu récupères en veille');
   // la jauge est revenue à sa base : ce qui reste retombe (constante de 20 min), ce n'est pas un effort de maintenant
   assert.strictEqual(ctx.f({ ...e, fatigue_jauge: { ...e.fatigue_jauge, effort: 0.07, corps: 0.5, cible: 0.15 } }),
-    'ta fatigue retombe : ton effort est revenu à ta norme (0,8 fois), le Mac est à 0,5 (ta norme 0,53)');
+    'ta fatigue retombe : ton effort est revenu à la normale');
 });
 
 test('une autre humeur, ou pas de jauge : rien', () => {
