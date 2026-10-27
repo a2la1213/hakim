@@ -132,18 +132,20 @@ SDK_MACOS = "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platfor
 JDK = Path("/usr/local/opt/openjdk")      # Java (Homebrew, « keg-only » : pas dans /usr/local/bin)
 
 
-def profil(atelier, port, fichiers=None, telephone=None):
+def profil(atelier, port, fichiers=None, telephone=None, lire_aussi=()):
     """TOUT est refusé par défaut (relecture JARVIS 2, C1, 2026-10-20 : « allow default » laissait joignables les
     services de macOS — ouvrir une app, soumettre une tâche à launchd, écrire des réglages — donc une sortie du bac à
     sable). Sont permis : le socle système d'Apple (system.sb), l'exécution des programmes du système et de ses outils
     (sauf ceux qui pilotent le Mac : open, launchctl, osascript, defaults…), la lecture des dossiers système, de son
     atelier, de ../fichiers et de ses outils ; l'écriture dans l'atelier et dans les fichiers du téléphone seulement ; le réseau par la seule passerelle
-    gardée ; les services Mach sauf ceux qui font sortir (SERVICES_REFUSES) ; le GPU (MLX, Metal)."""
+    gardée ; les services Mach sauf ceux qui font sortir (SERVICES_REFUSES) ; le GPU (MLX, Metal).
+    (27/10, le juge de nuit) telephone=False : pas d'écriture des fichiers du téléphone ; lire_aussi : des dossiers lus
+    en plus, jamais écrits (le juge lit tout l'atelier de Hakim et n'écrit que dans le sien)."""
     fichiers = FICHIERS if fichiers is None else fichiers
     telephone = TELEPHONE if telephone is None else telephone
-    ecritures = f' (subpath "{telephone.resolve()}")' if telephone.exists() else ""
+    ecritures = f' (subpath "{telephone.resolve()}")' if telephone and telephone.exists() else ""
     lectures = "".join(f' (subpath "{p}")' for p in [atelier, fichiers.resolve() if fichiers.exists() else fichiers]
-                       + _chemins_outils())
+                       + [Path(x).resolve() for x in lire_aussi] + _chemins_outils())
     programmes = "".join(f' (literal "{p}")' for p in PROGRAMMES_REFUSES)
     services = "".join(f' (global-name "{n}")' for n in SERVICES_REFUSES)
     return f"""(version 1)
@@ -209,21 +211,22 @@ def alerte_atelier(atelier=None, taille_ko=None):
             "Fais de la place maintenant (supprime ou compresse ce qui ne sert plus : caches, gros résultats intermédiaires).")
 
 
-def preparer(commande, atelier, port):
+def preparer(commande, atelier, port, lire_aussi=(), telephone=None):
     """(arguments, environnement) pour lancer `commande` (zsh) sous le bac à sable de l'atelier, avec la
     passerelle réseau sur `port`. Partagé par l'exécution directe et les tâches de fond (taches.py)."""
     (atelier / ".tmp").mkdir(parents=True, exist_ok=True)
     # Le profil passe EN LIGNE (-p), jamais par un fichier : relecture Opus du 2026-10-20, il était écrit dans
     # atelier/.tmp (que Hakim écrit) sous un nom prévisible — un lien symbolique posé là faisait écraser un fichier
     # hors de l'atelier par le serveur, et un tube nommé aurait pu servir un profil permissif.
-    regles = profil(atelier, port)
+    regles = profil(atelier, port, telephone=telephone, lire_aussi=lire_aussi)
     mandataire = f"http://127.0.0.1:{port}"
     env = {
         "HOME": str(atelier), "TMPDIR": str(atelier / ".tmp"), "LANG": "fr_FR.UTF-8", "TERM": "dumb",
         "TMPPREFIX": str(atelier / ".tmp" / "zsh"),       # les heredocs de zsh (sinon /tmp, refusé)
         # les outils de développement d'Xcode en direct (git, clang…) : le relais /usr/bin/git passe par xcrun, qui veut
         # écrire son cache dans /var/folders — refusé par le bac à sable « tout refusé par défaut » (C1, 2026-10-20)
-        "PATH": ":".join([str(atelier / ".venv" / "bin"), str(VENV / "bin"), "/usr/local/bin", "/opt/homebrew/bin",
+        "PATH": ":".join([str(atelier / ".venv" / "bin")] + [str(Path(x) / ".venv" / "bin") for x in lire_aussi]
+                         + [str(VENV / "bin"), "/usr/local/bin", "/opt/homebrew/bin",
                           "/Applications/Xcode.app/Contents/Developer/usr/bin", XCODE_OUTILS, str(JDK / "bin"),
                           str(Path.home() / ".local" / "bin"), "/usr/bin", "/bin", "/usr/sbin", "/sbin"]),
         "HTTP_PROXY": mandataire, "HTTPS_PROXY": mandataire, "ALL_PROXY": mandataire,
@@ -272,7 +275,13 @@ def surveiller(proc, t0, delai_s, atelier, raison):
         time.sleep(0.5)
 
 
-def executer(commande, delai_s=DELAI_S, atelier=None):
+class _SansReseau:
+    """(27/10, le juge de nuit) aucune passerelle : la seule sortie permise par le profil mène à un port fermé"""
+    port = 9
+    refus = []
+
+
+def executer(commande, delai_s=DELAI_S, atelier=None, lire_aussi=(), reseau=True, telephone=None):
     """Exécute `commande` (zsh) dans l'atelier, sous bac à sable. Rend un texte."""
     if not isinstance(commande, str) or not commande.strip():
         return "Aucune commande."
@@ -282,8 +291,8 @@ def executer(commande, delai_s=DELAI_S, atelier=None):
     atelier = Path(atelier or ATELIER)
     (atelier / ".tmp").mkdir(parents=True, exist_ok=True)
     atelier = atelier.resolve()
-    proxy = passerelle()
-    args, env = preparer(commande, atelier, proxy.port)
+    proxy = passerelle() if reseau else _SansReseau()
+    args, env = preparer(commande, atelier, proxy.port, lire_aussi=lire_aussi, telephone=telephone)
     t0 = time.time()
     proc = subprocess.Popen(args, cwd=str(atelier), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             stdin=subprocess.DEVNULL, text=True, errors="replace", start_new_session=True)

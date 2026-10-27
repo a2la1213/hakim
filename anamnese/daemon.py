@@ -1170,6 +1170,27 @@ def _noyau_pass(eng, mem, now=None):
         print("[daemon] noyau en échec :", ex)
 
 
+def _juge_nuit_pass(mem, now=None):
+    """(27/10, idée d'Ahmed relayée par Hakim : « la nuit porte conseil, chez les IA encore plus ») Le juge de nuit
+    (juge_nuit.py), lancé une fois par nuit vers 1 h, détaché : il attend lui-même la fin des tests de nuit et une heure
+    sans échange entre Ahmed et Hakim, juge 20 résultats et 2 h au plus, et s'arrête à 8 h 30. Un verrou évite deux juges."""
+    now = now or time.time()
+    h = time.localtime(now).tm_hour
+    jour = time.strftime("%Y-%m-%d", time.localtime(now))
+    if not (1 <= h < 6) or mem.kv_get("juge_nuit_jour") == jour:
+        return
+    mem.kv_set("juge_nuit_jour", jour)
+    racine = Path(__file__).resolve().parent
+    try:
+        journal = open(config.DATA_DIR / "juge-nuit.log", "a")
+        subprocess.Popen([sys.executable, "-B", str(racine / "juge_nuit.py"), "nuit"], cwd=str(racine), stdin=subprocess.DEVNULL,
+                         stdout=journal, stderr=subprocess.STDOUT, start_new_session=True)
+        print("[daemon] juge de nuit lancé")
+        interieur.noter(mem, "juge_nuit", "le juge de nuit est lancé ; il attend le calme et la fin des tests")
+    except Exception as e:
+        print("[daemon] juge de nuit en échec :", e)
+
+
 def _rangement_nuit_pass(mem, now=None):
     """(2026-10-21) Le rangement de nuit (ranger_nuit.py) : les souvenirs vécus des 3 derniers jours restés sans rubrique
     ou rangés sans assurance sont lus par Claude et rangés au bon endroit. Une fois par nuit, vers 5 h."""
@@ -1306,6 +1327,7 @@ def main():
             _rangement_nuit_pass(mem)              # les souvenirs mal rangés, lus et rangés (2026-10-21)
             _situations_pass(eng, mem)             # ses erreurs rangées par situation, et leurs leçons (27/10)
             _noyau_pass(eng, mem)                  # son noyau : ce qui revient dans ses choix, chaque semaine (27/10)
+            _juge_nuit_pass(mem)                   # le juge de nuit sur les résultats non jugés (27/10, idée d'Ahmed)
             _audit_dependances_pass(mem)           # les failles connues des dépendances, chaque semaine
             time.sleep(config.DAEMON_TICK)
         except KeyboardInterrupt:

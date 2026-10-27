@@ -1338,10 +1338,24 @@ setInterval(reveillerPourTaches, 3000).unref();
    (Ahmed ne veut pas être réveillé). */
 const JARVIS_RESUME_JOUR = path.join(JARVIS, 'resume-jour.json');
 let silencieuxJusqua = 0, resumeEssais = { jour: '', n: 0 };
+/* (27/10, idée d'Ahmed relayée par Hakim : « la nuit porte conseil » ; anamnese/juge_nuit.py) les verdicts du juge de nuit,
+   pour le résumé du matin : en données, avec le décompte ; rien s'ils datent de plus de 12 h. */
+const JARVIS_JUGE_NUIT = path.join(JARVIS, 'juge-nuit.json');
+function blocJugeNuit(r, maintenantMs) {
+  if (!r || r.etat !== 'fini' || !Array.isArray(r.verdicts) || !r.verdicts.length || maintenantMs / 1000 - Number(r.fin) > 12 * 3600) return '';
+  const n = (v) => r.verdicts.filter(x => x && x.verdict === v).length;
+  const lignes = r.verdicts.slice(0, 20).map(x => `${x.verdict} — ${String(x.titre || '').slice(0, 160)} (${String(x.raison || '').slice(0, 220)})`);
+  return `\nCette nuit, le juge de nuit (un Opus indépendant, calculs refaits sous bac à sable) a tranché ${r.verdicts.length} résultat(s) : `
+    + `${n('VALIDE')} VALIDE, ${n('À CORRIGER')} À CORRIGER, ${n('NON VÉRIFIABLE')} NON VÉRIFIABLE ; ${Number(r.restants) || 0} attendent encore. `
+    + "Dis-le à Ahmed en une ou deux lignes du résumé, avec ce qui est à corriger et pourquoi ; ses verdicts sont à la fin du fichier mère.\n"
+    + blocDonnees('Les verdicts du juge de nuit', lignes.join('\n'), crypto.randomBytes(4).toString('hex'));
+}
 function reveilResumeNuit() {
   if (process.env.JARVIS_RESUME_NUIT === '0') return;          // (bancs)
   const h = new Date().getHours(), jour = jourLocal();
   if (h < 5 || h >= 11 || (lireJson(JARVIS_RESUME_JOUR, {}) || {}).jour === jour) return;
+  const juge = lireJson(JARVIS_JUGE_NUIT, null);               // le juge de nuit tourne encore : son résumé l'attend
+  if (juge && juge.etat === 'en_cours' && h < 9 && Date.now() / 1000 - Number(juge.debut) < 4 * 3600) return;
   if (Date.now() - dernierMessageAhmedMs() < 15 * 60 * 1000 || reveilsDuJour() >= REVEILS_PAR_JOUR) return;
   const c = cerveau;
   if (!cerveauVivant(c)) {
@@ -1361,7 +1375,8 @@ function reveilResumeNuit() {
     + "Écris pour Ahmed le résumé de ta journée (les dernières 24 h) : appelle bilan_semaine(jours=1) pour les données (et carnets si "
     + "besoin). Cinq à huit lignes qu'il lit en une minute : ce qui a avancé, ce qui coince, les prédictions tranchées (justes ou non), "
     + "ce que tu proposes pour aujourd'hui. Commence par « Résumé de ma journée : ». Rien au-delà des données ; une phrase "
-    + "par idée. S'il n'y a vraiment rien eu, réponds exactement « No response requested. »";
+    + "par idée. S'il n'y a vraiment rien eu, réponds exactement « No response requested. »"
+    + blocJugeNuit(juge, Date.now());
   console.error('Jarvis : réveil pour le résumé de sa journée');
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
   catch (e) { console.error('Jarvis : réveil du résumé impossible', e.message); }

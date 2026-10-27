@@ -152,3 +152,25 @@ def test_le_telephone_s_ecrit_mais_pas_le_reste_des_fichiers(run, tmp_path, monk
     r = run(f"echo note > '{tel}/note.txt' && cat '{tel}/note.txt'; echo y > '{fichiers}/autre.txt'; cat '{fichiers}/autre.txt'")
     assert (tel / "note.txt").read_text().strip() == "note" and "note" in r
     assert (fichiers / "autre.txt").read_text() == "x" and "not permitted" in r
+
+
+def test_le_juge_de_nuit_lit_l_atelier_sans_y_ecrire_et_sans_reseau(run, tmp_path):
+    """(27/10, le juge de nuit, idée d'Ahmed) le juge lit TOUT l'atelier de Hakim, mais n'écrit que dans son dossier à lui ;
+    ni le téléphone, ni le réseau : il refait des calculs, il ne touche à rien de ce qu'il juge."""
+    import terminal
+    atelier = tmp_path / "atelier"
+    (atelier / "maths").mkdir(parents=True, exist_ok=True)
+    (atelier / "maths" / "script.py").write_text("print(6*7)\n")
+    juge = atelier / "juge-nuit" / "nuit"
+    juge.mkdir(parents=True)
+    r = terminal.executer(f"cat {atelier}/maths/script.py && cp {atelier}/maths/script.py . && python3 script.py && echo x > ici.txt; "
+                          f"echo y > {atelier}/maths/ecrit.txt; echo fin", delai_s=30, atelier=juge, lire_aussi=[atelier], reseau=False,
+                          telephone=False)
+    assert "print(6*7)" in r and "42" in r and "fin" in r
+    assert (juge / "ici.txt").exists()
+    assert not (atelier / "maths" / "ecrit.txt").exists()
+    r = terminal.executer("curl -s -m 5 -o /dev/null https://example.com; echo rc=$?", delai_s=30, atelier=juge, lire_aussi=[atelier],
+                          reseau=False, telephone=False)
+    assert "rc=0" not in r
+    # le profil : pas d'écriture du téléphone pour le juge
+    assert str(terminal.TELEPHONE) not in terminal.profil(juge, 9, telephone=False).split("(allow file-write*")[1].split(")\n")[0]
