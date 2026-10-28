@@ -65,3 +65,36 @@ def test_les_vraies_salutations_d_ahmed_passent():
         assert stt.filtrer_segments([seg(" " + t)], fr) == t, t
     assert stt.filtrer_segments([seg(" On parle d'Anamnèse, de Jarvis, du robot IA et de Claude Code.")], fr) == ""
     assert stt.filtrer_segments([seg(" نتكلم عن أنامنيز وجارفيس.")], stt.AMORCES["ar"]) == ""
+
+
+# (28/10, Ahmed : « je mélange français, arabe et anglais, on peut pas optimiser quand même ? » ; eval/latence/langue_encodeur.py :
+# même langue 97,7 %, même porte 98 %, aucun bruit ouvert, −1,15 s médian) la détection de langue encode le même segment que
+# le décodage, et la sortie de l'encodeur est partagée ; un son quasi muet n'a pas de parole
+def test_un_son_quasi_muet_n_a_pas_de_parole_sans_charger_whisper():
+    import numpy as np
+    lg, probs = stt.detecter_langue(np.zeros(16000, dtype=np.float32), avec_probs=True)
+    assert lg == stt.LANGUES_PERMISES[0] and probs == {} and not stt.parole_probable(probs)
+    lg, probs = stt.detecter_langue(np.zeros(0, dtype=np.float32), avec_probs=True)
+    assert probs == {}
+
+
+def test_la_sortie_de_l_encodeur_est_partagee_pour_la_meme_entree():
+    import numpy as np
+
+    class Encodeur:
+        appels = 0
+
+        def __call__(self, x):
+            Encodeur.appels += 1
+            return x * 2
+
+    stt.partager_encodeur(Encodeur)
+    stt.partager_encodeur(Encodeur)                               # une seule fois, même appelé deux fois
+    e = Encodeur()
+    a, b = np.ones((1, 4, 3), dtype=np.float32), np.zeros((1, 4, 3), dtype=np.float32)
+    r1 = e(a)
+    r2 = e(a.copy())                                             # la même entrée (autre objet) : reprise
+    assert Encodeur.appels == 1 and (r1 == r2).all()
+    e(b)
+    e(a)                                                         # une seule entrée gardée : a est réencodé
+    assert Encodeur.appels == 3

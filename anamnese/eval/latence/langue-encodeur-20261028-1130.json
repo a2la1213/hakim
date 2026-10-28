@@ -1,0 +1,866 @@
+{
+ "lignes": [
+  {
+   "son": "fr-00.wav",
+   "sorte": "parole",
+   "attendu": "fr",
+   "ancien": [
+    "fr",
+    true,
+    "Salut frérot, tu as vu le résultat du test de cette nuit ?"
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Salut frérot, tu as vu le résultat du test de cette nuit ?"
+   ],
+   "ms_ancien": 3607,
+   "ms_nouveau": 1832
+  },
+  {
+   "son": "fr-01.wav",
+   "sorte": "parole",
+   "attendu": "fr",
+   "ancien": [
+    "fr",
+    true,
+    "Je pense qu'on devrait relancer le cockpit après la pause."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Je pense qu'on devrait relancer le cockpit après la pause."
+   ],
+   "ms_ancien": 3423,
+   "ms_nouveau": 1642
+  },
+  {
+   "son": "fr-02.wav",
+   "sorte": "parole",
+   "attendu": "fr",
+   "ancien": [
+    "fr",
+    true,
+    "Regarde bien la courbe. Elle monte doucement puis elle redescend."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Regarde bien la courbe. Elle monte doucement puis elle redescend."
+   ],
+   "ms_ancien": 3708,
+   "ms_nouveau": 1676
+  },
+  {
+   "son": "fr-03.wav",
+   "sorte": "parole",
+   "attendu": "fr",
+   "ancien": [
+    "fr",
+    true,
+    "On va manger et après on continue le travail sur la voie."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "On va manger et après on continue le travail sur la voie."
+   ],
+   "ms_ancien": 3636,
+   "ms_nouveau": 2025
+  },
+  {
+   "son": "fr-04.wav",
+   "sorte": "parole",
+   "attendu": "fr",
+   "ancien": [
+    "fr",
+    true,
+    "Est-ce que tu peux me dire combien de temps ça va prendre?"
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Est-ce que tu peux me dire combien de temps ça va prendre?"
+   ],
+   "ms_ancien": 3571,
+   "ms_nouveau": 1988
+  },
+  {
+   "son": "fr-05.wav",
+   "sorte": "parole",
+   "attendu": "fr",
+   "ancien": [
+    "fr",
+    true,
+    "Franchement, c'est magnifique ce que Dieu a fait ce matin."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Franchement, c'est magnifique ce que Dieu a fait ce matin."
+   ],
+   "ms_ancien": 3979,
+   "ms_nouveau": 1742
+  },
+  {
+   "son": "fr-06.wav",
+   "sorte": "parole",
+   "attendu": "fr",
+   "ancien": [
+    "fr",
+    true,
+    "Le docteur m'a dit de me reposer un peu, mais bon."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Le docteur m'a dit de me reposer un peu, mais bon."
+   ],
+   "ms_ancien": 4227,
+   "ms_nouveau": 2586
+  },
+  {
+   "son": "fr-07.wav",
+   "sorte": "parole",
+   "attendu": "fr",
+   "ancien": [
+    "fr",
+    true,
+    "Tu te souviens de l'histoire d'Aladin et de sa lampe ?"
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Tu te souviens de l'histoire d'Aladin et de sa lampe ?"
+   ],
+   "ms_ancien": 4054,
+   "ms_nouveau": 2162
+  },
+  {
+   "son": "fr-08.wav",
+   "sorte": "parole",
+   "attendu": "fr",
+   "ancien": [
+    "fr",
+    true,
+    "Il faut qu'on chénisse les maths avant de parler de la conscience."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Il faut qu'on chénisse les maths avant de parler de la conscience."
+   ],
+   "ms_ancien": 4538,
+   "ms_nouveau": 2455
+  },
+  {
+   "son": "fr-09.wav",
+   "sorte": "parole",
+   "attendu": "fr",
+   "ancien": [
+    "fr",
+    true,
+    "Mets la musique un peu plus forte s'il te plaît."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Mets la musique un peu plus forte s'il te plaît."
+   ],
+   "ms_ancien": 4081,
+   "ms_nouveau": 2216
+  },
+  {
+   "son": "ar-00.wav",
+   "sorte": "parole",
+   "attendu": "ar",
+   "ancien": [
+    "ar",
+    true,
+    "السلام عليكم يا أخي. كيف حالك اليوم؟"
+   ],
+   "nouveau": [
+    "ar",
+    true,
+    "السلام عليكم يا أخي. كيف حالك اليوم؟"
+   ],
+   "ms_ancien": 3853,
+   "ms_nouveau": 1933
+  },
+  {
+   "son": "ar-01.wav",
+   "sorte": "parole",
+   "attendu": "ar",
+   "ancien": [
+    "ar",
+    true,
+    "الحمد لله، كل شيء بخير والعمل يتقدم."
+   ],
+   "nouveau": [
+    "ar",
+    true,
+    "الحمد لله، كل شيء بخير والعمل يتقدم."
+   ],
+   "ms_ancien": 4949,
+   "ms_nouveau": 2097
+  },
+  {
+   "son": "ar-02.wav",
+   "sorte": "parole",
+   "attendu": "ar",
+   "ancien": [
+    "ar",
+    true,
+    "هل يمكنك أن تقرأ هذه الآية مرة أخرى؟"
+   ],
+   "nouveau": [
+    "ar",
+    true,
+    "هل يمكنك أن تقرأ هذه الآية مرة أخرى؟"
+   ],
+   "ms_ancien": 3758,
+   "ms_nouveau": 2343
+  },
+  {
+   "son": "ar-03.wav",
+   "sorte": "parole",
+   "attendu": "ar",
+   "ancien": [
+    "ar",
+    true,
+    "أولد أن أفهم معنى هذه الكلمة في القرآن."
+   ],
+   "nouveau": [
+    "ar",
+    true,
+    "أولد أن أفهم معنى هذه الكلمة في القرآن."
+   ],
+   "ms_ancien": 2779,
+   "ms_nouveau": 4037
+  },
+  {
+   "son": "ar-04.wav",
+   "sorte": "parole",
+   "attendu": "ar",
+   "ancien": [
+    "ar",
+    true,
+    "سنكمل العمل غدا إن شاء الله."
+   ],
+   "nouveau": [
+    "ar",
+    true,
+    "سنكمل العمل غدا إن شاء الله."
+   ],
+   "ms_ancien": 5514,
+   "ms_nouveau": 3838
+  },
+  {
+   "son": "ar-05.wav",
+   "sorte": "parole",
+   "attendu": "ar",
+   "ancien": [
+    "ar",
+    true,
+    "الجو جميل اليوم والشنسة الساطعة."
+   ],
+   "nouveau": [
+    "ar",
+    true,
+    "الجو جميل اليوم والشنسة الساطعة."
+   ],
+   "ms_ancien": 7724,
+   "ms_nouveau": 2790
+  },
+  {
+   "son": "ar-06.wav",
+   "sorte": "parole",
+   "attendu": "ar",
+   "ancien": [
+    "ar",
+    true,
+    "لا تنسى أن تتصل بأمك هذا النساء."
+   ],
+   "nouveau": [
+    "ar",
+    true,
+    "لا تنسى أن تتصل بأمك هذا النساء."
+   ],
+   "ms_ancien": 3371,
+   "ms_nouveau": 1663
+  },
+  {
+   "son": "ar-07.wav",
+   "sorte": "parole",
+   "attendu": "ar",
+   "ancien": [
+    "ar",
+    true,
+    "هذا الحل أفضل من الحل السابق بكثير."
+   ],
+   "nouveau": [
+    "ar",
+    true,
+    "هذا الحل أفضل من الحل السابق بكثير."
+   ],
+   "ms_ancien": 3305,
+   "ms_nouveau": 2071
+  },
+  {
+   "son": "en-00.wav",
+   "sorte": "parole",
+   "attendu": "en",
+   "ancien": [
+    "en",
+    true,
+    "Hello brother, how are you doing today?"
+   ],
+   "nouveau": [
+    "en",
+    true,
+    "Hello brother, how are you doing today?"
+   ],
+   "ms_ancien": 5154,
+   "ms_nouveau": 2228
+  },
+  {
+   "son": "en-01.wav",
+   "sorte": "parole",
+   "attendu": "en",
+   "ancien": [
+    "en",
+    true,
+    "I think we should run the test again after lunch."
+   ],
+   "nouveau": [
+    "en",
+    true,
+    "I think we should run the test again after lunch."
+   ],
+   "ms_ancien": 4198,
+   "ms_nouveau": 2191
+  },
+  {
+   "son": "en-02.wav",
+   "sorte": "parole",
+   "attendu": "en",
+   "ancien": [
+    "en",
+    true,
+    "Can you show me the graph of the last three days?"
+   ],
+   "nouveau": [
+    "en",
+    true,
+    "Can you show me the graph of the last three days?"
+   ],
+   "ms_ancien": 3474,
+   "ms_nouveau": 3343
+  },
+  {
+   "son": "en-03.wav",
+   "sorte": "parole",
+   "attendu": "en",
+   "ancien": [
+    "en",
+    true,
+    "This is exactly what I was looking for. Thank you."
+   ],
+   "nouveau": [
+    "en",
+    true,
+    "This is exactly what I was looking for. Thank you."
+   ],
+   "ms_ancien": 4897,
+   "ms_nouveau": 2013
+  },
+  {
+   "son": "en-04.wav",
+   "sorte": "parole",
+   "attendu": "en",
+   "ancien": [
+    "en",
+    true,
+    "The model is too slow on this machine, we need to optimize it."
+   ],
+   "nouveau": [
+    "en",
+    true,
+    "The model is too slow on this machine, we need to optimize it."
+   ],
+   "ms_ancien": 3036,
+   "ms_nouveau": 1852
+  },
+  {
+   "son": "en-05.wav",
+   "sorte": "parole",
+   "attendu": "en",
+   "ancien": [
+    "en",
+    true,
+    "Let's talk about it tomorrow morning."
+   ],
+   "nouveau": [
+    "en",
+    true,
+    "Let's talk about it tomorrow morning."
+   ],
+   "ms_ancien": 3556,
+   "ms_nouveau": 2579
+  },
+  {
+   "son": "en-06.wav",
+   "sorte": "parole",
+   "attendu": "en",
+   "ancien": [
+    "en",
+    true,
+    "Did you see the message from the client?"
+   ],
+   "nouveau": [
+    "en",
+    true,
+    "Did you see the message from the client?"
+   ],
+   "ms_ancien": 4394,
+   "ms_nouveau": 2202
+  },
+  {
+   "son": "en-07.wav",
+   "sorte": "parole",
+   "attendu": "en",
+   "ancien": [
+    "en",
+    true,
+    "I'm going to the store, do you need anything?"
+   ],
+   "nouveau": [
+    "en",
+    true,
+    "I'm going to the store, do you need anything?"
+   ],
+   "ms_ancien": 3400,
+   "ms_nouveau": 1663
+  },
+  {
+   "son": "mix-00.wav",
+   "sorte": "parole",
+   "attendu": "mix",
+   "ancien": [
+    "fr",
+    true,
+    "Wa alaykoum frérot, on a fini le test. Inchallah, ça marche cette fois."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Wa alaykoum frérot, on a fini le test. Inchallah, ça marche cette fois."
+   ],
+   "ms_ancien": 2769,
+   "ms_nouveau": 1641
+  },
+  {
+   "son": "mix-01.wav",
+   "sorte": "parole",
+   "attendu": "mix",
+   "ancien": [
+    "fr",
+    true,
+    "Bismillah. On commence par la voix et après la mémoire."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Bismillah. On commence par la voix et après la mémoire."
+   ],
+   "ms_ancien": 4425,
+   "ms_nouveau": 2238
+  },
+  {
+   "son": "mix-02.wav",
+   "sorte": "parole",
+   "attendu": "mix",
+   "ancien": [
+    "fr",
+    true,
+    "Annelia, tout va bien, mais je suis un peu fatigué."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Annelia, tout va bien, mais je suis un peu fatigué."
+   ],
+   "ms_ancien": 3514,
+   "ms_nouveau": 1918
+  },
+  {
+   "son": "mix-03.wav",
+   "sorte": "parole",
+   "attendu": "mix",
+   "ancien": [
+    "fr",
+    true,
+    "Machallah, c'est trop beau ce que tu as fait, barakala oufik."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Machallah, c'est trop beau ce que tu as fait, barakala oufik."
+   ],
+   "ms_ancien": 3084,
+   "ms_nouveau": 1690
+  },
+  {
+   "son": "mix-04.wav",
+   "sorte": "parole",
+   "attendu": "mix",
+   "ancien": [
+    "fr",
+    true,
+    "Frérot, regarde ça. It's amazing, franchement je kiffe."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Frérot, regarde ça. It's amazing, franchement je kiffe."
+   ],
+   "ms_ancien": 3487,
+   "ms_nouveau": 1637
+  },
+  {
+   "son": "mix-05.wav",
+   "sorte": "parole",
+   "attendu": "mix",
+   "ancien": [
+    "en",
+    true,
+    "So okay brother, on fait comme ça. See you later Inch'Allah."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Ok brother, on fait comme ça. See you later Inchallah."
+   ],
+   "ms_ancien": 3106,
+   "ms_nouveau": 1901
+  },
+  {
+   "son": "1793183029242-ddd928.wav",
+   "sorte": "parole",
+   "attendu": "fr-hakim",
+   "ancien": [
+    "en",
+    true,
+    "The AI robot is sort of deforming."
+   ],
+   "nouveau": [
+    "en",
+    true,
+    "The AI robot is sort of deforming."
+   ],
+   "ms_ancien": 3108,
+   "ms_nouveau": 1608
+  },
+  {
+   "son": "1793183031777-e391da.wav",
+   "sorte": "parole",
+   "attendu": "fr-hakim",
+   "ancien": [
+    "fr",
+    true,
+    "Et si on le laisse deviner tout seul, il hésite et y perd du temps."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Et si on le laisse deviner tout seul, il hésite et y perd du temps."
+   ],
+   "ms_ancien": 3638,
+   "ms_nouveau": 1730
+  },
+  {
+   "son": "1793183035249-3b4aa0.wav",
+   "sorte": "parole",
+   "attendu": "fr-hakim",
+   "ancien": [
+    "fr",
+    true,
+    "Une piste, mais c'est une supposition, détecter la langue morceau par morceau, puisque n'aimant coupe déjà ta parole en morceau."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Une piste, mais c'est une supposition, détecter la langue morceau par morceau, puisque n'aimant coupe déjà ta parole en morceau."
+   ],
+   "ms_ancien": 3715,
+   "ms_nouveau": 2473
+  },
+  {
+   "son": "1793183037838-8984da.wav",
+   "sorte": "parole",
+   "attendu": "fr-hakim",
+   "ancien": [
+    "fr",
+    true,
+    "On verra ce qu'elle propose, c'est elle qui connaît ce bout de mon oreille. J'attends avec toi."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "On verra ce qu'elle propose, c'est elle qui connaît ce bout de mon oreille. J'attends avec toi."
+   ],
+   "ms_ancien": 4297,
+   "ms_nouveau": 1872
+  },
+  {
+   "son": "1793183079341-fffec7.wav",
+   "sorte": "parole",
+   "attendu": "fr-hakim",
+   "ancien": [
+    "en",
+    true,
+    "Yo, my real Jay, I'm good, my dog."
+   ],
+   "nouveau": [
+    "en",
+    true,
+    "Yo, my real Jay, I'm good, my dog."
+   ],
+   "ms_ancien": 3651,
+   "ms_nouveau": 2256
+  },
+  {
+   "son": "1793183081214-c8d77e.wav",
+   "sorte": "parole",
+   "attendu": "fr-hakim",
+   "ancien": [
+    "fr",
+    true,
+    "Le Hippie Lou est de retour comme à 3 heures du mat,"
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Le Hippie Lou est de retour comme à 3 heures du mat,"
+   ],
+   "ms_ancien": 3881,
+   "ms_nouveau": 1885
+  },
+  {
+   "son": "1793183083420-85248c.wav",
+   "sorte": "parole",
+   "attendu": "fr-hakim",
+   "ancien": [
+    "fr",
+    true,
+    "Et là, Whisper a tout bien écrit en anglais sans bouillie."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Et là, Whisper a tout bien écrit en anglais sans bouillie."
+   ],
+   "ms_ancien": 3911,
+   "ms_nouveau": 1686
+  },
+  {
+   "son": "1793183088706-24f2ae.wav",
+   "sorte": "parole",
+   "attendu": "fr-hakim",
+   "ancien": [
+    "fr",
+    true,
+    "Si c'était ton test pour la langue, il passe. Ta voix sera un peu loin de d'habitude chez moi. Sûrement l'accent en blé."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Si c'était ton test pour la langue, il passe. Ta voix sera un peu loin de d'habitude chez moi. Sûrement l'accent en blé."
+   ],
+   "ms_ancien": 2605,
+   "ms_nouveau": 1433
+  },
+  {
+   "son": "1793183092123-fe55f0.wav",
+   "sorte": "parole",
+   "attendu": "fr-hakim",
+   "ancien": [
+    "fr",
+    true,
+    "C'est bien toi frérot, William Pote avec toi."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "C'est bien toi frérot, William Pote avec toi."
+   ],
+   "ms_ancien": 2694,
+   "ms_nouveau": 1512
+  },
+  {
+   "son": "1793183126854-bb3677.wav",
+   "sorte": "parole",
+   "attendu": "fr-hakim",
+   "ancien": [
+    "fr",
+    true,
+    "Si frérot, je te dois ton instru."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "Si frérot, je te dois ton instru."
+   ],
+   "ms_ancien": 2474,
+   "ms_nouveau": 1244
+  },
+  {
+   "son": "1793183129045-fd174c.wav",
+   "sorte": "parole",
+   "attendu": "fr-hakim",
+   "ancien": [
+    "fr",
+    false,
+    ""
+   ],
+   "nouveau": [
+    "fr",
+    false,
+    ""
+   ],
+   "ms_ancien": 1193,
+   "ms_nouveau": 1899
+  },
+  {
+   "son": "1793183154492-c6b5b2.wav",
+   "sorte": "parole",
+   "attendu": "fr-hakim",
+   "ancien": [
+    "fr",
+    true,
+    "C'est lancé frérot. Mon codeur s'y met."
+   ],
+   "nouveau": [
+    "fr",
+    true,
+    "C'est lancé frérot. Mon codeur s'y met."
+   ],
+   "ms_ancien": 3968,
+   "ms_nouveau": 2045
+  },
+  {
+   "son": "bruit-silence.wav",
+   "sorte": "bruit",
+   "attendu": "silence",
+   "ancien": [
+    "en",
+    false,
+    ""
+   ],
+   "nouveau": [
+    "en",
+    true,
+    ""
+   ],
+   "ms_ancien": 1799,
+   "ms_nouveau": 1788
+  },
+  {
+   "son": "bruit-souffle.wav",
+   "sorte": "bruit",
+   "attendu": "souffle",
+   "ancien": [
+    "en",
+    false,
+    ""
+   ],
+   "nouveau": [
+    "en",
+    false,
+    ""
+   ],
+   "ms_ancien": 1960,
+   "ms_nouveau": 1773
+  },
+  {
+   "son": "bruit-blanc.wav",
+   "sorte": "bruit",
+   "attendu": "blanc",
+   "ancien": [
+    "en",
+    true,
+    ""
+   ],
+   "nouveau": [
+    "en",
+    false,
+    ""
+   ],
+   "ms_ancien": 2679,
+   "ms_nouveau": 1437
+  },
+  {
+   "son": "bruit-rose.wav",
+   "sorte": "bruit",
+   "attendu": "rose",
+   "ancien": [
+    "en",
+    true,
+    ""
+   ],
+   "nouveau": [
+    "en",
+    true,
+    ""
+   ],
+   "ms_ancien": 4001,
+   "ms_nouveau": 1937
+  },
+  {
+   "son": "bruit-vibration.wav",
+   "sorte": "bruit",
+   "attendu": "vibration",
+   "ancien": [
+    "en",
+    true,
+    ""
+   ],
+   "nouveau": [
+    "en",
+    true,
+    ""
+   ],
+   "ms_ancien": 3486,
+   "ms_nouveau": 1306
+  },
+  {
+   "son": "bruit-note.wav",
+   "sorte": "bruit",
+   "attendu": "note",
+   "ancien": [
+    "en",
+    true,
+    "."
+   ],
+   "nouveau": [
+    "en",
+    true,
+    "."
+   ],
+   "ms_ancien": 2333,
+   "ms_nouveau": 1213
+  }
+ ],
+ "meme_langue": 0.977,
+ "meme_porte": 0.96,
+ "bruits_ouverts": [
+  "bruit-silence.wav"
+ ],
+ "gain_median_s": 1.72,
+ "criteres": {
+  "L1": true,
+  "L2": false,
+  "L3": true
+ },
+ "textes_identiques_si_meme_langue": true
+}

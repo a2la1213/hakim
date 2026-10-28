@@ -182,14 +182,53 @@ def transcrire(fichier, langue=None, contexte="", voix=None):
     return sortie
 
 
+# (28/10, Ahmed : « je mélange français, arabe et anglais, on peut pas optimiser quand même ? » ; banc
+# eval/latence/langue_encodeur.py, critères figés avant : même langue 97,7 %, même porte « parole » 98 %, aucun bruit ouvert,
+# −1,15 s médian par transcription) la détection encode EXACTEMENT le segment que le décodage va encoder, et la sortie de
+# l'encodeur (le passage le plus cher) est gardée pour la même entrée : le décodage la reprend au lieu de tout réencoder.
+SILENCE_RMS = 0.002          # (amendement du banc) un son quasi muet n'a pas de parole (le souffle du banc est à 0,003)
+_MEMO_ENCODEUR = {}
+
+
+def partager_encodeur(classe):
+    """Garde la sortie du dernier encodage, par contenu de l'entrée (une seule ; une autre entrée la remplace)."""
+    if getattr(classe, "_partage", False):
+        return
+    import hashlib
+    import numpy as np
+    original = classe.__call__
+
+    def appel(self, x):
+        try:
+            cle = (id(self), tuple(x.shape), hashlib.sha1(np.array(x).tobytes()).hexdigest())
+        except Exception:
+            return original(self, x)
+        if cle not in _MEMO_ENCODEUR:
+            r = original(self, x)
+            _MEMO_ENCODEUR.clear()
+            _MEMO_ENCODEUR[cle] = r
+        return _MEMO_ENCODEUR[cle]
+
+    classe.__call__ = appel
+    classe._partage = True
+
+
 def detecter_langue(audio, avec_probs=False):
-    """La langue de l'audio parmi LANGUES_PERMISES (le même calcul que Whisper, restreint)."""
+    """La langue de l'audio parmi LANGUES_PERMISES (le même calcul que Whisper, restreint), sur le segment que le
+    décodage encodera (sa sortie d'encodeur lui est gardée). Un son quasi muet : pas de parole, sans rien charger."""
+    import numpy as np
+    a = np.asarray(audio, dtype=np.float32)
+    if not a.size or float(np.sqrt(np.mean(np.square(a)))) <= SILENCE_RMS:
+        return (LANGUES_PERMISES[0], {}) if avec_probs else LANGUES_PERMISES[0]
+    import importlib
     import mlx.core as mx
     from mlx_whisper.audio import N_FRAMES, N_SAMPLES, log_mel_spectrogram, pad_or_trim
     from mlx_whisper.transcribe import ModelHolder
+    partager_encodeur(importlib.import_module("mlx_whisper.whisper").AudioEncoder)
     modele = ModelHolder.get_model(MODELE, mx.float16)
     mel = log_mel_spectrogram(audio, n_mels=modele.dims.n_mels, padding=N_SAMPLES)
-    _, probs = modele.detect_language(pad_or_trim(mel, N_FRAMES, axis=-2).astype(mx.float16))
+    contenu = mel.shape[-2] - N_FRAMES                     # comme mlx_whisper.transcribe pour son premier segment
+    _, probs = modele.detect_language(pad_or_trim(mel[: min(N_FRAMES, contenu)], N_FRAMES, axis=-2).astype(mx.float16))
     return (choisir_langue(probs), probs) if avec_probs else choisir_langue(probs)
 
 
