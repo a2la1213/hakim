@@ -1272,7 +1272,10 @@ if (window.HakimApp && window.HakimApp.coeur) {
   try { $('coeur').checked = !!window.HakimApp.coeurEtat(); } catch (_) {}
   $('coeur').addEventListener('change', (e) => { try { e.target.checked = !!window.HakimApp.coeur(e.target.checked); } catch (_) {} });
 }
+// (28/10) l'heure de son dernier battement : le micro n'entend pas la vibration comme une voix (conversation.js)
+let dernierBattementCoeur = 0;
 window.battementCoeur = () => {
+  dernierBattementCoeur = Date.now();
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   for (const id of ['orbe', 'orbeScene']) {
     const el = $(id);
@@ -1609,12 +1612,21 @@ function anticiperConversation(conv, silenceMs) {
   conv.essaiVoix = conv.capteur.derniereVoix;
   const sp = { voix: conv.capteur.derniereVoix };
   conv.spec = sp;
-  texteDuTour(conv).then((texte) => {                                   // seulement la queue, déjà le reste
+  sp.texte = texteDuTour(conv);                       // (28/10) gardée : la fin de tour la reprend (transcriptionEnAvance)
+  sp.texte.then((texte) => {                                            // seulement la queue, déjà le reste
     if (conv.spec === sp) conv.spec = null;
     if (etat.conversation !== conv || !conv.capteur || !conv.capteur.enParole) return;
     if (conv.capteur.derniereVoix !== sp.voix) return;                 // tu as repris la parole : on attend
     if (texte !== null && phraseFinie(texte)) conv.capteur.finirTour({ texte });
   });
+}
+
+// (28/10, Ahmed : « la réactivité de la transcription de ma voix ») la transcription en avance de CE silence, s'il n'a
+// rien dit depuis : la fin de tour la reprend au lieu de tout retranscrire derrière elle dans le même processus (le
+// backtest : 9 tours sur 200 seulement finissaient en avance ; les autres payaient deux transcriptions à la suite)
+function transcriptionEnAvance(conv, infos) {
+  const sp = conv && conv.spec;
+  return sp && sp.texte && infos && sp.voix === infos.derniere_voix ? sp.texte : null;
 }
 
 /* ---------- mode Conversation (étape 6) ---------- */
@@ -1683,6 +1695,7 @@ async function basculerConversation() {
       ctx: actx,
       patienceMs: patienceConversation,
       jarvisParle: () => lecteur.actif,
+      dernierBattement: () => dernierBattementCoeur,
       surNiveau: (n) => { etat.niveauMicro = n; if (document.visibilityState === 'hidden') { micEnFond++; alimenterBulle(n); } },
       surDebut: () => { conv.finDemandee = false; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre('…'); humeur('je t’écoute…'); },
       surPause: (fenetre) => surPauseConversation(conv, fenetre),
@@ -1846,6 +1859,7 @@ async function tourDeParole(conv, wav, infos, extra) {
   const vivante = () => etat.conversation === conv || conv.fermeture;     // le dernier tour d'une conversation fermée
   if (!vivante()) return;
   const t0Tour = Date.now();
+  const avance = transcriptionEnAvance(conv, infos);
   conv.spec = null;
   if (conv.bruitDuTour) {                    // la coupure était un bruit, il a déjà repris : ce tour-là n'est rien
     conv.bruitDuTour = false;
@@ -1861,8 +1875,12 @@ async function tourDeParole(conv, wav, infos, extra) {
   humeur('transcription…');
   let texte = '';
   try {                                   // (2026-10-21) toujours rendu : sinon sa voix attendait ton tour pour toujours
-    // fin anticipée : la phrase est déjà transcrite ; sinon, la partie déjà comprise + la queue
+    // fin anticipée : la phrase est déjà transcrite ; sinon, sa transcription en avance (28/10) ; sinon, la partie déjà
+    // comprise + la queue
+    const deAvance = avance ? await avance : null;
+    if (deAvance !== null) journalVoix('transcription_reprise', {});
     texte = extra && extra.texte ? extra.texte
+      : deAvance !== null ? deAvance
       : (conv.ecrit && (conv.ecrit.confirme || conv.ecrit.partiel) ? await texteDuTour(conv) : await transcrireVite(wav, 'audio/wav'));
     if (texte === null && conv.ecrit && conv.ecrit.confirme) texte = await transcrireVite(wav, 'audio/wav');   // un morceau a échoué : le tour entier
   } catch (e) { journalVoix('tour_erreur'); texte = null; }

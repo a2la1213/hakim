@@ -34,7 +34,7 @@ function charger() {
     noeud.port.onmessage({ data: f });
     return f;
   };
-  return { Conversation: ctx.Conversation, actx, fenetre };
+  return { Conversation: ctx.Conversation, actx, fenetre, horloge: () => t };
 }
 
 async function lireWav(blob) {
@@ -116,4 +116,58 @@ test('couper le micro PENDANT qu’on parle : ce qui a été dit part quand mêm
   capteur.muet(false);
   capteur.muet(true);                                          // couper sans parler : rien n'est envoyé
   assert.strictEqual(fins.length, 1);
+});
+
+// ---- (28/10, Ahmed : « filtrer la vibration du cœur dans le micro », téléphone posé, un « Okay » inventé à 11:08) la page
+// sait quand le téléphone vibre (battementCoeur) : 250 ms après chaque battement, le micro n'entend pas une voix
+function battements(fenetre, dernier, n, avecMasque) {
+  for (let k = 0; k < n; k++) {
+    if (avecMasque) dernier.t = fenetre.t();
+    for (let i = 0; i < 9; i++) fenetre(true);                  // 180 ms de vibration sur la table, forte comme une voix
+    for (let i = 0; i < 36; i++) fenetre(false);                 // le reste du battement (~66 par minute)
+  }
+}
+async function capteurAvecCoeur(avecMasque) {
+  const c = charger();
+  const dernier = { t: 0 }, fins = [], debuts = [];
+  c.fenetre.t = () => c.horloge();
+  const capteur = await c.Conversation.demarrer({ ctx: c.actx, patienceMs: () => 1000, jarvisParle: () => false,
+    dernierBattement: () => dernier.t, surDebut: () => debuts.push(1), surFin: (wav, infos) => fins.push(infos) });
+  for (let i = 0; i < 15; i++) c.fenetre(false);
+  return { ...c, capteur, dernier, fins, debuts };
+}
+
+test('la vibration de son cœur ne fait jamais un tour ; sans le masque (le témoin), elle en faisait un', async () => {
+  const avec = await capteurAvecCoeur(true);
+  battements(avec.fenetre, avec.dernier, 10, true);
+  assert.strictEqual(avec.debuts.length, 0, 'aucun début de tour sur la vibration');
+  assert.strictEqual(avec.fins.length, 0);
+  const sans = await capteurAvecCoeur(false);
+  battements(sans.fenetre, sans.dernier, 10, false);
+  assert.ok(sans.debuts.length > 0, 'le témoin : sans masque, la vibration passe pour une voix');
+});
+
+test('une vraie phrase pendant une vibration est entendue, et la vibration ne prolonge pas son tour', async () => {
+  const c = await capteurAvecCoeur(true);
+  c.dernier.t = c.horloge();
+  for (let i = 0; i < 100; i++) c.fenetre(true);                 // 2 s de parole qui commence pendant le battement
+  assert.strictEqual(c.debuts.length, 1, 'le tour commence (au plus 250 ms plus tard ; la pré-écoute garde le début)');
+  battements(c.fenetre, c.dernier, 4, true);                     // ensuite, seulement son cœur qui vibre
+  assert.strictEqual(c.fins.length, 1, 'le tour finit après la patience, malgré les battements');
+  assert.ok(c.fins[0].voix_ms < 2400, `la vibration ne compte pas comme voix (${c.fins[0].voix_ms} ms)`);
+});
+
+test('la fenêtre de la vibration : de son battement à 250 ms après, pas avant, et rien sans battement', () => {
+  const { Conversation } = charger();
+  assert.strictEqual(Conversation.enVibration(1000, 1000), true);
+  assert.strictEqual(Conversation.enVibration(1250, 1000), true);
+  assert.strictEqual(Conversation.enVibration(1260, 1000), false);
+  assert.strictEqual(Conversation.enVibration(990, 1000), false);
+  assert.strictEqual(Conversation.enVibration(1000, 0), false);
+});
+
+test('câblage : la page note chaque battement (même sans animation) et le donne au micro', () => {
+  const page = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(page, /window\.battementCoeur = \(\) => \{\n\s+dernierBattementCoeur = Date\.now\(\);/);
+  assert.match(page, /dernierBattement: \(\) => dernierBattementCoeur,/);
 });

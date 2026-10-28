@@ -90,3 +90,41 @@ test('Whisper qui répète le texte déjà compris : la répétition est écart�
   conv.ecrit = { coupe: 5, confirme, partiel: null };
   assert.strictEqual(await invention.texteDuTour(conv), confirme);
 });
+
+// ---- (28/10, Ahmed : « la réactivité de la transcription de ma voix ») la transcription EN AVANCE (après 0,7 s de silence)
+// était jetée quand la patience finissait le tour avant elle, et la fin de tour retranscrivait tout DERRIÈRE elle, dans le
+// même processus (backtest : 9 tours sur 200 seulement finissaient en avance). Désormais la fin de tour la reprend.
+function chargerAvance(whisper) {
+  const cx = charger(whisper);
+  vm.runInContext(['const SILENCE_ANTICIPE_MS', 'const FIN_SUSPENDUE', 'function phraseFinie', 'function anticiperConversation',
+    'function transcriptionEnAvance'].map(extraire).join('\n')
+    + '\nthis.anticiperConversation = anticiperConversation; this.transcriptionEnAvance = transcriptionEnAvance;', cx);
+  return cx;
+}
+
+test('la fin de tour reprend la transcription en avance de ce silence : une seule transcription', async () => {
+  let appels = 0;
+  const cx = chargerAvance(async (m) => { appels++; await attendre(30); return m.join(' '); });
+  const capteur = capteurSimule(4);
+  Object.assign(capteur, { derniereVoix: 5000, assezDeVoix: true, finirTour() {} });
+  const conv = { capteur, ecrit: { coupe: 0, confirme: '', partiel: null } };
+  cx.etat = { reglages: {}, conversation: conv };
+  cx.anticiperConversation(conv, 800);
+  assert.strictEqual(appels, 1);
+  const avance = cx.transcriptionEnAvance(conv, { derniere_voix: 5000 });
+  assert.ok(avance, 'reprise : aucune voix depuis la transcription en avance');
+  assert.strictEqual(await avance, 'mot0 mot1 mot2 mot3');
+  assert.strictEqual(appels, 1, 'pas de deuxième transcription');
+  // il a repris la parole depuis : la transcription en avance ne vaut plus pour ce tour
+  cx.anticiperConversation(conv, 800);
+  assert.strictEqual(cx.transcriptionEnAvance(conv, { derniere_voix: 6000 }), null);
+  assert.strictEqual(cx.transcriptionEnAvance({ capteur }, { derniere_voix: 5000 }), null, 'rien en avance : rien');
+});
+
+test('câblage : la fin de tour reprend la transcription en avance avant de retranscrire', () => {
+  const tour = extraire('async function tourDeParole');
+  assert.match(tour, /const avance = transcriptionEnAvance\(conv, infos\);\n\s*conv\.spec = null;/);
+  assert.match(tour, /const deAvance = avance \? await avance : null;/);
+  assert.match(tour, /: deAvance !== null \? deAvance\n/);
+  assert.match(extraire('function anticiperConversation'), /sp\.texte = texteDuTour\(conv\);/);
+});

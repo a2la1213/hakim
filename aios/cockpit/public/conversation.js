@@ -15,6 +15,10 @@
     + "const c = e[0] && e[0][0]; if (c) this.port.postMessage(c.slice(0)); return true; } } "
     + "registerProcessor('capteur-jarvis', C);";
   const FENETRE_MS = 20, PREECOUTE_MS = 500, PAROLE_MAX_MS = 5 * 60 * 1000;
+  // (28/10, Ahmed : « filtrer la vibration du cœur dans le micro ») le battement vibre ~160 ms (30 ms fort, 110 ms de pause,
+  // 22 ms doux, appli Coeur.java) et le téléphone posé sur une table résonne un peu : 250 ms après chaque battement
+  const VIBRATION_MS = 250;
+  const enVibration = (maintenant, battement) => battement > 0 && maintenant >= battement && maintenant - battement <= VIBRATION_MS;
 
   function encoderWav(f32, taux) {
     const n = f32.length, tampon = new ArrayBuffer(44 + 2 * n), v = new DataView(tampon);
@@ -127,6 +131,8 @@
       let s = 0; for (let i = 0; i < f.length; i++) s += f[i] * f[i];
       const rms = Math.sqrt(s / f.length), maintenant = Date.now();
       const jarvis = !!o.jarvisParle();
+      // pendant la vibration de son cœur : ce n'est pas une voix (ni début de tour, ni voix qui prolonge le tour)
+      const vibre = !!o.dernierBattement && enVibration(maintenant, o.dernierBattement());
       if (jarvis && !jarvisDepuis) { jarvisDepuis = maintenant; echo = Math.max(echo * 0.5, bruit); }
       if (!jarvis) jarvisDepuis = 0;
       if (initFenetres < 15) { bruit = Math.max(0.002, initFenetres ? Math.min(bruit, rms) : rms); initFenetres++; }
@@ -144,8 +150,8 @@
       if (o.surNiveau) o.surNiveau(Math.min(1, rms * 7));
       if (etatV === 'attente') {
         if (jarvis) { if (rms < seuilBarge) echo = echo * 0.97 + rms * 0.03; }   // l'écho appris hors des moments forts
-        else bruit = Math.max(0.002, bruit * 0.985 + Math.min(rms, seuil) * 0.015);
-        const fort = jarvis ? (rms > seuilBarge && maintenant - jarvisDepuis > 400) : rms > seuil;
+        else if (!vibre) bruit = Math.max(0.002, bruit * 0.985 + Math.min(rms, seuil) * 0.015);
+        const fort = !vibre && (jarvis ? (rms > seuilBarge && maintenant - jarvisDepuis > 400) : rms > seuil);
         // « stop » a des creux (t, p) : 12 fenêtres fortes sur 15 suffisent pour couper Jarvis (relecture Opus)
         fortes.push(fort); if (fortes.length > 15) fortes.shift();
         const nFortes = fortes.reduce((n, x) => n + (x ? 1 : 0), 0);
@@ -163,7 +169,7 @@
       }
       tour.push(f.slice(0));
       // si Jarvis parle pendant le tour, son écho ne doit pas prolonger le tour d'Ahmed
-      if (rms > (jarvis ? seuilBarge : seuil)) {
+      if (!vibre && rms > (jarvis ? seuilBarge : seuil)) {
         if (pauseEnCours >= 600) pauses.push(pauseEnCours);   // une hésitation : une pause de plus de 0,6 s
         pauseEnCours = 0; derniereVoix = maintenant; voixMs += FENETRE_MS;
         if (!jarvis) { energies.push(rms); const f0 = hauteur(f, taux); if (f0) hauteurs.push(f0); }
@@ -230,5 +236,5 @@
     return t.replace(/[^\p{L}]/gu, '').length >= 2 && !HALLUCINATIONS.test(t);
   }
 
-  racine.Conversation = { demarrer, encoderWav, reechantillonner, utile, hauteur };
+  racine.Conversation = { demarrer, encoderWav, reechantillonner, utile, hauteur, enVibration };
 })(window);

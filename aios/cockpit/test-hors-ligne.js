@@ -109,7 +109,7 @@ function tour({ transcrire }) {
     etat: {}, retirerEcho: (t) => ({ texte: t, retire: false }),
   };
   vm.createContext(ctx);
-  vm.runInContext('const tourSansVoix = (infos) => !(infos && infos.ton);' + fonction('tourDeParole') + 'this.tourDeParole = tourDeParole;', ctx);
+  vm.runInContext('const tourSansVoix = (infos) => !(infos && infos.ton);' + fonction('transcriptionEnAvance') + fonction('tourDeParole') + 'this.tourDeParole = tourDeParole;', ctx);
   const conv = { enAttente: 0, ecrit: null };
   ctx.etat.conversation = conv;
   return { ctx, conv, gardes, journal };
