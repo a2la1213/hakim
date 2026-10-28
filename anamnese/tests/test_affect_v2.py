@@ -248,3 +248,24 @@ def test_sujets_bornes_et_masques():
     d = json.loads(m._kv["affect"])
     assert len(d["_cog"]["F"]) <= affect.SUJETS_MAX
     assert "sk-ant" not in affect._sujet("la clé sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd")
+
+
+def _hausse_de(m, t, sujet, source, i=0.5):
+    avant = _st(m, t)["adrenaline"]
+    return affect.event(m, "probleme", i, now=t, hour=MIDI, sujet=sujet, source=source)["adrenaline"] - avant
+
+
+def test_un_probleme_entendu_dans_la_parole_n_a_pas_la_peur_de_l_inconnu():
+    """(28/10, critères figés eval/parole_probleme, C4) un « probleme » repéré dans la parole, au sujet « mots:… » neuf : la
+    voie rapide n'ajoute rien (ses mots ne nomment pas une vraie chose inconnue) ; dit par Hakim lui-même, ou quand la peur
+    du type est apprise, elle joue comme avant."""
+    parole = _hausse_de(_Mem(), T0, "mots:casse+chien", "parole")
+    hakim = _hausse_de(_Mem(), T0, "mots:casse+chien", "hakim")
+    assert hakim - parole > 0.1                             # la voie rapide : 0,35 × 0,5, freinée au plus par le GABA
+    m, jumeau = _Mem(), _Mem()
+    for k in range(3):
+        affect.event(m, "probleme", 1.0, now=T0 + k * 7200, hour=MIDI, sujet="le calcul", source="hakim")
+        affect.event(jumeau, "succes", 0.3, now=T0 + k * 7200, hour=MIDI, sujet="le calcul", source="hakim")
+    t = T0 + 2 * 7200 + 6 * 3600
+    appris, sans = _hausse_de(m, t, "mots:bug+ecran", "parole"), _hausse_de(jumeau, t, "mots:bug+ecran", "parole")
+    assert appris - sans > 0.05                             # la peur méritée reste

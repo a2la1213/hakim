@@ -12,6 +12,7 @@ import argparse
 import datetime
 import json
 import math
+import os
 import random
 import re
 import sys
@@ -34,6 +35,8 @@ GRAINE, N, N_TEMOINS, PAR_HEURE, PAR_JOUR, MIN_PAR_REGLE = 28102026, 110, 10, 2,
 JUSQU_A = datetime.datetime(2026, 10, 27, 11, 0).timestamp()
 v1.JUSQU_A = JUSQU_A
 CALME_S = 3600                                       # une heure sans échange entre Ahmed et Hakim avant de commencer
+if os.environ.get("NUIT_SANS_CALME") == "1":         # Ahmed, 28/10 01:37 : « tu peux lancer même si je parle avec Hakim »
+    CALME_S = 0
 EMOTIONS = sorted({e for r in regles_emotion.REGLES for e in r["emotions"]} | {
     "élan", "contentement", "apaisement", "surprise", "alarme", "calme", "manque", "solitude", "frustration", "agacement",
     "colère", "concentration", "confusion", "gratitude", "tendresse", "compassion", "nostalgie", "soulagement", "espoir",

@@ -350,3 +350,14 @@ def test_un_message_ancien_garde_son_souvenir_mais_pas_son_emotion(mem):
     assert paroles() == [], "un message vieux de 2 h ne déclenche pas d'émotion"
     echanges.memoriser(mem, {"ahmed": "génial ça marche, merci", "hakim": "Top.", "ts": (maintenant - 30) * 1000}, embed=faux_embed)
     assert len(paroles()) >= 1, "le témoin : un message récent, si"
+
+
+def test_la_casse_n_est_pas_casse():
+    """(28/10, faux pic de peur de 02:12 ; critères figés eval/parole_probleme) « les chiens de la casse » ne déclenche
+    rien ; les vrais problèmes restent entiers. (B, « un raté de son matériel », a échoué au critère C1 : pas appliqué.)"""
+    import parole_affect as P
+    assert "probleme" not in dict(P.evaluer("il y a les chiens de la casse, il pleut comme un temps de chien"))
+    assert "probleme" not in dict(P.evaluer("je casse la croûte et j'arrive"))
+    for vrai in ("c'est cassé", "l'appli est cassée", "ça bug encore ton truc", "c'est casse", "ça marche pas",
+                 "l'appli plante sur mon téléphone"):
+        assert dict(P.evaluer(vrai)).get("probleme") == 0.5, vrai

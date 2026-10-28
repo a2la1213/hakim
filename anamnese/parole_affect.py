@@ -21,7 +21,7 @@ _NEG_P = r"(?<!pas )(?<!plus )(?<!sans )(?<!jamais )(?<!pas de )(?<!plus de )(?<
 _APRES_P = r"(?!\s+(?:pas|plus|jamais)\b)"
 LEXIQUE = [  # (événement, motif, intensité) — dans l'ordre : un « ça marche pas » est un problème, pas une réussite
     ("probleme", re.compile(r"\b(([çc]a|il|elle|tout|rien) (ne )?(marche|fonctionne|s'envoie|charge|r[ée]pond)s? (pas|plus)|"
-                            + _NEG_P + r"(?:bug\w*|plant\w*|bloqu\w*|erreur \d+|cass[ée]e?|un souci|un probl[eè]me|[çc]a coupe|"
+                            + _NEG_P + r"(?:bug\w*|plant\w*|bloqu\w*|erreur \d+|cass(?:ée?|ee)|(?:c'est|est|s'est|a|ai|as) casse|un souci|un probl[eè]me|[çc]a coupe|"
                             r"elle coupe|il coupe)" + _APRES_P + r")\b", re.I), 0.5),
     # (24/10, accord d'Ahmed) « n'importe quoi » n'est un échec que s'il VISE Hakim (« tu dis n'importe quoi », « c'est
     # n'importe quoi ce que tu… ») : en blague (« n'importe quoi mon frère ») ou à propos d'un autre, ce n'en est pas un

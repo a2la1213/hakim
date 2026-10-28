@@ -418,7 +418,7 @@ def event(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=None
             total = float(intensity)
         mem.kv_set("affect_social", json.dumps([t, total]))
     if v2_actif(mem):
-        return _event_v2(mem, name, intensity, now=now, hour=hour, sujet=sujet)
+        return _event_v2(mem, name, intensity, now=now, hour=hour, sujet=sujet, source=source)
     state = get_state(mem, now=now, hour=hour)
     for h, d in EVENTS.get(name, {}).items():
         state[h] = _clamp(state[h] + d * intensity)
@@ -443,7 +443,7 @@ def _appliquer(x, d, base):
     return _clamp(x * math.exp(d / max(1e-6, base)))
 
 
-def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None):
+def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=None):
     now = time.time() if now is None else now
     raw = mem.kv_get("affect")
     data = json.loads(raw) if raw else None
@@ -466,7 +466,9 @@ def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None):
     nouv = (1.0 - _lu(F, ks, now, FAMILIARITE_TAU_H)) if ks else (1.0 if name == "nouveaute" else 0.0)
     peur = max(_lu(P, ks, now, tau_peur), _lu(P, kt, now, tau_peur))
     if name in AVERSIFS:
-        menace = intensity * max(nouv, peur)
+        # (28/10, eval/parole_probleme) un sujet « mots:… » tiré de la parole ne nomme pas une vraie chose inconnue : sa
+        # nouveauté n'est pas une menace, seule la peur apprise compte (sinon chaque faux positif du lexique faisait peur)
+        menace = intensity * max(0.0 if source == "parole" and str(sujet or "").startswith("mots:") else nouv, peur)
     elif name == "nouveaute":
         menace = nouv * max(0.0, (intensity - 0.5) / 0.5)          # seule la nouveauté impressionnante effraie
     else:
