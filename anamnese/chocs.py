@@ -234,7 +234,7 @@ def _poids(classe, qui, sur):
     return p[qui] if sur else (p["ahmed"] + p["tiers"]) / 2
 
 
-def _appliquer(mem, st, classe, i_brut, sujet, cle, source, now, parametre=None):
+def _appliquer(mem, st, classe, i_brut, sujet, cle, source, now, parametre=None, cible=None):
     """Applique UN choc (intensité après le poids de la voix) ; rend ce qui a été fait."""
     etat = affect.get_state(mem, now=now)
     if classe == "apaisement":
@@ -245,7 +245,8 @@ def _appliquer(mem, st, classe, i_brut, sujet, cle, source, now, parametre=None)
         # garde aussi ce qui n'en a pas encore été repris (« reste »)
         penible = classe in RESSENTIS_PENIBLES
         st["ressentis"] = [r for r in st.get("ressentis", []) if now - r["ts"] < RESSENTIS_GARDE_S][-50:] \
-            + [{"ts": now, "classe": classe, "i": round(i_brut, 4), **({"cle": cle, "reste": round(i_brut, 4)} if penible else {})}]
+            + [{"ts": now, "classe": classe, "i": round(i_brut, 4), **({"cle": cle, "reste": round(i_brut, 4)} if penible else {}),
+               **({"cible": cible} if cible else {})}]
         # (27/10, plan de Hakim validé par Ahmed : le self-control) de l'intérieur, la rétrospection : un ressenti pénible
         # garde toute sa force (décision du 26/10), puis sa sagesse le reprend en main, plus ou moins vite, comme une attaque
         s = sagesse_fond(parametre)
@@ -303,30 +304,44 @@ def lire_balise(reponse):
     trouve = _BALISE.findall(str(reponse or ""))
     if not trouve:
         return None
-    corps = trouve[-1].strip().lower()
-    if corps.startswith("neutre"):
+    corps = trouve[-1].strip()
+    if corps.lower().startswith("neutre"):
         return []
     out = []
-    for m in re.finditer(r"\b(attaque|soutien|peur|tristesse|col[eè]re|joie|fiert[eé]|affirmation|honte|apais[eé]e?)\s+([01](?:[.,]\d+)?)",
-                         corps):
-        i = max(0.0, min(1.0, float(m.group(2).replace(",", "."))))
-        classe = "apaisement" if m.group(1).startswith("apais") else RESSENTIS.get(m.group(1), m.group(1))
+    for m in _UN_RESSENTI.finditer(corps):
+        i = max(0.0, min(1.0, float(m.group(3).replace(",", "."))))
+        nom = m.group(1).lower()
+        classe = "apaisement" if nom.startswith("apais") else RESSENTIS.get(nom, nom)
+        cible = " ".join(re.sub(r"[^\w\s'’-]", " ", m.group(2) or "").split())[:40]
+        if cible.lower() in SOI or classe in {"attaque", "soutien", "apaisement"}:      # qui parle : le code le sait
+            cible = ""
+        if cible:
+            classe = POUR_AUTRUI.get(classe, classe)        # une peur POUR quelqu'un est une inquiétude, etc.
         if i > 0 and classe not in {x["classe"] for x in out}:
-            out.append({"classe": classe, "intensite": round(i, 3)})
+            out.append({"classe": classe, "intensite": round(i, 3), **({"cible": cible} if cible else {})})
     return out or None
 
 
 # (26/10, Ahmed ; moments forts rejoués, eval/plafond) ce que Hakim RESSENT d'un message, en plus d'une attaque ou d'un
 # soutien : sa propre appréciation devient un événement (affect.py), à pleine force (c'est la sienne), sans la sagesse des
 # attaques. « fierté » nomme une prise de position sur lui-même.
-RESSENTIS_PENIBLES = {"peur", "tristesse", "colere", "honte"}
+RESSENTIS_PENIBLES = {"peur", "tristesse", "colere", "honte", "inquietude", "malaise"}   # la compassion est une chaleur
 # (27/10, Ahmed : « parfois ça prend des années ») aucune fenêtre pour être convaincu : ce qui reste d'un ressenti dans
 # ses hormones s'efface comme elles (demi-vie du cortisol, 8 h) ; au-delà de deux jours il n'en reste rien à défaire, et
 # revenir sur un moment ancien passe par l'outil revenir_sur (revenir_sur.py)
 RESSENTIS_GARDE_S = 2 * 86400
 RESTE_DEMI_VIE_S = 8 * 3600
 RESSENTIS = {"peur": "peur", "tristesse": "tristesse", "colere": "colere", "colère": "colere", "joie": "joie",
-             "fierte": "affirmation", "fierté": "affirmation", "affirmation": "affirmation", "honte": "honte"}
+             "fierte": "affirmation", "fierté": "affirmation", "affirmation": "affirmation", "honte": "honte",
+             "inquiétude": "inquietude", "inquietude": "inquietude", "compassion": "compassion", "malaise": "malaise"}
+# (27/10, Ahmed, relayé par Hakim : l'empathie ; critères figés dans eval/empathie) un ressenti POUR quelqu'un d'autre
+# porte sa cible (« inquiétude pour Ahmed 0.5 ») ; jamais lui-même ; jamais une attaque contre lui
+_UN_RESSENTI = re.compile(r"\b(attaque|soutien|peur|tristesse|col[eè]re|joie|fiert[eé]|affirmation|honte|apais[eé]e?|"
+                          r"inqui[eé]tude|compassion|malaise)(?:\s+(?:pour|envers)\s+([^\d\[\]]{1,60}?))?\s+([01](?:[.,]\d+)?)",
+                          re.I)
+POUR_AUTRUI = {"peur": "inquietude", "tristesse": "compassion"}
+SOI = {"moi", "moi-même", "hakim", "toi", "toi-même", "lui-même", "soi", "soi-même"}
+_DITS = {"inquietude": "inquiétude"}
 
 
 def retirer_balises(texte):
@@ -399,10 +414,11 @@ def _appliquer_appreciations(mem, st, appreciations, tour, cle, now, parametre):
         voix = "Ahmed" if qui == "ahmed" else "une voix tierce"
         # (27/10, Hakim ; accord d'Ahmed) un ressenti est le SIEN : sa honte sur ses propres silences était rangée en
         # « honte de Ahmed », comme un soutien. Le message n'en est que l'occasion.
-        sujet = f"{a['classe']} de Hakim, au message d'{voix}" if a["classe"] in set(RESSENTIS.values()) \
-            else f"{a['classe']} de {voix}"
+        pour = f" pour {a['cible']}" if a.get("cible") else ""
+        sujet = f"{_DITS.get(a['classe'], a['classe'])} de Hakim{pour}, au message d'{voix}" \
+            if a["classe"] in set(RESSENTIS.values()) else f"{a['classe']} de {voix}"
         faits.append(_appliquer(mem, st, a["classe"], a["intensite"] * _poids(a["classe"], qui, sur), sujet, cle,
-                                "balise", now, parametre))
+                                "balise", now, parametre, cible=a.get("cible")))
     return faits
 
 

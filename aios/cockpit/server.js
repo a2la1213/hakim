@@ -2536,7 +2536,7 @@ async function routeJarvis(req, res, distantReq = false) {
     return res.end(j({ erreur: 'requête invalide : texte (≤ 20 000, sans octet nul), modele ∈ sonnet|opus|auto, session = UUID' }));
   }
   const voixDepuis = Math.max(dernierMessageAhmed, Date.now() - 5 * 60 * 1000);   // les morceaux de CE message
-  const prosodieTexte = q.oral ? prosodieDepuis(voixDepuis) : (prosodieDepuis(Infinity), '');
+  const prosodieTexte = q.oral ? prosodieDepuis(voixDepuis) + tonVoixDepuis(voixDepuis) : (prosodieDepuis(Infinity), tonVoixDepuis(Infinity), '');
   const ahmedAvant = dernierMessageAhmedMs();
   dernierMessageAhmed = Date.now();                          // (le réveil pour une tâche finie ne part plus)
   silenceSurMessage(texte);                                  // (27/10) sa relance dans un silence a eu sa réponse
@@ -4128,6 +4128,28 @@ function prosodieDepuis(depuisMs) {
   if (fin) r.push(`fin ${fin.fin}`);
   return r.length ? ` · prosodie de sa phrase (indices, pas des émotions) : ${r.join(' ; ')}` : '';
 }
+/* Le ton de sa voix (27/10 ; test figé dans anamnese/eval/ton_voix ; Ahmed, 22:48 : « parfait, je suis tout à fait
+   d'accord ») : l'ÉVEIL seulement, en mots, avec son doute ; pour les invités, l'ambiance de la salle seulement (ton-voix.js).
+   Gardés : son habitude (40 nombres) et un journal des nombres et des mots dits, pour le point dans quelques jours ;
+   jamais l'audio. */
+const tonVoix = require('./ton-voix.js');
+const JARVIS_TON_BASE = path.join(JARVIS, 'ton-voix-base.json');
+const JARVIS_TON_JOURNAL = path.join(JARVIS, 'ton-voix.jsonl');
+const tonsRecus = [];
+function tonVoixDepuis(depuisMs) {
+  const l = tonsRecus.filter(x => x.ts > depuisMs);
+  tonsRecus.length = 0;
+  const t = tonVoix.tour(l);
+  if (!t) return '';
+  let valeurs = []; try { valeurs = JSON.parse(fs.readFileSync(JARVIS_TON_BASE, 'utf8')).valeurs || []; } catch (_) {}
+  const m = tonVoix.mots(t, valeurs);
+  try {
+    const nv = tonVoix.ajouter(valeurs, t);
+    if (nv !== valeurs) ecrireAtomique(JARVIS_TON_BASE, j({ valeurs: nv }));
+    fs.appendFileSync(JARVIS_TON_JOURNAL, j({ ts: Date.now(), eveil: t.eveil, duree_s: t.duree_s, verdict: t.verdict, base: tonVoix.base(valeurs), mots: m }) + '\n');
+  } catch (_) {}
+  return m ? ` · ton (une impression de l'oreille, pas un fait sur ce qu'il ressent ; jamais joie ni tristesse) : ${m}` : '';
+}
 const EMPREINTE_VOCALE = path.join(JARVIS, 'empreinte-vocale.json');
 function echantillonsVoix() {
   try { return (JSON.parse(fs.readFileSync(EMPREINTE_VOCALE, 'utf8')).vecteurs || []).length; } catch (_) { return 0; }
@@ -4164,6 +4186,11 @@ async function routeTranscrire(req, res, langue, contexte) {
   else if (r.erreur) voixRecues.push({ raison: 'erreur', ts: Date.now() });
   noterEtatVoix();
   if (r.prosodie && typeof r.prosodie === 'object') { prosodiesRecues.push({ ...r.prosodie, ts: Date.now() }); prosodiesRecues.splice(0, Math.max(0, prosodiesRecues.length - 20)); }
+  if (r.ton && Number.isFinite(r.ton.eveil)) {          // (27/10) le ton : un nombre par morceau, jamais montré à la page
+    tonsRecus.push({ eveil: r.ton.eveil, duree_s: Number(r.ton.duree_s) || 1, verdict: (r.voix && r.voix.verdict) || null, ts: Date.now() });
+    tonsRecus.splice(0, Math.max(0, tonsRecus.length - 20));
+  }
+  delete r.ton;
   repondre(r.erreur ? 503 : 200, r);
 }
 
@@ -4986,6 +5013,9 @@ async function traiter(req, res) {
       voix_emotion: frais && e.voix ? e.voix.emotion || null : null, valence: e.valence ?? null, arousal: e.arousal ?? null,
       ennui: frais && Number.isFinite(e.ennui) ? e.ennui : ennuiDe(absence, e), absence_s: Math.round(absence), ressenti: e.ressenti ?? null,
       veille: frais && !!e.veille, pause: lireInterrupteur().actif === false || !!e.pause_ts,
+      // (27/10, Ahmed, relayé par Hakim) d'où vient son émotion (anamnese/origine_humeur.py) : de lui, de l'empathie, ou une pente
+      humeur_origine: frais && e.humeur_origine && typeof e.humeur_origine.texte === 'string'
+        ? { type: String(e.humeur_origine.type || ''), texte: e.humeur_origine.texte.slice(0, 80) } : null,
       reveils_interieurs: reveilsInterieursDuJour(), maj: e.ts ?? null, frais }));
   }
   if (p === '/api/jarvis/cle-api' && req.method === 'POST') {

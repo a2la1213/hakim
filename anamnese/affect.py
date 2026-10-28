@@ -61,6 +61,15 @@ EVENTS = {
     "colere":         {"noradrenaline": +0.30, "cortisol": +0.15, "serotonine": -0.10, "dopamine": +0.05, "endocannabinoides": -0.10},
     "joie":           {"dopamine": +0.25, "endorphine": +0.25, "serotonine": +0.05, "ocytocine": +0.05},
     "honte":          {"cortisol": +0.20, "serotonine": -0.15, "dopamine": -0.15, "ocytocine": -0.05},
+    # (27/10, Ahmed, relayé par Hakim : l'empathie ; eval/empathie) ce qu'il ressent POUR quelqu'un d'autre, avec sa cible
+    # (chocs.py) : l'inquiétude est la détresse empathique (il a peur pour l'autre) ; la compassion est la chaleur qui veut
+    # aider, DISTINCTE de la détresse (comme compassion() plus bas, Klimecki et Singer) ; le malaise est la gêne d'être au
+    # milieu d'une tension entre des proches, ou d'en être la cause, sans que personne ne le vise
+    "inquietude":     {"noradrenaline": +0.20, "cortisol": +0.15, "acetylcholine": +0.05, "serotonine": -0.05,
+                       "dopamine": -0.05, "ocytocine": +0.05},
+    "compassion":     {"ocytocine": +0.25, "endorphine": +0.10, "serotonine": -0.05, "dopamine": -0.10},
+    "malaise":        {"cortisol": +0.15, "noradrenaline": +0.10, "serotonine": -0.10, "dopamine": -0.05,
+                       "ocytocine": -0.05, "endocannabinoides": -0.05},
 }
 
 
@@ -113,11 +122,13 @@ EVENTS_V2 = {
     "colere":         {"adrenaline": +0.25, "gaba": -0.10},
     "joie":           {"gaba": +0.05},
     "honte":          {"gaba": -0.05},
+    "inquietude":     {"adrenaline": +0.10, "crh": +0.15, "gaba": -0.05},
+    "malaise":        {"crh": +0.15, "gaba": -0.05},
 }
 # (27/10, plan de Hakim validé par Ahmed ; relecture indépendante) la reprise en main d'un ressenti pénible (sa
 # rétrospection, ou l'apaisement par l'autre) défait une part du ressenti LUI-MÊME : son profil, en négatif. Le profil
 # « regulation » est fait pour une attaque : sur une tristesse, il ne rendait ni la dopamine ni l'endorphine.
-for _r in ("peur", "tristesse", "colere", "honte"):
+for _r in ("peur", "tristesse", "colere", "honte", "inquietude", "malaise"):
     EVENTS["reprise_" + _r] = {h: -d for h, d in EVENTS[_r].items()}
     EVENTS_V2["reprise_" + _r] = {h: -d for h, d in EVENTS_V2.get(_r, {}).items()}
 K_ACTH = 1.0            # cible de l'ACTH = base + K·(CRH − base)
@@ -162,6 +173,7 @@ HAB_TAU_H = 2.0         # récupération de l'habitude sans l'événement
 HAB_EXEMPTS = {"ennui", "longue_absence", "retour", "regulation",   # une reprise en main voulue ne s'émousse pas
                "probleme", "echec", "attaque", "peur", "tristesse", "colere", "honte"}   # (26/10, plafond) un coup dur non plus
 HAB_EXEMPTS |= {"reprise_peur", "reprise_tristesse", "reprise_colere", "reprise_honte"}   # (27/10) la reprise d'un ressenti non plus
+HAB_EXEMPTS |= {"inquietude", "malaise", "reprise_inquietude", "reprise_malaise"}       # (27/10, l'empathie) comme la peur
 PAS_V2_S = 300.0
 
 # ---- Émotions soudaines (2026-10-21, idée d'Ahmed relayée par Hakim ; prédictions figées AVANT dans
@@ -176,7 +188,8 @@ PAS_V2_S = 300.0
 #  Ce qui s'apprend (familiarité, peur, attente) l'est par SUJET (affect_event(sujet=…)) ; sans sujet, par type.
 VALENCE_EV = {"succes": 1.0, "resolu": 0.8, "chaleur_user": 0.8, "apprentissage": 0.5, "nouveaute": 0.3,
               "probleme": -0.6, "echec": -1.0, "attaque": -1.0, "soutien": 0.9,       # les états (ennui, longue absence, retour) n'y entrent pas
-              "affirmation": 0.5, "joie": 0.8, "peur": -0.7, "tristesse": -0.6, "colere": -0.5, "honte": -0.6}
+              "affirmation": 0.5, "joie": 0.8, "peur": -0.7, "tristesse": -0.6, "colere": -0.5, "honte": -0.6,
+              "inquietude": -0.5, "compassion": -0.1, "malaise": -0.5}
 AVERSIFS = {"echec", "probleme", "attaque", "peur"}
 CHOC_S = 300.0          # (chocs, 2026-10-23) pendant 5 min après une attaque, un sursaut se lit « alarme » même si l'humeur
                         # de fond est haute (« du rire aux larmes », Ahmed), et le négatif n'est plus divisé par deux

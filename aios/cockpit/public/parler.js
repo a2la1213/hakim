@@ -616,6 +616,13 @@ function lire(m) {
 }
 
 /* ---------- affichage ---------- */
+// (27/10, Ahmed, relayé par Hakim) d'où vient son émotion : de lui, de l'empathie (avec la personne), ou une pente sans cause
+const ORIGINES_BADGE = { empathie: ['par empathie', 'origine-empathie'], mixte: ['empathie et pour lui', 'origine-empathie'], soi: ['pour lui', 'origine-soi'], pente: ['pente, sans cause', 'origine-pente'] };
+function origineDuBadge(o) {
+  if (!o || typeof o.texte !== 'string' || !ORIGINES_BADGE[o.type]) return null;
+  const [court, classe] = ORIGINES_BADGE[o.type];
+  return { court, texte: o.texte.slice(0, 80), classe };
+}
 function humeur(texte) {
   const parle = !!(lecteur && lecteur.actif), pense = !!etat.flux;
   const ecoute = !!etat.micro || !!(etat.conversation && !parle && !pense);
@@ -626,6 +633,14 @@ function humeur(texte) {
   for (const o of [orbeTete, orbeScene]) { o.humeur(code); o.mode(mode); }
   const mot = (etat.interieur && etat.interieur.humeur) || '';          // (26/10, Ahmed) son émotion, en un mot
   if ($('emotionMot').textContent !== mot) { $('emotionMot').textContent = mot; $('emotionScene').textContent = mot; }
+  const origine = mot ? origineDuBadge(etat.interieur && etat.interieur.humeur_origine) : null;
+  const court = origine ? `· ${origine.court}` : '', entier = origine ? origine.texte : '';
+  if ($('emotionOrigine').textContent !== court || $('emotionOrigineScene').textContent !== entier) {
+    $('emotionOrigine').textContent = court; $('emotionOrigine').title = entier;
+    $('emotionOrigine').className = `emotion-origine ${origine ? origine.classe : ''}`;
+    $('emotionOrigineScene').textContent = entier;
+    $('emotionOrigineScene').className = `emotion-origine-scene ${origine ? origine.classe : ''}`;
+  }
   // la scène : pendant qu'il parle, qu'il t'écoute, ou qu'il réfléchit à une question dite à l'oral
   const voixEnJeu = ecoute || parle || (pense && etat.dernierOral) || !!etat.conversation;
   $('muet').hidden = $('muetScene').hidden = !(etat.conversation && etat.conversation.capteur);

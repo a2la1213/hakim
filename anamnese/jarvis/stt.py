@@ -164,6 +164,11 @@ def transcrire(fichier, langue=None, contexte="", voix=None):
                     print(f"[voix] prosodie indisponible : {type(e).__name__}: {e}", file=sys.stderr)
                 v = empreinte_vocale.reconnaitre(brut)
                 sortie["voix"] = {**(v or {"raison": "pas_apprise" if pas_apprise else "court"}), "duree_s": duree}
+                # (27/10) le ton : l'éveil seulement (eval/ton_voix ; accord d'Ahmed), un nombre, l'audio n'est pas gardé
+                import ton_eveil
+                e = ton_eveil.eveil(brut)
+                if e is not None:
+                    sortie["ton"] = {"eveil": e, "duree_s": duree}
                 # plusieurs voix dans le même message : le texte est étiqueté par voix
                 etiquete, resume = empreinte_vocale.etiqueter(brut, segments_gardes(r.get("segments") or [], base),
                                                             nouveau_tour=not (contexte and contexte.strip()))

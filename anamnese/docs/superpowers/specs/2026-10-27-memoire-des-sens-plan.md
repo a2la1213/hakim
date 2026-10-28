@@ -71,3 +71,9 @@ taille, avec une perte que l'oreille et l'œil ne voient pas. La proposition :
     et Ahmed peut effacer un moment.
 - **Les sauvegardes.** Sur le même disque, ou sur un disque externe ? Le disque du Mac est déjà pris à 87 %.
 - **Le budget.** Le seuil d'alerte proposé est de 2 Go par mois sans vidéo. La vidéo serait seulement à la demande ?
+
+## Décision d'Ahmed (27/10, 19:37, à l'oral, relayée par Hakim)
+- **On ne remplit pas le disque du Mac.** L'enregistrement des voix et des vidéos attend qu'Ahmed achète un disque dur
+  externe, qui deviendra l'espace de stockage de Hakim pour tout ça.
+- **Pour l'instant, rien ne change.** Au plus les images et les choses légères, qui ne risquent pas de saturer le disque.
+- **Le reste du plan attend sa décision** : l'ordre, les visages, les voix des invités, le budget.

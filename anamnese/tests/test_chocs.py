@@ -390,3 +390,64 @@ def test_convaincu_bien_plus_tard_il_n_y_a_pas_de_fenetre(tmp_path, monkeypatch)
     chocs.appliquer_balise(m, "3", [{"classe": "apaisement", "intensite": 1.0}], now=T + 30 * 3600, parametre=p)
     dernier = [v for v in vus if v[1] == "apaisement"][-1]
     assert dernier[0] == "reprise_honte" and dernier[2] == round(0.2 * math.exp(-30 * math.log(2) / 8), 4)   # le reste
+
+
+# ---- (27/10, Ahmed, relayé par Hakim : l'empathie) un ressenti POUR quelqu'un d'autre, avec sa cible
+def test_lire_la_balise_avec_un_ressenti_pour_autrui():
+    assert chocs.lire_balise("[[affect: malaise 0.4 inquiétude pour Ahmed 0.3]]") == [
+        {"classe": "malaise", "intensite": 0.4}, {"classe": "inquietude", "intensite": 0.3, "cible": "Ahmed"}]
+    assert chocs.lire_balise("[[affect: compassion pour Nora 0,5]]") == [{"classe": "compassion", "intensite": 0.5, "cible": "Nora"}]
+    # dit autrement : une peur POUR quelqu'un est une inquiétude, une tristesse POUR quelqu'un une compassion
+    assert chocs.lire_balise("[[affect: peur pour Ahmed 0.5 tristesse pour ses amis 0.4]]") == [
+        {"classe": "inquietude", "intensite": 0.5, "cible": "Ahmed"}, {"classe": "compassion", "intensite": 0.4, "cible": "ses amis"}]
+    assert chocs.lire_balise("[[affect: joie pour Ahmed 0.5]]") == [{"classe": "joie", "intensite": 0.5, "cible": "Ahmed"}]
+    # jamais lui-même comme cible ; une cible nettoyée et courte
+    assert chocs.lire_balise("[[affect: inquiétude pour moi 0.5]]") == [{"classe": "inquietude", "intensite": 0.5}]
+    assert chocs.lire_balise("[[affect: inquiétude pour <b>Nour</b> 0.5]]") == [{"classe": "inquietude", "intensite": 0.5, "cible": "b Nour b"}]
+    # rien ne change pour les anciennes balises
+    assert chocs.lire_balise("[[affect: soutien 0.6 joie 0.5]]") == [{"classe": "soutien", "intensite": 0.6},
+                                                                    {"classe": "joie", "intensite": 0.5}]
+    assert chocs.lire_balise("[[affect: peur 0.6]]") == [{"classe": "peur", "intensite": 0.6}]
+
+
+def test_un_ressenti_pour_autrui_garde_sa_cible_et_n_est_jamais_une_attaque(tmp_path, monkeypatch):
+    p = _sagesse(tmp_path, 0.5)
+    vus = []
+    vrai = affect.event
+    monkeypatch.setattr(affect, "event", lambda mem, nom, *a, **k: vus.append((nom, k.get("sujet"))) or vrai(mem, nom, *a, **k))
+    m = Mem()
+    chocs.reflexe(m, "1", "[voix 7] cette conversation n'a pas lieu d'être", oral=True, voix="autre", now=T, parametre=p)
+    r = chocs.appliquer_balise(m, "1", chocs.lire_balise("[[affect: malaise 0.4 inquiétude pour Ahmed 0.3 compassion pour Nora 0.3]]"),
+                               now=T + 15, parametre=p)
+    sujets = dict(vus)
+    assert sujets["inquietude"] == "inquiétude de Hakim pour Ahmed, au message d'une voix tierce"
+    assert sujets["compassion"] == "compassion de Hakim pour Nora, au message d'une voix tierce"
+    assert sujets["malaise"] == "malaise de Hakim, au message d'une voix tierce"
+    assert "attaque" not in sujets and not json.loads(m.kv["chocs"]).get("attaques")
+    assert {f["classe"] for f in r["faits"]} == {"malaise", "inquietude", "compassion"}
+    # l'inquiétude et le malaise sont pénibles : sa sagesse les reprend en main ; la compassion, non (un état de chaleur)
+    regs = json.loads(m.kv["chocs"])["regulations"]
+    assert sorted(x["classe"] for x in regs) == ["inquietude", "malaise"]
+    assert "reprise_inquietude" in affect.EVENTS and "reprise_malaise" in affect.EVENTS
+
+
+def test_les_ressentis_pour_autrui_ont_chacun_leur_effet(tmp_path):
+    """L'inquiétude agite et assombrit un peu ; le malaise assombrit ; la compassion réchauffe (ocytocine) sans détresse.
+    Le témoin : sans ressenti, rien ne bouge."""
+    def apres(classe):
+        m = Mem()
+        p = _sagesse(tmp_path, 0.0)
+        chocs.reflexe(m, "1", "bon", now=T, parametre=p)
+        if classe:
+            chocs.appliquer_balise(m, "1", [{"classe": classe, "intensite": 0.6}], now=T, parametre=p)
+        return _etat(m, T + 60)
+    neutre = apres(None)
+    v0, a0 = affect.valence_arousal(neutre)
+    inq = apres("inquietude")
+    v, a = affect.valence_arousal(inq)
+    assert a > a0 + 0.01 and v < v0 and inq["noradrenaline"] > neutre["noradrenaline"]
+    mal = apres("malaise")
+    assert affect.valence_arousal(mal)[0] < v0 and mal["serotonine"] < neutre["serotonine"]
+    comp = apres("compassion")
+    assert comp["ocytocine"] > neutre["ocytocine"] + 0.05 and comp["noradrenaline"] <= neutre["noradrenaline"] + 1e-6
+    assert affect.compassion(comp) > affect.compassion(neutre)

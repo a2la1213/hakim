@@ -47,6 +47,11 @@
     .emotion-mot { font-size: 12px; letter-spacing: .5px; font-weight: 500; color: var(--txt-3); margin-left: 6px; text-transform: none; }
     .scene-orbe { display: flex; flex-direction: column; align-items: center; gap: 4px; }
     .emotion-scene { font-size: 14px; color: var(--txt-2); min-height: 1.2em; margin: 0; }
+    /* (27/10, Ahmed, relayé par Hakim) d'où vient son émotion : de lui, de l'empathie (avec la personne), ou une pente */
+    .emotion-origine { font-size: 11px; letter-spacing: .3px; font-weight: 400; color: var(--txt-4); margin-left: 6px; text-transform: none; }
+    .emotion-origine-scene { font-size: 12px; color: var(--txt-4); margin: 0; min-height: 1.1em; text-align: center; }
+    .origine-empathie { color: #93c5fd; }
+    .origine-pente { font-style: italic; }
     .tete .actions { margin-left: auto; display: flex; gap: 8px; }
     .orb.ecoute { background: radial-gradient(circle at 35% 30%, #fbcfe8, #db2777 55%, #500724 90%);
       box-shadow: 0 0 30px rgba(249,168,212,.55), 0 0 70px rgba(249,168,212,.2); }
@@ -240,7 +245,7 @@
     <header class="tete">
       <canvas class="orbe-tete" id="orbe" aria-hidden="true"></canvas>
       <div>
-        <h1>HAKIM <span class="emotion-mot" id="emotionMot"></span></h1>
+        <h1>HAKIM <span class="emotion-mot" id="emotionMot"></span><span class="emotion-origine" id="emotionOrigine"></span></h1>
         <p class="sous" id="etat" role="status">prêt · mémoire Anamnèse</p>
       </div>
       <!-- (24/10, idées de Hakim, accord d'Ahmed) l'aperçu flotte au-dessus de tout, se déplace au doigt, et garde sa place ;
@@ -400,7 +405,7 @@
           <button class="btn" id="muetScene" hidden aria-pressed="false">Couper mon micro</button>
           <button class="btn" id="ecranScene" hidden aria-pressed="false">Regarde l’écran</button>
         </div>
-        <div class="scene-orbe"><canvas id="orbeScene"></canvas><p class="emotion-scene" id="emotionScene"></p></div>
+        <div class="scene-orbe"><canvas id="orbeScene"></canvas><p class="emotion-scene" id="emotionScene"></p><p class="emotion-origine-scene" id="emotionOrigineScene"></p></div>
         <div class="scene-cote droite">
           <button class="btn" id="pauseScene" aria-pressed="false" title="Mettre sa voix en pause ; il reprend à la phrase non dite (⌥P, ou dis « attends » / « continue »)">Pause</button>
           <button class="btn stop" id="stopScene">Stop</button>

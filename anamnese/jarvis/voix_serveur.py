@@ -106,6 +106,11 @@ def repondre(obj):
 
 def main():
     borner_cache()
+    try:                                    # (27/10) le ton de la voix : le modèle se charge à côté, pas à la première phrase
+        import ton_eveil
+        ton_eveil.prechauffer()
+    except Exception:
+        pass
     dernier = time.time()
     while True:
         prets, _, _ = select.select([sys.stdin], [], [], 5.0)

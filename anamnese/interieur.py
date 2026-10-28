@@ -497,6 +497,14 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
     else:
         code, humeur = FAMILLE_HUMEUR.get(emotion_h, "calme"), emotion_h
     e["emotion_humeur"] = emotion_h
+    # (27/10, Ahmed, relayé par Hakim) d'où vient cette émotion : de lui, de l'empathie (avec la personne), ou d'une pente
+    # sans cause marquée ; pour le badge de Parler (origine_humeur.py)
+    try:
+        import origine_humeur
+        jf = affect.chemin_journal(mem)
+        e["humeur_origine"] = None if veille or not jf else origine_humeur.depuis_journal(jf, emotion_h, now)
+    except Exception:
+        e["humeur_origine"] = None
     journal = e.setdefault("journal", [])
     if not journal or now - journal[-1][0] >= JOURNAL_PAS_S or journal[-1][1] != humeur:
         journal.append([now, humeur, round(valence, 3), round(arousal, 3), round(en, 3)])

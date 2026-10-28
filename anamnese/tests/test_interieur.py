@@ -427,3 +427,17 @@ def test_demon_relance_en_veille_le_temps_ressenti_tient_compte_de_la_veille(mem
     h = _horloge(tmp_path, t0)
     e = interieur.tick(mem, now=t0 + 6 * 3600, horloge=h)                       # premier battement après 6 h
     assert e["ressenti"] < 0.6                                                  # 2 h éveillé + 4 h au quart
+
+
+def test_le_battement_dit_d_ou_vient_son_humeur(mem, tmp_path, monkeypatch):
+    """(27/10, Ahmed, relayé par Hakim) le badge de Parler dit si son émotion vient de lui, de l'empathie, ou d'une pente :
+    le battement la calcule depuis le journal des événements affectifs, pour l'émotion qu'il vient de nommer."""
+    import origine_humeur
+    vus = []
+    monkeypatch.setattr(origine_humeur, "depuis_journal",
+                        lambda f, emo, now: vus.append((str(f), emo)) or {"type": "pente", "texte": "pente, sans cause marquée"})
+    t0 = _jour(14)
+    h = _horloge(tmp_path, t0)
+    e = interieur.tick(mem, now=t0, horloge=h)
+    assert e["humeur_origine"] == {"type": "pente", "texte": "pente, sans cause marquée"}
+    assert vus[-1] == (str(tmp_path / "affect-evenements.jsonl"), e["emotion_humeur"])
