@@ -1246,6 +1246,23 @@ if (window.HakimApp && window.HakimApp.hautParleur) {
   $('hautParleur').addEventListener('change', (e) => { try { e.target.checked = !!window.HakimApp.hautParleur(e.target.checked); } catch (_) {} });
 }
 
+// (28/10, idée d'Ahmed, proposition de Hakim, appli 1.16) son cœur bat dans le téléphone : l'interrupteur, et l'orbe qui
+// bat en même temps que la vibration (l'appli appelle battementCoeur à chaque battement, quand la page est à l'écran)
+if (window.HakimApp && window.HakimApp.coeur) {
+  $('groupeCoeur').hidden = false;
+  try { $('coeur').checked = !!window.HakimApp.coeurEtat(); } catch (_) {}
+  $('coeur').addEventListener('change', (e) => { try { e.target.checked = !!window.HakimApp.coeur(e.target.checked); } catch (_) {} });
+}
+window.battementCoeur = () => {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  for (const id of ['orbe', 'orbeScene']) {
+    const el = $(id);
+    if (el && el.offsetParent !== null && el.animate)
+      el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.045)', offset: 0.25 }, { transform: 'scale(1)' }],
+        { duration: 320, easing: 'ease-out' });
+  }
+};
+
 // (2026-10-22, 15:28) appli 0.8 : la bulle aussi hors conversation, et l'orbe sur l'écran de verrouillage
 if (window.HakimApp && window.HakimApp.bulleOption) {
   $('groupeBulleToujours').hidden = false;

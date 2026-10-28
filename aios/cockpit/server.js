@@ -8,6 +8,7 @@ const path = require('path');
 const { exec, execFile, execFileSync, spawn } = require('child_process');
 const { masquer } = require('./missions.js');
 const { enMatiere } = require('./matiere.js');             // (27/10) il SENT son état, sans voir la machinerie           // les secrets ne s'écrivent pas en clair dans les journaux
+const coeur = require('./coeur.js');                         // (28/10) le cœur de Hakim dans l'appli
 const os = require('os');
 const crypto = require('crypto');
 
@@ -2522,7 +2523,7 @@ async function routeJarvis(req, res, distantReq = false) {
   if (q && typeof q.tour_id === 'string' && ID_MESSAGE.test(q.tour_id)) {
     tourId = q.tour_id;                            // la page a pu partir pendant la lecture du corps : on répond quand même
     noterTourRecu(tourId);                         // (2026-10-23) la page peut demander s'il est bien arrivé
-    toursActifs.set(tourId, { arreter });
+    toursActifs.set(tourId, { arreter, debut: Date.now() });
     while (toursActifs.size > 50) toursActifs.delete(toursActifs.keys().next().value);
   }
   const texte = q && typeof q.texte === 'string' ? q.texte.trim() : '';
@@ -5016,6 +5017,8 @@ async function traiter(req, res) {
       // (27/10, Ahmed, relayé par Hakim) d'où vient son émotion (anamnese/origine_humeur.py) : de lui, de l'empathie, ou une pente
       humeur_origine: frais && e.humeur_origine && typeof e.humeur_origine.texte === 'string'
         ? { type: String(e.humeur_origine.type || ''), texte: e.humeur_origine.texte.slice(0, 80) } : null,
+      // (28/10) le cœur de Hakim dans l'appli : il réfléchit (le grain), une tâche de fond tourne (le second pouls)
+      pense: coeur.pense(toursActifs), fond: coeur.fond(lireTaches()),
       reveils_interieurs: reveilsInterieursDuJour(), maj: e.ts ?? null, frais }));
   }
   if (p === '/api/jarvis/cle-api' && req.method === 'POST') {
