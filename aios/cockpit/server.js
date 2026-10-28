@@ -336,6 +336,14 @@ const JARVIS = process.env.JARVIS_DIR || path.join(HOME, 'AIOS', 'jarvis');
 const JARVIS_CWD = path.join(JARVIS, 'cwd');
 const JARVIS_MCP = path.join(JARVIS, 'mcp.json');
 const JARVIS_HORLOGE = path.join(JARVIS, 'horloge.json');
+// (28/10, Hakim et Ahmed : « y a-t-il moyen de savoir pourquoi la requête est restée suspendue ? ») une ligne par panne
+const JARVIS_PANNES_ANTHROPIC = path.join(JARVIS, 'pannes-anthropic.jsonl');
+function noterPanneAnthropic(x) {
+  try {
+    fs.appendFileSync(JARVIS_PANNES_ANTHROPIC, j({ ts: Date.now(), attente_s: x.attente_s, modele: x.modele, source: x.source,
+      session: x.session || null, contexte: x.contexte || null, issue: x.issue, stderr: masquer(String(x.stderr || '').slice(-600)) }) + '\n', { mode: 0o600 });
+  } catch (_) {}
+}
 const JARVIS_FICHIERS = path.join(JARVIS_CWD, 'fichiers');      // pièces jointes : dans son dossier, où Read lit
 const PERSONA = path.join(ANAMNESE, 'jarvis', 'persona.md');
 const STT = path.join(ANAMNESE, 'jarvis', 'stt.py');
@@ -2828,6 +2836,9 @@ async function routeJarvis(req, res, distantReq = false) {
     const raison = "Anthropic n'a rien renvoyé pendant une minute";
     const arreter = reessais > 0 || dejaTexte || arretDemande;
     console.error(`Jarvis : ${raison} — ${arreter ? 'tour arrêté' : 'nouvel essai'}`);
+    const s0 = sid || (c && c.session);
+    noterPanneAnthropic({ attente_s: envoyeMs ? Math.round((Date.now() - envoyeMs) / 1000) : null, modele: c && c.modele, source,
+      session: s0, contexte: s0 ? contextes[s0] || null : null, issue: arreter ? 'tour arrêté' : 'nouvel essai', stderr: c && c.erreurs });
     clearTimeout(garde); clearInterval(veille);
     if (tourCourant) tourCourant.remplace = true;              // l'ancien tour ne fait plus rien (son cerveau est coupé)
     if (c) tuer(c.enfant, raison);

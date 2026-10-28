@@ -73,6 +73,11 @@ test('câblage : un tour bloqué réessaie une fois, puis s’arrête avec la ra
   assert.match(route, /Anthropic n'a rien renvoyé/);
   assert.match(route, /n'est pas de toi/);                       // la note à Hakim : le silence synthétique n'est pas le sien
   assert.match(route, /envoyer\(\{ t: 'statut', x: [^}]*dire: true \}\)/);
+  // (Hakim et Ahmed, 08:33 : « y a-t-il moyen de savoir pourquoi ? ») chaque panne laisse sa trace : l'attente, le modèle,
+  // la taille de la conversation, et ce que claude a écrit sur sa sortie d'erreur
+  assert.match(src, /const JARVIS_PANNES_ANTHROPIC = path\.join\(JARVIS, 'pannes-anthropic\.jsonl'\)/);
+  assert.match(route, /noterPanneAnthropic\(\{ /);
+  assert.match(src, /stderr: masquer\(String\(x\.stderr \|\| ''\)\.slice\(-600\)\)/);
 });
 
 test('la page dit le statut à voix haute quand la voix est active', () => {

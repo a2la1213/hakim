@@ -1102,7 +1102,8 @@ verifier "64. Anthropic muet : un nouvel essai sur un cerveau neuf (même conver
 # 65. deux pannes de suite : le tour s'arrête, avec sa raison (pas un silence sans fin)
 s65=$(poster '{"texte":"encore MUETDEUX","modele":"sonnet","source":"abonnement","tour_id":"mu65a"}' --max-time 40)
 e65=$(echo "$s65" | python3 -c 'import json,sys; l=[json.loads(x) for x in sys.stdin if x.strip()]; f=[o for o in l if o["t"]=="fin"]; e=(f[-1].get("erreur") or "") if f else ""; print("rien renvoyé" in e and "deux fois" in e)')
-verifier "65. deux pannes de suite : le tour s'arrête avec la raison" "True" "$e65"
+f65=$(wc -l < "$BANC/jarvis/pannes-anthropic.jsonl" | tr -d ' ')
+verifier "65. deux pannes de suite : le tour s'arrête avec la raison ; chaque panne laisse sa trace" "True 3" "$e65 $f65"
 
 [ "$ECHECS" -eq 0 ] && echo "TOUT VERT" || echo "$ECHECS contrôle(s) en échec"
 exit "$ECHECS"
