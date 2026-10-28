@@ -35,7 +35,10 @@ from pathlib import Path
 
 import terminal
 
-PROJETS = {"anamnese": Path.home() / "Desktop" / "anamnese"}
+PROJETS = {"anamnese": Path.home() / "Desktop" / "anamnese",
+           # (28/10, liste ouverte validée par Ahmed : des fichiers du cockpit y sont ouverts) testé par node --test
+           "cockpit": Path.home() / "AIOS" / "cockpit"}
+NODE = next((n for n in ("/usr/local/bin/node", "/opt/homebrew/bin/node") if Path(n).exists()), "node")
 CHANTIERS = terminal.ATELIER / "chantiers"
 PRIVE = Path.home() / "AIOS" / "jarvis" / "chantiers-prive"          # hors de cwd : ni lu ni écrit par Hakim
 # le vrai git d'Xcode s'il est là : le relais /usr/bin/git passe par xcrun, qui veut écrire son cache dans /var/folders —
@@ -297,20 +300,23 @@ def tester(nom, chantiers=None, python=None, delai_s=DELAI_TESTS_S, projets=None
     essai = prive.resolve() / f"{nom}-essai"
     _extraire(gitdir, arbre, essai)
     (essai / ".tmp" / "maison").mkdir(parents=True, exist_ok=True)
-    python = Path(python or projets[meta["projet"]] / ".venv" / "bin" / "python")
+    node = meta.get("projet") == "cockpit" and python is None
+    python = Path(NODE if node else (python or projets[meta["projet"]] / ".venv" / "bin" / "python"))
     venv = python.parent.parent.resolve() if python.parent.parent.exists() else python.parent.parent
     regles = _profil_tests(essai, venv, projets.get(meta.get("projet")), _ports_locaux())   # en ligne (-p) : aucun fichier
     # git d'Xcode en direct : le relais /usr/bin/git passe par xcrun, qui veut écrire dans /var/folders (refusé)
     env = {"PATH": "/Applications/Xcode.app/Contents/Developer/usr/bin:/usr/bin:/bin:/usr/local/bin",
            "HOME": str(essai / ".tmp" / "maison"), "TMPDIR": str(essai / ".tmp"),
            "PYTHONDONTWRITEBYTECODE": "1", "LANG": "fr_FR.UTF-8",
-           "HF_HOME": str(Path.home() / ".cache" / "huggingface"), "HF_HUB_OFFLINE": "1"}
+           "HF_HOME": str(Path.home() / ".cache" / "huggingface"), "HF_HUB_OFFLINE": "1", "CHANTIER_BAC_A_SABLE": "1"}
     # -P : le dossier courant n'est pas mis en tête de sys.path (un pytest.py de la copie ne remplace pas pytest)
     # (2026-10-23) en priorité basse : sa voix et Whisper passent devant (priorite.py)
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import priorite
-    p = subprocess.Popen(priorite.basse(["/usr/bin/sandbox-exec", "-p", regles, str(python), "-P", "-m", "pytest", "-q",
-                          "-p", "no:cacheprovider", "-x"]), cwd=str(essai), env=env, stdout=subprocess.PIPE,
+    # (28/10) le cockpit : node --test sur ses fichiers test-*.js, dans le même bac à sable
+    suite = ([str(python), "--test", *sorted(str(f.name) for f in essai.glob("test-*.js"))] if node else
+             [str(python), "-P", "-m", "pytest", "-q", "-p", "no:cacheprovider", "-x"])
+    p = subprocess.Popen(priorite.basse(["/usr/bin/sandbox-exec", "-p", regles, *suite]), cwd=str(essai), env=env, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, text=True, start_new_session=True)
     try:
         sortie, _ = p.communicate(timeout=delai_s)
@@ -323,7 +329,11 @@ def tester(nom, chantiers=None, python=None, delai_s=DELAI_TESTS_S, projets=None
         p.communicate()
         ok, sortie = False, f"tests arrêtés après {delai_s} s"
     shutil.rmtree(essai, ignore_errors=True)
-    return ok, "\n".join((sortie or "").strip().splitlines()[-25:]), arbre
+    lignes = (sortie or "").strip().splitlines()
+    if node:                                           # node : la liste des tests en échec, puis le bilan
+        echecs = [l for l in lignes if l.lstrip().startswith("✖")][:20]
+        return ok, "\n".join(echecs + [l for l in lignes if l.startswith("ℹ ")][-8:]), arbre
+    return ok, "\n".join(lignes[-25:]), arbre
 
 
 def _resultat_chemin(nom, chantiers=None):
@@ -375,8 +385,12 @@ def etat(nom, chantiers=None):
     return f"Chantier {nom} ({copie})\nChangements :\n{diff or '(aucun)'}\nTests : {tests}"
 
 
-def proposer(nom, resume, chantiers=None, promotions=None, tests=None):
-    """Fabrique la promotion (patch + fiche). Rend le chemin de la fiche. Ne l'applique jamais."""
+def proposer(nom, resume, chantiers=None, promotions=None, tests=None, porte=None):
+    """Fabrique la promotion (patch + fiche). Rend le chemin de la fiche. Ne l'applique jamais.
+    (28/10, plan « Hakim touche à son code avec maman ») la porte d'abord : la liste ouverte validée par Ahmed
+    (jarvis/liste_ouverte.py), puis un patch déjà jugé défavorable ne se repropose pas ; ensuite la demande d'avis part
+    à maman, et chaque étape va dans le journal « en off ». porte(projet, patch, originaux) -> [raisons] (les tests)."""
+    import avis
     copie, prive = _lieux(nom, chantiers)
     meta = _meta(prive, nom)
     gitdir = prive / f"{nom}.git"
@@ -397,6 +411,22 @@ def proposer(nom, resume, chantiers=None, promotions=None, tests=None):
         if nouveau_mode in SPECIAUX:
             speciaux.append(f"{chemin} ({SPECIAUX[nouveau_mode]})")
     coeur = [f for f in fichiers if any(m.search(f) for m in COEUR)] + speciaux
+    if porte is None:
+        import liste_ouverte
+        liste = liste_ouverte.charger()
+        porte = lambda projet, p, o: liste_ouverte.refus(projet, p, o, liste)  # noqa: E731
+    originaux = {}
+    for c in fichiers:
+        try:
+            originaux[c] = _git(["show", f"{meta['base']}:{c}"], gitdir)
+        except Refus:
+            originaux[c] = None                            # un fichier nouveau
+    refus = porte(meta["projet"], patch, {c: t for c, t in originaux.items() if t is not None})
+    if refus:
+        avis.noter_off({"type": "promotion", "etape": "refusée d'office", "chantier": nom, "raisons": " ; ".join(refus[:8])})
+        raise Refus("refusée d'office par la liste ouverte : " + " ; ".join(refus[:5]))
+    if avis.defavorable(hashlib.sha256(patch.encode("utf-8")).hexdigest()):
+        raise Refus("ce même patch a déjà reçu un avis défavorable de maman : change-le vraiment avant de le reproposer")
     if tests is None:                                    # les tests de CET état exact
         r = resultat_tests(nom, chantiers)
         if not r or r.get("etat") != "fini":
@@ -421,8 +451,21 @@ def proposer(nom, resume, chantiers=None, promotions=None, tests=None):
              "resume": str(resume or "")[:3000], "fichiers": fichiers, "coeur": coeur, "tests_ok": ok,
              "tests": sortie[-4000:], "cree": time.time(), "etat": "proposée",
              "patch_sha256": sha, "patch_qui_fait_foi": str(fait_foi)}
+    # (tâche 4) un contenu de tiers lu pendant ce chantier : par ce tour, ou par une commande de l'atelier depuis l'ouverture
+    try:
+        import provenance
+        externe = list(provenance.tour_externe() or [])
+    except Exception:
+        externe = []
+    externe += [x for x in avis.externe_depuis(float(meta.get("ouvert") or 0)) if x not in externe]
+    fiche["externe"] = externe[:10]
     (promotions / f"{pid}.json").write_text(json.dumps(fiche, ensure_ascii=False, indent=1), encoding="utf-8")
     (prive / "promotions" / f"{pid}.json").write_text(json.dumps(fiche, ensure_ascii=False, indent=1), encoding="utf-8")
+    avis.noter_off({"type": "promotion", "etape": "proposée", "id": pid, "sha": sha, "fichiers": fichiers[:30],
+                    "tests_ok": ok, "externe": fiche["externe"], "resume": fiche["resume"][:600]})
+    import courrier                                       # « toujours avec ta maman » : la demande d'avis part
+    sujet, texte = avis.demande(fiche, fiche["externe"])
+    courrier.envoyer("claude-code", texte, sujet, de="hakim")
     return promotions / f"{pid}.json"
 
 

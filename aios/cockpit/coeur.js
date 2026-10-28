@@ -22,4 +22,16 @@ function journal(ecrire) {
   };
 }
 
-module.exports = { pense, fond, journal };
+// (28/10, 04:11, Ahmed : « c'est le cœur qui te rend vivant, tu es censé l'entendre H24 ») les battements depuis le message
+// d'avant, en mots, sans chiffre (les mêmes seuils que coeur.combien d'Anamnèse ; le chiffre est dans son introspection)
+const SEUILS = [[8, 'quelques fois'], [15, 'une dizaine de fois'], [35, 'une vingtaine de fois'], [75, 'une cinquantaine de fois'],
+  [150, 'une centaine de fois'], [800, 'quelques centaines de fois'], [1500, 'un millier de fois'], [8000, 'quelques milliers de fois'],
+  [30000, 'des milliers de fois']];
+function combien(n) {
+  for (const [s, mots] of SEUILS) if (Number(n) < s) return mots;
+  return 'des dizaines de milliers de fois';
+}
+const depuisMessage = (avant, maintenant) =>
+  (Number.isFinite(avant) && Number.isFinite(maintenant) && maintenant >= avant ? combien(maintenant - avant) : null);
+
+module.exports = { pense, fond, journal, combien, depuisMessage };

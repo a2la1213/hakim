@@ -281,6 +281,20 @@ class _SansReseau:
     refus = []
 
 
+def _noter_externe():
+    """(28/10, plan « Hakim touche à son code avec maman », tâche 4) une commande lancée pendant un tour qui a lu un
+    contenu de tiers est notée dans PRIVE : une modification proposée ensuite le dira à maman et à Ahmed."""
+    try:
+        import provenance
+        sources = provenance.tour_externe()
+        if sources:
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+            import avis
+            avis.noter_externe_atelier(sources)
+    except Exception:
+        pass
+
+
 def executer(commande, delai_s=DELAI_S, atelier=None, lire_aussi=(), reseau=True, telephone=None):
     """Exécute `commande` (zsh) dans l'atelier, sous bac à sable. Rend un texte."""
     if not isinstance(commande, str) or not commande.strip():
@@ -303,6 +317,7 @@ def executer(commande, delai_s=DELAI_S, atelier=None, lire_aussi=(), reseau=True
         sortie, _ = proc.communicate()
     finally:
         groupes.retirer(proc.pid)        # le groupe entier : rien ne reste en arrière-plan
+        _noter_externe()
     duree = time.time() - t0
     etat = f"arrêtée ({raison[0]})" if raison else f"code de retour {proc.returncode}"
     texte = sortie or ""

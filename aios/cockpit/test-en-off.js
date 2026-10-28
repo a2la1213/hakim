@@ -42,8 +42,19 @@ test('câblage : la route exige le jeton, masque, et Parler a son panneau', () =
   assert.ok(i > 0);
   const route = src.slice(i, i + 700);
   assert.match(route, /jetonValide\(req\)/);
-  assert.match(route, /enOff\.lignes\(.*, masquer\)/);
+  assert.match(route, /enOff\.lignes\([^;]*, masquer,\s*finFichier\(path\.join\(JARVIS, 'journal-off\.jsonl'\)/);
   assert.match(html, /id="btnEnOff"/);
   assert.match(html, /id="enOff"/);
   assert.match(page, /\/api\/jarvis\/en-off/);
+});
+
+test('(28/10) le journal du code entre dans « en off » : propositions, avis, gestes d’Ahmed', () => {
+  const off = [{ ts: 400, type: 'promotion', etape: 'proposée', id: '20261028-050000-essai', resume: 'X passe à 2', fichiers: ['affect.py'] },
+    { ts: 450, type: 'avis', id: '20261028-050000-essai', verdict: 'favorable', source: 'maman-reveil', texte: 'ok' },
+    { ts: 500, type: 'promotion', etape: 'appliquée', id: '20261028-050000-essai', commit: 'abc' },
+    { ts: 600, type: 'liste', nom: 'memory.py', etat: 'ouvert' }].map(o => JSON.stringify(o)).join('\n');
+  const l = O.lignes('', '', 50, (t) => t, off);
+  assert.deepStrictEqual(l.map(x => x.type), ['code', 'code', 'code', 'code']);
+  assert.match(l[3].sujet, /proposée/); assert.match(l[2].sujet, /avis favorable/); assert.match(l[1].sujet, /appliquée/);
+  assert.match(l[0].sujet, /ouvre « memory\.py »/);
 });

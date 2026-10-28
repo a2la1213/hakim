@@ -80,7 +80,8 @@ def _vie_interieure_isolee(monkeypatch, tmp_path):
         pass
     # (27/10) les fichiers des chantiers de la nuit : jamais les vrais pendant les tests
     for module, noms in (("occupations", ("MIENNES",)), ("noyau", ("PREUVES",)), ("situations", ("CLASSEMENT", "LECONS")),
-                         ("reveil_interieur", ("FICHIER", "ISSUES", "JOURNAL")), ("engine", ("JOURNAL_APPELS",))):
+                         ("reveil_interieur", ("FICHIER", "ISSUES", "JOURNAL")), ("engine", ("JOURNAL_APPELS",)),
+                         ("avis", ("DOSSIER", "PROMOS_PRIVE", "JOURNAL_OFF", "EXTERNE_ATELIER")), ("relances", ("DOSSIER",))):
         try:
             m = __import__(module)
             for nom in noms:

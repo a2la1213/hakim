@@ -183,10 +183,12 @@ class Verrou {
     return { code: v, fin: this.code.fin };
   }
 
-  defi(type, extra = {}) {
+  // (28/10) suffixe : un texte que l'appli Android affiche sous l'empreinte, lu DANS le défi (signé avec lui), jamais
+  // dans ce que la page lui passe — pour les gestes du code de Hakim (code.js)
+  defi(type, extra = {}, suffixe = '') {
     const t = this.maintenant();
     for (const [k, x] of this.defis) if (x.fin <= t) this.defis.delete(k);
-    const v = b64u(crypto.randomBytes(32));
+    const v = b64u(crypto.randomBytes(32)) + (suffixe ? '.' + suffixe : '');
     while (this.defis.size >= 64) this.defis.delete(this.defis.keys().next().value);    // borné, les plus vieux d'abord
     this.defis.set(v, { type, fin: t + DUREE_DEFI, ...extra });
     return v;
@@ -245,11 +247,13 @@ class Verrou {
   }
 
   // La preuve de présence : un défi lié à UNE action (« mission:accepter:<id> »…), à usage unique.
-  optionsPresence(rpId, action) {
+  optionsPresence(rpId, action, texte) {
     const cles = this.passkeysPour(rpId);
     if (!cles.length && (rpId === MAC || !this.appsAvecEmpreinte().length))
       throw new Error(rpId === MAC ? 'aucun Touch ID associé sur ce Mac' : 'aucun téléphone associé');
-    return { challenge: this.defi('presence', { action: String(action), rpId }), rpId, userVerification: 'required', timeout: 120000,
+    const suffixe = texte ? b64u(Buffer.from(String(texte).slice(0, 300), 'utf8')) : '';
+    return { challenge: this.defi('presence', { action: String(action), rpId, texte: texte ? String(texte).slice(0, 300) : undefined }, suffixe),
+      rpId, userVerification: 'required', timeout: 120000,
       allowCredentials: cles.map(k => ({ type: 'public-key', id: k.id })) };
   }
 

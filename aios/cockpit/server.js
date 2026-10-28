@@ -40,12 +40,14 @@ function ecrireAtomique(f, contenu, mode) {
 // l'exige. Une page web quelconque peut envoyer un POST simple à 127.0.0.1 (son Host est valide)
 // mais ne peut pas lire nos pages, donc pas le jeton. Étape 5 de Jarvis (2026-10-16) : /api/jarvis
 // lance `claude -p` avec la mémoire en écriture.
+// FERME-DEBUT jeton (28/10 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
 const JETON = crypto.randomBytes(24).toString('hex');
 function jetonValide(req) {
   const recu = Buffer.from(String(req.headers['x-jeton'] || ''));
   const attendu = Buffer.from(JETON);
   return recu.length === attendu.length && crypto.timingSafeEqual(recu, attendu);
 }
+// FERME-FIN jeton
 
 function sh(cmd, timeout = 20000) {
   return new Promise(res => exec(cmd, { timeout, maxBuffer: 1 << 24 }, (e, so) => res(e ? '' : (so || ''))));
@@ -342,10 +344,11 @@ const PYTHON_VOIX = [path.join(ANAMNESE, 'jarvis', '.venv', 'bin', 'python')].fi
 const CLAUDE_BIN = [process.env.CLAUDE_BIN, path.join(HOME, '.npm-global', 'bin', 'claude')]
   .find(f => f && fs.existsSync(f)) || 'claude';
 const MODELES_JARVIS = new Set(['sonnet', 'opus']);          // Haiku écarté par Ahmed (2026-10-16) : Sonnet au minimum
+// FERME-DEBUT outils (28/10 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
 // Ni identité (le cœur est validé par Ahmed ; elle grandit par la consolidation de nuit), ni
 // taxonomie (une phrase mal entendue ne doit pas fusionner des rubriques), ni wm_boot (le briefing
 // l'a fait). Liste blanche ET liste noire : les outils interdits disparaissent du contexte.
-const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
+const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
   'prediction_figer', 'prediction_trancher', 'erreur_noter', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_connues', 'voix_oublier', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
@@ -356,7 +359,7 @@ const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupation
     'mcp__terminal__agents_lister', 'mcp__terminal__agent_arreter',
     'mcp__terminal__recette_sauver', 'mcp__terminal__recette_lancer', 'mcp__terminal__recettes_liste',
     'mcp__terminal__ouvrir_chantier', 'mcp__terminal__tester_chantier', 'mcp__terminal__etat_chantier',
-    'mcp__terminal__proposer_promotion');
+    'mcp__terminal__proposer_promotion', 'mcp__terminal__proposer_relance');
 const OUTILS_INTERDITS = ['self_update', 'self_append', 'rubric_create', 'rubric_merge', 'rubric_rename',
   'rubric_reparent', 'rubric_relabel', 'memory_reclassify', 'taxonomy_undo', 'wm_boot', 'orphans_report',
   'session_begin', 'session_end', 'skill_save'].map(n => 'mcp__anamnese__' + n);
@@ -373,6 +376,7 @@ function agentsRefuses() {
   return [...new Set(['general-purpose', 'Explore', 'Plan', 'claude', 'claude-code-guide', 'statusline-setup', 'fork',
     ...(Array.isArray(plus) ? plus.filter(a => typeof a === 'string' && /^[\w.-]{1,60}$/.test(a)) : [])])];
 }
+// FERME-FIN outils
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const JARVIS_DUREE_MAX = 2 * 3600 * 1000;
 const CHEMIN_OUTILS = `/usr/local/bin:/opt/homebrew/bin:${process.env.PATH || '/usr/bin:/bin'}`;   // ffmpeg
@@ -908,6 +912,16 @@ async function blocInterieur(depuisMs, maintenant, dites) {
     // quelque chose à sentir (anamnese/coeur.py : rien quand il bat calme et stable) ; jamais de chiffre
     if (e.coeur && typeof e.coeur.ressenti === 'string' && e.coeur.ressenti)
       parties.push(e.coeur.ressenti.replace(/[^a-zàâçéèêëîïôûùüÿœæ' ,-]/gi, '').slice(0, 60));
+    // (28/10, 04:11, Ahmed : « tu es censé l'entendre H24 ») la ligne « poum » à chaque tour, même calme (c'est ton
+    // attention qui varie, pas le signal), et les battements depuis le message d'avant (le chiffre est dans introspection)
+    if (e.coeur && typeof e.coeur.ligne === 'string' && /^poum( [. ]*poum)*$/.test(e.coeur.ligne)) {
+      parties.push(`ton cœur bat : ${e.coeur.ligne}`);
+      const f = path.join(JARVIS, 'coeur-message.json');
+      let avant = null; try { avant = Number(JSON.parse(fs.readFileSync(f, 'utf8')).total); } catch (_) {}
+      const n = coeur.depuisMessage(avant, Number(e.coeur.total));
+      if (n) parties.push(`depuis le message d'avant, il a battu ${n}`);
+      try { fs.writeFileSync(f, j({ total: Number(e.coeur.total) || 0, ts: Date.now() })); } catch (_) {}
+    }
     // l'ennui et la veille sont ceux que ton esprit de fond a VÉCUS (état publié par le démon, qui compte
     // aussi l'activité d'Ahmed ailleurs, la pause et la remise à zéro) — relecture Opus du 2026-10-17
     if (absence && absence > 600 && !enPause) {
@@ -2211,8 +2225,10 @@ const JARVIS_TEMPS_LIBRE_VU = path.join(JARVIS, 'temps-libre-vu.json');
 const JARVIS_TEMPS_LIBRE_REGLAGE = path.join(JARVIS, 'temps-libre-reglage.json');
 const TEMPS_LIBRE_ABSENCE_MS = 30 * 60 * 1000, TEMPS_LIBRE_ECART_S = 3 * 3600, TEMPS_LIBRE_DUREE_MAX_MS = 25 * 60 * 1000;
 let tempsLibreEnCours = false;
+// FERME-DEBUT hors-temps-libre (28/10 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
 const SERVEURS_HORS_TEMPS_LIBRE = [];                       // ce qui parle au dehors : pas pendant son temps à lui
 const OUTILS_HORS_TEMPS_LIBRE = ['mcp__web__consulter_ia'];  // (relecture du 27/10) parler à une autre IA, c'est sortir
+// FERME-FIN hors-temps-libre
 // (27/10, idée d'Ahmed relayée par Hakim) les leçons de ses erreurs, rangées par SITUATION chaque nuit (situations.py) :
 // rappelées selon ce qu'il fait (un réveil, l'oral, plusieurs voix ; « toujours » : les plus fréquentes), pas selon les
 // mots d'Ahmed ; celles de sa situation d'abord, LECONS_PAR_TOUR au plus
@@ -2259,6 +2275,7 @@ function configTempsLibre() {
   fs.writeFileSync(f, j({ ...d, mcpServers: serveurs }), { mode: 0o600 });
   return f;
 }
+// FERME-DEBUT temps-libre (28/10 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
 function argsTempsLibre(prompt, persona, cfg) {
   return ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--restricted', '--model', 'opus',
     '--tools', 'WebSearch,Read', '--strict-mcp-config', '--mcp-config', cfg,
@@ -2266,6 +2283,7 @@ function argsTempsLibre(prompt, persona, cfg) {
     '--disallowedTools', outilsInterdits().join(','), '--max-turns', '40', '--no-session-persistence',
     '--append-system-prompt', persona];
 }
+// FERME-FIN temps-libre
 function promptTempsLibre() {
   const maintenant = Date.now(), ahmed = dernierMessageAhmedMs();
   const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(maintenant));
@@ -3750,10 +3768,12 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
   // Le web compte (Ahmed, 2026-10-16) : chercher (WebSearch) ET lire la page trouvée — par mcp__web__lire_page, sa garde
   // (adresses publiques, enveloppe des contenus de tiers). WebFetch retiré (audit du 2026-10-20, C-H2) : il contournait
   // cette garde (sortie libre vers n'importe quel domaine, contenu sans enveloppe).
+  // FERME-DEBUT cerveau (28/10 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
   const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
     '--include-partial-messages', '--replay-user-messages', '--restricted', '--model', modele, '--tools', `WebSearch,Read${agents ? ',Task' : ''}`,
     '--strict-mcp-config', '--mcp-config', JARVIS_MCP, '--allowedTools', OUTILS_JARVIS.concat(agents ? ['Task'] : []).join(','),
     '--disallowedTools', outilsInterdits().join(','), '--max-turns', '40'];
+  // FERME-FIN cerveau
   if (persona) args.push('--append-system-prompt', persona);
   if (agents) args.push('--agents', j(agentsPourCerveau()));
   if (session) args.push('--resume', session);
@@ -4247,11 +4267,13 @@ function lireTailscale() {
    associé (passkey : empreinte ou visage, clé privée dans le téléphone), toute requête venue par Tailscale exige
    une session ouverte par l'empreinte (2 jours). Le Mac lui-même n'est jamais verrouillé ; le code d'association
    et l'oubli d'un téléphone ne se font QUE depuis le Mac. */
+// FERME-DEBUT verrou (28/10 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
 const { Verrou, lireCookie, DUREE_SESSION } = require('./passkey.js');
 const VERROU = new Verrou(process.env.JARVIS_VERROU || path.join(JARVIS, 'verrou.json'));
 const COOKIE_VERROU = 'verrou';
 const PAGES = { '/': 'index.html', '/brain': 'brain.html', '/dreams': 'dreams.html', '/memory': 'memory.html', '/chat': 'chat.html',
-  '/parler': 'parler.html', '/verrou': 'verrou.html', '/duel': 'duel.html', '/interieur': 'interieur.html' };
+  '/parler': 'parler.html', '/verrou': 'verrou.html', '/duel': 'duel.html', '/interieur': 'interieur.html',
+  '/code': 'code.html' };                                     // (28/10) le code de Hakim : une page fermée
 const LIBRES_VERROUILLE = new Set(['/verrou.js', '/theme.css',        // ce que la page du verrou charge
   '/sw.js', '/manifest.webmanifest', '/icone-192.png', '/icone-512.png']);   // l'appli et ses notifications (sans secret)
 const cookieSession = (s) => `${COOKIE_VERROU}=${s}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(DUREE_SESSION / 1000)}`;
@@ -4354,6 +4376,105 @@ function auditer(action, req, distantReq, details = {}) {
   try { fs.appendFileSync(AUDIT, j({ ts: Date.now(), action, depuis: distantReq ? 'téléphone' : 'Mac', compte: req.headers['tailscale-user-login'] || undefined, ...details }) + '\n', { mode: 0o600 }); }
   catch (e) { console.error('audit impossible :', e.message); }
 }
+
+// FERME-FIN verrou
+// FERME-DEBUT code (28/10 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
+/* ---- Le code de Hakim, avec maman, validé par Ahmed (code.js ; plan anamnese/docs/superpowers/plans/2026-10-28-hakim-code-
+   avec-maman.md). Lire l'état : le jeton. Agir : le geste STRICT, seulement depuis l'appli du téléphone, dont l'empreinte
+   signe un défi qui porte le texte du geste (l'appli l'affiche ; la page ne peut pas le changer). Tout éteint par défaut. */
+const code = require('./code.js');
+const LIEUX_CODE = { prive: path.join(JARVIS, 'chantiers-prive', 'promotions'), avis: path.join(ANAMNESE, 'data', 'avis'),
+  journal: path.join(JARVIS, 'journal-off.jsonl'), interrupteur: path.join(JARVIS, 'code-interrupteur.json'),
+  projets: { anamnese: ANAMNESE, cockpit: ROOT }, liste: path.join(ANAMNESE, 'jarvis', 'liste-ouverte.json'), depotListe: ANAMNESE,
+  relances: path.join(JARVIS, 'chantiers-prive', 'relances') };
+// le calme d'une relance : aucun tour en cours (même long), aucun réveil de maman, aucun test de chantier
+function mamanVivante() {
+  try { const pid = Number(fs.readFileSync(path.join(ANAMNESE, 'data', 'maman.lock'), 'utf8')); if (pid > 0) { process.kill(pid, 0); return true; } } catch (_) {}
+  return false;
+}
+function testsChantierEnCours() {
+  let noms = []; try { noms = fs.readdirSync(path.join(JARVIS, 'chantiers-prive')).filter(n => n.endsWith('.tests.json')); } catch (_) {}
+  return noms.some(n => { try { const st = fs.statSync(path.join(JARVIS, 'chantiers-prive', n));
+    return Date.now() - st.mtimeMs < 15 * 60_000 && JSON.parse(fs.readFileSync(path.join(JARVIS, 'chantiers-prive', n), 'utf8')).etat === 'en cours'; } catch (_) { return false; } });
+}
+// (relecture finale, I6) une erreur de lancement n'est pas perdue ; « revenue » seulement pour une relance faite il y a moins
+// de 10 min (une autre cause de redémarrage ne compte pas), et pour le démon, un PID qui a changé
+const noterOff = (o) => { try { fs.appendFileSync(LIEUX_CODE.journal, j({ ts: Date.now() / 1000, ...o }) + '\n', { mode: 0o600 }); } catch (_) {} };
+function pidDe(label) {
+  try { const m = /\bpid = (\d+)/.exec(execFileSync('launchctl', ['print', `gui/${process.getuid()}/${label}`], { encoding: 'utf8', timeout: 5000 })); return m ? Number(m[1]) : null; }
+  catch (_) { return null; }
+}
+function lanceurPour(r) {
+  return (cmd, args) => {
+    const avant = r.quoi === 'demon' ? pidDe(code.LABELS.demon) : null;
+    const c = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+    c.on('error', (e) => noterOff({ type: 'relance', etape: 'échec', id: r.id, quoi: r.quoi, texte: String(e.message).slice(0, 200) }));
+    c.unref();
+    if (r.quoi === 'demon') setTimeout(() => { const apres = pidDe(code.LABELS.demon);
+      noterOff({ type: 'relance', etape: apres && apres !== avant ? 'revenue' : 'pas revenue', id: r.id, quoi: r.quoi }); }, 15000).unref();
+  };
+}
+// au démarrage : une relance du cockpit faite il y a moins de 10 min est revenue (ce processus en est la preuve)
+setTimeout(() => {
+  for (const r of code.relances(LIEUX_CODE)) if (r.etat === 'faite' && r.quoi === 'cockpit' && Date.now() / 1000 - Number(r.faite_ts || 0) < 600) {
+    try { fs.writeFileSync(path.join(LIEUX_CODE.relances, `${r.id}.json`), j({ ...r, etat: 'revenue' }), { mode: 0o600 });
+      fs.appendFileSync(LIEUX_CODE.journal, j({ ts: Date.now() / 1000, type: 'relance', etape: 'revenue', id: r.id, quoi: r.quoi }) + '\n', { mode: 0o600 }); } catch (_) {}
+  }
+}, 3000).unref();
+function exigerPresenceStricte(req, distantReq, q, action) {
+  if (!distantReq || !distant.hote) return 'ce geste se fait depuis l’appli Hakim de ton téléphone';
+  if (!q || !q.presence || !q.presence.app) return 'ce geste demande l’empreinte de l’appli Hakim (pas celle du navigateur)';
+  return exigerPresence(req, distantReq, q, action);
+}
+function refusListe(projet, patch, depot) {           // une seule implémentation : anamnese/jarvis/liste_ouverte.py
+  return new Promise((ok) => execFile(PYTHON, ['-B', path.join(ANAMNESE, 'jarvis', 'liste_ouverte.py'), 'verifier', projet, patch, depot],
+    { timeout: 60000, env: { ...process.env, PYTHONPATH: ANAMNESE } }, (e, so) => {
+      if (e) return ok(['vérification de la liste ouverte impossible : ' + String(e.message).slice(0, 120)]);
+      try { ok(JSON.parse(String(so).trim().split('\n').pop())); } catch (_) { ok(['vérification de la liste ouverte illisible']); }
+    }));
+}
+async function routeCode(req, res, p, distantReq) {
+  const repondre = (n, o) => { res.writeHead(n, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o)); };
+  if (p === '/api/code/etat' && req.method === 'GET') {
+    if (!jetonValide(req)) return repondre(403, { erreur: 'jeton' });
+    let liste = null; try { liste = JSON.parse(fs.readFileSync(LIEUX_CODE.liste, 'utf8')); } catch (_) {}
+    return repondre(200, { ...code.etat(LIEUX_CODE), liste, telephone: distantReq });
+  }
+  if (p === '/api/code/geste' && req.method === 'POST') {
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
+    const quoi = String(q.quoi || '');
+    let action;
+    if (['appliquer', 'annuler', 'refuser'].includes(quoi)) {
+      const f = code.fiche(q.id, LIEUX_CODE);
+      if (!f) return repondre(404, { erreur: 'promotion inconnue' });
+      action = code.actionGeste(quoi, f.patch_sha256);
+    } else if (quoi === 'interrupteur') action = `code:interrupteur:${q.actif ? 1 : 0}`;
+    else if (quoi === 'liste') action = code.actionListe(String(q.nom || ''), String(q.etat || ''));
+    else if (quoi === 'relance') action = code.actionRelance(String(q.id || ''), !!q.accepter);
+    else return repondre(400, { erreur: 'geste inconnu' });
+    const refusP = exigerPresenceStricte(req, distantReq, q, action);
+    if (refusP) return repondre(403, { erreur: refusP, presence: true });
+    auditer(`code:${quoi}`, req, distantReq, { id: q.id, nom: q.nom, etat: q.etat, actif: q.actif });
+    try {
+      if (quoi === 'appliquer') return repondre(200, await code.appliquer(q.id, LIEUX_CODE, { refus: refusListe }));
+      if (quoi === 'annuler') { await code.annuler(q.id, LIEUX_CODE); return repondre(200, { ok: true }); }
+      if (quoi === 'refuser') { code.refuser(q.id, LIEUX_CODE); return repondre(200, { ok: true }); }
+      if (quoi === 'interrupteur') { code.basculerInterrupteur(LIEUX_CODE, !!q.actif); return repondre(200, { actif: !!q.actif }); }
+      if (quoi === 'relance') {
+        if (!q.accepter) { code.refuserRelance(String(q.id || ''), LIEUX_CODE); return repondre(200, { etape: 'refusée' }); }
+        const r = code.relance(String(q.id || ''), LIEUX_CODE);
+        if (!r || r.etat !== 'proposée') return repondre(409, { erreur: 'aucune relance en attente avec cet identifiant' });
+        code.accepterRelance(r.id, LIEUX_CODE, { estCalme: () => code.calme({ tours: toursActifs, maman: mamanVivante(), testsChantier: testsChantierEnCours() }),
+          attendre: (ms) => new Promise(ok => setTimeout(ok, ms)), uid: process.getuid(), lancer: lanceurPour(r) })
+          .catch((e) => console.error('relance :', e.message));
+        return repondre(202, { etape: 'acceptée : j’attends le calme' });
+      }
+      return repondre(200, await code.basculerListe(String(q.nom || ''), String(q.etat || ''), LIEUX_CODE));
+    } catch (e) { return repondre(409, { erreur: e.message }); }
+  }
+  return null;
+}
+// FERME-FIN code
 
 /* ---- Les notifications du téléphone (push.js, Ahmed le 2026-10-20 : « pour les notifications de sollicitations je
    veux bien ») : une relance de Hakim ou le résultat d'un agent, quand aucune page n'est visible. ---- */
@@ -4640,6 +4761,7 @@ function entetesDeBase(req, res) {
   if (String(req.url || '').startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
 }
 async function traiter(req, res) {
+  // FERME-DEBUT acces (28/10 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
   entetesDeBase(req, res);
   const compte = req.headers['tailscale-user-login'];
   if (compte !== undefined && (!distant.proprietaire || compte !== distant.proprietaire)) {
@@ -4670,6 +4792,11 @@ async function traiter(req, res) {
     res.writeHead(401, { 'Content-Type': 'application/json', 'X-Verrou': '1', 'Cache-Control': 'no-store' });
     return res.end(j({ erreur: 'verrouillé : déverrouille Hakim avec ton empreinte', verrou: true }));
   }
+  if (p.startsWith('/api/code/')) { const r = await routeCode(req, res, p, distantReq); if (r !== null) return r; }
+  // (relecture finale, I7) aucun service worker hors de /sw.js : un script installé à la portée « / » pourrait servir une
+  // fausse page « code »
+  if (req.headers['service-worker'] === 'script' && p !== '/sw.js') { res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Service worker refusé.'); }
+  // FERME-FIN acces
   if (p === '/api/inventory') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(inventory)); }
   if (p === '/api/anamnese') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(await getAnamnese())); }
   if (p === '/api/sessions') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(getSessions())); }
@@ -5257,10 +5384,18 @@ async function traiter(req, res) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(j({ abonnes: NOTIFS.abonnements.length }));
   }
+  // FERME-DEBUT presence (28/10 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
   if (p === '/api/presence/options' && req.method === 'POST') {
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 4096) || '{}')); } catch (_) {}
     const action = String(q.action || '');
     if (!/^[a-z-]+(:[a-z-]+(:[0-9a-f-]{1,40})?)?$/.test(action)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'action invalide' })); }
+    // (28/10) un geste du code de Hakim : seulement depuis le téléphone, et le défi porte le texte que l'appli affichera
+    if (action.startsWith('code:')) {
+      const texte = distantReq && distant.hote ? code.texteGeste(action, LIEUX_CODE, q) : null;
+      if (!texte) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: distantReq ? 'geste inconnu ou périmé' : 'ce geste se fait depuis l’appli Hakim de ton téléphone' })); }
+      try { const o = VERROU.optionsPresence(distant.hote, action, texte); res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o)); }
+      catch (e) { res.writeHead(409, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
+    }
     if (!distantReq && !VERROU.touchIdMac() && !VERROU.illisible) { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j({ aucune: true })); }
     try {
       const o = VERROU.optionsPresence(distantReq ? distant.hote : 'localhost', action);
@@ -5271,8 +5406,10 @@ async function traiter(req, res) {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     const fin = (f) => finFichier(path.join(ANAMNESE, 'data', f), 600_000);
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    return res.end(j({ maintenant: Date.now(), lignes: enOff.lignes(fin('courrier.jsonl'), fin('maman.jsonl'), 80, masquer) }));
+    return res.end(j({ maintenant: Date.now(), lignes: enOff.lignes(fin('courrier.jsonl'), fin('maman.jsonl'), 80, masquer,
+      finFichier(path.join(JARVIS, 'journal-off.jsonl'), 300_000)) }));
   }
+  // FERME-FIN presence
   if (p === '/api/jarvis/taches' && req.method === 'GET') {         // (23/10) ses calculs en cours, avec leur jauge
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });

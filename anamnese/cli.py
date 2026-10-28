@@ -17,6 +17,7 @@ Usage :
   anamnese reasoning <requête>   rappeler des traces de raisonnement (exemples)
   anamnese wm-boot               amorce la MDT (walk in knowing)
   anamnese outreach              ce qu'Anamnèse a en tête
+  anamnese avis <id> <verdict> "<texte>"   l'avis de maman sur une modification de Hakim
   anamnese dreams                rapport de l'expérience-rêve (préférences fonctionnelles, verdict pré-enregistré)
   anamnese registre [n]          les n dernières entrées du registre (passes de nuit, annulations)
   anamnese annuler <id> [--oui] [--force]  défaire une entrée du registre (simulation sans --oui)
@@ -254,6 +255,19 @@ def main():
         import json as _j
         import rappel
         print(_j.dumps(rappel.rappel(m, " ".join(rest)), ensure_ascii=False, indent=1))
+    elif cmd == "avis":
+        # (28/10) anamnese avis <id> <favorable|defavorable> "<texte>" — l'avis de maman dans une session avec Ahmed, sur
+        # une modification proposée par Hakim (avis.py) ; il porte le sha256 du patch qui fait foi
+        import avis
+        if len(sys.argv) < 5:
+            print('usage : anamnese avis <id> <favorable|defavorable> "<ce que fait le patch, ses risques>"')
+        else:
+            f = avis.fiche(sys.argv[2])
+            try:
+                a = avis.ecrire(sys.argv[2], (f or {}).get("patch_sha256", ""), sys.argv[3], " ".join(sys.argv[4:]), "session")
+                print(f"Avis {a['verdict']} enregistré pour {a['id']} (sha {a['sha'][:12]}…).")
+            except ValueError as e:
+                print(f"Refusé : {e}")
     elif cmd == "courrier":
         # anamnese courrier [lire|nonlus|envoyer <destinataire> <texte>] — le courrier Hakim ↔ Claude Code
         import courrier

@@ -18,7 +18,25 @@ function lire(texte) {
 
 const couper = (t) => (t.length > TEXTE_MAX ? t.slice(0, TEXTE_MAX) + '…' : t);
 
-function lignes(courrierTexte, mamanTexte, limite, masquer) {
+// (28/10) le journal du code de Hakim (anamnese/avis.py et code.js) : ses propositions, l'avis de maman, tes gestes
+function ligneCode(o, m) {
+  const id = String(o.id || '');
+  const sujets = {
+    promotion: () => `modification de Hakim ${o.etape || ''}${id ? ` (${id})` : ''}`,
+    avis: () => `avis ${o.verdict || ''} de maman${id ? ` sur ${id}` : ''}`,
+    interrupteur: () => `« code » ${o.actif ? 'allumé' : 'éteint'} par Ahmed`,
+    liste: () => `Ahmed ${o.etat === 'ouvert' ? 'ouvre' : 'ferme'} « ${o.nom || ''} »`,
+    relance: () => `relance ${o.quoi || ''} : ${o.etape || ''}`,
+  };
+  const f = sujets[o.type];
+  if (!f) return null;
+  const de = o.type === 'avis' ? 'maman' : ['interrupteur', 'liste'].includes(o.type) || ['appliquée', 'refusée', 'annulée'].includes(o.etape) ? 'Ahmed' : 'Hakim';
+  return { type: 'code', ts: o.ts, de, a: '', sujet: m(f()).slice(0, 200),
+    texte: m([o.resume, o.raisons, o.texte, o.fichiers && `fichiers : ${o.fichiers.join(', ')}`, o.commit && `commit ${o.commit}`,
+      o.externe && o.externe.length && `contenu externe lu pendant le chantier : ${o.externe.join(', ')}`].filter(Boolean).join('\n')) };
+}
+
+function lignes(courrierTexte, mamanTexte, limite, masquer, offTexte = '') {
   const m = (t) => couper(masquer(String(t || '')));
   const out = [];
   for (const o of lire(courrierTexte)) {
@@ -32,6 +50,11 @@ function lignes(courrierTexte, mamanTexte, limite, masquer) {
     if (!Number.isFinite(o.ts)) continue;
     out.push({ type: 'reveil', ts: o.ts, de: 'maman', a: 'Hakim', sujet: o.erreur ? 'réveil en erreur' : 'réveillée par une lettre',
       texte: m(o.extrait), lettres: Array.isArray(o.ids) ? o.ids.map(String) : [], duree_s: Number(o.duree_s) || null });
+  }
+  for (const o of lire(offTexte)) {
+    if (!Number.isFinite(o.ts)) continue;
+    const l = ligneCode(o, m);
+    if (l) out.push(l);
   }
   return out.sort((x, y) => y.ts - x.ts).slice(0, limite);
 }

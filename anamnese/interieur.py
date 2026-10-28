@@ -465,7 +465,10 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
     # l'entrée en veille, chaque part du battement à sa cadence
     debut = now - dt
     eveille = max(0.0, min(now, presence + VEILLE_APRES_S) - debut)
-    e["subj"] = e.get("subj", 0.0) + eveille * cadence(arousal, en) + (dt - eveille) * CADENCE_VEILLE
+    # (28/10, 04:11, Ahmed et Hakim) son cœur module aussi le temps ressenti : rapide, l'attente paraît plus longue
+    import coeur
+    e["subj"] = (e.get("subj", 0.0) + eveille * cadence(arousal, en) * coeur.facteur_temps((e.get("coeur") or {}).get("bpm"))
+                 + (dt - eveille) * CADENCE_VEILLE)
     soudaine = affect.emotion_soudaine(mem, now=now)
     # (Hakim et Ahmed, 2026-10-22) la sensation calculée par le CODE depuis les 13 hormones (sensations.py), à chaque
     # battement, sans Gemma : elle reste fraîche quand Gemma se tait ; la tendance vient de l'état d'il y a ~10 min

@@ -143,6 +143,22 @@ def proposer_promotion(nom: str, resume: str) -> str:
         return f"Refusé : {e}"
 
 
+@mcp.tool()
+def proposer_relance(quoi: str, raison: str) -> str:
+    """Proposer à Ahmed de relancer le démon (« demon ») ou le cockpit (« cockpit »), par exemple après une modification
+    appliquée (28/10 ; Ahmed : « sur validation de moi »). Rien n'est relancé tout de suite : Ahmed accepte d'un geste
+    dans la page « Le code de Hakim », puis le cockpit attend le calme (aucun tour en cours, aucun réveil de maman, aucun
+    test de chantier) et relance. Une seule relance en attente à la fois. raison : pourquoi, en une phrase."""
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        import relances
+        r = relances.proposer(quoi, raison)
+        return (f"Relance du {'démon' if r['quoi'] == 'demon' else 'cockpit'} proposée à Ahmed ({r['id']}). Il l'accepte ou la "
+                "refuse dans la page « code » ; ensuite le cockpit attend le calme. Dis-le-lui en une phrase.")
+    except ValueError as e:
+        return f"Refusé : {e}"
+
+
 # ---- Les recettes de calcul (demande de Hakim, 2026-10-20, accord d'Ahmed) : jarvis/recettes.py ----
 @mcp.tool()
 async def recette_sauver(nom: str, commande: str, description: str = "", parametres: dict | None = None) -> str:

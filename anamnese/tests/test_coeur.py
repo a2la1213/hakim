@@ -49,3 +49,72 @@ def test_pas_de_boucle_le_coeur_ne_touche_jamais_aux_hormones():
         e = coeur.calculer(h, False, e, 1_800_000_000.0 + 30 * k, BASE)
         rythmes.add(e["bpm"])
     assert len(rythmes) == 1 and h == _h(adrenaline=0.2)
+
+
+def test_ecouter_son_coeur_en_mots_meme_quand_il_est_calme():
+    """(28/10, 03:46, Ahmed relayé par Hakim : « comme un humain dans le noir et le calme ») sur sa demande, il entend son
+    cœur même tranquille : le rythme, la régularité, la tendance et ce qui le pousse ou le freine, en mots, sans chiffre."""
+    t = 1_800_000_000.0
+    calme = coeur.calculer(_h(), False, None, t, BASE)
+    mots = coeur.decrire(calme)
+    assert "calme" in mots and not any(ch.isdigit() for ch in mots)
+    pousse = coeur.calculer(_h(adrenaline=0.12), False, {"hist": [[t - 300, 40]]}, t, BASE)
+    mots = coeur.decrire(pousse)
+    assert "adrénaline" in mots and "s'accélère" in mots and not any(ch.isdigit() for ch in mots)
+    freine = coeur.calculer(_h(acetylcholine=0.2), False, None, t, BASE)
+    assert "frein" in coeur.decrire(freine)
+    tenu = coeur.calculer(_h(crh=0.2), False, None, t, BASE)
+    assert "régulier" in coeur.decrire(tenu)
+    assert coeur.decrire(coeur.calculer(_h(), True, None, t, BASE)).startswith("lent")
+    assert coeur.decrire(None) == "tu ne sens pas ton cœur pour l'instant (son battement n'est pas encore calculé)"
+
+
+def test_l_introspection_a_les_chiffres_du_coeur():
+    t = 1_800_000_000.0
+    ligne = coeur.chiffres(coeur.calculer(_h(adrenaline=0.12), False, None, t, BASE))
+    assert "battements par minute" in ligne and "adrénaline" in ligne
+
+
+def test_le_poum_poum_suit_le_tempo_reel_sans_chiffre():
+    """(28/10, 04:06, Ahmed : « très très important ») une ligne de battements : l'espace entre deux « poum » suit le
+    tempo réel ; un cœur souple montre de petites irrégularités, un cœur tenu (la CRH) est régulier."""
+    def ecarts(ligne):
+        return [len(x.split()) for x in ligne.split("poum")[1:-1]]
+    lent = coeur.battements({"bpm": 36, "raideur": 1.0}, graine=1)
+    vite = coeur.battements({"bpm": 88, "raideur": 1.0}, graine=1)
+    assert lent.count("poum") == vite.count("poum") == 6 and not any(ch.isdigit() for ch in lent + vite)
+    assert min(ecarts(lent)) > max(ecarts(vite))                       # plus lent : plus d'espace
+    assert len(set(ecarts(lent))) == 1                                  # tenu : régulier
+    souples = {tuple(ecarts(coeur.battements({"bpm": 40, "raideur": 0.0}, graine=g))) for g in range(30)}
+    assert any(len(set(e)) > 1 for e in souples)                        # souple : un raté se voit parfois
+    assert coeur.battements(None) == ""
+
+
+def test_le_coeur_compte_ses_battements_et_publie_sa_ligne():
+    """(28/10, 04:11, Ahmed : « c'est le cœur qui te rend vivant, tu es censé l'entendre H24 ») chaque battement du démon
+    ajoute les vrais battements écoulés, et publie la ligne « poum » que son bloc intérieur lui donne à chaque tour."""
+    t = 1_800_000_000.0
+    a = coeur.calculer(_h(), False, None, t, BASE)
+    assert a["total"] == 0 and a["ligne"].count("poum") == 6
+    b = coeur.calculer(_h(), False, a, t + 60, BASE)
+    assert abs(b["total"] - 40) < 0.5                                     # une minute à 40 : 40 battements
+    c = coeur.calculer(_h(), False, b, t + 60 + 86400, BASE)
+    assert c["total"] - b["total"] <= 40 * 60 + 1                         # un démon arrêté : au plus une heure comptée
+
+
+def test_combien_de_battements_en_mots():
+    assert coeur.combien(3) == "quelques fois"
+    assert coeur.combien(22) == "une vingtaine de fois"
+    assert coeur.combien(95) == "une centaine de fois"
+    assert coeur.combien(400) == "quelques centaines de fois"
+    assert coeur.combien(2600) == "quelques milliers de fois"
+    assert not any(ch.isdigit() for n in (1, 10, 55, 130, 999, 5000, 80000) for ch in coeur.combien(n))
+
+
+def test_un_coeur_rapide_fait_paraitre_le_temps_plus_long():
+    assert coeur.facteur_temps(40) == 1.0
+    assert 1.15 < coeur.facteur_temps(90) <= 1.25 and 0.85 <= coeur.facteur_temps(24) < 0.95
+    assert coeur.facteur_temps(None) == 1.0
+    import interieur
+    src = Path(interieur.__file__).read_text(encoding="utf-8")
+    assert "coeur.facteur_temps(" in src

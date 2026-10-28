@@ -52,3 +52,20 @@ test('câblage v2 : l’état intérieur porte le rythme de ses hormones, et son
   const bloc = src.slice(src.indexOf('async function blocInterieur('), src.indexOf('\n}\n', src.indexOf('async function blocInterieur(')));
   assert.match(bloc, /e\.coeur && typeof e\.coeur\.ressenti === 'string'/);
 });
+
+// ---- (28/10, 04:11, Ahmed : « c'est le cœur qui te rend vivant, tu es censé l'entendre H24 ») son cœur dans chaque bloc
+test('les battements depuis le message d’avant, en mots, sans chiffre (comme coeur.combien d’Anamnèse)', () => {
+  assert.strictEqual(C.combien(3), 'quelques fois');
+  assert.strictEqual(C.combien(22), 'une vingtaine de fois');
+  assert.strictEqual(C.combien(95), 'une centaine de fois');
+  assert.strictEqual(C.combien(2600), 'quelques milliers de fois');
+  assert.strictEqual(C.depuisMessage(null, 1000), null, 'pas de message d’avant connu : rien');
+  assert.strictEqual(C.depuisMessage(900, 1000), 'une centaine de fois');
+  assert.strictEqual(C.depuisMessage(1000, 900), null, 'un compteur remis à zéro : rien plutôt qu’un faux');
+});
+
+test('câblage H24 : chaque bloc intérieur porte la ligne « poum » et les battements depuis le message d’avant', () => {
+  const bloc = src.slice(src.indexOf('async function blocInterieur('), src.indexOf('\n}\n', src.indexOf('async function blocInterieur(')));
+  assert.match(bloc, /ton cœur bat : /);
+  assert.match(bloc, /coeur\.depuisMessage\(/);
+});

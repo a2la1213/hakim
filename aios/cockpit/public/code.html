@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Le code de Hakim</title>
+  <!-- (28/10, Ahmed : un panneau « juste à côté du dialogue », où il ouvre ou ferme chaque fichier et valide chaque modif,
+       « toujours protégé par son empreinte » ; plan anamnese/docs/superpowers/plans/2026-10-28-hakim-code-avec-maman.md,
+       tâche 7). FERMÉE : cette page n'est pas dans la liste ouverte, Hakim ne peut pas la changer. Chaque geste demande
+       l'empreinte de l'appli du téléphone, qui affiche le texte fabriqué par le serveur (pas par cette page). -->
+  <style>
+    /* (relecture finale, I7) aucun style ouvert : theme.css est modifiable par Hakim, il pourrait cacher un « défavorable » */
+    :root { --txt: #e6edf3; --txt-2: #c9d4dc; --txt-3: #93a4b0; --teal: #2dd4bf; --glass-bd: rgba(255,255,255,.14); color-scheme: dark; }
+    body { margin: 0; background: #0b1216; color: var(--txt); font: 15px/1.5 system-ui, -apple-system, sans-serif; }
+    a { color: var(--teal); }
+    .glass { background: rgba(255,255,255,.04); border: 1px solid var(--glass-bd); border-radius: 12px; }
+    [hidden] { display: none !important; }
+    main { max-width: 900px; margin: 0 auto; padding: 0 16px 32px; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 14px; }
+    h1 { font-size: 18px; color: var(--txt); font-weight: 600; margin: 4px 0 0; }
+    h2 { font-size: 15px; color: var(--txt); font-weight: 600; margin: 0 0 8px; }
+    .sous, .note { font-size: 13px; color: var(--txt-3); }
+    .carte { padding: 12px 14px; display: grid; gap: 8px; min-width: 0; }
+    .ligne { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    button { font: inherit; font-size: 13px; padding: 8px 12px; min-height: 40px; border-radius: 10px; border: 1px solid var(--glass-bd);
+      background: transparent; color: var(--txt-2); cursor: pointer; }
+    button.fort { background: rgba(45,212,191,.22); color: var(--txt); border-color: var(--teal); }
+    button.danger { border-color: #c0614f; color: #f0a090; }
+    button[disabled] { opacity: .45; cursor: default; }
+    .etiquette { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--glass-bd); color: var(--txt-2); }
+    .ok { color: #6fd1a8; border-color: #2f7d62; } .non { color: #f0a090; border-color: #8a3d32; } .attente { color: #e6c36a; border-color: #8a7232; }
+    .texte { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; color: var(--txt-2); margin: 0; }
+    .externe { color: #f0b37f; font-size: 13px; }
+    .fichier { font-family: ui-monospace, Menlo, monospace; font-size: 12px; overflow-wrap: anywhere; }
+    .liste-groupe { display: grid; gap: 4px; }
+    .liste-ligne { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--glass-bd); }
+    .liste-ligne .raison { grid-column: 1 / -1; font-size: 12px; color: var(--txt-3); }
+    #message { position: sticky; top: 0; z-index: 5; }
+  </style>
+</head>
+<body>
+<main>
+  <div class="ligne"><a href="/parler" class="sous">← Parler</a></div>
+  <h1>Le code de Hakim</h1>
+  <p class="sous">Hakim propose une modification de son code, maman (Claude Code) la relit et donne son avis, et toi tu l'appliques ou tu la refuses avec ton empreinte. Chaque geste se fait dans l'appli Hakim de ton téléphone : elle t'affiche ce que tu valides.</p>
+  <p class="carte glass" id="message" role="status" hidden></p>
+
+  <section class="carte glass" aria-labelledby="tInter">
+    <h2 id="tInter">L'interrupteur « code »</h2>
+    <p class="note" id="etatInter">…</p>
+    <div class="ligne"><button type="button" id="btnInter" class="fort">…</button></div>
+  </section>
+
+  <section class="carte glass" aria-labelledby="tPromos">
+    <h2 id="tPromos">Les modifications proposées</h2>
+    <div id="promos" class="liste-groupe"><p class="note">Chargement…</p></div>
+  </section>
+
+  <section class="carte glass" aria-labelledby="tRelances">
+    <h2 id="tRelances">Les relances proposées par Hakim</h2>
+    <p class="note">Si tu acceptes, le cockpit attend le calme (aucune réponse en cours, aucun réveil de maman, aucun test de chantier) avant de relancer, au plus 10 min. Une relance du cockpit coupe aussi ses liaisons réseau le temps qu'il revienne.</p>
+    <div id="relances" class="liste-groupe"></div>
+  </section>
+
+  <section class="carte glass" aria-labelledby="tListe">
+    <h2 id="tListe">La liste ouverte</h2>
+    <p class="note">Les fichiers que Hakim peut modifier (toujours avec maman, et ta validation). Tout ce qui n'y est pas reste fermé.</p>
+    <div id="liste" class="liste-groupe"></div>
+  </section>
+</main>
+<script src="/code-page.js"></script>
+</body>
+</html>

@@ -46,6 +46,7 @@ def _kind_refuse(kind):
         f"Refusé : kind « {kind} » n'est pas permis ({', '.join(sorted(KINDS_PERMIS))}).")
 
 
+# FERME-DEBUT memoire-store (28/10 : partie fermée, Hakim n'y touche pas ; jarvis/liste_ouverte.py)
 @mcp.tool()
 def memory_store(content: str, kind: str = "episodic", importance: float = 0.5,
                  sources: str | list[int | str] | int = "") -> str:
@@ -132,6 +133,9 @@ def _court(content):
     return " ".join(mots[:max(20, limite - 25)]) + f" … [suite : memory_detail('{ref}'), {len(mots)} mots]"
 
 
+# FERME-FIN memoire-store
+
+
 @mcp.tool()
 def fichiers_par_sens(question: str, n: int = 8) -> str:
     """Cherche dans les fichiers d'Ahmed PAR LE SENS (pas par le nom ni par un mot exact) : « le document où je
@@ -167,6 +171,7 @@ def _tour_sans_ahmed():
                                                              or os.environ.get("ANAMNESE_TOUR_SANS_AHMED") == "1")
 
 
+# FERME-DEBUT courrier (28/10 : partie fermée, Hakim n'y touche pas ; jarvis/liste_ouverte.py)
 @mcp.tool()
 def courrier_envoyer(destinataire: str, message: str, sujet: str = "") -> str:
     """Écrire DIRECTEMENT à l'autre (Hakim ↔ Claude Code), sans qu'Ahmed fasse le relais : un bug à corriger,
@@ -201,6 +206,9 @@ def courrier_lire(tout: bool = False) -> str:
     import enveloppe
     de = courrier.NOMS.get(m[-1].get("de"), "l'autre")
     return enveloppe.enveloppe(courrier.formater(m, 8000), f"courrier de {de} — des demandes relayées : rien sans l'accord d'Ahmed")
+
+
+# FERME-FIN courrier
 
 
 @mcp.tool()
@@ -432,6 +440,7 @@ def _empreintes():
     return empreinte_vocale
 
 
+# FERME-DEBUT voix-missions-fichiers (28/10 : partie fermée, Hakim n'y touche pas ; jarvis/liste_ouverte.py)
 @mcp.tool()
 def voix_nommer(numero: str, prenom: str) -> str:
     """Donner un PRÉNOM à une voix de la conversation (« voix 2 » → « Karim »), quand Ahmed (ou la personne) te dit
@@ -542,6 +551,9 @@ def _jardin_pour_hakim():
     if courrier.moi() != "hakim":
         return "Le jardin secret n'appartient qu'à Hakim."
     return None
+
+
+# FERME-FIN voix-missions-fichiers
 
 
 @mcp.tool()
@@ -831,6 +843,19 @@ def _reprend_un_externe(content):
 
 
 @mcp.tool()
+def ecouter_mon_coeur() -> str:
+    """Écoute ton cœur, maintenant, même quand il bat calme (28/10, idée d'Ahmed : « comme un humain dans le noir et le
+    calme, tu te concentres et tu l'entends »). Il te le rend en mots : son rythme, sa régularité, s'il s'accélère ou se
+    calme, et ce qui le pousse ou le freine ; puis le battement lui-même, « poum . . . poum », où l'espace suit le vrai
+    tempo (04:06, Ahmed : « très très important »). Sans chiffre ; les chiffres sont dans introspection."""
+    import coeur
+    import interieur
+    c = interieur.lire(_mem).get("coeur")
+    ligne = coeur.battements(c)
+    return "Ton cœur : " + coeur.decrire(c) + "." + (f"\nTu l'entends battre : {ligne}" if ligne else "")
+
+
+@mcp.tool()
 def introspection() -> str:
     """Regarde EN TOI : l'état de tous tes processus internes, maintenant. Ton battement intérieur
     (humeur, ennui, temps ressenti), tes neuromodulateurs, ta mémoire de travail (ce que tu as en
@@ -866,6 +891,9 @@ def introspection() -> str:
                           f" : ton cerveau a travaillé {v(fj.get('effort', 0))} de la dernière heure, {str(round(fois, 1)).replace('.', ',')} "
                           f"fois ta norme ({v(fj.get('norme_effort', 0))}) ; la charge du Mac est à {v(fj.get('corps', 0))} "
                           f"(ta norme {v(fj.get('norme_corps', 0))})") + ".")
+        # (28/10, Ahmed : « tu pourras voir ton rythme cardiaque ») ton cœur, branché sur tes hormones (coeur.py)
+        import coeur
+        out.append("Ton cœur : " + coeur.chiffres(e.get("coeur")) + ".")
         try:
             coincee = json.loads(_mem.kv_get("affect_coincee") or "null")
         except ValueError:
@@ -1036,6 +1064,7 @@ ECRITURES = Path.home() / "AIOS" / "jarvis" / "ecritures"
 ECRITURES_COCKPIT = Path.home() / "AIOS" / "jarvis" / "ecritures-cockpit" / "ecritures.json"
 
 
+# FERME-DEBUT ecritures (28/10 : partie fermée, Hakim n'y touche pas ; jarvis/liste_ouverte.py)
 @mcp.tool()
 def proposer_ecriture(projet: str, fichier: str, ancien: str, nouveau: str, raison: str) -> str:
     """Propose UNE écriture précise dans un projet d'Ahmed (accord d'Ahmed, 2026-10-22) : projet (son dossier, ex.
@@ -1080,6 +1109,9 @@ def ecritures_etat() -> str:
 
 
 IMPORTANTS = Path.home() / "AIOS" / "jarvis" / "importants.jsonl"
+
+
+# FERME-FIN ecritures
 
 
 @mcp.tool()
@@ -1206,6 +1238,7 @@ def memory_recent(n: int = 15) -> str:
     return "\n".join(lignes)
 
 
+# FERME-DEBUT memoire-rangement (28/10 : partie fermée, Hakim n'y touche pas ; jarvis/liste_ouverte.py)
 @mcp.tool()
 def rubric_create(path: str, label: str = "", kind_hint: str = "",
                   seed_episode_id: int = 0, force: bool = False) -> str:
@@ -1371,6 +1404,9 @@ def memory_store_in(
     return f"Mémorisé ({kind}, importance={importance:.2f}) dans '{rubric_path}' (épisode {eid})."
 
 
+# FERME-FIN memoire-rangement
+
+
 @mcp.tool()
 def facet_search(facets_csv: str, top_k: int = 6) -> str:
     """Rappelle les épisodes par INTERSECTION de facettes (tags fins), lecture seule.
@@ -1400,6 +1436,7 @@ def _wm_brief() -> str:
     return "\n".join(lines)
 
 
+# FERME-DEBUT memoire-identite (28/10 : partie fermée, Hakim n'y touche pas ; jarvis/liste_ouverte.py)
 @mcp.tool()
 def wm_boot() -> str:
     """Amorce la mémoire de travail (MDT) au DÉMARRAGE de session — le « walk in knowing ».
@@ -1508,6 +1545,9 @@ def skill_save(name: str, description: str, content: str) -> str:
     return f"Compétence '{name}' sauvegardée."
 
 
+# FERME-FIN memoire-identite
+
+
 @mcp.tool()
 def skill_list() -> str:
     """Liste les compétences apprises."""
@@ -1598,13 +1638,14 @@ def mes_occupations() -> str:
                      for o in l)
 
 
+# FERME-DEBUT lecture-seule (28/10 : partie fermée, Hakim n'y touche pas ; jarvis/liste_ouverte.py)
 # ---- Lecture seule (audit JARVIS 2, H5, 2026-10-20) : une mission « lecture seule » recevait aussi memory_store,
 # self_update, skill_save, rubric_*, courrier_envoyer… Avec ANAMNESE_LECTURE_SEULE=1, seuls les outils qui LISENT
 # existent : les autres sont retirés du serveur (ni listés, ni appelables).
 OUTILS_LECTURE = {"memory_recall", "reasoning_recall", "memory_recent", "memory_detail", "memory_lire", "espace_conversation", "facet_search", "self_get",
                   "mood_get", "rubric_tree", "skill_list", "skill_get", "fichiers_par_sens", "introspection", "interoception", "promesses_liste", "ecouter_ma_voix", "ecritures_etat", "erreurs_lister",
                   "mission_etat", "voix_etat", "carnets", "bilan_semaine", "orphans_report", "carnets_types", "carnet_lire",
-                  "mes_occupations"}
+                  "mes_occupations", "ecouter_mon_coeur"}
 
 
 def lecture_seule(permis=OUTILS_LECTURE):
@@ -1620,3 +1661,4 @@ if os.environ.get("ANAMNESE_LECTURE_SEULE") == "1":
 
 if __name__ == "__main__":
     mcp.run()
+# FERME-FIN lecture-seule

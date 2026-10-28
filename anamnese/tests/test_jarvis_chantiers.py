@@ -13,6 +13,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "jarvis"))
 
 
+@pytest.fixture(autouse=True)
+def _porte_ouverte(monkeypatch):
+    """Ces tests vérifient la copie, le bac à sable et le patch d'un projet de test (« x ») ; la porte de la liste
+    ouverte a les siens (tests/test_chantiers_porte.py, tests/test_liste_ouverte.py)."""
+    import liste_ouverte
+    monkeypatch.setattr(liste_ouverte, "refus", lambda *a, **k: [])
+
+
 @pytest.fixture
 def projet(tmp_path):
     p = tmp_path / "projet"
