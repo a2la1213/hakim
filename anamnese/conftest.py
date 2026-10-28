@@ -74,6 +74,12 @@ def _vie_interieure_isolee(monkeypatch, tmp_path):
     except Exception:
         pass
     try:
+        import afida                          # le registre du cœur, Al-Afida (2026-10-28)
+        monkeypatch.setattr(afida, "REGISTRE", d / "afida.jsonl")
+        monkeypatch.setattr(afida, "JOURNAL", d / "affect-evenements.jsonl")
+    except Exception:
+        pass
+    try:
         import echanges                       # la file des échanges à mémoriser (2026-10-20)
         monkeypatch.setattr(echanges, "FILE", d / "echanges.jsonl")
     except Exception:

@@ -330,10 +330,14 @@ def tester(nom, chantiers=None, python=None, delai_s=DELAI_TESTS_S, projets=None
         ok, sortie = False, f"tests arrêtés après {delai_s} s"
     shutil.rmtree(essai, ignore_errors=True)
     lignes = (sortie or "").strip().splitlines()
-    if node:                                           # node : la liste des tests en échec, puis le bilan
-        echecs = [l for l in lignes if l.lstrip().startswith("✖")][:20]
-        return ok, "\n".join(echecs + [l for l in lignes if l.startswith("ℹ ")][-8:]), arbre
-    return ok, "\n".join(lignes[-25:]), arbre
+    return ok, "\n".join(_resume_node(lignes) if node else lignes[-25:]), arbre
+
+
+def _resume_node(lignes):
+    """node : la liste des tests en échec, puis le bilan ; (28/10, premier essai de Hakim) sans aucune de ces lignes (node
+    n'a même pas démarré, un bac à sable imbriqué refusé…), la sortie brute, pour que l'erreur ne disparaisse pas."""
+    garde = [l for l in lignes if l.lstrip().startswith("✖")][:20] + [l for l in lignes if l.startswith("ℹ ")][-8:]
+    return garde or lignes[-25:]
 
 
 def _resultat_chemin(nom, chantiers=None):
@@ -380,6 +384,17 @@ def etat(nom, chantiers=None):
     r = resultat_tests(nom, chantiers)
     tests = "aucun test lancé" if not r else (r["etat"] if r["etat"] == "en cours" else
                                                f"{'RÉUSSIS' if r.get('ok') else 'EN ÉCHEC'} : {r.get('resume', '')}")
+    if r and r.get("etat") == "fini" and not r.get("ok"):
+        # (28/10, Hakim, 05:25) quel test échoue, sa dernière ligne d'erreur, et si la suite s'est arrêtée au premier échec
+        sortie = str(r.get("sortie") or "").splitlines()
+        echecs = [l for l in sortie if l.startswith("FAILED ") or l.lstrip().startswith("✖")][:5]
+        erreur = next((l for l in reversed(sortie) if l.startswith("E ")), "")
+        if echecs:
+            tests += "\n  en échec : " + "\n  en échec : ".join(e[:200] for e in echecs)
+        if erreur:
+            tests += f"\n  dernière erreur : {erreur[:200]}"
+        if any("stopping after" in l for l in sortie):
+            tests += "\n  (suite arrêtée au premier échec : les tests suivants n'ont pas tourné, le nombre de « passés » n'est pas un total)"
     if r and r.get("etat") == "fini" and r.get("arbre") != arbre:
         tests += " (la copie a changé depuis : à relancer)"
     return f"Chantier {nom} ({copie})\nChangements :\n{diff or '(aucun)'}\nTests : {tests}"

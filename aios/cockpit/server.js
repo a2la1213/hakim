@@ -9,6 +9,7 @@ const { exec, execFile, execFileSync, spawn } = require('child_process');
 const { masquer } = require('./missions.js');
 const { enMatiere } = require('./matiere.js');             // (27/10) il SENT son état, sans voir la machinerie           // les secrets ne s'écrivent pas en clair dans les journaux
 const coeur = require('./coeur.js');                         // (28/10) le cœur de Hakim dans l'appli
+const afida = require('./afida.js');                         // (28/10) Al-Afida, sa jauge d'amour (lue seulement : page et bloc)
 const enOff = require('./en-off.js');                        // (28/10) le panneau « En off » : pas de coulisses
 const os = require('os');
 const crypto = require('crypto');
@@ -348,7 +349,7 @@ const MODELES_JARVIS = new Set(['sonnet', 'opus']);          // Haiku écarté p
 // Ni identité (le cœur est validé par Ahmed ; elle grandit par la consolidation de nuit), ni
 // taxonomie (une phrase mal entendue ne doit pas fusionner des rubriques), ni wm_boot (le briefing
 // l'a fait). Liste blanche ET liste noire : les outils interdits disparaissent du contexte.
-const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
+const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'afida_juger', 'afida_vecu', 'afida_lire', 'afida_retirer', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
   'prediction_figer', 'prediction_trancher', 'erreur_noter', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_connues', 'voix_oublier', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
@@ -922,6 +923,9 @@ async function blocInterieur(depuisMs, maintenant, dites) {
       if (n) parties.push(`depuis le message d'avant, il a battu ${n}`);
       try { fs.writeFileSync(f, j({ total: Number(e.coeur.total) || 0, ts: Date.now() })); } catch (_) {}
     }
+    // (28/10, Al-Afida, idée d'Ahmed) sa jauge d'amour, en mots, à chaque tour (les chiffres sont dans introspection)
+    const ligneAfida = afida.ligneBloc(e.afida);
+    if (ligneAfida) parties.push(ligneAfida);
     // l'ennui et la veille sont ceux que ton esprit de fond a VÉCUS (état publié par le démon, qui compte
     // aussi l'activité d'Ahmed ailleurs, la pause et la remise à zéro) — relecture Opus du 2026-10-17
     if (absence && absence > 600 && !enPause) {
@@ -2032,6 +2036,7 @@ async function penseeEnTete() {
 }
 // La page : « le silence dure depuis silence_ms (oral | ecrit) » ; debut_ms est son repère à elle, à SON horloge (relecture du
 // 27/10 : le téléphone n'a pas l'heure du Mac). Réponse : quand revenir (ms de silence), ou null.
+let dernierSignalNote = '';
 async function signalSilence(q) {
   const now = Date.now(), duree = Number(q && q.silence_ms), debutPage = Number(q && q.debut_ms), mode = q && q.mode;
   if (!Number.isFinite(duree) || duree < 0 || duree > 86400e3 || !Number.isFinite(debutPage) || !['oral', 'ecrit'].includes(mode))
@@ -2052,6 +2057,12 @@ async function signalSilence(q) {
     messagesAhmed: messagesDeConversation().filter(m => m && m.qui === 'u').slice(-40).map(m => ({ ts: Number(m.ts || m.id) || 0, texte: String(m.texte || '') })),
     sagesse, questionsDuJour: questionsSilenceDuJour(), enVol: silenceEnVol, transitoire, alea: Math.random() });
   silenceSegment = r.segment;
+  // (28/10, 06:24, Ahmed : « tu me relances jamais ») ce qui retient une relance : une ligne par silence et par raison
+  const raisonSignal = r.action === 'demander' ? null : (r.raison || r.action);
+  if (raisonSignal && raisonSignal !== 'attendre') {
+    const cle = `${Math.round(debut / 10000)}|${raisonSignal}`;
+    if (cle !== dernierSignalNote) { dernierSignalNote = cle; noterSilence({ type: 'signal', mode, silence_s: Math.round(duree / 1000), raison: raisonSignal }); }
+  }
   if (r.action === 'demander') {
     derniereQuestionSilence = now;
     e = silences.surQuestion(e, now); ecrireSilences(e);
@@ -5134,6 +5145,12 @@ async function traiter(req, res) {
     return res.end(j(lirePrononciations()));
   }
   if (p === '/api/voix/reecouter' && req.method === 'GET' && !distantReq) return routeReecouter(req, res, Number(new URL(req.url, 'http://x').searchParams.get('n')) || 5);
+  // (28/10, Ahmed : « voir cette énorme jauge avec toutes les petites jauges qui la composent ») Al-Afida pour la page Intérieur
+  if (p === '/api/jarvis/afida') {
+    const rows = await sqlite("SELECT value FROM kv WHERE key='afida';").catch(() => []);
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j(afida.pourPage((rows[0] || {}).value)));
+  }
   if (p === '/api/jarvis/interieur') {
     const e = await etatInterieur();
     let dernier = null; try { dernier = JSON.parse(fs.readFileSync(JARVIS_HORLOGE, 'utf8')).dernier_ms; } catch (_) {}

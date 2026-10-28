@@ -55,6 +55,7 @@ JOURNAL_MAX = 300
 # (Ahmed, 2026-10-22 : « Gemma en pause si j'ai écrit ou parlé dans les 30 dernières minutes ») le Mac est trop
 # chargé pendant qu'il est là (voix MLX, calculs), et la consolidation utile est celle de la nuit
 PRESENCE_PAUSE_S = 30 * 60
+AFIDA_PAS_S = 60                         # Al-Afida recalculée au plus une fois par minute
 HORLOGE_JARVIS = Path.home() / "AIOS" / "jarvis" / "horloge.json"
 JOURNAL_JARVIS = Path.home() / "AIOS" / "jarvis" / "journal.jsonl"
 PAGE_JARVIS = Path.home() / "AIOS" / "jarvis" / "page.json"
@@ -498,6 +499,22 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
                             code=e.get("humeur_code"), scores=(e.get("sensation_code") or {}).get("scores"))
     except Exception:
         pass
+    # (28/10, Al-Afida, idée d'Ahmed) sa jauge d'amour, recalculée depuis son registre et ce qu'il a vécu ; la grande jauge
+    # agit par ses freins (affect.py lit le kv « afida ») ; jamais une garde ne la lit
+    if now - float(e.get("afida_t") or 0) >= AFIDA_PAS_S:
+        e["afida_t"] = now
+        try:
+            import afida
+            j = affect.chemin_journal(mem)
+            a = afida.calculer(now, journal=j if j else Path("/nonexistent/affect-evenements.jsonl"))
+            mem.kv_set(afida.CLE, json.dumps(a, ensure_ascii=False))
+            if a["petites"]:
+                e["afida"] = {"grande": a["grande"], "mots": afida.en_mots(a["grande"], feminin=False),
+                              "petites": [{"chose": p["chose"], "mots": afida.en_mots(p["niveau"])} for p in a["petites"][:6]]}
+            else:                                           # rien d'aimé : rien à sentir (pas « ni plein ni vide » à chaque tour)
+                e.pop("afida", None)
+        except Exception:
+            pass
     emotion_h = humeur_hormonale(e.get("sensation_code"), e.get("emotion_humeur"))
     if veille:
         code, humeur = "veille", LIBELLES["veille"]

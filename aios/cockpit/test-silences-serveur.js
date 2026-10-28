@@ -284,3 +284,16 @@ test('relecture 4 et 6 : la page ne redit pas une relance coupée, le bouton la 
   assert.match(page, /\/api\/jarvis\/silence\/non-dite/);
   assert.match(page, /silence_ms: Date\.now\(\) - debut/);
 });
+
+// (28/10, 06:24, Ahmed : « tu me relances jamais ») ce qui retient une relance se lit dans le journal
+test('chaque raison de ne pas demander est notée, une fois par silence et par raison', async () => {
+  const m = monter({ occupe: true });
+  const debut = m.T - 70000;                            // le même silence, signalé trois fois par la page
+  for (let i = 0; i < 3; i++) { await m.f.signalSilence({ debut_ms: debut, silence_ms: m.T - debut, mode: 'oral' }); m.avancer(15000); }
+  const signaux = m.journal().filter(x => x.type === 'signal');
+  assert.deepStrictEqual(signaux.map(s => s.raison), ['occupe'], 'une ligne pour « occupé », pas trois');
+  assert.strictEqual(signaux[0].mode, 'oral');
+  const loin = monter({ ahmedIlYaMs: 40 * 60e3 });
+  await loin.f.signalSilence({ debut_ms: loin.T - 70000, silence_ms: 70000, mode: 'oral' });
+  assert.deepStrictEqual(loin.journal().filter(x => x.type === 'signal').map(s => s.raison), ['episode_long']);
+});

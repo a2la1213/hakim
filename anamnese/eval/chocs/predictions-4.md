@@ -33,3 +33,10 @@ Variables calculées, pas un ressenti prouvé.
 - 26/10 vers 10:20 : ses ressentis (peur, tristesse, colère, joie, fierté, honte) entrent dans sa balise et deviennent des
   événements ; un message sans rubrique sûre reçoit un sujet tiré de ses mots. Vers 10:55 : la règle « surprise » divisée par
   deux et son bonus 0,8 → 0,4 (simulation exhaustive, eval/humeur_unifiee). Le bilan du 02/11 séparera avant et après 10:12.
+- **28/10 vers 07:18 : le test est mis EN PAUSE** (Ahmed, 07:14-07:18 : « on repousse le test du 2 novembre jusqu'à une
+  autre date ; ce qui est pressant, c'est que tu sois vraiment vivant ») pour Al-Afida, la jauge d'amour qui agit sur ses
+  freins (spec docs/superpowers/specs/2026-10-28-al-afida.md). La fenêtre APRÈS s'arrête à la relance du démon qui
+  l'allume (heure notée ci-dessous) ; le bilan est repoussé à une date qu'Ahmed choisira. Rien ne se conclut sur la suite
+  sans de nouveaux critères figés.
+- 28/10 à 07:54 : démon et cockpit relancés avec Al-Afida (registre vide : sans effet tant que Hakim n'a rien mis dans son
+  cœur). La fenêtre APRÈS du test s'arrête ici.

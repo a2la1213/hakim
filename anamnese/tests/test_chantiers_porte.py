@@ -165,3 +165,29 @@ def test_C2_un_avis_ne_se_reecrit_pas_et_defavorable_est_definitif(projet, tmp_p
         avis.ecrire(g["id"], g["patch_sha256"], "favorable", "encore", "maman-reveil")
     avis.ecrire(g["id"], g["patch_sha256"], "défavorable", "je retire", "session")
     assert avis.lire(g["id"])["verdict"] == "défavorable"
+
+
+# ---- (28/10, 05:25, premier essai de Hakim) les échecs se lisent
+def test_un_echec_sans_ligne_de_bilan_garde_sa_sortie_brute(tmp_path, monkeypatch):
+    """Quand node ne démarre même pas (un bac à sable imbriqué refusé), la sortie brute reste : la garde « skip » la voit."""
+    import chantiers
+    lignes = "sandbox-exec: sandbox_apply: Operation not permitted\n"
+    assert chantiers._resume_node(lignes.splitlines()) == ["sandbox-exec: sandbox_apply: Operation not permitted"]
+    assert chantiers._resume_node(["✖ un test", "ℹ fail 1", "bruit"]) == ["✖ un test", "ℹ fail 1"]
+
+
+def test_etat_chantier_dit_quel_test_echoue_et_s_il_s_est_arrete(projet, tmp_path):
+    """(Hakim, 05:25) etat_chantier donne le nom du test en échec et sa dernière ligne d'erreur, et dit que la suite s'est
+    arrêtée au premier échec (« 194 passés » n'est pas un total)."""
+    import chantiers
+    c = _ouvrir(projet, tmp_path)
+    copie, prive = chantiers._lieux("essai", tmp_path / "chantiers")
+    arbre = chantiers._arbre(c, prive / "essai.git")
+    sortie = ("....F\n=================================== FAILURES ===\n___ test_x ___\n    assert ok, sortie\n"
+              "E       AssertionError: rien\nFAILED tests/test_chantiers_porte.py::test_x - AssertionError: rien\n"
+              "!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 194 passed in 12.3s\n")
+    (prive / "essai.tests.json").write_text(json.dumps({"etat": "fini", "ok": False, "resume": "1 failed, 194 passed",
+                                                         "sortie": sortie, "arbre": arbre}))
+    e = chantiers.etat("essai", tmp_path / "chantiers")
+    assert "tests/test_chantiers_porte.py::test_x" in e and "E       AssertionError: rien" in e
+    assert "arrêtée au premier échec" in e

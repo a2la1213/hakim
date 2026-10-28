@@ -2657,20 +2657,43 @@ function debutDuSilence() {
   const dernier = etat.messages.length ? quandMessage(etat.messages[etat.messages.length - 1]) : 0;
   return Math.max(etat.finVoixA || 0, voix, parlaitA || 0, etat.derniereActivite || 0, dernier || 0);
 }
-function modeDuSilence() {
+// (28/10, « test échoué » : 105 s avant le premier signal au lieu de ~60, téléphone plié, sans trace) ce qui empêche la page
+// de compter, nommé pour le diagnostic de la voix ; null : elle compte
+function silenceBloquePar() {
   const voix = etat.conversation || etat.reglages.volant || etat.reglages.lectureAuto;   // voix éteinte : la file ne se vide pas, elle ne compte pas
-  if (etat.reglages.volant || etat.flux || etat.micro || etat.transcription || !lecteur || lecteur.actif || lecteur.enPause || (voix && aDire.length)) return null;
+  if (etat.reglages.volant) return 'volant';
+  if (etat.flux) return 'reponse_en_cours';
+  if (etat.micro) return 'micro';
+  if (etat.transcription) return 'transcription';
+  if (!lecteur) return 'sans_lecteur';
+  if (lecteur.actif) return 'il_parle';
+  if (lecteur.enPause) return 'voix_en_pause';
+  if (voix && aDire.length) return 'a_dire';
   const c = etat.conversation;
-  if (c) return c.capteur && !c.capteur.estMuet && !c.capteur.enParole && !c.capteur.pisteMuette ? 'oral' : null;
-  if (document.visibilityState !== 'visible') return null;
+  if (c) return !c.capteur ? 'sans_capteur' : c.capteur.estMuet ? 'micro_coupe' : c.capteur.enParole ? 'on_parle' : c.capteur.pisteMuette ? 'piste_muette' : null;
+  if (document.visibilityState !== 'visible') return 'page_cachee';
   const u = etat.messages.filter(m => m.qui === 'u').slice(-1)[0];
-  return u && Date.now() - quandMessage(u) < 30 * 60000 ? 'ecrit' : null;
+  return u && Date.now() - quandMessage(u) < 30 * 60000 ? null : 'pas_de_conversation';
+}
+function modeDuSilence() {
+  if (silenceBloquePar()) return null;
+  return etat.conversation ? 'oral' : 'ecrit';
+}
+// un blocage de 10 s ou plus, noté quand il finit (sa cause, sa durée, page cachée ou non)
+let blocageSilence = { cause: null, depuis: 0 };
+function noterBlocageSilence(cause, now = Date.now()) {
+  const b = blocageSilence;
+  if (cause === b.cause) return;
+  if (b.cause && now - b.depuis >= 10000) journalVoix('silence_bloque', { cause: b.cause, ms: now - b.depuis, cachee: document.visibilityState === 'hidden' });
+  blocageSilence = { cause, depuis: now };
 }
 let signalSilence = { debut: 0, prochain: 0, fini: false, envoiA: 0 };
 const nosSilences = new Set();                                  // les repères des silences que CETTE page a signalés
-setInterval(() => {
-  const mode = modeDuSilence();
-  if (!mode) return;
+function compterSilence() {
+  const bloque = silenceBloquePar();
+  noterBlocageSilence(bloque);
+  if (bloque) return;
+  const mode = etat.conversation ? 'oral' : 'ecrit';
   const debut = debutDuSilence();
   if (!debut) return;
   if (debut !== signalSilence.debut) signalSilence = { debut, prochain: mode === 'oral' ? 30000 : 90000, fini: false, envoiA: 0 };
@@ -2678,14 +2701,17 @@ setInterval(() => {
   if (s.fini || Date.now() - debut < s.prochain || Date.now() - s.envoiA < 5000) return;
   s.envoiA = Date.now();
   nosSilences.add(debut); if (nosSilences.size > 20) nosSilences.delete(nosSilences.values().next().value);
+  journalVoix('silence_signal', { mode, silence_s: Math.round((Date.now() - debut) / 1000), cachee: document.visibilityState === 'hidden' });
   fetch('/api/jarvis/silence', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
     body: JSON.stringify({ debut_ms: debut, silence_ms: Date.now() - debut, mode }) })
     .then(r => (r.ok ? r.json() : null)).then((o) => {
+      journalVoix('silence_reponse', o ? { raison: String(o.raison || ''), ...(o.revenir_ms == null ? {} : { revenir_s: Math.round(Number(o.revenir_ms) / 1000) }) } : { raison: 'erreur' });
       if (!o || signalSilence !== s) return;
       if (o.revenir_ms == null) s.fini = true;
       else s.prochain = Math.max(s.prochain, Number(o.revenir_ms) || 0);
-    }).catch(() => {});
-}, 2000);
+    }).catch(() => journalVoix('silence_reponse', { raison: 'reseau' }));
+}
+setInterval(compterSilence, 2000);
 $('fil').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-relance]');
   if (!b) return;
@@ -2861,7 +2887,8 @@ $('horsLigne').addEventListener('click', () => {
 const accuses = new Set();
 async function accuserReception() {
   if (document.visibilityState !== 'visible') return;      // « vu » = affiché sur un écran visible, pas reçu en fond
-  const ids = etat.messages.filter(x => x.spontane === 'resultat' && !accuses.has(x.id)).map(x => x.id).slice(-200);
+  // (28/10, 06:44) sa relance d'un silence aussi : sans accusé, le cockpit lui disait « non vu » alors qu'elle était à l'écran
+  const ids = etat.messages.filter(x => (x.spontane === 'resultat' || x.spontane === 'silence') && !accuses.has(x.id)).map(x => x.id).slice(-200);
   if (!ids.length) return;
   ids.forEach(id => accuses.add(id));
   try {

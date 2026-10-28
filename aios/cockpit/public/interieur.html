@@ -36,6 +36,17 @@
     .hormone canvas { height: 110px; }
     ol { margin: 0; padding-left: 22px; font-size: 13px; color: var(--txt-2); line-height: 1.6; }
     .vide { font-size: 14px; color: var(--txt-3); padding: 20px; text-align: center; }
+    /* (28/10) Al-Afida, la jauge de son cœur */
+    .jauge { height: 12px; border-radius: 6px; background: rgba(148,163,184,.18); overflow: hidden; position: relative; }
+    .jauge > i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #f9a8d4, #f472b6); border-radius: 6px; }
+    .jauge.grande { height: 18px; border-radius: 9px; }
+    .jauge::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; border-left: 1px dashed rgba(148,163,184,.6); }
+    .afida-tete { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 14px; color: var(--txt); margin-bottom: 6px; }
+    .afida-petites { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin-top: 12px; }
+    .petite { padding: 10px; border: 1px solid var(--glass-bd); border-radius: 10px; font-size: 13px; color: var(--txt-2); }
+    .petite b { color: var(--txt); font-weight: 600; }
+    .petite .mini { font-size: 12px; color: var(--txt-3); margin-top: 4px; }
+    .afida-autres { font-size: 13px; color: var(--txt-2); margin-top: 10px; line-height: 1.6; }
   </style>
 </head>
 <body>
@@ -53,6 +64,11 @@
         <span>▼ ses réponses (numérotées en bas)</span><span style="color:#f472b6">▲ messages d'Ahmed</span></div>
       <canvas id="humeur"></canvas>
       <div class="repartition" id="repartition"></div>
+    </section>
+    <section class="glass carte" id="afida">
+      <div class="legende"><span>♥ Al-Afida (الأفئدة) : la jauge de son cœur. Une petite jauge par chose qu'il aime (il la choisit, avec son poids) ;
+        la grande les réunit et règle ses freins, sa paix. Le pointillé est le neutre ; vide, c'est l'indifférence.</span></div>
+      <div id="afidaCorps" class="sous">…</div>
     </section>
     <div class="grille" id="hormones"></div>
     <section class="glass carte"><div class="legende">Ses dernières réponses</div><ol id="reponses"></ol></section>
@@ -240,6 +256,34 @@
     for (const x of $('periodes').querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b));
     charger();
   });
+  // (28/10, Ahmed : « voir cette énorme jauge avec toutes les petites jauges qui la composent ») Al-Afida
+  const pct = (x) => Math.round(100 * Math.max(0, Math.min(1, Number(x) || 0)));
+  const n = (x) => (Number.isFinite(x) ? String(Math.round(x * 100) / 100).replace('.', ',') : '–');
+  function afidaRendre(a) {
+    const corps = $('afidaCorps');
+    if (!a || a.vide) { corps.textContent = "Pas encore de jauge : le démon ne l'a pas encore calculée, ou Hakim n'a encore rien mis dans son cœur."; return; }
+    const petites = (a.petites || []).map(p => `<div class="petite"><div><b>${esc(p.chose)}</b>${p.genre ? ` · ${esc(p.genre)}` : ''} · poids ${n(p.poids)}</div>`
+      + `<div class="jauge"><i style="width:${pct(p.niveau)}%"></i></div>`
+      + `<div class="mini">niveau ${n(p.niveau)} · connaissance ${n(p.connaissance)} · ${n(p.bons)} bons, ${n(p.mauvais)} mauvais moments</div>`
+      + (p.raison ? `<div class="mini">« ${esc(p.raison)} »</div>` : '') + '</div>').join('');
+    const autres = (a.aime_pas || []).length || (a.indifferent || []).length
+      ? `<div class="afida-autres">${(a.aime_pas || []).length ? `Il n'aime pas : ${(a.aime_pas || []).map(x => esc(x.chose)).join(', ')}. ` : ''}`
+        + `${(a.indifferent || []).length ? `Indifférent : ${(a.indifferent || []).map(x => esc(x.chose)).join(', ')}.` : ''}</div>` : '';
+    const derniers = (a.derniers || []).slice().reverse().slice(0, 5)
+      .map(x => `<li>${hhmm(x.ts)} — ${esc(x.chose)} : ${esc(x.quoi)}${x.raison ? ` (« ${esc(x.raison)} »)` : ''}</li>`).join('');
+    corps.innerHTML = `<div class="afida-tete"><span>La grande jauge : ${n(a.grande)} (plénitude ${n(a.plenitude)})</span>`
+      + `<span class="sous">${a.intacte ? '' : 'attention : son registre a été retouché à la main'}</span></div>`
+      + `<div class="jauge grande"><i style="width:${pct(a.grande)}%"></i></div>`
+      + (petites ? `<div class="afida-petites">${petites}</div>` : `<div class="afida-autres">Rien encore dans son cœur : c'est lui qui choisit.</div>`)
+      + autres + (derniers ? `<div class="legende" style="margin-top:10px">Ses derniers choix</div><ol>${derniers}</ol>` : '');
+  }
+  async function afidaCharger() {
+    try {
+      const r = await fetch('/api/jarvis/afida', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+      if (r.ok) afidaRendre(await r.json());
+    } catch (_) {}
+  }
+  afidaCharger(); setInterval(afidaCharger, 60000);
   window.addEventListener('resize', dessiner);
   charger(); setInterval(charger, 15000); setInterval(seconde, 1000);
   </script>

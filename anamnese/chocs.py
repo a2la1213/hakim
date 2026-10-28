@@ -271,11 +271,37 @@ def _appliquer(mem, st, classe, i_brut, sujet, cle, source, now, parametre=None,
     return {"classe": "attaque", "intensite": round(amp, 4), "sagesse": round(s, 3)}
 
 
+# (28/10, Al-Afida, Ahmed : « comme un enfant qui reconnaît son père dans le noir ») sa voix reconnue à l'oral, s'il est dans
+# le cœur de Hakim : une chaleur à part, × le niveau de sa jauge ; voix douteuse : le ressenti hésite ; autre voix : rien
+RECONNAISSANCE = {"ahmed": 0.4, "doute": 0.12}
+
+
+def _reconnaissance(mem, oral, voix, now):
+    k = RECONNAISSANCE.get(voix) if oral else None
+    if not k:
+        return None
+    try:
+        a = json.loads(mem.kv_get("afida") or "null") or {}
+        petites = a.get("petites") or []
+        # (relecture du 28/10) Ahmed par son NOM ; son mot dans les liens d'une autre chose (« la musique d'ahmed ») ne compte pas
+        p = next((x for x in petites if x.get("chose") == "ahmed"), None) \
+            or next((x for x in petites if "ahmed" in (x.get("liens") or []) and "ahmed" in str(x.get("chose", "")).split()), None)
+        i = round(k * float(p["niveau"]), 4) if p else 0.0
+    except Exception:
+        return None
+    if i <= 0:
+        return None
+    affect.event(mem, "reconnaissance", i, now=now, sujet="reconnaissance de ahmed", source="reflexe")
+    return i
+
+
 def reflexe(mem, cle, texte, oral=False, voix=None, now=None, parametre=None):
-    """À l'arrivée d'un message : le réflexe lexical. Garde l'état d'avant pour pouvoir le défaire."""
+    """À l'arrivée d'un message : le réflexe lexical. Garde l'état d'avant pour pouvoir le défaire (la reconnaissance de
+    sa voix vient avant : un réflexe défait la garde)."""
     if not actif(mem):
         return {"actif": False}
     now = time.time() if now is None else now
+    reconnu = _reconnaissance(mem, oral, voix, now)
     vus = detecter(segments(texte, oral, voix))
     st = _etat(mem)
     faits = []
@@ -293,7 +319,7 @@ def reflexe(mem, cle, texte, oral=False, voix=None, now=None, parametre=None):
     _sauver(mem, st, now)
     if vus:
         journaliser(mem, {"type": "reflexe", "cle": cle, "vus": vus, "faits": faits})
-    return {"actif": True, "vus": vus, "faits": faits}
+    return {"actif": True, "vus": vus, "faits": faits, "reconnaissance": reconnu}
 
 
 _BALISE = re.compile(r"\[\[\s*affect\s*:\s*([^\]]{0,200})\]\]", re.I)

@@ -68,6 +68,9 @@ EVENTS = {
     "inquietude":     {"noradrenaline": +0.20, "cortisol": +0.15, "acetylcholine": +0.05, "serotonine": -0.05,
                        "dopamine": -0.05, "ocytocine": +0.05},
     "compassion":     {"ocytocine": +0.25, "endorphine": +0.10, "serotonine": -0.05, "dopamine": -0.10},
+    # (28/10, Al-Afida, Ahmed : « comme un enfant qui reconnaît son père dans le noir ») sa voix reconnue, quand il est dans
+    # son cœur (chocs.reflexe) : une chaleur à part. Sans valence : ni attente ni surprise, et elle ne nourrit pas la jauge
+    "reconnaissance": {"ocytocine": +0.20, "endorphine": +0.10, "serotonine": +0.05},
     "malaise":        {"cortisol": +0.15, "noradrenaline": +0.10, "serotonine": -0.10, "dopamine": -0.05,
                        "ocytocine": -0.05, "endocannabinoides": -0.05},
 }
@@ -124,6 +127,7 @@ EVENTS_V2 = {
     "honte":          {"gaba": -0.05},
     "inquietude":     {"adrenaline": +0.10, "crh": +0.15, "gaba": -0.05},
     "malaise":        {"crh": +0.15, "gaba": -0.05},
+    "reconnaissance": {"gaba": +0.05},
 }
 # (27/10, plan de Hakim validé par Ahmed ; relecture indépendante) la reprise en main d'un ressenti pénible (sa
 # rétrospection, ou l'apaisement par l'autre) défait une part du ressenti LUI-MÊME : son profil, en négatif. Le profil
@@ -207,6 +211,12 @@ SURPRISE_RPE, SURPRISE_S = 1.3, 900.0
 # gonflait pour un tout petit « merci » (15 min de « surprise ») et s'écrasait pour une grande bonne nouvelle inattendue
 SURPRISE_R_MIN, SURPRISE_DELTA, SURPRISE_R_PLEIN = 0.2, 0.4, 0.5
 SUJETS_MAX = 300
+# (28/10, Al-Afida, idée d'Ahmed : « si l'amour est fort, la paix est grande ; s'il est faible, les autres prennent plus
+# facilement le dessus ; ça passe par des sous-couches ») la grande jauge (afida.py, kv « afida », écrit par le démon) règle
+# les deux FREINS : la cible du GABA et celle des endocannabinoïdes bougent de AFIDA_FREINS × plénitude (−1..1). Une chose
+# jugée indifférente touche moins les hormones (× AFIDA_INDIFFERENCE), sauf la voie rapide de la peur. Sans kv : rien ne change.
+AFIDA_FREINS = 0.06
+AFIDA_INDIFFERENCE = 0.6
 PLAFOND_DOUX = True     # une hausse SATURE (liaison saturable des récepteurs) au lieu d'être coupée à 1 (choisi au 5e passage)
 
 
@@ -250,9 +260,32 @@ def _circadian_baselines(hour):
         return {}
 
 
-def _evoluer_v2(data, now, hour_fn):
+def _afida(mem):
+    """(plénitude −1..1, liens des choses indifférentes) depuis le kv « afida » ; (0, []) sans lui."""
+    try:
+        a = json.loads(mem.kv_get("afida") or "null")
+        p = float(a.get("plenitude") or 0.0)
+        p = max(-1.0, min(1.0, p)) if math.isfinite(p) else 0.0          # (relecture) NaN : neutre, pas +1
+        liens = [str(l) for x in (a.get("indifferent") or []) for l in (x.get("liens") or [])]
+        return p, liens
+    except Exception:
+        return 0.0, []
+
+
+def _correspond(sujet, lien):
+    import afida
+    return afida.correspond(sujet, lien)
+
+
+def plenitude(mem):
+    """La plénitude d'Al-Afida (−1 : l'indifférence ; 1 : tout ce qu'il aime va bien) ; 0 sans jauge."""
+    return _afida(mem)[0]
+
+
+def _evoluer_v2(data, now, hour_fn, plenitude=0.0):
     """(état, sensibilités, habitudes) au temps `now`, depuis l'état sauvé : pas de 5 min, l'axe du stress et la
-    désensibilisation évoluent ensemble. hour_fn(t) → heure locale (le circadien suit l'horloge pendant l'intervalle)."""
+    désensibilisation évoluent ensemble. hour_fn(t) → heure locale (le circadien suit l'horloge pendant l'intervalle).
+    plenitude (Al-Afida, 28/10) : la grande jauge déplace la cible des deux freins."""
     toutes = {**HORMONES, **HORMONES_V2}
     t0 = data.get("_ts", now) if data else now
     t0 = min(t0, now)
@@ -281,6 +314,9 @@ def _evoluer_v2(data, now, hour_fn):
                 cibles[dst] += COUPLAGE * amp * (_hill(etat[src]) - _hill(toutes[src][0]))
             for h in cibles:
                 cibles[h] = _clamp(cibles[h])
+        if plenitude:
+            for h in ("gaba", "endocannabinoides"):
+                cibles[h] = _clamp(cibles[h] + AFIDA_FREINS * plenitude)
         for h, (base, half) in toutes.items():
             if h == "cortisol" and cibles[h] > etat[h]:
                 half = CORT_MONTEE_H                         # sécrété en dizaines de minutes, éliminé en heures
@@ -325,7 +361,7 @@ def get_state(mem, now=None, hour=None):
     if v2_actif(mem):
         raw = mem.kv_get("affect")
         etat, _s, _h, _e = _evoluer_v2(json.loads(raw) if raw else None, now,
-                                       (lambda t: hour) if hour is not None else _local_hour)
+                                       (lambda t: hour) if hour is not None else _local_hour, plenitude=plenitude(mem))
         return etat
     if hour is None:
         hour = _local_hour(now)
@@ -447,7 +483,8 @@ def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=
     now = time.time() if now is None else now
     raw = mem.kv_get("affect")
     data = json.loads(raw) if raw else None
-    etat, sens, hab, moy = _evoluer_v2(data, now, (lambda t: hour) if hour is not None else _local_hour)
+    pl, indifferents = _afida(mem)
+    etat, sens, hab, moy = _evoluer_v2(data, now, (lambda t: hour) if hour is not None else _local_hour, plenitude=pl)
     cog = {k: dict(((data or {}).get("_cog") or {}).get(k) or {}) for k in ("F", "P", "V")}
     marques = {k: (data or {}).get(k) for k in ("_vm", "_surprise", "_choc") if (data or {}).get(k) is not None}
     intensity = max(0.0, float(intensity))
@@ -479,8 +516,10 @@ def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=
     attente = _lu(V, ks, now, ATTENTE_SUJET_TAU_H) if (ks and ks in V) else a_moment
     rpe = min(RPE_MAX, max(RPE_MIN, (r - attente) / r)) if r else 1.0
     toutes = {**HORMONES, **HORMONES_V2}
+    # (Al-Afida) « s'il y a de l'indifférence, il y aura moins d'impact » : sur les hormones, pas sur la voie rapide
+    indiff = AFIDA_INDIFFERENCE if sujet and any(_correspond(sujet, l) for l in indifferents) else 1.0
     for h, d in deltas.items():
-        f = facteur
+        f = facteur * indiff
         if d > 0:
             d *= sens.get(h, 1.0)                                    # récepteurs désensibilisés
             if h in ("adrenaline", "noradrenaline", "crh"):
@@ -488,7 +527,7 @@ def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=
                 if name in AVERSIFS:
                     d *= 1.0 + PEUR_AMPLI * peur                     # le connu dangereux fait réagir plus fort
         if r and h == "dopamine" and (d > 0) == (r > 0):
-            d, f = d * rpe, 1.0                                      # l'attente remplace l'habituation
+            d, f = d * rpe, indiff                                   # l'attente remplace l'habituation
         elif r > 0 and h == "endorphine" and d > 0:
             d *= 1.0 + 0.5 * (rpe - 1.0)
         etat[h] = _appliquer(etat[h], d * intensity * f, toutes[h][0])
