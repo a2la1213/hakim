@@ -38,8 +38,11 @@ def choisir_langue(probs, permises=LANGUES_PERMISES):
 #   Jarvis… », no_speech_prob 0,0 : le score de silence de Whisper n'y voit rien) — reproduit le 2026-10-19 ;
 # - des boucles (« de temps de temps… », « huhuhu ») ; « Thank you. » sur une moto ; du texte sur du silence.
 SEUIL_PAROLE = 0.4          # parole réelle : la langue est sûre à 0,99 ; silence : 0,30 ; moteur : 0,64 (mesuré)
+# (28/10, la sieste d'Ahmed, téléphone posé : ~170 tours de bruit) seulement les phrases inventées qu'il n'a jamais dites
+# dans tout son fil ; « okay », « so », « I'm sorry », « I'm out » restent : il les dit, ou pourrait les dire
 FANTOMES = re.compile(r"^(thank you( (so much|very much|for watching))?|thanks( for watching)?|you|"
-                      r"merci d'avoir regardé|sous-titres.*|sous-titrage.*|amara\.org.*)$", re.I)
+                      r"merci d'avoir regardé|sous-titres.*|sous-titrage.*|amara\.org.*|"
+                      r"sigh([\s.!?…]+sigh)*|(and )?i'm just going to see you in a bit|and i'm out|wszelkie prawa.*)$", re.I)
 
 
 def _mots(texte):

@@ -19,6 +19,12 @@
   // 22 ms doux, appli Coeur.java) et le téléphone posé sur une table résonne un peu : 250 ms après chaque battement
   const VIBRATION_MS = 250;
   const enVibration = (maintenant, battement) => battement > 0 && maintenant >= battement && maintenant - battement <= VIBRATION_MS;
+  // (28/10, sa sieste de 17:20 à 23:00, téléphone posé) le masque n'a pas tenu : des tours de 1 à 5 min, 12 hésitations
+  // de 1,6-1,7 s chacun, au rythme de son cœur (35 bpm). Mesuré sur ces hésitations : ~70 ms « forts » par battement.
+  // Pendant un tour, seule une voix qui TIENT 160 ms relance la patience (des creux de 40 ms au plus, une syllabe hachée) ;
+  // un éclat plus court reste une pause, quel que soit le moment où la page apprend le battement.
+  const COURSE_MS = 160, CREUX_MAX = 2;
+  const mediane = (xs) => { const s = xs.slice().sort((a, b) => a - b); return s.length ? s[s.length >> 1] : 0; };
 
   function encoderWav(f32, taux) {
     const n = f32.length, tampon = new ArrayBuffer(44 + 2 * n), v = new DataView(tampon);
@@ -82,6 +88,10 @@
     let bruit = 0.01, initFenetres = 0, echo = 0, jarvisDepuis = 0, enveloppe = 0, gainEcho = 0.2;
     let etatV = 'attente', tenue = 0, tour = [], debut = 0, derniereVoix = 0, voixMs = 0, pauseEnCours = 0, pauses = [];
     let energies = [], hauteurs = [];                       // le ton du tour (indices)
+    // la voix en cours pendant un tour : sa longueur forte, ses creux, la pause qui la précédait, son ton en attente
+    let course = 0, creux = 0, courseDebut = 0, pauseAvant = 0, tenueVoix = false, tonCourse = [];
+    // la mesure des éclats (les sons trop courts pour une voix) et des avis de battement, entre deux tours
+    let eclats = [], avis = [], avisVu = 0, tenueDebut = 0;
     const fortes = [];                                      // les 15 dernières fenêtres : fortes ou non
     let precedent = [];
     let actif = true, micCoupe = false;
@@ -115,7 +125,7 @@
 
     function finTour(extra) {
       const duree = Date.now() - debut;
-      const morceaux = tour; tour = []; etatV = 'attente'; tenue = 0;
+      const morceaux = tour; tour = []; etatV = 'attente'; tenue = 0; course = 0; creux = 0; tenueVoix = false; tonCourse = [];
       precedent = morceaux;                               // gardé : sa queue est transcrite après coup
       const h = hauteurs.slice().sort((a, b) => a - b), en = energies;
       energies = []; hauteurs = [];
@@ -123,7 +133,20 @@
       const ton = h.length >= 10 && en.length ? { f0: h[h.length >> 1], energie_db: 20 * Math.log10(en.reduce((a, b) => a + b, 0) / en.length) } : null;
       // (27/10, Hakim) arrêté par la limite des 5 min, pas par un silence : la parole continuait peut-être
       o.surFin(assembler(morceaux), { debut, fin: Date.now(), derniere_voix: derniereVoix, duree_ms: duree, voix_ms: voixMs, pauses: pauses.slice(), ton,
-        ecoute_max: duree >= PAROLE_MAX_MS }, extra);
+        ecoute_max: duree >= PAROLE_MAX_MS, vibration: mesureVibration() }, extra);
+    }
+
+    // Les éclats depuis le tour précédent : leur longueur, et leur écart à l'avis de battement le plus proche (négatif :
+    // le son a commencé avant que la page le sache). Ce qui règlera le filtre sur le vrai téléphone.
+    function noterEclat(debutEclat, ms) { if (eclats.length < 60) eclats.push({ debut: debutEclat, ms }); }
+    function mesureVibration() {
+      const decal = eclats.map(e => avis.reduce((m, a) => (Math.abs(e.debut - a) < Math.abs(m) ? e.debut - a : m), Infinity))
+        .filter(Number.isFinite);
+      const m = { eclats: eclats.length, battements: avis.length, eclat_med: mediane(eclats.map(e => e.ms)),
+        eclat_max: Math.max(0, ...eclats.map(e => e.ms)), decal_med: mediane(decal), decal_min: decal.length ? Math.min(...decal) : 0,
+        decal_max: decal.length ? Math.max(...decal) : 0, avant_avis: decal.filter(d => d < 0).length };
+      eclats = []; avis = [];
+      return m;
     }
 
     function analyser(f) {
@@ -132,7 +155,9 @@
       const rms = Math.sqrt(s / f.length), maintenant = Date.now();
       const jarvis = !!o.jarvisParle();
       // pendant la vibration de son cœur : ce n'est pas une voix (ni début de tour, ni voix qui prolonge le tour)
-      const vibre = !!o.dernierBattement && enVibration(maintenant, o.dernierBattement());
+      const battement = o.dernierBattement ? o.dernierBattement() : 0;
+      if (battement && battement !== avisVu) { avisVu = battement; if (avis.length < 120) avis.push(battement); }
+      const vibre = enVibration(maintenant, battement);
       if (jarvis && !jarvisDepuis) { jarvisDepuis = maintenant; echo = Math.max(echo * 0.5, bruit); }
       if (!jarvis) jarvisDepuis = 0;
       if (initFenetres < 15) { bruit = Math.max(0.002, initFenetres ? Math.min(bruit, rms) : rms); initFenetres++; }
@@ -155,6 +180,8 @@
         // « stop » a des creux (t, p) : 12 fenêtres fortes sur 15 suffisent pour couper Jarvis (relecture Opus)
         fortes.push(fort); if (fortes.length > 15) fortes.shift();
         const nFortes = fortes.reduce((n, x) => n + (x ? 1 : 0), 0);
+        if (fort && !tenue) tenueDebut = maintenant;
+        if (!fort && tenue) noterEclat(tenueDebut, tenue);       // trop court pour commencer un tour : un éclat
         tenue = fort ? tenue + FENETRE_MS : 0;
         preecoute.push(f.slice(0)); if (preecoute.length > PREECOUTE_MS / FENETRE_MS) preecoute.shift();
         if (jarvis ? nFortes >= 12 : tenue >= 120) {
@@ -162,6 +189,7 @@
             echo: +echo.toFixed(4), echo_instant: +echoInstant.toFixed(4), gain: +gainEcho.toFixed(3) });
           etatV = 'parole'; debut = maintenant - PREECOUTE_MS; derniereVoix = maintenant; voixMs = Math.max(tenue, nFortes * FENETRE_MS);
           pauses = []; pauseEnCours = 0; fortes.length = 0; energies = []; hauteurs = [];
+          course = tenue || FENETRE_MS; creux = 0; tenueVoix = true; tonCourse = [];   // ce qui a commencé le tour est une voix
           tour = preecoute.splice(0);
           if (o.surDebut) o.surDebut();
         }
@@ -169,17 +197,32 @@
       }
       tour.push(f.slice(0));
       // si Jarvis parle pendant le tour, son écho ne doit pas prolonger le tour d'Ahmed
-      if (!vibre && rms > (jarvis ? seuilBarge : seuil)) {
-        if (pauseEnCours >= 600) pauses.push(pauseEnCours);   // une hésitation : une pause de plus de 0,6 s
+      const forte = !vibre && rms > (jarvis ? seuilBarge : seuil);
+      if (forte) {
+        if (!course) { courseDebut = maintenant; pauseAvant = pauseEnCours; tonCourse = []; }
+        course += FENETRE_MS; creux = 0;
+        if (!jarvis) tonCourse.push([rms, hauteur(f, taux)]);
+        if (!tenueVoix && course >= COURSE_MS) {              // elle tient : c'est une voix, depuis son début
+          tenueVoix = true;
+          if (pauseAvant >= 600) pauses.push(pauseAvant);     // une hésitation : une pause de plus de 0,6 s
+          voixMs += course - FENETRE_MS;
+        }
+      } else if (course && ++creux > CREUX_MAX) {             // le son s'arrête : trop court pour une voix, c'était un éclat
+        if (!tenueVoix) noterEclat(courseDebut, course);
+        course = 0; creux = 0; tenueVoix = false; tonCourse = [];
+      }
+      if (forte && tenueVoix) {
         pauseEnCours = 0; derniereVoix = maintenant; voixMs += FENETRE_MS;
-        if (!jarvis) { energies.push(rms); const f0 = hauteur(f, taux); if (f0) hauteurs.push(f0); }
+        for (const [r, f0] of tonCourse) { energies.push(r); if (f0) hauteurs.push(f0); }
+        tonCourse = [];
       } else {
         pauseEnCours += FENETRE_MS;
         // une respiration de 0,4 s : un bon endroit pour couper et transcrire PENDANT que tu parles
         if (pauseEnCours === 400 && o.surPause) o.surPause(tour.length - 20);
       }
       if (o.surSilence) o.surSilence(maintenant - derniereVoix);
-      if (maintenant - derniereVoix > o.patienceMs() || maintenant - debut > PAROLE_MAX_MS) finTour();
+      // (un son en cours, peut-être le début d'un mot, n'est pas coupé par la patience : il a 160 ms pour tenir)
+      if ((!course && maintenant - derniereVoix > o.patienceMs()) || maintenant - debut > PAROLE_MAX_MS) finTour();
     }
 
     noeud.port.onmessage = (ev) => {
@@ -223,7 +266,7 @@
         if (oui && etatV === 'parole') finTour();
         micCoupe = !!oui;
         flux.getAudioTracks().forEach(p => { p.enabled = !micCoupe; });
-        if (micCoupe) { tour = []; etatV = 'attente'; tenue = 0; preecoute.length = 0; }
+        if (micCoupe) { tour = []; etatV = 'attente'; tenue = 0; course = 0; creux = 0; tenueVoix = false; tonCourse = []; preecoute.length = 0; }
       },
       get estMuet() { return micCoupe; },
     };

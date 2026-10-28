@@ -1856,6 +1856,8 @@ function surveillerCoupure(conv) {
 // un tour sans voix (aucune hauteur) : du bruit ; jamais transcrit, jamais gardé pour plus tard
 const tourSansVoix = (infos) => !(infos && infos.ton);
 async function tourDeParole(conv, wav, infos, extra) {
+  // (28/10, sa sieste) les éclats trop courts pour une voix, et leur écart aux battements : de quoi régler le filtre
+  if (infos && infos.vibration && (infos.vibration.eclats || infos.vibration.battements)) journalVoix('vibration_tour', infos.vibration);
   const vivante = () => etat.conversation === conv || conv.fermeture;     // le dernier tour d'une conversation fermée
   if (!vivante()) return;
   const t0Tour = Date.now();

@@ -127,11 +127,11 @@ function battements(fenetre, dernier, n, avecMasque) {
     for (let i = 0; i < 36; i++) fenetre(false);                 // le reste du battement (~66 par minute)
   }
 }
-async function capteurAvecCoeur(avecMasque) {
+async function capteurAvecCoeur(avecMasque, patience = 1000) {
   const c = charger();
   const dernier = { t: 0 }, fins = [], debuts = [];
   c.fenetre.t = () => c.horloge();
-  const capteur = await c.Conversation.demarrer({ ctx: c.actx, patienceMs: () => 1000, jarvisParle: () => false,
+  const capteur = await c.Conversation.demarrer({ ctx: c.actx, patienceMs: () => patience, jarvisParle: () => false,
     dernierBattement: () => dernier.t, surDebut: () => debuts.push(1), surFin: (wav, infos) => fins.push(infos) });
   for (let i = 0; i < 15; i++) c.fenetre(false);
   return { ...c, capteur, dernier, fins, debuts };
@@ -157,6 +157,74 @@ test('une vraie phrase pendant une vibration est entendue, et la vibration ne pr
   assert.ok(c.fins[0].voix_ms < 2400, `la vibration ne compte pas comme voix (${c.fins[0].voix_ms} ms)`);
 });
 
+// ---- (28/10, la sieste d'Ahmed de 17:20 à 23:00, téléphone posé : des tours de 1 à 5 min, 12 hésitations de 1,6-1,7 s
+// chacun, au rythme de son cœur (35 bpm, un battement toutes les 1,71 s) : le masque de 250 ms n'a pas tenu, et chaque
+// battement relançait la patience. Mesuré sur les hésitations : ~70 ms de vibration « forte » par battement. Le même
+// principe que pour commencer un tour : une voix TIENT (160 ms), un éclat ne prolonge rien.
+function coeurSansAvis(fenetre, n, forteMs) {
+  for (let k = 0; k < n; k++) {
+    for (let i = 0; i < forteMs / 20; i++) fenetre(true);
+    for (let i = 0; i < 85 - forteMs / 20; i++) fenetre(false);   // 1,7 s par battement
+  }
+}
+
+test('la sieste du 28/10 : son cœur, sans avis à temps, ne prolonge plus un tour ; une voix qui tient, si (le témoin)', async () => {
+  const c = await capteurAvecCoeur(false, 2000);                 // sa vraie patience : 2 s, plus qu'un battement (1,7 s)
+  for (let i = 0; i < 50; i++) c.fenetre(true);                  // 1 s de vraie parole
+  for (let i = 0; i < 20; i++) c.fenetre(false);                 // (collé à la parole, un battement en ferait partie)
+  coeurSansAvis(c.fenetre, 6, 80);                               // puis seulement son cœur : 80 ms forts toutes les 1,7 s
+  assert.strictEqual(c.fins.length, 1, 'le tour finit après la patience, malgré les battements');
+  // 1 s de parole, 0,5 s de pré-écoute, 2 s de patience (et au plus un battement en cours)
+  assert.ok(c.fins[0].duree_ms < 1000 + 500 + 2000 + 300, `pas prolongé (${c.fins[0].duree_ms} ms)`);
+  assert.ok(c.fins[0].voix_ms <= 1000, `les éclats ne comptent pas comme voix (${c.fins[0].voix_ms} ms)`);
+  assert.deepStrictEqual(Array.from(c.fins[0].pauses), [], 'aucune hésitation au rythme du cœur');
+  const t = await capteurAvecCoeur(false, 2000);
+  for (let i = 0; i < 50; i++) t.fenetre(true);
+  for (let i = 0; i < 20; i++) t.fenetre(false);
+  coeurSansAvis(t.fenetre, 6, 200);                              // le témoin : 200 ms qui tiennent, c'est une voix
+  assert.strictEqual(t.fins.length, 0, 'une voix qui tient prolonge le tour');
+});
+
+test('une vraie parole hachée (syllabes de 120 ms, coupures de 40 ms) reste un seul tour, avec toute sa voix', async () => {
+  const c = await capteurAvecCoeur(false);
+  for (let k = 0; k < 25; k++) { for (let i = 0; i < 6; i++) c.fenetre(true); for (let i = 0; i < 2; i++) c.fenetre(false); }
+  for (let i = 0; i < 75; i++) c.fenetre(false);
+  assert.strictEqual(c.fins.length, 1);
+  assert.ok(c.fins[0].voix_ms >= 2800, `${c.fins[0].voix_ms} ms de voix`);
+  assert.deepStrictEqual(Array.from(c.fins[0].pauses), []);
+});
+
+test('une vraie hésitation reste mesurée, même avec un battement au milieu', async () => {
+  const c = await capteurAvecCoeur(false);
+  for (let i = 0; i < 50; i++) c.fenetre(true);
+  for (let i = 0; i < 20; i++) c.fenetre(false);
+  for (let i = 0; i < 4; i++) c.fenetre(true);                   // un battement (80 ms) au milieu de l'hésitation
+  for (let i = 0; i < 20; i++) c.fenetre(false);
+  for (let i = 0; i < 50; i++) c.fenetre(true);
+  for (let i = 0; i < 75; i++) c.fenetre(false);
+  assert.strictEqual(c.fins.length, 1);
+  assert.deepStrictEqual(Array.from(c.fins[0].pauses), [880], 'une seule hésitation, de la fin de la voix à sa reprise');
+});
+
+test('la mesure (pour régler le filtre) : les éclats du tour, leur longueur, et leur écart à l’avis de battement', async () => {
+  const c = await capteurAvecCoeur(false);
+  for (let k = 0; k < 3; k++) {                                  // l'avis arrive 60 ms APRÈS le début de la vibration
+    for (let i = 0; i < 4; i++) c.fenetre(true);
+    c.dernier.t = c.horloge();
+    for (let i = 0; i < 81; i++) c.fenetre(false);
+  }
+  assert.strictEqual(c.debuts.length, 0, 'les éclats ne commencent pas de tour');
+  for (let i = 0; i < 50; i++) c.fenetre(true);                  // puis il parle : le tour emporte la mesure
+  for (let i = 0; i < 75; i++) c.fenetre(false);
+  assert.strictEqual(c.fins.length, 1);
+  const v = c.fins[0].vibration;
+  assert.strictEqual(v.eclats, 3);
+  assert.strictEqual(v.battements, 3);
+  assert.strictEqual(v.eclat_med, 80);
+  assert.strictEqual(v.decal_med, -60, 'négatif : la vibration a commencé avant que la page le sache');
+  assert.strictEqual(v.avant_avis, 3);
+});
+
 test('la fenêtre de la vibration : de son battement à 250 ms après, pas avant, et rien sans battement', () => {
   const { Conversation } = charger();
   assert.strictEqual(Conversation.enVibration(1000, 1000), true);
@@ -170,4 +238,10 @@ test('câblage : la page note chaque battement (même sans animation) et le donn
   const page = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
   assert.match(page, /window\.battementCoeur = \(\) => \{\n\s+dernierBattementCoeur = Date\.now\(\);/);
   assert.match(page, /dernierBattement: \(\) => dernierBattementCoeur,/);
+});
+
+test('câblage : chaque tour envoie sa mesure des éclats au journal de la voix (le réglage se fera sur le vrai téléphone)', () => {
+  const page = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const tour = page.slice(page.indexOf('async function tourDeParole('), page.indexOf('async function tourDeParole(') + 400);
+  assert.match(tour, /if \(infos && infos\.vibration && \(infos\.vibration\.eclats \|\| infos\.vibration\.battements\)\) journalVoix\('vibration_tour', infos\.vibration\);/);
 });

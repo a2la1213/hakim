@@ -50,6 +50,19 @@ def test_les_boucles_et_les_formules_fantomes_sont_ecartees():
     assert stt.filtrer_segments([seg(" Bonjour."), seg(" de temps de temps de temps de temps", cr=2.5)], amorce) == "Bonjour."
 
 
+def test_les_fantomes_de_la_sieste_du_28_10_sont_ecartes_mais_pas_ce_qu_ahmed_dit_vraiment():
+    """(28/10, de 17:20 à 23:33 : téléphone posé, Ahmed endormi, ~170 tours de bruit transcrits.) Seules les phrases
+    inventées qu'Ahmed n'a JAMAIS dites dans tout son fil sont écartées, entières ; « Okay », « So », « I'm sorry »,
+    « I don't know », « I'm out » restent : il les a dites, ou pourrait les dire (il mélange les trois langues)."""
+    en = stt.AMORCES["en"]
+    for t in ("Sigh.", "Sigh. Sigh. Sigh.", "And I'm just going to see you in a bit.", "I'm just going to see you in a bit.",
+              "And I'm out.", "Wszelkie prawa.", "Wszelkie prawa zastrzeżone."):
+        assert stt.filtrer_segments([seg(" " + t)], en) == "", t
+    for t in ("Okay.", "So.", "I'm sorry.", "I don't know.", "I'm out.", "Sigh, je suis crevé.",
+              "And I'm just going to see you in a bit, inchallah, à demain."):
+        assert stt.filtrer_segments([seg(" " + t)], en) == t, t
+
+
 def test_le_silence_n_est_pas_transcrit():
     assert stt.parole_probable({"fr": 0.12, "en": 0.30, "ar": 0.02, "es": 0.15}) is False     # mesuré sur du silence
     assert stt.parole_probable({"fr": 0.99, "en": 0.01}) is True
