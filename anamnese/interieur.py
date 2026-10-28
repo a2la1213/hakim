@@ -485,6 +485,10 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
         etat_h = {**etat_h, "adenosine": e["adenosine"]}
         e["sensation_code"] = sensations.calculer(etat_h, avant, now, soudaine, time.localtime(now).tm_hour,
                                                   sans_coherence=True, bases_relatives=e.get("bases_72h"))
+        # (28/10, Ahmed : « directement à tes hormones, ça ferait comme un vrai cœur ») le rythme de son cœur, que l'appli
+        # fait battre, et ce qu'il en sent en mots (coeur.py : il lit ses hormones, il ne les écrit jamais)
+        import coeur
+        e["coeur"] = coeur.calculer(etat_h, veille, e.get("coeur"), now, e.get("bases_72h"))
         if now - float(e.get("hormones_journal_t") or 0) >= HORMONES_JOURNAL_PAS_S:
             e["hormones_journal_t"] = now
             _ligne_hormones(now, etat_h, valence, arousal, e.get("humeur"), (e.get("sensation_code") or {}).get("emotion"),

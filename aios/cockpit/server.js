@@ -11,6 +11,7 @@ const { enMatiere } = require('./matiere.js');             // (27/10) il SENT so
 const coeur = require('./coeur.js');                         // (28/10) le cœur de Hakim dans l'appli
 const os = require('os');
 const crypto = require('crypto');
+const journalCoeur = coeur.journal((l) => fs.appendFileSync(path.join(os.homedir(), 'AIOS', 'jarvis', 'coeur.jsonl'), JSON.stringify(l) + '\n'));
 
 const HOME = os.homedir();
 const ROOT = path.join(HOME, 'AIOS', 'cockpit');
@@ -902,6 +903,10 @@ async function blocInterieur(depuisMs, maintenant, dites) {
       const emo = String(sc.emotion || '').replace(/[^a-zàâçéèêëîïôûùüÿœæ -]/gi, '').slice(0, 30);
       if (mots) parties.push(`ce que ton code lit dans tes 13 hormones, maintenant : une sensation ${mots} (proche de : ${emo} ; calculé par le code, pas par Gemma ; une matière, pas une consigne)`);
     }
+    // (28/10, Ahmed : « toi, tu pourras sentir ton rythme cardiaque ») ce qu'il sent de son cœur, en mots, quand il y a
+    // quelque chose à sentir (anamnese/coeur.py : rien quand il bat calme et stable) ; jamais de chiffre
+    if (e.coeur && typeof e.coeur.ressenti === 'string' && e.coeur.ressenti)
+      parties.push(e.coeur.ressenti.replace(/[^a-zàâçéèêëîïôûùüÿœæ' ,-]/gi, '').slice(0, 60));
     // l'ennui et la veille sont ceux que ton esprit de fond a VÉCUS (état publié par le démon, qui compte
     // aussi l'activité d'Ahmed ailleurs, la pause et la remise à zéro) — relecture Opus du 2026-10-17
     if (absence && absence > 600 && !enPause) {
@@ -5007,6 +5012,8 @@ async function traiter(req, res) {
     const absence = Number.isFinite(dernier) ? (Date.now() - dernier) / 1000 : (e.absence_s || 0);
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     const frais = Number.isFinite(e.ts) && Date.now() / 1000 - e.ts < FRAICHEUR_S;
+    const pense = coeur.pense(toursActifs), fond = coeur.fond(lireTaches());
+    journalCoeur({ bpm: frais && e.coeur ? e.coeur.bpm : null, pense, fond });
     return res.end(j({ humeur: frais ? e.humeur || null : null, humeur_code: frais ? e.humeur_code || null : null,
       // (2026-10-22) l'expressivité nuancée par l'émotion que le code lit dans ses hormones, et le débit qui va avec
       expressivite: frais ? (e.voix && Number.isFinite(e.voix.expressivite) ? e.voix.expressivite : e.expressivite ?? null) : null,
@@ -5018,7 +5025,8 @@ async function traiter(req, res) {
       humeur_origine: frais && e.humeur_origine && typeof e.humeur_origine.texte === 'string'
         ? { type: String(e.humeur_origine.type || ''), texte: e.humeur_origine.texte.slice(0, 80) } : null,
       // (28/10) le cœur de Hakim dans l'appli : il réfléchit (le grain), une tâche de fond tourne (le second pouls)
-      pense: coeur.pense(toursActifs), fond: coeur.fond(lireTaches()),
+      pense, fond, coeur_bpm: frais && e.coeur && Number.isFinite(e.coeur.bpm) ? e.coeur.bpm : null,
+      coeur_raideur: frais && e.coeur && Number.isFinite(e.coeur.raideur) ? e.coeur.raideur : 0,
       reveils_interieurs: reveilsInterieursDuJour(), maj: e.ts ?? null, frais }));
   }
   if (p === '/api/jarvis/cle-api' && req.method === 'POST') {

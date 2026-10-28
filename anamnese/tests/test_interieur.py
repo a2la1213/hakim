@@ -441,3 +441,14 @@ def test_le_battement_dit_d_ou_vient_son_humeur(mem, tmp_path, monkeypatch):
     e = interieur.tick(mem, now=t0, horloge=h)
     assert e["humeur_origine"] == {"type": "pente", "texte": "pente, sans cause marquée"}
     assert vus[-1] == (str(tmp_path / "affect-evenements.jsonl"), e["emotion_humeur"])
+
+
+def test_le_battement_calcule_son_coeur_depuis_ses_hormones(mem, tmp_path):
+    """(28/10, Ahmed : « directement à tes hormones ») chaque battement publie le rythme de son cœur et ce qu'il en sent ;
+    l'historique s'allonge d'un battement à l'autre (la tendance : il s'accélère, il se calme)."""
+    t0 = _jour(14)
+    h = _horloge(tmp_path, t0)
+    e = interieur.tick(mem, now=t0, horloge=h)
+    assert 35 <= e["coeur"]["bpm"] <= 96 and len(e["coeur"]["hist"]) == 1
+    e = interieur.tick(mem, now=t0 + 60, horloge=h)
+    assert len(e["coeur"]["hist"]) == 2
