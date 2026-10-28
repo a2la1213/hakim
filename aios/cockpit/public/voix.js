@@ -439,6 +439,30 @@
     };
   }
 
+  /* ---- (28/10) ses débuts de réponse les plus fréquents (anamnese/eval/latence : 44 % de ses 2 828 dernières réponses) :
+     la voix d'un début connu est gardée par le cockpit (debuts.js) et resservie sans attendre la synthèse ---- */
+  const DEBUTS = ['frérot,', 'oui frérot,', 'oui,', 'ok frérot,', 'tu as raison,', "d'accord frérot,", 'ha,', "d'accord,", 'ah,',
+    'pas de souci,', 'bonne question,', 'merci,', 'merci frérot,', 'pardon frérot,', 'avec plaisir,', 'non,', 'bonne idée,',
+    'honnêtement,', 'non frérot,', 'compris,', 'je comprends,', 'ok,', 'ça marche,', "c'est noté,", 'bismillah,', 'bien reçu,',
+    "t'as raison,", "c'est fait,", 'pardon,', 'pas de souci frérot,', 'merci frérot.', 'si,', "c'est envoyé,", 'pas tout à fait,',
+    'parfait frérot,'];
+  // (déplacé de parler.js le 28/10 : le cockpit fabrique d'avance ses débuts au même niveau de voix) une exclamation un peu
+  // plus vive, une mauvaise nouvelle ou une excuse un peu plus douce, une question à peine relevée
+  const PHRASE_VIVE = /!\s*$|\b(g[ée]nial|super|enfin|bravo|incroyable|trop bien|magnifique|r[ée]ussi|[çc]a marche)\b/i;
+  const PHRASE_DOUCE = /\b(d[ée]sol[ée]|pardon|malheureusement|dommage|triste|perdu|rat[ée]|[ée]chou[ée]|je regrette|h[ée]las)\b/i;
+  function expressivitePhrase(base, texte) {
+    if (!Number.isFinite(base)) return base;
+    const t = String(texte || '');
+    return base + (PHRASE_VIVE.test(t) ? 0.08 : 0) - (PHRASE_DOUCE.test(t) ? 0.06 : 0) + (/\?\s*$/.test(t) ? 0.03 : 0);
+  }
+  // le début connu par lequel commence ce texte (sa casse gardée), s'il est suivi d'autre chose ; sinon null
+  function debutDe(texte) {
+    const t = String(texte || '');
+    const m = t.match(/^\s*([^,.!?]{1,30}[,.])\s+\S/u);
+    if (!m) return null;
+    return DEBUTS.includes(m[1].toLowerCase().replace(/\s+/g, ' ')) ? m[1] : null;
+  }
+
   /* ---- choix des voix du système ---- */
   function choisirVoix(voix, langue, prefere) {
     const toutes = Array.from(voix || []);
@@ -475,7 +499,7 @@
 
   const Voix = { versArabe, segmenter, pourLaVoix, decoupeur, choisirVoix, creerLecteur, FORMULE, VOIX_SEULE, AFFECT, sansAffect, latexParle,
     definirPrononciations,
-    diction, prononcable, enLettres };
+    diction, prononcable, enLettres, DEBUTS, debutDe, expressivitePhrase };
   racine.Voix = Voix;
   if (typeof module !== 'undefined' && module.exports) module.exports = Voix;
 })(typeof window !== 'undefined' ? window : globalThis);

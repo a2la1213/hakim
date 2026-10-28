@@ -139,17 +139,25 @@ fetch('/api/voix/prononciations', { cache: 'no-store' }).then(r => r.json()).the
 // (26/10, Ahmed : « que la voix suive mieux ») le SENS de chaque phrase nuance l'expressivité de son humeur : une victoire ou
 // une exclamation un peu plus vive, une mauvaise nouvelle ou une excuse un peu plus douce, une question à peine relevée.
 // Le cockpit borne ensuite à la plage sûre de Chatterbox.
-const PHRASE_VIVE = /!\s*$|\b(g[ée]nial|super|enfin|bravo|incroyable|trop bien|magnifique|r[ée]ussi|[çc]a marche)\b/i;
-const PHRASE_DOUCE = /\b(d[ée]sol[ée]|pardon|malheureusement|dommage|triste|perdu|rat[ée]|[ée]chou[ée]|je regrette|h[ée]las)\b/i;
-function expressivitePhrase(base, texte) {
-  if (!Number.isFinite(base)) return base;
-  const t = String(texte || '');
-  return base + (PHRASE_VIVE.test(t) ? 0.08 : 0) - (PHRASE_DOUCE.test(t) ? 0.06 : 0) + (/\?\s*$/.test(t) ? 0.03 : 0);
-}
+const expressivitePhrase = (base, texte) => Voix.expressivitePhrase(base, texte);   // (28/10) dans voix.js, partagé avec le cockpit
 // (26/10, 13:30, Ahmed : « fatigué, il sonne comme un ogre ») le rythme de son état ne passe plus par la vitesse de lecture
 // (elle changeait aussi la hauteur, comme une bande) : la voix l'applique elle-même, à hauteur constante (tempo, ci-dessous)
 const vitesseVoix = () => (etat.reglages.vitesse || 1);
 const tempoVoix = () => etat.reglages.voixNeutre ? 1 : Math.max(0.86, Math.min(1.12, Number(etat.interieur && etat.interieur.voix_vitesse) || 1));
+// (28/10) ses débuts de réponse dont le cockpit a la voix toute prête (debuts.js) : demandés au début de chaque réponse
+const palierVoix = (x, pas) => (Number.isFinite(Number(x)) && x !== null ? (Math.round(Number(x) / pas) * pas).toFixed(2) : '-');
+const emotionDebut = (d) => (etat.interieur && !etat.reglages.voixNeutre ? expressivitePhrase(etat.interieur.expressivite, d) : null);
+const cleDebut = (d) => `${d.toLowerCase().replace(/\s+/g, ' ')}|${palierVoix(emotionDebut(d), 0.1)}|${palierVoix(tempoVoix(), 0.05)}`;
+let debutsPrets = new Set();
+async function chargerDebutsPrets() {
+  try {
+    const e = emotionDebut('Oui frérot,'), t = tempoVoix();
+    const r = await fetch(`/api/voix/debuts?langue=fr${e === null ? '' : `&emotion=${e}`}&tempo=${t}`, { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+    if (!r.ok) return;
+    const o = await r.json();
+    debutsPrets = new Set((o.prets || []).map(([d, pe]) => `${String(d).toLowerCase()}|${pe}|${o.palier_tempo}`));
+  } catch (_) {}
+}
 const lecteurSysteme = synth ? Voix.creerLecteur(synth, window.SpeechSynthesisUtterance, voixPour, vitesseVoix) : null;
 
 // Voix neuronale (Chatterbox, sur le Mac, étape 5 bis) : chaque morceau d'une seule langue est
@@ -275,6 +283,14 @@ function creerLecteurNeuronal() {
   //   virgule : le blanc éventuel tombe là où l'on respire, pas au milieu d'un paragraphe.
   function prochainLot() {
     const premier = !sources.size && !lots.length;
+    // (28/10) un début de réponse dont le cockpit a la voix toute prête (debuts.js) part seul : le premier son sans attendre
+    const debut = premier ? Voix.debutDe(unites[0].texte) : null;
+    if (debut && unites[0].langue === 'fr' && debutsPrets.has(cleDebut(debut))) {
+      const reste = unites[0].texte.slice(debut.length).trim();
+      const langue = unites[0].langue;
+      unites.splice(0, 1, { langue, texte: reste });
+      return { langue, texte: debut };
+    }
     const plafond = etat.conversation ? 160 : 400;
     const vitesse = vitesseVoix();
     // l'avance en secondes RÉELLES : ce qui est programmé (déjà à la vitesse) + ce qui est prêt (à diviser)
@@ -969,6 +985,7 @@ async function envoyer(texte, oral, dejaRelance) {
         conversation: !!etat.conversation, present: presentEnvoye, maintenant: Date.now(), camera,
         appareil: appareilPage(), volant: !!etat.reglages.volant, position: positionAEnvoyer(), ecran: imageEcran(),
         capteurs: capteursDuTelephone(), tour_id: String(m.id) });
+    chargerDebutsPrets();                              // (28/10) pendant qu'il prépare : ses débuts dont la voix est prête
     const poster = () => fetch('/api/jarvis', { method: 'POST', signal: ctl.signal,
       headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: corpsEnvoi });
     let r = await poster();

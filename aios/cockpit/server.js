@@ -11,6 +11,7 @@ const { enMatiere } = require('./matiere.js');             // (27/10) il SENT so
 const coeur = require('./coeur.js');                         // (28/10) le cœur de Hakim dans l'appli
 const afida = require('./afida.js');                         // (28/10) Al-Afida, sa jauge d'amour (lue seulement : page et bloc)
 const Veilleur = require('./veilleur.js');                   // (28/10) le garde-fou contre les pannes d'Anthropic
+const D = require('./debuts.js');                            // (28/10) ses débuts de réponse, leur voix prête d'avance
 const enOff = require('./en-off.js');                        // (28/10) le panneau « En off » : pas de coulisses
 const os = require('os');
 const crypto = require('crypto');
@@ -659,6 +660,7 @@ function trierSouvenirs(prompt, permis) {
   return new Promise((resolve) => {
     const t0 = Date.now();
     const env = { ...process.env }; delete env.ANTHROPIC_API_KEY;
+    env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';            // (28/10) mesuré : ~0,15 s de moins par appel
     try {
       const enfant = execFile(CLAUDE_BIN, ['-p', '--model', 'sonnet', '--max-turns', '2', '--tools', '', '--restricted',
         '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence'],
@@ -2563,6 +2565,7 @@ async function routeJarvis(req, res, distantReq = false) {
   });
   const corps = await lireCorps(req, 1 << 20);
   const recuMs = Date.now();                      // (27/10) où passe le temps : préparation, puis cerveau (vitesseDuTour)
+  const etapes = {}, chrono = chronometre(etapes);  // (28/10) et chaque étape de la préparation (on accélère, on ne coupe rien)
   let premierTexteMs = 0, premierOutilMs = 0, envoyeMs = 0;
   let q = null; try { q = JSON.parse(String(corps || '')); } catch (_) {}
   if (q && typeof q.tour_id === 'string' && ID_MESSAGE.test(q.tour_id)) {
@@ -2604,7 +2607,10 @@ async function routeJarvis(req, res, distantReq = false) {
   const depuisMs = instantValide(Number(q.t_precedent), maintenant) ? Number(q.t_precedent)
     : (instantValide(dernierAvant, maintenant) ? dernierAvant : NaN);
   const dites = (Array.isArray(q.pensees_dites) ? q.pensees_dites : []).map(Number).filter(Number.isFinite).slice(0, 20);
-  const interieurTexte = await blocInterieur(depuisMs, maintenant, dites).catch(() => '');
+  // (28/10, backtest : le rappel et son tri font 90 % de la préparation) il part le premier, en parallèle du reste
+  const nonce = crypto.randomBytes(4).toString('hex');                 // (C-H6) le code des blocs de données de ce tour
+  const rappelP = chrono('rappel', blocRappel(session, texte, nonce).catch(() => ({ texte: '', ids: [] })));
+  const interieurTexte = await chrono('interieur', blocInterieur(depuisMs, maintenant, dites).catch(() => ''));
   const qui = q.oral ? (q.conversation ? "Ahmed (à l'oral, mode Conversation, transcription automatique)"
     : "Ahmed (à l'oral, transcription automatique)") : 'Ahmed (écrit)';
   const deja = (session && ditParSession.get(session)) || {};
@@ -2629,11 +2635,11 @@ async function routeJarvis(req, res, distantReq = false) {
   // (2026-10-23) les chocs d'humeur : le réflexe lexical, tout de suite, avant que son humeur soit lue pour ce tour
   const cleChoc = tourId || `t${maintenant}`;
   const voixChoc = q.oral && derniereVoix && Date.now() - derniereVoix.ts < 120000 ? derniereVoix.verdict : null;
-  const reflexeChoc = await chocsAppel('reflexe', { cle: cleChoc, texte, oral: !!q.oral, voix: voixChoc }).catch(() => null);
+  const reflexeChoc = await chrono('reflexe', chocsAppel('reflexe', { cle: cleChoc, texte, oral: !!q.oral, voix: voixChoc }).catch(() => null));
   if (reflexeChoc && reflexeChoc.erreur) console.error(`Chocs : ${reflexeChoc.erreur}`);
   if (reflexeChoc && (reflexeChoc.regles_erreur || reflexeChoc.style_erreur)) console.error(`Chocs : ${reflexeChoc.regles_erreur || ''} ${reflexeChoc.style_erreur || ''}`);
   try {                                                  // la sagesse : réflexe, puis contrôle (2026-10-22)
-    const ei = await etatInterieur();
+    const ei = await chrono('sagesse', etatInterieur());
     if (reflexeChoc && reflexeChoc.actif && (reflexeChoc.vus || []).length && reflexeChoc.humeur_code)
       Object.assign(ei, { humeur: reflexeChoc.humeur, humeur_code: reflexeChoc.humeur_code, arousal: reflexeChoc.arousal });
     const sg = blocSagesse(ei, q, voixVerdict, q.tour_id);
@@ -2653,7 +2659,6 @@ async function routeJarvis(req, res, distantReq = false) {
     notesIntrospection.delete(session);
     situation.texte = situation.texte ? `${situation.texte}\n${n}` : n;
   }
-  const nonce = crypto.randomBytes(4).toString('hex');                 // (C-H6) le code des blocs de données de ce tour
   const courrierRecu = courrierPourHakim(nonce);
   if (courrierRecu.texte) situation.texte = situation.texte ? `${situation.texte}\n${courrierRecu.texte}` : courrierRecu.texte;
   const coupesTexte = texteAgentsCoupes();
@@ -2682,7 +2687,7 @@ async function routeJarvis(req, res, distantReq = false) {
   if (/terminées depuis son message précédent/.test(tachesTexte)) noterExterne('sortie de commande');
   if (courrierRecu.texte) noterExterne('courrier');
   const horlogeTexte = horloge(maintenant, Number(q.t_precedent), Number(q.t_debut));
-  const rappelBloc = await blocRappel(session, texte, nonce).catch(() => ({ texte: '', ids: [] }));
+  const rappelBloc = await rappelP;
   const pairsTexte = typeof blocPairsDistants === 'function' ? blocPairsDistants(nonce) : '';   // (absent d'une copie publiée)
   const leconsTexte = blocLecons(declencheursDuTour(q, texte));
   const voixTierce = q.voix === 'autre' || declencheursDuTour(q, texte).includes('plusieurs_voix');
@@ -2701,7 +2706,7 @@ async function routeJarvis(req, res, distantReq = false) {
   const presentMs = Number(q.maintenant);
   journaliser('ahmed', texte);
   if (!session) {
-    const b = await briefingFrais();
+    const b = await chrono('briefing', briefingFrais());
     briefingCache.ts = 0;                       // la conversation suivante en aura un neuf, préparé en avance :
     setTimeout(() => briefingFrais(0).catch(() => {}), 20000);   // après la réponse, pour ne pas la ralentir
     if (b) { prompt = `${blocDonnees('Briefing Anamnèse', b, nonce)}\n\n${prompt}`; categories.briefing = b.length; }
@@ -2724,6 +2729,7 @@ async function routeJarvis(req, res, distantReq = false) {
   const choix = SOURCES.has(q.source) ? q.source : 'auto';
   let source = sourcePour(choix);
   let c = null;
+  const tCerveau = Date.now(), avantCerveau = cerveau;
   if (source !== 'local') {
     try { c = cerveauPour(modele, session, persona, source); }
     catch (e) {
@@ -2732,6 +2738,7 @@ async function routeJarvis(req, res, distantReq = false) {
       return res.end(j({ erreur: `lancement de claude impossible : ${e.message || e}` }));
     }
   }
+  etapes.cerveau_ms = Date.now() - tCerveau; etapes.cerveau_neuf = !!c && c !== avantCerveau;
   const t0 = Date.now();
   res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff' });
@@ -2762,7 +2769,7 @@ async function routeJarvis(req, res, distantReq = false) {
       for (const a of arretsDits) { const k = arretsNonDits.indexOf(a); if (k >= 0) arretsNonDits.splice(k, 1); }
     if (pourquoi) noterArret(pourquoi, texte, !o.coupe && !o.erreur);
     const modeleReel = (source !== 'local' && c && c.modeleReel) || undefined;
-    if (o.jetons) noterJetons({ session: sid, modele, modele_reel: modeleReel, source, ms: Date.now() - t0, tours: o.tours, ...o.jetons, categories, ...vitesseDuTour(recuMs, envoyeMs, premierTexteMs, premierOutilMs) });
+    if (o.jetons) noterJetons({ session: sid, modele, modele_reel: modeleReel, source, ms: Date.now() - t0, tours: o.tours, ...o.jetons, categories, etapes, ...vitesseDuTour(recuMs, envoyeMs, premierTexteMs, premierOutilMs) });
     // chaque échange devient un souvenir, sans que personne ait à le demander (le démon l'encre selon l'attention)
     if (!o.coupe && !o.erreur) verifierRessenti(sid, reponse);
     const externe = retirerExterne();
@@ -2956,6 +2963,13 @@ async function routeJarvis(req, res, distantReq = false) {
 function relanceNonReponse(reponse, dejaRelance, source, o, voixTierce) {
   // (relecture du 27/10) un invité parlait : le message n'était peut-être pas pour lui, on ne le force pas
   return !dejaRelance && !voixTierce && source !== 'local' && !(o && o.is_error) && NON_REPONSE_SERVEUR.test(sansBaliseAffect(reponse).trim());
+}
+// (28/10, Ahmed via Hakim : « on ne coupe rien, on accélère ») la durée de chaque étape de la préparation d'un tour
+function chronometre(etapes) {
+  return async (nom, p) => {
+    const t = Date.now();
+    try { return await p; } finally { etapes[nom] = Date.now() - t; }
+  };
 }
 function vitesseDuTour(recuMs, envoyeMs, premierTexteMs, premierOutilMs) {
   const v = {};
@@ -4037,16 +4051,51 @@ const fileVoix = [];
 let voixOccupee = false, transcriptionsEnAttente = 0;
 async function pomperVoix() {
   if (voixOccupee || transcriptionsEnAttente > 0) return;     // la transcription d'Ahmed passe avant la voix
-  const tache = fileVoix.shift();
+  let tache = fileVoix.shift();
+  // (28/10) au calme seulement (rien d'autre à dire, aucun tour en cours) : un de ses débuts de réponse, fabriqué d'avance
+  if (!tache && fileDebuts.length && !toursActifs.size) tache = fileDebuts.shift();
   if (!tache) return;
   if (tache.annulee) { tache.fin({ erreur: 'annulée' }); return pomperVoix(); }
   voixOccupee = true;
+  const tSynthese = Date.now();
   // L'humeur s'entend : son expressivité (interieur.py, 0,38 morosité … 0,72 joie) règle Chatterbox.
   const r = await voixDemander({ op: 'dire', texte: tache.texte, langue: tache.langue, fichier: tache.fichier,
     exaggeration: tache.emotion == null ? null : Math.max(0.3, Math.min(1.0, tache.emotion)), tempo: tache.tempo }, 180000);   // (26/10) jusqu’à 1,0 : eval/voix_plage.py
   voixOccupee = false;
+  // (28/10, Ahmed via Hakim : accélérer la voix) l'attente dans la file, puis la synthèse elle-même
+  try {
+    fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'synthese_serveur', attente_ms: tSynthese - (tache.recu || tSynthese), ms: Date.now() - tSynthese, caracteres: tache.texte.length,
+      audio_s: r && Number.isFinite(Number(r.duree_s)) ? Number(r.duree_s) : null, erreur: !!(r && r.erreur) }) + '\n', { mode: 0o600 });
+  } catch (_) {}
   tache.fin(r);
   pomperVoix();
+}
+
+/* ---- (28/10, Ahmed : « tout en même temps » ; anamnese/eval/latence) ses débuts de réponse les plus fréquents : leur voix,
+   fabriquée au calme pour le niveau de voix du moment (expressivité au dixième, rythme au vingtième), est gardée si elle est
+   plausible (debuts.js), puis resservie sans attendre. Deux essais au plus par début et par niveau. ---- */
+const fileDebuts = [], debutsEssais = new Map();
+function fabriquerDebuts(langue, emotion, tempo) {
+  for (const d of VoixPage.DEBUTS) {
+    const t = d.charAt(0).toUpperCase() + d.slice(1);
+    const e = emotion === null ? null : VoixPage.expressivitePhrase(emotion, t);      // le niveau que la page lui donnera
+    const c = D.cle(t, langue, e, tempo);
+    if (D.lire(c) || (debutsEssais.get(c) || 0) >= 2 || fileDebuts.some(x => x.cle === c)) continue;
+    debutsEssais.set(c, (debutsEssais.get(c) || 0) + 1);
+    const fichier = path.join(os.tmpdir(), `jarvis-voix-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.wav`);
+    fileDebuts.push({ texte: prononcer(t), langue, emotion: e, tempo, fichier, cle: c, annulee: false, recu: Date.now(),
+      fin: (r) => fs.readFile(fichier, (e, data) => {
+        fs.unlink(fichier, () => {});
+        if (!e && r && !r.erreur && D.plausible(t, r.duree_s)) D.garder(c, data, r.duree_s);
+      }) });
+  }
+  while (fileDebuts.length > 200) fileDebuts.shift();
+  pomperVoix();
+}
+// [début, palier de son expressivité] : chaque début a le niveau de voix que la page lui donnera (expressivitePhrase)
+function debutsPrets(langue, emotion, tempo) {
+  return VoixPage.DEBUTS.map(d => [d, emotion === null ? null : VoixPage.expressivitePhrase(emotion, d)])
+    .filter(([d, e]) => D.lire(D.cle(d, langue, e, tempo))).map(([d, e]) => [d, D.palier(e, 0.1)]);
 }
 
 /* ---- Hakim s'entend (demande de Hakim, accord d'Ahmed le 2026-10-22) : les 30 derniers morceaux de SA voix sont
@@ -4131,13 +4180,24 @@ async function routeDire(req, res) {
   const emotion = q && Number.isFinite(Number(q.emotion)) ? Math.max(0, Math.min(1, Number(q.emotion))) : null;
   // (26/10, Ahmed : « garde SA voix ») le rythme de son état, appliqué par la voix elle-même, à hauteur constante
   const tempo = q && Number.isFinite(Number(q.tempo)) ? Math.max(0.85, Math.min(1.15, Number(q.tempo))) : null;
+  // (28/10) un de ses débuts de réponse : sa voix gardée part tout de suite (debuts.js) ; sinon fabriquée, gardée si plausible
+  const langueVoix = /^[a-z]{2}$/.test((q && q.langue) || '') ? q.langue : 'fr';
+  const debut = VoixPage.debutDe(texte + ' x') === texte;
+  const cleVoix = debut ? D.cle(texte, langueVoix, emotion, tempo) : null;
+  const garde = debut ? D.lire(cleVoix) : null;
+  if (garde) {
+    try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'voix_gardee', caracteres: texte.length }) + '\n', { mode: 0o600 }); } catch (_) {}
+    res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Duree': String(garde.duree || '') });
+    return res.end(garde.data);
+  }
   const tache = { texte, langue: /^[a-z]{2}$/.test((q && q.langue) || '') ? q.langue : 'fr', annulee: false, emotion, tempo,
     fichier: path.join(os.tmpdir(), `jarvis-voix-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.wav`) };
   res.on('close', () => { if (!res.writableFinished) tache.annulee = true; });
-  const r = await new Promise((resolve) => { tache.fin = resolve; fileVoix.push(tache); pomperVoix(); });
+  const r = await new Promise((resolve) => { tache.recu = Date.now(); tache.fin = resolve; fileVoix.push(tache); pomperVoix(); });
   if (r.erreur) { fs.unlink(tache.fichier, () => {}); return repondre(r.erreur === 'annulée' ? 499 : 503, { erreur: r.erreur }); }
   fs.readFile(tache.fichier, (e, data) => {
     if (e) { fs.unlink(tache.fichier, () => {}); return repondre(500, { erreur: 'audio introuvable' }); }
+    if (debut && D.plausible(texte, r.duree_s)) D.garder(cleVoix, data, r.duree_s);
     garderVoixRecente(tache, r.duree_s);
     if (res.writableEnded) return;
     res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Duree': String(r.duree_s || '') });
@@ -4250,12 +4310,18 @@ async function routeTranscrire(req, res, langue, contexte) {
   const ext = /mp4|aac|m4a/.test(type) ? '.m4a' : (/ogg/.test(type) ? '.ogg' : (/wav/.test(type) ? '.wav' : '.webm'));
   const f = path.join(os.tmpdir(), `jarvis-${process.pid}-${Date.now()}${ext}`);
   try { fs.writeFileSync(f, audio); } catch (e) { return repondre(500, { erreur: 'écriture du fichier audio impossible' }); }
+  // (28/10, Ahmed via Hakim : accélérer l'oreille) la voix et l'oreille partagent un processus : une synthèse en cours fait attendre
+  const tTranscription = Date.now(), syntheseEnCours = voixOccupee;
   transcriptionsEnAttente++;
   let r;
   if (apprentissageVoix > 0 && Date.now() > apprentissageFin) { apprentissageVoix = 0; apprentissageRegistre = null; }
   const modeVoix = apprentissageVoix > 0 ? (apprentissageRegistre ? `apprendre:${apprentissageRegistre}` : 'apprendre') : 'reconnaitre';
   try { r = await voixDemander({ op: 'transcrire', fichier: f, langue: /^[a-z]{2}$/.test(langue || '') ? langue : null, contexte: contexte || '', voix: modeVoix }, 180000); }
   finally { transcriptionsEnAttente--; pomperVoix(); }
+  try {
+    fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'transcription_serveur', ms: Date.now() - tTranscription, synthese_en_cours: syntheseEnCours, octets: audio.length,
+      erreur: !!(r && r.erreur) }) + '\n', { mode: 0o600 });
+  } catch (_) {}
   fs.unlink(f, () => {});
   delete r.id;
   if (r.voix && r.voix.appris) {
@@ -5184,6 +5250,17 @@ async function traiter(req, res) {
       api_panne: Date.now() < apiEnPanneJusqua ? (abonnement.apiPanne || 'indisponible') : null }));
   }
   if (p === '/api/voix/dire' && req.method === 'POST') return routeDire(req, res);
+  // (28/10) les débuts de réponse dont la voix est prête pour ce niveau de voix ; les autres se fabriquent au calme
+  if (p === '/api/voix/debuts') {
+    const u = new URL(req.url, 'http://x');
+    const langue = /^[a-z]{2}$/.test(u.searchParams.get('langue') || '') ? u.searchParams.get('langue') : 'fr';
+    const n = (k, a, b) => { const v = Number(u.searchParams.get(k)); return u.searchParams.get(k) !== null && Number.isFinite(v) ? Math.max(a, Math.min(b, v)) : null; };
+    const emotion = n('emotion', 0, 1), tempo = n('tempo', 0.85, 1.15);
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(j({ prets: debutsPrets(langue, emotion, tempo), palier_emotion: D.palier(emotion, 0.1), palier_tempo: D.palier(tempo, 0.05) }));
+    if (langue === 'fr') fabriquerDebuts(langue, emotion, tempo);
+    return;
+  }
   if (p === '/api/voix/prononciations' && req.method === 'GET') {     // (2026-10-23) le dictionnaire local, pour la page
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     return res.end(j(lirePrononciations()));

@@ -70,3 +70,58 @@ test('la relance repart dans le MÊME tour (remis en tête de file, texte effac�
   assert.match(route, /const voixTierce = q\.voix === 'autre' \|\| declencheursDuTour\(q, texte\)\.includes\('plusieurs_voix'\);/);
   assert.match(page, /else if \(o\.t === 'efface'\) \{ m\.texte = ''; if \(auto\) decoupe\.finir\(\); majMessage\(m\); \}/, 'la voix oublie aussi la non-réponse');
 });
+
+// ---- (28/10, Ahmed via Hakim, 10:29 : « on ne coupe rien, on accélère » ; d'abord mesurer CHAQUE étape de la préparation)
+test('le chronomètre des étapes : la durée de chaque étape, même quand elle échoue', async () => {
+  const ctx = { Date, Promise };
+  vm.createContext(ctx);
+  vm.runInContext(prendreDans(serveur, 'chronometre') + 'this.f = chronometre;', ctx);
+  const etapes = {};
+  const chrono = ctx.f(etapes);
+  assert.strictEqual(await chrono('vite', Promise.resolve(7)), 7);
+  await assert.rejects(chrono('rate', new Promise((_, r) => setTimeout(() => r(new Error('x')), 30))));
+  assert.ok(etapes.vite >= 0 && etapes.vite < 20, etapes.vite);
+  assert.ok(etapes.rate >= 25, etapes.rate);
+});
+
+test('chaque étape de la préparation est chronométrée et notée avec le tour (jetons.jsonl)', () => {
+  const route = prendreDans(serveur, 'routeJarvis');
+  assert.match(route, /const etapes = \{\}, chrono = chronometre\(etapes\);/);
+  for (const nom of ['interieur', 'reflexe', 'sagesse', 'briefing'])
+    assert.match(route, new RegExp(`await chrono\\('${nom}', `), nom);
+  assert.match(route, /chrono\('rappel', blocRappel\(/);              // lancé en premier, attendu plus loin
+  assert.match(route, /etapes\.cerveau_ms = Date\.now\(\) - tCerveau;/);
+  assert.match(route, /etapes\.cerveau_neuf = /);
+  assert.match(route, /noterJetons\(\{[^}]*etapes,/);
+});
+
+// (28/10) l'oreille : la transcription passe par le même processus que la voix ; une synthèse en cours la fait attendre
+test('chaque transcription est mesurée côté serveur : sa durée, et si une synthèse de voix tournait à son arrivée', () => {
+  const route = prendreDans(serveur, 'routeTranscrire');
+  assert.match(route, /const tTranscription = Date\.now\(\), syntheseEnCours = voixOccupee;/);
+  assert.match(route, /e: 'transcription_serveur', ms: Date\.now\(\) - tTranscription, synthese_en_cours: syntheseEnCours, octets: audio\.length/);
+});
+
+// (28/10) la voix : combien chaque phrase a attendu dans la file, puis combien sa synthèse a pris
+test('chaque synthèse de voix est mesurée côté serveur : attente dans la file, durée de synthèse, longueur', () => {
+  const pompe = prendreDans(serveur, 'pomperVoix');
+  assert.match(pompe, /const tSynthese = Date\.now\(\);/);
+  assert.match(pompe, /e: 'synthese_serveur', attente_ms: tSynthese - \(tache\.recu \|\| tSynthese\), ms: Date\.now\(\) - tSynthese, caracteres: tache\.texte\.length/);
+  assert.match(serveur, /tache\.recu = Date\.now\(\); tache\.fin = resolve; fileVoix\.push\(tache\);/);
+});
+
+// (28/10, backtest : 90 % de la préparation est le rappel et son tri) le rappel part dès le début de la préparation, en
+// parallèle du reste (intérieur, réflexe, sagesse) ; rien n'est coupé, il est attendu avant d'écrire le message
+test('le rappel part en premier, en parallèle du reste de la préparation', () => {
+  const route = prendreDans(serveur, 'routeJarvis');
+  const iRappel = route.indexOf("const rappelP = chrono('rappel', blocRappel(session, texte, nonce)");
+  const iInterieur = route.indexOf("const interieurTexte = await chrono('interieur'");
+  assert.ok(iRappel > 0 && iRappel < iInterieur, 'le rappel est lancé avant l’intérieur');
+  assert.match(route, /const rappelBloc = await rappelP;/);
+  assert.strictEqual((route.match(/const nonce = crypto\.randomBytes\(4\)\.toString\('hex'\);/g) || []).length, 1);
+});
+
+test('le tri ne fait aucun trafic accessoire (mesuré : ~0,15 s de moins par appel)', () => {
+  const tri = prendreDans(serveur, 'trierSouvenirs');
+  assert.match(tri, /CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1'/);
+});

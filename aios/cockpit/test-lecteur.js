@@ -16,7 +16,7 @@ const corps = (() => { const i = SRC.indexOf('function creerLecteurNeuronal'); r
 const Voix = require('./public/voix.js');
 
 // Une boucle d'événements à temps virtuel : les promesses se résolvent entre deux minuteries.
-function simulateur({ fixe, parSec, cps, appris, conversation = true }) {
+function simulateur({ fixe, parSec, cps, appris, conversation = true, prets = [] }) {
   let maintenant = 0, suivant = 1;
   const minuteries = new Map();
   const planifier = (fn, ms, repete) => { const id = suivant++; minuteries.set(id, { t: maintenant + Math.max(0, ms) / 1000, fn, repete }); return id; };
@@ -38,6 +38,7 @@ function simulateur({ fixe, parSec, cps, appris, conversation = true }) {
     performance: { now: () => maintenant * 1000 },
     localStorage: { getItem: () => (appris ? JSON.stringify(appris) : null), setItem() {} },
     etat: { conversation: conversation ? {} : null, reglages: { vitesse: 1 }, interieur: null },
+    debutsPrets: new Set(prets), cleDebut: (d) => d,                 // (28/10) ses débuts dont la voix est prête
     actx, analyseurVoix: {}, lecteurSysteme: null,
     jeton: () => 'x', humeur() {}, jarvisPeutParler: () => true,
     fetch: (url, o) => {
@@ -160,4 +161,19 @@ test('le texte qui arrive pendant la pause est gardé pour la reprise', async ()
   const attendu = REPONSE.slice(0, 3).map(p => Voix.pourLaVoix(Voix.versArabe(p))).join(' ').replace(/\s+/g, ' ');
   assert.strictEqual(dit, attendu);
   assert.ok(!sim.lecteur.actif, 'tout est dit, le lecteur a fini');
+});
+
+// (28/10) un début de réponse dont le cockpit a la voix toute prête part seul, en premier ; sinon rien ne change
+test('un début dont la voix est prête part seul en premier ; la suite part juste après', async () => {
+  const phrase = "Oui frérot, je suis là et je t'entends très bien, on peut continuer.";
+  const sim = simulateur({ ...MESUREE, prets: ['Oui frérot,'] });
+  await sim.avancer(0); sim.lecteur.dire(phrase); sim.lecteur.finFlux();
+  await sim.avancer(30);
+  const sons = sim.sons.filter(x => !x.coupe).map(x => x.texte);
+  assert.strictEqual(sons[0], 'Oui frérot,');
+  assert.strictEqual(sons.join(' ').replace(/\s+/g, ' '), Voix.pourLaVoix(Voix.versArabe(phrase)).replace(/\s+/g, ' '));
+  const sans = simulateur({ ...MESUREE });
+  await sans.avancer(0); sans.lecteur.dire(phrase); sans.lecteur.finFlux();
+  await sans.avancer(30);
+  assert.notStrictEqual(sans.sons[0].texte, 'Oui frérot,', 'pas prête : le premier morceau reste comme avant');
 });
