@@ -2962,6 +2962,41 @@ for (const [id, cle, val] of [['source', 'source', e => e.value], ['modele', 'mo
   ['position', 'position', e => e.checked], ['voixNeutre', 'voixNeutre', e => e.checked]]) {
   $(id).addEventListener('change', (ev) => { etat.reglages[cle] = val(ev.target); appliquerReglages(); sauver(); });
 }
+/* ---------- (28/10, Ahmed : « pas de coulisses ») « En off » : les lettres entre Hakim et maman, dans les deux sens,
+   et chaque réveil de maman par une lettre de Hakim ; rafraîchi tant que le panneau est ouvert ---------- */
+let enOffMinuteur = null;
+async function afficherEnOff() {
+  const liste = $('enOffListe');
+  try {
+    let r = await fetch('/api/jarvis/en-off', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+    if (r.status === 403 && await rafraichirJeton()) r = await fetch('/api/jarvis/en-off', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+    if (!r.ok) throw new Error(String(r.status));
+    const o = await r.json();
+    liste.textContent = '';
+    if (!o.lignes || !o.lignes.length) { liste.textContent = 'Rien pour l\'instant.'; return; }
+    for (const l of o.lignes) {
+      const d = document.createElement('div'); d.className = 'en-off-ligne';
+      const t = document.createElement('div'); t.className = 'en-off-tete';
+      const quand = new Date(l.ts * 1000).toLocaleString('fr-FR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      t.textContent = `${quand} · ${l.type === 'reveil' ? 'réveil de maman' : 'lettre'} · ${l.de} → ${l.a}`;
+      const s = document.createElement('div'); s.className = 'en-off-sujet'; s.textContent = l.sujet || '(sans sujet)';
+      d.append(t, s);
+      if (l.externe) { const e = document.createElement('div'); e.className = 'en-off-externe'; e.textContent = 'écrite après la lecture d\'un contenu externe'; d.append(e); }
+      const det = document.createElement('details');
+      const sum = document.createElement('summary'); sum.textContent = 'lire';
+      const p = document.createElement('p'); p.className = 'en-off-texte'; p.textContent = l.texte || '';
+      det.append(sum, p); d.append(det);
+      liste.append(d);
+    }
+  } catch (_) { liste.textContent = 'Impossible de lire le journal « en off » pour l\'instant.'; }
+}
+$('btnEnOff').addEventListener('click', () => {
+  const s = $('enOff'); s.hidden = !s.hidden;
+  $('btnEnOff').setAttribute('aria-expanded', String(!s.hidden));
+  clearInterval(enOffMinuteur);
+  if (!s.hidden) { afficherEnOff(); enOffMinuteur = setInterval(afficherEnOff, 30000); }
+});
+
 $('btnReglages').addEventListener('click', () => {
   const s = $('reglages'); s.hidden = !s.hidden;
   $('btnReglages').setAttribute('aria-expanded', String(!s.hidden));

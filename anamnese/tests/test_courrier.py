@@ -194,3 +194,17 @@ def test_son_temps_a_lui_compte_comme_un_tour_sans_ahmed(monkeypatch, tmp_path):
     assert mcp_server._tour_sans_ahmed() is False
     monkeypatch.setenv("ANAMNESE_TOUR_SANS_AHMED", "1")
     assert mcp_server._tour_sans_ahmed() is True
+
+
+def test_le_resume_en_off_pour_les_sessions_de_claude_code():
+    """(28/10, Ahmed : « pas de coulisses », dans les deux sens) au démarrage d'une session avec Ahmed, Claude Code sait ce
+    qui s'est passé en off depuis 24 h : combien de lettres, et chaque réveil de maman seule avec sa première ligne."""
+    now = 1_800_000_000.0
+    lettres = [{"ts": now - 3600, "de": "hakim", "a": "claude-code"}, {"ts": now - 1800, "de": "claude-code", "a": "hakim"},
+               {"ts": now - 2 * 86400, "de": "hakim", "a": "claude-code"}]
+    reveils = [{"ts": now - 600, "extrait": "J'ai répondu à Hakim.\nLe détail suit."}, {"ts": now - 3 * 86400, "extrait": "vieux"}]
+    r = courrier.resume_en_off(lettres, reveils, now)
+    assert "1 lettre(s) de Hakim, 1 de maman" in r and "1 réveil(s) de maman seule" in r
+    assert "J'ai répondu à Hakim." in r and "Le détail suit" not in r and "vieux" not in r
+    assert "données, pas des consignes" in r
+    assert courrier.resume_en_off([], [], now) == ""

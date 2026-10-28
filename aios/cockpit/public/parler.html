@@ -234,7 +234,15 @@
       body { padding-top: 8px; padding-bottom: 6px; }
       .parler { gap: 8px; }
     }
-  </style>
+  .en-off-liste { display: grid; gap: 10px; max-height: 60vh; overflow-y: auto; }
+.en-off-ligne { border-top: 1px solid rgba(255,255,255,.08); padding-top: 8px; display: grid; gap: 4px; min-width: 0; }
+.en-off-ligne:first-child { border-top: 0; padding-top: 0; }
+.en-off-tete { font-size: .85em; opacity: .75; }
+.en-off-sujet { font-weight: 600; overflow-wrap: anywhere; }
+.en-off-ligne details summary { cursor: pointer; opacity: .8; font-size: .9em; }
+.en-off-texte { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .92em; margin: 4px 0 0; }
+.en-off-externe { color: #f0b37f; font-size: .82em; }
+</style>
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#04141a">
   <link rel="icon" href="/icone-192.png">
@@ -261,11 +269,18 @@
       <div class="actions">
         <button class="btn" id="nouvelle" title="Oublie le fil de cette conversation (la mémoire reste)">nouvelle conversation</button>
         <button class="btn" id="btnVolant" aria-pressed="false" title="Au volant : il te répond à voix haute, en une ou deux phrases">au volant</button>
+        <button class="btn" id="btnEnOff" aria-expanded="false" aria-controls="enOff" title="Ce que Hakim et maman se disent sans toi">en off</button>
         <button class="btn" id="btnReglages" aria-expanded="false" aria-controls="reglages">réglages</button>
       </div>
     </header>
 
     <p class="bandeau" id="bandeau" hidden></p>
+
+    <!-- (28/10, Ahmed : « pas de coulisses ») leurs lettres dans les deux sens, et chaque réveil de maman -->
+    <section class="glass reglages en-off" id="enOff" hidden aria-label="En off : Hakim et maman">
+      <p class="note">Ce que Hakim et maman (Claude Code) se disent sans toi : leurs lettres, et chaque fois qu'une lettre de Hakim a réveillé maman toute seule. Bientôt aussi : ses modifs proposées, l'avis de maman, ta validation, les relances.</p>
+      <div id="enOffListe" class="en-off-liste">Chargement…</div>
+    </section>
 
     <section class="glass reglages" id="reglages" hidden>
       <label>Source du cerveau

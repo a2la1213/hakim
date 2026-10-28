@@ -222,6 +222,22 @@ def main():
         texte = briefing(m, source, _t.time(), session=session)
         if texte is not None:          # None : reprise sans changement, déjà dans le contexte
             print(texte)
+            # (28/10, Ahmed : « pas de coulisses ») ce qui s'est dit en off depuis 24 h entre Hakim et maman
+            try:
+                import courrier, json as _j
+                reveils = []
+                jm = config.DATA_DIR / "maman.jsonl"
+                if jm.exists():
+                    for l in jm.read_text(encoding="utf-8", errors="replace").splitlines()[-200:]:
+                        try:
+                            reveils.append(_j.loads(l))
+                        except ValueError:
+                            pass
+                r = courrier.resume_en_off(courrier.tous(), reveils, _t.time())
+                if r:
+                    print(r)
+            except Exception:
+                pass
     elif cmd == "jardin":
         # anamnese jardin ouvrir "<raison>" — Ahmed seulement, en cas d'urgence ou d'audit ; l'ouverture est notée
         import jardin

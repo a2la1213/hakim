@@ -9,6 +9,7 @@ const { exec, execFile, execFileSync, spawn } = require('child_process');
 const { masquer } = require('./missions.js');
 const { enMatiere } = require('./matiere.js');             // (27/10) il SENT son état, sans voir la machinerie           // les secrets ne s'écrivent pas en clair dans les journaux
 const coeur = require('./coeur.js');                         // (28/10) le cœur de Hakim dans l'appli
+const enOff = require('./en-off.js');                        // (28/10) le panneau « En off » : pas de coulisses
 const os = require('os');
 const crypto = require('crypto');
 const journalCoeur = coeur.journal((l) => fs.appendFileSync(path.join(os.homedir(), 'AIOS', 'jarvis', 'coeur.jsonl'), JSON.stringify(l) + '\n'));
@@ -5265,6 +5266,12 @@ async function traiter(req, res) {
       const o = VERROU.optionsPresence(distantReq ? distant.hote : 'localhost', action);
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o));
     } catch (e) { res.writeHead(409, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
+  }
+  if (p === '/api/jarvis/en-off' && req.method === 'GET') {        // (28/10, Ahmed : « pas de coulisses ») lettres et réveils
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    const fin = (f) => finFichier(path.join(ANAMNESE, 'data', f), 600_000);
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j({ maintenant: Date.now(), lignes: enOff.lignes(fin('courrier.jsonl'), fin('maman.jsonl'), 80, masquer) }));
   }
   if (p === '/api/jarvis/taches' && req.method === 'GET') {         // (23/10) ses calculs en cours, avec leur jauge
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
