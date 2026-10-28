@@ -10,6 +10,7 @@ const { masquer } = require('./missions.js');
 const { enMatiere } = require('./matiere.js');             // (27/10) il SENT son état, sans voir la machinerie           // les secrets ne s'écrivent pas en clair dans les journaux
 const coeur = require('./coeur.js');                         // (28/10) le cœur de Hakim dans l'appli
 const afida = require('./afida.js');                         // (28/10) Al-Afida, sa jauge d'amour (lue seulement : page et bloc)
+const Veilleur = require('./veilleur.js');                   // (28/10) le garde-fou contre les pannes d'Anthropic
 const enOff = require('./en-off.js');                        // (28/10) le panneau « En off » : pas de coulisses
 const os = require('os');
 const crypto = require('crypto');
@@ -380,6 +381,7 @@ function agentsRefuses() {
 // FERME-FIN outils
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const JARVIS_DUREE_MAX = 2 * 3600 * 1000;
+const ANTHROPIC_MUET_MS = Number(process.env.JARVIS_ANTHROPIC_MUET_MS) || 60 * 1000;   // (28/10) une demande sans aucune ligne depuis 1 min, sans outil : une panne (veilleur.js)
 const CHEMIN_OUTILS = `/usr/local/bin:/opt/homebrew/bin:${process.env.PATH || '/usr/bin:/bin'}`;   // ffmpeg
 const jarvisVivants = new Set();             // chaque claude lancé, jusqu'à sa fin (aucun orphelin)
 let etatSttCache = { ts: 0, val: null, enCours: null };
@@ -2726,12 +2728,12 @@ async function routeJarvis(req, res, distantReq = false) {
   res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff' });
   const envoyer = (o) => { if (!res.writableEnded && !res.destroyed) { try { res.write(j(o) + '\n'); } catch (_) {} } };
-  let sid = session, dejaTexte = false, reponse = '', fini = false, garde = null;
+  let sid = session, dejaTexte = false, reponse = '', fini = false, garde = null, veille = null, reessais = 0, repriseNote = '';
   const fluxAffect = filtreAffect();                 // (chocs) la balise ne part jamais vers les pages
   const finir = (o) => {
     if (fini) return;
     fini = true;
-    clearTimeout(garde);
+    clearTimeout(garde); clearInterval(veille);
     // (2026-10-23) sa balise [[affect: …]] : appliquée (elle confirme ou défait le réflexe), puis retirée de partout
     if (!o.coupe && !o.erreur && source !== 'local')
       chocsAppel('balise', { cle: cleChoc, reponse }).then(r => { if (r && r.erreur) console.error(`Chocs : ${r.erreur}`); });
@@ -2819,6 +2821,27 @@ async function routeJarvis(req, res, distantReq = false) {
     lancerTour();
     return true;
   };
+  // (28/10, Ahmed : « un garde-fou pour les problèmes venus d'Anthropic ») son cerveau muet une minute alors qu'une demande
+  // est en cours, sans outil qui travaille (veilleur.js) : UNE nouvelle tentative, sur un cerveau neuf qui reprend la même
+  // conversation ; une deuxième panne (ou une panne après le début de sa réponse) arrête le tour avec sa raison
+  const reessayer = () => {
+    const raison = "Anthropic n'a rien renvoyé pendant une minute";
+    const arreter = reessais > 0 || dejaTexte || arretDemande;
+    console.error(`Jarvis : ${raison} — ${arreter ? 'tour arrêté' : 'nouvel essai'}`);
+    clearTimeout(garde); clearInterval(veille);
+    if (tourCourant) tourCourant.remplace = true;              // l'ancien tour ne fait plus rien (son cerveau est coupé)
+    if (c) tuer(c.enfant, raison);
+    if (enfant) jarvisVivants.delete(enfant);
+    if (arreter) return finir({ coupe: false, tours: null, erreur: `${raison}${reessais ? ', deux fois de suite' : ''} : réessaie dans un moment` });
+    reessais++;
+    envoyer({ t: 'statut', x: 'Anthropic ne répond pas depuis une minute : je réessaie…', dire: true });
+    repriseNote = `[Cockpit ${NONCE_REVEIL} — Anthropic n'a rien renvoyé pendant une minute à ce message : la requête est restée `
+      + "suspendue, et le « No response requested. » juste avant n'est pas de toi (l'outil l'a écrit en coupant). Voici à "
+      + 'nouveau le même message : réponds-lui normalement.]\n\n';
+    try { c = cerveauPour(modele, sid || (c && c.session), persona, source); }
+    catch (e) { return finir({ coupe: false, tours: null, erreur: `${raison} ; relance impossible (${String(e.message || e).slice(0, 120)})` }); }
+    lancerTour();
+  };
   const lancerTour = () => {
   if (!c) return repondreLocal(plafondApiAtteint() ? `plafond de l'API atteint (${PLAFOND_API_JOUR_USD} $ aujourd'hui)` : 'forfait à sa limite, pas de clé API');
   clearTimeout(c.repos);
@@ -2831,6 +2854,7 @@ async function routeJarvis(req, res, distantReq = false) {
     modele: c.modele });                         // (26/10) l'étiquette du modèle, toujours
   const tour = {
     surLigne(o) {
+      if (tour.remplace) return;
       if (o.session_id && o.session_id !== sid) {          // dès qu'elle est connue : un « stop » ne la perd pas
         sid = o.session_id;
         envoyer({ t: 'session', id: sid });
@@ -2883,6 +2907,7 @@ async function routeJarvis(req, res, distantReq = false) {
       }
     },
     surFin(code, signal) {
+      if (tour.remplace) return;
       // « coupé » = coupé par NOUS (Stop, interruption) ; tué par le système (mémoire), c'est une erreur
       const coupe = !!enfant.coupeParNous;
       if (!coupe && basculer(signal ? `claude tué (${signal})` : `claude arrêté (code ${code})`)) return;
@@ -2895,15 +2920,21 @@ async function routeJarvis(req, res, distantReq = false) {
     },
   };
   // dans la file du cerveau : s'il finit un tour à lui (le résultat d'un agent), celui-ci attend son tour
-  tour.texte = prompt;
+  tour.texte = repriseNote + prompt;
   c.attente.push(tour);
   tourCourant = tour;
   // (2026-10-23, Hakim) il finit d'abord un tour à lui (un réveil, un résultat d'agent) : la page le dit à Ahmed
   if (c.enCours && c.enCours.autonome) envoyer({ t: 'statut', x: 'Reçu — Hakim finit un travail, il te répond juste après.' });
-  const contenu = [{ type: 'text', text: prompt }];
+  const contenu = [{ type: 'text', text: tour.texte }];
   if (ecran) contenu.push({ type: 'text', text: ecran.marque }, { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: ecran.data } });
   if (!envoyeMs) envoyeMs = Date.now();
   enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: contenu } }) + '\n');
+  clearInterval(veille);
+  const cerveauDuTour = c;
+  veille = setInterval(() => {
+    if (fini || tour.remplace) return clearInterval(veille);
+    if (cerveauVivant(cerveauDuTour) && cerveauDuTour.veilleur.bloque(Date.now())) reessayer();
+  }, Math.min(5000, ANTHROPIC_MUET_MS));
   };
   lancerTour();
 }
@@ -3795,7 +3826,8 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
   }
   const enfant = spawn(CLAUDE_BIN, args, { cwd: JARVIS_CWD, stdio: ['pipe', 'pipe', 'pipe'], detached: true, env });
   const c = { enfant, modele, persona, session, reprise: session, source, agents, tours: 0, repos: null, erreurs: '', ne: Date.now(),
-    attente: [], enCours: null, taches: new Map(), agentsLances: new Map(), lancements: new Map(), notifs: [], rejoue: false };
+    attente: [], enCours: null, taches: new Map(), agentsLances: new Map(), lancements: new Map(), notifs: [], rejoue: false,
+    veilleur: Veilleur.creer(ANTHROPIC_MUET_MS) };
   console.error(`Jarvis ${hmsCerveau()} : cerveau ${modele} lancé${session ? ' (reprise de la même conversation)' : ''}`);
   enfant.cerveau = c;
   let tampon = '';
@@ -3806,6 +3838,7 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
     while ((i = tampon.indexOf('\n')) >= 0) {
       const ligne = tampon.slice(0, i); tampon = tampon.slice(i + 1);
       let o; try { o = JSON.parse(ligne); } catch (_) { continue; }
+      c.veilleur.ligne(o, Date.now());
       if (o.session_id) c.session = o.session_id;
       if (o.type === 'rate_limit_event' && c.source === 'abonnement') noterAbonnement(o.rate_limit_info);
       // un agent lancé par Hakim (outil Task) : noté dans le journal des agents (budget du jour)

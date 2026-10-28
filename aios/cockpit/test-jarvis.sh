@@ -94,6 +94,12 @@ if "-p" in sys.argv[1:] and "--input-format" not in sys.argv[1:]:   # une missio
 FIN = {"type": "result", "subtype": "success", "is_error": False, "num_turns": 1, "session_id": SID,
        "usage": {"input_tokens": 3, "cache_read_input_tokens": 1000, "cache_creation_input_tokens": 200, "output_tokens": 5}}
 def texte_(x): return {"type": "stream_event", "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": x}}}
+def attendre(s):                                              # (28/10) un tour long parle encore (le veilleur ne le prend pas pour une panne)
+    fin = time.time() + s
+    while time.time() < fin:
+        if interruption.wait(min(0.5, max(0.0, fin - time.time()))): return True
+        out({"type": "stream_event", "event": {"type": "ping"}})
+    return interruption.is_set()
 agent_fin = None
 while True:
     try:
@@ -110,7 +116,7 @@ while True:
         out(texte_("Le Juge du banc a fini : "))
         time.sleep(0.3)
         log(f"AUTONOME_MARQUE {os.path.exists(BANC + '/jarvis/tour-autonome.json')}")
-        time.sleep(secondes("autonome_s"))
+        attendre(secondes("autonome_s")); interruption.clear()
         out(texte_("tout est juste.")); out(FIN)
         continue
     if ligne is None: break
@@ -121,6 +127,10 @@ while True:
     interruption.clear()
     if "--replay-user-messages" in sys.argv[1:]:
         out({"type": "user", "isReplay": True, "message": {"role": "user", "content": [{"type": "text", "text": texte}]}, "session_id": SID})
+    # (28/10) une panne d'Anthropic : la requête part et rien ne revient (MUET : la première fois ; MUETDEUX : toujours)
+    if "MUETDEUX" in texte or ("MUET" in texte and not os.path.exists(BANC + "/muet_vu")):
+        open(BANC + "/muet_vu", "w").write("1"); log(f"MUET {pid}")
+        time.sleep(3600); continue
     if "apiKeyHelper" in args:                                # facturé à l'API (--settings apiKeyHelper) : il répond
         log(f"API {pid}")
         if "SANSCREDIT" in ligne:
@@ -160,7 +170,7 @@ while True:
         out({"type": "system", "subtype": "background_tasks_changed", "tasks": [{"task_id": "t1", "description": "Juge du banc"}]})
         out({"type": "system", "subtype": "task_started", "task_id": "t1", "is_backgrounded": True})
         agent_fin = time.time() + secondes("agent_s")
-    if interruption.wait(secondes("claude_s")):
+    if attendre(secondes("claude_s")):
         out({"type": "result", "subtype": "error_during_execution", "is_error": True, "session_id": SID}); continue
     out(FIN)
 log(f"END {pid}")
@@ -209,7 +219,7 @@ printf '#!/bin/bash\necho %s\n' "'{\"Self\":{\"DNSName\":\"mac-ahmed.tail-test.t
 chmod +x "$BANC/faux-tailscale"
 # une conversation déjà trop lourde (contrôle 38) : 900 000 jetons
 echo '{"sessions":{"99999999-9999-4999-8999-999999999999":900000}}' > "$BANC/jarvis/contextes.json"
-JARVIS_CHOCS_CLI="$BANC/faux-chocs" COCKPIT_PORT=$PORT ANAMNESE_DIR="$BANC/anamnese" JARVIS_DIR="$BANC/jarvis" CLAUDE_BIN="$BANC/faux-claude" OLLAMA_URL="http://127.0.0.1:$OLLAMA_PORT" ANAMNESE_DB="$BANC/memory.db" TAILSCALE_CLI="$BANC/faux-tailscale" JARVIS_CLE_API="$BANC/config/cle-api" JARVIS_TROUSSEAU_SERVICE="banc-jarvis-absent" JARVIS_JOURNAL_MAX=1500 JARVIS_JOURNAL_GARDE=10 JARVIS_NON_VU_MS=1500 JARVIS_REVEIL_TACHE_MS=8000 JARVIS_MISSIONS_MAISON="$BANC/maison" JARVIS_COURRIER_REGROUPER_MS=1500 JARVIS_COURRIER_ECART_MS=1000 JARVIS_COURRIER_HEURES=0-24 JARVIS_COURRIER_AHMED_MS=0 JARVIS_RESUME_NUIT=0 JARVIS_AGENTS_PAR_JOUR=8 COCKPIT_SANS_INVENTAIRE=1 JARVIS_PUSH_FAUX="$BANC/push.log" \
+JARVIS_CHOCS_CLI="$BANC/faux-chocs" COCKPIT_PORT=$PORT ANAMNESE_DIR="$BANC/anamnese" JARVIS_DIR="$BANC/jarvis" CLAUDE_BIN="$BANC/faux-claude" OLLAMA_URL="http://127.0.0.1:$OLLAMA_PORT" ANAMNESE_DB="$BANC/memory.db" TAILSCALE_CLI="$BANC/faux-tailscale" JARVIS_CLE_API="$BANC/config/cle-api" JARVIS_TROUSSEAU_SERVICE="banc-jarvis-absent" JARVIS_JOURNAL_MAX=1500 JARVIS_JOURNAL_GARDE=10 JARVIS_NON_VU_MS=1500 JARVIS_REVEIL_TACHE_MS=8000 JARVIS_MISSIONS_MAISON="$BANC/maison" JARVIS_COURRIER_REGROUPER_MS=1500 JARVIS_COURRIER_ECART_MS=1000 JARVIS_COURRIER_HEURES=0-24 JARVIS_COURRIER_AHMED_MS=0 JARVIS_RESUME_NUIT=0 JARVIS_AGENTS_PAR_JOUR=8 COCKPIT_SANS_INVENTAIRE=1 JARVIS_PUSH_FAUX="$BANC/push.log" JARVIS_ANTHROPIC_MUET_MS=1500 \
   /usr/local/bin/node "$DIR/server.js" >"$BANC/serveur.log" 2>&1 &
 PID=$!
 trap 'kill "$PID" "$OPID" 2>/dev/null; [ -n "${GARDER:-}" ] && echo "banc gardé : $BANC" || rm -rf "$BANC"' EXIT
@@ -1078,6 +1088,21 @@ verifier "62. arrêter un de ses agents : liste, inconnu refusé, arrêt par Ahm
 printf '{"سمير": "Samir"}' > "$BANC/jarvis/prononciations.json"
 p63=$(curl -s "$U/api/voix/prononciations" | python3 -c "import json,sys; print(json.load(sys.stdin).get('سمير'))")
 verifier "63. prononciations : le dictionnaire local est servi à la page" "Samir" "$p63"
+
+# 64. (28/10, Ahmed : « un garde-fou pour les problèmes venus d'Anthropic ») la requête part et rien ne revient : après le
+# délai (1,5 s au banc, 1 min en vrai), un cerveau neuf reprend la même conversation et le même message, avec une note à
+# Hakim (le « No response requested. » d'avant n'est pas de lui) ; la page voit et entend « je réessaie »
+rm -f "$BANC/muet_vu"
+s64=$(poster '{"texte":"un pari MUET","modele":"sonnet","source":"abonnement","tour_id":"mu64a"}' --max-time 30)
+a64=$(echo "$s64" | python3 -c 'import json,sys; l=[json.loads(x) for x in sys.stdin if x.strip()]; st=[o for o in l if o["t"]=="statut"]; f=[o for o in l if o["t"]=="fin"]; print(bool(st and "réessaie" in st[0]["x"] and st[0].get("dire")), "".join(o.get("x","") for o in l if o["t"]=="texte").strip()[:13], bool(f) and not f[-1].get("erreur"))')
+b64=$(grep -l "un pari MUET" "$BANC"/entree.* 2>/dev/null | wc -l | tr -d ' ')     # le même message, envoyé deux fois (deux cerveaux)
+c64=$(grep -c -- '--resume' "$BANC/args.$(dernier)")
+d64=$(grep -c "n'est pas de toi" "$BANC/entree.$(dernier)")
+verifier "64. Anthropic muet : un nouvel essai sur un cerveau neuf (même conversation, note à Hakim), puis la réponse" "True Salut frérot. True 2 1 1" "$a64 $b64 $c64 $d64"
+# 65. deux pannes de suite : le tour s'arrête, avec sa raison (pas un silence sans fin)
+s65=$(poster '{"texte":"encore MUETDEUX","modele":"sonnet","source":"abonnement","tour_id":"mu65a"}' --max-time 40)
+e65=$(echo "$s65" | python3 -c 'import json,sys; l=[json.loads(x) for x in sys.stdin if x.strip()]; f=[o for o in l if o["t"]=="fin"]; e=(f[-1].get("erreur") or "") if f else ""; print("rien renvoyé" in e and "deux fois" in e)')
+verifier "65. deux pannes de suite : le tour s'arrête avec la raison" "True" "$e65"
 
 [ "$ECHECS" -eq 0 ] && echo "TOUT VERT" || echo "$ECHECS contrôle(s) en échec"
 exit "$ECHECS"

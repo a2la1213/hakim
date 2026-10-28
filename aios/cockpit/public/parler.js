@@ -1001,6 +1001,8 @@ async function envoyer(texte, oral, dejaRelance) {
         } else if (o.t === 'efface') { m.texte = ''; if (auto) decoupe.finir(); majMessage(m); }   // (27/10) sa non-réponse effacée, à l'écran et dans la voix
         else if (o.t === 'statut' && typeof o.x === 'string') {   // (2026-10-23) reçu, il finit d'abord un travail
           humeur(o.x.slice(0, 160)); $('annonce').textContent = o.x.slice(0, 160);
+          // (28/10) une panne d'Anthropic : dite à voix haute quand la voix est active (téléphone plié, il n'aurait rien vu)
+          if (o.dire && (etat.conversation || etat.reglages.volant || etat.reglages.lectureAuto) && !lecteur.actif) lecteur.dire(o.x.slice(0, 160));
         } else if (o.t === 'debut') {
           if (o.modele) { m.modele = o.modele; majMessage(m); }        // le routeur a choisi (Sonnet ou Opus)
         } else if (o.t === 'source') {                        // le forfait à sa limite : l'API, puis le local
