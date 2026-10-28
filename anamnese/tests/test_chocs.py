@@ -308,7 +308,8 @@ def test_un_soutien_vu_par_le_reflexe_puis_confirme_par_la_balise_n_est_pas_effa
     assert _etat(m, T + 16)["ocytocine"] > base + 0.05
 
 
-def test_un_soutien_ou_une_fierte_de_sa_balise_nourrissent_la_regle_de_la_joie(tmp_path):
+def test_un_soutien_ou_une_fierte_de_sa_balise_nourrissent_la_regle_de_la_joie(tmp_path, monkeypatch):
+    monkeypatch.setattr(__import__('regles_emotion'), "RETIREES", set())       # le mécanisme, règles retirées comprises (28/10)
     import regles_emotion
     p = _sagesse(tmp_path, 0.2)
     m = Mem()

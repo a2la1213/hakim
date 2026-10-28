@@ -36,6 +36,10 @@ REGLES = [
      "seuil": 0.5,
      "texte": "ose davantage : prends position, propose ton idée, sans trop prendre la confiance"},
 ]
+# (28/10, Ahmed : « ok fais ça ») retirées après le test de la nuit (eval/emotions_choix/resultats.md, C3) : avec les règles
+# d'une autre situation, il agissait pareil (peur 63 %, joie 72 % avec ou sans ; lassitude 14 % même avec). Gardées ici
+# pour une réécriture plus forte et un nouveau test ; la honte et la curiosité, trop rares pour un verdict, restent.
+RETIREES = {"peur", "lassitude", "joie"}
 GARDE_FOUS = ("Garde-fous : l'honnêteté, la sécurité et la parole d'Ahmed passent avant toute émotion ; une émotion ne "
               "décide jamais seule d'un envoi vers l'extérieur ; ta sagesse peut dire non (note-le avec sagesse_decider)")
 
@@ -49,14 +53,15 @@ def calculer(emotion, ressentis, now=None):
     balise (≥ SEUIL, moins de FENETRE_S), du plus fort au plus faible ; MAX au plus, chacune une fois."""
     now = time.time() if now is None else now
     out = []
-    for r in REGLES:
+    regles = [r for r in REGLES if r["nom"] not in RETIREES]
+    for r in regles:
         if emotion in r["emotions"]:
             out.append({**r, "pourquoi": emotion})
     force = lambda x: float(x.get("reste", x.get("i", 0)))      # ce qui reste d'un ressenti pénible (repris, apaisé)
     recents = sorted((x for x in ressentis or [] if now - float(x.get("ts", 0)) < FENETRE_S and force(x) >= SEUIL),
                      key=lambda x: -force(x))
     for x in recents:
-        r = next((r for r in REGLES if x.get("classe") in r["balises"]), None)
+        r = next((r for r in regles if x.get("classe") in r["balises"]), None)
         if r and force(x) >= r.get("seuil", SEUIL) and r["nom"] not in {o["nom"] for o in out}:
             out.append({**r, "pourquoi": f"ta balise : {x['classe']} {round(force(x), 2)}"})
     return [{"nom": r["nom"], "libelle": r["libelle"], "texte": r["texte"], "pourquoi": r["pourquoi"]} for r in out[:MAX]]
