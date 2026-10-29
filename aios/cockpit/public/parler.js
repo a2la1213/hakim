@@ -1155,7 +1155,7 @@ function imageEcran() {
   if (!actif) return undefined;
   let d = '', raison = '';
   try { d = window.HakimApp.ecranImage() || ''; } catch (_) { raison = 'exception'; }
-  // la raison est un code court (le diagnostic n'accepte que [a-z_]) : pas_de_service, verrouille, pas_d_image, erreur…
+  // la raison est un code court (le diagnostic n'accepte que [a-z_]) : pas_de_service, verrouille, aucune_image_encore, image_perdue, erreur…
   if (!d && !raison) try { raison = window.HakimApp.ecranRaison ? String(window.HakimApp.ecranRaison()) : 'image_vide'; } catch (_) {}
   journalVoix('ecran', { taille: d.length, raison: raison || undefined });
   return d ? { data: d } : undefined;
