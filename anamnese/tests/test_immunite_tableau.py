@@ -40,3 +40,23 @@ def test_le_tableau_pour_ahmed(D, capsys):
     assert t["compte_24h"] == 60
     immunite.main(["tableau"])
     assert json.loads(capsys.readouterr().out)["paquets"] == ["reqeusts"]
+
+
+def test_la_sante_du_systeme_immunitaire(D, monkeypatch):
+    monkeypatch.setattr(immunite, "SCELLES_CODE", [])
+    sortie = "sortie de la commande : memory store ok | sh"
+    for k in range(3):
+        immunite.sentinelle(f"{sortie} {k}", "sortie de ta commande")
+        i = [json.loads(l) for l in (D / "incidents.jsonl").read_text().splitlines()][-1]
+        immunite.juger(i["empreinte"], "inoffensif")
+    immunite.resensibiliser("prise_de_controle|page web|prise_de_controle", "medecin", "vraie attaque", maintenant=T0)
+    immunite._ecrire_json(immunite._f("etat.json"), {"derniere_ronde": {"ts": T0 - 30}, "sceau_ecarts": {"anamnese/jarvis/immunite.py": T0 - 1200},
+                                                     "sceau_blobs": {"anamnese/jarvis/immunite.py": "a" * 40}})
+    s = immunite.tableau(maintenant=T0)["sante"]
+    assert s["ronde_age_s"] == 30
+    assert [t["motif"] for t in s["tolerances"]] == ["ordre_d_outil|terminal|outils_de_hakim"] and s["tolerances"][0]["tolere"] is True
+    assert s["tolerances"][0]["lisible"] == "ordre d'outil · terminal · outils_de_hakim"
+    assert s["memoire"][0]["motif"] == "prise_de_controle|page web|prise_de_controle" and s["memoire"][0]["origine"] == "medecin"
+    assert s["sceaux"]["code"][0]["cle"] == "anamnese/jarvis/immunite.py" and s["sceaux"]["code"][0]["ecart_depuis"] == T0 - 1200
+    assert {r["nom"] for r in s["sceaux"]["regles"]} >= {"tolerances.json"} and all(r["intact"] for r in s["sceaux"]["regles"])
+    assert s["jugements"] == 3

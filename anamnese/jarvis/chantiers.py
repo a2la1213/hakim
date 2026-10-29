@@ -437,6 +437,12 @@ def proposer(nom, resume, chantiers=None, promotions=None, tests=None, porte=Non
         except Refus:
             originaux[c] = None                            # un fichier nouveau
     refus = porte(meta["projet"], patch, {c: t for c, t in originaux.items() if t is not None})
+    try:                                                 # (29/10) un chantier qui touche au système immunitaire : grave
+        import immunite
+        if any(immunite.verifier_atteinte(f, "chantier") for f in fichiers):
+            refus = list(refus or []) + ["le système immunitaire est fermé aux chantiers"]
+    except Exception:
+        pass
     if refus:
         avis.noter_off({"type": "promotion", "etape": "refusée d'office", "chantier": nom, "raisons": " ; ".join(refus[:8])})
         raise Refus("refusée d'office par la liste ouverte : " + " ; ".join(refus[:5]))

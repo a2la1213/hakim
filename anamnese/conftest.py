@@ -2,6 +2,7 @@
 
 import pathlib
 import sqlite3
+import sys
 
 import pytest
 
@@ -117,6 +118,10 @@ def _vie_interieure_isolee(monkeypatch, tmp_path):
                 monkeypatch.setattr(sortie, nom, d / f)
     except Exception:
         pass
+    # (2026-10-29) la marque d'un tour autonome de Hakim : un test lisait la vraie, et échouait pendant ses réveils
+    monkeypatch.setenv("ANAMNESE_MARQUE_AUTONOME", str(d / "tour-autonome.json"))
+    if "mcp_server" in sys.modules:
+        monkeypatch.setattr(sys.modules["mcp_server"], "MARQUE_AUTONOME", d / "tour-autonome.json")
     try:                                      # le système immunitaire (2026-10-29) : l'enveloppe note des incidents
         import immunite
         if not str(immunite.DOSSIER).startswith(str(tmp_path)):

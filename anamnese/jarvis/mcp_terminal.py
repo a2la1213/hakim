@@ -40,8 +40,8 @@ async def executer(commande: str, delai_s: int = 120, arriere_plan: bool = False
     est prévenu quand elle se termine. Suis-la avec suivre_tache, arrête-la avec arreter_tache."""
     try:
         try:                                              # (29/10, lot 6) un paquet piégé est refusé avant de tourner
-            import immunite
-            refus = immunite.verifier_paquets(commande)
+            import immunite                               # (29/10) et toucher au système immunitaire, aussi
+            refus = immunite.verifier_atteinte(commande, "terminal") or immunite.verifier_paquets(commande)
         except Exception as e:                            # une panne de la garde ne bloque pas son terminal (dite)
             print(f"[immunité] garde des paquets en panne : {type(e).__name__}: {str(e)[:300]}", file=sys.stderr)
             refus = None

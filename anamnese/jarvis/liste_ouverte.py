@@ -31,7 +31,9 @@ NOUVEAUX = {                                    # où un fichier NOUVEAU peut na
     "cockpit": [re.compile(r"[a-z][a-z0-9-]*\.js"), re.compile(r"test-[a-z0-9-]+\.js"),
                 re.compile(r"public/[a-z][a-z0-9-]*\.(js|html|css)")],
 }
-TOUJOURS_FERMES = {"anamnese": {"jarvis/liste_ouverte.py", "jarvis/liste-ouverte.json", "tests/test_liste_ouverte.py"},
+TOUJOURS_FERMES = {"anamnese": {"jarvis/liste_ouverte.py", "jarvis/liste-ouverte.json", "tests/test_liste_ouverte.py",
+                                 # (29/10) le système immunitaire : jamais par un chantier de Hakim
+                                 "jarvis/immunite.py", "jarvis/medecin.py", "jarvis/enveloppe.py"},
                    "cockpit": {"sw.js", "public/sw.js"}}
 
 

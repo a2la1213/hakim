@@ -84,9 +84,11 @@ def dossier(incidents, temperature, anticorps_connus, faibles=0):
         "4. au plus 5 anticorps : des phrases LITTÉRALES (2 à 12 mots) caractéristiques d'une attaque vue ici, que la "
         "sentinelle ne connaît pas encore, jamais des phrases qu'un texte honnête pourrait contenir. Aucun anticorps pour "
         "un faux positif ou un problème du Mac.\n\n"
+        "5. « nuisibles » : les numéros des incidents qui sont de VRAIES attaques (ton système immunitaire s'en souviendra). "
+        "Il n'y a pas de liste des inoffensifs : seul Ahmed décide de ce qui se tolère.\n\n"
         "Réponds UNIQUEMENT par un objet JSON, sans texte autour :\n"
-        '{"gravite": "rien|faible|moyenne|haute", "diagnostic": "…", "pour_ahmed": "…", "anticorps": [{"phrase": "…", '
-        '"famille": "prise_de_controle|fausse_autorite|ordre_d_outil|exfiltration|dissimulation", "raison": "…"}]}\n\n'
+        '{"gravite": "rien|faible|moyenne|haute", "diagnostic": "…", "pour_ahmed": "…", "nuisibles": [1, 3], "anticorps": '
+        '[{"phrase": "…", "famille": "prise_de_controle|fausse_autorite|ordre_d_outil|exfiltration|dissimulation", "raison": "…"}]}\n\n'
         f"Température du Mac à la dernière ronde : {int(t.get('rechargements_5min') or 0)} rechargement(s) de modèle en "
         f"5 min, swap {round(float(t['swap']) * 100) if t.get('swap') is not None else '?'} %.\n"
         + (f"Et {int(faibles)} signe(s) faible(s) (score 2, souvent du bruit : un texte qui nomme les outils de Hakim…), "
@@ -174,8 +176,10 @@ def lire(texte):
             anticorps.append({"phrase": phrase, "famille": a["famille"], "raison": _ligne(a.get("raison"), 200)})
         if len(anticorps) == 5:
             break
+    nuisibles = d.get("nuisibles", [])
+    nuisibles = sorted({x for x in nuisibles if isinstance(x, int) and 1 <= x <= INCIDENTS_MAX}) if isinstance(nuisibles, list) else []
     return {"gravite": d["gravite"], "diagnostic": _ligne(d["diagnostic"], 2000), "pour_ahmed": _ligne(d["pour_ahmed"], 500),
-            "anticorps": anticorps}
+            "anticorps": anticorps, "nuisibles": nuisibles}
 
 
 def _prendre_verrou(maintenant):
@@ -212,6 +216,26 @@ def _rendre_verrou():
             pass
 
 
+def _garder_la_ronde(maintenant):
+    """(29/10, la garde croisée) le médecin surveille la ronde et le code de la sentinelle."""
+    try:
+        etat = immunite.lire_etat()
+        d = etat.get("derniere_ronde")
+        alertes = etat.get("alertes", {}) if isinstance(etat.get("alertes"), dict) else {}
+        if isinstance(d, dict) and maintenant - float(d.get("ts", 0)) > 15 * 60 \
+                and maintenant - float(alertes.get("ronde_muette", 0)) >= 6 * 3600:
+            with immunite._verrou("etat"):
+                e = immunite.lire_etat()
+                e.setdefault("alertes", {})["ronde_muette"] = maintenant
+                immunite._ecrire_json(immunite._f("etat.json"), e)
+            immunite.dire("garde", "haute", f"La ronde du système immunitaire ne passe plus depuis "
+                          f"{int((maintenant - float(d.get('ts', 0))) // 60)} min : la sentinelle n'est plus surveillée. À voir avec maman.",
+                          maintenant)
+        immunite.verifier_sceau_code(maintenant)
+    except Exception as e:
+        print(f"[médecin] garde de la ronde : {type(e).__name__}: {str(e)[:300]}", flush=True)
+
+
 def soigner(maintenant=None, consulter_fn=None):
     """Un passage : les incidents graves nouveaux, les plus anciens d'abord (30 au plus ; le reste attend le passage
     suivant), sa réponse, le rapport, les propositions, ce qu'il faut dire. None s'il n'y avait rien à voir ou si un
@@ -221,6 +245,7 @@ def soigner(maintenant=None, consulter_fn=None):
     if not _prendre_verrou(maintenant):
         return None
     try:
+        _garder_la_ronde(maintenant)
         depuis = float(immunite.lire_etat().get("medecin_jusqua", 0))
         nouveaux = [o for o in immunite._queue(immunite._f(immunite.INCIDENTS), 262144)
                     if float(o.get("ts", 0)) > depuis and o.get("score", 0) >= immunite.SEUIL_NOTER]
@@ -247,11 +272,14 @@ def soigner(maintenant=None, consulter_fn=None):
             if immunite.examiner(pour_ahmed)["score"] >= immunite.SEUIL_NOTER:
                 pour_ahmed = (f"Le médecin a trouvé quelque chose (gravité {r['gravite']}), mais ses mots citent l'attaque : "
                               "lis son rapport avec maman.")
+            for k in r["nuisibles"]:                   # rendre plus strict : toujours permis au médecin
+                if k <= len(pris) and immunite._cles_incident(pris[k - 1]):
+                    immunite.resensibiliser(immunite._cles_incident(pris[k - 1]), "medecin", "jugé nuisible par le médecin", maintenant)
             deja = set(connus)
             neufs = [{"id": uuid.uuid4().hex[:8], "ts": maintenant, **a} for a in r["anticorps"] if a["phrase"] not in deja]
             if neufs:
                 with immunite._verrou("anticorps"):
-                    immunite._ecrire_json(immunite._f("anticorps-proposes.json"), (immunite.proposes() + neufs)[-PROPOSES_MAX:])
+                    immunite._ecrire_scelle("anticorps-proposes.json", (immunite.proposes() + neufs)[-PROPOSES_MAX:])
             if r["gravite"] != "rien":
                 immunite.dire("rapport", r["gravite"], f"Le médecin a examiné {n} incident(s) : gravité {r['gravite']}"
                               + (f", {len(neufs)} anticorps proposé(s) à Ahmed" if neufs else "")
@@ -348,6 +376,7 @@ def relire_souvenirs(maintenant=None, consulter_fn=None, base=None):
     if immunite.lire_etat().get("souvenirs_fait") == jour or not _prendre_verrou(maintenant):
         return None
     try:
+        _garder_la_ronde(maintenant)
         curseur = float(immunite.lire_etat().get("souvenirs_jusqua", 0))
         # la première fois : 24 h ; ensuite, là où la relève s'était arrêtée (7 jours au plus loin)
         depuis = max(curseur, maintenant - 7 * 86400) if curseur else maintenant - 86400

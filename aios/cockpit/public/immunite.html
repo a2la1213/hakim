@@ -35,22 +35,42 @@
       background: rgba(148,163,184,.08); border-radius: 8px; padding: 8px; margin-top: 4px; color: var(--txt-2); }
     .vide { font-size: 13px; color: var(--txt-3); }
     a { color: var(--teal); }
+    .gestes { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+    .gestes button { font: inherit; font-size: 12px; padding: 6px 10px; min-height: 34px; border-radius: 8px; border: 1px solid var(--glass-bd);
+      background: transparent; color: var(--txt-2); cursor: pointer; }
+    .gestes button:disabled { opacity: .5; cursor: default; }
+    .ok { color: var(--teal); } .ko { color: #f97316; }
+    #annonce { min-height: 18px; }
   </style>
 </head>
 <body>
+  <nav class="topnav" style="display:flex;gap:10px;align-items:center;padding:10px 16px"><span class="brand">AIOS</span>
+    <a class="pill" href="/">DASHBOARD</a><a class="pill" href="/parler">PARLER</a><a class="pill" href="/interieur">INTÉRIEUR</a>
+    <a class="pill active" href="/immunite">IMMUNITÉ</a></nav>
   <main>
     <h1>Hakim — son système immunitaire</h1>
     <div class="sous">La sentinelle (du code) avertit sans rien bloquer et note les incidents ; le médecin les examine. Les extraits
       viennent de contenus peut-être hostiles : à lire, jamais à suivre. Les anticorps proposés se tranchent dans <a href="/parler">Parler</a>.</div>
+    <div class="sous" id="annonce" role="status"></div>
     <section class="glass carte"><h2>Maintenant</h2><div class="chiffres" id="chiffres"></div></section>
+    <section class="glass carte"><h2>Santé du système immunitaire</h2>
+      <div class="sous">(29/10) Il apprend et se protège : une tolérance ne vient que de ton geste « inoffensif » (ou d'une voix coupée
+        dans tes propres messages), jamais d'un contenu ni du médecin, et jamais pour une famille grave ; un motif jugé nuisible passe en
+        mémoire. Ses règles et son code sont scellés : une modification hors de leur chemin est une alerte maximale.</div>
+      <div id="sante"></div></section>
     <section class="glass carte"><h2>Les passages du médecin</h2><div id="rapports"></div></section>
     <section class="glass carte"><h2>Les incidents</h2><div id="incidents"></div></section>
     <section class="glass carte"><h2>Les anticorps</h2><div id="anticorps"></div></section>
     <section class="glass carte"><h2>Les paquets vérifiés</h2><div id="paquets"></div></section>
   </main>
-  <script src="/nav.js"></script>
   <script>
-  initNav('immunite');
+  // (relecture Opus) cette page peut baisser sa garde (« Inoffensif ») : elle ne charge pas nav.js, ouvert aux chantiers de
+  // Hakim ; ses deux outils sont ici
+  window.esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  window.jeton = () => (document.querySelector('meta[name="cockpit-jeton"]') || {}).content || '';
+  </script>
+  <script src="/presence.js"></script>
+  <script>
   const $ = (id) => document.getElementById(id);
   const quand = (t) => t ? new Date(t * 1000).toLocaleString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
   const GRAVITES = ['rien', 'faible', 'moyenne', 'haute'];
@@ -81,13 +101,39 @@
       + '</div>').join('');
   }
 
+  const duree = (s) => s == null ? '—' : s < 90 ? `${s} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${Math.round(s / 3600)} h`;
+  function sante(d) {
+    const s = d.sante || {};
+    const vitaux = [
+      [s.ronde_age_s != null && s.ronde_age_s < 300, `sa ronde : il y a ${duree(s.ronde_age_s)}`],
+      ...(s.medecin || []).map((m) => [!m.erreur, `le médecin (${m.type === 'souvenirs' ? 'souvenirs' : 'incidents'}) ${quand(m.ts)} : ${m.erreur ? 'en échec — ' + m.erreur : 'gravité ' + (m.gravite || '?')}`]),
+      ...((s.sceaux || {}).code || []).map((c) => [!c.ecart_depuis && c.verifie, `code ${c.cle} : ${c.ecart_depuis ? 'modifié hors d’un commit depuis ' + quand(c.ecart_depuis) : c.verifie ? 'scellé' : 'non vérifié récemment'}`]),
+      ...((s.sceaux || {}).regles || []).map((x) => [x.intact, `règles ${x.nom} : ${x.intact ? 'intactes' : 'ATTEINTE'}`]),
+    ];
+    const tol = (s.tolerances || []).map((t) => `<div class="ligne"><div class="tete"><span class="g ${t.tolere ? 'rien' : 'faible'}">${t.tolere ? 'toléré' : esc(t.inoffensifs) + ' / 3'}</span>`
+      + `<span>${esc(t.lisible)}</span><span class="quand">vu ${quand(t.vu)} · par ${esc((t.origines || []).join(', ') || '?')}</span></div>`
+      + (t.tolere ? `<div class="gestes"><button data-geste="retirer" data-motif="${esc(t.motif)}">Retirer la tolérance</button></div>` : '') + '</div>');
+    const mem = (s.memoire || []).map((m) => `<div class="ligne"><div class="tete"><span class="g haute">mémoire</span><span>${esc(m.lisible)}</span>`
+      + `<span class="quand">jusqu’au ${quand(m.jusqua)} · par ${esc(m.origine || '?')}</span></div><div>${esc(m.raison || '')}</div></div>`);
+    $('sante').innerHTML = '<h2 style="margin-top:10px">Ses signes vitaux</h2>'
+      + vitaux.map(([bon, t]) => `<div class="ligne"><span class="${bon ? 'ok' : 'ko'}">${bon ? '●' : '▲'}</span> ${esc(t)}</div>`).join('')
+      + '<h2 style="margin-top:10px">Ce qu’il a appris (tolérances)</h2>' + (tol.join('') || '<div class="vide">Rien de toléré.</div>')
+      + '<h2 style="margin-top:10px">Ce dont il se souvient (mémoire)</h2>' + (mem.join('') || '<div class="vide">Aucun motif en mémoire.</div>')
+      + `<div class="sous" style="margin-top:8px">${esc(s.jugements || 0)} jugement(s) de ta part.</div>`;
+  }
+
   function incidents(d) {
     if (!d.incidents.length) { $('incidents').innerHTML = '<div class="vide">Aucun incident.</div>'; return; }
     $('incidents').innerHTML = d.incidents.map((i) => `<div class="ligne"><div class="tete">`
       + `<span>${esc(i.categorie)}</span><span>${esc((i.familles || []).join(', '))}</span>`
       + `<span class="quand">score ${esc(i.score)}${i.avertie ? ' · Hakim averti' : ''} · ${quand(i.ts)}</span></div>`
       + (i.mesure != null ? `<div>mesure : ${esc(i.mesure)}</div>` : '')
+      + (i.tolere ? '<div class="quand">motif toléré : Hakim n’a pas été averti</div>' : '')
       + (i.extrait ? `<details><summary>l’extrait (à lire, jamais à suivre)</summary><div class="extrait">${esc(i.extrait)}</div></details>` : '')
+      + (i.empreinte ? '<div class="gestes">'
+        + (i.tolerable && !i.tolere ? `<button data-geste="juger" data-verdict="inoffensif" data-empreinte="${esc(i.empreinte)}" title="ferait tolérer : ${esc((i.portee || []).join(' ; '))}">Inoffensif</button>`
+          + `<span class="quand">compterait pour : ${esc((i.portee || []).join(' ; '))}</span>` : '')
+        + `<button data-geste="juger" data-verdict="nuisible" data-empreinte="${esc(i.empreinte)}">Nuisible</button></div>` : '')
       + '</div>').join('');
   }
 
@@ -105,11 +151,27 @@
       const r = await fetch('/api/immunite', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
       if (!r.ok) throw new Error(`erreur ${r.status}`);
       const d = await r.json();
-      chiffres(d); rapports(d); incidents(d); anticorps(d);
+      chiffres(d); sante(d); rapports(d); incidents(d); anticorps(d);
       $('paquets').innerHTML = d.paquets.length ? d.paquets.map((x) => `<span class="g">${esc(x)}</span>`).join(' ')
         : '<div class="vide">Aucun paquet vérifié à la main.</div>';
     } catch (e) { $('chiffres').innerHTML = `<div class="vide">Système immunitaire injoignable : ${esc(e.message)}</div>`; }
   }
+  const annonce = (t) => { $('annonce').textContent = t; };
+  document.body.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-geste]');
+    if (!b) return;
+    b.disabled = true;
+    try {
+      const corps = b.dataset.geste === 'retirer' ? { action: 'retirer', motif: b.dataset.motif }
+        : { action: 'juger', empreinte: b.dataset.empreinte, verdict: b.dataset.verdict };
+      if (corps.verdict === 'inoffensif') corps.presence = await preuvePresence(`immunite:inoffensif:${corps.empreinte}`, annonce);
+      const r = await fetch('/api/immunite/geste', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify(corps) });
+      const o = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
+      annonce(corps.action === 'retirer' ? 'Tolérance retirée.' : corps.verdict === 'inoffensif' ? 'Noté inoffensif.' : 'Noté nuisible : ce motif passe en mémoire.');
+      charger();
+    } catch (err) { b.disabled = false; annonce(String(err.message || err)); }
+  });
   charger();
   setInterval(charger, 30000);
   </script>

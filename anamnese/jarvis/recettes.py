@@ -123,7 +123,7 @@ def lancer(nom, params=None, delai_s=3600, dossier=None, lanceur=None):
     commande = remplir(r, params)
     try:                                                 # (29/10, système immunitaire) un paquet piégé, même en recette
         import immunite
-        refus = immunite.verifier_paquets(commande)
+        refus = immunite.verifier_atteinte(commande, "recette") or immunite.verifier_paquets(commande)
     except Exception:
         refus = None
     if refus:
