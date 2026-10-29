@@ -215,6 +215,23 @@ def nommer(numero, nom, salle=None, fichier=None, maintenant=None):
     return nom
 
 
+def renommer(ancien, nouveau, fichier=None):
+    """« Machine à café » → « Inconnu » : une voix connue change de nom et garde son empreinte (29/10 : sans cet outil,
+    Hakim a dû oublier la voix pour la renommer)."""
+    nouveau = str(nouveau or "").strip()[:40]
+    if not nouveau or nouveau.lower() in ("ahmed",):
+        raise ValueError("un prénom, autre qu'Ahmed")
+    k = connues(fichier)
+    x = next((v for v in k if v["nom"].lower() == str(ancien).strip().lower()), None)
+    if x is None:
+        raise ValueError(f"aucune voix « {ancien} » (voix connues : {', '.join(v['nom'] for v in k) or 'aucune'})")
+    if any(v is not x and v["nom"].lower() == nouveau.lower() for v in k):
+        raise ValueError(f"une voix « {nouveau} » existe déjà")
+    x["nom"] = nouveau
+    _ecrire(fichier or CONNUES, k)
+    return nouveau
+
+
 def oublier(nom, fichier=None):
     k = connues(fichier)
     reste = [v for v in k if v["nom"].lower() != str(nom).strip().lower()]

@@ -59,7 +59,7 @@ const page = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8'
 
 test('câblage : chaque cerveau a son veilleur, nourri de chaque ligne', () => {
   assert.match(src, /const Veilleur = require\('\.\/veilleur\.js'\)/);
-  assert.match(src, /veilleur: Veilleur\.creer\(ANTHROPIC_MUET_MS\)/);
+  assert.match(src, /veilleur: Veilleur\.creer\(muetPour\(source\)\)/);   // (29/10) 1 min pour Anthropic, 45 pour Gemma (test-gemma.js)
   assert.match(src, /c\.veilleur\.ligne\(o, Date\.now\(\)\);/);
 });
 

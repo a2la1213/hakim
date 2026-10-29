@@ -151,3 +151,23 @@ def test_reinitialiser_avec_sauvegarde(tmp_path, monkeypatch):
     E.reinitialiser("tout", fichier=f)
     assert E.etat(fichier=f)["echantillons"] == 0 and E.reconnaitre("a", fichier=f) is None
     assert len(list(tmp_path.glob("empreinte.sauvegarde-*.json"))) >= 1
+
+
+def test_renommer_une_voix_connue_garde_son_empreinte(tmp_path, monkeypatch):
+    """(29/10, Ahmed : « tu la renommes, Inconnu et pas Machine à café ») sans outil pour renommer, Hakim a dû oublier
+    la voix, et son empreinte avec."""
+    monkeypatch.setattr(E, "CONNUES", tmp_path / "connues.json")
+    cafe, karim = np.round(_unit(np.eye(256)[3]), 5).tolist(), np.round(_unit(np.eye(256)[7]), 5).tolist()
+    E._ecrire(E.CONNUES, [{"nom": "Machine à café", "moyenne": cafe, "n": 4, "cree": 1.0},
+                          {"nom": "Karim", "moyenne": karim, "n": 9, "cree": 2.0}])
+    assert E.renommer(" machine à café ", "Inconnu") == "Inconnu"
+    k = {x["nom"]: x for x in E.connues()}
+    assert set(k) == {"Inconnu", "Karim"} and k["Inconnu"]["moyenne"] == cafe and k["Inconnu"]["n"] == 4
+    assert E.renommer("inconnu", "INCONNU") == "INCONNU"                 # sa propre casse : permis
+    with pytest.raises(ValueError, match="existe déjà"):
+        E.renommer("INCONNU", "karim")
+    with pytest.raises(ValueError, match="Ahmed"):
+        E.renommer("Karim", "Ahmed")
+    with pytest.raises(ValueError, match="voix connues : INCONNU, Karim"):
+        E.renommer("Personne", "X")
+    assert sorted(x["nom"] for x in E.connues()) == ["INCONNU", "Karim"]

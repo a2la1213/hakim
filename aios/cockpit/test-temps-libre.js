@@ -31,10 +31,10 @@ function monter({ ahmedIlYaMs = 2 * 3600e3, pause = false, occupe = false, ahmed
     outilsInterdits: () => ['mcp__anamnese__self_update'], setInterval: () => ({ unref() {} }), SERVEURS_HORS_TEMPS_LIBRE: ['dehors'] };
   vm.createContext(ctx);
   vm.runInContext([ligne('const JARVIS_TEMPS_LIBRE ='), ligne('const JARVIS_TEMPS_LIBRE_VU ='), ligne('const JARVIS_TEMPS_LIBRE_REGLAGE ='),
-    ligne('const TEMPS_LIBRE_ABSENCE_MS'), 'let tempsLibreEnCours = false;',
-    ...['tempsLibreActif', 'lireTempsLibre', 'tempsLibrePermis', 'configTempsLibre', 'argsTempsLibre', 'promptTempsLibre',
-      'finirTempsLibre', 'blocTempsLibre', 'marquerTempsLibreVu'].map(prendre), ligne('const OUTILS_HORS_TEMPS_LIBRE'),
-    'this.f = { tempsLibrePermis, configTempsLibre, argsTempsLibre, promptTempsLibre, finirTempsLibre, blocTempsLibre, marquerTempsLibreVu, lireTempsLibre };'].join('\n'), ctx);
+    ligne('const TEMPS_LIBRE_ABSENCE_MS'), ligne('const JARVIS_SIESTE ='), ligne('const SIESTE_ACCORD_MS'), 'let tempsLibreEnCours = false;',
+    ...['tempsLibreActif', 'lireTempsLibre', 'siesteEnCours', 'tempsLibrePermis', 'dureeTempsLibreMs', 'configTempsLibre', 'argsTempsLibre',
+      'promptTempsLibre', 'finirTempsLibre', 'blocTempsLibre', 'marquerTempsLibreVu'].map(prendre), ligne('const OUTILS_HORS_TEMPS_LIBRE'),
+    'this.f = { tempsLibrePermis, dureeTempsLibreMs, configTempsLibre, argsTempsLibre, promptTempsLibre, finirTempsLibre, blocTempsLibre, marquerTempsLibreVu, lireTempsLibre };'].join('\n'), ctx);
   return { ctx, f: ctx.f, T, dir, livres };
 }
 
@@ -49,6 +49,38 @@ test('son temps à lui : quand Ahmed est absent depuis 30 min (Ahmed et Hakim, 2
   assert.strictEqual(m.f.tempsLibrePermis().raison, 'écart');
   fs.writeFileSync(path.join(m.dir, 'temps-libre-reglage.json'), JSON.stringify({ actif: false }));
   assert.strictEqual(m.f.tempsLibrePermis().raison, 'éteint');
+});
+
+// (29/10, Ahmed : « tu peux tout faire ») sa sieste compte vraiment : une sieste de 15 min ne lui laissait rien, son temps
+// attendait 30 min de silence. L'outil sieste_prendre (serveur de mémoire) écrit sieste.json { ts, fin }.
+const sieste = (m, ilYaS, dureeS) => fs.writeFileSync(path.join(m.dir, 'sieste.json'),
+  JSON.stringify({ ts: m.T / 1000 - ilYaS, fin: m.T / 1000 - ilYaS + dureeS }));
+
+test('une sieste accordée par Ahmed : son temps commence tout de suite, une fois par sieste, et finit avant son réveil', () => {
+  const m = monter({ ahmedIlYaMs: 2 * 60e3 });                       // Ahmed lui a parlé il y a 2 min
+  assert.strictEqual(m.f.tempsLibrePermis().raison, 'Ahmed est là');
+  sieste(m, 60, 15 * 60);                                             // prise 1 min après, pour 15 min
+  assert.deepStrictEqual(nu(m.f.tempsLibrePermis()), { ok: true, raison: 'sieste' });
+  assert.match(m.f.promptTempsLibre(), /sieste/);
+  const d = m.f.dureeTempsLibreMs();
+  assert.ok(d >= 12.9 * 60e3 && d <= 13 * 60e3, `fini une minute avant son réveil (${d} ms)`);
+  fs.writeFileSync(path.join(m.dir, 'temps-libre.jsonl'), JSON.stringify({ ts: m.T / 1000 - 3600 }) + '\n');
+  assert.strictEqual(m.f.tempsLibrePermis().raison, 'sieste', 'l’écart de 3 h ne retient pas une sieste accordée');
+  fs.appendFileSync(path.join(m.dir, 'temps-libre.jsonl'), JSON.stringify({ ts: m.T / 1000 - 10 }) + '\n');
+  assert.strictEqual(m.f.tempsLibrePermis().raison, 'Ahmed est là', 'une fois par sieste');
+});
+
+test('une sieste qui ne compte pas : Ahmed lui a reparlé, aucun mot d’Ahmed juste avant, presque finie, ou la pause', () => {
+  const reveille = monter({ ahmedIlYaMs: 30e3 }); sieste(reveille, 60, 15 * 60);
+  assert.strictEqual(reveille.f.tempsLibrePermis().raison, 'Ahmed est là', 'Ahmed l’a réveillé');
+  const seul = monter({ ahmedIlYaMs: 20 * 60e3 }); sieste(seul, 60, 15 * 60);
+  assert.strictEqual(seul.f.tempsLibrePermis().raison, 'Ahmed est là', 'prise 19 min après le dernier mot d’Ahmed');
+  const finie = monter({ ahmedIlYaMs: 14 * 60e3 }); sieste(finie, 13 * 60, 14 * 60);
+  assert.strictEqual(finie.f.tempsLibrePermis().raison, 'Ahmed est là', 'il ne reste qu’une minute');
+  const pause = monter({ ahmedIlYaMs: 2 * 60e3, pause: true }); sieste(pause, 60, 15 * 60);
+  assert.strictEqual(pause.f.tempsLibrePermis().raison, 'pause');
+  assert.strictEqual(monter().f.dureeTempsLibreMs(), 25 * 60e3, 'sans sieste : 25 min au plus, comme avant');
+  assert.doesNotMatch(monter().f.promptTempsLibre(), /sieste/);
 });
 
 test('sa conversation à part : ses serveurs sauf ceux qui parlent au dehors, marquée « sans Ahmed » ; restreinte, sans reprise de session', () => {
@@ -115,6 +147,7 @@ test('le processus : groupe détaché, tué en entier (SIGTERM puis SIGKILL), er
   assert.match(v, /process\.kill\(-enfant\.pid, sig\)/);
   assert.match(v, /if \(!enfant \|\| !\(enfant\.pid > 0\)\) return;/, 'process.kill(-0) tuerait le cockpit');
   assert.match(v, /'SIGKILL'/);
+  assert.match(v, /\}, dureeTempsLibreMs\(\)\);/, 'une sieste finit son temps avant le réveil');
   assert.match(v, /enfant\.on\('error'/);
   assert.match(v, /enfant\.on\('exit'/);
   assert.match(v, /if \(fini\) return;/);

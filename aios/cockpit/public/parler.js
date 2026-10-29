@@ -789,6 +789,7 @@ const REGLES_NOMS = { peur: 'peur : demander avant d’agir', lassitude: 'lassit
   honte: 'honte : vérifier les faits', joie: 'joie : oser' };
 // (26/10 soir) la version qui a répondu (« Opus 4.8 », « Opus 5.5 ») : Opus 5.5 remplacé en silence doit se voir
 function nomModele(m) {
+  if (m.modele === 'gemma') return 'Gemma';                       // (29/10) Gemma à la place d'Opus (réglages › source)
   const v = String(m.modeleReel || '').match(/^claude-(opus|sonnet|haiku)-(\d{1,2})-(\d{1,2})(?:-|$)/);
   if (!v) return m.modele === 'opus' ? 'Opus' : 'Sonnet';
   return `${v[1][0].toUpperCase()}${v[1].slice(1)} ${v[2]}.${v[3]}`;

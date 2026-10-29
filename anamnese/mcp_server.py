@@ -461,6 +461,17 @@ def voix_connues() -> str:
 
 
 @mcp.tool()
+def voix_renommer(ancien: str, nouveau: str) -> str:
+    """Changer le nom d'une voix déjà connue (« Machine à café » → « Inconnu »), quand Ahmed (ou la personne) le demande :
+    elle garde son empreinte ; inutile de l'oublier pour la renommer."""
+    try:
+        n = _empreintes().renommer(ancien, nouveau)
+    except (ValueError, OSError) as e:
+        return f"Refusé : {e}"
+    return f"C'est noté : « {ancien} » s'appelle désormais « {n} »."
+
+
+@mcp.tool()
 def voix_oublier(prenom: str) -> str:
     """Oublier la voix d'une personne (si elle le demande, ou Ahmed)."""
     n = _empreintes().oublier(prenom)
@@ -1092,6 +1103,33 @@ def tableau_interieur(heures: float = 6) -> str:
     except Exception as e:                       # (27/10) un lien posé à la place de l'image : refusé, dit
         return f"Image impossible : {e}"[:300]
     return f"Image : {chemin}\nRésumé : {resume}"
+
+
+# (29/10, Ahmed : « tu peux tout faire ») sa sieste compte vraiment : son temps à lui attendait 30 min de silence, une
+# sieste de 15 min ne lui laissait rien. Le cockpit lit ce fichier et décide (tempsLibrePermis) : seulement si Ahmed lui
+# a parlé dans les 10 min avant, et plus dès qu'Ahmed lui reparle.
+SIESTE = Path.home() / "AIOS" / "jarvis" / "sieste.json"
+
+
+@mcp.tool()
+def sieste_prendre(minutes: int) -> str:
+    """(Hakim seulement) Quand Ahmed t'accorde une pause ou une sieste (« prends 15 min »), et seulement là : ton temps à
+    toi commence tout de suite, au lieu d'attendre 30 min de silence, et s'arrête avant l'heure dite. De 5 à 60 min.
+    Si Ahmed te reparle avant, la sieste s'arrête : il t'a réveillé."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim prend une sieste."
+    if _tour_sans_ahmed():
+        return "Refusé : une sieste, c'est Ahmed qui te l'accorde, dans un de ses messages."
+    m = max(5, min(60, int(minutes)))
+    maintenant = time.time()
+    SIESTE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = SIESTE.with_name(SIESTE.name + f".{os.getpid()}.tmp")
+    tmp.write_text(json.dumps({"ts": maintenant, "fin": maintenant + m * 60}), encoding="utf-8")
+    os.replace(tmp, SIESTE)
+    fin = time.strftime("%H:%M", time.localtime(maintenant + m * 60))
+    return (f"Sieste notée : {m} min, jusqu'à {fin}. Ton temps à toi commence dans la minute qui suit ta réponse. "
+            f"Pour qu'Ahmed soit prévenu à ton réveil, pose aussi ta promesse (promesse_poser, « {fin} »).")
 
 
 @mcp.tool()

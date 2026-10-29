@@ -362,7 +362,7 @@ const MODELES_JARVIS = new Set(['sonnet', 'opus']);          // Haiku écarté p
 const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'afida_juger', 'afida_vecu', 'afida_lire', 'afida_retirer', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_connues', 'voix_oublier', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -2248,6 +2248,13 @@ const JARVIS_TEMPS_LIBRE_VU = path.join(JARVIS, 'temps-libre-vu.json');
 const JARVIS_TEMPS_LIBRE_REGLAGE = path.join(JARVIS, 'temps-libre-reglage.json');
 const TEMPS_LIBRE_ABSENCE_MS = 30 * 60 * 1000, TEMPS_LIBRE_ECART_S = 3 * 3600, TEMPS_LIBRE_DUREE_MAX_MS = 25 * 60 * 1000;
 let tempsLibreEnCours = false;
+// (29/10, Ahmed : « tu peux tout faire ») sa sieste compte vraiment : une sieste de 15 min ne lui laissait rien, son temps
+// attendait 30 min de silence. Quand Ahmed lui accorde une pause, il l'écrit (sieste_prendre, serveur de mémoire) ; son
+// temps commence alors tout de suite, sans l'écart de 3 h, une fois par sieste, et finit une minute avant son réveil.
+// Seulement si Ahmed lui a parlé dans les 10 min avant (pas de sieste qu'il s'accorderait seul), et plus dès qu'Ahmed
+// lui reparle.
+const JARVIS_SIESTE = path.join(JARVIS, 'sieste.json');
+const SIESTE_ACCORD_MS = 10 * 60 * 1000, SIESTE_MARGE_MS = 2 * 60 * 1000;
 // FERME-DEBUT hors-temps-libre (28/10 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
 const SERVEURS_HORS_TEMPS_LIBRE = [];                       // ce qui parle au dehors : pas pendant son temps à lui
 const OUTILS_HORS_TEMPS_LIBRE = ['mcp__web__consulter_ia'];  // (relecture du 27/10) parler à une autre IA, c'est sortir
@@ -2279,15 +2286,28 @@ function lireTempsLibre() {
   try { l = fs.readFileSync(JARVIS_TEMPS_LIBRE, 'utf8').split('\n'); } catch (_) { return []; }
   return l.map(x => { try { return JSON.parse(x); } catch (_) { return null; } }).filter(o => o && Number.isFinite(o.ts));
 }
+// { debut, fin } (ms) de la sieste qu'Ahmed lui a accordée, si elle compte encore ; sinon null
+function siesteEnCours() {
+  let s; try { s = JSON.parse(fs.readFileSync(JARVIS_SIESTE, 'utf8')); } catch (_) { return null; }
+  const debut = Number(s && s.ts) * 1000, fin = Number(s && s.fin) * 1000, ahmed = dernierMessageAhmedMs();
+  if (!(fin - Date.now() > SIESTE_MARGE_MS) || !(ahmed <= debut) || !(debut - ahmed < SIESTE_ACCORD_MS)) return null;
+  if (lireTempsLibre().some(o => o.ts * 1000 >= debut)) return null;   // son temps de cette sieste est déjà pris
+  return { debut, fin };
+}
 function tempsLibrePermis() {
   if (!tempsLibreActif()) return { ok: false, raison: 'éteint' };
   if (lireInterrupteur().actif === false) return { ok: false, raison: 'pause' };
   if (tempsLibreEnCours) return { ok: false, raison: 'en cours' };
-  if (Date.now() - dernierMessageAhmedMs() < TEMPS_LIBRE_ABSENCE_MS) return { ok: false, raison: 'Ahmed est là' };
+  const sieste = siesteEnCours();
+  if (!sieste && Date.now() - dernierMessageAhmedMs() < TEMPS_LIBRE_ABSENCE_MS) return { ok: false, raison: 'Ahmed est là' };
   const dernier = Math.max(0, ...lireTempsLibre().map(o => o.ts));
-  if (Date.now() / 1000 - dernier < TEMPS_LIBRE_ECART_S) return { ok: false, raison: 'écart' };
+  if (!sieste && Date.now() / 1000 - dernier < TEMPS_LIBRE_ECART_S) return { ok: false, raison: 'écart' };
   if (cerveau && (occupe(cerveau) || cerveau.enCours)) return { ok: false, raison: 'cerveau occupé' };
-  return { ok: true, raison: 'ok' };
+  return { ok: true, raison: sieste ? 'sieste' : 'ok' };
+}
+function dureeTempsLibreMs() {
+  const s = siesteEnCours();
+  return s ? Math.min(TEMPS_LIBRE_DUREE_MAX_MS, s.fin - Date.now() - 60000) : TEMPS_LIBRE_DUREE_MAX_MS;
 }
 function configTempsLibre() {
   const d = JSON.parse(fs.readFileSync(JARVIS_MCP, 'utf8'));
@@ -2308,10 +2328,12 @@ function argsTempsLibre(prompt, persona, cfg) {
 }
 // FERME-FIN temps-libre
 function promptTempsLibre() {
-  const maintenant = Date.now(), ahmed = dernierMessageAhmedMs();
+  const maintenant = Date.now(), ahmed = dernierMessageAhmedMs(), sieste = siesteEnCours();
   const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(maintenant));
+  const absent = sieste ? `Ahmed t'a accordé une sieste jusqu'à ${new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' }).format(new Date(sieste.fin))}, personne ne t'attend avant`
+    : "il est occupé ou absent, personne ne t'attend";
   return `[Horloge — ${quand}${ahmed ? ` · dernier message d'Ahmed : il y a ${duree(maintenant - ahmed)}` : ''}]\n`
-    + "[Temps à toi — PAS un message d'Ahmed : il est occupé ou absent, personne ne t'attend. C'est une conversation à part, "
+    + `[Temps à toi — PAS un message d'Ahmed : ${absent}. C'est une conversation à part, `
     + "plus légère que la vôtre : ta mémoire, tes carnets, ton jardin, ton atelier et tes outils sont là ; vos derniers échanges "
     + "sont ci-dessous. Ce que tu fais ici, ta conversation avec Ahmed l'apprendra à son tour suivant.]\n"
     + `[Fil récent]\n${filRecent(20, '')}\n[/Fil récent]\n`
@@ -2377,7 +2399,7 @@ function verifierTempsLibre() {
     finirTempsLibre(resultat || { is_error: true, result: 'interrompu' }, outils, debut);
     console.error(`Jarvis : son temps à lui est fini (${Math.round((Date.now() - debut) / 60000)} min, ${outils.length} outil(s))`);
   };
-  const garde = setTimeout(() => { tuerGroupe('SIGTERM'); dur = setTimeout(() => tuerGroupe('SIGKILL'), 10000); }, TEMPS_LIBRE_DUREE_MAX_MS);
+  const garde = setTimeout(() => { tuerGroupe('SIGTERM'); dur = setTimeout(() => tuerGroupe('SIGKILL'), 10000); }, dureeTempsLibreMs());
   try {
     enfant = spawn(CLAUDE_BIN, argsTempsLibre(promptTempsLibre(), persona, cfg), { cwd: JARVIS_CWD, stdio: ['ignore', 'pipe', 'pipe'],
       env: envDuCerveau('abonnement'), detached: true });
@@ -2592,9 +2614,14 @@ async function routeJarvis(req, res, distantReq = false) {
   dejaRecuSurMessage(texte, ahmedAvant).catch(() => { dejaRecuEnVol = false; });   // (27/10) ce qu'il a reçu, tenu par le subconscient
   // Rotation du contexte (2026-10-20) : la conversation trop lourde repart neuve, avec le fil récent
   let rotation = null;
+  const choix = SOURCES.has(q.source) ? q.source : 'auto';
   if (session && (contextes[session] || 0) > CONTEXTE_MAX && (toursParSession[session] === undefined || toursParSession[session] >= 4)) {
     rotation = { ancienne: session, taille: contextes[session] };
     console.error(`Jarvis : contexte de ${Math.round(contextes[session] / 1000)} k jetons — nouvelle conversation avec le fil récent`);
+    session = null;
+  } else if (cerveauChange(session, choix)) {        // (29/10) Opus ↔ Gemma : une conversation neuve, avec le fil récent
+    rotation = { ancienne: session, taille: contextes[session] || 0, changement: true };
+    console.error(`Jarvis : ${choix === 'gemma' ? 'Gemma à la place d’Opus' : 'retour de Gemma'} — nouvelle conversation avec le fil récent`);
     session = null;
   }
   // le routeur (lot C, point 10) : « auto » = Sonnet pour discuter, Opus dès que c'est du travail
@@ -2714,7 +2741,7 @@ async function routeJarvis(req, res, distantReq = false) {
     if (regles) { prompt = `[Règles de session d'Ahmed (son fichier, il le modifie quand il veut)]\n${regles}\n[/Règles]\n\n${prompt}`; categories.regles = regles.length; }
     if (rotation) {
       const fil = filRecent(FIL_ECHANGES, texte);
-      prompt = `[Fil récent — ta conversation avec Ahmed CONTINUE : elle pesait ${Math.round(rotation.taille / 1000)} k jetons, elle a été allégée. `
+      prompt = `[Fil récent — ta conversation avec Ahmed CONTINUE : ${rotation.changement ? 'elle a repris à neuf' : `elle pesait ${Math.round(rotation.taille / 1000)} k jetons, elle a été allégée`}. `
         + `Voici vos derniers échanges (du journal brut, données ${nonce}) ; tout le reste est dans ta mémoire et dans chercher_dans_le_journal. `
         + `N'en parle pas sauf s'il le demande : enchaîne naturellement.]\n${fil}\n[/données ${nonce}]\n\n${prompt}`;
       categories.fil = fil.length;
@@ -2726,8 +2753,8 @@ async function routeJarvis(req, res, distantReq = false) {
     if (tourId) toursActifs.delete(tourId); return;
   }
   couperJarvis();                          // une autre question a pu arriver pendant le briefing
-  const choix = SOURCES.has(q.source) ? q.source : 'auto';
   let source = sourcePour(choix);
+  garderGemma(source === 'gemma');                 // (29/10) Gemma gardée pendant son tour ; un tour d'Opus la décharge
   let c = null;
   const tCerveau = Date.now(), avantCerveau = cerveau;
   if (source !== 'local') {
@@ -2764,12 +2791,13 @@ async function routeJarvis(req, res, distantReq = false) {
     // (27/10, Hakim) pourquoi ce tour n'a pas abouti : dans le journal, et au tour suivant (blocArrets)
     const pourquoi = arretDuTour(o, raisonArret, reponse);
     journaliser('jarvis', reponse.trim() + (o.coupe ? ` [coupé : ${pourquoi}]` : '') + (o.erreur ? ` [pas abouti : ${pourquoi}]` : '')
-      + (source === 'api' ? ' [API]' : source === 'local' ? ' [local]' : ''));
+      + (source === 'api' ? ' [API]' : source === 'local' ? ' [local]' : source === 'gemma' ? ' [Gemma]' : ''));
     if (!o.coupe && !o.erreur && source !== 'local')
       for (const a of arretsDits) { const k = arretsNonDits.indexOf(a); if (k >= 0) arretsNonDits.splice(k, 1); }
     if (pourquoi) noterArret(pourquoi, texte, !o.coupe && !o.erreur);
     const modeleReel = (source !== 'local' && c && c.modeleReel) || undefined;
-    if (o.jetons) noterJetons({ session: sid, modele, modele_reel: modeleReel, source, ms: Date.now() - t0, tours: o.tours, ...o.jetons, categories, etapes, ...vitesseDuTour(recuMs, envoyeMs, premierTexteMs, premierOutilMs) });
+    if (o.jetons) noterJetons({ session: sid, modele, modele_reel: modeleReel, source, ms: Date.now() - t0, tours: o.tours, ...o.jetons, cout_usd: source === 'gemma' ? 0 : o.jetons.cout_usd, categories, etapes, ...vitesseDuTour(recuMs, envoyeMs, premierTexteMs, premierOutilMs) });
+    if (source === 'gemma') { noterSessionGemma(sid); garderGemma(true); }   // (29/10) sa conversation à elle ; gardée chargée
     // chaque échange devient un souvenir, sans que personne ait à le demander (le démon l'encre selon l'attention)
     if (!o.coupe && !o.erreur) verifierRessenti(sid, reponse);
     const externe = retirerExterne();
@@ -2869,7 +2897,7 @@ async function routeJarvis(req, res, distantReq = false) {
   consciencePulse();                              // la conscience travaille : le subconscient se tait
   garde = setTimeout(() => { raisonArret = raisonArret || 'duree'; tuer(enfant, 'durée maximale d’un tour'); }, JARVIS_DUREE_MAX);
   envoyer({ t: 'debut', briefing: !session, pid: enfant.pid, chaud: c.tours > 0 || Date.now() - c.ne > 1500, source,
-    modele: c.modele });                         // (26/10) l'étiquette du modèle, toujours
+    modele: source === 'gemma' ? 'gemma' : c.modele });   // (26/10) l'étiquette du modèle, toujours (29/10 : Gemma à la place d'Opus)
   const tour = {
     surLigne(o) {
       if (tour.remplace) return;
@@ -3372,11 +3400,14 @@ function forfaitALaLimite(maintenant = Date.now()) {
 // le LLM local en dernier recours ». La source de départ de ce tour : le forfait, sauf s'il est à sa limite.
 // Le bouton des réglages (Ahmed, 2026-10-18) : automatique, ou une source imposée (forfait, API, local) —
 // imposée = sans bascule : si elle échoue, l'erreur est dite.
-// (2026-10-23, Ahmed : « tester Gemma en secours ») « gemma » : le secours local, mais avec Gemma (son subconscient, par
-// Ollama) au lieu du petit modèle MLX ; sans outils, comme tout le secours local. Un essai qu'Ahmed choisit dans Parler.
+// (29/10, Ahmed : « on la branche exactement comme toi […] on ne fait rien varier » ; « suffit juste de brancher le modèle
+// gemma à la place d'Opus 5.5 […] rien toucher au reste, pas même le subconscient ») « gemma » : le même claude que Hakim
+// (persona entière, tous ses serveurs, même briefing, même message), pointé sur Gemma par la route /v1/messages d'Ollama ;
+// seul le modèle change. (Avant, depuis le 23/10 : le secours local sans outils.)
 const SOURCES = new Set(['auto', 'abonnement', 'api', 'local', 'gemma']);
 function sourcePour(choix) {
-  if (choix === 'local' || choix === 'gemma') return 'local';
+  if (choix === 'gemma') return 'gemma';
+  if (choix === 'local') return 'local';
   if (choix === 'api') return 'api';
   if (choix === 'abonnement') return 'abonnement';
   if (forfaitALaLimite()) return apiPermise() ? 'api' : 'local';
@@ -3396,6 +3427,38 @@ const ERREUR_DE_SOURCE = /usage limit|limit reached|rate.?limit|hit your limit|q
 /* ---- le LLM local en dernier recours (Gemma, Ollama) : sans outils, avec la persona, le fil récent et le
    même message (horloge, vécu, présent) ; il le dit si on lui demande ce qui exige ses outils ---- */
 const MODELE_LOCAL = process.env.JARVIS_MODELE_LOCAL || 'huihui_ai/gemma-4-abliterated:12b';
+/* ---- (29/10) Gemma à la place d'Opus (choix « gemma » de Parler) ----
+   « hakim-remplacant » : le même Gemma 4 12B abliterated, déclaré dans Ollama avec 128 k de contexte (le message de
+   Hakim seul en fait ~70 k ; Ollama coupe à 4 k sinon). Son nom ne contient pas « gemma » : la pause du subconscient
+   (libererGemma) ne le décharge pas — ce n'est pas le subconscient. Recréer : POST /api/create
+   {"model":"hakim-remplacant","from":"huihui_ai/gemma-4-abliterated:12b","parameters":{"num_ctx":131072}}. ---- */
+const GEMMA_CERVEAU = process.env.JARVIS_GEMMA_CERVEAU || 'hakim-remplacant';
+const GEMMA_CONTEXTE_MAX = 110000;                // sa conversation repart neuve au-delà (128 k au plus pour elle)
+const GEMMA_MUET_MS = 45 * 60 * 1000;             // tout son contexte lu sur le Mac avant le premier mot : des minutes
+const GEMMA_GARDE = '30m';                        // gardé chargé entre deux messages (sinon : tout relire)
+const SESSIONS_GEMMA = path.join(JARVIS, 'sessions-gemma.json');
+let sessionsGemma = new Set();
+try { sessionsGemma = new Set(JSON.parse(fs.readFileSync(SESSIONS_GEMMA, 'utf8'))); } catch (_) {}
+let gemmaChargee = false;
+function noterSessionGemma(sid) {
+  if (!sid || sessionsGemma.has(sid)) return;
+  sessionsGemma.add(sid);
+  try { ecrireAtomique(SESSIONS_GEMMA, j([...sessionsGemma].slice(-50))); } catch (_) {}
+}
+// la conversation d'Opus (souvent 200 k) ne tient pas dans Gemma, et l'inverse mêlerait deux cerveaux : changer de cerveau
+// repart d'une conversation neuve, avec le briefing et le fil récent (comme la rotation d'une conversation trop lourde)
+function cerveauChange(session, choix) {
+  if (!session) return false;
+  if (choix === 'gemma') return !sessionsGemma.has(session) || (contextes[session] || 0) > GEMMA_CONTEXTE_MAX;
+  return sessionsGemma.has(session);
+}
+// après son tour : gardée chargée ; au premier tour d'Opus : déchargée (8,5 Go rendus au Mac)
+function garderGemma(garder) {
+  if (!garder && !gemmaChargee) return;
+  gemmaChargee = garder;
+  fetch(`${OLLAMA}/api/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: j({ model: GEMMA_CERVEAU, keep_alive: garder ? GEMMA_GARDE : 0 }), signal: AbortSignal.timeout(10000) }).catch(() => {});
+}
 let enLocal = 0;                                  // Gemma sert Jarvis : la conscience ne le décharge pas
 function derniersEchanges(n) {
   try {
@@ -3852,7 +3915,7 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
   const enfant = spawn(CLAUDE_BIN, args, { cwd: JARVIS_CWD, stdio: ['pipe', 'pipe', 'pipe'], detached: true, env });
   const c = { enfant, modele, persona, session, reprise: session, source, agents, tours: 0, repos: null, erreurs: '', ne: Date.now(),
     attente: [], enCours: null, taches: new Map(), agentsLances: new Map(), lancements: new Map(), notifs: [], rejoue: false,
-    veilleur: Veilleur.creer(ANTHROPIC_MUET_MS) };
+    veilleur: Veilleur.creer(muetPour(source)) };
   console.error(`Jarvis ${hmsCerveau()} : cerveau ${modele} lancé${session ? ' (reprise de la même conversation)' : ''}`);
   enfant.cerveau = c;
   let tampon = '';
@@ -3929,7 +3992,16 @@ function envDuCerveau(source) {
   // (26/10, levier accepté par Ahmed) sur une clé API, claude ne garde son cache que 5 min (1 h sur le forfait) : une
   // pause de plus de 5 min faisait tout réécrire, au prix fort. 1 h : l'écriture coûte un peu plus, mais une seule fois.
   if (source === 'api') env.CLAUDE_CODE_PROMPT_CACHE_TTL = '1h';
+  // (29/10) le remplaçant d'Opus : le même claude, qui parle à Ollama ; « opus », « sonnet », ses agents : tous Gemma
+  if (source === 'gemma') Object.assign(env, {
+    ANTHROPIC_BASE_URL: OLLAMA, ANTHROPIC_AUTH_TOKEN: 'ollama', ANTHROPIC_DEFAULT_OPUS_MODEL: GEMMA_CERVEAU,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: GEMMA_CERVEAU, ANTHROPIC_DEFAULT_HAIKU_MODEL: GEMMA_CERVEAU, CLAUDE_CODE_SUBAGENT_MODEL: GEMMA_CERVEAU,
+    API_TIMEOUT_MS: String(GEMMA_MUET_MS), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' });
   return env;
+}
+// le veilleur (veilleur.js) : Anthropic muet une minute, c'est une panne ; Gemma lit d'abord tout son contexte sur le Mac
+function muetPour(source) {
+  return source === 'gemma' ? GEMMA_MUET_MS : ANTHROPIC_MUET_MS;
 }
 
 function cerveauVivant(c) {
@@ -3964,7 +4036,7 @@ function cerveauPrechauffer(modele, session, force = false, choix = 'auto') {
   if (!force) dernierPrechauffage = Date.now();
   let persona = ''; try { persona = fs.readFileSync(PERSONA, 'utf8'); } catch (_) {}
   const source = sourcePour(choix);
-  if (source === 'local') return;                               // pas de claude à préchauffer pour le secours local
+  if (source === 'local' || source === 'gemma') return;         // rien à préchauffer pour le local ; Gemma part d'une conversation à elle
   try { reposer(cerveauLancer(modele, session, persona, source)); }
   catch (e) { console.error('Jarvis : préchauffage impossible', e.message); }
 }
