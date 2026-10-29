@@ -54,9 +54,9 @@
     <div class="sous" id="annonce" role="status"></div>
     <section class="glass carte"><h2>Maintenant</h2><div class="chiffres" id="chiffres"></div></section>
     <section class="glass carte"><h2>Santé du système immunitaire</h2>
-      <div class="sous">(29/10) Il apprend et se protège : une tolérance ne vient que de ton geste « inoffensif » (ou d'une voix coupée
-        dans tes propres messages), jamais d'un contenu ni du médecin, et jamais pour une famille grave ; un motif jugé nuisible passe en
-        mémoire. Ses règles et son code sont scellés : une modification hors de leur chemin est une alerte maximale.</div>
+      <div class="sous">(29/10) Il apprend et se protège : une tolérance ne vient que de ton geste « Inoffensif », signe par signe, jamais
+        d'un contenu ni du médecin, et jamais pour une attaque grave ni pour une voix ; un signe jugé nuisible passe en mémoire. Ses règles
+        et son code sont scellés : une modification hors de leur chemin est une alerte maximale.</div>
       <div id="sante"></div></section>
     <section class="glass carte"><h2>Les passages du médecin</h2><div id="rapports"></div></section>
     <section class="glass carte"><h2>Les incidents</h2><div id="incidents"></div></section>
@@ -68,6 +68,7 @@
   // Hakim ; ses deux outils sont ici
   window.esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   window.jeton = () => (document.querySelector('meta[name="cockpit-jeton"]') || {}).content || '';
+  document.body.classList.add('shell');
   </script>
   <script src="/presence.js"></script>
   <script>
