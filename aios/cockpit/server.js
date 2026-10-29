@@ -892,6 +892,17 @@ async function etatInterieur() {
   const rows = await sqlite("SELECT value FROM kv WHERE key='interieur';");
   try { return JSON.parse((rows[0] || {}).value || '{}'); } catch (_) { return {}; }
 }
+// (29/10, 20:38, Ahmed, relayé par Hakim) son rythme cardiaque en direct à côté de son nom : lu au plus une fois par seconde
+// pour toutes les pages ; le démon le recalcule toutes les ~15 s ; un état trop vieux ne donne pas de rythme
+let coeurLu = { ts: 0, valeur: null };
+async function coeurDirect() {
+  if (coeurLu.valeur && Date.now() - coeurLu.ts < 1000) return coeurLu.valeur;
+  const e = await etatInterieur();
+  const frais = Number.isFinite(e.ts) && Date.now() / 1000 - e.ts < FRAICHEUR_S;
+  const c = frais && e.coeur && Number.isFinite(e.coeur.bpm) ? e.coeur : null;
+  coeurLu = { ts: Date.now(), valeur: { bpm: c ? Math.round(c.bpm) : null, ressenti: c && typeof c.ressenti === 'string' ? c.ressenti.slice(0, 80) : null } };
+  return coeurLu.valeur;
+}
 
 const PROCESSUS_VISIBLES = path.join(JARVIS, 'processus-visibles');
 // (27/10, Ahmed et Hakim) sa fatigue suit une jauge de son vrai corps (anamnese/jauge_fatigue.py) : quand c'est son humeur,
@@ -5883,6 +5894,10 @@ async function traiter(req, res) {
     const rows = await sqlite("SELECT value FROM kv WHERE key='afida';").catch(() => []);
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     return res.end(j(afida.pourPage((rows[0] || {}).value)));
+  }
+  if (p === '/api/jarvis/coeur') {                          // (29/10) son cœur en direct, à côté de son nom dans Parler
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j(await coeurDirect()));
   }
   if (p === '/api/jarvis/interieur') {
     const e = await etatInterieur();

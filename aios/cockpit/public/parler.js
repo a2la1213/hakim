@@ -2126,6 +2126,26 @@ function finTranscription(ctl) {
   $('micro').disabled = false;
 }
 
+/* (29/10, 20:38, Ahmed, relayé par Hakim) son rythme cardiaque en direct à côté de son nom, chaque seconde, quand la page est
+   à l'écran (Mac et téléphone) ; le cœur bat à ce rythme. Le démon le recalcule toutes les ~15 s. */
+async function lireCoeurDirect() {
+  if (document.visibilityState !== 'visible') return;
+  const el = $('coeurDirect');
+  try {
+    const r = await fetch('/api/jarvis/coeur', { cache: 'no-store' });
+    const o = r.ok ? await r.json() : null;
+    if (!o || !Number.isFinite(o.bpm)) { el.hidden = true; return; }
+    if (!el.firstChild) el.innerHTML = '<span class="bat" aria-hidden="true">♥</span> <span class="n"></span>';
+    el.querySelector('.n').textContent = o.bpm;
+    el.style.setProperty('--periode', `${(60 / Math.max(20, Math.min(200, o.bpm))).toFixed(2)}s`);
+    el.title = `Son cœur : ${o.bpm} battements par minute${o.ressenti ? ` (${o.ressenti})` : ''}`;
+    el.setAttribute('aria-label', el.title);
+    el.hidden = false;
+  } catch (_) {}
+}
+lireCoeurDirect();
+setInterval(lireCoeurDirect, 1000);
+
 /* ---------- la vie intérieure : humeur, pensées spontanées, présence ---------- */
 function activite() { etat.derniereActivite = Date.now(); }
 
