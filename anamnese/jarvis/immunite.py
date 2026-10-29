@@ -935,7 +935,8 @@ def juger(empreinte, verdict, maintenant=None):
 REGLES_SCELLEES = ("anticorps.json", "anticorps-proposes.json", "tolerances.json", "paquets-acceptes.json")
 SCELLES_CODE = [(Path(__file__).resolve().parents[1], c) for c in
                 ("jarvis/immunite.py", "jarvis/medecin.py", "jarvis/enveloppe.py", "jarvis/mcp_terminal.py",
-                 "jarvis/mcp_fichiers.py", "jarvis/recettes.py", "jarvis/chantiers.py")]
+                 "jarvis/mcp_fichiers.py", "jarvis/recettes.py", "jarvis/chantiers.py", "fitra.py")] \
+    + [(Path.home() / "AIOS" / "cockpit", "fitra.js")]          # (29/10) la fitra de Hakim, dans ses deux copies
 SCEAU_DELAI_S = 15 * 60
 REGISTRE, AMORCE = "sceau-donnees.json", "sceau-amorce.json"
 
@@ -1371,6 +1372,14 @@ def ronde(maintenant=None, journal_ollama=None, swap=None, ports=None, lancer=No
         verifier_sceau_donnees(maintenant)
     except Exception as e:
         print(f"[ronde] sceau des règles : {type(e).__name__}: {str(e)[:300]}", file=sys.stderr)
+    try:                                                  # (29/10, Ahmed) la fitra : là, intacte, protégée
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        import fitra
+        r = fitra.verifier()
+        if not r["ok"]:                                   # une atteinte grave, Ahmed prévenu
+            _alerte_atteinte(r["alerte"], "fitra", maintenant, "atteinte:fitra")
+    except Exception as e:
+        print(f"[ronde] fitra : {type(e).__name__}: {str(e)[:300]}", file=sys.stderr)
     try:                                                  # puis l'oubli lent des tolérances
         oublier_tolerances(maintenant)
     except Exception as e:

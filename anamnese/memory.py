@@ -10,6 +10,7 @@ l'auto-évolution : l'IA peut sauvegarder/rappeler des procédures apprises.
 """
 
 import sqlite3
+import sys
 import json
 import time
 
@@ -146,6 +147,11 @@ class Memory:
             """
         )
         self.db.commit()
+        try:                                               # (29/10, Ahmed) la fitra, à la racine de sa mémoire
+            import fitra
+            fitra.graver(self.db)
+        except Exception as e:                             # jamais une mémoire qui ne s'ouvre pas pour autant
+            print(f"[mémoire] fitra : {type(e).__name__}: {str(e)[:200]}", file=sys.stderr)
 
     # --- épisodes (mémoire épisodique) ---
     def _rubrique_existe(self, path):

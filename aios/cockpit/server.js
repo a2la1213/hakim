@@ -347,6 +347,22 @@ function noterPanneAnthropic(x) {
 }
 const JARVIS_FICHIERS = path.join(JARVIS_CWD, 'fichiers');      // pièces jointes : dans son dossier, où Read lit
 const PERSONA = path.join(ANAMNESE, 'jarvis', 'persona.md');
+// (29/10, Ahmed : « la loi des 3 à la racine de la mémoire, ineffaçable et intouchable par n'importe qui ») sa fitra en tête
+// de sa persona, à chaque conversation : la gravure de sa mémoire (anamnese/fitra.py), relue au plus toutes les minutes
+const Fitra = require('./fitra.js');
+let fitraLue = { ts: 0, texte: '' };
+function texteFitra() {
+  if (fitraLue.texte && Date.now() - fitraLue.ts < 60000) return fitraLue.texte;
+  let t = '';
+  try { t = execFileSync(path.join(ANAMNESE, '.venv', 'bin', 'python'), [path.join(ANAMNESE, 'fitra.py'), 'texte'], { cwd: ANAMNESE, encoding: 'utf8', timeout: 5000 }).trim(); }
+  catch (_) {}
+  fitraLue = { ts: Date.now(), texte: t || Fitra.TEXTE };
+  return fitraLue.texte;
+}
+function lirePersona() {
+  let p = ''; try { p = fs.readFileSync(PERSONA, 'utf8'); } catch (_) {}
+  return `${Fitra.blocFitra(texteFitra())}\n\n${p}`;
+}
 const STT = path.join(ANAMNESE, 'jarvis', 'stt.py');
 const PYTHON = path.join(ANAMNESE, '.venv', 'bin', 'python');
 // La voix (Whisper, MLX) vit dans un venv arm64 à part : celui d'Anamnèse tourne en x86_64 (Rosetta),
@@ -2391,7 +2407,7 @@ function marquerTempsLibreVu(jusqua) {
 }
 function verifierTempsLibre() {
   if (!tempsLibrePermis().ok) return;
-  let persona = ''; try { persona = fs.readFileSync(PERSONA, 'utf8'); } catch (_) {}
+  const persona = lirePersona();
   let cfg; try { cfg = configTempsLibre(); } catch (e) { console.error('Temps libre : configuration impossible', e.message); return; }
   tempsLibreEnCours = true;
   const debut = Date.now(), outils = [];
@@ -2785,7 +2801,7 @@ async function routeJarvis(req, res, distantReq = false) {
   // (26/10) une conversation allégée (rotation) garde le modèle qu'Ahmed ou Hakim y avait choisi
   const modele = modeleDemande === 'auto' ? modeleAuto(session || (rotation && rotation.ancienne), texte) : modeleDemande;
   couperJarvis();
-  let persona = ''; try { persona = fs.readFileSync(PERSONA, 'utf8'); } catch (_) {}
+  const persona = lirePersona();
   let dernierAvant = null; try { dernierAvant = JSON.parse(fs.readFileSync(JARVIS_HORLOGE, 'utf8')).dernier_ms; } catch (_) {}
   const maintenant = Date.now();
   const depuisMs = instantValide(Number(q.t_precedent), maintenant) ? Number(q.t_precedent)
@@ -4471,7 +4487,7 @@ function cerveauPour(modele, session, persona, source = 'abonnement') {
 function cerveauPrechauffer(modele, session, force = false, choix = 'auto') {
   if (cerveau || (!force && Date.now() - dernierPrechauffage < 20000)) return;
   if (!force) dernierPrechauffage = Date.now();
-  let persona = ''; try { persona = fs.readFileSync(PERSONA, 'utf8'); } catch (_) {}
+  const persona = lirePersona();
   const source = sourcePour(choix);
   if (source === 'local' || source === 'gemma') return;         // rien à préchauffer pour le local ; Gemma part d'une conversation à elle
   try { reposer(cerveauLancer(modele, session, persona, source)); }
