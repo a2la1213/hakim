@@ -106,8 +106,8 @@ test('son cerveau a SendMessage, avec sa garde (PreToolUse) ; le crochet de la s
   vm.runInContext([ligne('const CROCHET_IMMUNITE ='), ligne('const GARDE_MESSAGE ='), prendre('reglagesCerveau'), 'this.f = { reglagesCerveau };'].join('\n'), ctx);
   const r = JSON.parse(ctx.f.reglagesCerveau('abonnement'));
   assert.equal(r.hooks.PostToolUse[0].matcher, 'WebSearch|Read|Task|Agent');
-  const p = r.hooks.PreToolUse;
-  assert.equal(p.length, 1); assert.equal(p[0].matcher, 'SendMessage');
+  const p = r.hooks.PreToolUse.filter(h => h.matcher === 'SendMessage');
+  assert.equal(p.length, 1);
   assert.equal(p[0].hooks[0].command, "JARVIS_DIR='/j' JARVIS_AGENTS_PARALLELE_MAX=10 '/bin/node' '/cockpit/garde-message.js'");
   assert.ok(p[0].hooks[0].timeout > 0 && p[0].hooks[0].timeout <= 15);
   const c = prendre('cerveauLancer');
@@ -125,12 +125,12 @@ test('ses nouveaux outils sont permis ; un arrêt marque l’agent « arrêté �
 });
 
 test('ses agents savent leur vie : sommeil, messages, prénom, départ ; le juge ne juge jamais deux fois ; le témoin vierge reste vierge', () => {
-  const ctx = { JSON, Object, String, AGENTS: {}, LECTURE: [], MEMOIRE_LECTURE: [], lireSansLien: () => '', path, PREAMBULE_MATHS: '/x/y/z',
+  const ctx = { JSON, Object, String, Set, AGENTS: {}, LECTURE: [], MEMOIRE_LECTURE: [], lireSansLien: () => '', path, PREAMBULE_MATHS: '/x/y/z',
     REFERENCE_MATHS: '/r', agentsDeHakim: () => ({ moi: { description: 'le mien', prompt: 'Mon agent.', tools: [], model: 'sonnet' } }) };
   vm.createContext(ctx);
   const i = src.indexOf('const AGENTS = {');
   vm.runInContext(src.slice(i, src.indexOf('\n};\n', i) + 4).replace('const AGENTS', 'AGENTS') + ligne('const VIE_AGENT') + ligne('const VIE_JUGE')
-    + prendre('agentsPourCerveau') + 'this.a = agentsPourCerveau();', ctx);
+    + ligne('const OUTILS_CAFE') + prendre('agentsPourCerveau') + 'this.a = agentsPourCerveau();', ctx);
   for (const k of ['architecte', 'codeur', 'juge', 'moi']) {
     assert.match(ctx.a[k].prompt, /tu t'endors/, k); assert.match(ctx.a[k].prompt, /JE PARS :/, k); assert.match(ctx.a[k].prompt, /prénom/, k);
   }

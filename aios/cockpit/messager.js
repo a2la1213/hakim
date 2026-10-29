@@ -56,7 +56,8 @@ function reglagesMessager({ garde, jarvis, cible, uneFois, crochet }) {
   return JSON.stringify({ hooks: {
     PreToolUse: [{ matcher: 'SendMessage', hooks: [{ type: 'command', timeout: 10, onFailure: 'block',
       command: `JARVIS_DIR=${q(jarvis)} JARVIS_MESSAGER_CIBLE=${q(cible)} JARVIS_MESSAGER_UNE_FOIS=${q(uneFois)} ${garde}` }] },
-    { matcher: '*', hooks: [{ type: 'command', timeout: 10, onFailure: 'block', command: `JARVIS_DIR=${q(jarvis)} ${garde} --seulement-agents` }] }],
+    { matcher: '*', hooks: [{ type: 'command', timeout: 10, onFailure: 'block', command: `JARVIS_DIR=${q(jarvis)} ${garde} --seulement-agents` }] },
+    { matcher: 'mcp__terminal__cafe_dire', hooks: [{ type: 'command', timeout: 10, onFailure: 'block', command: `${garde} --cafe` }] }],
     PostToolUse: [{ matcher: 'WebSearch|Read|Task|Agent', hooks: [{ type: 'command', command: crochet, timeout: 20 }] }] } });
 }
 

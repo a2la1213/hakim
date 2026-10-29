@@ -81,8 +81,23 @@ function seulementAgents(e) {
   return 'le messager ne fait que porter ton message';
 }
 
+// (29/10) la salle de café : l'auteur d'un message est signé ici, par ce que claude dit de l'appel (agent_id), jamais
+// par ce que l'appelant prétend ; la réponse remplace « auteur » (updatedInput)
+function signerCafe(e) {
+  if (!e || typeof e !== 'object' || e.tool_name !== 'mcp__terminal__cafe_dire') return null;
+  const auteur = typeof e.agent_id === 'string' && /^a[0-9a-f]{16}$/.test(e.agent_id) ? e.agent_id : (e.agent_id ? null : 'hakim');
+  return auteur ? { ...objet(e.tool_input), auteur } : null;
+}
+
 function principal(brut) {
   let e = null, refus;
+  if (process.argv.includes('--cafe')) {
+    let entree = null; try { entree = signerCafe(JSON.parse(brut)); } catch (_) {}
+    process.stdout.write(JSON.stringify({ hookSpecificOutput: entree
+      ? { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: entree }
+      : { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'Garde du café : appel illisible.' } }));
+    return;
+  }
   const agents = process.argv.includes('--seulement-agents');
   try { e = JSON.parse(brut); refus = agents ? seulementAgents(e) : decider(e); } catch (_) { refus = 'garde : appel illisible'; }
   if (!agents || refus) noter(e, objet(objet(e).tool_input).to || objet(e).tool_name, refus);

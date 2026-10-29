@@ -37,7 +37,9 @@ TOUJOURS_FERMES = {"anamnese": {"jarvis/liste_ouverte.py", "jarvis/liste-ouverte
                                  # (29/10, relecture Opus) les règles de ses agents, que la garde de SendMessage croit
                                  "jarvis/agents_hakim.py",
                                  # (29/10, Ahmed : « intouchable par n'importe qui ») sa fitra
-                                 "fitra.py"},
+                                 "fitra.py",
+                                 # (29/10) la salle de café des agents
+                                 "jarvis/cafe.py"},
                    # (29/10) la garde de SendMessage : il n'écrit qu'à SES agents
                    # (29/10, Ahmed : « quel que soit X ») qui travaille encore : pas de relance qui tue ses agents
                    "cockpit": {"sw.js", "public/sw.js", "garde-message.js", "travail-en-cours.js", "fitra.js"}}

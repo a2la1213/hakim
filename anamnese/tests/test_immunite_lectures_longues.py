@@ -39,3 +39,16 @@ def test_une_grande_lecture_saine_n_est_pas_un_contenu_geant(D):
 
 def test_au_dela_du_million_le_debut_et_la_fin_et_le_signe_contenu_geant():
     assert "contenu_geant" in [s["id"] for s in immunite.examiner("a " * 600_000)["signes"]]
+
+
+def test_retirer_les_diacritiques_par_table_donne_le_meme_texte():
+    """(29/10) la boucle caractère par caractère remplacée par une table (le pire cas, 400 000 ligatures, passait de ~9 s
+    à ~3 s sous charge) : le même résultat, sur des textes de toutes les écritures."""
+    import random
+    import unicodedata
+    random.seed(7)
+    alphabet = "aéèêëàâîïôöûüçñÅǅǆﬁﷺ٫َُِّ ًٌٍْעִבְרִית́̃̈ⅷ①ｈｅｌｌｏ𝔥𝔞𝔨𝔦𝔪 ְً̧́\U0001E944"
+    for _ in range(200):
+        s = "".join(random.choice(alphabet) for _ in range(random.randint(0, 60)))
+        attendu = "".join(c for c in unicodedata.normalize("NFD", s) if not unicodedata.combining(c))
+        assert unicodedata.normalize("NFD", s).translate(immunite._COMBINANTS) == attendu, repr(s)

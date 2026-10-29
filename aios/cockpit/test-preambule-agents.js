@@ -29,7 +29,8 @@ test('chaque agent reçoit le préambule, avec son chemin et la condition « si 
     assert.match(a[nom].prompt, /Plafond M à un seul grain \(M symbolique\)/);
     assert.match(a[nom].prompt, /si ta mission touche aux maths ou à la physique du réel|Si ta mission touche aux maths ou à la physique du réel/);
     assert.match(a[nom].prompt, /atelier\/ancrage\/MATHS_DU_REEL_MERE\.md/);
-    assert.deepEqual(a[nom].tools, c.AGENTS[nom].tools, 'les outils ne changent pas');
+    // (29/10) les outils ne changent pas, sauf les deux du café, que chacun reçoit
+    assert.deepEqual(a[nom].tools, [...new Set([...c.AGENTS[nom].tools, 'mcp__terminal__cafe_lire', 'mcp__terminal__cafe_dire'])], 'les outils ne changent pas');
   }
 });
 
@@ -44,8 +45,9 @@ test('sans préambule, les agents restent tels quels ; un préambule énorme est
   for (const k of ['architecte', 'codeur', 'juge']) {
     assert.ok(p[k].prompt.startsWith(c.AGENTS[k].prompt), k);
     assert.match(p[k].prompt.slice(c.AGENTS[k].prompt.length), /^\n\n(Un juge ne juge jamais[^\n]*\n\n)?\[Ta vie d'agent/, k);
-    assert.deepEqual({ ...p[k], prompt: '' }, { ...c.AGENTS[k], prompt: '' }, k);
+    assert.deepEqual({ ...p[k], prompt: '', tools: [] }, { ...c.AGENTS[k], prompt: '', tools: [] }, k);
+    assert.ok(p[k].tools.includes('mcp__terminal__cafe_dire'), k);
   }
   const d = cockpit('x'.repeat(20000));
-  assert.ok(d.pour().juge.prompt.length < d.AGENTS.juge.prompt.length + 4600 + 1200);
+  assert.ok(d.pour().juge.prompt.length < d.AGENTS.juge.prompt.length + 4600 + 2000);
 });
