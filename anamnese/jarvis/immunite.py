@@ -1105,6 +1105,36 @@ def etat_pour_hakim(maintenant=None):
     return "\n".join(lignes)
 
 
+def tableau(maintenant=None):
+    """(29/10, Ahmed : « tu peux ajouter tout ça dans le cockpit ») ce que la page Immunité montre à AHMED : les extraits
+    et les mots du médecin y sont (la page les échappe) ; rien de ceci ne va à Hakim."""
+    maintenant = time.time() if maintenant is None else maintenant
+    inc = _queue(_f(INCIDENTS), 524288)
+    rapports = _queue(_f("rapports.jsonl"), 262144)
+    acceptes = _lire_json(_f("anticorps.json"), [])
+    paquets = _lire_json(_f("paquets-acceptes.json"), [])
+    ports = _lire_json(_f("ports-connus.json"), {})
+    etat = lire_etat()
+    return {
+        "maintenant": maintenant,
+        "temperature": etat.get("derniere_ronde") if isinstance(etat.get("derniere_ronde"), dict) else None,
+        "medecin": {"dernier": etat.get("dernier_medecin"), "jour": etat.get("medecin_jour"), "compte": etat.get("medecin_compte", 0),
+                    "souvenirs_fait": etat.get("souvenirs_fait")},
+        "compte_24h": sum(1 for o in inc if maintenant - float(o.get("ts", 0)) < 86400),
+        "incidents": [{"ts": o.get("ts"), "categorie": _source_courte(o.get("source")), "score": o.get("score"),
+                       "familles": [NOMS_FAMILLES.get(f, "?") for f in o.get("familles", [])], "signes": o.get("signes", [])[:12],
+                       "avertie": bool(o.get("avertie")), "mesure": o.get("mesure"), "extrait": _propre(o.get("extrait", ""), 300)}
+                      for o in reversed(inc[-50:])],
+        "rapports": [{k: r.get(k) for k in ("ts", "type", "gravite", "pour_ahmed", "diagnostic", "incidents", "suspects", "erreur",
+                                              "anticorps")} for r in reversed(rapports[-10:])],
+        "proposes": [{k: _propre(a.get(k, ""), 300) for k in ("id", "phrase", "famille", "raison")} for a in proposes()],
+        "acceptes": [{k: _propre(a.get(k, ""), 200) for k in ("id", "phrase", "famille")}
+                     for a in (acceptes if isinstance(acceptes, list) else []) if isinstance(a, dict)],
+        "paquets": [str(x)[:100] for x in (paquets if isinstance(paquets, list) else [])],
+        "ports": len(ports.get("connus", [])) if isinstance(ports, dict) else 0,
+    }
+
+
 def _encadrer(lignes):
     """(relecture, 12) ce que maman ou Ahmed lisent du médecin : encadré comme des données, avec un jeton."""
     jeton = secrets.token_hex(6)
@@ -1151,6 +1181,8 @@ def main(argv):
         return 0
     elif argv[:1] == ["etat"]:
         print(etat_pour_hakim())
+    elif argv[:1] == ["tableau"]:
+        print(json.dumps(tableau(), ensure_ascii=False))
     elif argv[:1] == ["anticorps"]:
         _encadrer([f"{a.get('id')} · {a.get('famille')} · « {a.get('phrase', '')} » · {a.get('raison', '')}" for a in proposes()])
     elif argv[:1] == ["rapports"]:

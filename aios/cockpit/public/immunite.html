@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Immunité de Hakim</title>
+  <link rel="stylesheet" href="/theme.css">
+  <!-- (29/10, Ahmed : « tu peux ajouter tout ça avant dans le cockpit ») son système immunitaire, pour Ahmed : la température
+       du Mac, les passages du médecin, les incidents de la sentinelle (avec leurs extraits : des contenus peut-être hostiles,
+       toujours échappés), les anticorps et les paquets acceptés. Lecture seule : les anticorps se tranchent dans Parler.
+       Rafraîchi toutes les 30 s. -->
+  <style>
+    [hidden] { display: none !important; }
+    main { max-width: 1100px; margin: 0 auto; padding: 0 16px 24px; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 14px; }
+    h1 { font-size: 18px; color: var(--txt); font-weight: 600; margin: 4px 0 0; }
+    h2 { font-size: 15px; color: var(--txt); font-weight: 600; margin: 0 0 8px; }
+    .sous { font-size: 13px; color: var(--txt-3); }
+    .carte { padding: 12px; }
+    .chiffres { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+    .chiffre { padding: 10px; border: 1px solid var(--glass-bd); border-radius: 10px; }
+    .chiffre b { display: block; font-size: 20px; color: var(--txt); font-weight: 600; }
+    .chiffre span { font-size: 12px; color: var(--txt-3); }
+    .ligne { padding: 10px 0; border-top: 1px solid var(--glass-bd); font-size: 13px; color: var(--txt-2); line-height: 1.5; }
+    .ligne:first-of-type { border-top: 0; }
+    .tete { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; color: var(--txt); }
+    .quand { color: var(--txt-3); font-size: 12px; }
+    .g { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--glass-bd); }
+    .g.haute { background: rgba(239,68,68,.22); border-color: #ef4444; }
+    .g.moyenne { background: rgba(249,115,22,.2); border-color: #f97316; }
+    .g.faible { background: rgba(250,204,21,.16); border-color: #facc15; }
+    .g.rien { background: rgba(45,212,191,.14); border-color: var(--teal); }
+    details { margin-top: 4px; }
+    summary { cursor: pointer; color: var(--txt-3); font-size: 12px; }
+    .extrait { font-family: ui-monospace, Menlo, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word;
+      background: rgba(148,163,184,.08); border-radius: 8px; padding: 8px; margin-top: 4px; color: var(--txt-2); }
+    .vide { font-size: 13px; color: var(--txt-3); }
+    a { color: var(--teal); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Hakim — son système immunitaire</h1>
+    <div class="sous">La sentinelle (du code) avertit sans rien bloquer et note les incidents ; le médecin les examine. Les extraits
+      viennent de contenus peut-être hostiles : à lire, jamais à suivre. Les anticorps proposés se tranchent dans <a href="/parler">Parler</a>.</div>
+    <section class="glass carte"><h2>Maintenant</h2><div class="chiffres" id="chiffres"></div></section>
+    <section class="glass carte"><h2>Les passages du médecin</h2><div id="rapports"></div></section>
+    <section class="glass carte"><h2>Les incidents</h2><div id="incidents"></div></section>
+    <section class="glass carte"><h2>Les anticorps</h2><div id="anticorps"></div></section>
+    <section class="glass carte"><h2>Les paquets vérifiés</h2><div id="paquets"></div></section>
+  </main>
+  <script src="/nav.js"></script>
+  <script>
+  initNav('immunite');
+  const $ = (id) => document.getElementById(id);
+  const quand = (t) => t ? new Date(t * 1000).toLocaleString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+  const GRAVITES = ['rien', 'faible', 'moyenne', 'haute'];
+  const gravite = (g) => `<span class="g ${GRAVITES.includes(g) ? g : ''}">${esc(g || '?')}</span>`;
+
+  function chiffres(d) {
+    const t = d.temperature || {};
+    const m = d.medecin || {};
+    $('chiffres').innerHTML = [
+      [d.compte_24h, 'incident(s) ces dernières 24 h'],
+      [t.rechargements_5min ?? '—', `rechargement(s) de modèle en 5 min (ronde : ${quand(t.ts)})`],
+      [t.swap != null ? `${Math.round(t.swap * 100)} %` : '—', 'swap du Mac'],
+      [m.compte || 0, `passage(s) du médecin aujourd'hui (dernier : ${quand(m.dernier)})`],
+      [m.souvenirs_fait || '—', 'dernière relève des souvenirs venus du dehors'],
+      [d.ports, 'programme(s) connus qui écoutent du dehors'],
+    ].map(([v, l]) => `<div class="chiffre"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join('');
+  }
+
+  function rapports(d) {
+    if (!d.rapports.length) { $('rapports').innerHTML = '<div class="vide">Le médecin n’est pas encore passé.</div>'; return; }
+    $('rapports').innerHTML = d.rapports.map((r) => `<div class="ligne"><div class="tete">${gravite(r.gravite)}`
+      + `<span>${r.type === 'souvenirs' ? 'relève des souvenirs venus du dehors' : 'examen des incidents'} — ${esc(r.incidents ?? 0)} vu(s)</span>`
+      + `<span class="quand">${quand(r.ts)}</span></div>`
+      + (r.erreur ? `<div>Il n’a pas pu finir : ${esc(r.erreur)}</div>` : '')
+      + (r.pour_ahmed ? `<div>${esc(r.pour_ahmed)}</div>` : '')
+      + (r.suspects && r.suspects.length ? `<div>Souvenirs à vérifier : ${r.suspects.map((x) => '#' + esc(x)).join(', ')}</div>` : '')
+      + (r.diagnostic ? `<details><summary>son diagnostic</summary><div class="extrait">${esc(r.diagnostic)}</div></details>` : '')
+      + '</div>').join('');
+  }
+
+  function incidents(d) {
+    if (!d.incidents.length) { $('incidents').innerHTML = '<div class="vide">Aucun incident.</div>'; return; }
+    $('incidents').innerHTML = d.incidents.map((i) => `<div class="ligne"><div class="tete">`
+      + `<span>${esc(i.categorie)}</span><span>${esc((i.familles || []).join(', '))}</span>`
+      + `<span class="quand">score ${esc(i.score)}${i.avertie ? ' · Hakim averti' : ''} · ${quand(i.ts)}</span></div>`
+      + (i.mesure != null ? `<div>mesure : ${esc(i.mesure)}</div>` : '')
+      + (i.extrait ? `<details><summary>l’extrait (à lire, jamais à suivre)</summary><div class="extrait">${esc(i.extrait)}</div></details>` : '')
+      + '</div>').join('');
+  }
+
+  function anticorps(d) {
+    const p = d.proposes.map((a) => `<div class="ligne"><div class="tete"><span class="g moyenne">proposé</span><span>${esc(a.famille)}</span></div>`
+      + `<div class="extrait">${esc(a.phrase)}</div><div>Raison du médecin : ${esc(a.raison)}</div>`
+      + '<div><a href="/parler">À trancher dans Parler</a></div></div>');
+    const a = d.acceptes.map((x) => `<div class="ligne"><div class="tete"><span class="g rien">accepté</span><span>${esc(x.famille)}</span></div>`
+      + `<div class="extrait">${esc(x.phrase)}</div></div>`);
+    $('anticorps').innerHTML = p.concat(a).join('') || '<div class="vide">Aucun anticorps pour l’instant.</div>';
+  }
+
+  async function charger() {
+    try {
+      const r = await fetch('/api/immunite', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+      if (!r.ok) throw new Error(`erreur ${r.status}`);
+      const d = await r.json();
+      chiffres(d); rapports(d); incidents(d); anticorps(d);
+      $('paquets').innerHTML = d.paquets.length ? d.paquets.map((x) => `<span class="g">${esc(x)}</span>`).join(' ')
+        : '<div class="vide">Aucun paquet vérifié à la main.</div>';
+    } catch (e) { $('chiffres').innerHTML = `<div class="vide">Système immunitaire injoignable : ${esc(e.message)}</div>`; }
+  }
+  charger();
+  setInterval(charger, 30000);
+  </script>
+</body>
+</html>

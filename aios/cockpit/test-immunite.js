@@ -232,3 +232,21 @@ test('lot 4 : branché dans son tour', () => {
   assert.match(src, /const voixBloc = blocVoixTierce\(q, texte, q\.oral && derniereVoix && Date\.now\(\) - derniereVoix\.ts < 120000 \? derniereVoix\.verdict : null\);/);
   assert.match(src, /\+ tempsLibre\.texte \+ immuniteBloc\.texte \+ voixBloc\.texte;/);
 });
+
+// ---- (29/10, Ahmed : « tu peux ajouter tout ça avant dans le cockpit ») la page Immunité
+test('la page Immunité : servie, dans la navigation, ses données derrière le jeton, tout ce qui vient du dehors échappé', () => {
+  assert.match(src, /'\/immunite': 'immunite\.html'/);
+  const nav = fs.readFileSync(path.join(__dirname, 'public', 'nav.js'), 'utf8');
+  assert.match(nav, /\['immunite', '\/immunite', 'IMMUNITÉ'\]/);
+  const i = src.indexOf("if (p === '/api/immunite') {");
+  assert.ok(i >= 0);
+  const route = src.slice(i, src.indexOf('\n  }\n', i));
+  assert.match(route, /if \(!jetonValide\(req\)\)/);
+  assert.match(route, /execFile\(path\.join\(ANAMNESE, '\.venv', 'bin', 'python'\), \[path\.join\(ANAMNESE, 'jarvis', 'immunite\.py'\), 'tableau'\]/);
+  const page = fs.readFileSync(path.join(__dirname, 'public', 'immunite.html'), 'utf8');
+  assert.match(page, /initNav\('immunite'\)/);
+  assert.match(page, /fetch\('\/api\/immunite', \{ headers: \{ 'X-Jeton': jeton\(\) \}/);
+  for (const champ of ['extrait', 'pour_ahmed', 'diagnostic', 'phrase', 'raison', 'categorie'])
+    assert.ok(new RegExp(`esc\\([^)]*\\.${champ}`).test(page), `${champ} échappé`);
+  assert.ok(!/innerHTML\s*=\s*[^;]*\$\{(?!esc\()[a-z]+\.(extrait|pour_ahmed|diagnostic|phrase|raison)/.test(page), 'jamais brut');
+});

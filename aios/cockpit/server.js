@@ -4574,7 +4574,7 @@ const VERROU = new Verrou(process.env.JARVIS_VERROU || path.join(JARVIS, 'verrou
 const COOKIE_VERROU = 'verrou';
 const PAGES = { '/': 'index.html', '/brain': 'brain.html', '/dreams': 'dreams.html', '/memory': 'memory.html', '/chat': 'chat.html',
   '/parler': 'parler.html', '/verrou': 'verrou.html', '/duel': 'duel.html', '/interieur': 'interieur.html',
-  '/code': 'code.html' };                                     // (28/10) le code de Hakim : une page fermée
+  '/code': 'code.html', '/immunite': 'immunite.html' };      // (29/10) son système immunitaire, pour Ahmed                                     // (28/10) le code de Hakim : une page fermée
 const LIBRES_VERROUILLE = new Set(['/verrou.js', '/theme.css',        // ce que la page du verrou charge
   '/sw.js', '/manifest.webmanifest', '/icone-192.png', '/icone-512.png']);   // l'appli et ses notifications (sans secret)
 const cookieSession = (s) => `${COOKIE_VERROU}=${s}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(DUREE_SESSION / 1000)}`;
@@ -5892,6 +5892,14 @@ async function traiter(req, res) {
     if (!r) { res.writeHead(503, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'mémoire injoignable' })); }
     if (args.length) courrierVersHakim(`Tes hormones : ${r.version}`, `Ahmed a basculé tes hormones en ${r.version}${r.version === 'v2' ? ' (13 hormones reliées entre elles, axe du stress, désensibilisation, habituation ; un détecteur signale une humeur coincée)' : ' (les 9 neuromodulateurs d\'avant, indépendants)'}.`);
     res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(r));
+  }
+  if (p === '/api/immunite') {                              // (29/10) la page Immunité : derrière le jeton, pour Ahmed
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    const so = await new Promise(fin => execFile(path.join(ANAMNESE, '.venv', 'bin', 'python'), [path.join(ANAMNESE, 'jarvis', 'immunite.py'), 'tableau'],
+      { cwd: ANAMNESE, timeout: 30000, maxBuffer: 1 << 22 }, (e, sortie) => fin(e ? '' : String(sortie || ''))));
+    let d = null; try { d = JSON.parse(so.trim().split('\n').pop()); } catch (_) {}
+    res.writeHead(d ? 200 : 503, { 'Content-Type': 'application/json' });
+    return res.end(j(d || { erreur: 'système immunitaire injoignable' }));
   }
   if (p === '/api/immunite/anticorps') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
