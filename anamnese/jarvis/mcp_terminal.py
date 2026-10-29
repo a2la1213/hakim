@@ -39,6 +39,14 @@ async def executer(commande: str, delai_s: int = 120, arriere_plan: bool = False
     et tu continues de parler avec Ahmed ; elle tourne jusqu'à 4 h (delai_s), survit à un Stop, et Ahmed
     est prévenu quand elle se termine. Suis-la avec suivre_tache, arrête-la avec arreter_tache."""
     try:
+        try:                                              # (29/10, lot 6) un paquet piégé est refusé avant de tourner
+            import immunite
+            refus = immunite.verifier_paquets(commande)
+        except Exception as e:                            # une panne de la garde ne bloque pas son terminal (dite)
+            print(f"[immunité] garde des paquets en panne : {type(e).__name__}: {str(e)[:300]}", file=sys.stderr)
+            refus = None
+        if refus:
+            return refus
         if arriere_plan:
             tid = await asyncio.to_thread(taches.lancer, commande, delai_s if delai_s and delai_s != 120 else 3600)
             sortie = (f"Tâche de fond {tid} lancée (journal : {taches.DOSSIER / (tid + '.log')}). Elle tourne pendant "

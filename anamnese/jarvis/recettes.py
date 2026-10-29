@@ -121,6 +121,13 @@ def lire(nom, dossier=None):
 def lancer(nom, params=None, delai_s=3600, dossier=None, lanceur=None):
     r = lire(nom, dossier)
     commande = remplir(r, params)
+    try:                                                 # (29/10, système immunitaire) un paquet piégé, même en recette
+        import immunite
+        refus = immunite.verifier_paquets(commande)
+    except Exception:
+        refus = None
+    if refus:
+        raise Refus(refus)
     import taches
     tid = (lanceur or taches.lancer)(commande, delai_s)
     r["lancements"] = int(r.get("lancements", 0)) + 1

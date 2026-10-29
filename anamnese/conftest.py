@@ -117,6 +117,12 @@ def _vie_interieure_isolee(monkeypatch, tmp_path):
                 monkeypatch.setattr(sortie, nom, d / f)
     except Exception:
         pass
+    try:                                      # le système immunitaire (2026-10-29) : l'enveloppe note des incidents
+        import immunite
+        if not str(immunite.DOSSIER).startswith(str(tmp_path)):
+            monkeypatch.setattr(immunite, "DOSSIER", d / "immunite")
+    except Exception:
+        pass
     try:                                      # la boucle de retour (2026-10-22)
         import boucle_retour
         monkeypatch.setattr(boucle_retour, "DOSSIER", d / "boucle")

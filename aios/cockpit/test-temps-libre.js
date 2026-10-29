@@ -28,7 +28,8 @@ function monter({ ahmedIlYaMs = 2 * 3600e3, pause = false, occupe = false, ahmed
     NON_REPONSE_SERVEUR: /^\s*no response requested\.?\s*$/i, sansBaliseAffect: (t) => String(t || ''),
     livrerAutonome: (c, texte, notifs, outils, issue, pieces, options) => livres.push({ texte, outils, options }),
     OUTILS_JARVIS: ['mcp__anamnese__memory_recall', 'mcp__terminal__executer', 'mcp__calcul__executer_python', 'WebSearch', 'mcp__dehors__envoyer', 'mcp__web__consulter_ia'],
-    outilsInterdits: () => ['mcp__anamnese__self_update'], setInterval: () => ({ unref() {} }), SERVEURS_HORS_TEMPS_LIBRE: ['dehors'] };
+    outilsInterdits: () => ['mcp__anamnese__self_update'], setInterval: () => ({ unref() {} }), SERVEURS_HORS_TEMPS_LIBRE: ['dehors'],
+    reglagesCerveau: (source) => JSON.stringify({ crochet: source }) };
   vm.createContext(ctx);
   vm.runInContext([ligne('const JARVIS_TEMPS_LIBRE ='), ligne('const JARVIS_TEMPS_LIBRE_VU ='), ligne('const JARVIS_TEMPS_LIBRE_REGLAGE ='),
     ligne('const TEMPS_LIBRE_ABSENCE_MS'), ligne('const JARVIS_SIESTE ='), ligne('const SIESTE_ACCORD_MS'), 'let tempsLibreEnCours = false;',
@@ -97,6 +98,7 @@ test('sa conversation à part : ses serveurs sauf ceux qui parlent au dehors, ma
   assert.ok(!a[a.indexOf('--allowedTools') + 1].includes('mcp__dehors__'));
   assert.ok(!a[a.indexOf('--allowedTools') + 1].includes('consulter_ia'), 'parler à une autre IA, c’est sortir');
   assert.ok(!a.includes('--resume'));
+  assert.deepStrictEqual(JSON.parse(a[a.indexOf('--settings') + 1]), { crochet: 'abonnement' }, 'la sentinelle veille aussi pendant son temps à lui');
 });
 
 test('le prompt : son temps, ses outils (terminal, expériences), le fil récent, et « No response requested. » pour ne rien dire', () => {
@@ -162,7 +164,7 @@ test('le processus : groupe détaché, tué en entier (SIGTERM puis SIGKILL), er
 test('branché : vérifié chaque minute, et le bloc entre dans son prochain tour avec les tâches', () => {
   assert.match(src, /setInterval\(verifierTempsLibre, 60000\)\.unref\(\)/);
   assert.match(src, /const tempsLibre = blocTempsLibre\(\);/);
-  assert.match(src, /const tachesTexte = blocTaches\(depuisMs, nonce\) \+ blocAtelier\(\) \+ tempsLibre\.texte;/);
+  assert.match(src, /const tachesTexte = blocTaches\(depuisMs, nonce\) \+ blocAtelier\(\) \+ tempsLibre\.texte/);
   assert.match(src, /if \(!o\.coupe && !o\.erreur && source !== 'local' && tempsLibre\.jusqua\) marquerTempsLibreVu\(tempsLibre\.jusqua\);/);
 });
 

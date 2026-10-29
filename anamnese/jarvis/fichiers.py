@@ -369,6 +369,14 @@ def preparer(chemin, racines=None, sortie=None, transcrire=None, accueil=None):
                 os.replace(source, copie)
         res["lire"] = [str(copie)]
         res["note"] = "copié dans le dossier de Jarvis pour être lu" + (" (secrets masqués)" if ext in TEXTES_A_MASQUER else "")
+        if ext == ".pdf" and copie.suffix == ".pdf":       # (29/10, système immunitaire) lu tel quel : son texte examiné
+            try:
+                import immunite
+                note = immunite.note_pdf(_pdf_texte(copie, d), str(reel))
+            except Exception:
+                note = ""
+            if note:
+                res["note"] += " — " + note
         if copie.name.endswith(".texte-masque.txt"):
             res["note"] = "ce PDF contient des secrets : seul son texte est lisible, secrets masqués"
         return res

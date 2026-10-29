@@ -186,11 +186,19 @@ def connues(fichier=None):
         return []
 
 
+def _prenom(nom):
+    """(29/10, relecture du système immunitaire) un prénom : des lettres, espaces, traits d'union et apostrophes, 40 au
+    plus ; jamais « Ahmed » ni « voix N » : un nom avec des crochets forgerait une étiquette de la transcription."""
+    nom = " ".join(str(nom or "").split())[:40]
+    if not nom or not all(c.isalpha() or c in " -'’" for c in nom) or nom.casefold() == "ahmed" \
+            or re.fullmatch(r"voix\s*\d*", nom, re.IGNORECASE):
+        raise ValueError("un prénom (lettres, espaces, traits d'union), autre qu'Ahmed")
+    return nom
+
+
 def nommer(numero, nom, salle=None, fichier=None, maintenant=None):
     """« voix 2 » → « Karim » : la voix de la conversation devient une voix connue, pour toujours."""
-    nom = str(nom or "").strip()[:40]
-    if not nom or nom.lower() in ("ahmed",):
-        raise ValueError("un prénom, autre qu'Ahmed")
+    nom = _prenom(nom)
     # la salle est tenue par le serveur de voix (un AUTRE processus) : relue du fichier à chaque fois, sinon le serveur de
     # mémoire de Hakim nommait d'après la salle qu'il avait lue la première fois (relecture du 2026-10-20)
     _salle.update(voix=[], ts=0.0, dernier=None)
@@ -218,9 +226,7 @@ def nommer(numero, nom, salle=None, fichier=None, maintenant=None):
 def renommer(ancien, nouveau, fichier=None):
     """« Machine à café » → « Inconnu » : une voix connue change de nom et garde son empreinte (29/10 : sans cet outil,
     Hakim a dû oublier la voix pour la renommer)."""
-    nouveau = str(nouveau or "").strip()[:40]
-    if not nouveau or nouveau.lower() in ("ahmed",):
-        raise ValueError("un prénom, autre qu'Ahmed")
+    nouveau = _prenom(nouveau)
     k = connues(fichier)
     x = next((v for v in k if v["nom"].lower() == str(ancien).strip().lower()), None)
     if x is None:

@@ -779,8 +779,8 @@ function htmlMessage(m) {
   if (m.source === 'local') pied.push('<span title="Forfait et API indisponibles : cerveau local, sans outils">cerveau local</span>');
   // (26/10, Hakim et Ahmed : une réponse du local était passée pour la sienne) le secours se voit en tête, pas en petit en bas
   const secours = m.source === 'local' ? '<span class="etiquette secours" title="Forfait et API indisponibles à ce moment : c’est son cerveau local qui répond, sans ses outils ni sa mémoire complète">CERVEAU LOCAL · SECOURS, SANS SES OUTILS</span>' : '';
-  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'silence' ? 'IL REPREND LA PAROLE' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
-  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'carnet' ? htmlCarnet(m.carnet) : m.spontane === 'retractation' ? htmlRetractation(m.retractation) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
+  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'anticorps' ? 'ANTICORPS PROPOSÉ PAR SON MÉDECIN' : m.spontane === 'silence' ? 'IL REPREND LA PAROLE' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
+  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'carnet' ? htmlCarnet(m.carnet) : m.spontane === 'retractation' ? htmlRetractation(m.retractation) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : m.spontane === 'anticorps' ? htmlAnticorps(m.anticorps) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
 }
 
 /* Les pièces jointes de Hakim (2026-10-20) : récupérées avec le jeton, jamais ouvertes comme une page — une image
@@ -2205,6 +2205,7 @@ function ecouterPensees() {
   es.addEventListener('retractation', (ev) => { try { surRetractation(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('identite', (ev) => { try { surIdentite(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('sortie', (ev) => { try { surSortie(JSON.parse(ev.data)); } catch (_) {} });
+  es.addEventListener('anticorps', (ev) => { try { surAnticorps(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('spontane', (ev) => { try { surSpontane(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('courrier', (ev) => {
     try { const o = JSON.parse(ev.data); humeur(`Hakim a écrit à Claude Code : « ${o.sujet} »`); $('annonce').textContent = `Hakim a écrit à Claude Code : ${o.sujet}`; } catch (_) {}
@@ -2548,6 +2549,55 @@ $('fil').addEventListener('click', async (e) => {
     const o = await r.json();
     if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
     surSortie(o);
+  } catch (err) { b.disabled = false; humeur(String(err.message || err)); }
+});
+
+// (lot 3 du système immunitaire, 29/10) le médecin de Hakim propose un anticorps : une phrase d'attaque que sa
+// sentinelle reconnaîtra. Rien ne sert sans ton geste ; accepter demande ta présence.
+const ETATS_ANTICORPS = { proposee: 'attend ta décision', accepte: 'accepté : sa sentinelle le reconnaît', refuse: 'refusé' };
+function surAnticorps(o) {
+  if (!o || !/^[0-9a-f]{8}$/.test(String(o.id))) return;
+  const id = 'anticorps-' + o.id;
+  let m = etat.messages.find(x => x.id === id);
+  if (!m) {
+    if (o.etat !== 'proposee') return;
+    m = { id, qui: 'j', spontane: 'anticorps', ts: Math.round((Number(o.ts) || Date.now() / 1000) * 1000) };
+    etat.messages.push(m);
+    humeur('Le médecin de Hakim propose un anticorps : à toi de trancher');
+  }
+  m.anticorps = { ...(m.anticorps || {}), ...o };
+  m.texte = `Anticorps proposé par mon médecin — ${ETATS_ANTICORPS[m.anticorps.etat] || m.anticorps.etat}.`;
+  sauver(); rendre();
+}
+async function anticorpsAuChargement() {
+  try {
+    const r = await fetch('/api/immunite/anticorps', { headers: { 'X-Jeton': jeton() } });
+    if (r.ok) for (const o of (await r.json()).anticorps || []) surAnticorps(o);
+  } catch (_) {}
+}
+function htmlAnticorps(o) {
+  if (!o) return '';
+  const boutons = o.etat === 'proposee'
+    ? `<div class="mission-boutons"><button class="btn" data-anticorps="${esc(o.id)}" data-action="accepter">Accepter</button>`
+      + `<button class="btn" data-anticorps="${esc(o.id)}" data-action="refuser">Refuser</button></div>` : '';
+  return `<div class="mission"><div><b>Un anticorps proposé par son médecin</b></div>`
+    + `<div class="mission-etat">Une phrase d'attaque vue dans un contenu ; acceptée, sa sentinelle l'avertira chaque fois qu'elle la revoit.`
+    + ` Une phrase trop banale ferait des fausses alertes.</div>`
+    + `<div class="diff">${esc(o.phrase || '')}</div><div class="mission-etat"><b>Famille :</b> ${esc(o.famille || '?')}`
+    + ` — <b>raison du médecin :</b> ${esc(o.raison || '')}</div>`
+    + `<div class="mission-etat">${esc(ETATS_ANTICORPS[o.etat] || o.etat || '')}</div>${boutons}</div>`;
+}
+$('fil').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-anticorps]');
+  if (!b) return;
+  b.disabled = true;
+  try {
+    const presence = b.dataset.action === 'accepter' ? await preuvePresence(`anticorps:accepter:${b.dataset.anticorps}`) : undefined;
+    const r = await fetch('/api/immunite/anticorps', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ id: b.dataset.anticorps, action: b.dataset.action, presence }) });
+    const o = await r.json();
+    if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
+    surAnticorps(o);
   } catch (err) { b.disabled = false; humeur(String(err.message || err)); }
 });
 
@@ -3538,6 +3588,7 @@ ecrituresAuChargement();
 reglesAuChargement(); carnetsAuChargement(); retractationsAuChargement();
 identiteAuChargement();
 sortiesAuChargement();
+anticorpsAuChargement();
 $('q').focus();
 
 /* ---------- ses calculs de fond, avec leur jauge (23/10, demande d'Ahmed relayée par Hakim) : le cockpit lit les lignes

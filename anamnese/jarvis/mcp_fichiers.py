@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 
 import fichiers  # noqa: E402
+import immunite  # noqa: E402  (29/10, lot 2 : les noms et lignes rendus sans enveloppe passent par la sentinelle)
 
 mcp = FastMCP("fichiers")
 
@@ -39,7 +40,7 @@ def chercher_fichiers(nom: str) -> str:
     if len(nom.strip()) < 2:
         return "Donne au moins deux caractères du nom."
     trouves = fichiers.chercher(nom.strip())
-    return "\n".join(trouves) if trouves else f"Aucun fichier dont le nom contient « {nom} »."
+    return immunite.veiller("\n".join(trouves), "noms de fichiers d'Ahmed") if trouves else f"Aucun fichier dont le nom contient « {nom} »."
 
 
 @mcp.tool()
@@ -51,7 +52,7 @@ def lister_dossier(chemin: str = "~") -> str:
         d, elements = fichiers.lister(chemin)
     except fichiers.Refus as e:
         return f"Refusé : {e}"
-    return f"{d} :\n" + ("\n".join(elements) if elements else "(dossier vide)")
+    return immunite.veiller(f"{d} :\n" + ("\n".join(elements) if elements else "(dossier vide)"), "noms de fichiers d'Ahmed")
 
 
 def _heure(texte):
@@ -136,7 +137,8 @@ def chercher_dans_fichiers(texte: str, dossier: str = "~") -> str:
         trouves = fichiers.chercher_contenu(texte.strip(), dossier)
     except fichiers.Refus as e:
         return f"Refusé : {e}"
-    return "\n".join(trouves) if trouves else f"Aucun fichier texte ne contient « {texte} » sous {dossier}."
+    return (immunite.veiller("\n".join(trouves), "lignes de fichiers d'Ahmed") if trouves
+            else f"Aucun fichier texte ne contient « {texte} » sous {dossier}.")
 
 
 if __name__ == "__main__":
