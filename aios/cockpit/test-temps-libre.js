@@ -148,6 +148,8 @@ test('le processus : groupe détaché, tué en entier (SIGTERM puis SIGKILL), er
   assert.match(v, /if \(!enfant \|\| !\(enfant\.pid > 0\)\) return;/, 'process.kill(-0) tuerait le cockpit');
   assert.match(v, /'SIGKILL'/);
   assert.match(v, /\}, dureeTempsLibreMs\(\)\);/, 'une sieste finit son temps avant le réveil');
+  const debut = src.indexOf('const OUTILS_JARVIS = [');
+  assert.ok(src.slice(debut, src.indexOf(']', debut)).includes("'sieste_prendre'"), 'sieste_prendre est permis à Hakim');
   assert.match(v, /enfant\.on\('error'/);
   assert.match(v, /enfant\.on\('exit'/);
   assert.match(v, /if \(fini\) return;/);
