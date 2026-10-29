@@ -73,3 +73,15 @@ test('(25/10) au-delà de 10 agents en parallèle, le dernier lancé est arrêt�
   assert.equal(c.agentsLances.size, 10);
   assert.deepEqual(ecrits.filter(e => e.request && e.request.subtype === 'stop_task').map(e => e.request.task_id), ['a10']);
 });
+
+test('(29/10, 16:55) un agent réveillé par SendMessage n’est pas rayé par le texte rejoué de son ANCIENNE fin', () => {
+  // la fin « stopped » d'avant le redémarrage, rejouée au tour suivant, effaçait l'agent réveillé : le cerveau, cru sans
+  // agent, a été remplacé à l'allègement et l'agent est mort avec lui
+  const { ctx, c } = cockpit();
+  const id = 'a71091a44f5580351';
+  ctx.suivre(c, { type: 'system', subtype: 'task_started', task_id: id, task_type: 'local_agent', description: 'Codeur portée par contact' });
+  ctx.suivre(c, { type: 'user', isReplay: true, isSynthetic: true, message: { content: `<task-notification>\n<task-id>${id}</task-id>\n<status>stopped</status>` } });
+  assert.deepEqual([...ctx.tachesDe(c).keys()], [id], 'toujours au travail');
+  ctx.suivre(c, { type: 'system', subtype: 'task_notification', task_id: id, status: 'completed' });
+  assert.equal(ctx.tachesDe(c).size, 0, 'sa vraie fin, par le signal de claude');
+});

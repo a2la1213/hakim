@@ -21,8 +21,8 @@ function registre() {
   vm.createContext(ctx);
   vm.runInContext([prendre('ecrireAtomique'), ligne('function lireJson('), ligne('const REGISTRE_AGENTS_MAX'), ligne('const ID_AGENT'),
     ligne('const DEPART_AGENT'), prendre('lireRegistreAgents'), prendre('ecrireRegistreAgents'), prendre('marquerAgent'),
-    prendre('noterRegistre'), prendre('prenomAgent'), prendre('texteDepart'),
-    'this.f = { noterRegistre, marquerAgent, lireRegistreAgents, texteDepart };'].join('\n'), ctx);
+    prendre('noterRegistre'), prendre('prenomAgent'), prendre('texteDepart'), prendre('couperAgents'),
+    'this.f = { noterRegistre, marquerAgent, lireRegistreAgents, texteDepart, couperAgents };'].join('\n'), ctx);
   return { f: ctx.f, d };
 }
 const debut = (id, extra = {}) => ({ type: 'system', subtype: 'task_started', task_id: id, task_type: 'local_agent', subagent_type: 'codeur',
@@ -59,8 +59,9 @@ test('« JE PARS : … » en tête de son dernier message : il est parti de lui-
   const a = f.lireRegistreAgents().agents[ID];
   assert.equal(a.etat, 'parti'); assert.equal(a.depart, "j'ai fait le tour, merci pour tout.");
   assert.match(f.texteDepart(a), /est parti de lui-même : j'ai fait le tour/);
-  f.noterRegistre(debut(ID)); f.noterRegistre(fin(ID, 'completed', 'Rapport.\nJe pars plus tard, peut-être.'));
-  assert.equal(f.lireRegistreAgents().agents[ID].etat, 'dort', 'seulement en tête de son message');
+  const autre = 'acafe0000000000ff';
+  f.noterRegistre(debut(autre)); f.noterRegistre(fin(autre, 'completed', 'Rapport.\nJe pars : plus tard, peut-être.'));
+  assert.equal(f.lireRegistreAgents().agents[autre].etat, 'dort', 'seulement en tête de son message');
 });
 
 test('arrêté par stop_task : plus réveillable ; mort avec son cerveau : coupé', () => {
@@ -100,7 +101,7 @@ test('un agent réveillé est suivi comme en cours (le cerveau ne s’endort pas
 
 test('son cerveau a SendMessage, avec sa garde (PreToolUse) ; le crochet de la sentinelle reste', () => {
   const ctx = { JSON, path, ANAMNESE: '/anamnese', j: JSON.stringify, aideCle: () => '/x', JARVIS: '/j', AGENTS_PARALLELE_MAX: 10,
-    process: { execPath: '/bin/node' }, __dirname: '/cockpit' };
+    NODE_STABLE: '/bin/node', __dirname: '/cockpit' };
   vm.createContext(ctx);
   vm.runInContext([ligne('const CROCHET_IMMUNITE ='), ligne('const GARDE_MESSAGE ='), prendre('reglagesCerveau'), 'this.f = { reglagesCerveau };'].join('\n'), ctx);
   const r = JSON.parse(ctx.f.reglagesCerveau('abonnement'));
@@ -136,4 +137,53 @@ test('ses agents savent leur vie : sommeil, messages, prénom, départ ; le juge
   assert.match(ctx.a.juge.prompt, /jamais deux fois le même travail/);
   assert.doesNotMatch(ctx.a.codeur.prompt, /jamais deux fois le même travail/);
   assert.doesNotMatch(ctx.a.vierge.prompt, /JE PARS/);
+});
+
+// ---- relecture Opus (29/10) ----
+test('relecture : « Je pars du principe que… » n’est pas un départ ; il faut les deux-points', () => {
+  const { f } = registre();
+  f.noterRegistre(debut(ID)); f.noterRegistre(fin(ID, 'completed', 'Je pars du principe que la formule est juste.'));
+  assert.equal(f.lireRegistreAgents().agents[ID].etat, 'dort');
+  f.noterRegistre(debut(ID)); f.noterRegistre(fin(ID, 'completed', 'JE PARS : merci.'));
+  assert.equal(f.lireRegistreAgents().agents[ID].etat, 'parti');
+});
+
+test('relecture : un agent parti ou arrêté que claude relance quand même reste parti ou arrêté, et le cockpit le dit', () => {
+  const { f } = registre();
+  f.noterRegistre(debut(ID)); f.noterRegistre(fin(ID, 'completed', 'JE PARS : assez.'));
+  const r = f.noterRegistre(debut(ID));
+  assert.equal(r.evenement, 'reveil_refuse');
+  assert.equal(f.lireRegistreAgents().agents[ID].etat, 'parti');
+  f.noterRegistre(fin(ID, 'completed', 'Bon, je réponds quand même.'));
+  assert.equal(f.lireRegistreAgents().agents[ID].etat, 'parti');
+  const c = prendre('cerveauLancer');
+  assert.match(c, /vie\.evenement === 'reveil_refuse'[\s\S]{0,500}stop_task/);
+});
+
+test('relecture : les agents morts avec leur cerveau passent « coupé » (à sa fermeture et au démarrage du cockpit)', () => {
+  const { f } = registre();
+  f.noterRegistre(debut(ID)); f.noterRegistre(debut('acafe0000000000ff', { session_id: 'sess-2' }));
+  f.couperAgents('sess-1');
+  const a = f.lireRegistreAgents().agents;
+  assert.equal(a[ID].etat, 'coupe'); assert.equal(a['acafe0000000000ff'].etat, 'travaille');
+  f.couperAgents(null);
+  assert.equal(f.lireRegistreAgents().agents['acafe0000000000ff'].etat, 'coupe');
+  assert.match(prendre('cerveauLancer'), /couperAgents\(c\.session\)/);
+  assert.match(src, /\nconst JARVIS_REGISTRE_AGENTS[\s\S]*\ncouperAgents\(null\);/);
+});
+
+test('relecture : la garde échoue fermée (onFailure block), node par un chemin stable ; les autres sessions coupées par claude lui-même', () => {
+  const ctx = { JSON, path, ANAMNESE: '/anamnese', j: JSON.stringify, aideCle: () => '/x', JARVIS: '/j', AGENTS_PARALLELE_MAX: 10,
+    NODE_STABLE: '/usr/local/bin/node', __dirname: '/cockpit' };
+  vm.createContext(ctx);
+  vm.runInContext([ligne('const CROCHET_IMMUNITE ='), ligne('const GARDE_MESSAGE ='), prendre('reglagesCerveau'), 'this.f = { reglagesCerveau };'].join('\n'), ctx);
+  const h = JSON.parse(ctx.f.reglagesCerveau('abonnement')).hooks.PreToolUse[0].hooks[0];
+  assert.equal(h.onFailure, 'block');
+  assert.match(h.command, /'\/usr\/local\/bin\/node' '\/cockpit\/garde-message\.js'$/);
+  assert.match(prendre('envDuCerveau'), /CLAUDE_CODE_HARBOR_KITE = '0'/);
+  assert.match(src, /const NODE_STABLE = fs\.existsSync\('\/usr\/local\/bin\/node'\) \? '\/usr\/local\/bin\/node' : process\.execPath;/);
+});
+
+test('relecture : un agent coupé, Hakim le réveille d’abord (il l’a fait le 29/10), avant de le relancer', () => {
+  assert.match(prendre('texteAgentsCoupes'), /SendMessage/);
 });

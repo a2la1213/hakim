@@ -197,9 +197,11 @@ async function basculerListe(nom, etatVoulu, lieux) {
 const LABELS = { demon: 'com.anamnese.daemon', cockpit: 'com.aios.cockpit' };
 // (relecture finale, I6) un tour peut durer jusqu'à 2 h (JARVIS_DUREE_MAX) : au-delà de 2 h 15, c'est un tour oublié
 const TOUR_OUBLIE_MS = 135 * 60_000;
-function calme({ tours, maman, testsChantier }, maintenant = Date.now()) {
+// (29/10, Ahmed : « s'il y a un agent, elle doit m'interdire de relancer le truc, quel que soit X ») travail : un agent ou
+// une tâche de fond travaille encore (travail-en-cours.js) ; une relance les tuerait
+function calme({ tours, maman, testsChantier, travail }, maintenant = Date.now()) {
   const enCours = [...(tours || new Map()).values()].some(t => Number.isFinite(t && t.debut) && maintenant - t.debut < TOUR_OUBLIE_MS);
-  return !enCours && !maman && !testsChantier;
+  return !enCours && !maman && !testsChantier && !travail;
 }
 function relances(lieux) {
   let noms = []; try { noms = fs.readdirSync(lieux.relances).filter(n => /^[0-9a-z-]+\.json$/.test(n)); } catch (_) {}
@@ -217,15 +219,20 @@ function refuserRelance(id, lieux) {
   ecrireRelance(lieux, { ...r, etat: 'refusée' });
   noter(lieux, { type: 'relance', etape: 'refusée', id, quoi: r.quoi });
 }
-async function accepterRelance(id, lieux, { estCalme, attendre, pas_ms = 2000, calme_ms = 20000, max_ms = 600000, uid, lancer }) {
+async function accepterRelance(id, lieux, { estCalme, attendre, pas_ms = 2000, calme_ms = 20000, max_ms = 600000, uid, lancer, pourquoi, signaler }) {
   const r = relance(id, lieux);
   if (!r || r.etat !== 'proposée') throw new Error('aucune relance en attente avec cet identifiant');
   ecrireRelance(lieux, { ...r, etat: 'acceptée' });
   noter(lieux, { type: 'relance', etape: 'acceptée', id, quoi: r.quoi });
-  let calmeDepuis = null;
+  let calmeDepuis = null, dit = '';
   for (let t = 0; t <= max_ms; t += pas_ms) {
     if (estCalme()) { calmeDepuis = calmeDepuis === null ? t : calmeDepuis; if (t - calmeDepuis >= calme_ms) break; }
-    else calmeDepuis = null;
+    else {
+      calmeDepuis = null;
+      // (29/10) Ahmed voit pourquoi elle attend : qui travaille encore (une fois par raison)
+      const raison = pourquoi ? String(pourquoi() || '') : '';
+      if (raison && raison !== dit && signaler) { dit = raison; signaler(raison); }
+    }
     if (t + pas_ms > max_ms) {
       ecrireRelance(lieux, { ...r, etat: 'pas de calme' });
       noter(lieux, { type: 'relance', etape: 'pas de calme', id, quoi: r.quoi });

@@ -89,10 +89,26 @@ _VERSION = re.compile(r"(?:\s+(?:v\s?\d+|version\s*\d+|bis|ter|corrigee?s?|revue
 _ETATS = {"travaille": "au travail", "dort": "endormi", "parti": "parti de lui-même", "arrete": "arrêté", "coupe": "coupé"}
 
 
+try:                                                # les sosies (cyrillique, grec…) de la sentinelle
+    from immunite import _SOSIES
+except Exception:                                   # noqa: BLE001
+    _SOSIES = {}
+
+
 def _plat(texte):
+    """(relecture Opus) toutes les écritures gardées (arabe, hébreu…), accents retirés, sosies ramenés au latin."""
     t = unicodedata.normalize("NFKD", str(texte or "")).casefold()
-    t = "".join(c for c in t if not unicodedata.combining(c))
-    return re.sub(r"[^0-9a-z]+", " ", t).strip()
+    t = "".join(c for c in t if not unicodedata.combining(c)).translate(_SOSIES)
+    return re.sub(r"[\W_]+", " ", t).strip()
+
+
+def _ecritures(texte):
+    """Les écritures des lettres d'un prénom (LATIN, ARABIC, CYRILLIC…) : un prénom n'en mélange pas deux."""
+    return {unicodedata.name(c, "?").split()[0] for c in str(texte) if c.isalpha()}
+
+
+class _Illisible(Exception):
+    pass
 
 
 def _registre(dossier=None):
@@ -104,13 +120,21 @@ def _registre(dossier=None):
         return {}, None
 
 
-def _lire_fiches(d):
+def _lire_fiches(d, strict=False):
+    """strict (avant d'écrire) : une fiche illisible n'est jamais écrasée (relecture Opus : elle effaçait les prénoms,
+    les travaux jugés et les récompenses)."""
     try:
-        f = json.loads((d / "agents-fiches.json").read_text(encoding="utf-8"))
-        a = f.get("agents") if isinstance(f, dict) else None
-        return a if isinstance(a, dict) else {}
-    except (OSError, ValueError):
+        f = json.loads((Path(d) / "agents-fiches.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
         return {}
+    except (OSError, ValueError):
+        if strict:
+            raise _Illisible()
+        return {}
+    a = f.get("agents") if isinstance(f, dict) else None
+    if not isinstance(a, dict) and strict:
+        raise _Illisible()
+    return a if isinstance(a, dict) else {}
 
 
 def _changer_fiches(d, changer):
@@ -118,13 +142,19 @@ def _changer_fiches(d, changer):
     d = Path(d)
     with open(d / "agents-fiches.lock", "a") as verrou:
         fcntl.flock(verrou, fcntl.LOCK_EX)
-        fiches = _lire_fiches(d)
+        try:
+            fiches = _lire_fiches(d, strict=True)
+        except _Illisible:
+            return ("Refusé : la fiche de tes agents (agents-fiches.json) est illisible ; je n'écris rien par-dessus. "
+                    "Dis-le à Ahmed ou à Claude Code.")
         reponse = changer(fiches)
         if not reponse.startswith("Refusé"):
             tmp = d / f"agents-fiches.json.{os.getpid()}.tmp"
             fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "w", encoding="utf-8") as h:
                 json.dump({"agents": fiches, "maj_ms": int(time.time() * 1000)}, h, ensure_ascii=False)
+                h.flush()
+                os.fsync(h.fileno())
             os.replace(tmp, d / "agents-fiches.json")
         return reponse
 
@@ -160,8 +190,9 @@ def nommer(agent, prenom, dossier=None, avec_naissance=False):
     if not a:
         return f"Refusé : je ne trouve pas « {agent} » parmi tes agents (agents_lister)."
     p = unicodedata.normalize("NFC", str(prenom or "").strip())
-    if not (2 <= len(p) <= 30 and _PRENOM.fullmatch(p)):
-        return "Refusé : un prénom, ce sont des lettres (avec au plus une espace, un tiret ou une apostrophe entre elles), de 2 à 30."
+    if not (2 <= len(p) <= 30 and _PRENOM.fullmatch(p)) or len(_ecritures(p)) != 1:
+        return ("Refusé : un prénom, ce sont des lettres d'une seule écriture (avec au plus une espace, un tiret ou une "
+                "apostrophe entre elles), de 2 à 30.")
     try:
         reserves = {_plat(x) for x in json.loads((d / "prenoms-reserves.json").read_text(encoding="utf-8"))}
     except (OSError, ValueError, TypeError):
@@ -174,7 +205,7 @@ def nommer(agent, prenom, dossier=None, avec_naissance=False):
         f = fiches.setdefault(a["id"], {})
         if f.get("prenom"):
             return f"Refusé : il s'appelle déjà {f['prenom']}, et garde le prénom qu'il a choisi."
-        pris = [i for i, x in fiches.items() if _plat(x.get("prenom_base", "")) == _plat(p)]
+        pris = [i for i, x in fiches.items() if i != a["id"] and x.get("prenom_base") and _plat(x["prenom_base"]) == _plat(p)]
         nom = p
         if pris and not avec_naissance:
             autre = agents.get(pris[0], {})
@@ -263,15 +294,17 @@ def lister_vies(dossier=None, n=30):
         etat = a.get("etat")
         if etat == "parti":
             groupes["parti"].append(ligne + f" : « {a.get('depart', '')} »")
-        elif etat in ("travaille", "dort") and session and a.get("session") != session:
+        elif etat in ("travaille", "dort", "coupe") and session and a.get("session") != session:
             groupes["ancien"].append(ligne)
         elif etat in ("travaille", "dort"):
             groupes[etat].append(ligne)
+        elif etat == "coupe":                       # mort avec son cerveau : il se réveille (Hakim l'a fait le 29/10)
+            groupes["dort"].append(ligne + " (coupé par un redémarrage)")
         else:
             groupes["autre"].append(ligne + f" ({_ETATS.get(etat, etat)})")
     titres = {"travaille": "Au travail (tes messages leur arrivent entre deux étapes)",
               "dort": "Endormis, réveillables avec SendMessage (leur numéro)",
               "ancien": "Endormis dans une ancienne conversation (plus joignables depuis l'allègement)",
-              "parti": "Partis d'eux-mêmes (on ne les réveille plus)", "autre": "Arrêtés ou coupés"}
+              "parti": "Partis d'eux-mêmes (on ne les réveille plus)", "autre": "Arrêtés (plus réveillables)"}
     blocs = [f"{titres[k]} :\n" + "\n".join(v) for k, v in groupes.items() if v]
     return "\n\n".join(blocs) if blocs else "Aucun agent au registre."

@@ -65,8 +65,9 @@ test('un juge endormi ne se réveille que pour un travail déclaré APRÈS son d
   const m = monde(); const fin = Date.now() - 60000; m.fil(JUGE, fin);
   m.registre({ [JUGE]: { id: JUGE, type: 'juge', etat: 'dort' } });
   assert.match(m.garder(m.appel(JUGE)).refus, /agent_juger/);
+  m.registre({ [JUGE]: { id: JUGE, type: 'juge', etat: 'dort', reveils: 1 } });
   m.fiches({ [JUGE]: { dossiers: [{ cle: 'portee', ts_ms: fin - 1000 }] } });
-  assert.match(m.garder(m.appel(JUGE)).refus, /agent_juger/, 'un dossier déclaré avant son dernier travail ne compte pas');
+  assert.match(m.garder(m.appel(JUGE)).refus, /agent_juger/, 'un travail, deux passages (son travail, son dernier mot) : plus de réveil');
   m.fiches({ [JUGE]: { dossiers: [{ cle: 'portee', ts_ms: fin - 1000 }, { cle: 'graines', ts_ms: Date.now() }] } });
   assert.equal(m.garder(m.appel(JUGE)).refus, null);
   m.registre({ [JUGE]: { id: JUGE, type: 'juge', etat: 'travaille' } });
@@ -101,4 +102,31 @@ test('chaque décision est notée (pour Ahmed), sans le texte du message', () =>
   assert.equal(l.length, 2);
   assert.equal(l[0].ok, true); assert.equal(l[1].ok, false);
   assert.ok(!JSON.stringify(l).includes('merci'));
+});
+
+// ---- relecture Opus (29/10) ----
+test('relecture : un juge dort après chaque travail ; un réveil pour son dernier mot, puis il faut un travail neuf', () => {
+  const m = monde(); m.fil(JUGE, Date.now() - 60000);
+  m.registre({ [JUGE]: { id: JUGE, type: 'juge', etat: 'dort', reveils: 0, session: 'sess-1' } });
+  m.fiches({ [JUGE]: { dossiers: [{ cle: 'portee', ts_ms: Date.now() }] } });
+  assert.equal(m.garder(m.appel(JUGE)).refus, null, 'un travail déclaré (même après coup) : un réveil, son dernier mot');
+  m.registre({ [JUGE]: { id: JUGE, type: 'juge', etat: 'dort', reveils: 1, session: 'sess-1' } });
+  assert.match(m.garder(m.appel(JUGE)).refus, /agent_juger/, 'deux fois le même travail : non');
+  m.fiches({ [JUGE]: { dossiers: [{ cle: 'portee', ts_ms: 1 }, { cle: 'graines', ts_ms: 2 }] } });
+  assert.equal(m.garder(m.appel(JUGE)).refus, null);
+});
+
+test('relecture : un juge absent du registre est reconnu par son fil (meta.json de claude) et suit la règle', () => {
+  const m = monde(); m.fil(JUGE);
+  const dir = path.dirname(m.appel(JUGE).transcript_path);
+  fs.writeFileSync(path.join(dir, 'sess-1', 'subagents', `agent-${JUGE}.meta.json`), JSON.stringify({ agentType: 'juge' }));
+  assert.match(m.garder(m.appel(JUGE)).refus, /agent_juger/);
+});
+
+test('relecture : la limite des dix se compte dans SA conversation (celle du crochet)', () => {
+  const m = monde(); m.fil(ID);
+  const agents = { [ID]: { id: ID, type: 'codeur', etat: 'dort' } };
+  for (let i = 0; i < 10; i++) { const id = 'a' + String(i).padStart(16, '0'); agents[id] = { id, type: 'codeur', etat: 'travaille', session: 'autre' }; }
+  m.registre(agents);
+  assert.equal(m.garder(m.appel(ID)).refus, null, 'dix au travail dans une AUTRE conversation ne comptent pas');
 });

@@ -108,3 +108,44 @@ def test_la_garde_de_ses_messages_lui_est_fermee():
     src = (Path(__file__).resolve().parents[1] / "jarvis" / "mcp_terminal.py").read_text(encoding="utf-8")
     for outil in ("def agent_prenom(", "def agent_juger(", "def agent_trouvaille("):
         assert outil in src, outil
+
+
+# ---- relecture Opus (29/10) ----
+def test_relecture_une_fiche_illisible_n_est_jamais_ecrasee(tmp_path):
+    d = _registre(tmp_path)
+    A.nommer(C1, "Élise", d)
+    (d / "agents-fiches.json").write_text('{"agents": {"' + C1 + '": {"prenom": "Él')     # tronquée (redémarrage)
+    assert A.nommer(J1, "Marc", d).startswith("Refusé")
+    assert A.juger(J1, "Graines", d).startswith("Refusé")
+    assert (d / "agents-fiches.json").read_text().endswith('"Él'), "rien n'est écrit par-dessus"
+
+
+def test_relecture_les_sosies_et_les_melanges_d_ecritures_sont_refuses(tmp_path):
+    d = _registre(tmp_path)
+    assert A.nommer(C1, "Hаkim", d).startswith("Refusé"), "un а cyrillique ne contourne pas les prénoms réservés"
+    A.nommer(C1, "Léa", d)
+    assert A.nommer(J1, "Lеa", d).startswith("Refusé"), "un е cyrillique ne fait pas un autre prénom"
+
+
+def test_relecture_les_prenoms_et_les_travaux_dans_d_autres_ecritures(tmp_path):
+    d = _registre(tmp_path)
+    assert not A.nommer(C1, "يوسف", d).startswith("Refusé"), "un prénom arabe, le premier : accepté"
+    assert A.nommer(J1, "يوسف", d).startswith("Refusé"), "le même : déjà porté"
+    assert not A.nommer(J1, "Мария", d).startswith("Refusé")
+    assert not A.juger(J1, "Torah : בראשית", d).startswith("Refusé")
+    assert not A.juger(J1, "Torah : שמות", d).startswith("Refusé"), "deux livres différents, deux travaux"
+    assert A.juger(J1, "torah : בראשית", d).startswith("Refusé")
+    assert not A.juger(J2, "سورة الفاتحة", d).startswith("Refusé"), "un titre arabe n'est pas vide"
+
+
+def test_relecture_un_agent_coupe_reste_reveillable_dans_la_liste(tmp_path):
+    d = _registre(tmp_path, **{C1: "coupe"})
+    t = A.lister(d)
+    bloc = t.split("\n\n")
+    assert any("réveillable" in b.lower() and "Portée par contact" in b for b in bloc)
+
+
+def test_relecture_ses_regles_d_agents_lui_sont_fermees():
+    import liste_ouverte
+    assert "jarvis/agents_hakim.py" in liste_ouverte.TOUJOURS_FERMES["anamnese"]
+    assert "travail-en-cours.js" in liste_ouverte.TOUJOURS_FERMES["cockpit"]

@@ -3,10 +3,12 @@
    agents, ceux de sa conversation (leur fil est dans <conversation>/subagents/, écrit par claude lui-même).
    - « to » : un numéro d'agent (a + 16 chiffres hexadécimaux), jamais un nom, « main » ou une autre session ;
    - un agent parti de lui-même (« JE PARS », Ahmed : « dès qu'il est saoulé, il peut partir ») n'est plus réveillé ;
-   - un juge ne se réveille que pour un travail déclaré (agent_juger) après son dernier travail : un juge ne juge
-     jamais deux fois le même travail ;
+   - un juge ne juge jamais deux fois le même travail : chaque travail déclaré (agent_juger) lui vaut deux passages,
+     son jugement et son dernier mot (relecture Opus du 29/10 : compter, pas comparer des heures) ;
    - réveiller un agent quand AGENTS_PARALLELE_MAX travaillent déjà : refusé, sans tuer personne.
-   Tout ce qui n'est pas lisible est refusé. Chaque décision est notée dans messages-agents.jsonl, sans le message.
+   Un appel illisible est refusé ; un registre illisible ne bloque pas un agent de sa conversation (son fil prouve qu'il
+   est à lui). Si ce crochet ne peut pas tourner, claude bloque l'envoi (onFailure « block », server.js).
+   Chaque décision est notée dans messages-agents.jsonl, sans le message.
    Fermé aux chantiers de Hakim (liste_ouverte.TOUJOURS_FERMES). */
 'use strict';
 const fs = require('fs');
@@ -29,8 +31,7 @@ function decider(e) {
   const tp = typeof e.transcript_path === 'string' ? e.transcript_path : '';
   if (!path.isAbsolute(tp) || !tp.endsWith('.jsonl')) return 'garde : ta conversation est introuvable';
   const fil = path.join(tp.slice(0, -'.jsonl'.length), 'subagents', `agent-${to}.jsonl`);
-  let stat;
-  try { stat = fs.statSync(fil); } catch (_) {
+  try { fs.statSync(fil); } catch (_) {
     return `${to} n'est pas un agent de ta conversation actuelle (ceux d'une conversation allégée ne peuvent plus être réveillés)`;
   }
   const registre = objet(objet(lireJson(path.join(JARVIS, 'registre-agents.json'))).agents);
@@ -39,12 +40,16 @@ function decider(e) {
   if (a.etat === 'parti') return `${nom} est parti de lui-même${a.depart ? ` (« ${String(a.depart).slice(0, 200)} »)` : ''} : on respecte son choix, on ne le réveille plus`;
   if (a.etat === 'arrete') return `${nom} a été arrêté : un agent arrêté ne peut plus être réveillé`;
   if (a.etat === 'travaille') return null;                     // pendant son travail : livré à sa prochaine étape
-  const au_travail = Object.values(registre).filter(x => objet(x).etat === 'travaille' && (!a.session || objet(x).session === a.session)).length;
+  const session = typeof e.session_id === 'string' ? e.session_id : '';
+  const au_travail = Object.values(registre).filter(x => objet(x).etat === 'travaille' && objet(x).session === session).length;
   if (au_travail >= PARALLELE_MAX) return `${au_travail} de tes agents travaillent déjà (${PARALLELE_MAX} au plus) : attends qu'un d'eux s'endorme pour réveiller ${nom}`;
-  if (a.type === 'juge') {
+  // son type : le registre, sinon ce que claude a écrit à sa naissance (meta.json)
+  const type = a.type || objet(lireJson(fil.replace(/\.jsonl$/, '.meta.json'))).agentType;
+  if (type === 'juge') {
     const dossiers = objet(objet(objet(lireJson(path.join(JARVIS, 'agents-fiches.json'))).agents)[to]).dossiers;
-    const dernier = Array.isArray(dossiers) ? Math.max(0, ...dossiers.map(d => Number(objet(d).ts_ms) || 0)) : 0;
-    if (!(dernier > stat.mtimeMs)) return `réveiller ${nom} demande un NOUVEAU travail à juger : déclare-le d'abord avec agent_juger (un juge ne juge jamais deux fois le même travail)`;
+    const passages = (Number(a.reveils) || 0) + 1;
+    if (!(Array.isArray(dossiers) && dossiers.length * 2 > passages))
+      return `réveiller ${nom} demande un NOUVEAU travail à juger : déclare-le d'abord avec agent_juger (un juge ne juge jamais deux fois le même travail ; après chaque travail, un seul réveil pour son dernier mot)`;
   }
   return null;
 }
