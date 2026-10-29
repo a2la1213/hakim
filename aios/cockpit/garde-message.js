@@ -22,12 +22,24 @@ const ID = /^a[0-9a-f]{16}$/;
 function lireJson(f) { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_) { return null; } }
 const objet = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {});
 
-// le refus (une phrase pour Hakim), ou null : le message passe
+// le refus (une phrase pour Hakim), ou null : le message passe. En mode messager (messager.js : une ancienne conversation
+// rouverte pour porter UN message), seulement la cible imposée, et une seule fois.
 function decider(e) {
+  const refus = examiner(e);
+  if (refus) return refus;
+  const uneFois = process.env.JARVIS_MESSAGER_UNE_FOIS;
+  if (uneFois) {
+    try { fs.writeFileSync(uneFois, String(Date.now()), { flag: 'wx', mode: 0o600 }); }
+    catch (_) { return 'le messager ne porte un message qu’une seule fois'; }
+  }
+  return null;
+}
+function examiner(e) {
   if (!e || typeof e !== 'object' || e.tool_name !== 'SendMessage') return 'garde : appel inattendu';
   const entree = objet(e.tool_input);
   const to = typeof entree.to === 'string' ? entree.to : '';
   if (!ID.test(to)) return `tu n'écris qu'à TES agents, par leur numéro (agents_lister) : « ${to.slice(0, 60)} » n'en est pas un`;
+  if (process.env.JARVIS_MESSAGER_CIBLE && to !== process.env.JARVIS_MESSAGER_CIBLE) return 'le messager ne porte qu’à l’agent demandé';
   const tp = typeof e.transcript_path === 'string' ? e.transcript_path : '';
   if (!path.isAbsolute(tp) || !tp.endsWith('.jsonl')) return 'garde : ta conversation est introuvable';
   const fil = path.join(tp.slice(0, -'.jsonl'.length), 'subagents', `agent-${to}.jsonl`);
@@ -61,10 +73,19 @@ function noter(e, to, refus) {
   } catch (_) {}
 }
 
+// (relecture Opus du messager) dans le messager, le fil principal ne fait que porter : SendMessage seul ; les outils de
+// l'agent réveillé (claude marque ses appels d'un agent_id) passent
+function seulementAgents(e) {
+  if (!e || typeof e !== 'object') return 'garde : appel illisible';
+  if (e.tool_name === 'SendMessage' || (typeof e.agent_id === 'string' && e.agent_id)) return null;
+  return 'le messager ne fait que porter ton message';
+}
+
 function principal(brut) {
   let e = null, refus;
-  try { e = JSON.parse(brut); refus = decider(e); } catch (_) { refus = 'garde : appel illisible'; }
-  noter(e, objet(objet(e).tool_input).to, refus);
+  const agents = process.argv.includes('--seulement-agents');
+  try { e = JSON.parse(brut); refus = agents ? seulementAgents(e) : decider(e); } catch (_) { refus = 'garde : appel illisible'; }
+  if (!agents || refus) noter(e, objet(objet(e).tool_input).to || objet(e).tool_name, refus);
   if (refus) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse',
     permissionDecision: 'deny', permissionDecisionReason: `Garde de tes messages : ${refus}.` } }));
 }

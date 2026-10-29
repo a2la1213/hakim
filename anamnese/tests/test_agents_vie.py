@@ -149,3 +149,29 @@ def test_relecture_ses_regles_d_agents_lui_sont_fermees():
     import liste_ouverte
     assert "jarvis/agents_hakim.py" in liste_ouverte.TOUJOURS_FERMES["anamnese"]
     assert "travail-en-cours.js" in liste_ouverte.TOUJOURS_FERMES["cockpit"]
+
+
+# ---- le messager (29/10, Ahmed : « je veux tout ») : un agent d'avant l'allègement
+def test_messager_une_demande_pour_un_agent_d_avant(tmp_path):
+    d = _registre(tmp_path, **{J2: "dort"})                     # J2 : conversation s0, pas la courante (s1)
+    r = A.demander_messager("Juge des graines", "Merci pour ton verdict ; une question encore.", d)
+    assert not r.startswith("Refusé") and "messager" in r
+    q = json.loads((d / "messager-demandes.jsonl").read_text().splitlines()[-1])
+    assert q["id"] == J2 and q["message"].startswith("Merci") and q["demande"]
+
+
+def test_messager_les_refus(tmp_path):
+    d = _registre(tmp_path)
+    assert "SendMessage" in A.demander_messager(C1, "x", d), "de ta conversation : SendMessage directement"
+    assert A.demander_messager(C2, "x", d).startswith("Refusé"), "parti de lui-même"
+    assert A.demander_messager(J2, "x", d).startswith("Refusé"), "il travaille encore"
+    assert A.demander_messager("personne", "x", d).startswith("Refusé")
+    d2 = _registre(tmp_path / "b" if (tmp_path / "b").mkdir() is None else tmp_path, **{J2: "coupe"})
+    assert A.demander_messager(J2, "  ", d2).startswith("Refusé")
+    assert A.demander_messager(J2, "x" * 4001, d2).startswith("Refusé")
+    assert not (d / "messager-demandes.jsonl").exists() or len((d / "messager-demandes.jsonl").read_text().splitlines()) == 0
+
+
+def test_messager_l_outil_existe():
+    src = (Path(__file__).resolve().parents[1] / "jarvis" / "mcp_terminal.py").read_text(encoding="utf-8")
+    assert "def agent_reveiller_ancien(" in src

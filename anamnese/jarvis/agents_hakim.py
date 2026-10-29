@@ -308,3 +308,35 @@ def lister_vies(dossier=None, n=30):
               "parti": "Partis d'eux-mêmes (on ne les réveille plus)", "autre": "Arrêtés (plus réveillables)"}
     blocs = [f"{titres[k]} :\n" + "\n".join(v) for k, v in groupes.items() if v]
     return "\n\n".join(blocs) if blocs else "Aucun agent au registre."
+
+
+# ---- le messager (29/10, Ahmed : « je veux tout ») : un agent d'avant l'allègement, réveillé à part par le cockpit
+MESSAGE_MAX = 4000
+
+
+def demander_messager(agent, message, dossier=None):
+    """Confie au cockpit un message pour un agent d'une conversation d'AVANT l'allègement : il rouvre cette conversation
+    à part, le lui porte (SendMessage, une fois), et sa réponse revient dans un bloc [Réponses de tes agents d'avant…].
+    Le cockpit revérifie tout (une conversation qu'un cerveau tient encore, un messager déjà en route)."""
+    d = Path(dossier or JARVIS)
+    a = trouver_au_registre(agent, d)
+    if not a:
+        return f"Refusé : je ne trouve pas « {agent} » parmi tes agents (agents_lister)."
+    if a.get("etat") == "parti":
+        return f"Refusé : il est parti de lui-même (« {a.get('depart', '')} ») ; on respecte son choix."
+    if a.get("etat") == "arrete":
+        return "Refusé : il a été arrêté, il ne peut plus être réveillé."
+    _, session = _registre(d)
+    if a.get("session") == session:
+        return f"Pas besoin du messager : il est de ta conversation actuelle, écris-lui directement avec SendMessage (to : {a['id']})."
+    if a.get("etat") == "travaille":
+        return "Refusé : il travaille encore, dans son ancienne conversation ; attends sa fin."
+    m = str(message or "").strip()
+    if not m or len(m) > MESSAGE_MAX:
+        return f"Refusé : un message de 1 à {MESSAGE_MAX} caractères."
+    demande = uuid.uuid4().hex[:12]
+    with (d / "messager-demandes.jsonl").open("a", encoding="utf-8") as h:
+        h.write(json.dumps({"ts": time.time(), "id": a["id"], "message": m, "demande": demande}, ensure_ascii=False) + "\n")
+    return (f"Confié au messager ({demande}) : il rouvre l'ancienne conversation de « {a.get('description', '?')} » et lui porte "
+            "ton message. Sa réponse arrivera dans un bloc [Réponses de tes agents d'avant…] (quelques minutes : il relit "
+            "toute l'ancienne conversation). Dis-le à Ahmed en une phrase.")

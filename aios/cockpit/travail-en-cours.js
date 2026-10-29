@@ -26,19 +26,28 @@ function travailEnCours(jarvis) {
     if (t.etat === 'en cours' && Number.isInteger(t.superviseur) && vivant(t.superviseur))
       taches.push({ id: String(t.id || n.slice(0, -5)), commande: String(t.commande || '').slice(0, 80) });
   }
-  return { agents: [...agents].map(([id, description]) => ({ id, description })), taches };
+  // (relecture du messager) un messager en route : une ancienne conversation rouverte, son agent peut-être au travail
+  const messagers = [];
+  let fichiers = [];
+  try { fichiers = fs.readdirSync(path.join(jarvis, 'messager')).filter(n => n.endsWith('.pid.json')); } catch (_) {}
+  for (const n of fichiers) {
+    const m = objet(lireJson(path.join(jarvis, 'messager', n)));
+    if (Number.isInteger(m.pid) && vivant(m.pid)) messagers.push({ id: String(m.id || '?'), session: String(m.session || '') });
+  }
+  return { agents: [...agents].map(([id, description]) => ({ id, description })), taches, messagers };
 }
 
 function texteTravail(t) {
   const morceaux = [];
   if (t.agents.length) morceaux.push(`${t.agents.length} agent${t.agents.length > 1 ? 's' : ''} au travail (${t.agents.map(a => `« ${a.description} »`).join(', ')})`);
   if (t.taches.length) morceaux.push(`${t.taches.length} tâche${t.taches.length > 1 ? 's' : ''} de fond (${t.taches.map(x => x.id).join(', ')})`);
+  if ((t.messagers || []).length) morceaux.push(`${t.messagers.length} messager${t.messagers.length > 1 ? 's' : ''} en route`);
   return morceaux.join(' et ');
 }
 
 if (require.main === module) {
   const t = travailEnCours(process.env.JARVIS_DIR || path.join(os.homedir(), 'AIOS', 'jarvis'));
-  if (t.agents.length || t.taches.length) {
+  if (t.agents.length || t.taches.length || t.messagers.length) {
     console.log(`NON : ${texteTravail(t)}. Une relance les tuerait : on attend qu'ils aient fini ou se soient endormis.`);
     process.exit(1);
   }

@@ -107,6 +107,15 @@ def agent_juger(agent: str, dossier: str) -> str:
 
 
 @mcp.tool()
+def agent_reveiller_ancien(agent: str, message: str) -> str:
+    """Écrire à un de tes agents d'AVANT l'allègement (agents_lister : « ancienne conversation »), que SendMessage ne joint
+    plus (Ahmed, 29/10 : « je veux tout »). Le cockpit rouvre son ancienne conversation à part et lui porte ton message ;
+    sa réponse t'arrive dans un bloc [Réponses de tes agents d'avant…]. Chaque réveil relit l'ancienne conversation
+    (~300 k jetons) : Ahmed l'accepte. Pour un agent de ta conversation actuelle, SendMessage directement."""
+    return agents_hakim.demander_messager(agent, message)
+
+
+@mcp.tool()
 def agent_trouvaille(agent: str, quoi: str, confirmee_par: str, rien_a_signaler: bool = False) -> str:
     """La récompense d'un agent (Ahmed, 29/10) : note une trouvaille CONFIRMÉE ensuite (par un test, par Ahmed, par le
     résultat), ou un « rien à signaler » juste (rien_a_signaler=True). Jamais une trouvaille non confirmée."""

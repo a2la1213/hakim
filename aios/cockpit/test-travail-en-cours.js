@@ -18,7 +18,7 @@ const cli = (d) => spawnSync(process.execPath, [path.join(__dirname, 'travail-en
 
 test('personne ne travaille : oui', () => {
   const d = jarvis();
-  assert.deepEqual(travailEnCours(d), { agents: [], taches: [] });
+  assert.deepEqual(travailEnCours(d), { agents: [], taches: [], messagers: [] });
   const r = cli(d);
   assert.equal(r.status, 0); assert.match(r.stdout, /^OUI/);
 });
@@ -62,4 +62,15 @@ test('branché : la relance acceptée compte les agents et les tâches, et le di
   assert.match(src, /travail: travailOccupe\(\)/);
   assert.match(src, /pourquoi: \(\) => texteTravail\(travailEnCours\(JARVIS\)\)/);
   assert.match(src, /signaler: \(t\) => ajouterAConversation\(/);
+});
+
+test('(relecture du messager) un messager en route compte comme un travail : pas de relance', () => {
+  const d = jarvis();
+  fs.mkdirSync(path.join(d, 'messager'));
+  fs.writeFileSync(path.join(d, 'messager', 'd1.pid.json'), JSON.stringify({ pid: process.pid, id: 'a7514e29068e49980', session: 's' }));
+  fs.writeFileSync(path.join(d, 'messager', 'd2.pid.json'), JSON.stringify({ pid: 999999, id: 'acafe0000000000ff', session: 's' }));
+  const t = travailEnCours(d);
+  assert.equal(t.messagers.length, 1);
+  assert.match(texteTravail(t), /1 messager en route/);
+  assert.equal(cli(d).status, 1);
 });

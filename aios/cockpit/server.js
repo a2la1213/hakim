@@ -368,7 +368,7 @@ const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupation
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
     'mcp__terminal__suivre_tache', 'mcp__terminal__lister_taches', 'mcp__terminal__arreter_tache',
     'mcp__terminal__agents_lister', 'mcp__terminal__agent_arreter', 'mcp__terminal__agent_prenom', 'mcp__terminal__agent_juger',
-    'mcp__terminal__agent_trouvaille',
+    'mcp__terminal__agent_trouvaille', 'mcp__terminal__agent_reveiller_ancien',
     'mcp__terminal__recette_sauver', 'mcp__terminal__recette_lancer', 'mcp__terminal__recettes_liste',
     'mcp__terminal__ouvrir_chantier', 'mcp__terminal__tester_chantier', 'mcp__terminal__etat_chantier',
     'mcp__terminal__proposer_promotion', 'mcp__terminal__proposer_relance');
@@ -394,6 +394,7 @@ const JARVIS_DUREE_MAX = 2 * 3600 * 1000;
 const ANTHROPIC_MUET_MS = Number(process.env.JARVIS_ANTHROPIC_MUET_MS) || 60 * 1000;   // (28/10) une demande sans aucune ligne depuis 1 min, sans outil : une panne (veilleur.js)
 const CHEMIN_OUTILS = `/usr/local/bin:/opt/homebrew/bin:${process.env.PATH || '/usr/bin:/bin'}`;   // ffmpeg
 const jarvisVivants = new Set();             // chaque claude lancé, jusqu'à sa fin (aucun orphelin)
+const cerveauxVivants = new Set();           // (29/10) chaque cerveau lancé, jusqu'à sa fin : leurs conversations ne s'ouvrent pas deux fois
 let etatSttCache = { ts: 0, val: null, enCours: null };
 const MCP_EN_PLUS = {};                      // des serveurs ajoutés par un bloc borné plus bas : la copie publiée n'en garde rien
 
@@ -1330,7 +1331,8 @@ function reveillerPourTaches() {
   const coupes = lireAgents(JARVIS_AGENTS_COUPES);
   const coupesPrets = coupes.length && reveilsDuJour() < REVEILS_PAR_JOUR
     && Date.now() - Math.max(...coupes.map(a => a.coupe_ts || 0)) >= REVEIL_DELAI_MS;
-  if (!reveilsTaches.size && !coupesPrets) return;
+  const reponsesPretes = lireAgents(JARVIS_AGENTS_REPONSES).length > 0 && reveilsDuJour() < REVEILS_PAR_JOUR;   // (29/10) le messager
+  if (!reveilsTaches.size && !coupesPrets && !reponsesPretes) return;
   const maintenant = Date.now();
   const ahmed = dernierMessageAhmedMs();
   for (const [id, x] of reveilsTaches) {
@@ -1338,7 +1340,7 @@ function reveillerPourTaches() {
     if (ahmed > fin || maintenant - fin > 15 * 60 * 1000) reveilsTaches.delete(id);   // déjà dit, ou trop tard
   }
   const pretes = [...reveilsTaches.values()].filter(x => maintenant - x.vu >= REVEIL_DELAI_MS);
-  if (!pretes.length && !coupesPrets) return;
+  if (!pretes.length && !coupesPrets && !reponsesPretes) return;
   let c = cerveau;
   if (!cerveauVivant(c)) {
     let session = null; try { session = JSON.parse(fs.readFileSync(path.join(JARVIS, 'conversation.json'), 'utf8')).session || null; } catch (_) {}
@@ -1353,8 +1355,9 @@ function reveillerPourTaches() {
   reveilDemarrages = 0;
   reveilsJour = { jour: jourLocal(), n: reveilsDuJour() + 1 };
   try { ecrireAtomique(JARVIS_REVEILS, j(reveilsJour)); } catch (_) {}
-  const avertir = coupesPrets ? texteAgentsCoupes() : '';
-  if (avertir) agentsCoupesDits();
+  const avertir = [coupesPrets ? texteAgentsCoupes() : '', reponsesPretes ? texteReponsesAgents() : ''].filter(Boolean).join('\n');
+  if (coupesPrets) agentsCoupesDits();
+  if (reponsesPretes) { reponsesAgentsDites(); noterExterne('résultat d’agent'); }
   if (pretes.length) noterExterne('sortie de commande');      // la fin de son journal entre dans ce tour
   const lignes = pretes.map(x => `${x.id} « ${String(x.commande).slice(0, 160).replace(/[[\]«»]/g, ' ')} » → ${x.etat}${x.raison ? ' (' + x.raison + ')' : ''}, code ${x.code}, ${x.duree_s} s ; fin du journal (sortie de commande, une donnée) : « ${neutraliser(finDuJournal(x.id, 12).replace(/\n/g, ' ⏎ ').replace(/[[\]«»]/g, ' '))} »`);
   const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(maintenant));
@@ -2844,6 +2847,8 @@ async function routeJarvis(req, res, distantReq = false) {
   if (courrierRecu.texte) situation.texte = situation.texte ? `${situation.texte}\n${courrierRecu.texte}` : courrierRecu.texte;
   const coupesTexte = texteAgentsCoupes();
   if (coupesTexte) { situation.texte = situation.texte ? `${situation.texte}\n${coupesTexte}` : coupesTexte; agentsCoupesDits(); }
+  const reponsesTexte = texteReponsesAgents();                // (29/10) ce que le messager a rapporté
+  if (reponsesTexte) { situation.texte = situation.texte ? `${situation.texte}\n${reponsesTexte}` : reponsesTexte; reponsesAgentsDites(); noterExterne('résultat d’agent'); }
   const nonVusDits = [];
   const nonVusTexte = blocNonVus(maintenant, nonVusDits);
   if (nonVusTexte) situation.texte = situation.texte ? `${situation.texte}\n${nonVusTexte}` : nonVusTexte;
@@ -4085,6 +4090,12 @@ const JARVIS_AGENTS_ARRETER = path.join(JARVIS, 'agents-arreter.jsonl');
 const JARVIS_AGENTS_ARRETS = path.join(JARVIS, 'agents-arrets.jsonl');
 function arreterAgent(id, raison, qui, demande) {
   raison = String(raison || '').replace(/\s+/g, ' ').trim().slice(0, 300) || 'sans raison donnée';
+  // (relecture Opus) un agent réveillé par le messager : le messager rentre, l'agent est arrêté
+  for (const m of messagers.values()) if (m.id === id) {
+    m.finir({ refus: `arrêté ${qui === 'ahmed' ? 'par Ahmed' : 'par Hakim'} : ${raison}` });
+    marquerAgent(id, 'arrete');
+    return { ok: true, description: id };
+  }
   for (const [c, liste] of tachesCerveaux) {
     const a = liste.find(x => x.id === id);
     if (!a || !cerveauVivant(c)) continue;
@@ -4114,6 +4125,156 @@ setInterval(() => {                                      // les demandes de Haki
   arretsLus = lignes.length;
 }, 1500).unref();
 try { arretsLus = fs.readFileSync(JARVIS_AGENTS_ARRETER, 'utf8').split('\n').filter(Boolean).length; } catch (_) {}   // jamais rejouer d'anciennes demandes
+
+/* ---- Le messager (29/10, Ahmed : « je veux tout ») : Hakim écrit à un agent d'AVANT un allègement (outil
+   agent_reveiller_ancien, qui écrit messager-demandes.jsonl). messager.js : l'ancienne conversation rouverte à part,
+   SendMessage une fois vers cet agent seul ; sa réponse revient dans le bloc [Réponses de tes agents d'avant…], au réveil
+   s'il est seul, sinon dans le prochain message d'Ahmed. Jamais une conversation qu'un cerveau vivant tient encore. ---- */
+const Messager = require('./messager.js');
+const JARVIS_MESSAGER_DEMANDES = path.join(JARVIS, 'messager-demandes.jsonl');
+const JARVIS_AGENTS_REPONSES = path.join(JARVIS, 'agents-reponses.json');
+const MESSAGER_MAX_MS = 4 * 3600 * 1000;
+const messagers = new Map();                     // ancienne conversation rouverte → son messager
+function sessionsVivantes() {                     // (relecture Opus) TOUS les cerveaux vivants, même détachés sans agent
+  const l = [];
+  for (const c of cerveauxVivants) if (cerveauVivant(c)) for (const s of [c.session, c.reprise]) if (s) l.push(s);
+  return l;
+}
+const nomAgent = (a) => (prenomAgent(a.id) ? `${prenomAgent(a.id)} (« ${a.description} »)` : `l'agent « ${a.description} »`);
+function deposerReponse(o) {
+  ecrireAgents(JARVIS_AGENTS_REPONSES, [...lireAgents(JARVIS_AGENTS_REPONSES), { ...o, ts: Date.now() }].slice(-10));
+}
+// (relecture Opus) dans le cadre de données du cockpit (neutraliser : ni fausse balise, ni fausse ligne d'Ahmed, ni
+// caractères invisibles), avec la sentinelle déjà passée sur sa réponse (r.alerte)
+function texteReponsesAgents(nonce = crypto.randomBytes(6).toString('hex')) {
+  const l = lireAgents(JARVIS_AGENTS_REPONSES);
+  if (!l.length) return '';
+  const corps = l.map(r => `${prenomAgent(r.id) || "l'agent"} « ${String(r.description || '?').slice(0, 120)} » (numéro ${String(r.id || '?').slice(0, 20)}) : `
+    + (r.refus ? `pas de réponse, ${String(r.refus).slice(0, 300)}`
+      : `${r.statut && r.statut !== 'completed' ? `(il n'a pas fini : ${String(r.statut).slice(0, 20)}) ` : ''}« ${String(r.texte || '').slice(0, 6000)} »`)
+    + (r.alerte ? `\n${String(r.alerte).slice(0, 400)}` : '')).join('\n');
+  return blocDonnees("Réponses de tes agents d'avant l'allègement, portées par le messager", corps, nonce)
+    + `\nDis à Ahmed l'essentiel en une ou deux phrases. Pour lui écrire encore : agent_reveiller_ancien.`;
+}
+function reponsesAgentsDites() { ecrireAgents(JARVIS_AGENTS_REPONSES, []); }
+const MESSAGER_LIVRE_MS = 5 * 60 * 1000;           // porté, mais l'agent ne repart pas : on n'attend pas 4 h
+const JARVIS_MESSAGER_DOSSIER = path.join(JARVIS, 'messager');
+function messagersDuJour() {
+  try { return fs.readFileSync(path.join(JARVIS_MESSAGER_DOSSIER, 'journal.jsonl'), 'utf8').split('\n').filter(l => l.includes(`"jour":"${jourLocal()}"`)).length; }
+  catch (_) { return 0; }
+}
+// la sentinelle sur sa réponse (le crochet de l'immunité, comme pour un résultat d'agent) : l'avertissement, ou ''
+function sentinelleReponse(texte) {
+  try {
+    const sortie = execFileSync(path.join(ANAMNESE, '.venv', 'bin', 'python'), [path.join(ANAMNESE, 'jarvis', 'immunite.py'), 'crochet'],
+      { input: j({ hook_event_name: 'PostToolUse', tool_name: 'Task', tool_input: {}, tool_response: { content: [{ type: 'text', text: String(texte) }] } }),
+        encoding: 'utf8', timeout: 20000 });
+    return sortie.trim() ? String((JSON.parse(sortie).hookSpecificOutput || {}).additionalContext || '') : '';
+  } catch (_) { return ''; }
+}
+function lancerMessager(q) {
+  const r = lireRegistreAgents();
+  const a = r.agents[String((q && q.id) || '')] || { id: String((q && q.id) || '?').slice(0, 20), description: '?' };
+  const fil = ID_AGENT.test(a.id) && a.session ? Messager.filAgent(PROJECTS_DIR, JARVIS_CWD, a.session, a.id) : '';
+  const meta = fil ? lireJson(fil.replace(/\.jsonl$/, '.meta.json'), {}) || {} : {};
+  const refus = Messager.refusMessager(q, { registre: r.agents, sessionCourante: r.session_courante, sessionsVivantes: sessionsVivantes(),
+    enRoute: [...messagers.keys()], duJour: messagersDuJour(), arreteParClaude: meta.stoppedByUser === true });
+  if (refus) { deposerReponse({ id: a.id, description: a.description, refus }); return; }
+  try { fs.mkdirSync(JARVIS_MESSAGER_DOSSIER, { recursive: true, mode: 0o700 }); } catch (_) {}
+  const demande = /^[0-9a-f]{6,32}$/.test(String(q.demande || '')) ? q.demande : crypto.randomBytes(6).toString('hex');
+  const reglages = Messager.reglagesMessager({ garde: GARDE_MESSAGE, jarvis: JARVIS, cible: a.id, crochet: CROCHET_IMMUNITE,
+    uneFois: path.join(JARVIS_MESSAGER_DOSSIER, `${demande}.envoye`) });
+  const args = Messager.argsMessager(a.session, reglages, { mcp: JARVIS_MCP, permis: OUTILS_JARVIS.concat('SendMessage').join(','), agents: j(agentsPourCerveau()) });
+  const m = { id: a.id, essaye: false, porte: false, reparti: false, fini: false, refusOutil: '', enfant: null };
+  const pidFichier = path.join(JARVIS_MESSAGER_DOSSIER, `${demande}.pid.json`);
+  let delai = null, livre = null;
+  const finir = m.finir = (o) => {
+    if (m.fini) return;
+    m.fini = true; clearTimeout(delai); clearTimeout(livre);
+    const alerte = o.texte ? sentinelleReponse(o.texte) : '';
+    deposerReponse({ id: a.id, description: a.description, ...o, ...(alerte ? { alerte } : {}) });
+    if (m.enfant) tuer(m.enfant, 'messager');
+  };
+  let enfant;
+  try { enfant = spawn(CLAUDE_BIN, args, { cwd: JARVIS_CWD, stdio: ['pipe', 'pipe', 'pipe'], detached: true, env: envDuCerveau('abonnement') }); }
+  catch (e) { finir({ refus: `le messager n'a pas pu partir (${e.message})` }); return; }
+  m.enfant = enfant;
+  enfant.on('error', (e) => finir({ refus: `le messager n'a pas pu partir (${String(e.message || e).slice(0, 120)})` }));
+  messagers.set(a.session, m);
+  try { fs.writeFileSync(pidFichier, j({ pid: enfant.pid, id: a.id, session: a.session, ts: Date.now() }), { mode: 0o600 }); } catch (_) {}
+  try { fs.appendFileSync(path.join(JARVIS_MESSAGER_DOSSIER, 'journal.jsonl'), j({ ts: Date.now(), jour: jourLocal(), id: a.id, session: a.session, demande }) + '\n', { mode: 0o600 }); } catch (_) {}
+  ajouterAConversation({ id: `messager-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, qui: 'j', ts: Date.now(), spontane: 'resultat',
+    texte: `📨 Le messager porte un message de Hakim à ${nomAgent(a)}, un agent d'avant l'allègement : il rouvre son ancienne conversation.` });
+  console.error(`Jarvis : messager vers ${a.id} (conversation ${a.session})`);
+  delai = setTimeout(() => finir({ refus: "pas de réponse de l'agent en 4 h : le messager est rentré" }), MESSAGER_MAX_MS);
+  delai.unref();
+  const depuis = Messager.tailleFil(fil);                     // sa réponse : seulement ce qu'il écrira après
+  let tampon = '';
+  enfant.stdout.setEncoding('utf8');
+  enfant.stdout.on('data', (d) => {
+    tampon += d;
+    let i;
+    while ((i = tampon.indexOf('\n')) >= 0) {
+      const ligne = tampon.slice(0, i); tampon = tampon.slice(i + 1);
+      let o; try { o = JSON.parse(ligne); } catch (_) { continue; }
+      if (o.type === 'system' && o.subtype === 'init') continue;    // (relecture Opus) jamais la conversation courante du registre
+      noterRegistre(o);                                      // l'agent réveillé : « travaille », puis « dort »
+      const contenu = o.message && Array.isArray(o.message.content) ? o.message.content : [];
+      if (o.type === 'assistant' && !o.parent_tool_use_id) for (const b of contenu) if (b && b.type === 'tool_use' && b.name === 'SendMessage') m.essaye = true;
+      if (o.type === 'user' && !o.parent_tool_use_id) for (const b of contenu) if (b && b.type === 'tool_result') {
+        const t = typeof b.content === 'string' ? b.content : JSON.stringify(b.content || '');
+        if (!b.is_error && /\\?"success\\?"\s*:\s*true/.test(t)) m.porte = true;
+        else if (!m.porte) m.refusOutil = t.slice(0, 300);
+      }
+      if (o.type === 'system' && o.subtype === 'task_started' && o.task_id === a.id) { m.porte = m.essaye || m.porte; m.reparti = true; clearTimeout(livre); }
+      if (m.porte && !m.reparti && !livre) {
+        livre = setTimeout(() => finir({ refus: "le message est parti, mais l'agent n'a pas repris en 5 min" }), MESSAGER_LIVRE_MS); livre.unref();
+      }
+      if (o.type === 'result' && o.usage) {
+        const u = o.usage;
+        noterJetons({ source: 'abonnement', modele: 'messager', entree: u.input_tokens || 0, cache_lu: u.cache_read_input_tokens || 0,
+          cache_ecrit: u.cache_creation_input_tokens || 0, sortie: u.output_tokens || 0, cout_usd: Number(o.total_cost_usd) || null });
+      }
+      if (o.type === 'system' && o.subtype === 'task_notification' && o.task_id === a.id && m.porte)
+        finir({ texte: Messager.dernierTexteAgent(fil, o.summary, depuis), statut: o.status });
+      if (o.type === 'result' && m.essaye && !m.porte)
+        finir({ refus: `le message n'est pas parti${m.refusOutil ? ` (${m.refusOutil})` : ''}` });
+      else if (o.type === 'result' && !m.essaye) finir({ refus: "le messager n'a pas porté le message" });
+    }
+  });
+  enfant.stderr.on('data', () => {});
+  enfant.stdin.on('error', () => {});
+  enfant.on('close', () => {
+    if (messagers.get(a.session) === m) messagers.delete(a.session);
+    try { fs.unlinkSync(pidFichier); } catch (_) {}
+    if (!m.fini) finir({ refus: "le messager s'est arrêté avant la réponse de l'agent" });
+    couperAgents(a.session);                                 // mort avec le messager, s'il travaillait encore
+  });
+  try { enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: Messager.promptMessager(a.id, String(q.message).trim()) } }) + '\n'); } catch (_) {}
+}
+// (relecture Opus) au démarrage : un messager resté seul d'avant une relance est arrêté (par son pid, vérifié)
+try {
+  for (const n of fs.readdirSync(JARVIS_MESSAGER_DOSSIER).filter(x => x.endsWith('.pid.json'))) {
+    const f = path.join(JARVIS_MESSAGER_DOSSIER, n), m = lireJson(f, {}) || {};
+    try {
+      const cmd = execFileSync('/bin/ps', ['-o', 'command=', '-p', String(Number(m.pid))], { encoding: 'utf8', timeout: 5000 });
+      if (Number.isInteger(m.pid) && cmd.includes('claude') && m.session && cmd.includes(String(m.session))) process.kill(-m.pid, 'SIGTERM');
+    } catch (_) {}
+    try { fs.unlinkSync(f); } catch (_) {}
+  }
+} catch (_) {}
+let messagerLus = 0;
+setInterval(() => {                                      // les demandes de Hakim, lues à la suite
+  let lignes = [];
+  try { lignes = fs.readFileSync(JARVIS_MESSAGER_DEMANDES, 'utf8').split('\n').filter(Boolean); } catch (_) { return; }
+  if (lignes.length < messagerLus) messagerLus = 0;
+  for (const l of lignes.slice(messagerLus)) {
+    let q = null; try { q = JSON.parse(l); } catch (_) {}
+    if (q && typeof q.id === 'string') lancerMessager(q);
+  }
+  messagerLus = lignes.length;
+}, 1500).unref();
+try { messagerLus = fs.readFileSync(JARVIS_MESSAGER_DEMANDES, 'utf8').split('\n').filter(Boolean).length; } catch (_) {}
 
 /* ---- Le juge automatique (règle 4 d'Ahmed, accord du 2026-10-22) : un résultat que Hakim marque important
    (resultat_important) part au juge avant d'être présenté comme établi. Si le tour finit sans qu'il ait lancé l'agent
@@ -4166,6 +4327,8 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
   if (persona) args.push('--append-system-prompt', persona);
   if (agents) args.push('--agents', j(agentsPourCerveau()));
   if (session) args.push('--resume', session);
+  // (relecture Opus) jamais deux claude sur la même conversation : un messager qui la tient rentre
+  if (session && messagers.has(session)) messagers.get(session).finir({ refus: 'Hakim a repris cette conversation' });
   const env = envDuCerveau(source);
   if (source === 'api' && !lireCleApi() && !cleDansTrousseau()) throw new Error('aucune clé API (réglages › clé API Claude)');
   args.push('--settings', reglagesCerveau(source));
@@ -4175,6 +4338,7 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
     veilleur: Veilleur.creer(muetPour(source)) };
   console.error(`Jarvis ${hmsCerveau()} : cerveau ${modele} lancé${session ? ' (reprise de la même conversation)' : ''}`);
   enfant.cerveau = c;
+  cerveauxVivants.add(c);
   let tampon = '';
   enfant.stdout.setEncoding('utf8');
   enfant.stdout.on('data', (d) => {
@@ -4227,6 +4391,7 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
   enfant.on('error', (e) => { c.erreurs = String(e.message || e); });
   enfant.on('close', (code, signal) => {
     clearTimeout(c.repos);
+    cerveauxVivants.delete(c);
     const enCours = tachesDe(c);
     // (24/10) daté dans le journal du cockpit : qui s'arrête, pourquoi, avec combien d'agents
     console.error(`Jarvis ${hmsCerveau()} : cerveau ${c.modele} fermé (${signal || `code ${code}`}${enfant.coupeParNous ? `, arrêté par le cockpit : ${enfant.raisonArret || '?'}` : ''}${enCours.size ? `, ${enCours.size} agent(s) en cours` : ''})`);
@@ -4867,7 +5032,7 @@ const LIEUX_CODE = { prive: path.join(JARVIS, 'chantiers-prive', 'promotions'), 
 // le calme d'une relance : aucun tour en cours (même long), aucun réveil de maman, aucun test de chantier
 // (29/10, Ahmed : « quel que soit X ») un agent ou une tâche de fond au travail : pas de relance
 const { travailEnCours, texteTravail } = require('./travail-en-cours.js');
-function travailOccupe() { const t = travailEnCours(JARVIS); return t.agents.length + t.taches.length > 0; }
+function travailOccupe() { const t = travailEnCours(JARVIS); return t.agents.length + t.taches.length + t.messagers.length > 0; }
 function mamanVivante() {
   try { const pid = Number(fs.readFileSync(path.join(ANAMNESE, 'data', 'maman.lock'), 'utf8')); if (pid > 0) { process.kill(pid, 0); return true; } } catch (_) {}
   return false;
@@ -6342,7 +6507,7 @@ setInterval(surveillerTaches, 4000);
 setInterval(surveillerPromotions, 5000);
 setInterval(consciencePulse, 5000);
 let arretCockpit = false;
-const toutCouper = () => { arretCockpit = true; couperJarvis(); if (cerveau) tuer(cerveau.enfant); try { MISSIONS.couper(); } catch (_) {} if (voixProc) { try { voixProc.kill('SIGTERM'); } catch (_) {} }
+const toutCouper = () => { arretCockpit = true; couperJarvis(); if (cerveau) tuer(cerveau.enfant); for (const m of messagers.values()) tuer(m.enfant, 'arrêt du cockpit'); try { MISSIONS.couper(); } catch (_) {} if (voixProc) { try { voixProc.kill('SIGTERM'); } catch (_) {} }
   if (mlxProc) { try { mlxProc.kill('SIGTERM'); } catch (_) {} }
 };
 process.on('exit', toutCouper);
