@@ -475,6 +475,10 @@ function interrompre(c) {
   const t = c.enCours;
   if (!t || t.autonome || t.interrompu) return;              // son propre tour (un résultat d'agent) va au bout
   t.interrompu = true;
+  // (29/10, Théo) sonde réelle, claude 2.1.300 : un « interrupt » arrête AUSSI ses agents en cours, lancés comme réveillés
+  // (« stoppedByUser » : plus jamais réveillables). Tant qu'un agent ou une tâche travaille, on ne l'envoie pas : son tour
+  // va au bout sans être dit (interrompu : « coupé »), et le message d'Ahmed passe juste après.
+  if (tachesDe(c).size) { console.error(`Jarvis : tour coupé sans « interrupt » (${tachesDe(c).size} agent(s) ou tâche(s) au travail : il les tuerait)`); return; }
   try { c.enfant.stdin.write(j({ type: 'control_request', request_id: `stop-${Date.now()}`, request: { subtype: 'interrupt' } }) + '\n'); }
   catch (_) { tuer(c.enfant, 'interruption douce impossible'); }
 }

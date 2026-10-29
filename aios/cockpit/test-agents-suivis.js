@@ -50,12 +50,20 @@ test('un agent qui a déjà fini (sans agentId), l’agent d’un agent, un agen
   assert.equal(ctx.tachesDe(c, 1_000 + 3 * 3600 * 1000 + 1).size, 0, 'oublié après 3 h sans nouvelles');
 });
 
-test('Ahmed coupe la parole pendant qu’un agent tourne : interruption douce, le cerveau (et l’agent) vivent', () => {
+test('Ahmed coupe la parole pendant qu’un agent tourne : AUCUN « interrupt » (il tue les agents), son tour finit sans être dit', () => {
+  // (29/10, Théo) sonde réelle, claude 2.1.300 : un « interrupt » arrête aussi les agents en cours, lancés comme réveillés,
+  // « stoppedByUser » : plus jamais réveillables
   const { ctx, c, enfant, tues, ecrits } = cockpit();
   ctx.suivre(c, lance('tu1', 'La règle rétrécit-elle')); ctx.suivre(c, resultat('tu1', 'agentId: a33'));
   ctx.lacher(enfant, null);
   assert.deepEqual(tues, [], 'pas tué');
-  assert.equal(ecrits[0].request.subtype, 'interrupt');
+  assert.deepEqual(ecrits, [], 'aucun interrupt');
+  assert.equal(c.enCours.interrompu, true, 'son tour est marqué coupé : il ne sera pas dit');
+  // un agent réveillé par SendMessage (task_started) compte aussi
+  const r = cockpit();
+  r.ctx.suivre(r.c, { type: 'system', subtype: 'task_started', task_id: 'a7514e29068e49980', task_type: 'local_agent', description: 'Théo' });
+  r.ctx.lacher(r.enfant, null);
+  assert.deepEqual(r.ecrits, []); assert.deepEqual(r.tues, []);
   // sans agent : arrêté, avec sa raison (datée dans le journal à la fermeture)
   const d = cockpit();
   d.ctx.lacher(d.enfant, null);
