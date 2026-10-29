@@ -34,7 +34,8 @@ NOUVEAUX = {                                    # où un fichier NOUVEAU peut na
 TOUJOURS_FERMES = {"anamnese": {"jarvis/liste_ouverte.py", "jarvis/liste-ouverte.json", "tests/test_liste_ouverte.py",
                                  # (29/10) le système immunitaire : jamais par un chantier de Hakim
                                  "jarvis/immunite.py", "jarvis/medecin.py", "jarvis/enveloppe.py"},
-                   "cockpit": {"sw.js", "public/sw.js"}}
+                   # (29/10) la garde de SendMessage : il n'écrit qu'à SES agents
+                   "cockpit": {"sw.js", "public/sw.js", "garde-message.js"}}
 
 
 def _sans_point(chemin):

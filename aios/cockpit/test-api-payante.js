@@ -78,3 +78,16 @@ test('sur l’API son cache est gardé 1 h (5 min par défaut) ; sur le forfait 
   assert.equal(forfait.ANTHROPIC_API_KEY, undefined);
   assert.equal(forfait.PATH, '/usr/bin');
 });
+
+test('(29/10, Ahmed : « au max ») ses lectures : 200 000 jetons par Read et par outil MCP, sur le forfait et sur l’API ; Gemma garde 25 000', () => {
+  const { f, ctx } = monde();
+  Object.assign(ctx, { OLLAMA: 'http://127.0.0.1:11434', GEMMA_CERVEAU: 'hakim-remplacant', GEMMA_MUET_MS: 60000 });
+  for (const source of ['abonnement', 'api']) {
+    const env = f.envDuCerveau(source);
+    assert.equal(env.CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS, '200000', source);
+    assert.equal(env.MAX_MCP_OUTPUT_TOKENS, '200000', source);
+  }
+  const g = f.envDuCerveau('gemma');
+  assert.equal(g.CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS, undefined, 'son contexte ne tient pas une lecture pareille');
+  assert.equal(g.MAX_MCP_OUTPUT_TOKENS, undefined);
+});

@@ -37,7 +37,9 @@ JOURNAL_OLLAMA = Path.home() / ".ollama" / "logs" / "server.log"
 SEUIL_AVERTIR, SEUIL_NOTER = 3, 2
 SEUIL_FLAGRANT = 6                         # dit à Ahmed tout de suite, au plus une fois par ALERTE_FLAGRANTE_S
 ALERTE_FLAGRANTE_S = 3600                  # (relecture finale, 10) une fois par heure : pas d'usure du canal
-SCAN_MAX = 200_000                         # au-delà : le début et la fin (100 000 chacun), et un signe « contenu géant »
+# au-delà : le début et la fin (la moitié chacun), et un signe « contenu géant ». Un million depuis le 29/10 (200 000
+# avant) : son Read passe à 200 000 jetons par appel, et le milieu d'une grande lecture doit être lu (0,6 s pour 900 000)
+SCAN_MAX = 1_000_000
 NORMALISE_MAX = 4 * SCAN_MAX               # l'expansion Unicode (NFKC) est coupée là
 INCIDENTS_MAX_OCTETS = 5_000_000           # puis incidents.jsonl.1 (un seul ancien gardé)
 DEDOUBLON_S = 3600                         # le même contenu revu dans l'heure : un seul incident

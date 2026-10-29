@@ -11,7 +11,8 @@ const prendre = (nom) => { const i = srv.indexOf(`function ${nom}(`); return srv
 function cockpit() {
   const tues = [], ecrits = [];
   const ctx = { Map, String, JSON, Date, Array, tues, ecrits, j: JSON.stringify,
-    process: { kill: (pid, sig) => tues.push([pid, sig]) }, setTimeout: () => ({ unref() {} }), console: { error() {} } };
+    process: { kill: (pid, sig) => tues.push([pid, sig]) }, setTimeout: () => ({ unref() {} }), console: { error() {} },
+    marquerAgent: () => {} };
   vm.createContext(ctx);
   vm.runInContext(`const AGENT_OUBLI_MS = 3 * 3600 * 1000; const AGENTS_PARALLELE_MAX = 10; const hmsCerveau = () => '00:00:00';`
     + prendre('tachesDe') + prendre('suivreAgents') + prendre('tuer') + prendre('cerveauVivant') + prendre('interrompre') + prendre('lacher')

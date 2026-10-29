@@ -84,8 +84,33 @@ def arreter_tache(tache: str) -> str:
 
 @mcp.tool()
 def agents_lister() -> str:
-    """Tes agents en cours (architecte, codeur, juge… lancés avec Task) : numéro, description, type, depuis quand."""
+    """Tes agents (architecte, codeur, juge… lancés avec Task) et leur vie : au travail, endormis (réveillables avec
+    SendMessage, par leur numéro), partis d'eux-mêmes ; leur prénom, leur naissance, leurs travaux jugés et leurs
+    trouvailles confirmées."""
     return agents_hakim.lister()
+
+
+@mcp.tool()
+def agent_prenom(agent: str, prenom: str, avec_naissance: bool = False) -> str:
+    """Note le prénom qu'un de tes agents a choisi (Ahmed, 29/10 : demande-lui d'abord ; si sa réponse ne va pas,
+    propose-lui trois prénoms et il en choisit un). Prénoms d'hommes et de femmes, tous différents ; un agent garde
+    le sien. avec_naissance=True seulement quand tous les prénoms sont épuisés : il revient avec sa date de naissance."""
+    return agents_hakim.nommer(agent, prenom, avec_naissance=avec_naissance)
+
+
+@mcp.tool()
+def agent_juger(agent: str, dossier: str) -> str:
+    """Déclare le travail qu'un de tes JUGES va juger (son nom, pas sa version). Un juge ne juge jamais deux fois le
+    même travail (Ahmed, 29/10) : refusé s'il l'a déjà jugé. Pour réveiller un juge endormi avec SendMessage, déclare
+    d'abord son nouveau travail ici ; déclare aussi le premier, juste après l'avoir lancé."""
+    return agents_hakim.juger(agent, dossier)
+
+
+@mcp.tool()
+def agent_trouvaille(agent: str, quoi: str, confirmee_par: str, rien_a_signaler: bool = False) -> str:
+    """La récompense d'un agent (Ahmed, 29/10) : note une trouvaille CONFIRMÉE ensuite (par un test, par Ahmed, par le
+    résultat), ou un « rien à signaler » juste (rien_a_signaler=True). Jamais une trouvaille non confirmée."""
+    return agents_hakim.trouvaille(agent, quoi, confirmee_par, rien_a_signaler=rien_a_signaler)
 
 
 @mcp.tool()

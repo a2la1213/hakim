@@ -37,7 +37,15 @@ test('chaque agent reçoit le préambule, avec son chemin et la condition « si 
 test('sans préambule, les agents restent tels quels ; un préambule énorme est borné',
   { skip: process.env.CHANTIER_BAC_A_SABLE === '1' && 'bac à sable d’un chantier' }, () => {
   const c = cockpit();
-  assert.deepEqual(c.pour(), c.AGENTS);
+  // (29/10) sans préambule, chacun reçoit seulement sa vie d'agent (le juge, en plus, sa règle) ; le témoin vierge rien
+  const p = c.pour();
+  assert.deepEqual(Object.keys(p), Object.keys(c.AGENTS));
+  assert.deepEqual(p.vierge, c.AGENTS.vierge);
+  for (const k of ['architecte', 'codeur', 'juge']) {
+    assert.ok(p[k].prompt.startsWith(c.AGENTS[k].prompt), k);
+    assert.match(p[k].prompt.slice(c.AGENTS[k].prompt.length), /^\n\n(Un juge ne juge jamais[^\n]*\n\n)?\[Ta vie d'agent/, k);
+    assert.deepEqual({ ...p[k], prompt: '' }, { ...c.AGENTS[k], prompt: '' }, k);
+  }
   const d = cockpit('x'.repeat(20000));
-  assert.ok(d.pour().juge.prompt.length < d.AGENTS.juge.prompt.length + 4600);
+  assert.ok(d.pour().juge.prompt.length < d.AGENTS.juge.prompt.length + 4600 + 1200);
 });
