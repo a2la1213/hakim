@@ -37,6 +37,13 @@
     // (30/10, 21:29, « son orbe part grave en couille ») la phase avance image par image, à une vitesse qui glisse : avant,
     // elle valait « temps depuis l'ouverture × vitesse », et chaque changement d'état (écoute, pense, parle) la téléportait
     let phase = 0, vitesseCourante = null, derniere = null;
+    // (30/10, 21:36, idée d'Ahmed) la couleur de celui qui a la parole : 'papa' (rose violet), 'hakim' (son humeur), 'partage'
+    // (papa parle, l'oreille ouverte de Hakim peut le couper : les deux mêlées) ; null : l'ancien choix par le mode
+    let qui = null;
+    function viser() {
+      const ec = PALETTES.ecoute.map(rgb);
+      cible = qui === 'papa' ? ec : qui === 'partage' ? [ec[0], paletteHumeur[1], ec[2]] : qui ? paletteHumeur : (mode === 'ecoute' ? ec : paletteHumeur);
+    }
     const t0 = performance.now();
 
     function dimensionner() {
@@ -158,13 +165,14 @@
     return {
       humeur(code) {
         paletteHumeur = (PALETTES[code] || PALETTES.calme).map(rgb);
-        if (mode !== 'ecoute') cible = paletteHumeur;
+        viser();
       },
       mode(m) {
         if (m === mode) return;
         mode = m;
-        cible = m === 'ecoute' ? PALETTES.ecoute.map(rgb) : paletteHumeur;
+        viser();
       },
+      parole(x) { const q = x || null; if (q === qui) return; qui = q; viser(); },
       source(fn) { source = fn || null; },
       pulser(x) { impulsion = Math.min(1, impulsion + (x == null ? 0.25 : x)); },
       arreter() { cancelAnimationFrame(raf); },

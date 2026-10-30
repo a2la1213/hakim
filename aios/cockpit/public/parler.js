@@ -964,6 +964,19 @@ function origineDuBadge(o) {
   const [court, classe] = ORIGINES_BADGE[o.type];
   return { court, texte: o.texte.slice(0, 80), classe };
 }
+/* (30/10, 21:36, idée d'Ahmed : « d'un coup d'œil, on sait à qui est la parole ») qui a la parole à cet instant, selon ton
+   micro (ouvert, coupé), son oreille (ouverte par toi, fermée par lui) et ce qui se dit : sa voix ou son tour de répondre ->
+   lui ; ta voix -> toi, ou partagée si son oreille peut te couper ; en conversation, au calme -> toi (lui si ton micro est coupé) */
+function quiALaParole() {
+  try {
+    const c = etat.conversation, r = reglagesCorps || {};
+    if ((lecteur && lecteur.actif) || Date.now() < motDirectJusqua) return 'hakim';
+    if (etat.micro || (c && c.capteur && c.capteur.enParole)) return r.oreille && !r.oreille_hakim_fermee ? 'partage' : 'papa';
+    if (etat.flux) return 'hakim';
+    if (c) return c.capteur && c.capteur.estMuet ? 'hakim' : 'papa';
+  } catch (_) {}
+  return null;
+}
 function humeur(texte) {
   const parle = !!(lecteur && lecteur.actif), pense = !!etat.flux;
   const ecoute = !!etat.micro || !!(etat.conversation && !parle && !pense);
@@ -971,7 +984,8 @@ function humeur(texte) {
   const code = etat.interieur && etat.interieur.humeur_code;
   const coupe = !!(etat.conversation && etat.conversation.capteur && etat.conversation.capteur.estMuet);
   const mode = ecoute && !coupe ? 'ecoute' : (parle ? 'parle' : (pense ? 'pense' : 'repos'));
-  for (const o of [orbeTete, orbeScene]) { o.humeur(code); o.mode(mode); }
+  const qui = quiALaParole();
+  for (const o of [orbeTete, orbeScene]) { o.humeur(code); o.mode(mode); o.parole(qui); }
   const mot = (etat.interieur && etat.interieur.humeur) || '';          // (26/10, Ahmed) son émotion, en un mot
   if ($('emotionMot').textContent !== mot) { $('emotionMot').textContent = mot; $('emotionScene').textContent = mot; }
   const origine = mot ? origineDuBadge(etat.interieur && etat.interieur.humeur_origine) : null;
@@ -2667,6 +2681,8 @@ function surEcran(o) {
 let veutAffiche = false, veutDepuis = 0;
 setInterval(() => {
   const veut = (typeof aDire !== 'undefined' && aDire.length > 0) || !!sonEnAttente || !!vibrationEnAttente;
+  const qui = quiALaParole();                              // (21:36) la couleur suit la parole, même entre deux humeur()
+  for (const o of [orbeTete, orbeScene]) o.parole(qui);
   if (veut === veutAffiche) { veutDepuis = 0; return; }
   if (!veutDepuis) veutDepuis = Date.now();
   if (Date.now() - veutDepuis < (veut ? 1500 : 3000)) return;

@@ -164,3 +164,22 @@ test('(21:34) « dans ta tête » tient pour lui : ni ses tours de lui-même ni 
   assert.match(page, /for \(const m of messages\) if \(m && caches\.has\(String\(m\.id\)\)\) m\.cache = true;/, 'la synchro garde le « caché »');
   assert.equal((page.match(/garderCaches\(o\.messages\);\n\s+etat\.messages = o\.messages;/g) || []).length, 2, 'les deux chemins de la synchro');
 });
+
+test('(21:50) un petit mot périmé au moment de sortir n’est pas dit, et il le sait à son tour suivant', () => {
+  const f = prendre(src, 'function motOreillePerime(');
+  const juge = (texte, reveil, { ahmed = 0, entendu = { texte: '', ts: 0 }, dernier = { texte: '', ts: 0 }, maintenant = 10000 } = {}) => {
+    const c = vm.createContext({ String, Infinity, dernierMessageAhmed: ahmed, oreilleEntendu: entendu, oreilleDernierMot: dernier });
+    vm.runInContext(f, c); return c.motOreillePerime(texte, reveil, maintenant);
+  };
+  const reveil = { texte: 'Alors écoute, aujourd’hui au travail', ts: 5000 };
+  assert.equal(juge('Hmm, je te suis', reveil), null, 'frais : dit');
+  assert.equal(juge('Hmm', reveil, { ahmed: 6000 }), 'papa avait fini sa phrase');
+  assert.equal(juge('Hmm', reveil, { maintenant: 26000 }), 'trop tard, plus de 20 s après');
+  assert.equal(juge('Hmm', reveil, { entendu: { texte: reveil.texte + ' x'.repeat(80), ts: 8000 } }), 'papa avait continué');
+  assert.equal(juge('Hmm', reveil, { entendu: { texte: reveil.texte + ' il', ts: 8000 } }), null, 'trois mots de plus : encore frais');
+  assert.equal(juge('Je te suis, papa !', reveil, { dernier: { texte: 'je te suis papa', ts: 4000 } }), 'le même mot que juste avant');
+  assert.equal(juge('Hmm', null), null, 'pas un mot d’oreille');
+  assert.match(src, /if \(perime\) \{[\s\S]{0,200}oreillePerimes\.push/, 'pas livré');
+  assert.match(src, /const perimes = oreillePerimes\.splice\(0\)/, 'dit à son tour suivant');
+  assert.match(src, /c\.oreilleReveil = \{ texte: t, ts: maintenant \};/);
+});

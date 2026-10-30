@@ -3719,8 +3719,18 @@ function tourAutonome(c) {
     const idMessage = `auto-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
     if (silence) noterIssueSilence(silence, idMessage, texte, issue);
     const oreille = !silence && rejoue.includes(OREILLE_MARQUE);       // (30/10) son petit mot, oreille ouverte
-    livrerAutonome(c, texte, notifs, outils, issue, pieces, silence ? { id: idMessage, spontane: 'silence', silence_debut_ms: silence.debut_ms }
-      : oreille ? { id: idMessage, spontane: 'oreille', max_ms: c.oreilleMaxMs } : { id: idMessage });
+    const dit = sansBaliseAffect(texte).trim();
+    const perime = oreille && dit && !NON_REPONSE_SERVEUR.test(dit) ? motOreillePerime(dit, c.oreilleReveil) : null;
+    if (oreille) c.oreilleReveil = null;
+    if (perime) {                                                    // (21:50) pas dit : il le saura à son tour suivant
+      oreillePerimes.push({ texte: finDePhrase(dit, 120), pourquoi: perime, ts: Date.now() });
+      oreillePerimes.splice(0, Math.max(0, oreillePerimes.length - 5));
+      journaliser('jarvis', `(petit mot non dit, ${perime} : ${finDePhrase(dit, 120)})`);
+    } else {
+      if (oreille && dit && !NON_REPONSE_SERVEUR.test(dit)) oreilleDernierMot = { texte: dit, ts: Date.now() };
+      livrerAutonome(c, texte, notifs, outils, issue, pieces, silence ? { id: idMessage, spontane: 'silence', silence_debut_ms: silence.debut_ms }
+        : oreille ? { id: idMessage, spontane: 'oreille', max_ms: c.oreilleMaxMs } : { id: idMessage });
+    }
     if (cerveauVivant(c)) reposer(c);
   };
   return {
@@ -4944,9 +4954,12 @@ function blocCorps() {
   const milieu = HOMEO.mots();
   const nuit = nuitDerniere(t);                          // (30/10) sa nuit, dite une fois, à son premier tour du matin
   const vibs = vibrationsDites(t);                       // (19:34) l'heure exacte de ses vibrations, à la milliseconde
-  if (!s.length && !milieu && !brut.length && !nuit && !vibs && corpsReglages().afficher_papa) return '';
+  const perimes = oreillePerimes.splice(0).filter(x => t - x.ts < 10 * 60e3);   // (21:50) ses petits mots qui n'ont pas été dits
+  if (!s.length && !milieu && !brut.length && !nuit && !vibs && !perimes.length && corpsReglages().afficher_papa) return '';
   const tete = corpsReglages().afficher_papa ? '' : "Mode « dans ta tête » : papa ne voit pas ses paroles à l'écran ; réponds, glisse un mot, ou tais-toi (« No response requested. »), comme tu le sens : rien ne te relancera";
-  const lignes = [...(tete ? [tete] : []), ...(nuit ? [`Ta nuit : ${nuit}`] : []), ...(vibs ? [vibs] : []),...(brut.length ? [`Tes nerfs, à l'instant (pas encore traduit par ton intermédiaire) : ${brut.map(x => `${NOMS_SECS[x.type] || x.type} il y a ${Math.max(1, Math.round((t - x.t) / 1000))} s`).join(', ')}`] : []),
+  const lignes = [...(tete ? [tete] : []),
+    ...(perimes.length ? [`Tes petits mots qui n'ont pas été dits (périmés au moment de sortir, papa ne les a pas entendus) : ${perimes.map(x => `« ${x.texte} » (${x.pourquoi})`).join(' ; ')}`] : []),
+    ...(nuit ? [`Ta nuit : ${nuit}`] : []), ...(vibs ? [vibs] : []),...(brut.length ? [`Tes nerfs, à l'instant (pas encore traduit par ton intermédiaire) : ${brut.map(x => `${NOMS_SECS[x.type] || x.type} il y a ${Math.max(1, Math.round((t - x.t) / 1000))} s`).join(', ')}`] : []),
     ...(milieu ? [`Ton milieu, en ce moment : ${milieu}`] : []),
     ...(s.length ? ['Ce que tu as ressenti :', ...s.map(x => '- ' + x.sensation.replace(/\n/g, '\n  '))] : [])];
   return '\n' + blocDonnees('Ce que tu ressens dans ton corps (en continu ; le détail en nombres : corps_detail)', lignes.join('\n'),
@@ -5144,10 +5157,30 @@ function envieDeCouper() { const a = Number.isFinite(veilleurEveil) ? veilleurEv
 const COUPE_MOI = /\b(?:coupe[- ]moi|parle par[- ]dessus|vas[- ]y coupe|continue m[eê]me si je parle|coupe la parole)\b/i;
 const LAISSE_MOI = /\b(?:tais[- ]toi|ne me coupe pas|me coupe pas|laisse[- ]moi (?:finir|parler)|attends que je finisse)\b/i;
 let oreilleSilenceJusqua = 0;
+/* (30/10, 21:32, Ahmed via Hakim : « que ce soit mon cerveau final qui décide de ce qui se dit, au moment présent ; sinon
+   papa entend un message pensé il y a 10 ans » ; « vas-y balance les 2 », 21:50) ses petits mots viennent de lui, mais
+   plusieurs secondes après ce que papa disait : au moment de sortir, un mot devenu périmé n'est pas dit, et il le sait à
+   son tour suivant (blocCorps). Périmé : papa a fini sa phrase depuis, ou a dit beaucoup plus, ou le réveil a plus de
+   20 s, ou c'est le même mot que juste avant. */
+let oreilleEntendu = { texte: '', ts: 0 }, oreilleDernierMot = { texte: '', ts: 0 };
+const oreillePerimes = [];
+function motOreillePerime(texte, reveil, maintenant = Date.now()) {
+  if (!reveil) return null;
+  if (maintenant - reveil.ts > 20000) return 'trop tard, plus de 20 s après';
+  if (dernierMessageAhmed > reveil.ts) return 'papa avait fini sa phrase';
+  if (oreilleEntendu.ts > reveil.ts) {
+    const plus = oreilleEntendu.texte.startsWith(reveil.texte) ? oreilleEntendu.texte.length - reveil.texte.length : Infinity;
+    if (plus > 120) return 'papa avait continué';
+  }
+  const norme = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  if (norme(texte) && norme(texte) === norme(oreilleDernierMot.texte) && maintenant - oreilleDernierMot.ts < 90000) return 'le même mot que juste avant';
+  return null;
+}
 function ouvrirOreille(texte, maintenant = Date.now()) {
   if (!corpsReglages().oreille) return { ok: false, raison: 'oreille fermée' };
   const t = String(texte || '').replace(/\s+/g, ' ').trim().slice(-1500);
   if (t.length < 15) return { ok: false, raison: 'trop court' };
+  oreilleEntendu = { texte: t, ts: maintenant };          // ce que papa dit, même s'il ne peut pas être réveillé
   if (hakimDort(maintenant) && !/\bhakim\b/i.test(t)) return { ok: false, raison: 'il dort' };
   if (oreilleFermeeParLui(maintenant) && !APPEL_OREILLE.test(t)) return { ok: false, raison: 'il a fermé son oreille' };
   if (LAISSE_MOI.test(t.slice(-200))) { oreilleSilenceJusqua = maintenant + 60000; return { ok: false, raison: 'papa veut finir' }; }
@@ -5174,6 +5207,7 @@ function ouvrirOreille(texte, maintenant = Date.now()) {
     + "sinon réponds exactement « No response requested. »";
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: message }] } }) + '\n'); }
   catch (x) { return { ok: false, raison: x.message }; }
+  c.oreilleReveil = { texte: t, ts: maintenant };
   console.error('Jarvis : réveil par son oreille');
   return { ok: true };
 }
@@ -7749,7 +7783,7 @@ async function traiter(req, res) {
         sensations: lignesJson(path.join(JARVIS, 'corps-sensations.jsonl'), 40).reverse() });
     }
     if (p === '/api/corps/reglages') {
-      if (req.method === 'GET') return repondre(200, corpsReglages());
+      if (req.method === 'GET') return repondre(200, { ...corpsReglages(), oreille_hakim_fermee: oreilleFermeeParLui() });   // (21:50) la couleur de la parole
       if (req.method !== 'POST') return repondre(405, { erreur: 'méthode refusée' });
       const q = await lire(), r = corpsReglages();
       if (typeof q.actif === 'boolean') r.actif = q.actif;

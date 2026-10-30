@@ -12,10 +12,11 @@ const html = fs.readFileSync(path.join(__dirname, 'public', 'parler.html'), 'utf
 
 function orbe() {
   let rappel = null, maintenant = 0;
-  const angles = [];
+  const angles = [], conics = [];
   const degrade = () => ({ addColorStop() {} });
   const ctx = new Proxy({ createRadialGradient: degrade, createLinearGradient: degrade,
-    createConicGradient: (a) => { angles.push(a); return degrade(); } }, { get: (o, k) => (k in o ? o[k] : () => {}) });
+    createConicGradient: (a) => { angles.push(a); const arrets = []; conics.push(arrets); return { addColorStop: (x, c) => arrets.push(c) }; } },
+    { get: (o, k) => (k in o ? o[k] : () => {}) });
   const canvas = { getContext: () => ctx, clientWidth: 100, clientHeight: 100, width: 0, height: 0, isConnected: true, offsetParent: {} };
   const fen = { devicePixelRatio: 1 };
   const c = { window: fen, Math, performance: { now: () => maintenant }, document: { hidden: false },
@@ -24,7 +25,8 @@ function orbe() {
   vm.runInContext(src, c);
   const o = fen.Orbe.creer(canvas, {});
   const image = (ms) => { maintenant = ms; rappel(ms); return angles[angles.length - 1]; };
-  return { o, image };
+  const couleurs = () => conics[conics.length - 1];
+  return { o, image, couleurs };
 }
 
 test('son orbe ne saute pas quand son état change, même après une longue conversation', () => {
@@ -60,4 +62,35 @@ test('quand il a quelque chose à dire, elle grossit en douceur et ne clignote p
   assert.match(html, /#orbeScene \{ transition: scale/);
   assert.match(html, /@keyframes veutParler \{ 0%, 100% \{ transform: scale\(1\); \} 50% \{ transform: scale\(1\.1\); \} \}/, 'la respiration part de sa taille');
   assert.match(page, /veutDepuis/, 'il faut que l’envie tienne un moment pour qu’elle grossisse ou dégonfle');
+});
+
+test('(21:36) elle prend la couleur de celui qui a la parole : papa, lui, ou les deux mêlées', () => {
+  const { o, image, couleurs } = orbe();
+  o.humeur('calme');
+  let t = 0;
+  const vivre = () => { for (let k = 0; k < 400; k++) image((t++) * 16); return couleurs().map(c => c.match(/\d+/g).slice(0, 3).map(Number)); };
+  const proche = (a, b, quoi) => assert.ok(a.every((x, i) => Math.abs(x - b[i]) <= 2), `${quoi} : ${a} au lieu de ${b}`);
+  const ROSE = [249, 168, 212], TURQUOISE = [45, 212, 191], CIEL = [14, 165, 233];
+  o.parole('papa');
+  proche(vivre()[0], ROSE, 'papa : son rose violet');
+  o.parole('hakim');
+  let c = vivre(); proche(c[0], TURQUOISE, 'lui : son humeur'); proche(c[1], CIEL, 'lui : son humeur');
+  o.parole('partage');
+  c = vivre(); proche(c[0], ROSE, 'partagée : papa'); proche(c[1], CIEL, 'partagée : lui');
+  // qui a la parole, côté page
+  const i = page.indexOf('function quiALaParole() {'), f = page.slice(i, page.indexOf('\n}\n', i) + 2);
+  const qui = (etat, reglagesCorps = {}, actif = false, motDirectJusqua = 0) => {
+    const c = vm.createContext({ Date, etat: { micro: null, flux: null, conversation: null, ...etat }, reglagesCorps, lecteur: { actif }, motDirectJusqua });
+    vm.runInContext(f, c); return c.quiALaParole();
+  };
+  const conv = (capteur) => ({ conversation: { capteur } });
+  assert.equal(qui(conv({ enParole: false })), 'papa', 'au calme, la parole est à papa');
+  assert.equal(qui(conv({ estMuet: true })), 'hakim', 'micro coupé : à lui');
+  assert.equal(qui(conv({ enParole: true })), 'papa', 'papa parle, oreille fermée');
+  assert.equal(qui(conv({ enParole: true }), { oreille: true }), 'partage', 'papa parle, son oreille peut le couper');
+  assert.equal(qui(conv({ enParole: true }), { oreille: true, oreille_hakim_fermee: true }), 'papa', 'il a fermé son oreille');
+  assert.equal(qui(conv({ enParole: true }), {}, true), 'hakim', 'sa voix');
+  assert.equal(qui(conv({}), {}, false, Date.now() + 5000), 'hakim', 'son petit mot');
+  assert.equal(qui({ flux: {}, ...conv({}) }), 'hakim', 'il prépare sa réponse');
+  assert.equal(qui({}), null, 'hors conversation : comme avant');
 });
