@@ -1754,6 +1754,15 @@ function demandeDeRepeter(texte) {
   const t = String(texte || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[’`]/g, "'").replace(/\s+/g, ' ').trim();
   return !!t && !REPETER_NON.test(t) && DEMANDE_REPETER.some(r => r.test(t));
 }
+// (31/10, 00:35, Ahmed : « que le flux de parole ne lui emmêle pas les pinceaux ») il a déjà réagi par son oreille pendant que
+// papa parlait : le message entier arrive ensuite ; une ligne, une fois, pour qu'il ne redise pas la même chose
+function blocDejaReagi(maintenant = Date.now()) {
+  const m = oreilleDernierMot;
+  if (!m || !m.texte || m.signale || maintenant - m.ts > 90000) return '';
+  m.signale = true;
+  return `\n[Pendant que papa parlait, tu as déjà réagi par ton oreille : « ${finDePhrase(sansBaliseAffect(m.texte), 160)} ». `
+    + 'Ne le redis pas : réponds à ce qui reste de son message (une phrase courte s\'il n\'y a rien d\'autre)]';
+}
 // son tour : rien s'il n'y en a pas ; une ligne s'il y en a ; la liste entière (puis effacée) s'il demande de répéter
 function blocNonEntendus(texteAhmed, nonce, maintenant = Date.now()) {
   let lu = '';
@@ -3281,7 +3290,7 @@ async function routeJarvis(req, res, distantReq = false) {
   const tempsLibre = blocTempsLibre();
   const immuniteBloc = blocImmunite();
   const voixBloc = blocVoixTierce(q, texte, verdictDuTour(q));
-  const tachesTexte = blocTaches(depuisMs, nonce) + blocAtelier() + tempsLibre.texte + immuniteBloc.texte + voixBloc.texte + blocCorps() + blocNonEntendus(texte, nonce);
+  const tachesTexte = blocTaches(depuisMs, nonce) + blocAtelier() + tempsLibre.texte + immuniteBloc.texte + voixBloc.texte + blocCorps() + blocNonEntendus(texte, nonce) + blocDejaReagi();
   if (/terminées depuis son message précédent/.test(tachesTexte)) noterExterne('sortie de commande');
   if (courrierRecu.texte) noterExterne('courrier');
   if (immuniteBloc.texte) noterExterne('système immunitaire');       // (relecture du 29/10) il parle de contenus du dehors

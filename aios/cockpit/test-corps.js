@@ -41,7 +41,7 @@ test('le bloc de son prochain tour : son milieu du moment et ses sensations, en 
   actif = false;
   ctx.corpsADire.push({ ts: t, sensation: 'Coupé.' });
   assert.equal(ctx.f(), '', 'coupé par Ahmed : rien');
-  assert.match(src, /const tachesTexte = blocTaches\(depuisMs, nonce\) \+ blocAtelier\(\) \+ tempsLibre\.texte \+ immuniteBloc\.texte \+ voixBloc\.texte \+ blocCorps\(\) \+ blocNonEntendus\(texte, nonce\);/);
+  assert.match(src, /const tachesTexte = blocTaches\(depuisMs, nonce\) \+ blocAtelier\(\) \+ tempsLibre\.texte \+ immuniteBloc\.texte \+ voixBloc\.texte \+ blocCorps\(\) \+ blocNonEntendus\(texte, nonce\) \+ blocDejaReagi\(\);/);
 });
 
 test('branché : les routes (jeton), le lot vers corps.py, le réveil, l’interrupteur, la page SENS', () => {

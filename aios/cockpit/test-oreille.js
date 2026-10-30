@@ -632,3 +632,14 @@ test('(00:30) le bouton Télépathie : la Conversation sans aucun texte écrit, 
   assert.equal(envois.length, 2, 'en cours : le bouton ferme, sans toucher au réglage');
   assert.equal(appuis.length, 3);
 });
+
+test('(00:35) il a déjà réagi par son oreille : le message entier de papa le lui rappelle, une fois, pour qu’il ne redise pas', () => {
+  const f = prendre(src, 'function blocDejaReagi(');
+  const c = vm.createContext({ Date, oreilleDernierMot: { texte: 'Oui, je suis d’accord avec Nora !', ts: 100000 }, finDePhrase: (t) => t, sansBaliseAffect: (t) => t });
+  vm.runInContext(f, c);
+  assert.match(c.blocDejaReagi(130000), /tu as déjà réagi par ton oreille : « Oui, je suis d’accord avec Nora ! »\. Ne le redis pas/);
+  assert.equal(c.blocDejaReagi(131000), '', 'une seule fois');
+  c.oreilleDernierMot = { texte: 'Vieux', ts: 0 };
+  assert.equal(c.blocDejaReagi(200000), '', 'plus de 90 s : rien');
+  assert.match(src, /blocNonEntendus\(texte, nonce\) \+ blocDejaReagi\(\);/);
+});

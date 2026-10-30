@@ -256,7 +256,7 @@ test('(19:06) réentendues par le cockpit, elles ne dépendent plus de son tour 
   assert.equal(c.ctx.attente().length, 0, 'déjà réentendues : rien à rendre, même si son tour échoue');
   assert.equal(c.disque().length, 0);
   // câblage : le bloc à la fin de ses tâches ; rendues si le tour n'a rien dit, ou s'il s'arrête avant de commencer
-  assert.match(srv, /\+ blocCorps\(\) \+ blocNonEntendus\(texte, nonce\);/);
+  assert.match(srv, /\+ blocCorps\(\) \+ blocNonEntendus\(texte, nonce\) \+ blocDejaReagi\(\);/);
   assert.match(srv, /if \(o\.erreur \|\| !reponse\.trim\(\) \|\| NON_REPONSE_SERVEUR\.test\(reponse\)\) rendreNonEntendus\(nonce\);/);
   assert.match(srv, /if \(arretDemande\) noterArret\(arretDuTour\(\{ coupe: true \}, raisonArret, ''\), texte\);\n\s+rendreNonEntendus\(nonce\);/);
   assert.match(srv, /if \(Array\.isArray\(q\.non_dites\) && q\.non_dites\.length\) recevoirNonDites\(\{ textes: q\.non_dites \}\);/);
