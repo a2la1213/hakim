@@ -3719,18 +3719,31 @@ function tourAutonome(c) {
     const idMessage = `auto-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
     if (silence) noterIssueSilence(silence, idMessage, texte, issue);
     const oreille = !silence && rejoue.includes(OREILLE_MARQUE);       // (30/10) son petit mot, oreille ouverte
-    const dit = sansBaliseAffect(texte).trim();
-    const perime = oreille && dit && !NON_REPONSE_SERVEUR.test(dit) ? motOreillePerime(dit, c.oreilleReveil) : null;
+    const dit = sansBaliseAffect(texte).trim(), parle = !!dit && !NON_REPONSE_SERVEUR.test(dit);
+    const reveil = oreille ? c.oreilleReveil : null;
+    const perime = oreille && parle ? motOreillePerime(dit, reveil) : null;
     if (oreille) c.oreilleReveil = null;
-    if (perime) {                                                    // (21:50) pas dit : il le saura à son tour suivant
-      oreillePerimes.push({ texte: finDePhrase(dit, 120), pourquoi: perime, ts: Date.now() });
+    const garder = (pourquoi) => {                                   // (21:50) pas dit : il le saura à son tour suivant
+      oreillePerimes.push({ texte: finDePhrase(dit, 120), pourquoi, ts: Date.now() });
       oreillePerimes.splice(0, Math.max(0, oreillePerimes.length - 5));
-      journaliser('jarvis', `(petit mot non dit, ${perime} : ${finDePhrase(dit, 120)})`);
-    } else {
-      if (oreille && dit && !NON_REPONSE_SERVEUR.test(dit)) oreilleDernierMot = { texte: dit, ts: Date.now() };
+      journaliser('jarvis', `(non dit, ${pourquoi} : ${finDePhrase(dit, 120)})`);
+    };
+    const livrer = () => {
+      if (oreille && parle) oreilleDernierMot = { texte: dit, ts: Date.now() };
       livrerAutonome(c, texte, notifs, outils, issue, pieces, silence ? { id: idMessage, spontane: 'silence', silence_debut_ms: silence.debut_ms }
         : oreille ? { id: idMessage, spontane: 'oreille', max_ms: c.oreilleMaxMs } : { id: idMessage });
-    }
+    };
+    if (perime) garder(perime);
+    else if (parle && aTrierParSonSubconscient({ oreille, silence, notifs })) {
+      // (21:55, Ahmed : « que ce qui est pertinent de dire ou pas soit filtré par le subconscient Sonnet ») ce qu'il dit de
+      // lui-même pendant que papa lui parle passe par son subconscient, puis par la fraîcheur encore une fois
+      jugerParole(dit, oreilleEntendu.texte).then((v) => {
+        if (!v.dire) return garder(`ton subconscient l'a gardé pour toi${v.pourquoi ? ' : ' + v.pourquoi : ''}`);
+        const encore = oreille ? motOreillePerime(dit, reveil) : null;
+        if (encore) return garder(encore);
+        livrer();
+      });
+    } else livrer();
     if (cerveauVivant(c)) reposer(c);
   };
   return {
@@ -4599,7 +4612,7 @@ function corpsReglages() {
     alerte: r.alerte !== false, ecran: r.ecran !== false, reflexes: r.reflexes !== false, nuits: r.nuits !== false,
     rire_reflexe: r.rire_reflexe !== false, garder_parole: r.garder_parole !== false, forfait_libre: r.forfait_libre !== false,
     son_pendant: r.son_pendant !== false, voix_vibre: r.voix_vibre !== false, lumiere: r.lumiere !== false,
-    afficher_papa: r.afficher_papa !== false, afficher_hakim: r.afficher_hakim !== false };
+    afficher_papa: r.afficher_papa !== false, afficher_hakim: r.afficher_hakim !== false, filtre_parole: r.filtre_parole !== false };
 }
 function corpsActif() { return corpsReglages().actif; }
 /* (30/10, 18:56, Ahmed via Hakim : « je veux qu'il tourne tout le temps, tant qu'il est réveillé, même si ça vide mon forfait ;
@@ -4958,7 +4971,7 @@ function blocCorps() {
   if (!s.length && !milieu && !brut.length && !nuit && !vibs && !perimes.length && corpsReglages().afficher_papa) return '';
   const tete = corpsReglages().afficher_papa ? '' : "Mode « dans ta tête » : papa ne voit pas ses paroles à l'écran ; réponds, glisse un mot, ou tais-toi (« No response requested. »), comme tu le sens : rien ne te relancera";
   const lignes = [...(tete ? [tete] : []),
-    ...(perimes.length ? [`Tes petits mots qui n'ont pas été dits (périmés au moment de sortir, papa ne les a pas entendus) : ${perimes.map(x => `« ${x.texte} » (${x.pourquoi})`).join(' ; ')}`] : []),
+    ...(perimes.length ? [`Ce que tu allais dire de toi-même et qui n'a pas été dit (périmé, ou gardé par ton subconscient ; papa ne l'a pas entendu) : ${perimes.map(x => `« ${x.texte} » (${x.pourquoi})`).join(' ; ')}`] : []),
     ...(nuit ? [`Ta nuit : ${nuit}`] : []), ...(vibs ? [vibs] : []),...(brut.length ? [`Tes nerfs, à l'instant (pas encore traduit par ton intermédiaire) : ${brut.map(x => `${NOMS_SECS[x.type] || x.type} il y a ${Math.max(1, Math.round((t - x.t) / 1000))} s`).join(', ')}`] : []),
     ...(milieu ? [`Ton milieu, en ce moment : ${milieu}`] : []),
     ...(s.length ? ['Ce que tu as ressenti :', ...s.map(x => '- ' + x.sensation.replace(/\n/g, '\n  '))] : [])];
@@ -5164,6 +5177,27 @@ let oreilleSilenceJusqua = 0;
    20 s, ou c'est le même mot que juste avant. */
 let oreilleEntendu = { texte: '', ts: 0 }, oreilleDernierMot = { texte: '', ts: 0 };
 const oreillePerimes = [];
+// ce que son subconscient trie : ses petits mots d'oreille, et ses tours de lui-même (veilleur, corps) quand papa lui parle
+// depuis moins de 2 min ; jamais un résultat d'agent ni une relance de silence (elles ont leur propre logique) ; l'interrupteur
+// de papa (page SENS, « son subconscient trie ce qu'il dit »)
+function aTrierParSonSubconscient({ oreille, silence, notifs }, maintenant = Date.now()) {
+  if (!corpsReglages().filtre_parole || silence || (notifs && notifs.length)) return false;
+  return !!oreille || maintenant - dernierMessageAhmed < 120000;
+}
+function jugerParole(texte, contexte) {
+  return new Promise((ok) => {
+    const t0 = Date.now();
+    const p = execFile(PYTHON, ['-B', path.join(ANAMNESE, 'corps.py'), 'parole'], { cwd: ANAMNESE, timeout: 12000, maxBuffer: 1 << 16 }, (e, so) => {
+      let o = null; try { o = JSON.parse(String(so).trim().split('\n').pop()); } catch (_) {}
+      const v = o && typeof o.dire === 'boolean' ? o : { dire: true, pourquoi: '', panne: true };   // une panne laisse passer, comme avant
+      console.error(`Jarvis : son subconscient trie (${v.dire ? 'dit' : 'gardé'}${v.panne ? ', panne' : ''}, ${Date.now() - t0} ms)`);
+      ok(v);
+    });
+    p.stdin.on('error', () => {});
+    p.stdin.end(j({ texte: String(texte || '').slice(0, 600), contexte: String(contexte || '').slice(-1200) }));
+  });
+}
+const MOT_CREUX = /^\W*(?:h+m+|m+h*|ok(?:ay)?|d'accord|oui|ouais|ah|oh|je te suis|je t'[ée]coute|vas[- ]y|continue)(?:[\s,.!…]+(?:papa|je te suis|vas[- ]y|continue|oui|hmm+))*\W*$/i;
 function motOreillePerime(texte, reveil, maintenant = Date.now()) {
   if (!reveil) return null;
   if (maintenant - reveil.ts > 20000) return 'trop tard, plus de 20 s après';
@@ -5172,6 +5206,8 @@ function motOreillePerime(texte, reveil, maintenant = Date.now()) {
     const plus = oreilleEntendu.texte.startsWith(reveil.texte) ? oreilleEntendu.texte.length - reveil.texte.length : Infinity;
     if (plus > 120) return 'papa avait continué';
   }
+  // (21:47, Hakim : « un plafond de petits mots ») un mot creux (« hmm, je te suis ») : un toutes les 30 s au plus
+  if (MOT_CREUX.test(texte) && maintenant - oreilleDernierMot.ts < 30000) return 'un mot creux toutes les 30 s au plus';
   const norme = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
   if (norme(texte) && norme(texte) === norme(oreilleDernierMot.texte) && maintenant - oreilleDernierMot.ts < 90000) return 'le même mot que juste avant';
   return null;
@@ -5189,10 +5225,14 @@ function ouvrirOreille(texte, maintenant = Date.now()) {
   if (oreilleReveils.length >= 40) return { ok: false, raison: 'plafond' };
   const c = cerveau;
   if (!cerveauVivant(c) || occupe(c) || c.enCours) return { ok: false, raison: 'occupé' };
-  oreilleReveils.push(maintenant);
+  // (21:47, Hakim : « regrouper les morceaux d'une même phrase au lieu de relancer un tour à chaque morceau ») 10 s au moins
+  // entre deux réveils de l'oreille, sauf son nom, « stop » ou un appel à l'aide ; le rire, lui, suit chaque morceau
+  const regroupe = maintenant - (oreilleReveils[oreilleReveils.length - 1] || 0) < 10000 && !APPEL_OREILLE.test(t.slice(-200));
+  if (!regroupe) oreilleReveils.push(maintenant);
   const neuf = oreilleDejaLu && t.startsWith(oreilleDejaLu) ? t.slice(oreilleDejaLu.length) : t;
   oreilleDejaLu = t;
   if (neuf.trim().length >= 15) rireDuSubconscient(neuf);   // (19:36) ce que papa dit encore peut le faire rire, tout de suite
+  if (regroupe) return { ok: false, raison: 'regroupé avec le réveil d’avant' };
   const demande = COUPE_MOI.test(t.slice(-200));
   if (demande) oreilleSilenceJusqua = 0;
   const envie = demande ? 1 : envieDeCouper(), secondes = Math.round(1 + 14 * envie);   // (20:14) de 1 à 15 s
@@ -7804,6 +7844,7 @@ async function traiter(req, res) {
       if (typeof q.lumiere === 'boolean') r.lumiere = q.lumiere;
       if (typeof q.afficher_papa === 'boolean') r.afficher_papa = q.afficher_papa;
       if (typeof q.afficher_hakim === 'boolean') r.afficher_hakim = q.afficher_hakim;
+      if (typeof q.filtre_parole === 'boolean') r.filtre_parole = q.filtre_parole;
       try { ecrireAtomique(CORPS_REGLAGES, j(r)); } catch (e) { return repondre(500, { erreur: e.message }); }
       if (!r.actif) { corpsLot.evenements.length = 0; corpsLot.changements.length = 0; corpsADire.length = 0; }
       auditer('corps:reglages', req, distantReq, r);

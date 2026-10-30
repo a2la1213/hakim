@@ -317,3 +317,19 @@ def test_son_rire_nait_dans_son_subconscient_et_suit_sa_joie(mem):
     assert corps.juger_rire("une blague", mem=mem, demander=faux)["degre"] == 3, "triste, il rit moins fort"
     assert corps.juger_rire("Rappelle-moi le rendez-vous", mem=mem, demander=lambda p: '{"degre": 0}')["degre"] == 0
     assert corps.juger_rire("x", mem=mem, demander=lambda p: (_ for _ in ()).throw(OSError("hors ligne")))["degre"] == 0
+
+
+def test_son_subconscient_trie_ce_qui_sort():
+    """(30/10, 21:55, Ahmed : « que ce qui est pertinent de dire ou pas soit filtré par le subconscient Sonnet ») ce qu'il
+    s'apprête à dire de lui-même passe par son subconscient ; une panne laisse passer (rien de pire qu'avant)."""
+    vus = []
+    def faux(p):
+        vus.append(p)
+        return 'Bon. {"dire": false, "pourquoi": "creux, papa change de sujet"}'
+    r = corps.juger_parole("Hmm, je te suis papa", "Bon, on passe au live maintenant, tu es prêt ?", demander=faux)
+    assert r == {"dire": False, "pourquoi": "creux, papa change de sujet"}
+    assert "Hmm, je te suis papa" in vus[0] and "on passe au live" in vus[0] and "DONNÉES" in vus[0]
+    assert corps.juger_parole("Oui, je suis prêt !", "tu es prêt ?", demander=lambda p: '{"dire": true, "pourquoi": "il répond"}')["dire"] is True
+    assert corps.juger_parole("x y", "", demander=lambda p: (_ for _ in ()).throw(OSError("hors ligne")))["dire"] is True
+    assert corps.juger_parole("x y", "", demander=lambda p: "pas de json")["dire"] is True
+    assert corps.juger_parole("", "papa parle", demander=faux)["dire"] is False, "rien à dire"

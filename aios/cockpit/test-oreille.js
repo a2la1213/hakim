@@ -36,7 +36,7 @@ test('oreille ouverte : ce que papa a déjà dit le réveille ; fermée, il dort
 
 test('quarante réveils par heure au plus', () => {
   const o = oreille();
-  for (let i = 0; i < 45; i++) o.f('Alors écoute, aujourd’hui au travail il s’est passé un truc');
+  for (let i = 0; i < 45; i++) o.f('Alors écoute, aujourd’hui au travail il s’est passé un truc', Date.now() + i * 11000);   // (21:55) 10 s entre deux réveils
   assert.equal(o.ecrits.length, 40);
 });
 
@@ -167,9 +167,9 @@ test('(21:34) « dans ta tête » tient pour lui : ni ses tours de lui-même ni 
 
 test('(21:50) un petit mot périmé au moment de sortir n’est pas dit, et il le sait à son tour suivant', () => {
   const f = prendre(src, 'function motOreillePerime(');
-  const juge = (texte, reveil, { ahmed = 0, entendu = { texte: '', ts: 0 }, dernier = { texte: '', ts: 0 }, maintenant = 10000 } = {}) => {
+  const juge = (texte, reveil, { ahmed = 0, entendu = { texte: '', ts: 0 }, dernier = { texte: '', ts: -1e9 }, maintenant = 10000 } = {}) => {
     const c = vm.createContext({ String, Infinity, dernierMessageAhmed: ahmed, oreilleEntendu: entendu, oreilleDernierMot: dernier });
-    vm.runInContext(f, c); return c.motOreillePerime(texte, reveil, maintenant);
+    vm.runInContext(src.match(/const MOT_CREUX = .+;/)[0].replace('const ', 'var ') + f, c); return c.motOreillePerime(texte, reveil, maintenant);
   };
   const reveil = { texte: 'Alors écoute, aujourd’hui au travail', ts: 5000 };
   assert.equal(juge('Hmm, je te suis', reveil), null, 'frais : dit');
@@ -177,9 +177,39 @@ test('(21:50) un petit mot périmé au moment de sortir n’est pas dit, et il l
   assert.equal(juge('Hmm', reveil, { maintenant: 26000 }), 'trop tard, plus de 20 s après');
   assert.equal(juge('Hmm', reveil, { entendu: { texte: reveil.texte + ' x'.repeat(80), ts: 8000 } }), 'papa avait continué');
   assert.equal(juge('Hmm', reveil, { entendu: { texte: reveil.texte + ' il', ts: 8000 } }), null, 'trois mots de plus : encore frais');
-  assert.equal(juge('Je te suis, papa !', reveil, { dernier: { texte: 'je te suis papa', ts: 4000 } }), 'le même mot que juste avant');
+  assert.equal(juge('Tu as raison, c’est drôle !', reveil, { dernier: { texte: 'tu as raison c’est drôle', ts: 4000 } }), 'le même mot que juste avant');
+  assert.equal(juge('Hmm, je te suis papa', reveil, { dernier: { texte: 'Ah oui ?', ts: 4000 } }), 'un mot creux toutes les 30 s au plus');
+  assert.equal(juge('Hmm, je te suis papa', reveil, { dernier: { texte: 'Ah oui ?', ts: -30000 } }), null, 'trente secondes après : dit');
+  assert.equal(juge('Hmm, mais tu as oublié le sel', reveil, { dernier: { texte: 'Ah oui ?', ts: 4000 } }), null, 'un mot qui dit quelque chose');
   assert.equal(juge('Hmm', null), null, 'pas un mot d’oreille');
-  assert.match(src, /if \(perime\) \{[\s\S]{0,200}oreillePerimes\.push/, 'pas livré');
+  assert.match(src, /if \(perime\) garder\(perime\);/, 'pas livré');
+  assert.match(src, /const garder = \(pourquoi\) => \{[\s\S]{0,120}oreillePerimes\.push/, 'gardé pour son tour suivant');
   assert.match(src, /const perimes = oreillePerimes\.splice\(0\)/, 'dit à son tour suivant');
   assert.match(src, /c\.oreilleReveil = \{ texte: t, ts: maintenant \};/);
+});
+
+test('(21:55) son subconscient trie ce qu’il dit de lui-même ; les morceaux d’une même phrase ne le réveillent qu’une fois', () => {
+  const re = new RegExp(src.match(/const MOT_CREUX = \/(.+)\/i;/)[1], 'i');
+  for (const x of ['Hmm, je te suis papa', 'Hmm.', 'D’accord'.replace('’', "'"), 'Je t’écoute, vas-y'.replace('’', "'"), 'Mmh']) assert.ok(re.test(x), x);
+  for (const x of ['Hmm, mais tu as oublié le sel', 'Je te suis : on fait le live à 22 h ?']) assert.ok(!re.test(x), x);
+  // qui passe par lui
+  const f = prendre(src, 'function aTrierParSonSubconscient(');
+  const trie = (o, { filtre = true, ahmed = 0 } = {}) => {
+    const c = vm.createContext({ corpsReglages: () => ({ filtre_parole: filtre }), dernierMessageAhmed: ahmed });
+    vm.runInContext(f, c); return c.aTrierParSonSubconscient(o, 1e9);
+  };
+  assert.equal(trie({ oreille: true, notifs: [] }), true, 'ses petits mots');
+  assert.equal(trie({ oreille: false, notifs: [] }, { ahmed: 1e9 - 50000 }), true, 'un réveil pendant que papa lui parle');
+  assert.equal(trie({ oreille: false, notifs: [] }, { ahmed: 1e9 - 300000 }), false, 'seul, il dit ce qu’il veut');
+  assert.equal(trie({ oreille: false, notifs: [{}] }, { ahmed: 1e9 - 10000 }), false, 'un résultat d’agent passe toujours');
+  assert.equal(trie({ oreille: false, silence: {}, notifs: [] }, { ahmed: 1e9 - 10000 }), false, 'une relance de silence a sa logique');
+  assert.equal(trie({ oreille: true, notifs: [] }, { filtre: false }), false, 'l’interrupteur de papa');
+  assert.match(src, /jugerParole\(dit, oreilleEntendu\.texte\)\.then\(\(v\) => \{\n\s+if \(!v\.dire\) return garder\(/, 'gardé : pas dit, et il le saura');
+  assert.match(src, /const encore = oreille \? motOreillePerime\(dit, reveil\) : null;/, 'la fraîcheur, encore, après son subconscient');
+  assert.match(src, /\{ dire: true, pourquoi: '', panne: true \}/, 'une panne laisse passer');
+  // les morceaux d'une même phrase
+  const o = oreille();
+  assert.equal(o.f('Alors écoute, aujourd’hui au travail il s’est passé un truc').ok, true);
+  assert.equal(o.f('Alors écoute, aujourd’hui au travail il s’est passé un truc de fou avec').raison, 'regroupé avec le réveil d’avant');
+  assert.equal(o.f('Alors écoute, aujourd’hui au travail il s’est passé un truc de fou avec Hakim').ok, true, 'son nom passe toujours');
 });
