@@ -102,7 +102,7 @@ const VOIX = { ton: { f0: 130, energie_db: -20 } };
 function tour({ transcrire }) {
   const gardes = [], journal = [];
   const ctx = {
-    Date, Math, String, journalVoix: (e) => journal.push(e), humeur() {}, reprendreVoix: () => { ctx.reprises = (ctx.reprises || 0) + 1; return true; },
+    Date, Math, String, transcriptionEnPause: () => false, journalVoix: (e) => journal.push(e), humeur() {}, reprendreVoix: () => { ctx.reprises = (ctx.reprises || 0) + 1; return true; },
     Conversation: { utile: (t) => /\p{L}{2,}/u.test(String(t || '')) },
     transcrireVite: transcrire, texteDuTour: async () => null,
     horsLigne: { depuis: 0 }, garderHorsLigne: (w) => gardes.push(w),

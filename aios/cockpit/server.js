@@ -5383,7 +5383,7 @@ const MACHINERIE = /\b(?:maman|claude code|subconscient|cockpit|balises?|mon mic
 // (23:55, Ahmed : « le subconscient doit séparer en 7 à 10 empans, de petits paragraphes, et laisser le reste quand c'est trop
 // long ; ça allégera son subconscient ») le texte nettoyé est coupé en empans (une phrase, ou ce que dit une voix), chacun de
 // 25 mots au plus ; seuls les 8 derniers partent, un par ligne
-const EMPANS = 5, MOTS_PAR_EMPAN = 25;   // (31/10, 00:40, Ahmed : « descends à 5 »)
+const EMPANS = 3, MOTS_PAR_EMPAN = 25;   // (31/10, 00:40-00:45, Ahmed : « descends à 5 », puis « à 3 » ; on remontera avec un Mac plus puissant)
 // (31/10, 00:06, Ahmed : « pas 8 empans obligatoires : il doit sélectionner entre 1 et 8 ») son attention ne garde que les empans qui
 // le concernent (une question, « tu », son nom, un sujet qui le touche) et toujours le dernier ; 8 au plus, 1 au moins
 /* (31/10, 00:09, Ahmed : « il doit aussi pouvoir diriger son attention de façon consciente, mais aussi subconsciente : les deux
@@ -5470,8 +5470,9 @@ function ouvrirOreille(texte, maintenant = Date.now()) {
     // (23:40) le prénettoyage : rien de ce qu'il vient de dire ne s'adresse à lui (ni question, ni « tu », ni son nom) : pas pesé
     if (!retientSonAttention(String(neuf || ''))) return { ok: false, raison: 'prénettoyage : rien pour lui' };
     const att = attentionActive();
+    diffuser(abonnesPensees, 'attention', j({ pause: true }));   // (00:47) ses empans choisis : la page suspend la transcription
     jugerReveilOreille((att ? `(Hakim a choisi de suivre : ${att.mots.join(', ')})\n` : '') + nettoyerPourSonnet(t, 800)).then((v) => {
-      if (!v.reveiller) { console.error(`Jarvis : son subconscient garde l'oreille fermée (${v.pourquoi || 'rien qui presse'})`); return; }
+      if (!v.reveiller) { diffuser(abonnesPensees, 'attention', j({ pause: false })); console.error(`Jarvis : son subconscient garde l'oreille fermée (${v.pourquoi || 'rien qui presse'})`); return; }
       if (dernierMessageAhmed > maintenant || !cerveauVivant(c) || occupe(c) || c.enCours) return;
       ecrireReveilOreille(c, t, false, Date.now(), v.pourquoi, v.morceaux);
     });

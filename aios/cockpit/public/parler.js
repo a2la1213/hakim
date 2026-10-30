@@ -2067,10 +2067,9 @@ function morceauNeuf(texte, deja) {
 function surPauseConversation(conv, fenetre) {
   const e = conv.ecrit;
   if (!conv.capteur || !e || e.partiel || fenetre - e.coupe < 150) return;
-  // (30/10, 23:20) pendant SON tour, ces morceaux prenaient le Mac à sa voix ; (31/10, 00:42, Ahmed : « il faut qu'il ingurgite
-  // petit à petit, sinon c'est trop pour la transcription » : d'un bloc à la fin, une longue phrase prenait jusqu'à 20 s) : pendant
-  // son tour, un petit morceau toutes les 4 s au plus, ta phrase est digérée au fil de l'eau ; la fin ne transcrit que la queue
-  if (typeof sonTourEnCours === 'function' && sonTourEnCours() && Date.now() - (conv.partielA || 0) < 4000) return;
+  // (31/10, 00:47, Ahmed : « dès que Hakim donne le signal ou sélectionne ses empans, la transcription s'arrête, même si ça écoute
+  // toujours ; quand il finit de parler, il reprend la transcription ») : pendant son tour, aucun morceau n'est transcrit
+  if (typeof transcriptionEnPause === 'function' && transcriptionEnPause()) return;
   conv.partielA = Date.now();
   const de = e.coupe, wav = conv.capteur.segment(de, fenetre);
   if (!wav) return;                                                      // pas de voix dans ce morceau
@@ -2100,7 +2099,7 @@ async function texteDuTour(conv) {
 }
 function anticiperConversation(conv, silenceMs) {
   if (etat.reglages.rapide === false || silenceMs < SILENCE_ANTICIPE_MS || conv.spec || !conv.capteur) return;
-  if (typeof sonTourEnCours === 'function' && sonTourEnCours()) return;   // (23:20) son tour : ta phrase l'attend, rien à anticiper
+  if (typeof transcriptionEnPause === 'function' && transcriptionEnPause()) return;   // (00:47) son tour : rien à anticiper
   // un seul essai par silence (relecture Opus : la même queue était retranscrite ~10 fois par pause)
   if (conv.essaiVoix === conv.capteur.derniereVoix || !conv.capteur.assezDeVoix) return;
   conv.essaiVoix = conv.capteur.derniereVoix;
@@ -2487,8 +2486,8 @@ function filtrerVoixInconnues(texte) {
   return t.split(/(?=\[[^\]]{1,30}\])/).filter(x => !/^\s*\[voix \d+\]/i.test(x) || POUR_LUI_ICI.test(x)).join(' ').replace(/\s+/g, ' ').trim();
 }
 function resumerPourSonAttention(texte) {
-  const phrases = String(texte || '').replace(/\s+…\s+/g, ' ').split(/(?<=[.!?…])\s+/).filter(x => x.trim());
-  return `(dit pendant ta parole) ${(phrases.length > 5 ? '… ' : '') + phrases.slice(-5).join(' ')}`;   // (00:40) 5 au plus
+  const phrases = String(texte || '').replace(/\(dit pendant ta parole\)\s*/g, '').replace(/\s+…\s+/g, ' ').split(/(?<=[.!?…])\s+/).filter(x => x.trim());
+  return `(dit pendant ta parole) ${(phrases.length > 3 ? '… ' : '') + phrases.slice(-3).join(' ')}`;   // (00:45) 3 au plus
 }
 function libererSonTour() {
   const c = etat.conversation;
@@ -2503,6 +2502,30 @@ function libererSonTour() {
   return true;
 }
 setInterval(libererSonTour, 300);
+/* (31/10, 00:47) la transcription en pause : dès son signal (il prépare sa réponse, il a coupé ton micro, ou son oreille vient
+   de choisir ses empans) et jusqu'à la fin de sa voix. Le micro écoute toujours : tes 3 dernières phrases (le son) l'attendent,
+   et sont transcrites d'un bloc, petit à petit, quand il a fini de parler. */
+function transcriptionEnPause() {
+  const c = etat.conversation;
+  if (!c) return false;
+  if (c.attentionJusqua && Date.now() < c.attentionJusqua && !sonTourEnCours()) return true;   // son oreille a choisi
+  return sonTourEnCours() || !!(c.muetParHakim && !c.muetParHakim.attente);
+}
+async function reprendreTranscription() {
+  const c = etat.conversation;
+  if (!c || !c.sonsEnAttente || !c.sonsEnAttente.length || transcriptionEnPause() || c.reprise) return false;
+  if (Date.now() - (etat.finVoixA || 0) < 400) return false;
+  c.reprise = true;
+  const lot = c.sonsEnAttente.splice(0);
+  try {
+    const textes = [];
+    for (const x of lot) { const t = await transcrireVite(x.wav, 'audio/wav'); if (t && Conversation.utile(t)) textes.push(t); }
+    journalVoix('transcription_reprise_apres_sa_voix', { tours: lot.length, gardes: textes.length });
+    if (textes.length) await tourDeParole(c, null, lot[lot.length - 1].infos, { texte: resumerPourSonAttention(textes.join(' … ')), differe: true });
+  } catch (_) {} finally { c.reprise = false; }
+  return true;
+}
+setInterval(reprendreTranscription, 400);
 async function tourDeParole(conv, wav, infos, extra) {
   // (28/10, sa sieste) les éclats trop courts pour une voix, et leur écart aux battements : de quoi régler le filtre
   if (infos && infos.vibration && (infos.vibration.eclats || infos.vibration.battements)) journalVoix('vibration_tour', infos.vibration);
@@ -2520,6 +2543,12 @@ async function tourDeParole(conv, wav, infos, extra) {
   if (horsLigne.depuis && !(extra && extra.texte)) {
     if (tourSansVoix(infos)) { if (!reprendreVoix()) humeur(); return; }
     garderHorsLigne(wav, t0Tour); return;
+  }
+  // (00:47) la transcription en pause (son tour) : le son de ta phrase attend la fin de sa voix (les 3 dernières)
+  if (wav && !(extra && extra.texte) && transcriptionEnPause()) {
+    conv.sonsEnAttente = (conv.sonsEnAttente || []).concat([{ wav, infos }]).slice(-3);
+    journalVoix('tour_son_garde', { en_attente: conv.sonsEnAttente.length });
+    return;
   }
   // (31/10, 00:40, Ahmed : « la solution pour la salle : qu'il coupe l'arrivée du son quand il veut répondre, et que le tout ne
   // soit pas transcrit, juste les paroles proches qui l'intéressent ») micro coupé par lui : une voix lointaine (8 dB sous ta voix
@@ -3002,6 +3031,8 @@ function ecouterPensees() {
   // (19:58) sa lumière : la lampe du téléphone (l'appli 1.36), ou son SOS selon son émotion
   es.addEventListener('son', (ev) => { try { recevoirSon(JSON.parse(ev.data).extrait); } catch (_) {} });   // (22:51)
   es.addEventListener('micro', (ev) => { try { microParHakim(JSON.parse(ev.data)); } catch (_) {} });   // (22:27) de lui-même aussi
+  es.addEventListener('attention', (ev) => { try { const o = JSON.parse(ev.data), c = etat.conversation;   // (00:47) ses empans choisis
+    if (c) c.attentionJusqua = o.pause ? Date.now() + 15000 : 0; journalVoix('attention', { pause: !!o.pause }); } catch (_) {} });
   es.addEventListener('lumiere', (ev) => { try { const o = JSON.parse(ev.data);
     const r = window.HakimApp && window.HakimApp.lumiere ? String(window.HakimApp.lumiere(String(o.mode), String(o.emotion || ''))) : 'pas_de_pont';
     journalVoix('lumiere', { mode: String(o.mode), retour: codeRetour(r) }); } catch (_) {} });

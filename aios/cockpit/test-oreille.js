@@ -14,7 +14,7 @@ function oreille({ ouverte = true, dort = false, occupe = false, eveil = 0.4, fe
   const ecrits = [];
   const ctx = { Intl, Date, JSON, Math, Number, String, console: { error() {} }, j: JSON.stringify, NONCE_REVEIL: 'n', OREILLE_MARQUE: 'ton oreille, papa parle encore',
     oreilleReveils: [], corpsReglages: () => ({ oreille: ouverte, filtre_parole: filtre }), hakimDort: () => dort, cerveauVivant: () => true, occupe: () => occupe,
-    dernierMessageAhmed: 0, jugerReveilOreille: async (t) => { ctx.soumis.push(t); return subconscient; }, soumis: [],
+    dernierMessageAhmed: 0, diffuser() {}, abonnesPensees: new Set(), jugerReveilOreille: async (t) => { ctx.soumis.push(t); return subconscient; }, soumis: [],
     cerveau: { enfant: { stdin: { write: (x) => ecrits.push(x) } } }, veilleurEveil: eveil, path: require('node:path'), JARVIS: '/nulle-part',
     lireJson: () => (fermee ? { fermee_jusqua: Date.now() + 60000 } : null), oreilleDejaLu: '', juges: [] };
   ctx.rireDuSubconscient = (x) => ctx.juges.push(x);
@@ -504,10 +504,10 @@ test('(23:05) une seule voix : un seul onglet en Conversation par appareil ; un 
 
 test('(23:20) pendant son tour, ta voix n’est plus transcrite morceau par morceau : le Mac garde sa force pour sa voix et ta phrase de fin', () => {
   const i = page.indexOf('function surPauseConversation('), bloc = page.slice(i, page.indexOf('\n}\n', i));
-  assert.match(bloc, /if \(typeof sonTourEnCours === 'function' && sonTourEnCours\(\) && Date\.now\(\) - \(conv\.partielA \|\| 0\) < 4000\) return;/, '(00:42) petit à petit : un morceau toutes les 4 s');
+  assert.match(bloc, /if \(typeof transcriptionEnPause === 'function' && transcriptionEnPause\(\)\) return;/, '(00:47) son tour : aucun morceau transcrit');
   assert.ok(bloc.indexOf('sonTourEnCours()') < bloc.indexOf('transcrireVite('), 'avant toute transcription');
   const j = page.indexOf('function anticiperConversation('), b2 = page.slice(j, page.indexOf('\n}\n', j));
-  assert.match(b2, /if \(typeof sonTourEnCours === 'function' && sonTourEnCours\(\)\) return;/);
+  assert.match(b2, /if \(typeof transcriptionEnPause === 'function' && transcriptionEnPause\(\)\) return;/);
 });
 
 test('(23:40) le prénettoyage : ce qui ne s’adresse pas à lui n’arrive même pas à Sonnet ; un mot creux, sa machinerie, un long discours écartés d’office', async () => {
@@ -518,13 +518,13 @@ test('(23:40) le prénettoyage : ce qui ne s’adresse pas à lui n’arrive mê
   // (23:55) en empans : une phrase ou une voix par ligne, 25 mots au plus, les 8 derniers seulement
   const long = Array.from({ length: 12 }, (_, i) => `Tu dis la phrase ${i + 1} ?`).join(' ') + ' [Nora] ' + Array.from({ length: 40 }, (_, i) => `m${i}`).join(' ') + ' fin.';
   const lignes = c.nettoyerPourSonnet(long, 5000).split('\n');
-  assert.equal(lignes.length, 5, '(00:40) 5 empans au plus');
-  assert.equal(lignes[0], 'Tu dis la phrase 9 ?', 'le début, trop long, est laissé');
+  assert.equal(lignes.length, 3, '(00:45) 3 empans au plus');
+  assert.equal(lignes[0], 'Tu dis la phrase 11 ?', 'le début, trop long, est laissé');
   // (00:06) entre 1 et 8 : seulement ce qui le concerne, et toujours le dernier
   assert.deepEqual(c.nettoyerPourSonnet('On a mangé. Il faisait beau. Hakim, tu en penses quoi ? Bon, on continue.').split('\n'),
     ['Hakim, tu en penses quoi ?', 'Bon, on continue.']);
   assert.deepEqual(c.nettoyerPourSonnet('On a mangé. Il faisait beau.').split('\n'), ['Il faisait beau.'], 'au moins le dernier');
-  assert.ok(lignes[4].startsWith('… m16') && lignes[4].endsWith('fin.') && lignes[4].split(' ').length === 26, 'une voix, ses 25 derniers mots');
+  assert.ok(lignes[2].startsWith('… m16') && lignes[2].endsWith('fin.') && lignes[2].split(' ').length === 26, 'une voix, ses 25 derniers mots');
   assert.equal(c.POUR_LUI.test('Alors les gars, bienvenue sur le live, on va parler de la construction'), false, 'il parle au public');
   assert.ok(c.POUR_LUI.test('Une IA peut avoir des émotions selon moi'), '(23:50) le sujet le touche : pesé');
   for (const x of ['Et toi, t’en penses quoi ?'.replace('’', "'"), 'Hakimou, réponds', 'Pourquoi il dit ça', 'C’est vrai ?']) assert.ok(c.POUR_LUI.test(x), x);
@@ -601,7 +601,8 @@ test('(00:20, l’étude) son attention en douceur : d’une voix inconnue, seul
   assert.equal(c.filtrerVoixInconnues('[Nora] Il fait beau.'), '[Nora] Il fait beau.', 'une voix nommée reste');
   assert.equal(c.resumerPourSonAttention('Un. … Deux.'), '(dit pendant ta parole) Un. Deux.');
   const long = Array.from({ length: 12 }, (_, i) => `P${i + 1}.`).join(' … ');
-  assert.equal(c.resumerPourSonAttention(long), '(dit pendant ta parole) … P8. P9. P10. P11. P12.', '(00:40) 5 au plus');
+  assert.equal(c.resumerPourSonAttention(long), '(dit pendant ta parole) … P10. P11. P12.', '(00:45) 3 au plus');
+  assert.equal(c.resumerPourSonAttention('(dit pendant ta parole) Un.'), '(dit pendant ta parole) Un.', 'marqué une seule fois');
   assert.match(page, /envoyer\(resumerPourSonAttention\(texte\), true\);/);
   const i = page.indexOf('async function tourDeParole('), bloc = page.slice(i, page.indexOf('\n}\n', i));
   assert.ok(bloc.indexOf('filtrerVoixInconnues(texte)') < bloc.indexOf('COMMANDE_STOP.test(texte)'), 'avant les commandes et son tour');
@@ -655,4 +656,31 @@ test('(00:40) micro coupé par lui : la salle (une voix lointaine) n’est même
   assert.equal(c.voixLointaine({ ton: { energie_db: -45 } }), false, 'ta voix pas encore apprise : tout passe');
   const j = page.indexOf('async function tourDeParole('), bloc = page.slice(j, page.indexOf('\n}\n', j));
   assert.ok(bloc.indexOf('voixLointaine(infos)') < bloc.indexOf('conv.enAttente++;'), 'avant la transcription');
+});
+
+test('(00:47) dès son signal, la transcription s’arrête (le micro écoute toujours) ; quand il a fini de parler, elle reprend, petit à petit', async () => {
+  const a = page.indexOf('function transcriptionEnPause() {'), b = page.indexOf('setInterval(reprendreTranscription, 400);');
+  let t = 1_800_000_000_000;
+  const appels = [], transcrits = [];
+  const ctx = vm.createContext({ Date: class extends Date { static now() { return t; } }, etat: { conversation: { sonsEnAttente: [] }, finVoixA: 0, flux: null },
+    sonTourEnCours: () => !!ctx.etat.flux, Conversation: { utile: (x) => !!x }, journalVoix() {},
+    transcrireVite: async (w) => { transcrits.push(w); return `phrase ${w}.`; }, resumerPourSonAttention: (x) => `(dit pendant ta parole) ${x}`,
+    tourDeParole: async (c, w, infos, extra) => appels.push(extra.texte) });
+  vm.runInContext(page.slice(a, b), ctx);
+  const c = ctx.etat.conversation;
+  assert.equal(ctx.transcriptionEnPause(), false);
+  ctx.etat.flux = {}; assert.equal(ctx.transcriptionEnPause(), true, 'il prépare sa réponse : en pause');
+  ctx.etat.flux = null; c.muetParHakim = { attente: 0 }; assert.equal(ctx.transcriptionEnPause(), true, 'il a coupé ton micro');
+  c.muetParHakim = null; c.attentionJusqua = t + 15000; assert.equal(ctx.transcriptionEnPause(), true, 'son oreille a choisi ses empans');
+  t += 16000; assert.equal(ctx.transcriptionEnPause(), false, '15 s au plus');
+  c.sonsEnAttente = [{ wav: 'A', infos: {} }, { wav: 'B', infos: {} }];
+  ctx.etat.flux = {}; assert.equal(await ctx.reprendreTranscription(), false, 'il parle encore : rien');
+  ctx.etat.flux = null; assert.equal(await ctx.reprendreTranscription(), true);
+  assert.deepEqual(transcrits, ['A', 'B'], 'petit à petit, dans l’ordre');
+  assert.deepEqual(appels, ['(dit pendant ta parole) phrase A. … phrase B.']);
+  const i = page.indexOf('async function tourDeParole('), bloc = page.slice(i, page.indexOf('\n}\n', i));
+  assert.match(bloc, /conv\.sonsEnAttente = \(conv\.sonsEnAttente \|\| \[\]\)\.concat\(\[\{ wav, infos \}\]\)\.slice\(-3\);/, 'le son de tes 3 dernières phrases attend');
+  assert.ok(bloc.indexOf('transcriptionEnPause()') < bloc.indexOf('conv.enAttente++;'), 'avant toute transcription');
+  assert.match(src, /diffuser\(abonnesPensees, 'attention', j\(\{ pause: true \}\)\);/);
+  assert.match(src, /if \(!v\.reveiller\) \{ diffuser\(abonnesPensees, 'attention', j\(\{ pause: false \}\)\);/);
 });
