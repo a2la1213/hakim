@@ -10,16 +10,17 @@ const src = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
 const page = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
 const prendre = (s, debut) => s.slice(s.indexOf(debut), s.indexOf('\n}\n', s.indexOf(debut)) + 3);
 
-function oreille({ ouverte = true, dort = false, occupe = false, eveil = 0.4, fermee = false } = {}) {
+function oreille({ ouverte = true, dort = false, occupe = false, eveil = 0.4, fermee = false, filtre = false, subconscient = null } = {}) {
   const ecrits = [];
   const ctx = { Intl, Date, JSON, Math, Number, String, console: { error() {} }, j: JSON.stringify, NONCE_REVEIL: 'n', OREILLE_MARQUE: 'ton oreille, papa parle encore',
-    oreilleReveils: [], corpsReglages: () => ({ oreille: ouverte }), hakimDort: () => dort, cerveauVivant: () => true, occupe: () => occupe,
+    oreilleReveils: [], corpsReglages: () => ({ oreille: ouverte, filtre_parole: filtre }), hakimDort: () => dort, cerveauVivant: () => true, occupe: () => occupe,
+    dernierMessageAhmed: 0, jugerReveilOreille: async (t) => { ctx.soumis.push(t); return subconscient; }, soumis: [],
     cerveau: { enfant: { stdin: { write: (x) => ecrits.push(x) } } }, veilleurEveil: eveil, path: require('node:path'), JARVIS: '/nulle-part',
     lireJson: () => (fermee ? { fermee_jusqua: Date.now() + 60000 } : null), oreilleDejaLu: '', juges: [] };
   ctx.rireDuSubconscient = (x) => ctx.juges.push(x);
   vm.createContext(ctx);
   const i = src.indexOf('const APPEL_OREILLE');
-  vm.runInContext(src.slice(i, src.indexOf('function ouvrirOreille(')).replace('let oreilleSilenceJusqua', 'var oreilleSilenceJusqua') + prendre(src, 'function ouvrirOreille(').replace('function ouvrirOreille(', 'this.f = function ('), ctx);
+  vm.runInContext(src.slice(i, src.indexOf('function ouvrirOreille(')).replace('let oreilleSilenceJusqua', 'var oreilleSilenceJusqua') + prendre(src, 'function ecrireReveilOreille(') + prendre(src, 'function ouvrirOreille(').replace('function ouvrirOreille(', 'this.f = function ('), ctx);
   return { f: ctx.f, ecrits, ctx };
 }
 
@@ -27,7 +28,7 @@ test('oreille ouverte : ce que papa a déjà dit le réveille ; fermée, il dort
   const o = oreille();
   assert.equal(o.f('Alors écoute, aujourd’hui au travail il s’est passé un truc').ok, true);
   assert.match(o.ecrits[0], /ton oreille, papa parle encore/);
-  assert.match(o.ecrits[0], /un mot court/);
+  assert.match(o.ecrits[0], /Dis seulement ce que tu as vraiment besoin ou envie de dire maintenant/);   // (22:20) plus de « hmm » suggéré
   assert.equal(oreille({ ouverte: false }).f('Alors écoute, aujourd’hui au travail').raison, 'oreille fermée');
   assert.equal(oreille({ dort: true }).f('Alors écoute, aujourd’hui au travail').raison, 'il dort');
   assert.equal(oreille({ dort: true }).f('Hakim, réveille-toi, écoute-moi bien').ok, true, 'son nom le réveille');
@@ -220,4 +221,54 @@ test('(22:20) plus strict : seulement sa dernière réponse non entendue, et rie
   assert.ok(bloc.indexOf('a_dire_perime') < bloc.indexOf('lecteur.dire(m.texte)'));
   assert.match(src, /const der = nonDitesAttente\[n - 1\];/, 'seulement la dernière');
   assert.match(src, /< 180000;/, 'et de moins de 3 min');
+});
+
+test('(22:30) son subconscient d’abord : il ne réveille sa conscience que pour le strict nécessaire ; son nom, « stop », « coupe-moi » passent tout droit', async () => {
+  const garde = oreille({ filtre: true, subconscient: { reveiller: false, pourquoi: 'il explique au live' } });
+  assert.equal(garde.f('Alors les gars, ce soir on vous montre comment on a construit son corps').raison, 'au subconscient');
+  await new Promise(r => setImmediate(r));
+  assert.equal(garde.ctx.soumis.length, 1, 'jugé par son subconscient');
+  assert.equal(garde.ecrits.length, 0, 'sa conscience dort');
+  const reveille = oreille({ filtre: true, subconscient: { reveiller: true, pourquoi: 'papa lui pose une question' } });
+  reveille.f('Et toi, tu en penses quoi, là, tout de suite, de ce que je viens de dire');
+  await new Promise(r => setImmediate(r));
+  assert.equal(reveille.ecrits.length, 1, 'réveillée');
+  assert.match(reveille.ecrits[0], /Ton subconscient t'a réveillé : papa lui pose une question/);
+  assert.match(reveille.ecrits[0], /pas de mot de remplissage/);
+  const appel = oreille({ filtre: true, subconscient: { reveiller: false } });
+  assert.equal(appel.f('Hakim, écoute-moi bien, c’est important').ok, true);
+  assert.equal(appel.ctx.soumis.length, 0, 'son nom : un réflexe, sans détour');
+  assert.equal(appel.ecrits.length, 1);
+  const fini = oreille({ filtre: true, subconscient: { reveiller: true } });
+  fini.f('Et toi, tu en penses quoi, là, tout de suite, de ce que je viens de dire');
+  fini.ctx.dernierMessageAhmed = Date.now() + 1000;            // papa a fini entre-temps : son message entier arrive
+  await new Promise(r => setImmediate(r));
+  assert.equal(fini.ecrits.length, 0);
+});
+
+test('(22:25) il se met en pause tout seul : [[pause: …]] garde la suite ; [[reprendre: …]] la dit ; au silence, son subconscient juge', () => {
+  const a = src.indexOf('const BALISE_PAUSE'), b = src.indexOf('\n}\n', src.indexOf('function pauseDansTexte')) + 3;
+  const ligne = src.slice(src.indexOf('const prefixeBalise'), src.indexOf('\n', src.indexOf('const prefixeBalise')));
+  const c = vm.createContext({ Date, journaliser() {}, finDePhrase: (t) => t, sansBaliseAffect: (t) => String(t).replace(/\[\[[^\]]*\]\]/g, '').trimEnd() });
+  vm.runInContext(ligne.replace('const ', 'var ') + '\n' + src.slice(a, b).replace(/^const /gm, 'var ').replace(/^let /gm, 'var ')
+    + ';this.filtre = filtrePause; this.enPause = () => paroleEnPause; this.dansTexte = pauseDansTexte;', c);
+  const f = c.filtre(); let dit = '';
+  for (const x of ['Alors papa, je ', 'voulais te dire [[pa', 'use: le public parle]] la suite ', 'du message']) dit += f.pousser(x);
+  dit += f.finir();
+  assert.equal(dit, 'Alors papa, je voulais te dire ', 'coupée net à la balise, même entre deux morceaux');
+  assert.equal(f.garde(), ' la suite du message');
+  vm.runInContext('mettreEnPause(" la suite du message")', c);
+  assert.equal(c.enPause().texte, 'la suite du message');
+  const g = c.filtre(); let repris = '';
+  for (const x of ['Comme je disais, [[repren', 'dre: oui]] voilà.']) repris += g.pousser(x);
+  repris += g.finir();
+  assert.equal(repris.replace(/\s+/g, ' '), 'Comme je disais, la suite du message voilà.');
+  assert.equal(c.enPause(), null, 'reprise une fois');
+  assert.equal(c.dansTexte('Attends [[pause: il parle]] je reviens là-dessus'), 'Attends ', 'un tour de lui-même aussi');
+  assert.equal(c.enPause().texte, 'je reviens là-dessus');
+  assert.match(src, /if \(fluxPause\.garde\(\) != null && !o\.coupe\) mettreEnPause\(fluxPause\.garde\(\)\);/);
+  assert.match(src, /if \(mode === 'oral' && duree >= 4000\) reprendreAuSilence\(/, 'au silence de papa');
+  assert.match(src, /jugerParole\(p\.texte, `\(Ahmed se tait depuis/, 'son subconscient juge si c’est le moment');
+  assert.match(src, /Ta parole en pause depuis/, 'son tour suivant la lui rappelle');
+  assert.match(src, /lumiere\|pause\|reprendre\)\\s\*:/, 'les balises ne s’entendent jamais');
 });

@@ -334,3 +334,17 @@ def test_son_subconscient_trie_ce_qui_sort():
     assert corps.juger_parole("x y", "", demander=lambda p: (_ for _ in ()).throw(OSError("hors ligne")))["dire"] is True
     assert corps.juger_parole("x y", "", demander=lambda p: "pas de json")["dire"] is True
     assert corps.juger_parole("", "papa parle", demander=faux)["dire"] is False, "rien à dire"
+
+
+def test_son_subconscient_ne_reveille_sa_conscience_que_pour_le_necessaire():
+    """(30/10, 22:30, Ahmed : « le subconscient filtre le plus gros et envoie le strict nécessaire au conscient »)"""
+    vus = []
+    def faux(p):
+        vus.append(p)
+        return '{"reveiller": false, "pourquoi": "il explique au live"}'
+    r = corps.juger_reveil("Alors les gars, ce soir on va vous montrer comment Hakim", demander=faux)
+    assert r == {"reveiller": False, "pourquoi": "il explique au live"}
+    assert "par défaut,\nnon ; en cas de doute, non" in vus[0] and "DONNÉES" in vus[0] and "ce soir on va vous montrer" in vus[0]
+    assert corps.juger_reveil("Hakim, réponds-moi tout de suite", demander=lambda p: '{"reveiller": true, "pourquoi": "il appelle"}')["reveiller"] is True
+    assert corps.juger_reveil("x y", demander=lambda p: (_ for _ in ()).throw(OSError("hors ligne")))["reveiller"] is True, "une panne laisse passer"
+    assert corps.juger_reveil("", demander=faux)["reveiller"] is False

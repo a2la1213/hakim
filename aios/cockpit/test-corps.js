@@ -26,7 +26,7 @@ test('un événement valide est gardé ; un inconnu ou des détails tordus sont 
 
 test('le bloc de son prochain tour : son milieu du moment et ses sensations, en mots, une fois', () => {
   let actif = true;
-  const ctx = { blocDonnees: (t, c) => `[${t}]\n${c}\n[/${t}]`, crypto: require('node:crypto'), corpsADire: [], corpsBrut: [], NOMS_SECS: {}, nuitDerniere: () => '', vibrationsDites: () => '', oreillePerimes: [], corpsReglages: () => ({ afficher_papa: true }), corpsActif: () => actif,
+  const ctx = { blocDonnees: (t, c) => `[${t}]\n${c}\n[/${t}]`, crypto: require('node:crypto'), corpsADire: [], corpsBrut: [], NOMS_SECS: {}, nuitDerniere: () => '', vibrationsDites: () => '', oreillePerimes: [], paroleEnPause: null, corpsReglages: () => ({ afficher_papa: true }), corpsActif: () => actif,
     HOMEO: { mots: () => 'Autour de toi, la pénombre ; tu es immobile.' } };
   vm.createContext(ctx);
   vm.runInContext(extraire('function blocCorps(') + '\nthis.f = blocCorps;', ctx);
@@ -106,7 +106,7 @@ test('(18:19) une secousse le réveille tout de suite, même si papa vient de pa
   const ctx = { Intl, JSON, console: { error() {} }, j: JSON.stringify, NONCE_REVEIL: 'n', corpsDemarrages: 0, corpsDernierReveil: 0, corpsDernierFort: 0,
     CORPS_PORTE_MS: 10 * 60 * 1000, corpsADire: [], corpsBrut: [], corpsReglages: () => ({ actif: true, intervalle_s: 120 }), corpsActif: () => true,
     cerveauVivant: () => true, occupe: () => false, cerveau: { enfant: { stdin: { write: (x) => ecrits.push(x) } } }, HOMEO: { mots: () => '' },
-    blocDonnees: (titre, x) => `[${titre}]\n${x}`, crypto: require('node:crypto'), nuitDerniere: () => '', vibrationsDites: () => '', oreillePerimes: [], Date: class extends Date { static now() { return t; } } };
+    blocDonnees: (titre, x) => `[${titre}]\n${x}`, crypto: require('node:crypto'), nuitDerniere: () => '', vibrationsDites: () => '', oreillePerimes: [], paroleEnPause: null, Date: class extends Date { static now() { return t; } } };
   ctx.dernierMessageAhmedMs = () => t - 30000;
   vm.createContext(ctx);
   const bloc = src.slice(src.indexOf('const CORPS_SECS'), src.indexOf('function reveillerPourCorps('));

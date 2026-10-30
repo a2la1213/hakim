@@ -23,7 +23,7 @@ function monter({ vivant = true, occupe = false, ahmedIlYaMs = 10 * 60e3, pause 
   const ecrits = [], prompts = [];
   const cerveau = { enCours: null, attente: [], notifs: [], enfant: { stdin: { write: (l) => ecrits.push(JSON.parse(l).message.content[0].text) } } };
   class FausseDate extends Date { constructor(...a) { super(...(a.length ? a : [T])); } static now() { return T; } }
-  const ctx = { fs, path, os, JSON, Number, String, Array, Set, Object, RegExp, Promise, Intl, console: { error() {} },
+  const ctx = { fs, path, os, JSON, Number, String, Array, Set, Object, RegExp, Promise, Intl, console: { error() {} }, paroleEnPause: null,
     Math: Object.assign(Object.create(Math), { random: () => 0.5 }), Date: FausseDate, require: (m) => require(path.join(__dirname, m)),
     JARVIS: dir, ANAMNESE: anamnese, SAGESSE: path.join(dir, 'sagesse.json'), j: JSON.stringify,
     lireJson: (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_) { return d; } },

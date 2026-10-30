@@ -51,7 +51,7 @@ test('les motifs : le rire en tapes sèches, de plus en plus ; une impulsion par
 });
 
 test('branché : la balise cachée et vue dans le flux, le rire vers son corps, le ronron dans la réponse au téléphone', () => {
-  assert.ok(src.includes('const BALISE_AFFECT = /\\[\\[\\s*(?:affect|souvenirs|modele|impulsion|son|alerte|ecran|rire|lumiere)\\s*:'), 'toutes ses balises cachées');
+  assert.ok(src.includes('const BALISE_AFFECT = /\\[\\[\\s*(?:affect|souvenirs|modele|impulsion|son|alerte|ecran|rire|lumiere|pause|reprendre)\\s*:'), 'toutes ses balises cachées');
   assert.ok(src.includes("envoyer({ t: 'impulsion', x, ...(cr && cr.motif ? { motif: cr.motif } : {}) })"), 'les six, ou une émotion à lui avec son motif');
   assert.match(src, /type: 'rire'/);
   assert.ok(src.includes("if (['mesure', 'rire', 'son', 'coupure'].includes(ev.type)) continue;"), 'son rire, son son, une coupure n’apprennent rien à ses nerfs des vibrations');
