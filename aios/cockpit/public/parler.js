@@ -2652,8 +2652,14 @@ function surEcran(o) {
   humeur();
 }
 // il a quelque chose à dire qui attend (un résultat, un son, une vibration) : son orbe grossit et respire
+// (21:29) une envie qui tient 1,5 s pour grossir, 3 s d'absence pour dégonfler : un rire pendant que papa parle ne la fait plus clignoter
+let veutAffiche = false, veutDepuis = 0;
 setInterval(() => {
   const veut = (typeof aDire !== 'undefined' && aDire.length > 0) || !!sonEnAttente || !!vibrationEnAttente;
+  if (veut === veutAffiche) { veutDepuis = 0; return; }
+  if (!veutDepuis) veutDepuis = Date.now();
+  if (Date.now() - veutDepuis < (veut ? 1500 : 3000)) return;
+  veutAffiche = veut; veutDepuis = 0;
   for (const id of ['orbe', 'orbeScene']) { const el = $(id); if (el) el.classList.toggle('veut-parler', veut); }
 }, 500);
 /* (30/10, 18:37-18:52) son rire, né dans son subconscient (le message de papa l'a fait rire) ou choisi par lui ([[rire: N]]) :

@@ -13,9 +13,12 @@
     .tete { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
     .orbe-tete { width: 64px; height: 64px; flex: none; margin: -9px -6px -9px -2px; transition: transform .6s cubic-bezier(.2,.8,.2,1); }
     /* (30/10, Ahmed : « grossis fort si t'as envie de dire quelque chose ») */
-    .orbe-tete.veut-parler, #orbeScene.veut-parler { animation: veutParler 1.6s ease-in-out infinite; }
-    @keyframes veutParler { 0%, 100% { transform: scale(1.18); } 50% { transform: scale(1.38); } }
-    @media (prefers-reduced-motion: reduce) { .orbe-tete.veut-parler, #orbeScene.veut-parler { animation: none; transform: scale(1.25); } }
+    /* (21:29) elle grossit en glissant (scale) et respire autour de sa taille (transform), sans à-coup ni à l'entrée ni à la sortie */
+    .orbe-tete.veut-parler, #orbeScene.veut-parler { scale: 1.25; animation: veutParler 1.6s ease-in-out infinite; }
+    .orbe-tete { transition: transform .6s cubic-bezier(.2,.8,.2,1), scale .6s ease; }
+    #orbeScene { transition: scale .6s ease; }
+    @keyframes veutParler { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+    @media (prefers-reduced-motion: reduce) { .orbe-tete.veut-parler, #orbeScene.veut-parler { animation: none; } }
     .alerte-hakim { flex: none; width: 28px; height: 28px; border-radius: 50%; border: 0; background: #e5484d; color: #fff; font-weight: 800;
       font-size: 16px; line-height: 28px; padding: 0; margin-left: -10px; box-shadow: 0 0 0 3px rgba(229,72,77,.25); cursor: pointer; }
     .alerte-hakim[hidden] { display: none; }

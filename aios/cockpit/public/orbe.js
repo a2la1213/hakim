@@ -34,6 +34,9 @@
     let paletteHumeur = PALETTES.calme.map(rgb);
     let couleurs = paletteHumeur.map(c => c.slice()), cible = paletteHumeur;
     let mode = 'repos', source = null, niveau = 0, impulsion = 0, bandes = [0, 0, 0], raf = 0;
+    // (30/10, 21:29, « son orbe part grave en couille ») la phase avance image par image, à une vitesse qui glisse : avant,
+    // elle valait « temps depuis l'ouverture × vitesse », et chaque changement d'état (écoute, pense, parle) la téléportait
+    let phase = 0, vitesseCourante = null, derniere = null;
     const t0 = performance.now();
 
     function dimensionner() {
@@ -59,6 +62,9 @@
       couleurs = couleurs.map((c, i) => melange(c, cible[i], 0.035));     // l'humeur glisse, ne saute pas
       const t = (maintenant - t0) / 1000;
       const vitesse = reduit ? 0.15 : (mode === 'pense' ? 1.7 : (mode === 'parle' || mode === 'ecoute' ? 1.1 : 0.45));
+      vitesseCourante = vitesseCourante == null ? vitesse : vitesseCourante + (vitesse - vitesseCourante) * 0.05;
+      phase += (derniere == null ? 0 : Math.min(0.1, Math.max(0, (maintenant - derniere) / 1000))) * vitesseCourante;
+      derniere = maintenant;
       const respire = mode === 'repos' && !reduit ? 0.025 * Math.sin(t * 1.1) : 0;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
@@ -86,7 +92,7 @@
       };
       for (let k = 2; k >= 1; k--) {
         const amp = reduit ? 0.01 : 0.03 + 0.16 * bandes[k] + 0.04 * niveau;
-        forme(1.08 + 0.06 * k, amp, t * vitesse * (1 + k * 0.37) + k * 2.1);
+        forme(1.08 + 0.06 * k, amp, phase * (1 + k * 0.37) + k * 2.1);
         const aura = ctx.createRadialGradient(cx, cy, R * 0.7, cx, cy, R * 1.35);
         aura.addColorStop(0, css(couleurs[k], 0.22 + 0.18 * niveau));
         aura.addColorStop(1, css(couleurs[k], 0));
@@ -94,7 +100,7 @@
         ctx.fill();
       }
       // Le corps : un dégradé CONIQUE des couleurs de son humeur, qui tourne, dans une forme vivante.
-      const ph0 = t * vitesse;
+      const ph0 = phase;
       forme(1, reduit ? 0.008 : 0.018 + 0.1 * bandes[0] + 0.03 * niveau, ph0);
       ctx.save();
       ctx.clip();
