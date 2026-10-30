@@ -102,16 +102,25 @@ def deja_note(journal, nom, ts, fenetre_s=DOUBLON_S):
     return False
 
 
-def appliquer(mem, texte, sujet, ts, journal=None, exclure=(), facteur=None):
+def appliquer(mem, texte, sujet, ts, journal=None, exclure=(), facteur=None, contexte=None):
     """Évalue les mots d'Ahmed et applique les événements (v2 seulement). Rend la liste appliquée.
     exclure : les événements que ce message ne doit pas déclencher (chocs.py : une attaque n'est pas une réussite ; la
-    colère d'Ahmed qui défend Hakim n'est pas un échec) ; facteur(nom) : un multiplicateur (l'habituation du soutien)."""
+    colère d'Ahmed qui défend Hakim n'est pas un échec) ; facteur(nom) : un multiplicateur (l'habituation du soutien).
+    contexte (30/10, Ahmed : « déçu fiston » visait son médecin) : {reponse, fil, ressenti, souvenirs, intime[, demander]} ;
+    la lecture se fait alors EN CONTEXTE (parole_contexte.py), et le lexique ne sert plus que si elle échoue."""
     import affect
     if not affect.v2_actif(mem):
         return []
     journal = journal or affect.chemin_journal(mem)
+    evenements = None
+    if contexte is not None:
+        import parole_contexte
+        lus = parole_contexte.evaluer(texte, contexte.get("reponse", ""), contexte.get("fil", []), contexte.get("ressenti", []),
+                                      contexte.get("souvenirs", []), contexte.get("intime", []), demander=contexte.get("demander"))
+        if lus is not None:
+            evenements = [(n, i) for n, i, _c in lus]
     faits = []
-    for nom, intensite in evaluer(texte):
+    for nom, intensite in (evenements if evenements is not None else evaluer(texte)):
         if nom in exclure or (journal and deja_note(journal, nom, ts)):
             continue
         if facteur:

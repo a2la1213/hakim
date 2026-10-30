@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Les sens de Hakim</title>
+  <link rel="stylesheet" href="/theme.css">
+  <!-- (30/10, Ahmed : « oui à tout, et que je puisse le suivre dans le cockpit ») ce que Hakim fait de ses sens et de son
+       Tricordeur : ses mesures, ses instruments à lui, ses commits, ses signatures et livraisons, ses écritures dans tes
+       Documents (avec la sauvegarde de l'ancienne version). Lecture seule ; tout est posé en texte. Rafraîchi toutes les 20 s. -->
+  <style>
+    main { max-width: 960px; margin: 0 auto; padding: 0 16px 24px; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 14px; }
+    h1 { font-size: 18px; color: var(--txt); font-weight: 600; margin: 4px 0 0; }
+    h2 { font-size: 15px; color: var(--txt); font-weight: 600; margin: 0 0 8px; }
+    .sous { font-size: 13px; color: var(--txt-3); }
+    .carte { padding: 12px; }
+    .ligne { padding: 8px 0; border-top: 1px solid var(--glass-bd); font-size: 13px; color: var(--txt-2); line-height: 1.5; overflow-wrap: anywhere; }
+    .ligne:first-of-type { border-top: 0; }
+    .quand { color: var(--txt-3); font-size: 12px; margin-right: 6px; }
+    .ok { color: var(--teal); } .ko { color: #f97316; }
+    .code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--txt-3); white-space: pre-wrap; }
+    .vide { font-size: 13px; color: var(--txt-3); }
+  </style>
+</head>
+<body>
+  <nav class="topnav" style="display:flex;gap:10px;align-items:center;padding:10px 16px;flex-wrap:wrap"><span class="brand">AIOS</span>
+    <a class="pill" href="/">DASHBOARD</a><a class="pill" href="/parler">PARLER</a><a class="pill" href="/immunite">IMMUNITÉ</a>
+    <a class="pill" href="/cafe">CAFÉ</a><a class="pill active" href="/sens">SENS</a></nav>
+  <main>
+    <h1>Les sens de Hakim</h1>
+    <div class="sous">Ce qu'il mesure avec ton téléphone, son Tricordeur à lui, et ce qu'il écrit dans tes Documents. Il n'efface
+      jamais rien ; toute modification garde l'ancienne version sur le Mac (~/AIOS/jarvis/telephone-sauvegardes).</div>
+    <section class="glass carte"><h2>Ses mesures</h2><div id="mesures"></div></section>
+    <section class="glass carte"><h2>Ses écritures dans tes Documents</h2><div id="documents"></div></section>
+    <section class="glass carte"><h2>Son Tricordeur : signatures et livraisons</h2><div id="tricordeur"></div></section>
+    <section class="glass carte"><h2>Son Tricordeur : ses changements (git)</h2><div id="commits"></div></section>
+    <section class="glass carte"><h2>Ses instruments à lui</h2><div id="instruments"></div></section>
+  </main>
+  <script src="/badges.js"></script>
+  <script>
+  const jeton = () => (document.querySelector('meta[name="cockpit-jeton"]') || {}).content || '';
+  document.body.classList.add('shell');
+  const quand = (t) => t ? new Date(t * 1000).toLocaleString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  const ligne = (t, morceaux, code) => {
+    const d = document.createElement('div'); d.className = 'ligne';
+    const q = document.createElement('span'); q.className = 'quand'; q.textContent = quand(t); d.appendChild(q);
+    for (const [texte, classe] of morceaux) { const s = document.createElement('span'); if (classe) s.className = classe; s.textContent = texte; d.appendChild(s); }
+    if (code) { const c = document.createElement('div'); c.className = 'code'; c.textContent = code; d.appendChild(c); }
+    return d;
+  };
+  const remplir = (id, elements, vide) => {
+    const el = document.getElementById(id); el.replaceChildren(...elements);
+    if (!elements.length) { const v = document.createElement('div'); v.className = 'vide'; v.textContent = vide; el.appendChild(v); }
+  };
+  async function charger() {
+    try {
+      const r = await fetch('/api/suivi', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erreur || r.status);
+      remplir('mesures', d.mesures.map(m => ligne(m.ts, [[`${m.id} · ${m.sens}${m.secondes ? `, ${m.secondes} s` : ''} · `, ''],
+        [m.ok ? 'finie' : `échec : ${m.erreur || '?'}`, m.ok ? 'ok' : 'ko']], m.resume)), 'Aucune mesure encore.');
+      remplir('documents', d.documents.map(e => ligne(e.ts, [[`${e.action === 'ajout' ? 'ajouté' : e.action === 'ecriture' ? 'modifié' : 'sauvegardé'} · `, ''],
+        [e.chemin || '', ''], [e.note ? ` — ${e.note}` : '', '']], e.sauvegarde ? `ancienne version : ${e.sauvegarde}` : '')), 'Il n’a rien écrit dans tes Documents.');
+      remplir('tricordeur', d.tricordeur.map(e => ligne(e.ts, [[`${e.action === 'livraison' ? 'livré' : 'signé'} · ${e.apk || ''}`, ''],
+        [e.vers ? ` → ${e.vers}` : '', 'ok']], e.note || '')), 'Rien de signé ni de livré encore.');
+      remplir('commits', d.commits.map(c => ligne(c.ts, [[`${c.h} · `, 'quand'], [c.message, '']])), 'Pas encore de changement.');
+      remplir('instruments', d.instruments.map(x => ligne(0, [[x.nom, 'ok'], [x.description ? ` — ${x.description}` : '', '']])), 'Pas encore d’instrument à lui.');
+    } catch (e) { remplir('mesures', [ligne(0, [[`Le cockpit ne répond pas (${e.message}).`, 'ko']])], ''); }
+  }
+  Badges.suivre(document.querySelector('nav.topnav'), 'sens');
+  charger();
+  setInterval(charger, 20000);
+  </script>
+</body>
+</html>

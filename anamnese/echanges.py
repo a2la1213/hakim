@@ -281,9 +281,26 @@ def _emotion(mem, e, ahmed, texte, emb, imp, raisons):
             if time.time() - ts > AGE_EMOTION_MAX_S:
                 raisons.append("message ancien : pas d'émotion à l'écriture")
             else:
-                faits = parole_affect.appliquer(mem, ahmed, sujet, ts, exclure=exclure, facteur=facteur)
+                # (30/10, Ahmed : « déçu fiston » visait son médecin ; « on s'en fout du temps et des tokens ») la lecture EN
+                # CONTEXTE : le fil, la réponse de Hakim, son ressenti, sa mémoire (parole_contexte.py) ; le lexique en secours
+                contexte = None
+                try:
+                    import parole_contexte
+                    if parole_contexte.actif(mem):
+                        souvenirs, intime = parole_contexte.memoire(mem, ahmed)
+                        contexte = {"reponse": str(e.get("hakim") or ""), "fil": parole_contexte.fil_recent(ts),
+                                    "ressenti": parole_contexte.ressenti(mem, ts), "souvenirs": souvenirs, "intime": intime}
+                except Exception:
+                    contexte = None
+                faits = parole_affect.appliquer(mem, ahmed, sujet, ts, exclure=exclure, facteur=facteur, contexte=contexte)
+                if contexte is not None:
+                    try:                                          # ce qui a été lu (des noms et des nombres, jamais un texte)
+                        with open(Path(__file__).resolve().parent / "data" / "parole-contexte.jsonl", "a", encoding="utf-8") as h:
+                            h.write(json.dumps({"ts": ts, "lus": faits, "lexique": parole_affect.evaluer(ahmed)}, ensure_ascii=False) + "\n")
+                    except OSError:
+                        pass
                 if faits:
-                    raisons.append("ses mots : " + ", ".join(n for n, _i in faits))
+                    raisons.append(("ses mots, lus en contexte : " if contexte is not None else "ses mots : ") + ", ".join(n for n, _i in faits))
         charge = affect.trace(mem)["c"]
         if charge >= 0.3:
             raisons.append("vécu avec émotion")

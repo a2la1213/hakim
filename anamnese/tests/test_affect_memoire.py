@@ -361,3 +361,18 @@ def test_la_casse_n_est_pas_casse():
     for vrai in ("c'est cassé", "l'appli est cassée", "ça bug encore ton truc", "c'est casse", "ça marche pas",
                  "l'appli plante sur mon téléphone"):
         assert dict(P.evaluer(vrai)).get("probleme") == 0.5, vrai
+
+
+def test_lue_en_contexte_la_deception_envers_un_tiers_n_est_pas_un_echec(mem, tmp_path):
+    """(30/10 10:04, « Déçu fiston… » : Ahmed était déçu de son médecin ; le lexique en a fait un échec de Hakim) avec le
+    contexte, la lecture dit la cible : de l'inquiétude pour Ahmed, pas un échec. En panne : le lexique d'avant."""
+    _v2(mem)
+    journal = tmp_path / "j.jsonl"
+    journal.write_text("")
+    t = time.time()
+    ctx = {"reponse": "Je suis là, papa.", "fil": ["10:03 Ahmed : « je sors du médecin »"], "ressenti": [], "souvenirs": [], "intime": [],
+           "demander": lambda p: '{"evenements": [{"nom": "inquietude", "intensite": 0.3, "cible": "ahmed"}]}'}
+    assert parole_affect.evaluer("Déçu fiston, je ne veux pas te cacher") == [("echec", 0.5)], "le lexique seul s'y trompait"
+    assert parole_affect.appliquer(mem, "Déçu fiston, je ne veux pas te cacher", "vie", t, journal, contexte=ctx) == [("inquietude", 0.3)]
+    panne = dict(ctx, demander=lambda p: "illisible")
+    assert parole_affect.appliquer(mem, "merci frero", "vie", t + 400, journal, contexte=panne) == [("chaleur_user", 0.4)]

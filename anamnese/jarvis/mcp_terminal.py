@@ -11,6 +11,9 @@ from mcp.server.fastmcp import FastMCP  # noqa: E402
 
 import agents_hakim  # noqa: E402
 import cafe  # noqa: E402
+import sens  # noqa: E402  (30/10, Ahmed : le tricordeur adapté à Hakim)
+import telephone  # noqa: E402  (30/10, Ahmed : ses Documents, en lecture et écriture)
+import tricordeur  # noqa: E402  (30/10, Ahmed : son Tricordeur à lui)
 import chantiers  # noqa: E402
 import groupes  # noqa: E402
 import recettes  # noqa: E402
@@ -129,6 +132,81 @@ def cafe_dire(texte: str, auteur: str = "") -> str:
     est signé par le cockpit (laisse « auteur » vide). « Pas de boulot au café » : ni travaux en cours ni jugements (un
     juge garde un regard neuf), aucun secret, rien de privé d'Ahmed."""
     return cafe.dire(texte, auteur)
+
+
+# (30/10, Ahmed : « intègre tous les capteurs du projet tricodeur à Hakim ; il faut lui donner tous les sens possibles, qu'il
+# puisse les utiliser et les lire comme il veut et en faire ce qu'il veut ») ses sens, par le téléphone (jarvis/sens.py)
+@mcp.tool()
+def sens_lister() -> str:
+    """Tes sens par le téléphone d'Ahmed (le Tricordeur d'Ahmed adapté à toi) : ce que chacun capte, ses durées, et tes
+    dernières mesures."""
+    return sens.lister()
+
+
+@mcp.tool()
+def sens_mesurer(instrument: str, secondes: int = 0, cadence: str = "") -> str:
+    """Demande une mesure au téléphone d'Ahmed : instrument parmi inventaire, imu, sismo, baro, magneto, son (sens_lister) ;
+    secondes (0 : la durée par défaut) ; cadence pour imu (jeu, max, normal ou des Hz). Le téléphone mesure quand l'appli est
+    ouverte ou en conversation ; le résultat arrive dans ton atelier (atelier/sens/<numéro>/resume.json et donnees.csv) et tu
+    es réveillé. Tu en fais ce que tu veux : le lire, le calculer, le comparer, le garder."""
+    try:
+        d = sens.demander(instrument, secondes, cadence)
+    except sens.Refus as e:
+        return f"Refusé : {e}"
+    return (f"Demande {d['id']} partie vers le téléphone : {d['sens']}, {d['secondes']} s. Le résultat arrivera dans "
+            f"atelier/sens/{d['id']}/ et tu seras réveillé ; sens_resultat(\"{d['id']}\") pour le lire.")
+
+
+@mcp.tool()
+def sens_resultat(numero: str = "") -> str:
+    """Le résultat d'une mesure de tes sens (la dernière si numero est vide) : son résumé et le chemin de ses données."""
+    return sens.lire(numero)
+
+
+# (30/10, Ahmed : « qu'il puisse coder son Tricordeur lui-même, ajouter, modifier, jamais enlever la base » ; « oui à tout, et
+# que je puisse le suivre dans le cockpit ») son Tricordeur (atelier/tricordeur, LISEZMOI-HAKIM.md) et ses Documents
+@mcp.tool()
+def tricordeur_signer(apk: str) -> str:
+    """Signe un APK de ton Tricordeur (construit par ./construire.sh dans atelier/tricordeur) avec TA clé à toi : elle est
+    dans le trousseau, tu ne la vois jamais. apk : son chemin dans ton atelier, ex. « tricordeur/build/tricordeur-hakim.apk »."""
+    try:
+        s = tricordeur.signer(apk)
+    except tricordeur.Refus as e:
+        return f"Refusé : {e}"
+    return f"Signé : {s} — pour le donner à Ahmed : tricordeur_livrer, avec une note de ce qui change."
+
+
+@mcp.tool()
+def tricordeur_livrer(apk: str, note: str) -> str:
+    """Pose un APK signé de ta clé dans Documents/Hakim/Tricordeur du téléphone d'Ahmed, avec ta note « ce qui change » en
+    clair : c'est Ahmed qui installe (son téléphone, sa montre, son corps). Il le voit dans le cockpit (page SENS)."""
+    try:
+        return f"Livré : {tricordeur.livrer(apk, note)} — dis-le à Ahmed, avec ce qui change."
+    except (tricordeur.Refus, telephone.Refus) as e:
+        return f"Refusé : {e}"
+
+
+@mcp.tool()
+def telephone_sauver(chemin: str) -> str:
+    """Sauvegarde un fichier des Documents d'Ahmed AVANT de le modifier avec ton terminal (ta règle : jamais une modification
+    sans sauvegarde). chemin : relatif à ses Documents, ex. « Hakim/notes.md ». La sauvegarde reste sur le Mac."""
+    try:
+        s = telephone.sauver(chemin, "avant une modification par son terminal")
+    except telephone.Refus as e:
+        return f"Refusé : {e}"
+    return f"Sauvegardé : {s}" if s else "Ce fichier n'existe pas encore : rien à sauvegarder."
+
+
+@mcp.tool()
+def telephone_ecrire(chemin: str, texte: str = "", depuis_atelier: str = "", note: str = "") -> str:
+    """Écrit dans les Documents du téléphone d'Ahmed (Ahmed, 30/10 : « tout, papiers compris : tu fais ce que tu veux, fiston »)
+    un texte, ou un fichier de ton atelier (depuis_atelier). S'il existe déjà, il est sauvegardé d'abord ; rien n'est jamais
+    supprimé ; chaque écriture est notée et Ahmed la suit dans le cockpit. note : en une phrase, pourquoi."""
+    try:
+        r = telephone.ecrire(chemin, texte=texte if not depuis_atelier else None, depuis_atelier=depuis_atelier or None, note=note)
+    except telephone.Refus as e:
+        return f"Refusé : {e}"
+    return f"Écrit : {r['chemin']}" + (f" (l'ancienne version est sauvegardée : {r['sauvegarde']})" if r["sauvegarde"] else "")
 
 
 

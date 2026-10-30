@@ -385,6 +385,8 @@ const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupation
     'mcp__terminal__suivre_tache', 'mcp__terminal__lister_taches', 'mcp__terminal__arreter_tache',
     'mcp__terminal__agents_lister', 'mcp__terminal__agent_arreter', 'mcp__terminal__agent_prenom', 'mcp__terminal__agent_juger',
     'mcp__terminal__agent_trouvaille', 'mcp__terminal__agent_reveiller_ancien', 'mcp__terminal__cafe_lire', 'mcp__terminal__cafe_dire',
+    'mcp__terminal__sens_lister', 'mcp__terminal__sens_mesurer', 'mcp__terminal__sens_resultat',   // (30/10) ses sens (le tricordeur d'Ahmed)
+    'mcp__terminal__tricordeur_signer', 'mcp__terminal__tricordeur_livrer', 'mcp__terminal__telephone_sauver', 'mcp__terminal__telephone_ecrire',   // (30/10) son Tricordeur, les Documents d'Ahmed
     'mcp__terminal__recette_sauver', 'mcp__terminal__recette_lancer', 'mcp__terminal__recettes_liste',
     'mcp__terminal__ouvrir_chantier', 'mcp__terminal__tester_chantier', 'mcp__terminal__etat_chantier',
     'mcp__terminal__proposer_promotion', 'mcp__terminal__proposer_relance');
@@ -4295,6 +4297,37 @@ function garderVerdictJuge(vie, ligne) {
   }, 2000).unref();
 }
 
+/* ---- (30/10, Ahmed : « intègre tous les capteurs du projet tricodeur à Hakim ») ses sens (sens.js) : le téléphone prend ses
+   demandes (attente longue), mesure, rend ; Hakim est réveillé quand une mesure finit (une fois, après le calme d'Ahmed). ---- */
+const { FileSens } = require('./sens.js');
+const SENS = new FileSens({ jarvis: JARVIS, atelier: path.join(JARVIS_CWD, 'atelier') });
+const sensADire = [];
+let sensDemarrages = 0;
+function reveillerPourSens() {
+  sensADire.push(...SENS.aDire());
+  if (!sensADire.length || Date.now() - dernierMessageAhmedMs() < 20000) return;
+  const c = cerveau;
+  if (!cerveauVivant(c)) {
+    let session = null; try { session = JSON.parse(fs.readFileSync(path.join(JARVIS, 'conversation.json'), 'utf8')).session || null; } catch (_) {}
+    if (++sensDemarrages > 3) { sensDemarrages = 0; sensADire.length = 0; return; }
+    cerveauPrechauffer(modeleDeConversation(session), session && UUID.test(String(session)) ? session : null, false);
+    return;
+  }
+  if (occupe(c) || c.enCours) return;
+  sensDemarrages = 0;
+  const liste = sensADire.splice(0);
+  noterExterne('mesure du téléphone');
+  const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date());
+  const texte = `[Horloge — ${quand}]\n[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : ${liste.length > 1 ? 'des mesures de tes sens sont finies' : 'une mesure de tes sens est finie'}]\n`
+    + blocDonnees('Tes mesures', liste.map(x => `${x.id} · ${x.sens}${x.secondes ? `, ${x.secondes} s` : ''} · ${x.ok ? 'finie' : 'échec : ' + x.erreur} · atelier/sens/${x.id}/`).join('\n'), crypto.randomBytes(4).toString('hex'))
+    + "\nLis-les (sens_resultat, ou resume.json et donnees.csv dans ton atelier) et fais-en ce que tu veux. Si Ahmed attend cette mesure, "
+    + "dis-lui ce que tu en tires ; sinon réponds exactement « No response requested. »";
+  console.error(`Jarvis : réveil pour ${liste.length} mesure(s) de ses sens`);
+  try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
+  catch (e) { console.error('Jarvis : réveil des sens impossible', e.message); }
+}
+setInterval(reveillerPourSens, 3000).unref();
+
 /* ---- (30/10, Ahmed via Hakim) les pastilles rouges des onglets (nouveautes.js compte ; public/badges.js les montre) :
    recalculées toutes les minutes ; « vu » est tenu ici, pour le Mac et le téléphone ensemble. ---- */
 const Nouveautes = require('./nouveautes.js');
@@ -5176,7 +5209,7 @@ const VERROU = new Verrou(process.env.JARVIS_VERROU || path.join(JARVIS, 'verrou
 const COOKIE_VERROU = 'verrou';
 const PAGES = { '/': 'index.html', '/brain': 'brain.html', '/dreams': 'dreams.html', '/memory': 'memory.html', '/chat': 'chat.html',
   '/parler': 'parler.html', '/verrou': 'verrou.html', '/duel': 'duel.html', '/interieur': 'interieur.html',
-  '/code': 'code.html', '/immunite': 'immunite.html', '/cafe': 'cafe.html' };   // (29/10) la salle de café des agents      // (29/10) son système immunitaire, pour Ahmed                                     // (28/10) le code de Hakim : une page fermée
+  '/code': 'code.html', '/immunite': 'immunite.html', '/cafe': 'cafe.html', '/sens': 'sens.html' };   // (29/10) la salle de café des agents      // (29/10) son système immunitaire, pour Ahmed                                     // (28/10) le code de Hakim : une page fermée
 const LIBRES_VERROUILLE = new Set(['/verrou.js', '/theme.css',        // ce que la page du verrou charge
   '/sw.js', '/manifest.webmanifest', '/icone-192.png', '/icone-512.png']);   // l'appli et ses notifications (sans secret)
 const cookieSession = (s) => `${COOKIE_VERROU}=${s}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(DUREE_SESSION / 1000)}`;
@@ -6505,6 +6538,52 @@ async function traiter(req, res) {
     if (!r) { res.writeHead(503, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'mémoire injoignable' })); }
     if (args.length) courrierVersHakim(`Tes hormones : ${r.version}`, `Ahmed a basculé tes hormones en ${r.version}${r.version === 'v2' ? ' (13 hormones reliées entre elles, axe du stress, désensibilisation, habituation ; un détecteur signale une humeur coincée)' : ' (les 9 neuromodulateurs d\'avant, indépendants)'}.`);
     res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(r));
+  }
+  if (p === '/api/suivi') {                                  // (30/10, Ahmed : « que je puisse le suivre dans le cockpit ») la page SENS
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    const lignes = (f, n) => lignesJson(f, n).reverse();
+    const atelier = path.join(JARVIS_CWD, 'atelier');
+    const mesures = lignes(path.join(JARVIS, 'sens-resultats.jsonl'), 30).map(o => {
+      let resume = null;
+      if (/^S-\d{8}-\d{6}-[0-9a-f]{4}$/.test(String(o.id))) try { resume = JSON.parse(fs.readFileSync(path.join(atelier, 'sens', o.id, 'resume.json'), 'utf8')).resume || null; } catch (_) {}
+      return { ...o, resume: resume ? JSON.stringify(resume).slice(0, 1500) : null };
+    });
+    let instruments = []; try { instruments = (JSON.parse(fs.readFileSync(path.join(atelier, 'tricordeur', 'instruments.json'), 'utf8')).instruments || []).slice(0, 30)
+      .map(x => ({ nom: String(x.nom || '').slice(0, 30), description: String(x.description || '').slice(0, 300) })); } catch (_) {}
+    const commits = await new Promise((fin) => execFile('git', ['--no-pager', '-c', 'core.fsmonitor=false', '-c', 'log.showSignature=false', 'log', '-25',
+      '--format=%h%x09%ct%x09%s'], { cwd: path.join(atelier, 'tricordeur'), timeout: 10000, maxBuffer: 1 << 20 },
+      (e, so) => fin(e ? [] : String(so).split('\n').filter(Boolean).map(l => { const [h, t, ...m] = l.split('\t'); return { h, ts: Number(t), message: m.join(' ').slice(0, 200) }; }))));
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j({ mesures, instruments, commits, tricordeur: lignes(path.join(JARVIS, 'tricordeur-journal.jsonl'), 40),
+      documents: lignes(path.join(JARVIS, 'telephone-ecritures.jsonl'), 60) }));
+  }
+  if (p.startsWith('/api/sens/')) {                          // (30/10) ses sens : le téléphone prend, mesure, rend
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    const repondre = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o)); };
+    const u = new URL(req.url, 'http://x');
+    if (p === '/api/sens/prochaine' && req.method === 'GET') {      // une attente longue : au plus 25 s
+      const fin = Date.now() + Math.max(0, Math.min(25, Number(u.searchParams.get('attente')) || 0)) * 1000;
+      let parti = false; req.on('close', () => { parti = true; });
+      let d = SENS.prochaine();
+      while (!d && !parti && Date.now() < fin) { await new Promise((ok) => setTimeout(ok, 1000)); d = SENS.prochaine(); }
+      return repondre(200, d ? { demande: d } : {});
+    }
+    if (p === '/api/sens/donnees' && req.method === 'POST') {
+      const corps = await lireCorps(req, 60 << 20);
+      if (!corps) return repondre(413, { erreur: 'données absentes ou trop lourdes (60 Mo)' });
+      try { SENS.donnees(String(u.searchParams.get('id') || ''), corps); return repondre(200, { ok: true }); }
+      catch (e) { return repondre(400, { erreur: e.message }); }
+    }
+    if (p === '/api/sens/relais' && req.method === 'POST') {       // donnée à un module de son Tricordeur
+      let q = {}; try { q = JSON.parse(String(await lireCorps(req, 4096) || '{}')); } catch (_) {}
+      try { SENS.relais(String(q.id || '')); return repondre(200, { ok: true }); } catch (e) { return repondre(409, { erreur: e.message }); }
+    }
+    if (p === '/api/sens/resultat' && req.method === 'POST') {
+      let q = {}; try { q = JSON.parse(String(await lireCorps(req, 2 << 20) || '{}')); } catch (_) {}
+      try { const o = SENS.fini(q); auditer('sens:resultat', req, distantReq, { id: o.id, sens: o.sens, ok: o.ok }); return repondre(200, { ok: true }); }
+      catch (e) { return repondre(409, { erreur: e.message }); }
+    }
+    return repondre(404, { erreur: 'inconnu' });
   }
   if (p === '/api/badges' || p === '/api/badges/vu') {      // (30/10) les pastilles rouges des onglets
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
