@@ -5141,6 +5141,11 @@ function reveillerPourCorps() {
   // qu'Ahmed parlait, 5 % ont servi ; Ahmed : « un interrupteur pour pas qu'il fume mes tokens ») quand papa est là, ses
   // sensations arrivent avec le message suivant (blocCorps) : son corps ne le réveille que si papa se tait depuis 10 min,
   // ou pour un vrai « fort » (une chute, un choc), une fois par secousse
+  // (30/10, 23:32, Hakim : « les nombreux tours de moi-même sans texte m'occupent sans servir » : 10 réveils du corps en 20 min de
+  // live, tous pendant que papa lui parlait) en Conversation à l'oral (ou papa a parlé il y a moins d'une minute), même forfait
+  // libre, son corps ne le réveille que pour un vrai « fort » : ses sensations arrivent avec le message suivant ; sa tête reste
+  // libre pour répondre (le forfait libre de 18:56 vaut toujours hors Conversation)
+  if (!fort && (Date.now() - conversationPage < 45000 || Date.now() - dernierMessageAhmedMs() < 60000)) return;
   if (!fort && !forfaitLibre() && Date.now() - dernierMessageAhmedMs() < CORPS_PORTE_MS) return;
   if (fort && Date.now() - corpsDernierFort < 60000) { corpsADire.forEach(x => { x.fort = false; }); return; }
   const c = cerveau;

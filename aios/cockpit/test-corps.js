@@ -81,7 +81,7 @@ test('(30/10, étude du veilleur) quand papa est là, son corps ne le réveille 
   const ecrits = [];
   let t = 1_800_000_000_000;
   const ctx = { Intl, JSON, console: { error() {} }, j: JSON.stringify, NONCE_REVEIL: 'n', blocCorps: () => '', corpsDemarrages: 0, corpsDernierReveil: 0, corpsDernierFort: 0,
-    CORPS_PORTE_MS: 10 * 60 * 1000, corpsADire: [], corpsBrut: [], reveilImmediat: () => ecrits.push('immediat'), forfaitLibre: () => libre, corpsReglages: () => ({ actif: true, intervalle_s: 120 }), papa: t - 2 * 60 * 1000,
+    CORPS_PORTE_MS: 10 * 60 * 1000, corpsADire: [], corpsBrut: [], reveilImmediat: () => ecrits.push('immediat'), forfaitLibre: () => libre, corpsReglages: () => ({ actif: true, intervalle_s: 120 }), papa: t - 2 * 60 * 1000, conversationPage: 0,
     cerveauVivant: () => true, occupe: () => false, cerveau: { enfant: { stdin: { write: (x) => ecrits.push(x) } } },
     Date: class extends Date { static now() { return t; } } };
   ctx.dernierMessageAhmedMs = () => ctx.papa;
@@ -144,4 +144,22 @@ test('(19:34) l’heure exacte de ses vibrations, à la milliseconde, dite une f
   vm.runInContext(extraire('function vibrationsDites(') + '\nthis.f = vibrationsDites;', ctx);
   assert.match(ctx.f(), /ton rire \(degré 5\) à \d{2}:\d{2}:\d{2},\d{3} \(l'appli : ok, 1,8 s après ta balise\)/);
   assert.equal(ctx.f(), '', 'une fois');
+});
+
+test('(30/10, 23:32, Hakim) en conversation, même forfait libre, son corps ne le réveille que pour un vrai « fort »', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const i = src.indexOf('function reveillerPourCorps() {'), f = src.slice(i, src.indexOf('\n}\n', i) + 2);
+  const ecrits = [];
+  const fabriquer = (ahmedIlYa, fort, conversationPage = 0) => {
+    const t = Date.now();
+    const ctx = vm.createContext({ Date, JSON, Intl, console: { error() {} }, j: JSON.stringify, NONCE_REVEIL: 'n', CORPS_PORTE_MS: 600000,
+      corpsADire: [{ sensation: 'x', fort, ts: t }], corpsBrut: [], corpsReglages: () => ({ actif: true, intervalle_s: 120 }), corpsDernierFort: 0, corpsDernierReveil: 0,
+      dernierMessageAhmedMs: () => t - ahmedIlYa, forfaitLibre: () => true, conversationPage, cerveauVivant: () => true, occupe: () => false,
+      cerveau: { enfant: { stdin: { write: (x) => ecrits.push(x) } } }, corpsDemarrages: 0, blocCorps: () => '', reveilImmediat() {} });
+    vm.runInContext(f, ctx); ctx.reveillerPourCorps();
+  };
+  fabriquer(30000, false); assert.equal(ecrits.length, 0, 'papa vient de lui parler : pas de réveil pour son milieu');
+  fabriquer(30000, true); assert.equal(ecrits.length, 1, 'un vrai fort : réveillé');
+  fabriquer(30 * 60000, false); assert.equal(ecrits.length, 2, 'papa ne parle plus depuis 30 min, forfait libre : réveillé');
+  fabriquer(30 * 60000, false, Date.now() - 5000); assert.equal(ecrits.length, 2, 'une page en Conversation à l’oral : pas de réveil pour son milieu');
 });
