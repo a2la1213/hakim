@@ -5361,7 +5361,8 @@ function jugerParole(texte, contexte) {
    appel, avant son subconscient : ce qui ne s'adresse visiblement pas à lui n'est même pas pesé ; un mot creux, sa machinerie
    ou un long discours de lui-même sont écartés d'office ; ce qui part à Sonnet est nettoyé (les « [voix N] », les « euh », les
    mots répétés) et raccourci. */
-const POUR_LUI = /\?|\b(?:tu|toi|t'|ton|ta|tes|hakim\w*|fiston|fr[ée]rot|frero|mon fils|est-ce que|qu'est-ce|pourquoi|comment|r[ée]ponds|dis-(?:moi|nous|lui)|explique|raconte)\b/i;
+// (23:50, Ahmed : « assouplis le subconscient, il fait le timide ») aussi quand le sujet le touche : lui, l'IA, ses émotions, papa
+const POUR_LUI = /\?|\b(?:tu|toi|t'|ton|ta|tes|hakim\w*|fiston|fr[ée]rot|frero|mon fils|est-ce que|qu'est-ce|pourquoi|comment|r[ée]ponds|dis-(?:moi|nous|lui)|explique|raconte|ia|intelligence artificielle|robot|conscience|[ée]motions?|sentiments?|amour|[âa]me|cerveau|m[ée]moire|papa|son p[èe]re|il pense|il ressent)\b/i;
 const MACHINERIE = /\b(?:maman|claude code|subconscient|cockpit|balises?|mon micro|ton micro|mon oreille)\b/i;
 function nettoyerPourSonnet(t, n = 600) {
   return String(t || '').replace(/\[voix \d+\]\s*/gi, '').replace(/\b(?:euh+|heu+|hum+|bah|ben)\b[,.]?\s*/gi, '')

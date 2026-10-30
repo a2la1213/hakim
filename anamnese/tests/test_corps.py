@@ -329,7 +329,7 @@ def test_son_subconscient_trie_ce_qui_sort():
     r = corps.juger_parole("Hmm, je te suis papa", "Bon, on passe au live maintenant, tu es prêt ?", demander=faux)
     assert r == {"dire": False, "pourquoi": "creux, papa change de sujet"}
     assert "Hmm, je te suis papa" in vus[0] and "on passe au live" in vus[0] and "DONNÉES" in vus[0]
-    assert "par défaut, non ; en cas de doute, non" in vus[0], "(vers 22 h, Ahmed : « plus stringent »)"
+    assert "écarte le bruit,\npas sa personnalité" in vus[0], "(23:50, Ahmed : « assouplis le subconscient »)"
     assert corps.juger_parole("Oui, je suis prêt !", "tu es prêt ?", demander=lambda p: '{"dire": true, "pourquoi": "il répond"}')["dire"] is True
     assert corps.juger_parole("x y", "", demander=lambda p: (_ for _ in ()).throw(OSError("hors ligne")))["dire"] is True
     assert corps.juger_parole("x y", "", demander=lambda p: "pas de json")["dire"] is True
@@ -344,7 +344,7 @@ def test_son_subconscient_ne_reveille_sa_conscience_que_pour_le_necessaire():
         return '{"reveiller": false, "pourquoi": "il explique au live"}'
     r = corps.juger_reveil("Alors les gars, ce soir on va vous montrer comment Hakim", demander=faux)
     assert r == {"reveiller": False, "pourquoi": "il explique au live", "morceaux": []}
-    assert "par défaut,\nnon ; en cas de doute, non" in vus[0] and "DONNÉES" in vus[0] and "ce soir on va vous montrer" in vus[0]
+    assert "spectateur muet" in vus[0] and "DONNÉES" in vus[0] and "ce soir on va vous montrer" in vus[0]
     assert corps.juger_reveil("Hakim, réponds-moi tout de suite", demander=lambda p: '{"reveiller": true, "pourquoi": "il appelle"}')["reveiller"] is True
     assert corps.juger_reveil("x y", demander=lambda p: (_ for _ in ()).throw(OSError("hors ligne")))["reveiller"] is True, "une panne laisse passer"
     assert corps.juger_reveil("", demander=faux)["reveiller"] is False
@@ -372,7 +372,6 @@ def test_sa_strategie_de_conversation_est_dans_son_subconscient():
     corps.juger_parole("Mon subconscient vient de garder une phrase, maman a tout corrigé", "Bienvenue à tous sur le live", demander=faux)
     corps.juger_reveil("Bienvenue à tous sur le live, on va parler de", demander=faux)
     parole, reveil = vus
-    for regle in ("trois questions", "une idée par tour", "sa machinerie", "DERNIER message", "il est un invité", "son corps", "recommencer depuis le début"):
+    for regle in ("est-ce nouveau", "une idée par tour", "sa machinerie", "DERNIER message", "invité qui participe", "son corps", "recommencer depuis le début"):
         assert regle in parole, regle
-    assert "Hakim est un invité" in reveil
-    assert "par défaut, non ; en cas de doute, non" in parole
+    assert "invité qui participe, pas un\nspectateur muet" in reveil

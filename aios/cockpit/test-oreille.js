@@ -518,6 +518,7 @@ test('(23:40) le prénettoyage : ce qui ne s’adresse pas à lui n’arrive mê
   vm.runInContext(src.slice(debut, fin).replace(/^const /gm, 'var ') + src.match(/const MOT_CREUX = .+;/)[0].replace('const ', 'var '), c);
   assert.equal(c.nettoyerPourSonnet('[voix 571] Euh, alors alors les gars, ben on est on est en live'), 'alors les gars, on est en live');
   assert.equal(c.POUR_LUI.test('Alors les gars, bienvenue sur le live, on va parler de la construction'), false, 'il parle au public');
+  assert.ok(c.POUR_LUI.test('Une IA peut avoir des émotions selon moi'), '(23:50) le sujet le touche : pesé');
   for (const x of ['Et toi, t’en penses quoi ?'.replace('’', "'"), 'Hakimou, réponds', 'Pourquoi il dit ça', 'C’est vrai ?']) assert.ok(c.POUR_LUI.test(x), x);
   assert.equal(c.preFiltreParole('Hmm, je te suis papa', 'blabla'), 'un mot creux (prénettoyage)');
   assert.equal(c.preFiltreParole('Maman a corrigé mon micro !', 'tu aimes quoi comme musique ?'), 'sa machinerie, sans qu’on lui en parle (prénettoyage)');
