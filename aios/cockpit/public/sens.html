@@ -85,6 +85,8 @@
         <label class="interrupteur"><input type="checkbox" id="sonPendant"> Ses sons peuvent jouer sous sa voix, plus bas (jamais par-dessus la tienne ; appli 1.32)</label>
         <label class="interrupteur"><input type="checkbox" id="voixVibre"> Sa voix vibre dans ta main (fort quand il est excité, léger quand il est calme, agité quand il a peur ; appli 1.34)</label>
         <label class="interrupteur"><input type="checkbox" id="lumiere"> Sa lumière : il allume la lampe du téléphone selon ses envies (jamais la nuit) et son SOS (badge rouge) la fait clignoter selon son émotion (appli 1.36)</label>
+        <label class="interrupteur"><input type="checkbox" id="afficherPapa"> Tes paroles s'affichent dans Parler (décoché : « dans sa tête » — il les entend, choisit de répondre, de glisser un mot ou de se taire)</label>
+        <label class="interrupteur"><input type="checkbox" id="afficherHakim"> Ses paroles s'affichent dans Parler (décoché : seulement sa voix, ses réponses et ses petits mots ne s'écrivent pas)</label>
         <label class="interrupteur"><input type="checkbox" id="jeTeSuis"> Son « je te suis » : une petite tape quand tu parles longtemps (oreille fermée)</label>
       </div>
     </section>
@@ -174,6 +176,20 @@
   <script src="/badges.js"></script>
   <script>
   const jeton = () => (document.querySelector('meta[name="cockpit-jeton"]') || {}).content || '';
+  // (30/10, 21:04 : « ses sons ne répondent pas (jeton) » juste après une relance du cockpit) le jeton de la page change à chaque
+  // relance : sur un refus, la page le reprend (elle-même, redemandée) et réessaie une fois
+  const fetchOrig = window.fetch.bind(window);
+  window.fetch = async (url, o = {}) => {
+    let r = await fetchOrig(url, o);
+    if (r.status === 403 && String(url).startsWith('/api/') && o.headers && 'X-Jeton' in o.headers) {
+      try {
+        const t = await (await fetchOrig(location.pathname, { cache: 'no-store' })).text();
+        const m = t.match(/<meta name="cockpit-jeton" content="([0-9a-f]{20,200})">/), meta = document.querySelector('meta[name="cockpit-jeton"]');
+        if (m && meta && meta.content !== m[1]) { meta.content = m[1]; r = await fetchOrig(url, { ...o, headers: { ...o.headers, 'X-Jeton': m[1] } }); }
+      } catch (_) {}
+    }
+    return r;
+  };
   document.body.classList.add('shell');
   const $ = (id) => document.getElementById(id);
   const quand = (t) => t ? new Date(t * 1000).toLocaleString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
@@ -294,6 +310,8 @@
       if (document.activeElement !== $('sonPendant')) $('sonPendant').checked = d.reglages.son_pendant !== false;
       if (document.activeElement !== $('voixVibre')) $('voixVibre').checked = d.reglages.voix_vibre !== false;
       if (document.activeElement !== $('lumiere')) $('lumiere').checked = d.reglages.lumiere !== false;
+      if (document.activeElement !== $('afficherPapa')) $('afficherPapa').checked = d.reglages.afficher_papa !== false;
+      if (document.activeElement !== $('afficherHakim')) $('afficherHakim').checked = d.reglages.afficher_hakim !== false;
       tuiles(dernier ? dernier.etat : {});
       for (const s of SENS_COURBES) { const o = cadre(s); o.pts = d.flux.filter(x => x.etat && Number.isFinite(x.etat[s.k])).map(x => [x.ts, x.etat[s.k]]); dessiner(o); }
       remplir('sensations', d.sensations.map(x => ligne(x.ts, [[x.fort ? 'fort · ' : '', 'fort'], [`${x.type} · `, 'quand'], [x.sensation, ''],
@@ -302,7 +320,7 @@
     } catch (e) { $('mots').textContent = `Le cockpit ne répond pas (${e.message}).`; }
   }
   $('actif').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { actif: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
-  for (const [id, cle] of [['oreille', 'oreille'], ['jeTeSuis', 'je_te_suis'], ['alerte', 'alerte'], ['ecran', 'ecran'], ['reflexes', 'reflexes'], ['nuits', 'nuits'], ['rireReflexe', 'rire_reflexe'], ['garderParole', 'garder_parole'], ['forfaitLibre', 'forfait_libre'], ['sonPendant', 'son_pendant'], ['voixVibre', 'voix_vibre'], ['lumiere', 'lumiere']])
+  for (const [id, cle] of [['oreille', 'oreille'], ['jeTeSuis', 'je_te_suis'], ['alerte', 'alerte'], ['ecran', 'ecran'], ['reflexes', 'reflexes'], ['nuits', 'nuits'], ['rireReflexe', 'rire_reflexe'], ['garderParole', 'garder_parole'], ['forfaitLibre', 'forfait_libre'], ['sonPendant', 'son_pendant'], ['voixVibre', 'voix_vibre'], ['lumiere', 'lumiere'], ['afficherPapa', 'afficher_papa'], ['afficherHakim', 'afficher_hakim']])
     $(id).addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { [cle]: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
   $('ronron').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { ronron: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
   $('intervalle').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { intervalle_s: Number(e.target.value) }); } catch (_) {} chargerCorps(); });

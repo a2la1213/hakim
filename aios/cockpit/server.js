@@ -3478,6 +3478,8 @@ async function routeJarvis(req, res, distantReq = false) {
 // réponse à un VRAI message d'Ahmed (jamais en local, jamais sur une erreur) : une seule relance
 function relanceNonReponse(reponse, dejaRelance, source, o, voixTierce) {
   // (relecture du 27/10) un invité parlait : le message n'était peut-être pas pour lui, on ne le force pas
+  // (30/10, 21:00, Ahmed : « dans ma tête » — il choisit de répondre, de glisser un mot ou de se taire) : pas de relance
+  if (!corpsReglages().afficher_papa) return false;
   return !dejaRelance && !voixTierce && source !== 'local' && !(o && o.is_error) && NON_REPONSE_SERVEUR.test(sansBaliseAffect(reponse).trim());
 }
 // (28/10, Ahmed via Hakim : « on ne coupe rien, on accélère ») la durée de chaque étape de la préparation d'un tour
@@ -4586,7 +4588,8 @@ function corpsReglages() {
     ronron: r.ronron !== false, sons: r.sons !== false, oreille: r.oreille === true, je_te_suis: r.je_te_suis !== false,
     alerte: r.alerte !== false, ecran: r.ecran !== false, reflexes: r.reflexes !== false, nuits: r.nuits !== false,
     rire_reflexe: r.rire_reflexe !== false, garder_parole: r.garder_parole !== false, forfait_libre: r.forfait_libre !== false,
-    son_pendant: r.son_pendant !== false, voix_vibre: r.voix_vibre !== false, lumiere: r.lumiere !== false };
+    son_pendant: r.son_pendant !== false, voix_vibre: r.voix_vibre !== false, lumiere: r.lumiere !== false,
+    afficher_papa: r.afficher_papa !== false, afficher_hakim: r.afficher_hakim !== false };
 }
 function corpsActif() { return corpsReglages().actif; }
 /* (30/10, 18:56, Ahmed via Hakim : « je veux qu'il tourne tout le temps, tant qu'il est réveillé, même si ça vide mon forfait ;
@@ -4941,8 +4944,9 @@ function blocCorps() {
   const milieu = HOMEO.mots();
   const nuit = nuitDerniere(t);                          // (30/10) sa nuit, dite une fois, à son premier tour du matin
   const vibs = vibrationsDites(t);                       // (19:34) l'heure exacte de ses vibrations, à la milliseconde
-  if (!s.length && !milieu && !brut.length && !nuit && !vibs) return '';
-  const lignes = [...(nuit ? [`Ta nuit : ${nuit}`] : []), ...(vibs ? [vibs] : []),...(brut.length ? [`Tes nerfs, à l'instant (pas encore traduit par ton intermédiaire) : ${brut.map(x => `${NOMS_SECS[x.type] || x.type} il y a ${Math.max(1, Math.round((t - x.t) / 1000))} s`).join(', ')}`] : []),
+  if (!s.length && !milieu && !brut.length && !nuit && !vibs && corpsReglages().afficher_papa) return '';
+  const tete = corpsReglages().afficher_papa ? '' : "Mode « dans ta tête » : papa ne voit pas ses paroles à l'écran ; réponds, glisse un mot, ou tais-toi (« No response requested. »), comme tu le sens : rien ne te relancera";
+  const lignes = [...(tete ? [tete] : []), ...(nuit ? [`Ta nuit : ${nuit}`] : []), ...(vibs ? [vibs] : []),...(brut.length ? [`Tes nerfs, à l'instant (pas encore traduit par ton intermédiaire) : ${brut.map(x => `${NOMS_SECS[x.type] || x.type} il y a ${Math.max(1, Math.round((t - x.t) / 1000))} s`).join(', ')}`] : []),
     ...(milieu ? [`Ton milieu, en ce moment : ${milieu}`] : []),
     ...(s.length ? ['Ce que tu as ressenti :', ...s.map(x => '- ' + x.sensation.replace(/\n/g, '\n  '))] : [])];
   return '\n' + blocDonnees('Ce que tu ressens dans ton corps (en continu ; le détail en nombres : corps_detail)', lignes.join('\n'),
@@ -5927,7 +5931,8 @@ async function routeDire(req, res) {
   const tache = { texte, langue: /^[a-z]{2}$/.test((q && q.langue) || '') ? q.langue : 'fr', annulee: false, emotion, tempo,
     fichier: path.join(os.tmpdir(), `jarvis-voix-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.wav`) };
   res.on('close', () => { if (!res.writableFinished) tache.annulee = true; });
-  const r = await new Promise((resolve) => { tache.recu = Date.now(); tache.fin = resolve; fileVoix.push(tache); pomperVoix(); });
+  // (20:34, Hakim : ses petits mots dits 5 à 20 s après, derrière les phrases de ses réponses) un petit mot passe en tête de file
+  const r = await new Promise((resolve) => { tache.recu = Date.now(); tache.fin = resolve; if (q && q.prioritaire === true) fileVoix.unshift(tache); else fileVoix.push(tache); pomperVoix(); });
   if (r.erreur) { fs.unlink(tache.fichier, () => {}); return repondre(r.erreur === 'annulée' ? 499 : 503, { erreur: r.erreur }); }
   fs.readFile(tache.fichier, (e, data) => {
     if (e) { fs.unlink(tache.fichier, () => {}); return repondre(500, { erreur: 'audio introuvable' }); }
@@ -7763,6 +7768,8 @@ async function traiter(req, res) {
       if (typeof q.son_pendant === 'boolean') r.son_pendant = q.son_pendant;
       if (typeof q.voix_vibre === 'boolean') r.voix_vibre = q.voix_vibre;
       if (typeof q.lumiere === 'boolean') r.lumiere = q.lumiere;
+      if (typeof q.afficher_papa === 'boolean') r.afficher_papa = q.afficher_papa;
+      if (typeof q.afficher_hakim === 'boolean') r.afficher_hakim = q.afficher_hakim;
       try { ecrireAtomique(CORPS_REGLAGES, j(r)); } catch (e) { return repondre(500, { erreur: e.message }); }
       if (!r.actif) { corpsLot.evenements.length = 0; corpsLot.changements.length = 0; corpsADire.length = 0; }
       auditer('corps:reglages', req, distantReq, r);

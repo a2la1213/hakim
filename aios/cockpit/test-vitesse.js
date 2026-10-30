@@ -51,12 +51,15 @@ test('Parler journalise les pauses de ta phrase, la patience et la fin anticipé
 // ---- (27/10, idée d'Ahmed, erreur de Hakim du 22/10, du 25/10 deux fois et du 27/10 à 00:30) « No response requested. »
 // en réponse à un VRAI message d'Ahmed : le cockpit le relance une fois au lieu de laisser Ahmed sans réponse
 test('« No response requested. » à un vrai message d’Ahmed : une seule relance, jamais en local ni sur une erreur', () => {
-  const ctx = { String };
+  const ctx = { String, corpsReglages: () => ({ afficher_papa: true }) };
   vm.createContext(ctx);
   vm.runInContext(ligne('const NON_REPONSE_SERVEUR') + 'const sansBaliseAffect = (t) => String(t || "");'
     + prendreDans(serveur, 'relanceNonReponse') + 'this.f = relanceNonReponse;', ctx);
   assert.strictEqual(ctx.f('No response requested.', false, 'abonnement', {}, false), true);
   assert.strictEqual(ctx.f('  no response requested  ', false, 'api', {}, false), true);
+  ctx.corpsReglages = () => ({ afficher_papa: false });
+  assert.strictEqual(ctx.f('No response requested.', false, 'abonnement', {}, false), false, '(21:00) « dans sa tête » : son silence est permis');
+  ctx.corpsReglages = () => ({ afficher_papa: true });
   assert.strictEqual(ctx.f('No response requested.', false, 'abonnement', {}, true), false, 'un invité parlait : pas forcément à lui');
   assert.strictEqual(ctx.f('No response requested.', true, 'abonnement', {}), false, 'une seule fois');
   assert.strictEqual(ctx.f('No response requested.', false, 'local', {}), false);
@@ -107,7 +110,7 @@ test('chaque synthèse de voix est mesurée côté serveur : attente dans la fil
   const pompe = prendreDans(serveur, 'pomperVoix');
   assert.match(pompe, /const tSynthese = Date\.now\(\);/);
   assert.match(pompe, /e: 'synthese_serveur', attente_ms: tSynthese - \(tache\.recu \|\| tSynthese\), ms: Date\.now\(\) - tSynthese, caracteres: tache\.texte\.length/);
-  assert.match(serveur, /tache\.recu = Date\.now\(\); tache\.fin = resolve; fileVoix\.push\(tache\);/);
+  assert.match(serveur, /tache\.recu = Date\.now\(\); tache\.fin = resolve; if \(q && q\.prioritaire === true\) fileVoix\.unshift\(tache\); else fileVoix\.push\(tache\);/);
 });
 
 // (28/10, backtest : 90 % de la préparation est le rappel et son tri) le rappel part dès le début de la préparation, en

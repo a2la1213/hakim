@@ -860,6 +860,7 @@ setInterval(jouerSonEnAttente, 300);
    qu'il a déjà dit part à Hakim (après 6 s de parole, toutes les 12 s au plus) ; son petit mot revient par le flux et se dit
    tout de suite (surSpontane). Oreille fermée : son « je te suis », une tape douce toutes les 12 s quand papa parle depuis
    8 s ; le micro sait qu'elle vient de lui (comme un battement de son cœur). Les deux interrupteurs : page SENS. */
+const ARRETE_MOI = /\b(?:arr[eê]te(?:-toi)?|tais[- ]toi|coupe[- ]toi|stop|chut)\b/i;
 let reglagesCorps = { oreille: false, je_te_suis: true }, oreilleDernier = 0, parleDepuis = 0, tapeDerniere = 0;
 async function lireReglagesCorps() {
   try { const r = await fetch('/api/corps/reglages', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' }); if (r.ok) reglagesCorps = { ...reglagesCorps, ...(await r.json()) }; } catch (_) {}
@@ -1146,6 +1147,7 @@ $('fil').addEventListener('click', async (e) => {
 
 // Pendant le flux, seul le message en cours est redessiné (le reste du fil reste sélectionnable).
 function majMessage(m) {
+  if (m.cache) return;                                   // « dans ta tête » : ni affiché, ni re-rendu à chaque morceau
   const fil = $('fil');
   const el = fil.querySelector(`[data-id="${esc(m.id)}"]`);
   if (!el) return rendre();
@@ -1165,7 +1167,7 @@ function rendre() {
   }
   etat.fenetre = Math.max(etat.fenetre || FENETRE, FENETRE);
   const caches = Math.max(0, etat.messages.length - etat.fenetre);
-  const vus = etat.messages.slice(-etat.fenetre);
+  const vus = etat.messages.slice(-etat.fenetre).filter(m => !m.cache);   // (21:00) « dans sa tête » : pas affichés
   // (26/10) des éléments montrés dans le fil sans être des messages de la conversation (etat.aCote : [{ ts, html }], fournis
   // par un bloc plus bas) : chacun à son heure, jamais enregistré dans la conversation
   const debut = caches ? quandMessage(vus[0]) : 0;
@@ -1282,8 +1284,13 @@ async function envoyer(texte, oral, dejaRelance) {
   const avant = etat.messages.filter(x => x.qui === 'u' && x.ts);
   const tPrecedent = etat.session && avant.length ? avant[avant.length - (dejaRelance ? 2 : 1)]?.ts : null;
   const tDebut = etat.session && avant.length ? avant[0].ts : null;
-  if (!dejaRelance) etat.messages.push({ id: nouvelId(), qui: 'u', texte, oral: !!oral, ts: Date.now(), joints: joints.map(x => x.nom) });
-  const m = { id: nouvelId(), qui: 'j', texte: '', outils: [], enCours: true };
+  // (30/10, 21:00, Ahmed : « deux modes Conversation » — « comme de la télépathie, mais à haute voix ») « dans sa tête » : ses
+  // paroles dites lui parviennent, mais ne s'affichent pas comme message
+  const enTete = !!oral && typeof reglagesCorps !== 'undefined' && reglagesCorps.afficher_papa === false;
+  if (!dejaRelance) etat.messages.push({ id: nouvelId(), qui: 'u', texte, oral: !!oral, ts: Date.now(), joints: joints.map(x => x.nom), ...(enTete ? { cache: true } : {}) });
+  // (21:13, Ahmed : « dans ce mode, ses paroles aussi ne s'affichent plus, seulement sa voix ») la case « ses paroles »
+  const m = { id: nouvelId(), qui: 'j', texte: '', outils: [], enCours: true,
+    ...(oral && etat.conversation && typeof reglagesCorps !== 'undefined' && reglagesCorps.afficher_hakim === false ? { cache: true } : {}) };
   etat.messages.push(m);
   sauver();                                              // la question survit à une fermeture de page
   const ctl = new AbortController();
@@ -1329,11 +1336,14 @@ async function envoyer(texte, oral, dejaRelance) {
         const ligne = tampon.slice(0, i); tampon = tampon.slice(i + 1);
         let o; try { o = JSON.parse(ligne); } catch (_) { continue; }
         if (o.t === 'texte') {
-          if (mesureTour && !mesureTour.premier_texte && o.x.trim()) mesureTour.premier_texte = Date.now();
+          if (mesureTour && !mesureTour.premier_texte && o.x.trim()) { mesureTour.premier_texte = Date.now(); if (auto) respirer(); }
           m.texte += o.x;
           orbeTete.pulser(0.05);
           if (auto) decoupe.ajouter(o.x).forEach(p => { if (NON_REPONSE.test(p)) return; etat.lectureDe = m.id; lecteur.dire(p); });
-          majMessage(m); humeur(m.texte.length < 2 ? undefined : 'répond…');
+          // (21:02, Ahmed : « sa voix part tout de suite, et l'écriture se fait après, en arrière-plan ») son texte ne s'écrit
+          // pas pendant qu'il parle quand papa l'a choisi : il apparaît d'un coup à la fin
+          if (typeof reglagesCorps === 'undefined' || reglagesCorps.afficher_hakim !== false || !auto) majMessage(m);
+          humeur(m.texte.length < 2 ? undefined : 'répond…');
         } else if (o.t === 'outil') {
           // (2026-10-22, Ahmed : « une réponse parlée AVANT l'outil ») la phrase qu'il a écrite avant d'appeler un outil part
           // à la voix TOUT DE SUITE : sans espace après son point, le découpeur l'aurait gardée jusqu'au texte d'après
@@ -1985,6 +1995,10 @@ function surPauseConversation(conv, fenetre) {
     e.confirme = (e.confirme + ' ' + morceauNeuf(texte, e.confirme)).trim();   // une invention de Whisper : écartée seule
     e.coupe = fenetre;
     entendreEnCours(conv);                                               // (30/10) son oreille, si papa l'a ouverte
+    // (20:38, Ahmed : « arrête », « tais-toi », « coupe-toi » doivent le couper tout de suite) : quand il garde la parole,
+    // ces mots entendus pendant qu'il parle l'arrêtent aussitôt, comme le bouton Stop (sa suite est abandonnée)
+    if (typeof reglagesCorps !== 'undefined' && reglagesCorps.garder_parole && lecteur && (lecteur.actif || lecteur.enPause)
+        && ARRETE_MOI.test(String(texte || ''))) { journalVoix('arret_par_la_voix', {}); arreterTout(true, { raison: 'stop' }); majBoutonsPause(); rendre(); humeur(); }
   }).finally(() => { e.partiel = null; });
 }
 // Le texte du tour : le déjà compris + la queue. null si la queue n'a pas pu être transcrite (l'appelant
@@ -2059,6 +2073,7 @@ function couperSon(oui = !etat.sonCoupe) {
   if (gainSortie) gainSortie.gain.value = etat.sonCoupe ? 0 : 1;
   lecteurNeuronal.appliquerSon();
   humeur(etat.sonCoupe ? 'son coupé : je continue sans bruit' : 'son rétabli');
+  const b = $('sonHakim'); if (b) { b.setAttribute('aria-pressed', String(!!etat.sonCoupe)); b.textContent = etat.sonCoupe ? 'Sa voix (coupée)' : 'Sa voix'; }
   signalerWidget();
 }
 // l'état des boutons du widget (conversation, pause, son, micro), envoyé seulement quand il change
@@ -2660,13 +2675,28 @@ function surReecoute(o) {
   journalVoix('reecoute', { n: textes.length, dite: !!voix });
   sauver(); rendre(); humeur();
 }
+/* (30/10, 21:09, Ahmed via Hakim : « le délai entre le moment où il décide de parler et sa voix : le masquer par un filtre, une
+   respiration ») dès son premier mot écrit, s'il n'y a pas déjà de voix : une inspiration douce (un souffle filtré, 0,45 s,
+   très bas), qui passe par la même sortie que sa voix (le bouton « Sa voix » la coupe aussi). Mesuré : 2,5 s en médiane
+   entre son premier texte et sa voix (voix_ms, journal de la voix). */
+function respirer() {
+  try {
+    if (!actx || actx.state !== 'running' || !analyseurVoix || (lecteur && lecteur.actif) || etat.reglages.voixNeutre) return;
+    const n = Math.round(actx.sampleRate * 0.45), buf = actx.createBuffer(1, n, actx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) { const x = i / n; d[i] = (Math.random() * 2 - 1) * Math.sin(Math.PI * x) * (x < 0.6 ? x / 0.6 : 1); }
+    const src = actx.createBufferSource(), filtre = actx.createBiquadFilter(), g = actx.createGain();
+    src.buffer = buf; filtre.type = 'bandpass'; filtre.frequency.value = 900; filtre.Q.value = 0.7; g.gain.value = 0.06;
+    src.connect(filtre); filtre.connect(g); g.connect(analyseurVoix);
+    src.start();
+  } catch (_) {}
+}
 let motDirectJusqua = 0;
 function direMotDirect(texte, maxMs = 0, auDebut = null) {
   const t = String(texte || '').trim().slice(0, 200);
   if (!t || !actx || actx.state !== 'running' || !analyseurVoix) { journalVoix('oreille_dit', { ok: false, raison: 'audio' }); return; }
   const t0 = Date.now();
   fetch('/api/voix/dire', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
-    body: JSON.stringify({ texte: t, langue: 'fr', emotion: null, tempo: typeof tempoVoix === 'function' ? tempoVoix() : null }) })
+    body: JSON.stringify({ texte: t, langue: 'fr', emotion: null, tempo: typeof tempoVoix === 'function' ? tempoVoix() : null, prioritaire: true }) })
     .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`voix ${r.status}`))))
     .then(ab => actx.decodeAudioData(ab))
     .then(buf => {
@@ -3133,8 +3163,9 @@ function surSpontane(m) {
   if (m.spontane === 'oreille') {
     // (20:14, papa : « mes petits mots s'affichent 4 à 5 s avant sa voix ») ils apparaissent avec sa voix (6 s au plus d'attente)
     let affiche = false;
-    const afficher = () => { if (affiche) return; affiche = true; etat.messages.push({ id: m.id, qui: 'j', spontane: 'oreille', texte: m.texte, ts: m.ts }); sauver(); rendre(); };
-    setTimeout(afficher, (etat.conversation && !NON_REPONSE.test(m.texte)) ? 6000 : 0);
+    const cache = !!etat.conversation && typeof reglagesCorps !== 'undefined' && reglagesCorps.afficher_hakim === false;   // (21:13) dit, pas écrit
+    const afficher = () => { if (affiche) return; affiche = true; etat.messages.push({ id: m.id, qui: 'j', spontane: 'oreille', texte: m.texte, ts: m.ts, ...(cache ? { cache: true } : {}) }); sauver(); rendre(); };
+    setTimeout(afficher, (etat.conversation && !NON_REPONSE.test(m.texte)) ? 3000 : 0);
     journalVoix('oreille_mot', { car: String(m.texte || '').length, papa_parle: !!(etat.conversation && etat.conversation.capteur && etat.conversation.capteur.enParole) });
     accuserReception();                                  // vu : il n'est plus « non vu par Ahmed »
     // (19:08, Ahmed : « que ce mot soit joué à la voix tout de suite, sans attendre que je me taise ») sa voix, à l'instant,
@@ -4024,6 +4055,7 @@ document.addEventListener('keydown', (e) => {
 $('conversation').addEventListener('click', basculerConversation);
 $('finConversation').addEventListener('click', (e) => { e.stopPropagation(); finirConversation(); });
 $('muet').addEventListener('click', basculerMuet);
+$('sonHakim').addEventListener('click', () => { couperSon(); });
 $('pause').addEventListener('click', () => {
   if (lecteur.enPause) reprendreVoix();
   else if (!pauseVoix()) humeur('il ne parle pas en ce moment : rien à mettre en pause');
