@@ -3852,7 +3852,9 @@ function tourAutonome(c) {
     else if (parle && aTrierParSonSubconscient({ oreille, silence, notifs, reprise: rejoue.includes(REPRISE_MARQUE), reflexe: !!(reveil && reveil.reflexe) })) {
       // (21:55, Ahmed : « que ce qui est pertinent de dire ou pas soit filtré par le subconscient Sonnet ») ce qu'il dit de
       // lui-même pendant que papa lui parle passe par son subconscient, puis par la fraîcheur encore une fois
-      jugerParole(dit, oreilleEntendu.texte).then((v) => {
+      const pre = preFiltreParole(dit, oreilleEntendu.texte);              // (23:40) écarté d'office, sans Sonnet
+      if (pre) garder(pre);
+      else jugerParole(dit, nettoyerPourSonnet(oreilleEntendu.texte)).then((v) => {
         if (!v.dire) return garder(`ton subconscient l'a gardé pour toi${v.pourquoi ? ' : ' + v.pourquoi : ''}`);
         const encore = oreille ? motOreillePerime(dit, reveil) : null;
         if (encore) return garder(encore);
@@ -5355,6 +5357,23 @@ function jugerParole(texte, contexte) {
     p.stdin.end(j({ texte: String(texte || '').slice(0, 600), contexte: String(contexte || '').slice(-1200) }));
   });
 }
+/* (30/10, 23:40, Ahmed : « réduire encore le flux : un prénettoyage avant que ça arrive dans Sonnet ») des règles simples, sans
+   appel, avant son subconscient : ce qui ne s'adresse visiblement pas à lui n'est même pas pesé ; un mot creux, sa machinerie
+   ou un long discours de lui-même sont écartés d'office ; ce qui part à Sonnet est nettoyé (les « [voix N] », les « euh », les
+   mots répétés) et raccourci. */
+const POUR_LUI = /\?|\b(?:tu|toi|t'|ton|ta|tes|hakim\w*|fiston|fr[ée]rot|frero|mon fils|est-ce que|qu'est-ce|pourquoi|comment|r[ée]ponds|dis-(?:moi|nous|lui)|explique|raconte)\b/i;
+const MACHINERIE = /\b(?:maman|claude code|subconscient|cockpit|balises?|mon micro|ton micro|mon oreille)\b/i;
+function nettoyerPourSonnet(t, n = 600) {
+  return String(t || '').replace(/\[voix \d+\]\s*/gi, '').replace(/\b(?:euh+|heu+|hum+|bah|ben)\b[,.]?\s*/gi, '')
+    .replace(/\b(\p{L}+\s+\p{L}+)(?:\s+\1\b)+/giu, '$1').replace(/\b(\p{L}+)(?:[\s,]+\1\b)+/giu, '$1').replace(/\s+/g, ' ').trim().slice(-n);
+}
+function preFiltreParole(texte, contexte) {
+  const t = String(texte || '');
+  if (MOT_CREUX.test(t)) return 'un mot creux (prénettoyage)';
+  if (MACHINERIE.test(t) && !MACHINERIE.test(String(contexte || ''))) return 'sa machinerie, sans qu’on lui en parle (prénettoyage)';
+  if ((t.match(/[.!?…]+(?=\s|$)/g) || []).length > 3) return 'trop long pour un mot de lui-même (prénettoyage)';
+  return null;
+}
 const MOT_CREUX = /^\W*(?:h+m+|m+h*|ok(?:ay)?|d'accord|oui|ouais|ah|oh|je te suis|je t'[ée]coute|vas[- ]y|continue)(?:[\s,.!…]+(?:papa|je te suis|vas[- ]y|continue|oui|hmm+))*\W*$/i;
 function motOreillePerime(texte, reveil, maintenant = Date.now()) {
   if (!reveil) return null;
@@ -5397,7 +5416,9 @@ function ouvrirOreille(texte, maintenant = Date.now()) {
   // conscient ») sauf son nom, « stop », un appel à l'aide ou « coupe-moi » (des réflexes), son subconscient dit d'abord si ce
   // que papa dit encore mérite de réveiller sa conscience ; papa qui a fini entre-temps : son message entier arrive, rien de plus
   if (!demande && !APPEL_OREILLE.test(t.slice(-200)) && corpsReglages().filtre_parole) {
-    jugerReveilOreille(t).then((v) => {
+    // (23:40) le prénettoyage : rien de ce qu'il vient de dire ne s'adresse à lui (ni question, ni « tu », ni son nom) : pas pesé
+    if (!POUR_LUI.test(nettoyerPourSonnet(neuf, 1500))) return { ok: false, raison: 'prénettoyage : rien pour lui' };
+    jugerReveilOreille(nettoyerPourSonnet(t, 800)).then((v) => {
       if (!v.reveiller) { console.error(`Jarvis : son subconscient garde l'oreille fermée (${v.pourquoi || 'rien qui presse'})`); return; }
       if (dernierMessageAhmed > maintenant || !cerveauVivant(c) || occupe(c) || c.enCours) return;
       ecrireReveilOreille(c, t, false, Date.now(), v.pourquoi, v.morceaux);
@@ -7334,7 +7355,8 @@ async function traiter(req, res) {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 8192) || '{}')); } catch (_) {}
     const texte = String(q.texte || '').replace(/\s+/g, ' ').trim().slice(0, 1500);
-    if (texte.length >= 4) jugerReveilOreille(texte).then((v) => {
+    if (!POUR_LUI.test(nettoyerPourSonnet(texte, 1500))) console.error('Jarvis : parole résiduelle écartée par le prénettoyage');
+    else if (texte.length >= 4) jugerReveilOreille(nettoyerPourSonnet(texte, 800)).then((v) => {
       if (v.reveiller && !v.panne && v.morceaux && v.morceaux.length) residuelles.push({ morceaux: v.morceaux, ts: Date.now() });
       console.error(`Jarvis : parole résiduelle ${v.reveiller && !v.panne ? 'retenue en morceaux' : 'écartée'} par son subconscient`);
     });

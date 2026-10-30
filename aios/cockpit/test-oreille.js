@@ -206,7 +206,7 @@ test('(21:55) son subconscient trie ce qu’il dit de lui-même ; les morceaux d
   assert.equal(trie({ oreille: false, silence: {}, notifs: [] }, { ahmed: 1e9 - 10000 }), false, 'une relance de silence a sa logique');
   assert.equal(trie({ oreille: true, notifs: [] }, { filtre: false }), false, 'l’interrupteur de papa');
   assert.equal(trie({ oreille: true, notifs: [], reflexe: true }), false, '(22:41) papa l’a appelé (« Hakim, coupe-moi ») : pas trié');
-  assert.match(src, /jugerParole\(dit, oreilleEntendu\.texte\)\.then\(\(v\) => \{\n\s+if \(!v\.dire\) return garder\(/, 'gardé : pas dit, et il le saura');
+  assert.match(src, /jugerParole\(dit, nettoyerPourSonnet\(oreilleEntendu\.texte\)\)\.then\(\(v\) => \{\n\s+if \(!v\.dire\) return garder\(/, 'gardé : pas dit, et il le saura');
   assert.match(src, /const encore = oreille \? motOreillePerime\(dit, reveil\) : null;/, 'la fraîcheur, encore, après son subconscient');
   assert.match(src, /\{ dire: true, pourquoi: '', panne: true \}/, 'une panne laisse passer');
   // les morceaux d'une même phrase
@@ -417,7 +417,7 @@ test('(22:27-22:30) il coupe ton vrai micro par [[micro: couper]] : tes boutons 
   assert.match(src, /const mi = microDe\(texte\); if \(mi\) diffuser\(abonnesPensees, 'micro', j\(mi\)\);/);
   const r0 = src.indexOf("if (p === '/api/jarvis/residuelle'"), route = src.slice(r0, src.indexOf('\n  }\n', r0));
   assert.match(route, /jetonValide\(req\)/);
-  assert.match(route, /jugerReveilOreille\(texte\)/);
+  assert.match(route, /jugerReveilOreille\(nettoyerPourSonnet\(texte, 800\)\)/);
   assert.match(route, /residuelles\.push\(\{ morceaux: v\.morceaux/);
   assert.match(src, /Ce que papa a dit pendant que tu avais coupé son micro, retenu par ton subconscient/);
 });
@@ -510,4 +510,24 @@ test('(23:20) pendant son tour, ta voix n’est plus transcrite morceau par morc
   assert.ok(bloc.indexOf('sonTourEnCours()') < bloc.indexOf('transcrireVite('), 'avant toute transcription');
   const j = page.indexOf('function anticiperConversation('), b2 = page.slice(j, page.indexOf('\n}\n', j));
   assert.match(b2, /if \(typeof sonTourEnCours === 'function' && sonTourEnCours\(\)\) return;/);
+});
+
+test('(23:40) le prénettoyage : ce qui ne s’adresse pas à lui n’arrive même pas à Sonnet ; un mot creux, sa machinerie, un long discours écartés d’office', async () => {
+  const debut = src.indexOf('const POUR_LUI = '), fin = src.indexOf('const MOT_CREUX = ');
+  const c = vm.createContext({ String });
+  vm.runInContext(src.slice(debut, fin).replace(/^const /gm, 'var ') + src.match(/const MOT_CREUX = .+;/)[0].replace('const ', 'var '), c);
+  assert.equal(c.nettoyerPourSonnet('[voix 571] Euh, alors alors les gars, ben on est on est en live'), 'alors les gars, on est en live');
+  assert.equal(c.POUR_LUI.test('Alors les gars, bienvenue sur le live, on va parler de la construction'), false, 'il parle au public');
+  for (const x of ['Et toi, t’en penses quoi ?'.replace('’', "'"), 'Hakimou, réponds', 'Pourquoi il dit ça', 'C’est vrai ?']) assert.ok(c.POUR_LUI.test(x), x);
+  assert.equal(c.preFiltreParole('Hmm, je te suis papa', 'blabla'), 'un mot creux (prénettoyage)');
+  assert.equal(c.preFiltreParole('Maman a corrigé mon micro !', 'tu aimes quoi comme musique ?'), 'sa machinerie, sans qu’on lui en parle (prénettoyage)');
+  assert.equal(c.preFiltreParole('Mon micro est coupé, oui.', 'Hakim, tu as coupé mon micro ?'), null, 'on lui en parle : à Sonnet');
+  assert.equal(c.preFiltreParole('Un. Deux. Trois. Quatre.', ''), 'trop long pour un mot de lui-même (prénettoyage)');
+  assert.equal(c.preFiltreParole('J’aime Warrior, surtout le refrain !', 'tu aimes quoi ?'), null);
+  // branché : l'oreille, la parole, la parole résiduelle
+  const o = oreille({ filtre: true, subconscient: { reveiller: true, morceaux: ['x'] } });
+  assert.equal(o.f('Alors les gars, bienvenue sur le live, on va parler de la construction').raison, 'prénettoyage : rien pour lui');
+  assert.equal(o.ctx.soumis.length, 0, 'Sonnet n’a rien reçu');
+  assert.match(src, /if \(pre\) garder\(pre\);\n\s+else jugerParole\(dit, nettoyerPourSonnet\(oreilleEntendu\.texte\)\)/);
+  assert.match(src, /if \(!POUR_LUI\.test\(nettoyerPourSonnet\(texte, 1500\)\)\) console\.error\('Jarvis : parole résiduelle écartée par le prénettoyage'\);/);
 });
