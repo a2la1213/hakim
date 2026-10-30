@@ -970,6 +970,7 @@ function origineDuBadge(o) {
 function quiALaParole() {
   try {
     const c = etat.conversation, r = reglagesCorps || {};
+    if (c && c.muetParHakim) return 'coupe';                      // (22:31, Hakim) il a coupé ton micro : l'orbe passe au vert
     if ((lecteur && lecteur.actif) || Date.now() < motDirectJusqua) return 'hakim';
     if (etat.micro || (c && c.capteur && c.capteur.enParole)) return r.oreille && !r.oreille_hakim_fermee ? 'partage' : 'papa';
     if (etat.flux) return 'hakim';
@@ -1378,6 +1379,7 @@ async function envoyer(texte, oral, dejaRelance) {
           majMessage(m); humeur(nom === 'WebSearch' ? 'cherche sur le web…' : 'cherche dans sa mémoire…');
         } else if (o.t === 'rire' && Number.isInteger(o.degre)) { surRire(o); }   // (30/10) le rire qu'il a choisi
         else if (o.t === 'son' && o.extrait) { m.son = o.extrait; sonEnAttente = { id: m.id, extrait: o.extrait, t: Date.now() }; }   // (30/10, Bumblebee)
+        else if (o.t === 'micro') microParHakim(o);                      // (22:27) le micro de papa, coupé par lui
         else if (o.t === 'impulsion') { m.impulsion = String(o.x || ''); m.impulsionMotif = Array.isArray(o.motif) ? o.motif : null; if (!auto) vibrerPourMorceau(m.id, ''); }   // (30/10) sa balise : au début de sa voix ; voix éteinte, dès qu'elle arrive
         else if (o.t === 'efface') { m.texte = ''; if (auto) decoupe.finir(); majMessage(m); }   // (27/10) sa non-réponse effacée, à l'écran et dans la voix
         else if (o.t === 'statut' && typeof o.x === 'string') {   // (2026-10-23) reçu, il finit d'abord un travail
@@ -2175,15 +2177,23 @@ async function basculerConversation() {
   rendre(); humeur();
 }
 
+// les boutons de ton micro : coupé par toi, coupé par Hakim (22:27), ou ouvert
+function majBoutonsMuet(conv) {
+  const hakim = !!(conv && conv.muetParHakim), oui = hakim || !!(conv && conv.capteur && conv.capteur.estMuet);
+  for (const id of ['muet', 'muetScene']) {
+    $(id).setAttribute('aria-pressed', oui ? 'true' : 'false');
+    $(id).textContent = hakim ? (id === 'muet' ? 'Coupé par Hakim' : 'Rouvrir mon micro (coupé par Hakim)')
+      : oui ? (id === 'muet' ? 'Micro coupé' : 'Rouvrir mon micro') : (id === 'muet' ? 'Muet' : 'Couper mon micro');
+  }
+}
 function basculerMuet() {
   const conv = etat.conversation;
   if (!conv || !conv.capteur) return;
+  // (22:27) coupé par Hakim : ton bouton reprend la main et rouvre
+  if (conv.muetParHakim) { conv.muetParHakim = null; majBoutonsMuet(conv); journalVoix('micro_hakim', { x: 'ouvrir', pourquoi: 'papa' }); humeur('je t’écoute…'); signalerWidget(); return; }
   const oui = !conv.capteur.estMuet;
   conv.capteur.muet(oui);
-  for (const id of ['muet', 'muetScene']) {
-    $(id).setAttribute('aria-pressed', oui ? 'true' : 'false');
-    $(id).textContent = oui ? (id === 'muet' ? 'Micro coupé' : 'Rouvrir mon micro') : (id === 'muet' ? 'Muet' : 'Couper mon micro');
-  }
+  majBoutonsMuet(conv);
   noterPresent({ e: oui ? 'muet' : 'micro_rouvert', t: Date.now() });
   humeur(oui ? 'micro coupé : je ne t’entends plus (⌥X pour rouvrir)' : 'je t’écoute…');
   signalerWidget();
@@ -2305,6 +2315,46 @@ function garderPourSonTour(conv, texte) {
   humeur('je finis, puis je t’écoute');
 }
 // sa voix a fini (ou sa réponse n'a rien dit) : ce que tu as dit pendant son tour lui part, d'un bloc
+/* (30/10, 22:27-22:30, Ahmed : « il n'arrive plus à me muter » ; « quand il se mute, le bouton du micro se mute aussi » ; « une
+   parole résiduelle le perturbe : ma dernière phrase transcrite, il faut qu'elle soit filtrée par le subconscient ») sa balise
+   [[micro: couper]] coupe ton micro pour lui (tes boutons le montrent, l'orbe passe au vert) jusqu'à la fin de sa voix, ou le
+   temps qu'il dit ; ton bouton reprend la main ; « stop » et « attends » sont toujours entendus (Hakim, 22:31 : « son stop et
+   son bouton restent plus forts que moi ») ; ta phrase encore en route part à son subconscient, pas à lui ; interrupteur de
+   papa : « il peut couper mon micro » (page SENS) */
+function envoyerResiduelle(texte) {
+  if (!String(texte || '').trim()) return;
+  journalVoix('residuelle', { mots: String(texte).split(/\s+/).filter(Boolean).length });
+  fetch('/api/jarvis/residuelle', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+    body: JSON.stringify({ texte: String(texte).slice(0, 1500) }) }).catch(() => {});
+}
+function microParHakim(o) {
+  const c = etat.conversation;
+  if (!c || !c.capteur || !o) return;
+  if (o.x === 'ouvrir') return rouvrirMicroDeHakim(c, 'ouvrir');
+  if (typeof reglagesCorps !== 'undefined' && reglagesCorps.micro_hakim === false) { journalVoix('micro_hakim', { x: 'refuse' }); return; }
+  if (c.capteur.estMuet && !c.muetParHakim) return;          // tu l'avais déjà coupé toi-même : c'est à toi
+  c.muetParHakim = { depuis: Date.now(), jusqua: o.s ? Date.now() + Math.min(120, Number(o.s)) * 1000 : 0, residu: false };
+  majBoutonsMuet(c);
+  if (c.tourGarde) { envoyerResiduelle(c.tourGarde); c.tourGarde = ''; c.muetParHakim.residu = true; }
+  journalVoix('micro_hakim', { x: 'couper', s: Number(o.s) || 0 });
+  humeur();
+}
+function rouvrirMicroDeHakim(c, pourquoi) {
+  if (!c || !c.muetParHakim) return;
+  c.muetParHakim = null;
+  majBoutonsMuet(c);
+  journalVoix('micro_hakim', { x: 'ouvrir', pourquoi });
+  humeur();
+}
+// jusqu'à la fin de sa voix (15 s sans voix au plus), ou le temps qu'il a dit
+function surveillerMicroDeHakim() {
+  const c = etat.conversation, m = c && c.muetParHakim;
+  if (!m) return;
+  if (m.jusqua) { if (Date.now() >= m.jusqua) rouvrirMicroDeHakim(c, 'temps'); return; }
+  const voixFinie = (etat.finVoixA || 0) > m.depuis && Date.now() - etat.finVoixA > 400;
+  if (!sonTourEnCours() && !(lecteur && lecteur.enPause) && (voixFinie || Date.now() - m.depuis > 15000)) rouvrirMicroDeHakim(c, 'fin_de_sa_voix');
+}
+setInterval(surveillerMicroDeHakim, 300);
 function libererSonTour() {
   const c = etat.conversation;
   if (!c || !c.tourGarde || sonTourEnCours() || (lecteur && lecteur.enPause) || c.enAttente || (c.capteur && c.capteur.enParole)) return false;
@@ -2384,6 +2434,8 @@ async function tourDeParole(conv, wav, infos, extra) {
   // (30/10, vers 22 h 10, Ahmed : « maintenant stp, il galère à répondre » ; Hakim : « chacun son tour, comme nous ») son tour :
   // pendant qu'il prépare ou dit sa réponse, ce que tu dis ne la coupe plus ; c'est gardé, et lui part dès que sa voix a
   // fini (« stop », « attends » et le bouton restent au-dessus de tout, plus haut)
+  // (22:30) micro coupé par lui : ta phrase encore en route part à son subconscient (une fois), le reste n'arrive pas
+  if (conv.muetParHakim) { if (!conv.muetParHakim.residu) { conv.muetParHakim.residu = true; envoyerResiduelle(texte); } else journalVoix('tour_muet', {}); return; }
   if (conv.tourGarde && !sonTourEnCours()) { texte = `${conv.tourGarde} … ${texte}`; conv.tourGarde = ''; }
   if (chacunSonTour() && sonTourEnCours()) { garderPourSonTour(conv, texte); return; }
   // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
@@ -2786,6 +2838,7 @@ function ecouterPensees() {
   es.addEventListener('rire', (ev) => { try { surRire(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('reecoute', (ev) => { try { surReecoute(JSON.parse(ev.data)); } catch (_) {} });
   // (19:58) sa lumière : la lampe du téléphone (l'appli 1.36), ou son SOS selon son émotion
+  es.addEventListener('micro', (ev) => { try { microParHakim(JSON.parse(ev.data)); } catch (_) {} });   // (22:27) de lui-même aussi
   es.addEventListener('lumiere', (ev) => { try { const o = JSON.parse(ev.data);
     const r = window.HakimApp && window.HakimApp.lumiere ? String(window.HakimApp.lumiere(String(o.mode), String(o.emotion || ''))) : 'pas_de_pont';
     journalVoix('lumiere', { mode: String(o.mode), retour: codeRetour(r) }); } catch (_) {} });

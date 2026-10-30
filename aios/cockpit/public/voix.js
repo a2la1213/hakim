@@ -68,10 +68,10 @@
      (« 5 $ et 10 $ » n'est pas une formule). Aussi $$…$$, \[…\] et \(…\). */
   const FORMULE = /(\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$(?=[^\s$])([^$\n]*?[^\s$\\])\$(?!\d))(?:\s*(?:\[\[|⟮⟮)voix:\s*([^\]⟯]*?)\s*(?:\]\]|⟯⟯))?/g;
   const VOIX_SEULE = /(?:\[\[|⟮⟮)voix:\s*([^\]⟯]*?)\s*(?:\]\]|⟯⟯)/g;   // ⟮⟮…⟯⟯ : la forme vue dans un bloc de données
-  const OUVRANT = /\$\$|\\\[|\\\(|\[\[voix:|⟮⟮voix:|\[\[\s*(?:affect|souvenirs|impulsion|son|alerte|ecran|rire|lumiere|pause|reprendre)|\$(?=[^\s$\d])/;
+  const OUVRANT = /\$\$|\\\[|\\\(|\[\[voix:|⟮⟮voix:|\[\[\s*(?:affect|souvenirs|impulsion|son|alerte|ecran|rire|lumiere|pause|reprendre|micro)|\$(?=[^\s$\d])/;
   /* (2026-10-23, chocs d'humeur) la balise d'appréciation de Hakim, [[affect: …]], à la fin de sa réponse : ni lue, ni
      affichée ; pendant le flux, un début de balise en fin de texte (« [[aff ») est caché lui aussi. */
-  const AFFECT = /\s*(?:\[\[|⟮⟮)\s*(?:affect|souvenirs|impulsion|son|alerte|ecran|rire|lumiere|pause|reprendre)\s*:[^\]⟯]{0,300}(?:\]\]|⟯⟯)/gi;   // et [[souvenirs: …]] (boucle de retour), [[impulsion: …]] (30/10)
+  const AFFECT = /\s*(?:\[\[|⟮⟮)\s*(?:affect|souvenirs|impulsion|son|alerte|ecran|rire|lumiere|pause|reprendre|micro)\s*:[^\]⟯]{0,300}(?:\]\]|⟯⟯)/gi;   // et [[souvenirs: …]] (boucle de retour), [[impulsion: …]] (30/10)
   const prefixeBalise = (mot, i = 0) => i === mot.length ? '(?:\\s*:[^\\]\\n]{0,300}\\]?)?' : `${mot[i]}(?:${prefixeBalise(mot, i + 1)})?`;   // (30/10) « …joie] » : coupée entre ses deux crochets, retenue aussi
   const AFFECT_OUVERT = new RegExp(`\\s*\\[(?:\\[\\s*(?:${prefixeBalise('affect')}|${prefixeBalise('souvenirs')}|${prefixeBalise('impulsion')}|${prefixeBalise('son')}|${prefixeBalise('alerte')}|${prefixeBalise('ecran')}|${prefixeBalise('rire')}|${prefixeBalise('lumiere')})?)?$`, 'i');
   const sansAffect = (t, flux) => { const x = String(t == null ? '' : t).replace(AFFECT, ''); return flux ? x.replace(AFFECT_OUVERT, '') : x; };

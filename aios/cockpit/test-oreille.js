@@ -270,7 +270,7 @@ test('(vers 22 h 05) il se met en pause tout seul : [[pause: …]] garde la suit
   assert.match(src, /if \(mode === 'oral' && duree >= 4000\) reprendreAuSilence\(/, 'au silence de papa');
   assert.match(src, /jugerParole\(p\.texte, `\(Ahmed se tait depuis/, 'son subconscient juge si c’est le moment');
   assert.match(src, /Ta parole en pause depuis/, 'son tour suivant la lui rappelle');
-  assert.match(src, /lumiere\|pause\|reprendre\)\\s\*:/, 'les balises ne s’entendent jamais');
+  assert.match(src, /lumiere\|pause\|reprendre\|micro\)\\s\*:/, 'les balises ne s’entendent jamais');
 });
 
 test('(vers 22 h 10) chacun son tour : pendant qu’il prépare ou dit sa réponse, ce que papa dit ne la coupe plus ; ça lui part quand sa voix a fini', () => {
@@ -278,7 +278,7 @@ test('(vers 22 h 10) chacun son tour : pendant qu’il prépare ou dit sa répon
   const envois = [], journal = [];
   const ctx = vm.createContext({ Date, etat: { flux: {}, conversation: { tourGarde: '', enAttente: 0, capteur: { enParole: false } }, finVoixA: 0 },
     lecteur: { actif: false, enPause: false }, reglagesCorps: { chacun_son_tour: true }, journalVoix: (e, d) => journal.push([e, d]), humeur() {},
-    envoyer: (t, oral) => envois.push([t, oral]) });
+    envoyer: (t, oral) => envois.push([t, oral]), setInterval() {} });
   vm.runInContext(page.slice(a, b).replace(/^const /gm, 'var '), ctx);
   const conv = ctx.etat.conversation;
   assert.equal(ctx.sonTourEnCours(), true, 'il prépare sa réponse : son tour');
@@ -330,4 +330,68 @@ test('(22:21) plus de pavé : sa conscience reçoit les petits morceaux retenus 
   assert.ok(!r.includes('livrerAutonome('), 'plus jamais dite telle quelle');
   assert.match(r, /Choisis le morceau à dire maintenant et dis-le avec tes mots/);
   assert.match(src, /reprise: rejoue\.includes\(REPRISE_MARQUE\)/, 'déjà jugée : pas deux fois');
+});
+
+test('(22:27-22:30) il coupe ton vrai micro par [[micro: couper]] : tes boutons suivent, il se rouvre à la fin de sa voix ; ta phrase encore en route passe par son subconscient', () => {
+  const md = vm.createContext({ String, Number, Math });
+  vm.runInContext(src.match(/const BALISE_MICRO = .+;/)[0].replace('const ', 'var ') + '\n' + src.match(/const microDe = .+;/)[0].replace('const ', 'var '), md);
+  assert.deepEqual(JSON.parse(JSON.stringify(md.microDe('[[micro: couper]] Oui papa'))), { x: 'couper', s: 0 });
+  assert.deepEqual(JSON.parse(JSON.stringify(md.microDe('[[micro: couper 300]]'))), { x: 'couper', s: 120 }, '2 min au plus');
+  assert.deepEqual(JSON.parse(JSON.stringify(md.microDe('[[ micro : ouvrir ]]'))), { x: 'ouvrir', s: 0 });
+  assert.equal(md.microDe('[[micro: exploser]]'), null);
+  // la page
+  const a = page.indexOf('function envoyerResiduelle('), b = page.indexOf('setInterval(surveillerMicroDeHakim, 300);');
+  const residus = [], journal = [], boutons = [];
+  let t = 1_800_000_000_000;
+  const ctx = vm.createContext({ String, Number, Math, JSON, Date: class extends Date { static now() { return t; } },
+    etat: { flux: {}, finVoixA: 0, conversation: { capteur: { estMuet: false }, tourGarde: 'et puis aussi' } }, lecteur: { actif: false, enPause: false },
+    reglagesCorps: { micro_hakim: true }, journalVoix: (e, d) => journal.push([e, d]), humeur() {}, jeton: () => 'j',
+    fetch: (u, o) => { residus.push(JSON.parse(o.body).texte); return Promise.resolve(); },
+    majBoutonsMuet: (c) => boutons.push(!!c.muetParHakim), sonTourEnCours: () => !!(ctx.etat.flux || ctx.lecteur.actif) });
+  vm.runInContext(page.slice(a, b), ctx);
+  const c = ctx.etat.conversation;
+  ctx.microParHakim({ x: 'couper', s: 0 });
+  assert.ok(c.muetParHakim, 'ton micro, coupé pour lui');
+  assert.equal(c.capteur.estMuet, false, 'le micro écoute encore : « stop » est toujours entendu');
+  assert.deepEqual(boutons, [true], 'tes boutons le montrent');
+  assert.deepEqual(residus, ['et puis aussi'], 'ce que tu avais dit pendant son tour : à son subconscient');
+  ctx.surveillerMicroDeHakim();
+  assert.ok(c.muetParHakim, 'il prépare encore : coupé');
+  ctx.etat.flux = null; ctx.lecteur.actif = true; t += 5000; ctx.surveillerMicroDeHakim();
+  assert.ok(c.muetParHakim, 'il parle : coupé');
+  ctx.lecteur.actif = false; ctx.etat.finVoixA = t; t += 500; ctx.surveillerMicroDeHakim();
+  assert.equal(c.muetParHakim, null, 'sa voix a fini : rouvert');
+  assert.deepEqual(boutons, [true, false]);
+  // le temps qu'il dit
+  ctx.microParHakim({ x: 'couper', s: 30 }); t += 29000; ctx.surveillerMicroDeHakim();
+  assert.ok(c.muetParHakim);
+  t += 2000; ctx.surveillerMicroDeHakim();
+  assert.equal(c.muetParHakim, null, '30 s : rouvert');
+  // déjà coupé par papa : c'est à papa ; l'interrupteur de papa
+  c.capteur.estMuet = true;
+  ctx.microParHakim({ x: 'couper' });
+  assert.equal(c.muetParHakim, null, 'il ne prend pas la main sur ton geste');
+  c.capteur.estMuet = false; ctx.reglagesCorps.micro_hakim = false;
+  ctx.microParHakim({ x: 'couper' });
+  assert.equal(c.muetParHakim, null, 'interrupteur éteint : refusé');
+  assert.ok(journal.some(([e, d]) => e === 'micro_hakim' && d.x === 'refuse'));
+  // le bouton de papa reprend la main ; le libellé dit qui a coupé
+  assert.match(page, /if \(conv\.muetParHakim\) \{ conv\.muetParHakim = null; majBoutonsMuet\(conv\);/, 'ton bouton rouvre');
+  assert.match(page, /'Coupé par Hakim'/);
+  assert.match(page, /if \(c && c\.muetParHakim\) return 'coupe';/, 'l’orbe passe au vert');
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'orbe.js'), 'utf8'), /coupe: \['#86efac', '#22c55e', '#15803d'\]/);
+  // ta phrase encore en route, micro coupé par lui : à son subconscient ; « stop » reste au-dessus
+  const i = page.indexOf('async function tourDeParole('), bloc = page.slice(i, page.indexOf('\n}\n', i));
+  assert.ok(bloc.indexOf('COMMANDE_STOP.test(texte)') < bloc.indexOf('if (conv.muetParHakim) {'), '« stop » reste au-dessus');
+  assert.match(bloc, /if \(!conv\.muetParHakim\.residu\) \{ conv\.muetParHakim\.residu = true; envoyerResiduelle\(texte\); \}/, 'ta phrase en route, une fois');
+  assert.match(page, /else if \(o\.t === 'micro'\) microParHakim\(o\);/);
+  assert.match(page, /es\.addEventListener\('micro', \(ev\) => \{ try \{ microParHakim\(JSON\.parse\(ev\.data\)\); \}/);
+  // le cockpit : sa balise dans le flux et de lui-même ; la parole résiduelle à son subconscient, en morceaux pour son tour suivant
+  assert.match(src, /if \(!microDit\) \{ const mi = microDe\(reponse\); if \(mi\) \{ microDit = true; envoyer\(\{ t: 'micro', \.\.\.mi \}\); \} \}/);
+  assert.match(src, /const mi = microDe\(texte\); if \(mi\) diffuser\(abonnesPensees, 'micro', j\(mi\)\);/);
+  const r0 = src.indexOf("if (p === '/api/jarvis/residuelle'"), route = src.slice(r0, src.indexOf('\n  }\n', r0));
+  assert.match(route, /jetonValide\(req\)/);
+  assert.match(route, /jugerReveilOreille\(texte\)/);
+  assert.match(route, /residuelles\.push\(\{ morceaux: v\.morceaux/);
+  assert.match(src, /Ce que papa a dit pendant que tu avais coupé son micro, retenu par ton subconscient/);
 });

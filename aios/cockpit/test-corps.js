@@ -26,7 +26,7 @@ test('un événement valide est gardé ; un inconnu ou des détails tordus sont 
 
 test('le bloc de son prochain tour : son milieu du moment et ses sensations, en mots, une fois', () => {
   let actif = true;
-  const ctx = { blocDonnees: (t, c) => `[${t}]\n${c}\n[/${t}]`, crypto: require('node:crypto'), corpsADire: [], corpsBrut: [], NOMS_SECS: {}, nuitDerniere: () => '', vibrationsDites: () => '', oreillePerimes: [], paroleEnPause: null, corpsReglages: () => ({ afficher_papa: true }), corpsActif: () => actif,
+  const ctx = { blocDonnees: (t, c) => `[${t}]\n${c}\n[/${t}]`, crypto: require('node:crypto'), corpsADire: [], corpsBrut: [], NOMS_SECS: {}, nuitDerniere: () => '', vibrationsDites: () => '', oreillePerimes: [], paroleEnPause: null, residuelles: [], corpsReglages: () => ({ afficher_papa: true }), corpsActif: () => actif,
     HOMEO: { mots: () => 'Autour de toi, la pénombre ; tu es immobile.' } };
   vm.createContext(ctx);
   vm.runInContext(extraire('function blocCorps(') + '\nthis.f = blocCorps;', ctx);
@@ -71,9 +71,9 @@ test('les réglages : actif par défaut, un intervalle parmi ceux permis', () =>
   const ctx = { lireJson: () => ({ intervalle_s: 7 }), CORPS_REGLAGES: 'x', CORPS_INTERVALLES: [30, 60, 120, 300, 900] };
   vm.createContext(ctx);
   vm.runInContext(extraire('function corpsReglages(') + '\nthis.f = corpsReglages;', ctx);
-  assert.equal(JSON.stringify(ctx.f()), JSON.stringify({ actif: true, intervalle_s: 120, ronron: true, sons: true, oreille: false, je_te_suis: true, alerte: true, ecran: true, reflexes: true, nuits: true, rire_reflexe: true, garder_parole: true, forfait_libre: true, son_pendant: true, voix_vibre: true, lumiere: true, afficher_papa: true, afficher_hakim: true, filtre_parole: true, chacun_son_tour: true }));
+  assert.equal(JSON.stringify(ctx.f()), JSON.stringify({ actif: true, intervalle_s: 120, ronron: true, sons: true, oreille: false, je_te_suis: true, alerte: true, ecran: true, reflexes: true, nuits: true, rire_reflexe: true, garder_parole: true, forfait_libre: true, son_pendant: true, voix_vibre: true, lumiere: true, afficher_papa: true, afficher_hakim: true, filtre_parole: true, chacun_son_tour: true, micro_hakim: true }));
   ctx.lireJson = () => ({ actif: false, intervalle_s: 60, ronron: false, sons: false });
-  assert.equal(JSON.stringify(ctx.f()), JSON.stringify({ actif: false, intervalle_s: 60, ronron: false, sons: false, oreille: false, je_te_suis: true, alerte: true, ecran: true, reflexes: true, nuits: true, rire_reflexe: true, garder_parole: true, forfait_libre: true, son_pendant: true, voix_vibre: true, lumiere: true, afficher_papa: true, afficher_hakim: true, filtre_parole: true, chacun_son_tour: true }));
+  assert.equal(JSON.stringify(ctx.f()), JSON.stringify({ actif: false, intervalle_s: 60, ronron: false, sons: false, oreille: false, je_te_suis: true, alerte: true, ecran: true, reflexes: true, nuits: true, rire_reflexe: true, garder_parole: true, forfait_libre: true, son_pendant: true, voix_vibre: true, lumiere: true, afficher_papa: true, afficher_hakim: true, filtre_parole: true, chacun_son_tour: true, micro_hakim: true }));
 });
 
 test('(30/10, étude du veilleur) quand papa est là, son corps ne le réveille plus ; un vrai choc, une fois par secousse', () => {
@@ -106,7 +106,7 @@ test('(18:19) une secousse le réveille tout de suite, même si papa vient de pa
   const ctx = { Intl, JSON, console: { error() {} }, j: JSON.stringify, NONCE_REVEIL: 'n', corpsDemarrages: 0, corpsDernierReveil: 0, corpsDernierFort: 0,
     CORPS_PORTE_MS: 10 * 60 * 1000, corpsADire: [], corpsBrut: [], corpsReglages: () => ({ actif: true, intervalle_s: 120 }), corpsActif: () => true,
     cerveauVivant: () => true, occupe: () => false, cerveau: { enfant: { stdin: { write: (x) => ecrits.push(x) } } }, HOMEO: { mots: () => '' },
-    blocDonnees: (titre, x) => `[${titre}]\n${x}`, crypto: require('node:crypto'), nuitDerniere: () => '', vibrationsDites: () => '', oreillePerimes: [], paroleEnPause: null, Date: class extends Date { static now() { return t; } } };
+    blocDonnees: (titre, x) => `[${titre}]\n${x}`, crypto: require('node:crypto'), nuitDerniere: () => '', vibrationsDites: () => '', oreillePerimes: [], paroleEnPause: null, residuelles: [], Date: class extends Date { static now() { return t; } } };
   ctx.dernierMessageAhmedMs = () => t - 30000;
   vm.createContext(ctx);
   const bloc = src.slice(src.indexOf('const CORPS_SECS'), src.indexOf('function reveillerPourCorps('));

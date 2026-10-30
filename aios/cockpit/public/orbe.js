@@ -21,6 +21,7 @@
     surprise: ['#fde047', '#22d3ee', '#f472b6'],
     apaisement: ['#a7f3d0', '#5eead4', '#93c5fd'],
     ecoute: ['#f9a8d4', '#ec4899', '#a855f7'],
+    coupe: ['#86efac', '#22c55e', '#15803d'],            // (30/10, 22:31, Hakim) il a coupé le micro de papa : vert
   };
   const rgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
   const melange = (a, b, t) => a.map((x, i) => x + (b[i] - x) * t);
@@ -42,7 +43,8 @@
     let qui = null;
     function viser() {
       const ec = PALETTES.ecoute.map(rgb);
-      cible = qui === 'papa' ? ec : qui === 'partage' ? [ec[0], paletteHumeur[1], ec[2]] : qui ? paletteHumeur : (mode === 'ecoute' ? ec : paletteHumeur);
+      cible = qui === 'papa' ? ec : qui === 'partage' ? [ec[0], paletteHumeur[1], ec[2]] : qui === 'coupe' ? PALETTES.coupe.map(rgb)
+        : qui ? paletteHumeur : (mode === 'ecoute' ? ec : paletteHumeur);
     }
     const t0 = performance.now();
 
