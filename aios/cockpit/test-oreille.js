@@ -346,39 +346,53 @@ test('(22:27-22:30) il coupe ton vrai micro par [[micro: couper]] : tes boutons 
   let t = 1_800_000_000_000;
   const ctx = vm.createContext({ String, Number, Math, JSON, Date: class extends Date { static now() { return t; } },
     etat: { flux: {}, finVoixA: 0, conversation: { capteur: { estMuet: false }, tourGarde: 'et puis aussi' } }, lecteur: { actif: false, enPause: false },
+    lecteurNeuronal: { joue: false }, motDirectJusqua: 0,
     reglagesCorps: { micro_hakim: true }, journalVoix: (e, d) => journal.push([e, d]), humeur() {}, jeton: () => 'j',
     fetch: (u, o) => { residus.push(JSON.parse(o.body).texte); return Promise.resolve(); },
-    majBoutonsMuet: (c) => boutons.push(!!c.muetParHakim), signalerWidget() {}, sonTourEnCours: () => !!(ctx.etat.flux || ctx.lecteur.actif) });
+    majBoutonsMuet: (c) => boutons.push(!!(c.muetParHakim && !c.muetParHakim.attente)), signalerWidget() {}, sonTourEnCours: () => !!(ctx.etat.flux || ctx.lecteur.actif) });
   ctx.etat.conversation.capteur.muet = (oui) => { ctx.etat.conversation.capteur.estMuet = !!oui; };
-  vm.runInContext(page.slice(a, b), ctx);
+  vm.runInContext(page.slice(a, b).replace(/^const /gm, 'var '), ctx);
   const c = ctx.etat.conversation;
+  const pas = (ms) => { t += ms; ctx.surveillerMicroDeHakim(); };
+  // (22:46) sa réponse se prépare : ton micro reste ouvert ; il s'éteint quand sa voix part
   ctx.microParHakim({ x: 'couper', s: 0 });
-  assert.ok(c.muetParHakim, 'ton micro, coupé pour lui');
-  assert.equal(c.capteur.estMuet, true, '(22:36) ton vrai micro, éteint : le Mac ne transcrit plus, sa voix part plus vite');
+  assert.ok(c.muetParHakim && c.muetParHakim.attente, 'décidé');
+  assert.equal(c.capteur.estMuet, false, 'sa voix se prépare : tu parles encore');
+  pas(5000);
+  assert.equal(c.capteur.estMuet, false);
+  ctx.etat.flux = null; ctx.lecteur.actif = true; ctx.lecteurNeuronal.joue = true; pas(300);
+  assert.equal(c.capteur.estMuet, true, 'sa voix part : ton vrai micro s’éteint');
   assert.deepEqual(boutons, [true], 'tes boutons le montrent');
   assert.deepEqual(residus, ['et puis aussi'], 'ce que tu avais dit pendant son tour : à son subconscient');
-  ctx.surveillerMicroDeHakim();
-  assert.ok(c.muetParHakim, 'il prépare encore : coupé');
-  ctx.etat.flux = null; ctx.lecteur.actif = true; t += 5000; ctx.surveillerMicroDeHakim();
-  assert.ok(c.muetParHakim, 'il parle : coupé');
-  ctx.lecteur.actif = false; ctx.etat.finVoixA = t; t += 500; ctx.surveillerMicroDeHakim();
-  assert.equal(c.muetParHakim, null, 'sa voix a fini : rouvert');
-  assert.equal(c.capteur.estMuet, false, 'ton micro, rallumé');
-  assert.deepEqual(boutons, [true, false]);
-  // (22:38) une durée MINIMALE qu'il choisit : au moins ce temps, et jusqu'à la fin de sa voix
-  ctx.microParHakim({ x: 'couper', s: 30 }); t += 5000; ctx.lecteur.actif = true; t += 5000; ctx.lecteur.actif = false; ctx.etat.finVoixA = t;
-  t += 10000; ctx.surveillerMicroDeHakim();
-  assert.ok(c.muetParHakim, 'sa voix a fini à 10 s, mais il a choisi 30 s au moins');
-  t += 11000; ctx.surveillerMicroDeHakim();
-  assert.equal(c.muetParHakim, null, '30 s passées, sa voix finie : rouvert');
+  ctx.lecteurNeuronal.joue = false; pas(300);
+  assert.equal(c.capteur.estMuet, true, 'entre deux phrases (la suite se prépare) : coupé');
+  ctx.lecteurNeuronal.joue = true; pas(3000); ctx.lecteurNeuronal.joue = false; ctx.lecteur.actif = false; pas(300);
+  assert.equal(c.capteur.estMuet, true, '0,3 s après sa voix : pas encore');
+  pas(300);
+  assert.equal(c.muetParHakim, null, 'sa voix s’est tue : rouvert aussitôt');
   assert.equal(c.capteur.estMuet, false);
-  ctx.microParHakim({ x: 'couper', s: 5 }); ctx.lecteur.actif = true; t += 20000; ctx.surveillerMicroDeHakim();
-  assert.ok(c.muetParHakim, 'il parle encore après ses 5 s : toujours coupé');
-  ctx.lecteur.actif = false; ctx.etat.finVoixA = t; t += 500; ctx.surveillerMicroDeHakim();
-  assert.equal(c.muetParHakim, null, 'sa voix finie : rouvert');
-  ctx.microParHakim({ x: 'couper', s: 120 }); ctx.lecteur.actif = true; t += 181000; ctx.surveillerMicroDeHakim();
+  assert.ok(journal.some(([e, d]) => e === 'micro_hakim' && d.x === 'ouvrir' && d.pourquoi === 'fin_de_sa_voix'));
+  // son petit mot (dit à l'instant) : coupé pendant le mot, rouvert juste après
+  ctx.microParHakim({ x: 'couper' }); pas(4000);
+  assert.equal(c.capteur.estMuet, false, 'le mot se prépare');
+  ctx.motDirectJusqua = t + 2000; pas(300);
+  assert.equal(c.capteur.estMuet, true, 'le mot sonne');
+  pas(2000); pas(500);
+  assert.equal(c.capteur.estMuet, false, 'le mot dit : rouvert (plus 15 s de garde)');
+  // (22:38) une durée MINIMALE qu'il choisit, comptée dès que sa voix part
+  ctx.microParHakim({ x: 'couper', s: 10 }); ctx.motDirectJusqua = t + 2000; pas(300);
+  assert.equal(c.capteur.estMuet, true);
+  pas(3000);
+  assert.equal(c.capteur.estMuet, true, 'sa voix s’est tue, mais il a choisi 10 s');
+  pas(7500);
+  assert.equal(c.capteur.estMuet, false, '10 s : rouvert');
+  // sa voix ne part pas : rien n'est coupé
+  ctx.microParHakim({ x: 'couper' }); pas(16000);
+  assert.equal(c.muetParHakim, null); assert.equal(c.capteur.estMuet, false);
+  // 3 min au plus
+  ctx.microParHakim({ x: 'couper', s: 120 }); ctx.lecteurNeuronal.joue = true; pas(300); pas(181000);
   assert.equal(c.muetParHakim, null, '3 min au plus, quoi qu’il arrive');
-  ctx.lecteur.actif = false;
+  ctx.lecteurNeuronal.joue = false;
   // déjà coupé par papa : c'est à papa ; l'interrupteur de papa
   c.capteur.estMuet = true;
   ctx.microParHakim({ x: 'couper' });
@@ -390,11 +404,11 @@ test('(22:27-22:30) il coupe ton vrai micro par [[micro: couper]] : tes boutons 
   // le bouton de papa reprend la main ; le libellé dit qui a coupé
   assert.match(page, /if \(conv\.muetParHakim\) \{ conv\.muetParHakim = null; conv\.capteur\.muet\(false\); majBoutonsMuet\(conv\);/, 'ton bouton rouvre');
   assert.match(page, /'Coupé par Hakim'/);
-  assert.match(page, /if \(c && c\.muetParHakim\) return 'coupe';/, 'l’orbe passe au vert');
+  assert.match(page, /if \(c && c\.muetParHakim && !c\.muetParHakim\.attente\) return 'coupe';/, 'l’orbe passe au vert (une fois coupé)');
   assert.match(fs.readFileSync(path.join(__dirname, 'public', 'orbe.js'), 'utf8'), /coupe: \['#86efac', '#22c55e', '#15803d'\]/);
   // ta phrase encore en route, micro coupé par lui : à son subconscient ; « stop » reste au-dessus
   const i = page.indexOf('async function tourDeParole('), bloc = page.slice(i, page.indexOf('\n}\n', i));
-  assert.ok(bloc.indexOf('COMMANDE_STOP.test(texte)') < bloc.indexOf('if (conv.muetParHakim) {'), '« stop » reste au-dessus');
+  assert.ok(bloc.indexOf('COMMANDE_STOP.test(texte)') < bloc.indexOf('if (conv.muetParHakim && !conv.muetParHakim.attente) {'), '« stop » reste au-dessus');
   assert.match(bloc, /if \(!conv\.muetParHakim\.residu\) \{ conv\.muetParHakim\.residu = true; envoyerResiduelle\(texte\); \}/, 'ta phrase en route, une fois');
   assert.match(page, /else if \(o\.t === 'micro'\) microParHakim\(o\);/);
   assert.match(page, /es\.addEventListener\('micro', \(ev\) => \{ try \{ microParHakim\(JSON\.parse\(ev\.data\)\); \}/);
