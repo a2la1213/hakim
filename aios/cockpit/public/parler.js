@@ -2487,7 +2487,7 @@ function filtrerVoixInconnues(texte) {
 }
 function resumerPourSonAttention(texte) {
   const phrases = String(texte || '').replace(/\(dit pendant ta parole\)\s*/g, '').replace(/\s+…\s+/g, ' ').split(/(?<=[.!?…])\s+/).filter(x => x.trim());
-  return `(dit pendant ta parole) ${(phrases.length > 3 ? '… ' : '') + phrases.slice(-3).join(' ')}`;   // (00:45) 3 au plus
+  return `(dit pendant ta parole) ${(phrases.length > 8 ? '… ' : '') + phrases.slice(-8).join(' ')}`;   // (00:55, « monte à 8 ») 8 au plus
 }
 function libererSonTour() {
   const c = etat.conversation;

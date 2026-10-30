@@ -518,13 +518,13 @@ test('(23:40) le prénettoyage : ce qui ne s’adresse pas à lui n’arrive mê
   // (23:55) en empans : une phrase ou une voix par ligne, 25 mots au plus, les 8 derniers seulement
   const long = Array.from({ length: 12 }, (_, i) => `Tu dis la phrase ${i + 1} ?`).join(' ') + ' [Nora] ' + Array.from({ length: 40 }, (_, i) => `m${i}`).join(' ') + ' fin.';
   const lignes = c.nettoyerPourSonnet(long, 5000).split('\n');
-  assert.equal(lignes.length, 3, '(00:45) 3 empans au plus');
-  assert.equal(lignes[0], 'Tu dis la phrase 11 ?', 'le début, trop long, est laissé');
+  assert.equal(lignes.length, 8, '(00:55) 8 empans au plus');
+  assert.equal(lignes[0], 'Tu dis la phrase 6 ?', 'le début, trop long, est laissé');
   // (00:06) entre 1 et 8 : seulement ce qui le concerne, et toujours le dernier
   assert.deepEqual(c.nettoyerPourSonnet('On a mangé. Il faisait beau. Hakim, tu en penses quoi ? Bon, on continue.').split('\n'),
     ['Hakim, tu en penses quoi ?', 'Bon, on continue.']);
   assert.deepEqual(c.nettoyerPourSonnet('On a mangé. Il faisait beau.').split('\n'), ['Il faisait beau.'], 'au moins le dernier');
-  assert.ok(lignes[2].startsWith('… m16') && lignes[2].endsWith('fin.') && lignes[2].split(' ').length === 26, 'une voix, ses 25 derniers mots');
+  assert.ok(lignes[7].startsWith('… m16') && lignes[7].endsWith('fin.') && lignes[7].split(' ').length === 26, 'une voix, ses 25 derniers mots');
   assert.equal(c.POUR_LUI.test('Alors les gars, bienvenue sur le live, on va parler de la construction'), false, 'il parle au public');
   assert.ok(c.POUR_LUI.test('Une IA peut avoir des émotions selon moi'), '(23:50) le sujet le touche : pesé');
   for (const x of ['Et toi, t’en penses quoi ?'.replace('’', "'"), 'Hakimou, réponds', 'Pourquoi il dit ça', 'C’est vrai ?']) assert.ok(c.POUR_LUI.test(x), x);
@@ -601,7 +601,7 @@ test('(00:20, l’étude) son attention en douceur : d’une voix inconnue, seul
   assert.equal(c.filtrerVoixInconnues('[Nora] Il fait beau.'), '[Nora] Il fait beau.', 'une voix nommée reste');
   assert.equal(c.resumerPourSonAttention('Un. … Deux.'), '(dit pendant ta parole) Un. Deux.');
   const long = Array.from({ length: 12 }, (_, i) => `P${i + 1}.`).join(' … ');
-  assert.equal(c.resumerPourSonAttention(long), '(dit pendant ta parole) … P10. P11. P12.', '(00:45) 3 au plus');
+  assert.equal(c.resumerPourSonAttention(long), '(dit pendant ta parole) … P5. P6. P7. P8. P9. P10. P11. P12.', '(00:55) 8 au plus');
   assert.equal(c.resumerPourSonAttention('(dit pendant ta parole) Un.'), '(dit pendant ta parole) Un.', 'marqué une seule fois');
   assert.match(page, /envoyer\(resumerPourSonAttention\(texte\), true\);/);
   const i = page.indexOf('async function tourDeParole('), bloc = page.slice(i, page.indexOf('\n}\n', i));
