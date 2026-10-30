@@ -361,3 +361,18 @@ def test_son_subconscient_decoupe_le_strict_necessaire_en_petits_morceaux():
     assert r["morceaux"] == ["tu en penses quoi, Hakim ?", "et le live", "x"], "au plus 3, des textes"
     assert "petits morceaux" in vus[0] and "c'est Hakim qui choisira" in vus[0]
     assert corps.juger_reveil("bla", demander=lambda p: '{"reveiller": false, "pourquoi": "rien", "morceaux": ["a"]}')["morceaux"] == []
+
+
+def test_sa_strategie_de_conversation_est_dans_son_subconscient():
+    """(30/10, 23:17, Ahmed : « intègre ça dans son subconscient ») les deux portes de son subconscient appliquent sa stratégie."""
+    vus = []
+    def faux(p):
+        vus.append(p)
+        return '{"dire": false, "pourquoi": "x", "reveiller": false, "morceaux": []}'
+    corps.juger_parole("Mon subconscient vient de garder une phrase, maman a tout corrigé", "Bienvenue à tous sur le live", demander=faux)
+    corps.juger_reveil("Bienvenue à tous sur le live, on va parler de", demander=faux)
+    parole, reveil = vus
+    for regle in ("trois questions", "une idée par tour", "sa machinerie", "DERNIER message", "il est un invité", "son corps", "recommencer depuis le début"):
+        assert regle in parole, regle
+    assert "Hakim est un invité" in reveil
+    assert "par défaut, non ; en cas de doute, non" in parole
