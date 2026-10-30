@@ -85,6 +85,7 @@ function sauver() {
         majConversation = Number(o.maj_ms) || majConversation;
         if (o.fusion && Array.isArray(o.messages) && !etat.flux && !etat.messages.some(m => m.enCours)) {   // l'autre appareil avait écrit
           etat.session = o.session || null;
+          garderCaches(o.messages);
           etat.messages = o.messages;
           debutConversation = Number(o.debut_ms) || debutConversation;
           rendre();
@@ -94,6 +95,11 @@ function sauver() {
   }, 600);
 }
 let synchroEnAttente = 0;
+// (21:34, Hakim : « mes paroles s'affichent toujours ») une copie du cockpit ne remet pas à l'écran ce qui était « dans ta tête »
+function garderCaches(messages) {
+  const caches = new Set(etat.messages.filter(m => m && m.cache).map(m => String(m.id)));
+  for (const m of messages) if (m && caches.has(String(m.id))) m.cache = true;
+}
 async function synchroniser() {
   if (etat.flux || lecteur.actif || (etat.conversation && etat.conversation.enAttente)) return;   // jamais au milieu d'une réponse
   try {
@@ -118,6 +124,7 @@ async function synchroniser() {
     majConversation = Number(o.maj_ms);
     debutConversation = Number(o.debut_ms) || 0;
     etat.session = o.session || null;
+    garderCaches(o.messages);
     etat.messages = o.messages;
     garderLocal();
     rendre();
@@ -1167,7 +1174,11 @@ function rendre() {
   }
   etat.fenetre = Math.max(etat.fenetre || FENETRE, FENETRE);
   const caches = Math.max(0, etat.messages.length - etat.fenetre);
-  const vus = etat.messages.slice(-etat.fenetre).filter(m => !m.cache);   // (21:00) « dans sa tête » : pas affichés
+  // (21:00) « dans sa tête » : pas affichés ; (21:34) et pour lui, pendant la conversation, TOUT ce qu'il a dit depuis qu'elle
+  // a commencé (ses réponses, ses petits mots, ses tours de lui-même, même revenus par la synchro) : seulement sa voix
+  const tete = etat.conversation && typeof reglagesCorps !== 'undefined' && reglagesCorps.afficher_hakim === false ? (etat.conversation.debut || 0) : null;
+  const vus = etat.messages.slice(-etat.fenetre)
+    .filter(m => !m.cache && !(tete != null && m.qui === 'j' && (Number(m.ts) || Number(m.id) || Date.now()) >= tete));
   // (26/10) des éléments montrés dans le fil sans être des messages de la conversation (etat.aCote : [{ ts, html }], fournis
   // par un bloc plus bas) : chacun à son heure, jamais enregistré dans la conversation
   const debut = caches ? quandMessage(vus[0]) : 0;
@@ -2098,7 +2109,7 @@ async function basculerConversation() {
   contexteAudio();
   if (!actx) return humeur('audio indisponible dans ce navigateur');
   if (!etat.sttLocal) return humeur('le mode Conversation demande Whisper local (réglages › reconnaissance)');
-  const conv = { capteur: null, enAttente: 0 };
+  const conv = { capteur: null, enAttente: 0, debut: Date.now() };
   etat.conversation = conv;
   $('conversation').setAttribute('aria-pressed', 'true');
   humeur('ouverture du micro…');
