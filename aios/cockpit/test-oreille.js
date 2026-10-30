@@ -272,3 +272,37 @@ test('(22:25) il se met en pause tout seul : [[pause: …]] garde la suite ; [[r
   assert.match(src, /Ta parole en pause depuis/, 'son tour suivant la lui rappelle');
   assert.match(src, /lumiere\|pause\|reprendre\)\\s\*:/, 'les balises ne s’entendent jamais');
 });
+
+test('(22:50) chacun son tour : pendant qu’il prépare ou dit sa réponse, ce que papa dit ne la coupe plus ; ça lui part quand sa voix a fini', () => {
+  const a = page.indexOf('const chacunSonTour = '), b = page.indexOf('setInterval(libererSonTour, 300);');
+  const envois = [], journal = [];
+  const ctx = vm.createContext({ Date, etat: { flux: {}, conversation: { tourGarde: '', enAttente: 0, capteur: { enParole: false } }, finVoixA: 0 },
+    lecteur: { actif: false, enPause: false }, reglagesCorps: { chacun_son_tour: true }, journalVoix: (e, d) => journal.push([e, d]), humeur() {},
+    envoyer: (t, oral) => envois.push([t, oral]) });
+  vm.runInContext(page.slice(a, b).replace(/^const /gm, 'var '), ctx);
+  const conv = ctx.etat.conversation;
+  assert.equal(ctx.sonTourEnCours(), true, 'il prépare sa réponse : son tour');
+  ctx.garderPourSonTour(conv, 'et aussi le live');
+  ctx.garderPourSonTour(conv, 'tu m’entends ?');
+  assert.equal(ctx.libererSonTour(), false, 'pas pendant son tour');
+  ctx.etat.flux = null; ctx.lecteur.actif = true;
+  assert.equal(ctx.libererSonTour(), false, 'pas pendant sa voix');
+  ctx.lecteur.actif = false; ctx.etat.finVoixA = Date.now();
+  assert.equal(ctx.libererSonTour(), false, 'un souffle après sa voix');
+  ctx.etat.finVoixA = Date.now() - 1000; conv.capteur.enParole = true;
+  assert.equal(ctx.libererSonTour(), false, 'papa reparle : ce tour-là le prendra');
+  conv.capteur.enParole = false;
+  assert.equal(ctx.libererSonTour(), true);
+  assert.deepEqual(envois, [['et aussi le live … tu m’entends ?', true]], 'd’un bloc, à l’oral');
+  assert.equal(conv.tourGarde, '');
+  ctx.reglagesCorps.chacun_son_tour = false;
+  assert.equal(ctx.chacunSonTour(), false, 'l’interrupteur de papa');
+  // dans le tour de parole : après « stop » / « attends », avant la coupure d'avant
+  const i = page.indexOf('async function tourDeParole('), bloc = page.slice(i, page.indexOf('\n}\n', i));
+  const k = (x) => bloc.indexOf(x);
+  assert.ok(k('COMMANDE_STOP.test(texte)') < k('if (chacunSonTour() && sonTourEnCours()) { garderPourSonTour(conv, texte); return; }'), '« stop » reste au-dessus');
+  assert.ok(k('COMMANDE_PAUSE.test(texte)') < k('garderPourSonTour(conv, texte)'), '« attends » aussi');
+  assert.ok(k('garderPourSonTour(conv, texte)') < k("arreterTout(true, { garder: true, raison: 'parole' })"), 'sa réponse n’est plus coupée');
+  assert.match(page, /if \(!voix \|\| !aDire\.length \|\| \(c && c\.tourGarde\)\) return;/, 'papa d’abord, avant ses mots en attente');
+  assert.match(src, /chacun_son_tour: r\.chacun_son_tour !== false/);
+});

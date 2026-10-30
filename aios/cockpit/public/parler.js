@@ -2297,6 +2297,25 @@ function surveillerCoupure(conv) {
 }
 // un tour sans voix (aucune hauteur) : du bruit ; jamais transcrit, jamais gardé pour plus tard
 const tourSansVoix = (infos) => !(infos && infos.ton);
+const chacunSonTour = () => typeof reglagesCorps === 'undefined' || reglagesCorps.chacun_son_tour !== false;
+const sonTourEnCours = () => !!(etat.flux || (lecteur && lecteur.actif));
+function garderPourSonTour(conv, texte) {
+  conv.tourGarde = conv.tourGarde ? `${conv.tourGarde} … ${texte}` : texte;
+  journalVoix('tour_garde', { mots: texte.split(/\s+/).filter(Boolean).length });
+  humeur('je finis, puis je t’écoute');
+}
+// sa voix a fini (ou sa réponse n'a rien dit) : ce que tu as dit pendant son tour lui part, d'un bloc
+function libererSonTour() {
+  const c = etat.conversation;
+  if (!c || !c.tourGarde || sonTourEnCours() || (lecteur && lecteur.enPause) || c.enAttente || (c.capteur && c.capteur.enParole)) return false;
+  if (Date.now() - (etat.finVoixA || 0) < 400) return false;
+  const texte = c.tourGarde;
+  c.tourGarde = '';
+  journalVoix('tour_libere', { mots: texte.split(/\s+/).filter(Boolean).length });
+  envoyer(texte, true);
+  return true;
+}
+setInterval(libererSonTour, 300);
 async function tourDeParole(conv, wav, infos, extra) {
   // (28/10, sa sieste) les éclats trop courts pour une voix, et leur écart aux battements : de quoi régler le filtre
   if (infos && infos.vibration && (infos.vibration.eclats || infos.vibration.battements)) journalVoix('vibration_tour', infos.vibration);
@@ -2362,6 +2381,11 @@ async function tourDeParole(conv, wav, infos, extra) {
   if (COMMANDE_PAUSE.test(texte)) { if (!lecteur.enPause) pauseVoix(); else humeur('en pause : « continue » pour que je reprenne'); return; }
   if (COMMANDE_VOLANT.test(texte) && !etat.reglages.volant) reglerVolant(true);             // puis il le lui dit (envoyé)
   else if (COMMANDE_FIN_VOLANT.test(texte) && etat.reglages.volant) reglerVolant(false);
+  // (30/10, 22:50, Ahmed : « maintenant stp, il galère à répondre » ; Hakim : « chacun son tour, comme nous ») son tour :
+  // pendant qu'il prépare ou dit sa réponse, ce que tu dis ne la coupe plus ; c'est gardé, et lui part dès que sa voix a
+  // fini (« stop », « attends » et le bouton restent au-dessus de tout, plus haut)
+  if (conv.tourGarde && !sonTourEnCours()) { texte = `${conv.tourGarde} … ${texte}`; conv.tourGarde = ''; }
+  if (chacunSonTour() && sonTourEnCours()) { garderPourSonTour(conv, texte); return; }
   // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
   if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(true, { garder: true, raison: 'parole' }); }
   sousTitre(texte);
@@ -3308,7 +3332,7 @@ function direSpontanes() {
   if (c && c.capteur && c.capteur.enParole) parlaitA = Date.now();
   sortirLesCoupees();                                // (30/10) une suite coupée ne se redit jamais d'elle-même
   const voix = c || etat.reglages.volant || etat.reglages.lectureAuto;
-  if (!voix || !aDire.length) return;
+  if (!voix || !aDire.length || (c && c.tourGarde)) return;          // (22:50) ce que papa a dit pendant son tour passe d'abord
   if (!lecteur || etat.flux || etat.micro || etat.transcription || !jarvisPeutParler() || lecteur.actif || lecteur.enPause
       || Date.now() - Math.max(parlaitA, etat.finVoixA || 0) < 1500) return;
   const m = aDire.shift();

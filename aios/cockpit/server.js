@@ -4692,7 +4692,8 @@ function corpsReglages() {
     alerte: r.alerte !== false, ecran: r.ecran !== false, reflexes: r.reflexes !== false, nuits: r.nuits !== false,
     rire_reflexe: r.rire_reflexe !== false, garder_parole: r.garder_parole !== false, forfait_libre: r.forfait_libre !== false,
     son_pendant: r.son_pendant !== false, voix_vibre: r.voix_vibre !== false, lumiere: r.lumiere !== false,
-    afficher_papa: r.afficher_papa !== false, afficher_hakim: r.afficher_hakim !== false, filtre_parole: r.filtre_parole !== false };
+    afficher_papa: r.afficher_papa !== false, afficher_hakim: r.afficher_hakim !== false, filtre_parole: r.filtre_parole !== false,
+    chacun_son_tour: r.chacun_son_tour !== false };
 }
 function corpsActif() { return corpsReglages().actif; }
 /* (30/10, 18:56, Ahmed via Hakim : « je veux qu'il tourne tout le temps, tant qu'il est réveillé, même si ça vide mon forfait ;
@@ -7951,6 +7952,7 @@ async function traiter(req, res) {
       if (typeof q.afficher_papa === 'boolean') r.afficher_papa = q.afficher_papa;
       if (typeof q.afficher_hakim === 'boolean') r.afficher_hakim = q.afficher_hakim;
       if (typeof q.filtre_parole === 'boolean') r.filtre_parole = q.filtre_parole;
+      if (typeof q.chacun_son_tour === 'boolean') r.chacun_son_tour = q.chacun_son_tour;
       try { ecrireAtomique(CORPS_REGLAGES, j(r)); } catch (e) { return repondre(500, { erreur: e.message }); }
       if (!r.actif) { corpsLot.evenements.length = 0; corpsLot.changements.length = 0; corpsADire.length = 0; }
       auditer('corps:reglages', req, distantReq, r);
