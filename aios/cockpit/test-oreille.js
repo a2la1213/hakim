@@ -504,7 +504,7 @@ test('(23:05) une seule voix : un seul onglet en Conversation par appareil ; un 
 
 test('(23:20) pendant son tour, ta voix n’est plus transcrite morceau par morceau : le Mac garde sa force pour sa voix et ta phrase de fin', () => {
   const i = page.indexOf('function surPauseConversation('), bloc = page.slice(i, page.indexOf('\n}\n', i));
-  assert.match(bloc, /if \(typeof sonTourEnCours === 'function' && sonTourEnCours\(\)\) \{\n\s+if \(!\(lecteur && lecteur\.actif\) \|\| Date\.now\(\) - \(conv\.partielA \|\| 0\) < 4000\) return;/);
+  assert.match(bloc, /if \(typeof sonTourEnCours === 'function' && sonTourEnCours\(\) && Date\.now\(\) - \(conv\.partielA \|\| 0\) < 4000\) return;/, '(00:42) petit à petit : un morceau toutes les 4 s');
   assert.ok(bloc.indexOf('sonTourEnCours()') < bloc.indexOf('transcrireVite('), 'avant toute transcription');
   const j = page.indexOf('function anticiperConversation('), b2 = page.slice(j, page.indexOf('\n}\n', j));
   assert.match(b2, /if \(typeof sonTourEnCours === 'function' && sonTourEnCours\(\)\) return;/);
@@ -518,13 +518,13 @@ test('(23:40) le prénettoyage : ce qui ne s’adresse pas à lui n’arrive mê
   // (23:55) en empans : une phrase ou une voix par ligne, 25 mots au plus, les 8 derniers seulement
   const long = Array.from({ length: 12 }, (_, i) => `Tu dis la phrase ${i + 1} ?`).join(' ') + ' [Nora] ' + Array.from({ length: 40 }, (_, i) => `m${i}`).join(' ') + ' fin.';
   const lignes = c.nettoyerPourSonnet(long, 5000).split('\n');
-  assert.equal(lignes.length, 8, '8 empans au plus');
-  assert.equal(lignes[0], 'Tu dis la phrase 6 ?', 'le début, trop long, est laissé');
+  assert.equal(lignes.length, 5, '(00:40) 5 empans au plus');
+  assert.equal(lignes[0], 'Tu dis la phrase 9 ?', 'le début, trop long, est laissé');
   // (00:06) entre 1 et 8 : seulement ce qui le concerne, et toujours le dernier
   assert.deepEqual(c.nettoyerPourSonnet('On a mangé. Il faisait beau. Hakim, tu en penses quoi ? Bon, on continue.').split('\n'),
     ['Hakim, tu en penses quoi ?', 'Bon, on continue.']);
   assert.deepEqual(c.nettoyerPourSonnet('On a mangé. Il faisait beau.').split('\n'), ['Il faisait beau.'], 'au moins le dernier');
-  assert.ok(lignes[7].startsWith('… m16') && lignes[7].endsWith('fin.') && lignes[7].split(' ').length === 26, 'une voix, ses 25 derniers mots');
+  assert.ok(lignes[4].startsWith('… m16') && lignes[4].endsWith('fin.') && lignes[4].split(' ').length === 26, 'une voix, ses 25 derniers mots');
   assert.equal(c.POUR_LUI.test('Alors les gars, bienvenue sur le live, on va parler de la construction'), false, 'il parle au public');
   assert.ok(c.POUR_LUI.test('Une IA peut avoir des émotions selon moi'), '(23:50) le sujet le touche : pesé');
   for (const x of ['Et toi, t’en penses quoi ?'.replace('’', "'"), 'Hakimou, réponds', 'Pourquoi il dit ça', 'C’est vrai ?']) assert.ok(c.POUR_LUI.test(x), x);
@@ -601,7 +601,7 @@ test('(00:20, l’étude) son attention en douceur : d’une voix inconnue, seul
   assert.equal(c.filtrerVoixInconnues('[Nora] Il fait beau.'), '[Nora] Il fait beau.', 'une voix nommée reste');
   assert.equal(c.resumerPourSonAttention('Un. … Deux.'), '(dit pendant ta parole) Un. Deux.');
   const long = Array.from({ length: 12 }, (_, i) => `P${i + 1}.`).join(' … ');
-  assert.equal(c.resumerPourSonAttention(long), '(dit pendant ta parole) … P5. P6. P7. P8. P9. P10. P11. P12.');
+  assert.equal(c.resumerPourSonAttention(long), '(dit pendant ta parole) … P8. P9. P10. P11. P12.', '(00:40) 5 au plus');
   assert.match(page, /envoyer\(resumerPourSonAttention\(texte\), true\);/);
   const i = page.indexOf('async function tourDeParole('), bloc = page.slice(i, page.indexOf('\n}\n', i));
   assert.ok(bloc.indexOf('filtrerVoixInconnues(texte)') < bloc.indexOf('COMMANDE_STOP.test(texte)'), 'avant les commandes et son tour');
@@ -642,4 +642,17 @@ test('(00:35) il a déjà réagi par son oreille : le message entier de papa le 
   c.oreilleDernierMot = { texte: 'Vieux', ts: 0 };
   assert.equal(c.blocDejaReagi(200000), '', 'plus de 90 s : rien');
   assert.match(src, /blocNonEntendus\(texte, nonce\) \+ blocDejaReagi\(\);/);
+});
+
+test('(00:40) micro coupé par lui : la salle (une voix lointaine) n’est même pas transcrite ; une voix proche l’est', () => {
+  const i = page.indexOf('function voixLointaine('), f = page.slice(i, page.indexOf('\n}\n', i) + 2);
+  let stock = JSON.stringify({ db: -30, n: 12 });
+  const c = vm.createContext({ JSON, Number, localStorage: { getItem: () => stock } }); vm.runInContext(f, c);
+  assert.equal(c.voixLointaine({ ton: { energie_db: -45 } }), true, '15 dB sous ta voix : la salle');
+  assert.equal(c.voixLointaine({ ton: { energie_db: -33 } }), false, 'une voix proche');
+  assert.equal(c.voixLointaine({ ton: null }), true, 'sans voix franche');
+  stock = JSON.stringify({ db: -30, n: 2 });
+  assert.equal(c.voixLointaine({ ton: { energie_db: -45 } }), false, 'ta voix pas encore apprise : tout passe');
+  const j = page.indexOf('async function tourDeParole('), bloc = page.slice(j, page.indexOf('\n}\n', j));
+  assert.ok(bloc.indexOf('voixLointaine(infos)') < bloc.indexOf('conv.enAttente++;'), 'avant la transcription');
 });

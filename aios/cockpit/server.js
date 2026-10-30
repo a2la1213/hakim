@@ -5383,7 +5383,7 @@ const MACHINERIE = /\b(?:maman|claude code|subconscient|cockpit|balises?|mon mic
 // (23:55, Ahmed : « le subconscient doit séparer en 7 à 10 empans, de petits paragraphes, et laisser le reste quand c'est trop
 // long ; ça allégera son subconscient ») le texte nettoyé est coupé en empans (une phrase, ou ce que dit une voix), chacun de
 // 25 mots au plus ; seuls les 8 derniers partent, un par ligne
-const EMPANS = 8, MOTS_PAR_EMPAN = 25;
+const EMPANS = 5, MOTS_PAR_EMPAN = 25;   // (31/10, 00:40, Ahmed : « descends à 5 »)
 // (31/10, 00:06, Ahmed : « pas 8 empans obligatoires : il doit sélectionner entre 1 et 8 ») son attention ne garde que les empans qui
 // le concernent (une question, « tu », son nom, un sujet qui le touche) et toujours le dernier ; 8 au plus, 1 au moins
 /* (31/10, 00:09, Ahmed : « il doit aussi pouvoir diriger son attention de façon consciente, mais aussi subconsciente : les deux

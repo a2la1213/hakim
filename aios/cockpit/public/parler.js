@@ -2067,13 +2067,10 @@ function morceauNeuf(texte, deja) {
 function surPauseConversation(conv, fenetre) {
   const e = conv.ecrit;
   if (!conv.capteur || !e || e.partiel || fenetre - e.coupe < 150) return;
-  // (30/10, 23:20, Ahmed : « pourquoi il n'arrive pas à répondre ») mesuré : la transcription de ta voix est passée de 1,5 s
-  // (21 h) à 7 s en médiane, jusqu'à 24 s ; tes phrases lui arrivaient 15 à 20 s en retard. Pendant SON tour, ces morceaux ne
-  // servent à rien (ton oreille ne peut pas le réveiller, tes mots l'attendent) et prennent le Mac à sa voix : il prépare,
-  // rien ; il parle, un morceau toutes les 4 s au plus (pour « arrête »). Ta phrase est transcrite d'un bloc à la fin.
-  if (typeof sonTourEnCours === 'function' && sonTourEnCours()) {
-    if (!(lecteur && lecteur.actif) || Date.now() - (conv.partielA || 0) < 4000) return;
-  }
+  // (30/10, 23:20) pendant SON tour, ces morceaux prenaient le Mac à sa voix ; (31/10, 00:42, Ahmed : « il faut qu'il ingurgite
+  // petit à petit, sinon c'est trop pour la transcription » : d'un bloc à la fin, une longue phrase prenait jusqu'à 20 s) : pendant
+  // son tour, un petit morceau toutes les 4 s au plus, ta phrase est digérée au fil de l'eau ; la fin ne transcrit que la queue
+  if (typeof sonTourEnCours === 'function' && sonTourEnCours() && Date.now() - (conv.partielA || 0) < 4000) return;
   conv.partielA = Date.now();
   const de = e.coupe, wav = conv.capteur.segment(de, fenetre);
   if (!wav) return;                                                      // pas de voix dans ce morceau
@@ -2340,6 +2337,12 @@ function finirConversation(garderLeTour = true) {
 
 // Le ton de ta voix comparé à TON habitude (lot C, point 20) : hauteur, débit (mots par seconde de voix), énergie.
 // L'habitude s'apprend sur tes tours (moyenne lente, gardée dans ce navigateur) ; rien n'est dit avant 5 tours.
+function voixLointaine(infos) {
+  const db = infos && infos.ton && Number(infos.ton.energie_db);
+  if (!Number.isFinite(db)) return true;                         // pas de voix franche : la salle, un bruit
+  let base = null; try { base = JSON.parse(localStorage.getItem('jarvis.ton') || 'null'); } catch (_) {}
+  return !!(base && base.n >= 5 && Number.isFinite(base.db) && db < base.db - 8);
+}
 function tonRelatif(infos, texte) {
   const t = infos && infos.ton;
   const mots = String(texte || '').trim().split(/\s+/).filter(Boolean).length;
@@ -2485,7 +2488,7 @@ function filtrerVoixInconnues(texte) {
 }
 function resumerPourSonAttention(texte) {
   const phrases = String(texte || '').replace(/\s+…\s+/g, ' ').split(/(?<=[.!?…])\s+/).filter(x => x.trim());
-  return `(dit pendant ta parole) ${(phrases.length > 8 ? '… ' : '') + phrases.slice(-8).join(' ')}`;
+  return `(dit pendant ta parole) ${(phrases.length > 5 ? '… ' : '') + phrases.slice(-5).join(' ')}`;   // (00:40) 5 au plus
 }
 function libererSonTour() {
   const c = etat.conversation;
@@ -2517,6 +2520,13 @@ async function tourDeParole(conv, wav, infos, extra) {
   if (horsLigne.depuis && !(extra && extra.texte)) {
     if (tourSansVoix(infos)) { if (!reprendreVoix()) humeur(); return; }
     garderHorsLigne(wav, t0Tour); return;
+  }
+  // (31/10, 00:40, Ahmed : « la solution pour la salle : qu'il coupe l'arrivée du son quand il veut répondre, et que le tout ne
+  // soit pas transcrit, juste les paroles proches qui l'intéressent ») micro coupé par lui : une voix lointaine (8 dB sous ta voix
+  // habituelle, ou sans voix franche) n'est même pas transcrite ; une voix proche l'est, et une voix familière le rouvre
+  if (conv.muetParHakim && !conv.muetParHakim.attente && voixLointaine(infos) && !(extra && extra.texte)) {
+    journalVoix('tour_loin', { db: infos && infos.ton ? Math.round(infos.ton.energie_db) : null });
+    return;
   }
   conv.enAttente++;
   humeur('transcription…');
