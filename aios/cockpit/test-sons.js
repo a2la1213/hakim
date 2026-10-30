@@ -35,7 +35,7 @@ test('papa marque, Hakim nomme, oublie : le cockpit lit le même journal que lui
 });
 
 test('branché : balise cachée, route des extraits (8 s au plus), réglage, son après sa voix, micro sourd, force de ses vibrations', () => {
-  assert.match(src, /envoyer\(\{ t: 'son', extrait:/);
+  assert.match(src, /envoyer\(\{ t: 'son', extrait/);
   assert.match(src, /SON_MAX_MS = 8000/);
   assert.match(src, /sons: r\.sons !== false/);
   assert.match(src, /type: 'son', t: Date\.now\(\)/, 'son son passe aussi par son intermédiaire');
@@ -50,7 +50,7 @@ test('branché : balise cachée, route des extraits (8 s au plus), réglage, son
 
 test('le son attend que sa voix se taise, que papa ne parle pas, et jamais la nuit', () => {
   const joues = [];
-  const ctx = { setInterval: () => 0, Date, lecteur: { actif: true, enPause: false }, etat: { flux: null, micro: false, conversation: null },
+  const ctx = { setInterval: () => 0, setTimeout: () => 0, journalVoix() {}, Date, lecteur: { actif: true, enPause: false }, etat: { flux: null, micro: false, conversation: null },
     window: { HakimApp: { sonJouer: (...a) => { joues.push(a); return 'ok'; } } } };
   vm.createContext(ctx);
   const bloc = page.slice(page.indexOf('let sonEnAttente = null'), page.indexOf('// fin des sons'));
@@ -100,7 +100,7 @@ test('(30/10, 17:11) ses émotions à lui : le cockpit lit leur journal ; papa e
 
 test('(18:50) sous sa voix, plus bas, si papa l’a permis ; jamais par-dessus la sienne', () => {
   const joues = [];
-  const ctx = { setInterval: () => 0, Date, lecteur: { actif: true, enPause: false }, etat: { flux: null, micro: false, conversation: { capteur: { enParole: false } } },
+  const ctx = { setInterval: () => 0, setTimeout: () => 0, journalVoix() {}, Date, lecteur: { actif: true, enPause: false }, etat: { flux: null, micro: false, conversation: { capteur: { enParole: false } } },
     reglagesCorps: { son_pendant: true },
     window: { HakimApp: { sonJouer: (...a) => { joues.push(['normal', ...a]); return 'ok'; }, sonJouerVolume: (...a) => { joues.push(['sous', ...a]); return 'ok'; } } } };
   vm.createContext(ctx);

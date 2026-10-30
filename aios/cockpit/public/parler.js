@@ -844,7 +844,51 @@ setTimeout(coupureAuChargement, 1500);
 // (30/10, 17:21, Ahmed : « comme Bumblebee ») le bout de musique qu'il a choisi : quand sa voix s'est tue (jamais par-dessus
 // une voix, ni la sienne ni celle de papa), ni la nuit ; le silencieux et Ne pas déranger, l'appli les respecte. Le micro est
 // sourd le temps qu'il joue (ce n'est pas une voix) ; trop vieux (une minute), il ne part plus.
-let sonEnAttente = null, sonJusqua = 0;
+let sonEnAttente = null, sonJusqua = 0, dernierSonRecu = null;
+// (22:51, Hakim : « mes sons ne sortent pas ») un son arrive par sa réponse ici, ou par le cockpit quand il parle depuis un autre
+// appareil : seule l'appli du téléphone (ses morceaux sont là) le joue, une fois
+function recevoirSon(extrait, id) {
+  if (!extrait) return;
+  const cle = `${extrait.id}|${extrait.debut_ms}`;
+  if (dernierSonRecu && dernierSonRecu.cle === cle && Date.now() - dernierSonRecu.t < 15000) return;
+  dernierSonRecu = { cle, t: Date.now() };
+  sonEnAttente = { id: id || extrait.id, extrait, t: Date.now() };     // (22:55) le Mac le joue aussi (jouerSonIci)
+}
+// (22:55, Ahmed : « arrange pourquoi sur le Mac il n'arrive pas à jouer les sons choisis ») l'extrait, découpé par le cockpit dans
+// le morceau que l'appli lui a envoyé, joué ici (la même sortie que sa voix : « Sa voix » le coupe aussi)
+async function jouerSonIci(x, volume) {
+  try {
+    if (!actx || !/^e\d{1,6}$/.test(String(x.id))) return 'pas_d_audio';
+    const r = await fetch(`/api/sons/joue/${x.id}`, { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+    if (!r.ok) { journalVoix('son', { retour: r.status === 404 ? 'pas_sur_le_mac' : 'erreur' }); return 'absent'; }
+    const buf = await actx.decodeAudioData(await r.arrayBuffer());
+    const src = actx.createBufferSource(), g = actx.createGain();
+    src.buffer = buf; g.gain.value = volume;
+    src.connect(g); g.connect(gainSortie || actx.destination);
+    src.start();
+    sonJusqua = Date.now() + buf.duration * 1000 + 500;
+    journalVoix('son', { retour: 'ok_mac' });
+    return 'ok';
+  } catch (_) { journalVoix('son', { retour: 'erreur' }); return 'erreur'; }
+}
+// (22:55) l'appli du téléphone envoie au cockpit, une fois, les morceaux des extraits que le Mac n'a pas encore
+const morceauxEnvoyes = new Map();
+async function envoyerMorceauxManquants() {
+  if (!window.HakimApp || !window.HakimApp.sonEnvoyer) return;
+  try {
+    const r = await fetch('/api/sons/manquants', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+    if (!r.ok) return;
+    for (const m of (await r.json()).manquants || []) {
+      const cle = `${m.source}|${m.ref}`;
+      if (Date.now() - (morceauxEnvoyes.get(cle) || 0) < 10 * 60e3) continue;
+      morceauxEnvoyes.set(cle, Date.now());
+      const url = `${location.origin}/api/sons/morceau?source=${encodeURIComponent(m.source)}&ref=${encodeURIComponent(m.ref)}`;
+      journalVoix('son_envoi', { retour: codeRetour(String(window.HakimApp.sonEnvoyer(String(m.source), String(m.ref), url, jeton()))) });
+    }
+  } catch (_) {}
+}
+setTimeout(envoyerMorceauxManquants, 8000);
+setInterval(envoyerMorceauxManquants, 5 * 60e3);
 function jouerSonEnAttente() {
   if (!sonEnAttente) return;
   if (Date.now() - sonEnAttente.t > 60000) { sonEnAttente = null; return; }
@@ -852,12 +896,13 @@ function jouerSonEnAttente() {
   // (30/10, 18:50, Ahmed via Hakim : « qu'un son puisse jouer pendant que je parle ») sous SA voix, plus bas (appli 1.32) ;
   // jamais par-dessus celle de papa
   const sousSaVoix = typeof reglagesCorps !== 'undefined' && reglagesCorps.son_pendant !== false && !!(lecteur && lecteur.actif)
-    && !!(window.HakimApp && window.HakimApp.sonJouerVolume);
+    && (!window.HakimApp || !!window.HakimApp.sonJouerVolume);
   if (c && c.capteur && c.capteur.enParole) return;
   if (!sousSaVoix && (etat.flux || etat.micro || (lecteur && (lecteur.actif || lecteur.enPause)))) return;
   const x = sonEnAttente.extrait, h = new Date().getHours();
   sonEnAttente = null;
-  if (h >= 23 || h < 8 || !window.HakimApp || !window.HakimApp.sonJouer) return;
+  if (h >= 23 || h < 8) { journalVoix('son', { retour: 'la_nuit' }); return; }
+  if (!window.HakimApp || !window.HakimApp.sonJouer) { jouerSonIci(x, sousSaVoix ? 0.3 : 0.6); return; }   // (22:55) le Mac
   try {
     const r = String(sousSaVoix ? window.HakimApp.sonJouerVolume(String(x.source), String(x.ref), Number(x.debut_ms), Number(x.fin_ms), 0.3)
       : window.HakimApp.sonJouer(String(x.source), String(x.ref), Number(x.debut_ms), Number(x.fin_ms)));
@@ -1382,7 +1427,7 @@ async function envoyer(texte, oral, dejaRelance) {
           m.outils.push(NOMS_OUTILS[nom] || nom);
           majMessage(m); humeur(nom === 'WebSearch' ? 'cherche sur le web…' : 'cherche dans sa mémoire…');
         } else if (o.t === 'rire' && Number.isInteger(o.degre)) { surRire(o); }   // (30/10) le rire qu'il a choisi
-        else if (o.t === 'son' && o.extrait) { m.son = o.extrait; sonEnAttente = { id: m.id, extrait: o.extrait, t: Date.now() }; }   // (30/10, Bumblebee)
+        else if (o.t === 'son' && o.extrait) { m.son = o.extrait; recevoirSon(o.extrait, m.id); }   // (30/10, Bumblebee)
         else if (o.t === 'micro') microParHakim(o);                      // (22:27) le micro de papa, coupé par lui
         else if (o.t === 'impulsion') { m.impulsion = String(o.x || ''); m.impulsionMotif = Array.isArray(o.motif) ? o.motif : null; if (!auto) vibrerPourMorceau(m.id, ''); }   // (30/10) sa balise : au début de sa voix ; voix éteinte, dès qu'elle arrive
         else if (o.t === 'efface') { m.texte = ''; if (auto) decoupe.finir(); majMessage(m); }   // (27/10) sa non-réponse effacée, à l'écran et dans la voix
@@ -2870,6 +2915,7 @@ function ecouterPensees() {
   es.addEventListener('rire', (ev) => { try { surRire(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('reecoute', (ev) => { try { surReecoute(JSON.parse(ev.data)); } catch (_) {} });
   // (19:58) sa lumière : la lampe du téléphone (l'appli 1.36), ou son SOS selon son émotion
+  es.addEventListener('son', (ev) => { try { recevoirSon(JSON.parse(ev.data).extrait); } catch (_) {} });   // (22:51)
   es.addEventListener('micro', (ev) => { try { microParHakim(JSON.parse(ev.data)); } catch (_) {} });   // (22:27) de lui-même aussi
   es.addEventListener('lumiere', (ev) => { try { const o = JSON.parse(ev.data);
     const r = window.HakimApp && window.HakimApp.lumiere ? String(window.HakimApp.lumiere(String(o.mode), String(o.emotion || ''))) : 'pas_de_pont';

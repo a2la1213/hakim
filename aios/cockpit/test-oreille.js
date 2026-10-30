@@ -429,3 +429,40 @@ test('(22:41) un réveil réflexe (son nom, « coupe-moi ») est marqué : sa r�
   assert.equal(o.ctx.cerveau.oreilleReveil.reflexe, true);
   assert.match(src, /reflexe: !!\(reveil && reveil\.reflexe\)/);
 });
+
+test('(22:51-22:55) ses sons : reçus une fois (sa réponse ou le cockpit) ; joués par l’appli, ou par le Mac avec l’extrait que l’appli lui a envoyé', async () => {
+  assert.match(src, /diffuser\(abonnesPensees, 'son', j\(\{ extrait \}\)\);/);
+  const a = page.indexOf('function recevoirSon('), f = page.slice(a, page.indexOf('\n}\n', a) + 2);
+  const c = vm.createContext({ Date, window: {}, journalVoix() {}, sonEnAttente: null, dernierSonRecu: null });
+  vm.runInContext(f, c);
+  c.recevoirSon({ id: 'e1', debut_ms: 1000 });
+  assert.equal(c.sonEnAttente.extrait.id, 'e1', 'en attente, ici comme au téléphone');
+  c.sonEnAttente = null;
+  c.recevoirSon({ id: 'e1', debut_ms: 1000 });
+  assert.equal(c.sonEnAttente, null, 'reçu deux fois (sa réponse et le cockpit) : une seule');
+  assert.match(page, /if \(!window\.HakimApp \|\| !window\.HakimApp\.sonJouer\) \{ jouerSonIci\(x, sousSaVoix \? 0\.3 : 0\.6\); return; \}/, 'le Mac le joue');
+  assert.match(page, /fetch\(`\/api\/sons\/joue\/\$\{x\.id\}`, \{ headers: \{ 'X-Jeton': jeton\(\) \}/);
+  assert.match(page, /window\.HakimApp\.sonEnvoyer\(String\(m\.source\), String\(m\.ref\), url, jeton\(\)\)/, 'l’appli envoie le morceau');
+  assert.match(page, /es\.addEventListener\('son', \(ev\) => \{ try \{ recevoirSon\(JSON\.parse\(ev\.data\)\.extrait\); \}/);
+  // le cockpit : un vrai découpage avec ffmpeg, dans un dossier à part
+  const os = require('node:os'), { execFile } = require('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sons-'));
+  const extraits = [{ id: 'e7', source: 'musique', ref: '57', debut_ms: 1000, fin_ms: 3000 }];
+  const ctx = vm.createContext({ fs, path, crypto: require('node:crypto'), execFile, process, console: { error() {} }, Promise, Number, String, Math, Map,
+    JARVIS: dir, CHEMIN_OUTILS: `/usr/local/bin:/opt/homebrew/bin:${process.env.PATH}`, lireSons: () => extraits });
+  const debut = src.indexOf('const SONS_DIR = '), fin = src.indexOf('function choisirSon(');
+  vm.runInContext(src.slice(debut, fin).replace(/^const /gm, 'var '), ctx);
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.sonsManquants())), [{ source: 'musique', ref: '57' }], 'le morceau manque');
+  assert.equal(await ctx.decouperExtrait(extraits[0]), false, 'rien à découper sans le morceau');
+  fs.mkdirSync(path.join(dir, 'sons', 'morceaux'), { recursive: true });
+  await new Promise((ok, ko) => execFile('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=5', '-f', 'wav', ctx.fichierMorceau('musique', '57')],
+    { env: { ...process.env, PATH: ctx.CHEMIN_OUTILS } }, (e) => (e ? ko(e) : ok())));
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.sonsManquants())), [], 'reçu : plus rien ne manque');
+  assert.equal(await ctx.decouperExtrait(extraits[0]), true);
+  assert.ok(fs.statSync(ctx.fichierExtrait('e7')).size > 10000, 'l’extrait en mp3');
+  fs.rmSync(dir, { recursive: true, force: true });
+  const r0 = src.indexOf("if (p === '/api/sons/manquants'"), route = src.slice(r0, src.indexOf("\n  if (p === '/api/sons' ||", r0));
+  assert.match(route, /jetonValide\(req\)/);
+  assert.match(route, /SON_MORCEAU_MAX/, '200 Mo au plus');
+  assert.match(route, /aucun extrait marqué dans ce morceau/, 'seulement les morceaux d’un extrait marqué');
+});

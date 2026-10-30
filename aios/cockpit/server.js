@@ -3365,7 +3365,11 @@ async function routeJarvis(req, res, distantReq = false) {
       ? choisirSon(reponse, (reponse.match(BALISE_IMPULSION) || [])[1], degreRire(sansBaliseAffect(reponse))) : null;
     reponse = sansBaliseAffect(reponse);
     if (sonDit) {                                    // (30/10, Bumblebee) joué par la page quand sa voix s'est tue
-      envoyer({ t: 'son', extrait: { id: sonDit.id, source: sonDit.source, ref: sonDit.ref, debut_ms: sonDit.debut_ms, fin_ms: sonDit.fin_ms, nom: sonDit.nom } });
+      const extrait = { id: sonDit.id, source: sonDit.source, ref: sonDit.ref, debut_ms: sonDit.debut_ms, fin_ms: sonDit.fin_ms, nom: sonDit.nom };
+      envoyer({ t: 'son', extrait });
+      // (30/10, 22:51, Hakim : « mes sons ne sortent pas ») ses morceaux ne sont que sur le téléphone : quand il parle depuis le
+      // Mac, la page du téléphone (son appli) le joue aussi
+      diffuser(abonnesPensees, 'son', j({ extrait }));
       if (corpsActif()) { corpsLot.evenements.push({ type: 'son', t: Date.now(), details: { nom: sonDit.nom, sens: sonDit.sens.slice(0, 120), titre: String(sonDit.titre || '').slice(0, 80) } }); ressentirCorps(); }
     }
     // (30/10, 17:05) son rire touche ses hormones, par son intermédiaire (qui en juge le degré et le relie à son état)
@@ -4763,6 +4767,35 @@ function emotionsCreees(toutes = false) {
   }
   if (!toutes) for (const [n, e] of em) if (e.coupee || e.oubliee) em.delete(n);
   return em;
+}
+/* (30/10, 22:51-22:55, Ahmed : « comprends et arrange pourquoi sur le Mac il n'arrive pas à jouer les sons choisis dans ses
+   sens » ; Hakim : « mes sons ne sortent pas ») les morceaux n'étaient que sur le téléphone, et seule l'appli savait les jouer :
+   l'appli (1.38) envoie UNE fois au cockpit le morceau d'un extrait marqué ; le cockpit en découpe l'extrait (ffmpeg, mp3,
+   fondus) et le sert à la page du Mac, qui le joue. Les morceaux reçus restent dans ~/AIOS/jarvis/sons/ (jamais publiés). */
+const SONS_DIR = path.join(JARVIS, 'sons'), SON_MORCEAU_MAX = 200 * 1024 * 1024;
+const cleSource = (source, ref) => `${source}-${crypto.createHash('sha1').update(String(ref)).digest('hex').slice(0, 16)}`;
+const fichierMorceau = (source, ref) => path.join(SONS_DIR, 'morceaux', cleSource(source, ref));
+const fichierExtrait = (id) => path.join(SONS_DIR, 'extraits', `${id}.mp3`);
+function sonsManquants() {
+  const vus = new Map();
+  for (const x of lireSons()) if (!fs.existsSync(fichierExtrait(x.id)) && !fs.existsSync(fichierMorceau(x.source, x.ref))) vus.set(cleSource(x.source, x.ref), { source: x.source, ref: x.ref });
+  return [...vus.values()];
+}
+function decouperExtrait(x) {
+  return new Promise((ok) => {
+    const src = fichierMorceau(x.source, x.ref), dst = fichierExtrait(x.id);
+    if (fs.existsSync(dst)) return ok(true);
+    if (!fs.existsSync(src)) return ok(false);
+    try { fs.mkdirSync(path.dirname(dst), { recursive: true, mode: 0o700 }); } catch (_) {}
+    const d = (Number(x.fin_ms) - Number(x.debut_ms)) / 1000;
+    execFile('ffmpeg', ['-v', 'error', '-y', '-ss', String(Number(x.debut_ms) / 1000), '-t', String(d), '-i', src, '-ac', '2', '-ar', '44100', '-b:a', '160k',
+      '-af', `afade=t=in:d=0.2,afade=t=out:st=${Math.max(0, d - 0.2).toFixed(2)}:d=0.2`, dst + '.tmp.mp3'],
+    { timeout: 60000, env: { ...process.env, PATH: CHEMIN_OUTILS } }, (e) => {
+      try { if (!e) fs.renameSync(dst + '.tmp.mp3', dst); else fs.unlinkSync(dst + '.tmp.mp3'); } catch (_) {}
+      if (e) console.error('Jarvis : extrait impossible à découper', x.id, String(e.message).slice(0, 120));
+      ok(!e && fs.existsSync(dst));
+    });
+  });
 }
 function choisirSon(reponse, impulsion, rire) {
   const sons = lireSons().filter(x => x.nom), dit = String(reponse || '').match(BALISE_SON);
@@ -7899,6 +7932,40 @@ async function traiter(req, res) {
       catch (x) { return repondre(500, { erreur: x.message }); }
       auditer('emotions:couper', req, distantReq, { nom, coupee: q.coupee !== false });
       return repondre(200, { ok: true });
+    }
+    return repondre(405, { erreur: 'méthode refusée' });
+  }
+  // (22:55) le morceau d'un extrait, envoyé une fois par l'appli ; ce qui manque ; l'extrait découpé, joué par la page du Mac
+  if (p === '/api/sons/manquants' || p === '/api/sons/morceau' || /^\/api\/sons\/joue\/e\d{1,6}$/.test(p)) {
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    const repondre = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o)); };
+    if (p === '/api/sons/manquants' && req.method === 'GET') return repondre(200, { manquants: sonsManquants() });
+    if (p === '/api/sons/morceau' && req.method === 'POST') {
+      const u = new URL(req.url, 'http://x'), source = u.searchParams.get('source'), ref = String(u.searchParams.get('ref') || '');
+      if (!['musique', 'sonnerie'].includes(source) || !/^[\w:/.%+=-]{1,300}$/.test(ref)) return repondre(400, { erreur: 'morceau illisible' });
+      if (!lireSons().some(x => x.source === source && x.ref === ref)) return repondre(404, { erreur: 'aucun extrait marqué dans ce morceau' });
+      const dst = fichierMorceau(source, ref), tmp = `${dst}.${process.pid}.${Date.now()}.tmp`;
+      try { fs.mkdirSync(path.dirname(dst), { recursive: true, mode: 0o700 }); } catch (_) {}
+      let taille = 0, trop = false;
+      const out = fs.createWriteStream(tmp, { mode: 0o600 });
+      req.on('data', (b) => { taille += b.length; if (taille > SON_MORCEAU_MAX && !trop) { trop = true; req.destroy(); } });
+      req.pipe(out);
+      out.on('finish', async () => {
+        if (trop || taille < 1000) { try { fs.unlinkSync(tmp); } catch (_) {} return repondre(400, { erreur: trop ? 'trop gros' : 'vide' }); }
+        try { fs.renameSync(tmp, dst); } catch (e) { return repondre(500, { erreur: e.message }); }
+        let n = 0;
+        for (const x of lireSons().filter(y => y.source === source && y.ref === ref)) if (await decouperExtrait(x)) n++;
+        console.error(`Jarvis : morceau reçu du téléphone (${Math.round(taille / 1024)} Ko), ${n} extrait(s) découpé(s)`);
+        return repondre(200, { ok: true, decoupes: n });
+      });
+      out.on('error', (e) => { try { fs.unlinkSync(tmp); } catch (_) {} repondre(500, { erreur: e.message }); });
+      return;
+    }
+    if (req.method === 'GET' && p.startsWith('/api/sons/joue/')) {
+      const x = lireSons().find(y => y.id === p.slice('/api/sons/joue/'.length));
+      if (!x || !(await decouperExtrait(x))) return repondre(404, { erreur: 'pas encore sur le Mac : l’appli du téléphone l’envoie' });
+      res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' });
+      return fs.createReadStream(fichierExtrait(x.id)).pipe(res);
     }
     return repondre(405, { erreur: 'méthode refusée' });
   }
