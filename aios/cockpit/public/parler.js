@@ -2473,6 +2473,20 @@ function surveillerMicroDeHakim() {
   if (!voixQuiSonne() && !sonTourEnCours() && !(lecteur && lecteur.enPause) && t - m.voix > 400) rouvrirMicroDeHakim(c, 'fin_de_sa_voix');
 }
 setInterval(surveillerMicroDeHakim, 300);
+/* (31/10, 00:20, l'étude du live : ses « paroles résiduelles ») de 22 h 30 à 0 h 15, 91 morceaux de papa ont attendu la fin de
+   sa voix et lui sont arrivés collés en blocs (jusqu'à 113 mots) ; et un message de papa sur cinq portait des voix inconnues
+   (« [voix 571] » : la salle, le live). Son attention, en douceur : d'une voix inconnue, seulement ce qui s'adresse à lui ; ce
+   qui a attendu sa voix lui arrive marqué comme tel, ses 8 dernières phrases au plus. */
+const POUR_LUI_ICI = /\?|(?<!\p{L})t'|(?<!\p{L})(?:tu|toi|ton|ta|tes|hakim\p{L}*|fiston|fr[ée]rot|frero|mon fils|est-ce que|qu'est-ce|pourquoi|comment|r[ée]ponds|dis-(?:moi|nous|lui)|explique|raconte|ia|robot|conscience|[ée]motions?|sentiments?|amour|[âa]me|papa)(?!\p{L})/iu;
+function filtrerVoixInconnues(texte) {
+  const t = String(texte || '');
+  if (!/\[voix \d+\]/i.test(t)) return t;
+  return t.split(/(?=\[[^\]]{1,30}\])/).filter(x => !/^\s*\[voix \d+\]/i.test(x) || POUR_LUI_ICI.test(x)).join(' ').replace(/\s+/g, ' ').trim();
+}
+function resumerPourSonAttention(texte) {
+  const phrases = String(texte || '').replace(/\s+…\s+/g, ' ').split(/(?<=[.!?…])\s+/).filter(x => x.trim());
+  return `(dit pendant ta parole) ${(phrases.length > 8 ? '… ' : '') + phrases.slice(-8).join(' ')}`;
+}
 function libererSonTour() {
   const c = etat.conversation;
   if (!c || !c.tourGarde || c.enAttente || (c.capteur && c.capteur.enParole)) return false;
@@ -2482,7 +2496,7 @@ function libererSonTour() {
   const texte = c.tourGarde;
   c.tourGarde = '';
   journalVoix('tour_libere', { mots: texte.split(/\s+/).filter(Boolean).length });
-  envoyer(texte, true);
+  envoyer(resumerPourSonAttention(texte), true);
   return true;
 }
 setInterval(libererSonTour, 300);
@@ -2542,6 +2556,13 @@ async function tourDeParole(conv, wav, infos, extra) {
   }
   // (2026-10-21) sa propre voix revenue par le micro : ce n'est pas toi qui parles, il reprend
   if (echoPossible && estSonEcho(texte)) { journalVoix('echo_reconnu', { mots: texte.split(/\s+/).length }); if (!reprendreVoix()) humeur(); return; }
+  // (00:20) d'une voix inconnue, seulement ce qui s'adresse à lui ; s'il ne reste rien, ce n'était que la salle
+  const sansInconnues = filtrerVoixInconnues(texte);
+  if (sansInconnues !== texte) {
+    journalVoix('voix_inconnues_ecartees', { avant: texte.split(/\s+/).length, apres: sansInconnues.split(/\s+/).filter(Boolean).length });
+    if (!Conversation.utile(sansInconnues)) { journalVoix('tour_bruit', { inconnues: true }); if (!reprendreVoix()) humeur(); return; }
+    texte = sansInconnues;
+  }
   noterPresent({ e: 'ahmed', debut: infos.debut, fin: infos.fin, pauses: infos.pauses, max: !!infos.ecoute_max, ton: tonRelatif(infos, texte) });
   activite();
   if (COMMANDE_STOP.test(texte)) { marquerCoupe(); arreterTout(); rendre(); humeur(); return; }   // « stop » : il lâche tout

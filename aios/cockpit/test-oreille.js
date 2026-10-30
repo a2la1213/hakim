@@ -294,7 +294,7 @@ test('(vers 22 h 10) chacun son tour : pendant qu’il prépare ou dit sa répon
   assert.equal(ctx.libererSonTour(), false, 'papa reparle : ce tour-là le prendra');
   conv.capteur.enParole = false;
   assert.equal(ctx.libererSonTour(), true);
-  assert.deepEqual(envois, [['et aussi le live … tu m’entends ?', true]], 'd’un bloc, à l’oral');
+  assert.deepEqual(envois, [['(dit pendant ta parole) et aussi le live tu m’entends ?', true]], 'd’un bloc, à l’oral, marqué (00:20)');
   assert.equal(conv.tourGarde, '');
   ctx.reglagesCorps.chacun_son_tour = false;
   assert.equal(ctx.chacunSonTour(), false, 'l’interrupteur de papa');
@@ -567,7 +567,7 @@ test('(00:06) plus jamais bloqué : sa voix en pause n’est pas son tour ; tes 
   ctx.garderPourSonTour(ctx.etat.conversation, 'ma question');
   t += 10000; assert.equal(ctx.libererSonTour(), false, 'sa réponse arrive : gardé');
   t += 21000; assert.equal(ctx.libererSonTour(), true, '30 s : tes mots partent quand même');
-  assert.deepEqual(envois, ['ma question']);
+  assert.deepEqual(envois, ['(dit pendant ta parole) ma question']);
   ctx.lecteur.enPause = true; ctx.etat.flux = null;
   assert.equal(ctx.sonTourEnCours(), false, 'sa voix en pause n’est pas son tour');
 });
@@ -590,4 +590,19 @@ test('(00:09) son attention : subconsciente (ce qui le concerne) et consciente (
   assert.equal(c.attentionActive(t), null);
   assert.match(src, /const att = dirigerAttention\(texte, maintenant\);/, 'dans ses réponses et ses tours de lui-même');
   assert.match(src, /lumiere\|pause\|reprendre\|micro\|attention\)\\s\*:/, 'la balise ne s’entend jamais');
+});
+
+test('(00:20, l’étude) son attention en douceur : d’une voix inconnue, seulement ce qui s’adresse à lui ; ce qui a attendu sa voix arrive marqué, 8 phrases au plus', () => {
+  const a = page.indexOf('const POUR_LUI_ICI = '), b = page.indexOf('function libererSonTour() {');
+  const c = vm.createContext({ String }); vm.runInContext(page.slice(a, b).replace(/^const /gm, 'var '), c);
+  assert.equal(c.filtrerVoixInconnues('Hakim, écoute. [voix 571] Il fait beau dehors. [voix 2] Et toi, tu en penses quoi ?'),
+    'Hakim, écoute. [voix 2] Et toi, tu en penses quoi ?', 'la salle écartée, la question gardée');
+  assert.equal(c.filtrerVoixInconnues('[voix 571] Il fait beau dehors.'), '', 'que la salle : rien');
+  assert.equal(c.filtrerVoixInconnues('[Nora] Il fait beau.'), '[Nora] Il fait beau.', 'une voix nommée reste');
+  assert.equal(c.resumerPourSonAttention('Un. … Deux.'), '(dit pendant ta parole) Un. Deux.');
+  const long = Array.from({ length: 12 }, (_, i) => `P${i + 1}.`).join(' … ');
+  assert.equal(c.resumerPourSonAttention(long), '(dit pendant ta parole) … P5. P6. P7. P8. P9. P10. P11. P12.');
+  assert.match(page, /envoyer\(resumerPourSonAttention\(texte\), true\);/);
+  const i = page.indexOf('async function tourDeParole('), bloc = page.slice(i, page.indexOf('\n}\n', i));
+  assert.ok(bloc.indexOf('filtrerVoixInconnues(texte)') < bloc.indexOf('COMMANDE_STOP.test(texte)'), 'avant les commandes et son tour');
 });
