@@ -2920,7 +2920,10 @@ function direMotDirect(texte, maxMs = 0, auDebut = null) {
       src.buffer = buf;
       src.connect(analyseurVoix);                        // le micro connaît sa voix (l'écho), comme pour ses réponses
       // (19:10) sa jauge d'envie de couper : il parle par-dessus papa tant de secondes au plus, puis rend la main
-      const duree = maxMs > 0 ? Math.min(buf.duration, maxMs / 1000) : buf.duration;
+      // (23:58, Ahmed : « faut le laisser tout dire » : à 23:40, son petit mot coupé à 4 s) sa jauge ne le coupe que si papa
+      // parle encore à cet instant, micro ouvert ; sinon il dit tout
+      const cv = etat.conversation, papaParle = !!(cv && cv.capteur && cv.capteur.enParole && !cv.capteur.estMuet);
+      const duree = maxMs > 0 && papaParle ? Math.min(buf.duration, maxMs / 1000) : buf.duration;
       motDirectJusqua = Date.now() + duree * 1000 + 300;
       src.start();
       if (auDebut) try { auDebut(); } catch (_) {}         // le texte apparaît avec sa voix

@@ -538,3 +538,8 @@ test('(23:40) le prénettoyage : ce qui ne s’adresse pas à lui n’arrive mê
   assert.match(src, /if \(pre\) garder\(pre\);\n\s+else jugerParole\(dit, nettoyerPourSonnet\(oreilleEntendu\.texte\)\)/);
   assert.match(src, /if \(!POUR_LUI\.test\(texte\)\) console\.error\('Jarvis : parole résiduelle écartée par le prénettoyage'\);/);
 });
+
+test('(23:58) « faut le laisser tout dire » : sa jauge ne coupe son petit mot que si papa parle encore, micro ouvert', () => {
+  assert.match(page, /const duree = maxMs > 0 && papaParle \? Math\.min\(buf\.duration, maxMs \/ 1000\) : buf\.duration;/);
+  assert.match(page, /papaParle = !!\(cv && cv\.capteur && cv\.capteur\.enParole && !cv\.capteur\.estMuet\)/);
+});
