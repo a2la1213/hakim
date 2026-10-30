@@ -1959,8 +1959,10 @@ async function photoCamera() {
    Dès 0,7 s de silence, ta phrase est transcrite EN AVANCE. Si tu n'as pas repris la parole et qu'elle
    semble finie (ponctuation finale, pas de « et », « mais », « euh »… à la fin), le tour se clôt tout
    de suite au lieu d'attendre toute la patience ; sinon on attend, comme avant : les hésitations
-   restent permises. Gain mesuré : ~2,8 s (patience 3,5 s → 0,7 s, transcription déjà faite). */
-const SILENCE_ANTICIPE_MS = 700;
+   restent permises. Gain mesuré : ~2,8 s (patience 3,5 s → 0,7 s, transcription déjà faite).
+   (30/10, 22:33, Ahmed : « 0,5 s pour la fin de ma parole, pas dans les réglages : dans la reconnaissance ») 0,5 s ; ta
+   patience des réglages ne change pas (une phrase qui ne semble pas finie l'attend toujours). */
+const SILENCE_ANTICIPE_MS = 500;
 const FIN_SUSPENDUE = /^(et|mais|donc|parce|que|qu|qui|ou|où|alors|euh|heu|hum|bah|ben|genre|enfin|puis|avec|pour|de|du|des|le|la|les|un|une|à|au|aux|en|sur|dans|par|car|si|quand|comme|je|tu|il|elle|on|nous|vous|mon|ma|mes|ton|ta|tes|son|sa|ses|ce|cette|ces|est|c'est|y|ya|wallah)$/i;
 function phraseFinie(t) {
   const x = String(t || '').trim();

@@ -128,3 +128,9 @@ test('câblage : la fin de tour reprend la transcription en avance avant de retr
   assert.match(tour, /: deAvance !== null \? deAvance\n/);
   assert.match(extraire('function anticiperConversation'), /sp\.texte = texteDuTour\(conv\);/);
 });
+
+test('(30/10, 22:33, Ahmed) la fin de ta parole se décide après 0,5 s de silence, dans la reconnaissance ; ta patience des réglages ne bouge pas', () => {
+  const page = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(page, /const SILENCE_ANTICIPE_MS = 500;/);
+  assert.match(page, /patience: 3\.5,/, 'le réglage par défaut reste');
+});
