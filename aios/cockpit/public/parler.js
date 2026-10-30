@@ -2240,8 +2240,14 @@ function majBoutonsMuet(conv) {
 function basculerMuet() {
   const conv = etat.conversation;
   if (!conv || !conv.capteur) return;
-  // (22:27) coupé par Hakim : ton bouton reprend la main et rouvre
-  if (conv.muetParHakim) { conv.muetParHakim = null; conv.capteur.muet(false); majBoutonsMuet(conv); journalVoix('micro_hakim', { x: 'ouvrir', pourquoi: 'papa' }); humeur('je t’écoute…'); signalerWidget(); return; }
+  // (22:27) coupé par Hakim : ton bouton reprend la main et rouvre ; (23:00, Ahmed : « je n'arrive plus à muter le micro moi-même »)
+  // sa coupure pas encore partie (sa voix se préparait, ton micro était ouvert) : ton geste à toi s'applique, il coupe
+  if (conv.muetParHakim) {
+    const enAttente = !!conv.muetParHakim.attente;
+    conv.muetParHakim = null;
+    if (!enAttente) { conv.capteur.muet(false); majBoutonsMuet(conv); journalVoix('micro_hakim', { x: 'ouvrir', pourquoi: 'papa' }); humeur('je t’écoute…'); signalerWidget(); return; }
+    journalVoix('micro_hakim', { x: 'annule', pourquoi: 'papa' });
+  }
   const oui = !conv.capteur.estMuet;
   conv.capteur.muet(oui);
   majBoutonsMuet(conv);

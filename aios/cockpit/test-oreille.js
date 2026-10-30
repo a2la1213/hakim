@@ -402,7 +402,7 @@ test('(22:27-22:30) il coupe ton vrai micro par [[micro: couper]] : tes boutons 
   assert.equal(c.muetParHakim, null, 'interrupteur éteint : refusé');
   assert.ok(journal.some(([e, d]) => e === 'micro_hakim' && d.x === 'refuse'));
   // le bouton de papa reprend la main ; le libellé dit qui a coupé
-  assert.match(page, /if \(conv\.muetParHakim\) \{ conv\.muetParHakim = null; conv\.capteur\.muet\(false\); majBoutonsMuet\(conv\);/, 'ton bouton rouvre');
+  assert.match(page, /if \(!enAttente\) \{ conv\.capteur\.muet\(false\); majBoutonsMuet\(conv\);/, 'ton bouton rouvre');
   assert.match(page, /'Coupé par Hakim'/);
   assert.match(page, /if \(c && c\.muetParHakim && !c\.muetParHakim\.attente\) return 'coupe';/, 'l’orbe passe au vert (une fois coupé)');
   assert.match(fs.readFileSync(path.join(__dirname, 'public', 'orbe.js'), 'utf8'), /coupe: \['#86efac', '#22c55e', '#15803d'\]/);
@@ -465,4 +465,21 @@ test('(22:51-22:55) ses sons : reçus une fois (sa réponse ou le cockpit) ; jou
   assert.match(route, /jetonValide\(req\)/);
   assert.match(route, /SON_MORCEAU_MAX/, '200 Mo au plus');
   assert.match(route, /aucun extrait marqué dans ce morceau/, 'seulement les morceaux d’un extrait marqué');
+});
+
+test('(23:00) ton bouton : si sa coupure n’est pas encore partie, il coupe ton micro (ton geste) ; s’il t’a coupé, il rouvre', () => {
+  const i = page.indexOf('function basculerMuet() {'), f = page.slice(i, page.indexOf('\n}\n', i) + 2);
+  const journal = [];
+  const conv = { capteur: { estMuet: false, muet(o) { this.estMuet = !!o; } }, muetParHakim: { attente: Date.now() } };
+  const c = vm.createContext({ etat: { conversation: conv }, Date, journalVoix: (e, d) => journal.push([e, d]), majBoutonsMuet() {}, noterPresent() {}, humeur() {}, signalerWidget() {} });
+  vm.runInContext(f, c);
+  c.basculerMuet();
+  assert.equal(conv.capteur.estMuet, true, 'sa coupure se préparait : ton bouton coupe ton micro');
+  assert.equal(conv.muetParHakim, null, 'et annule la sienne');
+  c.basculerMuet();
+  assert.equal(conv.capteur.estMuet, false, 'rouvert par toi');
+  conv.muetParHakim = { attente: 0, depuis: Date.now() }; conv.capteur.estMuet = true;
+  c.basculerMuet();
+  assert.equal(conv.capteur.estMuet, false, 'il t’avait coupé : ton bouton rouvre');
+  assert.equal(conv.muetParHakim, null);
 });
