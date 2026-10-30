@@ -612,3 +612,23 @@ test('(00:30, l’étude) en Conversation à l’oral, ses souvenirs ne passent 
   assert.match(src, /if \(theme\.length && TRI_ACTIF && !sansTri\) tri = await trierSouvenirs\(/);
   assert.match(src, /blocRappel\(session, texte, nonce, !!\(q\.oral && q\.conversation\)\)/);
 });
+
+test('(00:30) le bouton Télépathie : la Conversation sans aucun texte écrit, avec le réglage de ce soir ; Conversation : avec les textes', async () => {
+  const html = fs.readFileSync(path.join(__dirname, 'public', 'parler.html'), 'utf8');
+  assert.ok(html.indexOf('id="conversation"') < html.indexOf('id="telepathie"'), 'sous Conversation');
+  const a = page.indexOf('async function reglerAffichage('), b = page.indexOf("$('conversation').addEventListener('click', () => lancerConversation(false));");
+  const envois = [], appuis = [];
+  const el = { setAttribute() {} };
+  const ctx = vm.createContext({ JSON, reglagesCorps: { oreille: false }, jeton: () => 'j', fetch: async (u, o) => { envois.push(JSON.parse(o.body)); return { ok: true }; },
+    etat: { conversation: null }, $: () => el, journalVoix() {}, rendre() {}, basculerConversation: () => appuis.push(1) });
+  vm.runInContext(page.slice(a, b).replace(/^const /gm, 'var '), ctx);
+  await ctx.lancerConversation(true);
+  assert.deepEqual(envois[0], { afficher_papa: false, afficher_hakim: false, oreille: true, micro_hakim: true, chacun_son_tour: true, filtre_parole: true });
+  assert.equal(ctx.reglagesCorps.afficher_hakim, false, 'tout de suite, sans attendre la minute');
+  assert.equal(appuis.length, 1, 'la conversation démarre');
+  await ctx.lancerConversation(false);
+  assert.deepEqual(envois[1], { afficher_papa: true, afficher_hakim: true }, 'Conversation : avec les textes');
+  ctx.etat.conversation = {}; await ctx.lancerConversation(true);
+  assert.equal(envois.length, 2, 'en cours : le bouton ferme, sans toucher au réglage');
+  assert.equal(appuis.length, 3);
+});

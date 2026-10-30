@@ -153,6 +153,7 @@
     .saisie .groupe.sa-parole { flex: 1 1 auto; justify-content: center; }
     .saisie .groupe.sa-parole:not(:has(> :not([hidden]))) { display: none; }   /* rien à contrôler : le groupe s'efface */
     .saisie .btn.conversation { margin-left: auto; }
+    .saisie .btn.telepathie { margin-left: 0; }
     .saisie .rang.capture { justify-content: center; }
     .saisie .rang.capture .btn { font-size: 12px; opacity: .85; }
     .saisie .btn, .saisie .trombone { min-height: 44px; }                    /* assez grand pour le doigt (Fold plié) */
@@ -488,6 +489,9 @@
         </div>
         <button class="btn conversation" id="conversation" aria-pressed="false"
           title="Mode Conversation : il t'écoute en continu, répond à voix haute, et s'arrête dès que tu reprends la parole (⌥C)">Conversation</button>
+        <!-- (31/10, 00:30, Ahmed) la Conversation sans aucun texte écrit : seulement vos voix, avec le réglage de ce soir -->
+        <button class="btn conversation telepathie" id="telepathie" aria-pressed="false"
+          title="Télépathie : la Conversation sans aucun texte écrit (ni le tien, ni le sien), seulement vos voix ; son oreille, son micro, chacun son tour et son subconscient allumés">Télépathie</button>
       </div>
       <div class="rang capture">
         <button class="btn camera" id="camera" aria-pressed="false" title="Hakim te voit : analyse de ton visage sur le Mac, photo jointe à chaque message (⌥V)">Caméra</button>

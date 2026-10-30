@@ -2237,7 +2237,7 @@ async function basculerConversation() {
   } catch (e) {
     if (etat.conversation !== conv) return;
     etat.conversation = null;
-    $('conversation').setAttribute('aria-pressed', 'false');
+    $('conversation').setAttribute('aria-pressed', 'false'); $('telepathie').setAttribute('aria-pressed', 'false');
     humeur('micro refusé ou indisponible : autorise-le pour localhost'); setTimeout(() => humeur(), 5000);
     return;
   }
@@ -2331,7 +2331,7 @@ function finirConversation(garderLeTour = true) {
   etat.niveauMicro = 0;
   for (const id of ['muet', 'muetScene']) $(id).setAttribute('aria-pressed', 'false');
   $('muet').textContent = 'Muet'; $('muetScene').textContent = 'Couper mon micro';
-  $('conversation').setAttribute('aria-pressed', 'false');
+  $('conversation').setAttribute('aria-pressed', 'false'); $('telepathie').setAttribute('aria-pressed', 'false');
   noterPresent({ e: 'fin_conversation', t: Date.now() });
   sousTitre('');
   humeur();
@@ -4318,7 +4318,25 @@ document.addEventListener('keydown', (e) => {
   else if (e.altKey && e.code === 'KeyP') { e.preventDefault(); if (lecteur.enPause) reprendreVoix(); else pauseVoix(); }
   else if (e.key === 'Escape') { if (etat.conversation) finirConversation(false); arreterMicro(false); arreterTout(); majBoutonsPause(); rendre(); humeur(); }
 });
-$('conversation').addEventListener('click', basculerConversation);
+/* (31/10, 00:30, Ahmed : « un bouton Télépathie sous Conversation : le réglage actuel, automatiquement, sans mes textes ni les
+   siens ») Conversation : vos paroles s'écrivent ; Télépathie : la Conversation sans aucun texte écrit, avec son oreille, son
+   micro, chacun son tour et son subconscient allumés. Le réglage part au cockpit (page SENS) ; un deuxième appui ferme. */
+async function reglerAffichage(telepathie) {
+  const reglage = telepathie ? { afficher_papa: false, afficher_hakim: false, oreille: true, micro_hakim: true, chacun_son_tour: true, filtre_parole: true }
+    : { afficher_papa: true, afficher_hakim: true };
+  reglagesCorps = { ...reglagesCorps, ...reglage };
+  try { await fetch('/api/corps/reglages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify(reglage) }); } catch (_) {}
+}
+async function lancerConversation(telepathie) {
+  if (etat.conversation) return basculerConversation();     // en cours : le bouton la ferme
+  await reglerAffichage(telepathie);
+  $('telepathie').setAttribute('aria-pressed', telepathie ? 'true' : 'false');
+  journalVoix('conversation_mode', { mode: telepathie ? 'telepathie' : 'texte' });
+  rendre();
+  return basculerConversation();
+}
+$('conversation').addEventListener('click', () => lancerConversation(false));
+$('telepathie').addEventListener('click', () => lancerConversation(true));
 $('finConversation').addEventListener('click', (e) => { e.stopPropagation(); finirConversation(); });
 $('muet').addEventListener('click', basculerMuet);
 $('sonHakim').addEventListener('click', () => { couperSon(); });
