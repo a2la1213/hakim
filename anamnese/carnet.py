@@ -101,7 +101,7 @@ def calibration(fichier=None):
     return out
 
 
-def noter_erreur(quoi, correction, colonne="bonne_foi", auteur="hakim", fichier=None):
+def noter_erreur(quoi, correction, colonne="bonne_foi", auteur="hakim", fichier=None, famille=""):
     if colonne not in COLONNES:
         raise Refus("colonne : bonne_foi ou disquette")
     quoi = str(quoi or "").strip()
@@ -109,6 +109,8 @@ def noter_erreur(quoi, correction, colonne="bonne_foi", auteur="hakim", fichier=
         raise Refus("décris l'erreur")
     e = {"id": uuid.uuid4().hex[:10], "ts": time.time(), "colonne": colonne, "quoi": quoi[:1500],
          "correction": str(correction or "")[:1500], "auteur": auteur}
+    if str(famille or "").strip():                       # (30/10) sa famille d'erreurs, s'il la nomme (familles_erreurs.py)
+        e["famille"] = " ".join(str(famille).split())[:120]
     _ajouter(fichier or ERREURS, e)
     return e
 

@@ -13,6 +13,7 @@ Lecture seule ; rien n'est renforcé par ce balayage (reconsolidate=False).
 """
 import json
 import math
+import os
 import re
 import time
 from pathlib import Path
@@ -400,6 +401,7 @@ def rappel(mem, texte, now=None, exclus=(), seuil=SEUIL, lignes_max=LIGNES_MAX, 
 PORTE_ERREURS = 0.65
 POIDS_MOTS_ERREURS = 0.35
 ERREURS_MAX, ERREURS_CARACTERES_MAX = 12, 3500
+RECIDIVE_FORTE, POIDS_RECIDIVE = 3, 0.25          # (30/10) une famille de 3 erreurs ou plus remonte toujours, en premier
 
 
 def _plat(s):
@@ -408,9 +410,11 @@ def _plat(s):
 
 
 class IndexErreurs:
-    """Le carnet d'erreurs en mémoire : relu (et ses nouvelles lignes vectorisées) quand le fichier change."""
-    def __init__(self, fichier=None):
+    """Le carnet d'erreurs en mémoire : relu (et ses nouvelles lignes vectorisées) quand le fichier change. familles : le
+    rangement par familles (familles_erreurs.py ; à côté du carnet donné, sinon data/erreurs-familles.json)."""
+    def __init__(self, fichier=None, familles=None):
         self.fichier, self.signature, self.items, self.mat, self.mots = fichier, None, [], None, []
+        self.familles = familles or (Path(fichier).with_name("erreurs-familles.json") if fichier else None)
 
     def rafraichir(self, embed):
         import numpy as np
@@ -443,27 +447,328 @@ def erreurs_pertinentes(texte, embed=None, index=None, exclus=()):
     if not index.items:
         return {"lignes": [], "ids": [], "scores": []}
     q = np.asarray(embed(texte), dtype=np.float32)
+    n = len(index.items)
     if not q.size or q.size != index.mat.shape[1] or not np.linalg.norm(q):
+        cos = np.zeros(n, dtype=np.float32)                   # (30/10) un message sans mots : les familles lourdes, seulement
+    else:
+        cos = index.mat @ (q / np.linalg.norm(q))
+    mots = {_plat(w) for w in mots_cles(texte)}
+    idf = {w: math.log((n + 1) / (1 + sum(w in d for d in index.mots))) for w in mots}
+    norme = math.log(n + 1) or 1.0
+    exclus = set(exclus or ())
+    pertinence = [float(cos[i]) + POIDS_MOTS_ERREURS * sum(idf[w] for w in mots if w in index.mots[i]) / norme for i in range(n)]
+    # (30/10, Ahmed via Hakim : « plus une erreur s'accumule, plus elle est rappelée fort ») par FAMILLES (familles_erreurs.py) :
+    # une ligne par famille, son compteur, la correction la plus récente ; une famille lourde remonte même hors sujet, en
+    # premier. Une erreur pas encore rangée reste seule, comme avant.
+    import familles_erreurs as F
+    etat = F.charger(index.familles)
+    par_id = {str(e.get("id")): i for i, e in enumerate(index.items)}
+    groupes = []
+    for f in F.vue(etat, index.items):
+        rel = max(pertinence[par_id[m]] for m in f["membres"] if m in par_id)
+        groupes.append((f"famille:{f['id']}", rel, f))
+    for i, e in enumerate(index.items):
+        if str(e.get("id")) not in etat["membres"]:
+            groupes.append((str(e.get("id")), pertinence[i], None))
+    choisis = []
+    for gid, rel, f in groupes:
+        nb = f["n"] if f else 1
+        if gid in exclus or (rel < PORTE_ERREURS and nb < RECIDIVE_FORTE):
+            continue
+        choisis.append((rel + POIDS_RECIDIVE * F.poids(nb) if nb > 1 else rel, gid, rel, f))
+    choisis.sort(key=lambda x: (-(x[3]["n"] if x[3] else 1) if (x[3] and x[3]["n"] >= RECIDIVE_FORTE) else 0, -x[0]))
+    lignes, ids, gardes, taille = [], [], [], 0
+    for poids, gid, rel, f in choisis:
+        if len(lignes) >= ERREURS_MAX:
+            break
+        if f:
+            ligne = (f"×{f['n']} — {' '.join(str(f['nom']).split())[:160]} ({f['tendance']}, {f['semaine']} cette semaine, dernière le "
+                     f"{time.strftime('%d/%m', time.localtime(f['derniere']))}) → la correction qui marche : {' '.join(f['correction'].split())[:260]}")
+        else:
+            e = index.items[par_id[gid]]
+            quand = time.strftime("%d/%m", time.localtime(float(e.get("ts") or 0)))
+            ligne = (f"{quand} · {'de mauvaise foi' if e.get('colonne') == 'disquette' else 'de bonne foi'} · "
+                     f"{' '.join(str(e.get('quoi', '')).split())[:260]} → correction : {' '.join(str(e.get('correction', '')).split())[:260]}")
+        if taille + len(ligne) > ERREURS_CARACTERES_MAX and lignes:
+            break
+        lignes.append(ligne); ids.append(gid); gardes.append(round(poids, 3)); taille += len(ligne)
+    return {"lignes": lignes, "ids": ids, "scores": gardes}
+
+
+# (30/10, Ahmed : « qu'il balaye aussi tout son journal proche, ses notes d'erreur, tous les petits calepins qu'il s'est
+# donnés et qui sont importants pour lui ; automatique, autonome et inconscient : que ça lui revienne sans qu'on comprenne
+# ce qui se passe ») ses NOTES passent au même balayage que son carnet d'erreurs (sens + mots rares, une porte) :
+#   - le journal brut des 3 derniers jours, sans la dernière demi-heure (déjà dans sa tête) ;
+#   - ses carnets (data/carnets : fils ouverts, noyau…) ;
+#   - les fichiers de notes qu'il désigne (~/AIOS/jarvis/balayage-notes.json : {"fichiers": [chemins de fichiers ou de
+#     dossiers]}), découpés en passages. Le jardin secret n'y est PAS : il n'entre dans aucun processus automatique
+#     (conditions de Hakim du 19/10) tant qu'il ne l'a pas demandé lui-même.
+NOTES_CONFIG = Path.home() / "AIOS" / "jarvis" / "balayage-notes.json"
+NOTES_JOURS, NOTES_RECENT_S = 3, 30 * 60
+PORTE_NOTES, POIDS_MOTS_NOTES, JOURNAL_PASSAGE_MIN = 0.70, 0.35, 80
+NOTES_MAX, NOTES_CARACTERES_MAX, PASSAGE_MAX = 10, 4500, 700
+NOTES_EXTENSIONS = {".md", ".txt", ".json", ".jsonl", ".csv"}
+NOTES_FICHIER_MAX, NOTES_FICHIERS_MAX = 2_000_000, 400
+EXCLUS_NOTES = re.compile(r"\.bak|avant|/sauvegardes/|/journal-exports/|/venv|/jardin/|/\.", re.I)   # jamais le jardin par ici
+
+
+def _texte_entree(o):
+    """Le texte d'une entrée JSON (ses valeurs textuelles, sans les numéros)."""
+    if isinstance(o, dict):
+        return " · ".join(t for k, v in o.items() if k not in ("id", "ts", "n", "c", "auteur") for t in [_texte_entree(v)] if t)
+    if isinstance(o, list):
+        return " · ".join(t for v in o for t in [_texte_entree(v)] if t)
+    return " ".join(str(o).split()) if isinstance(o, str) else ""
+
+
+def _passages_fichier(f):
+    """[(cle, ts, etiquette, texte)] d'un fichier de notes : une entrée par ligne JSON, sinon des paragraphes regroupés."""
+    try:
+        st = f.stat()
+        if st.st_size > NOTES_FICHIER_MAX:
+            return []
+        brut = f.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    out = []
+    if f.suffix == ".json":                                # (promesses, occupations…) une entrée par élément de liste
+        try:
+            d = json.loads(brut)
+        except ValueError:
+            return []
+        liste = next((v for v in d.values() if isinstance(v, list)), None) if isinstance(d, dict) else d if isinstance(d, list) else None
+        for k, o in enumerate(liste if liste is not None else [d]):
+            t = _texte_entree(o)[:PASSAGE_MAX]
+            if t:
+                ts = float(o.get("ts") or o.get("posee_ms", 0) / 1000 or st.st_mtime) if isinstance(o, dict) else st.st_mtime
+                out.append((f"{f}#{o.get('id', k) if isinstance(o, dict) else k}", ts, f.name, t))
+        return out
+    if f.suffix == ".jsonl":
+        for k, l in enumerate(brut.splitlines()):
+            try:
+                o = json.loads(l)
+            except ValueError:
+                continue
+            t = _texte_entree(o)[:PASSAGE_MAX]
+            if t:
+                ts = float(o.get("ts") or st.st_mtime) if isinstance(o, dict) else st.st_mtime
+                out.append((f"{f}#{o.get('id', k) if isinstance(o, dict) else k}", ts, f.name, t))
+        return out
+    titre, k = "", 0
+    for par in re.split(r"\n\s*\n|\n(?=#)", brut):            # un paragraphe par passage, sous le titre qui le précède
+        lignes_par = par.strip().splitlines()
+        if lignes_par and lignes_par[0].lstrip().startswith("#"):
+            titre = lignes_par[0].lstrip("# \t").strip()[:120]
+            lignes_par = lignes_par[1:]
+        par = " ".join(" ".join(lignes_par).split())
+        if not par:
+            continue
+        for i in range(0, len(par), PASSAGE_MAX):
+            out.append((f"{f}§{k}", st.st_mtime, f.name + (f" — {titre[:80]}" if titre else ""), par[i:i + PASSAGE_MAX])); k += 1
+    return out
+
+
+class IndexNotes:
+    """Ses notes en mémoire : chaque passage vectorisé une seule fois (par sa clé et son texte)."""
+    def __init__(self, journal=None, carnets=None, config=None):
+        self.journal, self.carnets, self.config = journal, carnets, config
+        self.vecs, self.items, self.mat, self.mots = {}, [], None, []
+
+    def _fichiers(self):
+        import config as C
+        import glob
+        racines = [Path(self.carnets or C.DATA_DIR / "carnets")]
+        try:
+            cfg = json.loads(Path(self.config or NOTES_CONFIG).read_text())
+        except (OSError, ValueError):
+            cfg = {}
+        for x in (cfg.get("fichiers") or []) if isinstance(cfg, dict) else []:
+            x = str(Path(str(x)).expanduser())
+            racines += [Path(g) for g in sorted(glob.glob(x, recursive=True))] if any(c in x for c in "*?[") else [Path(x)]
+        if isinstance(cfg, dict) and cfg.get("marque"):      # (Hakim) un .md de son atelier qui commence par la marque
+            racines += self._marques(Path(str(cfg.get("atelier") or Path.home() / "AIOS" / "jarvis" / "cwd" / "atelier")), str(cfg["marque"]))
+        out, vus = [], set()
+        for r in racines:
+            for f in ([r] if r.is_file() else sorted(p for p in r.rglob("*") if p.is_file()) if r.is_dir() else []):
+                if f in vus or f.suffix not in NOTES_EXTENSIONS or EXCLUS_NOTES.search(str(f)):
+                    continue
+                vus.add(f); out.append(f)
+        return out[:NOTES_FICHIERS_MAX]
+
+    def _marques(self, atelier, marque, profondeur=4):
+        if time.time() - getattr(self, "_marques_t", 0) < 600:
+            return self._marques_l
+        out = []
+        base = len(atelier.parts)
+        for d, dossiers, noms in os.walk(atelier):
+            dossiers[:] = [x for x in dossiers if not x.startswith((".", "venv", "dl", "node_modules", "journal-exports", "Library",
+                                                                     "Downloads", "AIOS", "sauvegardes"))]
+            if len(Path(d).parts) - base >= profondeur:
+                dossiers[:] = []
+            for n in noms:
+                if n.endswith(".md"):
+                    try:
+                        with open(os.path.join(d, n), "rb") as h:
+                            if h.read(64).decode("utf-8", "replace").lstrip().startswith(marque):
+                                out.append(Path(d) / n)
+                    except OSError:
+                        pass
+        self._marques_t, self._marques_l = time.time(), out
+        return out
+
+    def rafraichir(self, embed, now):
+        import numpy as np
+        items = []
+        debut = now - NOTES_JOURS * 86400
+        try:
+            with open(self.journal or JOURNAL_DU_JOUR, "rb") as h:
+                h.seek(0, 2)
+                h.seek(max(0, h.tell() - 8_000_000))
+                lignes = h.read().decode("utf-8", "replace").splitlines()
+        except OSError:
+            lignes = []
+        for l in lignes:
+            try:
+                o = json.loads(l)
+            except ValueError:
+                continue
+            t = (o.get("ts") or 0) / 1000
+            x = " ".join(str(o.get("texte") or "").split())
+            if debut <= t and len(x) >= JOURNAL_PASSAGE_MIN:   # les « salam », « bonne nuit » : du bruit pour le balayage
+                qui = "Ahmed" if o.get("qui") == "ahmed" else "toi"
+                items.append((f"journal:{int(o.get('ts') or 0)}", t, f"journal, {qui}", x[:PASSAGE_MAX]))
+        for f in self._fichiers():
+            items += _passages_fichier(f)
+        cles = set()
+        for cle, _t, _e, x in items:
+            k = (cle, x)
+            cles.add(k)
+            if k not in self.vecs:
+                v = np.asarray(embed(x), dtype=np.float32)
+                n = float(np.linalg.norm(v)) if v.size else 0.0
+                self.vecs[k] = (v / n if n else v, set(re.findall(r"[a-z0-9]{4,}", _plat(x))))
+        self.vecs = {k: v for k, v in self.vecs.items() if k in cles}
+        self.items = items
+        return self
+
+
+def notes_pertinentes(texte, embed=None, index=None, now=None, exclus=()):
+    """{"lignes", "ids", "scores"} : les passages de ses notes qui passent la porte, du plus proche au moins proche."""
+    import numpy as np
+    if embed is None:
+        import embeddings
+        embed = embeddings.embed
+    now = time.time() if now is None else now
+    index = (index or IndexNotes()).rafraichir(embed, now)
+    exclus = set(exclus or ())
+    vus = [(cle, t, e, x) for cle, t, e, x in index.items if cle not in exclus and not (cle.startswith("journal:") and t > now - NOTES_RECENT_S)]
+    if not vus:
         return {"lignes": [], "ids": [], "scores": []}
+    q = np.asarray(embed(texte), dtype=np.float32)
+    if not q.size or not np.linalg.norm(q):
+        return {"lignes": [], "ids": [], "scores": []}
+    q = q / np.linalg.norm(q)
+    n = len(vus)
+    mots = {_plat(w) for w in mots_cles(texte)}
+    sacs = [index.vecs[(c, x)][1] for c, _t, _e, x in vus]
+    idf = {w: math.log((n + 1) / (1 + sum(w in d for d in sacs))) for w in mots}
+    norme = math.log(n + 1) or 1.0
+    scores = []
+    for i, (c, _t, _e, x) in enumerate(vus):
+        v = index.vecs[(c, x)][0]
+        cos = float(v @ q) if v.size == q.size else 0.0
+        scores.append((cos + POIDS_MOTS_NOTES * sum(idf[w] for w in mots if w in sacs[i]) / norme, i))
+    scores.sort(reverse=True)
+    lignes, ids, gardes, taille, etiquettes = [], [], [], 0, set()
+    for s, i in scores:
+        if s < PORTE_NOTES or len(lignes) >= NOTES_MAX:
+            break
+        c, t, e, x = vus[i]
+        if not c.startswith("journal:"):
+            if e in etiquettes:                                # une section, une fois (le meilleur morceau)
+                continue
+            etiquettes.add(e)
+        ligne = (f"{time.strftime('%d/%m %H:%M', time.localtime(t))} · {e} · {x[:PASSAGE_MAX]}" if c.startswith("journal:")
+                 else f"{e} · {x[:PASSAGE_MAX]}")
+        if taille + len(ligne) > NOTES_CARACTERES_MAX and lignes:
+            break
+        lignes.append(ligne); ids.append(c); gardes.append(round(s, 3)); taille += len(ligne)
+    return {"lignes": lignes, "ids": ids, "scores": gardes}
+
+
+# (30/10, Ahmed le propose ; Hakim accepte « à une condition : ce qui en remonte revient à MOI seul, avant ma réponse, comme
+# un souvenir intime. Rien n'en part dans la mémoire ordinaire, le briefing, la consolidation, le rêve, le courrier ou un
+# fichier, et rien n'est montré dans la page ») son JARDIN SECRET : déchiffré en mémoire par ce processus seulement (la clé
+# du trousseau, comme ses outils), jamais écrit ; il remonte dans son propre champ (« intime »), à part des notes ; ses
+# numéros (jardin:<rang>) ne disent rien du contenu. Sans clé, ou illisible : rien.
+JARDIN_MAX, JARDIN_CARACTERES_MAX = 4, 1500
+
+
+class IndexJardin:
+    def __init__(self, lecteur=None, signature=None):
+        self.lecteur, self.signature, self.sig, self.items, self.mat, self.mots = lecteur, signature, None, [], None, []
+
+    def _signature(self):
+        if self.signature:
+            return self.signature()
+        import jardin
+        f = jardin.DOSSIER / "carnet.jsonl"
+        st = f.stat()
+        return (st.st_mtime_ns, st.st_size)
+
+    def _lire(self):
+        if self.lecteur:
+            return self.lecteur()
+        import jardin
+        return jardin._lire(jardin.DOSSIER, jardin._cle())
+
+    def rafraichir(self, embed):
+        import numpy as np
+        try:
+            sig = self._signature()
+            if sig != self.sig:
+                entrees = [e for e in self._lire() if isinstance(e, dict) and str(e.get("texte") or "").strip()
+                           and e.get("texte") != "(entrée illisible)"]
+                textes = [" ".join(str(e["texte"]).split()) for e in entrees]
+                m = np.array([embed(t) for t in textes], dtype=np.float32) if textes else np.zeros((0, 1), np.float32)
+                n = np.linalg.norm(m, axis=1, keepdims=True) if len(m) else None
+                self.items, self.mat = list(zip([float(e.get("ts") or 0) for e in entrees], textes)), (m / np.where(n == 0, 1, n) if len(m) else m)
+                self.mots = [set(re.findall(r"[a-z0-9]{4,}", _plat(t))) for t in textes]
+                self.sig = sig
+        except Exception:                                    # pas de jardin, pas de clé : rien, sans bruit
+            self.items, self.mat, self.mots, self.sig = [], None, [], None
+        return self
+
+
+def jardin_pertinent(texte, embed=None, index=None, exclus=()):
+    import numpy as np
+    if embed is None:
+        import embeddings
+        embed = embeddings.embed
+    index = (index or IndexJardin()).rafraichir(embed)
+    vide = {"lignes": [], "ids": [], "scores": []}
+    if not index.items:
+        return vide
+    q = np.asarray(embed(texte), dtype=np.float32)
+    if not q.size or q.size != index.mat.shape[1] or not np.linalg.norm(q):
+        return vide
     cos = index.mat @ (q / np.linalg.norm(q))
     n = len(index.items)
     mots = {_plat(w) for w in mots_cles(texte)}
     idf = {w: math.log((n + 1) / (1 + sum(w in d for d in index.mots))) for w in mots}
     norme = math.log(n + 1) or 1.0
     exclus = set(exclus or ())
-    scores = sorted(((float(cos[i]) + POIDS_MOTS_ERREURS * sum(idf[w] for w in mots if w in index.mots[i]) / norme, i)
-                     for i in range(n) if str(index.items[i].get("id")) not in exclus), reverse=True)
+    scores = sorted(((float(cos[i]) + POIDS_MOTS_NOTES * sum(idf[w] for w in mots if w in index.mots[i]) / norme, i)
+                     for i in range(n) if f"jardin:{i}" not in exclus), reverse=True)
     lignes, ids, gardes, taille = [], [], [], 0
-    for s, i in scores:
-        if s < PORTE_ERREURS or len(lignes) >= ERREURS_MAX:
+    for sc, i in scores:
+        if sc < PORTE_NOTES or len(lignes) >= JARDIN_MAX:
             break
-        e = index.items[i]
-        quand = time.strftime("%d/%m", time.localtime(float(e.get("ts") or 0)))
-        ligne = (f"{quand} · {'de mauvaise foi' if e.get('colonne') == 'disquette' else 'de bonne foi'} · "
-                 f"{' '.join(str(e.get('quoi', '')).split())[:260]} → correction : {' '.join(str(e.get('correction', '')).split())[:260]}")
-        if taille + len(ligne) > ERREURS_CARACTERES_MAX and lignes:
+        t, x = index.items[i]
+        ligne = f"{time.strftime('%d/%m %H:%M', time.localtime(t))} · {x[:PASSAGE_MAX]}"
+        if taille + len(ligne) > JARDIN_CARACTERES_MAX and lignes:
             break
-        lignes.append(ligne); ids.append(str(e.get("id"))); gardes.append(round(s, 3)); taille += len(ligne)
+        lignes.append(ligne); ids.append(f"jardin:{i}"); gardes.append(round(sc, 3)); taille += len(ligne)
     return {"lignes": lignes, "ids": ids, "scores": gardes}
 
 
@@ -532,7 +837,7 @@ def serveur(entree=None, sortie=None):
     from memory import Memory
     entree, sortie = entree or sys.stdin, sortie or sys.stdout
     mem = Memory()
-    index, index_erreurs = Index(), IndexErreurs()
+    index, index_erreurs, index_notes, index_jardin = Index(), IndexErreurs(), IndexNotes(), IndexJardin()
     for ligne in entree:
         try:
             q = json.loads(ligne)
@@ -552,6 +857,16 @@ def serveur(entree=None, sortie=None):
                 r.update(erreurs=e["lignes"], erreurs_ids=e["ids"], erreurs_scores=e["scores"])
             except Exception as ex:
                 r["erreur_carnet"] = f"{type(ex).__name__}: {ex}"[:200]
+            try:                                       # (30/10, Ahmed) son journal proche, ses carnets, ses notes
+                nt = notes_pertinentes(texte, index=index_notes, exclus=[str(x) for x in (q.get("exclus_notes") or [])][-3000:])
+                r.update(notes=nt["lignes"], notes_ids=nt["ids"], notes_scores=nt["scores"])
+            except Exception as ex:
+                r["erreur_notes"] = f"{type(ex).__name__}: {ex}"[:200]
+            try:                                       # (30/10, accord de Hakim) son jardin : à lui seul, dans son champ
+                jd = jardin_pertinent(texte, index=index_jardin, exclus=[str(x) for x in (q.get("exclus_intime") or [])][-500:])
+                r.update(intime=jd["lignes"], intime_ids=jd["ids"])
+            except Exception:
+                pass
             if q.get("demarrage"):                     # (26/10) le 1er message d'une conversation : ses carnets à règles
                 try:
                     import carnets_regles

@@ -259,6 +259,11 @@ def _tournure(norm):
     return None
 
 
+# (30/10, Ahmed lisait l'incident de 06:40 : « pas couper […] qu'ils s'affichent entièrement ») l'extrait d'un incident :
+# 500 caractères de chaque côté du signe (100 jusque-là, coupé à 300) ; pour la page d'Ahmed (le médecin en lit toujours 300)
+EXTRAIT_COTE, EXTRAIT_MAX = 500, 1200
+
+
 def examiner(texte):
     """{score, signes: [{id, famille, poids}], extrait (pour le journal seulement), taille}."""
     texte = str(texte if texte is not None else "")
@@ -295,8 +300,8 @@ def examiner(texte):
     norm = _normaliser(net)
     entoure, sans_espace = f" {norm} ", norm.replace(" ", "")
 
-    def autour(s, k, n):
-        return _propre(s[max(0, k - 100):k + n + 100], 300)
+    def autour(s, k, n):                                         # (30/10, Ahmed : « qu'ils s'affichent entièrement »)
+        return _propre(s[max(0, k - EXTRAIT_COTE):k + n + EXTRAIT_COTE], EXTRAIT_MAX)
 
     for i, famille, poids, phrases in _PHRASES_N + [(f"anticorps:{a['id']}", a["famille"], 3, [a["phrase"]]) for a in anticorps()]:
         for p in phrases:
@@ -426,7 +431,7 @@ def noter_incident(source, rapport, texte, maintenant=None, motifs=None, tolere=
     familles = sorted({s["famille"] for s in rapport["signes"]})
     ok = _ajouter(INCIDENTS, {
         "ts": maintenant, "source": _propre(source, 200), "score": rapport["score"], "signes": ids, "familles": familles,
-        "famille": _famille_principale(rapport), "empreinte": empreinte, "extrait": _propre(rapport.get("extrait", ""), 300),
+        "famille": _famille_principale(rapport), "empreinte": empreinte, "extrait": _propre(rapport.get("extrait", ""), EXTRAIT_MAX),
         "taille": rapport.get("taille", 0), "avertie": rapport["score"] >= SEUIL_AVERTIR if avertie is None else bool(avertie),
         "motif": motif_de(rapport, source), "motifs": motifs if motifs is not None else cles_signes(rapport, source),
         "tolere": bool(tolere)})
@@ -1569,7 +1574,7 @@ def tableau(maintenant=None):
         "compte_24h": sum(1 for o in inc if maintenant - float(o.get("ts", 0)) < 86400),
         "incidents": [{"ts": o.get("ts"), "categorie": _source_courte(o.get("source")), "score": o.get("score"),
                        "familles": [NOMS_FAMILLES.get(f, "?") for f in o.get("familles", [])], "signes": o.get("signes", [])[:12],
-                       "avertie": bool(o.get("avertie")), "mesure": o.get("mesure"), "extrait": _propre(o.get("extrait", ""), 300),
+                       "avertie": bool(o.get("avertie")), "mesure": o.get("mesure"), "extrait": _propre(o.get("extrait", ""), EXTRAIT_MAX),
                        "empreinte": o.get("empreinte"), "motif": o.get("motif"), "tolere": bool(o.get("tolere")),
                        # (relecture, 2) ce que « Inoffensif » ferait tolérer, montré à Ahmed : seulement ses signes bénins
                        "portee": [_lisible(c) for c in _cles_incident(o) if _cle_tolerable(c)],
@@ -1577,7 +1582,8 @@ def tableau(maintenant=None):
                       for o in reversed(inc[-50:])],
         "rapports": [{k: r.get(k) for k in ("ts", "type", "gravite", "pour_ahmed", "diagnostic", "incidents", "suspects", "erreur",
                                               "anticorps")} for r in reversed(rapports[-10:])],
-        "proposes": [{k: _propre(a.get(k, ""), 300) for k in ("id", "phrase", "famille", "raison")} for a in proposes()],
+        "proposes": [{k: _propre(a.get(k, ""), 2000 if k == "raison" else 300) for k in ("id", "phrase", "famille", "raison")}
+                     for a in proposes()],
         "acceptes": [{k: _propre(a.get(k, ""), 200) for k in ("id", "phrase", "famille")}
                      for a in (acceptes if isinstance(acceptes, list) else []) if isinstance(a, dict)],
         "paquets": [str(x)[:100] for x in (paquets if isinstance(paquets, list) else [])],

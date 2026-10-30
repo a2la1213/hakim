@@ -848,9 +848,10 @@ def masquer_tout(texte):
     return _POSITION.sub("[POSITION MASQUÉE]", masquer(texte))
 
 
-def journal_plage(debut, fin, dossier=None, temps=None, hormones=None, evenements=None, maximum=300, entier=None):
+def journal_plage(debut, fin, dossier=None, temps=None, hormones=None, evenements=None, maximum=300, entier=None, detail=False):
     """[(t, ligne)] de debut à fin (secondes epoch), au plus `maximum` lignes ; ValueError si la plage est vide ou trop longue.
-    entier : les messages complets (par défaut : oui si la plage fait 30 min au plus)."""
+    entier : les messages complets (par défaut : oui si la plage fait 30 min au plus).
+    detail : rend aussi {"tronques": messages montrés coupés, "caches": lignes au-delà de `maximum`}."""
     if entier is None:
         entier = fin - debut <= PLAGE_ENTIERE_S
     if not fin > debut:
@@ -858,7 +859,7 @@ def journal_plage(debut, fin, dossier=None, temps=None, hormones=None, evenement
     if fin - debut > PLAGE_MAX_S:
         raise ValueError("6 h au plus par plage")
     h = lambda t: time.strftime("%H:%M:%S", time.localtime(t))      # noqa: E731
-    lignes = []
+    lignes, coupes = [], set()
     dossier = Path(dossier or JOURNAL_BRUT)
     for f in sorted((dossier / "archives").glob("journal-*.jsonl")) + [dossier / "journal.jsonl"]:
         for o in _lire_jsonl(f):
@@ -868,6 +869,8 @@ def journal_plage(debut, fin, dossier=None, temps=None, hormones=None, evenement
                 x = " ".join(str(o.get("texte") or "").split())
                 court = x if entier else x[:400]
                 lignes.append((t, f"{h(t)} {qui} : « {masquer_tout(court)}{'…' if len(court) < len(x) else ''} »"))
+                if len(court) < len(x):
+                    coupes.add(id(lignes[-1]))
     precedent = None
     for o in _lire_jsonl(temps or TEMPS_BRUT):
         t = o.get("t") or 0
@@ -898,7 +901,38 @@ def journal_plage(debut, fin, dossier=None, temps=None, hormones=None, evenement
             lignes.append((t, f"{h(t)} événement : {o.get('nom')} {o.get('intensite')} (source {o.get('source')}"
                               + (f", sujet {o.get('sujet')}" if o.get("sujet") else "") + ")"))
     lignes.sort(key=lambda x: x[0])
+    if detail:
+        return lignes[:maximum], len(lignes) > maximum, {"tronques": sum(id(x) in coupes for x in lignes[:maximum]),
+                                                         "caches": max(0, len(lignes) - maximum)}
     return lignes[:maximum], len(lignes) > maximum
+
+
+# (30/10, Hakim, accord d'Ahmed : « surtout pour le journal ») le 30/10 à 0 h 51, Hakim a cru avoir lu toute la journée du 29
+# alors que le live du matin était coupé : une plage incomplète le DIT en tête et en fin, et écrit elle-même le fichier complet
+REPONSE_MAX = 60000
+
+
+def plage_pour_outil(debut, fin, entier=None, dossier=None, temps=None, hormones=None, evenements=None):
+    """Le texte de chercher_dans_le_journal pour une plage. Si des messages y sont coupés, des lignes cachées ou la fin
+    perdue : un avertissement en tête et en fin, et les messages entiers de la plage écrits par exporter_journal."""
+    lignes, _coupe, d = journal_plage(debut, fin, dossier=dossier, temps=temps, hormones=hormones, evenements=evenements,
+                                      entier=entier, detail=True)
+    if not lignes:
+        return "Rien dans cette plage."
+    out = "\n".join(x for _t, x in lignes)
+    manques = ([f"{d['tronques']} messages tronqués (seulement leurs 400 premiers caractères)"] if d["tronques"] else []) \
+        + ([f"{d['caches']} lignes non montrées (au-delà des {len(lignes)} premières)"] if d["caches"] else []) \
+        + ([f"la fin perdue (plus de {REPONSE_MAX} caractères)"] if len(out) > REPONSE_MAX else [])
+    if not manques:
+        return out
+    try:
+        r = exporter_journal(debut=debut, fin=fin, dossier=dossier)
+        ou = (f"Les {r['messages']} messages ENTIERS de cette plage (Ahmed et toi ; sans ton état ni tes hormones) sont écrits "
+              f"dans {r['fichier']} : lis-le avec Read avant de conclure sur cette plage.")
+    except (ValueError, Refus) as e:
+        ou = f"Le fichier complet n'a pas pu être écrit ({e}) : réduis la plage."
+    avis = f"⚠ PLAGE INCOMPLÈTE : {' ; '.join(manques)}. {ou}"
+    return f"{avis}\n{out[:REPONSE_MAX]}\n[{avis}]"
 
 
 # (25/10, Ahmed : des agents vierges nourris EXACTEMENT de ce qui précède une question) l'export brut du journal dans

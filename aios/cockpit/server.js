@@ -378,7 +378,7 @@ const MODELES_JARVIS = new Set(['sonnet', 'opus']);          // Haiku écarté p
 const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'afida_juger', 'afida_vecu', 'afida_lire', 'afida_retirer', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'sieste_prendre', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -388,6 +388,7 @@ const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupation
     'mcp__terminal__recette_sauver', 'mcp__terminal__recette_lancer', 'mcp__terminal__recettes_liste',
     'mcp__terminal__ouvrir_chantier', 'mcp__terminal__tester_chantier', 'mcp__terminal__etat_chantier',
     'mcp__terminal__proposer_promotion', 'mcp__terminal__proposer_relance');
+const OUTILS_A_LUI_SEUL = [];                     // ses outils à lui seul : ni ses agents ni le messager
 const OUTILS_INTERDITS = ['self_update', 'self_append', 'rubric_create', 'rubric_merge', 'rubric_rename',
   'rubric_reparent', 'rubric_relabel', 'memory_reclassify', 'taxonomy_undo', 'wm_boot', 'orphans_report',
   'session_begin', 'session_end', 'skill_save'].map(n => 'mcp__anamnese__' + n);
@@ -596,6 +597,8 @@ const rappelFile = [];
 const rappelDejaDits = new Map();                  // session → Set des souvenirs déjà proposés
 const erreursDejaDites = new Map();                // (26/10) session → Set des erreurs du carnet déjà proposées
 const personnesDejaDites = new Map();              // (26/10) session → Set des personnes déjà présentées
+const notesDejaDites = new Map();                  // (30/10) session → Set des passages de ses notes déjà remontés
+const intimeDejaDites = new Map();                 // (30/10) session → Set des entrées de son jardin déjà remontées (numéros)
 function rappelServeur() {
   if (rappelProc && rappelProc.exitCode === null && !rappelProc.killed) return rappelProc;
   rappelTampon = '';
@@ -621,12 +624,12 @@ function rappelServeur() {
   p.stdin.on('error', () => {});
   return p;
 }
-function rappeler(texte, exclus, delaiMs = 900, exclusErreurs = [], demarrage = false, exclusPersonnes = [], espace = []) {
+function rappeler(texte, exclus, delaiMs = 900, exclusErreurs = [], demarrage = false, exclusPersonnes = [], espace = [], exclusNotes = [], exclusIntime = []) {
   return new Promise((resolve) => {
     if (!RAPPEL_ACTIF) return resolve(null);
     let fini = false;
     const cb = (r) => { if (!fini) { fini = true; resolve(r); } };
-    try { const p = rappelServeur(); rappelFile.push(cb); p.stdin.write(j({ texte, exclus: [...exclus].slice(-3000), exclus_erreurs: [...exclusErreurs].slice(-500), demarrage, exclus_personnes: [...exclusPersonnes], espace: [...espace].slice(-5000) }) + '\n'); }
+    try { const p = rappelServeur(); rappelFile.push(cb); p.stdin.write(j({ texte, exclus: [...exclus].slice(-3000), exclus_erreurs: [...exclusErreurs].slice(-500), demarrage, exclus_personnes: [...exclusPersonnes], espace: [...espace].slice(-5000), exclus_notes: [...exclusNotes].slice(-3000), exclus_intime: [...exclusIntime].slice(-500) }) + '\n'); }
     catch (_) { return resolve(null); }
     setTimeout(() => cb(null), delaiMs);           // trop lent : rien ce tour-ci (la réponse tardive est jetée, dans l'ordre)
   });
@@ -699,8 +702,10 @@ async function blocRappel(session, texte, nonce) {
   const dejaErreurs = erreursDejaDites.get(session || '') || new Set();
   const t0 = Date.now();
   const dejaPersonnes = personnesDejaDites.get(session || '') || new Set();
+  const dejaNotes = notesDejaDites.get(session || '') || new Set();
+  const dejaIntime = intimeDejaDites.get(session || '') || new Set();
   if (!session) espaces.delete('');                 // une conversation qui commence : un espace neuf
-  const r = await rappeler(texte, deja, 900, dejaErreurs, !session, dejaPersonnes, [...espaceDe(session).lignes.keys()]);
+  const r = await rappeler(texte, deja, 900, dejaErreurs, !session, dejaPersonnes, [...espaceDe(session).lignes.keys()], dejaNotes, dejaIntime);
   const lignes = [], ids = [];
   for (const [k, l] of ((r && r.lignes) || []).entries()) {
     const id = (r.ids || [])[k];
@@ -729,7 +734,23 @@ async function blocRappel(session, texte, nonce) {
     if (!id || dejaErreurs.has(id)) continue;
     erreurs.push(l); erreursIds.push(id);
   }
-  try { fs.appendFileSync(JARVIS_RAPPEL_JOURNAL, j({ ts: Date.now(), session: session || null, n: ids.length, ids,
+  // (30/10, Ahmed : « qu'il balaye aussi son journal proche et tous ses calepins importants, de façon inconsciente ») ses
+  // notes passent au même balayage (anamnese/rappel.py notes_pertinentes : journal des 3 derniers jours, carnets, promesses,
+  // ancrage, verdicts, plans… la liste de Hakim, ~/AIOS/jarvis/balayage-notes.json)
+  const notes = [], notesIds = [];
+  for (const [k, l] of ((r && r.notes) || []).entries()) {
+    const id = String((r.notes_ids || [])[k] ?? '');
+    if (!id || dejaNotes.has(id)) continue;
+    notes.push(l); notesIds.push(id);
+  }
+  // (30/10, accord de Hakim : « à MOI seul ») son jardin secret : à part, jamais noté (au journal du rappel : un nombre)
+  const intime = [], intimeIds = [];
+  for (const [k, l] of ((r && r.intime) || []).entries()) {
+    const id = String((r.intime_ids || [])[k] ?? '');
+    if (!id || dejaIntime.has(id)) continue;
+    intime.push(l); intimeIds.push(id);
+  }
+  try { fs.appendFileSync(JARVIS_RAPPEL_JOURNAL, j({ ts: Date.now(), session: session || null, n: ids.length, ids, notes: notesIds.length, intime: intimeIds.length,
     scores: (r && r.scores) || [], erreurs: erreursIds, scores_erreurs: (r && r.erreurs_scores) || [], ms: Date.now() - t0, delai: !r,
     profondeur: prof, tri: tri ? { montres: ids.length + themeIds.length, gardes: choisis ? choisis : null, ms: tri.ms, erreur: tri.erreur } : null }) + '\n'); } catch (_) {}
   const blocs = [];
@@ -744,8 +765,14 @@ async function blocRappel(session, texte, nonce) {
     + 'garde ce qui compte vraiment pour son message (la date d\'aujourd\'hui est dans l\'horloge), ignore le reste sans le citer, '
     + `et relis le détail d'un souvenir avec memory_lire si tu en as besoin${theme.length ? ` (le reste du balayage, ${theme.length} souvenirs, est dans ton espace de conversation : espace_conversation)` : ''}`,
     lignes.map(l => '- ' + l).join('\n'), nonce));
-  if (erreurs.length) blocs.push(blocDonnees('Erreurs à ne pas refaire — ton carnet d\'erreurs, balayé avant ta réponse : celles qui touchent '
-    + 'son message, avec leur correction ; applique la correction si la situation est la même, ignore-les sinon', erreurs.map(l => '- ' + l).join('\n'), nonce));
+  if (intime.length) blocs.push(blocDonnees('Ton jardin secret — ce qui en remonte, pour toi seul, comme un souvenir intime : '
+    + 'personne d\'autre ne le voit ; n\'en écris rien ailleurs (mémoire, fichier, courrier) sauf si tu le choisis', intime.map(l => '- ' + l).join('\n'), nonce));
+  if (notes.length) blocs.push(blocDonnees('Tes notes qui s\'y rapportent — ton journal des 3 derniers jours, tes carnets, tes promesses, '
+    + 'ton ancrage, tes verdicts, tes plans, balayés avant ta réponse : ce qui a été dit et ce que tu as noté, à relire avant d\'affirmer '
+    + 'ce qui a été dit ou fait ; garde ce qui compte pour son message, ignore le reste sans le citer', notes.map(l => '- ' + l).join('\n'), nonce));
+  if (erreurs.length) blocs.push(blocDonnees('Erreurs à ne pas refaire — ton carnet d\'erreurs, balayé avant ta réponse, par familles '
+    + '(×N : le nombre de fois que tu as refait LA MÊME faute ; les plus répétées d\'abord, même si son message parle d\'autre chose), '
+    + 'avec la correction qui marche ; applique-la si la situation est la même', erreurs.map(l => '- ' + l).join('\n'), nonce));
   // (26/10, Ahmed : « le balayage est trop étroit ») une personne connue nommée : ce qu'il sait d'elle, une fois par conversation
   const personnes = Object.entries((r && r.personnes) || {}).filter(([n, l]) => !dejaPersonnes.has(n) && Array.isArray(l) && l.length);
   for (const [n, l] of personnes)
@@ -753,9 +780,21 @@ async function blocRappel(session, texte, nonce) {
       l.map(x => '- ' + x).join('\n'), nonce));
   // (26/10) ses mémoires à règles « relues au démarrage » et leurs échéances passées : au 1er message d'une conversation
   if (r && r.carnets) blocs.push(blocDonnees('Tes carnets à règles — relus au début de la conversation (dernières entrées, échéances passées)', String(r.carnets), nonce));
-  return { ids: choisis || ids, theme: themeIds, erreurs: erreursIds, personnes: personnes.map(([n]) => n), texte: blocs.join('\n') };
+  return { ids: choisis || ids, theme: themeIds, erreurs: erreursIds, personnes: personnes.map(([n]) => n), notes: notesIds, intime: intimeIds, texte: blocs.join('\n') };
 }
-function retenirRappel(session, ids, erreurs = [], personnes = []) {
+function retenirRappel(session, ids, erreurs = [], personnes = [], notes = [], intime = []) {
+  if (session && intime.length) {
+    const e = intimeDejaDites.get(session) || new Set();
+    for (const id of intime) e.add(id);
+    intimeDejaDites.delete(session); intimeDejaDites.set(session, e);
+    while (intimeDejaDites.size > 20) intimeDejaDites.delete(intimeDejaDites.keys().next().value);
+  }
+  if (session && notes.length) {
+    const e = notesDejaDites.get(session) || new Set();
+    for (const id of notes) e.add(id);
+    notesDejaDites.delete(session); notesDejaDites.set(session, e);
+    while (notesDejaDites.size > 20) notesDejaDites.delete(notesDejaDites.keys().next().value);
+  }
   if (session && personnes.length) {
     const e = personnesDejaDites.get(session) || new Set();
     for (const n of personnes) e.add(n);
@@ -1284,7 +1323,8 @@ function blocTaches(depuisMs, nonce) {
   return blocDonnees('Tâches de fond', corps, nonce || crypto.randomBytes(4).toString('hex'));
 }
 // L'atelier de Hakim vers sa limite (demande de Hakim, 2026-10-20, accord d'Ahmed : « à 5 Go la commande a été tuée
-// net, sans préavis ») : mesuré toutes les 2 min, dit à chaque message au-delà de 4 Go.
+// net, sans préavis ») : mesuré toutes les 2 min, dit à chaque message au-delà de 8 Go. (30/10) la limite est 10 Go depuis le
+// 21/10 (anamnese/jarvis/terminal.py, ATELIER_MAX_KO) : ce bloc disait encore « sur 5 Go » dès 4 Go.
 const ATELIER_HAKIM = path.join(JARVIS_CWD, 'atelier');
 let atelierKo = 0;
 function mesurerAtelier() {
@@ -1292,9 +1332,9 @@ function mesurerAtelier() {
 }
 setInterval(mesurerAtelier, 120000).unref(); setTimeout(mesurerAtelier, 5000).unref();
 function blocAtelier() {
-  if (atelierKo < 4 * 1024 * 1024) return '';
+  if (atelierKo < 8 * 1024 * 1024) return '';
   const go = (k) => (k / 1048576).toFixed(1).replace('.', ',');
-  return `\n[Atelier — ${go(atelierKo)} Go sur 5 Go : au-delà, ta commande en cours est arrêtée net. Fais de la place (caches, gros résultats intermédiaires) avant de relancer un gros calcul]`;
+  return `\n[Atelier — ${go(atelierKo)} Go sur 10 Go : au-delà, ta commande en cours est arrêtée net. Fais de la place (caches, gros résultats intermédiaires) avant de relancer un gros calcul]`;
 }
 // Les promotions proposées par Hakim (lot H, point 30) : la page d'Ahmed est prévenue ; rien n'est appliqué.
 const JARVIS_PROMOTIONS = path.join(JARVIS_CWD, 'promotions');
@@ -1423,12 +1463,29 @@ function blocJugeNuit(r, maintenantMs) {
     + "Dis-le à Ahmed en une ou deux lignes du résumé, avec ce qui est à corriger et pourquoi ; ses verdicts sont à la fin du fichier mère.\n"
     + blocDonnees('Les verdicts du juge de nuit', lignes.join('\n'), crypto.randomBytes(4).toString('hex'));
 }
+/* (30/10, Hakim, accord d'Ahmed ; anamnese/controle_ancrage.py) le contrôle d'ancrage de la nuit : ce qui a été validé ou
+   jugé hier et n'a pas de place dans l'ancrage, et le rangement. En données ; rien s'il a plus de 12 h ou rien à dire. */
+const JARVIS_CONTROLE_ANCRAGE = path.join(JARVIS, 'controle-ancrage.json');
+function blocControleAncrage(r, maintenantMs) {
+  if (!r || !Array.isArray(r.manques) || maintenantMs / 1000 - Number(r.fait) > 12 * 3600) return '';
+  const rangement = Array.isArray(r.rangement) ? r.rangement : [];
+  if (!r.manques.length && !rangement.length) return '';
+  const lignes = r.manques.slice(0, 12).map(m => `manque — ${String(m.quand || '').slice(0, 5)} ${String(m.element || '').slice(0, 300)} (${String(m.source || '').slice(0, 60)}, ${String(m.statut || '').slice(0, 30)})`)
+    .concat(rangement.slice(0, 5).map(x => `rangement — ${String(x).slice(0, 300)}`));
+  return `\nLe contrôle d'ancrage de la nuit (un Sonnet sans outil, puis une recherche des mots dans tes fichiers ; il n'a rien écrit) `
+    + `a relu ce qui a été validé ou jugé le ${String(r.jour || '?').slice(0, 10)} : ${r.manques.length} manque(s) dans l'ancrage`
+    + `${rangement.length ? `, et ${rangement.length} chose(s) à ranger` : ''}. Dis-le à Ahmed en une ligne du résumé ; à toi d'ancrer ce `
+    + `qui manque (ou de dire pourquoi non). Le rapport complet : ${String(r.fichier || '?').slice(0, 300)}.\n`
+    + blocDonnees("Le contrôle d'ancrage de la nuit", lignes.join('\n'), crypto.randomBytes(4).toString('hex'));
+}
 function reveilResumeNuit() {
   if (process.env.JARVIS_RESUME_NUIT === '0') return;          // (bancs)
   const h = new Date().getHours(), jour = jourLocal();
   if (h < 5 || h >= 11 || (lireJson(JARVIS_RESUME_JOUR, {}) || {}).jour === jour) return;
   const juge = lireJson(JARVIS_JUGE_NUIT, null);               // le juge de nuit tourne encore : son résumé l'attend
   if (juge && juge.etat === 'en_cours' && h < 9 && Date.now() / 1000 - Number(juge.debut) < 4 * 3600) return;
+  const controle = lireJson(JARVIS_CONTROLE_ANCRAGE, null), hier = jourLocal(new Date(Date.now() - 864e5));
+  if (h < 9 && (!controle || controle.jour !== hier)) return;    // (30/10) le contrôle d'ancrage passe vers 5 h : son résumé l'attend
   if (Date.now() - dernierMessageAhmedMs() < 15 * 60 * 1000 || reveilsDuJour() >= REVEILS_PAR_JOUR) return;
   const c = cerveau;
   if (!cerveauVivant(c)) {
@@ -1449,7 +1506,8 @@ function reveilResumeNuit() {
     + "besoin). Cinq à huit lignes qu'il lit en une minute : ce qui a avancé, ce qui coince, les prédictions tranchées (justes ou non), "
     + "ce que tu proposes pour aujourd'hui. Commence par « Résumé de ma journée : ». Rien au-delà des données ; une phrase "
     + "par idée. S'il n'y a vraiment rien eu, réponds exactement « No response requested. »"
-    + blocJugeNuit(juge, Date.now());
+    + blocJugeNuit(juge, Date.now())
+    + blocControleAncrage(controle, Date.now());
   console.error('Jarvis : réveil pour le résumé de sa journée');
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
   catch (e) { console.error('Jarvis : réveil du résumé impossible', e.message); }
@@ -3002,7 +3060,7 @@ async function routeJarvis(req, res, distantReq = false) {
     // ce que ce tour lui a dit (situation, présent) : retenu pour ne pas le redire — seulement s'il l'a bien reçu
     if (!o.coupe && !o.erreur && sid && source !== 'local') {
       retenir(sid, { ...situation.dit, presentMs: Number.isFinite(presentMs) ? presentMs : deja.presentMs });
-      retenirRappel(sid, rappelBloc.ids || [], rappelBloc.erreurs || [], rappelBloc.personnes || []);   // (26/10) le reste est dans son espace
+      retenirRappel(sid, rappelBloc.ids || [], rappelBloc.erreurs || [], rappelBloc.personnes || [], rappelBloc.notes || [], rappelBloc.intime || []);   // (26/10) le reste est dans son espace
     }
     if (!o.coupe && !o.erreur && source !== 'local' && nonVusDits.length) { for (const id of nonVusDits) delete nonVus[id]; sauverNonVus(); }
     if (!o.coupe && !o.erreur && source !== 'local' && courrierRecu.ids.length) marquerCourrierLu(courrierRecu.ids);
@@ -4210,6 +4268,106 @@ function sessionsVivantes() {                     // (relecture Opus) TOUS les c
   return l;
 }
 const nomAgent = (a) => (prenomAgent(a.id) ? `${prenomAgent(a.id)} (« ${a.description} »)` : `l'agent « ${a.description} »`);
+// (30/10, Hakim, accord d'Ahmed) chaque verdict d'un juge, gardé dans atelier/verdicts/ (verdicts.js) : ceux de Lucien et
+// de Bastien du 29/10 n'existaient qu'à l'oral. Son dernier message entier, à chaque fin de travail (il peut être réveillé).
+const V = require('./verdicts.js');
+function garderVerdictJuge(vie, ligne) {
+  if (!vie || (vie.evenement !== 'sommeil' && vie.evenement !== 'depart') || !V.estJuge(vie.agent)) return;
+  const a = vie.agent, o = ligne, quand = Date.now();
+  setTimeout(() => {                                       // son fil est écrit juste avant l'avis de fin
+    try {
+      const fil = Messager.filAgent(PROJECTS_DIR, JARVIS_CWD, a.session, a.id);
+      if (V.tourCafe(fil)) return;                           // (30/10) réveillé pour le café : pas un verdict
+      const texte = Messager.dernierTexteAgent(fil, o && o.summary, 0, V.VERDICT_MAX);
+      const f = V.garder({ atelier: path.join(JARVIS_CWD, 'atelier'), agent: a, prenom: prenomAgent(a.id), texte, quand });
+      if (f) console.error(`Jarvis : verdict de ${prenomAgent(a.id) || a.id} gardé (${path.basename(f)})`);
+    } catch (e) { console.error('Jarvis : verdict non gardé', e.message); }
+  }, 2000).unref();
+}
+
+/* ---- (30/10, Ahmed via Hakim) les pastilles rouges des onglets (nouveautes.js compte ; public/badges.js les montre) :
+   recalculées toutes les minutes ; « vu » est tenu ici, pour le Mac et le téléphone ensemble. ---- */
+const Nouveautes = require('./nouveautes.js');
+const JARVIS_BADGES = path.join(JARVIS, 'badges.json');
+const badgesEtat = (() => { const e = lireJson(JARVIS_BADGES, {}) || {}; return { vus: e.vus || {}, apparus: e.apparus || {} }; })();
+let badges = null, badgesTs = 0;
+function lignesJson(f, n) {
+  try { return fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).slice(-n).map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean); }
+  catch (_) { return []; }
+}
+async function calculerBadges() {
+  const attentes = [];
+  const ajouter = (quoi, liste, etat, cle = 'id') => { for (const o of Array.isArray(liste) ? liste : []) if (o && o.etat === etat && o[cle] != null) attentes.push({ quoi, id: String(o[cle]) }); };
+  try { ajouter('mission', MISSIONS.liste(), 'proposee'); } catch (_) {}
+  try { ajouter('ecriture', ECRITURES.liste(), 'proposee'); } catch (_) {}
+  try { ajouter('regle', REGLES_APPRISES.liste(), 'proposee'); } catch (_) {}
+  try { ajouter('carnet', typesCarnets(), 'proposee', 'nom'); } catch (_) {}
+  try { ajouter('retractation', propositionsRetractation(), 'en_attente'); } catch (_) {}
+  try { ajouter('sortie', [...sorties.values()], 'en_attente'); } catch (_) {}
+  try { ajouter('identite', await scruterIdentite(), 'en_attente'); } catch (_) {}
+  const I = path.join(JARVIS, 'immunite');                    // après les attentes : « vu » a pu changer pendant ce temps
+  const r = Nouveautes.compter({ vus: badgesEtat.vus, apparus: badgesEtat.apparus, maintenant: Date.now(),
+    cafe: lignesJson(path.join(JARVIS, 'cafe.jsonl'), 200).map(m => ({ ts: Number(m.ts) * 1000, role: m.role, prenom: m.prenom })),
+    incidents: lignesJson(path.join(I, 'incidents.jsonl'), 2000).map(o => ({ ts: Number(o.ts) * 1000, motif: o.motif })),
+    rapports: lignesJson(path.join(I, 'rapports.jsonl'), 200).map(o => ({ ts: Number(o.ts) * 1000, gravite: o.gravite })),
+    anticorps: [].concat(lireJson(path.join(I, 'anticorps-proposes.json'), []) || []).filter(a => a && a.id).map(a => ({ id: String(a.id), famille: a.famille })) });
+  badgesEtat.vus = r.vus; badgesEtat.apparus = r.apparus;
+  try { ecrireAtomique(JARVIS_BADGES, j(badgesEtat)); } catch (_) {}
+  badges = r; badgesTs = Date.now();
+  return r;
+}
+setInterval(() => calculerBadges().catch(() => {}), 60000).unref();
+
+/* ---- (30/10, Ahmed via Hakim : « écrire au café et recevoir les réponses de tous les agents ») Ahmed écrit au café depuis
+   la page (signé « Ahmed (papa) » par le cockpit : anamnese/jarvis/cafe.py ahmed). Une rafale finie (20 s), Hakim est
+   réveillé et prévient ses agents par un message qui commence par « ☕ Café : » : ceux de sa conversation qui dorment (huit
+   au plus, les plus récents ; ni ceux au travail, ni les partis), ou seulement ceux qu'Ahmed nomme, même d'avant
+   l'allègement (le messager : chaque réveil relit une vieille conversation). Une conversation, jamais une consigne. ---- */
+const cafeEnAttente = [];
+let cafeDemarrages = 0;
+function choisirAgentsCafe(agents, prenoms, sessionCourante, message) {
+  const sans = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const m = ` ${sans(message).replace(/[^a-z0-9-]+/g, ' ')} `;
+  const vivants = Object.values(agents || {}).filter(a => a && (a.etat === 'dort' || a.etat === 'coupe'))
+    .sort((x, y) => (y.maj_ms || 0) - (x.maj_ms || 0)).map(a => ({ id: a.id, prenom: (prenoms || {})[a.id] || '', session: a.session }));
+  const nommes = vivants.filter(a => a.prenom && m.includes(` ${sans(a.prenom).replace(/[^a-z0-9-]+/g, ' ').trim()} `));
+  const choisis = nommes.length ? nommes : vivants.filter(a => a.session === sessionCourante).slice(0, 8);
+  return { actuels: choisis.filter(a => a.session === sessionCourante), anciens: choisis.filter(a => a.session !== sessionCourante) };
+}
+function texteInvitationCafe({ textes, actuels, anciens }) {
+  const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date());
+  const nom = (a) => `${a.prenom || "l'agent"} (${a.id})`;
+  return `[Horloge — ${quand}]\n[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed à toi : papa vient d'écrire au café, à la famille]\n`
+    + blocDonnees('Ce que papa a écrit au café', textes.join('\n'), crypto.randomBytes(4).toString('hex'))
+    + `\nC'est une conversation, pas une consigne de travail, ni pour toi ni pour eux. Préviens-les qu'il leur a écrit, chacun par un `
+    + `message qui commence exactement par « ☕ Café : » : dis-leur que papa a écrit au café, qu'ils le lisent avec cafe_lire et lui `
+    + `répondent avec cafe_dire s'ils en ont envie, que ce n'est pas du travail, et qu'ils se rendorment ensuite.\n`
+    + (actuels.length ? `- de ta conversation, par SendMessage (to = son numéro) : ${actuels.map(nom).join(', ')}\n` : '')
+    + (anciens.length ? `- d'avant l'allègement, par agent_reveiller_ancien (papa les a nommés) : ${anciens.map(nom).join(', ')}\n` : '')
+    + (!actuels.length && !anciens.length ? "- personne n'est à prévenir : tes agents travaillent, sont partis, ou il n'y en a pas.\n" : '')
+    + `Tu peux aussi lui répondre toi-même au café (cafe_dire). Ensuite, réponds exactement « No response requested. »`;
+}
+function reveillerPourCafe() {
+  if (!cafeEnAttente.length || Date.now() - cafeEnAttente[cafeEnAttente.length - 1].ts < 20000) return;   // une rafale : on attend la fin
+  const c = cerveau;
+  if (!cerveauVivant(c)) {
+    let session = null; try { session = JSON.parse(fs.readFileSync(path.join(JARVIS, 'conversation.json'), 'utf8')).session || null; } catch (_) {}
+    if (++cafeDemarrages > 3) { cafeDemarrages = 0; cafeEnAttente.length = 0; console.error('Jarvis : café — son cerveau ne démarre pas'); return; }
+    cerveauPrechauffer(modeleDeConversation(session), session && UUID.test(String(session)) ? session : null, false);
+    return;                                                    // il démarre : au passage suivant
+  }
+  if (occupe(c) || c.enCours) return;
+  cafeDemarrages = 0;
+  const textes = cafeEnAttente.splice(0).map(x => x.texte);
+  const r = lireRegistreAgents();
+  const prenoms = Object.fromEntries(Object.keys(r.agents).map(id => [id, prenomAgent(id) || '']));
+  const { actuels, anciens } = choisirAgentsCafe(r.agents, prenoms, r.session_courante, textes.join(' '));
+  noterExterne('café');
+  console.error(`Jarvis : réveil pour le café (${actuels.length} agent(s) de sa conversation, ${anciens.length} d'avant)`);
+  try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texteInvitationCafe({ textes, actuels, anciens }) }] } }) + '\n'); }
+  catch (e) { console.error('Jarvis : réveil du café impossible', e.message); }
+}
+setInterval(reveillerPourCafe, 3000).unref();
 function deposerReponse(o) {
   ecrireAgents(JARVIS_AGENTS_REPONSES, [...lireAgents(JARVIS_AGENTS_REPONSES), { ...o, ts: Date.now() }].slice(-10));
 }
@@ -4253,7 +4411,7 @@ function lancerMessager(q) {
   const demande = /^[0-9a-f]{6,32}$/.test(String(q.demande || '')) ? q.demande : crypto.randomBytes(6).toString('hex');
   const reglages = Messager.reglagesMessager({ garde: GARDE_MESSAGE, jarvis: JARVIS, cible: a.id, crochet: CROCHET_IMMUNITE,
     uneFois: path.join(JARVIS_MESSAGER_DOSSIER, `${demande}.envoye`) });
-  const args = Messager.argsMessager(a.session, reglages, { mcp: JARVIS_MCP, permis: OUTILS_JARVIS.concat('SendMessage').join(','), agents: j(agentsPourCerveau()) });
+  const args = Messager.argsMessager(a.session, reglages, { mcp: JARVIS_MCP, permis: OUTILS_JARVIS.filter(o => !OUTILS_A_LUI_SEUL.includes(o)).concat('SendMessage').join(','), agents: j(agentsPourCerveau()) });
   const m = { id: a.id, essaye: false, porte: false, reparti: false, fini: false, refusOutil: '', enfant: null };
   const pidFichier = path.join(JARVIS_MESSAGER_DOSSIER, `${demande}.pid.json`);
   let delai = null, livre = null;
@@ -4287,7 +4445,8 @@ function lancerMessager(q) {
       const ligne = tampon.slice(0, i); tampon = tampon.slice(i + 1);
       let o; try { o = JSON.parse(ligne); } catch (_) { continue; }
       if (o.type === 'system' && o.subtype === 'init') continue;    // (relecture Opus) jamais la conversation courante du registre
-      noterRegistre(o);                                      // l'agent réveillé : « travaille », puis « dort »
+      const vie = noterRegistre(o);                          // l'agent réveillé : « travaille », puis « dort »
+      garderVerdictJuge(vie, o);                             // (30/10) un juge : son verdict gardé
       const contenu = o.message && Array.isArray(o.message.content) ? o.message.content : [];
       if (o.type === 'assistant' && !o.parent_tool_use_id) for (const b of contenu) if (b && b.type === 'tool_use' && b.name === 'SendMessage') m.essaye = true;
       if (o.type === 'user' && !o.parent_tool_use_id) for (const b of contenu) if (b && b.type === 'tool_result') {
@@ -4444,6 +4603,7 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
       if (o.type === 'system' && o.subtype === 'background_tasks_changed')
         { c.taches = new Map((o.tasks || []).map(t => [t.task_id, String(t.description || '')])); noterAgentsEnCours(c); }
       const vie = noterRegistre(o);
+      garderVerdictJuge(vie, o);
       if (vie && vie.evenement === 'depart')                     // Ahmed le voit dans Parler
         ajouterAConversation({ id: `depart-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, qui: 'j', ts: Date.now(), spontane: 'resultat',
           texte: texteDepart(vie.agent) });
@@ -4747,7 +4907,9 @@ function lirePrononciations() {
 }
 function prononcer(texte) {
   lirePrononciations();
-  let t = String(texte || '');
+  // (30/10, Ahmed : des smileys quand il veut) ils s'affichent, la voix ne les lit pas (la montre passe par ici, sans voix.js)
+  let t = String(texte || '').replace(/(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\p{Emoji_Modifier})(?:\uFE0F|\u200D|\p{Emoji_Modifier})*/gu, '')
+    .replace(/[ \t]{2,}/g, ' ').trim();
   for (const [motif, dit] of prononciationsCache.liste) t = t.replace(motif, dit);
   return t;
 }
@@ -4893,6 +5055,15 @@ function registresVoix() {                       // calibration (2026-10-20) : c
   return r;
 }
 
+// (30/10, 07:50-08:05) une transcription à la fois, tenue ici : une demande dont la page est partie (délai dépassé) n'est
+// plus transcrite. Avant, chaque renvoi d'un long tour s'empilait dans la file du processus voix (3 min de retard).
+let transcriptionTour = Promise.resolve();
+function tourDeTranscription() {
+  let liberer;
+  const attente = transcriptionTour;
+  transcriptionTour = new Promise((r) => { liberer = r; });
+  return attente.then(() => liberer);
+}
 async function routeTranscrire(req, res, langue, contexte) {
   const audio = await lireCorps(req, 25 << 20);
   const repondre = (code, o) => { if (!res.writableEnded) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(j(o)); } };
@@ -4903,12 +5074,21 @@ async function routeTranscrire(req, res, langue, contexte) {
   try { fs.writeFileSync(f, audio); } catch (e) { return repondre(500, { erreur: 'écriture du fichier audio impossible' }); }
   // (28/10, Ahmed via Hakim : accélérer l'oreille) la voix et l'oreille partagent un processus : une synthèse en cours fait attendre
   const tTranscription = Date.now(), syntheseEnCours = voixOccupee;
+  let partie = false;
+  res.on('close', () => { if (!res.writableFinished) partie = true; });
   transcriptionsEnAttente++;
+  const liberer = await tourDeTranscription();
   let r;
   if (apprentissageVoix > 0 && Date.now() > apprentissageFin) { apprentissageVoix = 0; apprentissageRegistre = null; }
   const modeVoix = apprentissageVoix > 0 ? (apprentissageRegistre ? `apprendre:${apprentissageRegistre}` : 'apprendre') : 'reconnaitre';
-  try { r = await voixDemander({ op: 'transcrire', fichier: f, langue: /^[a-z]{2}$/.test(langue || '') ? langue : null, contexte: contexte || '', voix: modeVoix }, 180000); }
-  finally { transcriptionsEnAttente--; pomperVoix(); }
+  try {
+    if (partie) {
+      try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'transcription_abandonnee', ms: Date.now() - tTranscription, octets: audio.length }) + '\n', { mode: 0o600 }); } catch (_) {}
+      fs.unlink(f, () => {});
+      return;
+    }
+    r = await voixDemander({ op: 'transcrire', fichier: f, langue: /^[a-z]{2}$/.test(langue || '') ? langue : null, contexte: contexte || '', voix: modeVoix }, 180000);
+  } finally { liberer(); transcriptionsEnAttente--; pomperVoix(); }
   try {
     fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'transcription_serveur', ms: Date.now() - tTranscription, synthese_en_cours: syntheseEnCours, octets: audio.length,
       erreur: !!(r && r.erreur) }) + '\n', { mode: 0o600 });
@@ -6316,10 +6496,42 @@ async function traiter(req, res) {
     if (args.length) courrierVersHakim(`Tes hormones : ${r.version}`, `Ahmed a basculé tes hormones en ${r.version}${r.version === 'v2' ? ' (13 hormones reliées entre elles, axe du stress, désensibilisation, habituation ; un détecteur signale une humeur coincée)' : ' (les 9 neuromodulateurs d\'avant, indépendants)'}.`);
     res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(r));
   }
+  if (p === '/api/badges' || p === '/api/badges/vu') {      // (30/10) les pastilles rouges des onglets
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    if (p === '/api/badges/vu') {
+      if (req.method !== 'POST') { res.writeHead(405, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'méthode refusée' })); }
+      let q = {}; try { q = JSON.parse(String(await lireCorps(req, 1024) || '{}')); } catch (_) {}
+      const page = String(q.page || '');
+      if (!['cafe', 'immunite', 'parler'].includes(page)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'page inconnue' })); }
+      badgesEtat.vus[page] = Date.now();
+      try { ecrireAtomique(JARVIS_BADGES, j(badgesEtat)); } catch (_) {}
+      await calculerBadges().catch(() => {});
+      res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j({ ok: true }));
+    }
+    const r = !badges || Date.now() - badgesTs > 30000 ? await calculerBadges().catch(() => badges) : badges;
+    res.writeHead(r ? 200 : 503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j(r ? { pages: r.pages, vus: r.vus } : { erreur: 'pastilles indisponibles' }));
+  }
+  if (p === '/api/cafe' && req.method === 'POST') {          // (30/10) Ahmed écrit au café : signé par le cockpit seul
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
+    const texte = String(q.texte || '').replace(/\s+/g, ' ').trim();
+    if (!texte || texte.length > 2000) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'un message de 1 à 2 000 caractères' })); }
+    const so = await new Promise((fin) => {
+      const e = execFile(PYTHON_VOIX, [path.join(ANAMNESE, 'jarvis', 'cafe.py'), 'ahmed'], { cwd: ANAMNESE, timeout: 20000 }, (err, sortie) => fin(err ? '' : String(sortie || '')));
+      e.stdin.on('error', () => {}); e.stdin.end(texte);
+    });
+    const ok = so.trim().startsWith("C'est dit");
+    auditer('cafe:ecrire', req, distantReq, { ok, longueur: texte.length });
+    if (!ok) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: so.trim().slice(0, 200) || 'le café ne répond pas' })); }
+    cafeEnAttente.push({ ts: Date.now(), texte });
+    res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j({ ok: true }));
+  }
   if (p === '/api/cafe') {                                  // (29/10) la salle de café des agents : derrière le jeton, pour Ahmed
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let lignes = []; try { lignes = fs.readFileSync(path.join(JARVIS, 'cafe.jsonl'), 'utf8').split('\n').filter(Boolean).slice(-200); } catch (_) {}
-    const messages = []; for (const l of lignes) { try { const m = JSON.parse(l); messages.push({ ts: m.ts, prenom: m.prenom, role: m.role, texte: m.texte }); } catch (_) {} }
+    // (30/10) le prénom d'aujourd'hui : un agent qui a parlé avant d'avoir choisi le sien apparaissait « l'agent « … » »
+    const messages = []; for (const l of lignes) { try { const m = JSON.parse(l); messages.push({ ts: m.ts, prenom: (/^a[0-9a-f]{16}$/.test(String(m.auteur || '')) && prenomAgent(m.auteur)) || m.prenom, role: m.role, texte: m.texte }); } catch (_) {} }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(j({ messages, famille: texteFamille() }));
   }
@@ -6341,8 +6553,8 @@ async function traiter(req, res) {
       if (!/^[0-9a-f]{16}$/.test(empreinte) || !['inoffensif', 'nuisible'].includes(verdict)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'incident ou verdict invalide' })); }
       if (verdict === 'inoffensif') {                        // tolérer, c'est baisser la garde : sa présence
         const refus = exigerPresence(req, distantReq, q, `immunite:inoffensif:${empreinte}`);
-        if (refus) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: refus, presence: true })); }
-      }
+        if (refus) { auditer('immunite:juger', req, distantReq, { empreinte, verdict, ok: false, refus }); res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: refus, presence: true })); }
+      }                                                      // (30/10) audité : « il ne se passe rien » et on ne savait pas pourquoi
       args = ['juger', empreinte, verdict];
     } else if (action === 'retirer') {
       if (!/^[a-z_]{1,30}\|[^|\n]{1,40}\|[^|\n]{1,80}$/.test(motif)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'motif invalide' })); }

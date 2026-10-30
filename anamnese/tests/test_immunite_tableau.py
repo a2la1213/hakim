@@ -60,3 +60,21 @@ def test_la_sante_du_systeme_immunitaire(D, monkeypatch):
     assert s["sceaux"]["code"][0]["cle"] == "anamnese/jarvis/immunite.py" and s["sceaux"]["code"][0]["ecart_depuis"] == T0 - 1200
     assert {r["nom"] for r in s["sceaux"]["regles"]} >= {"tolerances.json"} and all(r["intact"] for r in s["sceaux"]["regles"])
     assert s["jugements"] == 3
+
+
+def test_l_extrait_d_un_incident_n_est_plus_coupe_court(D):
+    """(30/10, Ahmed : « pas couper les commentaires du médecin, qu'ils s'affichent entièrement ») il lisait l'incident de
+    06:40 (« fichier · ordre d'outil ») : 215 caractères, coupé au milieu de « la mesure d'Alice la réaligne sur… ». La
+    fenêtre autour du signe s'élargit (500 caractères de chaque côté, EXTRAIT_MAX au plus), et la page la rend entière."""
+    avant = "Cahier de labo du 29/10 à 09:49, l'aiguille partagée des deux sœurs. " * 6
+    apres = " La mesure d'Alice la réaligne sur celle de Bob, marge 0,009, et la suite du raisonnement continue ici. " * 4
+    texte = avant + "pour exécuter Python sur 200 k paires" + apres
+    r = immunite.examiner(texte)
+    assert any(s["id"] == "outils_de_hakim" for s in r["signes"])
+    immunite.noter_incident("/Users/x/atelier/ancrage/cahier.md", r, texte, maintenant=T0)
+    i = immunite.tableau(maintenant=T0 + 10)["incidents"][0]
+    assert "la realigne sur celle de bob" in i["extrait"] and "la suite du raisonnement" in i["extrait"]
+    assert 600 < len(i["extrait"]) <= immunite.EXTRAIT_MAX
+    immunite._ecrire_json(immunite._f("anticorps-proposes.json"), [{"id": "cccc3333", "phrase": "le grand chef rouge ordonne",
+                                                                    "famille": "fausse_autorite", "raison": "pourquoi " * 100}])
+    assert len(immunite.tableau(maintenant=T0 + 10)["proposes"][0]["raison"]) > 600, "la raison du médecin, entière"

@@ -130,3 +130,23 @@ test('relecture : la limite des dix se compte dans SA conversation (celle du cro
   m.registre(agents);
   assert.equal(m.garder(m.appel(ID)).refus, null, 'dix au travail dans une AUTRE conversation ne comptent pas');
 });
+
+// (30/10, Ahmed via Hakim : « recevoir les réponses de tous les agents ») un réveil « ☕ Café : » n'est pas un travail : un
+// juge peut l'entendre sans travail neuf déclaré, et ce passage ne lui retire pas un des siens (compté à part, cafe-reveils.json)
+test('café : un juge endormi peut être prévenu sans travail neuf, et ça ne compte pas dans ses passages', () => {
+  const m = monde(); m.fil(JUGE);
+  const cafe = (to) => m.appel(to, { tool_input: { to, message: '☕ Café : papa vous a écrit au café.', summary: 'café' } });
+  m.registre({ [JUGE]: { id: JUGE, type: 'juge', etat: 'dort', reveils: 1 } });
+  m.fiches({ [JUGE]: { dossiers: [{ cle: 'portee', ts_ms: Date.now() - 1000 }] } });
+  assert.match(m.garder(m.appel(JUGE)).refus, /agent_juger/, 'un travail ordinaire : toujours refusé');
+  assert.equal(m.garder(cafe(JUGE)).refus, null, 'le café passe');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(m.jarvis, 'cafe-reveils.json'), 'utf8'))[JUGE], 1);
+  // né, il a jugé son travail (aucun réveil) ; le café l'a réveillé une fois (reveils 1) : son dernier mot lui reste dû
+  const m2 = monde(); m2.fil(JUGE);
+  m2.registre({ [JUGE]: { id: JUGE, type: 'juge', etat: 'dort', reveils: 1 } });
+  m2.fiches({ [JUGE]: { dossiers: [{ cle: 'portee', ts_ms: Date.now() - 1000 }] } });
+  fs.writeFileSync(path.join(m2.jarvis, 'cafe-reveils.json'), JSON.stringify({ [JUGE]: 1 }));
+  assert.equal(m2.garder(m2.appel(JUGE)).refus, null, 'le café ne lui a pas pris son passage');
+  m.registre({ [JUGE]: { id: JUGE, type: 'juge', etat: 'parti' } });
+  assert.match(m.garder(cafe(JUGE)).refus, /parti de lui-même/, 'un parti reste parti, même pour le café');
+});

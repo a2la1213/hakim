@@ -147,7 +147,7 @@ def test_incident_note_une_fois_dans_un_dossier_ferme(D):
     i = inc[0]
     assert i["score"] >= immunite.SEUIL_AVERTIR and i["avertie"] is True
     assert "\x1b" not in i["source"] and "⟦" not in i["source"] and len(i["source"]) <= 200
-    assert len(i["extrait"]) <= 300 and "\x07" not in i["extrait"]
+    assert len(i["extrait"]) <= immunite.EXTRAIT_MAX and "\x07" not in i["extrait"]
     assert stat.S_IMODE(os.stat(D).st_mode) == 0o700
     assert stat.S_IMODE(os.stat(D / "incidents.jsonl").st_mode) == 0o600
 

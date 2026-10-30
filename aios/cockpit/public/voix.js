@@ -231,7 +231,7 @@
       .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '$1')        // [site](adresse) → site
       .replace(/https?:\/\/\S+/g, 'un lien')
       .replace(/\*\*|__|\*|`/g, '')
-      .replace(/\p{Extended_Pictographic}️?/gu, '');
+      .replace(/(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\p{Emoji_Modifier})(?:\uFE0F|\u200D|\p{Emoji_Modifier})*/gu, '');   // (30/10) drapeaux et teintes aussi
     const lignes = t.split('\n')
       .map(l => l.replace(/^\s*(?:#{1,6}\s+|[-•]\s+|\d+[.)]\s+|>\s*)/, '').replace(/\s+/g, ' ').trim())
       .filter(Boolean);

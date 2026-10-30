@@ -162,7 +162,7 @@ test('relecture : en mode messager, le fil principal ne peut que porter ; les ou
 
 test('relecture : branché — pas d’init qui écrase la conversation courante, erreur de lancement gérée, arrêt sûr, cadre de données', () => {
   const l = prendre('lancerMessager');
-  assert.match(l, /if \(o\.type === 'system' && o\.subtype === 'init'\) continue;[^\n]*\n\s*noterRegistre\(o\);/);
+  assert.match(l, /if \(o\.type === 'system' && o\.subtype === 'init'\) continue;[^\n]*\n\s*(const vie = )?noterRegistre\(o\);/);   // (30/10) vie : le verdict d'un juge
   assert.match(l, /enfant\.on\('error', /);
   assert.match(l, /tuer\(m\.enfant, /);
   assert.match(l, /noterJetons\(/);

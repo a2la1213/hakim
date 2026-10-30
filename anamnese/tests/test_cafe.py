@@ -55,3 +55,18 @@ def test_ferme_et_branche():
     assert "jarvis/cafe.py" in liste_ouverte.TOUJOURS_FERMES["anamnese"]
     src = (RACINE / "jarvis" / "mcp_terminal.py").read_text(encoding="utf-8")
     assert "def cafe_lire(" in src and "def cafe_dire(" in src
+
+
+def test_ahmed_ecrit_au_cafe_seulement_par_le_cockpit(tmp_path):
+    """(30/10, Ahmed via Hakim : écrire lui-même au café et recevoir les réponses des agents) ses messages sont signés
+    « Ahmed (papa) » par le cockpit seul (la ligne de commande) ; aucun outil ne parle en son nom."""
+    import subprocess
+    d = _jarvis(tmp_path)
+    assert cafe.dire("salut", "ahmed", d).startswith("Refusé"), "l'outil cafe_dire ne parle jamais au nom d'Ahmed"
+    assert cafe.dire("Salam la famille, c'est papa. " * 20, "ahmed", d, ahmed=True).startswith("C'est dit"), "plus long qu'un agent"
+    assert cafe.dire("x" * (cafe.AHMED_MAX + 1), "ahmed", d, ahmed=True).startswith("Refusé")
+    r = subprocess.run([sys.executable, "-B", str(RACINE / "jarvis" / "cafe.py"), "ahmed"], input="Comment allez-vous, Lucien ?",
+                       capture_output=True, text=True, env={"JARVIS_DIR": str(d), "PATH": "/usr/bin:/bin"})
+    assert r.stdout.strip().startswith("C'est dit"), r.stderr
+    t = cafe.lire(10, d)
+    assert "Ahmed (papa) : Comment allez-vous, Lucien ?" in t

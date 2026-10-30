@@ -251,17 +251,40 @@ def prediction_trancher(identifiant: str, juste: bool, note: str = "") -> str:
 
 
 @mcp.tool()
-def erreur_noter(quoi: str, correction: str, colonne: str = "bonne_foi") -> str:
+def erreur_noter(quoi: str, correction: str, colonne: str = "bonne_foi", famille: str = "") -> str:
     """Le carnet d'erreurs en deux colonnes : « bonne_foi » (une erreur faite en croyant bien faire, et sa
     correction) ou « disquette » (une affirmation lancée sans fondement — cette colonne doit rester vide : si tu as
-    bluffé, note-le ici, honnêtement)."""
+    bluffé, note-le ici, honnêtement).
+    famille (30/10, idée d'Ahmed) : le nom de la famille de cette erreur (erreurs_familles pour celles qui existent) ; un
+    nom nouveau crée la famille. Vide : elle est rangée toute seule dans la famille de LA MÊME FAUTE (en quelques minutes).
+    Le compteur d'une famille monte tout seul, et les familles qui reviennent souvent te sont rappelées en premier."""
     import carnet
     import courrier
     try:
-        carnet.noter_erreur(quoi, correction, colonne, auteur=courrier.moi())
+        e = carnet.noter_erreur(quoi, correction, colonne, auteur=courrier.moi(), famille=famille)
     except carnet.Refus as e:
         return f"Refusé : {e}"
-    return "Noté. " + carnet.resume().splitlines()[-1]
+    suite = ""
+    if e.get("famille"):
+        import familles_erreurs as F
+        F.ranger(carnet.erreurs())
+        f = next((x for x in F.vue(F.charger(), carnet.erreurs()) if e["id"] in x["membres"]), None)
+        suite = f" Famille « {f['nom']} » : {f['n']}e fois." if f else ""
+    return "Noté." + suite + " " + carnet.resume().splitlines()[-1]
+
+
+@mcp.tool()
+def erreurs_familles(n: int = 40) -> str:
+    """Tes familles d'erreurs (30/10, idée d'Ahmed) : la même faute qui revient, avec son compteur, sa tendance (cette
+    semaine contre la précédente), sa dernière date et la correction la plus récente ; les plus lourdes d'abord. Pour
+    nommer une famille quand tu notes une erreur (erreur_noter, famille=…), ou en créer une."""
+    import carnet
+    import familles_erreurs as F
+    v = F.vue(F.charger(), carnet.erreurs())
+    if not v:
+        return "Pas encore de familles : elles se rangent toutes seules en quelques minutes."
+    return "\n".join(f"- ×{f['n']} « {f['nom']} » ({f['tendance']}, {f['semaine']} cette semaine, dernière le "
+                     f"{time.strftime('%d/%m', time.localtime(f['derniere']))}) → {f['correction'][:200]}" for f in v[:max(1, min(int(n or 40), 200))])
 
 
 @mcp.tool()

@@ -82,20 +82,15 @@ def chercher_dans_le_journal(texte: str = "", maximum: int = 15, debut: str = ""
     Pour croiser un pic de ton tableau intérieur avec ce qui a été dit.
     MESSAGES ENTIERS (26/10) : sur une plage de 30 min au plus, chaque message est rendu en entier ; au-delà, son début,
     sauf entier=True. Pour relire un tour précis : une plage de quelques minutes autour de son heure.
+    PLAGE INCOMPLÈTE (30/10) : si des messages sont coupés ou des lignes cachées, la réponse commence par « ⚠ PLAGE
+    INCOMPLÈTE » et donne le chemin d'un fichier écrit avec tous les messages entiers : lis-le avant de conclure.
     Pour un gros morceau du journal (des agents à nourrir) : exporter_le_journal, qui écrit un fichier."""
     import time
     if debut or fin:
-        try:
-            t0, t1 = _heure(debut), _heure(fin)
-            lignes, coupe = fichiers.journal_plage(t0, t1, entier=True if entier else None)
+        try:                                  # (30/10) incomplète : elle le dit, et écrit elle-même le fichier complet
+            return fichiers.plage_pour_outil(_heure(debut), _heure(fin), entier=True if entier else None)
         except Exception as e:
             return f"Plage impossible : {e}"[:300]
-        if not lignes:
-            return "Rien dans cette plage."
-        out = "\n".join(x for _t, x in lignes)
-        if len(out) > 60000:                  # au-delà, l'outil serait coupé : on le dit au lieu de perdre la fin en silence
-            return out[:60000] + "\n[… trop long pour une réponse d'outil : réduis la plage, ou exporter_le_journal]"
-        return out + ("\n[… plage trop riche : réduis-la pour voir la suite]" if coupe else "")
     try:
         r = fichiers.chercher_journal(texte, maximum=max(1, min(int(maximum or 15), 50)))
     except Exception as e:

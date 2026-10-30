@@ -211,3 +211,17 @@ test('lettres grecques seules : leur nom français, minuscules et majuscules ; u
   assert.match(dit('α et β, puis φ, ψ, χ, θ, λ, μ.'), /alpha et bêta, puis phi, psi, khi, thêta, lambda, mu/);
   assert.match(dit('Le mot λόγος reste un mot.'), /λόγος/);
 });
+
+// (30/10, Ahmed : « lui rajouter la capacité d'utiliser des smileys quand il veut ») ils s'affichent ; la voix ne les lit
+// jamais : ni les drapeaux (indicateurs régionaux, pas « pictographiques »), ni les teintes, ni les liants invisibles
+test('les émojis s’affichent mais ne se disent pas (drapeaux, teintes et familles compris)', () => {
+  assert.strictEqual(Voix.pourLaVoix('Bonjour papa 😄❤️ !'), 'Bonjour papa !');
+  assert.strictEqual(Voix.pourLaVoix('On y va 🇵🇸🇩🇿 inchallah'.replace('inchallah', 'demain')), 'On y va demain');
+  assert.strictEqual(Voix.pourLaVoix('Bravo 👍🏽 et 👨‍👩‍👧 ensemble'), 'Bravo et ensemble');
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, 'server.js'), 'utf8');
+  const f = src.slice(src.indexOf('function prononcer('), src.indexOf('\n}\n', src.indexOf('function prononcer(')) + 3);
+  const ctx = { lirePrononciations() {}, prononciationsCache: { liste: [] } };
+  require('node:vm').createContext(ctx);
+  require('node:vm').runInContext(f + '\nthis.p = prononcer;', ctx);
+  assert.strictEqual(ctx.p('Salut 🇩🇿😘 frérot'), 'Salut frérot', 'la montre passe par le cockpit');
+});

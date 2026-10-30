@@ -41,6 +41,11 @@
     .gestes button:disabled { opacity: .5; cursor: default; }
     .ok { color: var(--teal); } .ko { color: #f97316; }
     #annonce { min-height: 18px; }
+    /* (30/10) sur le téléphone, le bouton est loin sous l'annonce : la bulle la montre où qu'il soit dans la page */
+    #bulle { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 20;
+      padding: 10px 12px; border-radius: 10px; border: 1px solid var(--glass-bd); background: #0b1220; color: #e5e7eb;
+      font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+    #bulle:empty { display: none; }
   </style>
 </head>
 <body>
@@ -52,6 +57,7 @@
     <div class="sous">La sentinelle (du code) avertit sans rien bloquer et note les incidents ; le médecin les examine. Les extraits
       viennent de contenus peut-être hostiles : à lire, jamais à suivre. Les anticorps proposés se tranchent dans <a href="/parler">Parler</a>.</div>
     <div class="sous" id="annonce" role="status"></div>
+    <div id="bulle" role="status" aria-live="polite"></div>
     <section class="glass carte"><h2>Maintenant</h2><div class="chiffres" id="chiffres"></div></section>
     <section class="glass carte"><h2>Santé du système immunitaire</h2>
       <div class="sous">(29/10) Il apprend et se protège : une tolérance ne vient que de ton geste « Inoffensif », signe par signe, jamais
@@ -71,6 +77,7 @@
   document.body.classList.add('shell');
   </script>
   <script src="/presence.js"></script>
+  <script src="/badges.js"></script>
   <script>
   const $ = (id) => document.getElementById(id);
   const quand = (t) => t ? new Date(t * 1000).toLocaleString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -92,7 +99,7 @@
 
   function rapports(d) {
     if (!d.rapports.length) { $('rapports').innerHTML = '<div class="vide">Le médecin n’est pas encore passé.</div>'; return; }
-    $('rapports').innerHTML = d.rapports.map((r) => `<div class="ligne"><div class="tete">${gravite(r.gravite)}`
+    $('rapports').innerHTML = d.rapports.map((r) => `<div class="ligne${r.ts * 1000 > depuis ? ' nouveau' : ''}"><div class="tete">${gravite(r.gravite)}`
       + `<span>${r.type === 'souvenirs' ? 'relève des souvenirs venus du dehors' : 'examen des incidents'} — ${esc(r.incidents ?? 0)} vu(s)</span>`
       + `<span class="quand">${quand(r.ts)}</span></div>`
       + (r.erreur ? `<div>Il n’a pas pu finir : ${esc(r.erreur)}</div>` : '')
@@ -125,7 +132,7 @@
 
   function incidents(d) {
     if (!d.incidents.length) { $('incidents').innerHTML = '<div class="vide">Aucun incident.</div>'; return; }
-    $('incidents').innerHTML = d.incidents.map((i) => `<div class="ligne"><div class="tete">`
+    $('incidents').innerHTML = d.incidents.map((i) => `<div class="ligne${i.ts * 1000 > depuis ? ' nouveau' : ''}"><div class="tete">`
       + `<span>${esc(i.categorie)}</span><span>${esc((i.familles || []).join(', '))}</span>`
       + `<span class="quand">score ${esc(i.score)}${i.avertie ? ' · Hakim averti' : ''} · ${quand(i.ts)}</span></div>`
       + (i.mesure != null ? `<div>mesure : ${esc(i.mesure)}</div>` : '')
@@ -157,7 +164,9 @@
         : '<div class="vide">Aucun paquet vérifié à la main.</div>';
     } catch (e) { $('chiffres').innerHTML = `<div class="vide">Système immunitaire injoignable : ${esc(e.message)}</div>`; }
   }
-  const annonce = (t) => { $('annonce').textContent = t; };
+  let bulleMinuteur = 0;
+  const annonce = (t) => { $('annonce').textContent = t; $('bulle').textContent = t; clearTimeout(bulleMinuteur);
+    if (!/pose ton doigt/.test(t)) bulleMinuteur = setTimeout(() => { $('bulle').textContent = ''; }, 10000); };
   document.body.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-geste]');
     if (!b) return;
@@ -173,6 +182,10 @@
       charger();
     } catch (err) { b.disabled = false; annonce(String(err.message || err)); }
   });
+  // (30/10) les pastilles : ce qui est nouveau depuis sa dernière visite est marqué (classe « nouveau »)
+  let depuis = Date.now();
+  Badges.suivre(document.querySelector('nav.topnav'), 'immunite');
+  Badges.ouvrir('immunite').then((d) => { depuis = d; charger(); });
   charger();
   setInterval(charger, 30000);
   </script>

@@ -335,3 +335,16 @@ test('les gestes d’Ahmed : juger un incident (inoffensif : avec sa présence),
   for (const champ of ['lisible', 'raison'])
     assert.ok(new RegExp(`esc\\([^)]*\\.${champ}`).test(page), `${champ} échappé`);
 });
+
+// ---- (30/10, Ahmed : « quand je clique sur inoffensif, il ne se passe rien ») sur le petit écran du téléphone, le bouton est
+// ~2 700 px sous l'annonce : « pose ton doigt », l'erreur ou « Noté » s'affichaient hors de vue. Une bulle fixe en bas de l'écran
+// les montre où qu'il soit ; et un refus de présence est noté au journal d'audit (on ne voyait pas pourquoi)
+test('le geste se voit où qu’il soit dans la page, et un refus de présence est audité', () => {
+  const page = fs.readFileSync(path.join(__dirname, 'public', 'immunite.html'), 'utf8');
+  assert.match(page, /id="bulle"[^>]*role="status"/);
+  assert.match(page, /#bulle \{[^}]*position: fixed[^}]*bottom/);
+  assert.match(page, /const annonce = \(t\) => \{[^\n]*\$\('bulle'\)/);
+  const i = src.indexOf("if (p === '/api/immunite/geste') {");
+  const route = src.slice(i, src.indexOf('\n  }\n', i));
+  assert.match(route, /if \(refus\) \{ auditer\('immunite:juger', req, distantReq, \{ empreinte, verdict, ok: false, refus \}\);/);
+});

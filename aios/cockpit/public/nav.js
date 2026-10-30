@@ -24,6 +24,11 @@ window.initNav = function (active) {
     + views.map(([k, href, label]) => `<a class="pill ${k === active ? 'active' : ''}" href="${href}">${label}</a>`).join('')
     + '<span class="status" id="nav-status">● …</span>';
   document.body.prepend(nav);
+  // (30/10, Ahmed via Hakim) les pastilles rouges des onglets (badges.js, fermé aux chantiers de Hakim)
+  const sb = document.createElement('script');
+  sb.src = '/badges.js';
+  sb.onload = () => { window.Badges.suivre(nav, active); if (window.Badges.PAGES[active]) window.Badges.ouvrir(active); };
+  document.head.appendChild(sb);
   const st = nav.querySelector('#nav-status');
   const tick = () => {
     const h = new Date().toTimeString().slice(0, 8);

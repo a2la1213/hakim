@@ -14,7 +14,7 @@ function monter(rappel, tri) {
   const ecrits = [];
   const ctx = { Date, String, JSON, Set, Map, Object, Array, Number, j: JSON.stringify, fs: { appendFileSync() {} },
     JARVIS_RAPPEL_JOURNAL: '/dev/null', JARVIS_ESPACE: '/dev/null', rappelDejaDits: new Map(), erreursDejaDites: new Map(),
-    personnesDejaDites: new Map(), espaces: new Map(), neutraliser: (t) => t, TRI_ACTIF: true, TRI_MAX: 25,
+    personnesDejaDites: new Map(), notesDejaDites: new Map(), intimeDejaDites: new Map(), espaces: new Map(), neutraliser: (t) => t, TRI_ACTIF: true, TRI_MAX: 25,
     filRecent: () => 'lun. 14:00 Ahmed : on parlait du gâteau', ecrireAtomique: (_f, c) => ecrits.push(JSON.parse(c)),
     appels: [] };
   ctx.rappeler = async (...a) => { ctx.appels.push(a); return rappel; };

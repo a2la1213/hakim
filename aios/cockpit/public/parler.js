@@ -1545,13 +1545,20 @@ function phraseFinie(t) {
   const dernier = x.replace(/[.!?؟]+$/, '').trim().split(/\s+/).pop() || '';
   return !FIN_SUSPENDUE.test(dernier.replace(/[^\p{L}']/gu, ''));
 }
+// (30/10, 07:50-08:05) un tour de 5 min (9,6 Mo) prend ~35 s à transcrire : abandonné à 25 s, il était renvoyé en boucle et
+// chaque copie s'empilait dans la file du Mac (jusqu'à 3 min de retard pour tout le monde). Le délai suit la durée du morceau :
+// 25 s, plus une demi-seconde par seconde d'audio, sous les 180 s du serveur.
+function delaiTranscription(octets, type) {
+  const s = /wav/.test(type || '') ? Math.max(0, octets - 44) / 32000 : octets / 6000;   // WAV 16 kHz 16 bits (conversation.js) ; sinon ~48 kb/s
+  return Math.min(170000, 25000 + Math.round(s * 500));
+}
 // Rend le texte ('' si rien n'a été dit), ou null si la transcription a ÉCHOUÉ (processus voix arrêté,
 // délai) : un échec ne doit jamais passer pour du silence (relecture Opus : 3,6 s de phrase perdues).
 async function transcrireVite(audio, type, contexte) {
   const langue = etat.reglages.langue === 'auto' ? '' : etat.reglages.langue.slice(0, 2);
   const ctx = contexte ? `&contexte=${encodeURIComponent(contexte.slice(-200))}` : '';
   const ctl = new AbortController(), t0 = Date.now();
-  const minuteur = setTimeout(() => ctl.abort(), 25000);         // (2026-10-21) jamais d'attente sans fin
+  const minuteur = setTimeout(() => ctl.abort(), delaiTranscription(audio.size || 0, type));   // (2026-10-21) jamais sans fin
   try {
     const transcrire = () => fetch(`/api/voix/transcrire?langue=${langue}${ctx}`, { method: 'POST', body: audio, signal: ctl.signal,
       headers: { 'Content-Type': type || 'audio/wav', 'X-Jeton': jeton() } });

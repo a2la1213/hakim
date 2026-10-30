@@ -20,6 +20,7 @@ import enveloppe
 
 JARVIS = Path(os.environ.get("JARVIS_DIR", Path.home() / "AIOS" / "jarvis"))
 TEXTE_MAX = 500
+AHMED_MAX = 2000           # (30/10) Ahmed y écrit lui-même, par le cockpit seul (python cafe.py ahmed < texte)
 GARDES = 200
 _ID = re.compile(r"a[0-9a-f]{16}")
 
@@ -31,8 +32,10 @@ def _lire_json(f):
         return {}
 
 
-def _qui(auteur, d):
-    """(prénom, rôle) de l'auteur, ou None s'il n'est pas de la famille."""
+def _qui(auteur, d, ahmed=False):
+    """(prénom, rôle) de l'auteur, ou None s'il n'est pas de la famille. « ahmed » : seulement par le cockpit (ahmed=True)."""
+    if auteur == "ahmed" and ahmed:
+        return "Ahmed", "papa"
     if auteur == "hakim":
         return "Hakim", "celui qui vous lance"
     if not _ID.fullmatch(str(auteur or "")):
@@ -45,12 +48,13 @@ def _qui(auteur, d):
     return (fiche.get("prenom") or f"l'agent « {str(a.get('description', '?'))[:80]} »"), str(a.get("type") or "agent")[:40]
 
 
-def dire(texte, auteur, dossier=None):
+def dire(texte, auteur, dossier=None, ahmed=False):
     d = Path(dossier or JARVIS)
     t = re.sub(r"\s+", " ", str(texte or "")).strip()
-    if not t or len(t) > TEXTE_MAX:
-        return f"Refusé : un message de 1 à {TEXTE_MAX} caractères."
-    qui = _qui(auteur, d)
+    maximum = AHMED_MAX if ahmed else TEXTE_MAX
+    if not t or len(t) > maximum:
+        return f"Refusé : un message de 1 à {maximum} caractères."
+    qui = _qui(auteur, d, ahmed)
     if not qui:
         return "Refusé : l'auteur n'est pas signé par le cockpit (seuls Hakim et ses agents parlent au café)."
     f = d / "cafe.jsonl"
@@ -86,3 +90,11 @@ def lire(n=30, dossier=None):
     corps = "\n".join(f"{datetime.fromtimestamp(m.get('ts', 0)).strftime('%d/%m %H:%M')} — {m.get('prenom', '?')} ({m.get('role', '?')}) : "
                       f"{m.get('texte', '')}" for m in msgs)
     return enveloppe.enveloppe(corps, "la salle de café de la famille (ses agents et Hakim)")
+
+
+if __name__ == "__main__":                     # (30/10) le cockpit seul : un message d'Ahmed, lu sur l'entrée standard
+    import sys
+    if sys.argv[1:] == ["ahmed"]:
+        print(dire(sys.stdin.read(AHMED_MAX * 4), "ahmed", ahmed=True))
+    else:
+        print("usage : python cafe.py ahmed < texte")

@@ -259,7 +259,7 @@ test('transcription refusée « 403 » : le jeton est repris et la même demande
       return o.headers['X-Jeton'] === 'neuf' ? { ok: true, status: 200, json: async () => ({ texte: 'bonjour' }) } : { ok: false, status: 403, json: async () => ({}) }; },
   };
   vm.createContext(ctx);
-  vm.runInContext(fonction('transcrireVite') + 'this.transcrire = transcrireVite;', ctx);
+  vm.runInContext(fonction('delaiTranscription') + fonction('transcrireVite') + 'this.transcrire = transcrireVite;', ctx);
   assert.equal(await ctx.transcrire('wav', 'audio/wav'), 'bonjour');
   assert.deepEqual(appels, ['ancien', 'neuf']);
 });
@@ -284,7 +284,7 @@ test('25 s sans réponse : le Mac est dit « débordé », pas « sans connexion
     fetch: async () => { const e = new Error('délai'); e.name = 'AbortError'; throw e; },
   };
   vm.createContext(ctx);
-  vm.runInContext(fonction('transcrireVite') + 'this.transcrire = transcrireVite;', ctx);
+  vm.runInContext(fonction('delaiTranscription') + fonction('transcrireVite') + 'this.transcrire = transcrireVite;', ctx);
   assert.equal(await ctx.transcrire('wav'), null);
   assert.equal(ctx.horsLigne.panne, 'lent');
 });

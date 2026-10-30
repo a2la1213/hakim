@@ -64,7 +64,7 @@ function reglagesMessager({ garde, jarvis, cible, uneFois, crochet }) {
 function tailleFil(fil) { try { return fs.statSync(fil).size; } catch (_) { return 0; } }
 // le dernier texte de l'agent écrit APRÈS l'octet « depuis » de son fil (écrit par claude) : jamais une ancienne réponse
 // (relecture Opus) ; sinon le résumé de la notification
-function dernierTexteAgent(fil, resume, depuis = 0) {
+function dernierTexteAgent(fil, resume, depuis = 0, max = REPONSE_MAX) {
   let lignes = [];
   try {
     const fd = fs.openSync(fil, 'r');
@@ -79,9 +79,9 @@ function dernierTexteAgent(fil, resume, depuis = 0) {
     let o; try { o = JSON.parse(lignes[i]); } catch (_) { continue; }
     const c = o && o.type === 'assistant' && o.message && o.message.content;
     const t = Array.isArray(c) ? c.filter(b => b && b.type === 'text').map(b => b.text).join('\n').trim() : '';
-    if (t) return t.slice(0, REPONSE_MAX);
+    if (t) return t.slice(0, max);
   }
-  return String(resume || '').slice(0, REPONSE_MAX);
+  return String(resume || '').slice(0, max);
 }
 
 function filAgent(projets, cwd, session, id) {

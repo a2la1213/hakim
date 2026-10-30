@@ -624,3 +624,42 @@ def test_les_aides_sans_lien_ont_un_plafond_et_rendent_un_refus_pas_une_erreur_b
         fichiers.ecrire_sans_lien(base / "neuf" / "x.txt", "x", base)
     with pytest.raises(fichiers.Refus):
         fichiers.creer_dossier_sans_lien(base / "neuf2", base)
+
+
+def test_plage_coupee_le_dit_et_ecrit_le_fichier_complet(tmp_path, monkeypatch):
+    """(30/10, Hakim, accord d'Ahmed : « surtout pour le journal ») le 30/10 à 0 h 51, Hakim a cru avoir lu toute la journée
+    du 29 alors que le live du matin était coupé. Une plage dont des messages sont coupés le DIT en tête et en fin
+    (« N messages tronqués ») et écrit elle-même le fichier complet, dont elle rend le chemin."""
+    import json
+    import fichiers as F
+    monkeypatch.setattr(F, "EXPORTS", tmp_path / "atelier" / "journal-exports")
+    (tmp_path / "atelier").mkdir()
+    t0 = 1_800_000_000.0
+    long = "Le live du matin : " + "l'aiguille partagée des deux sœurs. " * 30
+    (tmp_path / "journal.jsonl").write_text("\n".join(json.dumps(o) for o in [
+        {"ts": t0 * 1000, "qui": "ahmed", "texte": long},
+        {"ts": (t0 + 60) * 1000, "qui": "jarvis", "texte": "court"},
+        {"ts": (t0 + 120) * 1000, "qui": "jarvis", "texte": long + " fin du deuxième"}]) + "\n")
+    vide = tmp_path / "vide.jsonl"
+    o = F.plage_pour_outil(t0 - 3600, t0 + 600, dossier=tmp_path, temps=vide, hormones=vide, evenements=vide)
+    tete, fin = o.split("\n")[0], o.rstrip().split("\n")[-1]
+    assert "2 messages tronqués" in tete and "2 messages tronqués" in fin
+    chemin = Path(next(m for m in fin.split() if m.startswith(str(tmp_path))))
+    texte = chemin.read_text()
+    assert long.strip() in texte and "fin du deuxième" in texte and chemin.parent == tmp_path / "atelier" / "journal-exports"
+    # une plage courte (messages entiers, rien de coupé) : ni avertissement ni fichier
+    o2 = F.plage_pour_outil(t0 - 60, t0 + 600, dossier=tmp_path, temps=vide, hormones=vide, evenements=vide)
+    assert "tronqué" not in o2 and long.strip() in o2
+    # trop de lignes : le dit aussi, et le fichier a tout
+    (tmp_path / "journal.jsonl").write_text("\n".join(json.dumps({"ts": (t0 + k) * 1000, "qui": "ahmed", "texte": f"m{k}"})
+                                                      for k in range(320)) + "\n")
+    o3 = F.plage_pour_outil(t0 - 10, t0 + 400, dossier=tmp_path, temps=vide, hormones=vide, evenements=vide)
+    assert "20 lignes non montrées" in o3.split("\n")[0] and "m319" not in o3.split("[")[-2]
+    assert "m319" in Path(next(m for m in o3.rstrip().split("\n")[-1].split() if m.startswith(str(tmp_path)))).read_text()
+
+
+def test_l_outil_du_journal_passe_par_la_plage_qui_le_dit(monkeypatch):
+    import mcp_fichiers
+    vu = {}
+    monkeypatch.setattr(mcp_fichiers.fichiers, "plage_pour_outil", lambda t0, t1, entier=None: vu.setdefault("ok", "⚠ dit"))
+    assert mcp_fichiers.chercher_dans_le_journal(debut="2026-10-29 06:00", fin="2026-10-29 12:00") == "⚠ dit"

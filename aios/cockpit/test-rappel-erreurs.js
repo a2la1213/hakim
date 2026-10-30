@@ -10,7 +10,7 @@ const prendre = (nom) => { const i = src.indexOf(`function ${nom}(`); return src
 
 test('les erreurs pertinentes arrivent dans leur propre bloc, une seule fois par conversation', async () => {
   const ctx = { Date, String, JSON, Set, Map, j: JSON.stringify, fs: { appendFileSync() {} }, JARVIS_RAPPEL_JOURNAL: '/dev/null',
-    rappelDejaDits: new Map(), erreursDejaDites: new Map(), personnesDejaDites: new Map(), neutraliser: (t) => t,
+    rappelDejaDits: new Map(), erreursDejaDites: new Map(), personnesDejaDites: new Map(), notesDejaDites: new Map(), intimeDejaDites: new Map(), neutraliser: (t) => t,
     espaces: new Map(), ecrireAtomique() {}, JARVIS_ESPACE: '/dev/null', TRI_ACTIF: false };
   ctx.rappeler = async (_t, _e, _d, exclusErreurs) => ({ lignes: [], ids: [],
     erreurs: ['25/10 · de bonne foi · barre à part → correction : dans le journal'].filter(() => !exclusErreurs.has('a1')), erreurs_ids: ['a1'] });
@@ -27,7 +27,7 @@ test('les erreurs pertinentes arrivent dans leur propre bloc, une seule fois par
 
 test('(26/10) une personne nommée : ce que Hakim sait d’elle, une fois par conversation', async () => {
   const ctx = { Date, String, JSON, Set, Map, Object, Array, j: JSON.stringify, fs: { appendFileSync() {} }, JARVIS_RAPPEL_JOURNAL: '/dev/null',
-    rappelDejaDits: new Map(), erreursDejaDites: new Map(), personnesDejaDites: new Map(), neutraliser: (t) => t,
+    rappelDejaDits: new Map(), erreursDejaDites: new Map(), personnesDejaDites: new Map(), notesDejaDites: new Map(), intimeDejaDites: new Map(), neutraliser: (t) => t,
     espaces: new Map(), ecrireAtomique() {}, JARVIS_ESPACE: '/dev/null', TRI_ACTIF: false };
   ctx.rappeler = async () => ({ lignes: [], ids: [], personnes: { Nora: ['journal · 08:37 · toi : « tu m’as fait un pincement »'] } });
   vm.createContext(ctx);
@@ -42,7 +42,7 @@ test('(26/10) une personne nommée : ce que Hakim sait d’elle, une fois par co
 
 test('(26/10) le dossier du thème, tri éteint : il n’entre pas dans la conversation, il va dans l’espace', async () => {
   const ctx = { Date, String, JSON, Set, Map, Object, Array, j: JSON.stringify, fs: { appendFileSync() {} }, JARVIS_RAPPEL_JOURNAL: '/dev/null',
-    rappelDejaDits: new Map(), erreursDejaDites: new Map(), personnesDejaDites: new Map(), neutraliser: (t) => t,
+    rappelDejaDits: new Map(), erreursDejaDites: new Map(), personnesDejaDites: new Map(), notesDejaDites: new Map(), intimeDejaDites: new Map(), neutraliser: (t) => t,
     espaces: new Map(), ecrireAtomique() {}, JARVIS_ESPACE: '/dev/null', TRI_ACTIF: false };
   ctx.rappeler = async () => ({ lignes: ['#1 · le souvenir proche'], ids: [1], theme: ['#7 · 01/01/25 · un vieux souvenir du thème'], theme_ids: [7] });
   vm.createContext(ctx);

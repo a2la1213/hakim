@@ -131,6 +131,8 @@ def cafe_dire(texte: str, auteur: str = "") -> str:
     return cafe.dire(texte, auteur)
 
 
+
+
 @mcp.tool()
 def agent_trouvaille(agent: str, quoi: str, confirmee_par: str, rien_a_signaler: bool = False) -> str:
     """La récompense d'un agent (Ahmed, 29/10) : note une trouvaille CONFIRMÉE ensuite (par un test, par Ahmed, par le

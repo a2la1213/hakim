@@ -1191,6 +1191,58 @@ def _juge_nuit_pass(mem, now=None):
         print("[daemon] juge de nuit en échec :", e)
 
 
+def _controle_ancrage_pass(mem, now=None):
+    """(30/10, demande de Hakim, accord d'Ahmed) Le contrôle d'ancrage (controle_ancrage.py) : ce qui a été validé ou jugé
+    hier est-il dans le fichier mère des maths du réel ou un fichier d'ancrage ? Il signale, sans rien écrire dans l'ancrage.
+    Une fois par matin, entre 5 h et 10 h, détaché ; le rapport va dans le résumé du matin de Hakim."""
+    now = now or time.time()
+    h = time.localtime(now).tm_hour
+    jour = time.strftime("%Y-%m-%d", time.localtime(now))
+    if not (5 <= h < 10) or mem.kv_get("controle_ancrage_jour") == jour:
+        return
+    mem.kv_set("controle_ancrage_jour", jour)
+    racine = Path(__file__).resolve().parent
+    hier = time.strftime("%Y-%m-%d", time.localtime(now - 86400))
+    try:
+        journal = open(config.DATA_DIR / "controle-ancrage.log", "a")
+        subprocess.Popen([sys.executable, "-B", str(racine / "controle_ancrage.py"), "--jour", hier], cwd=str(racine),
+                         stdin=subprocess.DEVNULL, stdout=journal, stderr=subprocess.STDOUT, start_new_session=True)
+        print(f"[daemon] contrôle d'ancrage lancé pour le {hier}")
+    except Exception as e:
+        print("[daemon] contrôle d'ancrage en échec :", e)
+
+
+_familles_derniere = [0.0]
+
+
+def _familles_erreurs_pass(mem, now=None):
+    """(30/10, idée d'Ahmed) ses erreurs pas encore rangées vont dans leur famille (familles_erreurs.py, Claude sans outil),
+    toutes les 10 min s'il y en a ; détaché, un seul à la fois."""
+    now = now or time.time()
+    if now - _familles_derniere[0] < 600:
+        return
+    _familles_derniere[0] = now
+    try:
+        import carnet
+        import familles_erreurs as F
+        membres = F.charger()["membres"]
+        if not any(str(e.get("id")) not in membres for e in carnet.erreurs()):
+            return
+        racine = Path(__file__).resolve().parent
+        verrou = config.DATA_DIR / "familles-erreurs.pid"
+        try:
+            os.kill(int(verrou.read_text()), 0)
+            return                                             # un rangement tourne encore
+        except (OSError, ValueError):
+            pass
+        journal = open(config.DATA_DIR / "familles-erreurs.log", "a")
+        p = subprocess.Popen([sys.executable, "-B", str(racine / "familles_erreurs.py")], cwd=str(racine), stdin=subprocess.DEVNULL,
+                             stdout=journal, stderr=subprocess.STDOUT, start_new_session=True)
+        verrou.write_text(str(p.pid))
+    except Exception as e:
+        print("[daemon] familles d'erreurs en échec :", e)
+
+
 def _rangement_nuit_pass(mem, now=None):
     """(2026-10-21) Le rangement de nuit (ranger_nuit.py) : les souvenirs vécus des 3 derniers jours restés sans rubrique
     ou rangés sans assurance sont lus par Claude et rangés au bon endroit. Une fois par nuit, vers 5 h."""
@@ -1328,6 +1380,8 @@ def main():
             _situations_pass(eng, mem)             # ses erreurs rangées par situation, et leurs leçons (27/10)
             _noyau_pass(eng, mem)                  # son noyau : ce qui revient dans ses choix, chaque semaine (27/10)
             _juge_nuit_pass(mem)                   # le juge de nuit sur les résultats non jugés (27/10, idée d'Ahmed)
+            _controle_ancrage_pass(mem)            # ce qui a été validé ou jugé hier est-il ancré ? (30/10, Hakim)
+            _familles_erreurs_pass(mem)            # ses erreurs rangées par familles, toutes les 10 min (30/10, Ahmed)
             _audit_dependances_pass(mem)           # les failles connues des dépendances, chaque semaine
             time.sleep(config.DAEMON_TICK)
         except KeyboardInterrupt:

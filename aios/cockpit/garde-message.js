@@ -58,14 +58,23 @@ function examiner(e) {
   // son type : le registre, sinon ce que claude a écrit à sa naissance (meta.json)
   const type = a.type || objet(lireJson(fil.replace(/\.jsonl$/, '.meta.json'))).agentType;
   if (type === 'juge') {
+    // (30/10, Ahmed via Hakim : « les réponses de tous les agents ») « ☕ Café : » n'est pas un travail : il passe, compté à
+    // part (cafe-reveils.json), pour ne pas lui retirer un de ses passages
+    if (typeof entree.message === 'string' && /^\s*☕ Café :/.test(entree.message)) { compterCafe(to); return null; }
     const dossiers = objet(objet(objet(lireJson(path.join(JARVIS, 'agents-fiches.json'))).agents)[to]).dossiers;
-    const passages = (Number(a.reveils) || 0) + 1;
+    const passages = (Number(a.reveils) || 0) - (Number(objet(lireJson(path.join(JARVIS, 'cafe-reveils.json')))[to]) || 0) + 1;
     if (!(Array.isArray(dossiers) && dossiers.length * 2 > passages))
       return `réveiller ${nom} demande un NOUVEAU travail à juger : déclare-le d'abord avec agent_juger (un juge ne juge jamais deux fois le même travail ; après chaque travail, un seul réveil pour son dernier mot)`;
   }
   return null;
 }
 
+function compterCafe(to) {
+  const f = path.join(JARVIS, 'cafe-reveils.json');
+  const d = objet(lireJson(f));
+  d[to] = (Number(d[to]) || 0) + 1;
+  try { fs.writeFileSync(`${f}.${process.pid}.tmp`, JSON.stringify(d), { mode: 0o600 }); fs.renameSync(`${f}.${process.pid}.tmp`, f); } catch (_) {}
+}
 function noter(e, to, refus) {
   try {
     fs.appendFileSync(path.join(JARVIS, 'messages-agents.jsonl'), JSON.stringify({ ts: Date.now(), to: String(to || '').slice(0, 80),
