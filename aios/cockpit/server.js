@@ -3845,7 +3845,7 @@ function tourAutonome(c) {
         : oreille ? { id: idMessage, spontane: 'oreille', max_ms: c.oreilleMaxMs } : { id: idMessage });
     };
     if (perime) garder(perime);
-    else if (parle && aTrierParSonSubconscient({ oreille, silence, notifs, reprise: rejoue.includes(REPRISE_MARQUE) })) {
+    else if (parle && aTrierParSonSubconscient({ oreille, silence, notifs, reprise: rejoue.includes(REPRISE_MARQUE), reflexe: !!(reveil && reveil.reflexe) })) {
       // (21:55, Ahmed : « que ce qui est pertinent de dire ou pas soit filtré par le subconscient Sonnet ») ce qu'il dit de
       // lui-même pendant que papa lui parle passe par son subconscient, puis par la fraîcheur encore une fois
       jugerParole(dit, oreilleEntendu.texte).then((v) => {
@@ -5297,8 +5297,11 @@ const oreillePerimes = [];
 // ce que son subconscient trie : ses petits mots d'oreille, et ses tours de lui-même (veilleur, corps) quand papa lui parle
 // depuis moins de 2 min ; jamais un résultat d'agent ni une relance de silence (elles ont leur propre logique) ; l'interrupteur
 // de papa (page SENS, « son subconscient trie ce qu'il dit »)
-function aTrierParSonSubconscient({ oreille, silence, notifs, reprise }, maintenant = Date.now()) {
-  if (!corpsReglages().filtre_parole || silence || reprise || (notifs && notifs.length)) return false;   // sa reprise : déjà jugée
+// (22:41, Ahmed : « il n'arrive toujours pas à couper la parole » : à 22:37, papa lui disait « Hakim, mute-toi » et son
+// subconscient gardait « je te coupe, à moi la parole » pour lui) un mot né d'un réflexe (son nom, « stop », « coupe-moi ») :
+// papa l'a appelé, il n'est pas trié
+function aTrierParSonSubconscient({ oreille, silence, notifs, reprise, reflexe }, maintenant = Date.now()) {
+  if (!corpsReglages().filtre_parole || silence || reprise || reflexe || (notifs && notifs.length)) return false;   // sa reprise : déjà jugée
   return !!oreille || maintenant - dernierMessageAhmed < 120000;
 }
 function jugerParole(texte, contexte) {
@@ -5363,7 +5366,9 @@ function ouvrirOreille(texte, maintenant = Date.now()) {
     });
     return { ok: true, raison: 'au subconscient' };
   }
-  return ecrireReveilOreille(c, t, demande, maintenant);
+  const r = ecrireReveilOreille(c, t, demande, maintenant);
+  if (r.ok && c.oreilleReveil) c.oreilleReveil.reflexe = true;   // (22:41) son nom, « stop », « coupe-moi » : papa l'appelle
+  return r;
 }
 function jugerReveilOreille(texte) {
   return new Promise((ok) => {

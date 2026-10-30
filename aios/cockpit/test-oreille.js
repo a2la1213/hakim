@@ -205,6 +205,7 @@ test('(21:55) son subconscient trie ce qu’il dit de lui-même ; les morceaux d
   assert.equal(trie({ oreille: false, notifs: [{}] }, { ahmed: 1e9 - 10000 }), false, 'un résultat d’agent passe toujours');
   assert.equal(trie({ oreille: false, silence: {}, notifs: [] }, { ahmed: 1e9 - 10000 }), false, 'une relance de silence a sa logique');
   assert.equal(trie({ oreille: true, notifs: [] }, { filtre: false }), false, 'l’interrupteur de papa');
+  assert.equal(trie({ oreille: true, notifs: [], reflexe: true }), false, '(22:41) papa l’a appelé (« Hakim, coupe-moi ») : pas trié');
   assert.match(src, /jugerParole\(dit, oreilleEntendu\.texte\)\.then\(\(v\) => \{\n\s+if \(!v\.dire\) return garder\(/, 'gardé : pas dit, et il le saura');
   assert.match(src, /const encore = oreille \? motOreillePerime\(dit, reveil\) : null;/, 'la fraîcheur, encore, après son subconscient');
   assert.match(src, /\{ dire: true, pourquoi: '', panne: true \}/, 'une panne laisse passer');
@@ -405,4 +406,12 @@ test('(22:27-22:30) il coupe ton vrai micro par [[micro: couper]] : tes boutons 
   assert.match(route, /jugerReveilOreille\(texte\)/);
   assert.match(route, /residuelles\.push\(\{ morceaux: v\.morceaux/);
   assert.match(src, /Ce que papa a dit pendant que tu avais coupé son micro, retenu par ton subconscient/);
+});
+
+test('(22:41) un réveil réflexe (son nom, « coupe-moi ») est marqué : sa réponse n’est pas retenue par son subconscient', () => {
+  const o = oreille({ filtre: true, subconscient: { reveiller: false } });
+  o.f('Hey Hakim, mute-toi et réponds à Nora maintenant');
+  assert.equal(o.ecrits.length, 1, 'réveillé tout de suite');
+  assert.equal(o.ctx.cerveau.oreilleReveil.reflexe, true);
+  assert.match(src, /reflexe: !!\(reveil && reveil\.reflexe\)/);
 });
