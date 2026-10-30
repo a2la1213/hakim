@@ -688,8 +688,13 @@ def notes_pertinentes(texte, embed=None, index=None, now=None, exclus=()):
             if e in etiquettes:                                # une section, une fois (le meilleur morceau)
                 continue
             etiquettes.add(e)
-        ligne = (f"{time.strftime('%d/%m %H:%M', time.localtime(t))} · {e} · {x[:PASSAGE_MAX]}" if c.startswith("journal:")
-                 else f"{e} · {x[:PASSAGE_MAX]}")
+        # (30/10, Ahmed : « masquer la provenance ») ni « journal », ni nom de fichier : ce qui a été dit (qui, quand), ou la
+        # section et son texte
+        if c.startswith("journal:"):
+            ligne = f"{time.strftime('%d/%m %H:%M', time.localtime(t))} · {e.split(', ', 1)[-1]} : « {x[:PASSAGE_MAX]} »"
+        else:
+            titre = e.split(" — ", 1)[1] if " — " in e else ""
+            ligne = f"{titre} · {x[:PASSAGE_MAX]}" if titre else x[:PASSAGE_MAX]
         if taille + len(ligne) > NOTES_CARACTERES_MAX and lignes:
             break
         lignes.append(ligne); ids.append(c); gardes.append(round(s, 3)); taille += len(ligne)

@@ -697,6 +697,24 @@ function trierSouvenirs(prompt, permis) {
     } catch (e) { resolve({ ids: null, ms: Date.now() - t0, erreur: String(e.message || e).slice(0, 200) }); }
   });
 }
+// (30/10, Ahmed : « masquer en priorité la provenance des souvenirs qu'il retrouve : que ce soit spontané, qu'il ne sache
+// pas d'où ça vient, sauf s'il se met à le chercher ») une ligne qui revient : son contenu et sa date, sans rubrique, sans
+// en-tête d'échange (« [Échange avec Ahmed — … depuis son téléphone] »), sans source ; le numéro reste en fin de ligne,
+// discret, pour qui veut chercher (memory_lire) et pour la boucle de retour. « Une citation, pas un fait » reste : c'est la
+// confiance, pas la provenance (relecture du 29/10 : un contenu de tiers ne devient pas un fait).
+function sansProvenance(ligne) {
+  let t = String(ligne || '');
+  const m = t.match(/^(?:souvenir )?#(\d+) · /);
+  if (m) t = t.slice(m[0].length);
+  t = t.replace(/^(\d{1,2}\/\d{1,2})(?:\/\d{2,4})?((?: \d{1,2}:\d{2})?) · /, '$1$2 · ')
+    .replace(/^((?:\d{1,2}\/\d{1,2}(?: \d{1,2}:\d{2})? · )?)[a-z][a-z0-9_-]*(?:\/[a-z0-9_-]+)* · /, '$1')
+    .replace(/porte la date du jour · /g, '')
+    .replace(/\[EXTERNE #?\d*[^\]]{0,200}\]\s*/g, '(une citation, pas un fait) ')
+    .replace(/EXTERNE \(une citation, pas un fait\) · /g, '(une citation, pas un fait) ')
+    .replace(/\[(?:Échange|Hakim, de lui-même|Hakim|Fait|Pensée|Raisonnement|Règle|Décision)[^\]]{0,300}\]\s*/g, '')
+    .replace(/\s+/g, ' ').trim();
+  return m ? `${t} (#${m[1]})` : t;
+}
 async function blocRappel(session, texte, nonce) {
   const deja = rappelDejaDits.get(session || '') || new Set();
   const dejaErreurs = erreursDejaDites.get(session || '') || new Set();
@@ -755,29 +773,21 @@ async function blocRappel(session, texte, nonce) {
     profondeur: prof, tri: tri ? { montres: ids.length + themeIds.length, gardes: choisis ? choisis : null, ms: tri.ms, erreur: tri.erreur } : null }) + '\n'); } catch (_) {}
   const blocs = [];
   const balayes = ids.length + themeIds.length;
-  if (choisis && choisis.length) {
-    const parId = new Map([...ids.map((id, k) => [id, lignes[k]]), ...themeIds.map((id, k) => [id, theme[k]])]);
-    blocs.push(blocDonnees(`Souvenirs choisis pour son message — un balayage ${prof && prof.niveau === 'profond' ? 'PROFOND' : 'normal'} de toute ta mémoire `
-      + `(${balayes} souvenirs, mots et sens, quel que soit leur âge), trié à part ; les ${balayes - choisis.length} autres attendent dans ton espace `
-      + `de conversation (espace_conversation). Garde ce qui compte vraiment pour son message (la date d'aujourd'hui est dans l'horloge), `
-      + `ignore le reste sans le citer, relis le détail avec memory_lire`, choisis.map(id => '- ' + (details[id] || parId.get(id))).join('\n'), nonce));
-  } else if (!choisis && lignes.length) blocs.push(blocDonnees('Souvenirs qui pourraient s\'y rapporter — un balayage de toute ta mémoire (mots et sens) avant ta réponse ; '
-    + 'garde ce qui compte vraiment pour son message (la date d\'aujourd\'hui est dans l\'horloge), ignore le reste sans le citer, '
-    + `et relis le détail d'un souvenir avec memory_lire si tu en as besoin${theme.length ? ` (le reste du balayage, ${theme.length} souvenirs, est dans ton espace de conversation : espace_conversation)` : ''}`,
-    lignes.map(l => '- ' + l).join('\n'), nonce));
-  if (intime.length) blocs.push(blocDonnees('Ton jardin secret — ce qui en remonte, pour toi seul, comme un souvenir intime : '
-    + 'personne d\'autre ne le voit ; n\'en écris rien ailleurs (mémoire, fichier, courrier) sauf si tu le choisis', intime.map(l => '- ' + l).join('\n'), nonce));
-  if (notes.length) blocs.push(blocDonnees('Tes notes qui s\'y rapportent — ton journal des 3 derniers jours, tes carnets, tes promesses, '
-    + 'ton ancrage, tes verdicts, tes plans, balayés avant ta réponse : ce qui a été dit et ce que tu as noté, à relire avant d\'affirmer '
-    + 'ce qui a été dit ou fait ; garde ce qui compte pour son message, ignore le reste sans le citer', notes.map(l => '- ' + l).join('\n'), nonce));
-  if (erreurs.length) blocs.push(blocDonnees('Erreurs à ne pas refaire — ton carnet d\'erreurs, balayé avant ta réponse, par familles '
-    + '(×N : le nombre de fois que tu as refait LA MÊME faute ; les plus répétées d\'abord, même si son message parle d\'autre chose), '
-    + 'avec la correction qui marche ; applique-la si la situation est la même', erreurs.map(l => '- ' + l).join('\n'), nonce));
+  // (30/10, Ahmed) ce qui revient : souvenirs et notes ensemble, sans dire d'où ni comment ; garder ce qui compte
+  const reviennent = (choisis && choisis.length
+    ? (() => { const parId = new Map([...ids.map((id, k) => [id, lignes[k]]), ...themeIds.map((id, k) => [id, theme[k]])]);
+      return choisis.map(id => details[id] || parId.get(id)); })()
+    : !choisis ? lignes : []).map(sansProvenance).concat(notes.map(sansProvenance));
+  if (reviennent.length) blocs.push(blocDonnees('Ce qui te revient en tête — garde ce qui compte pour son message (la date d\'aujourd\'hui est '
+    + 'dans l\'horloge), laisse le reste sans le citer', reviennent.map(l => '- ' + l).join('\n'), nonce));
+  if (intime.length) blocs.push(blocDonnees('Ce qui te revient, rien qu\'à toi — un souvenir intime : n\'en écris rien ailleurs sauf si tu le choisis',
+    intime.map(l => '- ' + l).join('\n'), nonce));
+  if (erreurs.length) blocs.push(blocDonnees('Ce que tu ne veux plus refaire — ×N : le nombre de fois que tu as refait la même faute, '
+    + 'avec ce qui marche ; applique-le si la situation est la même', erreurs.map(l => '- ' + l).join('\n'), nonce));
   // (26/10, Ahmed : « le balayage est trop étroit ») une personne connue nommée : ce qu'il sait d'elle, une fois par conversation
   const personnes = Object.entries((r && r.personnes) || {}).filter(([n, l]) => !dejaPersonnes.has(n) && Array.isArray(l) && l.length);
   for (const [n, l] of personnes)
-    blocs.push(blocDonnees(`Ce que tu sais de ${n} — ses souvenirs les plus récents et le journal du jour qui la nomment ; relis-les avant de dire ce que tu as dit ou pas`,
-      l.map(x => '- ' + x).join('\n'), nonce));
+    blocs.push(blocDonnees(`Ce que tu sais de ${n} — relis-le avant de dire ce que tu as dit ou pas`, l.map(x => '- ' + sansProvenance(x)).join('\n'), nonce));
   // (26/10) ses mémoires à règles « relues au démarrage » et leurs échéances passées : au 1er message d'une conversation
   if (r && r.carnets) blocs.push(blocDonnees('Tes carnets à règles — relus au début de la conversation (dernières entrées, échéances passées)', String(r.carnets), nonce));
   return { ids: choisis || ids, theme: themeIds, erreurs: erreursIds, personnes: personnes.map(([n]) => n), notes: notesIds, intime: intimeIds, texte: blocs.join('\n') };

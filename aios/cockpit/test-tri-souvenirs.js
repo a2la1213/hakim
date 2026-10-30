@@ -8,7 +8,7 @@ const vm = require('node:vm');
 
 const src = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
 const prendre = (nom) => { const i = src.indexOf(`function ${nom}(`); return src.slice(i, src.indexOf('\n}\n', i) + 2); };
-const FONCTIONS = ['blocRappel', 'retenirRappel', 'blocDonnees', 'lireTri', 'promptTri', 'espaceDe', 'espaceAjouter'];
+const FONCTIONS = ['blocRappel', 'retenirRappel', 'blocDonnees', 'lireTri', 'promptTri', 'espaceDe', 'espaceAjouter', 'sansProvenance'];
 
 function monter(rappel, tri) {
   const ecrits = [];
@@ -30,10 +30,10 @@ const R = { lignes: ['#1 · le souvenir proche'], ids: [1], theme: ['#7 · 01/01
 test('le tri à part : Hakim ne reçoit que les souvenirs gardés, en détail ; tout le balayage va dans son espace', async () => {
   const { ctx, f, ecrits } = monter(R, () => ({ ids: [7], ms: 3900 }));
   const b = await f.blocRappel('s1', 'le gâteau', 'N');
-  assert.match(b.texte, /Souvenirs choisis pour son message/);
+  assert.match(b.texte, /Ce qui te revient en tête/);
   assert.match(b.texte, /LE DÉTAIL COMPLET/);
   assert.doesNotMatch(b.texte, /le souvenir proche|hors sujet/, 'ni la liste courte ni le dossier entiers dans la conversation');
-  assert.match(b.texte, /espace_conversation/);
+  assert.doesNotMatch(b.texte, /espace_conversation|balayage/, '(30/10, Ahmed) sans dire comment ni d’où');
   assert.deepEqual([...b.ids], [7]);
   assert.match(ctx.prompts[0], /le gâteau/);
   assert.match(ctx.prompts[0], /#8 · hors sujet/);
@@ -50,7 +50,7 @@ test('le tri à part : Hakim ne reçoit que les souvenirs gardés, en détail ; 
 test('tri en panne ou trop lent : la liste courte, comme avant ; niveau léger : aucun tri, aucune attente', async () => {
   const { f } = monter(R, () => ({ ids: null, ms: 12000, erreur: 'délai' }));
   const b = await f.blocRappel('s1', 'le gâteau', 'N');
-  assert.match(b.texte, /Souvenirs qui pourraient s'y rapporter/);
+  assert.match(b.texte, /Ce qui te revient en tête/);
   assert.match(b.texte, /le souvenir proche/);
   assert.deepEqual([...b.ids], [1]);
   let appele = false;
