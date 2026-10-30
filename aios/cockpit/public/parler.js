@@ -3314,6 +3314,10 @@ function direSpontanes() {
   const m = aDire.shift();
   sauverADire();
   if (NON_REPONSE.test(m.texte)) return;
+  // (30/10, 22:20, Ahmed : « qu'il ne garde que ce qu'il veut vraiment dire ») en conversation, ce qui a attendu plus de 45 s
+  // n'est plus le présent : pas dit (il reste écrit)
+  const age = Date.now() - (Number(m.recu) || 0);
+  if (c && age > 45000) { journalVoix('a_dire_perime', { age_s: Math.min(99999, Math.round(age / 1000)) }); return; }
   etat.lectureDe = m.id;
   lecteur.dire(m.texte);
   lecteur.finFlux();

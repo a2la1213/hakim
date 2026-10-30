@@ -213,3 +213,11 @@ test('(21:55) son subconscient trie ce qu’il dit de lui-même ; les morceaux d
   assert.equal(o.f('Alors écoute, aujourd’hui au travail il s’est passé un truc de fou avec').raison, 'regroupé avec le réveil d’avant');
   assert.equal(o.f('Alors écoute, aujourd’hui au travail il s’est passé un truc de fou avec Hakim').ok, true, 'son nom passe toujours');
 });
+
+test('(22:20) plus strict : seulement sa dernière réponse non entendue, et rien de ce qui a trop attendu', () => {
+  const i = page.indexOf('function direSpontanes() {'), bloc = page.slice(i, page.indexOf('\n}\n', i));
+  assert.match(bloc, /if \(c && age > 45000\) \{ journalVoix\('a_dire_perime'/, 'en conversation, plus de 45 s : pas dit');
+  assert.ok(bloc.indexOf('a_dire_perime') < bloc.indexOf('lecteur.dire(m.texte)'));
+  assert.match(src, /const der = nonDitesAttente\[n - 1\];/, 'seulement la dernière');
+  assert.match(src, /< 180000;/, 'et de moins de 3 min');
+});

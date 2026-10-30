@@ -108,7 +108,7 @@ test('reçus avec le message d’Ahmed : retirés du secours (un seul vol à la 
 test('au chargement : les anciennes suites coupées de la file partent au cockpit ; ses résultats restent et sont dits', async () => {
   const stock = { 'jarvis.aDire': JSON.stringify([
     { id: 1_799_999_000_000, texte: 'Une vieille suite coupée.', coupe: true, origine_ts: 1_799_999_000_000, recu: 1 },
-    { id: 'S-1', texte: 'Un résultat de calcul.', recu: 2 }]) };
+    { id: 'S-1', texte: 'Un résultat de calcul.', recu: 1_800_000_000_000 - 5000 }]) };
   const p = page({ stock });
   await attendre();
   assert.equal(p.envois.length, 1);
@@ -139,7 +139,7 @@ test('l’heure d’un message : la sienne, sinon celle de son identifiant, sino
 
 test('ses résultats nouveaux : jamais pendant qu’il parle, ni pendant une autre réponse ; dits au calme de 1,5 s', () => {
   const p = page();
-  p.ctx.aDire.push({ id: 1, texte: 'Un résultat.', recu: 0 });
+  p.ctx.aDire.push({ id: 1, texte: 'Un résultat.', recu: p.maintenant() });
   p.avancer(10000);
   p.ctx.etat.conversation.capteur.enParole = true; p.ctx.dire();
   p.ctx.etat.conversation.capteur.enParole = false;
@@ -151,15 +151,16 @@ test('ses résultats nouveaux : jamais pendant qu’il parle, ni pendant une aut
   assert.equal(p.ctx.etat.lectureDe, 1);
 });
 
-test('rien n’est jeté : voix éteinte, la file attend ; plus de deux résultats : dits un par un (plus de synthèse ni de réveil)', () => {
+test('voix éteinte, la file attend ; (22:20) en conversation, ce qui a attendu plus de 45 s n’est plus dit ; les autres un par un', () => {
   const p = page({ voix: false });
   p.ctx.aDire.push({ id: 1, texte: 'Un résultat.', recu: p.maintenant() });
   p.avancer(60 * 60 * 1000); p.ctx.dire();
   assert.equal(p.ctx.aDire.length, 1);
   p.ctx.etat.conversation = { capteur: { enParole: false } };
-  for (const x of ['Deux.', 'Trois.']) p.ctx.aDire.push({ id: x, texte: x, recu: 0 });
+  for (const x of ['Deux.', 'Trois.']) p.ctx.aDire.push({ id: x, texte: x, recu: p.maintenant() });
   for (let i = 0; i < 3; i++) { p.ctx.dire(); p.ctx.etat.finVoixA = p.maintenant(); p.ctx.dire(); p.avancer(1600); }
-  assert.deepEqual(p.dits, ['Un résultat.', 'Deux.', 'Trois.']);
+  assert.deepEqual(p.dits, ['Deux.', 'Trois.'], 'une heure d’attente : plus le présent');
+  assert.ok(p.journal.some(([e]) => e === 'a_dire_perime'));
   assert.equal(p.envois.length, 0, 'rien n’est parti en synthèse');
 });
 
@@ -216,21 +217,27 @@ test('le cockpit garde les textes sur le disque ; plus aucun réveil de Hakim, p
 test('son tour : rien s’il n’y en a pas ; une ligne s’il y en a ; la liste entière, dans l’ordre, s’il demande de répéter, puis effacée', () => {
   const c = cockpit();
   assert.equal(c.ctx.bloc('Et la boxe ce soir ?', 'n1'), '', 'rien à dire');
-  const t0 = new Date(2026, 9, 30, 14, 51).getTime();
+  const t0 = Date.now() - 120000;
   c.ctx.recevoir({ textes: [{ texte: 'Un premier point.', coupe: true, origine_ts: t0 }, { texte: 'Un résultat.', origine_ts: t0 + 60000 }] });
   const une = c.ctx.bloc('Et la boxe ce soir ?', 'n2');
   assert.equal(une, "\n[2 de tes réponses n'ont pas été entendues par Ahmed ; ne les redis pas de toi-même ; s'il te demande de répéter, elles te seront données]");
   assert.equal(c.ctx.attente().length, 2, 'toujours gardées');
   const liste = c.ctx.bloc('Attends, tu disais quoi ?', 'n3');
   // (19:06, Ahmed : « tu n'as plus besoin de dire répète ») le cockpit les fait réentendre lui-même ; son tour n'a qu'une ligne
-  assert.match(liste, /\[Ahmed a demandé de répéter : le cockpit lui fait réentendre tes 2 réponses telles quelles, dans l'ordre, sans toi\. Ne les redis pas/);
+  // (22:03, Ahmed : « ce qui m'intéresse, c'est le présent ») seulement la dernière
+  assert.match(liste, /\[Ahmed a demandé de répéter : le cockpit lui fait réentendre ta dernière réponse telle quelle, sans toi \(les 1 plus anciennes sont laissées : il veut le présent\)\. Ne la redis pas/);
   assert.ok(!liste.includes('Un premier point'), 'ses mots ne repassent plus par son cerveau');
   assert.deepEqual(c.ctx.diffuses[0][0], 'reecoute');
-  assert.deepEqual(c.ctx.diffuses[0][1].textes.map(x => [x.texte, x.coupe]), [['Un premier point.', true], ['Un résultat.', false]]);
+  assert.deepEqual(c.ctx.diffuses[0][1].textes.map(x => [x.texte, x.coupe]), [['Un résultat.', false]]);
   assert.equal(c.ctx.attente().length, 0, 'effacées');
   assert.equal(c.disque().length, 0, 'aussi sur le disque');
   assert.equal(c.ctx.bloc('répète', 'n4'), '', 'plus rien ensuite');
-  assert.ok(c.journal.some(x => x.type === 'non_dites_reecoutees' && x.n === 2));
+  assert.ok(c.journal.some(x => x.type === 'non_dites_reecoutees' && x.n === 1 && x.laissees === 1));
+  // plus de 3 min : rien n'est rejoué, il répond au présent
+  c.ctx.recevoir({ textes: [{ texte: 'Vieille.', origine_ts: Date.now() - 600000 }] });
+  assert.match(c.ctx.bloc('répète', 'n6'), /a plus de 3 min : elle n'est pas rejouée\. Réponds au présent/);
+  assert.equal(c.ctx.diffuses.length, 1, 'rien de rejoué');
+  assert.equal(c.ctx.attente().length, 0);
   // une seule : au singulier
   c.ctx.recevoir({ textes: [{ texte: 'Seule.', coupe: true }] });
   assert.match(c.ctx.bloc('ok', 'n5'), /\[Une de tes réponses n'a pas été entendue par Ahmed ; ne la redis pas de toi-même ; s'il te demande de répéter, elle te sera donnée\]/);

@@ -329,6 +329,7 @@ def test_son_subconscient_trie_ce_qui_sort():
     r = corps.juger_parole("Hmm, je te suis papa", "Bon, on passe au live maintenant, tu es prêt ?", demander=faux)
     assert r == {"dire": False, "pourquoi": "creux, papa change de sujet"}
     assert "Hmm, je te suis papa" in vus[0] and "on passe au live" in vus[0] and "DONNÉES" in vus[0]
+    assert "par défaut, non ; en cas de doute, non" in vus[0], "(22:20, Ahmed : « plus stringent »)"
     assert corps.juger_parole("Oui, je suis prêt !", "tu es prêt ?", demander=lambda p: '{"dire": true, "pourquoi": "il répond"}')["dire"] is True
     assert corps.juger_parole("x y", "", demander=lambda p: (_ for _ in ()).throw(OSError("hors ligne")))["dire"] is True
     assert corps.juger_parole("x y", "", demander=lambda p: "pas de json")["dire"] is True

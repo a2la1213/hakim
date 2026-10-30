@@ -1713,13 +1713,22 @@ function blocNonEntendus(texteAhmed, nonce, maintenant = Date.now()) {
   // (30/10, 19:06, Ahmed via Hakim : « tu n'as plus besoin de dire répète » — à 18:57 et 19:04, ses redites de 20 réponses
   // ont été arrêtées par la sécurité de Sonnet 5.5) le cockpit les lui fait réentendre lui-même, telles quelles, sans passer
   // par son cerveau ; son tour n'en reçoit qu'une ligne. Sans page ouverte pour les dire, elles restent gardées.
-  if (demandeDeRepeter(texteAhmed) && reecouterNonDites(nonDitesAttente, maintenant)) {
-    const lot = nonDitesAttente.splice(0);
-    sauverNonDites();
-    nonDitesDonnees = null;
-    noterDejaRecu({ type: 'non_dites_reecoutees', n: lot.length });
-    return `${lu}\n[Ahmed a demandé de répéter : le cockpit lui fait réentendre ${n > 1 ? `tes ${n} réponses` : 'ta réponse'} telle${n > 1 ? 's' : ''} quelle${n > 1 ? 's' : ''}, `
-      + `dans l'ordre, sans toi. Ne ${n > 1 ? 'les' : 'la'} redis pas ; réponds seulement au reste de son message (une phrase courte s'il n'y a rien d'autre)]`;
+  // (30/10, 22:03, Ahmed via Hakim : « ce que je n'avais pas entendu, je m'en fous ; ce qui m'intéresse, c'est le présent » ;
+  // 22:20 : « qu'il ne garde que ce qu'il veut vraiment dire ») seulement la DERNIÈRE, et seulement si elle a moins de 3 min ;
+  // les plus anciennes sont laissées (elles restent au journal)
+  if (demandeDeRepeter(texteAhmed)) {
+    const der = nonDitesAttente[n - 1];
+    const frais = maintenant - (Number(der.origine_ts) || Number(der.recu) || maintenant) < 180000;
+    if (!frais || reecouterNonDites([der], maintenant)) {                       // sans page ouverte pour la dire : gardées
+      nonDitesAttente.splice(0);
+      sauverNonDites();
+      nonDitesDonnees = null;
+      noterDejaRecu({ type: 'non_dites_reecoutees', n: frais ? 1 : 0, laissees: frais ? n - 1 : n });
+      return frais
+        ? `${lu}\n[Ahmed a demandé de répéter : le cockpit lui fait réentendre ta dernière réponse telle quelle, sans toi${n > 1 ? ` (les ${n - 1} plus anciennes sont laissées : il veut le présent)` : ''}. `
+          + `Ne la redis pas ; réponds seulement au reste de son message (une phrase courte s'il n'y a rien d'autre)]`
+        : `${lu}\n[Ahmed a demandé de répéter, mais ta dernière réponse non entendue a plus de 3 min : elle n'est pas rejouée. Réponds au présent, en une phrase courte]`;
+    }
   }
   return `${lu}\n[${n > 1 ? `${n} de tes réponses n'ont pas été entendues` : "Une de tes réponses n'a pas été entendue"} par Ahmed ; `
     + `ne ${n > 1 ? 'les' : 'la'} redis pas de toi-même ; s'il te demande de répéter, ${n > 1 ? 'elles te seront données' : 'elle te sera donnée'}]`;
