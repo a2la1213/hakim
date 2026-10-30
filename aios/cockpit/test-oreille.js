@@ -28,7 +28,7 @@ test('oreille ouverte : ce que papa a déjà dit le réveille ; fermée, il dort
   const o = oreille();
   assert.equal(o.f('Alors écoute, aujourd’hui au travail il s’est passé un truc').ok, true);
   assert.match(o.ecrits[0], /ton oreille, papa parle encore/);
-  assert.match(o.ecrits[0], /Dis seulement ce que tu as vraiment besoin ou envie de dire maintenant/);   // (22:20) plus de « hmm » suggéré
+  assert.match(o.ecrits[0], /Dis seulement ce que tu as vraiment besoin ou envie de dire maintenant/);   // (vers 22 h) plus de « hmm » suggéré
   assert.equal(oreille({ ouverte: false }).f('Alors écoute, aujourd’hui au travail').raison, 'oreille fermée');
   assert.equal(oreille({ dort: true }).f('Alors écoute, aujourd’hui au travail').raison, 'il dort');
   assert.equal(oreille({ dort: true }).f('Hakim, réveille-toi, écoute-moi bien').ok, true, 'son nom le réveille');
@@ -215,7 +215,7 @@ test('(21:55) son subconscient trie ce qu’il dit de lui-même ; les morceaux d
   assert.equal(o.f('Alors écoute, aujourd’hui au travail il s’est passé un truc de fou avec Hakim').ok, true, 'son nom passe toujours');
 });
 
-test('(22:20) plus strict : seulement sa dernière réponse non entendue, et rien de ce qui a trop attendu', () => {
+test('(vers 22 h) plus strict : seulement sa dernière réponse non entendue, et rien de ce qui a trop attendu', () => {
   const i = page.indexOf('function direSpontanes() {'), bloc = page.slice(i, page.indexOf('\n}\n', i));
   assert.match(bloc, /if \(c && age > 45000\) \{ journalVoix\('a_dire_perime'/, 'en conversation, plus de 45 s : pas dit');
   assert.ok(bloc.indexOf('a_dire_perime') < bloc.indexOf('lecteur.dire(m.texte)'));
@@ -223,7 +223,7 @@ test('(22:20) plus strict : seulement sa dernière réponse non entendue, et rie
   assert.match(src, /< 180000;/, 'et de moins de 3 min');
 });
 
-test('(22:30) son subconscient d’abord : il ne réveille sa conscience que pour le strict nécessaire ; son nom, « stop », « coupe-moi » passent tout droit', async () => {
+test('(vers 22 h 05) son subconscient d’abord : il ne réveille sa conscience que pour le strict nécessaire ; son nom, « stop », « coupe-moi » passent tout droit', async () => {
   const garde = oreille({ filtre: true, subconscient: { reveiller: false, pourquoi: 'il explique au live' } });
   assert.equal(garde.f('Alors les gars, ce soir on vous montre comment on a construit son corps').raison, 'au subconscient');
   await new Promise(r => setImmediate(r));
@@ -246,7 +246,7 @@ test('(22:30) son subconscient d’abord : il ne réveille sa conscience que pou
   assert.equal(fini.ecrits.length, 0);
 });
 
-test('(22:25) il se met en pause tout seul : [[pause: …]] garde la suite ; [[reprendre: …]] la dit ; au silence, son subconscient juge', () => {
+test('(vers 22 h 05) il se met en pause tout seul : [[pause: …]] garde la suite ; [[reprendre: …]] la dit ; au silence, son subconscient juge', () => {
   const a = src.indexOf('const BALISE_PAUSE'), b = src.indexOf('\n}\n', src.indexOf('function pauseDansTexte')) + 3;
   const ligne = src.slice(src.indexOf('const prefixeBalise'), src.indexOf('\n', src.indexOf('const prefixeBalise')));
   const c = vm.createContext({ Date, journaliser() {}, finDePhrase: (t) => t, sansBaliseAffect: (t) => String(t).replace(/\[\[[^\]]*\]\]/g, '').trimEnd() });
@@ -273,7 +273,7 @@ test('(22:25) il se met en pause tout seul : [[pause: …]] garde la suite ; [[r
   assert.match(src, /lumiere\|pause\|reprendre\)\\s\*:/, 'les balises ne s’entendent jamais');
 });
 
-test('(22:50) chacun son tour : pendant qu’il prépare ou dit sa réponse, ce que papa dit ne la coupe plus ; ça lui part quand sa voix a fini', () => {
+test('(vers 22 h 10) chacun son tour : pendant qu’il prépare ou dit sa réponse, ce que papa dit ne la coupe plus ; ça lui part quand sa voix a fini', () => {
   const a = page.indexOf('const chacunSonTour = '), b = page.indexOf('setInterval(libererSonTour, 300);');
   const envois = [], journal = [];
   const ctx = vm.createContext({ Date, etat: { flux: {}, conversation: { tourGarde: '', enAttente: 0, capteur: { enParole: false } }, finVoixA: 0 },
@@ -305,4 +305,29 @@ test('(22:50) chacun son tour : pendant qu’il prépare ou dit sa réponse, ce 
   assert.ok(k('garderPourSonTour(conv, texte)') < k("arreterTout(true, { garder: true, raison: 'parole' })"), 'sa réponse n’est plus coupée');
   assert.match(page, /if \(!voix \|\| !aDire\.length \|\| \(c && c\.tourGarde\)\) return;/, 'papa d’abord, avant ses mots en attente');
   assert.match(src, /chacun_son_tour: r\.chacun_son_tour !== false/);
+});
+
+test('(22:21) plus de pavé : sa conscience reçoit les petits morceaux retenus par son subconscient, choisit et reformule', async () => {
+  const longue = 'Alors voilà, ' + 'on parlait du live et de plein de choses, '.repeat(20) + 'et toi Hakim, tu en penses quoi ?';
+  const o = oreille({ filtre: true, subconscient: { reveiller: true, pourquoi: 'question directe', morceaux: ['et toi Hakim, tu en penses quoi ?'] } });
+  o.f(longue.replace('Hakim', 'mon fils'));
+  await new Promise(r => setImmediate(r));
+  assert.equal(o.ecrits.length, 1);
+  assert.match(o.ecrits[0], /en morceaux : 1\) « et toi Hakim, tu en penses quoi \? »/);
+  assert.ok(!o.ecrits[0].includes('on parlait du live et de plein de choses, on parlait'), 'pas toute sa phrase');
+  assert.match(o.ecrits[0], /choisis le morceau auquel réagir, avec tes mots, en une phrase courte/);
+  const reflexe = oreille();
+  reflexe.f(longue);
+  assert.match(reflexe.ecrits[0], /La fin de ce qu'il dit \(sa phrase continue\) : « …/, 'un réflexe : la fin seulement');
+  assert.ok(JSON.parse(reflexe.ecrits[0]).message.content[0].text.split('« …')[1].split(' »')[0].length <= 300, '300 caractères au plus');
+  // sa parole en pause : en morceaux, à sa conscience
+  const f = prendre(src, 'function morceauxDe(');
+  const c = vm.createContext({ String }); vm.runInContext(f, c);
+  assert.deepEqual(c.morceauxDe('Une phrase. Deux ! ' + 'mot '.repeat(60) + 'fin.'), ['Une phrase.', 'Deux !', 'mot '.repeat(25).trim(), 'mot '.repeat(25).trim()]);
+  const r = prendre(src, 'function reprendreAuSilence(');
+  assert.match(r, /const morceaux = morceauxDe\(prendreParoleEnPause\(\)\);/);
+  assert.match(r, /c\.enfant\.stdin\.write\(/, 'sa conscience, réveillée');
+  assert.ok(!r.includes('livrerAutonome('), 'plus jamais dite telle quelle');
+  assert.match(r, /Choisis le morceau à dire maintenant et dis-le avec tes mots/);
+  assert.match(src, /reprise: rejoue\.includes\(REPRISE_MARQUE\)/, 'déjà jugée : pas deux fois');
 });

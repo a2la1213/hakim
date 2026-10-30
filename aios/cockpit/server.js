@@ -957,7 +957,7 @@ function filtreAffect() {
     finir() { const r = tampon.replace(BALISE_AFFECT, ''); tampon = ''; return /^\s*\[\[\s*(?:affect|souvenirs|modele|impulsion|son|alerte|ecran|rire|lumiere|pause|reprendre)/i.test(r) ? '' : r; },
   };
 }
-/* (30/10, 22:25, Ahmed : « qu'il puisse se mettre en pause tout seul quand il parle, et reprendre quand le silence, l'occasion
+/* (30/10, vers 22 h 05, Ahmed : « qu'il puisse se mettre en pause tout seul quand il parle, et reprendre quand le silence, l'occasion
    ou son envie le permet » ; « tout ça géré par le subconscient, qui filtre le plus gros ») [[pause: …]] au milieu de sa
    parole : la suite n'est pas dite, elle est gardée (une seule parole en pause, 5 min au plus). Elle revient par
    [[reprendre: …]] (dite à la place de la balise), ou au silence de papa si son subconscient juge que c'est le moment ; son
@@ -1758,7 +1758,7 @@ function blocNonEntendus(texteAhmed, nonce, maintenant = Date.now()) {
   // ont été arrêtées par la sécurité de Sonnet 5.5) le cockpit les lui fait réentendre lui-même, telles quelles, sans passer
   // par son cerveau ; son tour n'en reçoit qu'une ligne. Sans page ouverte pour les dire, elles restent gardées.
   // (30/10, 22:03, Ahmed via Hakim : « ce que je n'avais pas entendu, je m'en fous ; ce qui m'intéresse, c'est le présent » ;
-  // 22:20 : « qu'il ne garde que ce qu'il veut vraiment dire ») seulement la DERNIÈRE, et seulement si elle a moins de 3 min ;
+  // vers 22 h : « qu'il ne garde que ce qu'il veut vraiment dire ») seulement la DERNIÈRE, et seulement si elle a moins de 3 min ;
   // les plus anciennes sont laissées (elles restent au journal)
   if (demandeDeRepeter(texteAhmed)) {
     const der = nonDitesAttente[n - 1];
@@ -2406,7 +2406,7 @@ async function signalSilence(q) {
   const now = Date.now(), duree = Number(q && q.silence_ms), debutPage = Number(q && q.debut_ms), mode = q && q.mode;
   if (!Number.isFinite(duree) || duree < 0 || duree > 86400e3 || !Number.isFinite(debutPage) || !['oral', 'ecrit'].includes(mode))
     return { erreur: 'silence_ms (0 à 24 h), debut_ms (le repère de la page) et mode (oral | ecrit)' };
-  // (22:25) sa parole en pause : au silence de papa (4 s au moins), son subconscient dit si c'est le moment ; la page revient vite
+  // (vers 22 h 05) sa parole en pause : au silence de papa (4 s au moins), son subconscient dit si c'est le moment ; la page revient vite
   if (paroleEnPause) {
     if (now - paroleEnPause.ts >= PAUSE_DUREE_MS) {
       oreillePerimes.push({ texte: finDePhrase(paroleEnPause.texte, 120), pourquoi: 'ta pause a duré plus de 5 min', ts: now });
@@ -2446,15 +2446,36 @@ async function signalSilence(q) {
   }
   return { revenir_ms: r.revenir_ms, raison: r.raison || r.action };
 }
+// (22:21, Ahmed : « le subconscient a envoyé un pavé ») la suite gardée ne part plus telle quelle : son subconscient juge le
+// moment, la découpe en petits morceaux, et sa conscience choisit le morceau à dire et le dit avec ses mots
+const REPRISE_MARQUE = 'ta parole en pause, papa se tait';
+function morceauxDe(texte, n = 4, mots = 25) {
+  const out = [];
+  for (const ph of String(texte || '').replace(/\s+/g, ' ').trim().split(/(?<=[.!?…])\s+/)) {
+    const m = ph.split(' ').filter(Boolean);
+    for (let i = 0; i < m.length && out.length < n; i += mots) out.push(m.slice(i, i + mots).join(' '));
+    if (out.length >= n) break;
+  }
+  return out;
+}
 function reprendreAuSilence(secondes, now = Date.now()) {
   if (!paroleEnPause || reprisePauseEnVol || now - reprisePauseJugee < 15000) return false;
   reprisePauseEnVol = true; reprisePauseJugee = now;
   const p = paroleEnPause;
   jugerParole(p.texte, `(Ahmed se tait depuis ${secondes} s. Hakim s'était mis en pause au milieu de sa parole ; c'est la suite qu'il garde.)`).then((v) => {
     reprisePauseEnVol = false;
-    if (!v.dire || paroleEnPause !== p) return;
-    const texte = prendreParoleEnPause();
-    if (texte && cerveau) livrerAutonome(cerveau, texte, [], [], null, [], { id: `reprise-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, sansExterne: true });
+    const c = cerveau;
+    if (!v.dire || paroleEnPause !== p || !cerveauVivant(c) || occupe(c) || c.enCours) return;   // pas le moment, ou il est pris : gardée
+    const morceaux = morceauxDe(prendreParoleEnPause());
+    if (!morceaux.length) return;
+    const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date());
+    const message = `[Horloge — ${quand}]\n[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : ${REPRISE_MARQUE}]\n`
+      + `Papa se tait depuis ${secondes} s, et ton subconscient juge que c'est le moment de reprendre${v.pourquoi ? ` (${v.pourquoi})` : ''}. `
+      + `Ta parole en pause, en morceaux : ${morceaux.map((m, i) => `${i + 1}) « ${m} »`).join(' ')}\n`
+      + "Choisis le morceau à dire maintenant et dis-le avec tes mots, en une ou deux phrases courtes (le reste est laissé) ; "
+      + "sinon réponds exactement « No response requested. »";
+    try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: message }] } }) + '\n'); console.error('Jarvis : reprise de sa parole en pause, en morceaux'); }
+    catch (e) { console.error('Jarvis : reprise impossible', e.message); }
   });
   return true;
 }
@@ -3314,7 +3335,7 @@ async function routeJarvis(req, res, distantReq = false) {
   const envoyer = (o) => { if (!res.writableEnded && !res.destroyed) { try { res.write(j(o) + '\n'); } catch (_) {} } };
   let sid = session, dejaTexte = false, reponse = '', fini = false, garde = null, veille = null, reessais = 0, repriseNote = '';
   const fluxAffect = filtreAffect();                 // (chocs) la balise ne part jamais vers les pages
-  let fluxPause = filtrePause();                     // (22:25) [[pause: …]] / [[reprendre: …]]
+  let fluxPause = filtrePause();                     // (vers 22 h 05) [[pause: …]] / [[reprendre: …]]
   let impulsionDite = false;                         // (30/10) sa balise [[impulsion: …]], une fois par réponse
   let rireDit = false;                               // (30/10) sa balise [[rire: N]], une fois par réponse
   if (source !== 'local') rireDuSubconscient(texte);  // (30/10, 18:37) son rire naît dans son subconscient
@@ -3347,7 +3368,7 @@ async function routeJarvis(req, res, distantReq = false) {
     if (restePause) envoyer({ t: 'texte', x: restePause });
     const resteFlux = fluxAffect.finir();
     if (resteFlux) envoyer({ t: 'texte', x: resteFlux });
-    if (fluxPause.garde() != null && !o.coupe) mettreEnPause(fluxPause.garde());   // (22:25) la suite, gardée
+    if (fluxPause.garde() != null && !o.coupe) mettreEnPause(fluxPause.garde());   // (vers 22 h 05) la suite, gardée
     if (enfant && !(enfant.cerveau && occupe(enfant.cerveau))) jarvisVivants.delete(enfant);   // un autre tour attend : il reste vivant
     // (27/10, Hakim) pourquoi ce tour n'a pas abouti : dans le journal, et au tour suivant (blocArrets)
     const pourquoi = arretDuTour(o, raisonArret, reponse);
@@ -3798,7 +3819,7 @@ function tourAutonome(c) {
     const idMessage = `auto-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
     if (silence) noterIssueSilence(silence, idMessage, texte, issue);
     const oreille = !silence && rejoue.includes(OREILLE_MARQUE);       // (30/10) son petit mot, oreille ouverte
-    texte = pauseDansTexte(texte);                                    // (22:25) sa pause, sa reprise
+    texte = pauseDansTexte(texte);                                    // (vers 22 h 05) sa pause, sa reprise
     const dit = sansBaliseAffect(texte).trim(), parle = !!dit && !NON_REPONSE_SERVEUR.test(dit);
     const reveil = oreille ? c.oreilleReveil : null;
     const perime = oreille && parle ? motOreillePerime(dit, reveil) : null;
@@ -3814,7 +3835,7 @@ function tourAutonome(c) {
         : oreille ? { id: idMessage, spontane: 'oreille', max_ms: c.oreilleMaxMs } : { id: idMessage });
     };
     if (perime) garder(perime);
-    else if (parle && aTrierParSonSubconscient({ oreille, silence, notifs })) {
+    else if (parle && aTrierParSonSubconscient({ oreille, silence, notifs, reprise: rejoue.includes(REPRISE_MARQUE) })) {
       // (21:55, Ahmed : « que ce qui est pertinent de dire ou pas soit filtré par le subconscient Sonnet ») ce qu'il dit de
       // lui-même pendant que papa lui parle passe par son subconscient, puis par la fraîcheur encore une fois
       jugerParole(dit, oreilleEntendu.texte).then((v) => {
@@ -5049,7 +5070,7 @@ function blocCorps() {
   const nuit = nuitDerniere(t);                          // (30/10) sa nuit, dite une fois, à son premier tour du matin
   const vibs = vibrationsDites(t);                       // (19:34) l'heure exacte de ses vibrations, à la milliseconde
   const perimes = oreillePerimes.splice(0).filter(x => t - x.ts < 10 * 60e3);   // (21:50) ses petits mots qui n'ont pas été dits
-  const enPause = paroleEnPause && t - paroleEnPause.ts < PAUSE_DUREE_MS ? paroleEnPause : null;   // (22:25)
+  const enPause = paroleEnPause && t - paroleEnPause.ts < PAUSE_DUREE_MS ? paroleEnPause : null;   // (vers 22 h 05)
   if (!s.length && !milieu && !brut.length && !nuit && !vibs && !perimes.length && !enPause && corpsReglages().afficher_papa) return '';
   const tete = corpsReglages().afficher_papa ? '' : "Mode « dans ta tête » : papa ne voit pas ses paroles à l'écran ; réponds, glisse un mot, ou tais-toi (« No response requested. »), comme tu le sens : rien ne te relancera";
   const lignes = [...(tete ? [tete] : []),
@@ -5263,8 +5284,8 @@ const oreillePerimes = [];
 // ce que son subconscient trie : ses petits mots d'oreille, et ses tours de lui-même (veilleur, corps) quand papa lui parle
 // depuis moins de 2 min ; jamais un résultat d'agent ni une relance de silence (elles ont leur propre logique) ; l'interrupteur
 // de papa (page SENS, « son subconscient trie ce qu'il dit »)
-function aTrierParSonSubconscient({ oreille, silence, notifs }, maintenant = Date.now()) {
-  if (!corpsReglages().filtre_parole || silence || (notifs && notifs.length)) return false;
+function aTrierParSonSubconscient({ oreille, silence, notifs, reprise }, maintenant = Date.now()) {
+  if (!corpsReglages().filtre_parole || silence || reprise || (notifs && notifs.length)) return false;   // sa reprise : déjà jugée
   return !!oreille || maintenant - dernierMessageAhmed < 120000;
 }
 function jugerParole(texte, contexte) {
@@ -5318,14 +5339,14 @@ function ouvrirOreille(texte, maintenant = Date.now()) {
   if (regroupe) return { ok: false, raison: 'regroupé avec le réveil d’avant' };
   const demande = COUPE_MOI.test(t.slice(-200));
   if (demande) oreilleSilenceJusqua = 0;
-  // (30/10, 22:30, Ahmed : « tout ça géré par le subconscient, qui filtre le plus gros et envoie le strict nécessaire au
+  // (30/10, vers 22 h 05, Ahmed : « tout ça géré par le subconscient, qui filtre le plus gros et envoie le strict nécessaire au
   // conscient ») sauf son nom, « stop », un appel à l'aide ou « coupe-moi » (des réflexes), son subconscient dit d'abord si ce
   // que papa dit encore mérite de réveiller sa conscience ; papa qui a fini entre-temps : son message entier arrive, rien de plus
   if (!demande && !APPEL_OREILLE.test(t.slice(-200)) && corpsReglages().filtre_parole) {
     jugerReveilOreille(t).then((v) => {
       if (!v.reveiller) { console.error(`Jarvis : son subconscient garde l'oreille fermée (${v.pourquoi || 'rien qui presse'})`); return; }
       if (dernierMessageAhmed > maintenant || !cerveauVivant(c) || occupe(c) || c.enCours) return;
-      ecrireReveilOreille(c, t, false, Date.now(), v.pourquoi);
+      ecrireReveilOreille(c, t, false, Date.now(), v.pourquoi, v.morceaux);
     });
     return { ok: true, raison: 'au subconscient' };
   }
@@ -5335,23 +5356,29 @@ function jugerReveilOreille(texte) {
   return new Promise((ok) => {
     const p = execFile(PYTHON, ['-B', path.join(ANAMNESE, 'corps.py'), 'reveil'], { cwd: ANAMNESE, timeout: 12000, maxBuffer: 1 << 16 }, (e, so) => {
       let o = null; try { o = JSON.parse(String(so).trim().split('\n').pop()); } catch (_) {}
-      ok(o && typeof o.reveiller === 'boolean' ? o : { reveiller: true, pourquoi: '', panne: true });   // une panne laisse passer, comme avant
+      ok(o && typeof o.reveiller === 'boolean' ? o : { reveiller: true, pourquoi: '', morceaux: [], panne: true });   // une panne laisse passer, comme avant
     });
     p.stdin.on('error', () => {});
     p.stdin.end(j({ texte: String(texte || '').slice(-1500) }));
   });
 }
-function ecrireReveilOreille(c, t, demande, maintenant, pourquoi = '') {
+// (30/10, 22:21, Ahmed : « le subconscient a envoyé un pavé ; qu'il découpe en petits morceaux, et que ce soit Hakim qui décide
+// du morceau à dire, et qu'il le reformule ») sa conscience ne reçoit plus toute la phrase de papa : les morceaux que son
+// subconscient a retenus, ou (un réflexe, une panne) la fin seulement
+function ecrireReveilOreille(c, t, demande, maintenant, pourquoi = '', morceaux = []) {
   const envie = demande ? 1 : envieDeCouper(), secondes = Math.round(1 + 14 * envie);   // (20:14) de 1 à 15 s
   c.oreilleMaxMs = secondes * 1000;
   const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(maintenant));
   const message = `[Horloge — ${quand}]\n[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : ${OREILLE_MARQUE}]\n`
-    + `Ce qu'il dit depuis le début de sa phrase, qui continue : « ${t} »\n`
+    + (morceaux && morceaux.length
+      ? `Ce que ton subconscient a retenu de ce qu'il dit (sa phrase continue), en morceaux : ${morceaux.map((m, i) => `${i + 1}) « ${m} »`).join(' ')}\n`
+      : `La fin de ce qu'il dit (sa phrase continue) : « ${t.length > 300 ? '…' + t.slice(-300) : t} »\n`)
     + (pourquoi ? `Ton subconscient t'a réveillé : ${pourquoi}.\n` : '')
     + `Ta jauge d'envie de couper : ${String(envie).replace('.', ',')} (tu peux parler par-dessus lui ${secondes} s au plus)`
     + `${demande ? ' — il te demande de le couper : vas-y, parle par-dessus lui' : ''}.\n`
     + "Il n'a pas fini : son message entier arrivera quand il se taira. Dis seulement ce que tu as vraiment besoin ou envie de "
-    + "dire maintenant (pas de mot de remplissage), dans le temps de ta jauge ; sinon réponds exactement « No response requested. »";
+    + "dire maintenant (pas de mot de remplissage) : choisis le morceau auquel réagir, avec tes mots, en une phrase courte, "
+    + "dans le temps de ta jauge ; sinon réponds exactement « No response requested. »";
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: message }] } }) + '\n'); }
   catch (x) { return { ok: false, raison: x.message }; }
   c.oreilleReveil = { texte: t, ts: maintenant };

@@ -151,7 +151,7 @@ test('ses résultats nouveaux : jamais pendant qu’il parle, ni pendant une aut
   assert.equal(p.ctx.etat.lectureDe, 1);
 });
 
-test('voix éteinte, la file attend ; (22:20) en conversation, ce qui a attendu plus de 45 s n’est plus dit ; les autres un par un', () => {
+test('voix éteinte, la file attend ; (vers 22 h) en conversation, ce qui a attendu plus de 45 s n’est plus dit ; les autres un par un', () => {
   const p = page({ voix: false });
   p.ctx.aDire.push({ id: 1, texte: 'Un résultat.', recu: p.maintenant() });
   p.avancer(60 * 60 * 1000); p.ctx.dire();

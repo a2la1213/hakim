@@ -329,7 +329,7 @@ def test_son_subconscient_trie_ce_qui_sort():
     r = corps.juger_parole("Hmm, je te suis papa", "Bon, on passe au live maintenant, tu es prêt ?", demander=faux)
     assert r == {"dire": False, "pourquoi": "creux, papa change de sujet"}
     assert "Hmm, je te suis papa" in vus[0] and "on passe au live" in vus[0] and "DONNÉES" in vus[0]
-    assert "par défaut, non ; en cas de doute, non" in vus[0], "(22:20, Ahmed : « plus stringent »)"
+    assert "par défaut, non ; en cas de doute, non" in vus[0], "(vers 22 h, Ahmed : « plus stringent »)"
     assert corps.juger_parole("Oui, je suis prêt !", "tu es prêt ?", demander=lambda p: '{"dire": true, "pourquoi": "il répond"}')["dire"] is True
     assert corps.juger_parole("x y", "", demander=lambda p: (_ for _ in ()).throw(OSError("hors ligne")))["dire"] is True
     assert corps.juger_parole("x y", "", demander=lambda p: "pas de json")["dire"] is True
@@ -337,14 +337,27 @@ def test_son_subconscient_trie_ce_qui_sort():
 
 
 def test_son_subconscient_ne_reveille_sa_conscience_que_pour_le_necessaire():
-    """(30/10, 22:30, Ahmed : « le subconscient filtre le plus gros et envoie le strict nécessaire au conscient »)"""
+    """(30/10, vers 22 h 05, Ahmed : « le subconscient filtre le plus gros et envoie le strict nécessaire au conscient »)"""
     vus = []
     def faux(p):
         vus.append(p)
         return '{"reveiller": false, "pourquoi": "il explique au live"}'
     r = corps.juger_reveil("Alors les gars, ce soir on va vous montrer comment Hakim", demander=faux)
-    assert r == {"reveiller": False, "pourquoi": "il explique au live"}
+    assert r == {"reveiller": False, "pourquoi": "il explique au live", "morceaux": []}
     assert "par défaut,\nnon ; en cas de doute, non" in vus[0] and "DONNÉES" in vus[0] and "ce soir on va vous montrer" in vus[0]
     assert corps.juger_reveil("Hakim, réponds-moi tout de suite", demander=lambda p: '{"reveiller": true, "pourquoi": "il appelle"}')["reveiller"] is True
     assert corps.juger_reveil("x y", demander=lambda p: (_ for _ in ()).throw(OSError("hors ligne")))["reveiller"] is True, "une panne laisse passer"
     assert corps.juger_reveil("", demander=faux)["reveiller"] is False
+
+
+def test_son_subconscient_decoupe_le_strict_necessaire_en_petits_morceaux():
+    """(30/10, 22:21, Ahmed : « le subconscient a envoyé un pavé ; qu'il découpe en petits morceaux, et que ce soit Hakim qui
+    décide du morceau à dire, et qu'il le reformule »)"""
+    vus = []
+    def faux(p):
+        vus.append(p)
+        return '{"reveiller": true, "pourquoi": "question directe", "morceaux": ["tu en penses quoi, Hakim ?", "  ", 3, "et le live", "x", "y"]}'
+    r = corps.juger_reveil("Alors voilà, et toi Hakim, tu en penses quoi, Hakim ?", demander=faux)
+    assert r["morceaux"] == ["tu en penses quoi, Hakim ?", "et le live", "x"], "au plus 3, des textes"
+    assert "petits morceaux" in vus[0] and "c'est Hakim qui choisira" in vus[0]
+    assert corps.juger_reveil("bla", demander=lambda p: '{"reveiller": false, "pourquoi": "rien", "morceaux": ["a"]}')["morceaux"] == []

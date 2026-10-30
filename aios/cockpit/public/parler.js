@@ -2381,7 +2381,7 @@ async function tourDeParole(conv, wav, infos, extra) {
   if (COMMANDE_PAUSE.test(texte)) { if (!lecteur.enPause) pauseVoix(); else humeur('en pause : « continue » pour que je reprenne'); return; }
   if (COMMANDE_VOLANT.test(texte) && !etat.reglages.volant) reglerVolant(true);             // puis il le lui dit (envoyé)
   else if (COMMANDE_FIN_VOLANT.test(texte) && etat.reglages.volant) reglerVolant(false);
-  // (30/10, 22:50, Ahmed : « maintenant stp, il galère à répondre » ; Hakim : « chacun son tour, comme nous ») son tour :
+  // (30/10, vers 22 h 10, Ahmed : « maintenant stp, il galère à répondre » ; Hakim : « chacun son tour, comme nous ») son tour :
   // pendant qu'il prépare ou dit sa réponse, ce que tu dis ne la coupe plus ; c'est gardé, et lui part dès que sa voix a
   // fini (« stop », « attends » et le bouton restent au-dessus de tout, plus haut)
   if (conv.tourGarde && !sonTourEnCours()) { texte = `${conv.tourGarde} … ${texte}`; conv.tourGarde = ''; }
@@ -3332,13 +3332,13 @@ function direSpontanes() {
   if (c && c.capteur && c.capteur.enParole) parlaitA = Date.now();
   sortirLesCoupees();                                // (30/10) une suite coupée ne se redit jamais d'elle-même
   const voix = c || etat.reglages.volant || etat.reglages.lectureAuto;
-  if (!voix || !aDire.length || (c && c.tourGarde)) return;          // (22:50) ce que papa a dit pendant son tour passe d'abord
+  if (!voix || !aDire.length || (c && c.tourGarde)) return;          // (vers 22 h 10) ce que papa a dit pendant son tour passe d'abord
   if (!lecteur || etat.flux || etat.micro || etat.transcription || !jarvisPeutParler() || lecteur.actif || lecteur.enPause
       || Date.now() - Math.max(parlaitA, etat.finVoixA || 0) < 1500) return;
   const m = aDire.shift();
   sauverADire();
   if (NON_REPONSE.test(m.texte)) return;
-  // (30/10, 22:20, Ahmed : « qu'il ne garde que ce qu'il veut vraiment dire ») en conversation, ce qui a attendu plus de 45 s
+  // (30/10, vers 22 h, Ahmed : « qu'il ne garde que ce qu'il veut vraiment dire ») en conversation, ce qui a attendu plus de 45 s
   // n'est plus le présent : pas dit (il reste écrit)
   const age = Date.now() - (Number(m.recu) || 0);
   if (c && age > 45000) { journalVoix('a_dire_perime', { age_s: Math.min(99999, Math.round(age / 1000)) }); return; }
