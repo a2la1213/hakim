@@ -2604,12 +2604,16 @@ const CROCHET_IMMUNITE = `'${path.join(ANAMNESE, '.venv', 'bin', 'python')}' '${
 // (relecture Opus) node par un chemin qui survit à « brew upgrade » ; si le crochet ne tourne pas, claude bloque l'envoi
 const NODE_STABLE = fs.existsSync('/usr/local/bin/node') ? '/usr/local/bin/node' : process.execPath;
 const GARDE_MESSAGE = `'${NODE_STABLE}' '${path.join(__dirname, 'garde-message.js')}'`;
+// (30/10, Ahmed : « tu peux la masquer pour eux ») sa clé GitHub privée, dans ses Documents : refusée au Read (et à l'écriture)
+// de Hakim, de ses agents et du messager ; son terminal et ses outils de fichiers la refusent aussi (anamnese)
+const CLES_MASQUEES = ['Read', 'Edit', 'Write'].flatMap(o => [`${o}(/${HOME}/**/GitHubKey*)`, `${o}(/${HOME}/**/githubkey*)`]);
 function reglagesCerveau(source) {
   return j({ hooks: { PostToolUse: [{ matcher: 'WebSearch|Read|Task|Agent', hooks: [{ type: 'command', command: CROCHET_IMMUNITE, timeout: 20 }] }],
     PreToolUse: [{ matcher: 'SendMessage', hooks: [{ type: 'command', timeout: 10, onFailure: 'block',
       command: `JARVIS_DIR='${JARVIS}' JARVIS_AGENTS_PARALLELE_MAX=${AGENTS_PARALLELE_MAX} ${GARDE_MESSAGE}` }] },
     // (29/10) au café, l'auteur est signé par ce que claude dit de l'appel (garde-message.js --cafe)
     { matcher: 'mcp__terminal__cafe_dire', hooks: [{ type: 'command', timeout: 10, onFailure: 'block', command: `${GARDE_MESSAGE} --cafe` }] }] },
+    permissions: { deny: CLES_MASQUEES },
     ...(source === 'api' ? { apiKeyHelper: aideCle() } : {}) });
 }
 /* (lot 4 du système immunitaire, 29/10) l'usurpation de voix : à l'oral, ce qu'une voix qui n'est pas celle d'Ahmed
@@ -4452,7 +4456,7 @@ function lancerMessager(q) {
   if (refus) { deposerReponse({ id: a.id, description: a.description, refus }); return; }
   try { fs.mkdirSync(JARVIS_MESSAGER_DOSSIER, { recursive: true, mode: 0o700 }); } catch (_) {}
   const demande = /^[0-9a-f]{6,32}$/.test(String(q.demande || '')) ? q.demande : crypto.randomBytes(6).toString('hex');
-  const reglages = Messager.reglagesMessager({ garde: GARDE_MESSAGE, jarvis: JARVIS, cible: a.id, crochet: CROCHET_IMMUNITE,
+  const reglages = Messager.reglagesMessager({ garde: GARDE_MESSAGE, jarvis: JARVIS, cible: a.id, crochet: CROCHET_IMMUNITE, masquees: CLES_MASQUEES,
     uneFois: path.join(JARVIS_MESSAGER_DOSSIER, `${demande}.envoye`) });
   const args = Messager.argsMessager(a.session, reglages, { mcp: JARVIS_MCP, permis: OUTILS_JARVIS.filter(o => !OUTILS_A_LUI_SEUL.includes(o)).concat('SendMessage').join(','), agents: j(agentsPourCerveau()) });
   const m = { id: a.id, essaye: false, porte: false, reparti: false, fini: false, refusOutil: '', enfant: null };

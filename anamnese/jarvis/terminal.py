@@ -179,6 +179,9 @@ def profil(atelier, port, fichiers=None, telephone=None, lire_aussi=()):
 (allow ipc-posix-sem*)
 (allow user-preference-read)
 (allow pseudo-tty)
+; (30/10, Ahmed : « tu peux la masquer pour eux ») sa clé GitHub privée, dans ses Documents : ni lue ni écrite (en dernier :
+; la dernière règle l'emporte sur les « allow » d'avant)
+(deny file-read* file-write* (regex #"/[Gg]it[Hh]ub[Kk]ey[^/]*$"))
 """
 
 

@@ -51,14 +51,15 @@ function argsMessager(session, reglages, { mcp, permis, agents }) {
 
 // la garde de SendMessage (la cible imposée, un seul envoi), la garde du fil principal (il ne fait que porter), et le
 // crochet de la sentinelle sur ce que lisent ses agents
-function reglagesMessager({ garde, jarvis, cible, uneFois, crochet }) {
+function reglagesMessager({ garde, jarvis, cible, uneFois, crochet, masquees = [] }) {
   const q = (s) => `'${String(s).replace(/'/g, '')}'`;
   return JSON.stringify({ hooks: {
     PreToolUse: [{ matcher: 'SendMessage', hooks: [{ type: 'command', timeout: 10, onFailure: 'block',
       command: `JARVIS_DIR=${q(jarvis)} JARVIS_MESSAGER_CIBLE=${q(cible)} JARVIS_MESSAGER_UNE_FOIS=${q(uneFois)} ${garde}` }] },
     { matcher: '*', hooks: [{ type: 'command', timeout: 10, onFailure: 'block', command: `JARVIS_DIR=${q(jarvis)} ${garde} --seulement-agents` }] },
     { matcher: 'mcp__terminal__cafe_dire', hooks: [{ type: 'command', timeout: 10, onFailure: 'block', command: `${garde} --cafe` }] }],
-    PostToolUse: [{ matcher: 'WebSearch|Read|Task|Agent', hooks: [{ type: 'command', command: crochet, timeout: 20 }] }] } });
+    PostToolUse: [{ matcher: 'WebSearch|Read|Task|Agent', hooks: [{ type: 'command', command: crochet, timeout: 20 }] }] },
+    permissions: { deny: masquees } });                   // (30/10) ce qu'Ahmed a masqué (sa clé GitHub privée)
 }
 
 function tailleFil(fil) { try { return fs.statSync(fil).size; } catch (_) { return 0; } }

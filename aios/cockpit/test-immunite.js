@@ -92,7 +92,7 @@ function monterReglages() {
   const ctx = { JSON, path, ANAMNESE: '/anamnese', j: JSON.stringify, aideCle: () => '/x/aide-cle', JARVIS: '/j', AGENTS_PARALLELE_MAX: 10,
     NODE_STABLE: '/bin/node', __dirname: '/cockpit' };
   vm.createContext(ctx);
-  vm.runInContext([ligne('const CROCHET_IMMUNITE ='), ligne('const GARDE_MESSAGE ='), prendre('reglagesCerveau'), 'this.f = { reglagesCerveau };'].join('\n'), ctx);
+  vm.runInContext([ligne('const CROCHET_IMMUNITE ='), ligne('const GARDE_MESSAGE ='), 'var CLES_MASQUEES = [];', prendre('reglagesCerveau'), 'this.f = { reglagesCerveau };'].join('\n'), ctx);
   return ctx.f;
 }
 

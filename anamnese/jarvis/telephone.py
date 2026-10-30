@@ -31,6 +31,9 @@ def _chemin(rel):
     rel = str(rel or "").strip()
     if not rel or rel.startswith(("~", "/")) or any(p in ("..", "") for p in Path(rel).parts) or ".stfolder" in rel or ".stversions" in rel:
         raise Refus("un chemin relatif à ses Documents, sans « .. » (ex. « Hakim/notes.txt »)")
+    nom = fichiers._normaliser(Path(rel).name)
+    if fichiers._SECRETS.search(nom) or fichiers.CLES_PAR_NOM.search(nom) or fichiers.cle_privee(documents() / rel):
+        raise Refus("fichier protégé (une clé, un secret) : Ahmed l'a masqué")      # (30/10, « masque-la pour eux »)
     return documents() / rel
 
 

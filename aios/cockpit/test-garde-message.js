@@ -150,3 +150,21 @@ test('café : un juge endormi peut être prévenu sans travail neuf, et ça ne c
   m.registre({ [JUGE]: { id: JUGE, type: 'juge', etat: 'parti' } });
   assert.match(m.garder(cafe(JUGE)).refus, /parti de lui-même/, 'un parti reste parti, même pour le café');
 });
+
+// (30/10, Ahmed : « tu peux la masquer pour eux ») sa clé GitHub privée, dans ses Documents : le Read de Hakim, de ses agents
+// et du messager la refuse (une règle « deny » l'emporte toujours) ; son terminal et ses outils de fichiers aussi (anamnese)
+test('la clé privée d’Ahmed : refusée au Read de Hakim, de ses agents et du messager', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const vm = require('node:vm');
+  const i = src.indexOf('const CLES_MASQUEES');
+  assert.ok(i >= 0);
+  const ctx = { HOME: '/Users/x' }; vm.createContext(ctx);
+  vm.runInContext(src.slice(i, src.indexOf('\n', i)) + '\nthis.c = CLES_MASQUEES;', ctx);
+  assert.ok(ctx.c.some(r => /^Read\(\/\/Users\/x\/\*\*\/GitHubKey\*\)$/.test(r)), ctx.c.join(' '));
+  assert.ok(ctx.c.some(r => /^Edit\(/.test(r)) && ctx.c.some(r => /^Write\(/.test(r)));
+  assert.match(src.slice(src.indexOf('function reglagesCerveau(')), /permissions: \{ deny: CLES_MASQUEES \}/);
+  const M = require('./messager.js');
+  const r = JSON.parse(M.reglagesMessager({ garde: 'g', jarvis: '/j', cible: 'a0000000000000000', crochet: 'c', uneFois: '/u', masquees: ['Read(//x/GitHubKey*)'] }));
+  assert.deepEqual(r.permissions.deny, ['Read(//x/GitHubKey*)']);
+  assert.match(src, /reglagesMessager\(\{[^}]*masquees: CLES_MASQUEES/);
+});

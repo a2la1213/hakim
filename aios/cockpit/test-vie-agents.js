@@ -103,7 +103,7 @@ test('son cerveau a SendMessage, avec sa garde (PreToolUse) ; le crochet de la s
   const ctx = { JSON, path, ANAMNESE: '/anamnese', j: JSON.stringify, aideCle: () => '/x', JARVIS: '/j', AGENTS_PARALLELE_MAX: 10,
     NODE_STABLE: '/bin/node', __dirname: '/cockpit' };
   vm.createContext(ctx);
-  vm.runInContext([ligne('const CROCHET_IMMUNITE ='), ligne('const GARDE_MESSAGE ='), prendre('reglagesCerveau'), 'this.f = { reglagesCerveau };'].join('\n'), ctx);
+  vm.runInContext([ligne('const CROCHET_IMMUNITE ='), ligne('const GARDE_MESSAGE ='), 'var CLES_MASQUEES = [];', prendre('reglagesCerveau'), 'this.f = { reglagesCerveau };'].join('\n'), ctx);
   const r = JSON.parse(ctx.f.reglagesCerveau('abonnement'));
   assert.equal(r.hooks.PostToolUse[0].matcher, 'WebSearch|Read|Task|Agent');
   const p = r.hooks.PreToolUse.filter(h => h.matcher === 'SendMessage');
@@ -176,7 +176,7 @@ test('relecture : la garde échoue fermée (onFailure block), node par un chemin
   const ctx = { JSON, path, ANAMNESE: '/anamnese', j: JSON.stringify, aideCle: () => '/x', JARVIS: '/j', AGENTS_PARALLELE_MAX: 10,
     NODE_STABLE: '/usr/local/bin/node', __dirname: '/cockpit' };
   vm.createContext(ctx);
-  vm.runInContext([ligne('const CROCHET_IMMUNITE ='), ligne('const GARDE_MESSAGE ='), prendre('reglagesCerveau'), 'this.f = { reglagesCerveau };'].join('\n'), ctx);
+  vm.runInContext([ligne('const CROCHET_IMMUNITE ='), ligne('const GARDE_MESSAGE ='), 'var CLES_MASQUEES = [];', prendre('reglagesCerveau'), 'this.f = { reglagesCerveau };'].join('\n'), ctx);
   const h = JSON.parse(ctx.f.reglagesCerveau('abonnement')).hooks.PreToolUse[0].hooks[0];
   assert.equal(h.onFailure, 'block');
   assert.match(h.command, /'\/usr\/local\/bin\/node' '\/cockpit\/garde-message\.js'$/);

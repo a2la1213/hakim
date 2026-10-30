@@ -83,3 +83,12 @@ def test_livrer_seulement_un_apk_signe_de_sa_cle(J, monkeypatch):
     monkeypatch.setattr(tricordeur.subprocess, "run", lambda cmd, **k: subprocess.CompletedProcess(cmd, 0, "CN=FoldLab", ""))
     with pytest.raises(tricordeur.Refus):
         tricordeur.livrer("tricordeur/build/t-signe.apk")
+
+
+def test_ses_documents_jamais_une_cle_privee(J):
+    doc = J / "cwd" / "fichiers" / "telephone" / "Z Fold 7"
+    (doc / "GitHubKey").write_text("-----BEGIN OPENSSH PRIVATE KEY-----\nb3Bl\n")
+    for f in (lambda: telephone.sauver("GitHubKey"), lambda: telephone.ecrire("GitHubKey", texte="x")):
+        with pytest.raises(telephone.Refus):
+            f()
+    assert (doc / "GitHubKey").read_text().startswith("-----BEGIN")

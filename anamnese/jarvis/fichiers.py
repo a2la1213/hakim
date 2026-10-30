@@ -104,6 +104,22 @@ class Refus(Exception):
     pass
 
 
+# (30/10, Ahmed : « tu peux la masquer pour eux ») « GitHubKey » dans ses Documents, une vraie clé SSH privée, n'avait pas
+# un nom de secret : les clés par leur nom (GitHubKey, ssh_key…), et TOUTE clé privée par son contenu, quel que soit son nom
+CLES_PAR_NOM = re.compile(r"git.?hub.?key|ssh.?key|deploy.?key|(^|[^a-z])key(\.pub)?$", re.I)
+_EN_TETE_CLE = re.compile(rb"-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY-----|PuTTY-User-Key-File")
+
+
+def cle_privee(chemin):
+    """Vrai si le fichier EST une clé privée (il commence par son en-tête : PEM, OpenSSH, PuTTY). Une note qui en contient
+    une au milieu reste lisible, la clé masquée (masquer)."""
+    try:
+        with open(chemin, "rb") as h:
+            return bool(_EN_TETE_CLE.match(h.read(4096).lstrip()))
+    except OSError:
+        return False
+
+
 def verifier(chemin, racines=None, accueil=None):
     """Le chemin réel (liens résolus), s'il est lisible par Jarvis ; sinon Refus avec la raison.
     Une pièce jointe (dans `accueil`) a été choisie par Ahmed lui-même : seul le test des noms de
@@ -128,10 +144,12 @@ def verifier(chemin, racines=None, accueil=None):
         raise Refus("fichier interne de Hakim (réglages, secrets techniques, base de la mémoire) : refusé")
     accueil = Path(accueil or ACCUEIL).resolve()
     jointe = reel == accueil or accueil in reel.parents
-    if not jointe and _SECRETS.search(_normaliser(reel.name)):
+    if not jointe and (_SECRETS.search(_normaliser(reel.name)) or CLES_PAR_NOM.search(_normaliser(reel.name))):
         raise Refus("fichier protégé : il peut contenir un secret (clé, mot de passe, .env)")
     if not reel.is_file():
         raise Refus("ce n'est pas un fichier")
+    if cle_privee(reel):
+        raise Refus("fichier protégé : c'est une clé privée")
     if reel.stat().st_nlink > 1 and any(_sous(reel, Path(z).resolve()) for z in ECRITS_PAR_HAKIM):
         raise Refus("un lien dur dans tes dossiers : refusé (il peut cacher un fichier fermé)")
     return reel

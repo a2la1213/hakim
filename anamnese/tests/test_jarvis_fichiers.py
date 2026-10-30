@@ -663,3 +663,26 @@ def test_l_outil_du_journal_passe_par_la_plage_qui_le_dit(monkeypatch):
     vu = {}
     monkeypatch.setattr(mcp_fichiers.fichiers, "plage_pour_outil", lambda t0, t1, entier=None: vu.setdefault("ok", "⚠ dit"))
     assert mcp_fichiers.chercher_dans_le_journal(debut="2026-10-29 06:00", fin="2026-10-29 12:00") == "⚠ dit"
+
+
+def test_une_cle_privee_ne_se_lit_pas_meme_sans_nom_de_secret(tmp_path):
+    """(30/10, Ahmed : « tu peux la masquer pour eux ») « GitHubKey » dans ses Documents, une vraie clé SSH privée, n'avait
+    pas un nom de secret : refusée par son nom, et toute clé privée refusée par son contenu, quel que soit son nom."""
+    racine = tmp_path / "Documents"
+    racine.mkdir()
+    (racine / "GitHubKey").write_text("-----BEGIN OPENSSH PRIVATE KEY-----\nb3Bl\n")
+    (racine / "GitHubKey.pub").write_text("ssh-ed25519 AAAA ahmed")
+    (racine / "notes-du-jour.txt").write_text("-----BEGIN RSA PRIVATE KEY-----\nMIIE\n")
+    (racine / "courses.txt").write_text("du pain")
+    for nom in ("GitHubKey", "GitHubKey.pub", "notes-du-jour.txt"):
+        with pytest.raises(fichiers.Refus):
+            fichiers.verifier(racine / nom, racines=[tmp_path], accueil=tmp_path / "accueil")
+    assert fichiers.verifier(racine / "courses.txt", racines=[tmp_path], accueil=tmp_path / "accueil")
+
+
+def test_son_terminal_ne_lit_ni_n_ecrit_une_cle_privee():
+    import terminal
+    args, _env = terminal.preparer("true", terminal.ATELIER, 9)
+    profil = " ".join(str(a) for a in args)
+    assert "[Gg]it[Hh]ub[Kk]ey" in profil and "deny file-read* file-write*" in profil
+    assert profil.rindex("[Gg]it[Hh]ub[Kk]ey") > profil.rindex("(allow file-write*"), "la dernière règle l'emporte"

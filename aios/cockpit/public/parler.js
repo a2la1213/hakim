@@ -3656,3 +3656,17 @@ async function chargerCalculs() {
 }
 chargerCalculs(); setInterval(chargerCalculs, 10000);
 document.addEventListener('visibilitychange', chargerCalculs);
+
+/* (30/10, Ahmed : « quand je passe d'une page à l'autre du cockpit, si je suis en conversation, que la conversation ne se
+   coupe pas ») sur le Mac, pendant une conversation, une autre page du cockpit s'ouvre dans un nouvel onglet : Parler reste
+   chargée, sa conversation continue. Dans l'appli du téléphone, c'est son volet qui s'en charge (Parler reste dessous). */
+function lienGardeConversation(e) {
+  if (!etat.conversation || window.HakimApp || e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+  const a = e.target && e.target.closest && e.target.closest('a[href]');
+  if (!a || a.target === '_blank') return;
+  let u; try { u = new URL(a.getAttribute('href'), location.origin); } catch (_) { return; }
+  if (u.origin !== location.origin || u.pathname.startsWith('/parler')) return;
+  e.preventDefault();
+  window.open(u.href, '_blank', 'noopener');
+}
+document.addEventListener('click', lienGardeConversation, true);

@@ -66,7 +66,7 @@ test('branché : le crochet du café dans son cerveau et chez le messager, les o
   const ctx = { JSON, path, ANAMNESE: '/anamnese', j: JSON.stringify, aideCle: () => '/x', JARVIS: '/j', AGENTS_PARALLELE_MAX: 10,
     NODE_STABLE: '/n', __dirname: '/cockpit' };
   vm.createContext(ctx);
-  vm.runInContext([ligne('const CROCHET_IMMUNITE ='), ligne('const GARDE_MESSAGE ='), prendre('reglagesCerveau'), 'this.f = { reglagesCerveau };'].join('\n'), ctx);
+  vm.runInContext([ligne('const CROCHET_IMMUNITE ='), ligne('const GARDE_MESSAGE ='), 'var CLES_MASQUEES = [];', prendre('reglagesCerveau'), 'this.f = { reglagesCerveau };'].join('\n'), ctx);
   const pre = JSON.parse(ctx.f.reglagesCerveau('abonnement')).hooks.PreToolUse;
   const c = pre.find(h => h.matcher === 'mcp__terminal__cafe_dire');
   assert.ok(c); assert.equal(c.hooks[0].onFailure, 'block'); assert.match(c.hooks[0].command, /garde-message\.js' --cafe$/);
