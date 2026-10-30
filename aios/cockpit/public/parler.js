@@ -2415,11 +2415,12 @@ function microParHakim(o) {
   if (o.x === 'ouvrir') return rouvrirMicroDeHakim(c, 'ouvrir');
   if (typeof reglagesCorps !== 'undefined' && reglagesCorps.micro_hakim === false) { journalVoix('micro_hakim', { x: 'refuse' }); return; }
   if (c.capteur.estMuet && !c.muetParHakim) return;          // tu l'avais déjà coupé toi-même : c'est à toi
-  // (22:46, Ahmed : « il a réussi sur une petite phrase, puis ça repart dans le même bug » ; Hakim : « coupé trop longtemps ») ton
-  // micro s'éteint quand SA VOIX part (pas pendant les 5 à 8 s où elle se prépare) et se rallume dès qu'elle se tait
-  c.muetParHakim = { attente: Date.now(), depuis: 0, s: Math.min(120, Number(o.s) || 0), jusqua: 0, voix: 0, residu: false };
+  // (30/10, 00:05, Ahmed : « quand il a sélectionné ses 8 empans… il coupe droit derrière son micro pour ne pas faire de
+  // cafouillage » ; « il doit pouvoir choisir quand il coupe ») c'est lui qui choisit (sa balise), et ton micro s'éteint AUSSITÔT ;
+  // il se rallume 0,4 s après sa voix (22:46 : plus jamais 15 s de trop), ou si sa voix ne part pas en 20 s
+  c.muetParHakim = { attente: 0, avantVoix: true, depuis: 0, s: Math.min(120, Number(o.s) || 0), jusqua: 0, voix: 0, residu: false };
   journalVoix('micro_hakim', { x: 'couper', s: Number(o.s) || 0 });
-  surveillerMicroDeHakim();
+  couperPourDeBon(c, c.muetParHakim);
 }
 function couperPourDeBon(c, m) {
   const t = Date.now();
@@ -2454,9 +2455,10 @@ function surveillerMicroDeHakim() {
     else if (t - m.attente > 15000) rouvrirMicroDeHakim(c, 'sans_voix');
     return;
   }
-  if (voixQuiSonne()) m.voix = t;
+  if (voixQuiSonne()) { m.voix = t; m.avantVoix = false; }
   if (t - m.depuis > 180000) return rouvrirMicroDeHakim(c, 'plafond');
   if (m.jusqua && t < m.jusqua) return;                      // sa durée minimale
+  if (m.avantVoix) { if (t - m.depuis > 20000) rouvrirMicroDeHakim(c, 'sans_voix'); return; }   // sa voix se prépare
   if (!voixQuiSonne() && !sonTourEnCours() && !(lecteur && lecteur.enPause) && t - m.voix > 400) rouvrirMicroDeHakim(c, 'fin_de_sa_voix');
 }
 setInterval(surveillerMicroDeHakim, 300);

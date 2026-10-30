@@ -354,16 +354,14 @@ test('(22:27-22:30) il coupe ton vrai micro par [[micro: couper]] : tes boutons 
   vm.runInContext(page.slice(a, b).replace(/^const /gm, 'var '), ctx);
   const c = ctx.etat.conversation;
   const pas = (ms) => { t += ms; ctx.surveillerMicroDeHakim(); };
-  // (22:46) sa réponse se prépare : ton micro reste ouvert ; il s'éteint quand sa voix part
+  // (00:05) c'est lui qui choisit : ton micro s'éteint AUSSITÔT ; il se rallume 0,4 s après sa voix
   ctx.microParHakim({ x: 'couper', s: 0 });
-  assert.ok(c.muetParHakim && c.muetParHakim.attente, 'décidé');
-  assert.equal(c.capteur.estMuet, false, 'sa voix se prépare : tu parles encore');
-  pas(5000);
-  assert.equal(c.capteur.estMuet, false);
-  ctx.etat.flux = null; ctx.lecteur.actif = true; ctx.lecteurNeuronal.joue = true; pas(300);
-  assert.equal(c.capteur.estMuet, true, 'sa voix part : ton vrai micro s’éteint');
+  assert.equal(c.capteur.estMuet, true, 'aussitôt, pour ne pas cafouiller');
   assert.deepEqual(boutons, [true], 'tes boutons le montrent');
   assert.deepEqual(residus, ['et puis aussi'], 'ce que tu avais dit pendant son tour : à son subconscient');
+  pas(5000);
+  assert.equal(c.capteur.estMuet, true, 'sa voix se prépare : coupé');
+  ctx.etat.flux = null; ctx.lecteur.actif = true; ctx.lecteurNeuronal.joue = true; pas(300);
   ctx.lecteurNeuronal.joue = false; pas(300);
   assert.equal(c.capteur.estMuet, true, 'entre deux phrases (la suite se prépare) : coupé');
   ctx.lecteurNeuronal.joue = true; pas(3000); ctx.lecteurNeuronal.joue = false; ctx.lecteur.actif = false; pas(300);
@@ -372,22 +370,21 @@ test('(22:27-22:30) il coupe ton vrai micro par [[micro: couper]] : tes boutons 
   assert.equal(c.muetParHakim, null, 'sa voix s’est tue : rouvert aussitôt');
   assert.equal(c.capteur.estMuet, false);
   assert.ok(journal.some(([e, d]) => e === 'micro_hakim' && d.x === 'ouvrir' && d.pourquoi === 'fin_de_sa_voix'));
-  // son petit mot (dit à l'instant) : coupé pendant le mot, rouvert juste après
+  // son petit mot : coupé dès sa décision, rouvert juste après le mot
   ctx.microParHakim({ x: 'couper' }); pas(4000);
-  assert.equal(c.capteur.estMuet, false, 'le mot se prépare');
-  ctx.motDirectJusqua = t + 2000; pas(300);
-  assert.equal(c.capteur.estMuet, true, 'le mot sonne');
-  pas(2000); pas(500);
-  assert.equal(c.capteur.estMuet, false, 'le mot dit : rouvert (plus 15 s de garde)');
-  // (22:38) une durée MINIMALE qu'il choisit, comptée dès que sa voix part
+  assert.equal(c.capteur.estMuet, true, 'le mot se prépare : coupé');
+  ctx.motDirectJusqua = t + 2000; pas(300); pas(2000); pas(500);
+  assert.equal(c.capteur.estMuet, false, 'le mot dit : rouvert (plus jamais 15 s de trop)');
+  // (22:38) une durée MINIMALE qu'il choisit
   ctx.microParHakim({ x: 'couper', s: 10 }); ctx.motDirectJusqua = t + 2000; pas(300);
-  assert.equal(c.capteur.estMuet, true);
   pas(3000);
   assert.equal(c.capteur.estMuet, true, 'sa voix s’est tue, mais il a choisi 10 s');
-  pas(7500);
+  pas(7000);
   assert.equal(c.capteur.estMuet, false, '10 s : rouvert');
-  // sa voix ne part pas : rien n'est coupé
-  ctx.microParHakim({ x: 'couper' }); pas(16000);
+  // sa voix ne part pas : rouvert à 20 s
+  ctx.microParHakim({ x: 'couper' }); pas(19000);
+  assert.equal(c.capteur.estMuet, true);
+  pas(1500);
   assert.equal(c.muetParHakim, null); assert.equal(c.capteur.estMuet, false);
   // 3 min au plus
   ctx.microParHakim({ x: 'couper', s: 120 }); ctx.lecteurNeuronal.joue = true; pas(300); pas(181000);
@@ -404,7 +401,7 @@ test('(22:27-22:30) il coupe ton vrai micro par [[micro: couper]] : tes boutons 
   // le bouton de papa reprend la main ; le libellé dit qui a coupé
   assert.match(page, /if \(!enAttente\) \{ conv\.capteur\.muet\(false\); majBoutonsMuet\(conv\);/, 'ton bouton rouvre');
   assert.match(page, /'Coupé par Hakim'/);
-  assert.match(page, /if \(c && c\.muetParHakim && !c\.muetParHakim\.attente\) return 'coupe';/, 'l’orbe passe au vert (une fois coupé)');
+  assert.match(page, /if \(c && c\.muetParHakim && !c\.muetParHakim\.attente\) return 'coupe';/, 'l’orbe passe au vert');
   assert.match(fs.readFileSync(path.join(__dirname, 'public', 'orbe.js'), 'utf8'), /coupe: \['#86efac', '#22c55e', '#15803d'\]/);
   // ta phrase encore en route, micro coupé par lui : à son subconscient ; « stop » reste au-dessus
   const i = page.indexOf('async function tourDeParole('), bloc = page.slice(i, page.indexOf('\n}\n', i));
