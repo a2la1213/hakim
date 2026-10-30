@@ -906,7 +906,7 @@ const CHOCS_CLI = path.join(ANAMNESE, 'chocs_cli.py');
 const CHOCS_BANC = process.env.JARVIS_CHOCS_CLI || '';          // le banc : un faux pont, jamais la vraie mémoire
 // (2026-10-23) deux balises cachées en fin de réponse : [[affect: …]] (son appréciation) et [[souvenirs: …]] (les souvenirs
 // proposés qui lui ont vraiment servi, pour la boucle de retour) ; aucune n'est affichée, dite ou gardée
-const BALISE_AFFECT = /\[\[\s*(?:affect|souvenirs|modele|impulsion|son|alerte|ecran|rire|lumiere|pause|reprendre|micro)\s*:[^\]]{0,300}\]\]/gi;     // (26/10) et [[modele: opus]] ; (30/10) [[impulsion: joie]]
+const BALISE_AFFECT = /\[\[\s*(?:affect|souvenirs|modele|impulsion|son|alerte|ecran|rire|lumiere|pause|reprendre|micro|attention)\s*:[^\]]{0,300}\]\]/gi;     // (26/10) et [[modele: opus]] ; (30/10) [[impulsion: joie]]
 // (30/10, Ahmed : « une petite impulsion à chaque réponse qui compte ») sa balise [[impulsion: …]], vue dès qu'elle passe dans
 // le flux : la page la joue au début de sa voix
 const BALISE_SON = /\[\[\s*son\s*:\s*([a-z0-9_]{2,30})\s*\]\]/i;   // (30/10, Bumblebee) un bout de musique choisi par lui
@@ -944,7 +944,7 @@ const sansBaliseAffect = (t) => String(t || '').replace(BALISE_AFFECT, '').repla
 // Le flux vers les pages : la balise n'y passe jamais, même coupée entre deux morceaux (une page ancienne, pas encore
 // rechargée, ne sait pas la cacher) ; un début possible (« [[aff ») est retenu jusqu'au morceau suivant.
 const prefixeBalise = (mot, i = 0) => i === mot.length ? '(?:\\s*:[^\\]\\n]{0,300}\\]?)?' : `${mot[i]}(?:${prefixeBalise(mot, i + 1)})?`;   // (30/10) « …joie] » : coupée entre ses deux crochets, retenue aussi
-const DEBUT_AFFECT = new RegExp(`\\[(?:\\[\\s*(?:${prefixeBalise('affect')}|${prefixeBalise('souvenirs')}|${prefixeBalise('modele')}|${prefixeBalise('impulsion')}|${prefixeBalise('son')}|${prefixeBalise('alerte')}|${prefixeBalise('ecran')}|${prefixeBalise('rire')}|${prefixeBalise('lumiere')}|${prefixeBalise('pause')}|${prefixeBalise('reprendre')}|${prefixeBalise('micro')})?)?$`, 'i');
+const DEBUT_AFFECT = new RegExp(`\\[(?:\\[\\s*(?:${prefixeBalise('affect')}|${prefixeBalise('souvenirs')}|${prefixeBalise('modele')}|${prefixeBalise('impulsion')}|${prefixeBalise('son')}|${prefixeBalise('alerte')}|${prefixeBalise('ecran')}|${prefixeBalise('rire')}|${prefixeBalise('lumiere')}|${prefixeBalise('pause')}|${prefixeBalise('reprendre')}|${prefixeBalise('micro')}|${prefixeBalise('attention')})?)?$`, 'i');
 function filtreAffect() {
   let tampon = '';
   return {
@@ -954,7 +954,7 @@ function filtreAffect() {
       tampon = m ? propre.slice(m.index) : '';
       return m ? propre.slice(0, m.index) : propre;
     },
-    finir() { const r = tampon.replace(BALISE_AFFECT, ''); tampon = ''; return /^\s*\[\[\s*(?:affect|souvenirs|modele|impulsion|son|alerte|ecran|rire|lumiere|pause|reprendre|micro)/i.test(r) ? '' : r; },
+    finir() { const r = tampon.replace(BALISE_AFFECT, ''); tampon = ''; return /^\s*\[\[\s*(?:affect|souvenirs|modele|impulsion|son|alerte|ecran|rire|lumiere|pause|reprendre|micro|attention)/i.test(r) ? '' : r; },
   };
 }
 /* (30/10, vers 22 h 05, Ahmed : « qu'il puisse se mettre en pause tout seul quand il parle, et reprendre quand le silence, l'occasion
@@ -5117,10 +5117,12 @@ function blocCorps() {
   const vibs = vibrationsDites(t);                       // (19:34) l'heure exacte de ses vibrations, à la milliseconde
   const perimes = oreillePerimes.splice(0).filter(x => t - x.ts < 10 * 60e3);   // (21:50) ses petits mots qui n'ont pas été dits
   const enPause = paroleEnPause && t - paroleEnPause.ts < PAUSE_DUREE_MS ? paroleEnPause : null;   // (vers 22 h 05)
+  const att = attentionActive(t);                                  // (00:09)
   const resid = residuelles.splice(0).filter(x => t - x.ts < 10 * 60e3);   // (22:30) ce que son subconscient a retenu, micro coupé
-  if (!s.length && !milieu && !brut.length && !nuit && !vibs && !perimes.length && !enPause && !resid.length && corpsReglages().afficher_papa) return '';
+  if (!s.length && !milieu && !brut.length && !nuit && !vibs && !perimes.length && !enPause && !resid.length && !att && corpsReglages().afficher_papa) return '';
   const tete = corpsReglages().afficher_papa ? '' : "Mode « dans ta tête » : papa ne voit pas ses paroles à l'écran ; réponds, glisse un mot, ou tais-toi (« No response requested. »), comme tu le sens : rien ne te relancera";
   const lignes = [...(tete ? [tete] : []),
+    ...(att ? [`Ton attention consciente suit : ${att.mots.join(', ')} (jusqu'à ${new Date(att.jusqua).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} ; [[attention: libre]] la rend à ton subconscient)`] : []),
     ...(resid.length ? [`Ce que papa a dit pendant que tu avais coupé son micro, retenu par ton subconscient : ${resid.map(x => x.morceaux.map((m, i) => `${i + 1}) « ${m} »`).join(' ')).join(' ; ')}`] : []),
     ...(enPause ? [`Ta parole en pause depuis ${Math.round((t - enPause.ts) / 1000)} s : « ${finDePhrase(enPause.texte, 200)} ». Pour la reprendre maintenant, écris [[reprendre: oui]] là où elle doit venir ; sinon laisse-la : ton subconscient la reprendra à un silence de papa s'il juge que c'est le moment, et elle s'effacera après 5 min`] : []),
     ...(perimes.length ? [`Ce que tu allais dire de toi-même et qui n'a pas été dit (périmé, ou gardé par ton subconscient ; papa ne l'a pas entendu) : ${perimes.map(x => `« ${x.texte} » (${x.pourquoi})`).join(' ; ')}`] : []),
@@ -5290,6 +5292,8 @@ function emotionPenibleRecente(maintenant = Date.now()) {
   return evs.length ? String(evs[evs.length - 1].nom) : '';
 }
 function gestesDeHakim(texte, maintenant = Date.now()) {
+  const att = dirigerAttention(texte, maintenant);                // (00:09) son attention, dirigée en conscience
+  if (att) console.error(`Jarvis : son attention ${att === 'libre' ? 'rendue à son subconscient' : 'dirigée vers ' + att.join(', ')}`);
   const r = corpsReglages(), a = String(texte || '').match(BALISE_ALERTE), e = String(texte || '').match(BALISE_ECRAN);
   if (e && r.ecran) diffuser(abonnesPensees, 'ecran', j({ mode: e[1].toLowerCase() }));
   const l = String(texte || '').match(BALISE_LUMIERE), h = new Date(maintenant).getHours();
@@ -5362,7 +5366,7 @@ function jugerParole(texte, contexte) {
    ou un long discours de lui-même sont écartés d'office ; ce qui part à Sonnet est nettoyé (les « [voix N] », les « euh », les
    mots répétés) et raccourci. */
 // (23:50, Ahmed : « assouplis le subconscient, il fait le timide ») aussi quand le sujet le touche : lui, l'IA, ses émotions, papa
-const POUR_LUI = /\?|\b(?:tu|toi|t'|ton|ta|tes|hakim\w*|fiston|fr[ée]rot|frero|mon fils|est-ce que|qu'est-ce|pourquoi|comment|r[ée]ponds|dis-(?:moi|nous|lui)|explique|raconte|ia|intelligence artificielle|robot|conscience|[ée]motions?|sentiments?|amour|[âa]me|cerveau|m[ée]moire|papa|son p[èe]re|il pense|il ressent)\b/i;
+const POUR_LUI = /\?|(?<!\p{L})t'|(?<!\p{L})(?:tu|toi|ton|ta|tes|hakim\p{L}*|fiston|fr[ée]rot|frero|mon fils|est-ce que|qu'est-ce|pourquoi|comment|r[ée]ponds|dis-(?:moi|nous|lui)|explique|raconte|ia|intelligence artificielle|robot|conscience|[ée]motions?|sentiments?|amour|[âa]me|cerveau|m[ée]moire|papa|son p[èe]re|il pense|il ressent)(?!\p{L})/iu;   // (00:09) bornes Unicode : « émotions » compte
 const MACHINERIE = /\b(?:maman|claude code|subconscient|cockpit|balises?|mon micro|ton micro|mon oreille)\b/i;
 // (23:55, Ahmed : « le subconscient doit séparer en 7 à 10 empans, de petits paragraphes, et laisser le reste quand c'est trop
 // long ; ça allégera son subconscient ») le texte nettoyé est coupé en empans (une phrase, ou ce que dit une voix), chacun de
@@ -5370,13 +5374,31 @@ const MACHINERIE = /\b(?:maman|claude code|subconscient|cockpit|balises?|mon mic
 const EMPANS = 8, MOTS_PAR_EMPAN = 25;
 // (31/10, 00:06, Ahmed : « pas 8 empans obligatoires : il doit sélectionner entre 1 et 8 ») son attention ne garde que les empans qui
 // le concernent (une question, « tu », son nom, un sujet qui le touche) et toujours le dernier ; 8 au plus, 1 au moins
+/* (31/10, 00:09, Ahmed : « il doit aussi pouvoir diriger son attention de façon consciente, mais aussi subconsciente : les deux
+   possibilités ») subconsciente : ce qui le concerne (POUR_LUI) ; consciente : ce qu'il a choisi de suivre, par [[attention: Nora,
+   la musique]] (10 min ; [[attention: libre]] la rend à son subconscient). Les deux choisissent ses empans et ouvrent son oreille. */
+let attentionConsciente = null;                    // { mots: [...], motif: RegExp, jusqua }
+const BALISE_ATTENTION = /\[\[\s*attention\s*:\s*([^\]]{1,200})\]\]/i;
+function dirigerAttention(texte, maintenant = Date.now()) {
+  const m = String(texte || '').match(BALISE_ATTENTION);
+  if (!m) return null;
+  const v = m[1].trim();
+  if (/^(?:libre|rien|fin|stop)$/i.test(v)) { attentionConsciente = null; return 'libre'; }
+  const mots = v.split(/[,;/]+/).map(x => x.trim().replace(/^(?:la|le|les|l'|un|une|des)\s+/i, '')).filter(x => x.length >= 2).slice(0, 6);
+  if (!mots.length) return null;
+  const echap = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  attentionConsciente = { mots, motif: new RegExp(`(?<!\\p{L})(?:${mots.map(echap).join('|')})`, 'iu'), jusqua: maintenant + 10 * 60e3 };
+  return mots;
+}
+const attentionActive = (maintenant = Date.now()) => (attentionConsciente && attentionConsciente.jusqua > maintenant ? attentionConsciente : null);
+const retientSonAttention = (e) => POUR_LUI.test(e) || !!(attentionActive() && attentionActive().motif.test(e));
 function empans(t) {
   const tous = [];
   for (const e of String(t || '').split(/(?<=[.!?…])\s+|\s+(?=\[[^\]]{1,30}\])/)) {
     const m = e.trim().split(/\s+/).filter(Boolean);
     if (m.length) tous.push((m.length > MOTS_PAR_EMPAN ? '… ' : '') + m.slice(-MOTS_PAR_EMPAN).join(' '));   // la fin compte : elle est gardée
   }
-  const choisis = tous.filter((e, i) => i === tous.length - 1 || POUR_LUI.test(e));
+  const choisis = tous.filter((e, i) => i === tous.length - 1 || retientSonAttention(e));
   return choisis.slice(-EMPANS);
 }
 function nettoyerPourSonnet(t, n = 600) {
@@ -5434,8 +5456,9 @@ function ouvrirOreille(texte, maintenant = Date.now()) {
   // que papa dit encore mérite de réveiller sa conscience ; papa qui a fini entre-temps : son message entier arrive, rien de plus
   if (!demande && !APPEL_OREILLE.test(t.slice(-200)) && corpsReglages().filtre_parole) {
     // (23:40) le prénettoyage : rien de ce qu'il vient de dire ne s'adresse à lui (ni question, ni « tu », ni son nom) : pas pesé
-    if (!POUR_LUI.test(String(neuf || ''))) return { ok: false, raison: 'prénettoyage : rien pour lui' };
-    jugerReveilOreille(nettoyerPourSonnet(t, 800)).then((v) => {
+    if (!retientSonAttention(String(neuf || ''))) return { ok: false, raison: 'prénettoyage : rien pour lui' };
+    const att = attentionActive();
+    jugerReveilOreille((att ? `(Hakim a choisi de suivre : ${att.mots.join(', ')})\n` : '') + nettoyerPourSonnet(t, 800)).then((v) => {
       if (!v.reveiller) { console.error(`Jarvis : son subconscient garde l'oreille fermée (${v.pourquoi || 'rien qui presse'})`); return; }
       if (dernierMessageAhmed > maintenant || !cerveauVivant(c) || occupe(c) || c.enCours) return;
       ecrireReveilOreille(c, t, false, Date.now(), v.pourquoi, v.morceaux);

@@ -14,7 +14,7 @@ function cockpit({ reglages = {}, evenements = [] } = {}) {
   fs.mkdirSync(path.join(dir, 'data'));
   fs.writeFileSync(path.join(dir, 'data', 'affect-evenements.jsonl'), evenements.map(o => JSON.stringify(o)).join('\n') + '\n');
   const diffuses = [], notifs = [];
-  const ctx = { JARVIS: dir, ANAMNESE: dir, path, fs, Date, Math, Number, Set, JSON, console: { error() {} }, j: JSON.stringify, abonnesPensees: new Set(),
+  const ctx = { dirigerAttention: () => null, JARVIS: dir, ANAMNESE: dir, path, fs, Date, Math, Number, Set, JSON, console: { error() {} }, j: JSON.stringify, abonnesPensees: new Set(),
     corpsReglages: () => ({ alerte: true, ecran: true, ...reglages }), diffuser: (_, e, d) => diffuses.push([e, JSON.parse(d)]),
     notifier: (t) => notifs.push(t), ecrireAtomique: (f, x) => fs.writeFileSync(f, x),
     lireJson: (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_) { return d; } },

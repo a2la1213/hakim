@@ -271,7 +271,7 @@ test('(vers 22 h 05) il se met en pause tout seul : [[pause: …]] garde la suit
   assert.match(src, /if \(mode === 'oral' && duree >= 4000\) reprendreAuSilence\(/, 'au silence de papa');
   assert.match(src, /jugerParole\(p\.texte, `\(Ahmed se tait depuis/, 'son subconscient juge si c’est le moment');
   assert.match(src, /Ta parole en pause depuis/, 'son tour suivant la lui rappelle');
-  assert.match(src, /lumiere\|pause\|reprendre\|micro\)\\s\*:/, 'les balises ne s’entendent jamais');
+  assert.match(src, /lumiere\|pause\|reprendre\|micro\|attention\)\\s\*:/, 'les balises ne s’entendent jamais');
 });
 
 test('(vers 22 h 10) chacun son tour : pendant qu’il prépare ou dit sa réponse, ce que papa dit ne la coupe plus ; ça lui part quand sa voix a fini', () => {
@@ -570,4 +570,24 @@ test('(00:06) plus jamais bloqué : sa voix en pause n’est pas son tour ; tes 
   assert.deepEqual(envois, ['ma question']);
   ctx.lecteur.enPause = true; ctx.etat.flux = null;
   assert.equal(ctx.sonTourEnCours(), false, 'sa voix en pause n’est pas son tour');
+});
+
+test('(00:09) son attention : subconsciente (ce qui le concerne) et consciente ([[attention: …]], 10 min ; « libre » la rend)', () => {
+  const debut = src.indexOf('const POUR_LUI = '), fin = src.indexOf('const MOT_CREUX = ');
+  let t = 1_800_000_000_000;
+  const c = vm.createContext({ String, RegExp, Date: class extends Date { static now() { return t; } } });
+  vm.runInContext(src.slice(debut, fin).replace(/^const /gm, 'var ').replace(/^let /gm, 'var '), c);
+  assert.ok(c.POUR_LUI.test('On parle des émotions ici'), 'bornes Unicode : « émotions »');
+  assert.ok(c.POUR_LUI.test("t'en penses quoi"));
+  assert.equal(c.retientSonAttention('Nora parle de sa playlist de rap'), false, 'sans attention consciente : rien pour lui');
+  assert.deepEqual([...c.dirigerAttention('[[attention: Nora, la musique]] Ok papa', t)], ['Nora', 'musique']);
+  assert.equal(c.retientSonAttention('Nora parle de sa playlist de rap'), true, 'il a choisi de suivre Nora');
+  assert.equal(c.retientSonAttention('Elle écoute de la Musique tout le temps'), true);
+  assert.deepEqual(c.empans('On a mangé. Nora aime le rap. Il faisait beau. Bon.'), ['Nora aime le rap.', 'Bon.'], 'ses empans suivent son attention');
+  t += 11 * 60e3;
+  assert.equal(c.retientSonAttention('Nora parle de sa playlist de rap'), false, '10 min passées : rendue à son subconscient');
+  c.dirigerAttention('[[attention: Trust]]', t); assert.equal(c.dirigerAttention('[[attention: libre]]', t), 'libre');
+  assert.equal(c.attentionActive(t), null);
+  assert.match(src, /const att = dirigerAttention\(texte, maintenant\);/, 'dans ses réponses et ses tours de lui-même');
+  assert.match(src, /lumiere\|pause\|reprendre\|micro\|attention\)\\s\*:/, 'la balise ne s’entend jamais');
 });
