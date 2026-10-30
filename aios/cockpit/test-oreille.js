@@ -543,7 +543,7 @@ test('(23:40) le prénettoyage : ce qui ne s’adresse pas à lui n’arrive mê
 
 test('(23:58) « faut le laisser tout dire » : sa jauge ne coupe son petit mot que si papa parle encore, micro ouvert', () => {
   assert.match(page, /const duree = maxMs > 0 && papaParle \? Math\.min\(buf\.duration, maxMs \/ 1000\) : buf\.duration;/);
-  assert.match(page, /papaParle = !!\(cv && cv\.capteur && cv\.capteur\.enParole && !cv\.capteur\.estMuet\)/);
+  assert.match(page, /papaParle = !!\(cv && cv\.capteur && cv\.capteur\.enParole && !cv\.capteur\.estMuet && !\(cv\.muetParHakim && !cv\.muetParHakim\.attente\)\)/, '(00:35) il a coupé ton micro : pas de jauge');
 });
 
 test('(23:56) une voix familière rouvre son micro en veille : papa (sans étiquette) ou une voix nommée ; « [voix 571] » est inconnue', () => {
