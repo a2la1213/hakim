@@ -23,6 +23,7 @@ function simulateur({ fixe, parSec, cps, appris, conversation = true, prets = []
   const sons = [], demandes = [];
   const actx = {
     state: 'running', get currentTime() { return maintenant; },
+    createGain: () => ({ gain: { value: 1 }, connect() {} }),   // (30/10, 20:09) la force de sa voix, phrase par phrase
     decodeAudioData: (ab) => Promise.resolve({ duration: ab.n / cps, texte: ab.texte }),   // le texte suit son audio
     createBufferSource() {
       const s = { buffer: null, playbackRate: { value: 1 }, connect() {}, onended: null,
@@ -41,6 +42,7 @@ function simulateur({ fixe, parSec, cps, appris, conversation = true, prets = []
     debutsPrets: new Set(prets), cleDebut: (d) => d,                 // (28/10) ses débuts dont la voix est prête
     actx, analyseurVoix: {}, lecteurSysteme: null,
     jeton: () => 'x', humeur() {}, jarvisPeutParler: () => true,
+    forceDeLaVoix: () => 1,
     fetch: (url, o) => {
       const { texte } = JSON.parse(o.body);
       demandes.push({ t: maintenant, texte });

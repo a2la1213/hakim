@@ -13,6 +13,10 @@ const SESSION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const MESSAGE_MAX = 4000;
 const REPONSE_MAX = 6000;
 const MESSAGERS_PAR_JOUR = 20;                     // (relecture Opus) chaque réveil relit ~300 k jetons
+// (30/10, 15:38, Ahmed via Hakim : « qu'on puisse les réveiller tous en même temps ») plusieurs messagers à la fois, un par
+// ancienne conversation (jamais deux claude sur la même) ; au-delà, ils attendent leur tour (cockpit) : la charge du Mac
+// (chacun est un claude et ses serveurs) et le forfait (chacun relit ~300 k jetons) le demandent
+const MESSAGERS_EN_PARALLELE = 3;
 
 // le refus (une phrase), ou null : le messager peut partir
 function refusMessager(q, { registre, sessionCourante, sessionsVivantes, enRoute, duJour = 0, arreteParClaude = false }) {
@@ -29,7 +33,6 @@ function refusMessager(q, { registre, sessionCourante, sessionsVivantes, enRoute
   if (a.etat === 'arrete' || arreteParClaude) return 'il a été arrêté : il ne peut plus être réveillé';
   if (a.etat === 'travaille') return 'il travaille encore, dans son ancienne conversation : attends sa fin';
   if ((sessionsVivantes || []).includes(a.session)) return 'son ancienne conversation tourne encore (un cerveau finit ses agents) : réessaie quand elle aura fini';
-  if ((enRoute || []).length) return 'un messager est déjà en route : un seul à la fois, attends sa réponse';
   if (duJour >= MESSAGERS_PAR_JOUR) return `déjà ${MESSAGERS_PAR_JOUR} messagers aujourd'hui (chacun relit toute une ancienne conversation)`;
   return null;
 }
@@ -57,7 +60,8 @@ function reglagesMessager({ garde, jarvis, cible, uneFois, crochet, masquees = [
     PreToolUse: [{ matcher: 'SendMessage', hooks: [{ type: 'command', timeout: 10, onFailure: 'block',
       command: `JARVIS_DIR=${q(jarvis)} JARVIS_MESSAGER_CIBLE=${q(cible)} JARVIS_MESSAGER_UNE_FOIS=${q(uneFois)} ${garde}` }] },
     { matcher: '*', hooks: [{ type: 'command', timeout: 10, onFailure: 'block', command: `JARVIS_DIR=${q(jarvis)} ${garde} --seulement-agents` }] },
-    { matcher: 'mcp__terminal__cafe_dire', hooks: [{ type: 'command', timeout: 10, onFailure: 'block', command: `${garde} --cafe` }] }],
+    { matcher: 'mcp__terminal__cafe_dire', hooks: [{ type: 'command', timeout: 10, onFailure: 'block', command: `${garde} --cafe` }] },
+    { matcher: 'mcp__terminal__cafe_lire', hooks: [{ type: 'command', timeout: 10, onFailure: 'block', command: `${garde} --cafe-lire` }] }],
     PostToolUse: [{ matcher: 'WebSearch|Read|Task|Agent', hooks: [{ type: 'command', command: crochet, timeout: 20 }] }] },
     permissions: { deny: masquees } });                   // (30/10) ce qu'Ahmed a masqué (sa clé GitHub privée)
 }
@@ -90,4 +94,4 @@ function filAgent(projets, cwd, session, id) {
 }
 
 module.exports = { refusMessager, promptMessager, argsMessager, reglagesMessager, dernierTexteAgent, tailleFil, filAgent, MESSAGE_MAX,
-  MESSAGERS_PAR_JOUR };
+  MESSAGERS_PAR_JOUR, MESSAGERS_EN_PARALLELE };

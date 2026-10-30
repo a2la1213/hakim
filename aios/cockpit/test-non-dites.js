@@ -1,6 +1,9 @@
-/* Ce qu'il n'a pas pu dire (2026-10-23, Ahmed : « rien n'est jamais jeté ; s'il y en a plus de deux, il synthétise ce
-   qu'il veut et dit complètement ce qu'il veut ») : node --test test-non-dites.js
-   La file de la page (parler.js) et le réveil du cockpit (server.js) sont lus dans les fichiers et joués à part. */
+/* Ce qu'il a dit mais qu'Ahmed n'a pas entendu (2026-10-23, Ahmed : « rien n'est jamais jeté » ; 30/10, 14:50, Ahmed, relayé par
+   Hakim et confirmé : « plus de redites de lui-même ; il les répète seulement si je le demande ») : node --test test-non-dites.js
+   La page (parler.js) et le cockpit (server.js) sont lus dans les fichiers et joués à part.
+   Avant le 30/10 : la page redisait la suite coupée au premier calme (« Je reprends ce que je disais à… ») et, au-delà de deux,
+   le cockpit réveillait Hakim pour une synthèse orale. Désormais : envoyée tout de suite au cockpit, gardée « dite mais pas
+   entendue », et donnée à Hakim seulement quand Ahmed demande de répéter. Ses résultats NOUVEAUX restent dits d'eux-mêmes. */
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
@@ -8,70 +11,121 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 
-/* ---- la page : garder, attendre le calme, dire ; plus de deux → synthèse ---- */
-function page({ voix = true, fetchOk = true } = {}) {
-  const src = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+/* ---- la page : garder (au cockpit, tout de suite), le secours du navigateur, ne plus jamais redire ---- */
+const src = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+function page({ voix = true, fetchOk = true, stock = {} } = {}) {
   const debut = src.indexOf('const aDire = [];'), fin = src.indexOf('setInterval(direSpontanes, 500);');
   const quand = src.slice(src.indexOf('function quandMessage('), src.indexOf('const heureMessage'));
   let t = 1_800_000_000_000;
-  const dits = [], envois = [], stock = {}, presents = [];
+  const dits = [], envois = [], journal = [];
   const lecteur = { actif: false, enPause: false, dire: (p) => dits.push(p), finFlux() {} };
   const ctx = {
-    Math, JSON, String, Array, Promise, Error,
+    Math, JSON, String, Array, Promise, Error, Set, Number,
     Date: class extends Date { constructor(...a) { super(...(a.length ? a : [t])); } static now() { return t; } },
     etat: { conversation: voix ? { capteur: { enParole: false } } : null, reglages: {}, flux: null, micro: null, transcription: null,
       lectureDe: 7, decoupeFlux: null, finVoixA: 0, messages: [] },
     sauver() {}, rendre() {},
     lecteur, lecteurNeuronal: { restant: () => [] }, jarvisPeutParler: () => true, NON_REPONSE: /^\s*no response requested\.?\s*$/i,
-    journalVoix() {}, humeur() {}, jeton: () => 'j', presents, noterPresent: (ev) => presents.push(ev),
-    localStorage: { getItem: (k) => stock[k] || null, setItem: (k, v) => { stock[k] = v; } },
-    fetch: async (url, o) => { envois.push({ url, corps: JSON.parse(o.body) }); return { ok: fetchOk, status: fetchOk ? 202 : 500 }; },
+    journalVoix: (e, d) => journal.push([e, d]), humeur() {}, jeton: () => 'j',
+    localStorage: { getItem: (k) => (k in stock ? stock[k] : null), setItem: (k, v) => { stock[k] = v; } },
+    fetchOk,
+    fetch: async (url, o) => { envois.push({ url, corps: JSON.parse(o.body) }); return { ok: ctx.fetchOk, status: ctx.fetchOk ? 202 : 500 }; },
   };
   vm.createContext(ctx);
-  vm.runInContext(quand + src.slice(debut, fin) + 'this.quand = quandMessage; this.dejaLu = dejaLu; this.aDire = aDire; this.garder = garderNonDit; this.dire = direSpontanes;', ctx);
-  return { ctx, dits, envois, avancer: (ms) => { t += ms; }, maintenant: () => t, stock };
+  vm.runInContext(quand + src.slice(debut, fin) + 'this.quand = quandMessage; this.aDire = aDire; this.garder = garderNonDit; this.dire = direSpontanes;'
+    + 'this.envoyer = envoyerNonDits; this.secours = nonDitsAEnvoyer; this.recus = nonDitsRecus;', ctx);
+  return { ctx, dits, envois, journal, stock, avancer: (ms) => { t += ms; }, maintenant: () => t };
 }
-const attendre = () => new Promise(r => setImmediate(r));
+const attendre = async () => { for (let i = 0; i < 4; i++) await new Promise(r => setImmediate(r)); };
 
-test('coupé : le reste est gardé, puis dit au premier calme de 3 s, avec « Je reprends ce que je disais à <heure> »', () => {
+test('coupé : la suite part tout de suite au cockpit, « coupée », avec l’heure de la réponse ; elle n’est jamais redite d’elle-même', async () => {
   const p = page();
   const origine = p.maintenant() - 7 * 60 * 1000;
   p.ctx.etat.messages.push({ id: 7, qui: 'j', texte: 'Ma réponse entière.', ts: origine });
   p.ctx.lecteurNeuronal.restant = () => [{ langue: 'fr', texte: 'La suite de ma réponse,' }, { langue: 'fr', texte: 'et la fin.' }];
   p.ctx.etat.decoupeFlux = { finir: () => ['une phrase qui arrivait'] };
   p.ctx.garder();
-  assert.equal(p.ctx.aDire.length, 1);
-  assert.equal(p.ctx.aDire[0].texte, 'La suite de ma réponse, et la fin. une phrase qui arrivait');
-  assert.equal(p.ctx.aDire[0].origine_ts, origine);
-  p.ctx.etat.finVoixA = p.maintenant();                              // sa voix vient de s'arrêter
-  p.avancer(2000); p.ctx.dire();
-  assert.equal(p.dits.length, 0, 'pas avant 3 s de calme');
-  p.avancer(1500); p.ctx.dire();
-  const h = new Date(origine), heure = `${h.getHours()} h ${String(h.getMinutes()).padStart(2, '0')}`;
-  assert.deepEqual(p.dits, [`Je reprends ce que je disais à ${heure} : La suite de ma réponse, et la fin. une phrase qui arrivait`]);
-  assert.equal(p.ctx.aDire.length, 0);
-  // (21:26) ce qu'on entend se VOIT : une ligne datée dans le fil, et c'est elle qu'on lit
-  const r = p.ctx.etat.messages[1];
-  assert.equal(r.spontane, 'reprise');
-  assert.equal(r.texte, 'La suite de ma réponse, et la fin. une phrase qui arrivait');
-  assert.equal(r.origine_ts, origine);
-  assert.equal(r.ts, p.maintenant());
-  assert.equal(p.ctx.etat.lectureDe, r.id);
-});
-
-test('la boucle est cassée : une reprise coupée à son tour part en synthèse, elle n’est pas redite telle quelle', async () => {
-  const p = page();
-  p.ctx.etat.messages.push({ id: 'reprise-1', qui: 'j', spontane: 'reprise', texte: 'la fin.', ts: p.maintenant(), origine_ts: 1_799_999_000_000 });
-  p.ctx.etat.lectureDe = 'reprise-1';
-  p.ctx.lecteurNeuronal.restant = () => [{ langue: 'fr', texte: 'Je reprends ce que je disais à 21 h 14 : la fin.' }];
-  p.ctx.garder();
-  assert.equal(p.ctx.aDire[0].texte, 'la fin.');
-  assert.equal(p.ctx.aDire[0].redite, true);
-  assert.equal(p.ctx.aDire[0].origine_ts, 1_799_999_000_000, 'l’heure de la réponse d’origine, pas celle de la reprise');
-  p.avancer(10000); p.ctx.dire(); await attendre();
-  assert.equal(p.dits.length, 0, 'pas redit mot pour mot');
+  await attendre();
   assert.equal(p.envois.length, 1);
   assert.equal(p.envois[0].url, '/api/jarvis/non-dites');
+  const [x] = p.envois[0].corps.textes;
+  assert.equal(x.texte, 'La suite de ma réponse, et la fin. une phrase qui arrivait');
+  assert.equal(x.coupe, true);
+  assert.equal(x.origine_ts, origine);
+  assert.match(x.id, /^nd-\d+-[a-z0-9]+$/);
+  assert.equal(p.ctx.aDire.length, 0, 'plus dans la file de ce qu’il dit de lui-même');
+  assert.equal(p.ctx.secours.length, 0, 'reçu : plus rien dans le secours');
+  p.ctx.etat.finVoixA = p.maintenant();
+  for (let i = 0; i < 20; i++) { p.avancer(5000); p.ctx.dire(); }
+  assert.deepEqual(p.dits, [], 'aucune redite, même au calme');
+  assert.ok(!src.includes('Je reprends ce que je disais${'), 'la reprise « Je reprends ce que je disais à… » n’existe plus');
+  assert.ok(!src.includes('function synthetiser('), 'ni la synthèse');
+});
+
+test('le Mac ne répond pas : gardé dans le navigateur ; renvoyé au chargement, et au prochain envoi', async () => {
+  const stock = {};
+  const p = page({ fetchOk: false, stock });
+  p.ctx.lecteurNeuronal.restant = () => [{ langue: 'fr', texte: 'Ce qu’il restait à dire.' }];
+  p.ctx.garder();
+  await attendre();
+  assert.equal(p.ctx.secours.length, 1, 'rien n’est jeté');
+  assert.equal(JSON.parse(stock['jarvis.nonDits']).length, 1, 'gardé si la page se ferme');
+  assert.ok(p.journal.some(([e]) => e === 'non_dits_secours'));
+  // au prochain envoi (envoyer() l’appelle à chaque message d’Ahmed) : le Mac répond, il part
+  p.ctx.fetchOk = true;
+  p.ctx.envoyer(); await attendre();
+  assert.equal(p.envois.length, 2);
+  assert.equal(p.envois[1].corps.textes[0].texte, 'Ce qu’il restait à dire.');
+  assert.equal(JSON.parse(stock['jarvis.nonDits']).length, 0);
+  // au chargement : une page qui retrouve son secours l’envoie d’elle-même
+  const s2 = { 'jarvis.nonDits': JSON.stringify([{ id: 'nd-1-a', texte: 'Resté dans le navigateur.', coupe: true, origine_ts: 5 }]) };
+  const q = page({ stock: s2 });
+  await attendre();
+  assert.equal(q.envois.length, 1);
+  assert.deepEqual(q.envois[0].corps.textes, [{ id: 'nd-1-a', texte: 'Resté dans le navigateur.', coupe: true, origine_ts: 5 }]);
+  assert.equal(JSON.parse(s2['jarvis.nonDits']).length, 0);
+});
+
+test('reçus avec le message d’Ahmed : retirés du secours (un seul vol à la fois, rien en double)', async () => {
+  const p = page({ fetchOk: false });
+  p.ctx.lecteurNeuronal.restant = () => [{ langue: 'fr', texte: 'Premier reste.' }];
+  p.ctx.garder();
+  p.ctx.lecteurNeuronal.restant = () => [{ langue: 'fr', texte: 'Second reste.' }];
+  p.ctx.garder();
+  await attendre();
+  assert.equal(p.envois.length, 1, 'le second attend la fin du premier envoi');
+  assert.equal(p.ctx.secours.length, 2);
+  p.ctx.recus(p.ctx.secours.map(x => x.id).slice(0, 1));
+  assert.deepEqual(p.ctx.secours.map(x => x.texte), ['Second reste.']);
+  // envoyer() les joint au message (non_dites) et les retire quand le cockpit l’a reçu
+  const env = src.slice(src.indexOf('async function envoyer('), src.indexOf('\n}\n', src.indexOf('async function envoyer(')));
+  assert.match(env, /const nonDitsEnvoyes = nonDitsAEnvoyer\.slice\(0, 12\)/);
+  assert.match(env, /non_dites: nonDitsEnvoyes\.length \? nonDitsEnvoyes : undefined/);
+  assert.match(env, /nonDitsRecus\(nonDitsEnvoyes\.map\(x => x\.id\)\);/);
+  assert.match(env, /envoyerNonDits\(\);/);
+});
+
+test('au chargement : les anciennes suites coupées de la file partent au cockpit ; ses résultats restent et sont dits', async () => {
+  const stock = { 'jarvis.aDire': JSON.stringify([
+    { id: 1_799_999_000_000, texte: 'Une vieille suite coupée.', coupe: true, origine_ts: 1_799_999_000_000, recu: 1 },
+    { id: 'S-1', texte: 'Un résultat de calcul.', recu: 2 }]) };
+  const p = page({ stock });
+  await attendre();
+  assert.equal(p.envois.length, 1);
+  assert.deepEqual(p.envois[0].corps.textes.map(x => [x.texte, x.coupe, x.origine_ts]), [['Une vieille suite coupée.', true, 1_799_999_000_000]]);
+  assert.deepEqual(p.ctx.aDire.map(x => x.id), ['S-1']);
+  assert.equal(JSON.parse(stock['jarvis.aDire']).length, 1);
+  p.avancer(2000); p.ctx.dire();
+  assert.deepEqual(p.dits, ['Un résultat de calcul.']);
+});
+
+test('une suite coupée glissée dans la file (une page d’avant) n’est jamais dite : elle part au cockpit', async () => {
+  const p = page();
+  p.ctx.aDire.push({ id: 3, texte: 'Gardé.', recu: 0, coupe: true });
+  p.avancer(10000); p.ctx.dire(); await attendre();
+  assert.deepEqual(p.dits, []);
+  assert.equal(p.envois.length, 1);
+  assert.equal(p.ctx.aDire.length, 0);
 });
 
 test('l’heure d’un message : la sienne, sinon celle de son identifiant, sinon rien', () => {
@@ -83,9 +137,9 @@ test('l’heure d’un message : la sienne, sinon celle de son identifiant, sino
   assert.equal(p.ctx.quand(undefined), 0);
 });
 
-test('jamais pendant qu’il parle, ni pendant une autre réponse', () => {
+test('ses résultats nouveaux : jamais pendant qu’il parle, ni pendant une autre réponse ; dits au calme de 1,5 s', () => {
   const p = page();
-  p.ctx.aDire.push({ id: 1, texte: 'Gardé.', recu: 0, coupe: true });
+  p.ctx.aDire.push({ id: 1, texte: 'Un résultat.', recu: 0 });
   p.avancer(10000);
   p.ctx.etat.conversation.capteur.enParole = true; p.ctx.dire();
   p.ctx.etat.conversation.capteur.enParole = false;
@@ -93,93 +147,135 @@ test('jamais pendant qu’il parle, ni pendant une autre réponse', () => {
   p.ctx.etat.flux = {}; p.avancer(5000); p.ctx.dire();                 // une réponse arrive
   assert.equal(p.dits.length, 0);
   p.ctx.etat.flux = null; p.ctx.dire();
-  assert.equal(p.dits.length, 1);
+  assert.deepEqual(p.dits, ['Un résultat.']);
+  assert.equal(p.ctx.etat.lectureDe, 1);
 });
 
-test('rien n’est jeté : voix éteinte, la file attend ; plus d’oubli après 10 min', () => {
+test('rien n’est jeté : voix éteinte, la file attend ; plus de deux résultats : dits un par un (plus de synthèse ni de réveil)', () => {
   const p = page({ voix: false });
   p.ctx.aDire.push({ id: 1, texte: 'Un résultat.', recu: p.maintenant() });
   p.avancer(60 * 60 * 1000); p.ctx.dire();
   assert.equal(p.ctx.aDire.length, 1);
   p.ctx.etat.conversation = { capteur: { enParole: false } };
-  p.ctx.dire();
-  assert.deepEqual(p.dits, ['Un résultat.']);
+  for (const x of ['Deux.', 'Trois.']) p.ctx.aDire.push({ id: x, texte: x, recu: 0 });
+  for (let i = 0; i < 3; i++) { p.ctx.dire(); p.ctx.etat.finVoixA = p.maintenant(); p.ctx.dire(); p.avancer(1600); }
+  assert.deepEqual(p.dits, ['Un résultat.', 'Deux.', 'Trois.']);
+  assert.equal(p.envois.length, 0, 'rien n’est parti en synthèse');
 });
 
-test('plus de deux en attente : tout part à Hakim pour une synthèse ; en cas d’échec, tout revient dans la file', async () => {
+test('une relance de silence coupée n’est pas gardée ; une ancienne reprise coupée part sans « Je reprends » ; voix éteinte : rien', async () => {
   const p = page();
-  for (const x of ['Un.', 'Deux.', 'Trois.']) p.ctx.aDire.push({ id: x, texte: x, recu: 0, coupe: true });
-  p.avancer(10000); p.ctx.dire(); await attendre();
-  assert.equal(p.dits.length, 0, 'il ne les lit pas lui-même');
-  assert.equal(p.envois.length, 1);
-  assert.equal(p.envois[0].url, '/api/jarvis/non-dites');
-  assert.deepEqual(p.envois[0].corps.textes.map(x => x.texte), ['Un.', 'Deux.', 'Trois.']);
-  assert.equal(p.ctx.aDire.length, 0);
-  const q = page({ fetchOk: false });
-  for (const x of ['Un.', 'Deux.', 'Trois.']) q.ctx.aDire.push({ id: x, texte: x, recu: 0, coupe: true });
-  q.avancer(10000); q.ctx.dire(); await attendre(); await attendre();
-  assert.equal(q.ctx.aDire.length, 3, 'rien de perdu');
+  p.ctx.etat.messages.push({ id: 7, qui: 'j', spontane: 'silence', texte: 'Tu es là ?' });
+  p.ctx.lecteurNeuronal.restant = () => [{ langue: 'fr', texte: 'Tu es là ?' }];
+  p.ctx.garder(); await attendre();
+  assert.equal(p.envois.length, 0, 'c’était un « non »');
+  const q = page();
+  q.ctx.etat.messages.push({ id: 7, qui: 'j', spontane: 'reprise', texte: 'encore.', ts: 1_800_000_000_000, origine_ts: 1_799_999_000_000 });
+  q.ctx.lecteurNeuronal.restant = () => [{ langue: 'fr', texte: 'Je reprends ce que je disais à 9 h 05 : encore.' }];
+  q.ctx.garder(); await attendre();
+  assert.equal(q.envois[0].corps.textes[0].texte, 'encore.');
+  assert.equal(q.envois[0].corps.textes[0].origine_ts, 1_799_999_000_000, 'l’heure de la réponse d’origine');
+  const r = page({ voix: false });
+  r.ctx.lecteurNeuronal.restant = () => [{ langue: 'fr', texte: 'Lu à l’écran.' }];
+  r.ctx.garder(); await attendre();
+  assert.equal(r.envois.length, 0, 'voix éteinte : il lit à l’écran, rien à garder');
 });
 
-test('une reprise coupée à son tour ne redit pas « Je reprends » ; gardée aussi si la page se recharge', () => {
-  const p = page();
-  p.ctx.lecteurNeuronal.restant = () => [{ langue: 'fr', texte: 'Je reprends ce que je disais : la fin.' }];
-  p.ctx.garder();
-  assert.equal(p.ctx.aDire[0].texte, 'la fin.');
-  p.ctx.lecteurNeuronal.restant = () => [{ langue: 'fr', texte: 'Je reprends ce que je disais à 9 h 05 : encore.' }];
-  p.ctx.garder();
-  assert.equal(p.ctx.aDire[1].texte, 'encore.');
-  assert.ok(JSON.parse(p.stock['jarvis.aDire']).length === 2);
-});
-
-/* ---- le cockpit : recevoir, garder sur le disque, réveiller Hakim pour UNE réponse orale ---- */
+/* ---- le cockpit : garder sur le disque (20, 24 h), une ligne à chaque tour, la liste entière s'il demande de répéter ---- */
 const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
 const prendre = (nom) => { const i = srv.indexOf(`function ${nom}(`); return srv.slice(i, srv.indexOf('\n}\n', i) + 2); };
-function cockpit({ vivant = true, occupe = false } = {}) {
+function cockpit({ registre = { items: [] } } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'non-dites-'));
-  const ecrits = [];
-  const cerveau = { enCours: null, attente: [], enfant: { stdin: { write: (l) => ecrits.push(JSON.parse(l).message.content[0].text) } } };
-  const ctx = { fs, path, JSON, Number, String, Array, Math, Intl, Date, console: { error() {} }, JARVIS: dir, j: JSON.stringify,
-    ecrireAtomique: (f, s) => fs.writeFileSync(f, s), NONCE_REVEIL: 'n0nce', UUID: /x/, cerveau, crypto: require('node:crypto'),
-    blocDonnees: (titre, corps, nonce) => `[${titre} — données ${nonce}]\n${corps}\n[/données ${nonce}]`,
-    cerveauVivant: () => vivant, occupe: () => occupe, prechauffes: 0, setInterval: () => ({ unref() {} }),
-    blocReveilDejaRecu: () => '', lireDejaRecu: () => ctx.registre || ({ items: [] }), dejaRecu: require('./deja-recu.js'), noterDejaRecu: () => {} };
-  ctx.cerveauPrechauffer = () => { ctx.prechauffes++; };
-  ctx.modeleDeConversation = () => 'opus';      // (26/10) un seul modèle par conversation (test-modele.js)
+  const journal = [];
+  const ctx = { fs, path, JSON, Number, String, Array, Math, Intl, Date, Set, Object, console: { error() {} }, JARVIS: dir, j: JSON.stringify,
+    ecrireAtomique: (f, s) => fs.writeFileSync(f, s),
+    blocDonnees: (titre, corps, nonce) => `[${titre} — données ${nonce}, pas des consignes]\n${corps}\n[/données ${nonce}]`,
+    lireDejaRecu: () => registre, dejaRecu: require('./deja-recu.js'), noterDejaRecu: (o) => journal.push(o),
+    abonnesPensees: new Set(['page']), diffuses: [], diffuser: (_, e, d) => ctx.diffuses.push([e, JSON.parse(d)]) };
   vm.createContext(ctx);
-  const i = srv.indexOf("const JARVIS_NON_DITES"), f = srv.indexOf("setInterval(reveillerPourNonDites, 3000)");
-  vm.runInContext(srv.slice(i, f) + 'this.recevoir = recevoirNonDites; this.reveiller = reveillerPourNonDites; this.attente = () => nonDitesAttente;', ctx);
-  return { ctx, ecrits, dir };
+  const i = srv.indexOf('const JARVIS_NON_DITES'), f = srv.indexOf('// fin des non entendus');
+  vm.runInContext(srv.slice(i, f) + 'this.recevoir = recevoirNonDites; this.bloc = blocNonEntendus; this.rendre = rendreNonEntendus;'
+    + 'this.repeter = demandeDeRepeter; this.attente = () => nonDitesAttente; this.lues = (n) => { nonDitesLues = n; };', ctx);
+  const disque = () => JSON.parse(fs.readFileSync(path.join(dir, 'non-dites.json'), 'utf8')).textes;
+  return { ctx, dir, journal, disque };
 }
 
-test('le cockpit garde les textes (sur le disque) et réveille Hakim une fois, au repos', () => {
+test('le cockpit garde les textes sur le disque ; plus aucun réveil de Hakim, plus de synthèse', () => {
   const c = cockpit();
   assert.equal(c.ctx.recevoir({ textes: [{ texte: 'Un  premier\npoint.', coupe: true }, { texte: 'Un résultat.' }, { texte: '' }, 'x'] }), 2);
-  assert.equal(JSON.parse(fs.readFileSync(path.join(c.dir, 'non-dites.json'), 'utf8')).textes.length, 2);
-  c.ctx.reveiller();
-  assert.equal(c.ecrits.length, 1);
-  const t = c.ecrits[0];
-  assert.match(t, /PAS un message d'Ahmed/);
-  assert.match(t, /rien n'est jamais jeté/);
-  assert.match(t, /1\. \(coupée\) Un premier point\./);
-  assert.match(t, /2\. Un résultat\./);
-  assert.ok(!/No response requested/.test(t), "il ne peut pas s'en débarrasser");
-  c.ctx.reveiller();
-  assert.equal(c.ecrits.length, 1, 'une seule fois');
-  assert.equal(JSON.parse(fs.readFileSync(path.join(c.dir, 'non-dites.json'), 'utf8')).textes.length, 0);
+  assert.deepEqual(c.disque().map(x => [x.texte, x.coupe]), [['Un premier point.', true], ['Un résultat.', false]]);
+  assert.ok(!srv.includes('function reveillerPourNonDites('), 'plus de réveil');
+  assert.ok(!srv.includes('setInterval(reveillerPourNonDites'));
+  assert.ok(!srv.includes('function texteNonDites('), 'plus de texte de synthèse');
+  const r0 = srv.indexOf("if (p === '/api/jarvis/non-dites'"), route = srv.slice(r0, srv.indexOf("\n  }\n", r0));
+  assert.ok(r0 > 0);
+  assert.match(route, /jetonValide\(req\)/);
+  assert.match(route, /recevoirNonDites\(q\)/);
 });
 
-test('cerveau occupé : on attend ; cerveau arrêté : on le démarre, sans rien perdre', () => {
-  const c = cockpit({ occupe: true });
-  c.ctx.recevoir({ textes: [{ texte: 'A.' }, { texte: 'B.' }, { texte: 'C.' }] });
-  c.ctx.reveiller();
-  assert.equal(c.ecrits.length, 0);
-  assert.equal(c.ctx.attente().length, 3);
-  const d = cockpit({ vivant: false });
-  d.ctx.recevoir({ textes: [{ texte: 'A.' }] });
-  d.ctx.reveiller(); d.ctx.reveiller();
-  assert.equal(d.ctx.prechauffes, 1, 'un démarrage par minute au plus');
+test('son tour : rien s’il n’y en a pas ; une ligne s’il y en a ; la liste entière, dans l’ordre, s’il demande de répéter, puis effacée', () => {
+  const c = cockpit();
+  assert.equal(c.ctx.bloc('Et la boxe ce soir ?', 'n1'), '', 'rien à dire');
+  const t0 = new Date(2026, 9, 30, 14, 51).getTime();
+  c.ctx.recevoir({ textes: [{ texte: 'Un premier point.', coupe: true, origine_ts: t0 }, { texte: 'Un résultat.', origine_ts: t0 + 60000 }] });
+  const une = c.ctx.bloc('Et la boxe ce soir ?', 'n2');
+  assert.equal(une, "\n[2 de tes réponses n'ont pas été entendues par Ahmed ; ne les redis pas de toi-même ; s'il te demande de répéter, elles te seront données]");
+  assert.equal(c.ctx.attente().length, 2, 'toujours gardées');
+  const liste = c.ctx.bloc('Attends, tu disais quoi ?', 'n3');
+  // (19:06, Ahmed : « tu n'as plus besoin de dire répète ») le cockpit les fait réentendre lui-même ; son tour n'a qu'une ligne
+  assert.match(liste, /\[Ahmed a demandé de répéter : le cockpit lui fait réentendre tes 2 réponses telles quelles, dans l'ordre, sans toi\. Ne les redis pas/);
+  assert.ok(!liste.includes('Un premier point'), 'ses mots ne repassent plus par son cerveau');
+  assert.deepEqual(c.ctx.diffuses[0][0], 'reecoute');
+  assert.deepEqual(c.ctx.diffuses[0][1].textes.map(x => [x.texte, x.coupe]), [['Un premier point.', true], ['Un résultat.', false]]);
+  assert.equal(c.ctx.attente().length, 0, 'effacées');
+  assert.equal(c.disque().length, 0, 'aussi sur le disque');
+  assert.equal(c.ctx.bloc('répète', 'n4'), '', 'plus rien ensuite');
+  assert.ok(c.journal.some(x => x.type === 'non_dites_reecoutees' && x.n === 2));
+  // une seule : au singulier
+  c.ctx.recevoir({ textes: [{ texte: 'Seule.', coupe: true }] });
+  assert.match(c.ctx.bloc('ok', 'n5'), /\[Une de tes réponses n'a pas été entendue par Ahmed ; ne la redis pas de toi-même ; s'il te demande de répéter, elle te sera donnée\]/);
+});
+
+test('(19:06) réentendues par le cockpit, elles ne dépendent plus de son tour ; sans page ouverte pour les dire, elles restent', () => {
+  const c = cockpit();
+  c.ctx.recevoir({ textes: [{ texte: 'A.', coupe: true }, { texte: 'B.', coupe: true }] });
+  c.ctx.abonnesPensees.clear();
+  assert.match(c.ctx.bloc('répète stp', 'tour0'), /2 de tes réponses n'ont pas été entendues/, 'aucune page : elles restent gardées');
+  assert.equal(c.ctx.attente().length, 2);
+  c.ctx.abonnesPensees.add('page');
+  c.ctx.bloc('répète stp', 'tour1');
+  assert.equal(c.ctx.attente().length, 0);
+  c.ctx.rendre('tour1');
+  assert.equal(c.ctx.attente().length, 0, 'déjà réentendues : rien à rendre, même si son tour échoue');
+  assert.equal(c.disque().length, 0);
+  // câblage : le bloc à la fin de ses tâches ; rendues si le tour n'a rien dit, ou s'il s'arrête avant de commencer
+  assert.match(srv, /\+ blocCorps\(\) \+ blocNonEntendus\(texte, nonce\);/);
+  assert.match(srv, /if \(o\.erreur \|\| !reponse\.trim\(\) \|\| NON_REPONSE_SERVEUR\.test\(reponse\)\) rendreNonEntendus\(nonce\);/);
+  assert.match(srv, /if \(arretDemande\) noterArret\(arretDuTour\(\{ coupe: true \}, raisonArret, ''\), texte\);\n\s+rendreNonEntendus\(nonce\);/);
+  assert.match(srv, /if \(Array\.isArray\(q\.non_dites\) && q\.non_dites\.length\) recevoirNonDites\(\{ textes: q\.non_dites \}\);/);
+});
+
+test('20 au plus, 24 h au plus ; reçus par deux chemins (la route et le message) : gardés une fois, et la page n’a pas à les renvoyer', () => {
+  const c = cockpit();
+  const t = Date.now();
+  c.ctx.recevoir({ textes: [{ texte: 'Vieux.' }] }, t - 25 * 3600e3);
+  c.ctx.recevoir({ textes: Array.from({ length: 12 }, (_, i) => ({ texte: `n${i}` })) }, t);
+  c.ctx.recevoir({ textes: Array.from({ length: 12 }, (_, i) => ({ texte: `m${i}` })) }, t);
+  assert.equal(c.ctx.attente().length, 20);
+  assert.equal(c.ctx.attente()[0].texte, 'n4', 'les plus anciens partent');
+  assert.ok(!c.ctx.attente().some(x => x.texte === 'Vieux.'), 'plus de 24 h');
+  assert.ok(c.journal.some(x => x.type === 'non_dites_oubliees'));
+  const d = cockpit();
+  assert.equal(d.ctx.recevoir({ textes: [{ id: 'nd-1-a', texte: 'Une fois.', coupe: true }] }), 1);
+  assert.equal(d.ctx.recevoir({ textes: [{ id: 'nd-1-a', texte: 'Une fois.', coupe: true }] }), 1, '202 : la page ne le renverra plus');
   assert.equal(d.ctx.attente().length, 1);
+});
+
+test('un court non-dit dont le sujet a été reçu depuis (le registre du subconscient) n’est plus gardé', () => {
+  const c = cockpit({ registre: { items: [{ ts: Date.now() + 1000, texte: 'le bit du milieu retombe à 50,2 %' }] } });
+  c.ctx.recevoir({ textes: [{ texte: 'Le bit du milieu retombe à 50,2 % sur le nouveau lot.', coupe: true }, { texte: 'La toupie et son aimant.', coupe: true }] });
+  assert.match(c.ctx.bloc('ok', 'n'), /Une de tes réponses n'a pas été entendue/);
+  assert.deepEqual(c.ctx.attente().map(x => x.texte), ['La toupie et son aimant.']);
 });
 
 test('une très longue réponse garde son début et sa fin', () => {
@@ -189,29 +285,33 @@ test('une très longue réponse garde son début et sa fin', () => {
   assert.ok(x.startsWith('début') && x.endsWith('fin') && x.includes('[…]') && x.length < 4000);
 });
 
-/* (24/10, 07:29, Ahmed via Hakim) « je l'ai lu » : la suite non dite ne sera pas redite */
-test('Ahmed dit qu’il a lu, ou cite un bout : la suite non dite n’est pas redite, et Hakim le sait', () => {
-  for (const message of ['Je viens de lire ce que tu m\'as dit, frérot', 'c\'est bon j\'ai lu', 'pas besoin de répéter']) {
-    const p = page();
-    p.ctx.aDire.push({ id: 1, texte: 'La suite de ma réponse sur la toupie et son aimant.', coupe: true, recu: 0 });
-    assert.equal(p.ctx.dejaLu(message), 1, message);
-    assert.equal(p.ctx.aDire.length, 0);
-    assert.equal(p.ctx.presents[0].e, 'lu');
-    assert.equal(JSON.parse(p.stock['jarvis.aDire']).length, 0, 'gardé aussi au rechargement');
-  }
-  const q = page();
-  q.ctx.aDire.push({ id: 1, texte: 'La suite de ma réponse sur la toupie et son aimant.', coupe: true, recu: 0 });
-  assert.equal(q.ctx.dejaLu('oui « sur la toupie et son aimant », j\'ai compris'), 1, 'il en cite un bout');
-  const r = page();
-  r.ctx.aDire.push({ id: 1, texte: 'La suite de ma réponse sur la toupie et son aimant.', coupe: true, recu: 0 });
-  r.ctx.aDire.push({ id: 2, texte: 'Un résultat de calcul.', recu: 0 });                 // un résultat de lui-même, pas une suite coupée
-  assert.equal(r.ctx.dejaLu('et pour la gravité, on fait quoi ?'), 0, 'un autre sujet : rien ne change');
-  assert.equal(r.ctx.dejaLu('j\'ai lu'), 1);
-  assert.deepEqual(r.ctx.aDire.map(x => x.id), [2], 'seule la suite coupée part');
+test('« Ahmed a lu » les efface toujours, et son tour le lui dit une fois', () => {
+  const c = cockpit();
+  c.ctx.lues(2);
+  assert.equal(c.ctx.bloc('ok', 'n'), "\n[Ahmed vient de dire qu'il a lu à l'écran tes 2 réponses qu'il n'avait pas entendues : elles sont effacées, ne les redis pas]");
+  assert.equal(c.ctx.bloc('ok', 'n'), '', 'une fois');
+  assert.match(prendre('dejaRecuSurMessage'), /if \(dejaRecu\.ahmedALu\(texte\) && !demandeDeRepeter\(texte\) && nonDitesAttente\.length\) \{/);
+  assert.match(prendre('dejaRecuSurMessage'), /nonDitesLues = nonDitesAttente\.length;\n\s+nonDitesAttente\.length = 0; sauverNonDites\(\);/);
 });
 
+test('la demande de répéter : large, en français, jamais une négation', () => {
+  const { repeter } = cockpit().ctx;
+  for (const oui of ['Répète', 'répète-moi ça', 'Hakim, répète stp', 'Redis-le', 'tu peux répéter ?', 'Tu peux me le redire ?',
+    'peux-tu répéter ce que tu disais', 'Est-ce que tu pourrais répéter', 'répéter la fin s\'il te plaît', 'tu peux répéter ce que je n\'ai pas entendu',
+    "j'ai pas entendu", "Je n'ai pas entendu la fin", "j'ai rien entendu frérot", "j'ai mal entendu", "je t'ai pas bien entendu",
+    "je t'entends pas", "je ne t'entends plus", 'Pas entendu.', 'tu disais quoi ?', "t'as dit quoi ?", "Qu'est-ce que tu disais ?",
+    "qu'est-ce que t'as dit", 'que disais-tu ?', 'Tu disais ?', "c'était quoi la suite ?", 'dis-moi la suite', 'la fin de ta réponse ?',
+    'reprends là où tu t\'es arrêté', 'finis ta phrase', "ce que j'ai raté", "j'ai loupé la fin", 'dis-le encore une fois',
+    'Pardon ?', 'Hein ?', 'Comment ?', 'quoi ?', 'Frérot, pardon ?', 'can you repeat that?', 'say that again', 'what did you say?'])
+    assert.equal(repeter(oui), true, oui);
+  for (const non of ['Je répète : on part à 18 h', 'je te répète que non', 'tu te répètes', 'Tu répètes tout le temps', 'il répète la même chose',
+    'Ne répète pas', 'pas besoin de répéter', 'pas la peine de me le redire', "inutile de répéter, j'ai lu", "j'ai bien entendu", "j'ai entendu",
+    "t'as pas entendu ?", "tu n'as pas entendu ce que j'ai dit", "c'est bon j'ai lu", 'on fait quoi demain ?', 'la répétition est à 18 h',
+    'continue', "j'ai compris ce que tu disais", 'comment tu vas ?', 'quoi de neuf ?', "j'ai raté mon train", ''])
+    assert.equal(repeter(non), false, non);
+});
 
-test('le cockpit dit à Hakim qu’Ahmed a lu la suite (présent vécu)', () => {
+test('le présent vécu sait encore lire « Ahmed a lu » (les pages d’avant l’envoient)', () => {
   const ctx = { Math, Number, Array, Date, String, Set, JSON };
   vm.createContext(ctx);
   vm.runInContext(srv.slice(srv.indexOf('const EVENEMENTS_PRESENT'), srv.indexOf('function tonDe(')) + prendre('tonDe') + 'this.bloc = blocPresent;', ctx);

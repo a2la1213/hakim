@@ -19,7 +19,7 @@ function extraire(debut) {
 }
 
 function charger(whisper) {
-  const cx = { console, Float32Array, ArrayBuffer, DataView, Math, Blob, Date };
+  const cx = { console, Float32Array, ArrayBuffer, DataView, Math, Blob, Date, entendreEnCours: () => {} };   // (30/10) son oreille : hors sujet ici
   cx.window = cx;
   vm.createContext(cx);
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'public', 'conversation.js'), 'utf8'), cx);  // le vrai filtre utile()

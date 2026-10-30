@@ -18,6 +18,7 @@ import os
 import shutil
 import signal
 import subprocess
+import re
 import sys
 import threading
 import time
@@ -146,6 +147,9 @@ def profil(atelier, port, fichiers=None, telephone=None, lire_aussi=()):
     ecritures = f' (subpath "{telephone.resolve()}")' if telephone and telephone.exists() else ""
     lectures = "".join(f' (subpath "{p}")' for p in [atelier, fichiers.resolve() if fichiers.exists() else fichiers]
                        + [Path(x).resolve() for x in lire_aussi] + _chemins_outils())
+    # (30/10, bug relevé par Hakim : Iris, codeuse, n'a pas pu lire famille.md avec son terminal) la fiche de la famille,
+    # tenue par le cockpit : lisible, jamais écrite (ni secret ni rien de privé d'Ahmed)
+    lectures += f' (literal "{CWD / "famille.md"}")'
     programmes = "".join(f' (literal "{p}")' for p in PROGRAMMES_REFUSES)
     services = "".join(f' (global-name "{n}")' for n in SERVICES_REFUSES)
     return f"""(version 1)
@@ -182,6 +186,8 @@ def profil(atelier, port, fichiers=None, telephone=None, lire_aussi=()):
 ; (30/10, Ahmed : « tu peux la masquer pour eux ») sa clé GitHub privée, dans ses Documents : ni lue ni écrite (en dernier :
 ; la dernière règle l'emporte sur les « allow » d'avant)
 (deny file-read* file-write* (regex #"/[Gg]it[Hh]ub[Kk]ey[^/]*$"))
+; (30/10, Hakim : « la clé de signature, je ne veux ni la voir ni la recopier ») les clés dans les Documents d'Ahmed
+(deny file-read* file-write* (regex #"/fichiers/telephone/.*\\.(keystore|jks|p12|pfx|pem|key)$"))
 """
 
 
@@ -197,6 +203,20 @@ ATELIER_ALERTE_KO = 8 * 1024 * 1024       # demande de Hakim (2026-10-20, accord
 
 
 _mesure_atelier = {"t": 0.0, "ko": 0}
+
+
+# (30/10, bug relevé par Hakim : « Iris ne voyait pas les mêmes fichiers que moi ») dans son terminal, HOME est l'atelier :
+# « ~/AIOS/jarvis/cwd/atelier/x » y désigne atelier/AIOS/jarvis/cwd/atelier/x, une copie imbriquée que ni Read ni ses agents
+# ne voient au bon endroit. Refusé avant de tourner, avec le bon chemin.
+_PIEGE_MAISON = re.compile(r"(~|\$HOME|\$\{HOME\})/AIOS(/|\b(?![A-Za-z0-9_]))")
+
+
+def piege_maison(commande):
+    if not _PIEGE_MAISON.search(str(commande or "")):
+        return None
+    return ("Refusé avant de tourner : dans ton terminal, ~ (HOME) EST ton atelier. « ~/AIOS/… » écrirait dans une copie "
+            f"imbriquée ({ATELIER}/AIOS/…) que Read et tes agents ne voient pas au bon endroit. Écris le chemin absolu "
+            f"{ATELIER}/… , ou relatif à ton atelier (le dossier de départ de chaque commande).")
 
 
 def alerte_atelier(atelier=None, taille_ko=None):

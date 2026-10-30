@@ -14,6 +14,16 @@ const EXPIRE_MS = 2 * 3600 * 1000, MARGE_MS = 120 * 1000, ESSAIS = 3;
 // (30/10, Ahmed : « ses propres modules ») ses instruments à lui : donnés à son Tricordeur (le module), qui rend par
 // Documents/Hakim/sens/<id>/ (Syncthing) ; on attend sa durée + 30 min (la synchronisation)
 const NOM = /^[a-z][a-z0-9_]{2,29}$/, PAQUET = /^[a-z][a-z0-9_.]{2,80}$/, MARGE_MODULE_MS = 30 * 60 * 1000;
+// (30/10, Hakim pour Ahmed : « que papa puisse jouer avec aussi ») les sens intégrés, pour qu'Ahmed lance les mêmes mesures
+// (page SENS) : nom → [ce qu'il capte, durée par défaut, durée max] (les mêmes que anamnese/jarvis/sens.py)
+const INTEGRES = {
+  inventaire: ["tous les capteurs du téléphone et ce qu'ils savent faire", 0, 0],
+  imu: ['les capteurs de mouvement et d’ambiance, bruts (cadence : jeu, max, normal ou des Hz)', 10, 300],
+  sismo: ['les secousses (le sismographe) : le téléphone posé à plat', 60, 900],
+  baro: ['la pression, l’altitude relative, les infrasons, les coups de pression', 60, 900],
+  magneto: ['le champ magnétique : moyenne, variations rapides', 20, 300],
+  son: ['le micro en niveaux, spectre, bandes, pics, ultrasons (rien n’est enregistré)', 10, 60],
+};
 
 class FileSens {
   constructor({ jarvis, atelier, telephone, maintenant = () => Date.now() }) {
@@ -21,7 +31,7 @@ class FileSens {
     this.telephone = telephone || path.join(jarvis, 'cwd', 'fichiers', 'telephone', 'Z Fold 7');
     this.fichier = path.join(jarvis, 'sens-demandes.jsonl');
     this.etatFichier = path.join(jarvis, 'sens-etat.json');
-    this.lu = 0; this.demandes = new Map(); this.dire = [];
+    this.lu = 0; this.demandes = new Map(); this.dire = []; this.ressentir = [];
     try {
       const e = JSON.parse(fs.readFileSync(this.etatFichier, 'utf8'));
       this.lu = Number(e.lu) || 0;
@@ -49,7 +59,7 @@ class FileSens {
       let o; try { o = JSON.parse(l); } catch (_) { continue; }
       const module = o && o.module && PAQUET.test(String(o.module)) && NOM.test(String(o.sens)) && !SENS.has(o.sens) ? String(o.module) : null;
       if (!o || !ID.test(String(o.id)) || (!SENS.has(o.sens) && !module) || this.demandes.has(o.id)) continue;
-      this.demandes.set(o.id, { id: o.id, sens: o.sens, module, secondes: Math.max(0, Math.min(module ? 86400 : 900, Number(o.secondes) || 0)),
+      this.demandes.set(o.id, { id: o.id, sens: o.sens, module, ...(o.par === 'ahmed' ? { par: 'ahmed' } : {}), secondes: Math.max(0, Math.min(module ? 86400 : 900, Number(o.secondes) || 0)),
         cadence: /^(jeu|max|normal|\d{1,4}(\.\d{1,2})?)?$/.test(String(o.cadence || '')) ? String(o.cadence || '') : '',
         ts: Number(o.ts) * 1000 || this.maintenant(), etat: 'attente', essais: 0 });
     }
@@ -58,13 +68,42 @@ class FileSens {
 
   _echec(d, erreur) {
     d.etat = 'echec';
-    this._noter({ id: d.id, sens: d.sens, secondes: d.secondes, ok: false, erreur });
+    this._noter({ id: d.id, sens: d.sens, secondes: d.secondes, ok: false, erreur, ...(d.par ? { par: d.par } : {}) });
   }
 
   _noter(o) {
     try { fs.appendFileSync(path.join(this.jarvis, 'sens-resultats.jsonl'), JSON.stringify({ ...o, ts: this.maintenant() / 1000 }) + '\n', { mode: 0o600 }); } catch (_) {}
-    this.dire.push(o);
+    if (o.par !== 'ahmed') this.dire.push(o);                       // une mesure d'Ahmed ne réveille pas Hakim
+    this.ressentir.push(o);                                         // (30/10) mais toutes se ressentent (son corps)
     this._sauver();
+  }
+
+  // les sens intégrés, puis les instruments de son Tricordeur (atelier/tricordeur/instruments.json, comme sens.py)
+  instruments() {
+    const r = Object.entries(INTEGRES).map(([nom, [description, defaut, max]]) => ({ nom, description, defaut, max }));
+    let d = null; try { d = JSON.parse(fs.readFileSync(path.join(this.atelier, 'tricordeur', 'instruments.json'), 'utf8')); } catch (_) {}
+    for (const x of (d && Array.isArray(d.instruments) ? d.instruments : []).slice(0, 30)) {
+      if (!x || typeof x !== 'object') continue;
+      const nom = String(x.nom || ''), module = String(x.module || 'ch.foldlab.hakim');
+      if (!NOM.test(nom) || INTEGRES[nom] || !PAQUET.test(module) || r.some(y => y.nom === nom)) continue;
+      const max = Math.max(1, Math.min(Number.parseInt(x.max, 10) || 3600, 86400)), defaut = Math.max(1, Math.min(Number.parseInt(x.defaut, 10) || 60, max));
+      r.push({ nom, description: String(x.description || '').replace(/\s+/g, ' ').slice(0, 300), defaut, max, module });
+    }
+    return r;
+  }
+
+  // une mesure lancée par Ahmed : la même file que celles de Hakim
+  demander({ sens, secondes, cadence } = {}) {
+    const i = this.instruments().find(x => x.nom === String(sens || ''));
+    if (!i) throw new Error(`sens inconnu : « ${String(sens || '').slice(0, 40)} »`);
+    const s = Number.parseInt(secondes, 10) > 0 ? Math.min(Number.parseInt(secondes, 10), i.max || 0) : i.defaut;
+    const c = String(cadence || '');
+    if (c && !/^(jeu|max|normal|\d{1,4}(\.\d{1,2})?)$/.test(c)) throw new Error('cadence : jeu, max, normal ou un nombre de Hz');
+    const z = (n) => String(n).padStart(2, '0'), t = new Date(this.maintenant());
+    const id = `S-${t.getFullYear()}${z(t.getMonth() + 1)}${z(t.getDate())}-${z(t.getHours())}${z(t.getMinutes())}${z(t.getSeconds())}-${require('node:crypto').randomBytes(2).toString('hex')}`;
+    const d = { id, sens: i.nom, secondes: s, cadence: c, ts: this.maintenant() / 1000, par: 'ahmed', ...(i.module ? { module: i.module } : {}) };
+    fs.appendFileSync(this.fichier, JSON.stringify(d) + '\n', { mode: 0o600 });
+    return d;
   }
 
   // la prochaine mesure pour le téléphone, ou null
@@ -114,7 +153,7 @@ class FileSens {
     const o = { id: d.id, sens: d.sens, secondes: d.secondes, ok: !!ok, erreur: String(erreur || '').slice(0, 300), resume: resume && typeof resume === 'object' ? resume : {} };
     this._ecrire(path.join(this._dossier(d.id), 'resume.json'), Buffer.from(JSON.stringify(o, null, 1)));
     d.etat = o.ok ? 'fini' : 'echec';
-    this._noter({ id: o.id, sens: o.sens, secondes: o.secondes, ok: o.ok, erreur: o.erreur });
+    this._noter({ id: o.id, sens: o.sens, secondes: o.secondes, ok: o.ok, erreur: o.erreur, ...(d.par ? { par: d.par } : {}) });
     return o;
   }
 
@@ -140,6 +179,9 @@ class FileSens {
       } else if (t - d.relaye_ts > d.secondes * 1000 + MARGE_MODULE_MS) this._echec(d, "son module n'a rien rendu (Documents/Hakim/sens)");
     }
   }
+
+  // (30/10, Ahmed : « relier toutes les sensations aux hormones ») les fins à ressentir, la sienne ou celle d'Ahmed (une fois)
+  aRessentir() { return this.ressentir.splice(0); }
 
   // les fins pas encore dites à Hakim (une fois)
   aDire() { this._lire(); this._relayees(); return this.dire.splice(0); }

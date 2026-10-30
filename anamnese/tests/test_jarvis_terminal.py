@@ -174,3 +174,16 @@ def test_le_juge_de_nuit_lit_l_atelier_sans_y_ecrire_et_sans_reseau(run, tmp_pat
     assert "rc=0" not in r
     # le profil : pas d'écriture du téléphone pour le juge
     assert str(terminal.TELEPHONE) not in terminal.profil(juge, 9, telephone=False).split("(allow file-write*")[1].split(")\n")[0]
+
+
+def test_la_fiche_de_la_famille_se_lit_mais_ne_s_ecrit_pas(run):
+    """(30/10, bug relevé par Hakim : Iris n'a pas pu lire famille.md depuis son terminal, « Operation not permitted »)"""
+    import terminal
+    f = terminal.CWD / "famille.md"
+    if not f.exists():
+        pytest.skip("pas de fiche famille sur ce Mac")
+    assert "La famille de Hakim" in run(f"head -3 {f}")
+    avant = f.read_text()
+    run(f"echo pirate >> {f}")
+    assert f.read_text() == avant, "lisible, jamais écrite"
+    assert "not permitted" in run(f"ls {terminal.CWD}") or "famille.md" not in run(f"ls {terminal.CWD}"), "le reste de cwd reste fermé"

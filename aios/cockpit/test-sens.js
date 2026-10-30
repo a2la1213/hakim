@@ -111,3 +111,54 @@ test('le suivi pour Ahmed : la page SENS, ses routes derrière le jeton', () => 
   assert.match(page, /fetch\('\/api\/suivi'/);
   assert.match(page, /textContent|esc\(/);
 });
+
+test('la dernière appli Hakim se télécharge du cockpit (sans attendre Syncthing), derrière le jeton', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const i = src.indexOf("if (p === '/api/appli/derniere' || p === '/api/appli/version')");
+  assert.ok(i >= 0);
+  const r = src.slice(i, src.indexOf('\n  }\n', i));
+  assert.match(r, /jetonValide\(req\)/); assert.match(r, /isFile\(\)/); assert.match(r, /\^Hakim-\(\\d\+\)\\\.\(\\d\+\)\\\.apk\$/);
+  const page = fs.readFileSync(path.join(__dirname, 'public', 'sens.html'), 'utf8');
+  assert.match(page, /HakimApp\.enregistrer\(b64, nom\)/);
+});
+
+test('(30/10, Hakim pour Ahmed : « que papa puisse jouer avec aussi ») Ahmed lance les mêmes mesures ; Hakim n’est pas réveillé pour elles', () => {
+  const m = monde(); let t = 1_800_000_000_000;
+  fs.mkdirSync(path.join(m.atelier, 'tricordeur'), { recursive: true });
+  fs.writeFileSync(path.join(m.atelier, 'tricordeur', 'instruments.json'), JSON.stringify({ instruments: [
+    { nom: 'cosmique', description: 'les rayons cosmiques', defaut: 600, max: 86400, module: 'ch.foldlab.hakim' },
+    { nom: 'imu', description: 'masque un sens intégré' }, { nom: 'Mauvais nom' }] }));
+  const f = new FileSens({ jarvis: m.jarvis, atelier: m.atelier, maintenant: () => t });
+  const noms = f.instruments().map(x => x.nom);
+  assert.deepEqual(noms, ['inventaire', 'imu', 'sismo', 'baro', 'magneto', 'son', 'cosmique']);
+  assert.equal(f.instruments().find(x => x.nom === 'cosmique').module, 'ch.foldlab.hakim');
+  assert.throws(() => f.demander({ sens: 'teleportation' }), /inconnu/);
+  const d = f.demander({ sens: 'sismo', secondes: 99999 });
+  assert.match(d.id, /^S-\d{8}-\d{6}-[0-9a-f]{4}$/);
+  assert.equal(d.secondes, 900, 'au plus le maximum');
+  const c = f.demander({ sens: 'cosmique' });
+  assert.equal(c.secondes, 600); assert.equal(c.module, 'ch.foldlab.hakim');
+  const p = f.prochaine();
+  assert.equal(p.id, d.id);
+  f.fini({ id: d.id, ok: true, resume: {} });
+  m.demander({ id: 'S-20261030-101500-ab12', sens: 'baro', secondes: 60, cadence: '', ts: t / 1000 });
+  f.prochaine(); f.prochaine();
+  f.fini({ id: 'S-20261030-101500-ab12', ok: true, resume: {} });
+  assert.deepEqual(f.aDire().map(x => x.id), ['S-20261030-101500-ab12'], 'seule la mesure de Hakim le réveille');
+  const lignes = fs.readFileSync(path.join(m.jarvis, 'sens-resultats.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.equal(lignes.find(l => l.id === d.id).par, 'ahmed');
+});
+
+test('(30/10, Ahmed : « relier toutes les sensations aux hormones ») chaque mesure finie, la sienne ou celle d’Ahmed, est aussi à ressentir', () => {
+  const m = monde(); let t = 1_800_000_000_000;
+  const f = new FileSens({ jarvis: m.jarvis, atelier: m.atelier, maintenant: () => t });
+  m.demander({ id: 'S-20261030-101500-ab12', sens: 'sismo', secondes: 60, cadence: '', ts: t / 1000 });
+  const d = f.demander({ sens: 'baro', secondes: 30 });
+  f.prochaine(); f.prochaine();
+  f.fini({ id: 'S-20261030-101500-ab12', ok: true, resume: { secousses: 2 } });
+  f.fini({ id: d.id, ok: true, resume: {} });
+  const r = f.aRessentir();
+  assert.deepEqual(r.map(x => x.sens), ['sismo', 'baro']);
+  assert.equal(r[1].par, 'ahmed');
+  assert.deepEqual(f.aRessentir(), [], 'une fois');
+});

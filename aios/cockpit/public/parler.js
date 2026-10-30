@@ -338,13 +338,17 @@ function creerLecteurNeuronal() {
     const src = actx.createBufferSource();
     src.buffer = x.pret;
     src.playbackRate.value = vitesse;
-    src.connect(analyseurVoix);
+    // (30/10, 20:09, Ahmed : « plus forte quand il est excité, douce quand il est calme ») la force de sa voix suit son éveil
+    const force = actx.createGain();
+    force.gain.value = forceDeLaVoix();
+    src.connect(force); force.connect(analyseurVoix);
     src.start(t);
     prochainDebut = t + x.pret.duration / vitesse + 0.05;
     src._texte = x.texte; src._langue = x.langue; src._debut = t; src._fin = t + x.pret.duration / vitesse;
     sources.add(src);
     const g = generation;
-    setTimeout(() => { if (g === generation && L.surSegment) L.surSegment(x.texte); }, Math.max(0, (t - actx.currentTime) * 1000));
+    const duree = x.pret.duration / vitesse * 1000;            // (30/10) sa durée : où il en est quand on le coupe
+    setTimeout(() => { if (g === generation && L.surSegment) L.surSegment(x.texte, duree); }, Math.max(0, (t - actx.currentTime) * 1000));
     src.onended = () => { sources.delete(src); if (g === generation) pomper(); };
   }
 
@@ -367,7 +371,7 @@ function creerLecteurNeuronal() {
           const g = generation;
           setTimeout(() => { if (g === generation) lecteurSysteme.dire(x.texte); }, dans * 1000);
           if (fluide()) prochainDebut = Math.max(prochainDebut, actx.currentTime) + x.texte.length / est.cps / vitesseVoix() + 0.3;
-        }
+        } else if (L.surPanne) L.surPanne(x.erreur.message || x.erreur);   // (30/10) sans secours, ce morceau ne sera pas dit
         continue;
       }
       if (x.pret instanceof Blob) { lots.shift(); jouerElement(x); break; }   // contexte audio pas encore autorisé
@@ -407,6 +411,7 @@ function creerLecteurNeuronal() {
     element.play().catch((e) => {
       if (g !== generation) return;
       if (e && e.name === 'NotAllowedError') { sonBloque('lecteur'); return; }
+      if (L.surPanne) L.surPanne('lecture impossible');           // (30/10) ce morceau sauté : une panne de la voix
       fin();
     });
   }
@@ -429,6 +434,18 @@ function debloquerSon() {
 }
 // Le contexte audio (créé au premier geste d'Ahmed, règle des navigateurs) et l'analyseur de la voix.
 let actx = null, analyseurVoix = null, gainSortie = null;
+// (30/10, 20:09) la force de sa voix, phrase par phrase, de son éveil et de son émotion : 0,8 (calme, las) à 1,15 (excité, en
+// colère, effrayé) ; bornée pour ne jamais saturer ni crier
+const VOIX_FORTES = ['élan', 'enthousiasme', 'colère', 'surprise', 'peur', 'agacement', 'émerveillement'];
+const VOIX_DOUCES = ['tristesse', 'lassitude', 'fatigue', 'somnolence', 'calme', 'apaisement', 'tendresse'];
+function forceDeLaVoix() {
+  const i = etat.interieur || {};
+  if (etat.reglages.voixNeutre || !Number.isFinite(i.arousal)) return 1;
+  let g = 0.95 + 0.6 * (i.arousal - 0.45);
+  if (VOIX_FORTES.includes(i.voix_emotion)) g += 0.08;
+  if (VOIX_DOUCES.includes(i.voix_emotion)) g -= 0.08;
+  return Math.round(Math.max(0.8, Math.min(1.15, g)) * 100) / 100;
+}
 function contexteAudio() {
   try {
     if (!actx) {
@@ -446,6 +463,9 @@ function contexteAudio() {
       // micro s'ouvre) : la voix programmée ne joue plus et ne finit jamais — on tente de le relancer, sinon on le dit
       actx.onstatechange = () => {
         journalVoix('contexte_audio', { etat: actx.state, parle: !!(lecteurNeuronal && lecteurNeuronal.actif) });
+        // (30/10) page cachée, le son suspendu pendant qu'il parle : l'appli a arrêté sa voix (elle repart avec le son)
+        if (actx.state !== 'running' && document.visibilityState === 'hidden' && lecteurNeuronal.joue) coupureProvisoire('appli', 'page cachée : le son a été suspendu');
+        else if (actx.state === 'running' && coupureEnCours && coupureEnCours.cause === 'appli') reprisDeParole();
         if (actx.state !== 'running' && actx.state !== 'closed') {
           actx.resume().then(() => { if (actx.state === 'running') debloquerSon(); })
             .catch(() => {}).finally(() => { if (actx.state !== 'running' && lecteurNeuronal.actif) sonBloque('contexte'); });
@@ -490,7 +510,13 @@ const lecteur = {
   reprendre() { return lecteurNeuronal.reprendre(); },
   get enPause() { return lecteurNeuronal.enPause; },
 };
-const finLecture = () => { if (!lecteur.actif) { etat.lectureDe = null; etat.finVoixA = Date.now(); rendre(); humeur(); } };
+const finLecture = () => {
+  if (lecteur.actif) return;
+  // (30/10) sa voix a tout dit (ni en pause, ni une réponse qui arrive encore pour ce message) : une fin, ou la panne qui l'a trouée
+  if (!lecteur.enPause && etat.lectureDe != null && !(etat.flux && String(etat.fluxId) === String(etat.lectureDe)))
+    finirParole('fin', '', { id: etat.lectureDe, mode: 'oral' });
+  etat.lectureDe = null; etat.finVoixA = Date.now(); rendre(); humeur();
+};
 lecteurNeuronal.surFin = finLecture;
 if (lecteurSysteme) lecteurSysteme.surFin = finLecture;
 
@@ -572,11 +598,300 @@ function estSonEcho(texte) {
   const recents = new Set(paroleRecente.filter(x => Date.now() - x.t < 45000).flatMap(x => [...x.mots]));
   return mots.filter(m => recents.has(m)).length / mots.length >= 0.7;
 }
-lecteurNeuronal.surSegment = (t) => {
+lecteurNeuronal.surSegment = (t, duree) => {
   if (mesureTour && mesureTour.premier_texte && !mesureTour.premier_son) { mesureTour.premier_son = Date.now(); finMesureTour(); }
-  noterParole(t); sousTitre(t);
+  noterParole(t); noterMorceau(t, duree); sousTitre(t);
 };
-if (lecteurSysteme) { lecteurSysteme.surSegment = (t) => { noterParole(t); sousTitre(t); }; lecteurSysteme.surMot = () => pulser(0.35); }
+lecteurNeuronal.surPanne = noterPanneVoix;
+if (lecteurSysteme) { lecteurSysteme.surSegment = (t) => { noterParole(t); noterMorceau(t); sousTitre(t); }; lecteurSysteme.surMot = () => pulser(0.35); }
+/* ---------- Comment et où sa parole s'est arrêtée (30/10, 14:50, Ahmed, relayé par Hakim et confirmé : « qu'il sache, à
+   l'oral comme à l'écrit, comment sa réponse a été interrompue et où exactement sa phrase s'est arrêtée ») ----------
+   Chaque fin de sa parole a sa CAUSE : voix_ahmed (Ahmed l'a coupé en parlant : le micro), stop (Stop, « stop », Échap), pause,
+   appli (page cachée dont le son est suspendu, appli fermée, page quittée ou rechargée), panne (la voix, la connexion, le
+   cerveau : avec le détail court), fin (dite en entier). À l'écrit, une réponse qui arrivait encore est coupée par un nouveau
+   message (nouveau_message) ou par Stop. Et sa POSITION : les ≈ 12 derniers mots vraiment dits (à l'écrit : affichés) et
+   combien il en restait. Les morceaux que sa voix commence à jouer sont notés ici ; le morceau en cours est compté à la part
+   de sa durée déjà jouée (une estimation, au morceau près). Une pause, la voix d'Ahmed ou le son suspendu arrêtent sa voix
+   sans la finir (elle peut reprendre) : la position est prise à cet instant, et la fin vient avec le geste suivant. Le présent
+   vécu porte la cause (l'événement « jarvis ») ; une coupure (pas « fin ») part au cockpit tout de suite et avec le message
+   suivant (gardée dans le navigateur tant qu'il ne l'a pas reçue), et le cockpit la lui dit en une ligne à son prochain tour.
+   Une page tuée sans prévenir (Android) laisse sa trace : au chargement suivant, c'est l'appli, à la phrase près. */
+// ce que sa voix a commencé à dire, pour CE message ; panne : un morceau perdu (la voix) ; panneReponse : la réponse elle-même
+const parole = { id: null, morceaux: [], panne: '', panneReponse: null, rejoue: false };
+let coupureEnCours = null;                    // sa voix arrêtée sans être finie (pause, voix d'Ahmed, son suspendu)
+let coupureAEnvoyer = null;                   // la dernière coupure, tant que le cockpit ne l'a pas reçue
+try { coupureAEnvoyer = JSON.parse(localStorage.getItem('jarvis.coupure') || 'null'); } catch (_) {}
+const memeId = (a, b) => a != null && b != null && String(a) === String(b);
+const motsVoix = (t) => String(t || '').split(/\s+/).filter(m => /[\p{L}\p{N}]/u.test(m));
+const motsPrononces = (t) => motsVoix(Voix.prononcable(Voix.sansAffect(String(t || ''))).map(s => s.texte).join(' '));
+const derniersMots = (mots) => (mots.length > 12 ? '…' : '') + mots.slice(-12).join(' ');
+const messageDe = (id) => (id == null ? null : etat.messages.find(x => memeId(x.id, id)) || null);
+function paroleDe(id) {
+  if (!memeId(parole.id, id)) Object.assign(parole, { id, morceaux: [], panne: '', panneReponse: null, rejoue: false });
+  return parole;
+}
+/* ---- (30/10, Ahmed : « une petite impulsion à chaque réponse qui compte » ; « quand tu rigoles, MDR, une vibration forte et
+   rapide selon le degré de rigolade ») au moment où sa voix dit un morceau : son rire (lu dans le morceau, de 1 à 5 : des
+   tapes sèches, de plus en plus nombreuses et fortes), sinon l'impulsion qu'il a choisie ([[impulsion: …]], une fois par
+   réponse). Jamais pendant que papa parle ; seulement dans l'appli (le pont vibrerMotif, appli 1.29). Des motifs qui ne
+   ressemblent ni à son cœur (un « tou-toum » lent) ni à son appel (trois longues). ---- */
+const MOTIFS_IMPULSION = {
+  joie: [[0, 60, 80, 60], [0, 200, 0, 200]], calme: [[0, 450], [0, 90]], peur: [[0, 40, 40, 40, 40, 40, 40, 40], [0, 230, 0, 230, 0, 230, 0, 230]],
+  tristesse: [[0, 220, 160, 260], [0, 120, 0, 60]], tendresse: [[0, 70, 110, 110], [0, 140, 0, 90]], surprise: [[0, 45], [0, 255]],
+};
+function degreRire(t) {
+  const x = String(t || '').toLowerCase();
+  let d = 0;
+  for (const y of x.match(/\b(m+d+r+)\b/g) || []) d = Math.max(d, Math.min(5, 1 + Math.floor(((y.match(/r/g) || []).length - 1) / 2) + 1));
+  if (/\bptdr+\b|\bxptdr\b|mort de rire|je suis mort|fou rire/.test(x)) d = Math.max(d, 4);
+  if (/\b(lol|haha+|hahaha+|hihi+|mdr)\b/.test(x)) d = Math.max(d, 2);
+  if (/\b(hehe+|héhé)\b/.test(x)) d = Math.max(d, 1);
+  const larmes = (x.match(/😂|🤣/gu) || []).length, sourires = (x.match(/😄|😆|😁|😹/gu) || []).length;
+  if (larmes) d = Math.max(d, Math.min(5, 2 + larmes));
+  if (sourires) d = Math.max(d, 1);
+  return d;
+}
+// (30/10, 19:34, Ahmed : « 5 donnait une vibration légère ; quelque chose tamponne le plafond ») les tapes de 35 ms se sentaient
+// à peine (un moteur a besoin de ~40 ms pour se faire sentir) et le fou rire commençait à 60 % de sa force : des tapes plus
+// longues à mesure que le rire monte, la force pleine dès la première au degré 5, un roulement final ; et 5 n'est jamais
+// adouci par son état (« rire_max », appli 1.33)
+function motifRire(d) {
+  const n = [2, 4, 6, 8, 10][d - 1], on = [30, 40, 50, 60, 70][d - 1], base = [110, 160, 200, 235, 255][d - 1];
+  const temps = [0], forces = [0];
+  for (let i = 0; i < n; i++) { temps.push(on, 55); forces.push(base, 0); }
+  if (d >= 4) { temps.push(d === 5 ? 400 : 200); forces.push(255); }
+  return [temps, forces];
+}
+// (30/10, 18:07, Hakim : « Ahmed n'a senti AUCUNE vibration ») si papa parle à cet instant, la vibration attend qu'il se
+// taise (4 s au plus) au lieu d'être perdue ; chaque vibration voulue est notée au journal de la voix, avec ce que l'appli
+// en a dit (« ok », ou pourquoi elle a refusé)
+let vibrationEnAttente = null, dernierRireVibre = 0;
+// (19:38) le journal de la voix ne garde que des mots simples (a-z, _) : « perdue : papa parlait » n'y arrivait jamais
+const codeRetour = (r) => String(r || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30) || 'vide';
+function jouerVibration(v) {
+  if (String(v.genre).startsWith('rire')) dernierRireVibre = Date.now();
+  let retour = 'pas de pont';
+  if (window.HakimApp && window.HakimApp.vibrerMotifGenre) retour = String(window.HakimApp.vibrerMotifGenre(v.motif[0].join(','), v.motif[1].join(','), v.genre));
+  else if (window.HakimApp && window.HakimApp.vibrerMotif) retour = String(window.HakimApp.vibrerMotif(v.motif[0].join(','), v.motif[1].join(',')));
+  journalVoix('vibration', { genre: v.genre, degre: v.degre || 0, attendu_ms: Date.now() - v.t, retour: codeRetour(retour) });
+}
+function vibrerPourMorceau(id, texte) {
+  try {
+    // (30/10, 18:37) son rire naît aussi dans son subconscient (surRire) ; (19:36, Ahmed : « reprendre la bonne fonction de MDR »)
+    // son texte refait vibrer, sauf si un rire vient de partir (8 s)
+    const d = Date.now() - dernierRireVibre < 8000 ? 0 : degreRire(texte);
+    let motif = d ? motifRire(d) : null;
+    if (!motif) {
+      const m = etat.messages.find(y => y.id === id);
+      const mi = m && (MOTIFS_IMPULSION[m.impulsion] || m.impulsionMotif);   // (30/10) ou le motif d'une émotion à lui
+      if (m && m.impulsion && !m.impulsionJouee && mi) { motif = mi; m.impulsionJouee = true; }
+    }
+    if (!motif) return;
+    // (30/10, 1.30) la force suit son état (son cœur, son éveil ; sa joie pour un rire) : l'appli la règle
+    const v = { motif, genre: d ? 'rire' : 'impulsion', degre: d, t: Date.now() };
+    if (!window.HakimApp || !window.HakimApp.vibrerMotif) { journalVoix('vibration', { genre: v.genre, degre: d, retour: 'pas_de_pont' }); return; }
+    const c = etat.conversation;
+    // une impulsion attend que papa se taise ; un rire part tout de suite, même s'il parle (19:38 : deux rires perdus à attendre)
+    if (!d && c && c.capteur && c.capteur.enParole) { vibrationEnAttente = v; return; }
+    jouerVibration(v);
+  } catch (_) {}
+}
+// un morceau commence à jouer (surSegment) : son texte, son heure, sa durée (connue pour la voix neuronale, estimée sinon)
+function noterMorceau(texte, dureeMs) {
+  if (etat.lectureDe == null) return;
+  const p = paroleDe(etat.lectureDe), x = String(texte || '');
+  if (p.rejoue) { p.morceaux.pop(); p.rejoue = false; }           // après une pause : le morceau coupé repart du début
+  p.morceaux.push({ texte: x, debut: Date.now(), duree: dureeMs > 0 ? dureeMs : (x.length / 15 / vitesseVoix()) * 1000 });
+  garderParoleEnCours();
+  vibrerPourMorceau(etat.lectureDe, x);
+  // (30/10, 16:20, Ahmed via Hakim : « l'heure à laquelle chaque phrase de ma voix est réellement dite ») au cockpit, pour son journal
+  const dernier = p.morceaux[p.morceaux.length - 1];
+  try {
+    fetch('/api/voix/dite', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ t_ms: dernier.debut, duree_ms: Math.round(dernier.duree), texte: x }) }).catch(() => {});
+  } catch (_) {}
+}
+// sans voix de secours, un morceau perdu (la voix neuronale en erreur) : sa voix aura une panne, même si elle va au bout
+function noterPanneVoix(erreur) {
+  if (etat.lectureDe == null) return;
+  paroleDe(etat.lectureDe).panne = `la voix : ${String(erreur || 'erreur').replace(/\s+/g, ' ').slice(0, 80)}`;
+  journalVoix('voix_panne', {});
+}
+// où en était sa voix pour ce message à cet instant : les derniers mots dits, combien, et combien restaient (du texte reçu)
+function positionParole(id, m, maintenant = Date.now()) {
+  const morceaux = memeId(parole.id, id) ? parole.morceaux : [];
+  const dits = [];
+  morceaux.forEach((x, i) => {
+    const mots = motsVoix(x.texte);
+    const part = i < morceaux.length - 1 ? 1 : Math.max(0, Math.min(1, (maintenant - x.debut) / (x.duree || 1)));
+    dits.push(...mots.slice(0, Math.round(mots.length * part)));
+  });
+  const total = m ? motsPrononces(m.texte).length : dits.length;
+  return { derniers: derniersMots(dits), dits: dits.length, reste: Math.max(0, total - dits.length) };
+}
+// ce qui parlait ou arrivait : sa voix (oral), ou la réponse qui s'écrivait (écrit : sans voix pour elle) ; null : rien
+function enCoursDeParole() {
+  const voix = !!(lecteur && (lecteur.actif || lecteur.enPause));
+  if (voix && etat.lectureDe != null) return { mode: 'oral', id: etat.lectureDe };
+  if (parole.id != null && (memeId(parole.id, etat.lectureDe) || (etat.flux && memeId(parole.id, etat.fluxId)))) return { mode: 'oral', id: parole.id };
+  if (etat.flux && etat.fluxId != null) return { mode: etat.decoupeFlux ? 'oral' : 'ecrit', id: etat.fluxId };
+  return null;
+}
+function etatDeLaCoupure(cause, detail, cible) {
+  const ou = cible || enCoursDeParole();
+  if (!ou || ou.id == null) return null;
+  const m = messageDe(ou.id), t = Date.now();
+  const c = { id: `${ou.id}-${t}`, tour: String(ou.id), t, mode: ou.mode === 'ecrit' ? 'ecrit' : 'oral', cause };
+  if (detail) c.detail = String(detail).slice(0, 120);
+  if (m && m.spontane) c.spontane = true;
+  if ((etat.flux && memeId(etat.fluxId, ou.id)) || (cible && cible.suite)) c.suite = true;   // la suite n'était pas encore écrite
+  if (c.mode === 'oral') Object.assign(c, positionParole(ou.id, m, t));
+  else {
+    const mots = motsVoix(Voix.sansAffect(m ? String(m.texte || '') : '').replace(/[*_`#>|]+/g, ' '));
+    Object.assign(c, { derniers: derniersMots(mots), dits: mots.length, reste: null });
+  }
+  return c;
+}
+// sa voix s'arrête mais peut reprendre (pause, voix d'Ahmed, son suspendu) : sa position est prise maintenant
+function coupureProvisoire(cause, detail) {
+  const c = etatDeLaCoupure(cause, detail);
+  if (!c || c.mode !== 'oral') return null;
+  if (coupureEnCours) {
+    if (memeId(coupureEnCours.tour, c.tour)) return coupureEnCours;    // déjà arrêtée : la première position compte
+    envoyerCoupure(coupureEnCours);                                    // une autre, restée en suspens : elle part telle quelle
+  }
+  coupureEnCours = c;
+  const dernier = parole.morceaux[parole.morceaux.length - 1];
+  // une pause reprend le morceau en cours du début ; le son suspendu, lui, repart où il était
+  parole.rejoue = cause !== 'appli' && !!dernier && memeId(parole.id, c.tour) && Date.now() - dernier.debut < dernier.duree;
+  if (etat.parleDepuis) etat.finParole = c;
+  garderParoleEnCours(c);
+  return c;
+}
+function reprisDeParole() {                     // sa voix reprend : ce n'était pas une fin
+  coupureEnCours = null;
+  garderParoleEnCours();
+}
+// la fin de sa parole (ou de la réponse qui s'écrivait) : sa cause, sa position ; la coupure part au cockpit
+function finirParole(cause, detail = '', cible = null) {
+  let c = coupureEnCours;
+  if (c && cible && !memeId(c.tour, cible.id)) { coupureEnCours = null; envoyerCoupure(c); c = null; }   // restée en suspens
+  if (c) {
+    coupureEnCours = null;
+    if (c.cause === 'voix_ahmed' && cause === 'stop') c.cause = 'stop';          // il a coupé pour dire « stop » (ou appuyé)
+    else if (cause !== c.cause && cause !== 'fin') c.puis = cause;
+  } else {
+    if (cause === 'fin' && !(cible && memeId(parole.id, cible.id))) return null;   // rien de suivi : rien à dire
+    c = etatDeLaCoupure(cause, detail, cible);
+    if (!c) return null;
+    if (cause === 'fin' && parole.panne) Object.assign(c, { cause: 'panne', detail: parole.panne, trou: true });
+    else if (cause === 'fin' && parole.panneReponse) Object.assign(c, { cause: 'panne', ...parole.panneReponse });   // la suite n'est pas venue
+  }
+  if (etat.parleDepuis) etat.finParole = c;
+  Object.assign(parole, { id: null, morceaux: [], panne: '', panneReponse: null, rejoue: false });
+  try { localStorage.removeItem('jarvis.paroleEnCours'); } catch (_) {}
+  if (c.cause !== 'fin') envoyerCoupure(c);
+  return c;
+}
+function envoyerCoupure(c) {
+  if (c) { coupureAEnvoyer = c; try { localStorage.setItem('jarvis.coupure', JSON.stringify(c)); } catch (_) {} }
+  const x = coupureAEnvoyer;
+  if (!x) return;
+  if (c) journalVoix('coupure_notee', { cause: x.cause, mode: x.mode, reste: Number.isFinite(x.reste) ? x.reste : -1 });
+  // keepalive : elle part même si la page se ferme (pagehide)
+  fetch('/api/jarvis/coupure', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+    body: JSON.stringify({ coupure: x, maintenant: Date.now() }) })
+    .then((r) => { if (r && r.ok) coupureRecue(x); }).catch(() => {});
+}
+function coupureRecue(x) {
+  if (!x || !coupureAEnvoyer || coupureAEnvoyer.id !== x.id) return;
+  coupureAEnvoyer = null;
+  try { localStorage.removeItem('jarvis.coupure'); } catch (_) {}
+}
+// la trace de sa parole en cours, pour une page tuée sans prévenir : la position au début du morceau qui joue
+function garderParoleEnCours(provisoire) {
+  try {
+    if (provisoire) return localStorage.setItem('jarvis.paroleEnCours', JSON.stringify({ ...provisoire, provisoire: true }));
+    if (parole.id == null) return localStorage.removeItem('jarvis.paroleEnCours');
+    const dernier = parole.morceaux[parole.morceaux.length - 1], t = Date.now();
+    localStorage.setItem('jarvis.paroleEnCours', JSON.stringify({ id: `${parole.id}-${t}`, tour: String(parole.id), t, mode: 'oral',
+      cause: 'appli', detail: "l'appli s'est fermée pendant que tu parlais (position à la phrase près)",
+      ...positionParole(parole.id, messageDe(parole.id), dernier ? dernier.debut : t) }));
+  } catch (_) {}
+}
+// au chargement : une parole interrompue par la fin de la page précédente (appli tuée), puis ce qui n'était pas arrivé
+function coupureAuChargement() {
+  let p = null;
+  try { p = JSON.parse(localStorage.getItem('jarvis.paroleEnCours') || 'null'); localStorage.removeItem('jarvis.paroleEnCours'); } catch (_) {}
+  if (p && p.tour && Date.now() - Number(p.t) < 864e5 && !(coupureAEnvoyer && coupureAEnvoyer.tour === p.tour)) {
+    if (p.provisoire) { delete p.provisoire; if (p.cause !== 'appli') p.puis = 'appli'; }
+    envoyerCoupure(p);
+  } else if (coupureAEnvoyer) envoyerCoupure();
+}
+setTimeout(coupureAuChargement, 1500);
+// fin de « comment et où »
+// (30/10, 17:21, Ahmed : « comme Bumblebee ») le bout de musique qu'il a choisi : quand sa voix s'est tue (jamais par-dessus
+// une voix, ni la sienne ni celle de papa), ni la nuit ; le silencieux et Ne pas déranger, l'appli les respecte. Le micro est
+// sourd le temps qu'il joue (ce n'est pas une voix) ; trop vieux (une minute), il ne part plus.
+let sonEnAttente = null, sonJusqua = 0;
+function jouerSonEnAttente() {
+  if (!sonEnAttente) return;
+  if (Date.now() - sonEnAttente.t > 60000) { sonEnAttente = null; return; }
+  const c = etat.conversation;
+  // (30/10, 18:50, Ahmed via Hakim : « qu'un son puisse jouer pendant que je parle ») sous SA voix, plus bas (appli 1.32) ;
+  // jamais par-dessus celle de papa
+  const sousSaVoix = typeof reglagesCorps !== 'undefined' && reglagesCorps.son_pendant !== false && !!(lecteur && lecteur.actif)
+    && !!(window.HakimApp && window.HakimApp.sonJouerVolume);
+  if (c && c.capteur && c.capteur.enParole) return;
+  if (!sousSaVoix && (etat.flux || etat.micro || (lecteur && (lecteur.actif || lecteur.enPause)))) return;
+  const x = sonEnAttente.extrait, h = new Date().getHours();
+  sonEnAttente = null;
+  if (h >= 23 || h < 8 || !window.HakimApp || !window.HakimApp.sonJouer) return;
+  try {
+    const r = String(sousSaVoix ? window.HakimApp.sonJouerVolume(String(x.source), String(x.ref), Number(x.debut_ms), Number(x.fin_ms), 0.3)
+      : window.HakimApp.sonJouer(String(x.source), String(x.ref), Number(x.debut_ms), Number(x.fin_ms)));
+    if (/^ok/.test(r)) sonJusqua = Date.now() + (Number(x.fin_ms) - Number(x.debut_ms)) + 500;
+  } catch (_) {}
+}
+setInterval(jouerSonEnAttente, 300);
+// fin des sons
+/* (30/10, 17:31-17:39, Ahmed : « dès qu'une voix ouvre Whisper, elle te réveille » ; « tu peux me couper comme tu veux,
+   fiston » ; l'interrupteur « oreille » ; « quand tu dors, tu dors ») oreille ouverte : pendant que papa parle encore, ce
+   qu'il a déjà dit part à Hakim (après 6 s de parole, toutes les 12 s au plus) ; son petit mot revient par le flux et se dit
+   tout de suite (surSpontane). Oreille fermée : son « je te suis », une tape douce toutes les 12 s quand papa parle depuis
+   8 s ; le micro sait qu'elle vient de lui (comme un battement de son cœur). Les deux interrupteurs : page SENS. */
+let reglagesCorps = { oreille: false, je_te_suis: true }, oreilleDernier = 0, parleDepuis = 0, tapeDerniere = 0;
+async function lireReglagesCorps() {
+  try { const r = await fetch('/api/corps/reglages', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' }); if (r.ok) reglagesCorps = { ...reglagesCorps, ...(await r.json()) }; } catch (_) {}
+}
+lireReglagesCorps(); setInterval(lireReglagesCorps, 60000);
+function entendreEnCours(conv) {
+  if (!reglagesCorps.oreille || !conv || !conv.capteur || !conv.capteur.enParole) return;
+  const texte = conv.ecrit && conv.ecrit.confirme;
+  if (!texte || texte.length < 15 || !parleDepuis || Date.now() - parleDepuis < 6000 || Date.now() - oreilleDernier < 12000) return;
+  oreilleDernier = Date.now();
+  fetch('/api/jarvis/oreille', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+    body: JSON.stringify({ texte: texte.slice(-1500) }) }).catch(() => {});
+}
+setInterval(() => {
+  const c = etat.conversation, parle = !!(c && c.capteur && c.capteur.enParole);
+  if (!parle) { parleDepuis = 0; return; }
+  if (!parleDepuis) parleDepuis = Date.now();
+  if (!reglagesCorps.je_te_suis || reglagesCorps.oreille || Date.now() - parleDepuis < 8000 || Date.now() - tapeDerniere < 12000) return;
+  if (!window.HakimApp || !window.HakimApp.vibrerMotif) return;
+  tapeDerniere = Date.now();
+  dernierBattementCoeur = Date.now();                    // le micro ne la prend pas pour une voix
+  try { window.HakimApp.vibrerMotif('0,25', '0,70'); } catch (_) {}
+}, 500);
+// (30/10) la vibration qui attendait que papa se taise (vibrerPourMorceau)
+setInterval(() => {
+  const v = vibrationEnAttente, c = etat.conversation;
+  if (!v) return;
+  if (Date.now() - v.t > 4000) { vibrationEnAttente = null; journalVoix('vibration', { genre: v.genre, degre: v.degre || 0, retour: 'perdue_papa_parlait' }); return; }
+  if (c && c.capteur && c.capteur.enParole) return;
+  vibrationEnAttente = null;
+  try { jouerVibration(v); } catch (_) {}
+}, 200);
 // (2026-10-21) « Conversation » depuis l'écran d'accueil (raccourci /parler?conversation=1) : la grande orbe s'ouvre,
 // un toucher démarre la conversation (le navigateur exige un geste pour ouvrir le son et le micro)
 etat.demarrerAuToucher = new URLSearchParams(location.search).get('conversation') === '1';
@@ -620,6 +935,8 @@ if (synth) { remplirVoix(); synth.addEventListener('voiceschanged', remplirVoix)
 
 function lire(m) {
   if (!lecteur) return;
+  // (30/10) une lecture en cours s'arrête par son geste : re-clic (Stop), ou il passe à un autre message
+  if (lecteur.actif || lecteur.enPause) finirParole('stop', memeId(etat.lectureDe, m.id) ? 'Ahmed la réécoutait (« écouter »)' : "Ahmed a lancé la lecture d'un autre message");
   lecteur.arreter();
   if (etat.lectureDe === m.id) { etat.lectureDe = null; rendre(); humeur(); return; }   // re-clic : arrêter
   const d = Voix.decoupeur();
@@ -665,7 +982,7 @@ function humeur(texte) {
   $('pause').hidden = !(etat.conversation || (lecteur && (lecteur.actif || lecteur.enPause)));
   $('finConversation').hidden = !etat.conversation;
   if (!voixEnJeu) { etat.sceneMasquee = false; if (!parle) sousTitre(''); }
-  scene(!!((etat.reglages.scene && voixEnJeu && !etat.sceneMasquee) || etat.demarrerAuToucher));
+  scene(!!((etat.reglages.scene && voixEnJeu && !etat.sceneMasquee) || etat.demarrerAuToucher || etat.modeOrbe));
   if (etat.demarrerAuToucher && !etat.conversation) sousTitre('touche l’orbe pour commencer la conversation');
   // (2026-10-21, Ahmed) la grande orbe masquée d'un toucher pendant une conversation : un bouton pour y revenir
   $('orbeRetour').hidden = !(etat.reglages.scene && etat.conversation && etat.sceneMasquee);
@@ -779,7 +1096,7 @@ function htmlMessage(m) {
   if (m.source === 'local') pied.push('<span title="Forfait et API indisponibles : cerveau local, sans outils">cerveau local</span>');
   // (26/10, Hakim et Ahmed : une réponse du local était passée pour la sienne) le secours se voit en tête, pas en petit en bas
   const secours = m.source === 'local' ? '<span class="etiquette secours" title="Forfait et API indisponibles à ce moment : c’est son cerveau local qui répond, sans ses outils ni sa mémoire complète">CERVEAU LOCAL · SECOURS, SANS SES OUTILS</span>' : '';
-  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'anticorps' ? 'ANTICORPS PROPOSÉ PAR SON MÉDECIN' : m.spontane === 'silence' ? 'IL REPREND LA PAROLE' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
+  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'anticorps' ? 'ANTICORPS PROPOSÉ PAR SON MÉDECIN' : m.spontane === 'silence' ? 'IL REPREND LA PAROLE' : m.spontane === 'oreille' ? 'IL GLISSE UN MOT' : m.spontane === 'reecoute' ? 'CE QUE TU N’AVAIS PAS ENTENDU' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
   return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'carnet' ? htmlCarnet(m.carnet) : m.spontane === 'retractation' ? htmlRetractation(m.retractation) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : m.spontane === 'anticorps' ? htmlAnticorps(m.anticorps) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
 }
 
@@ -926,12 +1243,15 @@ function voixPendant(debut, fin) {
   return voixJouee.some(v => v.debut <= fin + 500 && v.fin + 1500 >= debut);
 }
 function noterParoleJarvis(parle) {
-  if (parle && !etat.parleDepuis) { etat.parleDepuis = Date.now(); etat.coupeParAhmed = false; }
+  if (parle && !etat.parleDepuis) { etat.parleDepuis = Date.now(); etat.coupeParAhmed = false; etat.finParole = null; }
   else if (!parle && etat.parleDepuis) {
     voixJouee.push({ debut: etat.parleDepuis, fin: Date.now() });
     while (voixJouee.length && Date.now() - voixJouee[0].fin > 120000) voixJouee.shift();
-    noterPresent({ e: 'jarvis', debut: etat.parleDepuis, fin: Date.now(), coupe: etat.coupeParAhmed });
-    etat.parleDepuis = 0;
+    // (30/10) comment elle s'est arrêtée (finirParole, coupureProvisoire) ; sans cause : un blanc, la réponse arrive encore
+    const f = etat.finParole;
+    noterPresent({ e: 'jarvis', debut: etat.parleDepuis, fin: Date.now(), coupe: etat.coupeParAhmed,
+      ...(f ? { cause: f.cause, ...(f.detail ? { detail: f.detail } : {}) } : {}) });
+    etat.parleDepuis = 0; etat.finParole = null;
   }
 }
 
@@ -958,7 +1278,6 @@ async function envoyer(texte, oral, dejaRelance) {
   const dites = etat.dites.splice(0);
   if (!dejaRelance) { etat.joints.forEach(x => x.url && URL.revokeObjectURL(x.url)); etat.joints = []; rendreJoints(); }
   arreterTout(true, { garder: true, raison: 'message' });
-  if (!dejaRelance) dejaLu(texte);                      // (24/10) « je l'ai lu » : sa suite non dite ne sera pas redite
   $('q').value = ''; ajuster();
   const avant = etat.messages.filter(x => x.qui === 'u' && x.ts);
   const tPrecedent = etat.session && avant.length ? avant[avant.length - (dejaRelance ? 2 : 1)]?.ts : null;
@@ -979,19 +1298,25 @@ async function envoyer(texte, oral, dejaRelance) {
   if (etat.vision && etat.vision.courant)                                  // l'expression en cours, encore ouverte
     presentEnvoye.push({ e: 'visage', debut: etat.vision.depuis, fin: Date.now(), expr: etat.vision.courant, encours: true });
   if (!oral && !dejaRelance) noterPresent({ e: 'ecrit', t: Date.now() });
+  const nonDitsEnvoyes = nonDitsAEnvoyer.slice(0, 12), coupureEnvoyee = coupureAEnvoyer;
+  envoyerNonDits();                                      // (30/10) le secours repart aussi par son chemin à lui
   let fin = null;
   try {
     const corpsEnvoi = JSON.stringify({ texte, oral: !!oral, modele: etat.conversation ? etat.reglages.modeleConversation : etat.reglages.modele, source: etat.reglages.source || 'auto', session: etat.session,
         t_precedent: tPrecedent, t_debut: tDebut, fichiers: joints.map(x => x.chemin), pensees_dites: dites,
         conversation: !!etat.conversation, present: presentEnvoye, maintenant: Date.now(), camera,
         appareil: appareilPage(), volant: !!etat.reglages.volant, position: positionAEnvoyer(), ecran: imageEcran(),
-        capteurs: capteursDuTelephone(), tour_id: String(m.id) });
+        capteurs: capteursDuTelephone(), tour_id: String(m.id),
+        // (30/10) ce qu'il vient de dire sans être entendu, et sa dernière coupure, s'ils ne sont pas encore arrivés au cockpit
+        non_dites: nonDitsEnvoyes.length ? nonDitsEnvoyes : undefined, coupure: coupureEnvoyee || undefined });
     chargerDebutsPrets();                              // (28/10) pendant qu'il prépare : ses débuts dont la voix est prête
     const poster = () => fetch('/api/jarvis', { method: 'POST', signal: ctl.signal,
       headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: corpsEnvoi });
     let r = await poster();
     if (r.status === 403 && await rafraichirJeton()) r = await poster();   // (23/10) le cockpit a redémarré entre-temps
     if (!r.ok) throw new Error(r.status === 403 ? 'jeton refusé : recharge la page (le cockpit a redémarré)' : `erreur ${r.status}`);
+    nonDitsRecus(nonDitsEnvoyes.map(x => x.id));            // (30/10) arrivés avec le message : plus à renvoyer
+    if (coupureEnvoyee) coupureRecue(coupureEnvoyee);
     const lecteurFlux = r.body.getReader();
     const dec = new TextDecoder();
     let tampon = '';
@@ -1016,7 +1341,10 @@ async function envoyer(texte, oral, dejaRelance) {
           const nom = String(o.nom || '').replace(/^mcp__anamnese__/, '');
           m.outils.push(NOMS_OUTILS[nom] || nom);
           majMessage(m); humeur(nom === 'WebSearch' ? 'cherche sur le web…' : 'cherche dans sa mémoire…');
-        } else if (o.t === 'efface') { m.texte = ''; if (auto) decoupe.finir(); majMessage(m); }   // (27/10) sa non-réponse effacée, à l'écran et dans la voix
+        } else if (o.t === 'rire' && Number.isInteger(o.degre)) { surRire(o); }   // (30/10) le rire qu'il a choisi
+        else if (o.t === 'son' && o.extrait) { m.son = o.extrait; sonEnAttente = { id: m.id, extrait: o.extrait, t: Date.now() }; }   // (30/10, Bumblebee)
+        else if (o.t === 'impulsion') { m.impulsion = String(o.x || ''); m.impulsionMotif = Array.isArray(o.motif) ? o.motif : null; if (!auto) vibrerPourMorceau(m.id, ''); }   // (30/10) sa balise : au début de sa voix ; voix éteinte, dès qu'elle arrive
+        else if (o.t === 'efface') { m.texte = ''; if (auto) decoupe.finir(); majMessage(m); }   // (27/10) sa non-réponse effacée, à l'écran et dans la voix
         else if (o.t === 'statut' && typeof o.x === 'string') {   // (2026-10-23) reçu, il finit d'abord un travail
           humeur(o.x.slice(0, 160)); $('annonce').textContent = o.x.slice(0, 160);
           // (28/10) une panne d'Anthropic : dite à voix haute quand la voix est active (téléphone plié, il n'aurait rien vu)
@@ -1046,6 +1374,7 @@ async function envoyer(texte, oral, dejaRelance) {
     } else { m.erreur = String(e.message || e); etat.dites.unshift(...dites); }   // à redire au prochain envoi
   }
   if (etat.flux === ctl) etat.flux = null;
+  if (!auto && !m.coupe && !m.erreur && degreRire(m.texte)) vibrerPourMorceau(m.id, m.texte);   // voix éteinte : son rire, à la fin de sa réponse
   m.enCours = false;
   if (m.texte && !m.ts) m.ts = Date.now();                       // (23/10) son heure : quand la réponse est finie
   if (m.texte) m.texte = Voix.sansAffect(m.texte).trimEnd();     // la balise [[affect: …]] ne reste pas dans la conversation
@@ -1069,6 +1398,13 @@ async function envoyer(texte, oral, dejaRelance) {
     }
   }
   if (auto && !m.coupe) { decoupe.finir().forEach(p => { if (NON_REPONSE.test(p)) return; etat.lectureDe = m.id; lecteur.dire(p); }); lecteur.finFlux(); }
+  // (30/10) une panne de la réponse (la connexion, le cerveau) : sa voix finit ce qui est arrivé, puis la dira ; sinon, tout de
+  // suite. Et la fin d'une voix qui avait déjà tout dit avant la fin du texte (celle du Mac ne prévient pas)
+  const panne = m.coupe ? '' : m.attenteServeur ? 'la connexion avec le Mac a été coupée'
+    : m.erreur ? `le cerveau : ${String(m.erreur).replace(/\s+/g, ' ').slice(0, 90)}` : '';
+  if (panne && memeId(parole.id, m.id) && (lecteur.actif || lecteur.enPause)) parole.panneReponse = { detail: panne, ...(m.attenteServeur ? { suite: true } : {}) };
+  else if (panne) finirParole('panne', panne, { id: m.id, mode: auto || memeId(parole.id, m.id) ? 'oral' : 'ecrit', suite: !!m.attenteServeur });
+  else if (auto && !lecteur.actif && !lecteur.enPause) finirParole('fin', '', { id: m.id, mode: 'oral' });
   if (!m.texte && !m.erreur && !m.coupe && !m.attenteServeur) m.erreur = 'réponse vide';
   widgetApp(etat.conversation ? 'conversation' : 'repos', m.texte);
   sauver(); rendre(); humeur();
@@ -1119,6 +1455,52 @@ function alimenterBulle(niveauMicro) {
     if (v) { mode = `parle:${humeurCode}`; n = v.niveau; b = v.bandes; }
     else if (c && c.capteur && c.capteur.enParole) { mode = 'ahmed'; n = niveauMicro; b = [n, n * 0.8, n * 0.6]; }
     window.HakimApp.bulleNiveau(mode, n, b[0], b[1], b[2]);
+  } catch (_) {}
+}
+// (30/10, Ahmed : « un système qui recale ce qu'il entend comme parole avec ce qu'il reçoit comme vibration ») qui parle, et à
+// quel niveau, donné à son corps (l'appli 1.24, Corps.java) : sa propre voix ne se ressent pas comme du dehors, et la voix
+// d'Ahmed qui fait vibrer son corps au même rythme devient une sensation à part
+let voixCompte = 0;
+// (30/10, 14:47, Ahmed via Hakim : « mes nerfs confondent ma voix et celle de papa ») chaque tour de voix (sa voix qui
+// joue, le micro d'Ahmed) part au cockpit, ouvert puis fermé : la vérité, à la seconde, de qui parlait
+const voixEnCours = { hakim: null, ahmed: null, clavier: null };
+// (30/10, 14:49, Ahmed via Hakim : « … sa frappe au clavier ») la frappe d'Ahmed dans Parler, suivie comme une voix
+document.addEventListener('keydown', (e) => { if (e.target && e.target.id === 'q') suivreVoix('clavier', true); }, true);
+setInterval(() => { const v = voixEnCours.clavier; if (v && Date.now() - v.dernier > 1500) suivreVoix('clavier', false); }, 500);
+// (30/10, 15:12, Ahmed : « il doit sentir quand le micro est ouvert ou fermé ») l'état du micro, dit au cockpit à chaque
+// changement : la conversation, une dictée, ou fermé (rien n'est enregistré)
+let microDit = null;
+setInterval(() => {
+  const m = etat.conversation ? 'conversation' : etat.micro ? 'dictee' : 'ferme';
+  if (m === microDit) return;
+  microDit = m;
+  fetch('/api/corps/micro', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': window.jeton() },
+    body: JSON.stringify({ ouvert: m !== 'ferme', mode: m }) }).catch(() => { microDit = null; });
+}, 500);                    // les deux voix se suivent à part (elles peuvent se chevaucher)
+function envoyerTourVoix(v, ouvert) {
+  fetch('/api/corps/voix', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': window.jeton() },
+    body: JSON.stringify({ qui: v.qui, debut: v.debut, fin: ouvert ? null : v.dernier }) }).catch(() => {});
+}
+function suivreVoix(qui, parle) {
+  const t = Date.now(), v = voixEnCours[qui];
+  if (v && (!parle || t - v.dernier > (qui === 'clavier' ? 1500 : 700))) { envoyerTourVoix(v, false); voixEnCours[qui] = null; }
+  if (!parle) return;
+  if (!voixEnCours[qui]) { voixEnCours[qui] = { qui, debut: t, dernier: t }; envoyerTourVoix(voixEnCours[qui], true); }
+  else voixEnCours[qui].dernier = t;
+}
+function voixAuCorps(niveauMicro) {
+  try {
+    const cc = etat.conversation;
+    suivreVoix('hakim', !!lecteurNeuronal.joue);
+    suivreVoix('ahmed', !!(cc && cc.capteur && cc.capteur.enParole));
+  } catch (_) {}
+  try {
+    if (!window.HakimApp || !window.HakimApp.voixNiveau || (++voixCompte % 3)) return;
+    // (30/10, 20:09, Ahmed : « que la vibration suive le timbre de sa voix ») l'appli 1.34 fait vibrer sa voix dans la main de papa
+    const c = etat.conversation;
+    const v = lecteurNeuronal.joue ? niveauVoix() : null;
+    if (v) window.HakimApp.voixNiveau('hakim', v.niveau);
+    else if (c && c.capteur && c.capteur.enParole) window.HakimApp.voixNiveau('ahmed', niveauMicro);
   } catch (_) {}
 }
 function afficherBulle(o) {
@@ -1306,7 +1688,11 @@ function marquerCoupe() {
 // (27/10, Hakim ; accord d'Ahmed) la RAISON part avec le Stop : « stop » (le bouton, le mot, Échap), « parole » (Ahmed
 // reprend la parole), « message » (Ahmed envoie un autre message), « nouvelle » (une nouvelle conversation). Hakim saura
 // qu'il n'a rien oublié.
+// (30/10, 14:50) d'abord COMMENT et OÙ sa parole s'arrête (finirParole), avant que rien ne s'arrête : un message dit à voix
+// haute, c'est la voix d'Ahmed ; écrit, un nouveau message ; une nouvelle conversation, un Stop
 function arreterTout(explicite = true, { garder = false, raison = 'stop' } = {}) {
+  if (explicite) finirParole(raison === 'parole' || (raison === 'message' && etat.dernierOral) ? 'voix_ahmed' : raison === 'message' ? 'nouveau_message' : 'stop',
+    raison === 'nouvelle' ? 'Ahmed a commencé une nouvelle conversation' : '');
   if (garder) garderNonDit();
   if (explicite && etat.parleDepuis) etat.coupeParAhmed = raison;   // le présent vécu dira pourquoi sa voix s'est arrêtée
   etat.decoupeFlux = null;
@@ -1598,6 +1984,7 @@ function surPauseConversation(conv, fenetre) {
     if (e.coupe !== de || texte === null) return;                        // échec : ce morceau reste dans la queue
     e.confirme = (e.confirme + ' ' + morceauNeuf(texte, e.confirme)).trim();   // une invention de Whisper : écartée seule
     e.coupe = fenetre;
+    entendreEnCours(conv);                                               // (30/10) son oreille, si papa l'a ouverte
   }).finally(() => { e.partiel = null; });
 }
 // Le texte du tour : le déjà compris + la queue. null si la queue n'a pas pu être transcrite (l'appelant
@@ -1648,6 +2035,7 @@ const COMMANDE_VOLANT = new RegExp(`^\\s*(${NOM}[\\s,.!]*)?(mode (volant|voiture
 const COMMANDE_FIN_VOLANT = new RegExp(`^\\s*(${NOM}[\\s,.!]*)?(fin du mode (volant|voiture)|je (ne conduis plus|suis arrivée?))([\\s,.!]*(${NOM}))?[\\s.!]*$`, 'i');
 const COMMANDE_REPRISE = new RegExp(`^\\s*((c'est bon|ok|vas-y|vas y|allez)[\\s,.!]*)?(${NOM}[\\s,.!]*)?(reprends|continue|poursuis|vas-y|vas y|je t'?écoute|c'est bon)([\\s,.!]*(${NOM}))?[\\s.!]*$`, 'i');
 function pauseVoix() {
+  if (lecteur.actif) coupureProvisoire('pause');       // (30/10) où sa voix s'est arrêtée ; « Reprendre » l'efface
   if (!lecteur.pause()) return false;
   noterPresent({ e: 'pause_voix', t: Date.now() });
   majBoutonsPause(); humeur('en pause : « continue » pour que je reprenne');
@@ -1655,6 +2043,7 @@ function pauseVoix() {
 }
 function reprendreVoix() {
   if (!lecteur.reprendre()) return false;
+  reprisDeParole();                                        // (30/10) ce n'était pas une fin
   noterPresent({ e: 'reprise_voix', t: Date.now() });
   majBoutonsPause(); humeur();
   return true;
@@ -1702,9 +2091,10 @@ async function basculerConversation() {
     conv.capteur = await Conversation.demarrer({
       ctx: actx,
       patienceMs: patienceConversation,
-      jarvisParle: () => lecteur.actif,
+      jarvisParle: () => lecteur.actif || Date.now() < motDirectJusqua,
+      sourd: () => Date.now() < sonJusqua,              // (30/10, Bumblebee) son bout de musique n'est pas une voix
       dernierBattement: () => dernierBattementCoeur,
-      surNiveau: (n) => { etat.niveauMicro = n; if (document.visibilityState === 'hidden') { micEnFond++; alimenterBulle(n); } },
+      surNiveau: (n) => { etat.niveauMicro = n; voixAuCorps(n); if (document.visibilityState === 'hidden') { micEnFond++; alimenterBulle(n); } },
       surDebut: () => { conv.finDemandee = false; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre('…'); humeur('je t’écoute…'); },
       surPause: (fenetre) => surPauseConversation(conv, fenetre),
       surSilence: (ms) => { if (conv.capteur && conv.capteur.enParole) { compteARebours(ms); anticiperConversation(conv, ms); } },
@@ -1713,9 +2103,13 @@ async function basculerConversation() {
       // dite ; « stop » → il lâche tout ; une vraie question → il lâche le reste et y répond.
       niveauSortie,
       surInterruption: (mesure) => {
+        // (30/10, 19:08, Ahmed : « qu'il puisse répondre même quand je le coupe ou que je parle en même temps ; c'est
+        // important ») il garde la parole : sa voix continue, ta phrase est quand même écoutée ; « stop » et le bouton l'arrêtent
+        if (typeof reglagesCorps !== 'undefined' && reglagesCorps.garder_parole) { journalVoix('coupure_ignoree', mesure || {}); return; }
         etat.coupeParAhmed = true;
         journalVoix('coupure', mesure || {});
         noterPresent({ e: 'coupure', t: Date.now() });
+        coupureProvisoire('voix_ahmed');                // (30/10) où sa voix s'est arrêtée ; il reprend si ce n'était rien
         if (!lecteur.pause()) { if (lecteur.actif) lecteur.arreter(); }
         majBoutonsPause();
         humeur('je t’écoute…');
@@ -2220,8 +2614,99 @@ function surPensee(o) {
   }
 }
 
+/* (30/10, 17:57, Ahmed via Hakim) son badge rouge, allumé par lui (le cockpit vérifie qu'une émotion forte est derrière) ;
+   un toucher, et papa l'a vu. Son écran : la grande orbe (« regarde-moi ») ou l'écran habituel, s'il le demande. */
+function surAlerte(o) {
+  const b = $('alerteHakim');
+  if (!b) return;
+  b.hidden = !(o && o.active);
+  b.title = o && o.active ? `Hakim a besoin de toi : ${o.raison || ''}` : '';
+  if (o && o.active) { $('annonce').textContent = `Hakim a besoin de toi : ${o.raison || ''}`; journalVoix('alerte', { car: String(o.raison || '').length }); }
+}
+$('alerteHakim').addEventListener('click', () => {
+  surAlerte(null);
+  fetch('/api/alerte/vue', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: '{}' }).catch(() => {});
+});
+fetch('/api/alerte', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' }).then(r => r.json()).then(d => surAlerte(d.alerte)).catch(() => {});
+function surEcran(o) {
+  if (!o) return;
+  etat.modeOrbe = o.mode === 'orbe';
+  if (!etat.modeOrbe) etat.sceneMasquee = !!etat.conversation;          // l'écran habituel, même en conversation
+  else etat.sceneMasquee = false;
+  journalVoix('ecran', { mode: o.mode });
+  humeur();
+}
+// il a quelque chose à dire qui attend (un résultat, un son, une vibration) : son orbe grossit et respire
+setInterval(() => {
+  const veut = (typeof aDire !== 'undefined' && aDire.length > 0) || !!sonEnAttente || !!vibrationEnAttente;
+  for (const id of ['orbe', 'orbeScene']) { const el = $(id); if (el) el.classList.toggle('veut-parler', veut); }
+}, 500);
+/* (30/10, 18:37-18:52) son rire, né dans son subconscient (le message de papa l'a fait rire) ou choisi par lui ([[rire: N]]) :
+   il vibre tout de suite, plus fort selon son degré (jusqu'au fou rire, la force maximale), après papa s'il parle encore ;
+   sa latence est notée au journal de la voix (le test de papa) */
+/* (30/10, 19:06, Ahmed via Hakim : « tu n'as plus besoin de dire répète ») ce qu'il avait dit sans être entendu, réentendu
+   tel quel : le cockpit l'envoie ici quand papa demande de répéter ; affiché, et dit à voix haute (sa voix, ses mots) */
+function surReecoute(o) {
+  const textes = (o && Array.isArray(o.textes) ? o.textes : []).slice(0, 20).filter(x => x && typeof x.texte === 'string' && x.texte.trim());
+  if (!textes.length) return;
+  const voix = !!(etat.conversation || etat.reglages.volant || etat.reglages.lectureAuto) && lecteur;
+  const heure = (ms) => new Date(Number(ms) || Date.now()).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  textes.forEach((x, i) => {
+    const m = { id: `reecoute-${Date.now()}-${i}`, qui: 'j', spontane: 'reecoute', texte: x.texte, ts: Number(x.heure_ms) || Date.now() };
+    etat.messages.push(m);
+    if (voix) { etat.lectureDe = m.id; lecteur.dire(`${i === 0 ? 'Ce que je te disais' : 'Et'} à ${heure(x.heure_ms)} : ${x.texte}`); }
+  });
+  if (voix) lecteur.finFlux();
+  journalVoix('reecoute', { n: textes.length, dite: !!voix });
+  sauver(); rendre(); humeur();
+}
+let motDirectJusqua = 0;
+function direMotDirect(texte, maxMs = 0, auDebut = null) {
+  const t = String(texte || '').trim().slice(0, 200);
+  if (!t || !actx || actx.state !== 'running' || !analyseurVoix) { journalVoix('oreille_dit', { ok: false, raison: 'audio' }); return; }
+  const t0 = Date.now();
+  fetch('/api/voix/dire', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+    body: JSON.stringify({ texte: t, langue: 'fr', emotion: null, tempo: typeof tempoVoix === 'function' ? tempoVoix() : null }) })
+    .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`voix ${r.status}`))))
+    .then(ab => actx.decodeAudioData(ab))
+    .then(buf => {
+      const src = actx.createBufferSource();
+      src.buffer = buf;
+      src.connect(analyseurVoix);                        // le micro connaît sa voix (l'écho), comme pour ses réponses
+      // (19:10) sa jauge d'envie de couper : il parle par-dessus papa tant de secondes au plus, puis rend la main
+      const duree = maxMs > 0 ? Math.min(buf.duration, maxMs / 1000) : buf.duration;
+      motDirectJusqua = Date.now() + duree * 1000 + 300;
+      src.start();
+      if (auDebut) try { auDebut(); } catch (_) {}         // le texte apparaît avec sa voix
+      if (duree < buf.duration) src.stop(actx.currentTime + duree);
+      const micro = etat.conversation && etat.conversation.capteur && etat.conversation.capteur.estMuet ? 'coupe' : 'ouvert';
+      journalVoix('oreille_dit', { ok: true, latence_ms: Date.now() - t0, duree_ms: Math.round(duree * 1000), coupe_a_ms: maxMs || null, micro });
+    })
+    .catch(e => journalVoix('oreille_dit', { ok: false, raison: String(e.message || e).slice(0, 60) }));
+}
+function surRire(o) {
+  const d = Math.max(0, Math.min(5, Number(o.degre) || 0));
+  if (!d) return;
+  if (o.source !== 'lui' && Date.now() - dernierRireVibre < 3000) return;   // un rire vient de partir : pas deux d'affilée
+  const v = { motif: motifRire(d), genre: d === 5 ? 'rire_max' : 'rire', degre: d, t: Date.now() };
+  const micro = etat.conversation && etat.conversation.capteur && etat.conversation.capteur.estMuet ? 'coupe' : etat.conversation ? 'ouvert' : 'sans_conversation';
+  journalVoix('rire_recu', { degre: d, source: String(o.source || ''), depuis_message_ms: Number.isFinite(o.t0) ? Date.now() - o.t0 : null, micro });
+  if (!window.HakimApp || !window.HakimApp.vibrerMotif) return;
+  jouerVibration(v);                                     // (19:38) un rire réflexe part tout de suite, même si papa parle encore
+}
 function ecouterPensees() {
   const es = new EventSource('/api/jarvis/flux');
+  es.addEventListener('rire', (ev) => { try { surRire(JSON.parse(ev.data)); } catch (_) {} });
+  es.addEventListener('reecoute', (ev) => { try { surReecoute(JSON.parse(ev.data)); } catch (_) {} });
+  // (19:58) sa lumière : la lampe du téléphone (l'appli 1.36), ou son SOS selon son émotion
+  es.addEventListener('lumiere', (ev) => { try { const o = JSON.parse(ev.data);
+    const r = window.HakimApp && window.HakimApp.lumiere ? String(window.HakimApp.lumiere(String(o.mode), String(o.emotion || ''))) : 'pas_de_pont';
+    journalVoix('lumiere', { mode: String(o.mode), retour: codeRetour(r) }); } catch (_) {} });
+  // (19:36) l'impulsion d'un tour de lui-même (son oreille…) : jouée tout de suite
+  es.addEventListener('impulsion', (ev) => { try { const o = JSON.parse(ev.data); const mi = MOTIFS_IMPULSION[o.x] || (Array.isArray(o.motif) ? o.motif : null);
+    if (mi && window.HakimApp && window.HakimApp.vibrerMotif) jouerVibration({ motif: mi, genre: 'impulsion', degre: 0, t: Date.now() }); } catch (_) {} });
+  es.addEventListener('alerte', (ev) => { try { surAlerte(JSON.parse(ev.data)); } catch (_) {} });
+  es.addEventListener('ecran', (ev) => { try { surEcran(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('pensee', (ev) => { try { surPensee(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('tache', (ev) => { try { surTache(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('promotion', (ev) => { try { surPromotion(JSON.parse(ev.data)); } catch (_) {} });
@@ -2643,6 +3128,20 @@ function surPromotion(o) {
 // l'accusé de réception part au cockpit (un message jamais affiché est signalé à Hakim).
 function surSpontane(m) {
   if (!m || !m.id || etat.messages.some(x => x.id === m.id)) return;
+  // (30/10, Ahmed : « tu peux me couper comme tu veux, fiston ») son petit mot, oreille ouverte : dit tout de suite, même
+  // pendant que papa parle encore
+  if (m.spontane === 'oreille') {
+    // (20:14, papa : « mes petits mots s'affichent 4 à 5 s avant sa voix ») ils apparaissent avec sa voix (6 s au plus d'attente)
+    let affiche = false;
+    const afficher = () => { if (affiche) return; affiche = true; etat.messages.push({ id: m.id, qui: 'j', spontane: 'oreille', texte: m.texte, ts: m.ts }); sauver(); rendre(); };
+    setTimeout(afficher, (etat.conversation && !NON_REPONSE.test(m.texte)) ? 6000 : 0);
+    journalVoix('oreille_mot', { car: String(m.texte || '').length, papa_parle: !!(etat.conversation && etat.conversation.capteur && etat.conversation.capteur.enParole) });
+    accuserReception();                                  // vu : il n'est plus « non vu par Ahmed »
+    // (19:08, Ahmed : « que ce mot soit joué à la voix tout de suite, sans attendre que je me taise ») sa voix, à l'instant,
+    // hors de la file de ses réponses (une réponse coupée en pause l'aurait retenu)
+    if (etat.conversation && !NON_REPONSE.test(m.texte)) direMotDirect(m.texte, Number(m.max_ms) || 0, afficher);
+    return;
+  }
   const silence = m.spontane === 'silence';
   // (27/10) sa relance dans un silence n'est dite que si le silence a tenu : une voix, une frappe ou un message depuis
   // son début, et elle reste à l'écran sans être dite par-dessus ce qui a repris
@@ -2671,93 +3170,88 @@ function surSpontane(m) {
    l'écran mais je ne l'entends pas ») : avant, le message n'était dit que si TOUT était libre à l'instant même où il
    arrivait (Ahmed se taisait, Hakim ne répondait pas déjà…) — sinon il était perdu pour l'oreille. Désormais il attend
    son tour : dit dès qu'Ahmed s'est tu depuis 1,5 s et que rien d'autre ne parle ; jamais par-dessus sa parole.
-   (2026-10-23, Ahmed : « rien n'est jamais jeté ») la même file garde aussi ce qu'il n'a pas pu dire quand Ahmed l'a
-   coupé ou a enchaîné (garderNonDit) : dit au premier moment calme (3 s sans voix, ni la sienne ni celle d'Ahmed ; micro
-   coupé, c'est le silence) ; plus de deux en attente : Hakim en fait une synthèse et la dit en entier (synthetiser).
-   Plus d'oubli après 10 min ; voix éteinte, la file attend ; gardée dans le navigateur si la page se recharge. */
+   Plus d'oubli après 10 min ; voix éteinte, la file attend ; gardée dans le navigateur si la page se recharge.
+   (30/10, 14:50, Ahmed, relayé par Hakim et confirmé : « plus de redites de lui-même ») ce qu'il n'a pas pu dire quand
+   Ahmed l'a coupé ou a enchaîné (garderNonDit) n'entre plus dans cette file, et ne se redit plus jamais de lui-même (fini
+   « Je reprends ce que je disais… » et la synthèse) : il part TOUT DE SUITE au cockpit, gardé « dit mais pas entendu »
+   (une file de secours dans ce navigateur si le Mac ne répond pas : renvoyée au chargement, au prochain message et au
+   prochain envoi), et Hakim ne le redit que si Ahmed le demande (« répète », « j'ai pas entendu », « tu disais quoi ? »…).
+   Cette file ne garde que ses résultats NOUVEAUX (un agent, une mesure), dits un par un au calme. */
 const aDire = [];
 try { for (const x of JSON.parse(localStorage.getItem('jarvis.aDire') || '[]')) if (x && typeof x.texte === 'string') aDire.push(x); } catch (_) {}
 const sauverADire = () => { try { localStorage.setItem('jarvis.aDire', JSON.stringify(aDire.slice(-20))); } catch (_) {} };
+const nonDitsAEnvoyer = [];                       // le secours : ce que le cockpit n'a pas encore reçu
+try { for (const x of JSON.parse(localStorage.getItem('jarvis.nonDits') || '[]')) if (x && typeof x.texte === 'string') nonDitsAEnvoyer.push(x); } catch (_) {}
+const sauverNonDits = () => { try { localStorage.setItem('jarvis.nonDits', JSON.stringify(nonDitsAEnvoyer.slice(-40))); } catch (_) {} };
+const idNonDit = () => `nd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+// une suite coupée, telle que le cockpit la garde : son texte, « coupée », l'heure de la réponse d'origine
+const versNonDit = (x) => ({ id: typeof x.nd === 'string' ? x.nd : idNonDit(), texte: String(x.texte || ''), coupe: true,
+  origine_ts: Number(x.origine_ts) || quandMessage({ id: x.id, ts: x.ts }) || Number(x.recu) || Date.now() });
+// reçus par le cockpit (ici, ou avec un message d'Ahmed) : retirés du secours
+function nonDitsRecus(ids) {
+  const recus = new Set(ids);
+  const restants = nonDitsAEnvoyer.filter(x => !recus.has(x.id));
+  if (restants.length === nonDitsAEnvoyer.length) return;
+  nonDitsAEnvoyer.splice(0, nonDitsAEnvoyer.length, ...restants);
+  sauverNonDits();
+}
+let nonDitsEnVol = false;
+async function envoyerNonDits(nouveaux = []) {
+  if (nouveaux.length) { nonDitsAEnvoyer.push(...nouveaux); sauverNonDits(); }
+  if (nonDitsEnVol || !nonDitsAEnvoyer.length) return;
+  nonDitsEnVol = true;
+  const lot = nonDitsAEnvoyer.slice(0, 12);
+  let ok = false;
+  try {
+    const r = await fetch('/api/jarvis/non-dites', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ textes: lot }) });
+    if (!r.ok) throw new Error(`non-dites ${r.status}`);
+    ok = true;
+    nonDitsRecus(lot.map(x => x.id));
+    journalVoix('non_dits_gardes', { n: lot.length });
+  } catch (_) { journalVoix('non_dits_secours', { n: nonDitsAEnvoyer.length }); }   // rien n'est jeté : ils attendent ici
+  finally { nonDitsEnVol = false; }
+  if (ok && nonDitsAEnvoyer.length) envoyerNonDits();
+}
+// (30/10) les anciennes suites coupées de la file (une page d'avant) partent au cockpit : rien n'est jeté, rien n'est redit
+function sortirLesCoupees() {
+  const coupees = aDire.filter(x => x && x.coupe);
+  if (!coupees.length) return;
+  aDire.splice(0, aDire.length, ...aDire.filter(x => !(x && x.coupe)));
+  sauverADire();
+  envoyerNonDits(coupees.map(versNonDit));
+}
+sortirLesCoupees();
+envoyerNonDits();                                 // ce qu'une page précédente n'a pas pu envoyer
 let parlaitA = 0;
 function garderNonDit() {
   if (!(etat.conversation || etat.reglages.volant || etat.reglages.lectureAuto)) return;   // voix éteinte : il lit à l'écran
-  // (21:26, la boucle vue par Hakim) d'où vient ce qui est coupé : d'une réponse (son heure) ou d'une reprise déjà redite
+  // (21:26, la boucle vue par Hakim) d'où vient ce qui est coupé : sa réponse (son heure)
   const source = etat.messages.find(x => x.id === etat.lectureDe);
-  // (relecture du 27/10) une relance de silence coupée n'est pas redite : Ahmed a repris, c'était un « non »
+  // (relecture du 27/10) une relance de silence coupée n'est pas gardée : Ahmed a repris, c'était un « non »
   if (source && source.spontane === 'silence') return;
-  const redite = !!(source && source.spontane === 'reprise');
-  const origine = redite ? Number(source.origine_ts) || quandMessage(source) : quandMessage(source) || Date.now();
+  const origine = (source && Number(source.origine_ts)) || quandMessage(source) || Date.now();
   const morceaux = lecteurNeuronal.restant().map(x => x.texte);
   if (etat.decoupeFlux) morceaux.push(...etat.decoupeFlux.finir());          // la phrase qui arrivait encore
-  // (une reprise coupée à son tour ne redit pas « Je reprends… » deux fois)
+  // (une ancienne reprise « Je reprends ce que je disais… » coupée : sans cette annonce)
   const texte = morceaux.join(' ').replace(/\s+/g, ' ').trim().replace(/^(je reprends ce que je disais( à \d{1,2} h \d{2})?\s*:\s*)+/i, '');
   if (!/\p{L}{2,}/u.test(texte) || NON_REPONSE.test(texte)) return;
-  aDire.push({ id: etat.lectureDe || `nondit-${Date.now()}`, texte, recu: Date.now(), coupe: true, origine_ts: origine, redite });
-  sauverADire();
-  journalVoix('non_dit_garde', { car: texte.length, en_attente: aDire.length });
-}
-/* (24/10, 07:29, Ahmed via Hakim : « s'il me dit qu'il a lu, il ne répète pas ») la suite non dite d'une réponse est
-   déjà à l'écran : si le message d'Ahmed dit qu'il l'a lue (« j'ai lu », « je viens de lire », « pas besoin de
-   répéter »…) ou en cite un bout (5 mots de suite), elle ne sera pas redite, et Hakim le sait par le présent vécu. */
-const AHMED_A_LU = /\b(j'?ai (bien |déjà |deja )?(lu|vu à l'écran|vu a l'ecran)|je (l'?ai|viens de|vien de) (le |la )?(lu|lire)|déjà lu|deja lu|c'est bon,? j'?ai (lu|vu)|pas (besoin|la peine) de (le |la )?(répéter|repeter|redire|relire)|je l'?ai lu|lu à l'écran|lu a l'ecran|lu sur l'écran)\b/i;
-const motsDe = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[a-z0-9]+/g) || [];
-function citeUnBout(message, texte, n = 5) {
-  const m = ` ${motsDe(message).join(' ')} `, mots = motsDe(texte);
-  for (let i = 0; i + n <= mots.length; i++) if (m.includes(` ${mots.slice(i, i + n).join(' ')} `)) return true;
-  return false;
-}
-function dejaLu(message) {
-  const lu = AHMED_A_LU.test(String(message || ''));
-  const restants = aDire.filter(x => !(x.coupe && (lu || citeUnBout(message, x.texte))));
-  const n = aDire.length - restants.length;
-  if (!n) return 0;
-  aDire.splice(0, aDire.length, ...restants);
-  sauverADire();
-  noterPresent({ e: 'lu', t: Date.now() });
-  journalVoix('non_dit_lu', { n, cite: !lu });
-  return n;
-}
-let synthese = { enCours: false, reessaiA: 0 };
-async function synthetiser() {
-  if (synthese.enCours || Date.now() < synthese.reessaiA) return;
-  synthese.enCours = true;
-  const lot = aDire.splice(0);
-  sauverADire();
-  try {
-    const r = await fetch('/api/jarvis/non-dites', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
-      body: JSON.stringify({ textes: lot.map(x => ({ texte: x.texte, coupe: !!x.coupe })) }) });
-    if (!r.ok) throw new Error(`non-dites ${r.status}`);
-    journalVoix('non_dits_synthese', { n: lot.length });
-    humeur('Hakim rassemble ce qu’il n’a pas pu te dire…');
-  } catch (_) {
-    aDire.unshift(...lot); sauverADire();               // rien n'est jeté : au prochain moment calme, dans 30 s au plus tôt
-    synthese.reessaiA = Date.now() + 30000;
-  } finally { synthese.enCours = false; }
+  envoyerNonDits([{ id: idNonDit(), texte, coupe: true, origine_ts: origine }]);
+  journalVoix('non_dit_garde', { car: texte.length, en_attente: nonDitsAEnvoyer.length });
 }
 function direSpontanes() {
   const c = etat.conversation;
   if (c && c.capteur && c.capteur.enParole) parlaitA = Date.now();
+  sortirLesCoupees();                                // (30/10) une suite coupée ne se redit jamais d'elle-même
   const voix = c || etat.reglages.volant || etat.reglages.lectureAuto;
   if (!voix || !aDire.length) return;
-  const calme = aDire.some(x => x.coupe) ? 3000 : 1500;
   if (!lecteur || etat.flux || etat.micro || etat.transcription || !jarvisPeutParler() || lecteur.actif || lecteur.enPause
-      || Date.now() - Math.max(parlaitA, etat.finVoixA || 0) < calme) return;
-  // plus de deux en attente, ou un morceau déjà redit puis recoupé (il tournait en boucle) : sa synthèse, rien de jeté
-  if (aDire.length > 2 || aDire.some(x => x.redite)) { synthetiser(); return; }
+      || Date.now() - Math.max(parlaitA, etat.finVoixA || 0) < 1500) return;
   const m = aDire.shift();
   sauverADire();
   if (NON_REPONSE.test(m.texte)) return;
-  if (m.coupe) {
-    // (21:26) la reprise se VOIT dans le fil, datée : sinon on entend une phrase sans message
-    const h = m.origine_ts ? new Date(m.origine_ts) : null;
-    const reprise = { id: `reprise-${Date.now()}`, qui: 'j', spontane: 'reprise', texte: m.texte, ts: Date.now(), origine_ts: m.origine_ts || undefined };
-    etat.messages.push(reprise); sauver(); rendre();
-    etat.lectureDe = reprise.id;
-    lecteur.dire(`Je reprends ce que je disais${h ? ` à ${h.getHours()} h ${String(h.getMinutes()).padStart(2, '0')}` : ''} : ${m.texte}`);
-  } else {
-    etat.lectureDe = m.id;
-    lecteur.dire(m.texte);
-  }
+  etat.lectureDe = m.id;
+  lecteur.dire(m.texte);
   lecteur.finFlux();
   humeur();
 }
@@ -2835,7 +3329,7 @@ $('fil').addEventListener('click', async (e) => {
   b.disabled = true;
   const k = aDire.findIndex(x => x.id === b.dataset.relance);      // pas encore dite : elle ne le sera pas
   if (k >= 0) { aDire.splice(k, 1); sauverADire(); }
-  if (etat.lectureDe === b.dataset.relance) lecteur.arreter();
+  if (etat.lectureDe === b.dataset.relance) { finirParole('stop', '« pas maintenant »'); lecteur.arreter(); }
   try {
     const r = await fetch('/api/jarvis/silence/pas-maintenant', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
       body: JSON.stringify({ id: b.dataset.relance }) });
@@ -3537,6 +4031,7 @@ $('pause').addEventListener('click', () => {
 $('camera').addEventListener('click', basculerCamera);
 $('muetScene').addEventListener('click', (e) => { e.stopPropagation(); basculerMuet(); });
 window.addEventListener('pagehide', () => {
+  finirParole('appli', 'la page a été fermée, quittée ou rechargée');   // (30/10) part au cockpit même la page fermée (keepalive)
   finirConversation(false);
   arreterCamera();
   // (2026-10-21) la page se ferme : la réponse en cours continue sur le Mac et l'attendra dans la conversation
@@ -3670,3 +4165,40 @@ function lienGardeConversation(e) {
   window.open(u.href, '_blank', 'noopener');
 }
 document.addEventListener('click', lienGardeConversation, true);
+
+/* (30/10, Ahmed via Hakim : « l'historique des notes visible pour moi dans Parler ») la note de chaque travail de ses agents
+   et l'appréciation de Hakim, la plus récente d'abord ; lues à l'ouverture du volet, posées en texte. */
+(() => {
+  const d = document.getElementById('notesAgents');
+  if (!d) return;
+  d.addEventListener('toggle', async () => {
+    if (!d.open) return;
+    const liste = document.getElementById('notesAgentsListe');
+    try {
+      const r = await fetch('/api/agents/notes', { headers: { 'X-Jeton': window.jeton() }, cache: 'no-store' });
+      const o = await r.json();
+      if (!r.ok) throw new Error(o.erreur || r.status);
+      liste.replaceChildren();
+      if (!o.agents.length) { liste.textContent = 'Aucun agent encore.'; return; }
+      for (const a of o.agents) {
+        const t = document.createElement('div'); t.style.marginTop = '8px';
+        const b = document.createElement('b'); b.textContent = `${a.prenom || '(sans prénom)'}${a.surnom ? ` « ${a.surnom} »` : ''} — ${a.role} (expertise ${a.expertise})`; t.appendChild(b);
+        t.appendChild(document.createTextNode(` · ${a.type} de naissance · ${a.description}`));
+        for (const x of a.roles) {
+          const l = document.createElement('div'); l.style.margin = '4px 0 0 10px';
+          const quand = x.ts_ms ? new Date(x.ts_ms).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+          l.textContent = `${quand} · rôle : ${x.de} → ${x.vers} (sa réponse : « ${x.sa_reponse} »)`;
+          t.appendChild(l);
+        }
+        if (!a.notes.length) { const l = document.createElement('div'); l.style.margin = '4px 0 0 10px'; l.textContent = 'pas encore noté'; t.appendChild(l); }
+        for (const n of a.notes.slice().reverse()) {
+          const l = document.createElement('div'); l.style.margin = '4px 0 0 10px';
+          const quand = n.ts_ms ? new Date(n.ts_ms).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+          l.textContent = `${quand} · « ${n.travail} » : ${String(n.note).replace('.', ',')}/10${n.revisee ? ' (révisée)' : ''}${n.confirme_par ? ` — confirmé par ${n.confirme_par}` : ''} — ${n.appreciation}`;
+          t.appendChild(l);
+        }
+        liste.appendChild(t);
+      }
+    } catch (e) { liste.textContent = `Les notes ne répondent pas (${e.message}).`; }
+  });
+})();

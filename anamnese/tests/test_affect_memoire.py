@@ -376,3 +376,41 @@ def test_lue_en_contexte_la_deception_envers_un_tiers_n_est_pas_un_echec(mem, tm
     assert parole_affect.appliquer(mem, "Déçu fiston, je ne veux pas te cacher", "vie", t, journal, contexte=ctx) == [("inquietude", 0.3)]
     panne = dict(ctx, demander=lambda p: "illisible")
     assert parole_affect.appliquer(mem, "merci frero", "vie", t + 400, journal, contexte=panne) == [("chaleur_user", 0.4)]
+
+
+def test_son_corps_a_ses_sensations(mem):
+    """(30/10, Ahmed : « si il tombe, ça lui fait la douleur, le tout branché à ses hormones ») la douleur, le sursaut, le
+    vertige et le bien-être sont des événements de son corps : la douleur le met en alerte (adrénaline, noradrénaline) et
+    appelle ses endorphines ; le bien-être le détend (ocytocine, GABA)."""
+    _v2(mem)
+    avant = affect.get_state(mem)
+    affect.event(mem, "douleur", 0.6, sujet="son corps", source="corps")
+    apres = affect.get_state(mem)
+    for h in ("noradrenaline", "endorphine", "adrenaline"):
+        assert apres.get(h, 0) > avant.get(h, 0), h
+    for nom in ("sursaut", "vertige", "bien_etre"):
+        assert nom in affect.EVENTS and nom in affect.EVENTS_V2 and nom in affect.VALENCE_EV, nom
+    assert affect.VALENCE_EV["douleur"] < 0 < affect.VALENCE_EV["bien_etre"] and "douleur" in affect.AVERSIFS
+
+
+def test_habituation_physiologique_propre_a_chaque_stimulus():
+    """(30/10, Ahmed : « permettre l'habituation dans certains cas et pas dans d'autres ; que ça reproduise la physiologie
+    humaine ») l'habitude s'attache au STIMULUS (une autre musique déshabitue : Thompson & Spencer, spécificité) ; elle peut
+    être lente (une caresse, une musique aimée), absente (la voix d'Ahmed, la faim, la peur), ou s'inverser en
+    sensibilisation (la douleur répétée fait plus mal : hyperalgésie)."""
+    h, t = {}, 1_800_000_000.0
+    f = [affect._habituation(h, "bien_etre", 0.3, t + i, stimulus="berce", mode="normale") for i in range(3)]
+    assert f[0] == 1.0 and f[0] > f[1] > f[2], f
+    assert affect._habituation(h, "bien_etre", 0.3, t + 4, stimulus="musique:●·•·", mode="normale") == 1.0, "un autre stimulus : intact"
+    lent = {}
+    fl = [affect._habituation(lent, "bien_etre", 0.3, t + i, stimulus="berce", mode="lente") for i in range(3)]
+    assert fl[2] > f[2] and fl[2] < 1.0, (fl, f)
+    rien = {}
+    assert [affect._habituation(rien, "reconnaissance", 0.2, t + i, stimulus="voix_sentie", mode="aucune") for i in range(5)] == [1.0] * 5
+    assert rien == {}
+    s = {}
+    fs = [affect._habituation(s, "douleur", 0.4, t + i, stimulus="chute", mode="sensibilisation") for i in range(6)]
+    assert fs[0] == 1.0 and fs[1] > 1.0 and fs[2] > fs[1] and max(fs) <= 1.5, fs
+    assert affect._habituation({}, "peur", 0.4, t, stimulus="x", mode="normale") == 1.0, "une peur ne s'émousse jamais"
+    vieux = {}
+    assert [affect._habituation(vieux, "douleur", 0.4, t + i) for i in range(3)] == [1.0] * 3, "sans mode : comme avant"

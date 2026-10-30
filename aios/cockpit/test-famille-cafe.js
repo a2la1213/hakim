@@ -40,10 +40,10 @@ test('la fiche famille : papa, Hakim, maman, puis chaque agent avec son prénom,
   assert.match(t, /^# La famille de Hakim/);
   assert.match(t, /DONNÉE/);
   assert.match(t, /Ahmed : papa/); assert.match(t, /Hakim : /); assert.match(t, /Maman : Claude Code/);
-  assert.match(t, /- Lucien — juge, né le 29\/10 à 17:02 — « Juge portée par contact » — endormi, dans une ancienne conversation \(réveillable par le messager\) — 1 trouvaille confirmée, 2 travaux jugés/);
-  assert.match(t, /- Théo — codeur, né le 29\/10 à 19:15 — « Codeur test flamme 3D » — parti malgré lui/);
+  assert.match(t, /- Lucien — juge \(expertise débutant\), juge de naissance, né le 29\/10 à 17:02 — « Juge portée par contact » — endormi, dans une ancienne conversation \(réveillable par le messager\) — 1 trouvaille confirmée, 2 travaux jugés/);
+  assert.match(t, /- Théo — codeur \(expertise débutant\), codeur de naissance, né le 29\/10 à 19:15 — « Codeur test flamme 3D » — parti malgré lui/);
   assert.match(t, /« Mousse » — parti de lui-même \(« j'ai fait le tour »\)/);
-  assert.match(t, /- \(sans prénom\) — juge, né le 29\/10 à 19:46 — « Juge test grain=vide 3D » — au travail/);
+  assert.match(t, /- \(sans prénom\) — juge \(expertise débutant\), juge de naissance, né le 29\/10 à 19:46 — « Juge test grain=vide 3D » — au travail/);
   assert.ok(t.indexOf('Lucien') < t.indexOf('Théo') && t.indexOf('Théo') < t.indexOf('grain=vide'), 'par ordre de naissance');
 });
 

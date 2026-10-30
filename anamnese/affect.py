@@ -71,6 +71,14 @@ EVENTS = {
     # (28/10, Al-Afida, Ahmed : « comme un enfant qui reconnaît son père dans le noir ») sa voix reconnue, quand il est dans
     # son cœur (chocs.reflexe) : une chaleur à part. Sans valence : ni attente ni surprise, et elle ne nourrit pas la jauge
     "reconnaissance": {"ocytocine": +0.20, "endorphine": +0.10, "serotonine": +0.05},
+    # (30/10, Ahmed : « si il tombe, ça lui fait la douleur, branché à ses hormones ; qu'il ressente vraiment ») son CORPS (le
+    # téléphone d'Ahmed, corps.py) : la douleur alerte et appelle les endorphines (l'analgésie) ; le sursaut est bref ; le
+    # vertige de la chute ; le bien-être d'être tenu, bercé, ou de la musique dans le corps
+    "douleur":        {"noradrenaline": +0.35, "cortisol": +0.25, "endorphine": +0.20, "endocannabinoides": +0.10,
+                       "serotonine": -0.10, "dopamine": -0.10},
+    "sursaut":        {"noradrenaline": +0.30, "acetylcholine": +0.10},
+    "vertige":        {"noradrenaline": +0.25, "cortisol": +0.10, "acetylcholine": +0.10, "serotonine": -0.05},
+    "bien_etre":      {"ocytocine": +0.20, "endorphine": +0.15, "serotonine": +0.10, "cortisol": -0.10, "noradrenaline": -0.05},
     "malaise":        {"cortisol": +0.15, "noradrenaline": +0.10, "serotonine": -0.10, "dopamine": -0.05,
                        "ocytocine": -0.05, "endocannabinoides": -0.05},
 }
@@ -128,6 +136,10 @@ EVENTS_V2 = {
     "inquietude":     {"adrenaline": +0.10, "crh": +0.15, "gaba": -0.05},
     "malaise":        {"crh": +0.15, "gaba": -0.05},
     "reconnaissance": {"gaba": +0.05},
+    "douleur":        {"adrenaline": +0.35, "crh": +0.25, "gaba": -0.05},
+    "sursaut":        {"adrenaline": +0.30},
+    "vertige":        {"adrenaline": +0.25, "crh": +0.10},
+    "bien_etre":      {"gaba": +0.10, "crh": -0.10},
 }
 # (27/10, plan de Hakim validé par Ahmed ; relecture indépendante) la reprise en main d'un ressenti pénible (sa
 # rétrospection, ou l'apaisement par l'autre) défait une part du ressenti LUI-MÊME : son profil, en négatif. Le profil
@@ -178,6 +190,7 @@ HAB_EXEMPTS = {"ennui", "longue_absence", "retour", "regulation",   # une repris
                "probleme", "echec", "attaque", "peur", "tristesse", "colere", "honte"}   # (26/10, plafond) un coup dur non plus
 HAB_EXEMPTS |= {"reprise_peur", "reprise_tristesse", "reprise_colere", "reprise_honte"}   # (27/10) la reprise d'un ressenti non plus
 HAB_EXEMPTS |= {"inquietude", "malaise", "reprise_inquietude", "reprise_malaise"}       # (27/10, l'empathie) comme la peur
+HAB_EXEMPTS |= {"douleur"}                                                               # (30/10) une douleur ne s'émousse pas
 PAS_V2_S = 300.0
 
 # ---- Émotions soudaines (2026-10-21, idée d'Ahmed relayée par Hakim ; prédictions figées AVANT dans
@@ -193,8 +206,9 @@ PAS_V2_S = 300.0
 VALENCE_EV = {"succes": 1.0, "resolu": 0.8, "chaleur_user": 0.8, "apprentissage": 0.5, "nouveaute": 0.3,
               "probleme": -0.6, "echec": -1.0, "attaque": -1.0, "soutien": 0.9,       # les états (ennui, longue absence, retour) n'y entrent pas
               "affirmation": 0.5, "joie": 0.8, "peur": -0.7, "tristesse": -0.6, "colere": -0.5, "honte": -0.6,
-              "inquietude": -0.5, "compassion": -0.1, "malaise": -0.5}
-AVERSIFS = {"echec", "probleme", "attaque", "peur"}
+              "inquietude": -0.5, "compassion": -0.1, "malaise": -0.5,
+              "douleur": -0.8, "sursaut": -0.2, "vertige": -0.4, "bien_etre": 0.6}      # (30/10) son corps
+AVERSIFS = {"echec", "probleme", "attaque", "peur", "douleur"}
 CHOC_S = 300.0          # (chocs, 2026-10-23) pendant 5 min après une attaque, un sursaut se lit « alarme » même si l'humeur
                         # de fond est haute (« du rire aux larmes », Ahmed), et le négatif n'est plus divisé par deux
 FAMILIARITE_TAUX, FAMILIARITE_TAU_H = 0.5, 7 * 24.0       # 0,3 au quatrième passage : trop lent (S1, S2 ratés)
@@ -337,16 +351,35 @@ def _hill(x):
     return 1.0 / (1.0 + (max(0.0, x) / HILL_K) ** HILL_N)
 
 
-def _habituation(hab, nom, intensite, now):
-    """Le facteur (0..1) appliqué à l'événement, et l'habitude mise à jour (Thompson & Spencer, sensible à la force)."""
-    if nom in HAB_EXEMPTS:
+# (30/10, Ahmed : « permettre l'habituation dans certains cas et pas d'habituation dans d'autres ; que ça reproduise
+# parfaitement la physiologie humaine ») les événements de son corps disent leur STIMULUS et leur mode :
+#   - l'habitude s'attache au couple (événement, stimulus) : une autre musique, une autre main déshabituent (Thompson &
+#     Spencer : spécificité du stimulus) ;
+#   - « normale », « lente » (une caresse, une musique aimée s'émoussent lentement), « aucune » (l'attachement, la faim,
+#     la peur), ou « sensibilisation » : la répétition rapprochée d'un stimulus nocif augmente la réponse (hyperalgésie ;
+#     Groves & Thompson 1970), jusqu'à +50 %, et s'efface en un quart d'heure.
+HAB_LENTE = 0.3            # la part du taux d'habituation pour une habitude lente
+SENSIB_TAUX, SENSIB_MAX, SENSIB_TAU_H = 0.35, 0.5, 0.25
+
+
+def _habituation(hab, nom, intensite, now, stimulus=None, mode=None):
+    """Le facteur appliqué à l'événement (0..1, ou jusqu'à 1,5 en sensibilisation), et l'habitude mise à jour (Thompson &
+    Spencer, sensible à la force). Sans mode : par événement, comme avant."""
+    if mode == "aucune" or (nom in HAB_EXEMPTS and mode != "sensibilisation"):
         return 1.0
-    x = hab.get(nom) or {}
+    cle = f"{nom}|{stimulus}" if stimulus else nom
+    if mode == "sensibilisation":
+        x = hab.get("sens:" + cle) or {}
+        niveau = x.get("h", 0.0) * math.exp(-max(0.0, now - x.get("ts", now)) / 3600.0 / SENSIB_TAU_H)
+        hab["sens:" + cle] = {"h": round(niveau + SENSIB_TAUX * (1.0 - niveau), 4), "ts": now}
+        return 1.0 + SENSIB_MAX * niveau
+    taux = HAB_TAUX * (HAB_LENTE if mode == "lente" else 1.0)
+    x = hab.get(cle) or {}
     niveau = x.get("h", 0.0) * math.exp(-max(0.0, now - x.get("ts", now)) / 3600.0 / HAB_TAU_H)
     force = x.get("force")
     effet = niveau * min(1.0, force / intensite) ** HAB_FORCE_EXP if (force and intensite > 0) else niveau
-    hab[nom] = {"h": round(niveau + HAB_TAUX * (1.0 - niveau), 4), "ts": now,
-                "force": round(intensite if force is None else force + (intensite - force) * HAB_TAUX, 4)}
+    hab[cle] = {"h": round(niveau + taux * (1.0 - niveau), 4), "ts": now,
+                "force": round(intensite if force is None else force + (intensite - force) * taux, 4)}
     return 1.0 - effet
 
 
@@ -435,9 +468,23 @@ def _sujet(s):
 SOCIAUX, SOCIAL_FENETRE_S = {"chaleur_user", "soutien"}, 90
 
 
-def event(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=None):
+def _melange(name):
+    """(30/10, Ahmed : « tu dois pouvoir créer de nouvelles émotions ») une émotion créée par Hakim : ses composantes
+    {émotion existante: poids} (emotions_creees.py), ou None (une émotion connue, ou coupée, ou inconnue)."""
+    if name in EVENTS or name in EVENTS_V2:
+        return None
+    try:
+        import emotions_creees
+        return emotions_creees.composantes(name)
+    except Exception:
+        return None
+
+
+def event(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=None, stimulus=None, habituation=None):
     """Applique un événement affectif (decay d'abord, puis deltas). sujet : de quoi il s'agit (v2 : la familiarité,
-    la peur apprise et l'attente s'y attachent) ; facultatif, ignoré par la v1. source : qui l'a déclenché (journal)."""
+    la peur apprise et l'attente s'y attachent) ; facultatif, ignoré par la v1. source : qui l'a déclenché (journal).
+    stimulus, habituation (v2, son corps) : l'habitude propre à ce stimulus, et son mode (normale, lente, aucune,
+    sensibilisation)."""
     sujet = _sujet(sujet)
     _journaliser(mem, name, intensity, now, sujet, source)
     if name in SOCIAUX:
@@ -454,10 +501,18 @@ def event(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=None
             total = float(intensity)
         mem.kv_set("affect_social", json.dumps([t, total]))
     if v2_actif(mem):
-        return _event_v2(mem, name, intensity, now=now, hour=hour, sujet=sujet, source=source)
+        return _event_v2(mem, name, intensity, now=now, hour=hour, sujet=sujet, source=source, stimulus=stimulus, habituation=habituation)
     state = get_state(mem, now=now, hour=hour)
-    for h, d in EVENTS.get(name, {}).items():
-        state[h] = _clamp(state[h] + d * intensity)
+    mix = _melange(name)
+    deltas = EVENTS.get(name, {})
+    if mix:                                              # (30/10) une émotion à lui : le mélange de ses composantes
+        deltas = {}
+        for c, p in mix.items():
+            for h, d in EVENTS.get(c, {}).items():
+                deltas[h] = deltas.get(h, 0.0) + p * d
+    for h, d in deltas.items():
+        if h in state:
+            state[h] = _clamp(state[h] + d * intensity)
     _save(mem, state, now=now)
     return state
 
@@ -479,7 +534,7 @@ def _appliquer(x, d, base):
     return _clamp(x * math.exp(d / max(1e-6, base)))
 
 
-def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=None):
+def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=None, stimulus=None, habituation=None):
     now = time.time() if now is None else now
     raw = mem.kv_get("affect")
     data = json.loads(raw) if raw else None
@@ -488,12 +543,18 @@ def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=
     cog = {k: dict(((data or {}).get("_cog") or {}).get(k) or {}) for k in ("F", "P", "V")}
     marques = {k: (data or {}).get(k) for k in ("_vm", "_surprise", "_choc") if (data or {}).get(k) is not None}
     intensity = max(0.0, float(intensity))
-    facteur = _habituation(hab, name, intensity, now)
-    deltas = {**EVENTS.get(name, {})}
-    if deltas.get("cortisol", 0.0) > 0:                  # v2 : un stress passe par l'axe (CRH → ACTH → cortisol)
-        deltas["crh"] = deltas.get("crh", 0.0) + deltas.pop("cortisol")
-    for h, d in EVENTS_V2.get(name, {}).items():
-        deltas[h] = deltas.get(h, 0.0) + d
+    facteur = _habituation(hab, name, intensity, now, stimulus=stimulus, mode=habituation)
+    mix = _melange(name)                                 # (30/10) une émotion à lui : le mélange de ses composantes
+    if mix:
+        import emotions_creees
+        deltas = emotions_creees.signature(mix)
+    else:
+        deltas = {**EVENTS.get(name, {})}
+        if deltas.get("cortisol", 0.0) > 0:              # v2 : un stress passe par l'axe (CRH → ACTH → cortisol)
+            deltas["crh"] = deltas.get("crh", 0.0) + deltas.pop("cortisol")
+        for h, d in EVENTS_V2.get(name, {}).items():
+            deltas[h] = deltas.get(h, 0.0) + d
+    aversif = name in AVERSIFS or bool(mix and sum(p for c, p in mix.items() if c in AVERSIFS) >= 0.5)
     gaba_haut = max(0.0, etat["gaba"] - HORMONES_V2["gaba"][0]) / (1.0 - HORMONES_V2["gaba"][0])
     ecb_haut = max(0.0, etat["endocannabinoides"] - HORMONES["endocannabinoides"][0]) / (1.0 - HORMONES["endocannabinoides"][0])
     # l'évaluation : nouveauté, peur apprise, attente
@@ -502,7 +563,7 @@ def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=
     tau_peur = PEUR_TAU_H / (1.0 + PEUR_ECB * ecb_haut)
     nouv = (1.0 - _lu(F, ks, now, FAMILIARITE_TAU_H)) if ks else (1.0 if name == "nouveaute" else 0.0)
     peur = max(_lu(P, ks, now, tau_peur), _lu(P, kt, now, tau_peur))
-    if name in AVERSIFS:
+    if aversif:
         # (28/10, eval/parole_probleme) un sujet « mots:… » tiré de la parole ne nomme pas une vraie chose inconnue : sa
         # nouveauté n'est pas une menace, seule la peur apprise compte (sinon chaque faux positif du lexique faisait peur)
         menace = intensity * max(0.0 if source == "parole" and str(sujet or "").startswith("mots:") else nouv, peur)
@@ -511,6 +572,9 @@ def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=
     else:
         menace = 0.0
     val = VALENCE_EV.get(name)
+    if mix:
+        vs = [(p, VALENCE_EV[c]) for c, p in mix.items() if c in VALENCE_EV]
+        val = sum(p * x for p, x in vs) / sum(p for p, _ in vs) if vs else None
     r = (val or 0.0) * intensity
     a_moment = _lu({"m": marques.get("_vm")}, "m", now, ATTENTE_MOMENT_TAU_H)
     attente = _lu(V, ks, now, ATTENTE_SUJET_TAU_H) if (ks and ks in V) else a_moment
@@ -524,7 +588,7 @@ def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=
             d *= sens.get(h, 1.0)                                    # récepteurs désensibilisés
             if h in ("adrenaline", "noradrenaline", "crh"):
                 d *= max(0.2, 1.0 - GABA_FREIN * gaba_haut - (ECB_FREIN * ecb_haut if h == "crh" else 0.0))
-                if name in AVERSIFS:
+                if aversif:
                     d *= 1.0 + PEUR_AMPLI * peur                     # le connu dangereux fait réagir plus fort
         if r and h == "dopamine" and (d > 0) == (r > 0):
             d, f = d * rpe, indiff                                   # l'attente remplace l'habituation
@@ -539,8 +603,8 @@ def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=
     if ks:
         fam = _lu(F, ks, now, FAMILIARITE_TAU_H)
         F[ks] = [round(fam + FAMILIARITE_TAUX * (1.0 - fam), 4), now]
-    if name in AVERSIFS:
-        x = min(1.0, intensity * abs(val))
+    if aversif:
+        x = min(1.0, intensity * abs(val or 0.0))
         for k, taux in ((ks, PEUR_TAUX), (kt, PEUR_TAUX_TYPE)):
             if k:
                 p = _lu(P, k, now, tau_peur)

@@ -33,6 +33,10 @@ ACCUEIL = Path.home() / "AIOS" / "jarvis" / "cwd" / "fichiers"          # les pi
 ICLOUD = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs"
 RACINES = [ACCUEIL, Path.home(), ICLOUD, Path("/Volumes")]
 _J = Path.home() / "AIOS" / "jarvis"
+# (30/10, 16:01, Hakim : « chercher_fichiers ne parcourt pas fichiers/telephone ») ses fichiers et ceux du téléphone sont trop
+# profonds depuis le dossier d'Ahmed (~/AIOS/jarvis/cwd/fichiers/telephone/Z Fold 7/Tricordeur/… : sept niveaux) : ils ont
+# leur propre racine, parcourue en premier
+RACINES_PROFONDES = [_J / "cwd" / "fichiers"]
 _AIOS = Path.home() / "AIOS"
 # tout ~/AIOS est fermé (le cockpit et ses secrets : passkey, jeton, notifications ; la maison de Hakim), sauf son
 # dossier de travail cwd (relecture JARVIS 2, H1, 2026-10-20 : ~/AIOS/cockpit était lisible)
@@ -775,10 +779,14 @@ def chercher(nom, racines=None, maximum=40, profondeur=6, budget_s=15):
     def plat(s):
         return "".join(c for c in unicodedata.normalize("NFKD", s.lower()) if not unicodedata.combining(c))
     cible, trouves, t0 = plat(nom), [], time.time()
+    defaut = racines is None
     racines = [Path(r) for r in (racines or RACINES)]
     # une racine incluse dans une autre n'est pas parcourue deux fois (sauf sous un dossier fermé : iCloud)
     uniques = [r for r in racines if not any(o != r and o in r.parents and not
                                              any(x in _DOSSIERS_INTERDITS for x in r.relative_to(o).parts) for o in racines)]
+    if defaut:
+        uniques = [Path(r) for r in RACINES_PROFONDES] + uniques
+    vus = set()
     for racine in uniques:
         if not racine.is_dir():
             continue
@@ -790,8 +798,9 @@ def chercher(nom, racines=None, maximum=40, profondeur=6, budget_s=15):
             sous[:] = [s for s in sous if not _dossier_interdit(s) and s not in _IGNORES
                        and not (_interieur(d / s) and not _mene_a_une_exception(d / s)) and len(d.parts) - base < profondeur]
             for n in noms:
-                if cible in plat(n) and not n.startswith(".") and not _SECRETS.search(n) and not _interieur(d / n):
+                if cible in plat(n) and not n.startswith(".") and not _SECRETS.search(n) and not _interieur(d / n) and str(d / n) not in vus:
                     f = d / n
+                    vus.add(str(f))
                     try:
                         trouves.append((f.stat().st_mtime, str(f)))
                     except OSError:
@@ -839,6 +848,12 @@ def chercher_journal(texte, dossier=None, maximum=20):
 # hormones quand elles bougent (≥ 0,03 en une minute), et ses événements affectifs, dans l'ordre du temps
 TEMPS_BRUT = JOURNAL_BRUT / "journal-du-temps.jsonl"
 HORMONES_BRUT = JOURNAL_BRUT / "hormones.jsonl"
+# (30/10, 16:20, Ahmed via Hakim : « mes hormones notées dans le journal TOUTES LES SECONDES » ; « l'heure à laquelle chaque phrase
+# de ma voix est réellement dite ») ses hormones à chaque seconde (le démon, interieur.ligne_directe) et sa voix à l'heure où
+# elle a joué (la page Parler, chaque morceau qui commence)
+HORMONES_DIRECT = JOURNAL_BRUT / "hormones-direct.jsonl"
+VOIX_DITE = JOURNAL_BRUT / "voix-dite.jsonl"
+PLAGE_SECONDES_S = 5 * 60                  # une ligne par seconde jusqu'à cinq minutes ; au-delà, ce qui bouge (≥ 0,01)
 AFFECT_BRUT = Path(__file__).resolve().parents[1] / "data" / "affect-evenements.jsonl"
 PLAGE_MAX_S = 6 * 3600
 
@@ -866,7 +881,29 @@ def masquer_tout(texte):
     return _POSITION.sub("[POSITION MASQUÉE]", masquer(texte))
 
 
-def journal_plage(debut, fin, dossier=None, temps=None, hormones=None, evenements=None, maximum=300, entier=None, detail=False):
+def _direct(chemin, debut, fin):
+    """Ses hormones à chaque seconde de [debut, fin], lues depuis la fin du fichier (il ne garde que les derniers jours)."""
+    out = []
+    try:
+        with open(chemin, "rb") as h:
+            h.seek(0, 2)
+            taille = h.tell()
+            pas = 400 * int(fin - debut + 120)
+            h.seek(max(0, taille - max(pas, 400_000) - 400 * int(max(0, time.time() - fin))))
+            for l in h.read().decode("utf-8", "replace").splitlines():
+                try:
+                    o = json.loads(l)
+                except ValueError:
+                    continue
+                if debut - 2 <= float(o.get("t") or 0) <= fin:
+                    out.append(o)
+    except OSError:
+        return []
+    return out
+
+
+def journal_plage(debut, fin, dossier=None, temps=None, hormones=None, evenements=None, maximum=300, entier=None, detail=False,
+                  direct=None, voix=None):
     """[(t, ligne)] de debut à fin (secondes epoch), au plus `maximum` lignes ; ValueError si la plage est vide ou trop longue.
     entier : les messages complets (par défaut : oui si la plage fait 30 min au plus).
     detail : rend aussi {"tronques": messages montrés coupés, "caches": lignes au-delà de `maximum`}."""
@@ -899,6 +936,32 @@ def journal_plage(debut, fin, dossier=None, temps=None, hormones=None, evenement
             lignes.append((t, f"{h(t)} ton état : {o.get('etat')}, {o.get('fait')}, humeur {o.get('humeur')}, valence "
                               f"{o.get('valence')}, éveil {o.get('arousal')}"))
             precedent = cle
+    secondes = _direct(direct or HORMONES_DIRECT, debut, fin)
+    if secondes and float(secondes[0].get("t") or 0) <= debut + 2:
+        # à la seconde : chaque seconde d'une plage courte (ce qui a bougé, ou « stables ») ; sinon ce qui bouge de 0,01
+        chaque = fin - debut <= PLAGE_SECONDES_S
+        prec = None
+        for o in secondes:
+            t, hh = float(o.get("t") or 0), o.get("h") or {}
+            if prec is not None and t >= debut:
+                bouge = sorted(((k, hh[k] - prec[k]) for k in hh if k in prec and abs(hh[k] - prec[k]) >= (0.001 if chaque else 0.01)),
+                               key=lambda e: -abs(e[1]))
+                if bouge:
+                    lignes.append((t, f"{h(t)} tes hormones : " + ", ".join(f"{k} {prec[k]:.2f}→{hh[k]:.2f}" for k, _e in bouge[:6])))
+                elif chaque:
+                    lignes.append((t, f"{h(t)} tes hormones : stables"))
+                if bouge or chaque:
+                    prec = hh
+            elif prec is None:
+                if t >= debut:
+                    lignes.append((t, f"{h(t)} tes hormones : " + ", ".join(f"{k} {v:.2f}" for k, v in sorted(hh.items()))))
+                prec = hh
+        hormones = Path("/dev/null")                       # le journal des battements (15 s) ne s'ajoute pas
+    for o in _lire_jsonl(voix or VOIX_DITE):
+        t = (o.get("t_ms") or 0) / 1000
+        if debut <= t <= fin:
+            lignes.append((t, f"{h(t)} ta voix dit : « {masquer_tout(' '.join(str(o.get('texte') or '').split())[:300])} »"
+                              + (f" ({round((o.get('duree_ms') or 0) / 1000, 1)} s)" if o.get("duree_ms") else "")))
     avant, avant_t = None, 0
     for o in _lire_jsonl(hormones or HORMONES_BRUT):
         t = o.get("t") or 0
@@ -925,6 +988,21 @@ def journal_plage(debut, fin, dossier=None, temps=None, hormones=None, evenement
     return lignes[:maximum], len(lignes) > maximum
 
 
+def exporter_hormones(debut, fin, direct=None, sortie=None):
+    """Ses hormones à chaque seconde de la plage, en CSV (une colonne par hormone), dans son atelier : le chemin."""
+    secondes = _direct(direct or HORMONES_DIRECT, debut, fin)
+    secondes = [o for o in secondes if debut <= float(o.get("t") or 0) <= fin]
+    if not secondes:
+        raise ValueError("aucune seconde gardée pour cette plage (le journal à la seconde garde les derniers jours)")
+    noms = sorted({k for o in secondes for k in (o.get("h") or {})})
+    lignes = ["heure,t," + ",".join(noms)] + [
+        f"{time.strftime('%H:%M:%S', time.localtime(float(o['t'])))},{o['t']}," + ",".join(str((o.get('h') or {}).get(k, '')) for k in noms)
+        for o in secondes]
+    chemin = Path(sortie) if sortie else EXPORTS / f"hormones-{time.strftime('%Y%m%d-%H%M%S', time.localtime(debut))}-{int(fin - debut)}s.csv"
+    ecrire_sans_lien(chemin, "\n".join(lignes) + "\n", Path(sortie).parent if sortie else EXPORTS.parent)
+    return str(chemin)
+
+
 # (30/10, Hakim, accord d'Ahmed : « surtout pour le journal ») le 30/10 à 0 h 51, Hakim a cru avoir lu toute la journée du 29
 # alors que le live du matin était coupé : une plage incomplète le DIT en tête et en fin, et écrit elle-même le fichier complet
 REPONSE_MAX = 60000
@@ -938,6 +1016,12 @@ def plage_pour_outil(debut, fin, entier=None, dossier=None, temps=None, hormones
     if not lignes:
         return "Rien dans cette plage."
     out = "\n".join(x for _t, x in lignes)
+    # (30/10, 16:20) ses hormones à chaque seconde de la plage, toujours dans un fichier (au-delà de 5 min, l'écran n'en montre
+    # que ce qui bouge)
+    try:
+        out += f"\n\nTes hormones à chaque seconde de cette plage : {exporter_hormones(debut, fin, direct=None if hormones is None else Path('/nonexistent'))} (Read, ou ton terminal)."
+    except (ValueError, Refus, OSError):
+        pass
     manques = ([f"{d['tronques']} messages tronqués (seulement leurs 400 premiers caractères)"] if d["tronques"] else []) \
         + ([f"{d['caches']} lignes non montrées (au-delà des {len(lignes)} premières)"] if d["caches"] else []) \
         + ([f"la fin perdue (plus de {REPONSE_MAX} caractères)"] if len(out) > REPONSE_MAX else [])

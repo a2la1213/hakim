@@ -6,6 +6,7 @@ ffmpeg (images clés + transcription Whisper), audio par Whisper. Garde : seulem
 racines autorisées, jamais un secret (.env, clés, .ssh…), pas d'évasion par lien symbolique.
 Prédiction écrite avant le code : tout échoue (module absent).
 """
+import json
 import os
 import time
 import shutil
@@ -686,3 +687,40 @@ def test_son_terminal_ne_lit_ni_n_ecrit_une_cle_privee():
     profil = " ".join(str(a) for a in args)
     assert "[Gg]it[Hh]ub[Kk]ey" in profil and "deny file-read* file-write*" in profil
     assert profil.rindex("[Gg]it[Hh]ub[Kk]ey") > profil.rindex("(allow file-write*"), "la dernière règle l'emporte"
+
+
+def test_chercher_voit_les_fichiers_du_telephone_meme_profonds(tmp_path, monkeypatch):
+    """(30/10, 16:01, Hakim : « chercher_fichiers ne parcourt pas fichiers/telephone ; j'ai dit à papa « introuvable », à tort »)
+    les fichiers du téléphone (le Tricordeur d'Ahmed y écrit ses scans) sont cherchés depuis leur propre racine."""
+    import fichiers
+    profond = tmp_path / "maison" / "a" / "b" / "c" / "d" / "e" / "f"
+    profond.mkdir(parents=True)
+    (profond / "scan3d_20261030_155726_155833_scene.ply").write_text("ply")
+    monkeypatch.setattr(fichiers, "RACINES", [tmp_path / "maison"])
+    monkeypatch.setattr(fichiers, "RACINES_PROFONDES", [tmp_path / "maison" / "a" / "b"])
+    r = fichiers.chercher("scan3d_20261030")
+    assert len(r) == 1 and r[0].endswith("_scene.ply"), r
+
+
+def test_ses_hormones_a_chaque_seconde_et_sa_voix_a_l_heure_dite(tmp_path):
+    """(30/10, 16:20, Ahmed via Hakim : « mes hormones notées dans le journal TOUTES LES SECONDES » ; « l'heure à laquelle chaque
+    phrase de ma voix est réellement dite ») une plage courte : une ligne par seconde (ce qui a bougé, ou « stables ») ; sa voix
+    à l'heure où elle a joué ; ses hormones de la plage écrites seconde par seconde dans un fichier."""
+    import fichiers
+    t0 = 1_800_000_000
+    direct = tmp_path / "hormones-direct.jsonl"
+    with open(direct, "w") as h:
+        for i in range(10):
+            h.write(json.dumps({"t": t0 + i, "h": {"crh": 0.15 + (0.05 if i >= 5 else 0), "dopamine": 0.8}}) + "\n")
+    voix = tmp_path / "voix-dite.jsonl"
+    voix.write_text(json.dumps({"t_ms": (t0 + 5) * 1000 + 200, "duree_ms": 1800, "texte": "je ne sais pas"}) + "\n")
+    lignes, _coupe = fichiers.journal_plage(t0, t0 + 9, dossier=tmp_path, temps=tmp_path / "x", hormones=tmp_path / "x",
+                                            evenements=tmp_path / "x", direct=direct, voix=voix)
+    texte = "\n".join(x for _t, x in lignes)
+    assert texte.count("tes hormones") == 10, texte
+    assert "crh 0.15→0.20" in texte and "stables" in texte
+    assert "ta voix dit : « je ne sais pas »" in texte
+    i_voix, i_crh = texte.index("ta voix dit"), texte.index("crh 0.15→0.20")
+    assert i_crh < i_voix, "le saut de 16:11:35 (seconde 5) vient avant sa phrase dite à 5,2 s"
+    f = fichiers.exporter_hormones(t0, t0 + 9, direct=direct, sortie=tmp_path / "h.csv")
+    assert Path(f).read_text().splitlines()[0].startswith("heure,t,") and len(Path(f).read_text().splitlines()) == 11

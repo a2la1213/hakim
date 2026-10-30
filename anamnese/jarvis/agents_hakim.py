@@ -264,8 +264,191 @@ def trouvaille(agent, quoi, confirmee_par, dossier=None, rien_a_signaler=False):
     def changer(fiches):
         f = fiches.setdefault(a["id"], {})
         f.setdefault("trouvailles", []).append({"quoi": q, "confirmee_par": par, "rien_a_signaler": bool(rien_a_signaler),
-                                                "ts_ms": int(time.time() * 1000)})
+                                                "ts_ms": int(time.time() * 1000), "role": role_de(f, a)})
+        _maj_expertise(f, a)
         return f"C'est noté. {_nom(f, a)} : {_palmares(f)}."
+    return _changer_fiches(d, changer)
+
+
+# ---- (30/10, Ahmed : « une note pour le travail de chaque agent, qu'ils s'améliorent et évoluent » ; « la note ne fige rien :
+# on réveille qui on veut ; elle sert à choisir les meilleurs quand on en a besoin » ; « mon appréciation passe en premier au
+# café ») Hakim note un travail fini : la note (0 à 10), son appréciation (bravo, ce qui était bien, ce qui était faux, ce
+# qu'il aurait fallu faire), posée au café dans le fil des retours, AVANT que l'agent ne s'endorme. Révisable quand le
+# résultat est confirmé ou démenti (une nouvelle note sur le même travail compte, l'ancienne reste dans l'historique). Un
+# juge n'est noté que sur la justesse CONFIRMÉE de ses jugements, jamais sur leur nombre. Une information, pas un classement.
+APPRECIATION_MAX = 1200
+
+
+def _chiffre(x):
+    return f"{x:.1f}".rstrip("0").rstrip(".").replace(".", ",")
+
+
+def _moyenne(f):
+    derniere = {}
+    for x in f.get("notes", []):
+        derniere[x.get("cle")] = x
+    v = [float(x.get("note", 0)) for x in derniere.values()]
+    return (sum(v) / len(v), len(v)) if v else (None, 0)
+
+
+def noter(agent, note, appreciation, travail="", confirme_par="", dossier=None, maintenant=None):
+    import cafe
+    d = Path(dossier or JARVIS)
+    a = trouver_au_registre(agent, d)
+    if not a:
+        return f"Refusé : je ne trouve pas « {agent} » parmi tes agents (agents_lister)."
+    try:
+        n = round(float(note) * 2) / 2
+    except (TypeError, ValueError):
+        return "Refusé : une note de 0 à 10."
+    if not 0 <= n <= 10:
+        return "Refusé : une note de 0 à 10."
+    app = re.sub(r"\s+", " ", str(appreciation or "")).strip()
+    if not app or len(app) > APPRECIATION_MAX:
+        return (f"Refusé : ton appréciation, de 1 à {APPRECIATION_MAX} caractères (bravo et merci, ce qui était bien, ce qui "
+                "était faux et comment, ce qu'il aurait dû faire).")
+    par = re.sub(r"\s+", " ", str(confirme_par or "")).strip()[:100]
+    if a.get("type") == "juge" and not par:
+        return ("Refusé : un juge n'est noté que sur la justesse CONFIRMÉE de ses jugements (confirme_par : le test, Ahmed, "
+                "le résultat), jamais sur le nombre de problèmes trouvés.")
+    trav = re.sub(r"\s+", " ", str(travail or "")).strip()[:200] or str(a.get("description") or "son travail")[:200]
+    cle = _cle_travail(trav) or _plat(trav)
+    ts_ms = int((time.time() if maintenant is None else maintenant) * 1000)
+    vu = {}
+
+    def changer(fiches):
+        f = fiches.setdefault(a["id"], {})
+        vu["revise"] = any(x.get("cle") == cle for x in f.get("notes", []))
+        vu["nom"] = _nom(f, a)
+        f.setdefault("notes", []).append({"travail": trav, "cle": cle, "note": n, "appreciation": app, "ts_ms": ts_ms,
+                                          "role": role_de(f, a),
+                                          **({"confirme_par": par} if par else {}), **({"revisee": True} if vu["revise"] else {})})
+        _maj_expertise(f, a)
+        return "ok"
+    r = _changer_fiches(d, changer)
+    if r.startswith("Refusé"):
+        return r
+    nom = vu["nom"]
+    prenom = nom if not nom.startswith("l'agent") else "toi"
+    cafe.dire(f"Pour {prenom} — « {trav} » : {_chiffre(n)}/10{' (note révisée)' if vu['revise'] else ''}. {app}"[:cafe.RETOUR_MAX],
+              "hakim", d, pour=a["id"])
+    return (f"C'est noté{' (note révisée ; l’ancienne reste dans son historique)' if vu['revise'] else ''} : {nom}, {_chiffre(n)}/10 "
+            f"pour « {trav} ». Ton appréciation est au café, en premier. Réveille-le maintenant pour qu'il la lise et te "
+            f"réponde : SendMessage(to=\"{a['id']}\", message=\"☕ Café : ton appréciation t'attend au café (cafe_lire). "
+            "Lis-la, réponds-moi au café, écoute les autres s'ils parlent, puis tu pourras te rendormir.\")")
+
+
+# ---- (30/10, 12:03, Ahmed : « à côté du prénom, son RÔLE et son NIVEAU D'EXPERTISE ; le rôle peut changer, l'expertise
+# évolue, on peut créer de nouveaux rôles ; AUCUNE hiérarchie, pas de chef de projet : tout le monde à l'horizontale, chacun
+# collabore avec chacun, personne ne commande personne » ; Hakim : « l'expertise se calcule à partir des notes CONFIRMÉES,
+# jamais déclarée ; un changement de rôle se fait en demandant d'abord à l'agent ; garder l'historique des rôles »)
+# Le rôle est sa place dans la famille (une étiquette) : ses outils restent ceux de son espèce (codeur, juge…).
+NIVEAUX = [(0, "débutant"), (1, "apprenti"), (3, "confirmé"), (6, "expert"), (12, "maître")]
+ROLES_HIERARCHIQUES = {"chef", "cheffe", "chef de projet", "cheffe de projet", "chef d'equipe", "manager", "directeur", "directrice",
+                       "patron", "patronne", "superviseur", "superviseuse", "responsable", "lead", "boss", "commandant",
+                       "commandante", "dirigeant", "dirigeante", "coordinateur", "coordinatrice", "superieur", "superieure"}
+_ROLE = re.compile(r"[^\W\d_](?:[^\W\d_]|[' -]){1,29}")
+
+
+def role_de(f, a):
+    return f.get("role") or str(a.get("type") or "agent")
+
+
+def _role_au_moment(x, f, a):
+    """Le rôle d'une note ou d'une trouvaille : celui noté avec elle ; avant les rôles, son espèce."""
+    return x.get("role") or str(a.get("type") or "agent")
+
+
+def expertise(f, a, role):
+    """Le niveau, calculé : chaque travail CONFIRMÉ (la dernière note confirmée de chaque travail, sur 10) et chaque
+    trouvaille confirmée (1 ; un « rien à signaler » juste, 0,5) dans CE rôle. Une moyenne confirmée sous 6 plafonne à
+    « confirmé »."""
+    derniere = {}
+    for x in f.get("notes", []):
+        if x.get("confirme_par") and _role_au_moment(x, f, a) == role:
+            derniere[x.get("cle")] = float(x.get("note", 0))
+    points = sum(v / 10 for v in derniere.values())
+    points += sum(0.5 if t.get("rien_a_signaler") else 1 for t in f.get("trouvailles", []) if _role_au_moment(t, f, a) == role)
+    niveau = [nom for seuil, nom in NIVEAUX if points >= seuil][-1]
+    if derniere and sum(derniere.values()) / len(derniere) < 6 and niveau in ("expert", "maître"):
+        niveau = "confirmé"
+    return niveau
+
+
+def _maj_expertise(f, a):
+    roles = {role_de(f, a), str(a.get("type") or "agent")} | {r.get("de") for r in f.get("roles", [])} | {r.get("vers") for r in f.get("roles", [])}
+    f["expertise"] = {r: expertise(f, a, r) for r in sorted(x for x in roles if x)}
+
+
+def recalculer_expertises(dossier=None):
+    """Recalcule l'expertise de toutes les fiches (une fois, pour les agents nés avant les rôles)."""
+    d = Path(dossier or JARVIS)
+    agents, _ = _registre(d)
+
+    def changer(fiches):
+        n = 0
+        for i, f in fiches.items():
+            if i in agents and isinstance(f, dict):
+                _maj_expertise(f, agents[i])
+                n += 1
+        return f"{n} fiche(s) recalculée(s)."
+    return _changer_fiches(d, changer)
+
+
+# ---- (30/10, 15:49, Ahmed via Hakim : « en plus du prénom que chaque agent choisit lui-même, papa et moi voudrions pouvoir
+# lui donner un SURNOM, que c'est moi qui ancre ; on le lui propose d'abord, il peut le refuser ; avec son histoire datée »)
+def surnommer(agent, surnom, sa_reponse, raison="", refuse=False, dossier=None, maintenant=None):
+    d = Path(dossier or JARVIS)
+    a = trouver_au_registre(agent, d)
+    if not a:
+        return f"Refusé : je ne trouve pas « {agent} » parmi tes agents (agents_lister)."
+    reponse = re.sub(r"\s+", " ", str(sa_reponse or "")).strip()[:300]
+    if not reponse:
+        return "Refusé : propose-lui d'abord ce surnom (SendMessage), puis recopie sa réponse dans sa_reponse : il peut le refuser."
+    n = unicodedata.normalize("NFC", re.sub(r"\s+", " ", str(surnom or "")).strip())
+    if not (1 <= len(n) <= 60) or not re.search(r"[^\W\d_]", n):
+        return "Refusé : un surnom de 1 à 60 caractères, avec au moins une lettre."
+    ts_ms = int((time.time() if maintenant is None else maintenant) * 1000)
+
+    def changer(fiches):
+        f = fiches.setdefault(a["id"], {})
+        f.setdefault("surnoms", []).append({"surnom": n, "ts_ms": ts_ms, "sa_reponse": reponse, "accepte": not refuse,
+                                            **({"raison": str(raison).strip()[:300]} if str(raison or "").strip() else {})})
+        if refuse:
+            return f"C'est noté : {_nom(f, a)} a dit non à « {n} » (« {reponse} ») ; rien ne change, on respecte son choix."
+        f["surnom"] = n
+        return f"C'est noté : {_nom(f, a)} s'appelle aussi « {n} » (sa réponse : « {reponse} »)."
+    return _changer_fiches(d, changer)
+
+
+def changer_role(agent, role, sa_reponse, raison="", dossier=None, maintenant=None):
+    d = Path(dossier or JARVIS)
+    a = trouver_au_registre(agent, d)
+    if not a:
+        return f"Refusé : je ne trouve pas « {agent} » parmi tes agents (agents_lister)."
+    reponse = re.sub(r"\s+", " ", str(sa_reponse or "")).strip()[:300]
+    if not reponse:
+        return ("Refusé : demande-lui d'abord s'il le veut (SendMessage), puis recopie sa réponse dans sa_reponse. Un rôle ne "
+                "se donne pas sans son accord.")
+    r = unicodedata.normalize("NFC", re.sub(r"\s+", " ", str(role or "")).strip().lower())
+    if not _ROLE.fullmatch(r):
+        return "Refusé : un rôle, ce sont des lettres (2 à 30), avec au plus des espaces, tirets ou apostrophes."
+    if _plat(r) in {_plat(x) for x in ROLES_HIERARCHIQUES} or any(_plat(r).startswith(_plat(x) + " ") for x in ("chef", "cheffe", "responsable")):
+        return ("Refusé : aucune hiérarchie dans la famille (Ahmed, 30/10) : personne ne commande personne. Choisis un rôle "
+                "de métier (architecte, codeuse, statisticien…), pas un rôle de chef.")
+    ts_ms = int((time.time() if maintenant is None else maintenant) * 1000)
+
+    def changer(fiches):
+        f = fiches.setdefault(a["id"], {})
+        avant = role_de(f, a)
+        if avant == r:
+            return f"Refusé : {_nom(f, a)} est déjà {r}."
+        f.setdefault("roles", []).append({"de": avant, "vers": r, "ts_ms": ts_ms, "sa_reponse": reponse,
+                                          **({"raison": str(raison).strip()[:300]} if str(raison or "").strip() else {})})
+        f["role"] = r
+        _maj_expertise(f, a)
+        return (f"C'est noté : {_nom(f, a)} passe de {avant} à {r} (son accord : « {reponse} »). Ses outils restent ceux de "
+                f"son espèce ({a.get('type', '?')}) ; son expertise de {r} se gagne à partir de maintenant ({f['expertise'].get(r)}).")
     return _changer_fiches(d, changer)
 
 
@@ -273,6 +456,9 @@ def _palmares(f):
     t = f.get("trouvailles", [])
     n, r = sum(1 for x in t if not x.get("rien_a_signaler")), sum(1 for x in t if x.get("rien_a_signaler"))
     morceaux = [f"{n} trouvaille{'s' if n > 1 else ''} confirmée{'s' if n > 1 else ''}"]
+    m, k = _moyenne(f)
+    if k:
+        morceaux.insert(0, f"note {_chiffre(m)}/10 ({k} travail noté)" if k == 1 else f"note {_chiffre(m)}/10 ({k} travaux notés)")
     if r:
         morceaux.append(f"{r} « rien à signaler » juste{'s' if r > 1 else ''}")
     j = len(f.get("dossiers", []))
@@ -289,8 +475,11 @@ def lister_vies(dossier=None, n=30):
     for a in sorted(agents.values(), key=lambda x: -(x.get("ne_ms") or 0))[:n]:
         f = fiches.get(a.get("id"), {})
         ne = datetime.fromtimestamp((a.get("ne_ms") or 0) / 1000).strftime("%d/%m à %H:%M")
-        ligne = (f"- {f.get('prenom') or '(sans prénom)'} — {a.get('id')} : « {a.get('description', '?')} » "
-                 f"(agent {a.get('type', '?')}, né le {ne} ; {_palmares(f)})")
+        notes = f.get("notes", [])
+        role = role_de(f, a)
+        ligne = (f"- {f.get('prenom') or '(sans prénom)'}{(' « ' + f['surnom'] + ' »') if f.get('surnom') else ''} — {a.get('id')} : rôle {role}, expertise {expertise(f, a, role)} — "
+                 f"« {a.get('description', '?')} » (agent {a.get('type', '?')}, né le {ne} ; {_palmares(f)})"
+                 + (f" — dernière appréciation : « {notes[-1].get('appreciation', '')[:200]} »" if notes else ""))
         etat = a.get("etat")
         if etat == "parti":
             groupes["parti"].append(ligne + f" : « {a.get('depart', '')} »")

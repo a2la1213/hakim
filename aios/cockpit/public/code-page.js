@@ -89,7 +89,14 @@ function rendre() {
   }
 
   const rel = $('relances'); rel.textContent = '';
-  if (!(etat.relances || []).length) rel.append(el('p', { className: 'note', textContent: 'Aucune.' }));
+  // (30/10, 16:20, Ahmed : « un bouton pour relancer le cockpit quand je veux ») toujours là ; il attend que ses agents et tâches
+  // aient fini (sa garde du 29/10), pas le tour de Hakim
+  rel.append(el('div', { className: 'carte glass' },
+    el('p', { className: 'texte', textContent: 'Relancer toi-même, quand tu veux : la relance attend qu’aucun agent ni tâche ne travaille (au plus 10 min), et Hakim est prévenu.' }),
+    el('div', { className: 'ligne' },
+      el('button', { type: 'button', className: 'fort', textContent: 'Relancer le cockpit', onclick: () => geste({ quoi: 'relance_ahmed', cible: 'cockpit' }, 'code:relancer-moi:cockpit') }),
+      el('button', { type: 'button', textContent: 'Relancer le démon', onclick: () => geste({ quoi: 'relance_ahmed', cible: 'demon' }, 'code:relancer-moi:demon') }))));
+  if (!(etat.relances || []).length) rel.append(el('p', { className: 'note', textContent: 'Aucune relance proposée par Hakim.' }));
   for (const r of etat.relances || []) {
     const quoi = r.quoi === 'demon' ? 'le démon (sa mémoire)' : 'le cockpit';
     const ligne = el('div', { className: 'carte glass' },

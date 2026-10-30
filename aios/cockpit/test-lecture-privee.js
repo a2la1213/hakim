@@ -40,7 +40,7 @@ test('le web et le terminal ne sont pas des lectures privées', () => {
 });
 
 test('sa position, ses capteurs, sa montre : la situation le dit (prive)', () => {
-  const ctx = { Math, Number, String, JSON, Date, Array, Object, Intl, CONTEXTE_MAX: 100000,
+  const ctx = { Math, Number, String, JSON, Date, Array, Object, Intl, CONTEXTE_MAX: 100000, crypto: require('node:crypto'), lireLieux: () => [], lieuDe: () => null,
     jaugeForfait: () => ({ texte: '' }), appareilDe: () => 'son téléphone' };
   vm.createContext(ctx);
   const debut = srv.indexOf('const CAPTEURS_CHAMPS'), fin = srv.indexOf('function capteursDe(');

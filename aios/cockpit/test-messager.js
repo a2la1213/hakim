@@ -27,7 +27,8 @@ test('les refus du messager', () => {
   assert.match(r({ id: ID, message: 'x' }, ctx({ registre: reg('arrete') })), /arrêté/);
   assert.match(r({ id: ID, message: 'x' }, ctx({ registre: reg('travaille') })), /travaille encore/);
   assert.match(r({ id: ID, message: 'x' }, ctx({ sessionsVivantes: [VIEILLE] })), /tourne encore/, 'jamais deux claude sur la même conversation');
-  assert.match(r({ id: ID, message: 'x' }, ctx({ enRoute: [VIEILLE] })), /déjà en route/);
+  // (30/10, 15:38) la même conversation déjà rouverte par un messager : pas un refus, il attend son tour (le cockpit)
+  assert.equal(r({ id: ID, message: 'x' }, ctx({ enRoute: [VIEILLE] })), null);
   assert.match(r({ id: ID, message: 'x' }, ctx({ registre: { [ID]: { id: ID, etat: 'dort', session: '../x' } } })), /inconnue/);
 });
 
@@ -118,8 +119,13 @@ test('sa réponse arrive dans le cadre de données du cockpit, avec son prénom,
 });
 
 // ---- relecture Opus du messager (29/10) ----
-test('relecture : un seul messager à la fois, 20 par jour, et pas un agent que claude a arrêté', () => {
-  assert.match(M.refusMessager({ id: ID, message: 'x' }, ctx({ enRoute: ['une-autre'] })), /déjà en route/);
+test('relecture : trois messagers à la fois (un par conversation, les autres attendent), 20 par jour, et pas un agent que claude a arrêté', () => {
+  // (30/10, 15:38, Ahmed : « qu'on puisse les réveiller tous en même temps ») un autre en route n'est plus un refus : il attend son tour
+  assert.equal(M.refusMessager({ id: ID, message: 'x' }, ctx({ enRoute: ['une-autre'] })), null);
+  assert.equal(M.MESSAGERS_EN_PARALLELE, 3);
+  const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(srv, /messagers\.has\(a\.session\) \|\| messagers\.size >= Messager\.MESSAGERS_EN_PARALLELE/);
+  assert.match(srv, /setTimeout\(relancerMessagersEnAttente, 500\)/);
   assert.match(M.refusMessager({ id: ID, message: 'x' }, ctx({ duJour: 20 })), /20/);
   assert.match(M.refusMessager({ id: ID, message: 'x' }, ctx({ arreteParClaude: true })), /arrêté/);
 });

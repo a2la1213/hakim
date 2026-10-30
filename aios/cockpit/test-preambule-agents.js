@@ -44,10 +44,11 @@ test('sans préambule, les agents restent tels quels ; un préambule énorme est
   assert.deepEqual(p.vierge, c.AGENTS.vierge);
   for (const k of ['architecte', 'codeur', 'juge']) {
     assert.ok(p[k].prompt.startsWith(c.AGENTS[k].prompt), k);
-    assert.match(p[k].prompt.slice(c.AGENTS[k].prompt.length), /^\n\n(Un juge ne juge jamais[^\n]*\n\n)?\[Ta vie d'agent/, k);
+    assert.match(p[k].prompt.slice(c.AGENTS[k].prompt.length), /^\n\n(Un juge ne juge jamais[^\n]*\n\n)?\[Bienvenue dans la famille[^\n]*\n\[Ta vie d'agent/, k);
     assert.deepEqual({ ...p[k], prompt: '', tools: [] }, { ...c.AGENTS[k], prompt: '', tools: [] }, k);
     assert.ok(p[k].tools.includes('mcp__terminal__cafe_dire'), k);
   }
   const d = cockpit('x'.repeat(20000));
-  assert.ok(d.pour().juge.prompt.length < d.AGENTS.juge.prompt.length + 4600 + 2000);
+  // (30/10) la vie d'agent a grandi (le café, l'horizontale, la bienvenue d'Ahmed) : le préambule reste coupé à 4 000
+  assert.ok(d.pour().juge.prompt.length < d.AGENTS.juge.prompt.length + 4600 + 2600);
 });

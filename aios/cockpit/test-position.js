@@ -11,18 +11,21 @@ const prendre = (nom) => { const i = src.indexOf(`function ${nom}(`); return src
 const ctx = { Math, Number, JSON, Object, Set, CONTEXTE_MAX: 400000, jaugeForfait: () => ({ texte: '', cle: '' }), appareilDe: () => 'le Mac' };
 vm.createContext(ctx);
 const srcCapteurs = src.slice(src.indexOf('const CAPTEURS_CHAMPS'), src.indexOf('function capteursDe('));   // (avec CHAMPS_MONTRE)
+ctx.lireLieux = () => []; ctx.lieuDe = () => null; ctx.crypto = require('node:crypto');
 vm.runInContext(srcCapteurs + prendre('capteursDe') + prendre('positionDe') + prendre('blocSituation'), ctx);
 const T = 1_800_000_000_000;
 
 test('une position fraîche est arrondie à une centaine de mètres et dite une fois', () => {
   const q = { position: { lat: 46.5197456, lon: 6.6323412, precision_m: 23.4, t_ms: T - 120000 } };
   const a = ctx.blocSituation(q, false, { appareil: 'le Mac' }, T);
-  assert.match(a.texte, /sa position .* 46\.52, 6\.632, à 23 m près, mesurée il y a 2 min/);
-  assert.ok(!/46\.5197|6\.6323/.test(a.texte));
+  // (30/10, 14:53, Hakim : « que les coordonnées restent dans le cockpit ») le nom du lieu, jamais ses coordonnées
+  assert.match(a.texte, /sa position : un lieu que vous n'avez pas nommé .*, il y a 2 min/);
+  assert.ok(!/46\.5|6\.63/.test(a.texte));
   const b = ctx.blocSituation(q, false, { appareil: 'le Mac', ...a.dit }, T);
   assert.ok(!/position/.test(b.texte));                                          // pas redite tant qu'il ne bouge pas
   const c = ctx.blocSituation({ position: { ...q.position, lat: 46.53 } }, false, { appareil: 'le Mac', ...a.dit }, T);
-  assert.match(c.texte, /46\.53, 6\.632/);
+  assert.match(c.texte, /sa position : /, 'redite quand il bouge');
+  assert.ok(!/46\.53/.test(c.texte));
 });
 
 test('sans permission, périmée ou absurde : rien', () => {

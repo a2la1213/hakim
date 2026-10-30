@@ -239,7 +239,7 @@ def _appliquer(mem, st, classe, i_brut, sujet, cle, source, now, parametre=None,
     etat = affect.get_state(mem, now=now)
     if classe == "apaisement":
         return _apaiser(mem, st, i_brut, cle, now)
-    if classe in set(RESSENTIS.values()):
+    if classe in set(RESSENTIS.values()) or classe in _creees():   # (30/10) une émotion à lui se ressent comme les autres
         affect.event(mem, classe, round(i_brut, 4), now=now, sujet=sujet, source=source)
         # (27/10) gardés 2 h : ses règles de choix (regles_emotion.py) les lisent au tour suivant ; un ressenti pénible
         # garde aussi ce qui n'en a pas encore été repris (« reste »)
@@ -345,7 +345,22 @@ def lire_balise(reponse):
             classe = POUR_AUTRUI.get(classe, classe)        # une peur POUR quelqu'un est une inquiétude, etc.
         if i > 0 and classe not in {x["classe"] for x in out}:
             out.append({"classe": classe, "intensite": round(i, 3), **({"cible": cible} if cible else {})})
+    # (30/10, Ahmed : « créer de nouvelles émotions ») les siennes, par leur nom (emotions_creees.py)
+    noms = _creees()
+    if noms:
+        for m in re.finditer(r"\b(" + "|".join(map(re.escape, noms)) + r")\s+([01](?:[.,]\d+)?)", corps, re.I):
+            i, classe = max(0.0, min(1.0, float(m.group(2).replace(",", ".")))), m.group(1).lower()
+            if i > 0 and classe not in {x["classe"] for x in out}:
+                out.append({"classe": classe, "intensite": round(i, 3)})
     return out or None
+
+
+def _creees():
+    try:
+        import emotions_creees
+        return sorted(emotions_creees.actives(), key=len, reverse=True)
+    except Exception:
+        return []
 
 
 # (26/10, Ahmed ; moments forts rejoués, eval/plafond) ce que Hakim RESSENT d'un message, en plus d'une attaque ou d'un
@@ -442,7 +457,7 @@ def _appliquer_appreciations(mem, st, appreciations, tour, cle, now, parametre):
         # « honte de Ahmed », comme un soutien. Le message n'en est que l'occasion.
         pour = f" pour {a['cible']}" if a.get("cible") else ""
         sujet = f"{_DITS.get(a['classe'], a['classe'])} de Hakim{pour}, au message d'{voix}" \
-            if a["classe"] in set(RESSENTIS.values()) else f"{a['classe']} de {voix}"
+            if a["classe"] in set(RESSENTIS.values()) or a["classe"] in _creees() else f"{a['classe']} de {voix}"
         faits.append(_appliquer(mem, st, a["classe"], a["intensite"] * _poids(a["classe"], qui, sur), sujet, cle,
                                 "balise", now, parametre, cible=a.get("cible")))
     return faits

@@ -17,17 +17,20 @@ window.REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion
 
 window.initNav = function (active) {
   document.body.classList.add('shell');
-  const views = [['dashboard', '/', 'DASHBOARD'], ['brain', '/brain', 'CERVEAU 3D'], ['dreams', '/dreams', 'LABO DES RÊVES'], ['memory', '/memory', 'MÉMOIRE'], ['chat', '/chat', 'CHAT'], ['parler', '/parler', 'PARLER'], ['interieur', '/interieur', 'INTÉRIEUR'], ['immunite', '/immunite', 'IMMUNITÉ'], ['cafe', '/cafe', 'CAFÉ'], ['sens', '/sens', 'SENS']];
+  // (30/10, Ahmed : « les onglets, ça devient chargé : un menu hamburger, avec un seul bouton en plus pour parler ») la barre :
+  // ☰ · AIOS · PARLER · l'état du démon ; le menu et ses pastilles rouges sont dans badges.js (fermé aux chantiers de Hakim)
   const nav = document.createElement('nav');
   nav.className = 'topnav';
-  nav.innerHTML = '<div class="beacon"></div><span class="brand">AIOS</span>'
-    + views.map(([k, href, label]) => `<a class="pill ${k === active ? 'active' : ''}" href="${href}">${label}</a>`).join('')
-    + '<span class="status" id="nav-status">● …</span>';
+  nav.innerHTML = '<div class="beacon"></div><span class="brand">AIOS</span><span class="status" id="nav-status">● …</span>';
   document.body.prepend(nav);
-  // (30/10, Ahmed via Hakim) les pastilles rouges des onglets (badges.js, fermé aux chantiers de Hakim)
   const sb = document.createElement('script');
   sb.src = '/badges.js';
   sb.onload = () => { window.Badges.suivre(nav, active); if (window.Badges.PAGES[active]) window.Badges.ouvrir(active); };
+  sb.onerror = () => {                                       // sans badges.js : au moins les liens
+    for (const [href, label] of [['/', 'DASHBOARD'], ['/parler', 'PARLER'], ['/sens', 'SENS'], ['/immunite', 'IMMUNITÉ'], ['/cafe', 'CAFÉ']]) {
+      const a = document.createElement('a'); a.className = 'pill'; a.href = href; a.textContent = label; nav.insertBefore(a, nav.querySelector('.status'));
+    }
+  };
   document.head.appendChild(sb);
   const st = nav.querySelector('#nav-status');
   const tick = () => {

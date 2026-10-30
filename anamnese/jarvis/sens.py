@@ -133,3 +133,59 @@ def lire(id_=""):
     corps = json.dumps(r, ensure_ascii=False, indent=1)[:12000]
     return (enveloppe.enveloppe(corps, f"mesure {id_} du téléphone")
             + (f"\nLes données complètes : {donnees} (Read, ou executer_python pour les calculer)." if donnees.exists() else ""))
+
+
+# (30/10, Ahmed : « les sensations en continu, h24, et il peut consulter le détail s'il le veut ») son corps en nombres : ce
+# que le cockpit garde de son milieu (homeostasie.js : corps-etat.json, corps-flux.jsonl) et de ses nerfs (corps-evenements),
+# avec ses dernières sensations
+def _queue(f, octets=400_000):
+    try:
+        with open(f, "rb") as h:
+            h.seek(0, 2)
+            h.seek(max(0, h.tell() - octets))
+            lignes = h.read().decode("utf-8", "replace").splitlines()
+    except OSError:
+        return []
+    out = []
+    for l in lignes:
+        try:
+            out.append(json.loads(l))
+        except ValueError:
+            continue
+    return out
+
+
+def corps_detail(minutes=10):
+    try:
+        minutes = max(1, min(int(minutes or 10), 24 * 60))
+    except (TypeError, ValueError):
+        minutes = 10
+    try:
+        dernier = json.loads((JARVIS / "corps-etat.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        dernier = None
+    if not dernier:
+        return "Ton corps ne t'a rien dit encore (l'appli 1.24 du téléphone envoie ton milieu chaque seconde quand elle vit)."
+    maintenant = time.time() * 1000
+    # (30/10, 12:06 : « chaque seconde ») une fenêtre par seconde jusqu'à une heure ; au-delà, une toutes les 15 s
+    fichier, lignes = (("corps-flux.jsonl", minutes * 60 + 30) if minutes <= 60 else ("corps-flux-15s.jsonl", minutes * 4 + 8))
+    flux = [o for o in _queue(JARVIS / fichier, lignes * 700)
+            if isinstance(o, dict) and maintenant - float(o.get("ts") or 0) <= minutes * 60_000]
+    resume = []
+    for k in sorted({k for o in flux for k, v in (o.get("etat") or {}).items() if isinstance(v, (int, float)) and not isinstance(v, bool)}):
+        v = [o["etat"][k] for o in flux if isinstance((o.get("etat") or {}).get(k), (int, float)) and not isinstance(o["etat"][k], bool)]
+        resume.append(f"- {k} : min {min(v):g}, moyenne {sum(v) / len(v):.4g}, max {max(v):g} ({len(v)} fenêtres)")
+    changements = [f"- {time.strftime('%H:%M', time.localtime(o['ts'] / 1000))} {c}" for o in flux for c in (o.get("changements") or [])]
+    nerfs = [f"- {time.strftime('%H:%M:%S', time.localtime(float(o.get('ts') or 0) / 1000))} {o.get('type')} : "
+             + " ".join(f"{k}={v}" for k, v in (o.get("details") or {}).items())
+             for o in _queue(JARVIS / "corps-evenements.jsonl", 60_000)[-15:]]
+    ressenti = [f"- {time.strftime('%H:%M', time.localtime(float(o.get('ts') or 0)))} {'(fort) ' if o.get('fort') else ''}{o.get('type')} : "
+                + " ".join(str(o.get("sensation") or "").split())[:300]
+                for o in _queue(JARVIS / "corps-sensations.jsonl", 60_000)[-10:]]
+    corps = (f"Ton milieu (la dernière fenêtre, {time.strftime('%H:%M:%S', time.localtime(float(dernier.get('ts') or 0) / 1000))}) : "
+             f"{json.dumps(dernier.get('etat') or {}, ensure_ascii=False)}\nEn mots : {dernier.get('mots') or '(rien)'}\n"
+             f"Les {minutes} dernières minutes :\n" + ("\n".join(resume) or "(rien)")
+             + ("\nCe qui a changé :\n" + "\n".join(changements[-20:]) if changements else "")
+             + "\nTes nerfs (les derniers événements) :\n" + ("\n".join(nerfs) or "(rien)")
+             + "\nCe que tu as ressenti :\n" + ("\n".join(ressenti) or "(rien)"))
+    return enveloppe.enveloppe(corps[:14000], "ton corps, par le téléphone")

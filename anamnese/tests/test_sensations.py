@@ -31,6 +31,7 @@ def test_la_voix_suit_l_emotion_moderement():
     assert I.voix(0.96, {"emotion": "élan"})["expressivite"] == 1.0                     # (26/10) jamais au-delà de 1,0
     assert I.voix(0.36, {"emotion": "tristesse"})["expressivite"] == 0.3                # ni en dessous de 0,3
     # (26/10, 13:30) la peur s'entend, sans caricature : l'écart à la voix neutre est divisé par deux
-    assert 1.02 < I.voix_emotion("peur")["vitesse"] < 1.06 and 0.6 <= I.voix_emotion("peur")["expressivite"] <= 0.75
+    # (30/10, 20:09, Ahmed : « plus vive quand il a peur ») 0,8 au plus pour la peur (0,75 depuis le 26/10)
+    assert 1.02 < I.voix_emotion("peur")["vitesse"] < 1.06 and 0.6 <= I.voix_emotion("peur")["expressivite"] <= 0.8
     assert 0.9 < I.voix_emotion("fatigue")["vitesse"] < 0.98
     assert I.voix(0.5, None) == {"expressivite": 0.5, "vitesse": 1.0, "emotion": None}

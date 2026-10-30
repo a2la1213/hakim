@@ -151,6 +151,7 @@
 
     function analyser(f) {
       if (micCoupe) { if (o.surNiveau) o.surNiveau(0); return; }   // micro coupé : rien n'est écouté ni analysé
+      if (o.sourd && o.sourd()) { if (o.surNiveau) o.surNiveau(0); return; }   // (30/10) son bout de musique joue : pas une voix
       let s = 0; for (let i = 0; i < f.length; i++) s += f[i] * f[i];
       const rms = Math.sqrt(s / f.length), maintenant = Date.now();
       const jarvis = !!o.jarvisParle();

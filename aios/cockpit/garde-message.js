@@ -98,8 +98,23 @@ function signerCafe(e) {
   return auteur ? { ...objet(e.tool_input), auteur } : null;
 }
 
+// (30/10, Ahmed via Hakim : « un juge garde un regard neuf ») qui lit le café : signé de même (agent_id, ou « hakim ») ; le
+// café n'y montre à un juge que son propre retour
+function signerLecture(e) {
+  if (!e || typeof e !== 'object' || e.tool_name !== 'mcp__terminal__cafe_lire') return null;
+  const lecteur = typeof e.agent_id === 'string' && /^a[0-9a-f]{16}$/.test(e.agent_id) ? e.agent_id : (e.agent_id ? null : 'hakim');
+  return lecteur ? { ...objet(e.tool_input), lecteur } : null;
+}
+
 function principal(brut) {
   let e = null, refus;
+  if (process.argv.includes('--cafe-lire')) {
+    let entree = null; try { entree = signerLecture(JSON.parse(brut)); } catch (_) {}
+    process.stdout.write(JSON.stringify({ hookSpecificOutput: entree
+      ? { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: entree }
+      : { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'Garde du café : appel illisible.' } }));
+    return;
+  }
   if (process.argv.includes('--cafe')) {
     let entree = null; try { entree = signerCafe(JSON.parse(brut)); } catch (_) {}
     process.stdout.write(JSON.stringify({ hookSpecificOutput: entree

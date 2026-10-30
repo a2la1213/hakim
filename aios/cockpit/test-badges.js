@@ -46,7 +46,7 @@ test('branché : les routes, la page des pastilles (fermée aux chantiers), le m
   const route = src.slice(i, src.indexOf("\n  if (p === '/api/cafe' && req.method === 'POST')", i));
   assert.match(route, /if \(!jetonValide\(req\)\)/);
   assert.match(route, /\/api\/badges\/vu/);
-  assert.match(route, /\['cafe', 'immunite', 'parler'\]\.includes\(page\)/);
+  assert.match(route, /Nouveautes\.PAGES\.includes\(page\)/);
   assert.match(src, /setInterval\(\(\) => calculerBadges\(\)\.catch\(\(\) => \{\}\), 60000\)/);
   const b = fs.readFileSync(path.join(__dirname, 'public', 'badges.js'), 'utf8');
   assert.match(b, /fetch\('\/api\/badges'/);
@@ -62,3 +62,29 @@ test('branché : les routes, la page des pastilles (fermée aux chantiers), le m
     assert.match(t, /classList|nouveau/, f);
   }
 });
+
+test('(30/10, Ahmed : « le point rouge quand il y a du nouveau : immunité, sens, mais aussi le code… ») sens et code', () => {
+  const v = { cafe: T - 1000, immunite: T - 1000, parler: T - 1000, sens: T - 1000, code: T - 1000 };
+  const r = N.compter({ maintenant: T, vus: v, apparus: {}, cafe: [], incidents: [], rapports: [], anticorps: [],
+    attentes: [{ quoi: 'promotion', id: 'P-1' }, { quoi: 'promotion', id: 'P-2' }],
+    sens: { mesures: [{ ts: T - 500, ok: true }, { ts: T - 400, ok: false }, { ts: T - 5000, ok: true }, { ts: T - 300, ok: true, par: 'ahmed' }],
+      tricordeur: [{ ts: T - 200, action: 'livraison' }], documents: [{ ts: T - 100 }], fortes: [{ ts: T - 50, type: 'chute' }] } });
+  assert.equal(r.pages.code.n, 2);
+  assert.match(r.pages.code.resume.join(' '), /2 modifications de son code à relire/);
+  assert.equal(r.pages.sens.n, 5, 'deux mesures de Hakim (pas celle d’Ahmed, pas l’ancienne), la livraison, l’écriture, la sensation forte');
+  assert.match(r.pages.sens.resume.join(' '), /2 mesures finies \(1 en échec\)/);
+  assert.match(r.pages.sens.resume.join(' '), /1 livraison de son Tricordeur/);
+  assert.match(r.pages.sens.resume.join(' '), /1 écriture dans tes Documents/);
+  assert.match(r.pages.sens.resume.join(' '), /1 sensation forte \(chute\)/);
+  assert.deepEqual(N.PAGES, ['cafe', 'immunite', 'parler', 'sens', 'code']);
+});
+
+test('le serveur passe bien ce qui attend (missions, écritures…) et toutes les pages à « vu »', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const c = src.slice(src.indexOf('async function calculerBadges('), src.indexOf('\n}\n', src.indexOf('async function calculerBadges(')));
+  assert.match(c, /attentes,/, 'les attentes comptées (elles ne l’étaient pas)');
+  assert.match(c, /'promotion'/);
+  assert.match(c, /const sens = \{ mesures/);
+  assert.match(src, /Nouveautes\.PAGES\.includes\(page\)/);
+});
+

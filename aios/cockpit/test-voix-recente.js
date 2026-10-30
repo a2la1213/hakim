@@ -10,7 +10,7 @@ const crypto = require('node:crypto');
 const src = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
 const prendre = (nom) => { const i = src.indexOf(`function ${nom}(`); return src.slice(i, src.indexOf('\n}\n', i) + 2); };
 
-test('trente morceaux au plus, les plus anciens effacés, texte et durée gardés', () => {
+test('trente morceaux au plus, les plus anciens effacés, texte et durée gardés', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'voix-recente-'));
   let t = 1_800_000_000_000;
   const ctx = { fs, path, crypto, JSON, Number, Math, Date: { now: () => ++t }, j: JSON.stringify,
@@ -28,5 +28,8 @@ test('trente morceaux au plus, les plus anciens effacés, texte et durée gardé
   const l = JSON.parse(fs.readFileSync(ctx.VOIX_RECENTE_INDEX, 'utf8'));
   assert.strictEqual(l.length, 30);
   assert.strictEqual(l[0].texte, 'phrase 3');
-  assert.strictEqual(fs.readdirSync(ctx.VOIX_RECENTE).filter(x => x.endsWith('.wav')).length, 30);
+  // (30/10) l'effacement des plus anciens est asynchrone (fs.unlink) : la suite entière, chargée, le voyait parfois en retard
+  const wavs = () => fs.readdirSync(ctx.VOIX_RECENTE).filter(x => x.endsWith('.wav')).length;
+  for (let i = 0; i < 50 && wavs() > 30; i++) await new Promise(r => setTimeout(r, 20));
+  assert.strictEqual(wavs(), 30);
 });

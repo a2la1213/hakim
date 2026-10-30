@@ -151,6 +151,9 @@ function refuser(id, lieux) {
 const actionGeste = (quoi, sha) => `code:${quoi}:${String(sha || '').slice(0, 12)}`;
 const actionListe = (nom, etat) => 'code:liste:' + sha256(`${nom}|${etat}`).slice(0, 12);
 function texteGeste(action, lieux, details = {}) {
+  // (30/10, 16:20, Ahmed : « un bouton pour relancer le cockpit quand je veux ») sa relance à lui, au calme des agents
+  const moi = /^code:relancer-moi:(cockpit|demon)$/.exec(String(action || ''));
+  if (moi) return `Relancer ${moi[1] === 'demon' ? 'le démon (sa mémoire)' : 'le cockpit'} maintenant (toi, papa) : dès qu'aucun agent ni tâche ne travaille`;
   const m = /^code:(appliquer|annuler|refuser|interrupteur|liste|relancer|refuser-relance):([0-9a-f-]{1,40})$/.exec(String(action || ''));
   if (!m) return null;
   if (m[1] === 'relancer' || m[1] === 'refuser-relance') {
@@ -213,6 +216,13 @@ function relance(id, lieux) {
   return lireJson(path.join(lieux.relances, `${id}.json`));
 }
 const actionRelance = (id, accepter) => `code:${accepter ? 'relancer' : 'refuser-relance'}:${sha256(String(id)).slice(0, 12)}`;
+// (30/10, 16:20) la relance d'Ahmed, sans proposition de Hakim : une relance à son nom, acceptée tout de suite par lui
+function demanderRelanceAhmed(quoi, lieux) {
+  if (!LABELS[quoi]) throw new Error('on ne relance que le cockpit ou le démon');
+  const id = `ahmed-${Date.now()}`;
+  ecrireRelance(lieux, { id, quoi, raison: 'demandée par Ahmed (son bouton)', par: 'ahmed', etat: 'proposée', ts: Date.now() / 1000 });
+  return id;
+}
 function refuserRelance(id, lieux) {
   const r = relance(id, lieux);
   if (!r || r.etat !== 'proposée') throw new Error('aucune relance en attente avec cet identifiant');
@@ -247,4 +257,4 @@ async function accepterRelance(id, lieux, { estCalme, attendre, pas_ms = 2000, c
 }
 
 module.exports = { etat, peutAppliquer, appliquer, annuler, refuser, basculerInterrupteur, basculerListe, actionGeste, actionListe, texteGeste, fiche,
-  calme, relances, relance, accepterRelance, refuserRelance, actionRelance, LABELS };
+  calme, relances, relance, accepterRelance, refuserRelance, actionRelance, demanderRelanceAhmed, LABELS };

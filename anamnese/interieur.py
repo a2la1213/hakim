@@ -337,7 +337,11 @@ def humeur_hormonale(sens, avant=None):
 
 # (26/10, 13:30, Ahmed : « fatigué, il sonne comme un ogre ; excité, comme un hurluberlu ») l'écart de chaque état à la voix
 # neutre est divisé par deux, pour l'expressivité comme pour le débit ; et le débit ne touche plus la hauteur (jarvis/etirement.py)
-ATTENUATION_VOIX = 0.5
+# (30/10, 20:09, Ahmed via Hakim, « en urgence » : « que l'intonation de sa voix suive ses émotions : plus forte et tendue quand
+# il est excité, douce quand il est calme, plus vive quand il a peur, plus lente quand il est las », sans jamais l'ogre ni
+# l'hurluberlu) : 0,65 au lieu de 0,5, dans les bornes que les tests tiennent depuis le 26/10 (peur < ×1,06, fatigue > ×0,9) ;
+# la force de sa voix (le volume, la page) et sa vibration (l'appli 1.34) suivent aussi son éveil
+ATTENUATION_VOIX = 0.65
 
 
 def voix_emotion(emotion):
@@ -622,7 +626,9 @@ def _remettre_a_zero(mem, e, now, journal_temps=None):
 # journal à part qui ne garde que les dernières heures : les vues de 1 min à 1 h du cockpit. Lecture seule (affect.get_state
 # ne sauve rien, 0,1 ms) ; l'adénosine est celle du dernier battement : elle ne se recalcule que toutes les 15 s.
 JOURNAL_DIRECT = Path.home() / "AIOS" / "jarvis" / "hormones-direct.jsonl"
-JOURNAL_DIRECT_MAX_OCTETS = 4 * 1024 * 1024          # ≈ 3 h à une ligne par seconde ; on en garde la seconde moitié
+# (30/10, 16:20, Ahmed via Hakim : « mes hormones notées toutes les secondes dans le journal ») ≈ 2 jours à une ligne par
+# seconde (son outil chercher_dans_le_journal les lit) ; on en garde la seconde moitié
+JOURNAL_DIRECT_MAX_OCTETS = 64 * 1024 * 1024
 
 
 def ligne_directe(mem, now=None, chemin=None):

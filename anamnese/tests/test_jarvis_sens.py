@@ -64,3 +64,24 @@ def test_ses_instruments_a_lui(tmp_path, monkeypatch):
         except sens.Refus:
             pass
     assert "veilleur" in sens.lister() and "Tes instruments à toi" in sens.lister()
+
+
+def test_corps_detail_ses_nombres_quand_il_veut(tmp_path, monkeypatch):
+    """(30/10, Ahmed : « un flux constant qu'il ressent, et qu'il peut consulter en détail s'il le veut ») son corps en
+    nombres : le dernier état, le résumé des dernières minutes, ses nerfs, ses sensations."""
+    import time
+    monkeypatch.setattr(sens, "JARVIS", tmp_path)
+    assert "rien dit encore" in sens.corps_detail()
+    t = time.time() * 1000
+    (tmp_path / "corps-etat.json").write_text(json.dumps({"ts": t, "etat": {"lux": 410.5, "batterie": 64}, "mots": "Autour de toi, une lumière douce.", "changements": []}))
+    with open(tmp_path / "corps-flux.jsonl", "w") as h:
+        for i, lux in enumerate([100, 200, 300]):
+            h.write(json.dumps({"ts": t - (3 - i) * 15000, "etat": {"lux": lux, "batterie": 64}}) + "\n")
+        h.write(json.dumps({"ts": t - 3600e3, "etat": {"lux": 9999}}) + "\n")              # hors fenêtre : ignoré
+    (tmp_path / "corps-evenements.jsonl").write_text(json.dumps({"ts": t, "type": "chute", "details": {"hauteur_m": 0.9}}) + "\n")
+    (tmp_path / "corps-sensations.jsonl").write_text(json.dumps({"ts": t / 1000, "type": "chute", "sensation": "Tu tombes.", "fort": True}) + "\n")
+    r = sens.corps_detail(10)
+    assert "410.5" in r and "Autour de toi, une lumière douce." in r
+    assert "lux : min 100, moyenne 200, max 300 (3 fenêtres)" in r and "9999" not in r
+    assert "chute" in r and "hauteur_m=0.9" in r and "Tu tombes." in r
+    assert "DONNÉES" in r.upper() or "⟦" in r, "enveloppé comme une mesure"

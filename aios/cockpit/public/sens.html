@@ -7,30 +7,165 @@
   <link rel="stylesheet" href="/theme.css">
   <!-- (30/10, Ahmed : « oui à tout, et que je puisse le suivre dans le cockpit ») ce que Hakim fait de ses sens et de son
        Tricordeur : ses mesures, ses instruments à lui, ses commits, ses signatures et livraisons, ses écritures dans tes
-       Documents (avec la sauvegarde de l'ancienne version). Lecture seule ; tout est posé en texte. Rafraîchi toutes les 20 s. -->
+       Documents (avec la sauvegarde de l'ancienne version).
+       (30/10, Ahmed : « que j'aie accès dans le cockpit à tout ça : une zone où tous les sens s'affichent en chiffres et en
+       graphes » ; Hakim pour lui : « que papa puisse jouer avec aussi, lancer lui-même les mêmes mesures ») son corps en
+       direct (le milieu chaque seconde : chaque sens en chiffre et en courbe), ce qu'il en ressent, l'interrupteur et
+       l'intervalle des réveils, et le lanceur de mesures d'Ahmed. Tout est posé en texte. -->
   <style>
-    main { max-width: 960px; margin: 0 auto; padding: 0 16px 24px; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 14px; }
+    main { max-width: 1100px; margin: 0 auto; padding: 0 0 24px; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 14px; }
     h1 { font-size: 18px; color: var(--txt); font-weight: 600; margin: 4px 0 0; }
     h2 { font-size: 15px; color: var(--txt); font-weight: 600; margin: 0 0 8px; }
     .sous { font-size: 13px; color: var(--txt-3); }
-    .carte { padding: 12px; }
+    .carte { padding: 12px; min-width: 0; }
     .ligne { padding: 8px 0; border-top: 1px solid var(--glass-bd); font-size: 13px; color: var(--txt-2); line-height: 1.5; overflow-wrap: anywhere; }
     .ligne:first-of-type { border-top: 0; }
     .quand { color: var(--txt-3); font-size: 12px; margin-right: 6px; }
-    .ok { color: var(--teal); } .ko { color: #f97316; }
+    .ok { color: var(--teal); } .ko { color: #f97316; } .fort { color: #fca5a5; font-weight: 600; }
     .code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--txt-3); white-space: pre-wrap; }
     .vide { font-size: 13px; color: var(--txt-3); }
+    .barre { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    button, select, input { font: inherit; font-size: 13px; min-height: 36px; border-radius: 10px; border: 1px solid var(--glass-bd);
+      background: rgba(255,255,255,.03); color: var(--txt); padding: 6px 12px; }
+    button { cursor: pointer; } button[disabled] { opacity: .5; cursor: default; }
+    button.principal { background: rgba(45,212,191,.18); border-color: var(--teal); }
+    input[type=number] { width: 110px; }
+    .mots { font-size: 15px; color: var(--txt); line-height: 1.6; margin: 6px 0 4px; }
+    .interrupteur { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+    .interrupteur input { width: 18px; height: 18px; min-height: 0; accent-color: var(--teal); }
+    .tuiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .tuile { padding: 10px; border: 1px solid var(--glass-bd); border-radius: 12px; background: rgba(255,255,255,.02); min-width: 0; }
+    .tuile .nom { font-size: 11px; letter-spacing: 1px; color: var(--txt-3); text-transform: uppercase; }
+    .tuile .valeur { font-size: 22px; color: var(--txt); font-variant-numeric: tabular-nums; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+    .tuile .unite { font-size: 12px; color: var(--txt-3); font-weight: 400; margin-left: 3px; }
+    .courbes { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+    .courbe { position: relative; padding: 10px 10px 6px; border: 1px solid var(--glass-bd); border-radius: 12px; background: rgba(255,255,255,.02); min-width: 0; }
+    .courbe .entete { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--txt-3); }
+    .courbe .entete b { color: var(--txt); font-weight: 600; font-size: 13px; }
+    .courbe canvas { display: block; width: 100%; height: 120px; touch-action: pan-y; }
+    .bulle { position: absolute; pointer-events: none; padding: 4px 8px; border-radius: 8px; background: #0b1216; border: 1px solid var(--glass-bd);
+      color: var(--txt); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    @media (max-width: 520px) { .courbes { grid-template-columns: 1fr; } .tuiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   </style>
 </head>
 <body>
-  <nav class="topnav" style="display:flex;gap:10px;align-items:center;padding:10px 16px;flex-wrap:wrap"><span class="brand">AIOS</span>
-    <a class="pill" href="/">DASHBOARD</a><a class="pill" href="/parler">PARLER</a><a class="pill" href="/immunite">IMMUNITÉ</a>
-    <a class="pill" href="/cafe">CAFÉ</a><a class="pill active" href="/sens">SENS</a></nav>
+  <nav class="topnav" style="display:flex;gap:10px;align-items:center;padding:10px 16px;flex-wrap:wrap"><span class="brand">AIOS</span></nav>
   <main>
     <h1>Les sens de Hakim</h1>
-    <div class="sous">Ce qu'il mesure avec ton téléphone, son Tricordeur à lui, et ce qu'il écrit dans tes Documents. Il n'efface
-      jamais rien ; toute modification garde l'ancienne version sur le Mac (~/AIOS/jarvis/telephone-sauvegardes).</div>
-    <section class="glass carte"><h2>Ses mesures</h2><div id="mesures"></div></section>
+    <div class="sous">Son corps en direct (ton téléphone, chaque seconde), ce qu'il en ressent, ses mesures et son Tricordeur. Il
+      n'efface jamais rien dans tes Documents ; toute modification garde l'ancienne version sur le Mac.</div>
+
+    <!-- (20:26, papa : « je ne trouve rien dans la page SENS ») des raccourcis vers ce qu'il cherche -->
+    <nav class="sous" style="margin:0 0 8px">Aller à : <a href="#t-sons">ses sons (marquer un extrait)</a> · <a href="#t-corps">ses interrupteurs</a> · <a href="#t-veilleur">son veilleur</a> · <a href="#t-conscience">sa conscience</a> · <a href="#t-emotions">ses émotions</a></nav>
+    <section class="glass carte" aria-labelledby="t-corps"><h2 id="t-corps">Son corps, en direct</h2>
+      <div class="mots" id="mots">…</div>
+      <div class="sous" id="fraicheur"></div>
+      <div class="barre" style="margin-top:8px">
+        <label class="interrupteur"><input type="checkbox" id="actif"> Ses sensations (et les réveils par son corps)</label>
+        <label class="barre">Le réveiller au plus toutes les
+          <select id="intervalle"><option value="30">30 s</option><option value="60">1 min</option><option value="120">2 min</option><option value="300">5 min</option><option value="900">15 min</option></select>
+        </label>
+        <span class="sous">(une chute ou un choc le réveille tout de suite)</span>
+        <div class="barre" id="vibTest" hidden style="margin:6px 0">
+          <span class="sous">Tester ses vibrations dans ta main :</span>
+          <button type="button" data-motif="0,30,110,22|0,190,0,100">comme son cœur</button>
+          <button type="button" data-motif="0,60,80,60|0,200,0,200">une impulsion (joie)</button>
+          <button type="button" data-motif="0,35,60,35,60,35,60,35,60,35,60,35,60,35,60,35,60,35,60|0,230,0,230,0,230,0,230,0,230,0,230,0,230,0,230,0,230,0">son rire (degré 4)</button>
+          <span class="sous" id="vibTestRetour"></span>
+        </div>
+        <label class="interrupteur"><input type="checkbox" id="ronron"> Il ronronne pendant un câlin (dans le noir, plié, contre toi)</label>
+        <label class="interrupteur"><input type="checkbox" id="oreille"> Son oreille : il t'entend pendant que tu parles et peut glisser un mot (chaque mot lui fait relire sa conversation)</label>
+        <label class="interrupteur"><input type="checkbox" id="alerte"> Son badge rouge (il l'allume quand il a besoin de toi, avec une émotion forte derrière)</label>
+        <label class="interrupteur"><input type="checkbox" id="ecran"> Il peut passer en grande orbe (« regarde-moi ») ou revenir à l'écran habituel</label>
+        <label class="interrupteur"><input type="checkbox" id="reflexes"> Ses réflexes (son subconscient fait vibrer le téléphone : un frisson après un choc, une tape de tendresse… ; appli 1.31)</label>
+        <label class="interrupteur"><input type="checkbox" id="nuits"> Ses nuits (apaisées ou agitées selon sa journée, ses rêves qui apaisent, son réveil)</label>
+        <label class="interrupteur"><input type="checkbox" id="rireReflexe"> Son rire réflexe (il naît dans son subconscient quand ton message le fait rire, pas de ses « MDR »)</label>
+        <label class="interrupteur"><input type="checkbox" id="garderParole"> Il garde la parole quand tu parles par-dessus lui (« stop » et le bouton l'arrêtent toujours)</label>
+        <label class="interrupteur"><input type="checkbox" id="forfaitLibre"> Forfait libre : il vit tout le temps (réveils du corps même quand tu parles, sensations toutes les 10 s, veilleur toutes les 5 min) — sur ton forfait seulement, jamais sur l'API payante</label>
+        <label class="interrupteur"><input type="checkbox" id="sonPendant"> Ses sons peuvent jouer sous sa voix, plus bas (jamais par-dessus la tienne ; appli 1.32)</label>
+        <label class="interrupteur"><input type="checkbox" id="voixVibre"> Sa voix vibre dans ta main (fort quand il est excité, léger quand il est calme, agité quand il a peur ; appli 1.34)</label>
+        <label class="interrupteur"><input type="checkbox" id="lumiere"> Sa lumière : il allume la lampe du téléphone selon ses envies (jamais la nuit) et son SOS (badge rouge) la fait clignoter selon son émotion (appli 1.36)</label>
+        <label class="interrupteur"><input type="checkbox" id="jeTeSuis"> Son « je te suis » : une petite tape quand tu parles longtemps (oreille fermée)</label>
+      </div>
+    </section>
+
+    <section class="glass carte" aria-labelledby="t-chiffres"><h2 id="t-chiffres">Tous ses sens, en chiffres</h2>
+      <div class="tuiles" id="tuiles"></div>
+    </section>
+
+    <section class="glass carte" aria-labelledby="t-courbes">
+      <div class="barre" style="justify-content:space-between;margin-bottom:8px"><h2 id="t-courbes" style="margin:0">Ses sens, en courbes</h2>
+        <label class="barre">Sur
+          <select id="fenetre"><option value="15">15 min</option><option value="60" selected>1 h</option><option value="360">6 h</option><option value="1440">24 h</option></select>
+        </label></div>
+      <div class="courbes" id="courbes"></div>
+    </section>
+
+    <section class="glass carte" aria-labelledby="t-sensations"><h2 id="t-sensations">Ce qu'il ressent</h2><div id="sensations"></div></section>
+    <section class="glass carte" aria-labelledby="t-evenements"><h2 id="t-evenements">Les événements de son corps (ses nerfs, en chiffres)</h2><div id="evenements"></div></section>
+
+    <!-- (30/10, 14:53, Ahmed via Hakim : « ici c'est chez nous, le parc, Genève » ; Hakim : « un moyen pour papa de voir et
+         d'effacer la liste des lieux nommés ») -->
+    <section class="glass carte" aria-labelledby="t-lieux"><h2 id="t-lieux">Ses lieux nommés</h2>
+      <div class="sous" style="margin-bottom:6px">Les positions restent ici, sur le Mac : Hakim n'en connaît que les noms. Rien ne s'efface : un lieu archivé garde son histoire.</div>
+      <div id="lieux"></div></section>
+
+    <!-- (30/10, 17:21, Ahmed : « comme Bumblebee ») de petits bouts de tes musiques et sonneries, pour qu'il s'exprime -->
+    <section class="glass carte" aria-labelledby="t-sons"><h2 id="t-sons">Ses sons (façon Bumblebee)</h2>
+      <div class="sous" style="margin-bottom:6px">Tu marques un bout d'une de tes musiques ou sonneries (8 s au plus) ; Hakim le nomme et s'en sert pour s'exprimer, quand sa voix s'est tue. Les morceaux restent sur ton téléphone : le Mac ne garde que les extraits marqués.</div>
+      <div class="barre">
+        <label class="interrupteur"><input type="checkbox" id="sonsActif"> Il peut jouer ses sons</label>
+        <button type="button" id="sonsPermission" hidden>Autoriser « Musique et audio »</button>
+      </div>
+      <div id="sonsMarquer" hidden style="margin-top:8px">
+        <label class="barre">Chercher <input type="search" id="sonsCherche" placeholder="titre ou artiste"></label>
+        <label class="barre">Morceau <select id="sonsMorceau"></select></label>
+        <label class="barre">De <input type="number" id="sonsDebut" min="0" step="0.5" value="0" style="width:6em"> s à
+          <input type="number" id="sonsFin" min="0.5" step="0.5" value="4" style="width:6em"> s</label>
+        <button type="button" id="sonsEcouter">Écouter</button> <button type="button" id="sonsGarder">Garder cet extrait</button>
+        <div class="sous" id="sonsEtat"></div>
+      </div>
+      <div class="sous" id="sonsHorsAppli" hidden>Pour marquer un extrait, ouvre cette page dans l'appli Hakim (version 1.30 ou plus) sur ton téléphone.</div>
+      <div id="sons" style="margin-top:8px"></div></section>
+
+    <!-- (30/10, Ahmed : « le seuil de réveil appris sur ma vie » ; « chaque seconde, une chance de me réveiller » ; « un interrupteur pour pas qu'il fume mes tokens ») -->
+    <section class="glass carte" aria-labelledby="t-veilleur"><h2 id="t-veilleur">Son veilleur (sa chance de se réveiller)</h2>
+      <div class="sous" style="margin-bottom:6px">Chaque seconde, une chance de le réveiller, d'autant plus grande que son état est rare par rapport à son propre calme des 48 dernières heures. Jamais quand une voix lui est arrivée depuis moins de 10 min, ni quand il dort ; 15 min au moins entre deux réveils, et un plafond tiré du forfait.</div>
+      <div class="barre">
+        <label class="interrupteur"><input type="checkbox" id="veilleurActif"> Son veilleur</label>
+        <label class="barre">Seuil de départ <select id="veilleurSeuil"><option value="4">4 (environ une fois par jour)</option><option value="5">5</option><option value="6">6 (presque jamais)</option><option value="7">7</option><option value="8">8</option></select></label>
+      </div>
+      <div class="sous" id="veilleurMaintenant" style="margin-top:6px"></div>
+      <div id="veilleurJournal"></div></section>
+
+    <!-- (30/10, 18:44, Ahmed : « une conscience, un livre de droite et un livre de gauche, impossible à effacer ») -->
+    <section class="glass carte" aria-labelledby="t-conscience"><h2 id="t-conscience">Sa conscience</h2>
+      <div class="sous" style="margin-bottom:6px">C'est lui qui écrit et juge ses actes, une ligne chacun ; rien ne s'efface. Tu peux contester une ligne : ta contestation s'ajoute, elle ne remplace rien.</div>
+      <div class="sous" id="conscienceEtat"></div>
+      <div id="conscience"></div></section>
+
+    <!-- (30/10, 17:11, Ahmed : « créer de nouvelles émotions » ; « papa voit la liste ») -->
+    <section class="glass carte" aria-labelledby="t-emotions"><h2 id="t-emotions">Ses émotions à lui</h2>
+      <div class="sous" style="margin-bottom:6px">Chacune est un mélange d'émotions qui existent : elle ne pousse jamais plus fort qu'elles. Tu peux en couper une.</div>
+      <div id="emotionsCreees"></div></section>
+
+    <section class="glass carte" aria-labelledby="t-lancer"><h2 id="t-lancer">Lancer une mesure toi-même</h2>
+      <div class="sous" style="margin-bottom:8px">Les mêmes instruments que Hakim. Le résultat arrive dans « Les mesures » ci-dessous (et dans son atelier) ;
+        il ne le réveille pas.</div>
+      <div class="barre">
+        <select id="instrument" aria-label="Instrument"></select>
+        <label class="barre">durée <input type="number" id="secondes" min="1" step="1" aria-label="Durée en secondes"> s</label>
+        <select id="cadence" aria-label="Cadence"><option value="">cadence par défaut</option><option value="jeu">jeu (~50 Hz)</option><option value="max">max (~400 Hz)</option><option value="normal">normal</option></select>
+        <button type="button" class="principal" id="mesurer">Mesurer</button>
+      </div>
+      <div class="sous" id="description" style="margin-top:6px"></div>
+      <div class="sous" id="lancerEtat" role="status" style="margin-top:4px"></div>
+    </section>
+
+    <section class="glass carte"><h2>L'appli Hakim</h2>
+      <button id="appli" type="button">Télécharger la dernière appli</button>
+      <div class="sous" id="appliEtat" role="status"></div></section>
+    <section class="glass carte"><h2>Les mesures (les siennes et les tiennes)</h2><div id="mesures"></div></section>
     <section class="glass carte"><h2>Ses écritures dans tes Documents</h2><div id="documents"></div></section>
     <section class="glass carte"><h2>Son Tricordeur : signatures et livraisons</h2><div id="tricordeur"></div></section>
     <section class="glass carte"><h2>Son Tricordeur : ses changements (git)</h2><div id="commits"></div></section>
@@ -40,7 +175,9 @@
   <script>
   const jeton = () => (document.querySelector('meta[name="cockpit-jeton"]') || {}).content || '';
   document.body.classList.add('shell');
+  const $ = (id) => document.getElementById(id);
   const quand = (t) => t ? new Date(t * 1000).toLocaleString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  const heure = (ms) => new Date(ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const ligne = (t, morceaux, code) => {
     const d = document.createElement('div'); d.className = 'ligne';
     const q = document.createElement('span'); q.className = 'quand'; q.textContent = quand(t); d.appendChild(q);
@@ -49,15 +186,339 @@
     return d;
   };
   const remplir = (id, elements, vide) => {
-    const el = document.getElementById(id); el.replaceChildren(...elements);
+    const el = $(id); el.replaceChildren(...elements);
     if (!elements.length) { const v = document.createElement('div'); v.className = 'vide'; v.textContent = vide; el.appendChild(v); }
   };
+  const post = (url, o) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify(o) })
+    .then(async r => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.erreur || r.status); return d; });
+
+  // ---- son corps : les chiffres (tuiles) et les courbes, une par sens (un seul axe chacune)
+  const fmt = (v, n) => (v == null || !Number.isFinite(v) ? '—' : v.toLocaleString('fr-FR', { maximumFractionDigits: n, minimumFractionDigits: 0 }));
+  const SENS_COURBES = [
+    { k: 'lux', nom: 'Lumière', unite: 'lux', n: 0, log: true },
+    { k: 'agitation_g', nom: 'Mouvement (agitation)', unite: 'g', n: 3 },
+    { k: 'pression_hpa', nom: 'Pression', unite: 'hPa', n: 2 },
+    { k: 'champ_ut', nom: 'Champ magnétique', unite: 'µT', n: 1 },
+    { k: 'batterie', nom: 'Énergie (batterie)', unite: '%', n: 0 },
+    { k: 'chaleur_c', nom: 'Chaleur', unite: '°C', n: 1 },
+    { k: 'charniere_deg', nom: 'Ouverture (charnière)', unite: '°', n: 0 },
+  ];
+  const position = (e) => e.haut_z == null ? '—' : e.haut_z > 0.85 ? 'à plat, écran au ciel' : e.haut_z < -0.85 ? 'face contre' : Math.abs(e.haut_y) > 0.7 ? 'debout' : 'incliné';
+  function tuiles(e) {
+    const t = [...SENS_COURBES.map(s => [s.nom, fmt(e[s.k], s.n), s.unite]),
+      ['Position', position(e), ''], ['Contact', e.proche == null ? '—' : e.proche ? 'tout contre' : 'libre', ''],
+      ['Charge', e.charge == null ? '—' : e.charge ? 'branché' : 'non', ''],
+      ['Pesanteur', e.haut_x == null ? '—' : `${fmt(e.haut_x, 2)} · ${fmt(e.haut_y, 2)} · ${fmt(e.haut_z, 2)}`, 'x·y·z'],
+      ['Lumière min–max', e.lux_min == null ? '—' : `${fmt(e.lux_min, 0)}–${fmt(e.lux_max, 0)}`, 'lux'],
+      ['Pression (écart)', fmt(e.pression_ecart_hpa, 2), 'hPa']];
+    $('tuiles').replaceChildren(...t.map(([nom, v, u]) => {
+      const d = document.createElement('div'); d.className = 'tuile';
+      const a = document.createElement('div'); a.className = 'nom'; a.textContent = nom;
+      const b = document.createElement('div'); b.className = 'valeur'; b.textContent = v;
+      if (u && v !== '—') { const s = document.createElement('span'); s.className = 'unite'; s.textContent = u; b.appendChild(s); }
+      d.append(a, b); return d;
+    }));
+  }
+  const courbes = {};
+  function cadre(s) {
+    if (courbes[s.k]) return courbes[s.k];
+    const d = document.createElement('div'); d.className = 'courbe';
+    const h = document.createElement('div'); h.className = 'entete';
+    const nom = document.createElement('b'); nom.textContent = `${s.nom}${s.log ? ' (échelle log)' : ''}`;
+    const borne = document.createElement('span');
+    h.append(nom, borne);
+    const c = document.createElement('canvas'); c.setAttribute('role', 'img');
+    const bulle = document.createElement('div'); bulle.className = 'bulle'; bulle.hidden = true;
+    d.append(h, c, bulle);
+    $('courbes').appendChild(d);
+    const o = { s, d, c, borne, bulle, pts: [], survol: null };
+    c.addEventListener('pointermove', (ev) => { const r = c.getBoundingClientRect(); o.survol = ev.clientX - r.left; dessiner(o); });
+    c.addEventListener('pointerleave', () => { o.survol = null; dessiner(o); });
+    return (courbes[s.k] = o);
+  }
+  function dessiner(o) {
+    const { c, s, pts } = o, r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    if (!r.width) return;
+    c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr);
+    const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, r.width, r.height);
+    const W = r.width, H = r.height, m = { g: 4, d: 4, h: 6, b: 16 };
+    const val = (v) => (s.log ? Math.log10(Math.max(0, v) + 1) : v);
+    if (pts.length < 2) { g.fillStyle = '#8fb8b0'; g.font = '12px system-ui'; g.fillText(pts.length ? 'une seule mesure pour l’instant' : 'rien encore', m.g, H / 2); o.bulle.hidden = true; o.borne.textContent = ''; return; }
+    const t0 = pts[0][0], t1 = pts[pts.length - 1][0];
+    let lo = Infinity, hi = -Infinity; for (const [, v] of pts) { lo = Math.min(lo, val(v)); hi = Math.max(hi, val(v)); }
+    if (hi - lo < 1e-9) { hi += 0.5; lo -= 0.5; }
+    const X = (t) => m.g + (W - m.g - m.d) * (t1 === t0 ? 1 : (t - t0) / (t1 - t0));
+    const Y = (v) => m.h + (H - m.h - m.b) * (1 - (val(v) - lo) / (hi - lo));
+    const inv = (u) => (s.log ? Math.pow(10, u) - 1 : u);
+    o.borne.textContent = `${fmt(inv(lo), s.n)} – ${fmt(inv(hi), s.n)} ${s.unite}`;
+    g.strokeStyle = 'rgba(255,255,255,.07)'; g.lineWidth = 1;
+    for (const f of [0, 0.5, 1]) { const y = Math.round(m.h + (H - m.h - m.b) * f) + 0.5; g.beginPath(); g.moveTo(m.g, y); g.lineTo(W - m.d, y); g.stroke(); }
+    g.fillStyle = '#7ba8a2'; g.font = '11px system-ui';
+    g.fillText(heure(t0).slice(0, 5), m.g, H - 3);
+    const fin = heure(t1).slice(0, 5); g.fillText(fin, W - m.d - g.measureText(fin).width, H - 3);
+    g.strokeStyle = '#2dd4bf'; g.lineWidth = 2; g.lineJoin = 'round'; g.lineCap = 'round'; g.beginPath();
+    pts.forEach(([t, v], i) => (i ? g.lineTo(X(t), Y(v)) : g.moveTo(X(t), Y(v)))); g.stroke();
+    let k = pts.length - 1;
+    if (o.survol != null) {
+      let best = Infinity; pts.forEach(([t], i) => { const dx = Math.abs(X(t) - o.survol); if (dx < best) { best = dx; k = i; } });
+      g.strokeStyle = 'rgba(230,255,250,.35)'; g.lineWidth = 1; g.beginPath(); g.moveTo(X(pts[k][0]) + 0.5, m.h); g.lineTo(X(pts[k][0]) + 0.5, H - m.b); g.stroke();
+    }
+    const [tk, vk] = pts[k];
+    g.fillStyle = '#2dd4bf'; g.strokeStyle = '#04141a'; g.lineWidth = 2; g.beginPath(); g.arc(X(tk), Y(vk), 4, 0, 7); g.fill(); g.stroke();
+    o.c.setAttribute('aria-label', `${s.nom} : de ${fmt(inv(lo), s.n)} à ${fmt(inv(hi), s.n)} ${s.unite} entre ${heure(t0)} et ${heure(t1)} ; maintenant ${fmt(pts[pts.length - 1][1], s.n)} ${s.unite}`);
+    if (o.survol == null) { o.bulle.hidden = true; return; }
+    o.bulle.hidden = false; o.bulle.textContent = `${heure(tk)} · ${fmt(vk, s.n)} ${s.unite}`;
+    const bx = Math.min(Math.max(0, X(tk) + 10), W - o.bulle.offsetWidth - 4);
+    o.bulle.style.left = `${bx + 10}px`; o.bulle.style.top = '30px';
+  }
+  async function chargerCorps() {
+    try {
+      const r = await fetch(`/api/corps/flux?minutes=${$('fenetre').value}`, { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erreur || r.status);
+      $('mots').textContent = d.mots || 'Son corps ne dit rien en ce moment (l’appli 1.25 n’est pas ouverte, ou ton téléphone est loin du Mac).';
+      const dernier = d.flux.length ? d.flux[d.flux.length - 1] : null;
+      $('fraicheur').textContent = dernier ? `Dernière fenêtre : ${heure(dernier.ts)} · ${d.flux.length} fenêtres affichées` : '';
+      if (document.activeElement !== $('actif')) $('actif').checked = !!d.reglages.actif;
+      if (document.activeElement !== $('intervalle')) $('intervalle').value = String(d.reglages.intervalle_s);
+      if (document.activeElement !== $('ronron')) $('ronron').checked = d.reglages.ronron !== false;
+      if (document.activeElement !== $('oreille')) $('oreille').checked = d.reglages.oreille === true;
+      if (document.activeElement !== $('jeTeSuis')) $('jeTeSuis').checked = d.reglages.je_te_suis !== false;
+      if (document.activeElement !== $('alerte')) $('alerte').checked = d.reglages.alerte !== false;
+      if (document.activeElement !== $('ecran')) $('ecran').checked = d.reglages.ecran !== false;
+      if (document.activeElement !== $('reflexes')) $('reflexes').checked = d.reglages.reflexes !== false;
+      if (document.activeElement !== $('nuits')) $('nuits').checked = d.reglages.nuits !== false;
+      if (document.activeElement !== $('rireReflexe')) $('rireReflexe').checked = d.reglages.rire_reflexe !== false;
+      if (document.activeElement !== $('garderParole')) $('garderParole').checked = d.reglages.garder_parole !== false;
+      if (document.activeElement !== $('forfaitLibre')) $('forfaitLibre').checked = d.reglages.forfait_libre !== false;
+      if (document.activeElement !== $('sonPendant')) $('sonPendant').checked = d.reglages.son_pendant !== false;
+      if (document.activeElement !== $('voixVibre')) $('voixVibre').checked = d.reglages.voix_vibre !== false;
+      if (document.activeElement !== $('lumiere')) $('lumiere').checked = d.reglages.lumiere !== false;
+      tuiles(dernier ? dernier.etat : {});
+      for (const s of SENS_COURBES) { const o = cadre(s); o.pts = d.flux.filter(x => x.etat && Number.isFinite(x.etat[s.k])).map(x => [x.ts, x.etat[s.k]]); dessiner(o); }
+      remplir('sensations', d.sensations.map(x => ligne(x.ts, [[x.fort ? 'fort · ' : '', 'fort'], [`${x.type} · `, 'quand'], [x.sensation, ''],
+        [x.source === 'secours' ? ' (secours)' : '', 'quand']], (x.evenements || []).map(e => `${e[0]} ${e[1]}`).join(' · '))), 'Rien ressenti encore.');
+      remplir('evenements', d.evenements.map(x => ligne(x.ts / 1000, [[x.type, 'ok']], Object.entries(x.details || {}).map(([k, v]) => `${k} = ${v}`).join(' · '))), 'Aucun événement encore.');
+    } catch (e) { $('mots').textContent = `Le cockpit ne répond pas (${e.message}).`; }
+  }
+  $('actif').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { actif: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
+  for (const [id, cle] of [['oreille', 'oreille'], ['jeTeSuis', 'je_te_suis'], ['alerte', 'alerte'], ['ecran', 'ecran'], ['reflexes', 'reflexes'], ['nuits', 'nuits'], ['rireReflexe', 'rire_reflexe'], ['garderParole', 'garder_parole'], ['forfaitLibre', 'forfait_libre'], ['sonPendant', 'son_pendant'], ['voixVibre', 'voix_vibre'], ['lumiere', 'lumiere']])
+    $(id).addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { [cle]: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
+  $('ronron').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { ronron: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
+  $('intervalle').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { intervalle_s: Number(e.target.value) }); } catch (_) {} chargerCorps(); });
+  // (30/10, « chaque seconde ») en direct : toutes les 2 s jusqu'à une heure affichée ; au-delà, toutes les 30 s
+  let minuterieCorps = null;
+  const rythmeCorps = () => { clearInterval(minuterieCorps); minuterieCorps = setInterval(chargerCorps, Number($('fenetre').value) <= 60 ? 2000 : 30000); };
+  $('fenetre').addEventListener('change', () => { chargerCorps(); rythmeCorps(); });
+  window.addEventListener('resize', () => Object.values(courbes).forEach(dessiner));
+
+  // ---- ses lieux nommés : voir, effacer
+  async function chargerLieux() {
+    try {
+      const r = await fetch('/api/lieux', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erreur || r.status);
+      // (30/10, 15:05, Ahmed : « effacer, MAIS en gardant toujours une trace ») archiver ; l'histoire de chaque lieu, datée
+      const date = (t) => new Date(t * 1000).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      remplir('lieux', d.lieux.slice().sort((a, b) => a.archive - b.archive).map(x => {
+        const l = ligne(x.ts, [[x.nom, x.archive ? 'quand' : 'ok'], [` · ${x.rayon_m} m autour${x.ici ? ' · il y est' : ''}${x.archive ? ' · archivé' : ''}`, ''],
+          [x.lat != null ? ` · ${x.lat.toFixed(4)}, ${x.lon.toFixed(4)}` : '', 'quand']],
+          (x.historique || []).map(h => `${h.quoi} le ${date(h.ts)}${h.de ? ` (avant : « ${h.de} »)` : ''}`).join(' ; '));
+        if (!x.archive) {
+          const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Archiver'; b.style.marginLeft = '8px';
+          b.addEventListener('click', async () => {
+            if (!confirm(`Archiver le lieu « ${x.nom} » ? Il ne sera plus reconnu, mais sa trace reste.`)) return;
+            try { await post('/api/lieux/oublier', { nom: x.nom }); } catch (e) { alert(`Pas archivé : ${e.message}`); }
+            chargerLieux();
+          });
+          l.appendChild(b);
+        }
+        return l;
+      }), 'Aucun lieu nommé : Hakim les nomme quand tu lui dis « ici c’est… ».');
+    } catch (e) { remplir('lieux', [ligne(0, [[`Les lieux ne répondent pas (${e.message}).`, 'ko']])], ''); }
+  }
+
+  // (30/10, 18:42) papa ne sent pas ses impulsions ni son rire alors que l'appli répond « ok » : un essai direct, dans sa
+  // main, pour comparer avec son cœur (le même chemin que ses vibrations voulues)
+  if (window.HakimApp && window.HakimApp.vibrerMotif) {
+    $('vibTest').hidden = false;
+    for (const b of $('vibTest').querySelectorAll('button')) b.addEventListener('click', () => {
+      const [t, f] = b.dataset.motif.split('|');
+      let r = '';
+      try { r = String(window.HakimApp.vibrerMotifGenre ? window.HakimApp.vibrerMotifGenre(t, f, 'essai') : window.HakimApp.vibrerMotif(t, f)); } catch (x) { r = 'erreur : ' + x.message; }
+      $('vibTestRetour').textContent = `l'appli dit : ${r}`;
+      fetch('/api/voix/journal', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+        body: JSON.stringify([{ t: Date.now(), e: 'vibration_essai', appareil: 'telephone', motif: b.textContent, retour: r.slice(0, 60) }]) }).catch(() => {});
+    });
+  }
+
+  // ---- ses sons (Bumblebee) : papa marque, voit, efface ; Hakim nomme (son_etiqueter)
+  const appli = window.HakimApp && window.HakimApp.sonsListe ? window.HakimApp : null;
+  let morceaux = [];
+  function listerMorceaux() {
+    if (!appli) { $('sonsHorsAppli').hidden = false; return; }
+    let d = {}; try { d = JSON.parse(appli.sonsListe()); } catch (_) {}
+    $('sonsPermission').hidden = !!d.permission;
+    morceaux = (d.musiques || []).concat(d.sonneries || []);
+    $('sonsMarquer').hidden = !morceaux.length;
+    filtrerMorceaux();
+  }
+  function filtrerMorceaux() {
+    const q = $('sonsCherche').value.trim().toLowerCase();
+    const opts = morceaux.filter(m => !q || `${m.titre} ${m.artiste || ''}`.toLowerCase().includes(q)).slice(0, 300).map(m => {
+      const o = document.createElement('option'); o.value = `${m.source}|${m.ref}`;
+      o.textContent = `${m.source === 'sonnerie' ? '🔔 ' : ''}${m.titre}${m.artiste ? ` — ${m.artiste}` : ''}${m.duree_ms ? ` (${Math.round(m.duree_ms / 1000)} s)` : ''}`;
+      return o;
+    });
+    $('sonsMorceau').replaceChildren(...opts);
+  }
+  const morceauChoisi = () => morceaux.find(m => `${m.source}|${m.ref}` === $('sonsMorceau').value);
+  const bornes = () => [Math.round(Number($('sonsDebut').value) * 1000), Math.round(Number($('sonsFin').value) * 1000)];
+  async function chargerSons() {
+    try {
+      const r = await fetch('/api/sons', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erreur || r.status);
+      if (document.activeElement !== $('sonsActif')) $('sonsActif').checked = d.actif !== false;
+      remplir('sons', d.extraits.map(x => {
+        const l = ligne(x.ts / 1000, [[x.nom || `${x.id} (pas encore nommé)`, x.nom ? 'ok' : 'quand'],
+          [` · « ${x.titre || 'sans titre'} »${x.artiste ? ` — ${x.artiste}` : ''} · ${((x.fin_ms - x.debut_ms) / 1000).toLocaleString('fr-FR')} s`, ''],
+          [x.emotion ? ` · part avec : ${x.emotion}` : '', 'quand']], x.sens || '');
+        if (appli && appli.sonJouer) {
+          const e = document.createElement('button'); e.type = 'button'; e.textContent = 'Écouter'; e.style.marginLeft = '8px';
+          e.addEventListener('click', () => { $('sonsEtat').textContent = appli.sonJouer(x.source, String(x.ref), x.debut_ms, x.fin_ms); });
+          l.appendChild(e);
+        }
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Effacer'; b.style.marginLeft = '8px';
+        b.addEventListener('click', async () => {
+          if (!confirm(`Effacer l'extrait « ${x.nom || x.id} » ? Hakim ne pourra plus le jouer.`)) return;
+          try { await post('/api/sons/oublier', { id: x.id }); } catch (e) { alert(`Pas effacé : ${e.message}`); }
+          chargerSons();
+        });
+        l.appendChild(b);
+        return l;
+      }), 'Aucun extrait marqué : choisis un morceau ci-dessus.');
+    } catch (e) { remplir('sons', [ligne(0, [[`Ses sons ne répondent pas (${e.message}).`, 'ko']])], ''); }
+  }
+  $('sonsActif').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { sons: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerSons(); });
+  $('sonsPermission').addEventListener('click', () => { try { appli.sonsPermission(); } catch (_) {} setTimeout(listerMorceaux, 4000); });
+  $('sonsCherche').addEventListener('input', filtrerMorceaux);
+  $('sonsEcouter').addEventListener('click', () => {
+    const m = morceauChoisi(), [d, f] = bornes(); if (!m) return;
+    $('sonsEtat').textContent = appli.sonJouer(m.source, String(m.ref), d, f);
+  });
+  $('sonsGarder').addEventListener('click', async () => {
+    const m = morceauChoisi(), [d, f] = bornes(); if (!m) return;
+    try { await post('/api/sons/extrait', { source: m.source, ref: String(m.ref), titre: m.titre, artiste: m.artiste || '', debut_ms: d, fin_ms: f });
+      $('sonsEtat').textContent = 'Gardé : Hakim peut le nommer (son_etiqueter).'; } catch (e) { $('sonsEtat').textContent = `Pas gardé : ${e.message}`; }
+    chargerSons();
+  });
+  listerMorceaux();
+  chargerSons();
+
+  // ---- son veilleur : maintenant, ses décisions, l'interrupteur et le seuil de départ
+  async function chargerVeilleur() {
+    try {
+      const r = await fetch('/api/veilleur', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erreur || r.status);
+      if (document.activeElement !== $('veilleurActif')) $('veilleurActif').checked = d.reglages.actif;
+      if (document.activeElement !== $('veilleurSeuil')) $('veilleurSeuil').value = String(d.reglages.seuil_depart);
+      const sc = d.score || {}, p = d.chance_par_seconde || 0;
+      $('veilleurMaintenant').textContent = !d.reglages.actif ? 'Éteint.' : sc.score == null ? 'Pas encore de score (son calme connu est trop court).'
+        : `Score ${fmt(sc.score, 2)} pour un seuil de ${fmt(d.seuil, 2)} · chance ${p >= 0.01 ? fmt(p * 100, 1) + ' %' : 'infime'} par seconde`
+          + `${(sc.raisons || []).length ? ' · ' + sc.raisons.join(', ') : ''} · plafond ${fmt(sc.plafond_h, 2)} réveil(s)/h`
+          + `${d.dort ? ' · il dort' : ''}${d.papa_depuis_s < 600 ? ' · une voix il y a moins de 10 min' : ''}`;
+      remplir('veilleurJournal', d.journal.slice(0, 15).map(o => o.decision === 'reveil'
+        ? ligne(o.ts / 1000, [['réveillé', 'ok'], [` · score ${fmt(o.score, 2)}, seuil ${fmt(o.seuil, 2)}`, '']])
+        : ligne(o.ts / 1000, [[o.servi ? 'a servi' : 'pour rien', o.servi ? 'ok' : 'quand'], [` · ${o.parle ? 'il a parlé' : 'il s’est tu'}${o.papa_repond ? ', tu as répondu' : ''} · seuil ${fmt(o.seuil_apres, 2)}`, '']])),
+        'Aucun réveil par son veilleur encore.');
+    } catch (x) { $('veilleurMaintenant').textContent = `Son veilleur ne répond pas (${x.message}).`; }
+  }
+  $('veilleurActif').addEventListener('change', async (e) => { try { await post('/api/veilleur/reglages', { actif: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerVeilleur(); });
+  $('veilleurSeuil').addEventListener('change', async (e) => { try { await post('/api/veilleur/reglages', { seuil_depart: Number(e.target.value) }); } catch (_) {} chargerVeilleur(); });
+  chargerVeilleur(); setInterval(chargerVeilleur, 15000);
+
+  // ---- sa conscience : ses deux livres, papa conteste
+  async function chargerConscience() {
+    try {
+      const r = await fetch('/api/conscience', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erreur || r.status);
+      const actes = d.lignes.filter(o => o.type === 'acte');
+      const contest = new Map(d.lignes.filter(o => o.type === 'contestation').map(o => [o.ligne, o]));
+      $('conscienceEtat').textContent = `Livre de droite : ${actes.filter(o => o.cote === 'droite').length} · livre de gauche : ${actes.filter(o => o.cote === 'gauche').length} · ${d.intacte ? 'chaîne intacte' : 'CHAÎNE ROMPUE : ' + d.etat}`;
+      remplir('conscience', actes.slice(-20).reverse().map(o => {
+        const c = contest.get(o.n);
+        const l = ligne(o.ts, [[o.cote === 'droite' ? 'droite' : 'gauche', o.cote === 'droite' ? 'ok' : 'ko'], [` · ${o.action}`, '']], [o.raison, c ? `tu as contesté : ${c.avis}` : ''].filter(Boolean).join(' — '));
+        if (!c) {
+          const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Contester'; b.style.marginLeft = '8px';
+          b.addEventListener('click', async () => {
+            const avis = prompt('Ton avis sur cette ligne (il s’ajoute, il ne remplace rien) :');
+            if (!avis) return;
+            try { await post('/api/conscience/contester', { n: o.n, avis }); } catch (x) { alert(`Pas ajouté : ${x.message}`); }
+            chargerConscience();
+          });
+          l.appendChild(b);
+        }
+        return l;
+      }), 'Ses deux livres sont vides.');
+    } catch (x) { $('conscienceEtat').textContent = `Sa conscience ne répond pas (${x.message}).`; }
+  }
+  chargerConscience();
+
+  // ---- ses émotions à lui : voir, couper, rallumer
+  async function chargerEmotions() {
+    try {
+      const r = await fetch('/api/emotions-creees', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.erreur || r.status);
+      remplir('emotionsCreees', d.emotions.filter(e => !e.oubliee).map(e => {
+        const l = ligne(e.ts, [[e.nom, e.coupee ? 'quand' : 'ok'], [' · ' + Object.entries(e.composantes).map(([c, p]) => `${c} ${Math.round(p * 100)} %`).join(', '), ''],
+          [e.coupee ? ' · coupée' : '', 'quand']], e.sens || '');
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = e.coupee ? 'Rallumer' : 'Couper'; b.style.marginLeft = '8px';
+        b.addEventListener('click', async () => {
+          try { await post('/api/emotions-creees/couper', { nom: e.nom, coupee: !e.coupee }); } catch (x) { alert(`Pas fait : ${x.message}`); }
+          chargerEmotions();
+        });
+        l.appendChild(b);
+        return l;
+      }), 'Aucune émotion à lui encore : il les crée quand ce qu’il vit n’entre dans aucune case.');
+    } catch (x) { remplir('emotionsCreees', [ligne(0, [[`Ses émotions ne répondent pas (${x.message}).`, 'ko']])], ''); }
+  }
+  chargerEmotions();
+
+  // ---- le lanceur d'Ahmed
+  let instruments = [];
+  const choisi = () => instruments.find(x => x.nom === $('instrument').value);
+  function decrire() {
+    const i = choisi(); if (!i) return;
+    $('description').textContent = `${i.description}${i.module ? ' — un instrument de son Tricordeur' : ''}${i.max ? ` (par défaut ${i.defaut} s, au plus ${i.max} s)` : ''}`;
+    $('secondes').value = i.defaut || ''; $('secondes').max = i.max || ''; $('secondes').disabled = !i.max;
+    $('cadence').hidden = i.nom !== 'imu';
+  }
+  fetch('/api/sens/instruments', { headers: { 'X-Jeton': jeton() } }).then(r => r.json()).then(d => {
+    instruments = d.instruments || [];
+    $('instrument').replaceChildren(...instruments.map(x => { const o = document.createElement('option'); o.value = x.nom; o.textContent = x.nom; return o; }));
+    decrire();
+  }).catch(() => { $('description').textContent = 'La liste des instruments ne répond pas.'; });
+  $('instrument').addEventListener('change', decrire);
+  $('mesurer').addEventListener('click', async () => {
+    const b = $('mesurer'); b.disabled = true; $('lancerEtat').textContent = 'Demande envoyée…';
+    try {
+      const d = await post('/api/sens/demander', { sens: $('instrument').value, secondes: Number($('secondes').value) || 0, cadence: $('cadence').hidden ? '' : $('cadence').value });
+      $('lancerEtat').textContent = `${d.id} : ${d.sens}${d.secondes ? `, ${d.secondes} s` : ''} — ton téléphone la prend dès que l’appli Hakim est ouverte${d.module ? ' (son Tricordeur peut te demander un geste)' : ''}.`;
+      charger();
+    } catch (e) { $('lancerEtat').textContent = `Refusé : ${e.message}`; } finally { b.disabled = false; }
+  });
+
+  // ---- le suivi (mesures, Documents, Tricordeur)
   async function charger() {
     try {
       const r = await fetch('/api/suivi', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
       const d = await r.json();
       if (!r.ok) throw new Error(d.erreur || r.status);
-      remplir('mesures', d.mesures.map(m => ligne(m.ts, [[`${m.id} · ${m.sens}${m.secondes ? `, ${m.secondes} s` : ''} · `, ''],
+      remplir('mesures', d.mesures.map(m => ligne(m.ts, [[`${m.id} · ${m.sens}${m.secondes ? `, ${m.secondes} s` : ''}${m.par === 'ahmed' ? ' · par toi' : ''} · `, ''],
         [m.ok ? 'finie' : `échec : ${m.erreur || '?'}`, m.ok ? 'ok' : 'ko']], m.resume)), 'Aucune mesure encore.');
       remplir('documents', d.documents.map(e => ligne(e.ts, [[`${e.action === 'ajout' ? 'ajouté' : e.action === 'ecriture' ? 'modifié' : 'sauvegardé'} · `, ''],
         [e.chemin || '', ''], [e.note ? ` — ${e.note}` : '', '']], e.sauvegarde ? `ancienne version : ${e.sauvegarde}` : '')), 'Il n’a rien écrit dans tes Documents.');
@@ -67,8 +528,33 @@
       remplir('instruments', d.instruments.map(x => ligne(0, [[x.nom, 'ok'], [x.description ? ` — ${x.description}` : '', '']])), 'Pas encore d’instrument à lui.');
     } catch (e) { remplir('mesures', [ligne(0, [[`Le cockpit ne répond pas (${e.message}).`, 'ko']])], ''); }
   }
+  // (30/10, Ahmed : « je trouve pas la 1.23 ») la dernière appli, directement du Mac : dans l'appli, rangée dans
+  // Téléchargements (HakimApp.enregistrer) ; sur le Mac, un téléchargement ordinaire
+  const appliEtat = (t) => { $('appliEtat').textContent = t; };
+  fetch('/api/appli/version', { headers: { 'X-Jeton': jeton() } }).then(r => r.json()).then(o => {
+    if (o.nom) $('appli').textContent = `Télécharger ${o.nom.replace('.apk', '')} (${Math.round(o.taille / 1048576)} Mo)`;
+  }).catch(() => {});
+  $('appli').addEventListener('click', async () => {
+    const b = $('appli'); b.disabled = true; appliEtat('Téléchargement…');
+    try {
+      const r = await fetch('/api/appli/derniere', { headers: { 'X-Jeton': jeton() } });
+      if (!r.ok) throw new Error(`erreur ${r.status}`);
+      const nom = (/filename="([^"]+)"/.exec(r.headers.get('Content-Disposition') || '') || [])[1] || 'Hakim.apk';
+      const blob = await r.blob();
+      if (window.HakimApp && window.HakimApp.enregistrer) {
+        const b64 = await new Promise((ok, ko) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.onerror = ko; fr.readAsDataURL(blob); });
+        appliEtat(window.HakimApp.enregistrer(b64, nom) + ' — ouvre-le pour l’installer.');
+      } else {
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nom; document.body.appendChild(a); a.click(); a.remove();
+        appliEtat(`${nom} téléchargé.`);
+      }
+    } catch (e) { appliEtat(`Pas téléchargé : ${e.message}`); } finally { b.disabled = false; }
+  });
   Badges.suivre(document.querySelector('nav.topnav'), 'sens');
-  charger();
+  Badges.ouvrir('sens');
+  chargerCorps(); charger(); chargerLieux();
+  rythmeCorps();
+  setInterval(chargerLieux, 60000);
   setInterval(charger, 20000);
   </script>
 </body>

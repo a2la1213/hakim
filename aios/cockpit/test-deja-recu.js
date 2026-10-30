@@ -77,7 +77,8 @@ function monter({ conversation = [], sonnet = 'REÇU : le bit du milieu retombe 
     ecrireAtomique: (f, t) => fs.writeFileSync(f, t), masquer: (t) => t, sansBaliseAffect: (t) => String(t || ''),
     NON_REPONSE_SERVEUR: /^\s*no response requested\.?\s*$/i, jourLocal: () => '2026-10-27',
     messagesDeConversation: () => JSON.parse(fs.readFileSync(path.join(dir, 'conversation.json'), 'utf8')).messages,
-    nonDitesAttente: nonDites.slice(), sauverNonDites: () => {},
+    nonDitesAttente: nonDites.slice(), sauverNonDites: () => {}, nonDitesLues: 0,
+    demandeDeRepeter: (t) => /répète|repete/i.test(t),          // (30/10) la vraie est testée dans test-non-dites.js
     sonnetTeteDeFond: async (p, etiquette) => { appels.push({ p, etiquette }); return { texte: sonnet, ms: 1, cout: 0.004 }; } };
   vm.createContext(ctx);
   vm.runInContext(src.slice(src.indexOf('const dejaRecu = require('), src.indexOf('// fin du déjà reçu'))
@@ -100,16 +101,23 @@ test('câblage : Ahmed accuse réception, le subconscient note ce qu’il a reç
   assert.strictEqual(m.appels.length, 1);
 });
 
-test('câblage : « c’est bon, j’ai lu » vide ce qu’il n’avait pas pu dire', async () => {
+test('câblage : « c’est bon, j’ai lu » vide ce qu’il n’avait pas pu dire (et son tour le lui dira), sauf s’il demande aussi de répéter', async () => {
   const m = monter({ nonDites: [{ texte: 'le résultat du bit du milieu', recu: Date.now() - 60000 }] });
   await m.f.dejaRecuSurMessage("C'est bon, j'ai lu ce que tu m'as envoyé", Date.now() - 600000);
   assert.strictEqual(m.ctx.nonDitesAttente.length, 0);
+  assert.strictEqual(m.ctx.nonDitesLues, 1);
+  // (30/10) « j'ai lu le début, répète la fin » : la liste lui sera donnée (blocNonEntendus), puis effacée
+  const r = monter({ nonDites: [{ texte: 'le résultat du bit du milieu', recu: Date.now() - 60000 }] });
+  await r.f.dejaRecuSurMessage("J'ai lu le début, répète la fin", Date.now() - 600000);
+  assert.strictEqual(r.ctx.nonDitesAttente.length, 1);
 });
 
-test('câblage : le bloc entre dans chaque tour d’Ahmed et dans ses réveils ; un non-dit déjà reçu ne réveille plus', () => {
+test('câblage : le bloc entre dans chaque tour d’Ahmed et dans ses réveils ; un non-dit déjà reçu n’est plus gardé', () => {
   assert.match(src, /const dejaRecuTexte = blocDejaRecu\(maintenant\);/);
   assert.match(src, /dejaRecuSurMessage\(texte, ahmedAvant\)/);
-  for (const nom of ['reveillerPourTaches', 'reveillerPourPromesses', 'reveillerPourInterieur', 'reveillerAuSilence', 'reveillerPourNonDites'])
+  for (const nom of ['reveillerPourTaches', 'reveillerPourPromesses', 'reveillerPourInterieur', 'reveillerAuSilence'])
     assert.match(prendre(nom), /blocReveilDejaRecu\(\)/, nom);
-  assert.match(prendre('reveillerPourNonDites'), /dejaRecu\.couvert\(x\.texte, reg,/);
+  // (30/10) plus de réveil pour ce qu'il n'a pas pu dire : le tri du subconscient se fait quand on les range
+  assert.ok(!src.includes('function reveillerPourNonDites('));
+  assert.match(prendre('rangerNonDites'), /dejaRecu\.couvert\(x\.texte, reg,/);
 });

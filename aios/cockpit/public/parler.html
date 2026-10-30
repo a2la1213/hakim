@@ -11,7 +11,14 @@
     .parler { max-width: 920px; margin: 0 auto; position: relative; z-index: 1;
       display: flex; flex-direction: column; gap: 12px; min-height: calc(100vh - 80px); }
     .tete { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-    .orbe-tete { width: 64px; height: 64px; flex: none; margin: -9px -6px -9px -2px; }
+    .orbe-tete { width: 64px; height: 64px; flex: none; margin: -9px -6px -9px -2px; transition: transform .6s cubic-bezier(.2,.8,.2,1); }
+    /* (30/10, Ahmed : « grossis fort si t'as envie de dire quelque chose ») */
+    .orbe-tete.veut-parler, #orbeScene.veut-parler { animation: veutParler 1.6s ease-in-out infinite; }
+    @keyframes veutParler { 0%, 100% { transform: scale(1.18); } 50% { transform: scale(1.38); } }
+    @media (prefers-reduced-motion: reduce) { .orbe-tete.veut-parler, #orbeScene.veut-parler { animation: none; transform: scale(1.25); } }
+    .alerte-hakim { flex: none; width: 28px; height: 28px; border-radius: 50%; border: 0; background: #e5484d; color: #fff; font-weight: 800;
+      font-size: 16px; line-height: 28px; padding: 0; margin-left: -10px; box-shadow: 0 0 0 3px rgba(229,72,77,.25); cursor: pointer; }
+    .alerte-hakim[hidden] { display: none; }
     /* La scène : la grande orbe quand Hakim parle ou écoute, avec le sous-titre de ce qu'il dit. */
     .scene { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; align-content: center; gap: 8px;
       background: radial-gradient(ellipse at 50% 45%, rgba(3,14,16,.55), rgba(2,8,10,.88) 70%);
@@ -258,6 +265,8 @@
   <main class="parler">
     <header class="tete">
       <canvas class="orbe-tete" id="orbe" aria-hidden="true"></canvas>
+      <!-- (30/10, 17:57) son badge rouge : c'est lui qui l'allume ; un toucher, et papa l'a vu -->
+      <button type="button" class="alerte-hakim" id="alerteHakim" hidden title="Hakim a besoin de toi">!</button>
       <div>
         <h1>HAKIM <span class="coeur-direct" id="coeurDirect" hidden></span><span class="emotion-mot" id="emotionMot"></span><span class="emotion-origine" id="emotionOrigine"></span></h1>
         <p class="sous" id="etat" role="status">prêt · mémoire Anamnèse</p>
@@ -415,6 +424,8 @@
       </div>
       <p class="note" id="jetonsJour"></p>
       <p class="note" id="noteVoix"></p>
+      <!-- (30/10, Ahmed via Hakim) l'historique des notes de ses agents, et ses appréciations -->
+      <details id="notesAgents"><summary>Ses agents : rôles, expertise, notes</summary><div id="notesAgentsListe" class="note">…</div></details>
     </section>
 
     <!-- (23/10, demande d'Ahmed relayée par Hakim) ses calculs de fond en cours, avec leur jauge -->

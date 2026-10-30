@@ -31,3 +31,9 @@ test('en conversation, une autre page du cockpit s’ouvre à côté ; hors conv
   assert.equal(clic('/immunite'), false, 'dans l’appli : son volet s’en charge');
   assert.match(src, /document\.addEventListener\('click', lienGardeConversation, true\)/);
 });
+
+test('(30/10) qui parle est donné à son corps, page visible ou cachée (recaler ce qu’il entend et ce qu’il sent)', () => {
+  assert.match(src, /surNiveau: \(n\) => \{ etat\.niveauMicro = n; voixAuCorps\(n\);/);
+  assert.match(src, /window\.HakimApp\.voixNiveau\('hakim', v\.niveau\)/);
+  assert.match(src, /window\.HakimApp\.voixNiveau\('ahmed', niveauMicro\)/);
+});

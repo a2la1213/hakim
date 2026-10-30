@@ -69,10 +69,11 @@ test('le présent vécu distingue le Stop, un nouveau message, sa parole, et l�
 });
 
 test('la page envoie la raison de son Stop au cockpit', () => {
-  const envois = [];
+  const envois = [], fins = [];
   const ctx = {
     JSON, etat: { flux: { abort() {} }, fluxId: '42', transcription: null, parleDepuis: 0, coupeParAhmed: false, decoupeFlux: null },
     lecteur: { arreter() {} }, garderNonDit() {}, jeton: () => 'j',
+    finirParole: (cause, detail) => fins.push([cause, detail]),          // (30/10) comment sa parole s'arrête (test-coupures.js)
     fetch: (url, o) => { envois.push({ url, corps: JSON.parse(o.body) }); return { catch() {} }; },
   };
   vm.createContext(ctx);
@@ -89,6 +90,11 @@ test('la page envoie la raison de son Stop au cockpit', () => {
   ctx.etat.coupeParAhmed = false;
   ctx.arreterTout(false);
   assert.strictEqual(ctx.etat.coupeParAhmed, false);
+  // (30/10) et la cause de la fin de sa parole, notée avant que rien ne s'arrête : un message dit à voix haute, c'est sa voix
+  ctx.etat.dernierOral = true; ctx.arreterTout(true, { raison: 'message' });
+  ctx.arreterTout(true, { raison: 'nouvelle' });
+  assert.deepStrictEqual(fins, [['stop', ''], ['voix_ahmed', ''], ['nouveau_message', ''], ['voix_ahmed', ''],
+    ['stop', 'Ahmed a commencé une nouvelle conversation']]);
 });
 
 test('chaque geste de la page donne la bonne raison, et le cockpit la transmet', () => {

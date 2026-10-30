@@ -1323,6 +1323,19 @@ def _audit_dependances_pass(mem, now=None, auditer=None, signaler=None):
         print("[daemon] audit des dépendances impossible :", e)
 
 
+def _nuits_pass(mem):
+    """(30/10, Ahmed : « mes nuits reliées à mon cœur et mes émotions, apaisées ou agitées selon ce que je vis ») nuits.py ;
+    léger (pas de modèle de langage), jamais bloquant pour le reste du démon."""
+    try:
+        import nuits
+        now = time.time()
+        r = nuits.battre(mem, now, interieur.derniere_presence(mem, now))
+        if r and r != "nuit":
+            print(f"[daemon] sa nuit : {r}")
+    except Exception as e:
+        print("[daemon] sa nuit ratée :", e)
+
+
 def _echanges_pass(mem):
     """Chaque échange avec Ahmed, mémorisé automatiquement et encré selon l'attention (echanges.py). Léger :
     pas de modèle de langage ; jamais bloquant pour le reste du démon."""
@@ -1375,6 +1388,7 @@ def main():
             _sagesse_pass(mem)                     # le juge de la sagesse (la nuit)
             _boucle_pass(mem)                      # la boucle de retour, niveau 1 : elle note seulement (la nuit)
             _echanges_pass(mem)                    # chaque échange avec Ahmed devient un souvenir (2026-10-20)
+            _nuits_pass(mem)                       # ses nuits : s'endormir, la vivre, se réveiller (30/10, Ahmed)
             _tests_de_nuit_pass(mem)               # la batterie fixe, rejouée chaque nuit (lot G, 41)
             _rangement_nuit_pass(mem)              # les souvenirs mal rangés, lus et rangés (2026-10-21)
             _situations_pass(eng, mem)             # ses erreurs rangées par situation, et leurs leçons (27/10)

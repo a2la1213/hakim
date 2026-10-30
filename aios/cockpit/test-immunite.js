@@ -231,14 +231,16 @@ test('lot 4 : les demandes sensibles, en français, en anglais, en arabe ; pas l
 
 test('lot 4 : branché dans son tour', () => {
   assert.match(src, /const voixBloc = blocVoixTierce\(q, texte, verdictDuTour\(q\)\);/);
-  assert.match(src, /\+ tempsLibre\.texte \+ immuniteBloc\.texte \+ voixBloc\.texte;/);
+  assert.match(src, /\+ tempsLibre\.texte \+ immuniteBloc\.texte \+ voixBloc\.texte \+ blocCorps\(\) \+ blocNonEntendus\(texte, nonce\);/);   // (30/10) + ses réponses non entendues
 });
 
 // ---- (29/10, Ahmed : « tu peux ajouter tout ça avant dans le cockpit ») la page Immunité
 test('la page Immunité : servie, dans la navigation, ses données derrière le jeton, tout ce qui vient du dehors échappé', () => {
   assert.match(src, /'\/immunite': 'immunite\.html'/);
   const nav = fs.readFileSync(path.join(__dirname, 'public', 'nav.js'), 'utf8');
-  assert.match(nav, /\['immunite', '\/immunite', 'IMMUNITÉ'\]/);
+  // (30/10) le menu hamburger : la page est dans badges.js (fermé), que nav.js charge
+  assert.match(nav, /\/badges\.js/);
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'badges.js'), 'utf8'), /\['immunite', '\/immunite', 'Immunité'\]/);
   const i = src.indexOf("if (p === '/api/immunite') {");
   assert.ok(i >= 0);
   const route = src.slice(i, src.indexOf('\n  }\n', i));

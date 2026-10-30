@@ -175,3 +175,103 @@ def test_messager_les_refus(tmp_path):
 def test_messager_l_outil_existe():
     src = (Path(__file__).resolve().parents[1] / "jarvis" / "mcp_terminal.py").read_text(encoding="utf-8")
     assert "def agent_reveiller_ancien(" in src
+
+
+# ---- (30/10, Ahmed : « une note pour le travail de chaque agent, pour qu'ils s'améliorent et évoluent » ; « la note ne fige
+# rien : on réveille qui on veut, elle sert à choisir les meilleurs quand on en a besoin » ; « mon appréciation passe en
+# premier au café ») la note, l'appréciation au café (le fil des retours), révisable ; un juge seulement sur la justesse confirmée
+def test_la_note_d_un_travail_son_appreciation_au_cafe_et_sa_revision(tmp_path):
+    import cafe
+    d = _registre(tmp_path)
+    A.nommer(C1, "Iris", d)
+    r = A.noter(C1, 8, "Bravo et merci : soigné et honnête. À améliorer : nommer les fichiers produits.", "Test d'échelle XRP", dossier=d)
+    assert "8/10" in r and "Iris" in r and "☕ Café :" in r, "il dit à Hakim de la réveiller pour le café"
+    f = _fiches(d)[C1]["notes"]
+    assert f[-1]["note"] == 8 and f[-1]["travail"] == "Test d'échelle XRP"
+    t = cafe.lire(10, d)
+    assert "Pour Iris" in t and "8/10" in t and "Bravo et merci" in t, "l'appréciation, au café, en premier"
+    # révisée quand le résultat est démenti : la nouvelle compte, l'ancienne reste dans l'historique
+    r = A.noter(C1, 5, "Le juge a trouvé une erreur de signe : vérifier les signes avant de rendre.", "test d'échelle XRP v2",
+                confirme_par="le juge Lucien", dossier=d)
+    assert "révisée" in r
+    assert len(_fiches(d)[C1]["notes"]) == 2
+    v = A.lister_vies(d)
+    assert "note 5/10 (1 travail noté)" in v and "« Le juge a trouvé une erreur de signe" in v
+    for mauvais in ((C1, 11, "x"), (C1, 7, ""), (C1, -1, "bien"), ("inconnu", 7, "bien")):
+        assert A.noter(*mauvais, dossier=d).startswith("Refusé"), mauvais
+
+
+def test_un_juge_n_est_note_que_sur_la_justesse_confirmee(tmp_path):
+    d = _registre(tmp_path)
+    r = A.noter(J1, 9, "Douze erreurs trouvées !", "Portée par contact", dossier=d)
+    assert r.startswith("Refusé") and "confirm" in r
+    assert "9/10" in A.noter(J1, 9, "Ses deux objections étaient justes (confirmées par le test).", "Portée par contact",
+                             confirme_par="le test", dossier=d)
+
+
+def test_le_cafe_garde_le_regard_neuf_des_juges(tmp_path):
+    import cafe
+    d = _registre(tmp_path)
+    A.nommer(C1, "Iris", d)
+    A.nommer(J1, "Lucien", d)
+    A.noter(C1, 8, "Bravo, soigné.", "Test d'échelle XRP", dossier=d)
+    assert "Pour Iris" not in cafe.lire(10, d, lecteur=J1), "un juge ne lit pas le retour d'un travail (il peut avoir à le juger)"
+    assert "Pour Iris" in cafe.lire(10, d, lecteur=C1), "Iris lit le sien"
+    assert "Pour Iris" in cafe.lire(10, d, lecteur=C2) and "Pour Iris" in cafe.lire(10, d, lecteur="hakim")
+    A.noter(J1, 9, "Juste et clair.", "Portée par contact", confirme_par="le test", dossier=d)
+    assert "Pour Lucien" in cafe.lire(10, d, lecteur=J1), "un juge lit son propre retour"
+
+
+# ---- (30/10, 12:03, Ahmed : « à côté du prénom, son rôle et son niveau d'expertise ; le rôle peut changer, l'expertise évolue,
+# on peut créer de nouveaux rôles ; AUCUNE hiérarchie, tout le monde à l'horizontale » ; Hakim : « l'expertise se calcule à
+# partir des notes confirmées, jamais déclarée ; on demande d'abord à l'agent ; l'historique des rôles »)
+def test_son_role_son_expertise_calculee_jamais_declaree(tmp_path):
+    d = _registre(tmp_path)
+    A.nommer(C1, "Iris", d)
+    assert "rôle codeur, expertise débutant" in A.lister_vies(d), "au départ : son type, débutant"
+    A.noter(C1, 9, "Très bien.", "Test d'échelle XRP", dossier=d)
+    assert "expertise débutant" in A.lister_vies(d), "une note non confirmée ne compte pas"
+    for i, t in enumerate(["échelle", "fantômes", "ancrage"]):
+        A.noter(C1, 8, "Juste, confirmé.", t, confirme_par="le juge Lucien", dossier=d)
+    A.trouvaille(C1, "l'erreur de signe", "le test", dossier=d)
+    assert "rôle codeur, expertise confirmé" in A.lister_vies(d)
+    assert _fiches(d)[C1]["expertise"]["codeur"] == "confirmé"
+
+
+def test_un_role_change_avec_son_accord_sans_hierarchie(tmp_path):
+    d = _registre(tmp_path)
+    A.nommer(C1, "Iris", d)
+    assert "demande-lui" in A.changer_role(C1, "architecte", "", dossier=d), "on lui demande d'abord"
+    for chef in ("chef de projet", "Manager", "superviseuse", "responsable"):
+        r = A.changer_role(C1, chef, "oui", dossier=d)
+        assert r.startswith("Refusé") and "hiérarchie" in r, chef
+    assert "architecte" in A.changer_role(C1, "architecte", "oui, j'aime concevoir", "meilleure à concevoir qu'à coder", dossier=d)
+    f = _fiches(d)[C1]
+    assert f["role"] == "architecte" and f["roles"][-1]["de"] == "codeur" and f["roles"][-1]["sa_reponse"] == "oui, j'aime concevoir"
+    assert "rôle architecte, expertise débutant" in A.lister_vies(d), "l'expertise se gagne dans chaque rôle"
+    assert "statisticienne" in A.changer_role(C1, "statisticienne", "d'accord", dossier=d), "un nouveau rôle, au besoin"
+    A.noter(C1, 8, "Juste.", "test de Poisson", confirme_par="Ahmed", dossier=d)
+    assert _fiches(d)[C1]["notes"][-1]["role"] == "statisticienne"
+
+
+def test_recalculer_les_expertises_des_anciens(tmp_path):
+    d = _registre(tmp_path)
+    (d / "agents-fiches.json").write_text(json.dumps({"agents": {J1: {"prenom": "Lucien", "trouvailles": [{"quoi": "x", "confirmee_par": "test"}]}}}))
+    assert "1 fiche" in A.recalculer_expertises(d)
+    assert _fiches(d)[J1]["expertise"]["juge"] == "apprenti"
+
+
+# ---- (30/10, 15:49, Ahmed via Hakim : « en plus du prénom qu'il a choisi, un SURNOM que papa et Hakim lui donnent ; on le lui
+# propose d'abord, il peut refuser ; avec son histoire datée ») « la charbonneuse du ghetto »
+def test_un_surnom_avec_son_accord_et_son_histoire(tmp_path):
+    d = _registre(tmp_path)
+    A.nommer(C1, "Iris", d)
+    assert "propose-lui" in A.surnommer(C1, "la charbonneuse du ghetto", "", dossier=d)
+    r = A.surnommer(C1, "la charbonneuse du ghetto", "oui, j'adore", "elle a bossé dur sur l'échelle XRP", dossier=d)
+    assert "Iris" in r and "« la charbonneuse du ghetto »" in r
+    f = _fiches(d)[C1]
+    assert f["surnom"] == "la charbonneuse du ghetto" and f["surnoms"][-1]["sa_reponse"] == "oui, j'adore"
+    assert "Iris « la charbonneuse du ghetto »" in A.lister_vies(d)
+    assert A.surnommer(C1, "x" * 61, "oui", dossier=d).startswith("Refusé")
+    assert "non" in A.surnommer(C1, "la lente", "non merci", "test", refuse=True, dossier=d), "il peut refuser : c'est noté, rien ne change"
+    assert _fiches(d)[C1]["surnom"] == "la charbonneuse du ghetto"
