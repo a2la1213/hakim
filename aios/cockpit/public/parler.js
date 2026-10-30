@@ -2169,6 +2169,18 @@ function signalerWidget() {
 }
 const patienceConversation = () => (Number.isFinite(patienceMs()) ? patienceMs() : 3500);   // « jamais » : pas en conversation
 
+/* (30/10, 23:05, Ahmed : « il y a plusieurs voix qui sortent quand il parle ») deux onglets en Conversation sur le Mac
+   entendaient papa et disaient chaque petit mot deux fois (23:03:38 : un mot, deux voix à 3 s d'écart) : la conversation ne
+   vit que dans UN onglet de cet appareil, le dernier qui l'a ouverte ; les autres la ferment. */
+const idOnglet = Math.random().toString(36).slice(2);
+const canalOnglets = (() => { try { return new BroadcastChannel('hakim-conversation'); } catch (_) { return null; } })();
+if (canalOnglets) canalOnglets.onmessage = (ev) => {
+  const o = ev && ev.data;
+  if (!o || o.type !== 'conversation' || o.id === idOnglet || !etat.conversation) return;
+  journalVoix('conversation_autre_onglet', {});
+  finirConversation(false);
+  humeur('la conversation continue dans un autre onglet');
+};
 async function basculerConversation() {
   activite();
   if (etat.conversation) return finirConversation();
@@ -2178,6 +2190,7 @@ async function basculerConversation() {
   if (!etat.sttLocal) return humeur('le mode Conversation demande Whisper local (réglages › reconnaissance)');
   const conv = { capteur: null, enAttente: 0, debut: Date.now() };
   etat.conversation = conv;
+  if (canalOnglets) try { canalOnglets.postMessage({ type: 'conversation', id: idOnglet }); } catch (_) {}   // (23:05) un seul onglet
   $('conversation').setAttribute('aria-pressed', 'true');
   humeur('ouverture du micro…');
   try {
@@ -2892,6 +2905,8 @@ function direMotDirect(texte, maxMs = 0, auDebut = null) {
     .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`voix ${r.status}`))))
     .then(ab => actx.decodeAudioData(ab))
     .then(buf => {
+      // (23:05) un petit mot qui a attendu sa voix plus de 15 s n'est plus le présent (ce soir : 42 s, 101 s derrière d'autres)
+      if (Date.now() - t0 > 15000) { journalVoix('oreille_dit', { ok: false, raison: 'trop_tard', latence_ms: Date.now() - t0 }); return; }
       const src = actx.createBufferSource();
       src.buffer = buf;
       src.connect(analyseurVoix);                        // le micro connaît sa voix (l'écho), comme pour ses réponses

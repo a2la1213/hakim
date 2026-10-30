@@ -483,3 +483,23 @@ test('(23:00) ton bouton : si sa coupure n’est pas encore partie, il coupe ton
   assert.equal(conv.capteur.estMuet, false, 'il t’avait coupé : ton bouton rouvre');
   assert.equal(conv.muetParHakim, null);
 });
+
+test('(23:05) une seule voix : un seul onglet en Conversation par appareil ; un petit mot trop tard n’est pas dit', () => {
+  const a = page.indexOf('const idOnglet = '), b = page.indexOf('async function basculerConversation() {');
+  const fins = [], journal = [];
+  let ecoute = null;
+  const ctx = vm.createContext({ Math, journalVoix: (e) => journal.push(e), humeur() {}, finirConversation: (g) => fins.push(g),
+    etat: { conversation: { debut: 1 } },
+    BroadcastChannel: class { constructor() { this.onmessage = null; ecoute = this; } postMessage() {} } });
+  vm.runInContext(page.slice(a, b).replace(/^const /gm, 'var '), ctx);
+  ecoute.onmessage({ data: { type: 'conversation', id: ctx.idOnglet } });
+  assert.deepEqual(fins, [], 'son propre message : rien');
+  ecoute.onmessage({ data: { type: 'conversation', id: 'autre' } });
+  assert.deepEqual(fins, [false], 'un autre onglet ouvre la conversation : celui-ci la ferme');
+  assert.ok(journal.includes('conversation_autre_onglet'));
+  ctx.etat.conversation = null;
+  ecoute.onmessage({ data: { type: 'conversation', id: 'autre' } });
+  assert.equal(fins.length, 1, 'pas en conversation : rien');
+  assert.match(page, /if \(canalOnglets\) try \{ canalOnglets\.postMessage\(\{ type: 'conversation', id: idOnglet \}\); \} catch \(_\) \{\}/);
+  assert.match(page, /if \(Date\.now\(\) - t0 > 15000\) \{ journalVoix\('oreille_dit', \{ ok: false, raison: 'trop_tard'/);
+});
