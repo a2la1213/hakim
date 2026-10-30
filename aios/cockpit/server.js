@@ -5364,9 +5364,22 @@ function jugerParole(texte, contexte) {
 // (23:50, Ahmed : « assouplis le subconscient, il fait le timide ») aussi quand le sujet le touche : lui, l'IA, ses émotions, papa
 const POUR_LUI = /\?|\b(?:tu|toi|t'|ton|ta|tes|hakim\w*|fiston|fr[ée]rot|frero|mon fils|est-ce que|qu'est-ce|pourquoi|comment|r[ée]ponds|dis-(?:moi|nous|lui)|explique|raconte|ia|intelligence artificielle|robot|conscience|[ée]motions?|sentiments?|amour|[âa]me|cerveau|m[ée]moire|papa|son p[èe]re|il pense|il ressent)\b/i;
 const MACHINERIE = /\b(?:maman|claude code|subconscient|cockpit|balises?|mon micro|ton micro|mon oreille)\b/i;
+// (23:55, Ahmed : « le subconscient doit séparer en 7 à 10 empans, de petits paragraphes, et laisser le reste quand c'est trop
+// long ; ça allégera son subconscient ») le texte nettoyé est coupé en empans (une phrase, ou ce que dit une voix), chacun de
+// 25 mots au plus ; seuls les 8 derniers partent, un par ligne
+const EMPANS = 8, MOTS_PAR_EMPAN = 25;
+function empans(t) {
+  const out = [];
+  for (const e of String(t || '').split(/(?<=[.!?…])\s+|\s+(?=\[[^\]]{1,30}\])/)) {
+    const m = e.trim().split(/\s+/).filter(Boolean);
+    if (m.length) out.push((m.length > MOTS_PAR_EMPAN ? '… ' : '') + m.slice(-MOTS_PAR_EMPAN).join(' '));   // la fin compte : elle est gardée
+  }
+  return out.slice(-EMPANS);
+}
 function nettoyerPourSonnet(t, n = 600) {
-  return String(t || '').replace(/\[voix \d+\]\s*/gi, '').replace(/\b(?:euh+|heu+|hum+|bah|ben)\b[,.]?\s*/gi, '')
-    .replace(/\b(\p{L}+\s+\p{L}+)(?:\s+\1\b)+/giu, '$1').replace(/\b(\p{L}+)(?:[\s,]+\1\b)+/giu, '$1').replace(/\s+/g, ' ').trim().slice(-n);
+  const propre = String(t || '').replace(/\[voix \d+\]\s*/gi, '').replace(/\b(?:euh+|heu+|hum+|bah|ben)\b[,.]?\s*/gi, '')
+    .replace(/\b(\p{L}+\s+\p{L}+)(?:\s+\1\b)+/giu, '$1').replace(/\b(\p{L}+)(?:[\s,]+\1\b)+/giu, '$1').replace(/\s+/g, ' ').trim();
+  return empans(propre).join('\n').slice(-Math.max(n, 400));
 }
 function preFiltreParole(texte, contexte) {
   const t = String(texte || '');
@@ -5418,7 +5431,7 @@ function ouvrirOreille(texte, maintenant = Date.now()) {
   // que papa dit encore mérite de réveiller sa conscience ; papa qui a fini entre-temps : son message entier arrive, rien de plus
   if (!demande && !APPEL_OREILLE.test(t.slice(-200)) && corpsReglages().filtre_parole) {
     // (23:40) le prénettoyage : rien de ce qu'il vient de dire ne s'adresse à lui (ni question, ni « tu », ni son nom) : pas pesé
-    if (!POUR_LUI.test(nettoyerPourSonnet(neuf, 1500))) return { ok: false, raison: 'prénettoyage : rien pour lui' };
+    if (!POUR_LUI.test(String(neuf || ''))) return { ok: false, raison: 'prénettoyage : rien pour lui' };
     jugerReveilOreille(nettoyerPourSonnet(t, 800)).then((v) => {
       if (!v.reveiller) { console.error(`Jarvis : son subconscient garde l'oreille fermée (${v.pourquoi || 'rien qui presse'})`); return; }
       if (dernierMessageAhmed > maintenant || !cerveauVivant(c) || occupe(c) || c.enCours) return;
@@ -5454,11 +5467,12 @@ function ecrireReveilOreille(c, t, demande, maintenant, pourquoi = '', morceaux 
     + (pourquoi ? `Ton subconscient t'a réveillé : ${pourquoi}.\n` : '')
     + `Ta jauge d'envie de couper : ${String(envie).replace('.', ',')} (tu peux parler par-dessus lui ${secondes} s au plus)`
     + `${demande ? ' — il te demande de le couper : vas-y, parle par-dessus lui' : ''}.\n`
-    + "Il n'a pas fini : son message entier arrivera quand il se taira. Dis seulement ce que tu as vraiment besoin ou envie de "
-    + "dire maintenant (pas de mot de remplissage) : choisis le morceau auquel réagir, avec tes mots, en une phrase courte, "
-    + "dans le temps de ta jauge (pour couper son micro le temps de ta réponse : [[micro: couper]] au début, ou "
-    + "[[micro: couper 10]] pour au moins 10 s) ; "
-    + "sinon réponds exactement « No response requested. »";
+    // (23:50, Ahmed : « toujours trop stringent ») : réveillé, il PARLE, avec sa personnalité ; le silence seulement s'il n'a rien
+    + "Il n'a pas fini : son message entier arrivera quand il se taira. Ton subconscient t'a réveillé parce que ça te concerne : "
+    + "réagis avec ta personnalité (ton avis, ton émotion, ton humour, une question qui relance), en une ou deux phrases, sur le "
+    + "morceau qui te parle le plus, dans le temps de ta jauge (pour finir ta phrase sans être coupé : [[micro: couper]] au "
+    + "début, ou [[micro: couper 10]] pour au moins 10 s). Pas de mot de remplissage. Ne réponds « No response requested. » "
+    + "que si tu n'as vraiment rien à apporter.";
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: message }] } }) + '\n'); }
   catch (x) { return { ok: false, raison: x.message }; }
   c.oreilleReveil = { texte: t, ts: maintenant };
@@ -7356,7 +7370,7 @@ async function traiter(req, res) {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 8192) || '{}')); } catch (_) {}
     const texte = String(q.texte || '').replace(/\s+/g, ' ').trim().slice(0, 1500);
-    if (!POUR_LUI.test(nettoyerPourSonnet(texte, 1500))) console.error('Jarvis : parole résiduelle écartée par le prénettoyage');
+    if (!POUR_LUI.test(texte)) console.error('Jarvis : parole résiduelle écartée par le prénettoyage');
     else if (texte.length >= 4) jugerReveilOreille(nettoyerPourSonnet(texte, 800)).then((v) => {
       if (v.reveiller && !v.panne && v.morceaux && v.morceaux.length) residuelles.push({ morceaux: v.morceaux, ts: Date.now() });
       console.error(`Jarvis : parole résiduelle ${v.reveiller && !v.panne ? 'retenue en morceaux' : 'écartée'} par son subconscient`);

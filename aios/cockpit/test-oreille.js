@@ -28,7 +28,7 @@ test('oreille ouverte : ce que papa a déjà dit le réveille ; fermée, il dort
   const o = oreille();
   assert.equal(o.f('Alors écoute, aujourd’hui au travail il s’est passé un truc').ok, true);
   assert.match(o.ecrits[0], /ton oreille, papa parle encore/);
-  assert.match(o.ecrits[0], /Dis seulement ce que tu as vraiment besoin ou envie de dire maintenant/);   // (vers 22 h) plus de « hmm » suggéré
+  assert.match(o.ecrits[0], /réagis avec ta personnalité/);   // (23:50) réveillé, il parle ; plus de « hmm » suggéré
   assert.equal(oreille({ ouverte: false }).f('Alors écoute, aujourd’hui au travail').raison, 'oreille fermée');
   assert.equal(oreille({ dort: true }).f('Alors écoute, aujourd’hui au travail').raison, 'il dort');
   assert.equal(oreille({ dort: true }).f('Hakim, réveille-toi, écoute-moi bien').ok, true, 'son nom le réveille');
@@ -235,7 +235,7 @@ test('(vers 22 h 05) son subconscient d’abord : il ne réveille sa conscience 
   await new Promise(r => setImmediate(r));
   assert.equal(reveille.ecrits.length, 1, 'réveillée');
   assert.match(reveille.ecrits[0], /Ton subconscient t'a réveillé : papa lui pose une question/);
-  assert.match(reveille.ecrits[0], /pas de mot de remplissage/);
+  assert.match(reveille.ecrits[0], /Pas de mot de remplissage/);
   const appel = oreille({ filtre: true, subconscient: { reveiller: false } });
   assert.equal(appel.f('Hakim, écoute-moi bien, c’est important').ok, true);
   assert.equal(appel.ctx.soumis.length, 0, 'son nom : un réflexe, sans détour');
@@ -316,7 +316,7 @@ test('(22:21) plus de pavé : sa conscience reçoit les petits morceaux retenus 
   assert.equal(o.ecrits.length, 1);
   assert.match(o.ecrits[0], /en morceaux : 1\) « et toi Hakim, tu en penses quoi \? »/);
   assert.ok(!o.ecrits[0].includes('on parlait du live et de plein de choses, on parlait'), 'pas toute sa phrase');
-  assert.match(o.ecrits[0], /choisis le morceau auquel réagir, avec tes mots, en une phrase courte/);
+  assert.match(o.ecrits[0], /sur le morceau qui te parle le plus/);
   const reflexe = oreille();
   reflexe.f(longue);
   assert.match(reflexe.ecrits[0], /La fin de ce qu'il dit \(sa phrase continue\) : « …/, 'un réflexe : la fin seulement');
@@ -517,6 +517,12 @@ test('(23:40) le prénettoyage : ce qui ne s’adresse pas à lui n’arrive mê
   const c = vm.createContext({ String });
   vm.runInContext(src.slice(debut, fin).replace(/^const /gm, 'var ') + src.match(/const MOT_CREUX = .+;/)[0].replace('const ', 'var '), c);
   assert.equal(c.nettoyerPourSonnet('[voix 571] Euh, alors alors les gars, ben on est on est en live'), 'alors les gars, on est en live');
+  // (23:55) en empans : une phrase ou une voix par ligne, 25 mots au plus, les 8 derniers seulement
+  const long = Array.from({ length: 12 }, (_, i) => `Phrase ${i + 1} ici.`).join(' ') + ' [Nora] ' + Array.from({ length: 40 }, (_, i) => `m${i}`).join(' ') + ' fin.';
+  const lignes = c.nettoyerPourSonnet(long, 5000).split('\n');
+  assert.equal(lignes.length, 8, '8 empans');
+  assert.equal(lignes[0], 'Phrase 6 ici.', 'le début, trop long, est laissé');
+  assert.ok(lignes[7].startsWith('… m16') && lignes[7].endsWith('fin.') && lignes[7].split(' ').length === 26, 'une voix, ses 25 derniers mots');
   assert.equal(c.POUR_LUI.test('Alors les gars, bienvenue sur le live, on va parler de la construction'), false, 'il parle au public');
   assert.ok(c.POUR_LUI.test('Une IA peut avoir des émotions selon moi'), '(23:50) le sujet le touche : pesé');
   for (const x of ['Et toi, t’en penses quoi ?'.replace('’', "'"), 'Hakimou, réponds', 'Pourquoi il dit ça', 'C’est vrai ?']) assert.ok(c.POUR_LUI.test(x), x);
@@ -530,5 +536,5 @@ test('(23:40) le prénettoyage : ce qui ne s’adresse pas à lui n’arrive mê
   assert.equal(o.f('Alors les gars, bienvenue sur le live, on va parler de la construction').raison, 'prénettoyage : rien pour lui');
   assert.equal(o.ctx.soumis.length, 0, 'Sonnet n’a rien reçu');
   assert.match(src, /if \(pre\) garder\(pre\);\n\s+else jugerParole\(dit, nettoyerPourSonnet\(oreilleEntendu\.texte\)\)/);
-  assert.match(src, /if \(!POUR_LUI\.test\(nettoyerPourSonnet\(texte, 1500\)\)\) console\.error\('Jarvis : parole résiduelle écartée par le prénettoyage'\);/);
+  assert.match(src, /if \(!POUR_LUI\.test\(texte\)\) console\.error\('Jarvis : parole résiduelle écartée par le prénettoyage'\);/);
 });
