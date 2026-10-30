@@ -2407,6 +2407,12 @@ function envoyerResiduelle(texte) {
   fetch('/api/jarvis/residuelle', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
     body: JSON.stringify({ texte: String(texte).slice(0, 1500) }) }).catch(() => {});
 }
+// une voix familière : papa (sans étiquette) ou une voix nommée ; « [voix 571] » seule est inconnue
+function voixFamiliere(texte) {
+  const t = String(texte || '').trim();
+  if (t && !/^\[/.test(t)) return true;                       // ce qui précède toute étiquette : papa
+  return [...t.matchAll(/\[([^\]]{1,30})\]/g)].some(m => !/^voix \d+$/i.test(m[1].trim()));
+}
 // sa voix sonne (une réponse, ou un petit mot dit à l'instant)
 const voixQuiSonne = () => !!((lecteurNeuronal && lecteurNeuronal.joue) || Date.now() < motDirectJusqua);
 function microParHakim(o) {
@@ -2415,7 +2421,7 @@ function microParHakim(o) {
   if (o.x === 'ouvrir') return rouvrirMicroDeHakim(c, 'ouvrir');
   if (typeof reglagesCorps !== 'undefined' && reglagesCorps.micro_hakim === false) { journalVoix('micro_hakim', { x: 'refuse' }); return; }
   if (c.capteur.estMuet && !c.muetParHakim) return;          // tu l'avais déjà coupé toi-même : c'est à toi
-  // (30/10, 00:05, Ahmed : « quand il a sélectionné ses 8 empans… il coupe droit derrière son micro pour ne pas faire de
+  // (30/10, 23:53, Ahmed : « quand il a sélectionné ses 8 empans… il coupe droit derrière son micro pour ne pas faire de
   // cafouillage » ; « il doit pouvoir choisir quand il coupe ») c'est lui qui choisit (sa balise), et ton micro s'éteint AUSSITÔT ;
   // il se rallume 0,4 s après sa voix (22:46 : plus jamais 15 s de trop), ou si sa voix ne part pas en 20 s
   c.muetParHakim = { attente: 0, avantVoix: true, depuis: 0, s: Math.min(120, Number(o.s) || 0), jusqua: 0, voix: 0, residu: false };
@@ -2425,7 +2431,9 @@ function microParHakim(o) {
 function couperPourDeBon(c, m) {
   const t = Date.now();
   m.attente = 0; m.depuis = t; m.voix = t; m.jusqua = m.s ? t + m.s * 1000 : 0;
-  c.capteur.muet(true);                                      // ta phrase en cours finit son tour : elle part à son subconscient
+  // (30/10, 23:56, Ahmed : « il peut rouvrir le micro de façon subconsciente, uniquement quand il entend une voix familière ») le
+  // micro reste à l'écoute, en veille : ce qu'une voix inconnue dit ne lui arrive pas ; une voix familière (papa, une voix
+  // nommée) le rouvre. Tes boutons montrent « Coupé par Hakim », l'orbe passe au vert et ne bouge qu'avec sa voix.
   majBoutonsMuet(c);
   signalerWidget();
   if (c.tourGarde) { envoyerResiduelle(c.tourGarde); c.tourGarde = ''; m.residu = true; }
@@ -2436,7 +2444,6 @@ function rouvrirMicroDeHakim(c, pourquoi) {
   if (!c || !c.muetParHakim) return;
   const m = c.muetParHakim;
   c.muetParHakim = null;
-  if (c.capteur && c.capteur.estMuet) c.capteur.muet(false);
   majBoutonsMuet(c);
   signalerWidget();
   journalVoix('micro_hakim', { x: 'ouvrir', pourquoi, coupe_ms: m.depuis ? Date.now() - m.depuis : 0 });
@@ -2542,7 +2549,12 @@ async function tourDeParole(conv, wav, infos, extra) {
   // pendant qu'il prépare ou dit sa réponse, ce que tu dis ne la coupe plus ; c'est gardé, et lui part dès que sa voix a
   // fini (« stop », « attends » et le bouton restent au-dessus de tout, plus haut)
   // (22:30) micro coupé par lui : ta phrase encore en route part à son subconscient (une fois), le reste n'arrive pas
-  if (conv.muetParHakim && !conv.muetParHakim.attente) { if (!conv.muetParHakim.residu) { conv.muetParHakim.residu = true; envoyerResiduelle(texte); } else journalVoix('tour_muet', {}); return; }
+  // (23:56) micro coupé par lui, en veille : une voix familière le rouvre (son subconscient la reconnaît) et sa phrase lui
+  // arrive après sa voix ; une voix inconnue ne lui arrive pas
+  if (conv.muetParHakim && !conv.muetParHakim.attente) {
+    if (!voixFamiliere(texte)) { journalVoix('tour_muet', { voix: 'inconnue' }); return; }
+    rouvrirMicroDeHakim(conv, 'voix_familiere');
+  }
   if (conv.tourGarde && !sonTourEnCours()) { texte = `${conv.tourGarde} … ${texte}`; conv.tourGarde = ''; }
   if (chacunSonTour() && sonTourEnCours()) { garderPourSonTour(conv, texte); return; }
   // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
