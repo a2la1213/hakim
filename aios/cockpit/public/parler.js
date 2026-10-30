@@ -2192,7 +2192,7 @@ function basculerMuet() {
   const conv = etat.conversation;
   if (!conv || !conv.capteur) return;
   // (22:27) coupé par Hakim : ton bouton reprend la main et rouvre
-  if (conv.muetParHakim) { conv.muetParHakim = null; majBoutonsMuet(conv); journalVoix('micro_hakim', { x: 'ouvrir', pourquoi: 'papa' }); humeur('je t’écoute…'); signalerWidget(); return; }
+  if (conv.muetParHakim) { conv.muetParHakim = null; conv.capteur.muet(false); majBoutonsMuet(conv); journalVoix('micro_hakim', { x: 'ouvrir', pourquoi: 'papa' }); humeur('je t’écoute…'); signalerWidget(); return; }
   const oui = !conv.capteur.estMuet;
   conv.capteur.muet(oui);
   majBoutonsMuet(conv);
@@ -2319,10 +2319,11 @@ function garderPourSonTour(conv, texte) {
 // sa voix a fini (ou sa réponse n'a rien dit) : ce que tu as dit pendant son tour lui part, d'un bloc
 /* (30/10, 22:27-22:30, Ahmed : « il n'arrive plus à me muter » ; « quand il se mute, le bouton du micro se mute aussi » ; « une
    parole résiduelle le perturbe : ma dernière phrase transcrite, il faut qu'elle soit filtrée par le subconscient ») sa balise
-   [[micro: couper]] coupe ton micro pour lui (tes boutons le montrent, l'orbe passe au vert) jusqu'à la fin de sa voix, ou le
-   temps qu'il dit ; ton bouton reprend la main ; « stop » et « attends » sont toujours entendus (Hakim, 22:31 : « son stop et
-   son bouton restent plus forts que moi ») ; ta phrase encore en route part à son subconscient, pas à lui ; interrupteur de
-   papa : « il peut couper mon micro » (page SENS) */
+   [[micro: couper]] coupe ton VRAI micro (tes boutons le montrent, l'orbe passe au vert) jusqu'à la fin de sa voix, ou le
+   temps qu'il dit ; ton bouton reprend la main ; ta phrase encore en route part à son subconscient, pas à lui ; interrupteur
+   de papa : « il peut couper mon micro » (page SENS). (22:36, Ahmed : « il n'arrive toujours pas à se muter » : coupé « en
+   douceur », le micro transcrivait encore ta voix, le Mac ralentissait la sienne de 7 s, et tu le voyais t'écouter ;
+   maintenant le micro s'éteint vraiment : seul ton bouton le rouvre avant la fin de sa voix) */
 function envoyerResiduelle(texte) {
   if (!String(texte || '').trim()) return;
   journalVoix('residuelle', { mots: String(texte).split(/\s+/).filter(Boolean).length });
@@ -2336,7 +2337,9 @@ function microParHakim(o) {
   if (typeof reglagesCorps !== 'undefined' && reglagesCorps.micro_hakim === false) { journalVoix('micro_hakim', { x: 'refuse' }); return; }
   if (c.capteur.estMuet && !c.muetParHakim) return;          // tu l'avais déjà coupé toi-même : c'est à toi
   c.muetParHakim = { depuis: Date.now(), jusqua: o.s ? Date.now() + Math.min(120, Number(o.s)) * 1000 : 0, residu: false };
+  c.capteur.muet(true);                                      // ta phrase en cours finit son tour : elle part à son subconscient
   majBoutonsMuet(c);
+  signalerWidget();
   if (c.tourGarde) { envoyerResiduelle(c.tourGarde); c.tourGarde = ''; c.muetParHakim.residu = true; }
   journalVoix('micro_hakim', { x: 'couper', s: Number(o.s) || 0 });
   humeur();
@@ -2344,17 +2347,23 @@ function microParHakim(o) {
 function rouvrirMicroDeHakim(c, pourquoi) {
   if (!c || !c.muetParHakim) return;
   c.muetParHakim = null;
+  if (c.capteur && c.capteur.estMuet) c.capteur.muet(false);
   majBoutonsMuet(c);
+  signalerWidget();
   journalVoix('micro_hakim', { x: 'ouvrir', pourquoi });
   humeur();
 }
-// jusqu'à la fin de sa voix (15 s sans voix au plus), ou le temps qu'il a dit
+// (22:38, Ahmed : « qu'il puisse me muter pour une durée MINIMALE qu'il choisit, pour dire ce qu'il dit ») au moins le temps
+// qu'il a choisi, ET jusqu'à la fin de sa voix (15 s sans voix au plus après ce temps ; 3 min au plus en tout)
 function surveillerMicroDeHakim() {
   const c = etat.conversation, m = c && c.muetParHakim;
   if (!m) return;
-  if (m.jusqua) { if (Date.now() >= m.jusqua) rouvrirMicroDeHakim(c, 'temps'); return; }
-  const voixFinie = (etat.finVoixA || 0) > m.depuis && Date.now() - etat.finVoixA > 400;
-  if (!sonTourEnCours() && !(lecteur && lecteur.enPause) && (voixFinie || Date.now() - m.depuis > 15000)) rouvrirMicroDeHakim(c, 'fin_de_sa_voix');
+  const t = Date.now();
+  if (t - m.depuis > 180000) return rouvrirMicroDeHakim(c, 'plafond');
+  if (m.jusqua && t < m.jusqua) return;                      // sa durée minimale
+  const voixFinie = (etat.finVoixA || 0) > m.depuis && t - etat.finVoixA > 400;
+  if (!sonTourEnCours() && !(lecteur && lecteur.enPause) && (voixFinie || t - Math.max(m.depuis, m.jusqua || 0) > 15000))
+    rouvrirMicroDeHakim(c, voixFinie ? 'fin_de_sa_voix' : 'sans_voix');
 }
 setInterval(surveillerMicroDeHakim, 300);
 function libererSonTour() {

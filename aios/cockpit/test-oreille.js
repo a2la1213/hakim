@@ -347,12 +347,13 @@ test('(22:27-22:30) il coupe ton vrai micro par [[micro: couper]] : tes boutons 
     etat: { flux: {}, finVoixA: 0, conversation: { capteur: { estMuet: false }, tourGarde: 'et puis aussi' } }, lecteur: { actif: false, enPause: false },
     reglagesCorps: { micro_hakim: true }, journalVoix: (e, d) => journal.push([e, d]), humeur() {}, jeton: () => 'j',
     fetch: (u, o) => { residus.push(JSON.parse(o.body).texte); return Promise.resolve(); },
-    majBoutonsMuet: (c) => boutons.push(!!c.muetParHakim), sonTourEnCours: () => !!(ctx.etat.flux || ctx.lecteur.actif) });
+    majBoutonsMuet: (c) => boutons.push(!!c.muetParHakim), signalerWidget() {}, sonTourEnCours: () => !!(ctx.etat.flux || ctx.lecteur.actif) });
+  ctx.etat.conversation.capteur.muet = (oui) => { ctx.etat.conversation.capteur.estMuet = !!oui; };
   vm.runInContext(page.slice(a, b), ctx);
   const c = ctx.etat.conversation;
   ctx.microParHakim({ x: 'couper', s: 0 });
   assert.ok(c.muetParHakim, 'ton micro, coupé pour lui');
-  assert.equal(c.capteur.estMuet, false, 'le micro écoute encore : « stop » est toujours entendu');
+  assert.equal(c.capteur.estMuet, true, '(22:36) ton vrai micro, éteint : le Mac ne transcrit plus, sa voix part plus vite');
   assert.deepEqual(boutons, [true], 'tes boutons le montrent');
   assert.deepEqual(residus, ['et puis aussi'], 'ce que tu avais dit pendant son tour : à son subconscient');
   ctx.surveillerMicroDeHakim();
@@ -361,12 +362,22 @@ test('(22:27-22:30) il coupe ton vrai micro par [[micro: couper]] : tes boutons 
   assert.ok(c.muetParHakim, 'il parle : coupé');
   ctx.lecteur.actif = false; ctx.etat.finVoixA = t; t += 500; ctx.surveillerMicroDeHakim();
   assert.equal(c.muetParHakim, null, 'sa voix a fini : rouvert');
+  assert.equal(c.capteur.estMuet, false, 'ton micro, rallumé');
   assert.deepEqual(boutons, [true, false]);
-  // le temps qu'il dit
-  ctx.microParHakim({ x: 'couper', s: 30 }); t += 29000; ctx.surveillerMicroDeHakim();
-  assert.ok(c.muetParHakim);
-  t += 2000; ctx.surveillerMicroDeHakim();
-  assert.equal(c.muetParHakim, null, '30 s : rouvert');
+  // (22:38) une durée MINIMALE qu'il choisit : au moins ce temps, et jusqu'à la fin de sa voix
+  ctx.microParHakim({ x: 'couper', s: 30 }); t += 5000; ctx.lecteur.actif = true; t += 5000; ctx.lecteur.actif = false; ctx.etat.finVoixA = t;
+  t += 10000; ctx.surveillerMicroDeHakim();
+  assert.ok(c.muetParHakim, 'sa voix a fini à 10 s, mais il a choisi 30 s au moins');
+  t += 11000; ctx.surveillerMicroDeHakim();
+  assert.equal(c.muetParHakim, null, '30 s passées, sa voix finie : rouvert');
+  assert.equal(c.capteur.estMuet, false);
+  ctx.microParHakim({ x: 'couper', s: 5 }); ctx.lecteur.actif = true; t += 20000; ctx.surveillerMicroDeHakim();
+  assert.ok(c.muetParHakim, 'il parle encore après ses 5 s : toujours coupé');
+  ctx.lecteur.actif = false; ctx.etat.finVoixA = t; t += 500; ctx.surveillerMicroDeHakim();
+  assert.equal(c.muetParHakim, null, 'sa voix finie : rouvert');
+  ctx.microParHakim({ x: 'couper', s: 120 }); ctx.lecteur.actif = true; t += 181000; ctx.surveillerMicroDeHakim();
+  assert.equal(c.muetParHakim, null, '3 min au plus, quoi qu’il arrive');
+  ctx.lecteur.actif = false;
   // déjà coupé par papa : c'est à papa ; l'interrupteur de papa
   c.capteur.estMuet = true;
   ctx.microParHakim({ x: 'couper' });
@@ -376,7 +387,7 @@ test('(22:27-22:30) il coupe ton vrai micro par [[micro: couper]] : tes boutons 
   assert.equal(c.muetParHakim, null, 'interrupteur éteint : refusé');
   assert.ok(journal.some(([e, d]) => e === 'micro_hakim' && d.x === 'refuse'));
   // le bouton de papa reprend la main ; le libellé dit qui a coupé
-  assert.match(page, /if \(conv\.muetParHakim\) \{ conv\.muetParHakim = null; majBoutonsMuet\(conv\);/, 'ton bouton rouvre');
+  assert.match(page, /if \(conv\.muetParHakim\) \{ conv\.muetParHakim = null; conv\.capteur\.muet\(false\); majBoutonsMuet\(conv\);/, 'ton bouton rouvre');
   assert.match(page, /'Coupé par Hakim'/);
   assert.match(page, /if \(c && c\.muetParHakim\) return 'coupe';/, 'l’orbe passe au vert');
   assert.match(fs.readFileSync(path.join(__dirname, 'public', 'orbe.js'), 'utf8'), /coupe: \['#86efac', '#22c55e', '#15803d'\]/);

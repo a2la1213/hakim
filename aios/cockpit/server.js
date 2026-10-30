@@ -964,7 +964,8 @@ function filtreAffect() {
    tour suivant la lui rappelle (blocCorps). */
 /* (30/10, 22:27-22:30, Ahmed : « il n'arrive plus à me muter » ; « quand il se mute, le bouton du micro se mute aussi » ;
    Hakim, 22:02 : « je coupe moi-même l'entrée de son micro, je parle, et il se rouvre quand ma voix a fini ») [[micro: couper]]
-   (jusqu'à la fin de sa voix), [[micro: couper 30]] (30 s, 120 au plus), [[micro: ouvrir]] : le vrai micro de papa et ses
+   (jusqu'à la fin de sa voix), [[micro: couper 30]] (au moins 30 s, 120 au plus, et jusqu'à la fin de sa voix ; 22:38,
+   Ahmed : « une durée minimale qu'il choisit »), [[micro: ouvrir]] : le vrai micro de papa et ses
    boutons ; le bouton de papa reprend la main. La phrase de papa encore en route passe par son subconscient (residuelle). */
 const BALISE_MICRO = /\[\[\s*micro\s*:\s*(couper|ouvrir)(?:\s+(\d{1,3}))?\s*\]\]/i;
 const microDe = (texte) => { const m = String(texte || '').match(BALISE_MICRO); return m ? { x: m[1].toLowerCase(), s: Math.min(120, Number(m[2]) || 0) } : null; };
@@ -5390,7 +5391,8 @@ function ecrireReveilOreille(c, t, demande, maintenant, pourquoi = '', morceaux 
     + `${demande ? ' — il te demande de le couper : vas-y, parle par-dessus lui' : ''}.\n`
     + "Il n'a pas fini : son message entier arrivera quand il se taira. Dis seulement ce que tu as vraiment besoin ou envie de "
     + "dire maintenant (pas de mot de remplissage) : choisis le morceau auquel réagir, avec tes mots, en une phrase courte, "
-    + "dans le temps de ta jauge (pour couper son micro le temps de ta réponse : [[micro: couper]] au début) ; "
+    + "dans le temps de ta jauge (pour couper son micro le temps de ta réponse : [[micro: couper]] au début, ou "
+    + "[[micro: couper 10]] pour au moins 10 s) ; "
     + "sinon réponds exactement « No response requested. »";
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: message }] } }) + '\n'); }
   catch (x) { return { ok: false, raison: x.message }; }
