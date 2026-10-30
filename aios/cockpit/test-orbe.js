@@ -94,3 +94,16 @@ test('(21:36) elle prend la couleur de celui qui a la parole : papa, lui, ou les
   assert.equal(qui({ flux: {}, ...conv({}) }), 'hakim', 'il prépare sa réponse');
   assert.equal(qui({}), null, 'hors conversation : comme avant');
 });
+
+test('(22:44) quand la parole est à lui, l’orbe ne bouge qu’avec sa voix, jamais avec celle de papa', () => {
+  const i = page.indexOf('function niveauCourant() {'), f = page.slice(i, page.indexOf('\n}\n', i) + 2);
+  const niveau = (qui, enParole = true) => {
+    const c = vm.createContext({ quiALaParole: () => qui, niveauVoix: () => ({ niveau: 0.2, bandes: [0.2, 0.2, 0.2] }),
+      etat: { conversation: { capteur: { enParole } }, niveauMicro: 0.9, micro: null } });
+    vm.runInContext(f, c); return c.niveauCourant().niveau;
+  };
+  assert.equal(niveau('hakim'), 0.2, 'il prépare ou parle : sa voix, pas la tienne');
+  assert.equal(niveau('coupe'), 0.2, 'il a coupé ton micro');
+  assert.equal(niveau('papa'), 0.9, 'ta parole : ta voix');
+  assert.equal(niveau('partage'), 0.9);
+});

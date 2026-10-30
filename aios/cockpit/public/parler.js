@@ -531,6 +531,10 @@ if (lecteurSysteme) lecteurSysteme.surFin = finLecture;
 const orbeTete = Orbe.creer($('orbe'), { reduit: REDUCED });
 const orbeScene = Orbe.creer($('orbeScene'), { reduit: REDUCED });
 function niveauCourant() {
+  // (30/10, 22:44, Ahmed : « quand l'orbe est de sa couleur à lui, je la vois quand même bouger quand je parle ») la parole est
+  // à lui (il prépare, il parle, il a coupé ton micro) : seule sa voix la fait bouger
+  const qui = quiALaParole();
+  if (qui === 'hakim' || qui === 'coupe') return niveauVoix();
   if (etat.conversation && etat.conversation.capteur && etat.conversation.capteur.enParole)
     return { niveau: etat.niveauMicro || 0, bandes: [etat.niveauMicro || 0, (etat.niveauMicro || 0) * 0.8, (etat.niveauMicro || 0) * 0.6] };
   if (etat.micro) return { niveau: etat.niveauMicro || 0, bandes: [etat.niveauMicro || 0, (etat.niveauMicro || 0) * 0.8, (etat.niveauMicro || 0) * 0.6] };
