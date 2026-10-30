@@ -726,7 +726,10 @@ function sansProvenance(ligne) {
     .replace(/\s+/g, ' ').trim();
   return m ? `${t} (#${m[1]})` : t;
 }
-async function blocRappel(session, texte, nonce) {
+// (31/10, 00:30, l'étude : « pourquoi il a du mal à répondre ») avant chaque réponse, le rappel de ses souvenirs prenait 5,1 s en
+// médiane (9,2 s pour un sur dix), presque tout pour le TRI par Sonnet (un `claude -p` de plus, sur un Mac déjà saturé) ; son
+// cerveau, lui, parle 2 à 3 s après. En Conversation à l'oral, le tri est sauté : ses souvenirs gardent l'ordre du rappel.
+async function blocRappel(session, texte, nonce, sansTri = false) {
   const deja = rappelDejaDits.get(session || '') || new Set();
   const dejaErreurs = erreursDejaDites.get(session || '') || new Set();
   const t0 = Date.now();
@@ -752,7 +755,7 @@ async function blocRappel(session, texte, nonce) {
   const details = (r && r.details) || {};
   const prof = (r && r.profondeur) || null;
   let tri = null;
-  if (theme.length && TRI_ACTIF) tri = await trierSouvenirs(promptTri(texte, session ? filRecent(1, texte) : '', lignes, theme), new Set([...ids, ...themeIds]));
+  if (theme.length && TRI_ACTIF && !sansTri) tri = await trierSouvenirs(promptTri(texte, session ? filRecent(1, texte) : '', lignes, theme), new Set([...ids, ...themeIds]));
   const choisis = tri && Array.isArray(tri.ids) ? tri.ids : null;
   if (lignes.length || theme.length)
     espaceAjouter(session, [...ids.map((id, k) => [id, lignes[k]]), ...themeIds.map((id, k) => [id, theme[k]])], choisis || ids);
@@ -3196,7 +3199,7 @@ async function routeJarvis(req, res, distantReq = false) {
   const dites = (Array.isArray(q.pensees_dites) ? q.pensees_dites : []).map(Number).filter(Number.isFinite).slice(0, 20);
   // (28/10, backtest : le rappel et son tri font 90 % de la préparation) il part le premier, en parallèle du reste
   const nonce = crypto.randomBytes(4).toString('hex');                 // (C-H6) le code des blocs de données de ce tour
-  const rappelP = chrono('rappel', blocRappel(session, texte, nonce).catch(() => ({ texte: '', ids: [] })));
+  const rappelP = chrono('rappel', blocRappel(session, texte, nonce, !!(q.oral && q.conversation)).catch(() => ({ texte: '', ids: [] })));
   const interieurTexte = await chrono('interieur', blocInterieur(depuisMs, maintenant, dites).catch(() => ''));
   const qui = q.oral ? (q.conversation ? "Ahmed (à l'oral, mode Conversation, transcription automatique)"
     : "Ahmed (à l'oral, transcription automatique)") : 'Ahmed (écrit)';

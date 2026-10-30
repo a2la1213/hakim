@@ -117,7 +117,7 @@ test('chaque synthèse de voix est mesurée côté serveur : attente dans la fil
 // parallèle du reste (intérieur, réflexe, sagesse) ; rien n'est coupé, il est attendu avant d'écrire le message
 test('le rappel part en premier, en parallèle du reste de la préparation', () => {
   const route = prendreDans(serveur, 'routeJarvis');
-  const iRappel = route.indexOf("const rappelP = chrono('rappel', blocRappel(session, texte, nonce)");
+  const iRappel = route.indexOf("const rappelP = chrono('rappel', blocRappel(session, texte, nonce");
   const iInterieur = route.indexOf("const interieurTexte = await chrono('interieur'");
   assert.ok(iRappel > 0 && iRappel < iInterieur, 'le rappel est lancé avant l’intérieur');
   assert.match(route, /const rappelBloc = await rappelP;/);

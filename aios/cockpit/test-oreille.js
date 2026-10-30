@@ -606,3 +606,9 @@ test('(00:20, l’étude) son attention en douceur : d’une voix inconnue, seul
   const i = page.indexOf('async function tourDeParole('), bloc = page.slice(i, page.indexOf('\n}\n', i));
   assert.ok(bloc.indexOf('filtrerVoixInconnues(texte)') < bloc.indexOf('COMMANDE_STOP.test(texte)'), 'avant les commandes et son tour');
 });
+
+test('(00:30, l’étude) en Conversation à l’oral, ses souvenirs ne passent plus par le tri de Sonnet (5 s gagnées avant sa réponse)', () => {
+  assert.match(src, /async function blocRappel\(session, texte, nonce, sansTri = false\)/);
+  assert.match(src, /if \(theme\.length && TRI_ACTIF && !sansTri\) tri = await trierSouvenirs\(/);
+  assert.match(src, /blocRappel\(session, texte, nonce, !!\(q\.oral && q\.conversation\)\)/);
+});
