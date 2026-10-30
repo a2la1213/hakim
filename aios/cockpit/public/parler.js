@@ -2066,6 +2066,14 @@ function morceauNeuf(texte, deja) {
 function surPauseConversation(conv, fenetre) {
   const e = conv.ecrit;
   if (!conv.capteur || !e || e.partiel || fenetre - e.coupe < 150) return;
+  // (30/10, 23:20, Ahmed : « pourquoi il n'arrive pas à répondre ») mesuré : la transcription de ta voix est passée de 1,5 s
+  // (21 h) à 7 s en médiane, jusqu'à 24 s ; tes phrases lui arrivaient 15 à 20 s en retard. Pendant SON tour, ces morceaux ne
+  // servent à rien (ton oreille ne peut pas le réveiller, tes mots l'attendent) et prennent le Mac à sa voix : il prépare,
+  // rien ; il parle, un morceau toutes les 4 s au plus (pour « arrête »). Ta phrase est transcrite d'un bloc à la fin.
+  if (typeof sonTourEnCours === 'function' && sonTourEnCours()) {
+    if (!(lecteur && lecteur.actif) || Date.now() - (conv.partielA || 0) < 4000) return;
+  }
+  conv.partielA = Date.now();
   const de = e.coupe, wav = conv.capteur.segment(de, fenetre);
   if (!wav) return;                                                      // pas de voix dans ce morceau
   e.partiel = transcrireVite(wav, 'audio/wav', e.confirme).then((texte) => {
@@ -2094,6 +2102,7 @@ async function texteDuTour(conv) {
 }
 function anticiperConversation(conv, silenceMs) {
   if (etat.reglages.rapide === false || silenceMs < SILENCE_ANTICIPE_MS || conv.spec || !conv.capteur) return;
+  if (typeof sonTourEnCours === 'function' && sonTourEnCours()) return;   // (23:20) son tour : ta phrase l'attend, rien à anticiper
   // un seul essai par silence (relecture Opus : la même queue était retranscrite ~10 fois par pause)
   if (conv.essaiVoix === conv.capteur.derniereVoix || !conv.capteur.assezDeVoix) return;
   conv.essaiVoix = conv.capteur.derniereVoix;

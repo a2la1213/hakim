@@ -503,3 +503,11 @@ test('(23:05) une seule voix : un seul onglet en Conversation par appareil ; un 
   assert.match(page, /if \(canalOnglets\) try \{ canalOnglets\.postMessage\(\{ type: 'conversation', id: idOnglet \}\); \} catch \(_\) \{\}/);
   assert.match(page, /if \(Date\.now\(\) - t0 > 15000\) \{ journalVoix\('oreille_dit', \{ ok: false, raison: 'trop_tard'/);
 });
+
+test('(23:20) pendant son tour, ta voix n’est plus transcrite morceau par morceau : le Mac garde sa force pour sa voix et ta phrase de fin', () => {
+  const i = page.indexOf('function surPauseConversation('), bloc = page.slice(i, page.indexOf('\n}\n', i));
+  assert.match(bloc, /if \(typeof sonTourEnCours === 'function' && sonTourEnCours\(\)\) \{\n\s+if \(!\(lecteur && lecteur\.actif\) \|\| Date\.now\(\) - \(conv\.partielA \|\| 0\) < 4000\) return;/);
+  assert.ok(bloc.indexOf('sonTourEnCours()') < bloc.indexOf('transcrireVite('), 'avant toute transcription');
+  const j = page.indexOf('function anticiperConversation('), b2 = page.slice(j, page.indexOf('\n}\n', j));
+  assert.match(b2, /if \(typeof sonTourEnCours === 'function' && sonTourEnCours\(\)\) return;/);
+});
