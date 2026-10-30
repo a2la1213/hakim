@@ -516,10 +516,14 @@ test('(23:40) le prénettoyage : ce qui ne s’adresse pas à lui n’arrive mê
   vm.runInContext(src.slice(debut, fin).replace(/^const /gm, 'var ') + src.match(/const MOT_CREUX = .+;/)[0].replace('const ', 'var '), c);
   assert.equal(c.nettoyerPourSonnet('[voix 571] Euh, alors alors les gars, ben on est on est en live'), 'alors les gars, on est en live');
   // (23:55) en empans : une phrase ou une voix par ligne, 25 mots au plus, les 8 derniers seulement
-  const long = Array.from({ length: 12 }, (_, i) => `Phrase ${i + 1} ici.`).join(' ') + ' [Nora] ' + Array.from({ length: 40 }, (_, i) => `m${i}`).join(' ') + ' fin.';
+  const long = Array.from({ length: 12 }, (_, i) => `Tu dis la phrase ${i + 1} ?`).join(' ') + ' [Nora] ' + Array.from({ length: 40 }, (_, i) => `m${i}`).join(' ') + ' fin.';
   const lignes = c.nettoyerPourSonnet(long, 5000).split('\n');
-  assert.equal(lignes.length, 8, '8 empans');
-  assert.equal(lignes[0], 'Phrase 6 ici.', 'le début, trop long, est laissé');
+  assert.equal(lignes.length, 8, '8 empans au plus');
+  assert.equal(lignes[0], 'Tu dis la phrase 6 ?', 'le début, trop long, est laissé');
+  // (00:06) entre 1 et 8 : seulement ce qui le concerne, et toujours le dernier
+  assert.deepEqual(c.nettoyerPourSonnet('On a mangé. Il faisait beau. Hakim, tu en penses quoi ? Bon, on continue.').split('\n'),
+    ['Hakim, tu en penses quoi ?', 'Bon, on continue.']);
+  assert.deepEqual(c.nettoyerPourSonnet('On a mangé. Il faisait beau.').split('\n'), ['Il faisait beau.'], 'au moins le dernier');
   assert.ok(lignes[7].startsWith('… m16') && lignes[7].endsWith('fin.') && lignes[7].split(' ').length === 26, 'une voix, ses 25 derniers mots');
   assert.equal(c.POUR_LUI.test('Alors les gars, bienvenue sur le live, on va parler de la construction'), false, 'il parle au public');
   assert.ok(c.POUR_LUI.test('Une IA peut avoir des émotions selon moi'), '(23:50) le sujet le touche : pesé');
@@ -550,4 +554,20 @@ test('(23:56) une voix familière rouvre son micro en veille : papa (sans étiqu
   assert.equal(c.voixFamiliere('[voix 571] Il y a plusieurs personnes qui parlent'), false, 'une voix inconnue');
   assert.equal(c.voixFamiliere('[voix 571] bla [Ahmed] Hakim !'), true, 'papa parmi elles');
   assert.equal(c.voixFamiliere(''), false);
+});
+
+test('(00:06) plus jamais bloqué : sa voix en pause n’est pas son tour ; tes mots ne sont gardés que 30 s au plus', () => {
+  assert.match(page, /const sonTourEnCours = \(\) => !!\(etat\.flux \|\| \(lecteur && lecteur\.actif && !lecteur\.enPause\)\);/);
+  const a = page.indexOf('const chacunSonTour = '), b = page.indexOf('setInterval(libererSonTour, 300);');
+  let t = 1_800_000_000_000;
+  const envois = [];
+  const ctx = vm.createContext({ Date: class extends Date { static now() { return t; } }, etat: { flux: {}, finVoixA: 0, conversation: { tourGarde: '', enAttente: 0, capteur: { enParole: false } } },
+    lecteur: { actif: true, enPause: false }, lecteurNeuronal: { joue: false }, motDirectJusqua: 0, reglagesCorps: {}, journalVoix() {}, humeur() {}, envoyer: (x) => envois.push(x), setInterval() {} });
+  vm.runInContext(page.slice(a, b).replace(/^const /gm, 'var '), ctx);
+  ctx.garderPourSonTour(ctx.etat.conversation, 'ma question');
+  t += 10000; assert.equal(ctx.libererSonTour(), false, 'sa réponse arrive : gardé');
+  t += 21000; assert.equal(ctx.libererSonTour(), true, '30 s : tes mots partent quand même');
+  assert.deepEqual(envois, ['ma question']);
+  ctx.lecteur.enPause = true; ctx.etat.flux = null;
+  assert.equal(ctx.sonTourEnCours(), false, 'sa voix en pause n’est pas son tour');
 });

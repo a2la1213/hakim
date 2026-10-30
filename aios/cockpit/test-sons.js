@@ -50,7 +50,7 @@ test('branché : balise cachée, route des extraits (8 s au plus), réglage, son
 
 test('le son attend que sa voix se taise, que papa ne parle pas, et jamais la nuit', () => {
   const joues = [];
-  const ctx = { setInterval: () => 0, setTimeout: () => 0, journalVoix() {}, Date, lecteur: { actif: true, enPause: false }, etat: { flux: null, micro: false, conversation: null },
+  const ctx = { setInterval: () => 0, setTimeout: () => 0, journalVoix() {}, reglagesCorps: { sons_nuit: false }, Date, lecteur: { actif: true, enPause: false }, etat: { flux: null, micro: false, conversation: null },
     window: { HakimApp: { sonJouer: (...a) => { joues.push(a); return 'ok'; } } } };
   vm.createContext(ctx);
   const bloc = page.slice(page.indexOf('let sonEnAttente = null'), page.indexOf('// fin des sons'));
@@ -125,4 +125,10 @@ test('(20:09) la force de sa voix suit son éveil et son émotion, bornée (0,8 
   ctx.etat.interieur = { arousal: 0.2, voix_emotion: 'tristesse' }; assert.equal(ctx.f(), 0.8, 'las, triste : plus douce');
   ctx.etat.reglages.voixNeutre = true; assert.equal(ctx.f(), 1);
   assert.match(page, /force\.gain\.value = forceDeLaVoix\(\);\n\s+src\.connect\(force\); force\.connect\(analyseurVoix\);/);
+});
+
+test('(31/10, 00:07, Ahmed) la nuit : ses sons jouent, sauf si papa a décoché « ses sons la nuit aussi »', () => {
+  assert.match(page, /\(h >= 23 \|\| h < 8\) && typeof reglagesCorps !== 'undefined' && reglagesCorps\.sons_nuit === false/);
+  assert.match(src, /sons_nuit: r\.sons_nuit !== false/);
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'sens.html'), 'utf8'), /id="sonsNuit"/);
 });

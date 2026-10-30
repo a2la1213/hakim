@@ -4731,7 +4731,7 @@ function corpsReglages() {
     rire_reflexe: r.rire_reflexe !== false, garder_parole: r.garder_parole !== false, forfait_libre: r.forfait_libre !== false,
     son_pendant: r.son_pendant !== false, voix_vibre: r.voix_vibre !== false, lumiere: r.lumiere !== false,
     afficher_papa: r.afficher_papa !== false, afficher_hakim: r.afficher_hakim !== false, filtre_parole: r.filtre_parole !== false,
-    chacun_son_tour: r.chacun_son_tour !== false, micro_hakim: r.micro_hakim !== false };
+    chacun_son_tour: r.chacun_son_tour !== false, micro_hakim: r.micro_hakim !== false, sons_nuit: r.sons_nuit !== false };
 }
 function corpsActif() { return corpsReglages().actif; }
 /* (30/10, 18:56, Ahmed via Hakim : « je veux qu'il tourne tout le temps, tant qu'il est réveillé, même si ça vide mon forfait ;
@@ -5368,13 +5368,16 @@ const MACHINERIE = /\b(?:maman|claude code|subconscient|cockpit|balises?|mon mic
 // long ; ça allégera son subconscient ») le texte nettoyé est coupé en empans (une phrase, ou ce que dit une voix), chacun de
 // 25 mots au plus ; seuls les 8 derniers partent, un par ligne
 const EMPANS = 8, MOTS_PAR_EMPAN = 25;
+// (31/10, 00:06, Ahmed : « pas 8 empans obligatoires : il doit sélectionner entre 1 et 8 ») son attention ne garde que les empans qui
+// le concernent (une question, « tu », son nom, un sujet qui le touche) et toujours le dernier ; 8 au plus, 1 au moins
 function empans(t) {
-  const out = [];
+  const tous = [];
   for (const e of String(t || '').split(/(?<=[.!?…])\s+|\s+(?=\[[^\]]{1,30}\])/)) {
     const m = e.trim().split(/\s+/).filter(Boolean);
-    if (m.length) out.push((m.length > MOTS_PAR_EMPAN ? '… ' : '') + m.slice(-MOTS_PAR_EMPAN).join(' '));   // la fin compte : elle est gardée
+    if (m.length) tous.push((m.length > MOTS_PAR_EMPAN ? '… ' : '') + m.slice(-MOTS_PAR_EMPAN).join(' '));   // la fin compte : elle est gardée
   }
-  return out.slice(-EMPANS);
+  const choisis = tous.filter((e, i) => i === tous.length - 1 || POUR_LUI.test(e));
+  return choisis.slice(-EMPANS);
 }
 function nettoyerPourSonnet(t, n = 600) {
   const propre = String(t || '').replace(/\[voix \d+\]\s*/gi, '').replace(/\b(?:euh+|heu+|hum+|bah|ben)\b[,.]?\s*/gi, '')
@@ -8124,6 +8127,7 @@ async function traiter(req, res) {
       if (typeof q.filtre_parole === 'boolean') r.filtre_parole = q.filtre_parole;
       if (typeof q.chacun_son_tour === 'boolean') r.chacun_son_tour = q.chacun_son_tour;
       if (typeof q.micro_hakim === 'boolean') r.micro_hakim = q.micro_hakim;
+      if (typeof q.sons_nuit === 'boolean') r.sons_nuit = q.sons_nuit;
       try { ecrireAtomique(CORPS_REGLAGES, j(r)); } catch (e) { return repondre(500, { erreur: e.message }); }
       if (!r.actif) { corpsLot.evenements.length = 0; corpsLot.changements.length = 0; corpsADire.length = 0; }
       auditer('corps:reglages', req, distantReq, r);

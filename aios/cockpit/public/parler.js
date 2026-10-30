@@ -901,7 +901,8 @@ function jouerSonEnAttente() {
   if (!sousSaVoix && (etat.flux || etat.micro || (lecteur && (lecteur.actif || lecteur.enPause)))) return;
   const x = sonEnAttente.extrait, h = new Date().getHours();
   sonEnAttente = null;
-  if (h >= 23 || h < 8) { journalVoix('son', { retour: 'la_nuit' }); return; }
+  // (31/10, 00:07, Ahmed : « enlève cette restriction de la nuit, laisse-moi juste un bouton ») la nuit seulement si papa l'a voulu
+  if ((h >= 23 || h < 8) && typeof reglagesCorps !== 'undefined' && reglagesCorps.sons_nuit === false) { journalVoix('son', { retour: 'la_nuit' }); return; }
   if (!window.HakimApp || !window.HakimApp.sonJouer) { jouerSonIci(x, sousSaVoix ? 0.3 : 0.6); return; }   // (22:55) le Mac
   try {
     const r = String(sousSaVoix ? window.HakimApp.sonJouerVolume(String(x.source), String(x.ref), Number(x.debut_ms), Number(x.fin_ms), 0.3)
@@ -2387,8 +2388,11 @@ function surveillerCoupure(conv) {
 // un tour sans voix (aucune hauteur) : du bruit ; jamais transcrit, jamais gardé pour plus tard
 const tourSansVoix = (infos) => !(infos && infos.ton);
 const chacunSonTour = () => typeof reglagesCorps === 'undefined' || reglagesCorps.chacun_son_tour !== false;
-const sonTourEnCours = () => !!(etat.flux || (lecteur && lecteur.actif));
+// (31/10, 00:06, Ahmed : « il a l'air bloqué ») sa voix en PAUSE (coupée par une page cachée, 00:02:09) n'est pas son tour : tes
+// mots restaient gardés pour toujours
+const sonTourEnCours = () => !!(etat.flux || (lecteur && lecteur.actif && !lecteur.enPause));
 function garderPourSonTour(conv, texte) {
+  if (!conv.tourGarde) conv.tourGardeDepuis = Date.now();
   conv.tourGarde = conv.tourGarde ? `${conv.tourGarde} … ${texte}` : texte;
   journalVoix('tour_garde', { mots: texte.split(/\s+/).filter(Boolean).length });
   humeur('je finis, puis je t’écoute');
@@ -2471,8 +2475,10 @@ function surveillerMicroDeHakim() {
 setInterval(surveillerMicroDeHakim, 300);
 function libererSonTour() {
   const c = etat.conversation;
-  if (!c || !c.tourGarde || sonTourEnCours() || (lecteur && lecteur.enPause) || c.enAttente || (c.capteur && c.capteur.enParole)) return false;
-  if (Date.now() - (etat.finVoixA || 0) < 400) return false;
+  if (!c || !c.tourGarde || c.enAttente || (c.capteur && c.capteur.enParole)) return false;
+  // (00:06) au plus 30 s gardés : une réponse coincée ne te fait plus attendre pour toujours (tes mots partent, elle s'arrête)
+  const tropLong = Date.now() - (c.tourGardeDepuis || Date.now()) > 30000;
+  if (!tropLong && (sonTourEnCours() || Date.now() - (etat.finVoixA || 0) < 400)) return false;
   const texte = c.tourGarde;
   c.tourGarde = '';
   journalVoix('tour_libere', { mots: texte.split(/\s+/).filter(Boolean).length });

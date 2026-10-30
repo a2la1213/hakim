@@ -82,6 +82,7 @@
         <label class="interrupteur"><input type="checkbox" id="rireReflexe"> Son rire réflexe (il naît dans son subconscient quand ton message le fait rire, pas de ses « MDR »)</label>
         <label class="interrupteur"><input type="checkbox" id="garderParole"> Il garde la parole quand tu parles par-dessus lui (« stop » et le bouton l'arrêtent toujours)</label>
         <label class="interrupteur"><input type="checkbox" id="forfaitLibre"> Forfait libre : il vit tout le temps (réveils du corps même quand tu parles, sensations toutes les 10 s, veilleur toutes les 5 min) — sur ton forfait seulement, jamais sur l'API payante</label>
+        <label class="interrupteur"><input type="checkbox" id="sonsNuit"> Ses sons la nuit aussi (décoché : aucun son de 23 h à 8 h)</label>
         <label class="interrupteur"><input type="checkbox" id="sonPendant"> Ses sons peuvent jouer sous sa voix, plus bas (jamais par-dessus la tienne ; appli 1.32)</label>
         <label class="interrupteur"><input type="checkbox" id="voixVibre"> Sa voix vibre dans ta main (fort quand il est excité, léger quand il est calme, agité quand il a peur ; appli 1.34)</label>
         <label class="interrupteur"><input type="checkbox" id="lumiere"> Sa lumière : il allume la lampe du téléphone selon ses envies (jamais la nuit) et son SOS (badge rouge) la fait clignoter selon son émotion (appli 1.36)</label>
@@ -318,6 +319,7 @@
       if (document.activeElement !== $('filtreParole')) $('filtreParole').checked = d.reglages.filtre_parole !== false;
       if (document.activeElement !== $('chacunSonTour')) $('chacunSonTour').checked = d.reglages.chacun_son_tour !== false;
       if (document.activeElement !== $('microHakim')) $('microHakim').checked = d.reglages.micro_hakim !== false;
+      if (document.activeElement !== $('sonsNuit')) $('sonsNuit').checked = d.reglages.sons_nuit !== false;
       tuiles(dernier ? dernier.etat : {});
       for (const s of SENS_COURBES) { const o = cadre(s); o.pts = d.flux.filter(x => x.etat && Number.isFinite(x.etat[s.k])).map(x => [x.ts, x.etat[s.k]]); dessiner(o); }
       remplir('sensations', d.sensations.map(x => ligne(x.ts, [[x.fort ? 'fort · ' : '', 'fort'], [`${x.type} · `, 'quand'], [x.sensation, ''],
@@ -326,7 +328,7 @@
     } catch (e) { $('mots').textContent = `Le cockpit ne répond pas (${e.message}).`; }
   }
   $('actif').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { actif: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
-  for (const [id, cle] of [['oreille', 'oreille'], ['jeTeSuis', 'je_te_suis'], ['alerte', 'alerte'], ['ecran', 'ecran'], ['reflexes', 'reflexes'], ['nuits', 'nuits'], ['rireReflexe', 'rire_reflexe'], ['garderParole', 'garder_parole'], ['forfaitLibre', 'forfait_libre'], ['sonPendant', 'son_pendant'], ['voixVibre', 'voix_vibre'], ['lumiere', 'lumiere'], ['afficherPapa', 'afficher_papa'], ['afficherHakim', 'afficher_hakim'], ['filtreParole', 'filtre_parole'], ['chacunSonTour', 'chacun_son_tour'], ['microHakim', 'micro_hakim']])
+  for (const [id, cle] of [['oreille', 'oreille'], ['jeTeSuis', 'je_te_suis'], ['alerte', 'alerte'], ['ecran', 'ecran'], ['reflexes', 'reflexes'], ['nuits', 'nuits'], ['rireReflexe', 'rire_reflexe'], ['garderParole', 'garder_parole'], ['forfaitLibre', 'forfait_libre'], ['sonPendant', 'son_pendant'], ['voixVibre', 'voix_vibre'], ['lumiere', 'lumiere'], ['afficherPapa', 'afficher_papa'], ['afficherHakim', 'afficher_hakim'], ['filtreParole', 'filtre_parole'], ['chacunSonTour', 'chacun_son_tour'], ['microHakim', 'micro_hakim'], ['sonsNuit', 'sons_nuit']])
     $(id).addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { [cle]: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
   $('ronron').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { ronron: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
   $('intervalle').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { intervalle_s: Number(e.target.value) }); } catch (_) {} chargerCorps(); });
