@@ -16,11 +16,11 @@ const corps = (() => { const i = SRC.indexOf('function creerLecteurNeuronal'); r
 const Voix = require('./public/voix.js');
 
 // Une boucle d'événements à temps virtuel : les promesses se résolvent entre deux minuteries.
-function simulateur({ fixe, parSec, cps, appris, conversation = true, prets = [] }) {
+function simulateur({ fixe, parSec, cps, appris, conversation = true, prets = [], sonsMac = {}, appli = false }) {
   let maintenant = 0, suivant = 1;
   const minuteries = new Map();
   const planifier = (fn, ms, repete) => { const id = suivant++; minuteries.set(id, { t: maintenant + Math.max(0, ms) / 1000, fn, repete }); return id; };
-  const sons = [], demandes = [];
+  const sons = [], demandes = [], natifs = [];
   const actx = {
     state: 'running', get currentTime() { return maintenant; },
     createGain: () => ({ gain: { value: 1 }, connect() {} }),   // (30/10, 20:09) la force de sa voix, phrase par phrase
@@ -42,8 +42,12 @@ function simulateur({ fixe, parSec, cps, appris, conversation = true, prets = []
     debutsPrets: new Set(prets), cleDebut: (d) => d,                 // (28/10) ses débuts dont la voix est prête
     actx, analyseurVoix: {}, lecteurSysteme: null,
     jeton: () => 'x', humeur() {}, jarvisPeutParler: () => true,
-    forceDeLaVoix: () => 1,
+    forceDeLaVoix: () => 1, journalVoix() {},
     fetch: (url, o) => {
+      const son = /^\/api\/sons\/joue\/(e\d+)$/.exec(url);         // (31/10) un de ses extraits : là si le Mac l'a
+      if (son) return new Promise((res) => planifier(() => res(sonsMac[son[1]]
+        ? { ok: true, status: 200, arrayBuffer: () => Promise.resolve({ n: sonsMac[son[1]] * cps, texte: `[${son[1]}]` }) }
+        : { ok: false, status: 404 }), 50));
       const { texte } = JSON.parse(o.body);
       demandes.push({ t: maintenant, texte });
       return new Promise((res) => planifier(() => res({ ok: true, arrayBuffer: () => Promise.resolve({ n: texte.length, texte }) }),
@@ -51,6 +55,7 @@ function simulateur({ fixe, parSec, cps, appris, conversation = true, prets = []
     },
   };
   cx.window = cx;
+  if (appli) cx.HakimApp = { sonJouer: (source, ref, d, f) => { natifs.push({ t: maintenant, duree: (f - d) / 1000 }); return 'ok'; } };
   cx.vitesseVoix = () => (cx.etat.reglages.vitesse || 1);   // (26/10) le rythme de l'état passe par la voix (tempo), plus par la lecture
   cx.tempoVoix = () => 1;
   vm.createContext(cx);
@@ -67,7 +72,7 @@ function simulateur({ fixe, parSec, cps, appris, conversation = true, prets = []
       m.fn();
     }
   }
-  return { lecteur: cx.lecteur, sons, demandes, avancer, get maintenant() { return maintenant; } };
+  return { lecteur: cx.lecteur, sons, demandes, natifs, avancer, get maintenant() { return maintenant; } };
 }
 
 // Une réponse de Jarvis : la 1re phrase est complète à t = 0, la suite s'écrit à 60 caractères/s.
@@ -178,4 +183,69 @@ test('un début dont la voix est prête part seul en premier ; la suite part jus
   await sans.avancer(0); sans.lecteur.dire(phrase); sans.lecteur.finFlux();
   await sans.avancer(30);
   assert.notStrictEqual(sans.sons[0].texte, 'Oui frérot,', 'pas prête : le premier morceau reste comme avant');
+});
+
+// (31/10, 01:46, l'essai de papa : « ma voix dit « écoute ça, papa », elle se tait, le son joue, puis ma voix reprend ; une
+// balise en fin de réponse joue après mon dernier mot ») un son à sa place dans la voix
+const EXTRAIT = { id: 'e7', source: 'musique', ref: 'x.mp3', debut_ms: 1000, fin_ms: 5000 };   // 4 s
+async function direAvecSon(machine, avant, apres) {
+  const sim = simulateur({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 }, ...machine });
+  let fini = null;
+  sim.lecteur.surFin = () => { if (fini == null) fini = sim.maintenant; };
+  sim.lecteur.dire(avant);
+  sim.lecteur.direSon(EXTRAIT);
+  if (apres) sim.lecteur.dire(apres);
+  sim.lecteur.finFlux();
+  await sim.avancer(60);
+  return { sim, fini, voix: sim.sons.filter(x => !/^\[e/.test(x.texte)), extraits: sim.sons.filter(x => /^\[e/.test(x.texte)) };
+}
+
+test('son au milieu (le Mac a le morceau) : sa voix se tait, le son joue en entier, puis sa voix reprend', async () => {
+  const r = await direAvecSon({ sonsMac: { e7: 4 } }, 'Écoute ça, papa !', 'Alors, il est tombé au bon moment, cette fois ?');
+  assert.strictEqual(r.extraits.length, 1, 'le son joue une fois');
+  const [s] = r.extraits, avant = r.voix.filter(v => v.debut < s.debut), apres = r.voix.filter(v => v.debut >= s.debut);
+  assert.ok(avant.length && apres.length, 'de la voix avant et après le son');
+  assert.ok(Math.max(...avant.map(v => v.fin)) <= s.debut + 1e-6, 'le son attend la fin de « écoute ça »');
+  assert.ok(Math.min(...apres.map(v => v.debut)) >= s.fin - 1e-6, `la voix reprend après le son (${s.fin.toFixed(2)} s)`);
+  assert.ok(Math.abs(s.fin - s.debut - 4) < 1e-6, 'joué en entier');
+});
+
+test('son en fin de réponse : il joue après le dernier mot, et la fin de sa parole vient après lui', async () => {
+  const r = await direAvecSon({ sonsMac: { e7: 4 } }, 'Ok papa, on y va. Écoute ça, papa !', '');
+  const [s] = r.extraits;
+  assert.ok(s, 'le son joue');
+  assert.ok(Math.max(...r.voix.map(v => v.fin)) <= s.debut + 1e-6, 'après le dernier mot');
+  assert.ok(r.fini >= s.fin - 1e-6, `sa parole finit après le son (${r.fini} ≥ ${s.fin})`);
+});
+
+test('son suivi d\'un seul mot : il joue quand même, à sa place', async () => {
+  const r = await direAvecSon({ sonsMac: { e7: 4 } }, 'Écoute ça, papa !', 'Alors ?');
+  const [s] = r.extraits;
+  assert.ok(s, 'le son joue');
+  const alors = r.voix.find(v => /Alors/.test(v.texte));
+  assert.ok(alors && alors.debut >= s.fin - 1e-6, '« Alors ? » après le son');
+});
+
+test('le Mac n\'a pas le morceau, sur le téléphone : l\'appli le joue à sa place, la voix l\'attend', async () => {
+  const r = await direAvecSon({ appli: true }, 'Écoute ça, papa !', 'Alors, il est tombé au bon moment, cette fois ?');
+  assert.strictEqual(r.sim.natifs.length, 1, 'l\'appli le joue une fois');
+  const [n] = r.sim.natifs, avant = r.voix.filter(v => v.debut < n.t), apres = r.voix.filter(v => v.debut >= n.t);
+  assert.ok(avant.length && apres.length, 'de la voix avant et après le son');
+  assert.ok(Math.max(...avant.map(v => v.fin)) <= n.t + 1e-6, 'le son attend la fin de « écoute ça »');
+  assert.ok(Math.min(...apres.map(v => v.debut)) >= n.t + 4 - 1e-6, 'la voix reprend après les 4 s du son');
+});
+
+test('le Mac n\'a pas le morceau, en fin de réponse sur le téléphone : la fin de sa parole attend le son', async () => {
+  const r = await direAvecSon({ appli: true }, 'Écoute ça, papa !', '');
+  const [n] = r.sim.natifs;
+  assert.ok(n, 'l\'appli le joue');
+  assert.ok(Math.max(...r.voix.map(v => v.fin)) <= n.t + 1e-6, 'après le dernier mot');
+  assert.ok(r.fini >= n.t + 4 - 1e-6, `sa parole finit après le son (${r.fini} ≥ ${n.t + 4})`);
+});
+
+test('ni le Mac ni l\'appli n\'ont le morceau : sa voix continue sans lui, sans blanc', async () => {
+  const r = await direAvecSon({}, 'Écoute ça, papa !', 'Alors, il est tombé au bon moment, cette fois ?');
+  assert.strictEqual(r.extraits.length + r.sim.natifs.length, 0);
+  const dit = r.voix.map(v => v.texte).join(' ');
+  assert.match(dit, /papa/); assert.match(dit, /cette fois/);
 });

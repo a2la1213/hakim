@@ -751,9 +751,9 @@ test('(01:27-01:30) [[son: nom]] n’importe où : sa voix, puis le son en entie
   assert.match(page, /if \(x\.son && x\.erreur\) \{ lots\.shift\(\); continue; \}/, 'un son qui manque : sa voix continue');
   // où il joue
   const a2 = page.indexOf('const appareilIci = '), b2 = page.indexOf('function recevoirSon(');
-  const dits = [], sons = [];
+  const dits = [], sons = [], neuronal = { direSon: (x) => sons.push(x.id) };
   const ctx = vm.createContext({ window: {}, Date, journalVoix() {}, reglagesCorps: {}, etat: { reglages: {} }, NON_REPONSE: /^no response/i,
-    lecteur: { dire: (p) => dits.push(p) }, lecteurNeuronal: { direSon: (x) => sons.push(x.id) }, sonEnAttente: null, dernierSonRecu: null });
+    lecteur: { dire: (p) => dits.push(p), impl: neuronal }, lecteurNeuronal: neuronal, sonEnAttente: null, dernierSonRecu: null });
   vm.runInContext(page.slice(a2, b2).replace(/^const /gm, 'var '), ctx);
   const decoupe = { finir: () => ['Écoute ça, papa !'] };
   ctx.sonALaPlace({ id: 'e3', debut_ms: 0, cible: '' }, true, decoupe, 7);
@@ -763,4 +763,8 @@ test('(01:27-01:30) [[son: nom]] n’importe où : sa voix, puis le son en entie
   assert.deepEqual(sons, ['e3'], 'voulu sur le téléphone : pas sur le Mac');
   ctx.window.HakimApp = {}; ctx.sonALaPlace({ id: 'e5', debut_ms: 0, cible: 'tel' }, true, decoupe, 7);
   assert.deepEqual(sons, ['e3', 'e5'], 'le téléphone le joue');
+  // (01:55) la voix du Mac (pas le lecteur neuronal) : le son ne part pas tout de suite, il attend la fin de sa voix
+  ctx.lecteur.impl = {}; ctx.sonALaPlace({ id: 'e6', debut_ms: 0, cible: '' }, true, decoupe, 7);
+  assert.deepEqual(sons, ['e3', 'e5'], 'pas dans le lecteur neuronal');
+  assert.strictEqual(vm.runInContext('sonEnAttente && sonEnAttente.extrait.id', ctx), 'e6', 'gardé pour après sa voix');
 });

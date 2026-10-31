@@ -334,7 +334,16 @@ function creerLecteurNeuronal() {
         .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`son ${r.status}`))))
         .then(ab => actx.decodeAudioData(ab))
         .then(buf => { if (g !== generation) return; x.pret = buf; journalVoix('son', { retour: 'ok_en_ligne' }); pomper(); })
-        .catch(e => { if (g === generation && e.name !== 'AbortError') { x.erreur = e; journalVoix('son', { retour: 'absent_en_ligne' }); pomper(); } });
+        .catch(e => {
+          if (g !== generation || e.name === 'AbortError') return;
+          // (31/10, 01:50, l'essai de papa au téléphone : « aucun son ») le Mac n'a pas encore ce morceau : sur le téléphone, l'appli
+          // le joue elle-même, à la même place (sa voix se tait le temps de l'extrait)
+          if (window.HakimApp && window.HakimApp.sonJouer && x.son.source !== 'atelier') {
+            x.pret = { natif: true, duration: Math.max(0.5, (Number(x.son.fin_ms) - Number(x.son.debut_ms)) / 1000) };
+            journalVoix('son', { retour: 'natif_en_ligne' });
+          } else { x.erreur = e; journalVoix('son', { retour: 'absent_en_ligne' }); }
+          pomper();
+        });
       return;
     }
     fetch('/api/voix/dire', { method: 'POST', signal: x.ctl.signal,
@@ -357,6 +366,16 @@ function creerLecteurNeuronal() {
   }
 
   function programmer(x, t) {
+    if (x.pret && x.pret.natif) {                                  // (01:50) joué par l'appli, à sa place ; la suite attend sa fin
+      const s0 = x.son, dans = Math.max(0, (t - actx.currentTime) * 1000), fin = dans + x.pret.duration * 1000 + 150;
+      // une place dans « sources » : sa voix reste « active » le temps de l'extrait (le micro ne se rouvre pas, la fin n'est pas dite)
+      const place = { _debut: t, _fin: t + x.pret.duration, minuteurs: [], stop() { this.minuteurs.forEach(clearTimeout); } };
+      place.minuteurs.push(setTimeout(() => { try { window.HakimApp.sonJouer(String(s0.source), String(s0.ref), Number(s0.debut_ms), Number(s0.fin_ms)); } catch (_) {} }, dans));
+      place.minuteurs.push(setTimeout(() => { sources.delete(place); pomper(); }, fin));
+      sources.add(place);
+      prochainDebut = t + x.pret.duration + 0.15;
+      return;
+    }
     const vitesse = x.son ? 1 : vitesseVoix();                     // (01:27) un son garde sa vitesse
     const src = actx.createBufferSource();
     src.buffer = x.pret;
@@ -873,7 +892,8 @@ function sonALaPlace(extrait, auto, decoupe, id) {
   if (!sonPourIci(extrait.cible)) return;
   const h = new Date().getHours();
   if ((h >= 23 || h < 8) && typeof reglagesCorps !== 'undefined' && reglagesCorps.sons_nuit === false) { journalVoix('son', { retour: 'la_nuit' }); return; }
-  if (!auto || !lecteurNeuronal || etat.reglages.voix === 'systeme') { sonEnAttente = { id: id || extrait.id, extrait, t: Date.now() }; return; }
+  // (01:55) sa voix doit être celle de ce lecteur : avec la voix du Mac, le son partirait tout de suite, par-dessus
+  if (!auto || !lecteurNeuronal || lecteur.impl !== lecteurNeuronal) { sonEnAttente = { id: id || extrait.id, extrait, t: Date.now() }; return; }
   decoupe.finir().forEach(p => { if (NON_REPONSE.test(p)) return; etat.lectureDe = id; lecteur.dire(p); });
   lecteurNeuronal.direSon(extrait);
 }
