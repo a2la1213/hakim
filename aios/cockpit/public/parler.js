@@ -1522,10 +1522,20 @@ setInterval(() => {
     // sa voix : la palette de son humeur (comme l'orbe de la page) ; la tienne : le rose violet ; personne (15:49) :
     // l'orbe au repos du widget, dans la palette de son humeur
     const humeurCode = (etat.interieur && etat.interieur.humeur_code) || 'calme';
-    const mode = joue ? `parle:${humeurCode}` : Date.now() < ahmedJusqua ? 'ahmed' : `repos:${humeurCode}`;
+    // (31/10, 01:10, Ahmed : « les orbes de la bulle, du widget et du verrou coordonnées parfaitement à celle de Parler ») la
+    // même règle : la couleur de celui qui a la parole (quiALaParole)
+    const qui = quiALaParole();
+    const mode = joue ? `parle:${qui === 'coupe' ? 'coupe' : humeurCode}`
+      : Date.now() < ahmedJusqua && qui !== 'coupe' ? 'ahmed' : `repos:${paletteDeLaParole(humeurCode)}`;
     if (mode !== orbeWidget) { orbeWidget = mode; window.HakimApp.orbe(mode); }
+    signalerWidget();                                    // (01:10) « Hakim parle », « va parler », l'oreille : à l'instant
   } catch (_) {}
 }, 250);
+// la palette que montre l'orbe de Parler, pour les orbes de l'appli : papa (rose violet), coupé (vert), partagé, ou son humeur
+function paletteDeLaParole(humeurCode) {
+  const qui = quiALaParole();
+  return qui === 'papa' ? 'ecoute' : qui === 'coupe' ? 'coupe' : qui === 'partage' ? 'partage' : humeurCode;
+}
 
 // (2026-10-22, Ahmed) la bulle flottante de l'appli Android : l'orbe vivante de Parler par-dessus les autres applis. Quand
 // l'appli est cachée, la page lui envoie le vrai niveau des voix, au rythme du micro (une fenêtre sur trois, ~16 par
@@ -1538,10 +1548,12 @@ function alimenterBulle(niveauMicro) {
     // personne ne parle : la palette de son humeur, comme l'orbe de la page au repos (15:55, Ahmed)
     const humeurCode = (etat.interieur && etat.interieur.humeur_code) || 'calme';
     // (16:10) il réfléchit (sa réponse est demandée, pas encore dite) : « pense », l'orbe tourne plus vite, comme dans Parler
-    let mode = `${etat.flux ? 'pense' : 'repos'}:${humeurCode}`, n = 0, b = [0, 0, 0];
+    // (01:10) la palette de celui qui a la parole, comme l'orbe de Parler
+    const qui = quiALaParole();
+    let mode = `${etat.flux ? 'pense' : 'repos'}:${paletteDeLaParole(humeurCode)}`, n = 0, b = [0, 0, 0];
     const v = lecteurNeuronal.joue ? niveauVoix() : null;
-    if (v) { mode = `parle:${humeurCode}`; n = v.niveau; b = v.bandes; }
-    else if (c && c.capteur && c.capteur.enParole) { mode = 'ahmed'; n = niveauMicro; b = [n, n * 0.8, n * 0.6]; }
+    if (v) { mode = `parle:${qui === 'coupe' ? 'coupe' : humeurCode}`; n = v.niveau; b = v.bandes; }
+    else if (c && c.capteur && c.capteur.enParole && qui !== 'coupe') { mode = qui === 'partage' ? 'parle:partage' : 'ahmed'; n = niveauMicro; b = [n, n * 0.8, n * 0.6]; }
     window.HakimApp.bulleNiveau(mode, n, b[0], b[1], b[2]);
   } catch (_) {}
 }
@@ -2188,13 +2200,27 @@ function afficherOreilleHakim() {
   }
 }
 setInterval(afficherOreilleHakim, 15000);
+/* (31/10, 01:06-01:10, Ahmed : « un gros badge ROUGE, en grand, quand il parle ou juste avant ; le bouton qui dit qu'il parle ou
+   qu'il n'entend pas doit s'afficher partout ») ici (en-tête, grande orbe) ; l'appli le montre aussi (widget, bulle, verrou) */
+function afficherSonTour() {
+  try {
+    const c = etat.conversation, parle = voixQuiSonne(), va = !!c && !parle && transcriptionEnPause();
+    for (const [id, grand] of [['hakimParle', false], ['hakimParleScene', true]]) {
+      const el = $(id); if (!el) continue;
+      el.hidden = !(parle || va);
+      if (parle || va) el.textContent = parle ? '🔴 HAKIM PARLE' : (grand ? '🔴 Hakim va parler…' : '🔴 va parler');
+    }
+  } catch (_) {}
+}
+setInterval(afficherSonTour, 250);
 function signalerWidget() {
   try {
     if (!window.HakimApp || !window.HakimApp.boutons) return;
     const c = etat.conversation;
     const e = JSON.stringify({ conversation: !!c, pause: !!lecteur.enPause, son_coupe: !!etat.sonCoupe,
       micro_coupe: !!(c && c.capteur && (c.capteur.estMuet || (c.muetParHakim && !c.muetParHakim.attente))),
-      oreille_fermee: !!(typeof oreilleHakim !== 'undefined' && oreilleHakim.fermee) });
+      oreille_fermee: !!(typeof oreilleHakim !== 'undefined' && oreilleHakim.fermee),
+      hakim_parle: typeof voixQuiSonne === 'function' && voixQuiSonne(), va_parler: !!c && typeof voixQuiSonne === 'function' && !voixQuiSonne() && transcriptionEnPause() });
     if (e === dernierEtatWidget) return;
     dernierEtatWidget = e;
     window.HakimApp.boutons(e);

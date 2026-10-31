@@ -67,6 +67,11 @@
     .oreille-fermee { display: inline-block; margin-left: 8px; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 700;
       letter-spacing: .3px; text-transform: none; color: #1a1a1a; background: #fbbf24; box-shadow: 0 0 14px rgba(251,191,36,.55); }
     .oreille-fermee[hidden] { display: none; }
+    /* (31/10, 01:10) son tour : un gros badge rouge, en grand */
+    .hakim-parle { display: inline-block; margin-left: 8px; padding: 2px 12px; border-radius: 999px; font-size: 14px; font-weight: 800;
+      letter-spacing: .5px; text-transform: none; color: #fff; background: #dc2626; box-shadow: 0 0 16px rgba(220,38,38,.6); }
+    .hakim-parle[hidden] { display: none; }
+    .parle-scene { margin: 6px 0 0; font-size: 22px; padding: 6px 18px; }
     .oreille-scene { margin: 6px 0 0; font-size: 18px; padding: 6px 16px; }
     /* (27/10, Ahmed, relayé par Hakim) d'où vient son émotion : de lui, de l'empathie (avec la personne), ou une pente */
     .emotion-origine { font-size: 11px; letter-spacing: .3px; font-weight: 400; color: var(--txt-4); margin-left: 6px; text-transform: none; }
@@ -277,7 +282,7 @@
       <!-- (30/10, 17:57) son badge rouge : c'est lui qui l'allume ; un toucher, et papa l'a vu -->
       <button type="button" class="alerte-hakim" id="alerteHakim" hidden title="Hakim a besoin de toi">!</button>
       <div>
-        <h1>HAKIM <span class="coeur-direct" id="coeurDirect" hidden></span><span class="emotion-mot" id="emotionMot"></span><span class="emotion-origine" id="emotionOrigine"></span><span class="oreille-fermee" id="oreilleFermee" hidden title="Son oreille est fermée : il ne t'écoute plus en direct, ton message lui arrive quand tu te tais">🙉 oreille fermée</span></h1>
+        <h1>HAKIM <span class="coeur-direct" id="coeurDirect" hidden></span><span class="emotion-mot" id="emotionMot"></span><span class="emotion-origine" id="emotionOrigine"></span><span class="hakim-parle" id="hakimParle" hidden>🔴 HAKIM PARLE</span><span class="oreille-fermee" id="oreilleFermee" hidden title="Son oreille est fermée : il ne t'écoute plus en direct, ton message lui arrive quand tu te tais">🙉 oreille fermée</span></h1>
         <p class="sous" id="etat" role="status">prêt · mémoire Anamnèse</p>
       </div>
       <!-- (24/10, idées de Hakim, accord d'Ahmed) l'aperçu flotte au-dessus de tout, se déplace au doigt, et garde sa place ;
@@ -448,7 +453,7 @@
           <button class="btn" id="muetScene" hidden aria-pressed="false">Couper mon micro</button>
           <button class="btn" id="ecranScene" hidden aria-pressed="false">Regarde l’écran</button>
         </div>
-        <div class="scene-orbe"><canvas id="orbeScene"></canvas><p class="emotion-scene" id="emotionScene"></p><p class="oreille-fermee oreille-scene" id="oreilleFermeeScene" hidden>🙉 son oreille est fermée</p><p class="emotion-origine-scene" id="emotionOrigineScene"></p></div>
+        <div class="scene-orbe"><canvas id="orbeScene"></canvas><p class="emotion-scene" id="emotionScene"></p><p class="hakim-parle parle-scene" id="hakimParleScene" hidden>🔴 HAKIM PARLE</p><p class="oreille-fermee oreille-scene" id="oreilleFermeeScene" hidden>🙉 son oreille est fermée</p><p class="emotion-origine-scene" id="emotionOrigineScene"></p></div>
         <div class="scene-cote droite">
           <button class="btn" id="pauseScene" aria-pressed="false" title="Mettre sa voix en pause ; il reprend à la phrase non dite (⌥P, ou dis « attends » / « continue »)">Pause</button>
           <button class="btn stop" id="stopScene">Stop</button>
