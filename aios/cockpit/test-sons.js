@@ -152,7 +152,7 @@ test('(31/10, 01:25, Ahmed : « écoute ça, papa ! ») son son part juste APRÈ
   ctx.lecteur.actif = false; ctx.etat.finVoixA = t; ctx.j();
   assert.equal(ecrits.length, 0, 'son dernier mot vient de finir : 0,3 s');
   t += 400; ctx.j(); assert.equal(ecrits[0][0], 'apres', 'juste après son dernier mot');
-  ctx.lecteur.actif = true;
+  t += 9000; ctx.lecteur.actif = true;                // (09:30) le son d'avant a fini : un son à la fois
   ctx.sonEnAttente = { id: 2, t, extrait: { source: 'musique', ref: '57', debut_ms: 0, fin_ms: 3000, moment: 'sous' } };
   ctx.j(); assert.equal(ecrits[1] && ecrits[1][0], 'sous', '[[son: nom sous]] : sous sa voix');
 });

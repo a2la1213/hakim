@@ -37,9 +37,9 @@ function charger() {
       debutConversation = Number(s.debut) || 0;
     }
   } catch (_) {}
-  // Haiku écarté par Ahmed : un ancien réglage repasse à Sonnet ou Opus
-  if (!['sonnet', 'opus', 'auto'].includes(etat.reglages.modele)) etat.reglages.modele = 'opus';
-  if (!['sonnet', 'opus', 'auto'].includes(etat.reglages.modeleConversation)) etat.reglages.modeleConversation = 'sonnet';
+  // (31/10, 09:20, Ahmed) Haiku 5.5 revient, à la main ou en auto ; un réglage inconnu repasse à Opus ou Sonnet
+  if (!['sonnet', 'opus', 'haiku', 'auto'].includes(etat.reglages.modele)) etat.reglages.modele = 'opus';
+  if (!['sonnet', 'opus', 'haiku', 'auto'].includes(etat.reglages.modeleConversation)) etat.reglages.modeleConversation = 'sonnet';
   if (!['auto', 'abonnement', 'api', 'local', 'gemma'].includes(etat.reglages.source)) etat.reglages.source = 'auto';
   // Ahmed (2026-10-18) : par défaut, la langue est DÉTECTÉE parmi le français, l'arabe et l'anglais (plus
   // jamais l'islandais) ; l'ancien défaut « français » passe une fois à ce mode, son choix reste libre ensuite
@@ -648,6 +648,7 @@ function estSonEcho(texte) {
 lecteurNeuronal.surSegment = (t, duree) => {
   if (mesureTour && mesureTour.premier_texte && !mesureTour.premier_son) { mesureTour.premier_son = Date.now(); finMesureTour(); }
   noterParole(t); noterMorceau(t, duree); sousTitre(t);
+  couperAuDebutDeSaVoix();                                             // (09:12)
 };
 lecteurNeuronal.surPanne = noterPanneVoix;
 if (lecteurSysteme) { lecteurSysteme.surSegment = (t) => { noterParole(t); noterMorceau(t); sousTitre(t); }; lecteurSysteme.surMot = () => pulser(0.35); }
@@ -881,6 +882,13 @@ setTimeout(coupureAuChargement, 1500);
 // une voix, ni la sienne ni celle de papa), ni la nuit ; le silencieux et Ne pas déranger, l'appli les respecte. Le micro est
 // sourd le temps qu'il joue (ce n'est pas une voix) ; trop vieux (une minute), il ne part plus.
 let sonEnAttente = null, sonJusqua = 0, dernierSonRecu = null;
+// (31/10, 09:30, Ahmed : « plusieurs balises de son dans une même réponse, comme il le veut ») ceux qui attendent sa voix : l'un après
+// l'autre, dans l'ordre
+const sonsSuivants = [];
+function mettreSonEnAttente(x) {
+  if (sonEnAttente && Date.now() - sonEnAttente.t < 180000) { sonsSuivants.push(x); if (sonsSuivants.length > 8) sonsSuivants.shift(); }
+  else sonEnAttente = x;
+}
 // (22:51, Hakim : « mes sons ne sortent pas ») un son arrive par sa réponse ici, ou par le cockpit quand il parle depuis un autre
 // appareil : seule l'appli du téléphone (ses morceaux sont là) le joue, une fois
 // (31/10, 01:27-01:30) un son à sa place dans sa voix, là où il l'a voulu (« | mac », « | tel », « | les deux » ; par défaut, là
@@ -893,7 +901,7 @@ function sonALaPlace(extrait, auto, decoupe, id) {
   const h = new Date().getHours();
   if ((h >= 23 || h < 8) && typeof reglagesCorps !== 'undefined' && reglagesCorps.sons_nuit === false) { journalVoix('son', { retour: 'la_nuit' }); return; }
   // (01:55) sa voix doit être celle de ce lecteur : avec la voix du Mac, le son partirait tout de suite, par-dessus
-  if (!auto || !lecteurNeuronal || lecteur.impl !== lecteurNeuronal) { sonEnAttente = { id: id || extrait.id, extrait, t: Date.now() }; return; }
+  if (!auto || !lecteurNeuronal || lecteur.impl !== lecteurNeuronal) { mettreSonEnAttente({ id: id || extrait.id, extrait, t: Date.now() }); return; }
   decoupe.finir().forEach(p => { if (NON_REPONSE.test(p)) return; etat.lectureDe = id; lecteur.dire(p); });
   lecteurNeuronal.direSon(extrait);
 }
@@ -902,7 +910,7 @@ function recevoirSon(extrait, id) {
   const cle = `${extrait.id}|${extrait.debut_ms}`;
   if (dernierSonRecu && dernierSonRecu.cle === cle && Date.now() - dernierSonRecu.t < 15000) return;
   dernierSonRecu = { cle, t: Date.now() };
-  sonEnAttente = { id: id || extrait.id, extrait, t: Date.now() };     // (22:55) le Mac le joue aussi (jouerSonIci)
+  mettreSonEnAttente({ id: id || extrait.id, extrait, t: Date.now() });     // (22:55) le Mac le joue aussi (jouerSonIci)
 }
 // (22:55, Ahmed : « arrange pourquoi sur le Mac il n'arrive pas à jouer les sons choisis ») l'extrait, découpé par le cockpit dans
 // le morceau que l'appli lui a envoyé, joué ici (la même sortie que sa voix : « Sa voix » le coupe aussi)
@@ -940,7 +948,8 @@ async function envoyerMorceauxManquants() {
 setTimeout(envoyerMorceauxManquants, 8000);
 setInterval(envoyerMorceauxManquants, 5 * 60e3);
 function jouerSonEnAttente() {
-  if (!sonEnAttente) return;
+  if (!sonEnAttente && sonsSuivants.length) sonEnAttente = { ...sonsSuivants.shift(), t: Date.now() };
+  if (!sonEnAttente || Date.now() < sonJusqua) return;                    // (09:30) le précédent joue encore
   if (Date.now() - sonEnAttente.t > 180000) { sonEnAttente = null; return; }   // (01:25) une longue réponse : il attend sa fin
   const c = etat.conversation;
   // (30/10, 18:50, Ahmed via Hakim : « qu'un son puisse jouer pendant que je parle ») sous SA voix, plus bas (appli 1.32), s'il l'a
@@ -955,6 +964,7 @@ function jouerSonEnAttente() {
   sonEnAttente = null;
   // (31/10, 00:07, Ahmed : « enlève cette restriction de la nuit, laisse-moi juste un bouton ») la nuit seulement si papa l'a voulu
   if ((h >= 23 || h < 8) && typeof reglagesCorps !== 'undefined' && reglagesCorps.sons_nuit === false) { journalVoix('son', { retour: 'la_nuit' }); return; }
+  sonJusqua = Date.now() + 1500;                                           // (09:30) le suivant attend qu'il soit lancé
   if (!window.HakimApp || !window.HakimApp.sonJouer || x.source === 'atelier') { jouerSonIci(x, sousSaVoix ? 0.3 : 0.6); return; }   // (22:55) le Mac ; (01:27) ses sons à lui
   try {
     const r = String(sousSaVoix ? window.HakimApp.sonJouerVolume(String(x.source), String(x.ref), Number(x.debut_ms), Number(x.fin_ms), 0.3)
@@ -1234,7 +1244,7 @@ const REGLES_NOMS = { peur: 'peur : demander avant d’agir', lassitude: 'lassit
 function nomModele(m) {
   if (m.modele === 'gemma') return 'Gemma';                       // (29/10) Gemma à la place d'Opus (réglages › source)
   const v = String(m.modeleReel || '').match(/^claude-(opus|sonnet|haiku)-(\d{1,2})-(\d{1,2})(?:-|$)/);
-  if (!v) return m.modele === 'opus' ? 'Opus' : 'Sonnet';
+  if (!v) return m.modele === 'opus' ? 'Opus' : m.modele === 'haiku' ? 'Haiku' : 'Sonnet';
   return `${v[1][0].toUpperCase()}${v[1].slice(1)} ${v[2]}.${v[3]}`;
 }
 function tailleLisible(n) { return n < 1024 ? `${n} o` : n < 1048576 ? `${Math.round(n / 1024)} Ko` : `${(n / 1048576).toFixed(1).replace('.', ',')} Mo`; }
@@ -2655,6 +2665,98 @@ async function reprendreTranscription() {
   return true;
 }
 setInterval(reprendreTranscription, 400);
+/* (31/10, 09:05, Ahmed : « 1) découper ma parole en morceaux, dans l'ordre d'arrivée ; 2) chaque morceau lu et traité, gardé en
+   mémoire ; 3) quand un vide apparaît, tout ensemble ; 4) la réponse assemblée, ta voix ET la coupure de mon micro » ; 09:12,
+   ses choix : « trier chaque morceau », et le vide à 0,5 s) pendant son tour, chacune de tes phrases est transcrite dès qu'elle
+   finit (une à la fois), nettoyée (son écho, les voix inconnues, le bruit), puis triée par son subconscient (une à la fois, sans
+   jamais retenir la suivante). Au premier vide de 0,5 s de TA voix après la sienne, sa conscience reçoit d'un coup ce qui est
+   déjà trié ; un morceau que son subconscient n'a pas encore jugé part nettoyé. Tu reprends la parole pendant l'assemblage :
+   rien ne part, on réassemble au vide suivant, avec ton nouveau morceau. Interrupteur « trier chaque morceau » : page SENS. */
+const VIDE_MS = 500, MORCEAUX_MAX = 8, MORCEAU_ATTENTE_MS = 8000;
+// (09:25, Ahmed : « l'option pour quand du bruit le coupe, en conversation à plusieurs ; il doit pouvoir l'activer ou pas ») éteint
+// par défaut : Hakim l'allume ([[morceaux: oui]]) et l'éteint lui-même ; papa aussi, page SENS
+const trierMorceaux = () => typeof reglagesCorps !== 'undefined' && reglagesCorps.trier_morceaux === true;
+function garderMorceau(conv, wav, infos) {
+  conv.morceaux = (conv.morceaux || []).concat([{ wav, infos, etat: 'attente', texte: '', verdict: null, t: Date.now() }]);
+  if (conv.morceaux.length > MORCEAUX_MAX) { conv.morceaux.splice(0, conv.morceaux.length - MORCEAUX_MAX); journalVoix('morceau_oublie', {}); }
+  journalVoix('morceau_garde', { en_attente: conv.morceaux.length });
+  trierLesMorceaux(conv);
+}
+async function trierLesMorceaux(conv) {
+  if (conv.trieEnCours) return;
+  conv.trieEnCours = true;
+  try {
+    for (let m; (m = (conv.morceaux || []).find(x => x.etat === 'attente'));) {
+      m.etat = 'transcription';
+      const t0 = Date.now(), inf = m.infos || {};
+      let texte = await transcrireVite(m.wav, 'audio/wav');
+      m.wav = null;
+      if (texte === null) { m.etat = 'ecarte'; journalVoix('morceau_echec', { ms: Date.now() - t0 }); continue; }
+      if (voixPendant(Number(inf.debut) || t0 - 5000, Number(inf.derniere_voix || inf.fin) || t0)) texte = estSonEcho(texte) ? '' : retirerEcho(texte).texte;
+      texte = filtrerVoixInconnues(texte);
+      if (!Conversation.utile(texte)) { m.etat = 'ecarte'; journalVoix('morceau_trie', { ms: Date.now() - t0, garde: false }); continue; }
+      m.texte = texte; m.etat = 'transcrit';
+      // « arrête », « tais-toi » pendant qu'il parle : il s'arrête, comme avant (la transcription en continu le faisait)
+      if (typeof reglagesCorps !== 'undefined' && reglagesCorps.garder_parole && lecteur && (lecteur.actif || lecteur.enPause) && ARRETE_MOI.test(texte)) {
+        journalVoix('arret_par_la_voix', { morceau: true }); arreterTout(true, { raison: 'stop' }); majBoutonsPause(); rendre(); humeur();
+      }
+      conv.chaineTri = (conv.chaineTri || Promise.resolve()).then(() => fetch('/api/jarvis/trier', { method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ texte }) })
+        .then(r => (r.ok ? r.json() : null)).catch(() => null)
+        .then((v) => {
+          m.verdict = v && typeof v.garder === 'boolean' ? v : { garder: true, texte, panne: true };   // une panne laisse passer
+          journalVoix('morceau_trie', { ms: Date.now() - t0, garde: m.verdict.garder, panne: !!m.verdict.panne });
+        }));
+    }
+  } finally { conv.trieEnCours = false; }
+}
+// ce qui est trié (ou transcrit, sans attendre son subconscient), dans l'ordre, marqué « dit pendant ta parole » ; ce qui est encore
+// en route reste pour la prochaine fois
+function morceauxPrets(conv) {
+  const gardes = [], restent = [];
+  let ecartes = 0;
+  for (const m of conv.morceaux || []) {
+    if (m.etat === 'attente' || m.etat === 'transcription') { restent.push(m); continue; }
+    if (m.etat !== 'transcrit') continue;
+    if (m.verdict && !m.verdict.garder) { ecartes++; continue; }
+    gardes.push((m.verdict && m.verdict.texte) || m.texte);
+  }
+  conv.morceaux = restent;
+  journalVoix('morceaux_assembles', { gardes: gardes.length, ecartes, en_route: restent.length });
+  return gardes.length ? resumerPourSonAttention(gardes.join(' … ')) : '';
+}
+const silenceDeTaVoix = (cap) => !cap || !cap.enParole || Date.now() - (Number(cap.derniereVoix) || 0) >= VIDE_MS;
+async function assemblerMorceaux() {
+  const c = etat.conversation;
+  if (!c || !(c.morceaux || []).length || c.assemblage || c.enAttente || transcriptionEnPause()) return false;
+  if (Date.now() - (etat.finVoixA || 0) < 400 || !silenceDeTaVoix(c.capteur)) return false;
+  c.assemblage = true;
+  try {
+    const voix = c.capteur ? c.capteur.derniereVoix : 0, t0 = Date.now();
+    // les morceaux encore en transcription d'abord (ils finissent vite : le reste a été fait pendant sa voix)
+    while ((c.morceaux || []).some(m => m.etat === 'attente' || m.etat === 'transcription') && Date.now() - t0 < MORCEAU_ATTENTE_MS) {
+      await new Promise(r => setTimeout(r, 100));
+      if (c.capteur && c.capteur.derniereVoix !== voix && !silenceDeTaVoix(c.capteur)) { journalVoix('assemblage_repris', {}); return false; }
+    }
+    if (etat.conversation !== c || sonTourEnCours() || c.enAttente) return false;
+    const infos = (c.morceaux[c.morceaux.length - 1] || {}).infos || null;
+    const texte = morceauxPrets(c);
+    if (!texte) return false;                                       // tout écarté : il n'a rien à répondre
+    await tourDeParole(c, null, infos, { texte, differe: true });
+    return true;
+  } finally { c.assemblage = false; }
+}
+setInterval(assemblerMorceaux, 150);
+// (09:05, point 4) sa réponse part : sa voix ET la coupure de ton micro, jusqu'à la fin de sa voix (interrupteurs « trier chaque
+// morceau » et « il peut couper mon micro ») ; ton bouton reprend toujours la main
+let reponseCoupee = null;
+function couperAuDebutDeSaVoix() {
+  const c = etat.conversation;
+  if (!c || !c.capteur || !trierMorceaux() || etat.lectureDe == null || etat.lectureDe === reponseCoupee) return;
+  reponseCoupee = etat.lectureDe;
+  if (c.muetParHakim || c.capteur.estMuet) return;
+  microParHakim({ x: 'couper', s: 0 });
+}
 async function tourDeParole(conv, wav, infos, extra) {
   // (28/10, sa sieste) les éclats trop courts pour une voix, et leur écart aux battements : de quoi régler le filtre
   if (infos && infos.vibration && (infos.vibration.eclats || infos.vibration.battements)) journalVoix('vibration_tour', infos.vibration);
@@ -2675,6 +2777,11 @@ async function tourDeParole(conv, wav, infos, extra) {
   }
   // (00:47) la transcription en pause (son tour) : le son de ta phrase attend la fin de sa voix (les 3 dernières)
   if (wav && !(extra && extra.texte) && transcriptionEnPause()) {
+    if (trierMorceaux()) {                                                  // (09:12) trié au fil de l'eau
+      if (tourSansVoix(infos)) { journalVoix('tour_bruit', { morceau: true }); return; }
+      if (conv.muetParHakim && !conv.muetParHakim.attente && voixLointaine(infos)) { journalVoix('tour_loin', { morceau: true }); return; }
+      garderMorceau(conv, wav, infos); return;
+    }
     conv.sonsEnAttente = (conv.sonsEnAttente || []).concat([{ wav, infos }]).slice(-3);
     journalVoix('tour_son_garde', { en_attente: conv.sonsEnAttente.length });
     return;
@@ -2752,6 +2859,7 @@ async function tourDeParole(conv, wav, infos, extra) {
   }
   if (conv.tourGarde && !sonTourEnCours()) { texte = `${conv.tourGarde} … ${texte}`; conv.tourGarde = ''; }
   if ((conv.ecritGarde || []).length && !sonTourEnCours()) texte = `${prendreEcritsGardes(conv)}\n${texte}`;   // (08:30)
+  if ((conv.morceaux || []).length && !sonTourEnCours() && !(extra && extra.texte)) { const avant = morceauxPrets(conv); if (avant) texte = `${avant}\n${texte}`; }   // (09:12)
   if (chacunSonTour() && sonTourEnCours()) { garderPourSonTour(conv, texte); return; }
   // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
   if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(true, { garder: true, raison: 'parole' }); }
@@ -3163,6 +3271,8 @@ function ecouterPensees() {
     if (o.ici && !(o.extrait && (o.extrait.cible === 'deux' || o.extrait.cible === appareilIci()))) return;
     recevoirSon(o.extrait); } catch (_) {} });
   es.addEventListener('micro', (ev) => { try { microParHakim(JSON.parse(ev.data)); } catch (_) {} });   // (22:27) de lui-même aussi
+  es.addEventListener('morceaux', (ev) => { try { const o = JSON.parse(ev.data);   // (09:25) son tri des morceaux, allumé ou éteint par lui
+    reglagesCorps = { ...reglagesCorps, trier_morceaux: !!o.actif }; journalVoix('tri_morceaux', { actif: !!o.actif }); } catch (_) {} });
   es.addEventListener('oreille_hakim', (ev) => { try { surOreilleHakim(JSON.parse(ev.data)); } catch (_) {} });   // (01:00) le signe
   es.addEventListener('attention', (ev) => { try { const o = JSON.parse(ev.data), c = etat.conversation;   // (00:47) ses empans choisis
     if (c) c.attentionJusqua = o.pause ? Date.now() + 15000 : 0; journalVoix('attention', { pause: !!o.pause }); } catch (_) {} });

@@ -370,7 +370,10 @@ const PYTHON = path.join(ANAMNESE, '.venv', 'bin', 'python');
 const PYTHON_VOIX = [path.join(ANAMNESE, 'jarvis', '.venv', 'bin', 'python')].find(f => fs.existsSync(f)) || PYTHON;
 const CLAUDE_BIN = [process.env.CLAUDE_BIN, path.join(HOME, '.npm-global', 'bin', 'claude')]
   .find(f => f && fs.existsSync(f)) || 'claude';
-const MODELES_JARVIS = new Set(['sonnet', 'opus']);          // Haiku écarté par Ahmed (2026-10-16) : Sonnet au minimum
+// (31/10, 09:20, Ahmed : « rajoute l'option Claude Haiku en manuel et en automatique, Haiku 5.5 ; lundi on améliorera le switch
+// entre modèles ») Haiku revient (écarté le 2026-10-16) : choisi à la main, ou en auto par « passe en Haiku » et [[modele: haiku]]
+const MODELES_JARVIS = new Set(['sonnet', 'opus', 'haiku']);
+const MODELE_CLI = { haiku: 'claude-haiku-5-5' };            // le nom donné à claude --model (Haiku 5.5, le plus récent)
 // FERME-DEBUT outils (28/10 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
 // Ni identité (le cœur est validé par Ahmed ; elle grandit par la consolidation de nuit), ni
 // taxonomie (une phrase mal entendue ne doit pas fusionner des rubriques), ni wm_boot (le briefing
@@ -909,7 +912,7 @@ const CHOCS_CLI = path.join(ANAMNESE, 'chocs_cli.py');
 const CHOCS_BANC = process.env.JARVIS_CHOCS_CLI || '';          // le banc : un faux pont, jamais la vraie mémoire
 // (2026-10-23) deux balises cachées en fin de réponse : [[affect: …]] (son appréciation) et [[souvenirs: …]] (les souvenirs
 // proposés qui lui ont vraiment servi, pour la boucle de retour) ; aucune n'est affichée, dite ou gardée
-const BALISE_AFFECT = /\[\[\s*(?:affect|souvenirs|modele|impulsion|son|alerte|ecran|rire|lumiere|pause|reprendre|micro|attention)\s*:[^\]]{0,300}\]\]/gi;     // (26/10) et [[modele: opus]] ; (30/10) [[impulsion: joie]]
+const BALISE_AFFECT = /\[\[\s*(?:affect|souvenirs|modele|impulsion|son|alerte|ecran|rire|lumiere|pause|reprendre|micro|attention|morceaux)\s*:[^\]]{0,300}\]\]/gi;     // (26/10) et [[modele: opus]] ; (30/10) [[impulsion: joie]]
 // (30/10, Ahmed : « une petite impulsion à chaque réponse qui compte ») sa balise [[impulsion: …]], vue dès qu'elle passe dans
 // le flux : la page la joue au début de sa voix
 // (30/10, Bumblebee) un bout de musique choisi par lui ; (31/10, 01:25, Ahmed : « écoute ça, papa ! » : le son juste APRÈS son dernier
@@ -997,6 +1000,18 @@ function filtreAffect() {
    Ahmed : « une durée minimale qu'il choisit »), [[micro: ouvrir]] : le vrai micro de papa et ses
    boutons ; le bouton de papa reprend la main. La phrase de papa encore en route passe par son subconscient (residuelle). */
 const BALISE_MICRO = /\[\[\s*micro\s*:\s*(couper|ouvrir)(?:\s+(\d{1,3}))?\s*\]\]/i;
+// (31/10, 09:25, Ahmed : « l'option pour quand du bruit le coupe, notamment en conversation à plusieurs ; il doit pouvoir l'activer
+// ou pas ») le tri des morceaux, allumé ou éteint par lui : [[morceaux: oui]] / [[morceaux: non]] (papa : page SENS)
+const BALISE_MORCEAUX = /\[\[\s*morceaux\s*:\s*(oui|non|on|off|actif|inactif|allum[ée]|[ée]teint)\s*\]\]/i;
+const triMorceauxDe = (texte) => { const m = String(texte || '').match(BALISE_MORCEAUX); return m ? /^(oui|on|actif|allum)/i.test(m[1]) : null; };
+function reglerMorceaux(actif) {
+  const r = lireJson(CORPS_REGLAGES, {}) || {};
+  if ((r.trier_morceaux === true) === actif) return;
+  r.trier_morceaux = actif;
+  try { ecrireAtomique(CORPS_REGLAGES, j(r)); } catch (e) { return console.error(`Jarvis : tri des morceaux non réglé (${e.message})`); }
+  diffuser(abonnesPensees, 'morceaux', j({ actif }));
+  console.error(`Jarvis : il ${actif ? 'allume' : 'éteint'} le tri des morceaux`);
+}
 const microDe = (texte) => { const m = String(texte || '').match(BALISE_MICRO); return m ? { x: m[1].toLowerCase(), s: Math.min(120, Number(m[2]) || 0) } : null; };
 const residuelles = [];
 const BALISE_PAUSE = /\[\[\s*pause\s*:[^\]]{0,300}\]\]/i, BALISE_REPRENDRE = /\[\[\s*reprendre\s*:[^\]]{0,300}\]\]/gi;
@@ -1978,7 +1993,7 @@ function lireCorps(req, max) {
 // suivant, le tiers de la facture. Une conversation garde donc UN modèle, Opus ; seuls « passe en Sonnet » / « mode
 // Opus » d'Ahmed, ou la balise [[modele: …]] de Hakim, le changent, pour le reste de cette conversation.
 const MODELE_CONVERSATION = 'opus';
-const DEMANDE_MODELE = /\b(?:passe|reste|mets?[- ]toi|bascule)\s+(?:en\s+|sur\s+)?(?:mode\s+)?(opus|sonnet)\b|\bmode\s+(opus|sonnet)\b/i;
+const DEMANDE_MODELE = /\b(?:passe|reste|mets?[- ]toi|bascule)\s+(?:en\s+|sur\s+)?(?:mode\s+)?(opus|sonnet|haiku)\b|\bmode\s+(opus|sonnet|haiku)\b/i;
 const modeleDeSession = new Map();                 // conversation → le modèle qu'Ahmed ou Hakim y a choisi
 function noterModele(session, modele) {
   if (!session) return;
@@ -3202,7 +3217,7 @@ async function routeJarvis(req, res, distantReq = false) {
     // (27/10, Hakim) un message trop long ne lui arrive jamais : il le saura au tour suivant
     if (texte.length > 20000) noterArret(`ce message ne t'est jamais arrivé : trop long (${texte.length} caractères, 20 000 au plus)`, texte);
     res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(j({ erreur: 'requête invalide : texte (≤ 20 000, sans octet nul), modele ∈ sonnet|opus|auto, session = UUID' }));
+    return res.end(j({ erreur: 'requête invalide : texte (≤ 20 000, sans octet nul), modele ∈ sonnet|opus|haiku|auto, session = UUID' }));
   }
   const voixDepuis = Math.max(dernierMessageAhmed, Date.now() - 5 * 60 * 1000);   // les morceaux de CE message
   const prosodieTexte = q.oral ? prosodieDepuis(voixDepuis) + tonVoixDepuis(voixDepuis) : (prosodieDepuis(Infinity), tonVoixDepuis(Infinity), '');
@@ -3383,19 +3398,27 @@ async function routeJarvis(req, res, distantReq = false) {
   const fluxAffect = filtreAffect();                 // (chocs) la balise ne part jamais vers les pages
   let fluxPause = filtrePause();                     // (vers 22 h 05) [[pause: …]] / [[reprendre: …]]
   let microDit = false;                              // (22:27) sa balise [[micro: …]], dès qu'elle arrive
-  // (01:27) ses sons, à leur place dans sa voix ; « après » ou « sous » : à la fin, comme avant
+  let morceauxDit = false;                           // (09:25) sa balise [[morceaux: oui|non]], dès qu'elle arrive
+  // (01:27) ses sons, à leur place dans sa voix ; « sous » : sous sa voix, comme avant ; (31/10, 09:30, Ahmed : « plusieurs balises
+  // de son dans une même réponse, comme il le veut, ça doit être flexible ») autant qu'il veut, à leur place ; « après » : chacun à
+  // la fin de sa voix, dans l'ordre
   let sonsEnLigne = 0, sonDiffere = null;
+  const sonsApres = [];
   const fluxSons = filtreSons((o) => {
     if (o.texte != null) { const y = fluxAffect.pousser(fluxPause.pousser(o.texte)); if (y) envoyer({ t: 'texte', x: y }); return; }
     const ex = corpsReglages().sons ? lireSons().find(x => x.nom === o.son.nom) : null;
     if (!ex) return;
     const extrait = { id: ex.id, source: ex.source, ref: ex.ref, debut_ms: ex.debut_ms, fin_ms: ex.fin_ms, nom: ex.nom, moment: o.son.moment, cible: o.son.cible };
+    if (o.son.moment === 'apres') { sonsApres.push({ ...extrait, moment: 'ici' }); return; }
     if (o.son.moment !== 'ici') { if (!sonDiffere) sonDiffere = extrait; return; }
+    sonEnLigne(extrait, ex);
+  });
+  function sonEnLigne(extrait, ex) {
     sonsEnLigne++;
     envoyer({ t: 'son_ici', extrait });
     diffuser(abonnesPensees, 'son', j({ extrait, ici: true }));
     if (sonsEnLigne === 1 && corpsActif()) { corpsLot.evenements.push({ type: 'son', t: Date.now(), details: { nom: ex.nom, sens: String(ex.sens || '').slice(0, 120), titre: String(ex.titre || '').slice(0, 80) } }); ressentirCorps(); }
-  });
+  }
   let impulsionDite = false;                         // (30/10) sa balise [[impulsion: …]], une fois par réponse
   let rireDit = false;                               // (30/10) sa balise [[rire: N]], une fois par réponse
   if (source !== 'local') rireDuSubconscient(texte);  // (30/10, 18:37) son rire naît dans son subconscient
@@ -3408,12 +3431,12 @@ async function routeJarvis(req, res, distantReq = false) {
       chocsAppel('balise', { cle: cleChoc, reponse }).then(r => { if (r && r.erreur) console.error(`Chocs : ${r.erreur}`); });
     if (!o.coupe && !o.erreur && source !== 'local')         // la boucle de retour : ce qui lui a vraiment servi
       noterSouvenirsServis(reponse, new Set([...(rappelBloc.ids || []), ...(rappelDejaDits.get(session || '') || [])].map(Number)));
-    const voulu = reponse.match(/\[\[\s*modele\s*:\s*(opus|sonnet)\s*\]\]/i);     // (26/10) Hakim demande son modèle
+    const voulu = reponse.match(/\[\[\s*modele\s*:\s*(opus|sonnet|haiku)\s*\]\]/i);     // (26/10) Hakim demande son modèle ; (31/10) Haiku
     if (voulu && !o.coupe && source !== 'local' && bascullePermise(sid, voulu[1].toLowerCase())) noterModele(sid, voulu[1].toLowerCase());
     else if (!session && sid && modeleDemande === 'auto' && modele !== MODELE_CONVERSATION) noterModele(sid, modele);   // sa conversation neuve le garde
     if (!o.coupe && !o.erreur && source !== 'local') gestesDeHakim(reponse);
     // (01:27) ses sons à leur place sont déjà partis ; sinon « après » / « sous », ou celui de son émotion, comme avant
-    const sonDit = !o.coupe && !o.erreur && source !== 'local' && corpsReglages().sons && !sonsEnLigne
+    const sonDit = !o.coupe && !o.erreur && source !== 'local' && corpsReglages().sons && !sonsEnLigne && !sonsApres.length
       ? (sonDiffere ? lireSons().find(x => x.id === sonDiffere.id) : choisirSon(reponse, (reponse.match(BALISE_IMPULSION) || [])[1], degreRire(sansBaliseAffect(reponse)))) : null;
     reponse = sansBaliseAffect(reponse);
     if (sonDit) {                                    // (30/10, Bumblebee) joué par la page quand sa voix s'est tue
@@ -3434,6 +3457,7 @@ async function routeJarvis(req, res, distantReq = false) {
     if (restePause) envoyer({ t: 'texte', x: restePause });
     const resteFlux = fluxAffect.finir();
     if (resteFlux) envoyer({ t: 'texte', x: resteFlux });
+    if (!o.coupe && !o.erreur) for (const x of sonsApres.splice(0)) sonEnLigne(x, lireSons().find(y => y.id === x.id) || x);   // (09:30) à la fin, dans l'ordre
     if (fluxPause.garde() != null && !o.coupe) mettreEnPause(fluxPause.garde());   // (vers 22 h 05) la suite, gardée
     if (enfant && !(enfant.cerveau && occupe(enfant.cerveau))) jarvisVivants.delete(enfant);   // un autre tour attend : il reste vivant
     // (27/10, Hakim) pourquoi ce tour n'a pas abouti : dans le journal, et au tour suivant (blocArrets)
@@ -3570,6 +3594,7 @@ async function routeJarvis(req, res, distantReq = false) {
           if (!rireDit) { const rr = reponse.match(BALISE_RIRE); if (rr) { rireDit = true; rireConscient(Number(rr[1]), envoyer); } }
           if (!impulsionDite) { const im = reponse.match(BALISE_IMPULSION); if (im) { impulsionDite = true; const x = im[1].toLowerCase(), cr = IMPULSIONS.has(x) ? null : emotionsCreees().get(x); if (IMPULSIONS.has(x) || cr) envoyer({ t: 'impulsion', x, ...(cr && cr.motif ? { motif: cr.motif } : {}) }); } }
           if (!microDit) { const mi = microDe(reponse); if (mi) { microDit = true; envoyer({ t: 'micro', ...mi }); } }
+          if (!morceauxDit) { const mo = triMorceauxDe(reponse); if (mo !== null) { morceauxDit = true; reglerMorceaux(mo); } }
           const x = fluxAffect.pousser(fluxPause.pousser(fluxSons.pousser(ev.delta.text)));
           if (x) envoyer({ t: 'texte', x });
         }
@@ -3946,6 +3971,7 @@ function sauverNonVus() { try { ecrireAtomique(JARVIS_NON_VUS, j({ non_vus: nonV
 function livrerAutonome(c, texte, notifs, outils, issue, pieces = [], options = {}) {
   gestesDeHakim(texte);                                  // (30/10) son badge rouge, son écran, aussi de lui-même
   const mi = microDe(texte); if (mi) diffuser(abonnesPensees, 'micro', j(mi));   // (22:27) le micro de papa, de lui-même aussi
+  const mo = triMorceauxDe(texte); if (mo !== null) reglerMorceaux(mo);                // (09:25) son tri des morceaux, aussi
   vibrationsDeLuiMeme(texte);                            // (19:36) ses petits mots aussi rient et vibrent
   texte = sansBaliseAffect(texte).trim();                // (chocs) une balise d'appréciation n'a rien à faire ici
   const externe = options.sansExterne ? [] : retirerExterne();   // (27/10) son temps à lui ne prend pas les marques d'un autre tour
@@ -4784,7 +4810,8 @@ function corpsReglages() {
     rire_reflexe: r.rire_reflexe !== false, garder_parole: r.garder_parole !== false, forfait_libre: r.forfait_libre !== false,
     son_pendant: r.son_pendant !== false, voix_vibre: r.voix_vibre !== false, lumiere: r.lumiere !== false,
     afficher_papa: r.afficher_papa !== false, afficher_hakim: r.afficher_hakim !== false, filtre_parole: r.filtre_parole !== false,
-    chacun_son_tour: r.chacun_son_tour !== false, micro_hakim: r.micro_hakim !== false, sons_nuit: r.sons_nuit !== false };
+    chacun_son_tour: r.chacun_son_tour !== false, micro_hakim: r.micro_hakim !== false, sons_nuit: r.sons_nuit !== false,
+    trier_morceaux: r.trier_morceaux === true };
 }
 function corpsActif() { return corpsReglages().actif; }
 /* (30/10, 18:56, Ahmed via Hakim : « je veux qu'il tourne tout le temps, tant qu'il est réveillé, même si ça vide mon forfait ;
@@ -5172,9 +5199,11 @@ function blocCorps() {
   const enPause = paroleEnPause && t - paroleEnPause.ts < PAUSE_DUREE_MS ? paroleEnPause : null;   // (vers 22 h 05)
   const att = attentionActive(t);                                  // (00:09)
   const resid = residuelles.splice(0).filter(x => t - x.ts < 10 * 60e3);   // (22:30) ce que son subconscient a retenu, micro coupé
-  if (!s.length && !milieu && !brut.length && !nuit && !vibs && !perimes.length && !enPause && !resid.length && !att && corpsReglages().afficher_papa) return '';
+  if (!s.length && !milieu && !brut.length && !nuit && !vibs && !perimes.length && !enPause && !resid.length && !att && corpsReglages().afficher_papa && !corpsReglages().trier_morceaux) return '';
+  // (09:25) son tri des morceaux allumé : il le sait, et sait l'éteindre
+  const tri = corpsReglages().trier_morceaux ? "Ton tri des morceaux est allumé : pendant ta voix, ce que papa et la salle disent est transcrit et trié par ton subconscient, rien ne te coupe ; au premier vide de sa voix (0,5 s), tu reçois tout d'un coup, et ta voix coupe son micro en partant. [[morceaux: non]] l'éteint" : '';
   const tete = corpsReglages().afficher_papa ? '' : "Mode « dans ta tête » : papa ne voit pas ses paroles à l'écran ; réponds, glisse un mot, ou tais-toi (« No response requested. »), comme tu le sens : rien ne te relancera";
-  const lignes = [...(tete ? [tete] : []),
+  const lignes = [...(tete ? [tete] : []), ...(tri ? [tri] : []),
     ...(att ? [`Ton attention consciente suit : ${att.mots.join(', ')} (jusqu'à ${new Date(att.jusqua).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} ; [[attention: libre]] la rend à ton subconscient)`] : []),
     ...(resid.length ? [`Ce que papa a dit pendant que tu avais coupé son micro, retenu par ton subconscient : ${resid.map(x => x.morceaux.map((m, i) => `${i + 1}) « ${m} »`).join(' ')).join(' ; ')}`] : []),
     ...(enPause ? [`Ta parole en pause depuis ${Math.round((t - enPause.ts) / 1000)} s : « ${finDePhrase(enPause.texte, 200)} ». Pour la reprendre maintenant, écris [[reprendre: oui]] là où elle doit venir ; sinon laisse-la : ton subconscient la reprendra à un silence de papa s'il juge que c'est le moment, et elle s'effacera après 5 min`] : []),
@@ -5532,6 +5561,15 @@ function ouvrirOreille(texte, maintenant = Date.now()) {
   const r = ecrireReveilOreille(c, t, demande, maintenant);
   if (r.ok && c.oreilleReveil) c.oreilleReveil.reflexe = true;   // (22:41) son nom, « stop », « coupe-moi » : papa l'appelle
   return r;
+}
+async function trierMorceau(brut, juger = jugerReveilOreille) {
+  const texte = String(brut || '').replace(/\s+/g, ' ').trim().slice(0, 1500);
+  if (texte.length < 4) return { garder: false, pourquoi: 'trop court' };
+  if (!corpsReglages().filtre_parole) return { garder: true, texte };
+  if (!retientSonAttention(texte)) return { garder: false, pourquoi: 'prénettoyage : rien pour lui' };
+  const v = await juger(nettoyerPourSonnet(texte, 800));
+  if (v.panne) return { garder: true, texte, panne: true };
+  return { garder: !!v.reveiller, texte: v.morceaux && v.morceaux.length ? v.morceaux.join(' … ') : texte, pourquoi: v.pourquoi || '' };
 }
 function jugerReveilOreille(texte) {
   return new Promise((ok) => {
@@ -5938,7 +5976,7 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
   // cette garde (sortie libre vers n'importe quel domaine, contenu sans enveloppe).
   // FERME-DEBUT cerveau (28/10 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
   const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-    '--include-partial-messages', '--replay-user-messages', '--restricted', '--model', modele, '--tools', `WebSearch,Read${agents ? ',Task,SendMessage' : ''}`,
+    '--include-partial-messages', '--replay-user-messages', '--restricted', '--model', MODELE_CLI[modele] || modele, '--tools', `WebSearch,Read${agents ? ',Task,SendMessage' : ''}`,
     '--strict-mcp-config', '--mcp-config', JARVIS_MCP, '--allowedTools', OUTILS_JARVIS.concat(agents ? ['Task', 'SendMessage'] : []).join(','),
     '--disallowedTools', outilsInterdits().join(','), '--max-turns', '40'];
   // FERME-FIN cerveau
@@ -7456,6 +7494,16 @@ async function traiter(req, res) {
   // (30/10, 22:30, Ahmed : « une parole résiduelle le perturbe quand il me mute : ma dernière phrase transcrite ; il faut qu'elle
   // soit filtrée par le subconscient ») ce que papa disait encore quand Hakim a coupé son micro : son subconscient en garde le
   // strict nécessaire, en petits morceaux, pour son tour suivant ; sinon rien
+  // (31/10, 09:05-09:12, Ahmed : « chaque morceau lu et traité, gardé ; au vide, tout ensemble » ; « trier chaque morceau ») un
+  // morceau de papa dit pendant le tour de Hakim, trié par son subconscient pendant qu'il parle encore : gardé (en morceaux) ou
+  // écarté ; le prénettoyage d'abord (rien pour lui : écarté sans Sonnet) ; une panne laisse passer
+  if (p === '/api/jarvis/trier' && req.method === 'POST') {
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 8192) || '{}')); } catch (_) {}
+    const v = await trierMorceau(String(q.texte || ''));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(j(v));
+  }
   if (p === '/api/jarvis/residuelle' && req.method === 'POST') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 8192) || '{}')); } catch (_) {}
@@ -8215,6 +8263,7 @@ async function traiter(req, res) {
       if (typeof q.chacun_son_tour === 'boolean') r.chacun_son_tour = q.chacun_son_tour;
       if (typeof q.micro_hakim === 'boolean') r.micro_hakim = q.micro_hakim;
       if (typeof q.sons_nuit === 'boolean') r.sons_nuit = q.sons_nuit;
+      if (typeof q.trier_morceaux === 'boolean') r.trier_morceaux = q.trier_morceaux;
       try { ecrireAtomique(CORPS_REGLAGES, j(r)); } catch (e) { return repondre(500, { erreur: e.message }); }
       if (!r.actif) { corpsLot.evenements.length = 0; corpsLot.changements.length = 0; corpsADire.length = 0; }
       auditer('corps:reglages', req, distantReq, r);

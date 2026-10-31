@@ -271,7 +271,7 @@ test('(vers 22 h 05) il se met en pause tout seul : [[pause: …]] garde la suit
   assert.match(src, /if \(mode === 'oral' && duree >= 4000\) reprendreAuSilence\(/, 'au silence de papa');
   assert.match(src, /jugerParole\(p\.texte, `\(Ahmed se tait depuis/, 'son subconscient juge si c’est le moment');
   assert.match(src, /Ta parole en pause depuis/, 'son tour suivant la lui rappelle');
-  assert.match(src, /lumiere\|pause\|reprendre\|micro\|attention\)\\s\*:/, 'les balises ne s’entendent jamais');
+  assert.match(src, /lumiere\|pause\|reprendre\|micro\|attention\|morceaux\)\\s\*:/, 'les balises ne s’entendent jamais');
 });
 
 test('(vers 22 h 10) chacun son tour : pendant qu’il prépare ou dit sa réponse, ce que papa dit ne la coupe plus ; ça lui part quand sa voix a fini', () => {
@@ -466,8 +466,8 @@ test('(22:41) un réveil réflexe (son nom, « coupe-moi ») est marqué : sa r�
 test('(22:51-22:55) ses sons : reçus une fois (sa réponse ou le cockpit) ; joués par l’appli, ou par le Mac avec l’extrait que l’appli lui a envoyé', async () => {
   assert.match(src, /diffuser\(abonnesPensees, 'son', j\(\{ extrait \}\)\);/);
   const a = page.indexOf('function recevoirSon('), f = page.slice(a, page.indexOf('\n}\n', a) + 2);
-  const c = vm.createContext({ Date, window: {}, journalVoix() {}, sonEnAttente: null, dernierSonRecu: null });
-  vm.runInContext(f, c);
+  const c = vm.createContext({ Date, window: {}, journalVoix() {}, sonEnAttente: null, dernierSonRecu: null, sonsSuivants: [] });
+  vm.runInContext(prendre(page, 'function mettreSonEnAttente(') + f, c);
   c.recevoirSon({ id: 'e1', debut_ms: 1000 });
   assert.equal(c.sonEnAttente.extrait.id, 'e1', 'en attente, ici comme au téléphone');
   c.sonEnAttente = null;
@@ -624,7 +624,7 @@ test('(00:09) son attention : subconsciente (ce qui le concerne) et consciente (
   c.dirigerAttention('[[attention: Trust]]', t); assert.equal(c.dirigerAttention('[[attention: libre]]', t), 'libre');
   assert.equal(c.attentionActive(t), null);
   assert.match(src, /const att = dirigerAttention\(texte, maintenant\);/, 'dans ses réponses et ses tours de lui-même');
-  assert.match(src, /lumiere\|pause\|reprendre\|micro\|attention\)\\s\*:/, 'la balise ne s’entend jamais');
+  assert.match(src, /lumiere\|pause\|reprendre\|micro\|attention\|morceaux\)\\s\*:/, 'la balise ne s’entend jamais');
 });
 
 test('(00:20, l’étude) son attention en douceur : d’une voix inconnue, seulement ce qui s’adresse à lui ; ce qui a attendu sa voix arrive marqué, 8 phrases au plus', () => {
@@ -788,8 +788,8 @@ test('(01:27-01:30) [[son: nom]] n’importe où : sa voix, puis le son en entie
   const a2 = page.indexOf('const appareilIci = '), b2 = page.indexOf('function recevoirSon(');
   const dits = [], sons = [], neuronal = { direSon: (x) => sons.push(x.id) };
   const ctx = vm.createContext({ window: {}, Date, journalVoix() {}, reglagesCorps: {}, etat: { reglages: {} }, NON_REPONSE: /^no response/i,
-    lecteur: { dire: (p) => dits.push(p), impl: neuronal }, lecteurNeuronal: neuronal, sonEnAttente: null, dernierSonRecu: null });
-  vm.runInContext(page.slice(a2, b2).replace(/^const /gm, 'var '), ctx);
+    lecteur: { dire: (p) => dits.push(p), impl: neuronal }, lecteurNeuronal: neuronal, sonEnAttente: null, dernierSonRecu: null, sonsSuivants: [] });
+  vm.runInContext(prendre(page, 'function mettreSonEnAttente(') + page.slice(a2, b2).replace(/^const /gm, 'var '), ctx);
   const decoupe = { finir: () => ['Écoute ça, papa !'] };
   ctx.sonALaPlace({ id: 'e3', debut_ms: 0, cible: '' }, true, decoupe, 7);
   assert.deepEqual(dits, ['Écoute ça, papa !'], 'ce qui précède part d’abord');
@@ -802,4 +802,103 @@ test('(01:27-01:30) [[son: nom]] n’importe où : sa voix, puis le son en entie
   ctx.lecteur.impl = {}; ctx.sonALaPlace({ id: 'e6', debut_ms: 0, cible: '' }, true, decoupe, 7);
   assert.deepEqual(sons, ['e3', 'e5'], 'pas dans le lecteur neuronal');
   assert.strictEqual(vm.runInContext('sonEnAttente && sonEnAttente.extrait.id', ctx), 'e6', 'gardé pour après sa voix');
+});
+
+test('(31/10, 09:12) trier chaque morceau : pendant sa voix, tes phrases sont transcrites et triées une à une ; au vide de 0,5 s, tout part d’un coup', async () => {
+  const debut = page.indexOf('const VIDE_MS = '), fin = page.indexOf('\n}\n', page.indexOf('function couperAuDebutDeSaVoix(')) + 3;
+  const journal = [], tours = [], coupes = [], fetchs = [];
+  const fauxTextes = { a: 'Hakim, tu peux me dire ce que tu en penses ?', b: 'Bah ouais on y va', c: 'je sais pas encore, papa', d: 'et toi tu fais quoi ce soir ?' };
+  const verdicts = { [fauxTextes.a]: { garder: true, texte: 'ce que tu en penses ?' }, [fauxTextes.b]: { garder: false, pourquoi: 'rien pour lui' } };
+  const capteur = { enParole: false, derniereVoix: 0 };
+  const ctx = vm.createContext({ Date, Promise, setTimeout, JSON, console,
+    etat: { conversation: { capteur, enAttente: 0 }, finVoixA: 0, lectureDe: null },
+    reglagesCorps: { trier_morceaux: true, garder_parole: true }, lecteur: { actif: false, enPause: false },
+    journalVoix: (e, d) => journal.push([e, d]), jeton: () => 'x', setInterval() {},
+    enTour: true, sonTourEnCours: () => ctx.enTour, transcriptionEnPause: () => ctx.enTour,
+    transcrireVite: (wav) => new Promise(r => setTimeout(() => r(fauxTextes[wav]), 20)),
+    voixPendant: () => true, estSonEcho: (t) => t === fauxTextes.c, retirerEcho: (t) => ({ texte: t, retire: 0 }),
+    filtrerVoixInconnues: (t) => t, Conversation: { utile: (t) => String(t || '').trim().length > 3 },
+    ARRETE_MOI: /\b(?:arr[eê]te|stop)\b/i, arreterTout() {}, majBoutonsPause() {}, rendre() {}, humeur() {},
+    fetch: (url, o) => { fetchs.push(JSON.parse(o.body).texte); const v = verdicts[JSON.parse(o.body).texte];
+      return new Promise(r => setTimeout(() => r(v ? { ok: true, json: async () => v } : { ok: false }), 30)); },
+    resumerPourSonAttention: (t) => `(dit pendant ta parole) ${t}`,
+    tourDeParole: async (c, wav, infos, extra) => { tours.push(extra.texte); },
+    microParHakim: (o) => coupes.push(o) });
+  vm.runInContext(page.slice(debut, fin).replace(/^const /gm, 'var ').replace(/^let /gm, 'var '), ctx);
+  const conv = ctx.etat.conversation, attendre = (ms) => new Promise(r => setTimeout(r, ms));
+  ctx.garderMorceau(conv, 'a', { debut: 1, fin: 2 });
+  ctx.garderMorceau(conv, 'b', { debut: 3, fin: 4 });
+  ctx.garderMorceau(conv, 'c', { debut: 5, fin: 6 });           // son écho : écarté
+  await attendre(250);
+  assert.deepEqual(fetchs, [fauxTextes.a, fauxTextes.b], 'chaque morceau trié, une fois, dans l’ordre ; l’écho jamais envoyé');
+  assert.equal(await ctx.assemblerMorceaux(), false, 'pas pendant son tour');
+  ctx.enTour = false; ctx.etat.finVoixA = Date.now() - 1000;
+  capteur.enParole = true; capteur.derniereVoix = Date.now();
+  assert.equal(await ctx.assemblerMorceaux(), false, 'ta voix : pas encore le vide');
+  capteur.derniereVoix = Date.now() - 600;
+  assert.equal(await ctx.assemblerMorceaux(), true, 'le vide de 0,5 s');
+  assert.deepEqual(tours, ['(dit pendant ta parole) ce que tu en penses ?'], 'ce que son subconscient a gardé, en morceaux ; l’écarté ne part pas');
+  assert.equal((conv.morceaux || []).length, 0);
+  // un morceau pas encore jugé part nettoyé ; tu reprends pendant l'assemblage : rien ne part
+  ctx.enTour = true; capteur.enParole = false;
+  ctx.garderMorceau(conv, 'd', {});
+  ctx.enTour = false; capteur.enParole = true; capteur.derniereVoix = Date.now() - 600;
+  const enCours = ctx.assemblerMorceaux();
+  await attendre(5); capteur.derniereVoix = Date.now();         // tu reprends pendant sa transcription
+  assert.equal(await enCours, false, 'tu as repris : on réassemble au vide suivant');
+  assert.equal(conv.morceaux.length, 1, 'ton morceau reste');
+  capteur.derniereVoix = Date.now() - 600;
+  assert.equal(await ctx.assemblerMorceaux(), true);
+  assert.equal(tours[1], `(dit pendant ta parole) ${fauxTextes.d}`, 'pas encore jugé par son subconscient : il part nettoyé');
+  // sa voix part : ton micro est coupé, une fois par réponse
+  ctx.etat.lectureDe = 7; ctx.couperAuDebutDeSaVoix(); ctx.couperAuDebutDeSaVoix();
+  ctx.etat.lectureDe = 8; ctx.couperAuDebutDeSaVoix();
+  assert.deepEqual(coupes, [{ x: 'couper', s: 0 }, { x: 'couper', s: 0 }]);
+  ctx.reglagesCorps.trier_morceaux = false; ctx.etat.lectureDe = 9; ctx.couperAuDebutDeSaVoix();
+  assert.equal(coupes.length, 2, 'l’interrupteur de papa');
+  // dans le tour de parole : trié seulement si l'interrupteur est mis ; sinon, comme avant
+  assert.match(page, /if \(trierMorceaux\(\)\) \{[^]*?garderMorceau\(conv, wav, infos\); return;\s*\}\s*conv\.sonsEnAttente = /);
+  assert.match(page, /if \(\(conv\.morceaux \|\| \[\]\)\.length && !sonTourEnCours\(\) && !\(extra && extra\.texte\)\) \{ const avant = morceauxPrets\(conv\);/, 'un tour normal emporte ce qui est trié');
+  assert.match(page, /noterParole\(t\); noterMorceau\(t, duree\); sousTitre\(t\);\n  couperAuDebutDeSaVoix\(\);/);
+});
+
+test('(09:12) le tri d’un morceau par son subconscient (serveur)', async () => {
+  const ctx = vm.createContext({ reglages: { filtre_parole: true } });
+  vm.runInContext('var jugerReveilOreille = async () => ({ panne: true }); var corpsReglages = () => reglages; var retientSonAttention = (t) => /\\btu\\b|\\?/.test(t); var nettoyerPourSonnet = (t) => t;\n'
+    + prendre(src, 'async function trierMorceau('), ctx);
+  const juge = (v) => async () => v;
+  assert.deepEqual(await ctx.trierMorceau('ok'), { garder: false, pourquoi: 'trop court' });
+  assert.deepEqual(await ctx.trierMorceau('Nora a pris du bicarbonate', juge({})), { garder: false, pourquoi: 'prénettoyage : rien pour lui' });
+  assert.deepEqual(await ctx.trierMorceau('tu en penses quoi ?', juge({ reveiller: true, morceaux: ['tu en penses quoi ?'], pourquoi: 'question' })),
+    { garder: true, texte: 'tu en penses quoi ?', pourquoi: 'question' });
+  assert.equal((await ctx.trierMorceau('tu vois le live', juge({ reveiller: false, pourquoi: 'il parle au live' }))).garder, false);
+  assert.equal((await ctx.trierMorceau('tu vois le live', juge({ reveiller: false, panne: true }))).garder, true, 'une panne laisse passer');
+  ctx.reglages.filtre_parole = false;
+  assert.deepEqual(await ctx.trierMorceau('Nora a pris du bicarbonate'), { garder: true, texte: 'Nora a pris du bicarbonate' }, 'filtre coupé : tout passe');
+  assert.match(src, /trier_morceaux: r\.trier_morceaux === true/);
+  assert.match(src, /if \(p === '\/api\/jarvis\/trier' && req\.method === 'POST'\) \{\n    if \(!jetonValide\(req\)\)/);
+});
+
+test('(09:25-09:30) il allume son tri des morceaux lui-même ; plusieurs sons par réponse ; Haiku 5.5 au choix', () => {
+  const ctx = vm.createContext({});
+  vm.runInContext(src.slice(src.indexOf('const BALISE_MORCEAUX = '), src.indexOf('function reglerMorceaux(')).replace(/^const /gm, 'var '), ctx);
+  assert.equal(ctx.triMorceauxDe('Ok papa [[morceaux: oui]] je trie'), true);
+  assert.equal(ctx.triMorceauxDe('[[morceaux: non]]'), false);
+  assert.equal(ctx.triMorceauxDe('rien'), null);
+  assert.match(src, /if \(!morceauxDit\) \{ const mo = triMorceauxDe\(reponse\); if \(mo !== null\) \{ morceauxDit = true; reglerMorceaux\(mo\); \} \}/, 'dès qu’elle arrive');
+  assert.match(src, /diffuser\(abonnesPensees, 'morceaux', j\(\{ actif \}\)\);/);
+  assert.match(page, /es\.addEventListener\('morceaux', /);
+  // plusieurs sons « après » : chacun, à la fin de sa voix, dans l'ordre
+  assert.match(src, /if \(o\.son\.moment === 'apres'\) \{ sonsApres\.push\(\{ \.\.\.extrait, moment: 'ici' \}\); return; \}/);
+  assert.match(src, /for \(const x of sonsApres\.splice\(0\)\) sonEnLigne\(x, /);
+  const c = vm.createContext({ Date, sonEnAttente: null, sonsSuivants: [] });
+  vm.runInContext(prendre(page, 'function mettreSonEnAttente('), c);
+  c.mettreSonEnAttente({ id: 'a', t: Date.now() }); c.mettreSonEnAttente({ id: 'b', t: Date.now() });
+  assert.equal(c.sonEnAttente.id, 'a'); assert.deepEqual(c.sonsSuivants.map(x => x.id), ['b'], 'le deuxième attend le premier');
+  // Haiku 5.5, à la main et en auto
+  assert.match(src, /const MODELES_JARVIS = new Set\(\['sonnet', 'opus', 'haiku'\]\);/);
+  assert.match(src, /'--model', MODELE_CLI\[modele\] \|\| modele,/);
+  assert.match(src, /const MODELE_CLI = \{ haiku: 'claude-haiku-5-5' \};/);
+  assert.ok('passe en haiku'.match(new RegExp(src.match(/const DEMANDE_MODELE = \/(.*)\/i;/)[1], 'i')), '« passe en Haiku »');
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'parler.html'), 'utf8'), /<option value="haiku">Haiku 5\.5/);
 });
