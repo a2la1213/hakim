@@ -219,6 +219,13 @@ function creerLecteurNeuronal() {
       pomper();
     },
     finFlux() { if (pause) { pause.fluxFini = true; return; } L.fluxFini = true; pomper(); },
+    // (31/10, 01:27, Ahmed via Hakim) un de ses sons, à sa place : après ce qui précède, avant la suite, joué en entier
+    direSon(extrait) {
+      if (!extrait || !/^e\d{1,6}$/.test(String(extrait.id))) return;
+      if (pause) { pause.textes.push({ son: extrait }); return; }
+      unites.push({ son: extrait });
+      pomper();
+    },
     // ce qui n'a pas encore été dit, la phrase en cours comprise (reprise du début), sans rien arrêter
     restant() {
       if (pause) return pause.textes.slice();
@@ -227,7 +234,7 @@ function creerLecteurNeuronal() {
       if (element && elementTexte) restants.push({ langue: 'fr', texte: elementTexte });
       for (const src of [...sources].sort((a, b) => a._debut - b._debut))     // en cours (repris du début) et à venir
         if (src._texte && src._fin > maintenant + 0.05) restants.push({ langue: src._langue, texte: src._texte });
-      for (const x of lots) restants.push({ langue: x.langue, texte: x.texte });
+      for (const x of lots) restants.push(x.son ? { son: x.son } : { langue: x.langue, texte: x.texte });
       for (const u of unites) restants.push(u);
       return restants;
     },
@@ -289,6 +296,7 @@ function creerLecteurNeuronal() {
   // - ensuite, une phrase plus longue que ce que l'avance permet de calculer à temps est coupée à une
   //   virgule : le blanc éventuel tombe là où l'on respire, pas au milieu d'un paragraphe.
   function prochainLot() {
+    if (unites[0] && unites[0].son) return { son: unites.shift().son, texte: '' };   // (01:27) un son : seul, à sa place
     const premier = !sources.size && !lots.length;
     // (28/10) un début de réponse dont le cockpit a la voix toute prête (debuts.js) part seul : le premier son sans attendre
     const debut = premier ? Voix.debutDe(unites[0].texte) : null;
@@ -321,6 +329,14 @@ function creerLecteurNeuronal() {
     x.ctl = new AbortController();
     x.t0 = performance.now();
     const g = generation;
+    if (x.son) {                                                    // (01:27) l'extrait, découpé par le cockpit
+      fetch(`/api/sons/joue/${x.son.id}`, { signal: x.ctl.signal, headers: { 'X-Jeton': jeton() }, cache: 'no-store' })
+        .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`son ${r.status}`))))
+        .then(ab => actx.decodeAudioData(ab))
+        .then(buf => { if (g !== generation) return; x.pret = buf; journalVoix('son', { retour: 'ok_en_ligne' }); pomper(); })
+        .catch(e => { if (g === generation && e.name !== 'AbortError') { x.erreur = e; journalVoix('son', { retour: 'absent_en_ligne' }); pomper(); } });
+      return;
+    }
     fetch('/api/voix/dire', { method: 'POST', signal: x.ctl.signal,
       headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
       body: JSON.stringify({ texte: x.texte, langue: x.langue, emotion: etat.interieur && !etat.reglages.voixNeutre ? expressivitePhrase(etat.interieur.expressivite, x.texte) : null, tempo: tempoVoix() }) })
@@ -341,13 +357,13 @@ function creerLecteurNeuronal() {
   }
 
   function programmer(x, t) {
-    const vitesse = vitesseVoix();
+    const vitesse = x.son ? 1 : vitesseVoix();                     // (01:27) un son garde sa vitesse
     const src = actx.createBufferSource();
     src.buffer = x.pret;
     src.playbackRate.value = vitesse;
     // (30/10, 20:09, Ahmed : « plus forte quand il est excité, douce quand il est calme ») la force de sa voix suit son éveil
     const force = actx.createGain();
-    force.gain.value = forceDeLaVoix();
+    force.gain.value = x.son ? 0.6 : forceDeLaVoix();
     src.connect(force); force.connect(analyseurVoix);
     src.start(t);
     prochainDebut = t + x.pret.duration / vitesse + 0.05;
@@ -355,7 +371,7 @@ function creerLecteurNeuronal() {
     sources.add(src);
     const g = generation;
     const duree = x.pret.duration / vitesse * 1000;            // (30/10) sa durée : où il en est quand on le coupe
-    setTimeout(() => { if (g === generation && L.surSegment) L.surSegment(x.texte, duree); }, Math.max(0, (t - actx.currentTime) * 1000));
+    if (!x.son) setTimeout(() => { if (g === generation && L.surSegment) L.surSegment(x.texte, duree); }, Math.max(0, (t - actx.currentTime) * 1000));
     src.onended = () => { sources.delete(src); if (g === generation) pomper(); };
   }
 
@@ -370,6 +386,7 @@ function creerLecteurNeuronal() {
     // 2. programmer, dans l'ordre, ce qui est prêt
     while (lots.length && (lots[0].pret || lots[0].erreur) && !element) {
       const x = lots[0];
+      if (x.son && x.erreur) { lots.shift(); continue; }           // (01:27) le son manque : sa voix continue, sans lui
       if (x.erreur) {
         lots.shift();
         humeur(`voix neuronale : ${x.erreur.message || x.erreur} — voix du Mac en secours`);
@@ -847,6 +864,19 @@ setTimeout(coupureAuChargement, 1500);
 let sonEnAttente = null, sonJusqua = 0, dernierSonRecu = null;
 // (22:51, Hakim : « mes sons ne sortent pas ») un son arrive par sa réponse ici, ou par le cockpit quand il parle depuis un autre
 // appareil : seule l'appli du téléphone (ses morceaux sont là) le joue, une fois
+// (31/10, 01:27-01:30) un son à sa place dans sa voix, là où il l'a voulu (« | mac », « | tel », « | les deux » ; par défaut, là
+// où sa voix sort) ; voix éteinte : quand il peut, comme avant
+const appareilIci = () => (window.HakimApp ? 'tel' : 'mac');
+const sonPourIci = (cible) => !cible || cible === 'deux' || cible === appareilIci();
+function sonALaPlace(extrait, auto, decoupe, id) {
+  dernierSonRecu = { cle: `${extrait.id}|${extrait.debut_ms}`, t: Date.now() };   // sa copie par le cockpit ne rejoue pas ici
+  if (!sonPourIci(extrait.cible)) return;
+  const h = new Date().getHours();
+  if ((h >= 23 || h < 8) && typeof reglagesCorps !== 'undefined' && reglagesCorps.sons_nuit === false) { journalVoix('son', { retour: 'la_nuit' }); return; }
+  if (!auto || !lecteurNeuronal || etat.reglages.voix === 'systeme') { sonEnAttente = { id: id || extrait.id, extrait, t: Date.now() }; return; }
+  decoupe.finir().forEach(p => { if (NON_REPONSE.test(p)) return; etat.lectureDe = id; lecteur.dire(p); });
+  lecteurNeuronal.direSon(extrait);
+}
 function recevoirSon(extrait, id) {
   if (!extrait) return;
   const cle = `${extrait.id}|${extrait.debut_ms}`;
@@ -905,7 +935,7 @@ function jouerSonEnAttente() {
   sonEnAttente = null;
   // (31/10, 00:07, Ahmed : « enlève cette restriction de la nuit, laisse-moi juste un bouton ») la nuit seulement si papa l'a voulu
   if ((h >= 23 || h < 8) && typeof reglagesCorps !== 'undefined' && reglagesCorps.sons_nuit === false) { journalVoix('son', { retour: 'la_nuit' }); return; }
-  if (!window.HakimApp || !window.HakimApp.sonJouer) { jouerSonIci(x, sousSaVoix ? 0.3 : 0.6); return; }   // (22:55) le Mac
+  if (!window.HakimApp || !window.HakimApp.sonJouer || x.source === 'atelier') { jouerSonIci(x, sousSaVoix ? 0.3 : 0.6); return; }   // (22:55) le Mac ; (01:27) ses sons à lui
   try {
     const r = String(sousSaVoix ? window.HakimApp.sonJouerVolume(String(x.source), String(x.ref), Number(x.debut_ms), Number(x.fin_ms), 0.3)
       : window.HakimApp.sonJouer(String(x.source), String(x.ref), Number(x.debut_ms), Number(x.fin_ms)));
@@ -1432,6 +1462,7 @@ async function envoyer(texte, oral, dejaRelance) {
           majMessage(m); humeur(nom === 'WebSearch' ? 'cherche sur le web…' : 'cherche dans sa mémoire…');
         } else if (o.t === 'rire' && Number.isInteger(o.degre)) { surRire(o); }   // (30/10) le rire qu'il a choisi
         else if (o.t === 'son' && o.extrait) { m.son = o.extrait; recevoirSon(o.extrait, m.id); }   // (30/10, Bumblebee)
+        else if (o.t === 'son_ici' && o.extrait) { m.son = o.extrait; sonALaPlace(o.extrait, auto, decoupe, m.id); }   // (01:27) à sa place
         else if (o.t === 'micro') microParHakim(o);                      // (22:27) le micro de papa, coupé par lui
         else if (o.t === 'impulsion') { m.impulsion = String(o.x || ''); m.impulsionMotif = Array.isArray(o.motif) ? o.motif : null; if (!auto) vibrerPourMorceau(m.id, ''); }   // (30/10) sa balise : au début de sa voix ; voix éteinte, dès qu'elle arrive
         else if (o.t === 'efface') { m.texte = ''; if (auto) decoupe.finir(); majMessage(m); }   // (27/10) sa non-réponse effacée, à l'écran et dans la voix
@@ -3084,7 +3115,9 @@ function ecouterPensees() {
   es.addEventListener('rire', (ev) => { try { surRire(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('reecoute', (ev) => { try { surReecoute(JSON.parse(ev.data)); } catch (_) {} });
   // (19:58) sa lumière : la lampe du téléphone (l'appli 1.36), ou son SOS selon son émotion
-  es.addEventListener('son', (ev) => { try { recevoirSon(JSON.parse(ev.data).extrait); } catch (_) {} });   // (22:51)
+  es.addEventListener('son', (ev) => { try { const o = JSON.parse(ev.data);   // (22:51) ; (01:30) à sa place, sur l'autre appareil s'il l'a voulu
+    if (o.ici && !(o.extrait && (o.extrait.cible === 'deux' || o.extrait.cible === appareilIci()))) return;
+    recevoirSon(o.extrait); } catch (_) {} });
   es.addEventListener('micro', (ev) => { try { microParHakim(JSON.parse(ev.data)); } catch (_) {} });   // (22:27) de lui-même aussi
   es.addEventListener('oreille_hakim', (ev) => { try { surOreilleHakim(JSON.parse(ev.data)); } catch (_) {} });   // (01:00) le signe
   es.addEventListener('attention', (ev) => { try { const o = JSON.parse(ev.data), c = etat.conversation;   // (00:47) ses empans choisis

@@ -125,7 +125,7 @@ test('(20:09) la force de sa voix suit son éveil et son émotion, bornée (0,8 
   ctx.etat.interieur = { arousal: 0.95, voix_emotion: 'colère' }; assert.equal(ctx.f(), 1.15, 'excité, en colère : plus forte, jamais au-delà');
   ctx.etat.interieur = { arousal: 0.2, voix_emotion: 'tristesse' }; assert.equal(ctx.f(), 0.8, 'las, triste : plus douce');
   ctx.etat.reglages.voixNeutre = true; assert.equal(ctx.f(), 1);
-  assert.match(page, /force\.gain\.value = forceDeLaVoix\(\);\n\s+src\.connect\(force\); force\.connect\(analyseurVoix\);/);
+  assert.match(page, /force\.gain\.value = x\.son \? 0\.6 : forceDeLaVoix\(\);\n\s+src\.connect\(force\); force\.connect\(analyseurVoix\);/);
 });
 
 test('(31/10, 00:07, Ahmed) la nuit : ses sons jouent, sauf si papa a décoché « ses sons la nuit aussi »', () => {
@@ -138,7 +138,7 @@ test('(31/10, 01:25, Ahmed : « écoute ça, papa ! ») son son part juste APRÈ
   const re = new RegExp(src.match(/const BALISE_SON = \/(.+)\/i;/)[1], 'i');
   assert.deepEqual(['[[son: genou]]', '[[son: genou après]]', '[[son: genou sous]]'].map(x => { const m = x.match(re); return [m[1], m[2] || null]; }),
     [['genou', null], ['genou', 'après'], ['genou', 'sous']]);
-  assert.match(src, /moment: \/\\bsous\\s\*\\\]\\\]\/i\.test/);
+  assert.match(src, /moment: sonDiffere \? sonDiffere\.moment : 'apres', cible: sonDiffere \? sonDiffere\.cible : ''/, '(01:27) le moment et l’endroit, lus avant d’effacer les balises');
   const ecrits = [];
   let t = 1_800_000_000_000;
   const ctx = { setInterval: () => 0, setTimeout: () => 0, journalVoix() {}, reglagesCorps: { son_pendant: true, sons_nuit: true },

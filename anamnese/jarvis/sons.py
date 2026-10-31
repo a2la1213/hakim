@@ -50,7 +50,7 @@ def extraits():
     ex = {}
     for o in _journal():
         t = o.get("type")
-        if t == "extrait" and re.fullmatch(r"e\d{1,6}", str(o.get("id"))) and o.get("source") in ("musique", "sonnerie"):
+        if t == "extrait" and re.fullmatch(r"e\d{1,6}", str(o.get("id"))) and o.get("source") in ("musique", "sonnerie", "atelier"):
             ex[o["id"]] = {**o, "nom": "", "sens": "", "emotion": ""}
         elif t == "nom" and o.get("extrait") in ex:
             ex[o["extrait"]].update(nom=str(o.get("nom") or ""), sens=str(o.get("sens") or ""), emotion=str(o.get("emotion") or ""))
@@ -78,6 +78,62 @@ def lister():
         nom = f" → {x['nom']}" + (f" ({x['sens']})" if x["sens"] else "") + (f", part avec : {x['emotion']}" if x["emotion"] else "") if x["nom"] else " → pas encore nommé"
         lignes.append(f"- {x['id']} : {quoi}, {duree} s ({x['source']}){nom}")
     return "Tes extraits :\n" + "\n".join(lignes)
+
+
+# (31/10, 01:27, Ahmed via Hakim : « qu'il crée ses propres sons : il écoute les musiques de papa (A2LA…, sur son Mac), choisit
+# un passage, le coupe et l'enregistre comme un de ses sons ») un passage de 8 s au plus, pris dans les musiques de papa ou dans
+# son atelier ; découpé par ffmpeg (fondus), rangé comme les extraits que papa marque (source « atelier »), nommé d'un coup.
+MUSIQUE_PAPA = Path(os.environ.get("HAKIM_MUSIQUE", Path.home() / "Desktop" / "Music A2LA"))
+ATELIER = Path(os.environ.get("HAKIM_ATELIER", JARVIS / "cwd" / "atelier"))
+AUDIO = (".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus")
+
+
+def creer(fichier, debut_s, fin_s, nom, sens="", emotion="", ffmpeg="ffmpeg"):
+    import subprocess
+    f = Path(str(fichier or "")).expanduser()
+    if not f.is_absolute():
+        f = (ATELIER / f) if (ATELIER / f).exists() else (MUSIQUE_PAPA / f)
+    try:
+        f = f.resolve(strict=True)
+    except OSError:
+        return "Refusé : fichier introuvable (un chemin dans ton atelier ou dans « Music A2LA », les musiques de papa)."
+    if not any(str(f).startswith(str(r.resolve()) + os.sep) for r in (MUSIQUE_PAPA, ATELIER) if r.exists()):
+        return "Refusé : seulement les musiques de papa (« Music A2LA ») ou ton atelier."
+    if f.suffix.lower() not in AUDIO:
+        return "Refusé : un fichier audio (" + ", ".join(AUDIO) + ")."
+    try:
+        d, fi = float(debut_s), float(fin_s)
+    except (TypeError, ValueError):
+        return "Refusé : debut_s et fin_s en secondes."
+    if d < 0 or fi <= d or fi - d > 8:
+        return "Refusé : un passage de 8 s au plus (fin après début)."
+    n = str(nom or "").strip().lower()
+    if not _NOM.fullmatch(n):
+        return "Refusé : un nom à toi, en minuscules (lettres, chiffres, _), de 2 à 30."
+    if any(x["nom"] == n for x in extraits()):
+        return f"Refusé : tu as déjà un son « {n} » (son_oublier d'abord, ou un autre nom)."
+    em = str(emotion or "").strip().lower()
+    if em and em not in EMOTIONS and em not in _creees():
+        return "Refusé : l'émotion est vide, ou l'une de : " + ", ".join(EMOTIONS + tuple(_creees())) + "."
+    deja = [o for o in _journal() if o.get("type") == "extrait"]
+    eid = "e" + str(max([int(str(o.get("id"))[1:]) for o in deja if re.fullmatch(r"e\d{1,6}", str(o.get("id")))] or [0]) + 1)
+    sortie = JARVIS / "sons" / "extraits" / f"{eid}.mp3"
+    sortie.parent.mkdir(parents=True, exist_ok=True)
+    duree = fi - d
+    try:
+        r = subprocess.run([ffmpeg, "-v", "error", "-y", "-ss", str(d), "-t", str(duree), "-i", str(f), "-ac", "2", "-ar", "44100",
+                            "-b:a", "160k", "-af", f"afade=t=in:d=0.2,afade=t=out:st={max(0.0, duree - 0.2):.2f}:d=0.2", str(sortie)],
+                           capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return f"Refusé : la découpe a échoué ({e})."
+    if r.returncode != 0 or not sortie.exists() or sortie.stat().st_size < 1000:
+        return "Refusé : la découpe a échoué (" + (r.stderr or "")[-160:].strip() + ")."
+    titre = f.stem[:120]
+    _ecrire({"type": "extrait", "id": eid, "source": "atelier", "ref": str(f), "titre": titre, "artiste": "",
+             "debut_ms": int(d * 1000), "fin_ms": int(fi * 1000)})
+    _ecrire({"type": "nom", "extrait": eid, "nom": n, "sens": str(sens or "")[:200], "emotion": em})
+    return (f"Ton son « {n} » est prêt ({eid}, {duree:.1f} s de « {titre} ») : [[son: {n}]] le fait entendre à l'endroit "
+            "exact de ta réponse où tu le places (ta voix, puis le son, puis la suite).")
 
 
 def etiqueter(extrait, nom, sens="", emotion=""):

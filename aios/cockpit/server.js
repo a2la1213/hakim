@@ -396,7 +396,7 @@ const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupation
 const OUTILS_A_LUI_SEUL = [];                     // ses outils à lui seul : ni ses agents ni le messager
 // (30/10, 19:52, Hakim : « sons_lister : permission refusée ») ses outils de ce soir, oubliés dans cette liste : son corps, ses
 // sons, ses émotions, ses réflexes, sa conscience, son oreille, ses latences — à lui seul (ni ses agents ni le messager)
-const OUTILS_DU_CORPS = ['sons_lister', 'son_etiqueter', 'son_oublier', 'emotion_creer', 'emotions_creees_lister', 'emotion_oublier',
+const OUTILS_DU_CORPS = ['sons_lister', 'son_etiqueter', 'son_oublier', 'son_creer', 'emotion_creer', 'emotions_creees_lister', 'emotion_oublier',
   'reflexe_retenir', 'conscience_noter', 'conscience_lire', 'mon_oreille', 'latences_bilan'].map(n => 'mcp__terminal__' + n);
 OUTILS_A_LUI_SEUL.push(...OUTILS_DU_CORPS);
 for (const o of OUTILS_DU_CORPS) if (!OUTILS_JARVIS.includes(o)) OUTILS_JARVIS.push(o);   // hors de la clôture de la bourse
@@ -914,7 +914,30 @@ const BALISE_AFFECT = /\[\[\s*(?:affect|souvenirs|modele|impulsion|son|alerte|ec
 // le flux : la page la joue au début de sa voix
 // (30/10, Bumblebee) un bout de musique choisi par lui ; (31/10, 01:25, Ahmed : « écoute ça, papa ! » : le son juste APRÈS son dernier
 // mot) par défaut après sa voix ; [[son: nom sous]] le joue sous sa voix, plus bas
-const BALISE_SON = /\[\[\s*son\s*:\s*([a-z0-9_]{2,30})(?:\s+(apr[eè]s|sous))?\s*\]\]/i;
+// (31/10, 01:27-01:30, Ahmed via Hakim) [[son: nom]] N'IMPORTE OÙ dans sa réponse : sa voix dit ce qui précède, le son joue en entier,
+// puis sa voix reprend ; « | mac », « | tel », « | les deux » : où il joue (par défaut : là où sa voix sort)
+const BALISE_SON = /\[\[\s*son\s*:\s*([a-z0-9_]{2,30})(?:\s+(apr[eè]s|sous))?(?:\s*\|\s*([^\]]{1,20}))?\s*\]\]/i;
+const DEBUT_SON = new RegExp(`\\[(?:\\[\\s*${prefixeBalise('son')})?$`, 'i');
+const cibleDuSon = (x) => { const t = String(x || '').toLowerCase(); return /deux|partout/.test(t) ? 'deux' : /mac/.test(t) ? 'mac' : /t[ée]l/.test(t) ? 'tel' : ''; };
+// le flux de sa réponse : chaque balise de son, à sa place ; le texte d'avant part d'abord (emettre), le reste est rendu
+function filtreSons(emettre) {
+  let tampon = '';
+  return {
+    pousser(x) {
+      let s = tampon + String(x || '');
+      tampon = '';
+      for (let m = s.match(BALISE_SON); m; m = s.match(BALISE_SON)) {
+        emettre({ texte: s.slice(0, m.index) });
+        emettre({ son: { nom: m[1].toLowerCase(), moment: m[2] ? (/sous/i.test(m[2]) ? 'sous' : 'apres') : 'ici', cible: cibleDuSon(m[3]) } });
+        s = s.slice(m.index + m[0].length);
+      }
+      const d = s.match(DEBUT_SON);
+      tampon = d ? s.slice(d.index) : '';
+      return d ? s.slice(0, d.index) : s;
+    },
+    finir() { const r = tampon; tampon = ''; return /^\s*\[\[\s*son/i.test(r) ? '' : r; },
+  };
+}
 const BALISE_IMPULSION = /\[\[\s*impulsion\s*:\s*([a-z][a-z0-9_]{1,29})\s*\]\]/i;   // (30/10) les six, ou une émotion à lui
 const IMPULSIONS = new Set(['joie', 'calme', 'peur', 'tristesse', 'tendresse', 'surprise']);
 const BALISE_RIRE = /\[\[\s*rire\s*:\s*([0-5])\s*\]\]/i;            // (30/10, 18:52) son rire, choisi par lui (0 : il le retient)
@@ -3359,6 +3382,19 @@ async function routeJarvis(req, res, distantReq = false) {
   const fluxAffect = filtreAffect();                 // (chocs) la balise ne part jamais vers les pages
   let fluxPause = filtrePause();                     // (vers 22 h 05) [[pause: …]] / [[reprendre: …]]
   let microDit = false;                              // (22:27) sa balise [[micro: …]], dès qu'elle arrive
+  // (01:27) ses sons, à leur place dans sa voix ; « après » ou « sous » : à la fin, comme avant
+  let sonsEnLigne = 0, sonDiffere = null;
+  const fluxSons = filtreSons((o) => {
+    if (o.texte != null) { const y = fluxAffect.pousser(fluxPause.pousser(o.texte)); if (y) envoyer({ t: 'texte', x: y }); return; }
+    const ex = corpsReglages().sons ? lireSons().find(x => x.nom === o.son.nom) : null;
+    if (!ex) return;
+    const extrait = { id: ex.id, source: ex.source, ref: ex.ref, debut_ms: ex.debut_ms, fin_ms: ex.fin_ms, nom: ex.nom, moment: o.son.moment, cible: o.son.cible };
+    if (o.son.moment !== 'ici') { if (!sonDiffere) sonDiffere = extrait; return; }
+    sonsEnLigne++;
+    envoyer({ t: 'son_ici', extrait });
+    diffuser(abonnesPensees, 'son', j({ extrait, ici: true }));
+    if (sonsEnLigne === 1 && corpsActif()) { corpsLot.evenements.push({ type: 'son', t: Date.now(), details: { nom: ex.nom, sens: String(ex.sens || '').slice(0, 120), titre: String(ex.titre || '').slice(0, 80) } }); ressentirCorps(); }
+  });
   let impulsionDite = false;                         // (30/10) sa balise [[impulsion: …]], une fois par réponse
   let rireDit = false;                               // (30/10) sa balise [[rire: N]], une fois par réponse
   if (source !== 'local') rireDuSubconscient(texte);  // (30/10, 18:37) son rire naît dans son subconscient
@@ -3375,12 +3411,13 @@ async function routeJarvis(req, res, distantReq = false) {
     if (voulu && !o.coupe && source !== 'local' && bascullePermise(sid, voulu[1].toLowerCase())) noterModele(sid, voulu[1].toLowerCase());
     else if (!session && sid && modeleDemande === 'auto' && modele !== MODELE_CONVERSATION) noterModele(sid, modele);   // sa conversation neuve le garde
     if (!o.coupe && !o.erreur && source !== 'local') gestesDeHakim(reponse);
-    const sonDit = !o.coupe && !o.erreur && source !== 'local' && corpsReglages().sons
-      ? choisirSon(reponse, (reponse.match(BALISE_IMPULSION) || [])[1], degreRire(sansBaliseAffect(reponse))) : null;
+    // (01:27) ses sons à leur place sont déjà partis ; sinon « après » / « sous », ou celui de son émotion, comme avant
+    const sonDit = !o.coupe && !o.erreur && source !== 'local' && corpsReglages().sons && !sonsEnLigne
+      ? (sonDiffere ? lireSons().find(x => x.id === sonDiffere.id) : choisirSon(reponse, (reponse.match(BALISE_IMPULSION) || [])[1], degreRire(sansBaliseAffect(reponse)))) : null;
     reponse = sansBaliseAffect(reponse);
     if (sonDit) {                                    // (30/10, Bumblebee) joué par la page quand sa voix s'est tue
       const extrait = { id: sonDit.id, source: sonDit.source, ref: sonDit.ref, debut_ms: sonDit.debut_ms, fin_ms: sonDit.fin_ms, nom: sonDit.nom,
-        moment: /\bsous\s*\]\]/i.test((reponse.match(BALISE_SON) || [''])[0]) ? 'sous' : 'apres' };
+        moment: sonDiffere ? sonDiffere.moment : 'apres', cible: sonDiffere ? sonDiffere.cible : '' };
       envoyer({ t: 'son', extrait });
       // (30/10, 22:51, Hakim : « mes sons ne sortent pas ») ses morceaux ne sont que sur le téléphone : quand il parle depuis le
       // Mac, la page du téléphone (son appli) le joue aussi
@@ -3392,7 +3429,7 @@ async function routeJarvis(req, res, distantReq = false) {
       const dr = degreRire(reponse);
       if (dr && corpsActif() && Date.now() - dernierRireCorps > 30000) { dernierRireCorps = Date.now(); corpsLot.evenements.push({ type: 'rire', t: Date.now(), details: { degre_lu: dr, extrait: reponse.replace(BALISE_AFFECT, '').replace(/\s+/g, ' ').trim().slice(0, 180) } }); ressentirCorps(); }
     }
-    const restePause = fluxAffect.pousser(fluxPause.finir());
+    const restePause = fluxAffect.pousser(fluxPause.pousser(fluxSons.finir()) + fluxPause.finir());
     if (restePause) envoyer({ t: 'texte', x: restePause });
     const resteFlux = fluxAffect.finir();
     if (resteFlux) envoyer({ t: 'texte', x: resteFlux });
@@ -3452,7 +3489,7 @@ async function routeJarvis(req, res, distantReq = false) {
     enLocal++;
     consciencePulse();
     try {
-      await repondreEnLocal(prompt, persona, (x) => { dejaTexte = true; reponse += x; const y = fluxAffect.pousser(fluxPause.pousser(x)); if (y) envoyer({ t: 'texte', x: y }); }, ctl.signal,
+      await repondreEnLocal(prompt, persona, (x) => { dejaTexte = true; reponse += x; const y = fluxAffect.pousser(fluxPause.pousser(fluxSons.pousser(x))); if (y) envoyer({ t: 'texte', x: y }); }, ctl.signal,
         { gemma: choix === 'gemma' });
       finir({ coupe: false, tours: 1, erreur: null });
     } catch (e) {
@@ -3532,7 +3569,7 @@ async function routeJarvis(req, res, distantReq = false) {
           if (!rireDit) { const rr = reponse.match(BALISE_RIRE); if (rr) { rireDit = true; rireConscient(Number(rr[1]), envoyer); } }
           if (!impulsionDite) { const im = reponse.match(BALISE_IMPULSION); if (im) { impulsionDite = true; const x = im[1].toLowerCase(), cr = IMPULSIONS.has(x) ? null : emotionsCreees().get(x); if (IMPULSIONS.has(x) || cr) envoyer({ t: 'impulsion', x, ...(cr && cr.motif ? { motif: cr.motif } : {}) }); } }
           if (!microDit) { const mi = microDe(reponse); if (mi) { microDit = true; envoyer({ t: 'micro', ...mi }); } }
-          const x = fluxAffect.pousser(fluxPause.pousser(ev.delta.text));
+          const x = fluxAffect.pousser(fluxPause.pousser(fluxSons.pousser(ev.delta.text)));
           if (x) envoyer({ t: 'texte', x });
         }
       } else if (o.type === 'result') {
@@ -4764,7 +4801,7 @@ const SON_MAX_MS = 8000;
 function lireSons() {
   const ex = new Map();
   for (const o of lignesJson(SONS, 5000)) {
-    if (o.type === 'extrait' && /^e\d{1,6}$/.test(String(o.id)) && ['musique', 'sonnerie'].includes(o.source)) ex.set(o.id, { ...o, nom: '', sens: '', emotion: '' });
+    if (o.type === 'extrait' && /^e\d{1,6}$/.test(String(o.id)) && ['musique', 'sonnerie', 'atelier'].includes(o.source)) ex.set(o.id, { ...o, nom: '', sens: '', emotion: '' });   // (01:27) « atelier » : créé par lui
     else if (o.type === 'nom' && ex.has(o.extrait)) Object.assign(ex.get(o.extrait), { nom: String(o.nom || ''), sens: String(o.sens || ''), emotion: String(o.emotion || '') });
     else if (o.type === 'oubli') ex.delete(o.extrait);
   }

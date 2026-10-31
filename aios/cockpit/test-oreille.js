@@ -438,10 +438,10 @@ test('(22:51-22:55) ses sons : reçus une fois (sa réponse ou le cockpit) ; jou
   c.sonEnAttente = null;
   c.recevoirSon({ id: 'e1', debut_ms: 1000 });
   assert.equal(c.sonEnAttente, null, 'reçu deux fois (sa réponse et le cockpit) : une seule');
-  assert.match(page, /if \(!window\.HakimApp \|\| !window\.HakimApp\.sonJouer\) \{ jouerSonIci\(x, sousSaVoix \? 0\.3 : 0\.6\); return; \}/, 'le Mac le joue');
+  assert.match(page, /if \(!window\.HakimApp \|\| !window\.HakimApp\.sonJouer \|\| x\.source === 'atelier'\) \{ jouerSonIci\(x, sousSaVoix \? 0\.3 : 0\.6\); return; \}/, 'le Mac le joue (et ses sons à lui partout)');
   assert.match(page, /fetch\(`\/api\/sons\/joue\/\$\{x\.id\}`, \{ headers: \{ 'X-Jeton': jeton\(\) \}/);
   assert.match(page, /window\.HakimApp\.sonEnvoyer\(String\(m\.source\), String\(m\.ref\), url, jeton\(\)\)/, 'l’appli envoie le morceau');
-  assert.match(page, /es\.addEventListener\('son', \(ev\) => \{ try \{ recevoirSon\(JSON\.parse\(ev\.data\)\.extrait\); \}/);
+  assert.match(page, /es\.addEventListener\('son', \(ev\) => \{ try \{ const o = JSON\.parse\(ev\.data\);/);
   // le cockpit : un vrai découpage avec ffmpeg, dans un dossier à part
   const os = require('node:os'), { execFile } = require('node:child_process');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sons-'));
@@ -727,4 +727,40 @@ test('(01:10) les orbes de l’appli suivent celle de Parler ; « Hakim parle »
   for (const f2 of ['WidgetHakim.java', 'Bulle.java', 'OrbeVerrou.java', 'ConversationService.java']) assert.match(and(f2), /hakim_parle/, f2);
   assert.match(and('OrbeVue.java'), /PALETTES\.put\("coupe"/);
   assert.ok(fs.existsSync(path.join(process.env.HOME, 'AIOS', 'hakim-android', 'app', 'src', 'main', 'res', 'drawable-nodpi', 'orbe_repos_coupe_35.webp')), 'le widget a ses images vertes');
+});
+
+test('(01:27-01:30) [[son: nom]] n’importe où : sa voix, puis le son en entier, puis la suite ; « | mac », « | tel », « | les deux » ; ses sons à lui', () => {
+  // le cockpit : chaque balise à sa place dans le flux
+  const debut = src.indexOf('const BALISE_SON = '), fin = src.indexOf('function filtreSons(');
+  const ligne = src.slice(src.indexOf('const prefixeBalise'), src.indexOf('\n', src.indexOf('const prefixeBalise')));
+  const c = vm.createContext({ String, RegExp });
+  vm.runInContext(ligne.replace('const ', 'var ') + '\n' + src.slice(debut, fin).replace(/^const /gm, 'var ') + prendre(src, 'function filtreSons('), c);
+  const sortie = [];
+  const f = c.filtreSons((o) => sortie.push(o.texte != null ? ['texte', o.texte] : ['son', o.son.nom, o.son.moment, o.son.cible]));
+  for (const x of ['Écoute ça, papa ! [[so', 'n: genou]] Alors, t’as kiffé ? [[son: guerrier | les deux]] Et voilà.']) { const r = f.pousser(x); if (r) sortie.push(['texte', r]); }
+  assert.deepEqual(JSON.parse(JSON.stringify(sortie.filter(x => x[1] !== ''))), [['texte', 'Écoute ça, papa ! '], ['son', 'genou', 'ici', ''], ['texte', ' Alors, t’as kiffé ? '], ['son', 'guerrier', 'ici', 'deux'], ['texte', ' Et voilà.']]);
+  const g = c.filtreSons((o) => sortie.push(o)); sortie.length = 0;
+  g.pousser('[[son: genou sous | mac]]');
+  assert.deepEqual(JSON.parse(JSON.stringify(sortie[1].son)), { nom: 'genou', moment: 'sous', cible: 'mac' });
+  assert.match(src, /envoyer\(\{ t: 'son_ici', extrait \}\);/);
+  assert.match(src, /'sons_lister', 'son_etiqueter', 'son_oublier', 'son_creer',/, 'son_creer permis');
+  assert.match(src, /\['musique', 'sonnerie', 'atelier'\]\.includes\(o\.source\)/, 'ses sons à lui');
+  // la page : le lecteur joue l'unité « son » seule, à sa place, à sa vitesse
+  assert.match(page, /if \(unites\[0\] && unites\[0\]\.son\) return \{ son: unites\.shift\(\)\.son, texte: '' \};/);
+  assert.match(page, /const vitesse = x\.son \? 1 : vitesseVoix\(\);/);
+  assert.match(page, /if \(x\.son && x\.erreur\) \{ lots\.shift\(\); continue; \}/, 'un son qui manque : sa voix continue');
+  // où il joue
+  const a2 = page.indexOf('const appareilIci = '), b2 = page.indexOf('function recevoirSon(');
+  const dits = [], sons = [];
+  const ctx = vm.createContext({ window: {}, Date, journalVoix() {}, reglagesCorps: {}, etat: { reglages: {} }, NON_REPONSE: /^no response/i,
+    lecteur: { dire: (p) => dits.push(p) }, lecteurNeuronal: { direSon: (x) => sons.push(x.id) }, sonEnAttente: null, dernierSonRecu: null });
+  vm.runInContext(page.slice(a2, b2).replace(/^const /gm, 'var '), ctx);
+  const decoupe = { finir: () => ['Écoute ça, papa !'] };
+  ctx.sonALaPlace({ id: 'e3', debut_ms: 0, cible: '' }, true, decoupe, 7);
+  assert.deepEqual(dits, ['Écoute ça, papa !'], 'ce qui précède part d’abord');
+  assert.deepEqual(sons, ['e3'], 'puis le son, à sa place');
+  ctx.sonALaPlace({ id: 'e4', debut_ms: 0, cible: 'tel' }, true, decoupe, 7);
+  assert.deepEqual(sons, ['e3'], 'voulu sur le téléphone : pas sur le Mac');
+  ctx.window.HakimApp = {}; ctx.sonALaPlace({ id: 'e5', debut_ms: 0, cible: 'tel' }, true, decoupe, 7);
+  assert.deepEqual(sons, ['e3', 'e5'], 'le téléphone le joue');
 });

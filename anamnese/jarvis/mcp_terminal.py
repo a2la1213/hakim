@@ -245,6 +245,16 @@ def son_etiqueter(extrait: str, nom: str, sens: str = "", emotion: str = "") -> 
     return sons.etiqueter(extrait, nom, sens, emotion)
 
 
+# (31/10, 01:27, Ahmed via Hakim : « qu'il crée ses propres sons, dans les musiques de papa ») 8 s au plus, nommé d'un coup
+@mcp.tool()
+def son_creer(fichier: str, debut_s: float, fin_s: float, nom: str, sens: str = "", emotion: str = "") -> str:
+    """Crée un de tes sons : un passage de 8 s au plus (debut_s → fin_s) d'une musique de papa (dossier « Music A2LA » sur
+    son Mac, ses morceaux « A2LA - … ») ou d'un fichier audio de ton atelier ; il est découpé, rangé avec tes extraits et
+    nommé. Ensuite [[son: nom]] le fait entendre à l'endroit exact de ta réponse où tu le places."""
+    import sons
+    return sons.creer(fichier, debut_s, fin_s, nom, sens, emotion)
+
+
 # (30/10, 17:11, Ahmed : « tu dois pouvoir créer de nouvelles émotions, reliées à une vibration et à tes hormones »)
 @mcp.tool()
 def emotion_creer(nom: str, sens: str = "", melange: str = "maintenant") -> str:
