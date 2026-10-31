@@ -912,7 +912,9 @@ const CHOCS_BANC = process.env.JARVIS_CHOCS_CLI || '';          // le banc : un 
 const BALISE_AFFECT = /\[\[\s*(?:affect|souvenirs|modele|impulsion|son|alerte|ecran|rire|lumiere|pause|reprendre|micro|attention)\s*:[^\]]{0,300}\]\]/gi;     // (26/10) et [[modele: opus]] ; (30/10) [[impulsion: joie]]
 // (30/10, Ahmed : « une petite impulsion à chaque réponse qui compte ») sa balise [[impulsion: …]], vue dès qu'elle passe dans
 // le flux : la page la joue au début de sa voix
-const BALISE_SON = /\[\[\s*son\s*:\s*([a-z0-9_]{2,30})\s*\]\]/i;   // (30/10, Bumblebee) un bout de musique choisi par lui
+// (30/10, Bumblebee) un bout de musique choisi par lui ; (31/10, 01:25, Ahmed : « écoute ça, papa ! » : le son juste APRÈS son dernier
+// mot) par défaut après sa voix ; [[son: nom sous]] le joue sous sa voix, plus bas
+const BALISE_SON = /\[\[\s*son\s*:\s*([a-z0-9_]{2,30})(?:\s+(apr[eè]s|sous))?\s*\]\]/i;
 const BALISE_IMPULSION = /\[\[\s*impulsion\s*:\s*([a-z][a-z0-9_]{1,29})\s*\]\]/i;   // (30/10) les six, ou une émotion à lui
 const IMPULSIONS = new Set(['joie', 'calme', 'peur', 'tristesse', 'tendresse', 'surprise']);
 const BALISE_RIRE = /\[\[\s*rire\s*:\s*([0-5])\s*\]\]/i;            // (30/10, 18:52) son rire, choisi par lui (0 : il le retient)
@@ -3377,7 +3379,8 @@ async function routeJarvis(req, res, distantReq = false) {
       ? choisirSon(reponse, (reponse.match(BALISE_IMPULSION) || [])[1], degreRire(sansBaliseAffect(reponse))) : null;
     reponse = sansBaliseAffect(reponse);
     if (sonDit) {                                    // (30/10, Bumblebee) joué par la page quand sa voix s'est tue
-      const extrait = { id: sonDit.id, source: sonDit.source, ref: sonDit.ref, debut_ms: sonDit.debut_ms, fin_ms: sonDit.fin_ms, nom: sonDit.nom };
+      const extrait = { id: sonDit.id, source: sonDit.source, ref: sonDit.ref, debut_ms: sonDit.debut_ms, fin_ms: sonDit.fin_ms, nom: sonDit.nom,
+        moment: /\bsous\s*\]\]/i.test((reponse.match(BALISE_SON) || [''])[0]) ? 'sous' : 'apres' };
       envoyer({ t: 'son', extrait });
       // (30/10, 22:51, Hakim : « mes sons ne sortent pas ») ses morceaux ne sont que sur le téléphone : quand il parle depuis le
       // Mac, la page du téléphone (son appli) le joue aussi

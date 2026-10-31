@@ -891,14 +891,16 @@ setTimeout(envoyerMorceauxManquants, 8000);
 setInterval(envoyerMorceauxManquants, 5 * 60e3);
 function jouerSonEnAttente() {
   if (!sonEnAttente) return;
-  if (Date.now() - sonEnAttente.t > 60000) { sonEnAttente = null; return; }
+  if (Date.now() - sonEnAttente.t > 180000) { sonEnAttente = null; return; }   // (01:25) une longue réponse : il attend sa fin
   const c = etat.conversation;
-  // (30/10, 18:50, Ahmed via Hakim : « qu'un son puisse jouer pendant que je parle ») sous SA voix, plus bas (appli 1.32) ;
-  // jamais par-dessus celle de papa
-  const sousSaVoix = typeof reglagesCorps !== 'undefined' && reglagesCorps.son_pendant !== false && !!(lecteur && lecteur.actif)
-    && (!window.HakimApp || !!window.HakimApp.sonJouerVolume);
+  // (30/10, 18:50, Ahmed via Hakim : « qu'un son puisse jouer pendant que je parle ») sous SA voix, plus bas (appli 1.32), s'il l'a
+  // demandé ([[son: nom sous]]) ; jamais par-dessus celle de papa. (31/10, 01:25, Ahmed : « écoute ça, papa ! ») sinon, juste
+  // APRÈS son dernier mot : la réponse finie, sa voix (et un petit mot) tue depuis 0,3 s
+  const sousSaVoix = sonEnAttente.extrait && sonEnAttente.extrait.moment === 'sous' && typeof reglagesCorps !== 'undefined'
+    && reglagesCorps.son_pendant !== false && !!(lecteur && lecteur.actif) && (!window.HakimApp || !!window.HakimApp.sonJouerVolume);
   if (c && c.capteur && c.capteur.enParole) return;
-  if (!sousSaVoix && (etat.flux || etat.micro || (lecteur && (lecteur.actif || lecteur.enPause)))) return;
+  if (!sousSaVoix && (etat.flux || etat.micro || (lecteur && (lecteur.actif || lecteur.enPause)) || Date.now() < motDirectJusqua
+      || Date.now() - (etat.finVoixA || 0) < 300)) return;
   const x = sonEnAttente.extrait, h = new Date().getHours();
   sonEnAttente = null;
   // (31/10, 00:07, Ahmed : « enlève cette restriction de la nuit, laisse-moi juste un bouton ») la nuit seulement si papa l'a voulu

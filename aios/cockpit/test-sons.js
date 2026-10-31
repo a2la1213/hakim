@@ -50,7 +50,7 @@ test('branché : balise cachée, route des extraits (8 s au plus), réglage, son
 
 test('le son attend que sa voix se taise, que papa ne parle pas, et jamais la nuit', () => {
   const joues = [];
-  const ctx = { setInterval: () => 0, setTimeout: () => 0, journalVoix() {}, reglagesCorps: { sons_nuit: false }, Date, lecteur: { actif: true, enPause: false }, etat: { flux: null, micro: false, conversation: null },
+  const ctx = { setInterval: () => 0, setTimeout: () => 0, journalVoix() {}, motDirectJusqua: 0, reglagesCorps: { sons_nuit: false }, Date, lecteur: { actif: true, enPause: false }, etat: { flux: null, micro: false, conversation: null },
     window: { HakimApp: { sonJouer: (...a) => { joues.push(a); return 'ok'; } } } };
   vm.createContext(ctx);
   const bloc = page.slice(page.indexOf('let sonEnAttente = null'), page.indexOf('// fin des sons'));
@@ -98,21 +98,22 @@ test('(30/10, 17:11) ses émotions à lui : le cockpit lit leur journal ; papa e
   assert.match(fs.readFileSync(path.join(__dirname, 'public', 'sens.html'), 'utf8'), /id="emotionsCreees"/);
 });
 
-test('(18:50) sous sa voix, plus bas, si papa l’a permis ; jamais par-dessus la sienne', () => {
+test('(18:50) sous sa voix, plus bas, si papa l’a permis (et s’il l’a demandé : [[son: nom sous]], 01:25) ; jamais par-dessus la sienne', () => {
   const joues = [];
-  const ctx = { setInterval: () => 0, setTimeout: () => 0, journalVoix() {}, Date, lecteur: { actif: true, enPause: false }, etat: { flux: null, micro: false, conversation: { capteur: { enParole: false } } },
-    reglagesCorps: { son_pendant: true },
+  const ctx = { setInterval: () => 0, setTimeout: () => 0, journalVoix() {}, motDirectJusqua: 0, Date, lecteur: { actif: true, enPause: false }, etat: { flux: null, micro: false, conversation: { capteur: { enParole: false } } },
+    reglagesCorps: { son_pendant: true, sons_nuit: true },
     window: { HakimApp: { sonJouer: (...a) => { joues.push(['normal', ...a]); return 'ok'; }, sonJouerVolume: (...a) => { joues.push(['sous', ...a]); return 'ok'; } } } };
   vm.createContext(ctx);
   const bloc = page.slice(page.indexOf('let sonEnAttente = null'), page.indexOf('// fin des sons'));
   vm.runInContext(bloc.replace('let sonEnAttente', 'var sonEnAttente').replace(', sonJusqua = 0;', '; var sonJusqua = 0;') + '\nthis.j = jouerSonEnAttente;', ctx);
   const h = new Date().getHours(), nuit = h >= 23 || h < 8;
   ctx.etat.conversation.capteur.enParole = true;
-  ctx.sonEnAttente = { id: 1, t: Date.now(), extrait: { source: 'musique', ref: '12', debut_ms: 0, fin_ms: 3000 } };
+  ctx.sonEnAttente = { id: 1, t: Date.now(), extrait: { source: 'musique', ref: '12', debut_ms: 0, fin_ms: 3000, moment: 'sous' } };
   ctx.j(); assert.equal(joues.length, 0, 'papa parle : jamais');
   ctx.etat.conversation.capteur.enParole = false;
   ctx.j();
-  if (!nuit) { assert.equal(joues[0][0], 'sous'); assert.equal(joues[0][5], 0.3, 'plus bas'); }
+  assert.equal(joues[0][0], 'sous'); assert.equal(joues[0][5], 0.3, 'plus bas');
+  void nuit;
 });
 
 test('(20:09) la force de sa voix suit son éveil et son émotion, bornée (0,8 à 1,15) ; neutre si papa l’a voulue neutre', () => {
@@ -131,4 +132,27 @@ test('(31/10, 00:07, Ahmed) la nuit : ses sons jouent, sauf si papa a décoché 
   assert.match(page, /\(h >= 23 \|\| h < 8\) && typeof reglagesCorps !== 'undefined' && reglagesCorps\.sons_nuit === false/);
   assert.match(src, /sons_nuit: r\.sons_nuit !== false/);
   assert.match(fs.readFileSync(path.join(__dirname, 'public', 'sens.html'), 'utf8'), /id="sonsNuit"/);
+});
+
+test('(31/10, 01:25, Ahmed : « écoute ça, papa ! ») son son part juste APRÈS son dernier mot ; [[son: nom sous]] sous sa voix', () => {
+  const re = new RegExp(src.match(/const BALISE_SON = \/(.+)\/i;/)[1], 'i');
+  assert.deepEqual(['[[son: genou]]', '[[son: genou après]]', '[[son: genou sous]]'].map(x => { const m = x.match(re); return [m[1], m[2] || null]; }),
+    [['genou', null], ['genou', 'après'], ['genou', 'sous']]);
+  assert.match(src, /moment: \/\\bsous\\s\*\\\]\\\]\/i\.test/);
+  const ecrits = [];
+  let t = 1_800_000_000_000;
+  const ctx = { setInterval: () => 0, setTimeout: () => 0, journalVoix() {}, reglagesCorps: { son_pendant: true, sons_nuit: true },
+    Date: class extends Date { static now() { return t; } }, motDirectJusqua: 0, lecteur: { actif: true, enPause: false },
+    etat: { flux: null, micro: false, conversation: null, finVoixA: 0 }, window: { HakimApp: { sonJouer: (...a) => { ecrits.push(['apres', ...a]); return 'ok'; }, sonJouerVolume: (...a) => { ecrits.push(['sous', ...a]); return 'ok'; } } } };
+  vm.createContext(ctx);
+  const bloc = page.slice(page.indexOf('let sonEnAttente = null'), page.indexOf('// fin des sons'));
+  vm.runInContext(bloc.replace('let sonEnAttente', 'var sonEnAttente') + '\nthis.j = jouerSonEnAttente;', ctx);
+  ctx.sonEnAttente = { id: 1, t, extrait: { source: 'musique', ref: '57', debut_ms: 22000, fin_ms: 30000, moment: 'apres' } };
+  ctx.j(); assert.equal(ecrits.length, 0, 'sa voix parle : il attend');
+  ctx.lecteur.actif = false; ctx.etat.finVoixA = t; ctx.j();
+  assert.equal(ecrits.length, 0, 'son dernier mot vient de finir : 0,3 s');
+  t += 400; ctx.j(); assert.equal(ecrits[0][0], 'apres', 'juste après son dernier mot');
+  ctx.lecteur.actif = true;
+  ctx.sonEnAttente = { id: 2, t, extrait: { source: 'musique', ref: '57', debut_ms: 0, fin_ms: 3000, moment: 'sous' } };
+  ctx.j(); assert.equal(ecrits[1] && ecrits[1][0], 'sous', '[[son: nom sous]] : sous sa voix');
 });
