@@ -2500,7 +2500,7 @@ const chacunSonTour = () => typeof reglagesCorps === 'undefined' || reglagesCorp
 // mots restaient gardés pour toujours
 const sonTourEnCours = () => !!(etat.flux || (lecteur && lecteur.actif && !lecteur.enPause));
 function garderPourSonTour(conv, texte) {
-  if (!conv.tourGarde) conv.tourGardeDepuis = Date.now();
+  if (!conv.tourGarde && !(conv.ecritGarde || []).length) conv.tourGardeDepuis = Date.now();
   conv.tourGarde = conv.tourGarde ? `${conv.tourGarde} … ${texte}` : texte;
   journalVoix('tour_garde', { mots: texte.split(/\s+/).filter(Boolean).length });
   humeur('je finis, puis je t’écoute');
@@ -2595,16 +2595,39 @@ function resumerPourSonAttention(texte) {
   const phrases = String(texte || '').replace(/\(dit pendant ta parole\)\s*/g, '').replace(/\s+…\s+/g, ' ').split(/(?<=[.!?…])\s+/).filter(x => x.trim());
   return `(dit pendant ta parole) ${(phrases.length > 8 ? '… ' : '') + phrases.slice(-8).join(' ')}`;   // (00:55, « monte à 8 ») 8 au plus
 }
+/* (31/10, 08:22, Ahmed via Hakim, en plein live : « chaque message écrit annule sa réponse avant que sa voix parte » ; 13 réponses
+   jamais entendues ce matin, papa écrivait toutes les 5 à 15 s) en conversation, « chacun son tour » vaut aussi pour l'écrit : ce
+   que tu écris pendant qu'il prépare ou dit sa réponse est gardé, et lui arrive dès que sa voix a fini, avec ce que tu as dit ;
+   « stop » écrit, le bouton Stop et un fichier joint passent toujours tout de suite */
+function prendreEcritsGardes(c) {
+  const e = (c && c.ecritGarde) || [];
+  if (!e.length) return '';
+  c.ecritGarde = [];
+  return `(écrit pendant ta parole) ${e.join(' … ')}`;
+}
+function envoyerEcrit(texte) {
+  const c = etat.conversation, t = String(texte || '').trim();
+  if (t && c && chacunSonTour() && sonTourEnCours() && !COMMANDE_STOP.test(t) && !etat.joints.length) {
+    if (!c.tourGarde && !(c.ecritGarde || []).length) c.tourGardeDepuis = Date.now();
+    (c.ecritGarde = c.ecritGarde || []).push(t);
+    journalVoix('ecrit_garde', { n: c.ecritGarde.length });
+    $('q').value = ''; ajuster();
+    humeur('je finis, puis je te lis');
+    return;
+  }
+  const avant = t && c && !sonTourEnCours() ? prendreEcritsGardes(c) : '';
+  envoyer(avant ? `${avant}\n${t}` : texte, false);
+}
 function libererSonTour() {
   const c = etat.conversation;
-  if (!c || !c.tourGarde || c.enAttente || (c.capteur && c.capteur.enParole)) return false;
+  if (!c || !(c.tourGarde || (c.ecritGarde || []).length) || c.enAttente || (c.capteur && c.capteur.enParole)) return false;
   // (00:06) au plus 30 s gardés : une réponse coincée ne te fait plus attendre pour toujours (tes mots partent, elle s'arrête)
   const tropLong = Date.now() - (c.tourGardeDepuis || Date.now()) > 30000;
   if (!tropLong && (sonTourEnCours() || Date.now() - (etat.finVoixA || 0) < 400)) return false;
-  const texte = c.tourGarde;
+  const texte = c.tourGarde, ecrits = prendreEcritsGardes(c);
   c.tourGarde = '';
-  journalVoix('tour_libere', { mots: texte.split(/\s+/).filter(Boolean).length });
-  envoyer(resumerPourSonAttention(texte), true);
+  journalVoix('tour_libere', { mots: texte.split(/\s+/).filter(Boolean).length, ecrits: ecrits ? 1 : 0 });
+  envoyer([texte ? resumerPourSonAttention(texte) : '', ecrits].filter(Boolean).join('\n'), !!texte);
   return true;
 }
 setInterval(libererSonTour, 300);
@@ -2728,6 +2751,7 @@ async function tourDeParole(conv, wav, infos, extra) {
     rouvrirMicroDeHakim(conv, 'voix_familiere');
   }
   if (conv.tourGarde && !sonTourEnCours()) { texte = `${conv.tourGarde} … ${texte}`; conv.tourGarde = ''; }
+  if ((conv.ecritGarde || []).length && !sonTourEnCours()) texte = `${prendreEcritsGardes(conv)}\n${texte}`;   // (08:30)
   if (chacunSonTour() && sonTourEnCours()) { garderPourSonTour(conv, texte); return; }
   // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
   if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(true, { garder: true, raison: 'parole' }); }
@@ -3688,7 +3712,7 @@ function direSpontanes() {
   if (c && c.capteur && c.capteur.enParole) parlaitA = Date.now();
   sortirLesCoupees();                                // (30/10) une suite coupée ne se redit jamais d'elle-même
   const voix = c || etat.reglages.volant || etat.reglages.lectureAuto;
-  if (!voix || !aDire.length || (c && c.tourGarde)) return;          // (vers 22 h 10) ce que papa a dit pendant son tour passe d'abord
+  if (!voix || !aDire.length || (c && (c.tourGarde || (c.ecritGarde || []).length))) return;          // (vers 22 h 10) ce que papa a dit pendant son tour passe d'abord
   if (!lecteur || etat.flux || etat.micro || etat.transcription || !jarvisPeutParler() || lecteur.actif || lecteur.enPause
       || Date.now() - Math.max(parlaitA, etat.finVoixA || 0) < 1500) return;
   const m = aDire.shift();
@@ -4455,11 +4479,11 @@ $('nouvelle').addEventListener('click', () => {
   sauver(); rendre(); humeur();
 });
 $('micro').addEventListener('click', basculerMicro);
-$('envoyer').addEventListener('click', () => envoyer($('q').value, false));
+$('envoyer').addEventListener('click', () => envoyerEcrit($('q').value));
 $('stop').addEventListener('click', () => { arreterTout(); majBoutonsPause(); rendre(); humeur(); });
 $('q').addEventListener('input', () => { ajuster(); activite(); });
 $('q').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); envoyer($('q').value, false); }
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); envoyerEcrit($('q').value); }
 });
 document.addEventListener('keydown', (e) => {
   if (e.altKey && e.code === 'KeyM') { e.preventDefault(); basculerMicro(); }

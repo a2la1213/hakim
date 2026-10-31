@@ -304,8 +304,43 @@ test('(vers 22 h 10) chacun son tour : pendant qu’il prépare ou dit sa répon
   assert.ok(k('COMMANDE_STOP.test(texte)') < k('if (chacunSonTour() && sonTourEnCours()) { garderPourSonTour(conv, texte); return; }'), '« stop » reste au-dessus');
   assert.ok(k('COMMANDE_PAUSE.test(texte)') < k('garderPourSonTour(conv, texte)'), '« attends » aussi');
   assert.ok(k('garderPourSonTour(conv, texte)') < k("arreterTout(true, { garder: true, raison: 'parole' })"), 'sa réponse n’est plus coupée');
-  assert.match(page, /if \(!voix \|\| !aDire\.length \|\| \(c && c\.tourGarde\)\) return;/, 'papa d’abord, avant ses mots en attente');
+  assert.match(page, /if \(!voix \|\| !aDire\.length \|\| \(c && \(c\.tourGarde \|\| \(c\.ecritGarde \|\| \[\]\)\.length\)\)\) return;/, 'papa d’abord, avant ses mots en attente');
   assert.match(src, /chacun_son_tour: r\.chacun_son_tour !== false/);
+});
+
+test('(31/10, 08:22, en live) chacun son tour vaut aussi pour l’écrit : un message écrit ne coupe plus sa réponse en route', () => {
+  const a = page.indexOf('const chacunSonTour = '), b = page.indexOf('setInterval(libererSonTour, 300);');
+  const envois = [], journal = [], q = { value: '' };
+  const ctx = vm.createContext({ Date, etat: { flux: {}, joints: [], conversation: { tourGarde: '', enAttente: 0, capteur: { enParole: false } }, finVoixA: 0 },
+    lecteur: { actif: false, enPause: false }, reglagesCorps: { chacun_son_tour: true }, journalVoix: (e, d) => journal.push([e, d]), humeur() {},
+    envoyer: (t, oral) => envois.push([t, oral]), setInterval() {}, $: () => q, ajuster() {}, COMMANDE_STOP: /^\s*stop\s*$/i });
+  vm.runInContext(page.slice(a, b).replace(/^const /gm, 'var '), ctx);
+  const conv = ctx.etat.conversation;
+  q.value = 'et mute moi'; ctx.envoyerEcrit(q.value);
+  ctx.envoyerEcrit('vasy test');
+  assert.deepEqual(envois, [], 'il prépare sa réponse : rien ne la coupe');
+  assert.equal(q.value, '', 'la zone d’écriture est vidée');
+  ctx.garderPourSonTour(conv, 'tu m’entends ?');
+  ctx.etat.flux = null; ctx.lecteur.actif = true;
+  assert.equal(ctx.libererSonTour(), false, 'pas pendant sa voix');
+  ctx.lecteur.actif = false; ctx.etat.finVoixA = Date.now() - 1000;
+  assert.equal(ctx.libererSonTour(), true);
+  assert.deepEqual(envois, [['(dit pendant ta parole) tu m’entends ?\n(écrit pendant ta parole) et mute moi … vasy test', true]],
+    'ce que papa a dit et écrit, d’un seul message, après sa voix');
+  envois.length = 0; ctx.etat.flux = {};
+  ctx.envoyerEcrit('stop');
+  assert.deepEqual(envois, [['stop', false]], '« stop » écrit passe tout de suite');
+  envois.length = 0; ctx.envoyerEcrit('encore un'); ctx.etat.flux = null;
+  ctx.envoyerEcrit('et celui-là');
+  assert.deepEqual(envois, [['(écrit pendant ta parole) encore un\net celui-là', false]], 'un gardé ne part jamais après un nouveau');
+  envois.length = 0; ctx.etat.flux = {}; ctx.etat.conversation = null;
+  ctx.envoyerEcrit('hors conversation');
+  assert.deepEqual(envois, [['hors conversation', false]], 'hors conversation : comme avant');
+  ctx.etat.conversation = conv; ctx.reglagesCorps.chacun_son_tour = false; envois.length = 0;
+  ctx.envoyerEcrit('interrupteur coupé');
+  assert.deepEqual(envois, [['interrupteur coupé', false]], 'l’interrupteur de papa');
+  assert.match(page, /\$\('envoyer'\)\.addEventListener\('click', \(\) => envoyerEcrit\(\$\('q'\)\.value\)\);/);
+  assert.match(page, /e\.preventDefault\(\); envoyerEcrit\(\$\('q'\)\.value\);/);
 });
 
 test('(22:21) plus de pavé : sa conscience reçoit les petits morceaux retenus par son subconscient, choisit et reformule', async () => {
@@ -603,7 +638,7 @@ test('(00:20, l’étude) son attention en douceur : d’une voix inconnue, seul
   const long = Array.from({ length: 12 }, (_, i) => `P${i + 1}.`).join(' … ');
   assert.equal(c.resumerPourSonAttention(long), '(dit pendant ta parole) … P5. P6. P7. P8. P9. P10. P11. P12.', '(00:55) 8 au plus');
   assert.equal(c.resumerPourSonAttention('(dit pendant ta parole) Un.'), '(dit pendant ta parole) Un.', 'marqué une seule fois');
-  assert.match(page, /envoyer\(resumerPourSonAttention\(texte\), true\);/);
+  assert.match(page, /envoyer\(\[texte \? resumerPourSonAttention\(texte\) : '', ecrits\]\.filter\(Boolean\)\.join\('\\n'\), !!texte\);/);
   const i = page.indexOf('async function tourDeParole('), bloc = page.slice(i, page.indexOf('\n}\n', i));
   assert.ok(bloc.indexOf('filtrerVoixInconnues(texte)') < bloc.indexOf('COMMANDE_STOP.test(texte)'), 'avant les commandes et son tour');
 });
