@@ -921,6 +921,7 @@ const ARRETE_MOI = /\b(?:arr[eê]te(?:-toi)?|tais[- ]toi|coupe[- ]toi|stop|chut)
 let reglagesCorps = { oreille: false, je_te_suis: true }, oreilleDernier = 0, parleDepuis = 0, tapeDerniere = 0;
 async function lireReglagesCorps() {
   try { const r = await fetch('/api/corps/reglages', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' }); if (r.ok) reglagesCorps = { ...reglagesCorps, ...(await r.json()) }; } catch (_) {}
+  if (typeof surOreilleHakim === 'function') surOreilleHakim({ fermee: !!reglagesCorps.oreille_hakim_jusqua, jusqua: reglagesCorps.oreille_hakim_jusqua });   // (01:00)
 }
 lireReglagesCorps(); setInterval(lireReglagesCorps, 60000);
 function entendreEnCours(conv) {
@@ -2162,12 +2163,38 @@ function couperSon(oui = !etat.sonCoupe) {
 }
 // l'état des boutons du widget (conversation, pause, son, micro), envoyé seulement quand il change
 let dernierEtatWidget = '';
+/* (31/10, 01:00, Ahmed via Hakim : « un gros signe distinctif, partout, chaque fois qu'il ferme son oreille ») ici (en-tête et
+   grande orbe, avec le temps qui reste), et dans l'appli (widget, bulle, écran verrouillé, notification : l'appli 1.39) ; une
+   petite vibration quand elle se ferme et quand elle se rouvre */
+let oreilleHakim = { fermee: false, jusqua: 0 };
+function surOreilleHakim(o) {
+  const fermee = !!(o && o.fermee && Number(o.jusqua) > Date.now());
+  const change = fermee !== oreilleHakim.fermee;
+  oreilleHakim = { fermee, jusqua: fermee ? Number(o.jusqua) : 0 };
+  afficherOreilleHakim();
+  if (change) {
+    journalVoix('oreille_hakim', { fermee });
+    try { if (window.HakimApp && window.HakimApp.vibrerMotif) window.HakimApp.vibrerMotif(fermee ? '0,60,120,60' : '0,40', fermee ? '0,120,0,120' : '0,90'); } catch (_) {}   // fermée : deux tapes ; rouverte : une
+    dernierEtatWidget = ''; signalerWidget();
+  }
+}
+function afficherOreilleHakim() {
+  const reste = oreilleHakim.fermee ? Math.max(0, Math.ceil((oreilleHakim.jusqua - Date.now()) / 60000)) : 0;
+  if (oreilleHakim.fermee && !reste) { oreilleHakim = { fermee: false, jusqua: 0 }; dernierEtatWidget = ''; signalerWidget(); }
+  for (const [id, texte] of [['oreilleFermee', `🙉 oreille fermée · ${reste} min`], ['oreilleFermeeScene', `🙉 son oreille est fermée · encore ${reste} min`]]) {
+    const el = $(id); if (!el) continue;
+    el.hidden = !oreilleHakim.fermee;
+    if (oreilleHakim.fermee) el.textContent = texte;
+  }
+}
+setInterval(afficherOreilleHakim, 15000);
 function signalerWidget() {
   try {
     if (!window.HakimApp || !window.HakimApp.boutons) return;
     const c = etat.conversation;
     const e = JSON.stringify({ conversation: !!c, pause: !!lecteur.enPause, son_coupe: !!etat.sonCoupe,
-      micro_coupe: !!(c && c.capteur && c.capteur.estMuet) });
+      micro_coupe: !!(c && c.capteur && (c.capteur.estMuet || (c.muetParHakim && !c.muetParHakim.attente))),
+      oreille_fermee: !!(typeof oreilleHakim !== 'undefined' && oreilleHakim.fermee) });
     if (e === dernierEtatWidget) return;
     dernierEtatWidget = e;
     window.HakimApp.boutons(e);
@@ -3031,6 +3058,7 @@ function ecouterPensees() {
   // (19:58) sa lumière : la lampe du téléphone (l'appli 1.36), ou son SOS selon son émotion
   es.addEventListener('son', (ev) => { try { recevoirSon(JSON.parse(ev.data).extrait); } catch (_) {} });   // (22:51)
   es.addEventListener('micro', (ev) => { try { microParHakim(JSON.parse(ev.data)); } catch (_) {} });   // (22:27) de lui-même aussi
+  es.addEventListener('oreille_hakim', (ev) => { try { surOreilleHakim(JSON.parse(ev.data)); } catch (_) {} });   // (01:00) le signe
   es.addEventListener('attention', (ev) => { try { const o = JSON.parse(ev.data), c = etat.conversation;   // (00:47) ses empans choisis
     if (c) c.attentionJusqua = o.pause ? Date.now() + 15000 : 0; journalVoix('attention', { pause: !!o.pause }); } catch (_) {} });
   es.addEventListener('lumiere', (ev) => { try { const o = JSON.parse(ev.data);

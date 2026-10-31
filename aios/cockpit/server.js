@@ -5338,6 +5338,16 @@ let oreilleReveils = [], oreilleDejaLu = '';
    suit son éveil : elle dit combien de secondes il peut parler par-dessus papa (1 à 8 s), et la page coupe là. */
 const APPEL_OREILLE = /\b(?:hakim|stop|au secours|a l'aide|à l'aide|aide-moi|attention)\b/i;
 function oreilleFermeeParLui(maintenant = Date.now()) { const o = lireJson(path.join(JARVIS, 'oreille-hakim.json'), null); return !!(o && Number(o.fermee_jusqua) > maintenant); }
+/* (31/10, 01:00, Ahmed via Hakim : « le signe oreille fermée PARTOUT : widget, bulle, écran verrouillé, mode orbe, Parler ») quand il
+   ferme ou rouvre son oreille, les pages le savent dans les 2 s (et elles le disent à l'appli) */
+const oreilleHakimJusqua = (maintenant = Date.now()) => { const o = lireJson(path.join(JARVIS, 'oreille-hakim.json'), null); const t = Number(o && o.fermee_jusqua) || 0; return t > maintenant ? t : 0; };
+let oreilleHakimAnnoncee = null;
+setInterval(() => {
+  const jusqua = oreilleHakimJusqua();
+  if (oreilleHakimAnnoncee !== null && !!jusqua === !!oreilleHakimAnnoncee && Math.abs(jusqua - oreilleHakimAnnoncee) < 5000) return;
+  oreilleHakimAnnoncee = jusqua;
+  diffuser(abonnesPensees, 'oreille_hakim', j({ fermee: !!jusqua, jusqua }));
+}, 2000).unref();
 function envieDeCouper() { const a = Number.isFinite(veilleurEveil) ? veilleurEveil : 0.4; return Math.round(Math.max(0.1, Math.min(1, 0.2 + 0.8 * Math.max(0, (a - 0.35) / 0.5))) * 100) / 100; }
 // (20:14, les tests de papa : « coupe-moi, continue par-dessus » ; « tais-toi, ne me coupe pas ») ce qu'il dit l'emporte sur la jauge
 const COUPE_MOI = /\b(?:coupe[- ]moi|parle par[- ]dessus|vas[- ]y coupe|continue m[eê]me si je parle|coupe la parole)\b/i;
@@ -8139,7 +8149,7 @@ async function traiter(req, res) {
         sensations: lignesJson(path.join(JARVIS, 'corps-sensations.jsonl'), 40).reverse() });
     }
     if (p === '/api/corps/reglages') {
-      if (req.method === 'GET') return repondre(200, { ...corpsReglages(), oreille_hakim_fermee: oreilleFermeeParLui() });   // (21:50) la couleur de la parole
+      if (req.method === 'GET') return repondre(200, { ...corpsReglages(), oreille_hakim_fermee: oreilleFermeeParLui(), oreille_hakim_jusqua: oreilleHakimJusqua() });   // (21:50) la couleur de la parole ; (01:00) le signe
       if (req.method !== 'POST') return repondre(405, { erreur: 'méthode refusée' });
       const q = await lire(), r = corpsReglages();
       if (typeof q.actif === 'boolean') r.actif = q.actif;

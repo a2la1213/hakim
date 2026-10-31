@@ -14,7 +14,7 @@ function oreille({ ouverte = true, dort = false, occupe = false, eveil = 0.4, fe
   const ecrits = [];
   const ctx = { Intl, Date, JSON, Math, Number, String, console: { error() {} }, j: JSON.stringify, NONCE_REVEIL: 'n', OREILLE_MARQUE: 'ton oreille, papa parle encore',
     oreilleReveils: [], corpsReglages: () => ({ oreille: ouverte, filtre_parole: filtre }), hakimDort: () => dort, cerveauVivant: () => true, occupe: () => occupe,
-    dernierMessageAhmed: 0, diffuser() {}, abonnesPensees: new Set(), jugerReveilOreille: async (t) => { ctx.soumis.push(t); return subconscient; }, soumis: [],
+    dernierMessageAhmed: 0, diffuser() {}, abonnesPensees: new Set(), setInterval: () => ({ unref() {} }), jugerReveilOreille: async (t) => { ctx.soumis.push(t); return subconscient; }, soumis: [],
     cerveau: { enfant: { stdin: { write: (x) => ecrits.push(x) } } }, veilleurEveil: eveil, path: require('node:path'), JARVIS: '/nulle-part',
     lireJson: () => (fermee ? { fermee_jusqua: Date.now() + 60000 } : null), oreilleDejaLu: '', juges: [] };
   ctx.rireDuSubconscient = (x) => ctx.juges.push(x);
@@ -683,4 +683,29 @@ test('(00:47) dès son signal, la transcription s’arrête (le micro écoute to
   assert.ok(bloc.indexOf('transcriptionEnPause()') < bloc.indexOf('conv.enAttente++;'), 'avant toute transcription');
   assert.match(src, /diffuser\(abonnesPensees, 'attention', j\(\{ pause: true \}\)\);/);
   assert.match(src, /if \(!v\.reveiller\) \{ diffuser\(abonnesPensees, 'attention', j\(\{ pause: false \}\)\);/);
+});
+
+test('(01:00) le signe « oreille fermée » partout : Parler, la grande orbe, et l’appli (widget, bulle, verrou, notification)', () => {
+  const a = page.indexOf('let oreilleHakim = '), b = page.indexOf('setInterval(afficherOreilleHakim, 15000);');
+  let t = 1_800_000_000_000;
+  const els = { oreilleFermee: { hidden: true, textContent: '' }, oreilleFermeeScene: { hidden: true, textContent: '' } }, vibres = [], envois = [];
+  const ctx = vm.createContext({ Date: class extends Date { static now() { return t; } }, Math, Number, JSON, $: (id) => els[id], journalVoix() {},
+    window: { HakimApp: { vibrerMotif: (a2, b2) => vibres.push([a2, b2]) } }, dernierEtatWidget: 'x', signalerWidget: () => envois.push(1) });
+  vm.runInContext(page.slice(a, b).replace(/^let /gm, 'var '), ctx);
+  ctx.surOreilleHakim({ fermee: true, jusqua: t + 10 * 60000 });
+  assert.equal(els.oreilleFermee.hidden, false, 'l’en-tête de Parler');
+  assert.equal(els.oreilleFermee.textContent, '🙉 oreille fermée · 10 min');
+  assert.equal(els.oreilleFermeeScene.hidden, false, 'la grande orbe');
+  assert.deepEqual(vibres, [['0,60,120,60', '0,120,0,120']], 'deux tapes quand elle se ferme');
+  assert.equal(envois.length, 1, 'l’appli le sait');
+  t += 10 * 60000 + 1000; ctx.afficherOreilleHakim();
+  assert.equal(els.oreilleFermee.hidden, true, 'le temps écoulé : le signe s’efface');
+  ctx.surOreilleHakim({ fermee: false, jusqua: 0 });
+  assert.equal(vibres.length, 1, 'déjà rouverte : pas de vibration de plus');
+  assert.match(page, /oreille_fermee: !!\(typeof oreilleHakim !== 'undefined' && oreilleHakim\.fermee\)/, 'dans l’état envoyé à l’appli');
+  assert.match(src, /diffuser\(abonnesPensees, 'oreille_hakim', j\(\{ fermee: !!jusqua, jusqua \}\)\);/);
+  const html = fs.readFileSync(path.join(__dirname, 'public', 'parler.html'), 'utf8');
+  assert.match(html, /id="oreilleFermee" hidden/); assert.match(html, /id="oreilleFermeeScene" hidden/);
+  const and = (f) => fs.readFileSync(path.join(process.env.HOME, 'AIOS', 'hakim-android', 'app', 'src', 'main', 'java', 'app', 'hakim', 'parler', f), 'utf8');
+  for (const f of ['WidgetHakim.java', 'Bulle.java', 'OrbeVerrou.java', 'ConversationService.java']) assert.match(and(f), /oreille_fermee/, f);
 });
