@@ -115,10 +115,11 @@ def disponible():
     return True
 
 
-def transcrire(fichier, langue=None, contexte="", voix=None):
+def transcrire(fichier, langue=None, contexte="", voix=None, avec_temps=False):
     """contexte : ce qui a déjà été transcrit de la même phrase (transcription en continu) ; il guide
     Whisper sur la suite (noms, orthographe, langue). voix : « reconnaitre » (l'empreinte vocale d'Ahmed, un
-    indice) ou « apprendre » (Ahmed l'a demandé) ; None : rien."""
+    indice) ou « apprendre » (Ahmed l'a demandé) ; None : rien. avec_temps : les segments gardés, avec les secondes de
+    chaque mot (31/10, Hakim : couper un passage de musique au bon endroit avec son_creer)."""
     import mlx_whisper
     t0 = time.time()
     audio = mlx_whisper.audio.load_audio(fichier)              # lu une fois : pour la langue et pour le texte
@@ -131,9 +132,14 @@ def transcrire(fichier, langue=None, contexte="", voix=None):
     amorce = base + (" " + contexte.strip()[-200:] if contexte and contexte.strip() else "")
     exacte = os.environ.get("JARVIS_PROSODIE_EXACTE") == "1"     # le temps de chaque mot : ~1 s de plus par transcription
     r = mlx_whisper.transcribe(audio, path_or_hf_repo=MODELE, initial_prompt=amorce, language=langue,
-                               condition_on_previous_text=False, word_timestamps=exacte)
+                               condition_on_previous_text=False, word_timestamps=exacte or avec_temps)
     texte = filtrer_segments(r.get("segments") or [{"text": r.get("text")}], base)
     sortie = {"texte": texte, "langue": r.get("language"), "ms": int((time.time() - t0) * 1000)}
+    if avec_temps:
+        sortie["segments"] = [{"debut": float(sg.get("start", 0)), "fin": float(sg.get("end", 0)), "texte": (sg.get("text") or "").strip(),
+                               "mots": [[w["word"].strip(), float(w["start"]), float(w["end"])] for w in (sg.get("words") or [])
+                                        if (w.get("word") or "").strip()]}
+                              for sg in segments_gardes(r.get("segments") or [], base)]
     if voix and texte:
         try:
             import numpy as np

@@ -342,8 +342,22 @@ def _a_du_son(reel):
 
 def _transcrire_whisper(fichier):
     import stt
-    r = stt.transcrire(str(fichier))
-    return r.get("texte", "")
+    return stt.transcrire(str(fichier), avec_temps=True)
+
+
+def _secondes(x):
+    return f"{int(x // 60)}:{x % 60:05.2f}"
+
+
+def _texte_avec_temps(nom, segments):
+    """(31/10, 01:52, Hakim : « je coupe à l'aveugle avec son_creer ») la transcription avec les secondes : chaque passage
+    (début → fin), puis chaque mot à sa seconde ; son_creer prend ces secondes (debut_s, fin_s) telles quelles."""
+    lignes = [f"# {nom} : la transcription avec les secondes (minutes:secondes, et entre crochets les secondes à donner à son_creer)", ""]
+    for sg in segments:
+        lignes.append(f"{_secondes(sg['debut'])} → {_secondes(sg['fin'])}  [{sg['debut']:.2f} → {sg['fin']:.2f}]  {sg['texte']}")
+        if sg.get("mots"):
+            lignes.append("    " + " · ".join(f"{m[0]} {m[1]:.2f}-{m[2]:.2f}" for m in sg["mots"]))
+    return masquer("\n".join(lignes) + "\n")
 
 
 def preparer(chemin, racines=None, sortie=None, transcrire=None, accueil=None):
@@ -405,7 +419,10 @@ def preparer(chemin, racines=None, sortie=None, transcrire=None, accueil=None):
     fait = d / "preparation.json"
     if fait.exists():
         try:
-            return json.loads(fait.read_text(encoding="utf-8"))
+            r = json.loads(fait.read_text(encoding="utf-8"))
+            # (31/10) un audio préparé avant les secondes : repréparé une fois, pour les avoir
+            if not ((ext in AUDIOS or ext in VIDEOS) and "temps" not in r):
+                return r
         except ValueError:
             pass
     source = _instantane(reel, d, racines, accueil)                # (H2) tout travaille sur cette copie vérifiée
@@ -451,10 +468,20 @@ def _preparer_depuis(source, reel, ext, d, res, fait, transcrire):
             _decoder([FFMPEG, "-loglevel", "error", "-y", "-i", str(source), "-vn", "-ac", "1", "-ar", "16000",
                       "-t", str(TRANSCRIPTION_MAX_S), str(son)], source, d, timeout=600)
             if son.exists():
-                res["texte"] = (transcrire(son) or "")[:TEXTE_MAX]
+                t = transcrire(son) or ""
+                res["texte"] = (t.get("texte", "") if isinstance(t, dict) else t)[:TEXTE_MAX]
                 son.unlink(missing_ok=True)
-        res["note"] = (f"{len(res['lire'])} images clés réparties sur la vidéo" if ext in VIDEOS else "audio") + \
-            (", transcription de la bande son" if res["texte"] else ", pas de parole transcrite")
+                segments = t.get("segments") if isinstance(t, dict) else None
+                if segments:
+                    temps = d / "transcription-avec-les-secondes.txt"
+                    temps.write_text(_texte_avec_temps(reel.name, segments)[:TEXTE_MAX], encoding="utf-8")
+                    res["temps"] = str(temps)
+                    res["lire"].append(str(temps))
+        res.setdefault("temps", "")
+        images = sum(1 for x in res["lire"] if x.endswith(".jpg"))
+        res["note"] = (f"{images} images clés réparties sur la vidéo" if ext in VIDEOS else "audio") + \
+            (", transcription de la bande son" if res["texte"] else ", pas de parole transcrite") + \
+            (" ; les secondes de chaque mot : à lire dans transcription-avec-les-secondes.txt (pour son_creer)" if res["temps"] else "")
     else:
         res["note"] = f"format {ext or 'sans extension'} : je ne sais pas encore le lire"
         return res

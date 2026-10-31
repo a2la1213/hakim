@@ -125,6 +125,27 @@ def test_video_images_cles_et_transcription(racine, tmp_path):
     assert r2["lire"] == r["lire"]
 
 
+def test_audio_les_secondes_de_chaque_mot_pour_son_creer(racine, tmp_path):
+    """(31/10, 01:52, Hakim : « je coupe à l'aveugle avec son_creer ») un audio rend aussi ses passages et ses mots, avec
+    leurs secondes, dans un fichier qu'il peut lire ; un audio préparé avant (sans les secondes) est repréparé une fois."""
+    son = racine / "disquette.wav"
+    subprocess.run([FFMPEG, "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=3", str(son)], check=True)
+    seg = {"texte": "trop de disquettes", "segments": [{"debut": 12.4, "fin": 14.02, "texte": "Trop de disquettes,",
+           "mots": [["Trop", 12.4, 12.7], ["de", 12.71, 12.89], ["disquettes,", 12.9, 13.79]]}]}
+    d = fichiers._dossier_cache(son.resolve(), tmp_path / "prepares")
+    (d / "preparation.json").write_text(json.dumps({"fichier": str(son), "lire": [], "texte": "trop de disquettes", "note": "audio"}))
+    r = _prep(son, racine, tmp_path, transcrire=lambda f: seg)
+    assert r["texte"] == "trop de disquettes" and r["temps"] in r["lire"]
+    lu = Path(r["temps"]).read_text(encoding="utf-8")
+    assert "0:12.40 → 0:14.02  [12.40 → 14.02]  Trop de disquettes," in lu
+    assert "disquettes, 12.90-13.79" in lu and "son_creer" in r["note"]
+    assert _prep(son, racine, tmp_path, transcrire=lambda f: pytest.fail("cache ignoré"))["temps"] == r["temps"]
+    sans = racine / "sans.wav"                         # un transcripteur sans les secondes : rien ne casse
+    subprocess.run([FFMPEG, "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=330:duration=2", str(sans)], check=True)
+    r2 = _prep(sans, racine, tmp_path, transcrire=lambda f: "bonjour")
+    assert r2["texte"] == "bonjour" and r2["temps"] == "" and r2["lire"] == []
+
+
 def test_format_inconnu_dit_ce_qu_il_ne_sait_pas(racine, tmp_path):
     (racine / "archive.zip").write_bytes(b"PK")
     r = _prep(racine / "archive.zip", racine, tmp_path)
