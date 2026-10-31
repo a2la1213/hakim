@@ -917,7 +917,8 @@ const BALISE_AFFECT = /\[\[\s*(?:affect|souvenirs|modele|impulsion|son|alerte|ec
 // (31/10, 01:27-01:30, Ahmed via Hakim) [[son: nom]] N'IMPORTE OÙ dans sa réponse : sa voix dit ce qui précède, le son joue en entier,
 // puis sa voix reprend ; « | mac », « | tel », « | les deux » : où il joue (par défaut : là où sa voix sort)
 const BALISE_SON = /\[\[\s*son\s*:\s*([a-z0-9_]{2,30})(?:\s+(apr[eè]s|sous))?(?:\s*\|\s*([^\]]{1,20}))?\s*\]\]/i;
-const DEBUT_SON = new RegExp(`\\[(?:\\[\\s*${prefixeBalise('son')})?$`, 'i');
+let debutSon = null;                                // construite au premier usage (prefixeBalise est définie plus bas)
+const DEBUT_SON = () => debutSon || (debutSon = new RegExp(`\\[(?:\\[\\s*${prefixeBalise('son')})?$`, 'i'));
 const cibleDuSon = (x) => { const t = String(x || '').toLowerCase(); return /deux|partout/.test(t) ? 'deux' : /mac/.test(t) ? 'mac' : /t[ée]l/.test(t) ? 'tel' : ''; };
 // le flux de sa réponse : chaque balise de son, à sa place ; le texte d'avant part d'abord (emettre), le reste est rendu
 function filtreSons(emettre) {
@@ -931,7 +932,7 @@ function filtreSons(emettre) {
         emettre({ son: { nom: m[1].toLowerCase(), moment: m[2] ? (/sous/i.test(m[2]) ? 'sous' : 'apres') : 'ici', cible: cibleDuSon(m[3]) } });
         s = s.slice(m.index + m[0].length);
       }
-      const d = s.match(DEBUT_SON);
+      const d = s.match(DEBUT_SON());
       tampon = d ? s.slice(d.index) : '';
       return d ? s.slice(0, d.index) : s;
     },
