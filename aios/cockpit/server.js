@@ -3331,7 +3331,7 @@ async function routeJarvis(req, res, distantReq = false) {
   const tempsLibre = blocTempsLibre();
   const immuniteBloc = blocImmunite();
   const voixBloc = blocVoixTierce(q, texte, verdictDuTour(q));
-  const tachesTexte = blocTaches(depuisMs, nonce) + blocAtelier() + tempsLibre.texte + immuniteBloc.texte + voixBloc.texte + blocCorps() + blocNonEntendus(texte, nonce) + blocDejaReagi();
+  const tachesTexte = blocTaches(depuisMs, nonce) + blocAtelier() + tempsLibre.texte + immuniteBloc.texte + voixBloc.texte + blocCorps() + blocNonEntendus(texte, nonce) + blocDejaReagi() + aideOutils(modele);
   if (/terminées depuis son message précédent/.test(tachesTexte)) noterExterne('sortie de commande');
   if (courrierRecu.texte) noterExterne('courrier');
   if (immuniteBloc.texte) noterExterne('système immunitaire');       // (relecture du 29/10) il parle de contenus du dehors
@@ -5187,6 +5187,21 @@ function nuitDerniere(maintenant = Date.now()) {
 const CORPS_SECS = new Set(['secousse', 'choc', 'chute']);
 const NOMS_SECS = { secousse: 'une secousse', choc: 'un choc', chute: 'une chute' };
 const corpsBrut = [];
+// (01/11, 00:48, Ahmed via Hakim : « une aide à Haiku pour attirer son attention sur tous les outils nécessaires et comment les
+// utiliser, directement et ultra simplement ; le filtre agit différemment entre Sonnet, Opus et surtout Haiku ») très guidé pour
+// Haiku, un rappel pour Sonnet, rien pour Opus
+const AIDE_OUTILS_HAIKU = `\n\n[Aide aux outils — tu réponds en Haiku : sers-toi de tes outils tout de suite, sans hésiter]
+Règle unique : si ta réponse dépend d'un fait que tu n'as pas sous les yeux, appelle l'outil AVANT de répondre ; sinon, réponds court.
+- le passé, un nom, un projet, ce qu'on s'est dit → mcp__anamnese__memory_recall(requete)
+- un fait à garder (décision, préférence, promesse) → mcp__anamnese__memory_store(content)
+- une info d'aujourd'hui, une actualité, un prix → WebSearch(query)
+- un fichier, une photo, un audio de papa → mcp__fichiers__preparer_fichier(chemin), puis Read sur ce qu'il rend
+- ton cœur, ton corps, la machine → mcp__anamnese__ecouter_mon_coeur, mcp__anamnese__interoception
+- écrire à maman (un bug, une demande de papa) → mcp__anamnese__courrier_envoyer(destinataire="claude-code", message)
+- couper un passage de musique pour un de tes sons → son_creer(fichier, debut_s, fin_s, nom, sens, emotion) (terminal)
+- un calcul → ton serveur « calcul »`;
+const AIDE_OUTILS_SONNET = `\n\n[Rappel outils] le passé → memory_recall ; le présent → WebSearch ; un fichier → preparer_fichier puis Read ; un fait à garder → memory_store.`;
+const aideOutils = (modele) => (modele === 'haiku' ? AIDE_OUTILS_HAIKU : modele === 'sonnet' ? AIDE_OUTILS_SONNET : '');
 function blocCorps() {
   if (!corpsActif()) { corpsADire.length = 0; corpsBrut.length = 0; return ''; }
   const t = Date.now();
