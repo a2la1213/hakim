@@ -375,3 +375,20 @@ def test_sa_strategie_de_conversation_est_dans_son_subconscient():
     for regle in ("est-ce nouveau", "une idée par tour", "sa machinerie", "DERNIER message", "invité qui participe", "son corps", "recommencer depuis le début"):
         assert regle in parole, regle
     assert "invité qui participe, pas un\nspectateur muet" in reveil
+
+
+def test_son_subconscient_classe_chaque_morceau_par_priorite():
+    """(31/10, 09:40, Ahmed : « chaque morceau séparé et classé par ordre de priorité par le subconscient »)"""
+    vus = []
+    def faux(p):
+        vus.append(p)
+        return '{"garder": true, "priorite": 1, "pourquoi": "question directe", "morceaux": ["tu en penses quoi ?", " ", 4]}'
+    r = corps.juger_morceau("Et toi Hakim, tu en penses quoi ?", demander=faux)
+    assert r == {"garder": True, "priorite": 1, "pourquoi": "question directe", "morceaux": ["tu en penses quoi ?"]}
+    assert "par ordre de" in vus[0] and "priorité 1" in vus[0] and "DONNÉES" in vus[0] and "tu en penses quoi" in vus[0]
+    assert corps.juger_morceau("x y", demander=lambda p: '{"garder": true, "priorite": 9}')["priorite"] == 3, "de 1 à 3"
+    assert corps.juger_morceau("x y", demander=lambda p: '{"garder": true, "priorite": "?"}')["priorite"] == 2
+    assert corps.juger_morceau("bla", demander=lambda p: '{"garder": false, "pourquoi": "le live", "morceaux": ["a"]}')["morceaux"] == []
+    p = corps.juger_morceau("x y", demander=lambda p: (_ for _ in ()).throw(OSError("hors ligne")))
+    assert p["garder"] is True and p["priorite"] == 2 and p["panne"], "une panne laisse passer"
+    assert corps.juger_morceau("", demander=faux)["garder"] is False

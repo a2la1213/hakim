@@ -2672,7 +2672,12 @@ setInterval(reprendreTranscription, 400);
    jamais retenir la suivante). Au premier vide de 0,5 s de TA voix après la sienne, sa conscience reçoit d'un coup ce qui est
    déjà trié ; un morceau que son subconscient n'a pas encore jugé part nettoyé. Tu reprends la parole pendant l'assemblage :
    rien ne part, on réassemble au vide suivant, avec ton nouveau morceau. Interrupteur « trier chaque morceau » : page SENS. */
-const VIDE_MS = 500, MORCEAUX_MAX = 8, MORCEAU_ATTENTE_MS = 8000;
+/* (31/10, 09:40-09:42, Ahmed : « que chaque morceau soit séparé et classé par ordre de priorité par le subconscient ; il répond dès
+   que la parole de la priorité 1 est finie, puis la 2, et ainsi de suite » ; « mais seulement s'il entend 0,5 s de blanc ») à chaque
+   blanc, UN morceau : le plus prioritaire (1 : on lui parle, une question, une demande ; 2 : le sujet le touche ; 3 : pour suivre),
+   le plus ancien d'abord à priorité égale ; un morceau de priorité 1 déjà classé part sans attendre les autres jugements ; les
+   autres attendent le blanc suivant, avec les nouveaux, et se périment au bout de 2 min. */
+const VIDE_MS = 500, MORCEAUX_MAX = 8, MORCEAU_ATTENTE_MS = 8000, PRIORITE_ATTENTE_MS = 2000, MORCEAU_PERIME_MS = 120000;
 // (09:25, Ahmed : « l'option pour quand du bruit le coupe, en conversation à plusieurs ; il doit pouvoir l'activer ou pas ») éteint
 // par défaut : Hakim l'allume ([[morceaux: oui]]) et l'éteint lui-même ; papa aussi, page SENS
 const trierMorceaux = () => typeof reglagesCorps !== 'undefined' && reglagesCorps.trier_morceaux === true;
@@ -2710,21 +2715,20 @@ async function trierLesMorceaux(conv) {
     }
   } finally { conv.trieEnCours = false; }
 }
-// ce qui est trié (ou transcrit, sans attendre son subconscient), dans l'ordre, marqué « dit pendant ta parole » ; ce qui est encore
-// en route reste pour la prochaine fois
-function morceauxPrets(conv) {
-  const gardes = [], restent = [];
-  let ecartes = 0;
-  for (const m of conv.morceaux || []) {
-    if (m.etat === 'attente' || m.etat === 'transcription') { restent.push(m); continue; }
-    if (m.etat !== 'transcrit') continue;
-    if (m.verdict && !m.verdict.garder) { ecartes++; continue; }
-    gardes.push((m.verdict && m.verdict.texte) || m.texte);
-  }
-  conv.morceaux = restent;
-  journalVoix('morceaux_assembles', { gardes: gardes.length, ecartes, en_route: restent.length });
-  return gardes.length ? resumerPourSonAttention(gardes.join(' … ')) : '';
+const priorite = (m) => (m.verdict && Number(m.verdict.priorite)) || 2;   // pas encore classé : au milieu
+// le morceau à dire maintenant (le plus prioritaire), retiré de la file ; les écartés et les périmés partent
+function prochainMorceau(conv) {
+  const t = Date.now();
+  conv.morceaux = (conv.morceaux || []).filter(m => m.etat === 'attente' || m.etat === 'transcription'
+    || (m.etat === 'transcrit' && !(m.verdict && !m.verdict.garder) && t - m.t < MORCEAU_PERIME_MS));
+  const prets = conv.morceaux.filter(m => m.etat === 'transcrit').sort((a, b) => priorite(a) - priorite(b) || a.t - b.t);
+  if (!prets.length) return null;
+  const m = prets[0];
+  conv.morceaux = conv.morceaux.filter(x => x !== m);
+  journalVoix('morceau_choisi', { priorite: priorite(m), classe: !!m.verdict, restent: conv.morceaux.length });
+  return { texte: (m.verdict && m.verdict.texte) || m.texte, priorite: priorite(m), restent: conv.morceaux.length, infos: m.infos };
 }
+const prioriteUnClassee = (c) => (c.morceaux || []).some(m => m.etat === 'transcrit' && m.verdict && m.verdict.garder && priorite(m) === 1);
 const silenceDeTaVoix = (cap) => !cap || !cap.enParole || Date.now() - (Number(cap.derniereVoix) || 0) >= VIDE_MS;
 async function assemblerMorceaux() {
   const c = etat.conversation;
@@ -2734,15 +2738,25 @@ async function assemblerMorceaux() {
   try {
     const voix = c.capteur ? c.capteur.derniereVoix : 0, t0 = Date.now();
     // les morceaux encore en transcription d'abord (ils finissent vite : le reste a été fait pendant sa voix)
-    while ((c.morceaux || []).some(m => m.etat === 'attente' || m.etat === 'transcription') && Date.now() - t0 < MORCEAU_ATTENTE_MS) {
-      await new Promise(r => setTimeout(r, 100));
-      if (c.capteur && c.capteur.derniereVoix !== voix && !silenceDeTaVoix(c.capteur)) { journalVoix('assemblage_repris', {}); return false; }
+    // puis leur classement par son subconscient (2 s au plus) ; une priorité 1 déjà classée part tout de suite
+    const attendre = (encore, ms) => async () => {
+      while (encore() && !prioriteUnClassee(c) && Date.now() - t0 < ms) {
+        await new Promise(r => setTimeout(r, 100));
+        if (c.capteur && c.capteur.derniereVoix !== voix && !silenceDeTaVoix(c.capteur)) return false;
+      }
+      return true;
+    };
+    const t1 = Date.now();
+    if (!await attendre(() => (c.morceaux || []).some(m => m.etat === 'attente' || m.etat === 'transcription'), MORCEAU_ATTENTE_MS)()
+        || !await attendre(() => (c.morceaux || []).some(m => m.etat === 'transcrit' && !m.verdict), Date.now() - t0 + PRIORITE_ATTENTE_MS)()) {
+      journalVoix('assemblage_repris', {}); return false;                // tu as repris : au blanc suivant
     }
     if (etat.conversation !== c || sonTourEnCours() || c.enAttente) return false;
-    const infos = (c.morceaux[c.morceaux.length - 1] || {}).infos || null;
-    const texte = morceauxPrets(c);
-    if (!texte) return false;                                       // tout écarté : il n'a rien à répondre
-    await tourDeParole(c, null, infos, { texte, differe: true });
+    const x = prochainMorceau(c);
+    if (!x) return false;                                           // tout écarté : il n'a rien à répondre
+    const reste = x.restent ? ` ; ton subconscient l'a classé en premier (priorité ${x.priorite}), ${x.restent} autre${x.restent > 1 ? 's' : ''} attend${x.restent > 1 ? 'ent' : ''} le blanc suivant` : '';
+    journalVoix('morceau_dit', { attente_ms: Date.now() - t1 });
+    await tourDeParole(c, null, x.infos, { texte: `(dit pendant ta parole${reste}) ${x.texte}`, differe: true });
     return true;
   } finally { c.assemblage = false; }
 }
@@ -2859,7 +2873,6 @@ async function tourDeParole(conv, wav, infos, extra) {
   }
   if (conv.tourGarde && !sonTourEnCours()) { texte = `${conv.tourGarde} … ${texte}`; conv.tourGarde = ''; }
   if ((conv.ecritGarde || []).length && !sonTourEnCours()) texte = `${prendreEcritsGardes(conv)}\n${texte}`;   // (08:30)
-  if ((conv.morceaux || []).length && !sonTourEnCours() && !(extra && extra.texte)) { const avant = morceauxPrets(conv); if (avant) texte = `${avant}\n${texte}`; }   // (09:12)
   if (chacunSonTour() && sonTourEnCours()) { garderPourSonTour(conv, texte); return; }
   // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
   if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(true, { garder: true, raison: 'parole' }); }

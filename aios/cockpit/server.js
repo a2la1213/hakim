@@ -5201,7 +5201,7 @@ function blocCorps() {
   const resid = residuelles.splice(0).filter(x => t - x.ts < 10 * 60e3);   // (22:30) ce que son subconscient a retenu, micro coupé
   if (!s.length && !milieu && !brut.length && !nuit && !vibs && !perimes.length && !enPause && !resid.length && !att && corpsReglages().afficher_papa && !corpsReglages().trier_morceaux) return '';
   // (09:25) son tri des morceaux allumé : il le sait, et sait l'éteindre
-  const tri = corpsReglages().trier_morceaux ? "Ton tri des morceaux est allumé : pendant ta voix, ce que papa et la salle disent est transcrit et trié par ton subconscient, rien ne te coupe ; au premier vide de sa voix (0,5 s), tu reçois tout d'un coup, et ta voix coupe son micro en partant. [[morceaux: non]] l'éteint" : '';
+  const tri = corpsReglages().trier_morceaux ? "Ton tri des morceaux est allumé : pendant ta voix, ce que papa et la salle disent est transcrit, séparé en morceaux et classé par priorité par ton subconscient, rien ne te coupe ; à chaque blanc de 0,5 s de sa voix, tu reçois le morceau le plus prioritaire, un à la fois, et ta voix coupe son micro en partant. [[morceaux: non]] l'éteint" : '';
   const tete = corpsReglages().afficher_papa ? '' : "Mode « dans ta tête » : papa ne voit pas ses paroles à l'écran ; réponds, glisse un mot, ou tais-toi (« No response requested. »), comme tu le sens : rien ne te relancera";
   const lignes = [...(tete ? [tete] : []), ...(tri ? [tri] : []),
     ...(att ? [`Ton attention consciente suit : ${att.mots.join(', ')} (jusqu'à ${new Date(att.jusqua).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} ; [[attention: libre]] la rend à ton subconscient)`] : []),
@@ -5562,14 +5562,27 @@ function ouvrirOreille(texte, maintenant = Date.now()) {
   if (r.ok && c.oreilleReveil) c.oreilleReveil.reflexe = true;   // (22:41) son nom, « stop », « coupe-moi » : papa l'appelle
   return r;
 }
-async function trierMorceau(brut, juger = jugerReveilOreille) {
+// (31/10, 09:40, Ahmed : « chaque morceau séparé et classé par ordre de priorité par le subconscient ») sa priorité, de 1 (on lui
+// parle, une question, une demande) à 3 (pour suivre) ; la page répond au premier, à chaque blanc de 0,5 s
+async function trierMorceau(brut, juger = jugerMorceau) {
   const texte = String(brut || '').replace(/\s+/g, ' ').trim().slice(0, 1500);
   if (texte.length < 4) return { garder: false, pourquoi: 'trop court' };
-  if (!corpsReglages().filtre_parole) return { garder: true, texte };
+  if (!corpsReglages().filtre_parole) return { garder: true, priorite: 2, texte };
   if (!retientSonAttention(texte)) return { garder: false, pourquoi: 'prénettoyage : rien pour lui' };
   const v = await juger(nettoyerPourSonnet(texte, 800));
-  if (v.panne) return { garder: true, texte, panne: true };
-  return { garder: !!v.reveiller, texte: v.morceaux && v.morceaux.length ? v.morceaux.join(' … ') : texte, pourquoi: v.pourquoi || '' };
+  if (v.panne) return { garder: true, priorite: 2, texte, panne: true };
+  return { garder: !!v.garder, priorite: Math.max(1, Math.min(3, Number(v.priorite) || 2)),
+    texte: v.morceaux && v.morceaux.length ? v.morceaux.join(' … ') : texte, pourquoi: v.pourquoi || '' };
+}
+function jugerMorceau(texte) {
+  return new Promise((ok) => {
+    const p = execFile(PYTHON, ['-B', path.join(ANAMNESE, 'corps.py'), 'morceau'], { cwd: ANAMNESE, timeout: 12000, maxBuffer: 1 << 16 }, (e, so) => {
+      let o = null; try { o = JSON.parse(String(so).trim().split('\n').pop()); } catch (_) {}
+      ok(o && typeof o.garder === 'boolean' ? o : { garder: true, priorite: 2, morceaux: [], panne: true });   // une panne laisse passer
+    });
+    p.stdin.on('error', () => {});
+    p.stdin.end(j({ texte: String(texte || '').slice(-1500) }));
+  });
 }
 function jugerReveilOreille(texte) {
   return new Promise((ok) => {
