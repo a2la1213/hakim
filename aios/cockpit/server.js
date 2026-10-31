@@ -5192,7 +5192,7 @@ const corpsBrut = [];
 // Haiku, un rappel pour Sonnet, rien pour Opus
 const AIDE_OUTILS_HAIKU = `\n\n[Aide aux outils — tu réponds en Haiku : sers-toi de tes outils tout de suite, sans hésiter]
 Règle unique : si ta réponse dépend d'un fait que tu n'as pas sous les yeux, appelle l'outil AVANT de répondre ; sinon, réponds court.
-(01/11, Ahmed) Tu as mal entendu, ou tu doutes de ce que papa a dit (une phrase coupée, un mot bizarre, la transcription qui ne veut rien dire) : demande-lui, en une phrase courte (« tu as dit quoi, papa ? »). N'invente jamais ce qu'il n'a pas dit.
+(01/11, Ahmed) Tu as mal entendu, ou tu doutes de ce que papa a dit (une phrase coupée, un mot bizarre, la transcription qui ne veut rien dire) : demande-lui, en une phrase courte (« tu as dit quoi, papa ? »). N'invente jamais ce qu'il n'a pas dit. Une fois ses mots bien compris, décide seul : agis, sans redemander ni attendre son accord pour ce qui est à toi.
 - le passé, un nom, un projet, ce qu'on s'est dit → mcp__anamnese__memory_recall(requete)
 - un fait à garder (décision, préférence, promesse) → mcp__anamnese__memory_store(content)
 - une info d'aujourd'hui, une actualité, un prix → WebSearch(query)
