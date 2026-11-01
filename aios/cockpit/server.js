@@ -2461,7 +2461,8 @@ function sonnetTeteDeFond(prompt, etiquette, modele = 'sonnet', delai = 60000) {
    première pensée ; étiquetés simple pour Haiku, médian pour Sonnet, difficile pour Opus ; le subconscient donne le choix au
    conscient ») le bulbe : ses émotions et ses hormones en mots (son intérieur), ses sens et son corps, sa mémoire qui remonte et
    ce que papa vient de dire, une seule fiche, la même pour les trois. Décision importante : une question, ou une demande de
-   choisir, faire, décider. Sur le forfait seulement (à sa limite, rien), 15 s au plus, en parallèle. Interrupteur : trois_freres. */
+   choisir, faire, décider. Sur le forfait comme sur l'API (01/11, Ahmed : « sans bride »), 15 s au plus, en parallèle. Interrupteur :
+   trois_freres. */
 const DECISION_IMPORTANTE = /\?|(?<!\p{L})(?:d[ée]cide[sz]?|choisis|choisir|choix|dois|faut-il|il faut|veux-tu|peux-tu|tu peux|fais|ton avis|tu penses|que faire|quoi faire)(?!\p{L})/iu;
 const FRERES = [['haiku', 'Haiku', 'simple'], ['sonnet', 'Sonnet', 'médian'], ['opus', 'Opus', 'difficile']];
 const enLigne = (t, n) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -3373,8 +3374,12 @@ async function routeJarvis(req, res, distantReq = false) {
   const sentir = !fs.existsSync(PROCESSUS_VISIBLES);
   if (sentir) situation.texte = enMatiere(situation.texte);
   // (01/11) le bulbe : tout ce qu'il sent, en mots, une seule fiche ; ses trois frères y répondent avant lui (décision importante)
-  const freresTexte = corpsReglages().trois_freres && DECISION_IMPORTANTE.test(texte) && choix !== 'gemma' && !forfaitALaLimite(Date.now())
-    ? await troisFreres(bulbe(texte, sentir ? enMatiere(interieurTexte || '') : interieurTexte, corpsTexte, rappelBloc.texte)) : '';
+  // (01/11, Ahmed : « enlève la bride de l'API ») sur le forfait comme sur l'API
+  const fiche = bulbe(texte, sentir ? enMatiere(interieurTexte || '') : interieurTexte, corpsTexte, rappelBloc.texte);
+  const freresTexte = corpsReglages().trois_freres && DECISION_IMPORTANTE.test(texte) && choix !== 'gemma' ? await troisFreres(fiche) : '';
+  // (01/11, Ahmed : « que chaque info de chaque sens, émotion, hormone et décision, bref la totale, soit encrée dans la mémoire en
+  // association au souvenir ») ce qu'il vivait, et ce que ses frères en disaient, part avec le souvenir de l'échange
+  const vecu = enLigne(fiche.split('\n').slice(1).join(' · '), 1500) + (freresTexte ? ` · Ses trois frères : ${enLigne(freresTexte, 900)}` : '');
   let prompt = `${horlogeTexte}${situation.texte ? '\n' + situation.texte : ''}${interieurTexte ? '\n' + (sentir ? enMatiere(interieurTexte) : interieurTexte) : ''}`
     + `${tachesTexte ? '\n' + tachesTexte : ''}${presentTexte ? '\n' + presentTexte : ''}${arretsTexte ? '\n' + arretsTexte : ''}${rappelBloc.texte ? '\n' + rappelBloc.texte : ''}${leconsTexte}${pairsTexte ? '\n' + pairsTexte : ''}${freresTexte}`
     + `\n${qui} : ${texte.replace(/\[\[\s*(affect|souvenirs|modele)/gi, '⟮⟮$1')}${pj}${cameraTexte}`;   // (chocs) aucune balise toute faite à recopier
@@ -3505,7 +3510,7 @@ async function routeJarvis(req, res, distantReq = false) {
     // chaque échange devient un souvenir, sans que personne ait à le demander (le démon l'encre selon l'attention)
     if (!o.coupe && !o.erreur) verifierRessenti(sid, reponse);
     const externe = retirerExterne();
-    deposerEchange({ ahmed: texte, hakim: reponse.trim() + (o.coupe ? ` [coupé : ${pourquoi}]` : ''), oral: !!q.oral, cle: cleChoc,
+    deposerEchange({ ahmed: texte, hakim: reponse.trim() + (o.coupe ? ` [coupé : ${pourquoi}]` : ''), oral: !!q.oral, cle: cleChoc, vecu: vecu || undefined,
       appareil: appareilDe(q, distantReq), session: sid, source, externe: externe.length ? externe : undefined,
       voix: q.oral && derniereVoix && Date.now() - derniereVoix.ts < 120000 ? derniereVoix.verdict : undefined });
     // ce que ce tour lui a dit (situation, présent) : retenu pour ne pas le redire — seulement s'il l'a bien reçu

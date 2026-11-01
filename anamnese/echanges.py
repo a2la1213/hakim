@@ -189,8 +189,10 @@ def _texte_souvenir(e):
     if e.get("voix") == "autre":                 # l'empreinte vocale : probablement pas Ahmed (un invité, la télé)
         return (f"[Échange — {', '.join(cadre)}, voix qui n'est probablement pas celle d'Ahmed] Quelqu'un : "
                 f"« {_court(_masquer(e.get('ahmed', '')))} » · Hakim : « {_court(_masquer(e.get('hakim', '')))} »")
+    # (01/11, Ahmed : « chaque info de chaque sens, émotion, hormone et décision, encrée dans la mémoire en association au souvenir »)
+    vecu = " ".join(_masquer(str(e.get("vecu") or "")).split())[:1500]
     return (f"[Échange avec Ahmed — {', '.join(cadre)}] Ahmed : « {_court(_masquer(e.get('ahmed', '')))} » · "
-            f"Hakim : « {_court(_masquer(e.get('hakim', '')))} »")
+            f"Hakim : « {_court(_masquer(e.get('hakim', '')))} »" + (f" · Ce qu'il vivait : {vecu}" if vecu else ""))
 
 
 def _nom_outil(o):
