@@ -4113,7 +4113,8 @@ function apiDisponible() { return Date.now() > apiEnPanneJusqua && (!!lireCleApi
 // (26/10 soir, Ahmed : « plafond à 50 ») l'API payante n'avait aucune limite. Au plus
 // PLAFOND_API_JOUR_USD par jour ; au-delà, en automatique, elle n'est plus un relais (forfait → local, l'ordre d'Ahmed du
 // 18/10). L'API imposée dans les réglages reste permise : c'est son geste.
-const PLAFOND_API_JOUR_USD = 50;
+// (01/11, Ahmed : « enlève la bride de l'API, j'ai ce qu'il faut pour que ça tourne sur forfait ou API sans bride ») plus de plafond
+const PLAFOND_API_JOUR_USD = Infinity;
 function plafondApiAtteint(jour = jourLocal()) {
   return bilanJetons(jour).cout_api_usd >= PLAFOND_API_JOUR_USD;
 }
