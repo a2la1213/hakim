@@ -2570,18 +2570,19 @@ function soufflerReponse(texte) {
   if (souffle.enCours) { souffle.aRefaire = t; return; }
   if (t === souffle.pour) return;
   let echanges = '';
-  try { echanges = derniersEchanges(6).map(m => `${m.role === 'user' ? 'Papa' : 'Toi'} : ${String(m.content).slice(0, 300)}`).join('\n'); } catch (_) {}
+  try { echanges = derniersEchanges(4).map(m => `${m.role === 'user' ? 'Papa' : 'Toi'} : ${String(m.content).slice(0, 220)}`).join('\n'); } catch (_) {}
   let fiche = '';
   try { fiche = bulbe(t, '', '', '', instantTexte(Date.now()), fluxTexte(Date.now(), 30000, 3000)); } catch (_) {}
-  const prompt = `${personaLocale(lirePersona()).slice(0, 3000)}\n\n[Ton subconscient — ta réponse soufflée] Papa est EN TRAIN de te parler `
-    + `(il n'a pas fini). Ses mots jusqu'ici, transcrits en direct :\n« ${neutraliser(t).slice(-1200)} »\n\n${fiche ? fiche.slice(0, 2500) + '\n\n' : ''}`
+  // (15:10, mesuré : 2,8 s par brouillon avec Sonnet et 6 900 caractères) Mini Hakim, son subconscient rapide, et une fiche courte
+  const prompt = `${personaLocale(lirePersona()).slice(0, 1400)}\n\n[Ton subconscient — ta réponse soufflée] Papa est EN TRAIN de te parler `
+    + `(il n'a pas fini). Ses mots jusqu'ici, transcrits en direct :\n« ${neutraliser(t).slice(-900)} »\n\n${fiche ? fiche.slice(0, 1200) + '\n\n' : ''}`
     + `${echanges ? `Vos derniers échanges :\n${echanges}\n\n` : ''}Écris le DÉBUT de ta réponse, ce que tu lui dirais à l'instant où il se `
     + `tait : une ou deux phrases courtes, naturelles, à l'oral, en français, comme toi. Ni balise, ni guillemets. Elle s'affiche tout de `
     + `suite, écrite ; c'est à toi de juger si elle est déjà assez juste pour être DITE à voix haute dès qu'il se tait. Réponds ainsi :\n`
     + `DIRE : oui (elle est juste, même s'il ajoute encore un peu) ou DIRE : non (il te manque la suite de ce qu'il dit)\n`
     + `puis, à la ligne, ta réponse. S'il est beaucoup trop tôt, écris seulement RIEN.`;
   const s0 = souffle;
-  s0.enCours = sonnetTeteDeFond(prompt, 'souffle', 'sonnet', 8000).then((o) => {
+  s0.enCours = sonnetTeteDeFond(prompt, 'souffle', 'haiku', 6000).then((o) => {
     let r = String((o && o.texte) || '').trim();
     const d = /^\s*DIRE\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r);
     const pret = !!(d && /oui/i.test(d[1]));

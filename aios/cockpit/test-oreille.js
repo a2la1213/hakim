@@ -288,7 +288,7 @@ test('(vers 22 h 10) chacun son tour : pendant qu’il prépare ou dit sa répon
   // dans le tour de parole : après « stop » / « attends », avant la coupure d'avant
   const i = page.indexOf('async function tourDeParole('), bloc = page.slice(i, page.indexOf('\n}\n', i));
   const k = (x) => bloc.indexOf(x);
-  assert.ok(k('COMMANDE_STOP.test(texte)') < k('if (chacunSonTour() && sonTourEnCours()) { garderPourSonTour(conv, texte); return; }'), '« stop » reste au-dessus');
+  assert.ok(k('COMMANDE_STOP.test(texte)') < k('if (chacunSonTour() && sonTourEnCours() && !conv.souffleParle) { garderPourSonTour(conv, texte); return; }'), '« stop » reste au-dessus');
   assert.ok(k('COMMANDE_PAUSE.test(texte)') < k('garderPourSonTour(conv, texte)'), '« attends » aussi');
   assert.ok(k('garderPourSonTour(conv, texte)') < k("arreterTout(true, { garder: true, raison: 'parole' })"), 'sa réponse n’est plus coupée');
   assert.match(page, /if \(!voix \|\| !aDire\.length \|\| \(c && \(c\.tourGarde \|\| \(c\.ecritGarde \|\| \[\]\)\.length\)\)\) return;/, 'papa d’abord, avant ses mots en attente');

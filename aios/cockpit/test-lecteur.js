@@ -286,8 +286,9 @@ test('un trou pendant qu\'il écrit encore : ses meubles le couvrent de bout en 
   assert.ok(meubles.length >= 5, `enchaînés tout le trou : ${sim.sons.map(s => s.texte).join(' | ')}`);
   // (14:31, Ahmed : « 3 s de blanc : je meuble entre 0,2 s et 2,8 s ; les 0,2 s de fin et les 0,2 s du début du suivant font les
   // 0,4 s de transition ») le premier meuble part 0,2 s après sa voix
+  // (15:15, Ahmed : « la seconde de blanc » entre sa voix et ses meubles aussi)
   const souffle = meubles[0].debut - premiere.fin;
-  assert.ok(souffle >= 0.15 && souffle <= 0.35, `0,2 s de blanc avant le premier meuble : ${souffle.toFixed(2)} s`);
+  assert.ok(souffle >= 0.95 && souffle <= 1.15, `1 s de blanc avant le premier meuble : ${souffle.toFixed(2)} s`);
   // (14:40, Ahmed : « sans rien mélanger ») l'un après l'autre ; (14:58) 1 s de silence entre deux
   for (let i = 1; i < meubles.length; i++) {
     const ecart = meubles[i].debut - meubles[i - 1].fin;
@@ -295,11 +296,12 @@ test('un trou pendant qu\'il écrit encore : ses meubles le couvrent de bout en 
   }
   const dernier = meubles.filter(m => m.debut < suite.debut).pop();
   const fondu = dernier.fin - suite.debut;
-  // elle coupe le meuble qui joue, ou elle part dans le silence entre deux : jamais par-dessus, jamais plus d'1 s après
-  assert.ok(fondu <= 0.01 && fondu >= -1.05, `la suite part dès qu'elle est prête, pas par-dessus un meuble : ${fondu.toFixed(2)} s`);
+  // (15:15) le meuble s'éteint en 0,2 s, puis 1 s de silence avant sa voix : jamais par-dessus
+  assert.ok(fondu <= -0.95 && fondu >= -1.3, `1 s de silence entre le meuble et sa voix : ${fondu.toFixed(2)} s`);
   assert.ok(!meubles.some(m => m.debut > suite.debut), 'plus aucun meuble une fois la suite partie');
   const sans = (await trou8s(false)).sim.sons[1];
-  assert.ok(suite.debut <= sans.debut + 0.1, `la suite n'attend pas la fin d'un meuble : ${suite.debut.toFixed(2)} s contre ${sans.debut.toFixed(2)} s sans meubles`);
+  // (15:15) le meuble s'éteint (0,2 s) puis 1 s de silence : sa voix part au plus ~1,2 s après qu'elle est prête, jamais après la fin du meuble
+  assert.ok(suite.debut <= sans.debut + 1.3, `la suite n'attend pas la fin d'un meuble : ${suite.debut.toFixed(2)} s contre ${sans.debut.toFixed(2)} s sans meubles`);
   assert.ok(!segments.includes('Euh,'), 'un meuble n\'est pas un morceau de sa réponse (ni sous-titre ni fin de parole)');
 });
 
@@ -379,7 +381,7 @@ test('avant son premier mot : une seconde de silence, puis ses meubles jusqu\'à
   assert.ok(meubles.length >= 3, 'enchaînés jusqu\'à sa réponse');
   const dernier = meubles.filter(m => m.debut < reponse.debut).pop();
   const fondu = dernier.fin - reponse.debut;
-  assert.ok(fondu >= -0.02 && fondu <= 0.01, `sa réponse part juste après le meuble, pas par-dessus : ${fondu.toFixed(2)} s`);
+  assert.ok(fondu >= -1.3 && fondu <= -0.95, `1 s de silence entre le meuble et sa réponse : ${fondu.toFixed(2)} s`);
   assert.ok(!meubles.some(m => m.debut > reponse.debut), 'plus aucun meuble une fois sa réponse partie');
   assert.ok(demandes.every(Boolean), 'ceux d\'« avant » son premier mot');
 });

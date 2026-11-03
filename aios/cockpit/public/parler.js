@@ -359,11 +359,15 @@ function creerLecteurNeuronal() {
   // deux) jusqu'à ce que la suite soit prête ; elle coupe le meuble en cours (un fondu de 30 ms) et part aussitôt. Au plus
   // COUVRIR_MAX secondes d'affilée (un outil très long : le silence revient).
   // (14:31, Ahmed : « 3 s de blanc : je meuble entre 0,2 s et 2,8 s ») le premier meuble part 0,2 s après sa voix
-  const HESITER_APRES = 0.2, HESITER_AVANT = 1.0, ENTRE_MEUBLES = 0.12, COUVRIR_MAX = 90;
+  // (15:15, Ahmed : « quand il meuble pendant qu'il parle, la même transition de 0,2 s + 0,2 s, et la seconde de blanc ») entre sa voix
+  // et un meuble, dans les deux sens : 1 s de silence (HESITER_APRES, SILENCE_REPRISE) ; sa voix ralentit sur sa fin avant un trou, et
+  // repart au ralenti en accélérant après un meuble (adoucirFin, adoucirDebut : fournis par la page)
+  const HESITER_APRES = 1.0, HESITER_AVANT = 1.0, ENTRE_MEUBLES = 0.12, COUVRIR_MAX = 90, SILENCE_REPRISE = 1.0;
   // (14:20-14:31) les meubles se fondaient l'un dans l'autre (fondus croisés de 0,15 puis 0,4 s) : remplacé à 14:40
   // (14:40, Ahmed : « sans rien mélanger ») plus de fondus croisés : un meuble ralenti au bout (ralentirMeuble), le suivant qui repart
   // de cette vitesse, l'un APRÈS l'autre ; sa réponse, quand elle part, arrête le meuble en 30 ms et commence juste après
-  const FONDU_REPONSE = 0.03, ENTRE_DEUX_MEUBLES = 1.0;               // (14:58, Ahmed : « 1 s au lieu de 0,5 s »)
+  const FONDU_REPONSE = 0.2, ENTRE_DEUX_MEUBLES = 1.0;                // (14:58, Ahmed : « 1 s au lieu de 0,5 s ») ; (15:15) le meuble s'éteint en 0,2 s
+  let finDernierMeuble = 0;
   let trou = null, avant = null, aParle = false, couvre = 0, attendre = false, dejaParle = false;
   const vraiesSources = () => [...sources].some(s => !s._hesitation);   // une hésitation ne fait pas de lui un « déjà parti »
   // sa réponse s'écrit, se prépare, ou attend sa voix (la fin du texte n'est pas la fin de ce qu'il a à dire)
@@ -397,6 +401,15 @@ function creerLecteurNeuronal() {
       clearTimeout(avant);
       attendre = true; aParle = false; dejaParle = false; couvre = 0;
       avant = setTimeout(() => { avant = null; if (!vraiesSources() && !element && glisser()) couvre = fluide() ? actx.currentTime : 1; }, HESITER_AVANT * 1000);
+    },
+    // (15:10) une parole dont la voix est déjà fabriquée (sa réponse soufflée) : à sa place, sans attendre la synthèse
+    direAudio(texte, buf) {
+      if (!buf || !buf.duration) { L.dire(texte); return; }
+      if (pause) { pause.textes.push({ langue: 'fr', texte }); pause.fluxFini = false; return; }
+      if (L.fluxFini && !attendre) { aParle = false; dejaParle = false; }
+      L.fluxFini = false;
+      unites.push({ audio: { texte, pret: buf } });
+      pomper();
     },
     // (13:30) un meuble choisi par lui (conscient, [[meuble: nom]]) : à sa place, entre ce qui précède et la suite
     direMeuble(h) {
@@ -453,7 +466,7 @@ function creerLecteurNeuronal() {
       if (element) { element.pause(); URL.revokeObjectURL(element.src); element = null; }
       prochainDebut = 0; L.fluxFini = true;
       clearInterval(veille); veille = null;
-      clearTimeout(trou); trou = null; clearTimeout(avant); avant = null; aParle = false; couvre = 0; attendre = false; dejaParle = false;
+      clearTimeout(trou); trou = null; clearTimeout(avant); avant = null; aParle = false; couvre = 0; attendre = false; dejaParle = false; finDernierMeuble = 0;
     },
     get actif() { return unites.length > 0 || lots.length > 0 || sources.size > 0 || !!element; },
     get joue() { return sources.size > 0 || !!element; },
@@ -487,6 +500,7 @@ function creerLecteurNeuronal() {
   //   virgule : le blanc éventuel tombe là où l'on respire, pas au milieu d'un paragraphe.
   function prochainLot() {
     if (unites[0] && unites[0].son) return { son: unites.shift().son, texte: '' };   // (01:27) un son : seul, à sa place
+    if (unites[0] && unites[0].audio) { const a = unites.shift().audio; return { pret: a.pret, texte: a.texte, langue: 'fr' }; }   // (15:10) déjà fabriquée
     if (unites[0] && unites[0].meuble) {                                // (13:30) un meuble choisi : déjà prêt, à sa place
       const h = unites.shift().meuble;
       return { pret: h.pret, texte: h.texte || '', meuble: h, hesitation: true, volume: h.volume, dureeMax: h.dureeMax, brut: h.brut };
@@ -572,6 +586,11 @@ function creerLecteurNeuronal() {
       aParle = true;
       return;
     }
+    // (15:15) sa voix après un meuble repart au ralenti en accélérant ; sa dernière parole avant un trou ralentit sur sa fin
+    if (!x.hesitation && !x.son && x.pret && x.pret.getChannelData) {
+      if (x.apresMeuble && L.adoucirDebut) x.pret = L.adoucirDebut(x.pret);
+      if (!unites.length && !lots.length && !L.fluxFini && L.adoucirFin) x.pret = L.adoucirFin(x.pret);
+    }
     const vitesse = x.son || x.brut ? 1 : vitesseVoix();             // (01:27) un son garde sa vitesse ; (13:30) un souffle aussi
     const src = actx.createBufferSource();
     src.buffer = x.pret;
@@ -592,7 +611,7 @@ function creerLecteurNeuronal() {
     const g = generation;
     const duree = joue * 1000;                                 // (30/10) sa durée : où il en est quand on le coupe
     if (!x.son && !x.hesitation) setTimeout(() => { if (g === generation && L.surSegment) L.surSegment(x.texte, duree); }, Math.max(0, (t - actx.currentTime) * 1000));
-    src.onended = () => { sources.delete(src); if (g === generation) pomper(); };
+    src.onended = () => { sources.delete(src); if (src._auto && fluide()) finDernierMeuble = actx.currentTime; if (g === generation) pomper(); };
   }
 
   function pomper() {
@@ -637,7 +656,8 @@ function creerLecteurNeuronal() {
           try { s2.stop(now + FONDU_REPONSE); } catch (_) {}
           s2._fin = Math.min(s2._fin, now + FONDU_REPONSE);
         }
-        prochainDebut = now + FONDU_REPONSE + 0.005;                 // juste après le meuble, pas par-dessus
+        prochainDebut = now + FONDU_REPONSE + SILENCE_REPRISE;        // (15:15) le meuble s'éteint, 1 s de silence, puis sa voix
+        x.apresMeuble = true;
       }
       // (Avant le 2026-10-17, une machine lente attendait 8 s de voix d'avance, voire la fin de tout le
       // texte, avant de parler : c'est ce qu'Ahmed entendait. Le découpage aux virgules remplace l'attente.)
@@ -650,6 +670,10 @@ function creerLecteurNeuronal() {
           : (unites.length ? prevoir(unites[0].texte.length) : 0);
         const attente = pretDans - x.pret.duration / vitesseVoix() + 0.15;
         if (attente > 0) t += Math.min(0.5, attente);                 // au plus une demi-seconde : il parle tôt
+      }
+      // (15:15) un meuble vient de finir : 1 s de silence avant sa voix, et sa voix repart au ralenti
+      if (!x.hesitation && finDernierMeuble && fluide() && actx.currentTime - finDernierMeuble < SILENCE_REPRISE + 0.5) {
+        t = Math.max(t, finDernierMeuble + SILENCE_REPRISE); x.apresMeuble = true;
       }
       lots.shift();
       programmer(x, t);
@@ -831,6 +855,10 @@ lecteurNeuronal.hesitation = (o) => {
   } catch (_) { return h; }
 };
 lecteurNeuronal.peutHesiter = () => etat.reponseVoix != null && jarvisPeutParler();
+// (15:15) la même transition entre sa voix et ses meubles : sa voix repart au ralenti (de 0,35 à la normale sur sa première lettre),
+// et sa dernière parole avant un trou ralentit sur sa fin (+0,3 s)
+lecteurNeuronal.adoucirDebut = (buf) => { try { return ralentirMeuble(buf, 0, 0.35).tampon; } catch (_) { return buf; } };
+lecteurNeuronal.adoucirFin = (buf) => { try { return ralentirMeuble(buf, buf.duration + 0.3, 1).tampon; } catch (_) { return buf; } };
 if (lecteurSysteme) lecteurSysteme.surFin = finLecture;
 
 /* ---------- les orbes : la petite (en-tête) et la grande (scène, quand il parle ou écoute) ---------- */
@@ -2710,11 +2738,34 @@ function vifConversation(conv) {
 function surSouffle(o) {
   if (!etat.conversation || !o || !o.texte) return;
   const texte = String(o.texte).slice(0, 400);
+  etat.dernierSouffle = { texte, pret: !!o.pret, pour: String(o.pour || ''), t: Date.now() };
+  if (o.pret) preparerVoixSouffle(texte);                             // (15:10) sa voix fabriquée d'avance : dite sans attendre
   etat.aCote = (etat.aCote || []).filter(x => x.cle !== 'souffle');
   etat.aCote.push({ ts: Date.now(), cle: 'souffle', html: `<div class="m j brouillon" style="opacity:.75;font-style:italic">`
     + `<span class="quand">${o.pret ? '🗣️ prête à dire' : '✍️ il écrit encore'}</span><div>${esc(texte)}</div></div>` });
   rendre();
   envoyerParoles('hakim', `${o.pret ? '🗣️' : '✍️'} ${texte}`);
+}
+// (15:10, mesuré : la voix met ~2,6 s avant son premier son) le brouillon prêt à dire : sa voix fabriquée pendant que papa parle
+// encore (la synthèse est libre à ce moment-là) ; le suivant remplace le précédent
+let voixSouffle = { texte: '', pret: null, ctl: null };
+function preparerVoixSouffle(texte) {
+  if (!actx || actx.state !== 'running' || voixSouffle.texte === texte) return;
+  if (voixSouffle.ctl) voixSouffle.ctl.abort();
+  const ctl = new AbortController(), v = { texte, pret: null, ctl };
+  voixSouffle = v;
+  fetch('/api/voix/dire', { method: 'POST', signal: ctl.signal, headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+    body: JSON.stringify({ texte, langue: 'fr', emotion: etat.interieur && !etat.reglages.voixNeutre ? expressivitePhrase(etat.interieur.expressivite, texte) : null, tempo: tempoVoix() }) })
+    .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('voix'))))
+    .then(ab => actx.decodeAudioData(ab))
+    .then(buf => { if (voixSouffle === v) v.pret = buf; })
+    .catch(() => {});
+}
+// (15:10) le brouillon a-t-il été écrit pour ce que papa a dit jusqu'ici ? (ses mots, presque tous, sont dans « pour »)
+function recouvre(pour, actuel) {
+  const mots = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^\p{L}\p{N}]+/u).filter(m => m.length > 1);
+  const a = mots(actuel).slice(-40), b = new Set(mots(pour));
+  return a.length >= 3 && a.filter(m => b.has(m)).length / a.length >= 0.8;
 }
 function retirerSouffle() {
   if (!(etat.aCote || []).some(x => x.cle === 'souffle')) return;
@@ -2737,9 +2788,10 @@ async function prendreSouffle(conv) {
   // (15:02, Ahmed : « il ne la dit que quand il estime qu'il peut enfin répondre ») pas prête à ses yeux : elle reste écrite, il ne la dit pas
   if (!r || !pret || etat.conversation !== conv || (conv.capteur && conv.capteur.enParole) || lecteur.actif || etat.flux) { journalVoix('souffle', { pris: !!r, pret, dit: false }); return; }
   conv.souffleParle = true; conv.souffleDit = r;
-  journalVoix('souffle', { pris: true, dit: true, mots: r.split(/\s+/).length });
+  const prete = voixSouffle.texte === r && voixSouffle.pret;
+  journalVoix('souffle', { pris: true, dit: true, mots: r.split(/\s+/).length, voix_prete: !!prete });
   etat.reponseVoix = 'souffle';
-  lecteur.dire(r);
+  if (prete) lecteurNeuronal.direAudio(r, voixSouffle.pret); else lecteur.dire(r);
 }
 function ligneEnDirect(conv) {
   const e = conv && conv.ecrit, cap = conv && conv.capteur;
@@ -2796,6 +2848,19 @@ async function texteDuTour(conv) {
 function anticiperConversation(conv, silenceMs) {
   if (etat.reglages.rapide === false || silenceMs < SILENCE_ANTICIPE_MS || conv.spec || !conv.capteur) return;
   if (typeof transcriptionEnPause === 'function' && transcriptionEnPause()) return;   // (00:47) son tour : rien à anticiper
+  // (15:10, Ahmed : « le moment exact où il faut qu'il parle » ; mesuré sur 69 tours : il attendait 3,5 s de silence, 7 seulement
+  // anticipés) son subconscient a jugé sa réponse prête pour ce que tu as dit, ou tes mots en direct finissent une phrase : ton tour
+  // finit à 0,7 s de silence ; la grande oreille confirme ensuite ta phrase, comme d'habitude
+  if (silenceMs >= 700 && conv.ecrit && !conv.finAnticipee) {
+    const vifTexte = `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}`.trim(), s = etat.dernierSouffle;
+    const parSouffle = !!(s && s.pret && Date.now() - s.t < 15000 && recouvre(s.pour, vifTexte));
+    if (parSouffle || phraseFinie(vifTexte)) {
+      conv.finAnticipee = true;
+      journalVoix('fin_anticipee', { par: parSouffle ? 'souffle' : 'mots', silence_ms: Math.round(silenceMs) });
+      conv.capteur.finirTour();
+      return;
+    }
+  }
   // un seul essai par silence (relecture Opus : la même queue était retranscrite ~10 fois par pause)
   if (conv.essaiVoix === conv.capteur.derniereVoix || !conv.capteur.assezDeVoix) return;
   conv.essaiVoix = conv.capteur.derniereVoix;
@@ -2954,7 +3019,7 @@ async function basculerConversation() {
       dernierBattement: () => dernierBattementCoeur,
       surNiveau: (n) => { etat.niveauMicro = n; voixAuCorps(n); if (document.visibilityState === 'hidden') { micEnFond++; alimenterBulle(n); } },
       // (13:25, papa : « aucun « je t'écoute » ») rien à la place de ses mots : ils s'affichent dès le premier
-      surDebut: () => { conv.finDemandee = false; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre(''); humeur(); },
+      surDebut: () => { conv.finDemandee = false; conv.finAnticipee = false; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre(''); humeur(); },
       surPause: (fenetre) => surPauseConversation(conv, fenetre),
       surSilence: (ms) => { if (conv.capteur && conv.capteur.enParole) { compteARebours(ms); anticiperConversation(conv, ms); } },
       // Ahmed (ou une autre voix) parle pendant que Hakim parle : Hakim se MET EN PAUSE (lot C, point 26) ; sa
@@ -3516,7 +3581,8 @@ async function tourDeParole(conv, wav, infos, extra) {
   }
   if (conv.tourGarde && !sonTourEnCours()) { texte = `${conv.tourGarde} … ${texte}`; conv.tourGarde = ''; }
   if ((conv.ecritGarde || []).length && !sonTourEnCours()) texte = `${prendreEcritsGardes(conv)}\n${texte}`;   // (08:30)
-  if (chacunSonTour() && sonTourEnCours()) { garderPourSonTour(conv, texte); return; }
+  // (15:10, mesuré : sa soufflée dite à 15:05:46, ton tour retenu 18 s derrière elle) sa réponse soufflée ne retient pas ton tour
+  if (chacunSonTour() && sonTourEnCours() && !conv.souffleParle) { garderPourSonTour(conv, texte); return; }
   // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
   if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(true, { garder: true, raison: 'parole' }); }
   sousTitre(texte);
@@ -3868,6 +3934,9 @@ let motDirectJusqua = 0;
 function direMotDirect(texte, maxMs = 0, auDebut = null) {
   const t = String(texte || '').trim().slice(0, 200);
   if (!t || !actx || actx.state !== 'running' || !analyseurVoix) { journalVoix('oreille_dit', { ok: false, raison: 'audio' }); return; }
+  // (15:12, Ahmed : « tout ce qui sort de sa bouche est séquentiel ; c'est la réflexion qui est parallèle » ; mesuré : son petit mot
+  // de 15:05:59 par-dessus ses meubles) sa voix joue déjà : le petit mot passe après, dans la même file, jamais par-dessus
+  if (lecteur && (lecteur.actif || lecteur.enPause)) { journalVoix('oreille_dit', { ok: true, file: true }); lecteur.dire(t); if (auDebut) try { auDebut(); } catch (_) {} return; }
   const t0 = Date.now();
   fetch('/api/voix/dire', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
     body: JSON.stringify({ texte: t, langue: 'fr', emotion: null, tempo: typeof tempoVoix === 'function' ? tempoVoix() : null, prioritaire: true }) })
