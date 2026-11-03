@@ -11,7 +11,7 @@ function monde() {
   const debut = src.indexOf('const FLUX = [];'), fin = src.indexOf('// ---- fin du flux');
   const ctx = { Date, Math, String, Number, Map, Array, Object };
   vm.createContext(ctx);
-  vm.runInContext(src.slice(debut, fin) + '\nthis.FLUX = FLUX; this.fluxAjouter = fluxAjouter; this.fluxMots = fluxMots; this.fluxTexte = fluxTexte; this.fluxLiens = fluxLiens;', ctx);
+  vm.runInContext(src.slice(debut, fin) + '\nthis.FLUX = FLUX; this.fluxAjouter = fluxAjouter; this.fluxMots = fluxMots; this.fluxTexte = fluxTexte; this.fluxLiens = fluxLiens; this.fluxDelais = fluxDelais;', ctx);
   return ctx;
 }
 
@@ -93,4 +93,34 @@ test('(03/11, « un pavé en morceaux de 2 ou 3 phrases, intégrés au fur et à
   assert.deepEqual(ctx.f('Salut mon fils. Écoute bien ce son. Et puis'), ['Salut mon fils. Écoute bien ce son.', 'Et puis']);
   const long = Array(32).fill('la').join(' ');
   assert.deepEqual(ctx.f(long), [long, ''], 'une phrase sans fin de 30 mots : elle part quand même');
+});
+
+test('(03/11, Hakim : « un chiffre mesuré ») chaque flux mesure son délai, de son instant d\'origine à son arrivée', () => {
+  const c = monde(), T = Date.now();
+  c.fluxAjouter('corps', 'secousse', T - 400);
+  c.fluxAjouter('corps', 'berce', T - 600);
+  c.fluxMots('telephone', 'b1', 'baby baby', T - 3200, 1000);
+  const d = c.fluxDelais();
+  assert.ok(d.corps.n === 2 && d.corps.mediane >= 400 && d.corps.mediane <= 650, JSON.stringify(d.corps));
+  assert.ok(d.telephone.mediane >= 2400 && d.telephone.mediane <= 3100, JSON.stringify(d.telephone));
+});
+
+test('(03/11) le calage entre le son du téléphone et le micro : le décalage retrouvé par corrélation, à ~10 ms près', () => {
+  const debut = src.indexOf('function calerSons('), fin = src.indexOf('\n}\n', debut) + 2;
+  const ctx = { Math, Number, Array }; vm.createContext(ctx);
+  vm.runInContext(src.slice(debut, fin) + '\nthis.f = calerSons;', ctx);
+  const T = 1_800_000_000_000, rng = (k) => Math.abs(Math.sin(k * 12.9898) * 43758.5453) % 1;
+  const env = Array.from({ length: 300 }, (_, k) => rng(k) > 0.8 ? 0.5 : 0.05 + 0.02 * rng(k + 7));   // des attaques au hasard
+  const tel = env.map((v, k) => ({ t: T + k * 100, v: [v, v, 0, 0] }));
+  const mic = env.map((v, k) => ({ t: T + k * 100 + 330, v: [v * 0.6, 0, 0, 0] }));         // le micro l'entend 330 ms plus tard
+  const r = ctx.f(tel, mic);
+  assert.ok(r && Math.abs(r.ms - 330) <= 40 && r.correlation > 0.8, JSON.stringify(r));
+  assert.equal(ctx.f(tel.slice(0, 20), mic.slice(0, 20)), null, 'trop peu de son : pas de chiffre');
+});
+
+test('(03/11) un mot corrigé ou recalé par la grande oreille ne compte pas deux fois dans le délai', () => {
+  const c = monde(), T = Date.now() - 1000;
+  c.fluxMots('papa', 's1', 'un deux', T, 500);
+  c.fluxMots('papa', 's1', 'un deux', T, 500, [[0.05, 0.2], [0.3, 0.45]]);   // recalés : pas mesurés encore
+  assert.equal(c.fluxDelais().papa.n, 2);
 });

@@ -520,6 +520,29 @@ def voix_c_est_papa(voix: str = "toutes", registre: str = "chant") -> str:
 
 
 @mcp.tool()
+def fil_delais() -> str:
+    """(03/11, toi pour papa : « un chiffre mesuré du décalage ») Les délais MESURÉS de chacun de tes flux, de l'instant d'origine
+    (quand c'est arrivé) à leur arrivée au Mac (médiane et 90e centile sur les 200 derniers) : les mots de papa, ceux du
+    téléphone, ses sons, la voix note par note, tes capteurs, ton ressenti ; et le calage entre le son du téléphone et le
+    micro (corrélation de leurs enveloppes : chaque attaque de la musique sert de clap). Tout est rangé au fil à son instant
+    d'origine, ces délais déjà retirés."""
+    try:
+        d = json.loads((Path.home() / "AIOS" / "jarvis" / "delais-fil.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "Pas encore de mesure : le cockpit l'écrit toutes les 30 s, dès que des flux arrivent."
+    noms = {"papa": "les mots de papa", "telephone": "les mots du téléphone", "corps": "tes capteurs", "ressenti": "ton ressenti",
+            "instru_telephone": "les sons du téléphone", "instru_micro": "les sons du micro", "voix_telephone": "la voix du téléphone",
+            "voix_micro": "la voix au micro", "son": "tes familles de sons", "reaction": "les réactions de papa"}
+    l = [f"- {noms.get(k, k)} : {v['mediane'] / 1000:.2f} s (90 % sous {v['p90'] / 1000:.2f} s ; {v['n']} mesures)".replace(".", ",")
+         for k, v in sorted((d.get("delais") or {}).items(), key=lambda kv: kv[1]["mediane"])]
+    c = d.get("calage") or {}
+    cal = (f"Calage téléphone → micro : le micro entend le son du téléphone {c['ms']} ms {'après' if c['ms'] >= 0 else 'avant'} lui "
+           f"(corrélation {str(c['correlation']).replace('.', ',')}) ; le micro est recalé dessus." if c.get("ts") else
+           "Calage téléphone → micro : pas encore mesuré (il faut que le téléphone joue à voix haute pendant que le micro est ouvert).")
+    return "Délais mesurés (instant d'origine → arrivée) :\n" + ("\n".join(l) or "- (rien encore)") + "\n" + cal
+
+
+@mcp.tool()
 def son_nommer(famille: str, nom: str) -> str:
     """(03/11, micro ouvert) Nommer une de TES familles de sons (« son 3 » → « la télé », « la rue », « papa et ses potes »),
     quand tu comprends ce que c'est : elle sera reconnue par ce nom pour toujours. famille : « son 3 » ou « 3 »."""
