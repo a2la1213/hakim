@@ -837,6 +837,7 @@ const lecteur = {
 };
 const finLecture = () => {
   if (lecteur.actif) return;
+  for (const x of etat.messages.slice(-6)) if (x.auRythme && !x.enCours) x.auRythme = false;   // (16:45) sa voix a fini : tout s'écrit
   if (!etat.flux) etat.reponseVoix = null;                              // (13:30) sa réponse est dite : plus de meubles
   // (30/10) sa voix a tout dit (ni en pause, ni une réponse qui arrive encore pour ce message) : une fin, ou la panne qui l'a trouée
   if (!lecteur.enPause && etat.lectureDe != null && !(etat.flux && String(etat.fluxId) === String(etat.lectureDe)))
@@ -983,6 +984,9 @@ function envoyerParoles(qui, texte) {
   }, 250);
 }
 lecteurNeuronal.surSegment = (t, duree) => {
+  // (16:45) le bout que sa voix commence : sa réponse s'écrit jusque-là, au même instant
+  const mR = etat.lectureDe != null ? etat.messages.find(x => String(x.id) === String(etat.lectureDe)) : null;
+  if (mR && mR.auRythme) { mR.ditCar = (mR.ditCar || 0) + String(t || '').length + 1; majMessage(mR); }
   if (mesureTour && mesureTour.premier_texte && !mesureTour.premier_son) { mesureTour.premier_son = Date.now(); finMesureTour(); }
   noterParole(t); noterMorceau(t, duree); if (!enTelepathie()) sousTitre(t);   // (16:08) en Télépathie, rien d'écrit
   envoyerParoles('hakim', t);                                         // (14:47) ce qu'il dit, sous l'orbe de l'appli
@@ -1464,7 +1468,8 @@ function humeur(texte) {
   const repos = etat.interieur && etat.interieur.humeur ? `humeur : ${etat.interieur.humeur}` : 'prêt · mémoire Anamnèse';
   if (etat.interieur) $('etat').title = `ennui ${String((etat.interieur.ennui || 0).toFixed(2)).replace('.', ',')}`;
   if (texte) $('etat').textContent = texte;
-  else $('etat').textContent = ecoute ? '🎙️' : (pense ? 'réfléchit…' : (parle ? 'parle…' : repos));   // (13:25) plus de « je t'écoute »
+  // (13:25) plus de « je t'écoute » ; (16:45, Ahmed : « que la réflexion soit inexistante par défaut ») en Conversation, plus de « réfléchit… »
+  else $('etat').textContent = ecoute ? '🎙️' : (pense ? (etat.conversation ? '' : 'réfléchit…') : (parle ? 'parle…' : repos));
   $('envoyer').hidden = pense;
   $('stop').hidden = !(pense || parle);
 }
@@ -1528,7 +1533,21 @@ function quandMessage(m) {
 }
 const heureMessage = (t) => (t ? `<span class="heure" title="${esc(new Date(t).toLocaleString('fr-FR'))}">${new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
 const jourMessage = (t) => new Date(t).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+// (16:45) la part de sa réponse que sa voix a déjà dite : la même proportion de ce qui est écrit, jusqu'au bout du mot
+function texteAuRythme(m) {
+  const texte = String(m.texte || '');
+  const total = Voix.prononcable(texte).map(x => x.texte).join(' ').length;
+  if (!total || !m.ditCar) return '';
+  let n = Math.round(texte.length * Math.min(1, m.ditCar / total));
+  while (n < texte.length && !/\s/.test(texte[n])) n++;
+  return texte.slice(0, n).trimEnd();
+}
 function htmlMessage(m) {
+  if (m.qui === 'j' && m.auRythme) {
+    const vu = texteAuRythme(m);
+    if (!vu) return `<div class="m j" data-id="${esc(m.id)}" hidden></div>`;   // rien avant sa voix : ni « réfléchit… », ni texte
+    m = { ...m, texte: vu, outils: [] };
+  }
   const heure = heureMessage(quandMessage(m));
   // (15:38, Ahmed : « que Hakim puisse mettre les mêmes smileys que moi sur mes messages ») sa réaction, en bas à gauche
   const saReaction = m.qui === 'u' && m.reactionHakim && REACTIONS.includes(m.reactionHakim)
@@ -1875,7 +1894,12 @@ async function envoyer(texte, oral, dejaRelance) {
   if (!dejaRelance) etat.messages.push({ id: nouvelId(), qui: 'u', texte, oral: !!oral, ts: Date.now(), joints: joints.map(x => x.nom), ...(enTete ? { cache: true } : {}) });
   // (21:13, Ahmed : « dans ce mode, ses paroles aussi ne s'affichent plus, seulement sa voix ») la case « ses paroles »
   const m = { id: nouvelId(), qui: 'j', texte: souffleDit ? `${souffleDit} ` : '', outils: [], enCours: true,
-    ...(oral && etat.conversation && typeof reglagesCorps !== 'undefined' && reglagesCorps.afficher_hakim === false ? { cache: true } : {}) };
+    ...(oral && etat.conversation && typeof reglagesCorps !== 'undefined' && reglagesCorps.afficher_hakim === false ? { cache: true } : {}),
+    // (16:45, Ahmed : « que la réflexion soit inexistante par défaut, remplacée par la pensée qui sort au même moment du haut-parleur
+    // et en message sur l'interface ») en Conversation, sa réponse s'écrit au rythme de sa voix : rien (ni « réfléchit… ») avant son
+    // premier son, puis ce que sa voix a dit ; tout, quand sa voix a fini
+    ...(oral && etat.conversation && lecteur && lecteur.impl === lecteurNeuronal && !enTelepathie()
+      ? { auRythme: true, ditCar: souffleDit ? Voix.prononcable(souffleDit).map(x => x.texte).join(' ').length + 1 : 0 } : {}) };
   etat.messages.push(m);
   sauver();                                              // la question survit à une fermeture de page
   const ctl = new AbortController();
@@ -1980,6 +2004,7 @@ async function envoyer(texte, oral, dejaRelance) {
   if (etat.flux === ctl) etat.flux = null;
   if (!auto && !m.coupe && !m.erreur && degreRire(m.texte)) vibrerPourMorceau(m.id, m.texte);   // voix éteinte : son rire, à la fin de sa réponse
   m.enCours = false;
+  if (m.auRythme && !(lecteur && (lecteur.actif || lecteur.enPause))) m.auRythme = false;   // (16:45) rien à dire, ou déjà dit : tout s'écrit
   if (m.texte && !m.ts) m.ts = Date.now();                       // (23/10) son heure : quand la réponse est finie
   if (m.texte) m.texte = Voix.sansAffect(m.texte).trimEnd();     // la balise [[affect: …]] ne reste pas dans la conversation
   if (m.texte && !auto && !NON_REPONSE.test(m.texte)) notifierApp('Hakim te répond', m.texte, String(m.id));   // (23/10) appli cachée
@@ -2938,7 +2963,11 @@ setInterval(() => {
   const c = etat.conversation;
   if (c && c.ecrit && ((c.capteur && c.capteur.enParole) || c.ecrit.vifEnCours || c.ecrit.partiel)) ligneEnDirectMontrer(c);
 }, 150);
-setInterval(() => { const c = etat.conversation; if (c) vifConversation(c); }, 100);   // (13:25) au dixième de seconde
+setInterval(() => { const c = etat.conversation; if (c) vifConversation(c); }, 100);
+setInterval(() => {                                       // (16:45) sa voix arrêtée ou coupée : sa réponse s'écrit en entier
+  for (const m of etat.messages.slice(-6))
+    if (m.auRythme && !m.enCours && !(lecteur && (lecteur.actif || lecteur.enPause))) { m.auRythme = false; majMessage(m); }
+}, 1000);   // (13:25) au dixième de seconde
 // (03/11, Ahmed : « micro ouvert ; on le laisse apprendre à détecter les sons, les bruits, les voix qui se mélangent ») toutes
 // les 10 s, les 3 dernières secondes entendues vont à ses familles de sons (le Mac les range, il les nomme)
 let ambianceEnCours = false;

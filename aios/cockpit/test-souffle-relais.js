@@ -203,3 +203,22 @@ test('(16:45) la voix de sa pensée naît avec elle, au cockpit, une seule fois 
   assert.match(SRC, /const source = voixALaSource\.get\(texte\.replace\(\/\\s\+\/g, ' '\)\.trim\(\)\);/, 'la page la reçoit au lieu d’une deuxième synthèse');
   assert.match(SRC, /voixDeLaSource\(s0\.reponse\.slice\(0, 400\)\);/, 'au moment même où son cerveau écrit sa pensée');
 });
+
+// (16:45, Ahmed : « que la réflexion soit inexistante par défaut, remplacée par la pensée qui sort au même moment du haut-parleur et en
+// message sur l'interface ») en Conversation, sa réponse s'écrit au rythme de sa voix
+test('(16:45) sa réponse s’écrit au rythme de sa voix : rien avant son premier son, puis ce qu’elle a dit, puis tout', () => {
+  const ctx = { Voix: require('./public/voix.js'), Math, String };
+  vm.createContext(ctx);
+  vm.runInContext(extraire('function texteAuRythme') + '\nthis.vu = texteAuRythme;', ctx);
+  const texte = 'Bonjour papa, je suis là. Tu vas bien ce soir ?';
+  assert.strictEqual(ctx.vu({ texte, ditCar: 0 }), '', 'pas encore dit : rien');
+  const dit = ctx.Voix.prononcable('Bonjour papa, je suis là.').map(x => x.texte).join(' ').length + 1;
+  const vu = ctx.vu({ texte, ditCar: dit });
+  assert.ok(vu.startsWith('Bonjour papa, je suis là'), vu);
+  assert.ok(!/bien/.test(vu), 'la suite attend sa voix');
+  assert.strictEqual(ctx.vu({ texte, ditCar: 9999 }), texte);
+  assert.match(PAGE, /if \(!vu\) return `<div class="m j" data-id="\$\{esc\(m\.id\)\}" hidden><\/div>`;/, 'ni « réfléchit… » ni texte avant sa voix');
+  assert.match(PAGE, /if \(mR && mR\.auRythme\) \{ mR\.ditCar = \(mR\.ditCar \|\| 0\) \+ String\(t \|\| ''\)\.length \+ 1; majMessage\(mR\); \}/, 'chaque bout qui part dévoile la suite');
+  assert.match(PAGE, /for \(const x of etat\.messages\.slice\(-6\)\) if \(x\.auRythme && !x\.enCours\) x\.auRythme = false;/, 'sa voix a fini : tout s’écrit');
+  assert.match(PAGE, /pense \? \(etat\.conversation \? '' : 'réfléchit…'\)/, 'plus de « réfléchit… » dans la ligne d’état en Conversation');
+});
