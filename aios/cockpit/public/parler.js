@@ -2504,7 +2504,7 @@ function surPauseConversation(conv, fenetre) {
     if (e.coupe !== de || texte === null) return;                        // échec : ce morceau reste dans la queue
     e.confirme = (e.confirme + ' ' + morceauNeuf(texte, e.confirme)).trim();   // une invention de Whisper : écartée seule
     e.coupe = fenetre;
-    e.vif = ''; if (typeof sousTitre === 'function') sousTitre(e.confirme);   // (03/11) le morceau confirmé remplace ses mots vifs
+    e.vif = ''; if (typeof ligneEnDirectMontrer === 'function') ligneEnDirectMontrer(conv); else if (typeof sousTitre === 'function') sousTitre(e.confirme);   // (03/11) le morceau confirmé remplace ses mots vifs
     entendreEnCours(conv);                                               // (30/10) son oreille, si papa l'a ouverte
     // (20:38, Ahmed : « arrête », « tais-toi », « coupe-toi » doivent le couper tout de suite) : quand il garde la parole,
     // ces mots entendus pendant qu'il parle l'arrêtent aussitôt, comme le bouton Stop (sa suite est abandonnée)
@@ -2544,14 +2544,45 @@ function vifConversation(conv) {
       if (!o) { if (e.vifFenetre === n) e.vifFenetre = avant; return; }   // (13:25) refusée : elle repart au tic suivant
       if (conv.ecrit !== e || e.coupe !== de || !cap.enParole) return;   // un morceau déjà confirmé, un autre tour : périmé
       e.vif = morceauNeuf(o.texte || '', e.confirme);
+      conv.pense = !!o.pense;                                             // (13:59) ses trois voix réfléchissent déjà
+      // (13:59, papa : « un mot de décalage ») le retard de ses mots à l'écran sur sa voix : de la fin du morceau transcrit à maintenant
+      if (Number(cap.debutTour) > 0 && Date.now() - (e.decalageNote || 0) > 2000) {
+        e.decalageNote = Date.now();
+        journalVoix('vif_decalage', { ms: Math.max(0, Date.now() - (Number(cap.debutTour) + n * 20)), mots: e.vif.split(/\s+/).filter(Boolean).length });
+      }
       // (13:25) combien de temps entre le début de sa voix et son premier mot à l'écran (voix-diagnostic.jsonl)
       if (e.vif && !e.premierMot) { e.premierMot = true; journalVoix('premier_mot', { ms: Math.max(0, Date.now() - Number(cap.debutTour || Date.now())) }); }
-      sousTitre(`${e.confirme} ${e.vif}`.trim());
+      ligneEnDirectMontrer(conv);
       entendreEnCours(conv);
     })
     .catch(() => {})
     .finally(() => { e.vifEnCours = null; });
 }
+// (13:59, papa : « je dois voir sur l'interface le micro quand je parle, et le mot qui se transcrit, ou qu'il réfléchit, sur la même
+// ligne ») la ligne en direct, sous l'orbe et dans l'état : 🎙️ quand il parle, ses mots (la fin), ✍️ pendant qu'un morceau se
+// transcrit, 💭 quand Hakim réfléchit (ses trois voix pendant qu'il parle, ou sa réponse ensuite)
+function ligneEnDirect(conv) {
+  const e = conv && conv.ecrit, cap = conv && conv.capteur;
+  const mots = e ? `${e.confirme || ''} ${e.vif || ''}`.trim() : '';
+  const parts = [];
+  if (cap && cap.enParole) parts.push('🎙️');
+  if (mots) parts.push(mots.length > 90 ? `…${mots.slice(-90)}` : mots);
+  if (e && (e.vifEnCours || e.partiel)) parts.push('✍️');
+  if ((conv && conv.pense) || etat.flux) parts.push('💭');
+  return parts.join(' ');
+}
+function ligneEnDirectMontrer(conv) {
+  if (!conv || (lecteur && lecteur.actif)) return;                     // sa voix a la ligne quand il parle
+  const l = ligneEnDirect(conv);
+  if (!l) return;
+  sousTitre(l);
+  if ($('etat')) $('etat').textContent = l;
+}
+// tant que papa parle ou qu'un morceau se transcrit, la ligne suit (✍️ qui va et vient, 💭)
+setInterval(() => {
+  const c = etat.conversation;
+  if (c && c.ecrit && ((c.capteur && c.capteur.enParole) || c.ecrit.vifEnCours || c.ecrit.partiel)) ligneEnDirectMontrer(c);
+}, 150);
 setInterval(() => { const c = etat.conversation; if (c) vifConversation(c); }, 100);   // (13:25) au dixième de seconde
 // (03/11, Ahmed : « micro ouvert ; on le laisse apprendre à détecter les sons, les bruits, les voix qui se mélangent ») toutes
 // les 10 s, les 3 dernières secondes entendues vont à ses familles de sons (le Mac les range, il les nomme)

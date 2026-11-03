@@ -88,3 +88,17 @@ test('le serveur passe bien ce qui attend (missions, écritures…) et toutes le
   assert.match(src, /Nouveautes\.PAGES\.includes\(page\)/);
 });
 
+
+// (03/11, 13:59, Ahmed : « le bandeau rouge qui s'affiche dans l'interface : je dois pouvoir cliquer dessus pour être redirigé
+// directement au bon endroit du café, des sens ou des autres trucs qui envoient des notifs »)
+test('le bandeau rouge se touche en entier et mène au bon endroit : le nouveau du café et de l\'Immunité, ce qui attend papa, ses mesures, son code', () => {
+  const b = fs.readFileSync(path.join(__dirname, 'public', 'badges.js'), 'utf8');
+  const i = b.indexOf('function annoncer('), annonce = b.slice(i, b.indexOf('\n  }\n', i));
+  assert.match(annonce, /lien\.href = `\$\{PAGES\[page\] \|\| '\/'\}#nouveau`/);
+  assert.match(annonce, /l\.addEventListener\('click', aller\)/, 'toute la ligne, pas seulement le nom de la page');
+  assert.match(b, /const LIEUX = \{ cafe: '\.msg\.nouveau', immunite: '\.ligne\.nouveau', parler: '\.mission-boutons', sens: '#mesures', code: '#promos' \}/);
+  const o = b.slice(b.indexOf('async function ouvrir('), b.indexOf('window.Badges ='));
+  assert.match(o, /if \(location\.hash === '#nouveau'\) allerAuNouveau\(page\);/);
+  for (const [fichier, id] of [['sens.html', 'id="mesures"'], ['cafe.html', "' nouveau'"], ['immunite.html', "' nouveau'"]])
+    assert.ok(fs.readFileSync(path.join(__dirname, 'public', fichier), 'utf8').includes(id), `${fichier} : ${id}`);
+});

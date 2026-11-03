@@ -13,6 +13,10 @@
     ['cafe', '/cafe', 'Café'], ['code', '/code', 'Code'], ['interieur', '/interieur', 'Intérieur'], ['memory', '/memory', 'Mémoire'],
     ['brain', '/brain', 'Cerveau 3D'], ['dreams', '/dreams', 'Labo des rêves'], ['chat', '/chat', 'Chat']];
   const NOMS = Object.fromEntries(MENU.map(([k, , l]) => [k, l]));
+  // (03/11, 13:59, Ahmed : « le bandeau rouge : je dois pouvoir cliquer dessus pour être redirigé au bon endroit du café, des sens ou
+  // des autres trucs qui envoient des notifs ») où aller sur chaque page : le premier nouveau (café, Immunité), le dernier geste qui
+  // attend papa (Parler), ses mesures (SENS), les modifications à relire (Code)
+  const LIEUX = { cafe: '.msg.nouveau', immunite: '.ligne.nouveau', parler: '.mission-boutons', sens: '#mesures', code: '#promos' };
   const jet = () => (typeof window.jeton === 'function' ? window.jeton() : (document.querySelector('meta[name="cockpit-jeton"]') || {}).content || '');
   const style = document.createElement('style');
   style.textContent = '.pastille{display:inline-block;min-width:16px;height:16px;padding:0 4px;margin-left:5px;border-radius:8px;'
@@ -36,6 +40,7 @@
     + '.menu-panneau a{display:flex;align-items:center;min-height:44px;padding:0 12px;border-radius:10px;color:#c9d4dc;font-size:15px;text-decoration:none}'
     + '.menu-panneau a:hover{background:rgba(255,255,255,.05)}.menu-panneau a[aria-current="page"]{color:#2dd4bf;background:rgba(45,212,191,.10)}'
     + '.menu-panneau a .pastille{margin-left:auto}.menu-panneau .resume{color:#f3b6b6;font-size:12px;padding:0 12px 6px;margin-top:-4px}'
+    + '.annonce-ligne{cursor:pointer}.annonce-ligne:hover{text-decoration:underline}'
     + '[hidden]{display:none !important}';
   document.head.appendChild(style);
 
@@ -132,7 +137,12 @@
     for (const [page, p] of a_dire) {
       const l = document.createElement('div');
       const lien = document.createElement('a');
-      lien.href = PAGES[page] || '/'; lien.textContent = NOMS[page] || page; lien.style.color = '#fff'; lien.style.fontWeight = '600';
+      lien.href = `${PAGES[page] || '/'}#nouveau`; lien.textContent = NOMS[page] || page; lien.style.color = '#fff'; lien.style.fontWeight = '600';
+      // toute la ligne se touche : elle mène à l'endroit du nouveau sur sa page
+      const aller = () => { location.href = `${PAGES[page] || '/'}#nouveau`; };
+      l.className = 'annonce-ligne'; l.setAttribute('role', 'link'); l.tabIndex = 0;
+      l.addEventListener('click', aller);
+      l.addEventListener('keydown', (e) => { if (e.key === 'Enter') aller(); });
       l.appendChild(lien);
       l.appendChild(document.createTextNode(` : ${(p.resume || []).join(' ; ') || 'du nouveau'}`));
       b.appendChild(l);
@@ -167,7 +177,22 @@
   }
   // à l'ouverture : la bulle « Depuis ta dernière visite », puis « vu » ; rend l'heure de sa visite précédente (ms) pour
   // que la page marque ce qui est nouveau
+  // arrivé par le bandeau (#nouveau) : la page se rend, puis elle va à l'endroit (8 s au plus pour qu'il apparaisse)
+  function allerAuNouveau(page) {
+    const sel = LIEUX[page];
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (_) {}
+    if (!sel) return;
+    const t0 = Date.now();
+    const essai = () => {
+      const l = [...document.querySelectorAll(sel)];
+      const x = page === 'parler' ? (l.length ? (l[l.length - 1].closest('.mission') || l[l.length - 1]) : null) : l[0];
+      if (x) { x.scrollIntoView({ behavior: 'smooth', block: 'center' }); x.classList.add('nouveau'); return; }
+      if (Date.now() - t0 < 8000) setTimeout(essai, 300);
+    };
+    essai();
+  }
   async function ouvrir(page) {
+    if (location.hash === '#nouveau') allerAuNouveau(page);
     let depuis = Date.now();
     try {
       const d = await lire();

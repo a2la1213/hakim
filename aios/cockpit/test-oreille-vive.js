@@ -107,3 +107,30 @@ test('page : aucun « je t\'écoute » à la place de ses mots', () => {
   assert.doesNotMatch(PAGE, /surDebut: \(\) => \{[^\n]*sousTitre\('…'\)/);
   assert.doesNotMatch(PAGE, /surDebut: \(\) => \{[^\n]*je t’écoute/);
 });
+
+// (13:59, papa : « l'écoute de Hakim et la transcription en parallèle, avec un mot de décalage ; sur l'interface, le micro quand je
+// parle, le mot qui se transcrit, et s'il réfléchit, sur la même ligne »)
+function ligne() {
+  const ctx = { etat: { flux: null } };
+  vm.createContext(ctx);
+  const i = PAGE.indexOf('function ligneEnDirect(');
+  vm.runInContext(PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2), ctx);
+  return ctx;
+}
+test('une seule ligne en direct : le micro quand papa parle, ses mots, la transcription en cours, et sa réflexion', () => {
+  const p = ligne();
+  const conv = { capteur: { enParole: true }, ecrit: { confirme: 'Bonjour mon fils,', vif: 'tu vas', vifEnCours: {} }, pense: true };
+  assert.strictEqual(p.ligneEnDirect(conv), '🎙️ Bonjour mon fils, tu vas ✍️ 💭');
+  conv.capteur.enParole = false; conv.ecrit.vifEnCours = null; conv.pense = false;
+  p.etat.flux = {};
+  assert.strictEqual(p.ligneEnDirect(conv), 'Bonjour mon fils, tu vas 💭', 'il s\'est tu : ses mots, et Hakim réfléchit');
+  conv.ecrit.vif = 'x'.repeat(200);
+  assert.ok(p.ligneEnDirect(conv).length < 110, 'une ligne : la fin de ses mots seulement');
+});
+
+test('le cockpit dit à la page quand ses trois voix réfléchissent déjà pendant que papa parle', () => {
+  const i = SRC.indexOf('async function routeVif(');
+  assert.match(SRC.slice(i, SRC.indexOf('\n}\n', i)), /pense: !!\(speculation\.promesse && !speculation\.fini\)/);
+  assert.match(PAGE, /conv\.pense = !!o\.pense;/);
+  assert.match(PAGE, /journalVoix\('vif_decalage', \{ ms: /);
+});

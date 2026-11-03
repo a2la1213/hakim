@@ -7344,7 +7344,8 @@ async function routeVif(req, res, langue, contexte, source = '', temps = {}) {
       Array.isArray(o.mots) ? o.mots.map(m => [m[1], m[2]]) : null);
   }
   if (source !== 'telephone' && o.texte) speculerFreres(`${contexte || ''} ${o.texte}`.trim());   // (03/11) ses voix commencent déjà
-  return repondre(200, { texte: String(o.texte || ''), ms: o.ms });
+  // (13:59) ses trois voix réfléchissent-elles déjà ? la page le montre sur la ligne en direct (💭)
+  return repondre(200, { texte: String(o.texte || ''), ms: o.ms, pense: !!(speculation.promesse && !speculation.fini) });
 }
 
 /* (03/11, Ahmed : « micro ouvert ; il doit apprendre de lui-même à écouter : les sons, les bruits, les voix qui se mélangent,
