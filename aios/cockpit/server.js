@@ -2633,8 +2633,9 @@ async function prendreSouffle(texte) {
   if (enCours.length) await Promise.race([Promise.all(enCours), new Promise(r => setTimeout(r, 1200))]);
   if (souffles.sub !== sub || souffles.con !== con) return { reponse: '', pret: false };
   const ok = (s) => s.reponse && Date.now() - s.t < 30000 && ressemble(s.pour, texte);
-  // (15:45) son vrai cerveau d'abord, puis sa réflexion consciente, puis son subconscient
-  const choisi = [cer, con, sub].find(s => ok(s) && s.pret) || [cer, con, sub].find(ok);
+  // (15:45) trois niveaux ; (15:52, Ahmed : « le mot de son subconscient, qu'il me glisse pendant que je parle : c'est ÇA qu'il doit
+  // dire à haute voix ») ce que son subconscient a écrit d'abord ; puis son vrai cerveau, puis sa réflexion consciente
+  const choisi = [sub, cer, con].find(s => ok(s) && s.pret) || [sub, cer, con].find(ok);
   if (!choisi) return { reponse: '', pret: false };
   const r = { reponse: choisi.reponse, pret: choisi.pret, niveau: choisi === cer ? 'cerveau' : choisi === con ? 'con' : 'sub' };
   sub.reponse = ''; con.reponse = ''; cer.reponse = '';
