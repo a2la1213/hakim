@@ -2,7 +2,5 @@
   {"nom": "euh", "texte": "Euh,", "volume": 1.0, "quand": "partout", "etats": ["hésitation"]},
   {"nom": "hum", "texte": "Hum,", "volume": 1.0, "quand": "partout", "etats": ["hésitation"]},
   {"nom": "alors", "texte": "Alors,", "volume": 1.0, "quand": "avant", "etats": ["hésitation"]},
-  {"nom": "voyons voir", "texte": "Voyons voir,", "volume": 1.0, "quand": "partout", "etats": ["hésitation"]},
-  {"nom": "souffle", "genre": "souffle", "duree_ms": 500, "volume": 0.35, "quand": "partout", "etats": []},
-  {"nom": "respiration", "genre": "respiration", "duree_ms": 900, "volume": 0.3, "quand": "partout", "etats": []}
+  {"nom": "voyons voir", "texte": "Voyons voir,", "volume": 1.0, "quand": "partout", "etats": ["hésitation"]}
 ]

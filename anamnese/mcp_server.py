@@ -741,7 +741,7 @@ def meuble_creer(nom: str, texte: str = "", son: str = "", genre: str = "", volu
 @mcp.tool()
 def meuble_regler(nom: str, texte: str = "", son: str = "", genre: str = "", volume: float = 0, duree_ms: int = 0,
                   quand: str = "", etats: str = "", actif: str = "") -> str:
-    """(03/11) RÉGLER un de tes meubles (les tiens ou ceux de départ : euh, hum, alors, voyons voir, souffle, respiration).
+    """(03/11) RÉGLER un de tes meubles (les tiens ou ceux de départ : euh, hum, alors, voyons voir).
     Seuls les réglages donnés changent. actif : « non » pour l'éteindre, « oui » pour le rallumer. etats : la nouvelle liste
     entière (« aucun » pour n'importe lequel)."""
     r = {"texte": texte or None, "son": son or None, "genre": genre or None, "volume": volume or None,

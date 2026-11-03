@@ -18,7 +18,13 @@ def dossier(tmp_path, monkeypatch):
 
 def test_ses_meubles_de_depart_sont_la():
     noms = [m["nom"] for m in M.lister()]
-    assert {"euh", "hum", "alors", "voyons voir", "souffle", "respiration"} <= set(noms)
+    assert {"euh", "hum", "alors", "voyons voir"} <= set(noms)
+
+
+def test_ses_meubles_de_depart_sont_tous_de_sa_voix():
+    """(03/11, 14:12, Ahmed : « t'as pas enlevé le trigger, le petit signal juste avant qu'il parle » ; « il meuble avec sa voix »)
+    le souffle et la respiration de départ sonnaient comme un signal : ceux de départ sont tous des paroles."""
+    assert all(m.get("texte") for m in M.lister())
 
 
 def test_il_cree_un_meuble_parle_et_le_regle():
