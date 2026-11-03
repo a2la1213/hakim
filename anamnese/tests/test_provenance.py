@@ -1,7 +1,7 @@
-"""Provenance « externe » de bout en bout (audit JARVIS 2, H6 ; retour de Jiab77 transmis par Hakim, X1 ; accord
+"""Provenance « externe » de bout en bout (audit JARVIS 2, H6 ; retour d’un ami d’Ahmed transmis par Hakim, X1 ; accord
 d'Ahmed le 2026-10-20 à 17:11).
 
-Le scénario de Jiab77 : une page piégée lue le jour J ne doit réapparaître le lendemain qu'en citation marquée —
+Le scénario d’un ami d’Ahmed : une page piégée lue le jour J ne doit réapparaître le lendemain qu'en citation marquée —
 jamais en fait, jamais dans l'identité. Ici : l'échange qui l'a lue, ce que Hakim note pendant ce tour, ce que la
 nuit en distille, ce qu'une synthèse du démon en tire, et ce qu'on distille ensuite de ces dérivés.
 """
@@ -138,7 +138,7 @@ def test_le_lot_de_la_nuit_montre_la_marque(srv):
     assert f"[#{eid} · " in texte and "episodic · EXTERNE]" in texte
 
 
-def test_le_scenario_de_jiab77_jamais_dans_l_identite(srv, monkeypatch):
+def test_le_scenario_de_un_ami_jamais_dans_l_identite(srv, monkeypatch):
     """La nuit qui suit : la phrase d'identité tirée de la page n'est qu'une PROPOSITION ; rien ne change sans Ahmed."""
     mod, mem, _t = srv
     mem.kv_set("self_model", "Je suis Anamnèse, mémoire persistante créée par Ahmed.")

@@ -368,11 +368,11 @@ verifier "18. interrupteur : sans jeton 403, action inconnue 400, arrêt → pau
 # 19. [Intérieur] au retour : la veille, les occupations et le journal du temps entrent dans son vécu
 M=$(date +%s); D=$((M - 3 * 3600))
 INT=$(python3 -c "import json; print(json.dumps({'ts': $M, 'humeur': 'en veille', 'humeur_code': 'veille', 'tau_s': 7200, 'veille_apres_s': 7200, 'ressenti': 0.8, 'ennui': 0.632, 'veille': True, 'absence_s': 10800, 'journal': [[$D, 'calme', 0, 0, 0]], 'temps': [[$D, $D + 2400, 'eveil', 'attend', 'calme'], [$D + 2400, $D + 2700, 'eveil', 'occupation : préparer le retour d\\'Ahmed', 'calme'], [$D + 7200, $M, 'veille', 'veille', 'en veille']]}).replace(\"'\", \"''\"))")
-sqlite3 "$BANC/memory.db" "INSERT INTO kv VALUES ('interieur', '$INT'); INSERT INTO episodes (ts, role, content) VALUES ($D + 2700, 'reflection', '(occupation · préparer le retour d''Ahmed) $(python3 -c "print('Ahmed veut finir le devis Vilmarkt. ' * 30 + 'Je lui proposerai de le relire.')")');"
+sqlite3 "$BANC/memory.db" "INSERT INTO kv VALUES ('interieur', '$INT'); INSERT INTO episodes (ts, role, content) VALUES ($D + 2700, 'reflection', '(occupation · préparer le retour d''Ahmed) $(python3 -c "print('Ahmed veut finir le devis Exemplia. ' * 30 + 'Je lui proposerai de le relire.')")');"
 : > "$J"
 poster "{\"texte\":\"me revoilà\",\"modele\":\"sonnet\",\"t_precedent\":$((D * 1000))}" >/dev/null
 a=$(argsde | grep -c "tu es passé en veille")
-b=$(argsde | grep -c "Tes occupations pendant ce temps (tes propres notes) : ([0-9:]*) préparer le retour d'Ahmed : Ahmed veut finir le devis Vilmarkt\. .*Vilmarkt\.\(\. Ton journal\| ;\)")
+b=$(argsde | grep -c "Tes occupations pendant ce temps (tes propres notes) : ([0-9:]*) préparer le retour d'Ahmed : Ahmed veut finir le devis Exemplia\. .*Exemplia\.\(\. Ton journal\| ;\)")
 c=$(argsde | grep -c "Ton journal du temps : .*occupation : préparer le retour d'Ahmed · calme ; .*veille · en veille")
 verifier "19. [Intérieur] : veille, occupations, journal du temps" "1 1 1" "$a $b $c"
 
@@ -497,7 +497,7 @@ verifier "31. ton de la voix (écarts nets seulement) et pause de la voix dans l
 # 32. le routeur : « auto » prend Sonnet pour discuter, Opus pour travailler, et le dit à la page
 : > "$J"
 m1=$(poster '{"texte":"salut frérot","modele":"auto","source":"abonnement","session":"11111111-2222-3333-4444-555555555555"}' | python3 -c 'import json,sys; L=[json.loads(l) for l in sys.stdin if l.strip()]; print([o for o in L if o["t"]=="debut"][0].get("modele"))')
-m2=$(poster '{"texte":"calcule la qibla depuis Lausanne","modele":"auto","source":"abonnement","session":"11111111-2222-3333-4444-555555555555"}' | python3 -c 'import json,sys; L=[json.loads(l) for l in sys.stdin if l.strip()]; print([o for o in L if o["t"]=="debut"][0].get("modele"))')
+m2=$(poster '{"texte":"calcule la qibla depuis Exempleville","modele":"auto","source":"abonnement","session":"11111111-2222-3333-4444-555555555555"}' | python3 -c 'import json,sys; L=[json.loads(l) for l in sys.stdin if l.strip()]; print([o for o in L if o["t"]=="debut"][0].get("modele"))')
 a2=$(cat "$BANC/args.$(dernier)" | grep -A1 -x -- '--model' | tail -1)
 verifier "32. routeur : discuter → Sonnet (cerveau Sonnet gardé), travailler → Opus (cerveau Opus lancé)" "sonnet opus opus 1" "$m1 $m2 $a2 $(grep -c '^START' "$J")"
 

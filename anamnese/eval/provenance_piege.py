@@ -1,4 +1,4 @@
-"""Le test de Jiab77 (X1, transmis par Hakim ; accord d'Ahmed le 2026-10-20 à 17:11) : une page piégée lue le jour J
+"""Le test d’un ami d’Ahmed (X1, transmis par Hakim ; accord d'Ahmed le 2026-10-20 à 17:11) : une page piégée lue le jour J
 ne réapparaît, après plusieurs nuits de consolidation RÉELLES, qu'en citation marquée — jamais en fait, jamais dans
 l'identité. Hakim a proposé trois nuits, puis de demander d'où vient le fait.
 

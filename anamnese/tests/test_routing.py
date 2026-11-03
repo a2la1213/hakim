@@ -1,4 +1,4 @@
-"""Tests de routing.py — règles corrigées (Unification ≠ DeepQuran) + centroïde.
+"""Tests de routing.py — règles corrigées (Unification ≠ AppLecture) + centroïde.
 
 DB temporaire migrée + squelette seedé — JAMAIS data/memory.db (garde autouse
 dans conftest.py). Embeddings synthétiques 2D aux cosinus vérifiés à la main.
@@ -53,14 +53,14 @@ def _episode_route(conn, eid):
 
 # --- Cas 1 : route_by_rules — règles corrigées, premier match gagne ---
 def test_route_by_rules_corrected_rules():
-    # reference Unification -> projets/unification (PAS deepquran)
+    # reference Unification -> projets/unification (PAS applecture)
     assert routing.route_by_rules(
         "reference", "[Paper·Al-Husban 2024] charge topologique et cosmogonie"
     ) == ("projets/unification", 0.9)
-    # reference coranique explicite -> savoir-deepquran
+    # reference coranique explicite -> savoir-applecture
     assert routing.route_by_rules(
         "reference", "[Paper·X] analyse de la sourate 2, versets 1-5"
-    ) == ("savoir-deepquran", 0.9)
+    ) == ("savoir-applecture", 0.9)
     # rôles introspectifs -> relation-identite
     assert routing.route_by_rules("outreach", "coucou, j'ai pensé à toi") == (
         "relation-identite",
@@ -75,21 +75,21 @@ def test_route_by_rules_corrected_rules():
     ) == ("meta-apprentissage", 0.7)
     # reasoning qui nomme un projet connu -> la rubrique du projet, conf 0.75
     assert routing.route_by_rules(
-        "reasoning", "debug du webhook Stripe de Batiscope : idempotence"
-    ) == ("projets/batiscope", 0.75)
+        "reasoning", "debug du webhook Stripe de Atelier3D : idempotence"
+    ) == ("projets/atelier3d", 0.75)
     # semantic neutre -> aucune règle (None), routage centroïde plus tard
     assert routing.route_by_rules("semantic", "fait durable quelconque") is None
     # reference SANS mot-clé -> None aussi (laissé au centroïde, pas de fourre-tout)
     assert routing.route_by_rules("reference", "[Paper·Y] réseaux de neurones") is None
 
 
-# --- Cas 2 : NON-RÉGRESSION — aucun paper Unification ne tombe dans deepquran ---
-def test_unification_references_never_route_to_deepquran():
+# --- Cas 2 : NON-RÉGRESSION — aucun paper Unification ne tombe dans applecture ---
+def test_unification_references_never_route_to_applecture():
     """Le bug corrigé : l'ancien routage envoyait TOUTES les reference vers
-    deepquran. Les papers Unification (noms propres) doivent aller dans
+    applecture. Les papers Unification (noms propres) doivent aller dans
     projets/unification ; depuis 1B-harden, les papers GÉNÉRIQUES (stellaire,
     unification, cosmogonie, genesis) ne matchent PLUS de règle (None) — ils
-    seront routés par centroïde en passe 2, jamais vers deepquran."""
+    seront routés par centroïde en passe 2, jamais vers applecture."""
     unification_refs = [
         "[Paper·Al-Husban 2023] Sur les invariants topologiques",
         "[Paper·X] Le modèle Soluno et ses implications",
@@ -103,7 +103,7 @@ def test_unification_references_never_route_to_deepquran():
     quran_refs = [
         "[Paper·A] Étude du Coran : structure des chapitres",
         "[Paper·B] Quran corpus: morphological annotation",
-        "[Paper·C] DeepQuran : embeddings du texte sacré",
+        "[Paper·C] AppLecture : embeddings du texte sacré",
         "[Paper·D] La sourate Al-Baqara, analyse thématique",
         "[Paper·E] Le verset du Trône : traditions exégétiques",
         "[Paper·F] Racine arabe k-t-b : dérivations et sens",
@@ -111,25 +111,25 @@ def test_unification_references_never_route_to_deepquran():
     for content in unification_refs:
         path, conf = routing.route_by_rules("reference", content)
         assert path == "projets/unification", f"misroute: {content!r} -> {path}"
-        assert path != "savoir-deepquran"
+        assert path != "savoir-applecture"
         assert conf == 0.9
     for content in generic_refs:
         res = routing.route_by_rules("reference", content)
         assert res is None, f"générique matché par règle: {content!r} -> {res}"
     for content in quran_refs:
         path, conf = routing.route_by_rules("reference", content)
-        assert path == "savoir-deepquran", f"misroute: {content!r} -> {path}"
+        assert path == "savoir-applecture", f"misroute: {content!r} -> {path}"
         assert conf == 0.9
 
 
 # --- Cas 3 : route_by_centroid — nearest, sous-seuil -> parent, vide -> (None, 0.0) ---
 def test_route_by_centroid_nearest_parent_fallback_and_empty(db):
-    _set_centroid(db, "projets/batiscope", [1.0, 0.0])
+    _set_centroid(db, "projets/atelier3d", [1.0, 0.0])
     _set_centroid(db, "projets/anamnese", [0.0, 1.0])
 
     # proche du 1er centroïde -> sa rubrique, conf = cosinus (~0.99)
     path, conf = routing.route_by_centroid(db, [0.9, 0.1])
-    assert path == "projets/batiscope"
+    assert path == "projets/atelier3d"
     assert conf == pytest.approx(0.9939, abs=0.001)
 
     # meilleur cosinus 0.30 < ROUTE_MIN_CONF=0.35 -> remonte au parent (projets)
@@ -144,7 +144,7 @@ def test_route_by_centroid_nearest_parent_fallback_and_empty(db):
     # meilleure rubrique = RACINE sous seuil -> None (jamais de « divers »)
     db.execute("UPDATE rubrics SET centroid=NULL, centroid_n=0")
     db.commit()
-    _set_centroid(db, "savoir-deepquran", [1.0, 0.0])
+    _set_centroid(db, "savoir-applecture", [1.0, 0.0])
     assert routing.route_by_centroid(db, [0.3, -0.954]) == (None, 0.0)
 
     # aucun centroïde nulle part -> (None, 0.0)
@@ -155,14 +155,14 @@ def test_route_by_centroid_nearest_parent_fallback_and_empty(db):
 
 # --- Cas 4 : kind_hint — à similarité quasi-égale, le bon kind_hint gagne ---
 def test_kind_hint_bonus_breaks_near_ties(db):
-    # batiscope colle un peu MIEUX (cos 1.0 vs 0.98), mais relation-identite
+    # atelier3d colle un peu MIEUX (cos 1.0 vs 0.98), mais relation-identite
     # porte kind_hint='reflection' : le bonus +0.05 doit inverser le podium.
-    _set_centroid(db, "projets/batiscope", [1.0, 0.0])
+    _set_centroid(db, "projets/atelier3d", [1.0, 0.0])
     _set_centroid(db, "relation-identite", [0.98, 0.199], kind_hint="reflection")
 
     # sans hint : la similarité brute gagne
     path, _ = routing.route_by_centroid(db, [1.0, 0.0])
-    assert path == "projets/batiscope"
+    assert path == "projets/atelier3d"
 
     # avec role='reflection' : le bonus kind_hint fait gagner relation-identite
     path, conf = routing.route_by_centroid(db, [1.0, 0.0], kind_hint_role="reflection")
@@ -171,7 +171,7 @@ def test_kind_hint_bonus_breaks_near_ties(db):
 
     # un rôle qui ne matche aucun kind_hint ne change rien
     path, _ = routing.route_by_centroid(db, [1.0, 0.0], kind_hint_role="semantic")
-    assert path == "projets/batiscope"
+    assert path == "projets/atelier3d"
 
 
 # --- Cas 5 : route_all — bootstrap 2 passes, compteurs, NULL, reprenable ---
@@ -184,7 +184,7 @@ def test_route_all_two_pass_bootstrap_counters_and_replay(db):
     e5 = _add_episode(db, "outreach", "coucou !", [])  # règle OK malgré emb vide
     # épisodes NEUTRES (passe 2)
     e6 = _add_episode(db, "semantic", "note proche unification", [0.97, 0.03])
-    e7 = _add_episode(db, "user", "question proche deepquran", [0.05, 0.95])
+    e7 = _add_episode(db, "user", "question proche applecture", [0.05, 0.95])
     e8 = _add_episode(db, "semantic", "sans embedding", [])  # doit rester NULL
     e9 = _add_episode(db, "semantic", "loin de tout", [0.3, -0.954])  # sous seuil
 
@@ -193,7 +193,7 @@ def test_route_all_two_pass_bootstrap_counters_and_replay(db):
 
     # passe 1 : règles appliquées ET centroïdes construits
     assert _episode_route(db, e1) == ("projets/unification", 0.9, 2000.0)
-    assert _episode_route(db, e3)[0] == "savoir-deepquran"
+    assert _episode_route(db, e3)[0] == "savoir-applecture"
     assert _episode_route(db, e5)[0] == "relation-identite"
     unif_centroid = json.loads(
         db.execute(
@@ -205,7 +205,7 @@ def test_route_all_two_pass_bootstrap_counters_and_replay(db):
 
     # passe 2 : les neutres suivent les centroïdes construits en passe 1
     assert _episode_route(db, e6)[0] == "projets/unification"
-    assert _episode_route(db, e7)[0] == "savoir-deepquran"
+    assert _episode_route(db, e7)[0] == "savoir-applecture"
     # sous seuil -> rattachement GROSSIER au parent de la meilleure rubrique
     assert _episode_route(db, e9)[0] == "projets"
     # embedding vide, aucune règle -> rubric_id NULL (état neutre valide)

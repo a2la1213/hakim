@@ -216,7 +216,7 @@ def test_secours_apres_passage_interrompu_reprend(nuit):
 
 def test_route_login_d_un_projet_n_est_pas_une_limite():
     res = _res("error_during_execution", True, None,
-               "Échec : la route /login de mygaragebot renvoie 500 (authentication middleware)", 12)
+               "Échec : la route /login de botgarage renvoie 500 (authentication middleware)", 12)
     assert consolidate.verdict(res) == "echec"
 
 

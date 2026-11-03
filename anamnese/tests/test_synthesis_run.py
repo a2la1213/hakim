@@ -16,7 +16,7 @@ class FakeMem:
     def log_coactivation(self, ids, now, boost=0.05): self.coact.append(tuple(ids)); return 1
 
 def _seed_pairs(conn):
-    conn.execute("INSERT INTO rubrics VALUES (1,'projets/physique'),(2,'projets/batiscope')")
+    conn.execute("INSERT INTO rubrics VALUES (1,'projets/physique'),(2,'projets/atelier3d')")
     conn.execute("INSERT INTO episodes (id,role,content,embedding,importance,rubric_id) VALUES "
         "(1,'semantic','les 0 et 1 en rotation',?,0.5,1),(2,'semantic','interactions imparfaites',?,0.5,2)",
         (json.dumps([1.0,0.0,0.0]), json.dumps([0.6,0.8,0.0])))

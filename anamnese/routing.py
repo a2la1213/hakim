@@ -3,10 +3,10 @@
 Deux mécanismes, dans cet ordre :
 1. RÈGLES déterministes sur (role, content). Correction du misroute historique :
    les `reference` façon Unification (Al-Husban, Soluno, charge topologique…)
-   vont dans `projets/unification`, PAS dans `savoir-deepquran` ; seules les
-   références coraniques EXPLICITES vont dans deepquran — et la règle DeepQuran
+   vont dans `projets/unification`, PAS dans `savoir-applecture` ; seules les
+   références coraniques EXPLICITES vont dans applecture — et la règle AppLecture
    est évaluée AVANT la règle Unification (un paper coranique citant
-   incidemment « al-husban » reste dans deepquran) ; les autres `reference`
+   incidemment « al-husban » reste dans applecture) ; les autres `reference`
    ne matchent AUCUNE règle et sont laissées au centroïde.
 2. CENTROÏDE : cosinus de l'embedding vs les centroïdes non vides des rubriques
    (+ bonus additif doux si `rubrics.kind_hint == role`). PLANCHER (1B-harden) :
@@ -59,7 +59,7 @@ UNIFICATION_KEYWORDS = (
 QURAN_KEYWORDS = (
     "coran",
     "quran",
-    "deepquran",
+    "applecture",
     "sourate",
     "verset",
     "racine arabe",
@@ -72,11 +72,11 @@ QURAN_KEYWORDS = (
 
 # Projets connus nommables dans un `reasoning` : (mot-clé, rubrique).
 PROJECT_KEYWORDS = (
-    ("batiscope", "projets/batiscope"),
+    ("atelier3d", "projets/atelier3d"),
     ("anamnèse", "projets/anamnese"),
     ("anamnese", "projets/anamnese"),
     ("unification", "projets/unification"),
-    ("deepquran", "savoir-deepquran"),
+    ("applecture", "savoir-applecture"),
 )
 
 
@@ -107,18 +107,18 @@ def _contains_any(content, keywords):
 # rubric_path, conf, keywords). `keywords` = les mots-clés susceptibles de
 # déclencher la règle (None pour les règles purement par rôle) — utilisé par
 # `route_report` pour attribuer chaque hit à son mot-clé déclencheur.
-# L'ordre porte la correction : DeepQuran est testée AVANT Unification —
+# L'ordre porte la correction : AppLecture est testée AVANT Unification —
 # un paper coranique explicite (quran/sourate/…) qui cite incidemment le
-# « calendrier al-husban » (#431/#432) doit gagner deepquran, alors que le
+# « calendrier al-husban » (#431/#432) doit gagner applecture, alors que le
 # vrai paper Unification (Al-Husban Soluno-Stellaire, sans mot-clé coranique)
-# traverse la règle DeepQuran sans matcher et tombe sur Unification. Un
+# traverse la règle AppLecture sans matcher et tombe sur Unification. Un
 # `reasoning` qui nomme un projet est testé AVANT le `reasoning` générique.
 RULES = (
     [
         (
             lambda role, content: role == "reference"
             and _contains_any(content, QURAN_KEYWORDS),
-            "savoir-deepquran",
+            "savoir-applecture",
             0.9,
             QURAN_KEYWORDS,
         ),
@@ -203,8 +203,8 @@ def mots_cles_projets(paths):
             cible = "/".join(seg[: i + 1])
             for v in {nom, nom.replace("-", " "), nom.replace("-", "")}:
                 kw[sans_accents(v)] = cible
-    if "projets/batelia" in paths:                                # ancien nom de Batelia
-        kw["batiscope"] = "projets/batelia"
+    if "projets/chantier3d" in paths:                                # ancien nom de Chantier3D
+        kw["atelier3d"] = "projets/chantier3d"
     return kw
 
 
@@ -332,7 +332,7 @@ def decider(role, content, embedding, paths, rubriques):
       son sous-arbre ; sinon la règle historique d'un reasoning/reference qui nomme un projet
       ou un corpus ; sinon le centroïde ;
     - autres rôles (démon, thought) : règles historiques, sinon centroïde en cosinus BRUT ;
-    - une règle qui vise une rubrique disparue (projets/batiscope) est ignorée."""
+    - une règle qui vise une rubrique disparue (projets/atelier3d) est ignorée."""
     existants = set(paths)
     ruled = route_by_rules(role, content)
     if ruled is not None and ruled[0] not in existants:

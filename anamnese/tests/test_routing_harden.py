@@ -59,9 +59,9 @@ def test_word_boundary_matching():
 
 # --- Cas 2 : anti-cross-talk — les génériques ne routent PLUS vers unification ---
 def test_generic_keywords_no_cross_talk():
-    # « Cosmogonie coranique » : JAMAIS unification (deepquran ou None acceptés)
+    # « Cosmogonie coranique » : JAMAIS unification (applecture ou None acceptés)
     res = routing.route_by_rules("reference", "Cosmogonie coranique : lecture des versets")
-    assert res is None or res[0] == "savoir-deepquran"
+    assert res is None or res[0] == "savoir-applecture"
     # « genesis » générique retiré : aucune règle ne matche (laissé au centroïde)
     assert routing.route_by_rules("reference", "Genesis of black hole binaries") is None
     # « unification » générique retiré aussi (pour les reference)
@@ -70,47 +70,47 @@ def test_generic_keywords_no_cross_talk():
     ) is None
 
 
-# --- Cas 2bis : précédence DeepQuran > Unification sur les reference mixtes ---
-def test_quranic_reference_citing_al_husban_routes_to_deepquran(db):
+# --- Cas 2bis : précédence AppLecture > Unification sur les reference mixtes ---
+def test_quranic_reference_citing_al_husban_routes_to_applecture(db):
     """Non-régression #431/#432 : un paper CORANIQUE qui cite incidemment le
-    « calendrier al-Husban » doit aller dans savoir-deepquran, pas dans
+    « calendrier al-Husban » doit aller dans savoir-applecture, pas dans
     projets/unification — le signal coranique explicite (quran/sourate/…)
-    prime sur une mention al-husban de passage. La règle DeepQuran est donc
+    prime sur une mention al-husban de passage. La règle AppLecture est donc
     évaluée AVANT la règle Unification pour les reference."""
     mixed = (
         "[Paper · Siyam_Ramadan_Root_Analytical_Study_V2.pdf] Ṣiyām and "
         "Ramaḍān in the Quran — A Systematic Root-Analytical Study — si le "
         "calendrier al-Husban (Paper I) est correct, Ramaḍān = M6"
     )
-    assert routing.route_by_rules("reference", mixed) == ("savoir-deepquran", 0.9)
+    assert routing.route_by_rules("reference", mixed) == ("savoir-applecture", 0.9)
 
     # le VRAI paper Unification (aucun mot-clé coranique) reste bien routé :
-    # il traverse la règle DeepQuran sans matcher et tombe sur Unification
+    # il traverse la règle AppLecture sans matcher et tombe sur Unification
     pure = (
         "[Paper · Al-Husban Soluno-Stellaire v5.5] charge topologique "
         "et calendrier soluno-stellaire"
     )
     assert routing.route_by_rules("reference", pure) == ("projets/unification", 0.9)
 
-    # route_report attribue le hit mixte à la règle GAGNANTE (DeepQuran) :
-    # compté dans savoir-deepquran, et « al-husban » ne le crédite pas
+    # route_report attribue le hit mixte à la règle GAGNANTE (AppLecture) :
+    # compté dans savoir-applecture, et « al-husban » ne le crédite pas
     e_mixed = _add_episode(db, "reference", mixed, [0.0, 1.0])
     report = routing.route_report(db)
-    assert report["by_rule_counts"] == {"savoir-deepquran": 1}
+    assert report["by_rule_counts"] == {"savoir-applecture": 1}
     assert e_mixed in report["by_keyword"]["quran"]
     assert e_mixed not in report["by_keyword"].get("al-husban", [])
 
 
 # --- Cas 3 : plancher de similarité — best_sim <= 0 -> (None, 0.0) ---
 def test_similarity_floor_never_negative_conf(db):
-    _set_centroid(db, "projets/batiscope", [1.0, 0.0])
+    _set_centroid(db, "projets/atelier3d", [1.0, 0.0])
 
     # cosinus -1 : plancher -> (None, 0.0), PAS de fallback parent à conf < 0
     assert routing.route_by_centroid(db, [-1.0, 0.0]) == (None, 0.0)
 
     # au-dessus du seuil : route normalement (comportement conservé)
     path, conf = routing.route_by_centroid(db, [0.9, 0.1])
-    assert path == "projets/batiscope"
+    assert path == "projets/atelier3d"
     assert conf == pytest.approx(0.9939, abs=0.001)
 
     # 0 < sim (~0.30) < ROUTE_MIN_CONF=0.35 : fallback parent CONSERVÉ
@@ -147,7 +147,7 @@ def test_route_report_counts_keywords_and_never_writes(db):
     # comptes par rubrique (passe règles UNIQUEMENT, pas de centroïde)
     assert report["by_rule_counts"] == {
         "projets/unification": 2,
-        "savoir-deepquran": 1,
+        "savoir-applecture": 1,
         "relation-identite": 1,
     }
     assert report["unmatched"] == 2  # e4 (reference neutre) + e6 (user)
@@ -192,12 +192,12 @@ def test_route_sample_script_prints_and_never_writes(db, tmp_path, monkeypatch, 
 
     out = capsys.readouterr().out
     assert "projets/unification" in out
-    assert "savoir-deepquran" in out
+    assert "savoir-applecture" in out
     assert f"#{e1}" in out and f"#{e2}" in out
     # extrait tronqué à 80 chars : la fin du contenu long n'apparaît pas
     assert long_ref[:80] in out
     assert long_ref not in out
-    # CHAQUE mot-clé Unification/DeepQuran est listé (même à 0 hit)
+    # CHAQUE mot-clé Unification/AppLecture est listé (même à 0 hit)
     for kw in routing.UNIFICATION_KEYWORDS + routing.QURAN_KEYWORDS:
         assert kw in out
 

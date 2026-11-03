@@ -1,4 +1,4 @@
-"""Provenance « externe » des souvenirs (audit JARVIS 2, H6, et retour de Jiab77 transmis par Hakim, X1 ; accord
+"""Provenance « externe » des souvenirs (audit JARVIS 2, H6, et retour d’un ami d’Ahmed transmis par Hakim, X1 ; accord
 d'Ahmed le 2026-10-20 à 17:11).
 
 Le risque : une page piégée lue par Hakim le jour J devient, la nuit, un « fait » de la mémoire, puis une phrase de

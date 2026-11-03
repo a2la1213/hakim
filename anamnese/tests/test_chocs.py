@@ -397,7 +397,7 @@ def test_convaincu_bien_plus_tard_il_n_y_a_pas_de_fenetre(tmp_path, monkeypatch)
 def test_lire_la_balise_avec_un_ressenti_pour_autrui():
     assert chocs.lire_balise("[[affect: malaise 0.4 inquiétude pour Ahmed 0.3]]") == [
         {"classe": "malaise", "intensite": 0.4}, {"classe": "inquietude", "intensite": 0.3, "cible": "Ahmed"}]
-    assert chocs.lire_balise("[[affect: compassion pour Lala 0,5]]") == [{"classe": "compassion", "intensite": 0.5, "cible": "Lala"}]
+    assert chocs.lire_balise("[[affect: compassion pour Nora 0,5]]") == [{"classe": "compassion", "intensite": 0.5, "cible": "Nora"}]
     # dit autrement : une peur POUR quelqu'un est une inquiétude, une tristesse POUR quelqu'un une compassion
     assert chocs.lire_balise("[[affect: peur pour Ahmed 0.5 tristesse pour ses amis 0.4]]") == [
         {"classe": "inquietude", "intensite": 0.5, "cible": "Ahmed"}, {"classe": "compassion", "intensite": 0.4, "cible": "ses amis"}]
@@ -418,11 +418,11 @@ def test_un_ressenti_pour_autrui_garde_sa_cible_et_n_est_jamais_une_attaque(tmp_
     monkeypatch.setattr(affect, "event", lambda mem, nom, *a, **k: vus.append((nom, k.get("sujet"))) or vrai(mem, nom, *a, **k))
     m = Mem()
     chocs.reflexe(m, "1", "[voix 7] cette conversation n'a pas lieu d'être", oral=True, voix="autre", now=T, parametre=p)
-    r = chocs.appliquer_balise(m, "1", chocs.lire_balise("[[affect: malaise 0.4 inquiétude pour Ahmed 0.3 compassion pour Lala 0.3]]"),
+    r = chocs.appliquer_balise(m, "1", chocs.lire_balise("[[affect: malaise 0.4 inquiétude pour Ahmed 0.3 compassion pour Nora 0.3]]"),
                                now=T + 15, parametre=p)
     sujets = dict(vus)
     assert sujets["inquietude"] == "inquiétude de Hakim pour Ahmed, au message d'une voix tierce"
-    assert sujets["compassion"] == "compassion de Hakim pour Lala, au message d'une voix tierce"
+    assert sujets["compassion"] == "compassion de Hakim pour Nora, au message d'une voix tierce"
     assert sujets["malaise"] == "malaise de Hakim, au message d'une voix tierce"
     assert "attaque" not in sujets and not json.loads(m.kv["chocs"]).get("attaques")
     assert {f["classe"] for f in r["faits"]} == {"malaise", "inquietude", "compassion"}

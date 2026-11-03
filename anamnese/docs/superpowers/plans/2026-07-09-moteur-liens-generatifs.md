@@ -303,7 +303,7 @@ def _seed(conn):
         "CREATE TABLE episodes (id INTEGER PRIMARY KEY, role TEXT, content TEXT, embedding TEXT, rubric_id INTEGER);"
         "CREATE TABLE rubrics (id INTEGER PRIMARY KEY, path TEXT);"
         "CREATE TABLE coactivation (a_id INTEGER, b_id INTEGER, weight REAL, last_ts REAL, PRIMARY KEY(a_id,b_id));")
-    conn.execute("INSERT INTO rubrics VALUES (1,'projets/physique'),(2,'projets/batiscope')")
+    conn.execute("INSERT INTO rubrics VALUES (1,'projets/physique'),(2,'projets/atelier3d')")
     # 1 & 2 : mi-distance (cos~0.5), rubriques ≠  -> FERTILE
     # 1 & 3 : quasi-identiques (cos~1) -> trop proche, écarté
     import math
@@ -537,7 +537,7 @@ class FakeMem:
     def log_coactivation(self, ids, now, boost=0.05): self.coact.append(tuple(ids)); return 1
 
 def _seed_pairs(conn):
-    conn.execute("INSERT INTO rubrics VALUES (1,'projets/physique'),(2,'projets/batiscope')")
+    conn.execute("INSERT INTO rubrics VALUES (1,'projets/physique'),(2,'projets/atelier3d')")
     conn.execute("INSERT INTO episodes (id,role,content,embedding,importance,rubric_id) VALUES "
         "(1,'semantic','les 0 et 1 en rotation',?,0.5,1),(2,'semantic','interactions imparfaites',?,0.5,2)",
         (json.dumps([1.0,0.0,0.0]), json.dumps([0.6,0.8,0.0])))

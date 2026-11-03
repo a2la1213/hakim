@@ -1247,7 +1247,7 @@ ECRITURES_COCKPIT = Path.home() / "AIOS" / "jarvis" / "ecritures-cockpit" / "ecr
 @mcp.tool()
 def proposer_ecriture(projet: str, fichier: str, ancien: str, nouveau: str, raison: str) -> str:
     """Propose UNE écriture précise dans un projet d'Ahmed (accord d'Ahmed, 2026-10-22) : projet (son dossier, ex.
-    « ~/Desktop/mybuildbot »), fichier (chemin relatif au projet), ancien (le texte EXACT à remplacer, présent une seule
+    « ~/Desktop/botbatiment »), fichier (chemin relatif au projet), ancien (le texte EXACT à remplacer, présent une seule
     fois ; vide pour un fichier neuf), nouveau (le texte qui le remplace), raison (une phrase). Rien ne s'écrit sans le
     geste d'Ahmed dans Parler ; appliquée, c'est un commit à part, qu'il peut annuler (git revert). Le cockpit refuse
     ton propre code, ton atelier, le cockpit, ce que le Mac exécute seul, .git, .env et les réglages. Une proposition =
@@ -1696,7 +1696,7 @@ def _origine():
 
 @mcp.tool()
 def self_update(text: str, confirm: str = "") -> str:
-    """PROPOSE un nouveau CŒUR de l'identité. Depuis le 2026-10-20 (retour de Jiab77, accord d'Ahmed), l'identité
+    """PROPOSE un nouveau CŒUR de l'identité. Depuis le 2026-10-20 (retour d’un ami d’Ahmed, accord d'Ahmed), l'identité
     ne change que par une différence qu'Ahmed valide : rien n'est écrit tant qu'il n'a pas tranché (cockpit, carte
     « identité »). Le cœur actuel et les 5 précédents restent gardés."""
     ok, raison, pid = identity.proposer(_mem, "coeur", text, _origine())
@@ -1709,7 +1709,7 @@ def self_update(text: str, confirm: str = "") -> str:
 @mcp.tool()
 def self_append(phrase: str) -> str:
     """PROPOSE une phrase à la 1re personne pour la couche « évolution » de l'identité. Depuis le 2026-10-20
-    (retour de Jiab77, accord d'Ahmed), l'identité ne change que par une différence qu'Ahmed valide : la phrase
+    (retour d’un ami d’Ahmed, accord d'Ahmed), l'identité ne change que par une différence qu'Ahmed valide : la phrase
     attend sa décision. Refuse les doublons, les reniements et les phrases hors 10..200 caractères."""
     ok, raison, pid = identity.proposer(_mem, "phrase", phrase, _origine())
     if not ok:

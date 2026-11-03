@@ -2,7 +2,7 @@
 découpé par voix.
 
 Convention du texte (jarvis/empreinte_vocale.py) : ce qui n'est pas étiqueté est d'Ahmed ; une autre voix est annoncée
-(« [voix 2] … », ou son nom si elle est connue : « [Lala] … »), et le retour d'Ahmed aussi (« [Ahmed] … »). L'étiquette
+(« [voix 2] … », ou son nom si elle est connue : « [Nora] … »), et le retour d'Ahmed aussi (« [Ahmed] … »). L'étiquette
 de l'échange (voix = ahmed / autre / plusieurs / doute ; absente = message tapé) dit à qui appartient le début non étiqueté.
 
 Sortie (privée, jamais versionnée) : eval/data/chocs/segments.jsonl, et des tranches lisibles pour les annotateurs.

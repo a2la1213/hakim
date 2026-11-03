@@ -29,12 +29,12 @@ ACTIF = {"actif": True}
 
 def test_rien_sans_quelque_chose_de_concret_ni_la_nuit_ni_s_il_est_la(mem):
     assert S.solliciter(mem, now=_a(14), inter=ACTIF, absence_s=3600) is None                # rien à dire
-    S.ajouter_envie(mem, "occupation", "retour", "J'ai préparé ton retour : on reprend le devis Vilmarkt ?", now=_a(13))
+    S.ajouter_envie(mem, "occupation", "retour", "J'ai préparé ton retour : on reprend le devis Exemplia ?", now=_a(13))
     assert S.solliciter(mem, now=_a(2), inter=ACTIF, absence_s=3600) is None                 # la nuit
     assert S.solliciter(mem, now=_a(14), inter=ACTIF, absence_s=300) is None                 # il est là
     assert S.solliciter(mem, now=_a(14), inter={"actif": False}, absence_s=3600) is None     # en pause
     t = S.solliciter(mem, now=_a(14), inter=ACTIF, absence_s=3600)
-    assert t and "Vilmarkt" in t
+    assert t and "Exemplia" in t
     (c,) = mem.db.execute("SELECT content FROM episodes WHERE role='outreach'").fetchone()
     assert c.startswith("(relance)")
 

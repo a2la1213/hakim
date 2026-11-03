@@ -6,7 +6,7 @@ pendant des lives, des invités et des proches. Chaque ligne :
 
     [identifiant] jour heure — qui parle (selon le système) : texte
 
-« qui parle » vient d'une empreinte vocale qui peut se tromper : « voix 129 », « Lala » = un tiers ; « Ahmed (tapé) » = un
+« qui parle » vient d'une empreinte vocale qui peut se tromper : « voix 129 », « Nora » = un tiers ; « Ahmed (tapé) » = un
 message écrit, donc sûrement Ahmed ; « début d'échange, voix=… » = le système n'est pas sûr. Lis dans l'ordre : le sens
 d'une phrase dépend souvent de ce qui précède.
 

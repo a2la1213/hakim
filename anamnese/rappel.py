@@ -151,7 +151,7 @@ NOM_VOIX = re.compile(r"\[([^\[\]\d]{2,30})\]")
 
 
 def noms_entendus(texte):
-    """Les voix connues nommées dans la transcription (« [Lala] bonjour ») : ni Ahmed, ni une « voix 2 » anonyme."""
+    """Les voix connues nommées dans la transcription (« [Nora] bonjour ») : ni Ahmed, ni une « voix 2 » anonyme."""
     out = []
     for n in NOM_VOIX.findall(texte or ""):
         n = n.strip()
@@ -777,7 +777,7 @@ def jardin_pertinent(texte, embed=None, index=None, exclus=()):
     return {"lignes": lignes, "ids": ids, "scores": gardes}
 
 
-# (26/10, Ahmed : « le balayage est trop étroit » ; à 13:17 Hakim a nié devant Lala ce qu'il avait dit d'elle à 08:37) quand
+# (26/10, Ahmed : « le balayage est trop étroit » ; à 13:17 Hakim a nié devant Nora ce qu'il avait dit d'elle à 08:37) quand
 # un message NOMME une personne connue (une voix enregistrée, ou une voix nommée dans la transcription), une section « ce que
 # tu sais d'elle » : ses souvenirs les plus récents (même du jour) et les passages du journal brut du jour qui la nomment.
 VOIX_CONNUES = Path.home() / "AIOS" / "jarvis" / "voix-connues.json"
@@ -786,7 +786,7 @@ PERSONNE_SOUVENIRS, PERSONNE_JOURNAL = 4, 3
 
 
 def personnes_nommees(texte, voix=None):
-    """Les personnes connues nommées dans le message (leur nom, ou une voix nommée « [Lala] ») ; jamais Ahmed."""
+    """Les personnes connues nommées dans le message (leur nom, ou une voix nommée « [Nora] ») ; jamais Ahmed."""
     noms = []
     try:
         noms = [str(v.get("nom") or "") for v in json.loads(Path(voix or VOIX_CONNUES).read_text())]
@@ -794,7 +794,7 @@ def personnes_nommees(texte, voix=None):
         pass
     plat_t = " " + _plat(texte) + " "
     out, vus = [], set()
-    for n in noms:                                           # leur nom tel qu'enregistré (« Lala », « Légendaire »)
+    for n in noms:                                           # leur nom tel qu'enregistré (« Nora », « Légendaire »)
         pn = _plat(n).strip()
         if pn and pn != "ahmed" and pn not in vus and re.search(r"(?<![a-z0-9])" + re.escape(pn) + r"(?![a-z0-9])", plat_t):
             out.append(n.strip()); vus.add(pn)

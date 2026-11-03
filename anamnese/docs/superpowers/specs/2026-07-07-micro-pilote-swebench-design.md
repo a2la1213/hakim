@@ -11,7 +11,7 @@ Tout doit tenir dans le **forfait Claude Code Max (~125 $ / fenêtre d'usage)**.
 
 ## Ce que ce pilote mesure VRAIMENT (honnêteté de périmètre)
 
-Sur des repos SWE-bench **étrangers** (flask, sqlfluff…), notre **mémoire Anamnèse est inerte** : elle contient les projets d'Ahmed (Batiscope/anamnese/Coran), rien sur ces repos → aucun recall pertinent. Donc le micro-pilote isole et teste la **discipline de vérification** de notre setup (protocole CLAUDE.md + systematic-debugging + TDD + auto-réfutation adversariale + prouvé/plausible), **pas** la mémoire ni l'orchestration lourde.
+Sur des repos SWE-bench **étrangers** (flask, sqlfluff…), notre **mémoire Anamnèse est inerte** : elle contient les projets d'Ahmed (Atelier3D/anamnese/Coran), rien sur ces repos → aucun recall pertinent. Donc le micro-pilote isole et teste la **discipline de vérification** de notre setup (protocole CLAUDE.md + systematic-debugging + TDD + auto-réfutation adversariale + prouvé/plausible), **pas** la mémoire ni l'orchestration lourde.
 - **Mémoire** : sa valeur se prouve sur du travail RÉPÉTÉ dans le MÊME codebase (déjà mesurée en partie par `eval/longmemeval.py`) — hors périmètre ici.
 - **Atelier/tournoi** : artillerie pour features multi-modules — inutile et hors-budget sur un patch mono-issue — un autre bench, plus tard.
 

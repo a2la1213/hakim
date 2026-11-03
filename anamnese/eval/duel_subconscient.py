@@ -1,5 +1,5 @@
 """Le duel du subconscient (point 35 de la liste du 2026-10-19 ; « ouiii », Ahmed, 2026-10-20) : notre Gemma 4 12B
-abliterated (huihui_ai) contre LiquidAI LFM2.5-8B-A1B (le modèle recommandé par le dépôt ai-pipeline de Jiab77).
+abliterated (huihui_ai) contre LiquidAI LFM2.5-8B-A1B (le modèle recommandé par un ami).
 
 Méthode (critères d'Ahmed « trois juges », compétence jugement-du-sens-trois-juges) :
 - 30 situations RÉELLES du subconscient : 30 instants pris dans le journal brut du 16 au 20/10 ; à chacun, la

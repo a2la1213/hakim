@@ -73,7 +73,7 @@ test('découpeur : abréviations, listes et guillemets (relecture Opus, 2026-10-
 });
 
 test('liens markdown : on dit le nom du site, pas l\'adresse', () => {
-  assert.strictEqual(Voix.pourLaVoix('Source : [AccuWeather](https://www.accuweather.com/fr/ch/lausanne).'), 'Source : AccuWeather.');
+  assert.strictEqual(Voix.pourLaVoix('Source : [AccuWeather](https://www.accuweather.com/fr/ch/exempleville).'), 'Source : AccuWeather.');
 });
 
 test('formules de maths : la voix dit la version parlée, jamais le LaTeX (2026-10-21)', () => {

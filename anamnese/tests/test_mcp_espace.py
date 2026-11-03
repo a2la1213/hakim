@@ -25,7 +25,7 @@ def _serveur(tmp_path, monkeypatch, contenu):
 def test_l_espace_se_fouille_par_les_mots_sans_accents(tmp_path, monkeypatch):
     lignes = [{"id": 1, "l": "#1 · 01/09/26 · projets · le gâteau de l'anniversaire de sa fille", "choisi": True},
               {"id": 2, "l": "#2 · 02/09/26 · projets · réglage du routeur de mémoire", "choisi": False},
-              {"id": 3, "l": "#3 · 03/09/26 · projets · anniversaire de Lala, le gateau au chocolat", "choisi": False}]
+              {"id": 3, "l": "#3 · 03/09/26 · projets · anniversaire de Nora, le gateau au chocolat", "choisi": False}]
     s = _serveur(tmp_path, monkeypatch, {"session": "s1", "maj": time.time() * 1000, "lignes": lignes})
     r = s.espace_conversation("gateau anniversaire")
     assert "3 souvenirs balayés" in r and "1 déjà reçu" in r

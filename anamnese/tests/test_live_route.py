@@ -32,7 +32,7 @@ def mem(tmp_path):
     )
     m.db.execute(
         "UPDATE rubrics SET centroid='[0.0, 1.0]', centroid_n=1 "
-        "WHERE path='savoir-deepquran'"
+        "WHERE path='savoir-applecture'"
     )
     m.db.commit()
     yield m

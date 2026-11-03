@@ -3,7 +3,7 @@
 Mise en place le 2026-07-01. Principe : **on route chaque rôle vers l'exigence réelle**, pas un tier aveugle.
 Insight clé : **l'edge différentiel de Fable est dans la VÉRIFICATION adversariale, pas le codage courant** (bien servi par Sonnet 5 / Opus, moins chers).
 
-## Routing (17 agents mybuildbot + orchestrateur)
+## Routing (17 agents botbatiment + orchestrateur)
 
 | Modèle | Rôles | Pourquoi |
 |---|---|---|

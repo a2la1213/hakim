@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""lex.py — lookup dans le LEXIQUE DeepQuran (1906 racines) À LA DEMANDE.
+"""lex.py — lookup dans le LEXIQUE AppLecture (1906 racines) À LA DEMANDE.
 
 Le lexique n'est PAS embarqué dans la mémoire RAG d'Anamnèse (base structurée
 volumineuse → on la noierait + bruit au recall). On l'interroge ICI, par racine
@@ -15,7 +15,7 @@ import re
 import json
 from pathlib import Path
 
-LEX = Path("/Users/admin/Desktop/DeepQuran_v2/DeepQuran-App/deepquran_lexicon.json")
+LEX = Path("/Users/admin/Desktop/AppLecture_v2/AppLecture-App/applecture_lexicon.json")
 
 
 def norm(s):

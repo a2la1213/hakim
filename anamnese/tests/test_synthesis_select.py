@@ -9,9 +9,9 @@ def _seed(conn):
         "CREATE TABLE episodes (id INTEGER PRIMARY KEY, role TEXT, content TEXT, embedding TEXT, rubric_id INTEGER);"
         "CREATE TABLE rubrics (id INTEGER PRIMARY KEY, path TEXT);"
         "CREATE TABLE coactivation (a_id INTEGER, b_id INTEGER, weight REAL, last_ts REAL, PRIMARY KEY(a_id,b_id));")
-    # rubriques de TÊTE distinctes (physique vs batiscope) — la nouveauté naît
+    # rubriques de TÊTE distinctes (physique vs atelier3d) — la nouveauté naît
     # aux frontières de domaine ; top_rubric = path.split('/',1)[0].
-    conn.execute("INSERT INTO rubrics VALUES (1,'physique/quantique'),(2,'batiscope/optique')")
+    conn.execute("INSERT INTO rubrics VALUES (1,'physique/quantique'),(2,'atelier3d/optique')")
     # 1 & 2 : mi-distance (cos~0.5), rubriques ≠  -> FERTILE
     # 1 & 3 : quasi-identiques (cos~1) -> trop proche, écarté
     import math

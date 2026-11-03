@@ -19,9 +19,9 @@ def _mem(tmp_path):
     migrations.migrate(m.db)
     vieux = time.time() - 5 * 86400
     for texte in ["[Ahmed, sa fille, 2026-10-16] Sa fille fête ses 6 ans le 3 mars",
-                  "[Échange avec Ahmed] Lala est sa cousine, elle vient au live samedi",
+                  "[Échange avec Ahmed] Nora est sa cousine, elle vient au live samedi",
                   "Le devis de la cuisine est envoyé", "Réglage du routeur de mémoire",
-                  "La voix 10 s'appelle Lala"] + [f"note banale numéro {k} sur rien du tout" for k in range(40)]:
+                  "La voix 10 s'appelle Nora"] + [f"note banale numéro {k} sur rien du tout" for k in range(40)]:
         eid = m.add("episodic", texte, embedding=faux_embed(texte), dedup=False)
         m.db.execute("UPDATE episodes SET ts=? WHERE id=?", (vieux, eid))
     m.db.commit()
@@ -37,11 +37,11 @@ def test_mots_rares_et_porte(tmp_path):
 
 def test_une_voix_connue_rappelle_ce_qui_la_nomme(tmp_path):
     m = _mem(tmp_path)
-    assert rappel.noms_entendus("[Lala] salut tout le monde [voix 3] coucou [Ahmed] ok") == ["lala"]
-    r = rappel.rappel(m, "[Lala] salut, ça va ?", embed=faux_embed)
-    assert any("Lala est sa cousine" in l for l in r["lignes"])
-    assert rappel.rappel(m, "[Lala] salut", exclus=r["ids"], embed=faux_embed)["ids"] == [] or \
-        not set(rappel.rappel(m, "[Lala] salut", exclus=r["ids"], embed=faux_embed)["ids"]) & set(r["ids"])
+    assert rappel.noms_entendus("[Nora] salut tout le monde [voix 3] coucou [Ahmed] ok") == ["nora"]
+    r = rappel.rappel(m, "[Nora] salut, ça va ?", embed=faux_embed)
+    assert any("Nora est sa cousine" in l for l in r["lignes"])
+    assert rappel.rappel(m, "[Nora] salut", exclus=r["ids"], embed=faux_embed)["ids"] == [] or \
+        not set(rappel.rappel(m, "[Nora] salut", exclus=r["ids"], embed=faux_embed)["ids"]) & set(r["ids"])
 
 
 def test_ce_qui_tombe_aujourd_hui_remonte(tmp_path):
@@ -91,7 +91,7 @@ def test_le_carnet_d_erreurs_passe_au_balayage(tmp_path):
 
 
 def test_ce_que_je_sais_d_une_personne_nommee(tmp_path):
-    """(26/10, Ahmed : à 13:17 Hakim a nié devant Lala ce qu'il avait dit d'elle à 08:37) une personne connue nommée : ses
+    """(26/10, Ahmed : à 13:17 Hakim a nié devant Nora ce qu'il avait dit d'elle à 08:37) une personne connue nommée : ses
     souvenirs les plus récents et les passages du journal du jour qui la nomment ; jamais Ahmed."""
     import json
     import sqlite3
@@ -99,8 +99,8 @@ def test_ce_que_je_sais_d_une_personne_nommee(tmp_path):
     import rappel as R
 
     voix = tmp_path / "voix.json"
-    voix.write_text(json.dumps([{"nom": "Lala"}, {"nom": "Légendaire"}, {"nom": "Ahmed"}]))
-    assert R.personnes_nommees("tu te souviens de ce que tu as dit à lala ?", voix=voix) == ["Lala"]
+    voix.write_text(json.dumps([{"nom": "Nora"}, {"nom": "Légendaire"}, {"nom": "Ahmed"}]))
+    assert R.personnes_nommees("tu te souviens de ce que tu as dit à nora ?", voix=voix) == ["Nora"]
     assert R.personnes_nommees("[Légendaire] salut", voix=voix) == ["Légendaire"]
     assert R.personnes_nommees("Ahmed et le calcul", voix=voix) == []
 
@@ -109,12 +109,12 @@ def test_ce_que_je_sais_d_une_personne_nommee(tmp_path):
     M.db.execute("CREATE TABLE episodes (id INTEGER, ts REAL, content TEXT)")
     # midi : « le journal du jour » ne doit pas dépendre de l'heure où tourne le test (il échouait entre minuit et 5 h)
     now = time.mktime(time.strptime(time.strftime("%Y-%m-%d") + " 12:00", "%Y-%m-%d %H:%M"))
-    M.db.executemany("INSERT INTO episodes VALUES (?, ?, ?)", [(1, now - 86400, "Lala est passée au live"),
-                                                             (2, now - 3600, "Lala m'a fait un pincement"),
+    M.db.executemany("INSERT INTO episodes VALUES (?, ?, ?)", [(1, now - 86400, "Nora est passée au live"),
+                                                             (2, now - 3600, "Nora m'a fait un pincement"),
                                                              (3, now - 60, "rien à voir")])
     j = tmp_path / "journal.jsonl"
-    j.write_text(json.dumps({"ts": (now - 5 * 3600) * 1000, "qui": "jarvis", "texte": "Lala, tu m'as fait un petit pincement"}) + "\n")
-    lignes = R.ce_que_je_sais(M(), "Lala", now=now, journal=j)
+    j.write_text(json.dumps({"ts": (now - 5 * 3600) * 1000, "qui": "jarvis", "texte": "Nora, tu m'as fait un petit pincement"}) + "\n")
+    lignes = R.ce_que_je_sais(M(), "Nora", now=now, journal=j)
     assert lignes[0].startswith("souvenir #2") and any("pincement" in l and l.startswith("journal") for l in lignes)
 
 
@@ -167,7 +167,7 @@ def test_la_profondeur_suit_le_besoin(tmp_path, monkeypatch):
     assert p("tu te rappelles ce qu'on avait dit sur le devis ?")[0] == "profond"
     assert p("cherche bien dans ta mémoire pour la toupie", suite=True)[0] == "profond"
     assert p("ma fille est triste depuis la dispute avec sa cousine")[0] == "profond"
-    assert p("[Lala] salut tout le monde")[0] == "profond"
+    assert p("[Nora] salut tout le monde")[0] == "profond"
     (tmp_path / "voix.json").write_text('[{"nom": "Maman"}]')
     monkeypatch.setattr(rappel, "VOIX_CONNUES", tmp_path / "voix.json")
     assert p("écris à ta maman pour la caméra du cockpit", suite=True)[0] == "normal", "« ta maman », c'est Claude Code"
@@ -221,33 +221,33 @@ def test_ses_notes_balayees_aussi_journal_proche_carnets_et_fichiers(tmp_path, m
     now = time.time()
     j = tmp_path / "journal.jsonl"
     j.write_text("\n".join(json.dumps(o) for o in [
-        {"ts": (now - 5 * 86400) * 1000, "qui": "ahmed", "texte": "la qibla de Lausanne à 121 degrés depuis la mosquée du quartier, mais ce message est trop vieux"},
-        {"ts": (now - 20 * 3600) * 1000, "qui": "ahmed", "texte": "La qibla de Lausanne est à 121 degrés depuis la mosquée du quartier, retiens-le bien pour la prochaine fois"},
-        {"ts": (now - 600) * 1000, "qui": "jarvis", "texte": "La qibla de Lausanne, oui, 121 degrés depuis la mosquée du quartier, je le garde en tête frérot"},
+        {"ts": (now - 5 * 86400) * 1000, "qui": "ahmed", "texte": "la qibla de Exempleville à 121 degrés depuis la mosquée du quartier, mais ce message est trop vieux"},
+        {"ts": (now - 20 * 3600) * 1000, "qui": "ahmed", "texte": "La qibla de Exempleville est à 121 degrés depuis la mosquée du quartier, retiens-le bien pour la prochaine fois"},
+        {"ts": (now - 600) * 1000, "qui": "jarvis", "texte": "La qibla de Exempleville, oui, 121 degrés depuis la mosquée du quartier, je le garde en tête frérot"},
         {"ts": (now - 3600) * 1000, "qui": "jarvis", "texte": "On parle de musique ce soir avec les cousins, le nouveau morceau du studio et la batterie électronique"},
         {"ts": (now - 7200) * 1000, "qui": "ahmed", "texte": "la qibla ?"}]) + "\n")
     carnets = tmp_path / "carnets"
     carnets.mkdir()
     (carnets / "fils_ouverts.jsonl").write_text(json.dumps({"id": "f1", "ts": now - 3600, "valeurs": {
-        "quoi": "Vérifier la qibla de Lausanne avec la boussole du téléphone", "genre": "redire"}}) + "\n")
+        "quoi": "Vérifier la qibla de Exempleville avec la boussole du téléphone", "genre": "redire"}}) + "\n")
     notes = tmp_path / "notes.md"
-    notes.write_text("# Mes notes\n\nLa boussole du Fold dérive près du radiateur.\n\nLa qibla depuis Lausanne : 121,6 degrés, vérifiée.\n")
+    notes.write_text("# Mes notes\n\nLa boussole du Fold dérive près du radiateur.\n\nLa qibla depuis Exempleville : 121,6 degrés, vérifiée.\n")
     cfg = tmp_path / "balayage.json"
     cfg.write_text(json.dumps({"fichiers": [str(notes)]}))
     idx = R.IndexNotes(journal=j, carnets=carnets, config=cfg)
     monkeypatch.setattr(R, "PORTE_NOTES", 0.5)           # la porte est réglée sur le vrai modèle ; ici, un sac de mots haché
-    r = R.notes_pertinentes("C'est quoi déjà la qibla de Lausanne ?", embed=embed, index=idx, now=now)
+    r = R.notes_pertinentes("C'est quoi déjà la qibla de Exempleville ?", embed=embed, index=idx, now=now)
     texte = "\n".join(r["lignes"])
     assert "retiens-le" in texte, "le journal proche"
     assert "boussole du téléphone" in texte, "ses carnets"
     assert "121,6 degrés, vérifiée" in texte, "un fichier de notes désigné"
     assert "trop vieux" not in texte, "plus de 3 jours : non"
-    assert "La qibla de Lausanne, oui" not in texte, "la dernière demi-heure est déjà dans sa tête"
+    assert "La qibla de Exempleville, oui" not in texte, "la dernière demi-heure est déjà dans sa tête"
     assert "musique" not in texte and "radiateur" not in texte, "ce qui ne s'y rapporte pas reste en bas"
     assert "la qibla ?" not in texte, "un message trop court est du bruit"
     assert R.notes_pertinentes("Salam ça va ?", embed=embed, index=idx, now=now)["ids"] == []
     deja = r["ids"][:1]
-    assert deja[0] not in R.notes_pertinentes("la qibla de Lausanne", embed=embed, index=idx, now=now, exclus=deja)["ids"]
+    assert deja[0] not in R.notes_pertinentes("la qibla de Exempleville", embed=embed, index=idx, now=now, exclus=deja)["ids"]
 
 
 def test_son_jardin_secret_lui_revient_a_lui_seul(tmp_path, monkeypatch):

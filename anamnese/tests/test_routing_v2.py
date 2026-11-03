@@ -11,11 +11,11 @@ route_episode), centroïdes leave-one-out. Les chiffres et leurs limites sont da
    en mode centré, aucun seuil ni repli au parent (ils envoyaient 28 % des insights à la
    racine « projets ») : seul le plancher ≤ 0 donne None.
 3. Gardes : centroïdes non finis écartés ; vecteur nul → None.
-4. Une règle historique vers une rubrique disparue (projets/batiscope) est ignorée.
+4. Une règle historique vers une rubrique disparue (projets/atelier3d) est ignorée.
 5. « thought » garde son comportement historique (relation-identite).
 
 Prédiction écrite avant le correctif : les tests de collisions, de sous-arbre, de seuil,
-de NaN, de vecteur nul, de batiscope et de thought échouent sur la version relue.
+de NaN, de vecteur nul, de atelier3d et de thought échouent sur la version relue.
 """
 
 import json
@@ -28,9 +28,9 @@ import routing
 
 ARBRE = ["projets", "projets/anamnese", "projets/anamnese/daemon-consolidation", "projets/robot-ia",
          "projets/quran-study", "projets/quran-study/openrasm", "projets/quran-study/histoire-du-texte",
-         "projets/proxipro", "projets/proxipro/qa", "projets/tradelab", "projets/tradelab/strategies",
-         "projets/axai-distillation", "projets/axai-distillation/compression", "projets/batelia",
-         "projets/synod-it", "projets/synod-it/astronomie", "projets/studio51music", "projets/lvx",
+         "projets/proxipro", "projets/proxipro/qa", "projets/labmarches", "projets/labmarches/strategies",
+         "projets/axai-distillation", "projets/axai-distillation/compression", "projets/chantier3d",
+         "projets/synod-it", "projets/synod-it/astronomie", "projets/studiostudioclient", "projets/lvx",
          "projets/unification", "sciences", "sciences/physique", "relation-identite", "meta-apprentissage"]
 KW = routing.mots_cles_projets(ARBRE)
 
@@ -54,8 +54,8 @@ def test_projet_en_tete():
         # collisions relevées par la relecture : le projet nommé en premier l'emporte
         "[Proxipro] Stratégies de prix": "projets/proxipro",
         "[Anamnèse] compression des souvenirs": "projets/anamnese",
-        "[Batelia] astronomie du chantier": "projets/batelia",
-        "[Studio51music] histoire du texte des paroles": "projets/studio51music",
+        "[Chantier3D] astronomie du chantier": "projets/chantier3d",
+        "[Studiostudioclient] histoire du texte des paroles": "projets/studiostudioclient",
         # frontières de mot
         "Réflexion métaphysique sur le temps": None,
         "RÉUNIFICATION des sciences": None,
@@ -161,7 +161,7 @@ def test_en_tete_puis_sous_rubrique_par_centroide(tmp_path):
 
 def test_regle_vers_rubrique_disparue_ignoree(tmp_path):
     conn = _base(tmp_path)
-    row = {"role": "reasoning", "content": "[Anamnèse] debug : on avait corrigé ça dans Batiscope",
+    row = {"role": "reasoning", "content": "[Anamnèse] debug : on avait corrigé ça dans Atelier3D",
            "embedding": json.dumps([0.1] * 16)}
     assert routing.route_episode(conn, row) == ("projets/anamnese", routing.CONF_PROJET_EN_TETE)
     conn.close()

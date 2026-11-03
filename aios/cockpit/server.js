@@ -3132,7 +3132,7 @@ function filRecent(n, messageDuTour) {
 // je doive lui dire de mémoriser ») : chaque échange part dans une file que le démon d'Anamnèse lit (echanges.py)
 // et encre selon l'attention ; la consolidation de nuit décide ensuite ce qui reste.
 const JARVIS_ECHANGES = path.join(JARVIS, 'echanges-a-memoriser.jsonl');
-// Provenance « externe » (audit JARVIS 2, H6 ; retour de Jiab77, X1 ; accord d'Ahmed le 2026-10-20 à 17:11) : un
+// Provenance « externe » (audit JARVIS 2, H6 ; retour d’un ami d’Ahmed, X1 ; accord d'Ahmed le 2026-10-20 à 17:11) : un
 // tour qui lit un contenu de tiers est marqué. La marque (une ligne par source, en ajout seul — la passerelle du
 // terminal y note aussi ses sorties réseau) dit au serveur de mémoire de Hakim que ce qu'il écrit pendant ce tour
 // vient du dehors ; à la fin du tour, le cockpit la lit pour marquer l'échange, puis la retire (anamnese/provenance.py).
@@ -5528,7 +5528,7 @@ const EMPANS = 8, MOTS_PAR_EMPAN = 25;   // (31/10, 00:40-00:45 : 5 puis 3 ; 00:
 // (31/10, 00:06, Ahmed : « pas 8 empans obligatoires : il doit sélectionner entre 1 et 8 ») son attention ne garde que les empans qui
 // le concernent (une question, « tu », son nom, un sujet qui le touche) et toujours le dernier ; 8 au plus, 1 au moins
 /* (31/10, 00:09, Ahmed : « il doit aussi pouvoir diriger son attention de façon consciente, mais aussi subconsciente : les deux
-   possibilités ») subconsciente : ce qui le concerne (POUR_LUI) ; consciente : ce qu'il a choisi de suivre, par [[attention: Lala,
+   possibilités ») subconsciente : ce qui le concerne (POUR_LUI) ; consciente : ce qu'il a choisi de suivre, par [[attention: Nora,
    la musique]] (10 min ; [[attention: libre]] la rend à son subconscient). Les deux choisissent ses empans et ouvrent son oreille. */
 let attentionConsciente = null;                    // { mots: [...], motif: RegExp, jusqua }
 const BALISE_ATTENTION = /\[\[\s*attention\s*:\s*([^\]]{1,200})\]\]/i;
@@ -7043,7 +7043,7 @@ function courrierVersHakim(sujet, texte) {
     sujet: String(sujet).slice(0, 200), texte: String(texte).slice(0, 8000) };
   try { fs.appendFileSync(COURRIER, j(m) + '\n'); } catch (e) { console.error('missions : courrier impossible', e.message); }
 }
-// L'identité de Hakim ne change que par une différence qu'Ahmed valide (retour de Jiab77 transmis par Hakim, X1 ;
+// L'identité de Hakim ne change que par une différence qu'Ahmed valide (retour d’un ami d’Ahmed transmis par Hakim, X1 ;
 // accord d'Ahmed le 2026-10-20 à 17:11). La nuit, le rêve local, une session PROPOSENT (anamnese/identity.py) ; le
 // cockpit montre la proposition (carte dans Parler, notification) et transmet la décision d'Ahmed (même garde que
 // les missions : jeton de la page, et passkey depuis le téléphone).

@@ -181,7 +181,7 @@ def test_load_queries_jsonl(tmp_path):
     p = tmp_path / "queries.jsonl"
     lignes = [
         {"query": "daemon anamnese", "expected": [12, 34], "note": "n1"},
-        {"query": "batiscope", "expected": [56], "note": "n2"},
+        {"query": "atelier3d", "expected": [56], "note": "n2"},
     ]
     p.write_text(
         "\n".join(json.dumps(l, ensure_ascii=False) for l in lignes) + "\n",

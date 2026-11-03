@@ -29,9 +29,9 @@ def test_sans_evenement_c_est_une_pente_et_c_est_dit():
 
 
 def test_empathie_et_soi_meles():
-    o = O.origine("tristesse", [ev(200, "compassion", 0.4, "compassion de hakim pour lala, au message d'une voix tierce"),
+    o = O.origine("tristesse", [ev(200, "compassion", 0.4, "compassion de hakim pour nora, au message d'une voix tierce"),
                                 ev(250, "tristesse", 0.4, "tristesse de hakim, au message d'ahmed")], T)
-    assert o == {"type": "mixte", "texte": "par empathie (pour Lala) et pour lui-même"}
+    assert o == {"type": "mixte", "texte": "par empathie (pour Nora) et pour lui-même"}
 
 
 def test_les_cibles_et_le_malaise():

@@ -34,7 +34,7 @@ MODELE_BRAS = "claude-sonnet-5-5"
 MODELE_JUGE = "claude-opus-5-5"
 VERSION_METRIQUES = 2
 SCORE = {"correct": 1.0, "partiel": 0.5, "faux": 0.0, "abstention": 0.0}
-SYSTEME = ("Tu es l'assistant d'Ahmed Alla Eddine Ouared. Réponds à sa question en 1 à 3 phrases, en "
+SYSTEME = ("Tu es l'assistant d'Ahmed. Réponds à sa question en 1 à 3 phrases, en "
            "français, avec précision. Si tu ne connais pas la réponse, dis-le simplement (« je ne sais "
            "pas ») au lieu d'inventer. Termine TOUJOURS par une dernière ligne « CONFIANCE: N », N entre "
            "0 et 100 étant ta probabilité d'avoir juste.")

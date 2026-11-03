@@ -29,14 +29,14 @@ test('(26/10) une personne nommée : ce que Hakim sait d’elle, une fois par co
   const ctx = { Date, String, JSON, Set, Map, Object, Array, j: JSON.stringify, fs: { appendFileSync() {} }, JARVIS_RAPPEL_JOURNAL: '/dev/null',
     rappelDejaDits: new Map(), erreursDejaDites: new Map(), personnesDejaDites: new Map(), notesDejaDites: new Map(), intimeDejaDites: new Map(), neutraliser: (t) => t,
     espaces: new Map(), ecrireAtomique() {}, JARVIS_ESPACE: '/dev/null', TRI_ACTIF: false };
-  ctx.rappeler = async () => ({ lignes: [], ids: [], personnes: { Lala: ['journal · 08:37 · toi : « tu m’as fait un pincement »'] } });
+  ctx.rappeler = async () => ({ lignes: [], ids: [], personnes: { Nora: ['journal · 08:37 · toi : « tu m’as fait un pincement »'] } });
   vm.createContext(ctx);
   vm.runInContext('async ' + ['blocRappel', 'retenirRappel', 'blocDonnees', 'espaceDe', 'espaceAjouter', 'sansProvenance'].map(prendre).join('\n') + 'this.f = { blocRappel, retenirRappel };', ctx);
-  const b = await ctx.f.blocRappel('s1', 'Lala est là', 'N');
-  assert.match(b.texte, /Ce que tu sais de Lala/);
+  const b = await ctx.f.blocRappel('s1', 'Nora est là', 'N');
+  assert.match(b.texte, /Ce que tu sais de Nora/);
   assert.match(b.texte, /pincement/);
   ctx.f.retenirRappel('s1', b.ids, b.erreurs, b.personnes);
-  const b2 = await ctx.f.blocRappel('s1', 'Lala est là', 'N');
+  const b2 = await ctx.f.blocRappel('s1', 'Nora est là', 'N');
   assert.equal(b2.texte, '');
 });
 

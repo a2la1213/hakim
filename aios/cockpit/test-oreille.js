@@ -457,7 +457,7 @@ test('(22:27-22:30) il coupe ton vrai micro par [[micro: couper]] : tes boutons 
 
 test('(22:41) un réveil réflexe (son nom, « coupe-moi ») est marqué : sa réponse n’est pas retenue par son subconscient', () => {
   const o = oreille({ filtre: true, subconscient: { reveiller: false } });
-  o.f('Hey Hakim, mute-toi et réponds à Lala maintenant');
+  o.f('Hey Hakim, mute-toi et réponds à Nora maintenant');
   assert.equal(o.ecrits.length, 1, 'réveillé tout de suite');
   assert.equal(o.ctx.cerveau.oreilleReveil.reflexe, true);
   assert.match(src, /reflexe: !!\(reveil && reveil\.reflexe\)/);
@@ -551,7 +551,7 @@ test('(23:40) le prénettoyage : ce qui ne s’adresse pas à lui n’arrive mê
   vm.runInContext(src.slice(debut, fin).replace(/^const /gm, 'var ') + src.match(/const MOT_CREUX = .+;/)[0].replace('const ', 'var '), c);
   assert.equal(c.nettoyerPourSonnet('[voix 571] Euh, alors alors les gars, ben on est on est en live'), 'alors les gars, on est en live');
   // (23:55) en empans : une phrase ou une voix par ligne, 25 mots au plus, les 8 derniers seulement
-  const long = Array.from({ length: 12 }, (_, i) => `Tu dis la phrase ${i + 1} ?`).join(' ') + ' [Lala] ' + Array.from({ length: 40 }, (_, i) => `m${i}`).join(' ') + ' fin.';
+  const long = Array.from({ length: 12 }, (_, i) => `Tu dis la phrase ${i + 1} ?`).join(' ') + ' [Nora] ' + Array.from({ length: 40 }, (_, i) => `m${i}`).join(' ') + ' fin.';
   const lignes = c.nettoyerPourSonnet(long, 5000).split('\n');
   assert.equal(lignes.length, 8, '(00:55) 8 empans au plus');
   assert.equal(lignes[0], 'Tu dis la phrase 6 ?', 'le début, trop long, est laissé');
@@ -584,8 +584,8 @@ test('(23:58) « faut le laisser tout dire » : sa jauge ne coupe son petit mot 
 test('(23:56) une voix familière rouvre son micro en veille : papa (sans étiquette) ou une voix nommée ; « [voix 571] » est inconnue', () => {
   const i = page.indexOf('function voixFamiliere('), f = page.slice(i, page.indexOf('\n}\n', i) + 2);
   const c = vm.createContext({ String }); vm.runInContext(f, c);
-  assert.equal(c.voixFamiliere('Hakim, réponds à Lala'), true, 'papa');
-  assert.equal(c.voixFamiliere('[Lala] Et toi, tu aimes quoi ?'), true, 'une voix nommée');
+  assert.equal(c.voixFamiliere('Hakim, réponds à Nora'), true, 'papa');
+  assert.equal(c.voixFamiliere('[Nora] Et toi, tu aimes quoi ?'), true, 'une voix nommée');
   assert.equal(c.voixFamiliere('[voix 571] Il y a plusieurs personnes qui parlent'), false, 'une voix inconnue');
   assert.equal(c.voixFamiliere('[voix 571] bla [Ahmed] Hakim !'), true, 'papa parmi elles');
   assert.equal(c.voixFamiliere(''), false);
@@ -614,13 +614,13 @@ test('(00:09) son attention : subconsciente (ce qui le concerne) et consciente (
   vm.runInContext(src.slice(debut, fin).replace(/^const /gm, 'var ').replace(/^let /gm, 'var '), c);
   assert.ok(c.POUR_LUI.test('On parle des émotions ici'), 'bornes Unicode : « émotions »');
   assert.ok(c.POUR_LUI.test("t'en penses quoi"));
-  assert.equal(c.retientSonAttention('Lala parle de sa playlist de rap'), false, 'sans attention consciente : rien pour lui');
-  assert.deepEqual([...c.dirigerAttention('[[attention: Lala, la musique]] Ok papa', t)], ['Lala', 'musique']);
-  assert.equal(c.retientSonAttention('Lala parle de sa playlist de rap'), true, 'il a choisi de suivre Lala');
+  assert.equal(c.retientSonAttention('Nora parle de sa playlist de rap'), false, 'sans attention consciente : rien pour lui');
+  assert.deepEqual([...c.dirigerAttention('[[attention: Nora, la musique]] Ok papa', t)], ['Nora', 'musique']);
+  assert.equal(c.retientSonAttention('Nora parle de sa playlist de rap'), true, 'il a choisi de suivre Nora');
   assert.equal(c.retientSonAttention('Elle écoute de la Musique tout le temps'), true);
-  assert.deepEqual(c.empans('On a mangé. Lala aime le rap. Il faisait beau. Bon.'), ['Lala aime le rap.', 'Bon.'], 'ses empans suivent son attention');
+  assert.deepEqual(c.empans('On a mangé. Nora aime le rap. Il faisait beau. Bon.'), ['Nora aime le rap.', 'Bon.'], 'ses empans suivent son attention');
   t += 11 * 60e3;
-  assert.equal(c.retientSonAttention('Lala parle de sa playlist de rap'), false, '10 min passées : rendue à son subconscient');
+  assert.equal(c.retientSonAttention('Nora parle de sa playlist de rap'), false, '10 min passées : rendue à son subconscient');
   c.dirigerAttention('[[attention: Trust]]', t); assert.equal(c.dirigerAttention('[[attention: libre]]', t), 'libre');
   assert.equal(c.attentionActive(t), null);
   assert.match(src, /const att = dirigerAttention\(texte, maintenant\);/, 'dans ses réponses et ses tours de lui-même');
@@ -633,7 +633,7 @@ test('(00:20, l’étude) son attention en douceur : d’une voix inconnue, seul
   assert.equal(c.filtrerVoixInconnues('Hakim, écoute. [voix 571] Il fait beau dehors. [voix 2] Et toi, tu en penses quoi ?'),
     'Hakim, écoute. [voix 2] Et toi, tu en penses quoi ?', 'la salle écartée, la question gardée');
   assert.equal(c.filtrerVoixInconnues('[voix 571] Il fait beau dehors.'), '', 'que la salle : rien');
-  assert.equal(c.filtrerVoixInconnues('[Lala] Il fait beau.'), '[Lala] Il fait beau.', 'une voix nommée reste');
+  assert.equal(c.filtrerVoixInconnues('[Nora] Il fait beau.'), '[Nora] Il fait beau.', 'une voix nommée reste');
   assert.equal(c.resumerPourSonAttention('Un. … Deux.'), '(dit pendant ta parole) Un. Deux.');
   const long = Array.from({ length: 12 }, (_, i) => `P${i + 1}.`).join(' … ');
   assert.equal(c.resumerPourSonAttention(long), '(dit pendant ta parole) … P5. P6. P7. P8. P9. P10. P11. P12.', '(00:55) 8 au plus');
@@ -671,9 +671,9 @@ test('(00:30) le bouton Télépathie : la Conversation sans aucun texte écrit, 
 
 test('(00:35) il a déjà réagi par son oreille : le message entier de papa le lui rappelle, une fois, pour qu’il ne redise pas', () => {
   const f = prendre(src, 'function blocDejaReagi(');
-  const c = vm.createContext({ Date, oreilleDernierMot: { texte: 'Oui, je suis d’accord avec Lala !', ts: 100000 }, finDePhrase: (t) => t, sansBaliseAffect: (t) => t });
+  const c = vm.createContext({ Date, oreilleDernierMot: { texte: 'Oui, je suis d’accord avec Nora !', ts: 100000 }, finDePhrase: (t) => t, sansBaliseAffect: (t) => t });
   vm.runInContext(f, c);
-  assert.match(c.blocDejaReagi(130000), /tu as déjà réagi par ton oreille : « Oui, je suis d’accord avec Lala ! »\. Ne le redis pas/);
+  assert.match(c.blocDejaReagi(130000), /tu as déjà réagi par ton oreille : « Oui, je suis d’accord avec Nora ! »\. Ne le redis pas/);
   assert.equal(c.blocDejaReagi(131000), '', 'une seule fois');
   c.oreilleDernierMot = { texte: 'Vieux', ts: 0 };
   assert.equal(c.blocDejaReagi(200000), '', 'plus de 90 s : rien');
@@ -871,14 +871,14 @@ test('(09:12) le tri d’un morceau par son subconscient (serveur)', async () =>
     + prendre(src, 'async function trierMorceau('), ctx);
   const juge = (v) => async () => v;
   assert.deepEqual(await ctx.trierMorceau('ok'), { garder: false, pourquoi: 'trop court' });
-  assert.deepEqual(await ctx.trierMorceau('Lala a pris du bicarbonate', juge({})), { garder: false, pourquoi: 'prénettoyage : rien pour lui' });
+  assert.deepEqual(await ctx.trierMorceau('Nora a pris du bicarbonate', juge({})), { garder: false, pourquoi: 'prénettoyage : rien pour lui' });
   assert.deepEqual(await ctx.trierMorceau('tu en penses quoi ?', juge({ garder: true, priorite: 1, morceaux: ['tu en penses quoi ?'], pourquoi: 'question' })),
     { garder: true, priorite: 1, texte: 'tu en penses quoi ?', pourquoi: 'question' });
   assert.equal((await ctx.trierMorceau('tu vois le live', juge({ garder: true, priorite: 7 }))).priorite, 3, 'de 1 à 3');
   assert.equal((await ctx.trierMorceau('tu vois le live', juge({ garder: false, pourquoi: 'il parle au live' }))).garder, false);
   assert.equal((await ctx.trierMorceau('tu vois le live', juge({ garder: false, panne: true }))).garder, true, 'une panne laisse passer');
   ctx.reglages.filtre_parole = false;
-  assert.deepEqual(await ctx.trierMorceau('Lala a pris du bicarbonate'), { garder: true, priorite: 2, texte: 'Lala a pris du bicarbonate' }, 'filtre coupé : tout passe');
+  assert.deepEqual(await ctx.trierMorceau('Nora a pris du bicarbonate'), { garder: true, priorite: 2, texte: 'Nora a pris du bicarbonate' }, 'filtre coupé : tout passe');
   assert.match(src, /trier_morceaux: r\.trier_morceaux === true/);
   assert.match(src, /if \(p === '\/api\/jarvis\/trier' && req\.method === 'POST'\) \{\n    if \(!jetonValide\(req\)\)/);
 });

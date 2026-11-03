@@ -92,9 +92,9 @@ def test_raison_lue_sur_l_entree_standard():
 def test_nouvelle_pensee_du_demon_reinjectee_a_la_reprise(mem):
     """L'empreinte couvre toute la sortie (hors bannière), dont « ce que j'ai en tête »."""
     assert cli.briefing(mem, "startup", 30_000.0, session="s1")
-    mem.add("outreach", "(relance) As-tu relancé le devis Vilmarkt ?", embedding=_faux_embed("devis"))
+    mem.add("outreach", "(relance) As-tu relancé le devis Exemplia ?", embedding=_faux_embed("devis"))
     texte = cli.briefing(mem, "resume", 31_000.0, session="s1")
-    assert texte and "devis Vilmarkt" in texte
+    assert texte and "devis Exemplia" in texte
 
 
 def test_competence_sous_le_plancher_non_proposee(mem, monkeypatch):
@@ -150,6 +150,6 @@ def test_en_tete_sans_la_vieille_poesie(mem):
     """2026-10-16 : seules les pensées de la vie intérieure (et la métacognition) sont « en tête »."""
     mem.add("reflection", "Je sens que ma structure intérieure est comme une cartographie en expansion.", embedding=[])
     mem.add("outreach", "(sollicitation spontanée) Nos échanges sont une danse de précision.", embedding=[])
-    mem.add("reflection", "(pensée · gemma · absence 40 min) Le devis Vilmarkt attend sa réponse.", embedding=[])
+    mem.add("reflection", "(pensée · gemma · absence 40 min) Le devis Exemplia attend sa réponse.", embedding=[])
     tete = cli._en_tete(mem)
-    assert "Vilmarkt" in tete and "cartographie" not in tete and "danse" not in tete
+    assert "Exemplia" in tete and "cartographie" not in tete and "danse" not in tete

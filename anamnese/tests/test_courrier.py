@@ -128,12 +128,12 @@ def test_hakim_cree_ses_rubriques_mais_pas_dans_un_tour_sans_ahmed(tmp_path, mon
     monkeypatch.setenv("ANAMNESE_SOURCE", "hakim")
     creer = mcp_server.mcp._tool_manager.get_tool("rubric_create").fn
     ranger = mcp_server.mcp._tool_manager.get_tool("memory_reclassify").fn
-    eid = mem.add("episodic", "Lala est sa cousine", dedup=False)
+    eid = mem.add("episodic", "Nora est sa cousine", dedup=False)
     (tmp_path / "tour-autonome.json").write_text("{}")
     assert creer("personnes").startswith("Refusé pendant un tour") and ranger(eid, "personnes").startswith("Refusé pendant un tour")
     (tmp_path / "tour-autonome.json").unlink()
-    assert "prête" in creer("personnes") and "prête" in creer("personnes/lala")
-    assert "personnes/lala" in ranger(eid, "personnes/lala")
+    assert "prête" in creer("personnes") and "prête" in creer("personnes/nora")
+    assert "personnes/nora" in ranger(eid, "personnes/nora")
 
 
 # ---------- (27/10) Claude Code réveillée seule par une lettre de Hakim : son propre marqueur de lecture
