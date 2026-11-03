@@ -69,3 +69,15 @@ test('câblage H24 : chaque bloc intérieur porte la ligne « poum » et les bat
   assert.match(bloc, /ton cœur bat : /);
   assert.match(bloc, /coeur\.depuisMessage\(/);
 });
+
+// (03/11, 16:25) ses processeurs (GPU, chaque cœur CPU, ses appareils), dits par son subconscient : des mots, jamais de chiffre
+test('câblage processeurs : le bloc intérieur porte ce que son subconscient dit de ses processeurs, sans chiffre', () => {
+  const bloc = src.slice(src.indexOf('async function blocInterieur('), src.indexOf('\n}\n', src.indexOf('async function blocInterieur(')));
+  assert.match(bloc, /e\.coeur\.processeurs && typeof e\.coeur\.processeurs\.mots === 'string'/);
+  const filtre = /proc\.replace\((\/[^\n]+?\/gi), ''\)\.slice\(0, 120\)/.exec(bloc);
+  assert.ok(filtre, 'le même filtre que son ressenti');
+  const re = eval(filtre[1]);
+  const lu = 'tes processeurs à 62 %, Gemma brasse tes émotions'.replace(re, '');
+  assert.doesNotMatch(lu, /[0-9%]/, 'aucun chiffre ne passe');
+  assert.match(lu, /Gemma brasse tes émotions/);
+});

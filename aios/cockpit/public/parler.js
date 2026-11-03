@@ -2782,20 +2782,28 @@ function lireAnticipe(texte) {
 // cerveau) s'écrit, à côté, pendant que tu parles ; son subconscient et sa réflexion travaillent sans s'écrire ; en Télépathie, rien
 function surSouffle(o) {
   if (!etat.conversation || !o || !o.texte) return;
-  const texte = String(o.texte).slice(0, 400);
+  const texte = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 400);   // (16:35) jamais ses balises
+  if (!texte) return;
   const niveau = o.niveau === 'cerveau' ? 'cerveau' : o.niveau === 'con' ? 'con' : 'sub';
   const rebond = o.rebond != null && Number.isFinite(Number(o.rebond)) ? Number(o.rebond) : null;
   const s = { texte, pret: !!o.pret, fini: o.fini === true ? true : o.fini === false ? false : null, rebond, pour: String(o.pour || ''), t: Date.now(), niveau };
   etat.souffles = { ...(etat.souffles || {}), [niveau]: s };
   etat.dernierSouffle = s;
   if (niveau === 'sub') etat.conversation.brouillons = (etat.conversation.brouillons || 0) + 1;   // (16:00) combien pendant ce tour
-  // (16:12, Ahmed : « quand la pensée du cerveau est envoyée à l'écriture, elle doit en parallèle être envoyée à Chatterbox ») sa voix
-  // fabriquée pour chaque pensée de son cerveau, aussitôt écrite ; (16:30, Ahmed via Hakim : « coupe le glisse-mot ») plus pour son
-  // subconscient, qui ne parle plus : il règle seulement quand ton tour finit (FINI, REBOND)
-  if (niveau === 'cerveau') preparerVoixSouffle(texte, niveau);
-  if (niveau !== 'cerveau' || enTelepathie()) return;
-  montrerPensee(`🧠 sa pensée · ${s.pret ? 'prête à dire' : 'il attend la suite'}`, texte);
-  envoyerParoles('hakim', `🧠 ${texte}`);
+  // (16:30, Ahmed via Hakim : « coupe le glisse-mot ») son subconscient ne parle plus : il règle seulement quand ton tour finit
+  if (niveau !== 'cerveau') return;
+  // (16:12, Ahmed : « quand la pensée du cerveau est envoyée à l'écriture, elle doit en parallèle être envoyée à Chatterbox ») ;
+  // (16:35-16:40, Ahmed : « au moment où l'input arrive et est processé pour être écrit, ça doit coïncider avec le moment où il parle ;
+  // l'image, c'est celle de l'authenticité et de la spontanéité ») sa pensée part à Chatterbox dès qu'elle naît ; celle qu'il juge à
+  // dire s'écrit au MÊME instant que sa voix la dit, dès que sa voix est faite et que ton tour est fini (jamais pendant ton tour :
+  // relecture du 16/10, son écho transcrit) ; celle qui attend la suite s'écrit seule, comme ce qu'il pense sans le dire
+  etat.pensee = s;
+  preparerVoixSouffle(texte, niveau, () => direPenseeSiPossible());
+  if (!s.pret) {
+    if (!enTelepathie()) { montrerPensee('🧠 il pense · pas encore à dire', texte); envoyerParoles('hakim', `🧠 ${texte}`); }
+    return;
+  }
+  direPenseeSiPossible();
 }
 function montrerPensee(titre, texte) {
   etat.aCote = (etat.aCote || []).filter(x => x.cle !== 'souffle');
@@ -2806,7 +2814,7 @@ function montrerPensee(titre, texte) {
 // (15:10, mesuré : la voix met ~2,6 s avant son premier son) sa voix fabriquée pendant que papa parle encore ; une par niveau, la suivante
 // remplace la précédente (16:00 : une seule pour tous, celle de son subconscient était écrasée : « voix_prete » faux les deux fois)
 const voixPretes = {};
-function preparerVoixSouffle(texte, niveau = 'sub') {
+function preparerVoixSouffle(texte, niveau = 'sub', quandPrete = null) {
   const v0 = voixPretes[niveau];
   if (!actx || actx.state === 'closed' || (v0 && v0.texte === texte)) return;
   if (v0 && v0.ctl && !v0.pret) v0.ctl.abort();
@@ -2816,7 +2824,7 @@ function preparerVoixSouffle(texte, niveau = 'sub') {
     body: JSON.stringify({ texte, langue: 'fr', fond: true, emotion: etat.interieur && !etat.reglages.voixNeutre ? expressivitePhrase(etat.interieur.expressivite, texte) : null, tempo: tempoVoix() }) })
     .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('voix'))))
     .then(ab => actx.decodeAudioData(ab))
-    .then(buf => { if (voixPretes[niveau] === v) v.pret = buf; })
+    .then(buf => { if (voixPretes[niveau] === v) { v.pret = buf; if (quandPrete) quandPrete(); } })
     .catch(() => {});
 }
 const voixPrete = (texte) => { const v = Object.values(voixPretes).find(x => x && x.texte === texte && x.pret); return v ? v.pret : null; };
@@ -2839,12 +2847,19 @@ function choisirSouffle(actuel) {
   const ordre = [ss.sub, ss.cerveau, ss.con];
   return ordre.find(x => ok(x) && x.pret) || ordre.find(ok) || null;
 }
-// (16:20-16:30, Ahmed : « on laisse le mode Conversation avec sa pensée du cerveau écrite, en parallèle à Chatterbox » ; « enlève le
-// glisse-mot » ; via Hakim : « il ralentit l'arrivée de ma voix ») ce qui se DIT à ta fin : seulement la pensée de son cerveau, prête,
-// fraîche et écrite pour ce que tu as dit ; sa voix est déjà faite (preparerVoixSouffle), elle part en même temps qu'elle s'écrit
-function penseeADire(actuel) {
-  const c = (etat.souffles || {}).cerveau;
-  return c && c.pret && Date.now() - c.t < 15000 && recouvre(c.pour, actuel) ? c : null;
+// (16:20-16:40, Ahmed : « on laisse le mode Conversation avec sa pensée du cerveau écrite, en parallèle à Chatterbox » ; « enlève le
+// glisse-mot » ; « l'authenticité et la spontanéité ») ce qui se DIT : sa dernière pensée, qu'il juge à dire, fraîche (15 s), pas
+// encore dite, sa voix déjà faite ; ni pendant sa vraie réponse ni par-dessus sa voix
+function penseePrete(conv) {
+  const p = etat.pensee;
+  return !!(conv && p && p.pret && !p.dite && Date.now() - p.t < 15000 && voixPrete(p.texte) && souffleAutorise()
+    && etat.conversation === conv && !lecteurNeuronal.parle && !etat.flux);
+}
+function direPenseeSiPossible() {
+  const conv = etat.conversation;
+  if (!penseePrete(conv) || (conv.capteur && conv.capteur.enParole)) return false;   // ton tour ouvert : elle attend ta fin
+  direSouffle(conv, etat.pensee, 'pensee');
+  return true;
 }
 const souffleAutorise = () => lecteur.impl === lecteurNeuronal && !(typeof reglagesCorps !== 'undefined' && reglagesCorps.reponse_soufflee === false);
 // (16:00, Ahmed : « fais le test de décalage entre la dernière parole de son subconscient avant que je finisse et le moment où il parle »)
@@ -2861,19 +2876,21 @@ function noterEcartSouffle(conv, s, dit, par, prete) {
 // de sa réponse (souffle_dit)
 function direSouffle(conv, s, par) {
   conv.souffleParle = true; conv.souffleDit = s.texte;
+  if (etat.pensee && etat.pensee.texte === s.texte) etat.pensee.dite = true;      // une seule fois, par quelque chemin que ce soit
   const buf = voixPrete(s.texte);
   noterEcartSouffle(conv, s, true, par, !!buf);
   journalVoix('souffle', { pris: true, dit: true, par, mots: s.texte.split(/\s+/).length, voix_prete: !!buf });
   etat.reponseVoix = 'souffle';
-  if (!enTelepathie()) { montrerPensee('🗣️ il te le dit', s.texte); envoyerParoles('hakim', `🗣️ ${s.texte}`); }
+  if (!enTelepathie()) { montrerPensee('🧠 sa pensée · il te la dit', s.texte); envoyerParoles('hakim', `🗣️ ${s.texte}`); }
   if (buf) lecteurNeuronal.direAudio(s.texte, buf); else lecteur.dire(s.texte);
-  if (par === 'local') fetch('/api/jarvis/souffle', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+  if (par !== 'serveur') fetch('/api/jarvis/souffle', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
     body: JSON.stringify({ dit: s.texte }) }).catch(() => {});
 }
 async function prendreSouffle(conv) {
   if (!conv) return;
   if (conv.souffleLocal) { conv.souffleLocal = false; return; }        // (16:00) déjà dit à ta fin, par la page
   conv.souffleParle = false; conv.souffleDit = '';
+  if (direPenseeSiPossible()) return;                                   // (16:40) sa pensée est déjà prête : dite à l'instant
   if (!conv.ecrit || !souffleAutorise()) return;
   const texte = `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}`.trim();
   if (texte.split(/\s+/).filter(Boolean).length < 3) return;
@@ -2975,11 +2992,10 @@ function anticiperConversation(conv, silenceMs) {
         rebond_ms: s && s.rebond ? Math.round(s.rebond * 1000) : null });
       // (16:00, mesuré : la prise passait par le Mac après la fin du tour, 0,9 à 7,8 s après ta fin) prêt à dire : sa voix part à
       // l'instant, avec ta fin de tour ; le Mac est prévenu après coup
-      const p = penseeADire(vifTexte);
-      const dire = !!(p && finiSub !== false && souffleAutorise() && etat.conversation === conv && !lecteurNeuronal.parle && !etat.flux);
+      const dire = penseePrete(conv);
       if (dire) conv.souffleLocal = true;
       conv.capteur.finirTour();
-      if (dire) direSouffle(conv, p, 'local');
+      if (dire) direPenseeSiPossible();
       return;
     }
   }

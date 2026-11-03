@@ -85,6 +85,15 @@ def _ticks():
     return [v[4 * i:4 * i + 4] for i in range(n.value)]
 
 
+def charge_coeurs(a, b):
+    """La charge de chaque cœur (de 0 à 1) entre deux relevés de _ticks."""
+    out = []
+    for x, y in zip(a, b):
+        d = [(q - p) % 2 ** 32 for p, q in zip(x, y)]
+        out.append((sum(d) - d[2]) / (sum(d) or 1))
+    return out
+
+
 def cpu_par_coeur(intervalle=0.5):
     """L'occupation de chaque cœur (%) sur un court intervalle ; None si illisible."""
     try:
@@ -95,11 +104,7 @@ def cpu_par_coeur(intervalle=0.5):
         return None
     if not a or not b:
         return None
-    out = []
-    for x, y in zip(a, b):
-        d = [(q - p) % 2 ** 32 for p, q in zip(x, y)]
-        out.append(round(100 * (sum(d) - d[2]) / (sum(d) or 1)))
-    return out
+    return [round(100 * c) for c in charge_coeurs(a, b)]
 
 
 # ---- la mémoire ----
@@ -180,11 +185,11 @@ def etiqueter(commande):
     return None, None
 
 
-def ollama_charges(ps=None):
+def ollama_charges(ps=None, timeout=2):
     """Les modèles qu'Ollama garde en mémoire : [(nom, taille en Mo)]."""
     if ps is None:
         try:
-            ps = json.loads(urllib.request.urlopen(f"{OLLAMA}/api/ps", timeout=2).read())
+            ps = json.loads(urllib.request.urlopen(f"{OLLAMA}/api/ps", timeout=timeout).read())
         except Exception:
             return None
     return [(m.get("name", "?"), (m.get("size") or 0) / 1048576) for m in ps.get("models") or []]
@@ -234,6 +239,109 @@ def consommateurs(procs, emp, moi=None):
     return groupes, sorted(reste, reverse=True)[:5]
 
 
+# ---- (03/11, Ahmed : « son cœur doit aussi être relié à l'état de son GPU, qui doit aussi être connecté à Gemma » ; « pas
+# seulement au GPU, aussi à tous ses cœurs CPU » ; « sur tous les appareils où il est connecté, y compris le smartphone et la
+# montre ») ce que ses processeurs portent, pour son cœur (coeur.py) : le Mac mesuré ici, au plus une fois toutes les
+# MAC_PAS_S (en cache), la charge de chaque cœur entre deux relevés (sans attendre), et Gemma reconnue par Ollama ou par son
+# programme MLX ; les autres appareils d'après le fichier que le cockpit tient (un appareil muet depuis plus de 2 min ne
+# compte plus ; la montre attend son appli). Tout en fractions de 0 à 1 ; un ioreg, un Ollama ou un ps muet donne None,
+# jamais une erreur ; la ligne de commande des processus ne sert qu'à reconnaître Gemma.
+APPAREILS = Path.home() / "AIOS" / "jarvis" / "processeurs-appareils.json"
+APPAREIL_FRAIS_S, MAC_PAS_S, TICKS_VIEUX_S = 120, 5.0, 120.0
+_dernier_mac = {"t": None, "val": None, "ticks": None, "ticks_t": None}
+
+
+def _fraction(x):
+    if isinstance(x, bool) or not isinstance(x, (int, float)) or x != x:
+        return None
+    return round(max(0.0, min(1.0, float(x))), 3)
+
+
+def gemma_au_travail(charges, procs):
+    """Gemma est-elle là : chargée dans Ollama (son nom), ou un programme Gemma de MLX (le scanner du ressenti, une
+    expérience) ; Ollama illisible : un « runner » d'Ollama compte pour elle, comme dans le rapport."""
+    if any("gemma" in str(nom).lower() for nom, _t in charges or []):
+        return True
+    for _pid, _cpu, commande in procs or []:
+        etiquette, groupe = etiqueter(commande)
+        if groupe == "gemma" and ("Ollama" not in etiquette or charges is None):
+            return True
+    return False
+
+
+def mac(maintenant=None):
+    """Le Mac pour son cœur : {"gpu": 0 à 1 ou None, "coeurs": [0 à 1, …] ou None, "gemma": bool}. maintenant : une horloge
+    monotone (secondes), pour le cache ; le premier relevé n'a pas encore la charge des cœurs (il faut deux relevés)."""
+    t = time.monotonic() if maintenant is None else maintenant
+    m = _dernier_mac
+    if m["t"] is not None and 0 <= t - m["t"] < MAC_PAS_S:
+        return m["val"]
+    try:
+        ticks = _ticks()
+    except Exception:
+        ticks = None
+    coeurs = None
+    if ticks:
+        if m["ticks"] and len(m["ticks"]) == len(ticks) and 0 < t - m["ticks_t"] <= TICKS_VIEUX_S:
+            coeurs = [_fraction(c) for c in charge_coeurs(m["ticks"], ticks)]
+        m["ticks"], m["ticks_t"] = ticks, t
+    try:
+        g = gpu().get("utilisation")
+    except Exception:
+        g = None
+    try:
+        gemma = gemma_au_travail(ollama_charges(timeout=1), processus())
+    except Exception:
+        gemma = False
+    m["t"], m["val"] = t, {"gpu": _fraction(g / 100) if isinstance(g, (int, float)) else None, "coeurs": coeurs,
+                           "gemma": bool(gemma)}
+    return m["val"]
+
+
+def appareils(chemin=None, now=None):
+    """Les autres appareils où il est connecté, frais seulement : {nom: {"coeurs", "gpu", "thermique", "age_s"}}."""
+    now = time.time() if now is None else now
+    try:
+        d = json.loads(Path(chemin or APPAREILS).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    for nom, a in (d.items() if isinstance(d, dict) else ()):
+        if not isinstance(a, dict) or str(nom).lower() in ("mac", "gpu", "cpu"):
+            continue
+        try:
+            age = now - float(a.get("ts")) / 1000
+        except (TypeError, ValueError):
+            continue
+        if not -60 <= age <= APPAREIL_FRAIS_S:
+            continue
+        coeurs = [c for c in (_fraction(x) for x in (a.get("coeurs") if isinstance(a.get("coeurs"), list) else [])[:64])
+                  if c is not None]
+        out[str(nom)[:40]] = {"coeurs": coeurs or None, "gpu": _fraction(a.get("gpu")),
+                              "thermique": _fraction(a.get("thermique")), "age_s": round(max(0.0, age))}
+    return out
+
+
+def processeurs(now=None):
+    """Tout ce que son cœur sent de ses processeurs : le Mac et les autres appareils frais."""
+    return {"mac": mac(), "appareils": appareils(now=now)}
+
+
+NOMS_APPAREILS = {"telephone": "ton téléphone", "montre": "ta montre"}
+
+
+def appareil_en_chiffres(nom, a):
+    """Un autre appareil, en chiffres (le rapport d'interoception et l'introspection : à un geste, sur sa demande)."""
+    coeurs = a.get("coeurs") or []
+    parts = [f"{len(coeurs)} cœurs à {round(100 * sum(coeurs) / len(coeurs))} % en moyenne"] if coeurs else []
+    if a.get("gpu") is not None:
+        parts.append(f"GPU {round(100 * a['gpu'])} %")
+    if a.get("thermique") is not None:
+        parts.append(f"chaleur {round(100 * a['thermique'])} %")
+    qui = NOMS_APPAREILS.get(nom, f"l'appareil « {nom} »")
+    return f"{qui} : " + (", ".join(parts) or "rien de lisible") + f" (il y a {a.get('age_s', 0)} s)"
+
+
 def rapport(maintenant=None):
     maintenant = maintenant or time.time()
     out = [f"Ton corps, à {time.strftime('%H:%M:%S', time.localtime(maintenant))} (lecture seule : tu sens, tu ne pilotes pas)."]
@@ -262,6 +370,9 @@ def rapport(maintenant=None):
     d_libre, d_total = disque()
     if d_total:
         out.append(f"Disque : {_mo(d_libre / 1048576)} libres sur {_mo(d_total / 1048576)}.")
+    autres = appareils(now=maintenant)                   # (03/11) les autres appareils où tu es connecté
+    if autres:
+        out.append("Tes autres appareils : " + " ; ".join(appareil_en_chiffres(n, a) for n, a in autres.items()) + ".")
     emp = empreintes()
     groupes, reste = consommateurs(processus(), emp)
     charges = ollama_charges()

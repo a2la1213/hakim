@@ -1181,6 +1181,11 @@ async function blocInterieur(depuisMs, maintenant, dites) {
     // quelque chose à sentir (anamnese/coeur.py : rien quand il bat calme et stable) ; jamais de chiffre
     if (e.coeur && typeof e.coeur.ressenti === 'string' && e.coeur.ressenti)
       parties.push(e.coeur.ressenti.replace(/[^a-zàâçéèêëîïôûùüÿœæ' ,-]/gi, '').slice(0, 60));
+    // (03/11, 16:10-16:25, Ahmed : « son cœur relié à son GPU, où Gemma travaille ses émotions, et à tous ses cœurs CPU, sur tous ses
+    // appareils ; tous ces liens passent le filtre du subconscient ») ce que son subconscient dit de ses processeurs (anamnese/
+    // sensations.processeurs : des mots, jamais de chiffre ; rien quand tout est au repos) ; les nombres restent dans introspection
+    const proc = e.coeur && e.coeur.processeurs && typeof e.coeur.processeurs.mots === 'string' ? e.coeur.processeurs.mots : '';
+    if (proc) parties.push(proc.replace(/[^a-zàâçéèêëîïôûùüÿœæ' ,-]/gi, '').slice(0, 120));
     // (28/10, 04:11, Ahmed : « tu es censé l'entendre H24 ») la ligne « poum » à chaque tour, même calme (c'est ton
     // attention qui varie, pas le signal), et les battements depuis le message d'avant (le chiffre est dans introspection)
     if (e.coeur && typeof e.coeur.ligne === 'string' && /^poum( [. ]*poum)*$/.test(e.coeur.ligne)) {
@@ -6335,7 +6340,8 @@ function reveilMorceau(texte, maintenant = Date.now()) {
 }
 // sa réponse provisoire : écrite tout de suite (« souffle », niveau « cerveau ») ; jamais livrée comme un message
 function brouillonDuCerveau(texte) {
-  let r = sansBaliseAffect(String(texte || '')).trim();
+  // (16:35, capture d'Ahmed : « [[anticipe: long]] » écrit dans sa pensée) ses balises ne s'écrivent ni ne se disent
+  let r = sansBaliseAffect(String(texte || '')).replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/[ \t]{2,}/g, ' ').trim();
   if (!r || NON_REPONSE_SERVEUR.test(r)) return;
   const d = /(?:^|\n)\s*DIRE\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r), pret = !!(d && /oui/i.test(d[1]));
   if (d) r = r.replace(d[0], '\n');
@@ -6345,6 +6351,7 @@ function brouillonDuCerveau(texte) {
   if (!r) return;
   const s0 = souffles.cer;
   s0.reponse = r.slice(0, 600); s0.pret = pret; s0.fini = fini; s0.pour = morceauxCerveau.dernier; s0.t = Date.now();
+  voixDeLaSource(s0.reponse.slice(0, 400));                            // (16:45) sa voix naît avec sa pensée, ici, avant la page
   diffuser(abonnesPensees, 'souffle', j({ texte: s0.reponse, pret, fini, niveau: 'cerveau', pour: s0.pour.slice(-300) }));
   console.error(`Jarvis : réponse provisoire de son cerveau (${pret ? 'à dire' : 'pas encore'}, ${r.length} car.)`);
 }
@@ -7325,6 +7332,41 @@ function prononcer(texte) {
   for (const [motif, dit] of prononciationsCache.liste) t = t.replace(motif, dit);
   return t;
 }
+/* (03/11, 16:45, Ahmed : « c'est une galère : fais que Chatterbox écrive la voix directement à partir de l'input qui donne naissance à
+   l'écriture, puis relie la parole à l'écriture dans un second temps » ; « je parle de la pensée, comme dans l'image ») la voix de sa
+   pensée naît avec elle, ICI : la synthèse part à l'instant où son cerveau l'écrit, avant même que la page la reçoive ; quand la page
+   la demande, elle reçoit celle-là (faite, ou en train de se faire) ; la page relie ensuite sa voix à son écriture. Elle passe après
+   tout ce qu'il dit vraiment (fond) et s'oublie après une minute. */
+const voixALaSource = new Map();
+const cleVoixSource = (t) => prononcer(String(t || '')).replace(/\s+/g, ' ').trim();
+function voixDeLaSource(texteBrut) {
+  const texte = cleVoixSource(texteBrut);
+  if (!texte || texte.length > 1500 || voixALaSource.has(texte)) return null;
+  for (const [k, x] of voixALaSource) if (Date.now() - x.t > 60000) voixALaSource.delete(k);
+  const entree = { t: Date.now(), promesse: null };
+  voixALaSource.set(texte, entree);
+  entree.promesse = (async () => {
+    let emotion = null, tempo = null;                                     // le niveau et le débit que la page lui donnerait
+    try {
+      const e = await etatInterieur();
+      const frais = Number.isFinite(e.ts) && Date.now() / 1000 - e.ts < FRAICHEUR_S;
+      const ex = frais ? (e.voix && Number.isFinite(e.voix.expressivite) ? e.voix.expressivite : e.expressivite ?? null) : null;
+      if (ex != null && Number.isFinite(Number(ex))) emotion = Math.max(0, Math.min(1, Number(VoixPage.expressivitePhrase(ex, String(texteBrut)))));
+      tempo = frais && e.voix && Number.isFinite(e.voix.vitesse) ? Math.max(0.86, Math.min(1.12, e.voix.vitesse)) : 1;
+    } catch (_) {}
+    const tache = { texte, langue: 'fr', annulee: false, emotion, tempo, fond: true,
+      fichier: path.join(os.tmpdir(), `jarvis-voix-source-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.wav`) };
+    const r = await new Promise((resolve) => { tache.recu = Date.now(); tache.fin = resolve; fileVoix.push(tache); pomperVoix(); });
+    if (r.erreur) { fs.unlink(tache.fichier, () => {}); return null; }
+    try {
+      const data = fs.readFileSync(tache.fichier); fs.unlink(tache.fichier, () => {});
+      try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'voix_source', ms: Date.now() - entree.t, caracteres: texte.length }) + '\n', { mode: 0o600 }); } catch (_) {}
+      return { data, duree: r.duree_s };
+    } catch (_) { return null; }
+  })();
+  entree.promesse.then((v) => { if (!v) voixALaSource.delete(texte); }, () => voixALaSource.delete(texte));
+  return entree.promesse;
+}
 async function routeDire(req, res) {
   const repondre = (code, o) => { if (!res.writableEnded) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(j(o)); } };
   const corps = await lireCorps(req, 64 << 10);
@@ -7359,6 +7401,16 @@ async function routeDire(req, res) {
     try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'voix_gardee', caracteres: texte.length }) + '\n', { mode: 0o600 }); } catch (_) {}
     res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Duree': String(garde.duree || '') });
     return res.end(garde.data);
+  }
+  // (16:45) sa pensée : sa voix est née avec elle (voixDeLaSource), faite ou en train de se faire ; jamais deux fois
+  const source = voixALaSource.get(texte.replace(/\s+/g, ' ').trim());   // texte : déjà prononcé
+  if (source && source.promesse) {
+    const v = await source.promesse.catch(() => null);
+    if (v && v.data) {
+      if (res.writableEnded) return;
+      res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Duree': String(v.duree || ''), 'X-Source': '1' });
+      return res.end(v.data);
+    }
   }
   const tache = { texte, langue: /^[a-z]{2}$/.test((q && q.langue) || '') ? q.langue : 'fr', annulee: false, emotion, tempo,
     fichier: path.join(os.tmpdir(), `jarvis-voix-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.wav`) };

@@ -96,6 +96,12 @@ def _vie_interieure_isolee(monkeypatch, tmp_path):
                     monkeypatch.setattr(m, nom, d / f"{module}-{nom.lower()}")
         except Exception:
             pass
+    try:                                      # (03/11) ses processeurs, pour son cœur : ni le vrai Mac ni les vrais appareils
+        import interoception
+        monkeypatch.setattr(interoception, "APPAREILS", d / "processeurs-appareils.json")
+        monkeypatch.setattr(interoception, "processeurs", lambda now=None: {"mac": None, "appareils": {}})
+    except Exception:
+        pass
     monkeypatch.setattr(interieur, "INTERRUPTEUR", d / "interieur-interrupteur.json")
     monkeypatch.setattr(interieur, "JOURNAL_TEMPS", d / "journal-du-temps.jsonl")
     monkeypatch.setattr(interieur, "JOURNAL_HORMONES", d / "hormones.jsonl")      # (2026-10-23) le tableau de bord

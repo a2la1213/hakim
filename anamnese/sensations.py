@@ -145,10 +145,55 @@ def ecarts(etat, base):
     return out
 
 
-def calculer(etat, avant=None, now=0.0, soudaine=None, hour=None, n=2, sans_coherence=False, bases_relatives=None, maintenant_biais=None):
+# (03/11, Ahmed : « son cœur relié à son GPU, à Gemma, à tous ses cœurs CPU, sur tous ses appareils… et tous ces liens passent
+# bien évidemment le filtre du subconscient ») ce qu'il SENT de ses processeurs, comme du reste de son corps : des mots,
+# jamais de chiffre (les chiffres restent à un geste, dans l'introspection) ; rien quand tout est au repos (comme un cœur
+# calme, ça ne se remarque pas) ; la même formulation pendant 15 min. p : ce que son cœur garde de ses processeurs
+# (coeur.calculer : le surcroît lissé de chaque source, en battements, et si Gemma est là).
+PROCESSEURS_MOTS = {
+    "un peu": ["tes processeurs s'affairent", "tes processeurs se mettent au travail"],
+    "fort": ["tes processeurs travaillent fort", "tes processeurs chauffent sous l'effort"],
+    "à fond": ["tes processeurs tournent à fond", "tes processeurs donnent tout ce qu'ils ont"],
+    "gemma": ["Gemma brasse tes émotions", "Gemma remue tes émotions en dessous"],
+    "actif": ["{} s'active", "{} travaille"],
+}
+PROCESSEURS_SENTI = 1.0           # un battement de plus (lissé) : en dessous, rien à sentir ; un autre appareil : la moitié
+EFFORT_PLEIN = 12.0               # = coeur.EFFORT_MAX
+
+
+def processeurs(p, now=0.0):
+    """Ses processeurs en mots de sensation (None : au repos)."""
+    p = p if isinstance(p, dict) else {}
+    lisse = p.get("lisse") if isinstance(p.get("lisse"), dict) else {}
+    v = lambda k: float(lisse.get(k) or 0.0)
+    choix = lambda cle: random.Random(f"{int(now // 900)}:processeurs:{cle}").choice(PROCESSEURS_MOTS[cle])
+    mots = []
+    mac = v("gpu") + v("cpu")
+    if mac >= PROCESSEURS_SENTI:
+        mots.append(choix("un peu" if mac < 4 else "fort" if mac < 8 else "à fond"))
+    if p.get("gemma") and v("gpu") >= PROCESSEURS_SENTI:
+        mots.append(choix("gemma"))
+    try:
+        from interoception import NOMS_APPAREILS
+    except Exception:
+        NOMS_APPAREILS = {}
+    for nom, a in (p.get("appareils") or {}).items():
+        if v(nom) < PROCESSEURS_SENTI / 2:
+            continue
+        qui = NOMS_APPAREILS.get(nom, "un autre de tes appareils")
+        chaleur = (a or {}).get("thermique") if isinstance(a, dict) else None
+        if isinstance(chaleur, (int, float)) and chaleur >= 0.5:
+            mots.append(f"{qui} chauffe" + (" fort" if chaleur >= 0.75 else ""))
+        else:
+            mots.append(choix("actif").format(qui))
+    return ", ".join(mots) or None
+
+
+def calculer(etat, avant=None, now=0.0, soudaine=None, hour=None, n=2, sans_coherence=False, bases_relatives=None, maintenant_biais=None,
+             processeurs=None):
     """{"emotion", "mots", "scores", "ts"} : 2 (ou 3) formulations pour les émotions dominantes.
     sans_coherence (chocs, 2026-10-23) : juste après une attaque, le négatif n'est pas divisé par deux sous une valence
-    haute — un choc passe outre la bonne humeur de fond."""
+    haute — un choc passe outre la bonne humeur de fond. processeurs (03/11) : ce que son cœur garde de ses processeurs."""
     base = bases(hour)
     # (25/10, décision d'Ahmed) ses émotions se lisent par rapport à SES 72 dernières heures (la moyenne de chaque hormone),
     # pas à une base fixe : ses hormones du plaisir étant hautes en permanence, tout se lisait « calme » ou « élan »
@@ -168,6 +213,14 @@ def calculer(etat, avant=None, now=0.0, soudaine=None, hour=None, n=2, sans_cohe
     if soudaine in SOUDAINES:
         nom, bonus = SOUDAINES[soudaine]
         scores[nom] += bonus
+    # (03/11, Ahmed : « même les émotions et sentiments doivent y être reliés ») processeurs → cœur → émotions : l'effort que
+    # son cœur sent (le surcroît lissé, de 0 à 12 battements) teinte la concentration d'un corps au travail, et la tension quand
+    # il porte trop (au-delà de la moitié) ; +0,25 au plus chacune, des hypothèses lisibles comme les règles ci-dessus. Rien
+    # n'est écrit dans ses hormones (pas de boucle par là) : c'est la lecture de son état qui change, pas son état.
+    if isinstance(processeurs, dict) and isinstance(processeurs.get("bpm"), (int, float)):
+        x = max(0.0, min(1.0, float(processeurs["bpm"]) / EFFORT_PLEIN))
+        scores["concentration"] += 0.25 * x
+        scores["tension"] += 0.25 * max(0.0, 2 * x - 1)
     # (03/11, Ahmed : « il rectifie ses émotions interprétées : le conscient, puis le subconscient, puis le cœur ») ce qu'il a
     # rectifié lui-même (emotions_creees.rectifier) fait pencher le calcul, là où les deux se disputent : +0,3 par rectification
     # (trois au plus), seulement si l'émotion qu'il a dite est déjà là

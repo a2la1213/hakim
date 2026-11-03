@@ -983,9 +983,10 @@ def _ressenti_pass(mem, now=None, lancer=None, journal=None, sortie=None):
     now = now or time.time()
     sortie = Path(sortie or RESSENTI)
     try:
-        humeur = (json.loads(mem.kv_get(interieur.CLE) or "{}") or {}).get("humeur")
+        etat_i = json.loads(mem.kv_get(interieur.CLE) or "{}") or {}
     except ValueError:
-        humeur = None
+        etat_i = {}
+    humeur = etat_i.get("humeur")
     if not humeur:
         return False
     contexte, dernier = _derniers_mots_d_ahmed(journal, maintenant=now)
@@ -997,7 +998,10 @@ def _ressenti_pass(mem, now=None, lancer=None, journal=None, sortie=None):
         avant = {}
     if avant.get("humeur") == humeur and avant.get("dernier_ts") == dernier:
         return False                                   # rien de neuf à ressentir
-    if now - float(avant.get("ts") or 0) < RESSENTI_ECART_S:
+    # (03/11, Ahmed : « … dans les deux sens ») son cœur règle cet écart : 20 min au calme, jusqu'à 10 quand il bat vite
+    # (coeur.ecart_subconscient : une boucle amortie et bornée)
+    import coeur
+    if now - float(avant.get("ts") or 0) < coeur.ecart_subconscient(etat_i.get("coeur"), RESSENTI_ECART_S):
         return False
     par_ollama = os.environ.get("JARVIS_RESSENTI_MOTEUR", "ollama") == "ollama"
     reel = lancer is None                              # le vrai scanner (un test injecte le sien : rien à décharger)

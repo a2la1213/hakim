@@ -499,12 +499,22 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
         import jauge_fatigue
         jauge_fatigue.mettre_a_jour(e, now, dt, veille)
         etat_h = {**etat_h, "adenosine": e["adenosine"]}
-        e["sensation_code"] = sensations.calculer(etat_h, avant, now, soudaine, time.localtime(now).tm_hour,
-                                                  sans_coherence=True, bases_relatives=e.get("bases_72h"))
         # (28/10, Ahmed : « directement à tes hormones, ça ferait comme un vrai cœur ») le rythme de son cœur, que l'appli
-        # fait battre, et ce qu'il en sent en mots (coeur.py : il lit ses hormones, il ne les écrit jamais)
+        # fait battre, et ce qu'il en sent en mots (coeur.py : il lit ses hormones, il ne les écrit jamais) ; (03/11, Ahmed)
+        # et ses processeurs : le GPU du Mac où Gemma travaille ses émotions, chacun de ses cœurs, son téléphone, sa montre
+        # (interoception.processeurs, en cache) ; ce qu'il en sait passe par le filtre du subconscient (des mots,
+        # sensations.processeurs), et l'effort que son cœur en sent teinte ses émotions (sensations.calculer, juste après)
         import coeur
-        e["coeur"] = coeur.calculer(etat_h, veille, e.get("coeur"), now, e.get("bases_72h"))
+        try:
+            import interoception
+            proc = interoception.processeurs(now)
+        except Exception:
+            proc = None
+        e["coeur"] = coeur.calculer(etat_h, veille, e.get("coeur"), now, e.get("bases_72h"), proc)
+        e["coeur"]["processeurs"]["mots"] = sensations.processeurs(e["coeur"]["processeurs"], now)
+        e["sensation_code"] = sensations.calculer(etat_h, avant, now, soudaine, time.localtime(now).tm_hour,
+                                                  sans_coherence=True, bases_relatives=e.get("bases_72h"),
+                                                  processeurs=e["coeur"]["processeurs"])
         if now - float(e.get("hormones_journal_t") or 0) >= HORMONES_JOURNAL_PAS_S:
             e["hormones_journal_t"] = now
             _ligne_hormones(now, etat_h, valence, arousal, e.get("humeur"), (e.get("sensation_code") or {}).get("emotion"),

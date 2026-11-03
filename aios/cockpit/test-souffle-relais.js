@@ -105,12 +105,14 @@ function extraire(debut) {
 function page() {
   const dits = [], journal = [];
   const ctx = { Date, Math, Number, String, Set, journalVoix: (e, d) => journal.push([e, d]), rythmeVoix: (k, d) => d,
-    souffleAutorise: () => true, lecteurNeuronal: { parle: false }, direSouffle: (conv, s, par) => dits.push([s.texte, par, conv.souffleLocal]) };
+    souffleAutorise: () => true, lecteurNeuronal: { parle: false }, voixPrete: () => ({}),
+    direSouffle: (conv, s, par) => { s.dite = true; dits.push([s.texte, par, conv.souffleLocal]); } };
   ctx.window = ctx;
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'public', 'conversation.js'), 'utf8'), ctx);   // le vrai filtre (phraseFinie)
   vm.runInContext(['const SILENCE_ANTICIPE_MS', 'const FIN_SUSPENDUE', 'function phraseFinie', 'function recouvre', 'function choisirSouffle',
-    'function penseeADire', 'function anticiperConversation'].map(extraire).join('\n') + '\nthis.anticiper = anticiperConversation;', ctx);
+    'function penseePrete', 'function direPenseeSiPossible', 'function anticiperConversation'].map(extraire).join('\n')
+    + '\nthis.anticiper = anticiperConversation; this.direPensee = direPenseeSiPossible;', ctx);
   return { ctx, dits, journal };
 }
 test('page : son rebond (1,5 s) règle le silence ; à ta fin, la pensée prête de son cerveau est dite tout de suite', () => {
@@ -118,13 +120,13 @@ test('page : son rebond (1,5 s) règle le silence ; à ta fin, la pensée prête
   const fins = [];
   const conv = { capteur: { finirTour: () => fins.push(1), derniereVoix: 1, assezDeVoix: false }, ecrit: { confirme: 'papa dit bonjour à son fils', vif: '' } };
   p.ctx.etat = { reglages: {}, conversation: conv,
-    souffles: { sub: { texte: 'Bonjour papa', pret: true, fini: true, rebond: 1.5, pour: 'papa dit bonjour à son fils', t: Date.now(), niveau: 'sub' },
-      cerveau: { texte: 'Bonjour mon papa, ça va ?', pret: true, fini: null, rebond: null, pour: 'papa dit bonjour à son fils', t: Date.now(), niveau: 'cerveau' } } };
+    souffles: { sub: { texte: 'Bonjour papa', pret: true, fini: true, rebond: 1.5, pour: 'papa dit bonjour à son fils', t: Date.now(), niveau: 'sub' } },
+    pensee: { texte: 'Bonjour mon papa, ça va ?', pret: true, fini: null, rebond: null, pour: 'papa dit bonjour à son fils', t: Date.now(), niveau: 'cerveau' } };
   p.ctx.anticiper(conv, 800);
   assert.strictEqual(fins.length, 0, 'son rebond de 1,5 s : pas encore');
   p.ctx.anticiper(conv, 1600);
   assert.strictEqual(fins.length, 1);
-  assert.deepStrictEqual(p.dits, [['Bonjour mon papa, ça va ?', 'local', true]], 'sa pensée, dite par la page, marquée pour que la prise du Mac ne la redise pas');
+  assert.deepStrictEqual(p.dits, [['Bonjour mon papa, ça va ?', 'pensee', true]], 'sa pensée, dite par la page, marquée pour que la prise du Mac ne la redise pas');
   assert.strictEqual(p.journal.find(x => x[0] === 'fin_anticipee')[1].rebond_ms, 1500);
 });
 test('page : (16:30) son subconscient seul finit ton tour, mais ne parle pas (« coupe le glisse-mot »)', () => {
@@ -154,5 +156,50 @@ test('(16:30) une voix fabriquée d’avance (fond) passe après tout ce qu’il
   assert.match(SRC, /if \(q && q\.fond === true\) tache\.fond = true;/);
   assert.match(SRC, /else \{ const k = fileVoix\.findIndex\(x => x\.fond\); if \(k >= 0\) fileVoix\.splice\(k, 0, tache\); else fileVoix\.push\(tache\); \}/);
   assert.match(PAGE, /body: JSON\.stringify\(\{ texte, langue: 'fr', fond: true,/);
-  assert.match(PAGE, /if \(niveau === 'cerveau'\) preparerVoixSouffle\(texte, niveau\);/, 'seule la pensée de son cerveau a sa voix d’avance');
+  assert.match(PAGE, /if \(niveau !== 'cerveau'\) return;[^]{0,900}preparerVoixSouffle\(texte, niveau, \(\) => direPenseeSiPossible\(\)\);/,
+    'seule la pensée de son cerveau a sa voix d’avance, et se dit dès qu’elle est faite');
+});
+
+test('page : (16:40) sa pensée se dit dès qu’elle est prête, jamais pendant ton tour, jamais pendant sa réponse, une seule fois', () => {
+  const p = page();
+  const conv = { capteur: { enParole: true } };
+  p.ctx.etat = { conversation: conv, pensee: { texte: 'Je suis là, papa', pret: true, t: Date.now(), niveau: 'cerveau' } };
+  assert.strictEqual(p.ctx.direPensee(), false, 'ton tour est ouvert : elle attend ta fin');
+  conv.capteur.enParole = false; p.ctx.etat.flux = {};
+  assert.strictEqual(p.ctx.direPensee(), false, 'sa vraie réponse s’écrit : elle ne passe plus');
+  p.ctx.etat.flux = null;
+  assert.strictEqual(p.ctx.direPensee(), true);
+  assert.strictEqual(p.ctx.direPensee(), false, 'déjà dite');
+  p.ctx.etat.pensee = { texte: 'Je t’écoute, finis ta phrase', pret: false, t: Date.now(), niveau: 'cerveau' };
+  assert.strictEqual(p.ctx.direPensee(), false, 'celle qui attend la suite s’écrit seulement');
+  assert.deepStrictEqual(p.dits.map(d => d[0]), ['Je suis là, papa']);
+});
+
+// (16:45, Ahmed : « que Chatterbox écrive la voix directement à partir de l'input qui donne naissance à l'écriture, puis relie la parole
+// à l'écriture dans un second temps ») la voix de sa pensée naît au cockpit avec elle, une seule fois ; la page la reçoit ensuite
+test('(16:45) la voix de sa pensée naît avec elle, au cockpit, une seule fois ; la page reçoit celle-là', async () => {
+  const i = SRC.indexOf('const voixALaSource = new Map();'), k = SRC.indexOf('async function routeDire(');
+  assert.ok(i > 0 && k > i);
+  const taches = [];
+  const ctx = { Map, Date, Math, Number, String, Promise, Buffer, console, process: { pid: 1 },
+    prononcer: (t) => String(t).replace(/😊/g, '').replace(/[ \t]{2,}/g, ' ').trim(),
+    etatInterieur: async () => ({ ts: Date.now() / 1000, voix: { expressivite: 0.5, vitesse: 1.05 } }), FRAICHEUR_S: 300,
+    VoixPage: { expressivitePhrase: (b) => b }, fileVoix: taches, pomperVoix() {}, path, os: { tmpdir: () => '/tmp' },
+    crypto: { randomBytes: () => ({ toString: () => 'abcd' }) }, j: JSON.stringify, JARVIS_VOIX_DIAGNOSTIC: '/dev/null',
+    fs: { readFileSync: () => Buffer.from('RIFF'), unlink() {}, appendFileSync() {} } };
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(i, k) + '\nthis.naitre = voixDeLaSource; this.cache = voixALaSource;', ctx);
+  const p1 = ctx.naitre('Bonjour  papa 😊');
+  assert.ok(p1, 'la synthèse part tout de suite');
+  assert.strictEqual(ctx.naitre('Bonjour papa'), null, 'déjà en train de naître : pas deux fois');
+  await new Promise(r => setImmediate(r));
+  assert.strictEqual(taches.length, 1);
+  assert.strictEqual(taches[0].fond, true, 'elle passe après ce qu’il dit vraiment');
+  assert.strictEqual(taches[0].tempo, 1.05);
+  taches[0].fin({ duree_s: 1.2 });
+  const v = await p1;
+  assert.strictEqual(String(v.data), 'RIFF');
+  assert.ok(ctx.cache.has('Bonjour papa'));
+  assert.match(SRC, /const source = voixALaSource\.get\(texte\.replace\(\/\\s\+\/g, ' '\)\.trim\(\)\);/, 'la page la reçoit au lieu d’une deuxième synthèse');
+  assert.match(SRC, /voixDeLaSource\(s0\.reponse\.slice\(0, 400\)\);/, 'au moment même où son cerveau écrit sa pensée');
 });
