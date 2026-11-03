@@ -185,6 +185,20 @@
       background: #ef4444; box-shadow: 0 0 6px #ef4444; z-index: 1; }
     .vision .expression { font-size: 11px; color: var(--txt-3); max-width: 110px; }
     .vision.sur-scene { position: fixed; right: 20px; bottom: 20px; z-index: 31; flex-direction: column; align-items: flex-end; }
+    /* (03/11) la caméra en grand, dans l'appli : l'image sur tout l'écran, son orbe en haut à droite, les boutons dessous */
+    .vision .vision-orbe, .vision .vision-boutons-plein { display: none; }
+    .vision.plein-ecran { position: fixed; inset: 0; z-index: 60; background: #000; display: block; border-radius: 0; }
+    .vision.plein-ecran::before { display: none; }
+    .vision.plein-ecran video { width: 100%; height: 100%; object-fit: cover; border-radius: 0; }
+    .vision.plein-ecran .boutons-vision { position: absolute; left: 16px; top: calc(16px + env(safe-area-inset-top)); }
+    .vision.plein-ecran .expression { position: absolute; left: 16px; bottom: calc(20px + env(safe-area-inset-bottom)); max-width: 60%;
+      font-size: 14px; color: #fff; text-shadow: 0 1px 3px #000; }
+    .vision.plein-ecran .vision-orbe { display: block; position: absolute; right: 16px; top: calc(16px + env(safe-area-inset-top));
+      width: 88px; height: 88px; }
+    .vision.plein-ecran .vision-orbe canvas { width: 100%; height: 100%; }
+    .vision.plein-ecran .vision-boutons-plein { display: flex; flex-direction: column; gap: 8px; position: absolute; right: 12px;
+      top: calc(112px + env(safe-area-inset-top)); }
+    .vision.plein-ecran .vision-boutons-plein .btn { background: rgba(0, 0, 0, .55); color: #fff; }
     .vision.flottante { position: fixed; z-index: 40; flex-direction: column; align-items: flex-end; gap: 4px; padding: 4px;
       border-radius: 12px; background: rgba(4,12,12,.55); touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
     .vision.flottante.tenue { cursor: grabbing; }
@@ -293,6 +307,13 @@
         <span class="boutons-vision">
           <button type="button" id="cameraFace" title="Caméra avant / arrière" aria-label="Passer à l'autre caméra">⟲</button>
           <button type="button" id="cameraCouper" title="Éteindre la caméra" aria-label="Éteindre la caméra">✕</button>
+        </span>
+        <!-- (03/11, Ahmed : « quand je clique sur Caméra, mon image en grand sur tout l'écran, avec son orbe en haut à droite et
+             les boutons dessous : sortir de la caméra, partager l'écran ») dans l'appli -->
+        <span class="vision-orbe" aria-hidden="true"><canvas id="orbeVision"></canvas></span>
+        <span class="vision-boutons-plein">
+          <button type="button" class="btn" id="visionSortir">sortir de la caméra</button>
+          <button type="button" class="btn" id="visionEcran">partager l'écran</button>
         </span>
       </div>
       <div class="actions">

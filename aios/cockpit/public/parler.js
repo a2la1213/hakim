@@ -566,6 +566,10 @@ if (lecteurSysteme) lecteurSysteme.surFin = finLecture;
 /* ---------- les orbes : la petite (en-tête) et la grande (scène, quand il parle ou écoute) ---------- */
 const orbeTete = Orbe.creer($('orbe'), { reduit: REDUCED });
 const orbeScene = Orbe.creer($('orbeScene'), { reduit: REDUCED });
+// (03/11) son orbe sur la caméra en grand, la même qui bat avec sa voix ; et ses deux boutons
+const orbeVision = $('orbeVision') ? Orbe.creer($('orbeVision'), { reduit: REDUCED }) : null;
+if ($('visionSortir')) $('visionSortir').addEventListener('click', () => { arreterCamera(); humeur(); });
+if ($('visionEcran')) $('visionEcran').addEventListener('click', () => { if ($('ecran')) $('ecran').click(); });
 function niveauCourant() {
   // (30/10, 22:44, Ahmed : « quand l'orbe est de sa couleur à lui, je la vois quand même bouger quand je parle ») la parole est
   // à lui (il prépare, il parle, il a coupé ton micro) : seule sa voix la fait bouger
@@ -578,7 +582,8 @@ function niveauCourant() {
 }
 orbeTete.source(niveauCourant);
 orbeScene.source(niveauCourant);
-const pulser = (x) => { orbeTete.pulser(x); orbeScene.pulser(x); };
+if (orbeVision) orbeVision.source(niveauCourant);
+const pulser = (x) => { orbeTete.pulser(x); orbeScene.pulser(x); if (orbeVision) orbeVision.pulser(x); };
 const sousTitre = (t) => { $('sousTitre').textContent = t || ''; };
 /* Diagnostic de la voix (2026-10-21, Ahmed : « la pause s'active toute seule », « il lit mais je n'entends rien ») :
    les événements de la voix et du micro (coupure, écho reconnu, son bloqué, contexte audio, transcription trop
@@ -1099,7 +1104,7 @@ function humeur(texte) {
   const coupe = !!(etat.conversation && etat.conversation.capteur && etat.conversation.capteur.estMuet);
   const mode = ecoute && !coupe ? 'ecoute' : (parle ? 'parle' : (pense ? 'pense' : 'repos'));
   const qui = quiALaParole();
-  for (const o of [orbeTete, orbeScene]) { o.humeur(code); o.mode(mode); o.parole(qui); }
+  for (const o of [orbeTete, orbeScene, orbeVision].filter(Boolean)) { o.humeur(code); o.mode(mode); o.parole(qui); }
   const mot = (etat.interieur && etat.interieur.humeur) || '';          // (26/10, Ahmed) son émotion, en un mot
   if ($('emotionMot').textContent !== mot) { $('emotionMot').textContent = mot; $('emotionScene').textContent = mot; }
   const origine = mot ? origineDuBadge(etat.interieur && etat.interieur.humeur_origine) : null;
@@ -1232,8 +1237,8 @@ function htmlMessage(m) {
   if (m.source === 'local') pied.push('<span title="Forfait et API indisponibles : cerveau local, sans outils">cerveau local</span>');
   // (26/10, Hakim et Ahmed : une réponse du local était passée pour la sienne) le secours se voit en tête, pas en petit en bas
   const secours = m.source === 'local' ? '<span class="etiquette secours" title="Forfait et API indisponibles à ce moment : c’est son cerveau local qui répond, sans ses outils ni sa mémoire complète">CERVEAU LOCAL · SECOURS, SANS SES OUTILS</span>' : '';
-  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'anticorps' ? 'ANTICORPS PROPOSÉ PAR SON MÉDECIN' : m.spontane === 'silence' ? 'IL REPREND LA PAROLE' : m.spontane === 'oreille' ? 'IL GLISSE UN MOT' : m.spontane === 'reecoute' ? 'CE QUE TU N’AVAIS PAS ENTENDU' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
-  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'carnet' ? htmlCarnet(m.carnet) : m.spontane === 'retractation' ? htmlRetractation(m.retractation) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : m.spontane === 'anticorps' ? htmlAnticorps(m.anticorps) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
+  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'membre' ? 'SES MEMBRES · LA PREMIÈRE FOIS, TON OUI' : m.spontane === 'anticorps' ? 'ANTICORPS PROPOSÉ PAR SON MÉDECIN' : m.spontane === 'silence' ? 'IL REPREND LA PAROLE' : m.spontane === 'oreille' ? 'IL GLISSE UN MOT' : m.spontane === 'reecoute' ? 'CE QUE TU N’AVAIS PAS ENTENDU' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
+  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'carnet' ? htmlCarnet(m.carnet) : m.spontane === 'retractation' ? htmlRetractation(m.retractation) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : m.spontane === 'membre' ? htmlMembre(m.membre) : m.spontane === 'anticorps' ? htmlAnticorps(m.anticorps) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
 }
 
 /* Les pièces jointes de Hakim (2026-10-20) : récupérées avec le jeton, jamais ouvertes comme une page — une image
@@ -1948,6 +1953,7 @@ async function basculerCamera() {
   $('camera').setAttribute('aria-pressed', 'true');
   $('vision').hidden = false;
   $('vision').classList.add('flottante');
+  if (window.HakimApp) $('vision').classList.add('plein-ecran');   // (03/11) dans l'appli : en grand, son orbe en haut à droite
   placerVision();
   try {
     await demarrerCapteurVision(v);
@@ -1983,7 +1989,7 @@ function arreterCamera() {
   if (v.natif) { clearInterval(v.natif.minuterie); v.natif = null; }
   $('camera').setAttribute('aria-pressed', 'false');
   $('vision').hidden = true;
-  $('vision').classList.remove('flottante', 'absent', 'arriere');
+  $('vision').classList.remove('flottante', 'absent', 'arriere', 'plein-ecran');
   noterPresent({ e: 'camera_fin', t: Date.now() });
 }
 // ⟲ : l'autre caméra ; l'expression en cours se ferme (l'arrière ne lit aucun visage)
@@ -3203,7 +3209,7 @@ let veutAffiche = false, veutDepuis = 0;
 setInterval(() => {
   const veut = (typeof aDire !== 'undefined' && aDire.length > 0) || !!sonEnAttente || !!vibrationEnAttente;
   const qui = quiALaParole();                              // (21:36) la couleur suit la parole, même entre deux humeur()
-  for (const o of [orbeTete, orbeScene]) o.parole(qui);
+  for (const o of [orbeTete, orbeScene, orbeVision].filter(Boolean)) o.parole(qui);
   if (veut === veutAffiche) { veutDepuis = 0; return; }
   if (!veutDepuis) veutDepuis = Date.now();
   if (Date.now() - veutDepuis < (veut ? 1500 : 3000)) return;
@@ -3317,6 +3323,7 @@ function ecouterPensees() {
   es.addEventListener('retractation', (ev) => { try { surRetractation(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('identite', (ev) => { try { surIdentite(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('sortie', (ev) => { try { surSortie(JSON.parse(ev.data)); } catch (_) {} });
+  es.addEventListener('membre', (ev) => { try { surMembre(JSON.parse(ev.data)); } catch (_) {} });   // (03/11) ses membres
   es.addEventListener('anticorps', (ev) => { try { surAnticorps(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('spontane', (ev) => { try { surSpontane(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('courrier', (ev) => {
@@ -3633,6 +3640,51 @@ function surSortie(o) {
   m.sortie = { ...(m.sortie || {}), ...o };
   m.texte = `Je voudrais ouvrir ${m.sortie.url} — ${ETATS_SORTIE[m.sortie.etat] || m.sortie.etat}.`;
   sauver(); rendre();
+}
+// (03/11, Ahmed : « il a le droit à tout, mais au début il demande toujours l'autorisation ») ses sens radio et ses membres :
+// la première fois, ton oui (pour toujours) ou ton non
+const ETATS_MEMBRE = { en_attente: 'attend ta décision', autorise: 'autorisé pour toujours', refuse: 'refusé' };
+function surMembre(o) {
+  if (!o || !/^[0-9a-f]{10}$/.test(String(o.id))) return;
+  const id = 'membre-' + o.id;
+  let m = etat.messages.find(x => x.id === id);
+  if (!m) {
+    if (o.etat !== 'en_attente') return;
+    m = { id, qui: 'j', spontane: 'membre', ts: Math.round((Number(o.ts) || Date.now() / 1000) * 1000) };
+    etat.messages.push(m);
+    humeur('Hakim demande à utiliser un de ses membres : à toi de trancher');
+  }
+  m.membre = { ...(m.membre || {}), ...o };
+  m.texte = `Je voudrais utiliser « ${m.membre.sens} » — ${ETATS_MEMBRE[m.membre.etat] || m.membre.etat}.`;
+  sauver(); rendre();
+}
+function htmlMembre(o) {
+  if (!o) return '';
+  const boutons = o.etat === 'en_attente'
+    ? `<div class="mission-boutons"><button class="btn" data-membre="${esc(o.id)}" data-action="autoriser">Autoriser pour toujours</button>`
+      + `<button class="btn" data-membre="${esc(o.id)}" data-action="refuser">Refuser</button></div>` : '';
+  return `<div class="mission"><div><b>La première fois : ${esc(o.sens)}</b></div><div class="mission-etat">${esc(o.quoi || '')}</div>`
+    + (o.texte ? `<div class="diff">${esc(o.texte)}</div>` : '')
+    + `<div class="mission-etat">${esc(ETATS_MEMBRE[o.etat] || o.etat)}</div>${boutons}</div>`;
+}
+$('fil').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-membre]');
+  if (!b) return;
+  b.disabled = true;
+  try {
+    const presence = b.dataset.action === 'autoriser' ? await preuvePresence(`membre:autoriser:${b.dataset.membre}`) : undefined;
+    const r = await fetch('/api/membres', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ id: b.dataset.membre, action: b.dataset.action, presence }) });
+    const o = await r.json();
+    if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
+    surMembre(o);
+  } catch (err) { b.disabled = false; humeur(String(err.message || err)); }
+});
+async function membresAuChargement() {
+  try {
+    const r = await fetch('/api/membres', { headers: { 'X-Jeton': jeton() } });
+    if (r.ok) for (const o of (await r.json()).membres || []) surMembre(o);
+  } catch (_) {}
 }
 async function sortiesAuChargement() {
   try {
@@ -4733,7 +4785,19 @@ missionsAuChargement();
 ecrituresAuChargement();
 reglesAuChargement(); carnetsAuChargement(); retractationsAuChargement();
 identiteAuChargement();
-sortiesAuChargement();
+sortiesAuChargement(); membresAuChargement();
+// (03/11, Ahmed : « si je mets de la musique, il l'entend et la reconnaît ») l'accès aux notifications n'est pas encore donné : on le
+// dit une fois par jour, et un toucher sur le message ouvre le réglage
+setTimeout(() => {
+  try {
+    if (!window.HakimApp || !window.HakimApp.ecouteMusique || window.HakimApp.ecouteMusique()) return;
+    const jour = new Date().toDateString();
+    if (localStorage.getItem('jarvis.ecouteMusique') === jour) return;
+    localStorage.setItem('jarvis.ecouteMusique', jour);
+    humeur('Pour que Hakim entende et reconnaisse ta musique : touche ici, puis active « Hakim » dans l’accès aux notifications');
+    $('etat').addEventListener('click', () => { try { window.HakimApp.ouvrirEcouteMusique(); } catch (_) {} }, { once: true });
+  } catch (_) {}
+}, 4000);
 anticorpsAuChargement();
 $('q').focus();
 

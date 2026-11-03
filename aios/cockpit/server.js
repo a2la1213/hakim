@@ -4896,7 +4896,8 @@ setInterval(reveillerPourSens, 3000).unref();
 const { Homeostasie } = require('./homeostasie.js');
 const HOMEO = new Homeostasie({ jarvis: JARVIS });
 const CORPS_TYPES = new Set(['chute', 'choc', 'secousse', 'pris_en_main', 'pose', 'berce', 'poche', 'sortie_poche', 'plie', 'deplie',
-  'lumiere_soudaine', 'noir', 'coup_de_pression', 'musique', 'voix_sentie']);
+  'lumiere_soudaine', 'noir', 'coup_de_pression', 'musique', 'voix_sentie',
+  'bluetooth', 'wifi', 'nfc', 'musique_ecoutee']);   // (03/11) ses sens radio (appli 1.42)
 const CORPS_REGLAGES = path.join(JARVIS, 'corps-reglages.json');
 const CORPS_INTERVALLES = [30, 60, 120, 300, 900];
 function corpsReglages() {
@@ -7205,6 +7206,34 @@ function surveillerSorties() {
 }
 setInterval(surveillerSorties, 3000).unref(); setTimeout(surveillerSorties, 1000).unref();
 
+/* ---- (03/11, Ahmed : « ses bras et ses jambes : NFC, Bluetooth, Wi-Fi… ; il a le droit à tout, mais au début il demande
+   toujours l'autorisation ») la première fois qu'un sens radio ou un membre sert, sa demande devient une carte dans Parler ;
+   autorisé, c'est pour toujours (membres-permis.json, lu par anamnese/jarvis/sens.py) ---- */
+const JARVIS_MEMBRES_DEMANDES = path.join(JARVIS, 'membres-demandes.jsonl');
+const JARVIS_MEMBRES_PERMIS = path.join(JARVIS, 'membres-permis.json');
+const ID_MEMBRE = /^[0-9a-f]{10}$/;
+const membres = new Map();
+let membresTaille = null;
+function surveillerMembres() {
+  let taille = 0; try { taille = fs.statSync(JARVIS_MEMBRES_DEMANDES).size; } catch (_) { membresTaille = 0; return; }
+  const depart = membresTaille === null || taille < membresTaille ? 0 : membresTaille, premier = membresTaille === null;
+  if (taille === depart) { membresTaille = taille; return; }
+  let neuf = ''; try { const fd = fs.openSync(JARVIS_MEMBRES_DEMANDES, 'r'); const b = Buffer.alloc(taille - depart); fs.readSync(fd, b, 0, b.length, depart); fs.closeSync(fd); neuf = b.toString('utf8'); } catch (_) {}
+  membresTaille = taille;
+  for (const l of neuf.split('\n')) {
+    let d; try { d = JSON.parse(l); } catch (_) { continue; }
+    if (!d || !ID_MEMBRE.test(String(d.id)) || membres.has(d.id) || Date.now() / 1000 - (Number(d.ts) || 0) > 6 * 3600) continue;
+    const x = { id: d.id, ts: Number(d.ts) || Date.now() / 1000, sens: String(d.sens || '').slice(0, 40), quoi: String(d.quoi || '').slice(0, 300),
+      texte: String(d.texte || '').slice(0, 300), etat: 'en_attente' };
+    membres.set(x.id, x);
+    while (membres.size > 50) membres.delete(membres.keys().next().value);
+    if (premier) continue;
+    diffuser(abonnesPensees, 'membre', j(x));
+    notifier(`Hakim demande, la première fois, à utiliser « ${x.sens} » (${finDePhrase(x.quoi, 120)}) — à autoriser ou refuser dans Parler`, `membre-${x.id}`);
+  }
+}
+setInterval(surveillerMembres, 3000).unref(); setTimeout(surveillerMembres, 1000).unref();
+
 /* ---- (lot 3 du système immunitaire, 29/10) les anticorps que le médecin propose : montrés dans Parler, acceptés ou
    refusés d'un geste d'Ahmed (accepter : avec sa présence). La phrase est une phrase d'attaque : elle va à la page
    d'Ahmed (échappée), jamais à Hakim ni dans une notification. ---- */
@@ -8564,6 +8593,29 @@ async function traiter(req, res) {
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(j({ anticorps: anticorpsProposes() }));
+  }
+  if (p === '/api/membres') {                                 // (03/11) ses membres : la première fois, ton geste
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    if (req.method === 'POST') {
+      let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
+      const x = membres.get(String(q.id || '')), action = String(q.action || '');
+      if (!x || !['autoriser', 'refuser'].includes(action)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'demande ou action invalide' })); }
+      if (x.etat !== 'en_attente') { res.writeHead(409, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'déjà tranchée' })); }
+      if (action === 'autoriser') {
+        const refus = exigerPresence(req, distantReq, q, `membre:autoriser:${x.id}`);
+        if (refus) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: refus, presence: true })); }
+        const d = lireJson(JARVIS_MEMBRES_PERMIS, {}) || {};
+        d[x.sens] = true;
+        try { ecrireAtomique(JARVIS_MEMBRES_PERMIS, j(d)); fs.chmodSync(JARVIS_MEMBRES_PERMIS, 0o600); } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
+        courrierVersHakim(`Papa t'autorise : ${x.sens}`, `Papa t'a donné son oui pour « ${x.sens} » (${x.quoi}). C'est pour toujours : sens_mesurer("${x.sens}"…) marche maintenant librement.`);
+      } else courrierVersHakim(`Papa refuse : ${x.sens}`, `Papa a dit non pour « ${x.sens} », pour l'instant.`);
+      x.etat = action === 'autoriser' ? 'autorise' : 'refuse';
+      auditer(`membre:${action}`, req, distantReq, { id: x.id, sens: x.sens });
+      res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(x));
+    }
+    surveillerMembres();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(j({ membres: [...membres.values()].filter(x => x.etat === 'en_attente') }));
   }
   if (p === '/api/sorties') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }

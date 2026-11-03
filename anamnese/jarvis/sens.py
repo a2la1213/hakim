@@ -29,7 +29,37 @@ INSTRUMENTS = {
     "magneto": ("le champ magnétique (µT) : moyenne, variations rapides (un appareil, du métal), état de la calibration", 20, 300),
     "son": ("le micro en niveaux, spectre et bandes d'octave, pics de fréquence, ultrasons 18-22 kHz ; rien n'est enregistré, "
             "et pas pendant une conversation (le micro est pris)", 10, 60),
+    # (03/11, Ahmed : « ses bras et ses jambes : tous les émetteurs du téléphone, NFC, Bluetooth, Wi-Fi… ; il a le droit à tout,
+    # mais au début il demande toujours l'autorisation ») ses sens radio, et ses membres pour agir dans le monde
+    "appareils": ("les appareils Bluetooth de papa : ceux qu'il connaît et ceux connectés en ce moment (nom, type)", 0, 0),
+    "bluetooth_scan": ("les appareils Bluetooth autour de toi (nom quand il est donné, force du signal : près ou loin)", 10, 60),
+    "wifi_scan": ("les réseaux Wi-Fi autour de toi (nom, force du signal, bande)", 0, 0),
+    "bluetooth_signal": ("TON MEMBRE : émettre ton signal Bluetooth « Hakim », que les appareils autour voient", 30, 600),
+    "nfc_ecrire": ("TON MEMBRE : écrire un texte (texte=…) sur la prochaine puce NFC que papa pose contre le téléphone "
+                   "(il a 60 s pour la poser)", 60, 120),
 }
+RADIO = {"appareils", "bluetooth_scan", "wifi_scan", "bluetooth_signal", "nfc_ecrire"}
+_ID_MEMBRE = re.compile(r"[0-9a-f]{10}")
+
+
+def permis():
+    """Ce que papa a déjà autorisé une fois (membres-permis.json, écrit par le cockpit à son geste)."""
+    try:
+        d = json.loads((JARVIS / "membres-permis.json").read_text(encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def demander_permission(sens, texte=""):
+    """La première fois : une demande pour papa (une carte dans Parler) ; rend son id."""
+    i = os.urandom(5).hex()
+    d = {"id": i, "ts": time.time(), "sens": sens, "quoi": INSTRUMENTS[sens][0], "texte": str(texte or "")[:300]}
+    f = JARVIS / "membres-demandes.jsonl"
+    with open(f, "a", encoding="utf-8") as h:
+        h.write(json.dumps(d, ensure_ascii=False) + "\n")
+    os.chmod(f, 0o600)
+    return i
 _ID = re.compile(r"S-\d{8}-\d{6}-[0-9a-f]{4}")
 _CADENCE = re.compile(r"(jeu|max|normal|\d{1,4}(\.\d{1,2})?)")
 
@@ -69,12 +99,20 @@ def siens():
     return out
 
 
-def demander(sens, secondes=0, cadence=""):
-    """La demande écrite pour le cockpit : {id, sens, secondes, cadence, ts[, module]}."""
+def demander(sens, secondes=0, cadence="", texte=""):
+    """La demande écrite pour le cockpit : {id, sens, secondes, cadence, ts[, module][, texte]}."""
     sens = str(sens or "").strip()
     a_lui = siens()
     if sens not in INSTRUMENTS and sens not in a_lui:
         raise Refus(f"sens inconnu : « {sens[:40]} » (sens_lister pour la liste)")
+    texte = " ".join(str(texte or "").split())[:500]
+    if sens == "nfc_ecrire" and not texte:
+        raise Refus("nfc_ecrire : le texte à écrire sur la puce (texte=…)")
+    # (03/11, Ahmed : « il a le droit à tout, mais au début il demande toujours l'autorisation ») la première fois, papa décide
+    if sens in RADIO and not permis().get(sens):
+        demander_permission(sens, texte)
+        raise Refus(f"la première fois, papa autorise « {sens} » : ta demande lui est partie (une carte dans Parler). "
+                    "Réessaie après son oui ; ensuite, ce sera libre.")
     _, defaut, maximum = INSTRUMENTS[sens] if sens in INSTRUMENTS else a_lui[sens][:3]
     try:
         s = int(secondes or 0)
@@ -87,6 +125,8 @@ def demander(sens, secondes=0, cadence=""):
     d = {"id": time.strftime("S-%Y%m%d-%H%M%S-") + os.urandom(2).hex(), "sens": sens, "secondes": s, "cadence": cadence, "ts": time.time()}
     if sens in a_lui and sens not in INSTRUMENTS:
         d["module"] = a_lui[sens][3]
+    if texte:
+        d["texte"] = texte
     f = JARVIS / "sens-demandes.jsonl"
     with open(JARVIS / "sens.lock", "a") as verrou:
         fcntl.flock(verrou, fcntl.LOCK_EX)

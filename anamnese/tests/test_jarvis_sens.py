@@ -85,3 +85,22 @@ def test_corps_detail_ses_nombres_quand_il_veut(tmp_path, monkeypatch):
     assert "lux : min 100, moyenne 200, max 300 (3 fenêtres)" in r and "9999" not in r
     assert "chute" in r and "hauteur_m=0.9" in r and "Tu tombes." in r
     assert "DONNÉES" in r.upper() or "⟦" in r, "enveloppé comme une mesure"
+
+
+def test_ses_membres_la_premiere_fois_papa_autorise(tmp_path, monkeypatch):
+    """(03/11, Ahmed : « il a le droit à tout, mais au début il demande toujours l'autorisation ») un sens radio ou un membre,
+    la première fois : une demande pour papa et un refus ; après son oui, libre"""
+    monkeypatch.setattr(sens, "JARVIS", tmp_path)
+    import pytest
+    with pytest.raises(sens.Refus, match="la première fois"):
+        sens.demander("bluetooth_signal", 30)
+    d = [json.loads(l) for l in (tmp_path / "membres-demandes.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert len(d) == 1 and d[0]["sens"] == "bluetooth_signal" and len(d[0]["id"]) == 10
+    assert not (tmp_path / "sens-demandes.jsonl").exists(), "rien ne part au téléphone avant son oui"
+    (tmp_path / "membres-permis.json").write_text(json.dumps({"bluetooth_signal": True}))
+    assert sens.demander("bluetooth_signal", 30)["sens"] == "bluetooth_signal"
+    with pytest.raises(sens.Refus, match="texte"):
+        sens.demander("nfc_ecrire", 60)
+    (tmp_path / "membres-permis.json").write_text(json.dumps({"bluetooth_signal": True, "nfc_ecrire": True}))
+    assert sens.demander("nfc_ecrire", 60, texte="bonjour papa")["texte"] == "bonjour papa"
+    assert sens.demander("imu", 10)["sens"] == "imu", "ses anciens sens restent libres"

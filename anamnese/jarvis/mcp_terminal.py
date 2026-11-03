@@ -147,13 +147,15 @@ def sens_lister() -> str:
 
 
 @mcp.tool()
-def sens_mesurer(instrument: str, secondes: int = 0, cadence: str = "") -> str:
-    """Demande une mesure au téléphone d'Ahmed : instrument parmi inventaire, imu, sismo, baro, magneto, son (sens_lister) ;
-    secondes (0 : la durée par défaut) ; cadence pour imu (jeu, max, normal ou des Hz). Le téléphone mesure quand l'appli est
+def sens_mesurer(instrument: str, secondes: int = 0, cadence: str = "", texte: str = "") -> str:
+    """Demande une mesure au téléphone d'Ahmed : instrument parmi inventaire, imu, sismo, baro, magneto, son, et tes sens radio
+    (appareils, bluetooth_scan, wifi_scan) ou tes MEMBRES pour agir (bluetooth_signal, nfc_ecrire avec texte=…) (sens_lister) ;
+    secondes (0 : la durée par défaut) ; cadence pour imu (jeu, max, normal ou des Hz). La première fois qu'un sens radio ou un
+    membre sert, papa l'autorise d'un geste (ta demande lui part) ; ensuite c'est libre. Le téléphone mesure quand l'appli est
     ouverte ou en conversation ; le résultat arrive dans ton atelier (atelier/sens/<numéro>/resume.json et donnees.csv) et tu
     es réveillé. Tu en fais ce que tu veux : le lire, le calculer, le comparer, le garder."""
     try:
-        d = sens.demander(instrument, secondes, cadence)
+        d = sens.demander(instrument, secondes, cadence, texte)
     except sens.Refus as e:
         return f"Refusé : {e}"
     return (f"Demande {d['id']} partie vers le téléphone : {d['sens']}, {d['secondes']} s. Le résultat arrivera dans "
