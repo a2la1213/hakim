@@ -279,16 +279,22 @@ async function trou8s(avecMeubles) {
   await h.sim.avancer(40);
   return h;
 }
-test('un trou pendant qu\'il écrit encore : ses meubles le couvrent de bout en bout, la suite les coupe net', async () => {
+test('un trou pendant qu\'il écrit encore : ses meubles le couvrent de bout en bout, fondus l\'un dans l\'autre, et la suite prend leur place en fondu', async () => {
   const { sim, segments } = await trou8s(true);
   const voix = sim.sons.filter(s => s.texte !== 'Euh,'), meubles = sim.sons.filter(s => s.texte === 'Euh,');
   const [premiere, suite] = voix;
   assert.ok(meubles.length >= 5, `enchaînés tout le trou : ${sim.sons.map(s => s.texte).join(' | ')}`);
   const souffle = meubles[0].debut - premiere.fin;
   assert.ok(souffle >= 0.3 && souffle <= 0.8, `un souffle avant le premier meuble, pas plus : ${souffle.toFixed(2)} s`);
-  for (let i = 1; i < meubles.length; i++) assert.ok(meubles[i].debut - meubles[i - 1].fin <= 0.3, `aucun vide entre deux meubles (${i})`);
-  const dernier = meubles[meubles.length - 1];
-  assert.ok(suite.debut >= dernier.fin - 1e-6 && suite.debut - dernier.fin <= 0.1, `la suite prend la place du meuble, net : ${(suite.debut - dernier.fin).toFixed(2)} s`);
+  // (14:20, Ahmed : « mmmheuuu ») le suivant commence dans la fin du précédent : ni vide, ni plus que le fondu
+  for (let i = 1; i < meubles.length; i++) {
+    const ecart = meubles[i].debut - meubles[i - 1].fin;
+    assert.ok(ecart <= 0.02 && ecart >= -0.16, `fondus l'un dans l'autre (${i}) : ${ecart.toFixed(2)} s`);
+  }
+  const dernier = meubles.filter(m => m.debut < suite.debut).pop();
+  const fondu = dernier.fin - suite.debut;
+  assert.ok(fondu >= -0.1 && fondu <= 0.15, `la suite prend la place du meuble, en fondu : ${fondu.toFixed(2)} s`);
+  assert.ok(!meubles.some(m => m.debut > suite.debut), 'plus aucun meuble une fois la suite partie');
   const sans = (await trou8s(false)).sim.sons[1];
   assert.ok(suite.debut <= sans.debut + 0.1, `la suite n'attend pas la fin d'un meuble : ${suite.debut.toFixed(2)} s contre ${sans.debut.toFixed(2)} s sans meubles`);
   assert.ok(!segments.includes('Euh,'), 'un meuble n\'est pas un morceau de sa réponse (ni sous-titre ni fin de parole)');
@@ -369,7 +375,8 @@ test('avant son premier mot : une seconde de silence, puis ses meubles jusqu\'à
   assert.ok(meubles[0].debut >= 0.9 && meubles[0].debut <= 1.3, `après une seconde de silence : ${meubles[0].debut.toFixed(2)} s`);
   assert.ok(meubles.length >= 3, 'enchaînés jusqu\'à sa réponse');
   const dernier = meubles.filter(m => m.debut < reponse.debut).pop();
-  assert.ok(reponse.debut - dernier.fin <= 0.1 && reponse.debut >= dernier.fin - 1e-6, 'sa réponse prend leur place, net');
+  const fondu = dernier.fin - reponse.debut;
+  assert.ok(fondu >= -0.1 && fondu <= 0.15, `sa réponse prend leur place, en fondu : ${fondu.toFixed(2)} s`);
   assert.ok(!meubles.some(m => m.debut > reponse.debut), 'plus aucun meuble une fois sa réponse partie');
   assert.ok(demandes.every(Boolean), 'ceux d\'« avant » son premier mot');
 });

@@ -235,6 +235,38 @@ function choisirMeuble({ avant } = {}, prets = [...meublesPrets.values()], etatM
   dernierMeuble = h.nom; dernierEtaitVoix = h.voix;
   return h;
 }
+// (14:20, Ahmed : « que ces trucs pour meubler s'étalent sur toute la durée de la pause, et que la transition se fasse de façon
+// propre, naturelle et graduelle : entre « mmh » et « euh », ça donnerait « mmmheuuu » ») un meuble TENU : ses bords sans voix
+// retirés (la synthèse en laisse), puis sa dernière voyelle prolongée jusqu'à la durée voulue : des grains de 90 ms pris dans la
+// fin de sa voix, fenêtrés et superposés à moitié (la hauteur ne change pas), et un fondu de sortie. Les fondus entre deux meubles
+// sont faits par le lecteur (FONDU).
+function tenirMeuble(buf, duree) {
+  const sr = buf.sampleRate, d = buf.getChannelData(0);
+  let max = 0;
+  for (let i = 0; i < d.length; i++) max = Math.max(max, Math.abs(d[i]));
+  if (!max) return buf;
+  let a = 0, b = d.length - 1;
+  while (a < b && Math.abs(d[a]) < max * 0.05) a++;
+  while (b > a && Math.abs(d[b]) < max * 0.05) b--;
+  const voix = d.subarray(a, b + 1), g = Math.round(0.09 * sr), pas = g >> 1;
+  const total = Math.max(voix.length, Math.round(duree * sr));
+  const out = actx.createBuffer(1, total, sr), o = out.getChannelData(0);
+  o.set(voix);
+  const entree = Math.min(voix.length, Math.round(0.01 * sr));          // pas de clic à l'attaque
+  for (let i = 0; i < entree; i++) o[i] *= i / entree;
+  if (total > voix.length && voix.length > 3 * g) {
+    // la fin de sa voix s'efface pendant que les grains montent (deux demi-fenêtres qui se complètent)
+    for (let i = 0; i < pas; i++) o[voix.length - pas + i] *= 0.5 + 0.5 * Math.cos(Math.PI * i / pas);
+    const z0 = Math.max(0, Math.round(voix.length * 0.6) - g), z1 = Math.max(z0 + 1, voix.length - g - Math.round(0.02 * sr));
+    for (let pos = voix.length - pas; pos < total; pos += pas) {
+      const de = z0 + Math.floor(Math.random() * (z1 - z0));
+      for (let i = 0; i < g && pos + i < total; i++) o[pos + i] += voix[de + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / g));
+    }
+  }
+  const sortie = Math.min(total, Math.round(0.15 * sr));                // il s'éteint en douceur
+  for (let i = 0; i < sortie; i++) o[total - 1 - i] *= i / sortie;
+  return out;
+}
 // (13:30) un meuble qu'il choisit lui-même : [[meuble: nom]] dans sa réponse
 function meubleNomme(nom) { return meublesPrets.get(String(nom || '').trim()) || [...meublesPrets.values()].find(m => sansAccent(m.nom) === sansAccent(nom)) || null; }
 const lecteurSysteme = synth ? Voix.creerLecteur(synth, window.SpeechSynthesisUtterance, voixPour, vitesseVoix) : null;
@@ -279,6 +311,10 @@ function creerLecteurNeuronal() {
   // deux) jusqu'à ce que la suite soit prête ; elle coupe le meuble en cours (un fondu de 30 ms) et part aussitôt. Au plus
   // COUVRIR_MAX secondes d'affilée (un outil très long : le silence revient).
   const HESITER_APRES = 0.45, HESITER_AVANT = 1.0, ENTRE_MEUBLES = 0.12, COUVRIR_MAX = 90;
+  // (14:20, Ahmed : « qu'ils s'étalent sur toute la pause, et que la transition entre deux se fasse de façon propre, naturelle et
+  // graduelle : entre « mmh » et « euh », ça donnerait « mmmheuuu » ») chaque meuble entre et sort en fondu ; le suivant commence
+  // dans la fin du précédent (FONDU) ; sa réponse, quand elle part, prend la place du meuble en fondu aussi (FONDU_REPONSE)
+  const FONDU = 0.15, FONDU_REPONSE = 0.12;
   let trou = null, avant = null, aParle = false, couvre = 0, attendre = false, dejaParle = false;
   const vraiesSources = () => [...sources].some(s => !s._hesitation);   // une hésitation ne fait pas de lui un « déjà parti »
   // sa réponse s'écrit, se prépare, ou attend sa voix (la fin du texte n'est pas la fin de ce qu'il a à dire)
@@ -494,6 +530,13 @@ function creerLecteurNeuronal() {
     src.connect(force); force.connect(analyseurVoix);
     src.start(t);
     const joue = Math.min(x.pret.duration / vitesse, x.dureeMax > 0 ? x.dureeMax : Infinity);   // (13:30) sa durée au plus
+    if (x.hesitation && force.gain.setValueAtTime) {               // (14:20) un meuble entre et sort en fondu
+      const gv = force.gain.value, f = Math.min(FONDU, joue / 3);
+      try {
+        force.gain.setValueAtTime(0, t); force.gain.linearRampToValueAtTime(gv, t + f);
+        force.gain.setValueAtTime(gv, Math.max(t + f, t + joue - f)); force.gain.linearRampToValueAtTime(0, t + joue);
+      } catch (_) {}
+    }
     if (joue < x.pret.duration / vitesse) { try { src.stop(t + joue); } catch (_) {} }
     prochainDebut = t + joue + 0.05;
     src._texte = x.hesitation ? '' : x.texte; src._hesitation = !!x.hesitation; src._auto = !!x.auto; src._gain = force;
@@ -534,13 +577,18 @@ function creerLecteurNeuronal() {
       }
       if (x.pret instanceof Blob) { lots.shift(); jouerElement(x); break; }   // contexte audio pas encore autorisé
       if (!sources.size && avance() === 0 && !jarvisPeutParler()) break;   // on attend la fin de ton tour
-      // (13:31) sa réponse part : le meuble que son subconscient jouait s'arrête net (un fondu de 30 ms), elle prend sa place
+      // (13:31) sa réponse part : elle prend la place du meuble que son subconscient jouait ; (14:20) en fondu (FONDU_REPONSE),
+      // sans attendre sa fin ; un meuble pas encore commencé ne part pas
       if (sources.size && [...sources].every(s2 => s2._auto) && fluide()) {
         const now = actx.currentTime;
         for (const s2 of sources) {
-          try { if (s2._gain && s2._gain.gain.setTargetAtTime) s2._gain.gain.setTargetAtTime(0, now, 0.01); } catch (_) {}
-          try { s2.stop(now + 0.03); } catch (_) {}
-          s2._fin = Math.min(s2._fin, now + 0.03);
+          if (s2._debut > now) { try { s2.stop(now); } catch (_) {} s2._fin = now; continue; }
+          try {
+            const gg = s2._gain && s2._gain.gain;
+            if (gg && gg.cancelScheduledValues) { gg.cancelScheduledValues(now); gg.setValueAtTime(gg.value, now); gg.linearRampToValueAtTime(0, now + FONDU_REPONSE); }
+          } catch (_) {}
+          try { s2.stop(now + FONDU_REPONSE + 0.02); } catch (_) {}
+          s2._fin = Math.min(s2._fin, now + FONDU_REPONSE + 0.02);
         }
         prochainDebut = now + 0.03;
       }
@@ -568,14 +616,15 @@ function creerLecteurNeuronal() {
 
   function hesiter() {
     trou = null;
-    if (!(aParle || couvre) || !enReponse() || sources.size) return;
+    if (!(aParle || couvre) || !enReponse() || element || [...sources].some(s2 => !s2._hesitation)) return;
     if (couvre && fluide() && actx.currentTime - couvre > COUVRIR_MAX) return;   // un trou immense : le silence revient
     if (glisser()) { if (!couvre) couvre = fluide() ? actx.currentTime : 1; aParle = false; }
   }
 
   // une hésitation toute prête, maintenant, si rien n'est sur le point d'être dit ; rend vrai si elle part
   function glisser() {
-    if (pause || sources.size || element || !fluide() || !L.hesitation) return false;
+    if (pause || element || !fluide() || !L.hesitation) return false;
+    if ([...sources].some(s2 => !s2._hesitation)) return false;        // sa vraie voix joue : pas de meuble par-dessus
     if (L.peutHesiter && !L.peutHesiter()) return false;
     const y = lots[0];
     if (y && (y.pret || y.erreur)) return false;                                  // la suite est là : pomper la programme
@@ -583,8 +632,13 @@ function creerLecteurNeuronal() {
     const h = L.hesitation({ avant: !dejaParle });
     if (!h || !h.pret || !h.pret.duration) return false;
     journalVoix('hesitation', { texte: h.texte, ...(!dejaParle ? { avant: true } : {}) });
-    programmer({ pret: h.pret, texte: h.texte, langue: 'fr', hesitation: true, auto: true, volume: h.volume, dureeMax: h.dureeMax, brut: h.brut },
-      actx.currentTime + 0.03);
+    // (14:20) il commence dans la fin du meuble qui joue encore : ils se fondent l'un dans l'autre (« mmmheuuu »)
+    const finMeubles = Math.max(0, ...[...sources].map(s2 => s2._fin));
+    const t = Math.max(actx.currentTime + 0.03, finMeubles - FONDU);
+    programmer({ pret: h.pret, texte: h.texte, langue: 'fr', hesitation: true, auto: true, volume: h.volume, dureeMax: h.dureeMax, brut: h.brut }, t);
+    // le suivant se prépare juste avant la fin de celui-ci, pour s'y fondre
+    clearTimeout(trou);
+    trou = setTimeout(hesiter, Math.max(0, (prochainDebut - 0.05 - FONDU - 0.15 - actx.currentTime) * 1000));
     return true;
   }
 
@@ -714,7 +768,13 @@ const finLecture = () => {
 lecteurNeuronal.surFin = finLecture;
 // (03/11) un trou dans sa réponse : un de ses meubles, choisi par son subconscient, seulement pendant une réponse dite à voix
 // haute (pas une réécoute) et quand papa ne parle pas
-lecteurNeuronal.hesitation = (o) => choisirMeuble(o);
+lecteurNeuronal.hesitation = (o) => {
+  const h = choisirMeuble(o);
+  if (!h || !h.pret || !h.voix) return h;
+  // (14:20) tenu un peu plus longtemps que sa voix (0,6 à 1,5 s de plus), jamais plus que sa durée au plus : il s'étale sur la pause
+  const voulu = h.pret.duration + 0.6 + Math.random() * 0.9, cible = h.dureeMax > 0 ? Math.min(h.dureeMax, voulu) : voulu;
+  try { return { ...h, pret: tenirMeuble(h.pret, cible), dureeMax: 0 }; } catch (_) { return h; }
+};
 lecteurNeuronal.peutHesiter = () => etat.reponseVoix != null && jarvisPeutParler();
 if (lecteurSysteme) lecteurSysteme.surFin = finLecture;
 
@@ -2702,9 +2762,19 @@ function afficherOreilleHakim() {
 setInterval(afficherOreilleHakim, 15000);
 /* (31/10, 01:06-01:10, Ahmed : « un gros badge ROUGE, en grand, quand il parle ou juste avant ; le bouton qui dit qu'il parle ou
    qu'il n'entend pas doit s'afficher partout ») ici (en-tête, grande orbe) ; l'appli le montre aussi (widget, bulle, verrou) */
+// (14:24, Ahmed : « le badge PARLE ne doit pas clignoter : en continu durant ses paroles et ses hésitations ; il disparaît seulement
+// quand il a fini de parler ») une fois sa voix partie pour cette réponse, il « parle » jusqu'à la fin de toute sa réponse (les
+// blancs entre deux morceaux et ses meubles compris) ; papa qui le coupe (sa voix en pause) le rend à papa
+function ilParleEnContinu() {
+  const sonne = voixQuiSonne();
+  if (sonne && etat.reponseVoix != null) etat.aParleReponse = etat.reponseVoix;
+  if (sonne) return true;
+  return etat.reponseVoix != null && etat.aParleReponse === etat.reponseVoix && !(lecteur && lecteur.enPause)
+    && !!(etat.flux || (lecteur && lecteur.actif));
+}
 function afficherSonTour() {
   try {
-    const c = etat.conversation, parle = voixQuiSonne(), va = !!c && !parle && transcriptionEnPause();
+    const c = etat.conversation, parle = ilParleEnContinu(), va = !!c && !parle && transcriptionEnPause();
     for (const [id, grand] of [['hakimParle', false], ['hakimParleScene', true]]) {
       const el = $(id); if (!el) continue;
       el.hidden = !(parle || va);
@@ -2720,7 +2790,7 @@ function signalerWidget() {
     const e = JSON.stringify({ conversation: !!c, pause: !!lecteur.enPause, son_coupe: !!etat.sonCoupe,
       micro_coupe: !!(c && c.capteur && (c.capteur.estMuet || (c.muetParHakim && !c.muetParHakim.attente))),
       oreille_fermee: !!(typeof oreilleHakim !== 'undefined' && oreilleHakim.fermee),
-      hakim_parle: typeof voixQuiSonne === 'function' && voixQuiSonne(), va_parler: !!c && typeof voixQuiSonne === 'function' && !voixQuiSonne() && transcriptionEnPause() });
+      hakim_parle: typeof ilParleEnContinu === 'function' && ilParleEnContinu(), va_parler: !!c && typeof ilParleEnContinu === 'function' && !ilParleEnContinu() && transcriptionEnPause() });
     if (e === dernierEtatWidget) return;
     dernierEtatWidget = e;
     window.HakimApp.boutons(e);

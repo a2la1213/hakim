@@ -739,12 +739,13 @@ test('(01:10) les orbes de l’appli suivent celle de Parler ; « Hakim parle »
   assert.deepEqual(['papa', 'coupe', 'partage', 'hakim', null].map(pal), ['ecoute', 'coupe', 'partage', 'joie', 'joie']);
   const a = page.indexOf('function afficherSonTour() {'), g = page.slice(a, page.indexOf('\n}\n', a) + 2);
   const els = { hakimParle: { hidden: true }, hakimParleScene: { hidden: true } };
-  const ctx = vm.createContext({ $: (id) => els[id], etat: { conversation: {} }, voixQuiSonne: () => ctx.v, transcriptionEnPause: () => ctx.p, v: false, p: false });
+  // (14:24) « parle » tient toute sa réponse : ilParleEnContinu (test-meubles.js)
+  const ctx = vm.createContext({ $: (id) => els[id], etat: { conversation: {} }, voixQuiSonne: () => ctx.v, ilParleEnContinu: () => ctx.v, transcriptionEnPause: () => ctx.p, v: false, p: false });
   vm.runInContext(g, ctx);
   ctx.afficherSonTour(); assert.equal(els.hakimParle.hidden, true);
   ctx.p = true; ctx.afficherSonTour(); assert.equal(els.hakimParle.textContent, '🔴 va parler'); assert.equal(els.hakimParleScene.textContent, '🔴 Hakim va parler…');
   ctx.v = true; ctx.afficherSonTour(); assert.equal(els.hakimParle.textContent, '🔴 HAKIM PARLE');
-  assert.match(page, /hakim_parle: typeof voixQuiSonne === 'function' && voixQuiSonne\(\), va_parler:/);
+  assert.match(page, /hakim_parle: typeof ilParleEnContinu === 'function' && ilParleEnContinu\(\), va_parler:/);
   const and = (f2) => fs.readFileSync(path.join(process.env.HOME, 'AIOS', 'hakim-android', 'app', 'src', 'main', 'java', 'app', 'hakim', 'parler', f2), 'utf8');
   for (const f2 of ['WidgetHakim.java', 'Bulle.java', 'OrbeVerrou.java', 'ConversationService.java']) assert.match(and(f2), /hakim_parle/, f2);
   assert.match(and('OrbeVue.java'), /PALETTES\.put\("coupe"/);
