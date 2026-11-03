@@ -362,7 +362,7 @@ function creerLecteurNeuronal() {
   // (14:20-14:31) les meubles se fondaient l'un dans l'autre (fondus croisés de 0,15 puis 0,4 s) : remplacé à 14:40
   // (14:40, Ahmed : « sans rien mélanger ») plus de fondus croisés : un meuble ralenti au bout (ralentirMeuble), le suivant qui repart
   // de cette vitesse, l'un APRÈS l'autre ; sa réponse, quand elle part, arrête le meuble en 30 ms et commence juste après
-  const FONDU_REPONSE = 0.03;
+  const FONDU_REPONSE = 0.03, ENTRE_DEUX_MEUBLES = 0.5;
   let trou = null, avant = null, aParle = false, couvre = 0, attendre = false, dejaParle = false;
   const vraiesSources = () => [...sources].some(s => !s._hesitation);   // une hésitation ne fait pas de lui un « déjà parti »
   // sa réponse s'écrit, se prépare, ou attend sa voix (la fin du texte n'est pas la fin de ce qu'il a à dire)
@@ -677,7 +677,9 @@ function creerLecteurNeuronal() {
     journalVoix('hesitation', { texte: h.texte, ...(!dejaParle ? { avant: true } : {}) });
     // (14:20) il commence dans la fin du meuble qui joue encore : ils se fondent l'un dans l'autre (« mmmheuuu »)
     const finMeubles = Math.max(0, ...[...sources].map(s2 => s2._fin));
-    const t = Math.max(actx.currentTime + 0.03, finMeubles);          // (14:40) juste après le précédent, sans le chevaucher
+    // (14:40) après le précédent, sans le chevaucher ; (14:46, Ahmed : « entre chaque meuble, 0,5 s de silence : ça aide la
+    // transition naturelle, sinon on dirait que les deux se chevauchent »)
+    const t = Math.max(actx.currentTime + 0.03, finMeubles > 0 ? finMeubles + ENTRE_DEUX_MEUBLES : 0);
     programmer({ pret: h.pret, texte: h.texte, langue: 'fr', hesitation: true, auto: true, volume: h.volume, dureeMax: h.dureeMax, brut: h.brut }, t);
     // le suivant se prépare juste avant la fin de celui-ci, pour s'y fondre
     clearTimeout(trou);
@@ -914,9 +916,29 @@ function estSonEcho(texte) {
   const recents = new Set(paroleRecente.filter(x => Date.now() - x.t < 45000).flatMap(x => [...x.mots]));
   return mots.filter(m => recents.has(m)).length / mots.length >= 0.7;
 }
+// (03/11, 14:47, Ahmed : « pour les widgets et la bulle, et même sur le verrou : une zone courte et petite sous l'orbe et les boutons,
+// avec ce qu'il entend et ce qu'il dit, quand c'est activé dans SENS ») ses mots et les tiens vers l'appli (Paroles.java), chacun
+// seulement si SENS l'affiche ; au plus 4 fois par seconde, et seulement ce qui change
+const parolesEnvoyees = { papa: '', hakim: '' }, parolesEnAttente = {};
+let parolesMinuteur = null;
+function envoyerParoles(qui, texte) {
+  if (!window.HakimApp || !window.HakimApp.paroles) return;
+  const t = String(texte || '').trim().slice(-160);
+  if (t === parolesEnvoyees[qui]) return;
+  parolesEnAttente[qui] = t;
+  if (parolesMinuteur) return;
+  parolesMinuteur = setTimeout(() => {
+    parolesMinuteur = null;
+    const r = typeof reglagesCorps !== 'undefined' ? reglagesCorps : {};
+    const o = { ...parolesEnAttente, montrer_papa: r.afficher_papa !== false, montrer_hakim: r.afficher_hakim !== false };
+    for (const k of Object.keys(parolesEnAttente)) { parolesEnvoyees[k] = parolesEnAttente[k]; delete parolesEnAttente[k]; }
+    try { window.HakimApp.paroles(JSON.stringify(o)); } catch (_) {}
+  }, 250);
+}
 lecteurNeuronal.surSegment = (t, duree) => {
   if (mesureTour && mesureTour.premier_texte && !mesureTour.premier_son) { mesureTour.premier_son = Date.now(); finMesureTour(); }
   noterParole(t); noterMorceau(t, duree); sousTitre(t);
+  envoyerParoles('hakim', t);                                         // (14:47) ce qu'il dit, sous l'orbe de l'appli
   couperAuDebutDeSaVoix();                                             // (09:12)
 };
 lecteurNeuronal.surPanne = noterPanneVoix;
@@ -2681,10 +2703,13 @@ function ligneEnDirect(conv) {
   return parts.join(' ');
 }
 function ligneEnDirectMontrer(conv) {
-  if (!conv || (lecteur && lecteur.actif)) return;                     // sa voix a la ligne quand il parle
+  if (conv && conv.ecrit) envoyerParoles('papa', `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}`);   // (14:47) ce qu'il entend
+  if (!conv) return;
   const l = ligneEnDirect(conv);
   if (!l) return;
-  sousTitre(l);
+  // (14:46, Ahmed : « ma transcription et sa parole en parallèle ») quand il parle, ses mots gardent le sous-titre et les tiens
+  // continuent dans la ligne d'état : les deux en même temps
+  if (!(lecteur && lecteur.actif)) sousTitre(l);
   if ($('etat')) $('etat').textContent = l;
 }
 // tant que papa parle ou qu'un morceau se transcrit, la ligne suit (✍️ qui va et vient, 💭)

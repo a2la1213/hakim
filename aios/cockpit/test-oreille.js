@@ -850,7 +850,7 @@ test('(31/10, 09:12-09:42) trier chaque morceau : transcrits et classés un à u
   ctx.reglagesCorps.trier_morceaux = false; ctx.etat.lectureDe = 9; ctx.couperAuDebutDeSaVoix();
   assert.equal(coupes.length, 2, 'éteint : rien');
   assert.match(page, /if \(trierMorceaux\(\)\) \{[^]*?garderMorceau\(conv, wav, infos\); return;\s*\}\s*conv\.sonsEnAttente = /);
-  assert.match(page, /noterParole\(t\); noterMorceau\(t, duree\); sousTitre\(t\);\n  couperAuDebutDeSaVoix\(\);/);
+  assert.match(page, /noterParole\(t\); noterMorceau\(t, duree\); sousTitre\(t\);\n  envoyerParoles\('hakim', t\);[^\n]*\n  couperAuDebutDeSaVoix\(\);/);
 });
 
 test('(09:12) le tri d’un morceau par son subconscient (serveur)', async () => {

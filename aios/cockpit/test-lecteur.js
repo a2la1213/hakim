@@ -288,10 +288,10 @@ test('un trou pendant qu\'il écrit encore : ses meubles le couvrent de bout en 
   // 0,4 s de transition ») le premier meuble part 0,2 s après sa voix
   const souffle = meubles[0].debut - premiere.fin;
   assert.ok(souffle >= 0.15 && souffle <= 0.35, `0,2 s de blanc avant le premier meuble : ${souffle.toFixed(2)} s`);
-  // (14:40, Ahmed : « sans rien mélanger ») l'un juste après l'autre : ni vide, ni chevauchement
+  // (14:40, Ahmed : « sans rien mélanger ») l'un après l'autre ; (14:46) 0,5 s de silence entre deux
   for (let i = 1; i < meubles.length; i++) {
     const ecart = meubles[i].debut - meubles[i - 1].fin;
-    assert.ok(Math.abs(ecart) <= 0.02, `l'un après l'autre (${i}) : ${ecart.toFixed(2)} s`);
+    assert.ok(Math.abs(ecart - 0.5) <= 0.03, `0,5 s de silence entre deux meubles (${i}) : ${ecart.toFixed(2)} s`);
   }
   const dernier = meubles.filter(m => m.debut < suite.debut).pop();
   const fondu = dernier.fin - suite.debut;
