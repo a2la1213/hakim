@@ -91,8 +91,11 @@ test('(03/11, « un pavé en morceaux de 2 ou 3 phrases, intégrés au fur et à
   vm.runInContext(src.slice(debut, fin) + '\nthis.f = morceauPret;', ctx);
   assert.deepEqual(ctx.f('Salut mon fils.'), [null, 'Salut mon fils.'], 'une phrase : il attend la suivante');
   assert.deepEqual(ctx.f('Salut mon fils. Écoute bien ce son. Et puis'), ['Salut mon fils. Écoute bien ce son.', 'Et puis']);
+  // (14:50, Ahmed : « jamais au milieu d'une phrase ») 30 mots sans deux fins de phrase : coupé à sa dernière virgule, sinon il attend
   const long = Array(32).fill('la').join(' ');
-  assert.deepEqual(ctx.f(long), [long, ''], 'une phrase sans fin de 30 mots : elle part quand même');
+  assert.deepEqual(ctx.f(long), [null, long], 'ni phrase finie ni virgule : il attend la suite');
+  const virgule = `${Array(20).fill('la').join(' ')}, ${Array(12).fill('mais').join(' ')}`;
+  assert.deepEqual(ctx.f(virgule), [`${Array(20).fill('la').join(' ')},`, Array(12).fill('mais').join(' ')]);
 });
 
 test('(03/11, Hakim : « un chiffre mesuré ») chaque flux mesure son délai, de son instant d\'origine à son arrivée', () => {

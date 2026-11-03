@@ -2576,7 +2576,13 @@ function morceauPret(tampon) {
   const t = String(tampon || '').trim();
   const fins = [...t.matchAll(/[.!?…؟]+(?=\s|$)/g)];
   if (fins.length >= 2) { const i = fins[1].index + fins[1][0].length; return [t.slice(0, i).trim(), t.slice(i).trim()]; }
-  if (t.split(/\s+/).filter(Boolean).length >= 30) return [t, ''];
+  // (14:50, Ahmed : « jamais au milieu d'une phrase ») 30 mots sans deux fins de phrase : coupé à sa dernière phrase finie, sinon à sa
+  // dernière virgule ; ni l'une ni l'autre : il attend la suite
+  if (t.split(/\s+/).filter(Boolean).length >= 30) {
+    const fin = fins.length ? fins[fins.length - 1] : null, v = t.lastIndexOf(', ');
+    const i = fin ? fin.index + fin[0].length : v > 0 ? v + 1 : -1;
+    if (i > 0) return [t.slice(0, i).trim(), t.slice(i).trim()];
+  }
   return [null, t];
 }
 function integrerAuFil(source, texte) {

@@ -460,7 +460,10 @@ function creerLecteurNeuronal() {
 
   // Coupe un texte trop long pour le temps disponible : à une ponctuation, ou juste avant une conjonction
   // (là où l'on reprend son souffle), jamais au milieu d'un groupe de mots. Les mots ne changent pas.
-  const COUPURES = /[,;:]\s+|\s+(?=(?:et|mais|donc|car|puis|alors|parce que|pour que|quand)\s)/gi;
+  // (03/11, 14:50, Ahmed : « chaque chunk coupé à une virgule ou à une phrase complète, jamais au milieu d'une phrase : « je suis en
+  // train de manger, mais pas de boisson » = « je suis en train de manger » + « mais pas de boisson » ») plus de coupure avant une
+  // conjonction sans virgule : seulement à la ponctuation ; sans virgule, le morceau reste entier
+  const COUPURES = /[,;:]\s+/g;
   function couper(texte, max, min) {
     if (texte.length <= max) return null;
     let choix = null, m;
