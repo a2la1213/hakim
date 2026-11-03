@@ -1503,7 +1503,7 @@ async function envoyer(texte, oral, dejaRelance) {
   const decoupe = Voix.decoupeur({ vif: true });           // (03/11) ses premiers mots partent tout de suite
   const auto = (etat.reglages.lectureAuto || etat.conversation || etat.reglages.volant) && lecteur;
   if (auto) etat.decoupeFlux = decoupe;                  // (23/10) sa phrase en cours d'arrivée, si on le coupe
-  const camera = etat.vision ? await photoCamera() : null;
+  const camera = etat.vision || (window.HakimApp && window.HakimApp.cameraOrbeEtat && window.HakimApp.cameraOrbeEtat()) ? await photoCamera() : null;
   const presentEnvoye = etat.present.slice(-40);
   if (etat.vision && etat.vision.courant)                                  // l'expression en cours, encore ouverte
     presentEnvoye.push({ e: 'visage', debut: etat.vision.depuis, fin: Date.now(), expr: etat.vision.courant, encours: true });
@@ -2051,9 +2051,15 @@ async function basculerCamera() {
   etat.vision = v;
   $('camera').setAttribute('aria-pressed', 'true');
   $('vision').hidden = false;
-  $('vision').classList.add('flottante');
-  if (window.HakimApp) $('vision').classList.add('plein-ecran');   // (03/11) dans l'appli : en grand, son orbe en haut à droite
-  placerVision();
+  // (03/11, Ahmed : « la caméra intégrée dans l'orbe ; on oublie l'écran entier ») dans la grande orbe en mode orbe, sinon dans
+  // la petite à côté de son nom. La caméra de la bulle (appli 1.48) rend la main d'abord : une seule caméra à la fois.
+  if (window.HakimApp && window.HakimApp.cameraOrbeEtat && window.HakimApp.cameraOrbeEtat()) {
+    try { window.HakimApp.cameraOrbe(false); } catch (_) {}
+    await new Promise(r => setTimeout(r, 700));
+    if (etat.vision !== v) return;
+  }
+  $('vision').classList.add('dans-orbe');
+  placerDansOrbe();
   try {
     await demarrerCapteurVision(v);
   } catch (e) {
@@ -2088,9 +2094,26 @@ function arreterCamera() {
   if (v.natif) { clearInterval(v.natif.minuterie); v.natif = null; }
   $('camera').setAttribute('aria-pressed', 'false');
   $('vision').hidden = true;
-  $('vision').classList.remove('flottante', 'absent', 'arriere', 'plein-ecran');
+  $('vision').classList.remove('flottante', 'absent', 'arriere', 'plein-ecran', 'dans-orbe');
   noterPresent({ e: 'camera_fin', t: Date.now() });
 }
+// (03/11) le cercle de la caméra suit l'orbe qui se voit : la grande (mode orbe) ou la petite de l'en-tête, au cœur de son corps
+function placerDansOrbe() {
+  const b = $('vision');
+  if (!etat.vision || !b.classList.contains('dans-orbe')) return;
+  const sceneVue = $('scene').classList.contains('visible');
+  const o = sceneVue ? $('orbeScene') : $('orbe');
+  const r = o && o.getBoundingClientRect();
+  if (!r || !r.width) return;
+  const d = Math.round(Math.min(r.width, r.height) * 0.56);
+  b.style.width = b.style.height = `${d}px`;
+  b.style.left = `${Math.round(r.left + r.width / 2 - d / 2)}px`;
+  b.style.top = `${Math.round(r.top + r.height / 2 - d / 2)}px`;
+  b.style.right = b.style.bottom = 'auto';
+}
+(function suivreOrbe() { placerDansOrbe(); requestAnimationFrame(suivreOrbe); })();
+// la caméra de la bulle et des widgets (appli 1.48) : son état, dit par l'appli
+function cameraOrbeEtat(oui) { journalVoix('camera_orbe', { allumee: !!oui }); }
 // ⟲ : l'autre caméra ; l'expression en cours se ferme (l'arrière ne lit aucun visage)
 async function changerCamera() {
   const v = etat.vision;
@@ -2183,6 +2206,18 @@ function fermerExpression(v, fin) {
 
 async function photoCamera() {
   const v = etat.vision;
+  // (03/11) la caméra de la bulle ou du widget allumée : sa dernière image part avec ton message, comme celle de Parler
+  if ((!v || !v.capteur) && window.HakimApp && window.HakimApp.cameraOrbeEtat && window.HakimApp.cameraOrbeEtat()) {
+    try {
+      const b64 = window.HakimApp.cameraOrbeImage();
+      if (!b64) return null;
+      const octets = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+      const nom = `camera-bulle-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}.jpg`;
+      const r = await fetch('/api/jarvis/fichier', { method: 'POST', body: octets, headers: { 'X-Jeton': jeton(), 'X-Nom': nom, 'Content-Type': 'image/jpeg' } });
+      const o = await r.json();
+      return o.chemin || null;
+    } catch (_) { return null; }
+  }
   if (!v || !v.capteur) return null;
   try {
     const jpeg = await v.capteur.capturer();
