@@ -348,7 +348,8 @@ function creerLecteurNeuronal() {
     }
     fetch('/api/voix/dire', { method: 'POST', signal: x.ctl.signal,
       headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
-      body: JSON.stringify({ texte: x.texte, langue: x.langue, emotion: etat.interieur && !etat.reglages.voixNeutre ? expressivitePhrase(etat.interieur.expressivite, x.texte) : null, tempo: tempoVoix() }) })
+      body: JSON.stringify({ texte: x.texte, langue: x.langue, emotion: etat.interieur && !etat.reglages.voixNeutre ? expressivitePhrase(etat.interieur.expressivite, x.texte) : null, tempo: tempoVoix(),
+        plan: !x.premier }) })                                        // (03/11) son subconscient prépare l'intonation des bouts suivants
       .then(r => r.ok ? r.arrayBuffer() : r.json().catch(() => ({})).then(o => Promise.reject(new Error(o.erreur || `voix ${r.status}`))))
       .then(ab => (fluide() ? actx.decodeAudioData(ab) : new Blob([ab], { type: 'audio/wav' })))
       .then(res => {
@@ -398,7 +399,9 @@ function creerLecteurNeuronal() {
     // 1. le processus voix ne reste jamais inactif quand du texte attend (une demande à la fois : on
     //    taille le lot en connaissant l'avance exacte du moment)
     if (unites.length && !lots.some(x => !x.pret && !x.erreur)) {
+      const premier = !sources.size && !lots.length;                // (03/11) le premier bout part sans attendre l'intonation préparée
       const x = prochainLot();
+      x.premier = premier;
       lots.push(x);
       lancer(x);
     }
@@ -1344,6 +1347,32 @@ function reagir(emoji) {
   document.addEventListener('pointerdown', (e) => { if (!$('reactions').hidden && !e.target.closest('#reactions')) fermerReactions(); }, true);
 })();
 
+/* (03/11, Ahmed : « ses réponses coupées en bouts, pas de longue réponse : 2 ou 3 phrases au plus, l'un après l'autre ; il doit
+   pouvoir décider consciemment de dire chaque bout, d'en annuler un, ou d'en remiser plusieurs s'il y en a beaucoup ») sa voix
+   par bouts de 3 phrases au plus. Lui décide, en écrivant : [[bout: annuler]] arrête tout de suite le bout qu'il disait ;
+   [[bout: remiser]] garde le bout suivant pour plus tard (écrit, pas dit). Au-delà de 3 bouts, la suite est remisée d'office.
+   Les bouts remisés partent au cockpit : il les retrouve à son tour suivant, et les dit quand il veut. */
+const BOUT_PHRASES = 3, BOUTS_MAX = 3;
+function boutDire(m, p) {
+  const b = m.bouts || (m.bouts = { phrases: 0, remise: 0, remises: [] });
+  const t = String(p || '');
+  if (/\[\[\s*bout\s*:\s*annuler\s*\]\]/i.test(t)) { try { lecteur.arreter(); } catch (_) {} journalVoix('bout', { geste: 'annuler' }); }
+  if (/\[\[\s*bout\s*:\s*remiser\s*\]\]/i.test(t)) { b.remise = BOUT_PHRASES; journalVoix('bout', { geste: 'remiser' }); }
+  const propre = Voix.sansAffect(t).trim();
+  if (!propre) return false;
+  b.phrases++;
+  const auDela = b.phrases > BOUT_PHRASES * BOUTS_MAX;
+  if (b.remise > 0 || auDela) {
+    if (b.remise > 0) b.remise--;
+    b.remises.push(propre);
+    clearTimeout(b.envoi);
+    b.envoi = setTimeout(() => fetch('/api/jarvis/bouts-remises', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ id: String(m.id), textes: b.remises.slice(0, 30) }) }).catch(() => {}), 1500);
+    return false;                                                  // écrit, pas dit
+  }
+  return true;
+}
+
 function majMessage(m) {
   if (m.cache) return;                                   // « dans ta tête » : ni affiché, ni re-rendu à chaque morceau
   const fil = $('fil');
@@ -1543,7 +1572,7 @@ async function envoyer(texte, oral, dejaRelance) {
           if (mesureTour && !mesureTour.premier_texte && o.x.trim()) { mesureTour.premier_texte = Date.now(); if (auto) respirer(); }
           m.texte += o.x;
           orbeTete.pulser(0.05);
-          if (auto) decoupe.ajouter(o.x).forEach(p => { if (NON_REPONSE.test(p)) return; etat.lectureDe = m.id; lecteur.dire(p); });
+          if (auto) decoupe.ajouter(o.x).forEach(p => { if (NON_REPONSE.test(p)) return; if (!boutDire(m, p)) return; etat.lectureDe = m.id; lecteur.dire(p); });
           // (21:02, Ahmed : « sa voix part tout de suite, et l'écriture se fait après, en arrière-plan ») son texte ne s'écrit
           // pas pendant qu'il parle quand papa l'a choisi : il apparaît d'un coup à la fin
           if (typeof reglagesCorps === 'undefined' || reglagesCorps.afficher_hakim !== false || !auto) majMessage(m);
@@ -1551,7 +1580,7 @@ async function envoyer(texte, oral, dejaRelance) {
         } else if (o.t === 'outil') {
           // (2026-10-22, Ahmed : « une réponse parlée AVANT l'outil ») la phrase qu'il a écrite avant d'appeler un outil part
           // à la voix TOUT DE SUITE : sans espace après son point, le découpeur l'aurait gardée jusqu'au texte d'après
-          if (auto && !m.coupe) decoupe.finir().forEach(p => { if (NON_REPONSE.test(p)) return; etat.lectureDe = m.id; lecteur.dire(p); });
+          if (auto && !m.coupe) decoupe.finir().forEach(p => { if (NON_REPONSE.test(p)) return; if (!boutDire(m, p)) return; etat.lectureDe = m.id; lecteur.dire(p); });
           const nom = String(o.nom || '').replace(/^mcp__anamnese__/, '');
           m.outils.push(NOMS_OUTILS[nom] || nom);
           majMessage(m); humeur(nom === 'WebSearch' ? 'cherche sur le web…' : 'cherche dans sa mémoire…');
@@ -1613,7 +1642,7 @@ async function envoyer(texte, oral, dejaRelance) {
       m.erreur = fin.erreur;
     }
   }
-  if (auto && !m.coupe) { decoupe.finir().forEach(p => { if (NON_REPONSE.test(p)) return; etat.lectureDe = m.id; lecteur.dire(p); }); lecteur.finFlux(); }
+  if (auto && !m.coupe) { decoupe.finir().forEach(p => { if (NON_REPONSE.test(p)) return; if (!boutDire(m, p)) return; etat.lectureDe = m.id; lecteur.dire(p); }); lecteur.finFlux(); }
   // (30/10) une panne de la réponse (la connexion, le cerveau) : sa voix finit ce qui est arrivé, puis la dira ; sinon, tout de
   // suite. Et la fin d'une voix qui avait déjà tout dit avant la fin du texte (celle du Mac ne prévient pas)
   const panne = m.coupe ? '' : m.attenteServeur ? 'la connexion avec le Mac a été coupée'

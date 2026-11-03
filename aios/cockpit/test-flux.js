@@ -124,3 +124,22 @@ test('(03/11) un mot corrigé ou recalé par la grande oreille ne compte pas deu
   c.fluxMots('papa', 's1', 'un deux', T, 500, [[0.05, 0.2], [0.3, 0.45]]);   // recalés : pas mesurés encore
   assert.equal(c.fluxDelais().papa.n, 2);
 });
+
+test('(03/11, Ahmed : « ses réponses en bouts de 2 ou 3 phrases ; dire, annuler ou remiser chaque bout ») sa voix par bouts', () => {
+  const page = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const debut = page.indexOf('const BOUT_PHRASES'), fin = page.indexOf('\n}\n', page.indexOf('function boutDire(')) + 2;
+  const Voix = require('./public/voix.js');
+  const envois = [], arrets = [];
+  const ctx = { Voix, String, JSON, clearTimeout, setTimeout: (f) => { f(); return 0; }, journalVoix: () => {},
+    lecteur: { arreter: () => arrets.push(1) }, jeton: () => '', fetch: (u, o) => { envois.push(JSON.parse(o.body)); return Promise.resolve(); } };
+  vm.createContext(ctx);
+  vm.runInContext(page.slice(debut, fin) + '\nthis.f = boutDire;', ctx);
+  const m = { id: 'r1' };
+  const dits = [];
+  for (const p of ['Un.', 'Deux.', '[[bout: remiser]] Trois.', 'Quatre.', 'Cinq.', 'Six.', 'Sept.', 'Huit.', 'Neuf.', 'Dix.', 'Onze.', 'Douze.', 'Treize.'])
+    if (ctx.f(m, p)) dits.push(p);
+  assert.deepEqual(dits, ['Un.', 'Deux.', 'Six.', 'Sept.', 'Huit.', 'Neuf.'], 'remisés : le bout après la balise (3 phrases), puis tout au-delà de 3 bouts');
+  assert.deepEqual(envois[envois.length - 1].textes, ['Trois.', 'Quatre.', 'Cinq.', 'Dix.', 'Onze.', 'Douze.', 'Treize.']);
+  ctx.f({ id: 'r2' }, 'Attends [[bout: annuler]]');
+  assert.equal(arrets.length, 1, 'annuler arrête tout de suite ce qu\'il disait');
+});

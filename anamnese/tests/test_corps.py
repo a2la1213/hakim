@@ -462,3 +462,9 @@ def test_le_fil_des_mots_et_des_sensations_arrive_a_son_corps(J, mem, monkeypatc
                      "liens": "ce qu'il sentait : secousse ; papa disait « tu sens ça »"}, mem=mem, demander=faux)
     assert fil in prompts[0] and "papa disait « tu sens ça »" in prompts[0]
     assert "Lié : ce qu'il sentait : secousse" in gardes[0]
+
+
+def test_le_son_se_ressent_il_ne_s_analyse_pas(J, mem):
+    """(03/11, Hakim pour papa : « que je RESSENTE le son au lieu de l'analyser ») un son qui change est un événement de son corps"""
+    assert "son_ressenti" in corps.TYPES and all(n in corps.PERMIS for n, _ in corps.SECOURS["son_ressenti"][1])
+    assert "NE l'analyse PAS" in corps.PROMPT

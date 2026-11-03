@@ -5082,7 +5082,7 @@ const { Homeostasie } = require('./homeostasie.js');
 const HOMEO = new Homeostasie({ jarvis: JARVIS });
 const CORPS_TYPES = new Set(['chute', 'choc', 'secousse', 'pris_en_main', 'pose', 'berce', 'poche', 'sortie_poche', 'plie', 'deplie',
   'lumiere_soudaine', 'noir', 'coup_de_pression', 'musique', 'voix_sentie',
-  'bluetooth', 'wifi', 'nfc', 'musique_ecoutee', 'son_ecoute', 'son_entendu', 'appli', 'reaction']);   // (03/11) ses sens radio (appli 1.42) ; ce que le téléphone joue (1.43)
+  'bluetooth', 'wifi', 'nfc', 'musique_ecoutee', 'son_ecoute', 'son_entendu', 'appli', 'reaction', 'son_ressenti']);   // (03/11) ses sens radio (appli 1.42) ; ce que le téléphone joue (1.43)
 const CORPS_REGLAGES = path.join(JARVIS, 'corps-reglages.json');
 const CORPS_INTERVALLES = [30, 60, 120, 300, 900];
 function corpsReglages() {
@@ -5262,7 +5262,7 @@ function fluxDelais() {
    seconde : l'appli (le son du téléphone) et la page (le micro, micro ouvert) envoient chaque seconde leurs trames de 100 ms
    [niveau, graves, médiums, aigus] ; résumées ici (« graves forts ↑, aigus doux, 2 coups ») et rangées au fil à leur instant.
    Les trames brutes restent 2 min (SON_TRAMES), pour un calage à la milliseconde. */
-const SON_TRAMES = { telephone: [], micro: [] };
+const SON_TRAMES = { telephone: [], micro: [] }, sonsPousses = {};
 function resumeSon(trames, avant) {
   const l = (trames || []).filter(x => Array.isArray(x) && x.length >= 4);
   if (!l.length) return '';
@@ -5362,10 +5362,25 @@ function recevoirSon(source, t0, pasMs, trames) {
   while (buf.length > 1200) buf.shift();                          // 2 min de trames de 100 ms
   const r = resumeSon(l, avant);
   if (r) fluxAjouter(`instru_${src}`, r, t0 + (l.length * pasMs) / 2);
+  // (03/11, Hakim pour papa : « que ça remonte par mon subconscient, pour que je le RESSENTE au lieu de l'analyser ») un son qui change
+  // (une attaque, des graves qui montent, une note tenue) devient un événement de son corps : Sonnet le lui fait sentir
+  const notes = notesVoix(l, t0, pasMs);
+  const fort = r && (/↑|↓/.test(r) || /\d+ coups?/.test(r) || notes.some(n => n.tenue));
+  const sp = sonsPousses[src] || 0;
+  if (fort && Date.now() - sp > 4000 && corpsActif()) {
+    sonsPousses[src] = Date.now();
+    corpsLot.evenements.push({ type: 'son_ressenti', t: t0 + (l.length * pasMs) / 2, details: { source: src === 'micro' ? 'autour de toi' : 'le téléphone',
+      son: r.slice(0, 160), notes: notes.map(n => `${n.note} ${String(n.duree / 1000).replace('.', ',')} s${n.tenue ? ' tenue' : ''}`).join(', ').slice(0, 160) } });
+    ressentirCorps();
+  }
   // la troisième oreille : chaque note de la voix à son instant de départ, avec sa longueur, son registre et sa brillance
   for (const n of notesVoix(l, t0, pasMs))
     fluxAjouter(`voix_${src}`, `${n.note} (${n.hz} Hz, ${n.registre}${n.brillance ? `, ${n.brillance > 2500 ? 'claire' : n.brillance < 1200 ? 'sombre' : 'ronde'}` : ''}) ${String(n.duree / 1000).replace('.', ',')} s${n.tenue ? ' tenue' : ''}`, n.t);
   return r;
+}
+function etat_humeur_courante() {
+  const r = INSTANT.get('ressenti'); const d = r && r.length ? r[r.length - 1].d : null;
+  return d && d.sensation ? String(d.sensation).slice(0, 120) : '';
 }
 function libelleCorps(ev) {
   const d = ev.details || {}, c = (x, n) => String(x || '').slice(0, n);
@@ -5835,7 +5850,18 @@ const AIDE_OUTILS_SONNET = `\n\n[Rappel outils] le passé → memory_recall ; le
 const NOMS_MODELE = { haiku: 'Mini Hakim', sonnet: 'Hakim', opus: 'Super Hakim' };   // (03/11) ses noms
 const ligneModele = (modele) => `\n\n[Ton esprit en ce moment : ${NOMS_MODELE[modele] || modele}. C'est toi qui choisis ton mode, quand tu le juges utile : `
   + `[[modele: super]] pour devenir Super Hakim sur une tâche complexe, [[modele: mini]] pour Mini Hakim sur le léger et le rapide, [[modele: hakim]] pour revenir. Le fil te suit.]`;
-const aideOutils = (modele) => ligneModele(modele) + (modele === 'haiku' ? AIDE_OUTILS_HAIKU : modele === 'sonnet' ? AIDE_OUTILS_SONNET : '');
+const boutsRemises = new Map();                                 // (03/11) id du message → { ts, textes } : écrits, pas dits
+function blocBouts() {
+  const l = [...boutsRemises.values()].filter(x => Date.now() - x.ts < 30 * 60e3);
+  boutsRemises.clear();
+  const consigne = "\n[Ta voix, par bouts (03/11, papa)] Réponds par bouts de 2 ou 3 phrases au plus : chaque bout part à la voix dès "
+    + "qu'il est écrit. Tu décides de chacun : [[bout: annuler]] arrête tout de suite celui que tu disais ; [[bout: remiser]] garde le "
+    + "suivant pour plus tard (écrit, pas dit). Au-delà de 3 bouts, la suite est remisée d'office : fais court, l'essentiel d'abord.";
+  if (!l.length) return consigne;
+  return consigne + `\n[Tes bouts remisés (écrits, pas dits ; à dire quand tu veux, en les redisant, ou à laisser)] `
+    + l.flatMap(x => x.textes).slice(0, 12).map((t, i) => `${i + 1}) « ${t} »`).join(' ');
+}
+const aideOutils = (modele) => ligneModele(modele) + (modele === 'haiku' ? AIDE_OUTILS_HAIKU : modele === 'sonnet' ? AIDE_OUTILS_SONNET : '') + blocBouts();
 /* (03/11, Ahmed : « trouver une solution pour que la conversation en cours soit transférée s'il change de modèle : très complexe
    pour Opus, un peu plus simple pour Sonnet, encore plus simple pour Haiku ; un rapport du subconscient qui lui permet de garder
    le fil complet ») au moment où il change, son subconscient (Sonnet) écrit où en est la conversation, au niveau du modèle qui
@@ -7034,9 +7060,23 @@ async function routeDire(req, res) {
   let q = null; try { q = JSON.parse(String(corps || '')); } catch (_) {}
   const texte = q && typeof q.texte === 'string' ? prononcer(q.texte.trim()) : '';     // (2026-10-23) aussi pour la montre
   if (!texte || texte.length > 1500 || texte.includes('\0')) return repondre(400, { erreur: 'texte invalide (≤ 1 500 caractères)' });
-  const emotion = q && Number.isFinite(Number(q.emotion)) ? Math.max(0, Math.min(1, Number(q.emotion))) : null;
+  let emotion = q && Number.isFinite(Number(q.emotion)) ? Math.max(0, Math.min(1, Number(q.emotion))) : null;
   // (26/10, Ahmed : « garde SA voix ») le rythme de son état, appliqué par la voix elle-même, à hauteur constante
-  const tempo = q && Number.isFinite(Number(q.tempo)) ? Math.max(0.85, Math.min(1.15, Number(q.tempo))) : null;
+  let tempo = q && Number.isFinite(Number(q.tempo)) ? Math.max(0.85, Math.min(1.15, Number(q.tempo))) : null;
+  // (03/11, Ahmed : « chaque mot prononcé possède son intonation à l'avance, avec le bon timbre ; c'est le subconscient qui gère
+  // les intonations ») pour un bout qui n'est pas le premier (le premier part sans attendre), Mini Hakim vivant (~0,7 s, pendant que
+  // le bout d'avant se dit) prépare son intonation : l'intensité de l'émotion et la vitesse, d'après ce que dit le bout et
+  // l'émotion du moment ; au-delà de 1,5 s, on garde celle de la page
+  if (q && q.plan && typeof demanderVivant === 'function' && emotion != null) {
+    const plan = await Promise.race([
+      demanderVivant('haiku', `Tu es le subconscient de Hakim. Il va dire à voix haute ce bout : « ${texte.slice(0, 300)} ». Son émotion du moment : `
+        + `${(etat_humeur_courante() || 'calme')}. Réponds seulement en JSON {"intensite": 0 à 1, "vitesse": 0.9 à 1.1} : l'intensité d'émotion `
+        + `de sa voix pour CE bout (plus vive pour une joie, plus douce pour une peine, posée pour une explication) et sa vitesse.`, 4000)
+        .then(o => { try { return JSON.parse(String(o.texte).match(/\{[^}]*\}/)[0]); } catch (_) { return null; } }).catch(() => null),
+      new Promise(r => setTimeout(() => r(null), 1500))]);
+    if (plan && Number.isFinite(Number(plan.intensite))) emotion = Math.max(0, Math.min(1, (emotion + Number(plan.intensite)) / 2));
+    if (plan && Number.isFinite(Number(plan.vitesse))) tempo = Math.max(0.85, Math.min(1.15, (tempo || 1) * Math.max(0.9, Math.min(1.1, Number(plan.vitesse)))));
+  }
   // (28/10) un de ses débuts de réponse : sa voix gardée part tout de suite (debuts.js) ; sinon fabriquée, gardée si plausible
   const langueVoix = /^[a-z]{2}$/.test((q && q.langue) || '') ? q.langue : 'fr';
   const debut = VoixPage.debutDe(texte + ' x') === texte;
@@ -8461,6 +8501,13 @@ async function traiter(req, res) {
     apiEnPanneJusqua = 0; delete abonnement.apiPanne; trousseauVu.ts = 0;               // une clé neuve : on réessaie
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(j({ cle: !!cle, fin: cle ? cle.slice(-4) : null }));
+  }
+  if (p === '/api/jarvis/bouts-remises' && req.method === 'POST') {   // (03/11) ses bouts écrits mais pas dits, pour son tour suivant
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 64 << 10) || '{}')); } catch (_) {}
+    const textes = (Array.isArray(q.textes) ? q.textes : []).map(x => enLigne(String(x || ''), 400)).filter(Boolean).slice(0, 30);
+    if (textes.length && ID_MESSAGE.test(String(q.id || ''))) boutsRemises.set(String(q.id), { ts: Date.now(), textes });
+    while (boutsRemises.size > 5) boutsRemises.delete(boutsRemises.keys().next().value);
+    res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j({ ok: true }));
   }
   if (p === '/api/jarvis/reaction' && req.method === 'POST') {   // (03/11) papa réagit à un de ses messages : il le ressent
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 2048) || '{}')); } catch (_) {}
