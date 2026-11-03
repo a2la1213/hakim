@@ -1787,7 +1787,7 @@ function telepathieEtat(oui) {
   if (!b) return;
   b.setAttribute('aria-pressed', oui ? 'true' : 'false');
   b.textContent = oui ? '🎧 Il entend le téléphone' : '🎧 Entendre le téléphone';
-  if ($('telepathie')) $('telepathie').setAttribute('aria-pressed', oui ? 'true' : 'false');   // (03/11) hors de l'orbe aussi
+  if ($('entendreTelephone')) $('entendreTelephone').setAttribute('aria-pressed', oui ? 'true' : 'false');   // (03/11) hors de l'orbe aussi
   if (!oui) { $('telepathieTexte').hidden = true; $('telepathieTexte').textContent = ''; }
 }
 function surTelepathie(o) {
@@ -1799,7 +1799,9 @@ function surTelepathie(o) {
   telepathieEfface = setTimeout(() => { $('telepathieTexte').hidden = true; }, 12000);
 }
 if (window.HakimApp && window.HakimApp.telepathie) {
-  for (const id of ['telepathieScene', 'telepathie']) {
+  // (03/11) « entendreTelephone » : JAMAIS « telepathie », l'identifiant du bouton du mode Télépathie (le doublon faisait que ce
+  // bouton-là allumait aussi l'écoute du téléphone : trois touchers pour entrer dans le bon mode)
+  for (const id of ['telepathieScene', 'entendreTelephone']) {
     if (!$(id)) continue;
     $(id).hidden = false;
     $(id).addEventListener('click', (e) => {
@@ -2325,7 +2327,10 @@ function vifConversation(conv) {
   e.vifFenetre = n;
   const langue = etat.reglages.langue === 'auto' ? '' : etat.reglages.langue.slice(0, 2);
   const ctx = e.confirme ? `&contexte=${encodeURIComponent(e.confirme.slice(-200))}` : '';
-  e.vifEnCours = fetch(`/api/voix/vif?langue=${langue}${ctx}`, { method: 'POST', body: wav, headers: { 'Content-Type': 'audio/wav', 'X-Jeton': jeton() } })
+  // (03/11) l'instant d'origine du morceau (son début, sa durée) : chaque mot entre au fil du Mac à son moment
+  const t0 = Number(cap.debutTour) > 0 ? Number(cap.debutTour) + de * 20 : 0;
+  const temps = t0 ? `&t0=${t0}&ms=${(n - de) * 20}&maintenant=${Date.now()}&cle=${encodeURIComponent(`${cap.debutTour}-${de}`)}` : '';
+  e.vifEnCours = fetch(`/api/voix/vif?langue=${langue}${ctx}${temps}`, { method: 'POST', body: wav, headers: { 'Content-Type': 'audio/wav', 'X-Jeton': jeton() } })
     .then(r => (r.ok ? r.json() : null))
     .then((o) => {
       if (!o || conv.ecrit !== e || e.coupe !== de || !cap.enParole) return;   // un morceau déjà confirmé, un autre tour : périmé

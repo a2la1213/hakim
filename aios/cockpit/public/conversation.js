@@ -249,6 +249,7 @@
       // le texte déjà transcrit dans extra)
       finirTour(extra) { if (etatV === 'parole') finTour(extra); },
       get derniereVoix() { return derniereVoix; },
+      get debutTour() { return debut; },                      // (03/11) l'instant (horloge de la page) où le tour a commencé
       // un morceau du tour en cours (fenêtres de 20 ms [de, a[) : transcrit pendant que tu parles ;
       // null s'il n'y a pas de voix dedans (rien à transcrire)
       segment(de, a) { return avecVoix(tour.slice(de, a === undefined ? tour.length : a)); },

@@ -25,3 +25,11 @@ test('la page et le cockpit ont la même liste', () => {
   assert.equal(l(page, 'const REACTIONS = ').replace('REACTIONS = ', ''), l(src, 'const REACTIONS_PAPA = ').replace('REACTIONS_PAPA = ', ''));
   assert.match(src, /type: 'reaction', t: Date\.now\(\), details: \{ emoji: String\(q\.emoji\), extrait \}/);
 });
+
+test('(03/11) aucune page n\'a deux éléments au même identifiant (le doublon « telepathie » faisait toucher trois fois le mode Télépathie)', () => {
+  for (const f of fs.readdirSync(path.join(__dirname, 'public')).filter(n => n.endsWith('.html'))) {
+    const ids = [...fs.readFileSync(path.join(__dirname, 'public', f), 'utf8').matchAll(/\sid="([^"$]+)"/g)].map(m => m[1]);
+    const doublons = [...new Set(ids.filter((x, i) => ids.indexOf(x) !== i))];
+    assert.deepEqual(doublons, [], f);
+  }
+});

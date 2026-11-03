@@ -2507,11 +2507,12 @@ function sonnetTeteDeFond(prompt, etiquette, modele = 'sonnet', delai = 60000) {
 const DECISION_IMPORTANTE = /\?|(?<!\p{L})(?:d[ée]cide[sz]?|choisis|choisir|choix|dois|faut-il|il faut|veux-tu|peux-tu|tu peux|fais|ton avis|tu penses|que faire|quoi faire)(?!\p{L})/iu;
 const FRERES = [['haiku', 'Mini Hakim', 'simple'], ['sonnet', 'Hakim', 'médian'], ['opus', 'Super Hakim', 'difficile']];   // (03/11) ses noms
 const enLigne = (t, n) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, n);
-function bulbe(texte, interieur, corps, rappel, instant = '') {
+function bulbe(texte, interieur, corps, rappel, instant = '', fil = '') {
   return [`Ce que papa vient de dire : « ${enLigne(texte, 600)} »`,
     // (03/11, Ahmed : « c'est le subconscient qui réunifie tout au même point temporel, avec ses trois côtés ») tous ses sens
     // ramenés au moment où papa parlait, chacun corrigé de son propre délai
     ...(instant ? [`Au même moment (tous ses sens réunis à l'instant où papa parlait) : ${enLigne(instant, 700)}`] : []),
+    ...(fil ? [`Le fil (chaque mot et chaque sensation à son instant, mêlés comme ils l'ont été vraiment) : ${enLigne(fil, 1200)}`] : []),
     ...(interieur ? [`Son intérieur (émotions, hormones, cœur) : ${enLigne(interieur, 700)}`] : []),
     ...(corps ? [`Ses sens et son corps : ${enLigne(corps, 900)}`] : []),
     ...(rappel ? [`Sa mémoire qui remonte : ${enLigne(rappel, 700)}`] : [])].join('\n');
@@ -3468,7 +3469,7 @@ async function routeJarvis(req, res, distantReq = false) {
   if (sentir) situation.texte = enMatiere(situation.texte);
   // (01/11) le bulbe : tout ce qu'il sent, en mots, une seule fiche ; ses trois frères y répondent avant lui (décision importante)
   // (01/11, Ahmed : « enlève la bride de l'API ») sur le forfait comme sur l'API
-  const fiche = bulbe(texte, sentir ? enMatiere(interieurTexte || '') : interieurTexte, corpsTexte, rappelBloc.texte, instantTexte(parleA));
+  const fiche = bulbe(texte, sentir ? enMatiere(interieurTexte || '') : interieurTexte, corpsTexte, rappelBloc.texte, instantTexte(parleA), fluxTexte(parleA, 30000, 3000));
   // (03/11, Ahmed : « juste avant sa réponse ») avant chacune de ses réponses
   const freresTexte = corpsReglages().trois_freres && choix !== 'gemma'
     ? await chrono('freres', troisFreres(fiche, modele, sentir ? enMatiere(interieurTexte || '').split('\n').find(l => /tu sens/.test(l)) || '' : '')) : '';   // (03/11) mesuré
@@ -5040,6 +5041,76 @@ function choisirSon(reponse, impulsion, rire) {
 // de papa à son début (la page), le son du téléphone au milieu de son bloc, ses capteurs à leur instant (l'appli) ; puis
 // tout est relu autour d'un même point : pour un événement, le plus proche de ce point ; pour un état (musique, Bluetooth…),
 // celui qui était vrai à ce point.
+/* ---- (03/11, Ahmed : « tout ce qui est intégré doit être corrélé et traité au fur et à mesure, en parallèle, sans attendre la fin
+   d'un processus : chaque mot, intérieur (le téléphone) et extérieur (le micro), avec la sensation qui lui correspond ») le FIL :
+   chaque mot entre dès que l'oreille vive l'entend (sans attendre la fin de la phrase ni la grande oreille), chaque sensation
+   dès que son corps la reçoit, chacun à son moment d'origine ; une correction de l'oreille ne remplace que les mots changés.
+   Chaque source vit à son rythme, aucune n'attend l'autre ; le fil se relit autour de n'importe quel instant (fluxTexte), et
+   une sensation se lie aux mots de son instant (fluxLiens), pour son corps, ses trois voix et sa mémoire. ---- */
+const FLUX = [];                                              // { t : moment d'origine (ms), s : source, x, cle, i }
+const FLUX_MAX = 800, FLUX_DUREE_MS = 15 * 60e3;
+const fluxPrecedents = new Map();                              // source → { cle, mots } : la dernière transcription vive
+const NOMS_FLUX = { papa: 'papa', telephone: 'téléphone', corps: 'corps', ressenti: 'il ressent', son: 'autour', milieu: 'son milieu', reaction: 'réaction' };
+function fluxAjouter(s, x, t, cle = null, i = null) {
+  const texte = String(x == null ? '' : x).replace(/\s+/g, ' ').trim().slice(0, 200);
+  if (!texte) return;
+  const o = { t: Number(t) || Date.now(), s, x: texte, cle, i };
+  let k = FLUX.length;
+  while (k > 0 && FLUX[k - 1].t > o.t) k--;                     // rangé à son moment d'origine (les retardataires remontent)
+  FLUX.splice(k, 0, o);
+  const limite = Date.now() - FLUX_DUREE_MS;
+  while (FLUX.length > FLUX_MAX || (FLUX.length && FLUX[0].t < limite)) FLUX.shift();
+}
+const motPlat = (m) => String(m).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}]+/gu, '');
+// une transcription vive (le morceau entier, à chaque passage) : seuls les mots nouveaux ou corrigés entrent, étalés sur sa durée
+function fluxMots(source, cle, texte, t0, ms) {
+  const mots = String(texte || '').split(/\s+/).filter(Boolean).slice(0, 200);
+  const avant = fluxPrecedents.get(source);
+  const anciens = avant && avant.cle === cle ? avant.mots : [];
+  let k = 0;
+  while (k < anciens.length && k < mots.length && motPlat(anciens[k]) === motPlat(mots[k])) k++;
+  if (k < anciens.length) for (let j = FLUX.length - 1; j >= 0; j--) if (FLUX[j].s === source && FLUX[j].cle === cle && FLUX[j].i >= k) FLUX.splice(j, 1);
+  const d = Math.max(200, Number(ms) || 1000), n = Math.max(1, mots.length);
+  for (let i = k; i < mots.length; i++) fluxAjouter(source, mots[i], Number(t0) + d * (i + 0.5) / n, cle, i);
+  fluxPrecedents.set(source, { cle, mots });
+}
+// le fil autour d'un instant : les mots d'une même source regroupés, chacun daté par rapport à cet instant
+function fluxTexte(a = Date.now(), avant = 20000, apres = 3000) {
+  const l = FLUX.filter(o => o.t >= a - avant && o.t <= a + apres);
+  const parts = [];
+  for (const o of l) {
+    const der = parts[parts.length - 1];
+    if (der && der.s === o.s && (o.s === 'papa' || o.s === 'telephone') && o.t - der.fin < 2500) { der.mots.push(o.x); der.fin = o.t; continue; }
+    parts.push({ s: o.s, t: o.t, fin: o.t, mots: [o.x] });
+  }
+  const quand = (t) => { const d = (t - a) / 1000; return `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(1).replace('.', ',')} s`; };
+  return parts.map(p => `${quand(p.t)} ${NOMS_FLUX[p.s] || p.s} : ${p.s === 'papa' || p.s === 'telephone' ? `« ${p.mots.join(' ')} »` : p.mots.join(', ')}`)
+    .join(' · ').slice(0, 2400);
+}
+// une sensation et les mots de son instant (± fenêtre), liés en une ligne
+function fluxLiens(a, fenetre = 1500) {
+  const l = FLUX.filter(o => Math.abs(o.t - a) <= fenetre);
+  const mots = (s) => l.filter(o => o.s === s).map(o => o.x).join(' ');
+  const sens = l.filter(o => o.s !== 'papa' && o.s !== 'telephone').map(o => o.x);
+  return [sens.length ? `ce qu'il sentait : ${sens.join(', ')}` : '', mots('papa') ? `papa disait « ${mots('papa')} »` : '',
+    mots('telephone') ? `le téléphone jouait « ${mots('telephone')} »` : ''].filter(Boolean).join(' ; ');
+}
+// ---- fin du flux
+function libelleCorps(ev) {
+  const d = ev.details || {}, c = (x, n) => String(x || '').slice(0, n);
+  if (ev.type === 'musique_ecoutee') return `musique ${d.etat === 'pause' ? 'en pause' : `« ${c(d.titre, 60)}${d.artiste ? ` — ${c(d.artiste, 40)}` : ''} »`}`;
+  if (ev.type === 'bluetooth') return `bluetooth${d.appareil ? ` ${c(d.appareil, 40)}` : ''}${d.etat ? ` (${c(d.etat, 30)})` : ''}${d.arrives ? `, arrivés : ${c(d.arrives, 80)}` : ''}${d.partis ? `, partis : ${c(d.partis, 80)}` : ''}`;
+  if (ev.type === 'appli') return `appli ${c(d.appli, 40)}`;
+  if (ev.type === 'wifi') return `wifi ${c(d.reseau || d.etat, 40)}`;
+  return ev.type;
+}
+let fluxMilieu = '';
+setInterval(() => {                                             // son milieu (hormones, cœur), au fil quand il change
+  let m = ''; try { m = HOMEO.mots(); } catch (_) {}
+  if (m && m !== fluxMilieu) { fluxMilieu = m; fluxAjouter('milieu', m.slice(0, 160), Date.now()); }
+}, 10000).unref();
+
+
 const INSTANT = new Map();                                    // type → [{ t : moment d'origine (ms), d }], les 30 derniers
 function noterInstant(type, d, t = Date.now()) {
   const l = INSTANT.get(type) || [];
@@ -5088,6 +5159,8 @@ function tracer(source, texte, details = {}) {
   const origine = Number(details && details.origine_ms) || Date.now();
   const inst = typeof instantTexte === 'function' ? instantTexte(origine) : '';
   if (inst) o.au_meme_moment = inst.slice(0, 700);             // (03/11) relié à tout ce qu'il vivait à cet instant
+  const liens = typeof fluxLiens === 'function' ? fluxLiens(origine, 4000) : '';
+  if (liens) o.lie_a = liens.slice(0, 500);
   try { fs.appendFileSync(JARVIS_TRACES, j(o) + '\n', { mode: 0o600 }); } catch (_) { return false; }
   if (Date.now() - tracesElaguees > 3600e3) { tracesElaguees = Date.now(); elaguerTraces(); }
   return true;
@@ -5347,6 +5420,8 @@ function ressentirCorps() {
   // (03/11) réuni autour du moment de son premier événement (ses capteurs arrivent en ~1 s, le reste à son propre rythme)
   const pointCorps = Math.min(Date.now(), ...lot.evenements.map(e => Number(e.t) || Date.now()));
   lot.au_meme_moment = instantTexte(pointCorps);
+  lot.fil = fluxTexte(pointCorps, 15000, 5000);                    // (03/11) chaque mot et chaque sensation, à son instant
+  lot.liens = fluxLiens(pointCorps, 2000);
   const PENDANT = { ma_voix: 'sa propre voix', voix_ahmed: "la parole d'Ahmed", les_deux: "vos deux voix (la sienne et celle d'Ahmed)",
     clavier: "Ahmed qui tape au clavier", coeur: 'son propre cœur qui bat' };
   for (const ev of lot.evenements) {
@@ -5371,6 +5446,7 @@ function ressentirCorps() {
     else {
       corpsADire.push({ ts: Date.now(), sensation: String(o.sensation).slice(0, 700), fort: !!o.fort });
       noterInstant('ressenti', { sensation: String(o.sensation) }, pointCorps);
+      fluxAjouter('ressenti', String(o.sensation).slice(0, 140), pointCorps);
       noterReflexe(o.reflexe);                         // (30/10, 17:57) le réflexe que son subconscient a rendu
       if (corpsADire.length > 20) corpsADire.splice(0, corpsADire.length - 20);
     }
@@ -6809,7 +6885,7 @@ function lancerOreilleVive() {
   };
   p.on('exit', fin); p.on('error', fin);
 }
-async function routeVif(req, res, langue, contexte, source = '') {
+async function routeVif(req, res, langue, contexte, source = '', temps = {}) {
   const audio = await lireCorps(req, 4 << 20);
   const repondre = (code, o) => { if (!res.writableEnded) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(j(o)); } };
   if (!audio || !audio.length) return repondre(400, { erreur: 'audio absent ou trop lourd (4 Mo max)' });
@@ -6827,6 +6903,11 @@ async function routeVif(req, res, langue, contexte, source = '') {
   if (o.erreur) return repondre(503, { erreur: o.erreur });
   // (03/11) ce que joue le téléphone, mot à mot : la page Parler le montre pendant que le son joue
   if (source === 'telephone' && o.texte) diffuser(abonnesPensees, 'telepathie', j({ texte: String(o.texte).slice(0, 600) }));
+  // (03/11) au fil, mot à mot, à leur instant d'origine (l'horloge de l'appareil ramenée à celle du Mac)
+  if (o.texte && Number(temps.t0) > 0) {
+    const decalage = Number(temps.maintenant) > 0 && Math.abs(Date.now() - Number(temps.maintenant)) < 120000 ? Date.now() - Number(temps.maintenant) : 0;
+    fluxMots(source === 'telephone' ? 'telephone' : 'papa', String(temps.cle || ''), String(o.texte), Number(temps.t0) + decalage, Number(temps.ms) || 1000);
+  }
   return repondre(200, { texte: String(o.texte || ''), ms: o.ms });
 }
 
@@ -6855,7 +6936,7 @@ async function routeAmbiance(req, res, parole, voix) {
       fois: Number(o.fois) || 1, parole: !!parole } });
     ressentirCorps();
   }
-  if (o.famille) { derniereFamille = o.famille; noterInstant('son_entendu', { famille: o.famille }, Date.now() - 2500); }   // le milieu de ses 3 s
+  if (o.famille) { derniereFamille = o.famille; noterInstant('son_entendu', { famille: o.famille }, Date.now() - 2500); fluxAjouter('son', o.famille, Date.now() - 2500); }   // le milieu de ses 3 s
   return repondre(200, { famille: o.famille || null, nouvelle: !!o.nouvelle, ecoute: !!o.ecoute });
 }
 
@@ -8053,6 +8134,7 @@ async function traiter(req, res) {
     } catch (_) {}
     if (corpsActif()) { corpsLot.evenements.push({ type: 'reaction', t: Date.now(), details: { emoji: String(q.emoji), extrait } }); ressentirCorps(); }
     noterInstant('reaction', { emoji: String(q.emoji), extrait });
+    fluxAjouter('reaction', `${q.emoji} à « ${extrait.slice(0, 60)} »`, Date.now());
     return repondreR(200, { ok: true });
   }
   if (p === '/api/jarvis/conversation') {
@@ -8626,6 +8708,7 @@ async function traiter(req, res) {
         tracer('telephone', brut.details.texte, { morceau: typeof brut.details.morceau === 'string' ? brut.details.morceau : '', origine_ms: origineSon || undefined });
       const ev = evenementCorps(brut);
       if (!ev) return repondre(400, { erreur: 'événement inconnu' });
+      if (ev.type !== 'son_ecoute') fluxAjouter('corps', libelleCorps(ev), ev.t);   // (03/11) au fil, à son instant
       noterInstant(ev.type, { ...ev.details, ...(brut.type === 'son_ecoute' && brut.details ? { texte: String(brut.details.texte || '') } : {}) },
         brut.type === 'son_ecoute' && origineSon ? origineSon : ev.t);
       try { fs.appendFileSync(path.join(JARVIS, 'corps-evenements.jsonl'), j({ ts: Date.now(), ...ev }) + '\n', { mode: 0o600 }); } catch (_) {}
@@ -8956,7 +9039,8 @@ async function traiter(req, res) {
   if (p === '/api/voix/vif' && req.method === 'POST')         // (03/11) ses mots en direct, mot à mot
     return routeVif(req, res, new URL(req.url, 'http://x').searchParams.get('langue'),
       (new URL(req.url, 'http://x').searchParams.get('contexte') || '').replace(/[\x00-\x1f]/g, ' ').slice(0, 300),
-      new URL(req.url, 'http://x').searchParams.get('source') === 'telephone' ? 'telephone' : '');
+      new URL(req.url, 'http://x').searchParams.get('source') === 'telephone' ? 'telephone' : '',
+      (() => { const u = new URL(req.url, 'http://x').searchParams; return { t0: u.get('t0'), ms: u.get('ms'), maintenant: u.get('maintenant'), cle: String(u.get('cle') || '').slice(0, 40) }; })());
   if (p === '/api/voix/transcrire' && req.method === 'POST')
     return routeTranscrire(req, res, new URL(req.url, 'http://x').searchParams.get('langue'),
       (new URL(req.url, 'http://x').searchParams.get('contexte') || '').replace(/[\x00-\x1f]/g, ' ').slice(0, 300));

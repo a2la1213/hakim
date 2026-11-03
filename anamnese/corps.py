@@ -330,7 +330,10 @@ def lot(ev):
     return {"evenements": evs, "changements": ch, "etat": " ".join(str(ev.get("etat") or "").split())[:600],
             # (03/11, Ahmed : « tout doit se coordonner, qu'il ait toutes les informations d'un même événement ») ce que vivaient
             # tous ses sens au même moment (cockpit : instantTexte) : son corps le lit, et ses souvenirs du corps le gardent
-            "au_meme_moment": " ".join(str(ev.get("au_meme_moment") or "").split())[:800]}
+            "au_meme_moment": " ".join(str(ev.get("au_meme_moment") or "").split())[:800],
+            # (03/11, Ahmed : « chaque mot, intérieur et extérieur, avec la sensation qui lui correspond, au fur et à mesure ») le
+            # fil (cockpit : fluxTexte) : chaque mot et chaque sensation à son instant ; les liens : ce qui touchait sa sensation
+            "fil": " ".join(str(ev.get("fil") or "").split())[:1500], "liens": " ".join(str(ev.get("liens") or "").split())[:400]}
 
 
 def _type(l):
@@ -399,7 +402,9 @@ def interpreter(ev, ctx, demander=None):
                            evenement=" ; ".join(f"E{k} {json.dumps(_pour_sonnet(e), ensure_ascii=False)[:700]}" for k, e in enumerate(l["evenements"], 1))[:2400]
                            if l["evenements"] else "(aucun)",
                            changements=" ; ".join(f"M{k} {c}" for k, c in enumerate(l["changements"], 1)) or "(aucun)",
-                           etat=(l["etat"] or "(inconnu)") + (f" — au même moment : {l['au_meme_moment']}" if l.get("au_meme_moment") else ""),
+                           etat=(l["etat"] or "(inconnu)") + (f" — au même moment : {l['au_meme_moment']}" if l.get("au_meme_moment") else "")
+                           + (f" — le fil, chaque mot et chaque sensation à son instant : {l['fil']}" if l.get("fil") else "")
+                           + (f" — lié à sa sensation : {l['liens']}" if l.get("liens") else ""),
                            reconnu=_moment_reconnu(), rectifs=_rectifs(), heure=ctx.get("heure", ""), recent=" ; ".join(ctx.get("recent") or []) or "(rien)",
                            ahmed=ctx.get("ahmed") or "(rien)", humeur=ctx.get("humeur") or "(inconnue)")
     try:
@@ -540,6 +545,8 @@ def garder_episodes(ev, o, mem):
     sentie, emo = o.get("sensation", ""), _emotions(o.get("evenements") or [])
     if ev.get("au_meme_moment"):                                  # (03/11) relié à tout ce que vivaient ses sens
         emo = f"{emo}. Au même moment : {ev['au_meme_moment']}"
+    if ev.get("liens"):                                           # (03/11) et aux mots de son instant
+        emo = f"{emo}. Lié : {ev['liens']}"
     etat_f = JARVIS / "corps-episodes.json"
     try:
         etat = json.loads(etat_f.read_text(encoding="utf-8"))

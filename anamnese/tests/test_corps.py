@@ -445,3 +445,20 @@ def test_papa_reagit_a_son_message_comme_sur_whatsapp(J, mem, monkeypatch):
     assert "reaction" in corps.TYPES and r["sensation"] == "Papa t'envoie un cœur."
     assert "❤️" in prompts[0] and "Je t'aime papa" in prompts[0]
     assert corps.SECOURS["reaction"][1] and all(n in corps.PERMIS for n, _ in corps.SECOURS["reaction"][1])
+
+
+def test_le_fil_des_mots_et_des_sensations_arrive_a_son_corps(J, mem, monkeypatch):
+    """(03/11, Ahmed : « chaque mot, intérieur et extérieur, avec la sensation qui lui correspond ») le fil et les liens du lot
+    arrivent à son corps, et le souvenir du corps garde les liens"""
+    _v2(mem)
+    gardes, prompts = [], []
+    monkeypatch.setattr(corps, "_souvenir", lambda m, texte, imp: gardes.append(texte))
+
+    def faux(p):
+        prompts.append(p)
+        return json.dumps({"sensation": "Un fou rire avec papa.", "fort": False, "evenements": [{"nom": "joie", "intensite": 0.4, "cause": "E1"}]})
+    fil = "−0,3 s téléphone : « baby » · +0,0 s corps : secousse · +0,0 s papa : « tu sens ça »"
+    corps.ressentir({"evenements": [{"type": "rire", "details": {"degre_lu": 4, "extrait": "MDRR"}}], "etat": "calme", "fil": fil,
+                     "liens": "ce qu'il sentait : secousse ; papa disait « tu sens ça »"}, mem=mem, demander=faux)
+    assert fil in prompts[0] and "papa disait « tu sens ça »" in prompts[0]
+    assert "Lié : ce qu'il sentait : secousse" in gardes[0]
