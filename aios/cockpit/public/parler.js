@@ -236,36 +236,74 @@ function choisirMeuble({ avant } = {}, prets = [...meublesPrets.values()], etatM
   return h;
 }
 // (14:20, Ahmed : « que ces trucs pour meubler s'étalent sur toute la durée de la pause, et que la transition se fasse de façon
-// propre, naturelle et graduelle : entre « mmh » et « euh », ça donnerait « mmmheuuu » ») un meuble TENU : ses bords sans voix
-// retirés (la synthèse en laisse), puis sa dernière voyelle prolongée jusqu'à la durée voulue : des grains de 90 ms pris dans la
-// fin de sa voix, fenêtrés et superposés à moitié (la hauteur ne change pas), et un fondu de sortie. Les fondus entre deux meubles
-// sont faits par le lecteur (FONDU).
+// propre, naturelle et graduelle : entre « mmh » et « euh », ça donnerait « mmmheuuu » ») un meuble TENU ; (14:33, Ahmed : « le mmh
+// et le alors : comme plusieurs voix parallèles légèrement décalées, un canon ») plus de grains pris au hasard : sa voyelle la plus
+// tenue (la plus périodique et la plus forte, plutôt vers la fin du mot) est bouclée PÉRIODE PAR PÉRIODE, comme on étire un mot
+// (« euuuuh », « mmmmh », « alooooors ») : une seule voix, la même note. Ses bords sans voix sont retirés ; le début et la fin du
+// mot restent ; sans voyelle tenue (que du souffle), il n'est pas étiré. Les fondus entre deux meubles : le lecteur (FONDU).
 function tenirMeuble(buf, duree) {
   const sr = buf.sampleRate, d = buf.getChannelData(0);
+  // l'analyse (ses bords, sa voyelle) ne se fait qu'une fois par meuble : gardée sur sa voix
+  const an = buf._boucle || (buf._boucle = analyserMeuble(d, sr));
+  if (!an.max) return buf;
+  const voix = d.subarray(an.a, an.b + 1), n = voix.length, meilleur = an.meilleur;
+  const total = Math.max(n, Math.round(duree * sr));
+  let sortieVoix = voix;
+  if (meilleur && total > n) {
+    // la boucle : un nombre entier de périodes (~60 ms), recousue sur 3 ms à chaque tour (pas de clic)
+    const T = meilleur.lag, s0 = meilleur.p0, cx = Math.min(Math.round(0.003 * sr), T >> 1);
+    let k = Math.max(2, Math.round(0.06 * sr / T));
+    while (k > 1 && s0 + k * T + cx >= n) k--;                      // la couture reste dans sa voix
+    const L = k * T;
+    if (k >= 2) {
+      const tours = Math.max(0, Math.ceil((total - n) / L));
+      const o = new Float32Array(n + tours * L);
+      o.set(voix.subarray(0, s0 + L));
+      let w = s0 + L;
+      for (let t = 0; t < tours; t++) {
+        for (let i = 0; i < L; i++) o[w + i] = voix[s0 + i];
+        for (let i = 0; i < cx; i++) { const q = i / cx; o[w + i] = o[w + i] * q + voix[s0 + L + i] * (1 - q); }   // la couture
+        w += L;
+      }
+      o.set(voix.subarray(s0 + L), w);                            // la fin du mot, après la voyelle tenue
+      sortieVoix = o;
+    }
+  }
+  const lon = Math.min(sortieVoix.length, Math.max(n, total));
+  const out = actx.createBuffer(1, lon, sr), o = out.getChannelData(0);
+  o.set(sortieVoix.subarray(0, lon));
+  const entree = Math.min(lon, Math.round(0.01 * sr));              // pas de clic à l'attaque
+  for (let i = 0; i < entree; i++) o[i] *= i / entree;
+  const sortie = Math.min(lon, Math.round(0.15 * sr));              // il s'éteint en douceur
+  for (let i = 0; i < sortie; i++) o[lon - 1 - i] *= i / sortie;
+  return out;
+}
+// ses bords sans voix, et sa voyelle la plus tenue : des fenêtres de 40 ms ; la période (70 à 400 Hz) par autocorrélation normalisée
+function analyserMeuble(d, sr) {
   let max = 0;
   for (let i = 0; i < d.length; i++) max = Math.max(max, Math.abs(d[i]));
-  if (!max) return buf;
+  if (!max) return { max: 0 };
   let a = 0, b = d.length - 1;
   while (a < b && Math.abs(d[a]) < max * 0.05) a++;
   while (b > a && Math.abs(d[b]) < max * 0.05) b--;
-  const voix = d.subarray(a, b + 1), g = Math.round(0.09 * sr), pas = g >> 1;
-  const total = Math.max(voix.length, Math.round(duree * sr));
-  const out = actx.createBuffer(1, total, sr), o = out.getChannelData(0);
-  o.set(voix);
-  const entree = Math.min(voix.length, Math.round(0.01 * sr));          // pas de clic à l'attaque
-  for (let i = 0; i < entree; i++) o[i] *= i / entree;
-  if (total > voix.length && voix.length > 3 * g) {
-    // la fin de sa voix s'efface pendant que les grains montent (deux demi-fenêtres qui se complètent)
-    for (let i = 0; i < pas; i++) o[voix.length - pas + i] *= 0.5 + 0.5 * Math.cos(Math.PI * i / pas);
-    const z0 = Math.max(0, Math.round(voix.length * 0.6) - g), z1 = Math.max(z0 + 1, voix.length - g - Math.round(0.02 * sr));
-    for (let pos = voix.length - pas; pos < total; pos += pas) {
-      const de = z0 + Math.floor(Math.random() * (z1 - z0));
-      for (let i = 0; i < g && pos + i < total; i++) o[pos + i] += voix[de + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / g));
+  const voix = d.subarray(a, b + 1), n = voix.length;
+  const fen = Math.round(0.04 * sr), saut = Math.round(0.01 * sr), lagMin = Math.floor(sr / 400), lagMax = Math.ceil(sr / 70);
+  let meilleur = null;
+  for (let p0 = 0; p0 + fen + lagMax < n; p0 += saut) {
+    let e = 0;
+    for (let i = p0; i < p0 + fen; i++) e += voix[i] * voix[i];
+    if (e < fen * (max * 0.1) ** 2) continue;                   // trop faible pour être sa voyelle
+    let r = 0, lag = 0;
+    for (let L = lagMin; L <= lagMax; L++) {
+      let s = 0, e2 = 0;
+      for (let i = p0; i < p0 + fen; i++) { s += voix[i] * voix[i + L]; e2 += voix[i + L] * voix[i + L]; }
+      const c = s / Math.sqrt(e * e2 || 1);
+      if (c > r) { r = c; lag = L; }
     }
+    const place = p0 / n, score = r * Math.sqrt(e / fen) * (place > 0.25 && place < 0.85 ? 1 : 0.7);
+    if (r > 0.8 && (!meilleur || score > meilleur.score)) meilleur = { p0, lag, score };
   }
-  const sortie = Math.min(total, Math.round(0.15 * sr));                // il s'éteint en douceur
-  for (let i = 0; i < sortie; i++) o[total - 1 - i] *= i / sortie;
-  return out;
+  return { max, a, b, meilleur };
 }
 // (13:30) un meuble qu'il choisit lui-même : [[meuble: nom]] dans sa réponse
 function meubleNomme(nom) { return meublesPrets.get(String(nom || '').trim()) || [...meublesPrets.values()].find(m => sansAccent(m.nom) === sansAccent(nom)) || null; }
@@ -310,11 +348,18 @@ function creerLecteurNeuronal() {
   // enchaîner s'il est long, s'arrêter net quand la réponse part ») les meubles s'enchaînent (une courte respiration entre
   // deux) jusqu'à ce que la suite soit prête ; elle coupe le meuble en cours (un fondu de 30 ms) et part aussitôt. Au plus
   // COUVRIR_MAX secondes d'affilée (un outil très long : le silence revient).
-  const HESITER_APRES = 0.45, HESITER_AVANT = 1.0, ENTRE_MEUBLES = 0.12, COUVRIR_MAX = 90;
+  // (14:31, Ahmed : « 3 s de blanc : je meuble entre 0,2 s et 2,8 s ») le premier meuble part 0,2 s après sa voix
+  const HESITER_APRES = 0.2, HESITER_AVANT = 1.0, ENTRE_MEUBLES = 0.12, COUVRIR_MAX = 90;
   // (14:20, Ahmed : « qu'ils s'étalent sur toute la pause, et que la transition entre deux se fasse de façon propre, naturelle et
   // graduelle : entre « mmh » et « euh », ça donnerait « mmmheuuu » ») chaque meuble entre et sort en fondu ; le suivant commence
   // dans la fin du précédent (FONDU) ; sa réponse, quand elle part, prend la place du meuble en fondu aussi (FONDU_REPONSE)
-  const FONDU = 0.15, FONDU_REPONSE = 0.12;
+  // (14:31, Ahmed : « les 0,2 s de fin et les 0,2 s du début du suivant font les 0,4 s de transition, sinon ça sonne bizarre ») le
+  // suivant commence 0,2 s avant la fin du précédent (FONDU) et monte en 0,2 s ; le précédent s'efface sur ses 0,4 dernières
+  // secondes (FONDU_SORTIE), sur sa voyelle tenue ; les courbes gardent la puissance constante (pas de creux au milieu). Sa
+  // réponse part tout de suite, et le meuble s'efface 0,2 s par-dessus (FONDU_REPONSE)
+  const FONDU = 0.2, FONDU_SORTIE = 0.4, FONDU_REPONSE = 0.2;
+  // une courbe à puissance constante (sinus montant, cosinus descendant), de 0 à g ou de g à 0
+  const courbe = (sens, g) => { const c = new Float32Array(32); for (let i = 0; i < 32; i++) { const q = i / 31; c[i] = g * (sens === 'monte' ? Math.sin(q * Math.PI / 2) : Math.cos(q * Math.PI / 2)); } return c; };
   let trou = null, avant = null, aParle = false, couvre = 0, attendre = false, dejaParle = false;
   const vraiesSources = () => [...sources].some(s => !s._hesitation);   // une hésitation ne fait pas de lui un « déjà parti »
   // sa réponse s'écrit, se prépare, ou attend sa voix (la fin du texte n'est pas la fin de ce qu'il a à dire)
@@ -530,11 +575,11 @@ function creerLecteurNeuronal() {
     src.connect(force); force.connect(analyseurVoix);
     src.start(t);
     const joue = Math.min(x.pret.duration / vitesse, x.dureeMax > 0 ? x.dureeMax : Infinity);   // (13:30) sa durée au plus
-    if (x.hesitation && force.gain.setValueAtTime) {               // (14:20) un meuble entre et sort en fondu
-      const gv = force.gain.value, f = Math.min(FONDU, joue / 3);
+    if (x.hesitation && force.gain.setValueCurveAtTime) {          // (14:20, 14:31) un meuble monte en 0,2 s, s'efface sur 0,4 s
+      const gv = force.gain.value, fe = Math.min(FONDU, joue / 4), fs = Math.min(FONDU_SORTIE, joue / 2);
       try {
-        force.gain.setValueAtTime(0, t); force.gain.linearRampToValueAtTime(gv, t + f);
-        force.gain.setValueAtTime(gv, Math.max(t + f, t + joue - f)); force.gain.linearRampToValueAtTime(0, t + joue);
+        force.gain.setValueCurveAtTime(courbe('monte', gv), t, fe);
+        force.gain.setValueCurveAtTime(courbe('descend', gv), t + joue - fs, fs);
       } catch (_) {}
     }
     if (joue < x.pret.duration / vitesse) { try { src.stop(t + joue); } catch (_) {} }
@@ -583,9 +628,11 @@ function creerLecteurNeuronal() {
         const now = actx.currentTime;
         for (const s2 of sources) {
           if (s2._debut > now) { try { s2.stop(now); } catch (_) {} s2._fin = now; continue; }
-          try {
+          try {                                                  // de là où il en est, vers 0 en 0,2 s
             const gg = s2._gain && s2._gain.gain;
-            if (gg && gg.cancelScheduledValues) { gg.cancelScheduledValues(now); gg.setValueAtTime(gg.value, now); gg.linearRampToValueAtTime(0, now + FONDU_REPONSE); }
+            if (gg && gg.cancelAndHoldAtTime) gg.cancelAndHoldAtTime(now);
+            else if (gg && gg.cancelScheduledValues) { gg.cancelScheduledValues(now); gg.setValueAtTime(gg.value, now); }
+            if (gg && gg.linearRampToValueAtTime) gg.linearRampToValueAtTime(0, now + FONDU_REPONSE);
           } catch (_) {}
           try { s2.stop(now + FONDU_REPONSE + 0.02); } catch (_) {}
           s2._fin = Math.min(s2._fin, now + FONDU_REPONSE + 0.02);
