@@ -288,14 +288,15 @@ test('un trou pendant qu\'il écrit encore : ses meubles le couvrent de bout en 
   // 0,4 s de transition ») le premier meuble part 0,2 s après sa voix
   const souffle = meubles[0].debut - premiere.fin;
   assert.ok(souffle >= 0.15 && souffle <= 0.35, `0,2 s de blanc avant le premier meuble : ${souffle.toFixed(2)} s`);
-  // (14:40, Ahmed : « sans rien mélanger ») l'un après l'autre ; (14:46) 0,5 s de silence entre deux
+  // (14:40, Ahmed : « sans rien mélanger ») l'un après l'autre ; (14:58) 1 s de silence entre deux
   for (let i = 1; i < meubles.length; i++) {
     const ecart = meubles[i].debut - meubles[i - 1].fin;
-    assert.ok(Math.abs(ecart - 0.5) <= 0.03, `0,5 s de silence entre deux meubles (${i}) : ${ecart.toFixed(2)} s`);
+    assert.ok(Math.abs(ecart - 1.0) <= 0.03, `1 s de silence entre deux meubles (${i}) : ${ecart.toFixed(2)} s`);
   }
   const dernier = meubles.filter(m => m.debut < suite.debut).pop();
   const fondu = dernier.fin - suite.debut;
-  assert.ok(fondu >= -0.02 && fondu <= 0.01, `la suite part juste après le meuble, pas par-dessus : ${fondu.toFixed(2)} s`);
+  // elle coupe le meuble qui joue, ou elle part dans le silence entre deux : jamais par-dessus, jamais plus d'1 s après
+  assert.ok(fondu <= 0.01 && fondu >= -1.05, `la suite part dès qu'elle est prête, pas par-dessus un meuble : ${fondu.toFixed(2)} s`);
   assert.ok(!meubles.some(m => m.debut > suite.debut), 'plus aucun meuble une fois la suite partie');
   const sans = (await trou8s(false)).sim.sons[1];
   assert.ok(suite.debut <= sans.debut + 0.1, `la suite n'attend pas la fin d'un meuble : ${suite.debut.toFixed(2)} s contre ${sans.debut.toFixed(2)} s sans meubles`);

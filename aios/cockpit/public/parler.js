@@ -335,7 +335,8 @@ const lecteurSysteme = synth ? Voix.creerLecteur(synth, window.SpeechSynthesisUt
 // Opus du 2026-10-16 — sinon il parlait par-dessus ton tour et Whisper transcrivait son écho.
 function jarvisPeutParler() {
   const c = etat.conversation;
-  return !(c && ((c.capteur && c.capteur.enParole) || c.enAttente > 0));
+  // (14:55) sa réponse soufflée parle pendant que la grande oreille confirme ta phrase (tu t'es tu)
+  return !(c && ((c.capteur && c.capteur.enParole) || (c.enAttente > 0 && !c.souffleParle)));
 }
 
 function creerLecteurNeuronal() {
@@ -362,7 +363,7 @@ function creerLecteurNeuronal() {
   // (14:20-14:31) les meubles se fondaient l'un dans l'autre (fondus croisés de 0,15 puis 0,4 s) : remplacé à 14:40
   // (14:40, Ahmed : « sans rien mélanger ») plus de fondus croisés : un meuble ralenti au bout (ralentirMeuble), le suivant qui repart
   // de cette vitesse, l'un APRÈS l'autre ; sa réponse, quand elle part, arrête le meuble en 30 ms et commence juste après
-  const FONDU_REPONSE = 0.03, ENTRE_DEUX_MEUBLES = 0.5;
+  const FONDU_REPONSE = 0.03, ENTRE_DEUX_MEUBLES = 1.0;               // (14:58, Ahmed : « 1 s au lieu de 0,5 s »)
   let trou = null, avant = null, aParle = false, couvre = 0, attendre = false, dejaParle = false;
   const vraiesSources = () => [...sources].some(s => !s._hesitation);   // une hésitation ne fait pas de lui un « déjà parti »
   // sa réponse s'écrit, se prépare, ou attend sa voix (la fin du texte n'est pas la fin de ce qu'il a à dire)
@@ -1813,7 +1814,10 @@ async function envoyer(texte, oral, dejaRelance) {
   etat.dernierOral = !!oral;
   const dites = etat.dites.splice(0);
   if (!dejaRelance) { etat.joints.forEach(x => x.url && URL.revokeObjectURL(x.url)); etat.joints = []; rendreJoints(); }
-  arreterTout(true, { garder: true, raison: 'message' });
+  // (14:55) sa réponse soufflée a déjà commencé pour ce tour : elle continue, et son conscient la reçoit comme le début de sa réponse
+  const souffleDit = oral && etat.conversation && etat.conversation.souffleDit ? etat.conversation.souffleDit : '';
+  if (etat.conversation) { etat.conversation.souffleDit = ''; }
+  arreterTout(true, { garder: true, raison: 'message', garderVoix: !!souffleDit });
   $('q').value = ''; ajuster();
   const avant = etat.messages.filter(x => x.qui === 'u' && x.ts);
   const tPrecedent = etat.session && avant.length ? avant[avant.length - (dejaRelance ? 2 : 1)]?.ts : null;
@@ -1823,7 +1827,7 @@ async function envoyer(texte, oral, dejaRelance) {
   const enTete = !!oral && typeof reglagesCorps !== 'undefined' && reglagesCorps.afficher_papa === false;
   if (!dejaRelance) etat.messages.push({ id: nouvelId(), qui: 'u', texte, oral: !!oral, ts: Date.now(), joints: joints.map(x => x.nom), ...(enTete ? { cache: true } : {}) });
   // (21:13, Ahmed : « dans ce mode, ses paroles aussi ne s'affichent plus, seulement sa voix ») la case « ses paroles »
-  const m = { id: nouvelId(), qui: 'j', texte: '', outils: [], enCours: true,
+  const m = { id: nouvelId(), qui: 'j', texte: souffleDit ? `${souffleDit} ` : '', outils: [], enCours: true,
     ...(oral && etat.conversation && typeof reglagesCorps !== 'undefined' && reglagesCorps.afficher_hakim === false ? { cache: true } : {}) };
   etat.messages.push(m);
   sauver();                                              // la question survit à une fermeture de page
@@ -1852,7 +1856,8 @@ async function envoyer(texte, oral, dejaRelance) {
         appareil: appareilPage(), volant: !!etat.reglages.volant, position: positionAEnvoyer(), ecran: imageEcran(),
         capteurs: capteursDuTelephone(), tour_id: String(m.id),
         // (30/10) ce qu'il vient de dire sans être entendu, et sa dernière coupure, s'ils ne sont pas encore arrivés au cockpit
-        non_dites: nonDitsEnvoyes.length ? nonDitsEnvoyes : undefined, coupure: coupureEnvoyee || undefined });
+        non_dites: nonDitsEnvoyes.length ? nonDitsEnvoyes : undefined, coupure: coupureEnvoyee || undefined,
+        souffle_dit: souffleDit || undefined });
     chargerDebutsPrets();                              // (28/10) pendant qu'il prépare : ses débuts dont la voix est prête
     const poster = () => fetch('/api/jarvis', { method: 'POST', signal: ctl.signal,
       headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: corpsEnvoi });
@@ -2302,8 +2307,8 @@ function marquerCoupe() {
 // qu'il n'a rien oublié.
 // (30/10, 14:50) d'abord COMMENT et OÙ sa parole s'arrête (finirParole), avant que rien ne s'arrête : un message dit à voix
 // haute, c'est la voix d'Ahmed ; écrit, un nouveau message ; une nouvelle conversation, un Stop
-function arreterTout(explicite = true, { garder = false, raison = 'stop' } = {}) {
-  if (explicite) finirParole(raison === 'parole' || (raison === 'message' && etat.dernierOral) ? 'voix_ahmed' : raison === 'message' ? 'nouveau_message' : 'stop',
+function arreterTout(explicite = true, { garder = false, raison = 'stop', garderVoix = false } = {}) {
+  if (explicite && !garderVoix) finirParole(raison === 'parole' || (raison === 'message' && etat.dernierOral) ? 'voix_ahmed' : raison === 'message' ? 'nouveau_message' : 'stop',
     raison === 'nouvelle' ? 'Ahmed a commencé une nouvelle conversation' : '');
   if (garder) garderNonDit();
   if (explicite && etat.parleDepuis) etat.coupeParAhmed = raison;   // le présent vécu dira pourquoi sa voix s'est arrêtée
@@ -2315,8 +2320,8 @@ function arreterTout(explicite = true, { garder = false, raison = 'stop' } = {})
     etat.flux.abort(); etat.flux = null; etat.fluxId = null;
   }
   if (etat.transcription) { etat.transcription.abort(); etat.transcription = null; }
-  if (lecteur) lecteur.arreter();
-  etat.lectureDe = null;
+  if (lecteur && !garderVoix) lecteur.arreter();                     // (14:55) sa réponse soufflée, déjà partie, continue
+  if (!garderVoix) etat.lectureDe = null;
 }
 
 /* ---------- micro ponctuel ---------- */
@@ -2695,6 +2700,27 @@ function vifConversation(conv) {
 // (13:59, papa : « je dois voir sur l'interface le micro quand je parle, et le mot qui se transcrit, ou qu'il réfléchit, sur la même
 // ligne ») la ligne en direct, sous l'orbe et dans l'état : 🎙️ quand il parle, ses mots (la fin), ✍️ pendant qu'un morceau se
 // transcrit, 💭 quand Hakim réfléchit (ses trois voix pendant qu'il parle, ou sa réponse ensuite)
+// (03/11, 14:55, Ahmed : « il commence à parler dans sa tête à ~1 s de quand je commence, il intègre au fur et à mesure » ; son choix :
+// « il prépare, il parle à ta fin ») quand tu te tais, sa réponse soufflée (préparée par son subconscient pendant que tu parlais) est
+// prise et dite aussitôt, pendant que la grande oreille confirme ta phrase ; son conscient continue derrière, sans la répéter
+async function prendreSouffle(conv) {
+  if (!conv) return;
+  conv.souffleParle = false; conv.souffleDit = '';
+  if (!conv.ecrit || lecteur.impl !== lecteurNeuronal || (typeof reglagesCorps !== 'undefined' && reglagesCorps.reponse_soufflee === false)) return;
+  const texte = `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}`.trim();
+  if (texte.split(/\s+/).filter(Boolean).length < 3) return;
+  let r = '';
+  try {
+    const rep = await fetch('/api/jarvis/souffle', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ texte }), signal: AbortSignal.timeout(2500) });
+    r = rep.ok ? String((await rep.json()).reponse || '').trim() : '';
+  } catch (_) { r = ''; }
+  if (!r || etat.conversation !== conv || (conv.capteur && conv.capteur.enParole) || lecteur.actif || etat.flux) { journalVoix('souffle', { pris: !!r, dit: false }); return; }
+  conv.souffleParle = true; conv.souffleDit = r;
+  journalVoix('souffle', { pris: true, dit: true, mots: r.split(/\s+/).length });
+  etat.reponseVoix = 'souffle';
+  lecteur.dire(r);
+}
 function ligneEnDirect(conv) {
   const e = conv && conv.ecrit, cap = conv && conv.capteur;
   const mots = e ? `${e.confirme || ''} ${e.vif || ''}`.trim() : '';
@@ -3405,6 +3431,7 @@ async function tourDeParole(conv, wav, infos, extra) {
   }
   conv.enAttente++;
   humeur('transcription…');
+  if (typeof prendreSouffle === 'function') prendreSouffle(conv);          // (14:55) sa réponse soufflée part tout de suite
   let texte = '';
   try {                                   // (2026-10-21) toujours rendu : sinon sa voix attendait ton tour pour toujours
     // fin anticipée : la phrase est déjà transcrite ; sinon, sa transcription en avance (28/10) ; sinon, la partie déjà
