@@ -392,3 +392,22 @@ def test_son_subconscient_classe_chaque_morceau_par_priorite():
     p = corps.juger_morceau("x y", demander=lambda p: (_ for _ in ()).throw(OSError("hors ligne")))
     assert p["garder"] is True and p["priorite"] == 2 and p["panne"], "une panne laisse passer"
     assert corps.juger_morceau("", demander=faux)["garder"] is False
+
+
+def test_son_subconscient_apprend_ce_qui_se_passe_dans_le_monde(monkeypatch, tmp_path):
+    """(03/11, Ahmed : « c'est à son subconscient d'intégrer les sensations de ses récepteurs en mémoire pour reconnaître les
+    choses, et de faire le lien avec le monde physique ») un moment reconnu avec assez de confiance est appris, une fois par 10 min"""
+    import moments
+    monkeypatch.setattr(corps, "JARVIS", tmp_path)
+    monkeypatch.setattr(moments, "JARVIS", tmp_path)
+    t = time.mktime(time.strptime("2026-11-03 10:00:30", "%Y-%m-%d %H:%M:%S"))
+    with open(tmp_path / "corps-flux.jsonl", "w", encoding="utf-8") as h:
+        for k in range(40):
+            h.write(json.dumps({"ts": (t - 35 + k) * 1000, "lux": 0.5, "agitation_g": 0.01, "haut_x": 0, "haut_y": 0, "haut_z": 1,
+                                "charniere_deg": 0, "champ_ut": 40}) + "\n")
+    assert corps.apprendre_moment({"nom": "poche", "sens": "papa me met dans sa poche", "confiance": 0.5}, t) is None, "pas assez sûr"
+    assert corps.apprendre_moment({"nom": "poche", "sens": "papa me met dans sa poche", "confiance": 0.9}, t) == "poche (papa me met dans sa poche)"
+    lignes = (tmp_path / "corps-moments.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(lignes) == 1 and "appris par ton subconscient" in json.loads(lignes[0])["sens"]
+    corps.apprendre_moment({"nom": "poche", "sens": "encore", "confiance": 0.95}, t + 60)
+    assert len((tmp_path / "corps-moments.jsonl").read_text(encoding="utf-8").splitlines()) == 1, "une fois par 10 min"

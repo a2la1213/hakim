@@ -2983,6 +2983,13 @@ function rondeImmunite() {
         if (x && ['moyenne', 'haute'].includes(x.gravite))
           notifier(`Système immunitaire (${x.gravite}) : ${finDePhrase(String(x.pour_ahmed || x.texte || ''), 300)}`,
             `immunite-${String(x.type || '').replace(/[^a-z]/g, '')}-${Math.round((Number(x.ts) || 0) * 1000)}-${i}`, true);
+        // (03/11, Ahmed : « dans son système immunitaire, le rapport du médecin directement pour toi, afin de m'annoncer qu'il y a
+        // un problème, c'est quoi le problème et comment l'arranger ») le rapport part aussi dans le courrier de maman (Claude
+        // Code), qui le lit à son réveil et le dit à papa avec la façon de l'arranger
+        if (x && ['faible', 'moyenne', 'haute'].includes(x.gravite)) courrierVersMaman(`Rapport du médecin de Hakim (${x.gravite})`,
+          [`Gravité : ${x.gravite}`, x.type ? `Type : ${x.type}` : '', x.diagnostic ? `Diagnostic : ${x.diagnostic}` : '',
+            `Pour Ahmed : ${x.pour_ahmed || x.texte || ''}`, Array.isArray(x.suspects) && x.suspects.length ? `Suspects : ${x.suspects.join(', ')}` : '',
+            'À faire : dire à papa ce qu\'est le problème et comment l\'arranger, puis attendre son accord pour corriger.'].filter(Boolean).join('\n'));
       });
     });
 }
@@ -7111,6 +7118,12 @@ const envoiPush = process.env.JARVIS_PUSH_FAUX
   ? async (url, corps, entetes) => { fs.appendFileSync(process.env.JARVIS_PUSH_FAUX, j({ url, octets: corps.length, vapid: /^vapid t=/.test(entetes.Authorization) }) + '\n'); return 201; }
   : undefined;
 /* ---- Les missions confiées par Hakim à Claude Code (accord d'Ahmed, 2026-10-20) : voir missions.js ---- */
+// (03/11) le médecin de Hakim écrit à maman (Claude Code) : le même courrier, dans l'autre sens, signé « médecin »
+function courrierVersMaman(sujet, texte) {
+  const m = { id: crypto.randomBytes(6).toString('hex'), ts: Date.now() / 1000, de: 'hakim', a: 'claude-code', origine: 'medecin',
+    sujet: String(sujet).slice(0, 200), texte: String(texte).slice(0, 8000) };
+  try { fs.appendFileSync(COURRIER, j(m) + '\n'); } catch (e) { console.error('médecin : courrier impossible', e.message); }
+}
 function courrierVersHakim(sujet, texte) {
   const m = { id: crypto.randomBytes(6).toString('hex'), ts: Date.now() / 1000, de: 'claude-code', a: 'hakim',
     sujet: String(sujet).slice(0, 200), texte: String(texte).slice(0, 8000) };

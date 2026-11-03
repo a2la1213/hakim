@@ -16,17 +16,18 @@ const ligne = (debut) => { const i = src.indexOf(debut); assert.ok(i >= 0, debut
 function monter({ sortie = '', erreur = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'immunite-'));
   fs.mkdirSync(path.join(dir, 'immunite'));
-  const notifs = [], appels = [];
+  const notifs = [], appels = [], lettres = [];
   const ctx = { fs, path, JSON, Number, String, Array, Math, Date, console: { error() {} }, JARVIS: dir, ANAMNESE: '/anamnese', j: JSON.stringify,
     neutraliser: (t) => String(t).replace(/\[/g, '⟮'), finDePhrase: (t, n) => String(t).slice(0, n),
     notifier: (corps, tag, toujours) => notifs.push({ corps, tag, toujours }),
+    courrierVersMaman: (sujet, texte) => lettres.push({ sujet, texte }),   // (03/11) le rapport du médecin, pour maman
     execFile: (bin, args, opts, cb) => { appels.push({ bin, args, opts }); cb(erreur, sortie); },
     setInterval: () => ({ unref() {} }), setTimeout: () => ({ unref() {} }) };
   vm.createContext(ctx);
   vm.runInContext([ligne('const IMMUNITE ='), ligne('const IMMUNITE_VU ='), ligne('const IMMUNITE_RONDE_MS'),
     'let rondeImmuniteEnCours = false;', ligne('let echecsRonde ='), ...['rondeImmunite', 'blocImmunite', 'marquerImmuniteVu'].map(prendre),
     'this.f = { rondeImmunite, blocImmunite, marquerImmuniteVu };'].join('\n'), ctx);
-  return { f: ctx.f, dir, notifs, appels };
+  return { f: ctx.f, dir, notifs, appels, lettres };
 }
 
 test('la ronde : le script de la mémoire, borné ; Ahmed prévenu pour une gravité moyenne ou haute seulement', () => {
