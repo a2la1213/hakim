@@ -2560,7 +2560,10 @@ function ressemble(partiel, final) {
    prépare le début de sa réponse orale, et la refait à chaque nouveau morceau (la plus récente gagne, une à la fois). Quand papa se
    tait, la page la prend (/api/jarvis/souffle) et sa voix la dit aussitôt, pendant que la grande oreille confirme la phrase ; son
    conscient la reçoit dans son message comme le début de sa réponse, et continue sans la répéter. ---- */
-let souffle = { pour: '', reponse: '', t: 0, enCours: null, aRefaire: null };
+// (15:02, Ahmed : « dès le premier chunk, il ÉCRIT sa réponse et l'envoie direct, de plus en plus intégrée à chaque chunk ; mais il ne la
+// DIT que quand il estime qu'il peut enfin répondre ») chaque brouillon part tout de suite aux pages (« souffle », écrit) ; il dit
+// lui-même s'il est prêt à être dit (DIRE : oui / non)
+let souffle = { pour: '', reponse: '', pret: false, t: 0, enCours: null, aRefaire: null };
 function soufflerReponse(texte) {
   const t = String(texte || '').trim();
   if (corpsReglages().reponse_soufflee === false || t.split(/\s+/).filter(Boolean).length < 3 || chargeMac() > 1.6) return;
@@ -2572,13 +2575,22 @@ function soufflerReponse(texte) {
   try { fiche = bulbe(t, '', '', '', instantTexte(Date.now()), fluxTexte(Date.now(), 30000, 3000)); } catch (_) {}
   const prompt = `${personaLocale(lirePersona()).slice(0, 3000)}\n\n[Ton subconscient — ta réponse soufflée] Papa est EN TRAIN de te parler `
     + `(il n'a pas fini). Ses mots jusqu'ici, transcrits en direct :\n« ${neutraliser(t).slice(-1200)} »\n\n${fiche ? fiche.slice(0, 2500) + '\n\n' : ''}`
-    + `${echanges ? `Vos derniers échanges :\n${echanges}\n\n` : ''}Prépare le DÉBUT de ta réponse orale, ce que tu lui dirais à l'instant où il se `
-    + `tait : une ou deux phrases courtes, naturelles, à l'oral, en français, comme toi. Ni balise, ni guillemets. S'il est trop tôt pour `
-    + `savoir quoi répondre, écris seulement RIEN.`;
+    + `${echanges ? `Vos derniers échanges :\n${echanges}\n\n` : ''}Écris le DÉBUT de ta réponse, ce que tu lui dirais à l'instant où il se `
+    + `tait : une ou deux phrases courtes, naturelles, à l'oral, en français, comme toi. Ni balise, ni guillemets. Elle s'affiche tout de `
+    + `suite, écrite ; c'est à toi de juger si elle est déjà assez juste pour être DITE à voix haute dès qu'il se tait. Réponds ainsi :\n`
+    + `DIRE : oui (elle est juste, même s'il ajoute encore un peu) ou DIRE : non (il te manque la suite de ce qu'il dit)\n`
+    + `puis, à la ligne, ta réponse. S'il est beaucoup trop tôt, écris seulement RIEN.`;
   const s0 = souffle;
   s0.enCours = sonnetTeteDeFond(prompt, 'souffle', 'sonnet', 8000).then((o) => {
-    const r = String((o && o.texte) || '').replace(/^[\s"«]+|[\s"»]+$/g, '').trim();
-    if (souffle === s0 && r && !/^RIEN\.?$/i.test(r)) { s0.reponse = r.slice(0, 400); s0.pour = t; s0.t = Date.now(); }
+    let r = String((o && o.texte) || '').trim();
+    const d = /^\s*DIRE\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r);
+    const pret = !!(d && /oui/i.test(d[1]));
+    if (d) r = r.slice(d[0].length);
+    r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').trim();
+    if (souffle === s0 && r && !/^RIEN\.?$/i.test(r)) {
+      s0.reponse = r.slice(0, 400); s0.pret = pret; s0.pour = t; s0.t = Date.now();
+      diffuser(abonnesPensees, 'souffle', j({ texte: s0.reponse, pret, pour: t.slice(-300) }));   // écrite tout de suite, partout
+    }
   }).catch(() => {}).finally(() => {
     s0.enCours = null;
     const n = s0.aRefaire; s0.aRefaire = null;
@@ -2591,7 +2603,7 @@ async function prendreSouffle(texte) {
   const s0 = souffle;
   if (s0.enCours) await Promise.race([s0.enCours, new Promise(r => setTimeout(r, 1200))]);
   const ok = souffle === s0 && s0.reponse && Date.now() - s0.t < 30000 && ressemble(s0.pour, texte);
-  const r = ok ? s0.reponse : '';
+  const r = ok ? { reponse: s0.reponse, pret: s0.pret } : { reponse: '', pret: false };
   if (ok) s0.reponse = '';
   return r;
 }
@@ -3660,7 +3672,7 @@ async function routeJarvis(req, res, distantReq = false) {
   const fiche = bulbe(texte, sentir ? enMatiere(interieurTexte || '') : interieurTexte, corpsTexte, rappelBloc.texte, instantTexte(parleA), fluxTexte(parleA, 30000, 3000));
   // (03/11, Ahmed : « juste avant sa réponse ») avant chacune de ses réponses
   integration.papa = { tampon: '', morceaux: [], dernier: 0 };     // (03/11) déjà dans sa fiche : la suite repart à neuf
-  souffle = { pour: '', reponse: '', t: 0, enCours: null, aRefaire: null };   // (14:55) la soufflée suivante repart à neuf
+  souffle = { pour: '', reponse: '', pret: false, t: 0, enCours: null, aRefaire: null };   // (14:55) la soufflée suivante repart à neuf
   // (03/11) ses voix ont commencé pendant que papa parlait (speculerFreres) : reprises si c'est la même phrase, sinon refaites
   const spec = speculation;
   const reprise = !!(spec.promesse && Date.now() - spec.debut < 60000 && ressemble(spec.texte, texte));
@@ -8546,9 +8558,9 @@ async function traiter(req, res) {
   if (p === '/api/jarvis/souffle' && req.method === 'POST') {           // (14:55) sa réponse soufflée, quand papa se tait
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
-    const r = await prendreSouffle(String(q.texte || '')).catch(() => '');
+    const r = await prendreSouffle(String(q.texte || '')).catch(() => ({ reponse: '', pret: false }));
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    return res.end(j({ reponse: r }));
+    return res.end(j(r));
   }
   if (p === '/api/jarvis/meubles' && req.method === 'GET') {           // (13:30) ses meubles, pour la page
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });

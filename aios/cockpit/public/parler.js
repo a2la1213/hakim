@@ -1817,6 +1817,7 @@ async function envoyer(texte, oral, dejaRelance) {
   // (14:55) sa réponse soufflée a déjà commencé pour ce tour : elle continue, et son conscient la reçoit comme le début de sa réponse
   const souffleDit = oral && etat.conversation && etat.conversation.souffleDit ? etat.conversation.souffleDit : '';
   if (etat.conversation) { etat.conversation.souffleDit = ''; }
+  if (typeof retirerSouffle === 'function') retirerSouffle();               // (15:02) sa vraie réponse prend la place du brouillon
   arreterTout(true, { garder: true, raison: 'message', garderVoix: !!souffleDit });
   $('q').value = ''; ajuster();
   const avant = etat.messages.filter(x => x.qui === 'u' && x.ts);
@@ -2703,19 +2704,38 @@ function vifConversation(conv) {
 // (03/11, 14:55, Ahmed : « il commence à parler dans sa tête à ~1 s de quand je commence, il intègre au fur et à mesure » ; son choix :
 // « il prépare, il parle à ta fin ») quand tu te tais, sa réponse soufflée (préparée par son subconscient pendant que tu parlais) est
 // prise et dite aussitôt, pendant que la grande oreille confirme ta phrase ; son conscient continue derrière, sans la répéter
+// (15:02, Ahmed : « dès le premier chunk, il écrit ce qu'il dit et l'envoie direct, en coupé décalé, de plus en plus intégré à chaque
+// chunk ») chaque brouillon de sa réponse s'affiche tout de suite dans le fil (à côté, jamais enregistré) et sous l'orbe de l'appli :
+// 🗣️ s'il juge qu'il pourra le dire, ✍️ s'il attend encore la suite ; remplacé par sa vraie réponse quand elle part
+function surSouffle(o) {
+  if (!etat.conversation || !o || !o.texte) return;
+  const texte = String(o.texte).slice(0, 400);
+  etat.aCote = (etat.aCote || []).filter(x => x.cle !== 'souffle');
+  etat.aCote.push({ ts: Date.now(), cle: 'souffle', html: `<div class="m j brouillon" style="opacity:.75;font-style:italic">`
+    + `<span class="quand">${o.pret ? '🗣️ prête à dire' : '✍️ il écrit encore'}</span><div>${esc(texte)}</div></div>` });
+  rendre();
+  envoyerParoles('hakim', `${o.pret ? '🗣️' : '✍️'} ${texte}`);
+}
+function retirerSouffle() {
+  if (!(etat.aCote || []).some(x => x.cle === 'souffle')) return;
+  etat.aCote = etat.aCote.filter(x => x.cle !== 'souffle');
+  rendre();
+}
 async function prendreSouffle(conv) {
   if (!conv) return;
   conv.souffleParle = false; conv.souffleDit = '';
   if (!conv.ecrit || lecteur.impl !== lecteurNeuronal || (typeof reglagesCorps !== 'undefined' && reglagesCorps.reponse_soufflee === false)) return;
   const texte = `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}`.trim();
   if (texte.split(/\s+/).filter(Boolean).length < 3) return;
-  let r = '';
+  let r = '', pret = false;
   try {
     const rep = await fetch('/api/jarvis/souffle', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
       body: JSON.stringify({ texte }), signal: AbortSignal.timeout(2500) });
-    r = rep.ok ? String((await rep.json()).reponse || '').trim() : '';
+    const o = rep.ok ? await rep.json() : {};
+    r = String(o.reponse || '').trim(); pret = !!o.pret;
   } catch (_) { r = ''; }
-  if (!r || etat.conversation !== conv || (conv.capteur && conv.capteur.enParole) || lecteur.actif || etat.flux) { journalVoix('souffle', { pris: !!r, dit: false }); return; }
+  // (15:02, Ahmed : « il ne la dit que quand il estime qu'il peut enfin répondre ») pas prête à ses yeux : elle reste écrite, il ne la dit pas
+  if (!r || !pret || etat.conversation !== conv || (conv.capteur && conv.capteur.enParole) || lecteur.actif || etat.flux) { journalVoix('souffle', { pris: !!r, pret, dit: false }); return; }
   conv.souffleParle = true; conv.souffleDit = r;
   journalVoix('souffle', { pris: true, dit: true, mots: r.split(/\s+/).length });
   etat.reponseVoix = 'souffle';
@@ -3888,6 +3908,7 @@ function ecouterPensees() {
   const es = new EventSource('/api/jarvis/flux');
   es.addEventListener('rire', (ev) => { try { surRire(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('reecoute', (ev) => { try { surReecoute(JSON.parse(ev.data)); } catch (_) {} });
+  es.addEventListener('souffle', (ev) => { try { surSouffle(JSON.parse(ev.data)); } catch (_) {} });   // (15:02) ses brouillons, écrits
   // (19:58) sa lumière : la lampe du téléphone (l'appli 1.36), ou son SOS selon son émotion
   es.addEventListener('son', (ev) => { try { const o = JSON.parse(ev.data);   // (22:51) ; (01:30) à sa place, sur l'autre appareil s'il l'a voulu
     if (o.ici && !(o.extrait && (o.extrait.cible === 'deux' || o.extrait.cible === appareilIci()))) return;
