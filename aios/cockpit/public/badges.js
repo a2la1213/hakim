@@ -22,7 +22,7 @@
   style.textContent = '.pastille{display:inline-block;min-width:16px;height:16px;padding:0 4px;margin-left:5px;border-radius:8px;'
     + 'background:#ef4444;color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center;vertical-align:1px}'
     + '.annonces{position:fixed;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top));z-index:30;max-width:640px;margin:0 auto;'
-    + 'display:flex;flex-direction:column;gap:8px;pointer-events:none}.annonces>*{pointer-events:auto}'
+    + 'display:flex;flex-direction:column;gap:8px;pointer-events:none;max-height:45vh;overflow-y:auto;overscroll-behavior:contain}.annonces>*{pointer-events:auto;flex:none}'
     + '.nouveautes{position:relative;padding:10px 36px 10px 12px;border-radius:10px;border:1px solid rgba(239,68,68,.5);background:#1a0f12;color:#fde2e2;font-size:13px;'
     + 'box-shadow:0 6px 24px rgba(0,0,0,.35)}.nouveautes button{position:absolute;right:6px;top:6px;border:0;background:transparent;'
     + 'color:inherit;font-size:16px;cursor:pointer}.nouveau{box-shadow:inset 3px 0 0 #ef4444;padding-left:8px !important}'
@@ -40,7 +40,8 @@
     + '.menu-panneau a{display:flex;align-items:center;min-height:44px;padding:0 12px;border-radius:10px;color:#c9d4dc;font-size:15px;text-decoration:none}'
     + '.menu-panneau a:hover{background:rgba(255,255,255,.05)}.menu-panneau a[aria-current="page"]{color:#2dd4bf;background:rgba(45,212,191,.10)}'
     + '.menu-panneau a .pastille{margin-left:auto}.menu-panneau .resume{color:#f3b6b6;font-size:12px;padding:0 12px 6px;margin-top:-4px}'
-    + '.annonce-ligne{cursor:pointer}.annonce-ligne:hover{text-decoration:underline}'
+    + '.annonce-ligne{cursor:pointer;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.annonce-ligne:hover{text-decoration:underline}'
+    + '.nouveautes{overflow-wrap:anywhere}.nouveautes.touchable{cursor:pointer}'
     + '.menu-languette{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:35;width:18px;height:56px;padding:0;border:1px solid rgba(255,255,255,.16);'
     + 'border-left:0;border-radius:0 12px 12px 0;background:rgba(15,23,28,.72);color:#c9d4dc;font-size:16px;line-height:1;cursor:pointer;'
     + 'display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}'
@@ -113,19 +114,44 @@
     languette.setAttribute('aria-label', 'Ouvrir le menu'); languette.setAttribute('aria-controls', 'menu-panneau');
     languette.addEventListener('click', () => (panneau.hidden ? ouvrir() : fermer()));
     document.body.appendChild(languette);
+    // (15:35, Ahmed : « il doit apparaître au rythme de mon doigt, pas juste en un clic ») le panneau suit le doigt : parti du bord
+    // gauche, il sort avec lui ; ouvert, un glissement vers la gauche le rentre avec lui ; lâché, il finit le geste (ou revient)
     let glisse = null;
+    const suivre = (p) => { panneau.style.transform = `translateX(${(p - 1) * 100}%)`; voile.style.opacity = String(p); };
+    const lacher = (ouvert) => {
+      panneau.style.transition = 'transform .18s ease-out'; voile.style.transition = 'opacity .18s ease-out';
+      suivre(ouvert ? 1 : 0);
+      setTimeout(() => {
+        panneau.style.transition = voile.style.transition = panneau.style.transform = voile.style.opacity = '';
+        if (ouvert) { if (!(history.state && history.state.menuOuvert)) ouvrir(); } else fermer();
+      }, 190);
+    };
     document.addEventListener('touchstart', (e) => {
       const t = e.touches && e.touches[0];
-      glisse = t && panneau.hidden && t.clientX <= 28 ? { x: t.clientX, y: t.clientY } : null;
+      if (!t) { glisse = null; return; }
+      if (panneau.hidden && t.clientX <= 28) glisse = { x: t.clientX, y: t.clientY, ouvrant: true, actif: false };
+      else if (!panneau.hidden && (panneau.contains(e.target) || e.target === voile)) glisse = { x: t.clientX, y: t.clientY, ouvrant: false, actif: false };
+      else glisse = null;
     }, { passive: true });
     document.addEventListener('touchmove', (e) => {
       const t = glisse && e.touches && e.touches[0];
       if (!t) return;
-      const dx = t.clientX - glisse.x, dy = Math.abs(t.clientY - glisse.y);
-      if (dy > 60) { glisse = null; return; }                       // un geste vertical : on fait défiler, pas le menu
-      if (dx > 50) { glisse = null; ouvrir(); }
+      const dx = t.clientX - glisse.x, dy = Math.abs(t.clientY - glisse.y), w = panneau.offsetWidth || 300;
+      if (!glisse.actif) {
+        if (dy > 24 && dy > Math.abs(dx)) { glisse = null; return; }          // un geste vertical : on fait défiler, pas le menu
+        if (Math.abs(dx) < 8) return;
+        glisse.actif = true;
+        panneau.style.transition = voile.style.transition = 'none';
+        if (glisse.ouvrant) { panneau.hidden = false; voile.hidden = false; burger.setAttribute('aria-expanded', 'true'); }
+      }
+      glisse.p = glisse.ouvrant ? Math.max(0, Math.min(1, dx / w)) : Math.max(0, Math.min(1, 1 + dx / w));
+      suivre(glisse.p);
     }, { passive: true });
-    document.addEventListener('touchend', () => { glisse = null; }, { passive: true });
+    document.addEventListener('touchend', () => {
+      const g = glisse; glisse = null;
+      if (!g || !g.actif) return;
+      lacher(g.ouvrant ? g.p > 0.35 : g.p > 0.65);
+    }, { passive: true });
     voile.addEventListener('click', fermer);
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !panneau.hidden) { fermer(); burger.focus(); } });
     // une page choisie : l'étape « menu ouvert » s'efface d'abord, puis on y va ; « retour » depuis elle revient ici, pas au menu
@@ -227,9 +253,11 @@
       depuis = Number(d && d.vus && d.vus[page]) || depuis;
       if (p && p.n && (p.resume || []).length) {
         const bulle = document.createElement('div');
-        bulle.className = 'nouveautes';
+        bulle.className = 'nouveautes touchable';
         bulle.setAttribute('role', 'status');
         bulle.textContent = `Depuis ta dernière visite : ${p.resume.join(' ; ')}.`;
+        // (15:35, Ahmed : « cliquer sur la bande rouge, et ça me ramène directement sur le bon truc ») elle mène au nouveau de la page
+        bulle.addEventListener('click', (e) => { if (e.target.closest('button')) return; allerAuNouveau(page); bulle.remove(); });
         const x = document.createElement('button');
         x.type = 'button'; x.textContent = '×'; x.setAttribute('aria-label', 'Fermer');
         x.addEventListener('click', () => bulle.remove());

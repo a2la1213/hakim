@@ -850,9 +850,10 @@ lecteurNeuronal.hesitation = (o) => {
   if (!h || !h.pret || !h.voix) return h;
   // (14:20) un peu plus long que sa voix (0,6 à 1,5 s de plus), jamais plus que sa durée au plus : il s'étale sur la pause ;
   // (14:40) au ralenti, et il repart de la vitesse où le meuble d'avant s'est arrêté (après sa voix : un départ lent, 0,35)
-  const voulu = h.pret.duration + 0.6 + Math.random() * 0.9, cible = h.dureeMax > 0 ? Math.min(h.dureeMax, voulu) : voulu;
+  // (15:40, Ahmed : « les meubles sont trop longs au début ») moins étirés (0,3 à 0,8 s de plus) et un départ moins lent (0,55)
+  const voulu = h.pret.duration + 0.3 + Math.random() * 0.5, cible = h.dureeMax > 0 ? Math.min(h.dureeMax, voulu) : voulu;
   try {
-    const r = ralentirMeuble(h.pret, cible, o && o.suite ? vitesseFinMeuble : rythmeVoix('ralenti_depart', 0.35));
+    const r = ralentirMeuble(h.pret, cible, o && o.suite ? vitesseFinMeuble : rythmeVoix('ralenti_depart', 0.55));
     vitesseFinMeuble = r.vFin;
     return { ...h, pret: r.tampon, dureeMax: 0 };
   } catch (_) { return h; }
@@ -861,7 +862,7 @@ lecteurNeuronal.peutHesiter = () => etat.reponseVoix != null && jarvisPeutParler
 // (15:15) la même transition entre sa voix et ses meubles : sa voix repart au ralenti (de 0,35 à la normale sur sa première lettre),
 // et sa dernière parole avant un trou ralentit sur sa fin (+0,3 s)
 const rythmeVoix = (k, d) => { const v = lecteurNeuronal.rythme && Number(lecteurNeuronal.rythme[k]); return Number.isFinite(v) ? v : d; };   // (15:24)
-lecteurNeuronal.adoucirDebut = (buf) => { try { return ralentirMeuble(buf, 0, rythmeVoix('ralenti_depart', 0.35)).tampon; } catch (_) { return buf; } };
+lecteurNeuronal.adoucirDebut = (buf) => { try { return ralentirMeuble(buf, 0, rythmeVoix('ralenti_depart', 0.55)).tampon; } catch (_) { return buf; } };
 lecteurNeuronal.adoucirFin = (buf) => { const f = rythmeVoix('ralenti_fin', 0.3); if (!(f > 0)) return buf; try { return ralentirMeuble(buf, buf.duration + f, 1).tampon; } catch (_) { return buf; } };
 if (lecteurSysteme) lecteurSysteme.surFin = finLecture;
 
@@ -1519,7 +1520,10 @@ const heureMessage = (t) => (t ? `<span class="heure" title="${esc(new Date(t).t
 const jourMessage = (t) => new Date(t).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 function htmlMessage(m) {
   const heure = heureMessage(quandMessage(m));
-  if (m.qui === 'u') return `<div class="m u" data-id="${esc(m.id)}">${m.oral ? '<span class="oral">À L’ORAL</span>' : ''}`
+  // (15:38, Ahmed : « que Hakim puisse mettre les mêmes smileys que moi sur mes messages ») sa réaction, en bas à gauche
+  const saReaction = m.qui === 'u' && m.reactionHakim && REACTIONS.includes(m.reactionHakim)
+    ? `<span class="reaction-hakim" title="La réaction de Hakim">${esc(m.reactionHakim)}</span>` : '';
+  if (m.qui === 'u') return `<div class="m u${saReaction ? ' a-reaction' : ''}" data-id="${esc(m.id)}">${saReaction}${m.oral ? '<span class="oral">À L’ORAL</span>' : ''}`
     + ((m.joints || []).length ? `<div class="pj">${m.joints.map(n => `<span>📎 ${esc(n)}</span>`).join('')}</div>` : '')
     + `<div class="txt">${esc(m.texte)}</div>`
     + (m.texte ? `<div class="pied">${heure}<button data-copier="${esc(m.id)}" title="Copier ce message">📋 copier</button></div>` : '') + '</div>';
@@ -1915,6 +1919,7 @@ async function envoyer(texte, oral, dejaRelance) {
           if (mesureTour && !mesureTour.premier_texte && o.x.trim()) mesureTour.premier_texte = Date.now();
           m.texte += o.x;
           if (/anticipe/i.test(o.x) || /\[\[\s*anticipe/i.test(m.texte.slice(-80))) lireAnticipe(m.texte.slice(-120));   // (15:22)
+          if (/reaction/i.test(m.texte.slice(-90))) reactionDeHakim(m);                                                    // (15:38)
           orbeTete.pulser(0.05);
           if (auto) decoupe.ajouter(o.x).forEach(p => { if (NON_REPONSE.test(p)) return; if (!boutDire(m, p)) return; etat.lectureDe = m.id; lecteur.dire(p); });
           // (21:02, Ahmed : « sa voix part tout de suite, et l'écriture se fait après, en arrière-plan ») son texte ne s'écrit
@@ -2781,6 +2786,18 @@ function retirerSouffle() {
   if (!(etat.aCote || []).some(x => x.cle === 'souffle')) return;
   etat.aCote = etat.aCote.filter(x => x.cle !== 'souffle');
   rendre();
+}
+// (15:38, Ahmed : « que Hakim puisse mettre les mêmes smileys que moi sur mes messages ») [[reaction: 😂]] dans sa réponse : sa réaction
+// sur ton message auquel il répond (sa voix ne le dit pas) ; une seule par message, la dernière gagne
+function reactionDeHakim(m) {
+  const r = /\[\[\s*reaction\s*:\s*([^\]\s]{1,8})\s*\]\]/i.exec(String(m.texte || '').slice(-200));
+  if (!r || !REACTIONS.includes(r[1])) return;
+  const i = etat.messages.indexOf(m);
+  const papa = etat.messages.slice(0, i < 0 ? etat.messages.length : i).reverse().find(x => x.qui === 'u');
+  if (!papa || papa.reactionHakim === r[1]) return;
+  papa.reactionHakim = r[1];
+  journalVoix('reaction_hakim', {});
+  sauver(); rendre();
 }
 // (15:22) ce qu'il attend de toi, dit à la fin de sa réponse : [[anticipe: court | long | question]] (sa voix ne le dit pas)
 function lireAnticipe(texte) {
