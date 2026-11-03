@@ -33,9 +33,9 @@ test('le cockpit retient le modèle de chaque réponse, pas celui d’un agent n
 
 test('Parler affiche la version qui a répondu : « Opus 4.8 » se distingue d’« Opus 5.5 »', () => {
   const { nomModele } = charger(page, ['nomModele']);
-  assert.equal(nomModele({ modele: 'opus', modeleReel: 'claude-opus-4-8' }), 'Opus 4.8');
-  assert.equal(nomModele({ modele: 'opus', modeleReel: 'claude-opus-5-5' }), 'Opus 5.5');
-  assert.equal(nomModele({ modele: 'sonnet', modeleReel: 'claude-sonnet-5-5' }), 'Sonnet 5.5');
+  assert.equal(nomModele({ modele: 'opus', modeleReel: 'claude-opus-4-8' }), 'Super Hakim (Opus 4.8)');
+  assert.equal(nomModele({ modele: 'opus', modeleReel: 'claude-opus-5-5' }), 'Super Hakim (Opus 5.5)');
+  assert.equal(nomModele({ modele: 'sonnet', modeleReel: 'claude-sonnet-5-5' }), 'Hakim (Sonnet 5.5)');
   assert.equal(nomModele({ modele: 'opus' }), 'Opus', 'une réponse d’avant : le nom seul');
   assert.equal(nomModele({ modele: 'sonnet', modeleReel: '<img src=x>' }), 'Sonnet', 'rien d’étrange ne passe');
 });

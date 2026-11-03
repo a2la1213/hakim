@@ -12,7 +12,7 @@ const ligne = (debut) => { const i = src.indexOf(debut); return src.slice(i, src
 function monde() {
   const ctx = { Date, String, Map };
   vm.createContext(ctx);
-  vm.runInContext(ligne('const MODELE_CONVERSATION') + ligne('const DEMANDE_MODELE')
+  vm.runInContext(ligne('const MODELE_CONVERSATION') + ligne('const ALIAS_MODELE') + ligne('const versModele') + ligne('const DEMANDE_MODELE')
     + 'const modeleDeSession = new Map();\n' + ['noterModele', 'modeleDeConversation', 'modeleAuto'].map(prendre).join('\n')
     + 'this.f = { modeleAuto, noterModele, modeleDeConversation };', ctx);
   return ctx.f;
@@ -33,6 +33,8 @@ test('« passe en Sonnet » change le modèle pour le reste de cette conversatio
   assert.equal(f.modeleAuto('b', 'salut', false), 'sonnet', 'une autre conversation garde Sonnet');
   assert.equal(f.modeleAuto('a', 'mode opus', false), 'opus');
   assert.equal(f.modeleAuto('a', 'mdr', false), 'opus');
+  assert.equal(f.modeleAuto('a', 'passe en mini hakim', false), 'haiku', '(03/11) ses noms');
+  assert.equal(f.modeleAuto('a', 'mode super hakim', false), 'opus');
 });
 
 test('la balise de Hakim fixe le modèle de sa conversation ; le préchauffage prend ce modèle', () => {

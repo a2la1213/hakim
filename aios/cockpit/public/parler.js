@@ -1245,7 +1245,7 @@ function nomModele(m) {
   if (m.modele === 'gemma') return 'Gemma';                       // (29/10) Gemma à la place d'Opus (réglages › source)
   const v = String(m.modeleReel || '').match(/^claude-(opus|sonnet|haiku)-(\d{1,2})-(\d{1,2})(?:-|$)/);
   if (!v) return m.modele === 'opus' ? 'Opus' : m.modele === 'haiku' ? 'Haiku' : 'Sonnet';
-  return `${v[1][0].toUpperCase()}${v[1].slice(1)} ${v[2]}.${v[3]}`;
+  return `${{ haiku: 'Mini Hakim', sonnet: 'Hakim', opus: 'Super Hakim' }[v[1]]} (${v[1][0].toUpperCase()}${v[1].slice(1)} ${v[2]}.${v[3]})`;   // (03/11) ses noms
 }
 function tailleLisible(n) { return n < 1024 ? `${n} o` : n < 1048576 ? `${Math.round(n / 1024)} Ko` : `${(n / 1048576).toFixed(1).replace('.', ',')} Mo`; }
 var apercus = new Map();

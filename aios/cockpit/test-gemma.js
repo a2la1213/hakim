@@ -92,5 +92,5 @@ test('la page nomme Gemma quand c’est elle qui a répondu', () => {
   const { f } = charger(page, ['nomModele']);
   assert.equal(f.nomModele({ modele: 'gemma' }), 'Gemma');
   assert.equal(f.nomModele({ modele: 'opus' }), 'Opus');
-  assert.equal(f.nomModele({ modele: 'opus', modeleReel: 'claude-opus-5-5' }), 'Opus 5.5');
+  assert.equal(f.nomModele({ modele: 'opus', modeleReel: 'claude-opus-5-5' }), 'Super Hakim (Opus 5.5)');
 });

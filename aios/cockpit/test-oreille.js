@@ -901,5 +901,5 @@ test('(09:25-09:30) il allume son tri des morceaux lui-même ; plusieurs sons pa
   assert.match(src, /'--model', MODELE_CLI\[modele\] \|\| modele,/);
   assert.match(src, /const MODELE_CLI = \{ haiku: 'claude-haiku-5-5' \};/);
   assert.ok('passe en haiku'.match(new RegExp(src.match(/const DEMANDE_MODELE = \/(.*)\/i;/)[1], 'i')), '« passe en Haiku »');
-  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'parler.html'), 'utf8'), /<option value="haiku">Haiku 5\.5/);
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'parler.html'), 'utf8'), /<option value="haiku">Mini Hakim \(Haiku 5\.5/);
 });
