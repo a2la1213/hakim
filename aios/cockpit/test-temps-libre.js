@@ -27,7 +27,7 @@ function monter({ ahmedIlYaMs = 2 * 3600e3, pause = false, occupe = false, ahmed
     cerveau: { enCours: null }, filRecent: () => 'lun. 13:00 Ahmed : on lance le calcul du sable',
     NON_REPONSE_SERVEUR: /^\s*no response requested\.?\s*$/i, sansBaliseAffect: (t) => String(t || ''),
     livrerAutonome: (c, texte, notifs, outils, issue, pieces, options) => livres.push({ texte, outils, options }),
-    OUTILS_JARVIS: ['mcp__anamnese__memory_recall', 'mcp__terminal__executer', 'mcp__calcul__executer_python', 'WebSearch', 'mcp__dehors__envoyer', 'mcp__web__consulter_ia'],
+    EFFORT_HAKIM: 'low', OUTILS_JARVIS: ['mcp__anamnese__memory_recall', 'mcp__terminal__executer', 'mcp__calcul__executer_python', 'WebSearch', 'mcp__dehors__envoyer', 'mcp__web__consulter_ia'],
     outilsInterdits: () => ['mcp__anamnese__self_update'], setInterval: () => ({ unref() {} }), SERVEURS_HORS_TEMPS_LIBRE: ['dehors'],
     reglagesCerveau: (source) => JSON.stringify({ crochet: source }) };
   vm.createContext(ctx);
@@ -93,6 +93,7 @@ test('sa conversation à part : ses serveurs sauf ceux qui parlent au dehors, ma
   assert.deepStrictEqual(a.slice(0, 2), ['-p', 'le prompt']);
   for (const x of ['--restricted', '--no-session-persistence', '--strict-mcp-config']) assert.ok(a.includes(x), x);
   assert.strictEqual(a[a.indexOf('--model') + 1], 'opus');
+  assert.strictEqual(a[a.indexOf('--effort') + 1], 'low', '(03/11) réflexion minimale');
   assert.strictEqual(a[a.indexOf('--append-system-prompt') + 1], 'le persona');
   assert.ok(a[a.indexOf('--allowedTools') + 1].includes('mcp__terminal__executer'));
   assert.ok(!a[a.indexOf('--allowedTools') + 1].includes('mcp__dehors__'));

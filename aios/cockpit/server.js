@@ -374,6 +374,9 @@ const CLAUDE_BIN = [process.env.CLAUDE_BIN, path.join(HOME, '.npm-global', 'bin'
 // entre modèles ») Haiku revient (écarté le 2026-10-16) : choisi à la main, ou en auto par « passe en Haiku » et [[modele: haiku]]
 const MODELES_JARVIS = new Set(['sonnet', 'opus', 'haiku']);
 const MODELE_CLI = { haiku: 'claude-haiku-5-5' };            // le nom donné à claude --model (Haiku 5.5, le plus récent)
+// (03/11, Ahmed : « tous les modèles en réflexion minimale, ni moyenne ni haute, on va au minimum… même pour le subconscient et
+// Gemma ») l'effort de chaque claude qui fait vivre Hakim : « low », le plus bas que claude accepte (« minimal » est refusé)
+const EFFORT_HAKIM = process.env.JARVIS_EFFORT || 'low';
 // FERME-DEBUT outils (28/10 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
 // Ni identité (le cœur est validé par Ahmed ; elle grandit par la consolidation de nuit), ni
 // taxonomie (une phrase mal entendue ne doit pas fusionner des rubriques), ni wm_boot (le briefing
@@ -701,7 +704,7 @@ function trierSouvenirs(prompt, permis) {
     const env = { ...process.env }; delete env.ANTHROPIC_API_KEY;
     env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';            // (28/10) mesuré : ~0,15 s de moins par appel
     try {
-      const enfant = execFile(CLAUDE_BIN, ['-p', '--model', 'sonnet', '--max-turns', '2', '--tools', '', '--restricted',
+      const enfant = execFile(CLAUDE_BIN, ['-p', '--model', 'sonnet', '--effort', EFFORT_HAKIM, '--max-turns', '2', '--tools', '', '--restricted',
         '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence'],
       { timeout: TRI_DELAI_MS, maxBuffer: 1 << 20, env },
       (e, so) => resolve(e ? { ids: null, ms: Date.now() - t0, erreur: e.killed ? 'délai dépassé' : String(e.message || e).slice(0, 200) }
@@ -1982,6 +1985,9 @@ const ROBOT_SIGNAL = path.join(HOME, '.robot-ia', 'gemma-occupe.json');
 // mémoire (un rêve commencé peut le recharger avant de se suspendre ; le robot peut l'avoir eu).
 // Seul Gemma : les autres modèles d'Ollama (embeddings…) ne sont pas le subconscient (relecture Opus).
 const OLLAMA = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
+// (03/11) la remplaçante d'Opus sans réflexion : le pont qui dit « disabled » à Ollama (pont-gemma.js) ; pas encore prêt : Ollama
+let pontGemma = null;
+try { require('./pont-gemma.js').demarrer(OLLAMA).then((p) => { pontGemma = p.url; }).catch(() => {}); } catch (_) {}
 let conversationPage = 0, liberationEnCours = false;
 // (29/10, la boucle de 11:09-11:13 : Gemma rechargée ~20 fois en 4 min ; Ahmed : « ok pour moi ») un modèle encore listé
 // mais dont l'échéance est passée est DÉJÀ en train de se décharger : le redemander le faisait recharger par Ollama pour le
@@ -2490,7 +2496,7 @@ function sonnetTeteDeFond(prompt, etiquette, modele = 'sonnet', delai = 60000) {
         });
         return;
       }
-      const enfant = execFile(CLAUDE_BIN, ['-p', '--model', (typeof MODELE_CLI !== 'undefined' && MODELE_CLI[modele]) || modele, '--max-turns', '1', '--tools', '', '--restricted', '--strict-mcp-config',
+      const enfant = execFile(CLAUDE_BIN, ['-p', '--model', (typeof MODELE_CLI !== 'undefined' && MODELE_CLI[modele]) || modele, '--effort', EFFORT_HAKIM, '--max-turns', '1', '--tools', '', '--restricted', '--strict-mcp-config',
         '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence', '--output-format', 'json',
         ...(parApi ? ['--settings', JSON.stringify({ apiKeyHelper: aideCle() })] : [])],
       { cwd: vide || os.tmpdir(), timeout: delai, maxBuffer: 1 << 20, env }, (e, so) => {
@@ -2850,7 +2856,7 @@ function vivantLibre(modele) {
   const env = { ...process.env, ANAMNESE_HEADLESS: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' }; delete env.ANTHROPIC_API_KEY;
   let vide = os.tmpdir(); try { vide = fs.mkdtempSync(path.join(os.tmpdir(), 'voix-vivante-')); } catch (_) {}
   const proc = spawn(CLAUDE_BIN, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-    '--model', (typeof MODELE_CLI !== 'undefined' && MODELE_CLI[m]) || m, '--tools', '', '--restricted', '--strict-mcp-config',
+    '--model', (typeof MODELE_CLI !== 'undefined' && MODELE_CLI[m]) || m, '--effort', EFFORT_HAKIM, '--tools', '', '--restricted', '--strict-mcp-config',
     '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence'], { cwd: vide, env, stdio: ['pipe', 'pipe', 'ignore'] });
   v = { modele: m, proc, n: 0, attente: null, tampon: '', dernier: Date.now(), vide };
   proc.stdout.on('data', (d) => {
@@ -3017,7 +3023,7 @@ function configTempsLibre() {
 }
 // FERME-DEBUT temps-libre (28/10 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
 function argsTempsLibre(prompt, persona, cfg) {
-  return ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--restricted', '--model', 'opus',
+  return ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--restricted', '--model', 'opus', '--effort', EFFORT_HAKIM,
     '--tools', 'WebSearch,Read', '--strict-mcp-config', '--mcp-config', cfg,
     '--allowedTools', OUTILS_JARVIS.filter(o => !SERVEURS_HORS_TEMPS_LIBRE.some(n => o.startsWith(`mcp__${n}__`)) && !OUTILS_HORS_TEMPS_LIBRE.includes(o)).join(','),
     '--disallowedTools', outilsInterdits().join(','), '--max-turns', '40', '--no-session-persistence',
@@ -4569,7 +4575,8 @@ async function repondreEnLocal(prompt, persona, surTexte, signal, { gemma = fals
   const r = await fetch(`${OLLAMA}/api/chat`, { method: 'POST', signal, headers: { 'Content-Type': 'application/json' },
     // (2026-10-23) l'essai « Gemma seule » : déchargée 3 min après sa dernière réponse (7,6 Go : le Mac saturait, la
     // transcription de la voix d'Ahmed passait à 25 s et plus)
-    body: j({ model: MODELE_LOCAL, stream: true, keep_alive: gemma ? '3m' : '30m', options: { num_ctx: 8192 },
+    // (03/11, Ahmed : « réflexion minimale… Gemma aussi ») Gemma 4 pense par défaut (ollama show) : jamais ici
+    body: j({ model: MODELE_LOCAL, stream: true, think: false, keep_alive: gemma ? '3m' : '30m', options: { num_ctx: 8192 },
       messages: [{ role: 'system', content: systeme }, ...historique, { role: 'user', content: prompt }] }) });
   if (!r.ok || !r.body) throw new Error(`Ollama ${r.status}`);
   const dec = new TextDecoder();
@@ -6551,6 +6558,7 @@ function lancerMessager(q) {
   const reglages = Messager.reglagesMessager({ garde: GARDE_MESSAGE, jarvis: JARVIS, cible: a.id, crochet: CROCHET_IMMUNITE, masquees: CLES_MASQUEES,
     uneFois: path.join(JARVIS_MESSAGER_DOSSIER, `${demande}.envoye`) });
   const args = Messager.argsMessager(a.session, reglages, { mcp: JARVIS_MCP, permis: OUTILS_JARVIS.filter(o => !OUTILS_A_LUI_SEUL.includes(o)).concat('SendMessage').join(','), agents: j(agentsPourCerveau()) });
+  args.push('--effort', EFFORT_HAKIM);                                // (03/11) réflexion minimale, comme son cerveau
   const m = { id: a.id, essaye: false, porte: false, reparti: false, fini: false, refusOutil: '', enfant: null };
   const pidFichier = path.join(JARVIS_MESSAGER_DOSSIER, `${demande}.pid.json`);
   let delai = null, livre = null;
@@ -6690,7 +6698,7 @@ function cerveauLancer(modele, session, persona, source = 'abonnement') {
   // cette garde (sortie libre vers n'importe quel domaine, contenu sans enveloppe).
   // FERME-DEBUT cerveau (28/10 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
   const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-    '--include-partial-messages', '--replay-user-messages', '--restricted', '--model', MODELE_CLI[modele] || modele, '--tools', `WebSearch,Read${agents ? ',Task,SendMessage' : ''}`,
+    '--include-partial-messages', '--replay-user-messages', '--restricted', '--model', MODELE_CLI[modele] || modele, '--effort', EFFORT_HAKIM, '--tools', `WebSearch,Read${agents ? ',Task,SendMessage' : ''}`,
     '--strict-mcp-config', '--mcp-config', JARVIS_MCP, '--allowedTools', OUTILS_JARVIS.concat(agents ? ['Task', 'SendMessage'] : []).join(','),
     '--disallowedTools', outilsInterdits().join(','), '--max-turns', '40'];
   // FERME-FIN cerveau
@@ -6803,7 +6811,7 @@ function envDuCerveau(source) {
   if (source !== 'gemma') Object.assign(env, { CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS: '200000', MAX_MCP_OUTPUT_TOKENS: '200000' });
   // (29/10) le remplaçant d'Opus : le même claude, qui parle à Ollama ; « opus », « sonnet », ses agents : tous Gemma
   if (source === 'gemma') Object.assign(env, {
-    ANTHROPIC_BASE_URL: OLLAMA, ANTHROPIC_AUTH_TOKEN: 'ollama', ANTHROPIC_DEFAULT_OPUS_MODEL: GEMMA_CERVEAU,
+    ANTHROPIC_BASE_URL: (typeof pontGemma !== 'undefined' && pontGemma) || OLLAMA, ANTHROPIC_AUTH_TOKEN: 'ollama', ANTHROPIC_DEFAULT_OPUS_MODEL: GEMMA_CERVEAU,
     ANTHROPIC_DEFAULT_SONNET_MODEL: GEMMA_CERVEAU, ANTHROPIC_DEFAULT_HAIKU_MODEL: GEMMA_CERVEAU, CLAUDE_CODE_SUBAGENT_MODEL: GEMMA_CERVEAU,
     API_TIMEOUT_MS: String(GEMMA_MUET_MS), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' });
   return env;
@@ -7082,6 +7090,8 @@ async function routeDire(req, res) {
   const debut = VoixPage.debutDe(texte + ' x') === texte;
   const cleVoix = debut ? D.cle(texte, langueVoix, emotion, tempo) : null;
   const garde = debut ? D.lire(cleVoix) : null;
+  // (03/11) une hésitation demandée d'avance (parler.js) : seulement si sa voix est gardée, jamais une synthèse de plus
+  if (!garde && q && q.gardee === true) return repondre(404, { erreur: 'pas encore gardée' });
   if (garde) {
     try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'voix_gardee', caracteres: texte.length }) + '\n', { mode: 0o600 }); } catch (_) {}
     res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Duree': String(garde.duree || '') });

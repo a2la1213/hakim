@@ -187,7 +187,7 @@ def _claude_isole(prompt, timeout=240):
     claude = os.environ.get("ANAMNESE_CLAUDE_BIN") or "claude"
     with tempfile.TemporaryDirectory(prefix="pensee-") as vide:
         try:
-            r = subprocess.run([claude, "-p", prompt, "--restricted", "--model", "sonnet", "--tools", "",
+            r = subprocess.run([claude, "-p", prompt, "--restricted", "--model", "sonnet", "--effort", config.EFFORT_HAKIM, "--tools", "",
                                 "--strict-mcp-config", "--no-session-persistence", "--max-turns", "1"],
                                capture_output=True, text=True, timeout=timeout, cwd=vide, stdin=subprocess.DEVNULL,
                                env={**os.environ, "ANAMNESE_HEADLESS": "1"})

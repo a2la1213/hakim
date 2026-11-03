@@ -455,7 +455,10 @@
 
   /* ---- (28/10) ses débuts de réponse les plus fréquents (anamnese/eval/latence : 44 % de ses 2 828 dernières réponses) :
      la voix d'un début connu est gardée par le cockpit (debuts.js) et resservie sans attendre la synthèse ---- */
-  const DEBUTS = ['frérot,', 'oui frérot,', 'oui,', 'ok frérot,', 'tu as raison,', "d'accord frérot,", 'ha,', "d'accord,", 'ah,',
+  // (03/11, Hakim pour papa) ses hésitations, pour meubler un trou au milieu d'une réponse (parler.js) : fabriquées et gardées
+  // comme ses débuts ; « alors, » ouvre aussi ses réponses
+  const HESITATIONS = ['euh,', 'hum,', 'alors,', 'voyons voir,'];
+  const DEBUTS = [...HESITATIONS, 'frérot,', 'oui frérot,', 'oui,', 'ok frérot,', 'tu as raison,', "d'accord frérot,", 'ha,', "d'accord,", 'ah,',
     'pas de souci,', 'bonne question,', 'merci,', 'merci frérot,', 'pardon frérot,', 'avec plaisir,', 'non,', 'bonne idée,',
     'honnêtement,', 'non frérot,', 'compris,', 'je comprends,', 'ok,', 'ça marche,', "c'est noté,", 'bismillah,', 'bien reçu,',
     "t'as raison,", "c'est fait,", 'pardon,', 'pas de souci frérot,', 'merci frérot.', 'si,', "c'est envoyé,", 'pas tout à fait,',
@@ -513,7 +516,7 @@
 
   const Voix = { versArabe, segmenter, pourLaVoix, decoupeur, choisirVoix, creerLecteur, FORMULE, VOIX_SEULE, AFFECT, sansAffect, latexParle,
     definirPrononciations,
-    diction, prononcable, enLettres, DEBUTS, debutDe, expressivitePhrase };
+    diction, prononcable, enLettres, DEBUTS, HESITATIONS, debutDe, expressivitePhrase };
   racine.Voix = Voix;
   if (typeof module !== 'undefined' && module.exports) module.exports = Voix;
 })(typeof window !== 'undefined' ? window : globalThis);

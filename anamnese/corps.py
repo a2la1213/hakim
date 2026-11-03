@@ -298,14 +298,20 @@ def contexte(maintenant=None):
             "nuit": _nuit(time.localtime(maintenant).tm_hour)}
 
 
+def _effort():
+    """(03/11, Ahmed : « réflexion minimale ») son corps réfléchit au plus bas (config.EFFORT_HAKIM)."""
+    import config
+    return config.EFFORT_HAKIM
+
+
 def demander_claude(prompt):
     claude = os.environ.get("ANAMNESE_CLAUDE_BIN") or str(Path.home() / ".npm-global" / "bin" / "claude")
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
     env["ANAMNESE_HEADLESS"] = "1"
     env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"   # (31/10, 00:45, Ahmed : « que ça aille plus vite pour trier »)
     with tempfile.TemporaryDirectory(prefix="corps-") as vide:
-        r = subprocess.run([claude, "-p", "--model", "sonnet", "--tools", "", "--restricted", "--strict-mcp-config", "--mcp-config",
-                            '{"mcpServers":{}}', "--no-session-persistence", "--output-format", "json"],
+        r = subprocess.run([claude, "-p", "--model", "sonnet", "--effort", _effort(), "--tools", "", "--restricted", "--strict-mcp-config",
+                            "--mcp-config", '{"mcpServers":{}}', "--no-session-persistence", "--output-format", "json"],
                            input=prompt, capture_output=True, text=True, timeout=90, cwd=vide, env=env)
     o = json.loads(r.stdout or "{}")
     if o.get("is_error"):
@@ -330,7 +336,7 @@ class SonnetVivant:
         env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
         self.vide = tempfile.mkdtemp(prefix="corps-vivant-")
         self.proc = subprocess.Popen([claude, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-                                      "--model", "sonnet", "--tools", "", "--restricted", "--strict-mcp-config", "--mcp-config",
+                                      "--model", "sonnet", "--effort", _effort(), "--tools", "", "--restricted", "--strict-mcp-config", "--mcp-config",
                                       '{"mcpServers":{}}', "--no-session-persistence"],
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
                                      cwd=self.vide, env=env)

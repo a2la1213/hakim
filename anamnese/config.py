@@ -24,6 +24,10 @@ CHAT_MODEL  = os.environ.get("ANAMNESE_CHAT_MODEL", "huihui_ai/gemma-4-abliterat
 EMBED_MODEL = os.environ.get("ANAMNESE_EMBED_MODEL", "nomic-embed-text")  # (legacy Ollama, voie locale)
 EMBED_MODEL_M2V = os.environ.get("ANAMNESE_EMBED_M2V", "minishlab/potion-multilingual-128M")  # MCP : autonome, sans Ollama
 LLM_TIMEOUT = int(os.environ.get("ANAMNESE_LLM_TIMEOUT", "240"))  # timeout génération locale (s)
+# (03/11, Ahmed : « tous les modèles en réflexion minimale, ni moyenne ni haute… même le subconscient et Gemma ») l'effort de
+# Claude quand il fait vivre Hakim (son corps, ses paroles lues en contexte, ses pensées) : « low », le plus bas que claude
+# accepte. Gemma, elle, ne pense pas (Engine.chat, think=False).
+EFFORT_HAKIM = os.environ.get("ANAMNESE_EFFORT_HAKIM", "low")
 
 # --- Mémoire ---
 DATA_DIR = ROOT / "data"

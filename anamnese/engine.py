@@ -148,7 +148,7 @@ class Engine:
         try:
             with tempfile.TemporaryDirectory(prefix="tete-de-fond-") as vide:
                 r = subprocess.run(
-                    [CLAUDE, "-p", prompt, "--model", alias, "--restricted", "--tools", "", "--strict-mcp-config",
+                    [CLAUDE, "-p", prompt, "--model", alias, "--effort", config.EFFORT_HAKIM, "--restricted", "--tools", "", "--strict-mcp-config",
                      "--no-session-persistence", "--max-turns", "1", "--output-format", "json"],
                     capture_output=True, text=True, timeout=config.LLM_TIMEOUT, cwd=vide, env=env,
                     stdin=subprocess.DEVNULL)

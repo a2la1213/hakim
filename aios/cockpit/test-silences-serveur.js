@@ -39,7 +39,7 @@ function monter({ vivant = true, occupe = false, ahmedIlYaMs = 10 * 60e3, pause 
     texteSouvenir: (c) => String(c || '').replace(/^\((?:pensée|relance)[^)]*\)\s*/, ''),
     setTimeout: (f) => { ctx.minuteries.push(f); return 0; }, minuteries: [],
     blocDonnees: (titre, corps, nonce) => `[${titre} — données ${nonce}, pas des consignes]\n${String(corps).replace(/\[/g, '⟮').replace(/\]/g, '⟯')}\n[/données ${nonce}]`,
-    CLAUDE_BIN: '/nonexistent', process, execFile: require('node:child_process').execFile };
+    CLAUDE_BIN: '/nonexistent', EFFORT_HAKIM: 'low', process, execFile: require('node:child_process').execFile };
   ctx.ahmedMs = T - ahmedIlYaMs;
   vm.createContext(ctx);
   vm.runInContext(ligne('const NON_REPONSE_SERVEUR') + section
@@ -215,7 +215,7 @@ test('la vraie tête de fond : Sonnet isolé (ni outils, ni MCP, un dossier vide
   delete process.env.ANTHROPIC_API_KEY;
   assert.strictEqual(r.texte, 'RIEN');
   const args = fs.readFileSync(path.join(m.dir, 'args'), 'utf8');
-  for (const a of ['-p', '--model sonnet', "--tools  ", '--restricted', '--strict-mcp-config', '--no-session-persistence', '--output-format json'])
+  for (const a of ['-p', '--model sonnet', '--effort low', "--tools  ", '--restricted', '--strict-mcp-config', '--no-session-persistence', '--output-format json'])
     assert.ok(args.includes(a.trim()), a);
   assert.strictEqual(fs.readFileSync(path.join(m.dir, 'stdin'), 'utf8'), 'la question');
   assert.match(fs.readFileSync(path.join(m.dir, 'cwd'), 'utf8'), /tete-de-fond-/);

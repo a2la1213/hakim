@@ -70,7 +70,9 @@ def demander_claude(prompt, modele="sonnet"):
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}      # le forfait, jamais l'API payante
     env["ANAMNESE_HEADLESS"] = "1"
     with tempfile.TemporaryDirectory(prefix="parole-") as vide:
-        r = subprocess.run([claude, "-p", "--model", modele, "--tools", "", "--restricted", "--strict-mcp-config", "--mcp-config",
+        import config                                                              # (03/11) réflexion minimale
+        r = subprocess.run([claude, "-p", "--model", modele, "--effort", config.EFFORT_HAKIM, "--tools", "", "--restricted",
+                            "--strict-mcp-config", "--mcp-config",
                             '{"mcpServers":{}}', "--no-session-persistence", "--output-format", "json"],
                            input=prompt, capture_output=True, text=True, timeout=120, cwd=vide, env=env)
     o = json.loads(r.stdout or "{}")

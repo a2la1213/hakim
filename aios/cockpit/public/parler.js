@@ -163,7 +163,26 @@ async function chargerDebutsPrets() {
     if (!r.ok) return;
     const o = await r.json();
     debutsPrets = new Set((o.prets || []).map(([d, pe]) => `${String(d).toLowerCase()}|${pe}|${o.palier_tempo}`));
+    chargerHesitations();
   } catch (_) {}
+}
+// (03/11, Hakim pour papa) ses hésitations (Voix.HESITATIONS) : leur voix gardée par le cockpit (debuts.js), demandée
+// seulement si elle est prête (« gardee » : jamais une synthèse de plus), décodée une fois, pour meubler un trou sans attendre
+const hesitationsPretes = new Map();
+let derniereHesitation = '';
+async function chargerHesitations() {
+  if (!actx || actx.state !== 'running') return;
+  if (hesitationsPretes.size > 40) hesitationsPretes.clear();
+  for (const h of Voix.HESITATIONS) {
+    const c = cleDebut(h);
+    if (!debutsPrets.has(c) || hesitationsPretes.has(c)) continue;
+    const texte = h.charAt(0).toUpperCase() + h.slice(1);
+    try {
+      const r = await fetch('/api/voix/dire', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+        body: JSON.stringify({ texte, langue: 'fr', emotion: emotionDebut(texte), tempo: tempoVoix(), gardee: true }) });
+      if (r.ok) hesitationsPretes.set(c, { texte, pret: await actx.decodeAudioData(await r.arrayBuffer()) });
+    } catch (_) {}
+  }
 }
 const lecteurSysteme = synth ? Voix.creerLecteur(synth, window.SpeechSynthesisUtterance, voixPour, vitesseVoix) : null;
 
@@ -195,6 +214,16 @@ function creerLecteurNeuronal() {
   // Pause (lot C, point 26, 2026-10-19) : ce qui n'a pas encore été dit, la phrase en cours comprise, est
   // gardé ; la reprise repart de cette phrase. Le texte qui arrive pendant la pause s'y ajoute.
   let pause = null, elementTexte = null;
+  // (03/11, Hakim pour papa : « je donne une première réponse courte, puis la suite ; si un trou se prépare entre les deux, une
+  // petite hésitation pour meubler, côté cockpit, sans que je l'écrive ») sa voix a fini, la suite n'est pas prête et sa réponse
+  // s'écrit encore : après un souffle, une hésitation toute prête (L.hesitation, fournie par la page). Une par trou, deux par
+  // réponse au plus, jamais avant son premier mot ; elle n'est pas un morceau de sa réponse (ni sous-titre, ni reprise).
+  // (13:11, papa via Hakim : « quand je réfléchis et qu'il y a un trou avant ma réponse » ; consciente quand il l'écrit,
+  // subconsciente quand elle vient seule) avant son premier mot aussi : la page dit qu'une réponse se prépare
+  // (attendreReponse) ; une seconde sans rien à dire, une hésitation, une seule.
+  const HESITER_APRES = 0.45, HESITER_AVANT = 1.0, HESITATIONS_MAX = 2;
+  let trou = null, avant = null, hesitees = 0, aParle = false;
+  const vraiesSources = () => [...sources].some(s => !s._hesitation);   // une hésitation ne fait pas de lui un « déjà parti »
   // coût fixe (s), coût par seconde de voix, caractères par seconde de voix : prudents au départ (la
   // machine swappe souvent), puis appris et gardés d'une session à l'autre dans ce navigateur
   const est = { fixe: 0.85, parSec: 0.75, cps: 15 };
@@ -204,10 +233,11 @@ function creerLecteurNeuronal() {
   const avance = () => (fluide() ? Math.max(0, prochainDebut - actx.currentTime) : 0);
   const prevoir = (n) => est.fixe + est.parSec * (n / est.cps);   // temps de synthèse prévu pour n caractères
   const L = {
-    surFin: null, surSegment: null, fluxFini: true,
+    surFin: null, surSegment: null, fluxFini: true, hesitation: null, peutHesiter: null,
     appliquerSon() { if (element) element.muted = !!etat.sonCoupe; },
     dire(phrase) {
       if (pause) { pause.textes.push(...Voix.prononcable(phrase)); pause.fluxFini = false; return; }
+      if (L.fluxFini) { hesitees = 0; aParle = false; }             // (03/11) une nouvelle réponse
       L.fluxFini = false;
       for (const seg of Voix.prononcable(phrase)) {
         // les phrases très longues sont coupées aux virgules : un morceau peut alors rester petit
@@ -219,6 +249,10 @@ function creerLecteurNeuronal() {
       pomper();
     },
     finFlux() { if (pause) { pause.fluxFini = true; return; } L.fluxFini = true; pomper(); },
+    attendreReponse() {
+      clearTimeout(avant);
+      avant = setTimeout(() => { avant = null; if (!vraiesSources() && !element) glisser({ avantPremier: true }); }, HESITER_AVANT * 1000);
+    },
     // (31/10, 01:27, Ahmed via Hakim) un de ses sons, à sa place : après ce qui précède, avant la suite, joué en entier
     direSon(extrait) {
       if (!extrait || !/^e\d{1,6}$/.test(String(extrait.id))) return;
@@ -267,6 +301,7 @@ function creerLecteurNeuronal() {
       if (element) { element.pause(); URL.revokeObjectURL(element.src); element = null; }
       prochainDebut = 0; L.fluxFini = true;
       clearInterval(veille); veille = null;
+      clearTimeout(trou); trou = null; clearTimeout(avant); avant = null; hesitees = 0; aParle = false;
     },
     get actif() { return unites.length > 0 || lots.length > 0 || sources.size > 0 || !!element; },
     get joue() { return sources.size > 0 || !!element; },
@@ -297,7 +332,7 @@ function creerLecteurNeuronal() {
   //   virgule : le blanc éventuel tombe là où l'on respire, pas au milieu d'un paragraphe.
   function prochainLot() {
     if (unites[0] && unites[0].son) return { son: unites.shift().son, texte: '' };   // (01:27) un son : seul, à sa place
-    const premier = !sources.size && !lots.length;
+    const premier = !vraiesSources() && !lots.length;
     // (28/10) un début de réponse dont le cockpit a la voix toute prête (debuts.js) part seul : le premier son sans attendre
     const debut = premier ? Voix.debutDe(unites[0].texte) : null;
     if (debut && unites[0].langue === 'fr' && debutsPrets.has(cleDebut(debut))) {
@@ -375,6 +410,7 @@ function creerLecteurNeuronal() {
       place.minuteurs.push(setTimeout(() => { sources.delete(place); pomper(); }, fin));
       sources.add(place);
       prochainDebut = t + x.pret.duration + 0.15;
+      aParle = true;
       return;
     }
     const vitesse = x.son ? 1 : vitesseVoix();                     // (01:27) un son garde sa vitesse
@@ -387,11 +423,12 @@ function creerLecteurNeuronal() {
     src.connect(force); force.connect(analyseurVoix);
     src.start(t);
     prochainDebut = t + x.pret.duration / vitesse + 0.05;
-    src._texte = x.texte; src._langue = x.langue; src._debut = t; src._fin = t + x.pret.duration / vitesse;
+    src._texte = x.hesitation ? '' : x.texte; src._hesitation = !!x.hesitation; src._langue = x.langue; src._debut = t; src._fin = t + x.pret.duration / vitesse;
     sources.add(src);
+    if (!x.hesitation) aParle = true;
     const g = generation;
     const duree = x.pret.duration / vitesse * 1000;            // (30/10) sa durée : où il en est quand on le coupe
-    if (!x.son) setTimeout(() => { if (g === generation && L.surSegment) L.surSegment(x.texte, duree); }, Math.max(0, (t - actx.currentTime) * 1000));
+    if (!x.son && !x.hesitation) setTimeout(() => { if (g === generation && L.surSegment) L.surSegment(x.texte, duree); }, Math.max(0, (t - actx.currentTime) * 1000));
     src.onended = () => { sources.delete(src); if (g === generation) pomper(); };
   }
 
@@ -399,7 +436,7 @@ function creerLecteurNeuronal() {
     // 1. le processus voix ne reste jamais inactif quand du texte attend (une demande à la fois : on
     //    taille le lot en connaissant l'avance exacte du moment)
     if (unites.length && !lots.some(x => !x.pret && !x.erreur)) {
-      const premier = !sources.size && !lots.length;                // (03/11) le premier bout part sans attendre l'intonation préparée
+      const premier = !vraiesSources() && !lots.length;             // (03/11) le premier bout part sans attendre l'intonation préparée
       const x = prochainLot();
       x.premier = premier;
       lots.push(x);
@@ -437,8 +474,31 @@ function creerLecteurNeuronal() {
       lots.shift();
       programmer(x, t);
     }
+    // 3. (03/11) un trou se prépare : sa voix a fini, la suite n'est pas là, sa réponse s'écrit encore
+    if (!trou && aParle && !L.fluxFini && !pause && !sources.size && !element && hesitees < HESITATIONS_MAX && L.hesitation)
+      trou = setTimeout(hesiter, HESITER_APRES * 1000);
     if (L.actif && !veille) veille = setInterval(pomper, 250);
     if (!L.actif) { clearInterval(veille); veille = null; if (L.surFin) L.surFin(); }
+  }
+
+  function hesiter() {
+    trou = null;
+    if (!aParle || L.fluxFini || sources.size || hesitees >= HESITATIONS_MAX) return;
+    if (glisser()) { hesitees++; aParle = false; }
+  }
+
+  // une hésitation toute prête, maintenant, si rien n'est sur le point d'être dit ; rend vrai si elle part
+  function glisser({ avantPremier = false } = {}) {
+    if (pause || sources.size || element || !fluide() || !L.hesitation) return false;
+    if (L.peutHesiter && !L.peutHesiter()) return false;
+    const y = lots[0];
+    if (y && (y.pret || y.erreur)) return false;                                  // la suite est là : pomper la programme
+    if (y && (y.t0 + prevoir(y.texte.length) * 1000 - performance.now()) / 1000 < 0.3) return false;   // presque prête
+    const h = L.hesitation();
+    if (!h || !h.pret || !h.pret.duration) return false;
+    journalVoix('hesitation', { texte: h.texte, ...(avantPremier ? { avant: true } : {}) });
+    programmer({ pret: h.pret, texte: h.texte, langue: 'fr', hesitation: true }, actx.currentTime + 0.03);
+    return true;
   }
 
   function jouerElement(x) {
@@ -564,6 +624,16 @@ const finLecture = () => {
   etat.lectureDe = null; etat.finVoixA = Date.now(); rendre(); humeur();
 };
 lecteurNeuronal.surFin = finLecture;
+// (03/11) un trou dans sa réponse : une hésitation prête (jamais la même deux fois de suite), seulement pendant qu'il écrit
+// encore et que papa ne parle pas
+lecteurNeuronal.hesitation = () => {
+  const prets = Voix.HESITATIONS.map(h => hesitationsPretes.get(cleDebut(h))).filter(Boolean);
+  const choix = prets.length > 1 ? prets.filter(x => x.texte !== derniereHesitation) : prets;
+  const h = choix[Math.floor(Math.random() * choix.length)] || null;
+  if (h) derniereHesitation = h.texte;
+  return h;
+};
+lecteurNeuronal.peutHesiter = () => !!etat.flux && jarvisPeutParler();
 if (lecteurSysteme) lecteurSysteme.surFin = finLecture;
 
 /* ---------- les orbes : la petite (en-tête) et la grande (scène, quand il parle ou écoute) ---------- */
@@ -1532,6 +1602,7 @@ async function envoyer(texte, oral, dejaRelance) {
   const decoupe = Voix.decoupeur({ vif: true });           // (03/11) ses premiers mots partent tout de suite
   const auto = (etat.reglages.lectureAuto || etat.conversation || etat.reglages.volant) && lecteur;
   if (auto) etat.decoupeFlux = decoupe;                  // (23/10) sa phrase en cours d'arrivée, si on le coupe
+  if (auto && etat.conversation && lecteur.impl === lecteurNeuronal) lecteurNeuronal.attendreReponse();   // (03/11) il réfléchit : un trou se meuble
   const camera = etat.vision || (window.HakimApp && window.HakimApp.cameraOrbeEtat && window.HakimApp.cameraOrbeEtat()) ? await photoCamera() : null;
   const presentEnvoye = etat.present.slice(-40);
   if (etat.vision && etat.vision.courant)                                  // l'expression en cours, encore ouverte
