@@ -243,7 +243,7 @@ def rangement(dernier_evenement=0.0):
 
 # ---------- le modèle
 def demander_claude(prompt):
-    c = [CLAUDE, "-p", "--model", "sonnet", "--tools", "", "--restricted", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+    c = [CLAUDE, "-p", "--model", "sonnet", "--effort", os.environ.get("ANAMNESE_EFFORT_HAKIM", "low"), "--tools", "", "--restricted", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
          "--no-session-persistence", "--output-format", "json"]
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}      # le forfait, jamais l'API payante
     env["ANAMNESE_HEADLESS"] = "1"

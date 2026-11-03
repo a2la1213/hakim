@@ -240,7 +240,7 @@ def _fermer_registre(rid, suite):
 def _run(prompt, modele, secours=False, registre_id=None):
     """Un run headless borné (tours + horloge). Retourne le JSON de résultat de la CLI.
     registre_id : transmis au serveur MCP (via l'environnement), qui y note chaque écriture."""
-    cmd = [CLAUDE_BIN, "-p", prompt, "--allowedTools", TOOLS, "--model", modele,
+    cmd = [CLAUDE_BIN, "-p", prompt, "--allowedTools", TOOLS, "--model", modele, "--effort", os.environ.get("ANAMNESE_EFFORT_HAKIM", "low"),
            "--max-turns", MAX_TURNS, "--output-format", "json"]
     if secours:
         cmd += ["--settings", json.dumps({"apiKeyHelper": APIKEY_HELPER})]

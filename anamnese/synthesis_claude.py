@@ -24,7 +24,7 @@ def claude_chat(prompt, timeout=300):
     try:
         # ANAMNESE_HEADLESS : le hook SessionStart (anamnese outreach) n'amorce pas la mémoire de
         # travail pour une exécution sans interface (relecture 2026-10-16).
-        r = subprocess.run([_claude_bin(), "-p", prompt, "--model", "sonnet", "--max-turns", "2",
+        r = subprocess.run([_claude_bin(), "-p", prompt, "--model", "sonnet", "--effort", config.EFFORT_HAKIM, "--max-turns", "2",
                             "--allowedTools", ""], capture_output=True, text=True, timeout=timeout,
                            env={**os.environ, "ANAMNESE_HEADLESS": "1"})
         return r.stdout if r.returncode == 0 else None

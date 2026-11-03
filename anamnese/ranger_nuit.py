@@ -50,7 +50,7 @@ def demander(prompt, lancer=None):
     if lancer:
         return lancer(prompt)
     import consolidate
-    cmd = [consolidate.CLAUDE_BIN, "-p", prompt, "--model", "sonnet", "--max-turns", "1", "--output-format", "json"]
+    cmd = [consolidate.CLAUDE_BIN, "-p", prompt, "--model", "sonnet", "--effort", config.EFFORT_HAKIM, "--max-turns", "1", "--output-format", "json"]
     r = subprocess.run(cmd, cwd=str(ROOT), env=dict(consolidate.ENV), capture_output=True, text=True, timeout=900)
     try:
         o = json.loads((r.stdout or "").strip())

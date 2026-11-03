@@ -209,7 +209,7 @@ def lire_verdict(t):
 def juger(b, dossier):
     dossier = Path(dossier)
     mcp = {"mcpServers": {"juge": {"command": str(PYTHON_JARVIS), "args": [str(MCP_JUGE)], "env": {"JUGE_DOSSIER": str(dossier)}}}}
-    c = [CLAUDE, "-p", "--model", "opus", "--tools", "", "--restricted", "--strict-mcp-config", "--mcp-config", json.dumps(mcp),
+    c = [CLAUDE, "-p", "--model", "opus", "--effort", config.EFFORT_HAKIM, "--tools", "", "--restricted", "--strict-mcp-config", "--mcp-config", json.dumps(mcp),
          "--allowedTools", "mcp__juge__executer", "--permission-mode", "dontAsk", "--no-session-persistence",
          "--max-turns", "40", "--output-format", "json"]
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}      # le forfait, jamais l'API payante

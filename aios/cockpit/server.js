@@ -384,7 +384,7 @@ const EFFORT_HAKIM = process.env.JARVIS_EFFORT || 'low';
 const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'afida_juger', 'afida_vecu', 'afida_lire', 'afida_retirer', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'sieste_prendre', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'son_nommer', 'sons_familles', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -6964,9 +6964,32 @@ async function pomperVoix() {
    fabriquée au calme pour le niveau de voix du moment (expressivité au dixième, rythme au vingtième), est gardée si elle est
    plausible (debuts.js), puis resservie sans attendre. Deux essais au plus par début et par niveau. ---- */
 const fileDebuts = [], debutsEssais = new Map();
+/* ---- (03/11, 13:30, papa via Hakim : « ses propres meubles pour les blancs, paramétrables, reliés à son conscient et à son
+   subconscient ») ses MEUBLES : ceux de départ (anamnese/jarvis/meubles_defaut.json), réglés ou oubliés par lui, puis les siens
+   (~/AIOS/jarvis/meubles.json, écrits par ses outils meuble_creer / meuble_regler / meuble_oublier : jarvis/meubles.py). La
+   voix de ceux qui parlent est fabriquée d'avance comme ses débuts ; la page les choisit pendant un trou (parler.js). ---- */
+const MEUBLES = path.join(JARVIS, 'meubles.json'), MEUBLES_DEFAUT = path.join(ANAMNESE, 'jarvis', 'meubles_defaut.json');
+const meublesCache = { t: 0, l: null };
+function lireMeubles() {
+  if (meublesCache.l && Date.now() - meublesCache.t < 2000) return meublesCache.l;
+  const defaut = lireJson(MEUBLES_DEFAUT, []), d = lireJson(MEUBLES, {}) || {};
+  const siens = new Map((Array.isArray(d.meubles) ? d.meubles : []).filter(m => m && m.nom).map(m => [String(m.nom), m]));
+  const oublies = new Set(Array.isArray(d.oublies) ? d.oublies : []);
+  const tout = (Array.isArray(defaut) ? defaut : []).filter(m => m && m.nom && !oublies.has(m.nom))
+    .map((m) => { const x = siens.get(m.nom); siens.delete(m.nom); return { ...m, ...(x || {}) }; }).concat([...siens.values()]);
+  const l = tout.map(m => ({ nom: String(m.nom).slice(0, 30),
+    ...(m.texte ? { texte: String(m.texte).slice(0, 40) } : m.son && /^e\d{1,6}$/.test(m.son) ? { son: m.son } : ['souffle', 'respiration'].includes(m.genre) ? { genre: m.genre } : {}),
+    volume: Math.max(0.1, Math.min(1.5, Number(m.volume) || 1)), ...(Number(m.duree_ms) >= 150 ? { duree_ms: Math.min(4000, Number(m.duree_ms)) } : {}),
+    quand: ['avant', 'entre', 'partout'].includes(m.quand) ? m.quand : 'partout',
+    etats: Array.isArray(m.etats) ? m.etats.slice(0, 8).map(e => String(e).slice(0, 20)) : [], actif: m.actif !== false }))
+    .filter(m => m.texte || m.son || m.genre);
+  meublesCache.t = Date.now(); meublesCache.l = l;
+  return l;
+}
+const estMeuble = (texte) => lireMeubles().some(m => m.texte && D.norme(prononcer(m.texte)) === D.norme(texte));
 function fabriquerDebuts(langue, emotion, tempo) {
-  for (const d of VoixPage.DEBUTS) {
-    const t = d.charAt(0).toUpperCase() + d.slice(1);
+  // ses débuts (en majuscule, comme dans ses réponses) et ses meubles qui parlent (tels qu'il les a écrits)
+  for (const t of VoixPage.DEBUTS.map(d => d.charAt(0).toUpperCase() + d.slice(1)).concat(lireMeubles().filter(m => m.actif && m.texte).map(m => m.texte))) {
     const e = emotion === null ? null : VoixPage.expressivitePhrase(emotion, t);      // le niveau que la page lui donnera
     const c = D.cle(t, langue, e, tempo);
     if (D.lire(c) || (debutsEssais.get(c) || 0) >= 2 || fileDebuts.some(x => x.cle === c)) continue;
@@ -6983,7 +7006,7 @@ function fabriquerDebuts(langue, emotion, tempo) {
 }
 // [début, palier de son expressivité] : chaque début a le niveau de voix que la page lui donnera (expressivitePhrase)
 function debutsPrets(langue, emotion, tempo) {
-  return VoixPage.DEBUTS.map(d => [d, emotion === null ? null : VoixPage.expressivitePhrase(emotion, d)])
+  return VoixPage.DEBUTS.concat(lireMeubles().filter(m => m.texte).map(m => m.texte)).map(d => [d, emotion === null ? null : VoixPage.expressivitePhrase(emotion, d)])
     .filter(([d, e]) => D.lire(D.cle(d, langue, e, tempo))).map(([d, e]) => [d, D.palier(e, 0.1)]);
 }
 
@@ -7087,7 +7110,7 @@ async function routeDire(req, res) {
   }
   // (28/10) un de ses débuts de réponse : sa voix gardée part tout de suite (debuts.js) ; sinon fabriquée, gardée si plausible
   const langueVoix = /^[a-z]{2}$/.test((q && q.langue) || '') ? q.langue : 'fr';
-  const debut = VoixPage.debutDe(texte + ' x') === texte;
+  const debut = VoixPage.debutDe(texte + ' x') === texte || estMeuble(texte);   // (13:30) un de ses meubles aussi
   const cleVoix = debut ? D.cle(texte, langueVoix, emotion, tempo) : null;
   const garde = debut ? D.lire(cleVoix) : null;
   // (03/11) une hésitation demandée d'avance (parler.js) : seulement si sa voix est gardée, jamais une synthèse de plus
@@ -7235,7 +7258,44 @@ function tourDeTranscription() {
    qui ne fait jamais attendre sa voix ni la grande oreille. Une demande à la fois : la page en envoie une nouvelle dès que la
    précédente est rendue (le dernier morceau de voix, ~toutes les 0,6 s) ; une demande de trop est refusée (occupée). ---- */
 const STT_VIF = path.join(ANAMNESE, 'jarvis', 'stt_vif.py');
-const oreilleVive = { proc: null, pret: false, attente: null, n: 0, tampon: '' };
+const oreilleVive = { proc: null, pret: false, attente: null, suivante: null, n: 0, ids: 0, tampon: '' };
+/* (03/11, 13:25, papa via Hakim : « aucun « je t'écoute » : la transcription en direct dès mon premier mot ; le premier mot arrive en
+   retard ») une seule oreille vive pour trois usages (la voix de papa, le son du téléphone, ses familles de sons). Avant : occupée,
+   elle refusait tout, et le premier mot de papa attendait 0,5 s de voix de plus pour retenter. Maintenant sa voix passe avant :
+   occupée, sa demande attend son tour (une seule, la plus récente : elle contient tout le morceau) ; les autres sont refusées tant
+   qu'une demande de papa attend. Mesuré à 13:28 (Mac chargé à 13,5) : 0,6 à 1,3 s par demande. */
+function oreilleDemander(d, papa) {
+  return new Promise((resoudre) => {
+    if (!oreilleVive.pret || !oreilleVive.proc) return resoudre({ occupee: true });
+    if (oreilleVive.attente || oreilleVive.suivante) {
+      if (!papa) return resoudre({ occupee: true });
+      if (oreilleVive.suivante) oreilleVive.suivante.resoudre({ occupee: true, remplacee: true });
+      oreilleVive.suivante = { d, resoudre };
+      return;
+    }
+    oreilleEnvoyer(d, resoudre);
+  });
+}
+function oreilleEnvoyer(d, resoudre) {
+  const id = ++oreilleVive.ids;
+  oreilleVive.attente = { id, resoudre, minuteur: setTimeout(() => {
+    if (oreilleVive.attente && oreilleVive.attente.id === id) { oreilleVive.attente = null; resoudre({ erreur: 'trop lente' }); oreilleSuivante(); }
+  }, 8000) };
+  try { oreilleVive.proc.stdin.write(j({ id, ...d }) + '\n'); }
+  catch (_) { oreilleVive.attente = null; resoudre({ erreur: 'oreille vive injoignable' }); oreilleSuivante(); }
+}
+function oreilleSuivante() {
+  const x = oreilleVive.suivante; oreilleVive.suivante = null;
+  if (!x) return;
+  if (oreilleVive.pret && oreilleVive.proc) oreilleEnvoyer(x.d, x.resoudre); else x.resoudre({ occupee: true });
+}
+// une réponse de Whisper : à la demande en cours, puis la suivante part
+function oreilleRecue(o) {
+  const a = oreilleVive.attente;
+  if (!a || o.id !== a.id) return;
+  oreilleVive.attente = null; clearTimeout(a.minuteur); a.resoudre(o);
+  oreilleSuivante();
+}
 function lancerOreilleVive() {
   if (oreilleVive.proc) return;
   const p = spawn(PYTHON_VOIX, ['-W', 'ignore', STT_VIF], { stdio: ['pipe', 'pipe', 'ignore'], env: { ...process.env, PATH: CHEMIN_OUTILS } });
@@ -7247,15 +7307,15 @@ function lancerOreilleVive() {
       const l = oreilleVive.tampon.slice(0, i); oreilleVive.tampon = oreilleVive.tampon.slice(i + 1);
       let o; try { o = JSON.parse(l); } catch (_) { continue; }
       if (o.pret) { oreilleVive.pret = true; continue; }
-      const a = oreilleVive.attente;
-      if (a && o.id === a.id) { oreilleVive.attente = null; clearTimeout(a.minuteur); a.resoudre(o); }
+      oreilleRecue(o);
     }
   });
   const fin = () => {
     if (oreilleVive.proc !== p) return;
     oreilleVive.proc = null; oreilleVive.pret = false;
-    const a = oreilleVive.attente; oreilleVive.attente = null;
+    const a = oreilleVive.attente, x = oreilleVive.suivante; oreilleVive.attente = null; oreilleVive.suivante = null;
     if (a) { clearTimeout(a.minuteur); a.resoudre({ erreur: 'oreille vive arrêtée' }); }
+    if (x) x.resoudre({ erreur: 'oreille vive arrêtée' });
   };
   p.on('exit', fin); p.on('error', fin);
 }
@@ -7264,16 +7324,13 @@ async function routeVif(req, res, langue, contexte, source = '', temps = {}) {
   const repondre = (code, o) => { if (!res.writableEnded) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(j(o)); } };
   if (!audio || !audio.length) return repondre(400, { erreur: 'audio absent ou trop lourd (4 Mo max)' });
   lancerOreilleVive();
-  if (!oreilleVive.pret || oreilleVive.attente) return repondre(429, { occupee: true, prete: oreilleVive.pret });
+  const papa = source !== 'telephone';                                  // (13:25) la voix de papa passe avant
+  if (!oreilleVive.pret || (!papa && (oreilleVive.attente || oreilleVive.suivante))) return repondre(429, { occupee: true, prete: oreilleVive.pret });
   const f = path.join(os.tmpdir(), `jarvis-vif-${process.pid}-${++oreilleVive.n}.wav`);
   try { fs.writeFileSync(f, audio); } catch (_) { return repondre(500, { erreur: 'écriture du fichier audio impossible' }); }
-  const o = await new Promise((resoudre) => {
-    const id = oreilleVive.n;
-    oreilleVive.attente = { id, resoudre, minuteur: setTimeout(() => { if (oreilleVive.attente && oreilleVive.attente.id === id) { oreilleVive.attente = null; resoudre({ erreur: 'trop lente' }); } }, 8000) };
-    try { oreilleVive.proc.stdin.write(j({ id, fichier: f, langue: /^[a-z]{2}$/.test(langue || '') ? langue : '', contexte: contexte || '' }) + '\n'); }
-    catch (_) { oreilleVive.attente = null; resoudre({ erreur: 'oreille vive injoignable' }); }
-  });
+  const o = await oreilleDemander({ fichier: f, langue: /^[a-z]{2}$/.test(langue || '') ? langue : '', contexte: contexte || '' }, papa);
   fs.unlink(f, () => {});
+  if (o.occupee) return repondre(429, { occupee: true, prete: true });
   if (o.erreur) return repondre(503, { erreur: o.erreur });
   // (03/11) ce que joue le téléphone, mot à mot : la page Parler le montre pendant que le son joue
   if (source === 'telephone' && o.texte) diffuser(abonnesPensees, 'telepathie', j({ texte: String(o.texte).slice(0, 600) }));
@@ -7297,16 +7354,12 @@ async function routeAmbiance(req, res, parole, voix) {
   const repondre = (code, o) => { if (!res.writableEnded) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(j(o)); } };
   if (!audio || !audio.length) return repondre(400, { erreur: 'audio absent ou trop lourd (1 Mo max)' });
   lancerOreilleVive();
-  if (!oreilleVive.pret || oreilleVive.attente) return repondre(429, { occupee: true });
+  if (!oreilleVive.pret || oreilleVive.attente || oreilleVive.suivante) return repondre(429, { occupee: true });
   const f = path.join(os.tmpdir(), `jarvis-amb-${process.pid}-${++oreilleVive.n}.wav`);
   try { fs.writeFileSync(f, audio); } catch (_) { return repondre(500, { erreur: 'écriture du fichier audio impossible' }); }
-  const o = await new Promise((resoudre) => {
-    const id = oreilleVive.n;
-    oreilleVive.attente = { id, resoudre, minuteur: setTimeout(() => { if (oreilleVive.attente && oreilleVive.attente.id === id) { oreilleVive.attente = null; resoudre({ erreur: 'trop lente' }); } }, 8000) };
-    try { oreilleVive.proc.stdin.write(j({ id, op: 'famille', fichier: f, parole: !!parole, voix: Math.max(0, Math.min(9, Number(voix) || 0)) }) + '\n'); }
-    catch (_) { oreilleVive.attente = null; resoudre({ erreur: 'oreille vive injoignable' }); }
-  });
+  const o = await oreilleDemander({ op: 'famille', fichier: f, parole: !!parole, voix: Math.max(0, Math.min(9, Number(voix) || 0)) }, false);
   fs.unlink(f, () => {});
+  if (o.occupee) return repondre(429, { occupee: true });
   if (o.erreur) return repondre(503, { erreur: o.erreur });
   if (o.famille && (o.nouvelle || o.famille !== derniereFamille) && corpsActif()) {
     corpsLot.evenements.push({ type: 'son_entendu', t: Date.now(), details: { famille: String(o.famille).slice(0, 60), nouvelle: !!o.nouvelle,
@@ -7682,7 +7735,7 @@ setTimeout(annoncerRelance, 5000).unref();
 const { Notifications } = require('./push.js');
 const { Missions } = require('./missions.js');
 const NOTIFS = new Notifications(JARVIS);
-const MISSIONS = new Missions({ dossier: path.join(JARVIS, 'missions'), donnees: path.join(JARVIS, 'missions-cockpit'), claude: CLAUDE_BIN,
+const MISSIONS = new Missions({ dossier: path.join(JARVIS, 'missions'), donnees: path.join(JARVIS, 'missions-cockpit'), claude: CLAUDE_BIN, effort: EFFORT_HAKIM,
   maison: process.env.JARVIS_MISSIONS_MAISON || HOME, parJour: Number(process.env.JARVIS_MISSIONS_PAR_JOUR) || 3, evenement: surMission,
   // (audit JARVIS 2, H5) : le serveur de mémoire des missions est en LECTURE SEULE (aucun outil qui écrit n'existe pour elles)
   mcp: { mcpServers: { anamnese: { command: path.join(ANAMNESE, '.venv', 'bin', 'python'), args: [path.join(ANAMNESE, 'mcp_server.py')],
@@ -8434,6 +8487,10 @@ async function traiter(req, res) {
   }
   if (p === '/api/voix/dire' && req.method === 'POST') return routeDire(req, res);
   // (28/10) les débuts de réponse dont la voix est prête pour ce niveau de voix ; les autres se fabriquent au calme
+  if (p === '/api/jarvis/meubles' && req.method === 'GET') {           // (13:30) ses meubles, pour la page
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j({ meubles: lireMeubles() }));
+  }
   if (p === '/api/voix/debuts') {
     const u = new URL(req.url, 'http://x');
     const langue = /^[a-z]{2}$/.test(u.searchParams.get('langue') || '') ? u.searchParams.get('langue') : 'fr';
@@ -9463,7 +9520,7 @@ async function traiter(req, res) {
         // (--restricted), et le prompt lu sur l'entrée standard — jamais pris pour une option, même s'il commence par « -- »
         const env = { ...process.env }; delete env.ANTHROPIC_API_KEY;
         const out = await new Promise(resolve => {
-          const enfant = execFile(CLAUDE_BIN, ['-p', '--model', model, '--max-turns', '2', '--tools', '', '--restricted',
+          const enfant = execFile(CLAUDE_BIN, ['-p', '--model', model, '--effort', EFFORT_HAKIM, '--max-turns', '2', '--tools', '', '--restricted',
             '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence'],
           { timeout: 300000, maxBuffer: 1 << 24, env },
           (e, so, se) => resolve(e ? { error: String(se || (e && e.message) || e).slice(0, 300) } : { text: (so || '').trim() }));

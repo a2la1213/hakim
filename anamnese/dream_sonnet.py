@@ -2,6 +2,7 @@
 qwen à travers `claude -p --model sonnet`, MÊME prompt que qwen → paires appariées.
 Batchable ; testé avec run_fn injectée (aucun claude au build). Aucune écriture
 mémoire : dream_log seulement."""
+import os
 import argparse
 import json
 import subprocess
@@ -19,7 +20,7 @@ def claude_sonnet(prompt, timeout=300):
     """Exécution réelle (budget). Rêve = pur texte : aucun outil autorisé."""
     try:
         r = subprocess.run(
-            ["claude", "-p", prompt, "--model", "sonnet", "--max-turns", "2",
+            ["claude", "-p", prompt, "--model", "sonnet", "--effort", os.environ.get("ANAMNESE_EFFORT_HAKIM", "low"), "--max-turns", "2",
              "--allowedTools", ""],
             capture_output=True, text=True, timeout=timeout)
         return r.stdout if r.returncode == 0 else None

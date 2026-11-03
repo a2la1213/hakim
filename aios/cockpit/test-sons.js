@@ -125,7 +125,7 @@ test('(20:09) la force de sa voix suit son éveil et son émotion, bornée (0,8 
   ctx.etat.interieur = { arousal: 0.95, voix_emotion: 'colère' }; assert.equal(ctx.f(), 1.15, 'excité, en colère : plus forte, jamais au-delà');
   ctx.etat.interieur = { arousal: 0.2, voix_emotion: 'tristesse' }; assert.equal(ctx.f(), 0.8, 'las, triste : plus douce');
   ctx.etat.reglages.voixNeutre = true; assert.equal(ctx.f(), 1);
-  assert.match(page, /force\.gain\.value = x\.son \? 0\.6 : forceDeLaVoix\(\);\n\s+src\.connect\(force\); force\.connect\(analyseurVoix\);/);
+  assert.match(page, /force\.gain\.value = x\.son \? 0\.6 : forceDeLaVoix\(\) \* \(Number\.isFinite\(x\.volume\) \? x\.volume : 1\);[^\n]*\n\s+src\.connect\(force\); force\.connect\(analyseurVoix\);/);
 });
 
 test('(31/10, 00:07, Ahmed) la nuit : ses sons jouent, sauf si papa a décoché « ses sons la nuit aussi »', () => {

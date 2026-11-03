@@ -19,6 +19,7 @@ decider), et une VITESSE de correction qui s'apprend (le paramètre « sagesse �
 Fichiers : ~/AIOS/jarvis/sagesse.json (le paramètre, écrit ici seulement), sagesse-tour.json (le cockpit),
 sagesse.jsonl (les décisions et les verdicts, en ajout seul).
 """
+import os
 import json
 import re
 import subprocess
@@ -133,7 +134,7 @@ def juger_la_nuit(maintenant=None, journal=None, parametre=None, conversation=No
     prompt = CONSIGNE + "\n\n" + "\n\n".join(blocs)
     if lancer is None:
         def lancer(p):
-            r = subprocess.run([str(CLAUDE), "-p", "--model", "sonnet", "--max-turns", "1", "--strict-mcp-config", "--mcp-config",
+            r = subprocess.run([str(CLAUDE), "-p", "--model", "sonnet", "--effort", os.environ.get("ANAMNESE_EFFORT_HAKIM", "low"), "--max-turns", "1", "--strict-mcp-config", "--mcp-config",
                                 '{"mcpServers":{}}', "--no-session-persistence", "--allowedTools", ""],
                                input=p, capture_output=True, text=True, timeout=900)
             return r.stdout

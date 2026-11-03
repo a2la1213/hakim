@@ -138,9 +138,9 @@ const CACHES = ['.git', '.claude', '.vscode', '.idea', '.husky', '.github', '.en
   '.venv', 'venv', 'node_modules', '__pycache__', '.npmrc', '.yarnrc', '.yarnrc.yml', '.pypirc', '.pre-commit-config.yaml', '.direnv'];
 
 class Missions {
-  constructor({ dossier, donnees, claude, maison, mcp, parJour = 3, toursMax = 40, dureeMs = 3600 * 1000,
+  constructor({ dossier, donnees, claude, effort = 'low', maison, mcp, parJour = 3, toursMax = 40, dureeMs = 3600 * 1000,
     budget = { sonnet: 3, opus: 8 }, evenement = () => {} }) {
-    Object.assign(this, { dossier, donnees, claude, maison, mcp, parJour, toursMax, dureeMs, budget, evenement });
+    Object.assign(this, { dossier, donnees, claude, effort, maison, mcp, parJour, toursMax, dureeMs, budget, evenement });
     fs.mkdirSync(donnees, { recursive: true, mode: 0o700 });
     this.fichier = path.join(donnees, 'missions.json');
     this.journal = path.join(donnees, 'missions.jsonl');
@@ -246,7 +246,7 @@ class Missions {
 
   arguments(m) {
     const maison = reel(this.maison) || this.maison;
-    const args = ['-p', this.consigne(m), '--output-format', 'stream-json', '--verbose', '--model', m.modele,
+    const args = ['-p', this.consigne(m), '--output-format', 'stream-json', '--verbose', '--model', m.modele, '--effort', this.effort,
       '--max-turns', String(this.toursMax), '--max-budget-usd', String(this.budget[m.modele] || 3), '--restricted',
       '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--strict-mcp-config', '--mcp-config', JSON.stringify(this.mcp || { mcpServers: {} })];
     const permis = ['mcp__anamnese__memory_recall', 'mcp__anamnese__reasoning_recall'];

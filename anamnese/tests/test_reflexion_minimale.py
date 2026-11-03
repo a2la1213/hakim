@@ -73,3 +73,22 @@ def test_gemma_ne_pense_pas_par_defaut():
     import inspect
     import engine
     assert inspect.signature(engine.Engine.chat).parameters["think"].default is False
+
+
+def test_partout_chaque_claude_d_anamnese_demande_l_effort():
+    """(03/11, 13:25, Ahmed : « la même partout ») aussi la nuit : consolidation, rêves, juge, médecin, règles, sagesse, contrôle
+    d'ancrage, familles d'erreurs, maman, la room des trois frères. Chaque liste d'arguments qui nomme un modèle nomme l'effort."""
+    import ast
+    racine = Path(__file__).resolve().parent.parent
+    manquants = []
+    for f in sorted(list(racine.glob("*.py")) + list((racine / "jarvis").glob("*.py"))):
+        try:
+            arbre = ast.parse(f.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        for n in ast.walk(arbre):
+            if isinstance(n, ast.List):
+                consts = [e.value for e in n.elts if isinstance(e, ast.Constant)]
+                if "--model" in consts and "-p" in consts and "--effort" not in consts:
+                    manquants.append(f"{f.relative_to(racine)}:{n.lineno}")
+    assert manquants == []

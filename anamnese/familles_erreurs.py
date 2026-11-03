@@ -116,7 +116,7 @@ def classer_par_claude(familles, erreurs, claude=None, modele="sonnet"):
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
     env["ANAMNESE_HEADLESS"] = "1"
     with tempfile.TemporaryDirectory(prefix="familles-") as vide:
-        r = subprocess.run([claude, "-p", "--model", modele, "--tools", "", "--restricted", "--strict-mcp-config", "--mcp-config",
+        r = subprocess.run([claude, "-p", "--model", modele, "--effort", config.EFFORT_HAKIM, "--tools", "", "--restricted", "--strict-mcp-config", "--mcp-config",
                             '{"mcpServers":{}}', "--no-session-persistence", "--output-format", "json"],
                            input=PROMPT.format(familles=lf, erreurs=le), capture_output=True, text=True, timeout=600, cwd=vide, env=env)
     o = json.loads(r.stdout or "{}")

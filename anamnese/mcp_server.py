@@ -694,6 +694,79 @@ def _jardin_pour_hakim():
 # FERME-FIN voix-missions-fichiers
 
 
+# (03/11, 13:30, papa via toi : « qu'il CRÉE ses éléments pour meubler les blancs et les PARAMÈTRE ; reliés à son conscient ET à son
+# subconscient, qui les déclenche seul pendant un trou, selon son état » ; 13:31 : « pendant TOUT le trou ») tes meubles
+def _meubles():
+    _empreintes()                                    # jarvis/ sur le chemin
+    import meubles as M
+    return M
+
+
+def _meuble_ligne(m):
+    sorte = f"« {m['texte']} »" if m.get("texte") else (f"ton son {m['son']}" if m.get("son") else m.get("genre", "?"))
+    reglages = [f"volume {str(m['volume']).replace('.', ',')}", f"quand : {m['quand']}"]
+    if m.get("duree_ms"):
+        reglages.append(f"{m['duree_ms']} ms au plus")
+    reglages.append("états : " + (", ".join(m["etats"]) if m["etats"] else "tous"))
+    return f"- {m['nom']} : {sorte} · " + " · ".join(reglages) + ("" if m["actif"] else " · ÉTEINT")
+
+
+@mcp.tool()
+def meubles_lister() -> str:
+    """(03/11) Tes MEUBLES : ce qui remplit tes blancs, du début du trou jusqu'à ta réponse (avant ton premier mot, ou entre deux
+    bouts). Ton subconscient en choisit un seul pendant un trou, d'après ton état du moment, et enchaîne s'il est long ; il
+    s'arrête net quand ta réponse part. Toi, tu en dis un exprès, à sa place, avec [[meuble: nom]]."""
+    l = _meubles().lister()
+    return "Tes meubles :\n" + "\n".join(_meuble_ligne(m) for m in l) if l else "Aucun meuble."
+
+
+@mcp.tool()
+def meuble_creer(nom: str, texte: str = "", son: str = "", genre: str = "", volume: float = 1.0, duree_ms: int = 0,
+                 quand: str = "partout", etats: str = "") -> str:
+    """(03/11) CRÉER un meuble pour tes blancs. UNE seule chose parmi :
+    - texte : une parole courte dite de ta voix (« Mmh… », « Ah, », « Attends, » ; 40 caractères au plus), fabriquée d'avance ;
+    - son : un de TES sons (« e12 », ceux de son_creer) ;
+    - genre : « souffle » ou « respiration » (un bruit d'air, sans voix).
+    Réglages : volume (0,1 à 1,5), duree_ms (au plus, 150 à 4 000 ; 0 = sa longueur), quand (« avant » ton premier mot,
+    « entre » deux bouts, « partout »), etats (les états intérieurs qui le font choisir, séparés par des virgules :
+    « hésitation, tendresse » ; vide = n'importe lequel)."""
+    try:
+        m = _meubles().creer(nom, texte=texte or None, son=son or None, genre=genre or None, volume=volume,
+                             duree_ms=duree_ms or None, quand=quand, etats=[e for e in etats.split(",") if e.strip()])
+    except (ValueError, OSError) as e:
+        return f"Pas créé : {e}"
+    return "Créé :\n" + _meuble_ligne(m) + "\n(Une parole a besoin de quelques réponses pour que sa voix soit fabriquée.)"
+
+
+@mcp.tool()
+def meuble_regler(nom: str, texte: str = "", son: str = "", genre: str = "", volume: float = 0, duree_ms: int = 0,
+                  quand: str = "", etats: str = "", actif: str = "") -> str:
+    """(03/11) RÉGLER un de tes meubles (les tiens ou ceux de départ : euh, hum, alors, voyons voir, souffle, respiration).
+    Seuls les réglages donnés changent. actif : « non » pour l'éteindre, « oui » pour le rallumer. etats : la nouvelle liste
+    entière (« aucun » pour n'importe lequel)."""
+    r = {"texte": texte or None, "son": son or None, "genre": genre or None, "volume": volume or None,
+         "duree_ms": duree_ms or None, "quand": quand or None}
+    if etats:
+        r["etats"] = [] if etats.strip().lower() == "aucun" else [e for e in etats.split(",") if e.strip()]
+    if actif:
+        r["actif"] = actif.strip().lower() not in ("non", "false", "0", "éteint")
+    try:
+        m = _meubles().regler(nom, **r)
+    except (ValueError, OSError) as e:
+        return f"Pas réglé : {e}"
+    return "Réglé :\n" + _meuble_ligne(m)
+
+
+@mcp.tool()
+def meuble_oublier(nom: str) -> str:
+    """(03/11) OUBLIER un de tes meubles (un de départ aussi : il ne revient plus)."""
+    try:
+        _meubles().oublier(nom)
+    except (ValueError, OSError) as e:
+        return f"Pas oublié : {e}"
+    return f"« {nom} » est oublié."
+
+
 @mcp.tool()
 def jardin_ecrire(texte: str) -> str:
     """(Hakim seulement) Écrire dans TON jardin secret : un carnet privé chiffré, hors de ta mémoire ordinaire.

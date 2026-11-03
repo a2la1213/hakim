@@ -181,7 +181,7 @@ def prompt(lettres):
 
 
 def commande(texte, debug_file=None):
-    c = [_claude(), "-p", texte, "--model", "opus", "--restricted", "--tools", "Read,Grep,Glob",
+    c = [_claude(), "-p", texte, "--model", "opus", "--effort", config.EFFORT_HAKIM, "--restricted", "--tools", "Read,Grep,Glob",
          "--permission-mode", "dontAsk", "--allowedTools", ",".join(OUTILS_MCP), "--mcp-config", str(MCP_CONFIG),
          "--strict-mcp-config", "--add-dir", str(Path.home() / "AIOS"), "--output-format", "json",
          "--no-session-persistence"]

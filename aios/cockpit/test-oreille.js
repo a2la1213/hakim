@@ -779,7 +779,7 @@ test('(01:27-01:30) [[son: nom]] n’importe où : sa voix, puis le son en entie
   assert.match(src, /\['musique', 'sonnerie', 'atelier'\]\.includes\(o\.source\)/, 'ses sons à lui');
   // la page : le lecteur joue l'unité « son » seule, à sa place, à sa vitesse
   assert.match(page, /if \(unites\[0\] && unites\[0\]\.son\) return \{ son: unites\.shift\(\)\.son, texte: '' \};/);
-  assert.match(page, /const vitesse = x\.son \? 1 : vitesseVoix\(\);/);
+  assert.match(page, /const vitesse = x\.son \|\| x\.brut \? 1 : vitesseVoix\(\);/);
   assert.match(page, /if \(x\.son && x\.erreur\) \{ lots\.shift\(\); continue; \}/, 'un son qui manque : sa voix continue');
   // où il joue
   const a2 = page.indexOf('const appareilIci = '), b2 = page.indexOf('function recevoirSon(');

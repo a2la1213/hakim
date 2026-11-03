@@ -45,7 +45,7 @@ test('la page et le cockpit coupent le niveau de voix de la même façon (le pal
 
 test('câblage : la route de la voix sert un début gardé sans attendre, et garde un début fabriqué s’il est plausible', () => {
   const route = src.slice(src.indexOf('async function routeDire('), src.indexOf('\nfunction etatStt('));
-  assert.match(route, /const debut = VoixPage\.debutDe\(texte \+ ' x'\) === texte;/);
+  assert.match(route, /const debut = VoixPage\.debutDe\(texte \+ ' x'\) === texte \|\| estMeuble\(texte\);/);
   assert.match(route, /const garde = debut \? D\.lire\(cleVoix\) : null;/);
   assert.match(route, /if \(garde\) \{/);
   assert.match(route, /if \(debut && D\.plausible\(texte, r\.duree_s\)\) D\.garder\(cleVoix, data, r\.duree_s\);/);

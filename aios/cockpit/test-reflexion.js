@@ -86,3 +86,21 @@ test('Ollama éteint : le pont répond une erreur lisible, il ne pend pas', asyn
   assert.match(r.t, /Ollama injoignable/);
   pont.serveur.close();
 });
+
+test('(13:25, Ahmed : « la même partout ») chaque claude du cockpit nomme l\'effort : ses missions et la route de génération aussi', () => {
+  const sources = { 'server.js': SRC, 'missions.js': fs.readFileSync(path.join(__dirname, 'missions.js'), 'utf8') };
+  const manquants = [];
+  for (const [nom, s] of Object.entries(sources)) {
+    // chaque « '--model' » d'une liste d'arguments de claude : l'effort suit, sur la même ligne ou la suivante
+    for (const m of s.matchAll(/'--model'/g)) {
+      const autour = s.slice(Math.max(0, m.index - 300), m.index + 260);
+      if (/'-p'/.test(autour) && !/'--effort'/.test(s.slice(m.index, m.index + 260))) manquants.push(`${nom} : ${s.slice(m.index, m.index + 80)}`);
+    }
+  }
+  assert.deepStrictEqual(manquants, []);
+  const Missions = require('./missions.js');
+  const dossier = fs.mkdtempSync(path.join(require('os').tmpdir(), 'missions-effort-'));
+  const ms = new (Missions.Missions || Missions)({ dossier, donnees: dossier, claude: 'claude', effort: 'low', maison: dossier });
+  const a = ms.arguments({ modele: 'sonnet', projet: dossier, consigne: 'x', titre: 'x', id: 'm1' });
+  assert.strictEqual(a[a.indexOf('--effort') + 1], 'low');
+});

@@ -99,7 +99,7 @@ def dossier(incidents, temperature, anticorps_connus, faibles=0):
 
 
 def args(prompt):
-    return [CLAUDE_BIN, "-p", prompt, "--restricted", "--model", MODELE, "--tools", "", "--strict-mcp-config",
+    return [CLAUDE_BIN, "-p", prompt, "--restricted", "--model", MODELE, "--effort", os.environ.get("ANAMNESE_EFFORT_HAKIM", "low"), "--tools", "", "--strict-mcp-config",
             "--no-session-persistence", "--max-turns", "1"]
 
 

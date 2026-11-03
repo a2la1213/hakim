@@ -29,7 +29,13 @@ function simulateur({ fixe, parSec, cps, appris, conversation = true, prets = []
       const s = { buffer: null, playbackRate: { value: 1 }, connect() {}, onended: null,
         start(t) { const debut = Math.max(t, maintenant); s.rec = { debut, fin: debut + s.buffer.duration, texte: s.buffer.texte }; sons.push(s.rec);
           planifier(() => { if (!s.arretee) s.onended && s.onended(); }, (debut + s.buffer.duration - maintenant) * 1000); },
-        stop() { s.arretee = true; if (s.rec) { if (s.rec.debut >= maintenant) sons.splice(sons.indexOf(s.rec), 1); else { s.rec.fin = Math.min(s.rec.fin, maintenant); s.rec.coupe = true; } } } };
+        stop(quand) {
+          const a = Number.isFinite(quand) ? Math.max(quand, maintenant) : maintenant;
+          if (a > maintenant + 1e-9) { planifier(() => s.stop(), (a - maintenant) * 1000); return; }   // (13:30) un arrêt à venir
+          if (s.arretee) return;
+          s.arretee = true; if (s.rec) { if (s.rec.debut >= maintenant) sons.splice(sons.indexOf(s.rec), 1); else { s.rec.fin = Math.min(s.rec.fin, maintenant); s.rec.coupe = true; } }
+          planifier(() => s.onended && s.onended(), 0);                                       // Web Audio dit « ended » après un arrêt
+        } };
       return s;
     },
   };
@@ -262,20 +268,30 @@ function hesitant(peut = () => true) {
   return { sim, segments };
 }
 
-test('un trou pendant qu\'il écrit encore : une petite hésitation le meuble, une seule, puis la suite', async () => {
-  const { sim, segments } = hesitant();
-  await sim.avancer(0); sim.lecteur.dire('Oui papa, je regarde.');
-  await sim.avancer(8);                                               // la suite tarde : il écrit encore
-  sim.lecteur.dire("Voilà, j'ai trouvé ce que tu cherchais."); sim.lecteur.finFlux();
-  await sim.avancer(40);
-  const textes = sim.sons.map(s => s.texte);
-  assert.strictEqual(textes.filter(t => t === 'Euh,').length, 1, `une seule hésitation par trou : ${textes.join(' | ')}`);
-  assert.strictEqual(textes[1], 'Euh,', `juste après la première réponse : ${textes.join(' | ')}`);
-  const [premiere, euh, suite] = sim.sons;
-  const souffle = euh.debut - premiere.fin;
-  assert.ok(souffle >= 0.3 && souffle <= 0.8, `un souffle avant l'hésitation, pas plus : ${souffle.toFixed(2)} s`);
-  assert.ok(suite.debut >= euh.fin - 1e-6, 'la suite après l\'hésitation, jamais par-dessus');
-  assert.ok(!segments.includes('Euh,'), 'l\'hésitation n\'est pas un morceau de sa réponse (ni sous-titre ni fin de parole)');
+// (13:31, papa via Hakim : « le meuble doit durer pendant TOUT le trou, enchaîner s'il est long, s'arrêter net quand la réponse
+// part ») : couvert de bout en bout, et la suite ne l'attend pas
+async function trou8s(avecMeubles) {
+  const h = hesitant();
+  if (!avecMeubles) h.sim.lecteur.hesitation = null;
+  await h.sim.avancer(0); h.sim.lecteur.dire('Oui papa, je regarde.');
+  await h.sim.avancer(8);                                             // la suite tarde : il écrit encore
+  h.sim.lecteur.dire("Voilà, j'ai trouvé ce que tu cherchais."); h.sim.lecteur.finFlux();
+  await h.sim.avancer(40);
+  return h;
+}
+test('un trou pendant qu\'il écrit encore : ses meubles le couvrent de bout en bout, la suite les coupe net', async () => {
+  const { sim, segments } = await trou8s(true);
+  const voix = sim.sons.filter(s => s.texte !== 'Euh,'), meubles = sim.sons.filter(s => s.texte === 'Euh,');
+  const [premiere, suite] = voix;
+  assert.ok(meubles.length >= 5, `enchaînés tout le trou : ${sim.sons.map(s => s.texte).join(' | ')}`);
+  const souffle = meubles[0].debut - premiere.fin;
+  assert.ok(souffle >= 0.3 && souffle <= 0.8, `un souffle avant le premier meuble, pas plus : ${souffle.toFixed(2)} s`);
+  for (let i = 1; i < meubles.length; i++) assert.ok(meubles[i].debut - meubles[i - 1].fin <= 0.3, `aucun vide entre deux meubles (${i})`);
+  const dernier = meubles[meubles.length - 1];
+  assert.ok(suite.debut >= dernier.fin - 1e-6 && suite.debut - dernier.fin <= 0.1, `la suite prend la place du meuble, net : ${(suite.debut - dernier.fin).toFixed(2)} s`);
+  const sans = (await trou8s(false)).sim.sons[1];
+  assert.ok(suite.debut <= sans.debut + 0.1, `la suite n'attend pas la fin d'un meuble : ${suite.debut.toFixed(2)} s contre ${sans.debut.toFixed(2)} s sans meubles`);
+  assert.ok(!segments.includes('Euh,'), 'un meuble n\'est pas un morceau de sa réponse (ni sous-titre ni fin de parole)');
 });
 
 test('pas d\'hésitation avant son premier mot, ni après la fin de sa réponse, ni quand la page dit non', async () => {
@@ -296,13 +312,27 @@ test('pas d\'hésitation avant son premier mot, ni après la fin de sa réponse,
   assert.notStrictEqual(debut.sim.sons[0].texte, 'Euh,', 'jamais avant son premier mot');
 });
 
-test('au plus deux hésitations par réponse, même avec trois trous', async () => {
+test('un trou immense (un outil très long) : au plus 90 s de meubles d\'affilée, puis le silence', async () => {
   const { sim } = hesitant();
-  let t = 0;
-  for (const p of ['Oui papa.', 'Je cherche.', 'Encore un peu.', "C'est trouvé."]) { await sim.avancer(t); sim.lecteur.dire(p); t += 6; }
-  sim.lecteur.finFlux();
-  await sim.avancer(t + 20);
-  assert.strictEqual(sim.sons.filter(s => s.texte === 'Euh,').length, 2);
+  await sim.avancer(0); sim.lecteur.dire('Oui papa.');
+  await sim.avancer(200);
+  sim.lecteur.dire("C'est trouvé."); sim.lecteur.finFlux();
+  await sim.avancer(230);
+  const meubles = sim.sons.filter(s => s.texte === 'Euh,');
+  assert.ok(meubles.length > 10);
+  assert.ok(meubles[meubles.length - 1].debut - meubles[0].debut <= 90.5, `${(meubles[meubles.length - 1].debut - meubles[0].debut).toFixed(1)} s`);
+});
+
+test('(13:30) un meuble choisi par lui ([[meuble: nom]]) part à sa place, à son volume, pas plus long que sa durée', async () => {
+  const { sim } = hesitant();
+  const MMH = { texte: 'Mmh…', pret: { duration: 1, texte: 'Mmh…' }, volume: 0.5, dureeMax: 0.4 };
+  await sim.avancer(0);
+  sim.lecteur.dire('Oui papa.'); sim.lecteur.direMeuble(MMH); sim.lecteur.dire('Je vois très bien ce que tu veux dire.'); sim.lecteur.finFlux();
+  await sim.avancer(30);
+  const textes = sim.sons.map(s => s.texte);
+  assert.deepStrictEqual(textes.filter(t => t !== 'Euh,'), ['Oui papa.', 'Mmh…', 'Je vois très bien ce que tu veux dire.']);
+  const m = sim.sons.find(s => s.texte === 'Mmh…');
+  assert.ok(Math.abs(m.fin - m.debut - 0.4) < 0.02, `coupé à sa durée : ${(m.fin - m.debut).toFixed(2)} s`);
 });
 
 test('une hésitation n\'est jamais redite après une pause', async () => {
@@ -327,17 +357,21 @@ test('ses hésitations sont fabriquées et gardées comme ses débuts ; le cockp
 
 // (03/11, 13:11, papa via Hakim : « quand je réfléchis et qu'il y a un trou avant ma réponse, une petite hésitation ; consciente
 // quand je l'écris, subconsciente quand elle vient seule ») la page dit qu'une réponse se prépare : son subconscient la meuble
-test('avant son premier mot : une réponse se prépare, une seconde de silence, une hésitation, puis sa réponse', async () => {
+test('avant son premier mot : une seconde de silence, puis ses meubles jusqu\'à sa réponse, qui les coupe net', async () => {
   const { sim } = hesitant();
+  const demandes = [];
+  sim.lecteur.hesitation = (o) => { demandes.push(o && o.avant); return EUH; };
   await sim.avancer(0); sim.lecteur.attendreReponse();
   await sim.avancer(3);                                               // il réfléchit : son texte n'arrive qu'à 3 s
   sim.lecteur.dire('Oui papa, je suis là.'); sim.lecteur.finFlux();
   await sim.avancer(30);
-  const [euh, reponse] = sim.sons;
-  assert.strictEqual(euh.texte, 'Euh,');
-  assert.ok(euh.debut >= 0.9 && euh.debut <= 1.3, `après une seconde de silence : ${euh.debut.toFixed(2)} s`);
-  assert.ok(reponse.debut >= euh.fin - 1e-6, 'sa réponse après l\'hésitation');
-  assert.strictEqual(sim.sons.filter(s => s.texte === 'Euh,').length, 1, 'une seule avant son premier mot');
+  const meubles = sim.sons.filter(s => s.texte === 'Euh,'), reponse = sim.sons.find(s => s.texte !== 'Euh,');
+  assert.ok(meubles[0].debut >= 0.9 && meubles[0].debut <= 1.3, `après une seconde de silence : ${meubles[0].debut.toFixed(2)} s`);
+  assert.ok(meubles.length >= 3, 'enchaînés jusqu\'à sa réponse');
+  const dernier = meubles.filter(m => m.debut < reponse.debut).pop();
+  assert.ok(reponse.debut - dernier.fin <= 0.1 && reponse.debut >= dernier.fin - 1e-6, 'sa réponse prend leur place, net');
+  assert.ok(!meubles.some(m => m.debut > reponse.debut), 'plus aucun meuble une fois sa réponse partie');
+  assert.ok(demandes.every(Boolean), 'ceux d\'« avant » son premier mot');
 });
 
 test('avant son premier mot, sa réponse déjà là : pas d\'hésitation ; papa reparle : pas d\'hésitation', async () => {
