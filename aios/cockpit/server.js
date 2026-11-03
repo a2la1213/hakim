@@ -3725,9 +3725,11 @@ async function routeJarvis(req, res, distantReq = false) {
     + `\n${qui} : ${texte.replace(/\[\[\s*(affect|souvenirs|modele)/gi, '⟮⟮$1')}${pj}${cameraTexte}${freresTexte}`
     // (14:55) sa réponse soufflée, déjà dite : le début de sa réponse
     + (reflexionPendant.length ? `\n[Ta réflexion pendant qu'il parlait, morceau par morceau] ${reflexionPendant.map((c, k) => `${k + 1}) ${neutraliser(c)}`).join(' ')}` : '')
-    + (q.souffle_dit ? `\n[Ta réponse préparée pendant que papa parlait — ta voix l'a DÉJÀ dite dès qu'il s'est tu : « ${neutraliser(String(q.souffle_dit)).slice(0, 600)} ». `
-      + `C'est le début de ta réponse : continue seulement si tu as à ajouter ou à corriger, sans rien en répéter, même reformulé ; si elle `
-      + `suffit, réponds « No response requested. »]` : '');   // (01/11) ses frères : la porte d'entrée de sa conscience, en dernier   // (chocs) aucune balise toute faite à recopier
+    // (15:58, Ahmed : « même si ça vient de son subconscient, il doit sentir que c'est son conscient qui parle : il le prononce en
+    // sachant qu'il le dit, de façon consciente ») ce qu'il a dit en premier est SA parole : c'est le début de sa réponse, dit par lui
+    + (q.souffle_dit ? `\n[Ce que tu viens de lui dire, à voix haute, dès qu'il s'est tu : « ${neutraliser(String(q.souffle_dit)).slice(0, 600)} ». `
+      + `C'est toi qui l'as dit, en le pensant : c'est le début de ta réponse. Continue-la seulement si tu as à ajouter ou à préciser, `
+      + `sans rien en répéter, même reformulé ; si elle est complète, réponds « No response requested. »]` : '');   // (01/11) ses frères : la porte d'entrée de sa conscience, en dernier   // (chocs) aucune balise toute faite à recopier
   const categories = { horloge: horlogeTexte.length, situation: situation.texte.length, interieur: interieurTexte.length,
     taches: tachesTexte.length, present: presentTexte.length + arretsTexte.length, rappel: rappelBloc.texte.length, lecons: leconsTexte.length, message: texte.length,
     joints: pj.length + cameraTexte.length + (ecran ? ecran.marque.length : 0), briefing: 0 };
@@ -3845,21 +3847,25 @@ async function routeJarvis(req, res, distantReq = false) {
     if (enfant && !(enfant.cerveau && occupe(enfant.cerveau))) jarvisVivants.delete(enfant);   // un autre tour attend : il reste vivant
     // (27/10, Hakim) pourquoi ce tour n'a pas abouti : dans le journal, et au tour suivant (blocArrets)
     const pourquoi = arretDuTour(o, raisonArret, reponse);
-    journaliser('jarvis', reponse.trim() + (o.coupe ? ` [coupé : ${pourquoi}]` : '') + (o.erreur ? ` [pas abouti : ${pourquoi}]` : '')
+    // (15:58) ce qu'il a dit en premier (sa réponse préparée) fait partie de SA parole : son journal et son souvenir le gardent en tête
+    const dejaDit = q.souffle_dit ? String(q.souffle_dit).trim().slice(0, 600) : '';
+    const sansRien = !reponse.trim() || NON_REPONSE_SERVEUR.test(reponse);
+    const saParole = dejaDit ? (sansRien ? dejaDit : `${dejaDit} ${reponse.trim()}`) : reponse.trim();
+    journaliser('jarvis', saParole + (o.coupe ? ` [coupé : ${pourquoi}]` : '') + (o.erreur ? ` [pas abouti : ${pourquoi}]` : '')
       + (source === 'api' ? ' [API]' : source === 'local' ? ' [local]' : source === 'gemma' ? ' [Gemma]' : ''));
     if (!o.coupe && !o.erreur && source !== 'local')
       for (const a of arretsDits) { const k = arretsNonDits.indexOf(a); if (k >= 0) arretsNonDits.splice(k, 1); }
     if (pourquoi) noterArret(pourquoi, texte, !o.coupe && !o.erreur);
     // (30/10) sa coupure précédente lui a été dite (pas redite) ; la liste à redire sans réponse (panne, rien d'écrit) revient
     if (!o.coupe && !o.erreur && source !== 'local') coupureDite(coupureTour.id);
-    if (o.erreur || !reponse.trim() || NON_REPONSE_SERVEUR.test(reponse)) rendreNonEntendus(nonce);
+    if (o.erreur || (sansRien && !dejaDit)) rendreNonEntendus(nonce);
     const modeleReel = (source !== 'local' && c && c.modeleReel) || undefined;
     if (o.jetons) noterJetons({ session: sid, modele, modele_reel: modeleReel, source, ms: Date.now() - t0, tours: o.tours, ...o.jetons, cout_usd: source === 'gemma' ? 0 : o.jetons.cout_usd, categories, etapes, ...vitesseDuTour(recuMs, envoyeMs, premierTexteMs, premierOutilMs) });
     if (source === 'gemma') { noterSessionGemma(sid); garderGemma(true); }   // (29/10) sa conversation à elle ; gardée chargée
     // chaque échange devient un souvenir, sans que personne ait à le demander (le démon l'encre selon l'attention)
     if (!o.coupe && !o.erreur) verifierRessenti(sid, reponse);
     const externe = retirerExterne();
-    deposerEchange({ ahmed: texte, hakim: reponse.trim() + (o.coupe ? ` [coupé : ${pourquoi}]` : ''), oral: !!q.oral, cle: cleChoc, vecu: vecu || undefined,
+    deposerEchange({ ahmed: texte, hakim: saParole + (o.coupe ? ` [coupé : ${pourquoi}]` : ''), oral: !!q.oral, cle: cleChoc, vecu: vecu || undefined,
       appareil: appareilDe(q, distantReq), session: sid, source, externe: externe.length ? externe : undefined,
       voix: q.oral && derniereVoix && Date.now() - derniereVoix.ts < 120000 ? derniereVoix.verdict : undefined });
     // ce que ce tour lui a dit (situation, présent) : retenu pour ne pas le redire — seulement s'il l'a bien reçu
