@@ -96,7 +96,7 @@ test('Whisper qui répète le texte déjà compris : la répétition est écart�
 // même processus (backtest : 9 tours sur 200 seulement finissaient en avance). Désormais la fin de tour la reprend.
 function chargerAvance(whisper) {
   const cx = charger(whisper);
-  vm.runInContext(['const SILENCE_ANTICIPE_MS', 'const FIN_SUSPENDUE', 'function phraseFinie', 'function anticiperConversation',
+  vm.runInContext(['const SILENCE_ANTICIPE_MS', 'const FIN_SUSPENDUE', 'function phraseFinie', 'function choisirSouffle', 'function anticiperConversation',
     'function transcriptionEnAvance'].map(extraire).join('\n')
     + '\nthis.anticiperConversation = anticiperConversation; this.transcriptionEnAvance = transcriptionEnAvance;', cx);
   return cx;

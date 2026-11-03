@@ -110,8 +110,8 @@ test('page : aucun « je t\'écoute » à la place de ses mots', () => {
 
 // (13:59, papa : « l'écoute de Hakim et la transcription en parallèle, avec un mot de décalage ; sur l'interface, le micro quand je
 // parle, le mot qui se transcrit, et s'il réfléchit, sur la même ligne »)
-function ligne() {
-  const ctx = { etat: { flux: null } };
+function ligne(mots = true) {
+  const ctx = { etat: { flux: null }, motsEnConversation: () => mots, enTelepathie: () => false };
   vm.createContext(ctx);
   const i = PAGE.indexOf('function ligneEnDirect(');
   vm.runInContext(PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2), ctx);
@@ -126,6 +126,12 @@ test('une seule ligne en direct : le micro quand papa parle, ses mots, la transc
   assert.strictEqual(p.ligneEnDirect(conv), 'Bonjour mon fils, tu vas 💭', 'il s\'est tu : ses mots, et Hakim réfléchit');
   conv.ecrit.vif = 'x'.repeat(200);
   assert.ok(p.ligneEnDirect(conv).length < 110, 'une ligne : la fin de ses mots seulement');
+});
+// (16:08, Ahmed : « même en Conversation, pas mes mots par défaut ») sans mots_conversation : le micro, la transcription, la réflexion
+test('(16:08) par défaut, la ligne en direct ne montre pas les mots de papa', () => {
+  const p = ligne(false);
+  const conv = { capteur: { enParole: true }, ecrit: { confirme: 'Bonjour mon fils,', vif: 'tu vas', vifEnCours: {} }, pense: true };
+  assert.strictEqual(p.ligneEnDirect(conv), '🎙️ ✍️ 💭');
 });
 
 test('le cockpit dit à la page quand ses trois voix réfléchissent déjà pendant que papa parle', () => {

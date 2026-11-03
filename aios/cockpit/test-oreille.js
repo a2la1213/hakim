@@ -103,7 +103,7 @@ test('(20:14) les tests de papa : « coupe-moi » donne sa jauge pleine (15 s) ;
 
 test('(20:34) son petit mot passe en tête de la file de sa voix', () => {
   assert.match(page, /prioritaire: true \}\) \}\)/);
-  assert.match(src, /if \(q && q\.prioritaire === true\) fileVoix\.unshift\(tache\); else fileVoix\.push\(tache\);/);
+  assert.match(src, /if \(q && q\.prioritaire === true\) fileVoix\.unshift\(tache\);\n    else if \(tache\.fond\) fileVoix\.push\(tache\);/);
 });
 
 test('(20:38) quand il garde la parole, « arrête », « tais-toi », « coupe-toi » entendus pendant qu’il parle l’arrêtent aussitôt', () => {
@@ -117,7 +117,7 @@ test('(20:38) quand il garde la parole, « arrête », « tais-toi », « coupe-
 });
 
 test('(21:00) deux modes : tes paroles « dans sa tête » (pas affichées, son silence permis) ; sa voix d’abord, son texte après', () => {
-  assert.match(page, /const enTete = !!oral && typeof reglagesCorps !== 'undefined' && reglagesCorps\.afficher_papa === false;/);
+  assert.match(page, /const enTete = !!oral && typeof reglagesCorps !== 'undefined' && \(reglagesCorps\.afficher_papa === false \|\| motsPapaCaches\(\)\);/);
   assert.match(page, /\.slice\(-etat\.fenetre\)\n    \.filter\(m => !m\.cache && /);
   assert.match(page, /reglagesCorps\.afficher_hakim !== false \|\| !auto\) majMessage\(m\);/);
   assert.match(src, /if \(!corpsReglages\(\)\.afficher_papa\) return false;/);
@@ -850,7 +850,7 @@ test('(31/10, 09:12-09:42) trier chaque morceau : transcrits et classés un à u
   ctx.reglagesCorps.trier_morceaux = false; ctx.etat.lectureDe = 9; ctx.couperAuDebutDeSaVoix();
   assert.equal(coupes.length, 2, 'éteint : rien');
   assert.match(page, /if \(trierMorceaux\(\)\) \{[^]*?garderMorceau\(conv, wav, infos\); return;\s*\}\s*conv\.sonsEnAttente = /);
-  assert.match(page, /noterParole\(t\); noterMorceau\(t, duree\); sousTitre\(t\);\n  envoyerParoles\('hakim', t\);[^\n]*\n  couperAuDebutDeSaVoix\(\);/);
+  assert.match(page, /noterParole\(t\); noterMorceau\(t, duree\); if \(!enTelepathie\(\)\) sousTitre\(t\);[^\n]*\n  envoyerParoles\('hakim', t\);[^\n]*\n  couperAuDebutDeSaVoix\(\);/);
 });
 
 test('(09:12) le tri d’un morceau par son subconscient (serveur)', async () => {

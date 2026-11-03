@@ -473,6 +473,8 @@ function creerLecteurNeuronal() {
     },
     get actif() { return unites.length > 0 || lots.length > 0 || sources.size > 0 || !!element; },
     get joue() { return sources.size > 0 || !!element; },
+    // (16:00) sa vraie voix (une réponse dite, à dire, ou en cours) : ses meubles n'en sont pas
+    get parle() { return lots.length > 0 || vraiesSources() || !!element || unites.some(u => !u.meuble); },
   };
 
   // Coupe un texte trop long pour le temps disponible : à une ponctuation, ou juste avant une conjonction
@@ -956,6 +958,14 @@ function estSonEcho(texte) {
 // (03/11, 14:47, Ahmed : « pour les widgets et la bulle, et même sur le verrou : une zone courte et petite sous l'orbe et les boutons,
 // avec ce qu'il entend et ce qu'il dit, quand c'est activé dans SENS ») ses mots et les tiens vers l'appli (Paroles.java), chacun
 // seulement si SENS l'affiche ; au plus 4 fois par seconde, et seulement ce qui change
+// (03/11, 16:08-16:20, Ahmed : « il y a un problème entre le message envoyé, la pensée et le mot glissé » ; « pour Télépathie rien du
+// tout ; même en Conversation, pas mes mots par défaut » ; « dans Conversation, enlève le mot glissé » ; « on laisse le mode
+// Conversation avec sa pensée du cerveau écrite, en parallèle à Chatterbox qui parle aussi vite que le message arrive ») ce qui
+// s'écrit selon le mode : à l'écrit, vos messages ; en Conversation, sa pensée (son cerveau) puis sa réponse, écrites en même temps
+// que sa voix les dit, et tes mots seulement si SENS le demande (mots_conversation) ; en Télépathie, rien
+const enTelepathie = () => !!etat.conversation && typeof reglagesCorps !== 'undefined' && reglagesCorps.afficher_papa === false && reglagesCorps.afficher_hakim === false;
+const motsEnConversation = () => typeof reglagesCorps !== 'undefined' && reglagesCorps.mots_conversation === true;
+const motsPapaCaches = () => !!etat.conversation && !motsEnConversation();
 const parolesEnvoyees = { papa: '', hakim: '' }, parolesEnAttente = {};
 let parolesMinuteur = null;
 function envoyerParoles(qui, texte) {
@@ -967,14 +977,14 @@ function envoyerParoles(qui, texte) {
   parolesMinuteur = setTimeout(() => {
     parolesMinuteur = null;
     const r = typeof reglagesCorps !== 'undefined' ? reglagesCorps : {};
-    const o = { ...parolesEnAttente, montrer_papa: r.afficher_papa !== false, montrer_hakim: r.afficher_hakim !== false };
+    const o = { ...parolesEnAttente, montrer_papa: r.afficher_papa !== false && !motsPapaCaches() && !enTelepathie(), montrer_hakim: r.afficher_hakim !== false && !enTelepathie() };
     for (const k of Object.keys(parolesEnAttente)) { parolesEnvoyees[k] = parolesEnAttente[k]; delete parolesEnAttente[k]; }
     try { window.HakimApp.paroles(JSON.stringify(o)); } catch (_) {}
   }, 250);
 }
 lecteurNeuronal.surSegment = (t, duree) => {
   if (mesureTour && mesureTour.premier_texte && !mesureTour.premier_son) { mesureTour.premier_son = Date.now(); finMesureTour(); }
-  noterParole(t); noterMorceau(t, duree); sousTitre(t);
+  noterParole(t); noterMorceau(t, duree); if (!enTelepathie()) sousTitre(t);   // (16:08) en Télépathie, rien d'écrit
   envoyerParoles('hakim', t);                                         // (14:47) ce qu'il dit, sous l'orbe de l'appli
   couperAuDebutDeSaVoix();                                             // (09:12)
 };
@@ -1861,7 +1871,7 @@ async function envoyer(texte, oral, dejaRelance) {
   const tDebut = etat.session && avant.length ? avant[0].ts : null;
   // (30/10, 21:00, Ahmed : « deux modes Conversation » — « comme de la télépathie, mais à haute voix ») « dans sa tête » : ses
   // paroles dites lui parviennent, mais ne s'affichent pas comme message
-  const enTete = !!oral && typeof reglagesCorps !== 'undefined' && reglagesCorps.afficher_papa === false;
+  const enTete = !!oral && typeof reglagesCorps !== 'undefined' && (reglagesCorps.afficher_papa === false || motsPapaCaches());
   if (!dejaRelance) etat.messages.push({ id: nouvelId(), qui: 'u', texte, oral: !!oral, ts: Date.now(), joints: joints.map(x => x.nom), ...(enTete ? { cache: true } : {}) });
   // (21:13, Ahmed : « dans ce mode, ses paroles aussi ne s'affichent plus, seulement sa voix ») la case « ses paroles »
   const m = { id: nouvelId(), qui: 'j', texte: souffleDit ? `${souffleDit} ` : '', outils: [], enCours: true,
@@ -2749,44 +2759,6 @@ function vifConversation(conv) {
 // (15:02, Ahmed : « dès le premier chunk, il écrit ce qu'il dit et l'envoie direct, en coupé décalé, de plus en plus intégré à chaque
 // chunk ») chaque brouillon de sa réponse s'affiche tout de suite dans le fil (à côté, jamais enregistré) et sous l'orbe de l'appli :
 // 🗣️ s'il juge qu'il pourra le dire, ✍️ s'il attend encore la suite ; remplacé par sa vraie réponse quand elle part
-function surSouffle(o) {
-  if (!etat.conversation || !o || !o.texte) return;
-  const texte = String(o.texte).slice(0, 400);
-  const con = o.niveau === 'con' || o.niveau === 'cerveau', cerveauVrai = o.niveau === 'cerveau';
-  etat.dernierSouffle = { texte, pret: !!o.pret, fini: o.fini === true ? true : o.fini === false ? false : null, pour: String(o.pour || ''), t: Date.now(), niveau: String(o.niveau || 'sub') };
-  if (o.pret) preparerVoixSouffle(texte);                             // (15:10) sa voix fabriquée d'avance : dite sans attendre
-  etat.aCote = (etat.aCote || []).filter(x => x.cle !== 'souffle');
-  etat.aCote.push({ ts: Date.now(), cle: 'souffle', html: `<div class="m j brouillon" style="opacity:.75;font-style:italic">`
-    + `<span class="quand">${cerveauVrai ? '🧠 son cerveau' : con ? '💭 il réfléchit' : '✍️ son subconscient'} · ${o.pret ? '🗣️ prête à dire' : 'il attend la suite'}</span><div>${esc(texte)}</div></div>` });
-  rendre();
-  envoyerParoles('hakim', `${cerveauVrai ? '🧠' : con ? '💭' : o.pret ? '🗣️' : '✍️'} ${texte}`);
-}
-// (15:10, mesuré : la voix met ~2,6 s avant son premier son) le brouillon prêt à dire : sa voix fabriquée pendant que papa parle
-// encore (la synthèse est libre à ce moment-là) ; le suivant remplace le précédent
-let voixSouffle = { texte: '', pret: null, ctl: null };
-function preparerVoixSouffle(texte) {
-  if (!actx || actx.state !== 'running' || voixSouffle.texte === texte) return;
-  if (voixSouffle.ctl) voixSouffle.ctl.abort();
-  const ctl = new AbortController(), v = { texte, pret: null, ctl };
-  voixSouffle = v;
-  fetch('/api/voix/dire', { method: 'POST', signal: ctl.signal, headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
-    body: JSON.stringify({ texte, langue: 'fr', emotion: etat.interieur && !etat.reglages.voixNeutre ? expressivitePhrase(etat.interieur.expressivite, texte) : null, tempo: tempoVoix() }) })
-    .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('voix'))))
-    .then(ab => actx.decodeAudioData(ab))
-    .then(buf => { if (voixSouffle === v) v.pret = buf; })
-    .catch(() => {});
-}
-// (15:10) le brouillon a-t-il été écrit pour ce que papa a dit jusqu'ici ? (ses mots, presque tous, sont dans « pour »)
-function recouvre(pour, actuel) {
-  const mots = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^\p{L}\p{N}]+/u).filter(m => m.length > 1);
-  const a = mots(actuel).slice(-40), b = new Set(mots(pour));
-  return a.length >= 3 && a.filter(m => b.has(m)).length / a.length >= 0.8;
-}
-function retirerSouffle() {
-  if (!(etat.aCote || []).some(x => x.cle === 'souffle')) return;
-  etat.aCote = etat.aCote.filter(x => x.cle !== 'souffle');
-  rendre();
-}
 // (15:38, Ahmed : « que Hakim puisse mettre les mêmes smileys que moi sur mes messages ») [[reaction: 😂]] dans sa réponse : sa réaction
 // sur ton message auquel il répond (sa voix ne le dit pas) ; une seule par message, la dernière gagne
 function reactionDeHakim(m) {
@@ -2804,30 +2776,129 @@ function lireAnticipe(texte) {
   const m = /\[\[\s*anticipe\s*:\s*(court|long|question)\s*\]\]/i.exec(String(texte || ''));
   if (m) { etat.anticipeTour = m[1].toLowerCase(); journalVoix('anticipe', { attendu: etat.anticipeTour }); }
 }
+// (16:00) chaque niveau garde son dernier brouillon (etat.souffles : sub, con, cerveau) : avant, un seul, et le dernier arrivé (souvent
+// sa réflexion ou son cerveau) écrasait celui de son subconscient, sa voix d'avance comprise
+// (16:20, Ahmed : « on laisse le mode Conversation avec sa pensée du cerveau écrite, en parallèle à Chatterbox ») seule sa pensée (son
+// cerveau) s'écrit, à côté, pendant que tu parles ; son subconscient et sa réflexion travaillent sans s'écrire ; en Télépathie, rien
+function surSouffle(o) {
+  if (!etat.conversation || !o || !o.texte) return;
+  const texte = String(o.texte).slice(0, 400);
+  const niveau = o.niveau === 'cerveau' ? 'cerveau' : o.niveau === 'con' ? 'con' : 'sub';
+  const rebond = o.rebond != null && Number.isFinite(Number(o.rebond)) ? Number(o.rebond) : null;
+  const s = { texte, pret: !!o.pret, fini: o.fini === true ? true : o.fini === false ? false : null, rebond, pour: String(o.pour || ''), t: Date.now(), niveau };
+  etat.souffles = { ...(etat.souffles || {}), [niveau]: s };
+  etat.dernierSouffle = s;
+  if (niveau === 'sub') etat.conversation.brouillons = (etat.conversation.brouillons || 0) + 1;   // (16:00) combien pendant ce tour
+  // (16:12, Ahmed : « quand la pensée du cerveau est envoyée à l'écriture, elle doit en parallèle être envoyée à Chatterbox ») sa voix
+  // fabriquée pour chaque pensée de son cerveau, aussitôt écrite ; (16:30, Ahmed via Hakim : « coupe le glisse-mot ») plus pour son
+  // subconscient, qui ne parle plus : il règle seulement quand ton tour finit (FINI, REBOND)
+  if (niveau === 'cerveau') preparerVoixSouffle(texte, niveau);
+  if (niveau !== 'cerveau' || enTelepathie()) return;
+  montrerPensee(`🧠 sa pensée · ${s.pret ? 'prête à dire' : 'il attend la suite'}`, texte);
+  envoyerParoles('hakim', `🧠 ${texte}`);
+}
+function montrerPensee(titre, texte) {
+  etat.aCote = (etat.aCote || []).filter(x => x.cle !== 'souffle');
+  etat.aCote.push({ ts: Date.now(), cle: 'souffle', html: `<div class="m j brouillon" style="opacity:.75;font-style:italic">`
+    + `<span class="quand">${titre}</span><div>${esc(texte)}</div></div>` });
+  rendre();
+}
+// (15:10, mesuré : la voix met ~2,6 s avant son premier son) sa voix fabriquée pendant que papa parle encore ; une par niveau, la suivante
+// remplace la précédente (16:00 : une seule pour tous, celle de son subconscient était écrasée : « voix_prete » faux les deux fois)
+const voixPretes = {};
+function preparerVoixSouffle(texte, niveau = 'sub') {
+  const v0 = voixPretes[niveau];
+  if (!actx || actx.state === 'closed' || (v0 && v0.texte === texte)) return;
+  if (v0 && v0.ctl && !v0.pret) v0.ctl.abort();
+  const ctl = new AbortController(), v = { texte, pret: null, ctl };
+  voixPretes[niveau] = v;
+  fetch('/api/voix/dire', { method: 'POST', signal: ctl.signal, headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+    body: JSON.stringify({ texte, langue: 'fr', fond: true, emotion: etat.interieur && !etat.reglages.voixNeutre ? expressivitePhrase(etat.interieur.expressivite, texte) : null, tempo: tempoVoix() }) })
+    .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('voix'))))
+    .then(ab => actx.decodeAudioData(ab))
+    .then(buf => { if (voixPretes[niveau] === v) v.pret = buf; })
+    .catch(() => {});
+}
+const voixPrete = (texte) => { const v = Object.values(voixPretes).find(x => x && x.texte === texte && x.pret); return v ? v.pret : null; };
+// (15:10) le brouillon a-t-il été écrit pour ce que papa a dit jusqu'ici ? (ses 40 derniers mots, aux trois quarts, sont dans « pour »)
+function recouvre(pour, actuel) {
+  const mots = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/[^\p{L}\p{N}]+/u).filter(m => m.length > 1);
+  const a = mots(actuel).slice(-40), b = new Set(mots(pour));
+  return a.length >= 3 && a.filter(m => b.has(m)).length / a.length >= 0.75;
+}
+function retirerSouffle() {
+  if (!(etat.aCote || []).some(x => x.cle === 'souffle')) return;
+  etat.aCote = etat.aCote.filter(x => x.cle !== 'souffle');
+  rendre();
+}
+// (16:00) le brouillon frais (15 s), écrit pour ce que tu as dit : celui de son subconscient d'abord, puis son cerveau, puis sa
+// réflexion ; prêt à dire d'abord. Il dit quand ton tour finit (FINI, son REBOND)
+function choisirSouffle(actuel) {
+  const ss = etat.souffles || {};
+  const ok = (x) => x && Date.now() - x.t < 15000 && recouvre(x.pour, actuel);
+  const ordre = [ss.sub, ss.cerveau, ss.con];
+  return ordre.find(x => ok(x) && x.pret) || ordre.find(ok) || null;
+}
+// (16:20-16:30, Ahmed : « on laisse le mode Conversation avec sa pensée du cerveau écrite, en parallèle à Chatterbox » ; « enlève le
+// glisse-mot » ; via Hakim : « il ralentit l'arrivée de ma voix ») ce qui se DIT à ta fin : seulement la pensée de son cerveau, prête,
+// fraîche et écrite pour ce que tu as dit ; sa voix est déjà faite (preparerVoixSouffle), elle part en même temps qu'elle s'écrit
+function penseeADire(actuel) {
+  const c = (etat.souffles || {}).cerveau;
+  return c && c.pret && Date.now() - c.t < 15000 && recouvre(c.pour, actuel) ? c : null;
+}
+const souffleAutorise = () => lecteur.impl === lecteurNeuronal && !(typeof reglagesCorps !== 'undefined' && reglagesCorps.reponse_soufflee === false);
+// (16:00, Ahmed : « fais le test de décalage entre la dernière parole de son subconscient avant que je finisse et le moment où il parle »)
+// à chaque fin de tour : son dernier brouillon, combien avant ta fin il est arrivé, et quand sa voix part après ta fin (voix-diagnostic)
+function noterEcartSouffle(conv, s, dit, par, prete) {
+  const fin = conv && conv.capteur ? Number(conv.capteur.derniereVoix) || 0 : 0, sub = etat.souffles && etat.souffles.sub;
+  journalVoix('souffle_ecart', { par, dit: !!dit, niveau: s ? s.niveau : null, pret: s ? !!s.pret : null,
+    brouillon_avant_fin_ms: s && s.t && fin ? Math.round(fin - s.t) : null,
+    dernier_sub_avant_fin_ms: sub && fin && Date.now() - sub.t < 60000 ? Math.round(fin - sub.t) : null,
+    parle_apres_fin_ms: dit && fin ? Math.round(Date.now() - fin) : null, rebond_ms: s && s.rebond ? Math.round(s.rebond * 1000) : null,
+    voix_prete: !!prete, brouillons: conv ? conv.brouillons || 0 : 0 });
+}
+// sa voix dit le brouillon ; il s'écrit au même instant (16:20 : écrit en parallèle à sa voix) ; son conscient le reçoit comme le début
+// de sa réponse (souffle_dit)
+function direSouffle(conv, s, par) {
+  conv.souffleParle = true; conv.souffleDit = s.texte;
+  const buf = voixPrete(s.texte);
+  noterEcartSouffle(conv, s, true, par, !!buf);
+  journalVoix('souffle', { pris: true, dit: true, par, mots: s.texte.split(/\s+/).length, voix_prete: !!buf });
+  etat.reponseVoix = 'souffle';
+  if (!enTelepathie()) { montrerPensee('🗣️ il te le dit', s.texte); envoyerParoles('hakim', `🗣️ ${s.texte}`); }
+  if (buf) lecteurNeuronal.direAudio(s.texte, buf); else lecteur.dire(s.texte);
+  if (par === 'local') fetch('/api/jarvis/souffle', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+    body: JSON.stringify({ dit: s.texte }) }).catch(() => {});
+}
 async function prendreSouffle(conv) {
   if (!conv) return;
+  if (conv.souffleLocal) { conv.souffleLocal = false; return; }        // (16:00) déjà dit à ta fin, par la page
   conv.souffleParle = false; conv.souffleDit = '';
-  if (!conv.ecrit || lecteur.impl !== lecteurNeuronal || (typeof reglagesCorps !== 'undefined' && reglagesCorps.reponse_soufflee === false)) return;
+  if (!conv.ecrit || !souffleAutorise()) return;
   const texte = `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}`.trim();
   if (texte.split(/\s+/).filter(Boolean).length < 3) return;
-  let r = '', pret = false;
+  let r = '', pret = false, niveau = 'sub';
   try {
     const rep = await fetch('/api/jarvis/souffle', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
       body: JSON.stringify({ texte }), signal: AbortSignal.timeout(2500) });
     const o = rep.ok ? await rep.json() : {};
-    r = String(o.reponse || '').trim(); pret = !!o.pret;
+    r = String(o.reponse || '').trim(); pret = !!o.pret; niveau = o.niveau || 'sub';
   } catch (_) { r = ''; }
-  // (15:02, Ahmed : « il ne la dit que quand il estime qu'il peut enfin répondre ») pas prête à ses yeux : elle reste écrite, il ne la dit pas
-  if (!r || !pret || etat.conversation !== conv || (conv.capteur && conv.capteur.enParole) || lecteur.actif || etat.flux) { journalVoix('souffle', { pris: !!r, pret, dit: false }); return; }
-  conv.souffleParle = true; conv.souffleDit = r;
-  const prete = voixSouffle.texte === r && voixSouffle.pret;
-  journalVoix('souffle', { pris: true, dit: true, mots: r.split(/\s+/).length, voix_prete: !!prete });
-  etat.reponseVoix = 'souffle';
-  if (prete) lecteurNeuronal.direAudio(r, voixSouffle.pret); else lecteur.dire(r);
+  const connu = Object.values(etat.souffles || {}).find(x => x && x.texte === r);
+  const s = r ? { ...(connu || {}), texte: r, pret, niveau: niveau === 'cerveau' ? 'cerveau' : niveau } : choisirSouffle(texte);
+  // (15:02, Ahmed : « il ne la dit que quand il estime qu'il peut enfin répondre ») pas prête à ses yeux : il ne la dit pas ; (16:00) un
+  // meuble qui joue ne l'empêche plus (avant, « lecteur.actif » comptait ses meubles) : seule sa vraie voix, ou sa réponse en cours
+  if (!r || !pret || s.niveau !== 'cerveau' || etat.conversation !== conv || (conv.capteur && conv.capteur.enParole) || lecteurNeuronal.parle || etat.flux) {
+    noterEcartSouffle(conv, s, false, 'serveur', false);
+    journalVoix('souffle', { pris: !!r, pret, dit: false }); return;
+  }
+  direSouffle(conv, s, 'serveur');
 }
+// (16:08, Ahmed : « même en Conversation, pas mes mots par défaut ») la ligne en direct garde 🎙️ ✍️ 💭 ; tes mots seulement si SENS le
+// demande (mots_conversation)
 function ligneEnDirect(conv) {
   const e = conv && conv.ecrit, cap = conv && conv.capteur;
-  const mots = e ? `${e.confirme || ''} ${e.vif || ''}`.trim() : '';
+  const mots = e && motsEnConversation() && !enTelepathie() ? `${e.confirme || ''} ${e.vif || ''}`.trim() : '';
   const parts = [];
   if (cap && cap.enParole) parts.push('🎙️');
   if (mots) parts.push(mots.length > 90 ? `…${mots.slice(-90)}` : mots);
@@ -2836,13 +2907,13 @@ function ligneEnDirect(conv) {
   return parts.join(' ');
 }
 function ligneEnDirectMontrer(conv) {
-  if (conv && conv.ecrit) envoyerParoles('papa', `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}`);   // (14:47) ce qu'il entend
+  if (conv && conv.ecrit && motsEnConversation() && !enTelepathie()) envoyerParoles('papa', `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}`);   // (14:47) ce qu'il entend
   if (!conv) return;
   const l = ligneEnDirect(conv);
   if (!l) return;
   // (14:46, Ahmed : « ma transcription et sa parole en parallèle ») quand il parle, ses mots gardent le sous-titre et les tiens
   // continuent dans la ligne d'état : les deux en même temps
-  if (!(lecteur && lecteur.actif)) sousTitre(l);
+  if (!(lecteur && lecteur.actif) && !enTelepathie()) sousTitre(l);
   if ($('etat')) $('etat').textContent = l;
 }
 // tant que papa parle ou qu'un morceau se transcrit, la ligne suit (✍️ qui va et vient, 💭)
@@ -2888,16 +2959,27 @@ function anticiperConversation(conv, silenceMs) {
   // laisse (0,5 s, 1,2 s, 0,7 s) ; subconsciente : à chaque morceau, Mini Hakim juge si tu as fini (FINI) — « non » : il ne te coupe
   // pas sur une fin de phrase, il attend ta suite (ou la patience) ; « oui » : ton tour finit au seuil, même sans point
   const rv = (k, d) => (typeof rythmeVoix === 'function' ? rythmeVoix(k, d) : d) * 1000;   // (15:24) réglables par lui
-  const seuil = { court: rv('silence_court', 0.5), long: rv('silence_long', 1.2), question: rv('silence_normal', 0.7) }[etat.anticipeTour] || rv('silence_normal', 0.7);
+  const seuilRythme = { court: rv('silence_court', 0.5), long: rv('silence_long', 1.2), question: rv('silence_normal', 0.7) }[etat.anticipeTour] || rv('silence_normal', 0.7);
+  const vifTexte = conv.ecrit ? `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}`.trim() : '';
+  const s = conv.ecrit && !conv.finAnticipee ? choisirSouffle(vifTexte) : null;
+  // (16:05, Ahmed : « il doit pouvoir ajuster s'il veut rebondir à 0,5 s ou 1 s ou autre quand je finis de parler, relié à ses émotions,
+  // sa mémoire, ses sensations, ses réactions ») son REBOND : le silence que son subconscient a choisi de te laisser en sentant tout ça
+  // (le brouillon prêt à dire le porte) ; sinon son rythme (rythme_regler) et ce qu'il attendait de toi
+  const seuil = s && s.pret && s.rebond ? s.rebond * 1000 : seuilRythme;
   if (silenceMs >= seuil && conv.ecrit && !conv.finAnticipee) {
-    const vifTexte = `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}`.trim(), s = etat.dernierSouffle;
-    const frais = !!(s && Date.now() - s.t < 15000 && recouvre(s.pour, vifTexte));
-    const finiSub = frais ? s.fini : null;
-    const parSouffle = frais && (s.pret || finiSub === true) && finiSub !== false;
+    const finiSub = s ? s.fini : null;
+    const parSouffle = !!s && (s.pret || finiSub === true) && finiSub !== false;
     if (parSouffle || (finiSub !== false && phraseFinie(vifTexte))) {
       conv.finAnticipee = true;
-      journalVoix('fin_anticipee', { par: parSouffle ? 'souffle' : 'mots', silence_ms: Math.round(silenceMs), attendu: etat.anticipeTour || 'normal', fini: finiSub });
+      journalVoix('fin_anticipee', { par: parSouffle ? 'souffle' : 'mots', silence_ms: Math.round(silenceMs), attendu: etat.anticipeTour || 'normal', fini: finiSub,
+        rebond_ms: s && s.rebond ? Math.round(s.rebond * 1000) : null });
+      // (16:00, mesuré : la prise passait par le Mac après la fin du tour, 0,9 à 7,8 s après ta fin) prêt à dire : sa voix part à
+      // l'instant, avec ta fin de tour ; le Mac est prévenu après coup
+      const p = penseeADire(vifTexte);
+      const dire = !!(p && finiSub !== false && souffleAutorise() && etat.conversation === conv && !lecteurNeuronal.parle && !etat.flux);
+      if (dire) conv.souffleLocal = true;
       conv.capteur.finirTour();
+      if (dire) direSouffle(conv, p, 'local');
       return;
     }
   }
@@ -3059,7 +3141,7 @@ async function basculerConversation() {
       dernierBattement: () => dernierBattementCoeur,
       surNiveau: (n) => { etat.niveauMicro = n; voixAuCorps(n); if (document.visibilityState === 'hidden') { micEnFond++; alimenterBulle(n); } },
       // (13:25, papa : « aucun « je t'écoute » ») rien à la place de ses mots : ils s'affichent dès le premier
-      surDebut: () => { conv.finDemandee = false; conv.finAnticipee = false; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre(''); humeur(); },
+      surDebut: () => { conv.finDemandee = false; conv.finAnticipee = false; conv.souffleLocal = false; conv.brouillons = 0; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre(''); humeur(); },
       surPause: (fenetre) => surPauseConversation(conv, fenetre),
       surSilence: (ms) => { if (conv.capteur && conv.capteur.enParole) { compteARebours(ms); anticiperConversation(conv, ms); } },
       // Ahmed (ou une autre voix) parle pendant que Hakim parle : Hakim se MET EN PAUSE (lot C, point 26) ; sa

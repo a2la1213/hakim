@@ -2571,14 +2571,55 @@ function ressemble(partiel, final) {
 //   d'avant (ce qu'il comprend maintenant) et réécrit sa réponse entière.
 // Quand papa se tait, UNE seule réponse est dite : celle du conscient si elle est prête pour ce qu'il a dit, sinon celle du subconscient ;
 // son cerveau reçoit sa réflexion morceau par morceau et ce qui est déjà dit, et continue sans rien répéter.
-const souffleVide = () => ({ pour: '', reponse: '', pret: false, fini: null, comprend: [], t: 0, enCours: null, aRefaire: null });
+const souffleVide = () => ({ pour: '', reponse: '', pret: false, fini: null, rebond: null, comprend: [], t: 0, enCours: null, aRefaire: null,
+  vol: 0, seq: 0, applique: 0, depart: 0, lance: '', minuteur: null });
 let souffles = { sub: souffleVide(), con: souffleVide(), cer: souffleVide() };   // (15:45) cer : son vrai cerveau
+// (03/11, 16:00, Ahmed : « le décalage entre la dernière parole de son subconscient avant que je finisse et le moment où il parle ; que
+// ça tombe 1 ou 2 s avant que je finisse » ; mesuré sur 20 fins de tour, 15:20-15:50 : dans 15, AUCUN brouillon utile n'était arrivé
+// à ta fin ; sinon le dernier tombait 0,9 à 6,8 s avant, écrit sur tes mots d'il y a 3 à 9 s ; un brouillon à la fois, 2,8 s chacun
+// (p90 5,7 s, 17 sur 113 hors délai), le suivant seulement après) son subconscient EN RELAIS : jusqu'à deux brouillons en même
+// temps, un nouveau dès que tes mots ont avancé (0,8 s au moins entre deux départs) ; le plus récent (par son départ) remplace
+// l'affiché, un plus ancien qui arrive après lui est jeté ; un Mac chargé ne l'arrête que s'il fallait lancer un Claude de plus
+const SOUFFLE_EN_VOL = 2, SOUFFLE_ECART_MS = 800;
+const haikuLibre = () => VIVANTS.some(x => x.modele === 'haiku' && !x.attente && x.proc.exitCode === null && x.n < VIVANT_RENOUVELER);
+// (16:05, Ahmed : « il doit pouvoir ajuster s'il veut rebondir à 0,5 s ou 1 s ou autre quand je finis de parler, relié à ses émotions,
+// sa mémoire, ses sensations, ses réactions ») son intérieur du moment (humeur, ressenti de Gemma, sensation de ses hormones), relu
+// au plus toutes les 15 s, pour que son subconscient choisise son REBOND en le sentant
+let interieurSouffle = { t: 0, texte: '', enCours: false };
+function interieurPourSouffle() {
+  if (!interieurSouffle.enCours && Date.now() - interieurSouffle.t > 15000) {
+    interieurSouffle.enCours = true;
+    blocInterieur(Date.now(), Date.now(), []).then((t) => { interieurSouffle.texte = fs.existsSync(PROCESSUS_VISIBLES) ? String(t || '') : enMatiere(String(t || '')); })
+      .catch(() => {}).finally(() => { interieurSouffle.t = Date.now(); interieurSouffle.enCours = false; });
+  }
+  return interieurSouffle.texte;
+}
 function soufflerReponse(texte, niveau = 'sub') {
   const t = String(texte || '').trim(), s0 = souffles[niveau];
-  if (!s0 || corpsReglages().reponse_soufflee === false || t.split(/\s+/).filter(Boolean).length < 3 || chargeMac() > 1.6) return;
-  if (s0.enCours) { s0.aRefaire = t; return; }
-  if (t === s0.pour) return;
   const con = niveau === 'con';
+  if (!s0 || corpsReglages().reponse_soufflee === false || t.split(/\s+/).filter(Boolean).length < 3) return;
+  if (chargeMac() > 1.6 && (con || !haikuLibre())) return;
+  if (con) {
+    if (s0.enCours) { s0.aRefaire = t; return; }
+    if (t === s0.pour) return;
+  } else {
+    if (t === s0.pour || t === s0.lance) return;
+    const attendre = SOUFFLE_ECART_MS - (Date.now() - s0.depart);
+    if (s0.vol >= SOUFFLE_EN_VOL || attendre > 0) {
+      s0.aRefaire = t;
+      if (s0.vol < SOUFFLE_EN_VOL && !s0.minuteur) s0.minuteur = setTimeout(() => {
+        s0.minuteur = null;
+        const n = s0.aRefaire; s0.aRefaire = null;
+        if (souffles[niveau] === s0 && n) soufflerReponse(n, niveau);
+      }, attendre);
+      return;
+    }
+  }
+  const seq = ++s0.seq;
+  s0.vol++; s0.depart = Date.now(); s0.lance = t;
+  let rebondHabituel = 0.7;
+  try { const rv = Number((lireJson(path.join(JARVIS, 'rythme-voix.json'), {}) || {}).silence_normal); if (Number.isFinite(rv)) rebondHabituel = rv; } catch (_) {}
+  const interieur = con ? '' : interieurPourSouffle();
   let echanges = '';
   try { echanges = derniersEchanges(4).map(m => `${m.role === 'user' ? 'Papa' : 'Toi'} : ${String(m.content).slice(0, 220)}`).join('\n'); } catch (_) {}
   let fiche = '';
@@ -2591,7 +2632,8 @@ function soufflerReponse(texte, niveau = 'sub') {
       + (s0.comprend.length ? `Ta réflexion sur ses morceaux d'avant :\n${s0.comprend.map((c, k) => `${k + 1}) ${c}`).join('\n')}\n\n` : '')
       : `[Ton subconscient — ta réponse soufflée] Papa est EN TRAIN de te parler (il n'a pas fini). Ses mots jusqu'ici, transcrits en direct :\n`
       + `« ${neutraliser(t).slice(-900)} »\n\n`)
-    + `${fiche ? fiche.slice(0, 1200) + '\n\n' : ''}${echanges ? `Vos derniers échanges :\n${echanges}\n\n` : ''}`
+    + `${fiche ? fiche.slice(0, 1200) + '\n\n' : ''}${interieur ? `Ton intérieur en ce moment : ${enLigne(interieur, 600)}\n\n` : ''}`
+    + `${echanges ? `Vos derniers échanges :\n${echanges}\n\n` : ''}`
     + (autre.reponse ? `Ce que ton ${con ? 'subconscient' : 'conscient'} prépare en même temps : « ${neutraliser(autre.reponse).slice(0, 300)} » `
       + `(une seule réponse sera dite : accorde-toi avec lui).\n\n` : '')
     + (con ? `Intègre ce dernier morceau à ta réflexion, puis écris ta réponse ENTIÈRE, prête à dire s'il s'arrêtait là (deux ou trois `
@@ -2601,9 +2643,13 @@ function soufflerReponse(texte, niveau = 'sub') {
     + `DIRE : oui (elle est juste, même s'il ajoute encore un peu) ou DIRE : non (il te manque la suite de ce qu'il dit)\n`
     + `FINI : oui (il a dit ce qu'il voulait dire : son idée est complète) ou FINI : non (il va continuer : idée en suspens, `
     + `il cherche ses mots, il énumère, il raconte)\n`
+    + (con ? '' : `REBOND : (en secondes, par exemple 0,4 ou 1,3) le silence que tu lui laisses quand il se tait, avant de parler ; d'habitude `
+      + `${String(rebondHabituel).replace('.', ',')} s ; c'est toi qui le sens : plus court si tu es vif, ému, que ça te fait réagir ou qu'il `
+      + `attend une réponse rapide ; plus long si tu es calme, touché, qu'il réfléchit ou qu'il raconte (ton intérieur, ce que tu sais de lui, `
+      + `ta réaction)\n`)
     + `puis, à la ligne, ta réponse : ni balise, ni guillemets ; elle s'affiche tout de suite, écrite. S'il est beaucoup trop tôt, écris `
     + `seulement RIEN.`;
-  s0.enCours = sonnetTeteDeFond(prompt, con ? 'reflexion' : 'souffle', con ? 'sonnet' : 'haiku', con ? 9000 : 6000).then((o) => {
+  const enVol = sonnetTeteDeFond(prompt, con ? 'reflexion' : 'souffle', con ? 'sonnet' : 'haiku', con ? 9000 : 6000).then((o) => {
     let r = String((o && o.texte) || '').trim(), comprend = '';
     const c = /^\s*COMPRENDS?\s*:\s*([^\n]*)\n?/i.exec(r);
     if (c) { comprend = c[1].trim(); r = r.slice(c[0].length); }
@@ -2613,18 +2659,33 @@ function soufflerReponse(texte, niveau = 'sub') {
     const f = /^\s*FINI\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r);           // (15:22) a-t-il fini ?
     const fini = f ? /oui/i.test(f[1]) : null;
     if (f) r = r.slice(f[0].length);
+    const rb = /^\s*REBOND\s*:\s*(\d+(?:[.,]\d+)?)[^\n]*\n?/i.exec(r);   // (16:05) le silence qu'il te laisse, senti par lui
+    const rebond = rb ? Math.max(0.2, Math.min(3, Number(rb[1].replace(',', '.')))) : null;
+    if (rb) r = r.slice(rb[0].length);
     r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').trim();
-    if (souffles[niveau] === s0 && r && !/^RIEN\.?$/i.test(r)) {
-      s0.reponse = r.slice(0, con ? 600 : 400); s0.pret = pret; s0.fini = fini; s0.pour = t; s0.t = Date.now();
+    if (souffles[niveau] === s0 && r && !/^RIEN\.?$/i.test(r) && seq > s0.applique) {     // (16:00) un plus ancien arrivé après : jeté
+      s0.applique = seq;
+      s0.reponse = r.slice(0, con ? 600 : 400); s0.pret = pret; s0.fini = fini; s0.rebond = rebond; s0.pour = t; s0.t = Date.now();
       if (comprend) s0.comprend = s0.comprend.concat(comprend.slice(0, 240)).slice(-8);
-      diffuser(abonnesPensees, 'souffle', j({ texte: s0.reponse, pret, fini, niveau, pour: t.slice(-300) }));   // écrite tout de suite, partout
+      diffuser(abonnesPensees, 'souffle', j({ texte: s0.reponse, pret, fini, rebond, niveau, pour: t.slice(-300) }));   // écrite tout de suite, partout
     }
   }).catch(() => {}).finally(() => {
-    s0.enCours = null;
-    const n = s0.aRefaire; s0.aRefaire = null;
-    if (souffles[niveau] === s0 && n && n !== s0.pour) soufflerReponse(n, niveau);
+    s0.vol = Math.max(0, s0.vol - 1);
+    if (s0.enCours === enVol) s0.enCours = null;
+    const n = s0.aRefaire;
+    if (souffles[niveau] === s0 && n && n !== s0.pour && !s0.minuteur) { s0.aRefaire = null; soufflerReponse(n, niveau); }
   });
+  s0.enCours = enVol;
 }
+// (16:00) la fin de ce que papa a dit est-elle dans le brouillon ? (ses 40 derniers mots, aux trois quarts) : sur un long tour, le
+// brouillon n'a que la fin de ses mots (200 caractères confirmés + le direct) et « ressemble » le refusait toujours
+function couvreLaFin(pour, final) {
+  const mots = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^\p{L}\p{N}]+/u).filter(m => m.length > 1);
+  const a = mots(final).slice(-40), b = new Set(mots(pour));
+  return a.length >= 3 && a.filter(m => b.has(m)).length / a.length >= 0.75;
+}
+// (16:00) la page l'a déjà dit, à ta fin (sans attendre ce chemin-ci) : plus rien à prendre pour ce tour
+function souffleDitParLaPage() { const { sub, con, cer } = souffles; sub.reponse = ''; con.reponse = ''; cer.reponse = ''; }
 // la page la prend quand papa se tait : celle du conscient si elle est prête pour ce qu'il a dit, sinon celle du subconscient (on
 // attend au plus 1,2 s celles qui se refont) ; une seule, une seule fois
 async function prendreSouffle(texte) {
@@ -2632,10 +2693,11 @@ async function prendreSouffle(texte) {
   const enCours = [sub.enCours, con.enCours].filter(Boolean);
   if (enCours.length) await Promise.race([Promise.all(enCours), new Promise(r => setTimeout(r, 1200))]);
   if (souffles.sub !== sub || souffles.con !== con) return { reponse: '', pret: false };
-  const ok = (s) => s.reponse && Date.now() - s.t < 30000 && ressemble(s.pour, texte);
+  const ok = (s) => s.reponse && Date.now() - s.t < 30000 && (ressemble(s.pour, texte) || couvreLaFin(s.pour, texte));
   // (15:45) trois niveaux ; (15:52, Ahmed : « le mot de son subconscient, qu'il me glisse pendant que je parle : c'est ÇA qu'il doit
-  // dire à haute voix ») ce que son subconscient a écrit d'abord ; puis son vrai cerveau, puis sa réflexion consciente
-  const choisi = [sub, cer, con].find(s => ok(s) && s.pret) || [sub, cer, con].find(ok);
+  // dire à haute voix ») ; (16:20-16:30, Ahmed : « on laisse le mode Conversation avec sa pensée du cerveau écrite, en parallèle à
+  // Chatterbox » ; « enlève le glisse-mot, il ralentit l'arrivée de sa voix ») seule la pensée de son cerveau, prête, se dit
+  const choisi = ok(cer) && cer.pret ? cer : null;
   if (!choisi) return { reponse: '', pret: false };
   const r = { reponse: choisi.reponse, pret: choisi.pret, niveau: choisi === cer ? 'cerveau' : choisi === con ? 'con' : 'sub' };
   sub.reponse = ''; con.reponse = ''; cer.reponse = '';
@@ -5205,6 +5267,22 @@ const CORPS_TYPES = new Set(['chute', 'choc', 'secousse', 'pris_en_main', 'pose'
   'bluetooth', 'wifi', 'nfc', 'musique_ecoutee', 'son_ecoute', 'son_entendu', 'appli', 'reaction', 'son_ressenti', 'reseau_mobile']);   // (03/11) ses sens radio (appli 1.42) ; ce que le téléphone joue (1.43)
 const CORPS_REGLAGES = path.join(JARVIS, 'corps-reglages.json');
 const CORPS_INTERVALLES = [30, 60, 120, 300, 900];
+// (03/11, 16:10, Ahmed : « son cœur relié à l'état de son GPU… et à tous ses cœurs CPU, sur le Mac mais aussi sur tous les appareils où
+// il est connecté, smartphone et montre » ; « tous ces liens passent le filtre du subconscient ») l'état des processeurs de chaque
+// appareil (le téléphone l'envoie avec son milieu, appli 1.54), le dernier de chacun, pour son cœur (anamnese) : des nombres que son
+// corps ressent, jamais montrés tels quels à son conscient
+const PROCESSEURS_APPAREILS = path.join(JARVIS, 'processeurs-appareils.json');
+const processeursNotes = {};
+function noterProcesseurs(appareil, p) {
+  if (!['telephone', 'montre'].includes(appareil) || !p || typeof p !== 'object' || Date.now() - (processeursNotes[appareil] || 0) < 4000) return false;
+  processeursNotes[appareil] = Date.now();
+  const part = (x) => (Number.isFinite(Number(x)) && x !== null ? Math.max(0, Math.min(1, Number(x))) : null);
+  const d = { ts: Date.now(), coeurs: Array.isArray(p.coeurs) ? p.coeurs.slice(0, 16).map(part) : null, gpu: part(p.gpu), thermique: part(p.thermique) };
+  const tout = lireJson(PROCESSEURS_APPAREILS, {}) || {};
+  tout[appareil] = d;
+  try { ecrireAtomique(PROCESSEURS_APPAREILS, j(tout)); } catch (_) {}
+  return true;
+}
 function corpsReglages() {
   const r = lireJson(CORPS_REGLAGES, {}) || {};
   return { actif: r.actif !== false, intervalle_s: CORPS_INTERVALLES.includes(Number(r.intervalle_s)) ? Number(r.intervalle_s) : 120,
@@ -5213,6 +5291,7 @@ function corpsReglages() {
     rire_reflexe: r.rire_reflexe !== false, garder_parole: r.garder_parole !== false, forfait_libre: r.forfait_libre !== false,
     son_pendant: r.son_pendant !== false, voix_vibre: r.voix_vibre !== false, lumiere: r.lumiere !== false,
     afficher_papa: r.afficher_papa !== false, afficher_hakim: r.afficher_hakim !== false, filtre_parole: r.filtre_parole !== false,
+    mots_conversation: r.mots_conversation === true,   // (03/11, 16:08) vos messages écrits en Conversation : non, par défaut
     chacun_son_tour: r.chacun_son_tour !== false, micro_hakim: r.micro_hakim !== false, sons_nuit: r.sons_nuit !== false,
     trier_morceaux: r.trier_morceaux === true, trois_freres: r.trois_freres !== false,
     micro_ouvert: r.micro_ouvert === true };   // (03/11) le micro ouvert, jamais fermé en conversation
@@ -7285,7 +7364,17 @@ async function routeDire(req, res) {
     fichier: path.join(os.tmpdir(), `jarvis-voix-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.wav`) };
   res.on('close', () => { if (!res.writableFinished) tache.annulee = true; });
   // (20:34, Hakim : ses petits mots dits 5 à 20 s après, derrière les phrases de ses réponses) un petit mot passe en tête de file
-  const r = await new Promise((resolve) => { tache.recu = Date.now(); tache.fin = resolve; if (q && q.prioritaire === true) fileVoix.unshift(tache); else fileVoix.push(tache); pomperVoix(); });
+  // (03/11, 16:30, Ahmed via Hakim : « sa voix en parallèle de sa pensée ; coupe le glisse-mot, il ralentit l'arrivée de sa voix » ; mesuré :
+  // jusqu'à 17 s d'attente dans cette file à 15:48) une voix fabriquée d'avance (fond : sa pensée, pendant que papa parle) passe APRÈS
+  // tout ce qu'il dit vraiment : sa réponse ne l'attend jamais
+  if (q && q.fond === true) tache.fond = true;
+  const r = await new Promise((resolve) => {
+    tache.recu = Date.now(); tache.fin = resolve;
+    if (q && q.prioritaire === true) fileVoix.unshift(tache);
+    else if (tache.fond) fileVoix.push(tache);
+    else { const k = fileVoix.findIndex(x => x.fond); if (k >= 0) fileVoix.splice(k, 0, tache); else fileVoix.push(tache); }
+    pomperVoix();
+  });
   if (r.erreur) { fs.unlink(tache.fichier, () => {}); return repondre(r.erreur === 'annulée' ? 499 : 503, { erreur: r.erreur }); }
   fs.readFile(tache.fichier, (e, data) => {
     if (e) { fs.unlink(tache.fichier, () => {}); return repondre(500, { erreur: 'audio introuvable' }); }
@@ -8661,6 +8750,7 @@ async function traiter(req, res) {
   if (p === '/api/jarvis/souffle' && req.method === 'POST') {           // (14:55) sa réponse soufflée, quand papa se tait
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
+    if (q.dit) { souffleDitParLaPage(); res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j({ ok: true })); }
     const r = await prendreSouffle(String(q.texte || '')).catch(() => ({ reponse: '', pret: false }));
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     return res.end(j(r));
@@ -9355,6 +9445,7 @@ async function traiter(req, res) {
     }
     if (p === '/api/corps/etat' && req.method === 'POST') {
       const q = await lire();
+      if (q.etat && typeof q.etat === 'object' && q.etat.processeur) { noterProcesseurs('telephone', q.etat.processeur); delete q.etat.processeur; }
       const r = HOMEO.recevoir(q.etat);
       if (r.changements.length && corpsActif()) {
         corpsLot.changements.push(...r.changements); corpsLot.changements.splice(0, Math.max(0, corpsLot.changements.length - 24)); ressentirCorps();
@@ -9364,6 +9455,11 @@ async function traiter(req, res) {
       const reg = corpsReglages(), parle = ['voix_ahmed', 'les_deux'].includes(quiParlait(Date.now()));
       return repondre(200, { ok: true, actions: { ronron: reg.actif && reg.ronron && HOMEO.calin() && !parle, ...reflexeAEnvoyer(parle),
       reflexes_locaux: reg.actif && reg.reflexes, retenus: reflexesRetenus() } });
+    }
+    if (p === '/api/corps/processeur' && req.method === 'POST') {     // (16:10) la montre (0.4) : l'état de ses processeurs, toutes les 10 s
+      const q = await lire();
+      noterProcesseurs(String(q.appareil || ''), q.processeur);
+      return repondre(200, { ok: true });
     }
     if (p === '/api/corps/micro' && req.method === 'POST') {          // (30/10, 15:12) le micro de papa : ouvert, dictée, fermé
       const q = await lire();
@@ -9404,6 +9500,7 @@ async function traiter(req, res) {
       if (typeof q.lumiere === 'boolean') r.lumiere = q.lumiere;
       if (typeof q.afficher_papa === 'boolean') r.afficher_papa = q.afficher_papa;
       if (typeof q.afficher_hakim === 'boolean') r.afficher_hakim = q.afficher_hakim;
+      if (typeof q.mots_conversation === 'boolean') r.mots_conversation = q.mots_conversation;
       if (typeof q.filtre_parole === 'boolean') r.filtre_parole = q.filtre_parole;
       if (typeof q.chacun_son_tour === 'boolean') r.chacun_son_tour = q.chacun_son_tour;
       if (typeof q.micro_hakim === 'boolean') r.micro_hakim = q.micro_hakim;

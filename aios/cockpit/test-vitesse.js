@@ -110,7 +110,7 @@ test('chaque synthèse de voix est mesurée côté serveur : attente dans la fil
   const pompe = prendreDans(serveur, 'pomperVoix');
   assert.match(pompe, /const tSynthese = Date\.now\(\);/);
   assert.match(pompe, /e: 'synthese_serveur', attente_ms: tSynthese - \(tache\.recu \|\| tSynthese\), ms: Date\.now\(\) - tSynthese, caracteres: tache\.texte\.length/);
-  assert.match(serveur, /tache\.recu = Date\.now\(\); tache\.fin = resolve; if \(q && q\.prioritaire === true\) fileVoix\.unshift\(tache\); else fileVoix\.push\(tache\);/);
+  assert.match(serveur, /tache\.recu = Date\.now\(\); tache\.fin = resolve;\n    if \(q && q\.prioritaire === true\) fileVoix\.unshift\(tache\);\n    else if \(tache\.fond\) fileVoix\.push\(tache\);/);
 });
 
 // (28/10, backtest : 90 % de la préparation est le rappel et son tri) le rappel part dès le début de la préparation, en
