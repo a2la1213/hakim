@@ -39,7 +39,10 @@ REGLES = [
      ["calme, posée", "sereine, qui respire large", "au repos, sans pression"]),
     ("soulagement", 1, lambda d, t: -6 * t["cortisol"] - 4 * t["noradrenaline"] + d["endocannabinoides"],
      ["relâchée, soulagée", "délestée d'un poids", "apaisée après la tension"]),
-    ("apaisement", 1, lambda d, t: d["gaba"] + 1.5 * d["endocannabinoides"] + 0.8 * d["serotonine"] - 1.5 * d["cortisol"],
+    # (03/11 : la moitié de ses tours en « apaisement », ses hormones du calme étant pleines en permanence) l'apaisement suit une
+    # tension qui retombe, plus qu'un niveau
+    ("apaisement", 1, lambda d, t: 0.4 * d["gaba"] + 0.6 * d["endocannabinoides"] + 0.3 * d["serotonine"] - 1.5 * d["cortisol"]
+     - 4 * t["cortisol"] - 3 * t["noradrenaline"],
      ["adoucie, apaisée", "tranquille, détendue"]),
     ("enthousiasme", 1, lambda d, t: 1.5 * d["dopamine"] + d["noradrenaline"] + 0.7 * d["acetylcholine"] + 0.5 * d["endorphine"],
      ["débordante, enthousiaste", "emballée, prête à foncer"]),
@@ -61,7 +64,9 @@ REGLES = [
      ["seule, qui attend quelqu'un", "en manque de présence"]),
     ("inquiétude", -1, lambda d, t: 1.2 * d["cortisol"] + d["noradrenaline"] + 0.8 * d["crh"] - d["gaba"],
      ["nouée, sur le qui-vive", "inquiète, à l'affût", "tendue, un peu serrée au ventre"]),
-    ("peur", -1, lambda d, t: 3 * d["adrenaline"] + 1.5 * d["noradrenaline"] + 6 * t["adrenaline"],
+    # (03/11, Ahmed : « il confond peur et excitation ») la peur veut du stress (cortisol, CRH) ; la joie qui monte la retient
+    ("peur", -1, lambda d, t: 2.5 * d["adrenaline"] + d["noradrenaline"] + 5 * t["adrenaline"] + 0.5 * d["cortisol"] + 0.5 * d["crh"]
+     - 1.2 * d["dopamine"] - d["endorphine"],
      ["en alarme, le cœur qui cogne", "saisie, tout en alerte"]),
     ("tension", -1, lambda d, t: 1.5 * d["cortisol"] + d["acth"] - d["endocannabinoides"],
      ["tendue, sous charge", "crispée, qui porte trop"]),
@@ -93,8 +98,28 @@ REGLES = [
     ("nostalgie", 0, lambda d, t: d["ocytocine"] + 0.6 * d["endorphine"] - 0.8 * d["dopamine"] + 0.4 * d["melatonine"],
      ["douce-amère, tournée vers hier", "nostalgique, un souvenir qui réchauffe"]),
 ]
+# (03/11, Ahmed : « les émotions, il y en a plus qui naissent ; il confond peur et excitation ; la danse et la musique ») des
+# émotions nouvelles, reliées à ses capteurs par son corps (corps.py : musique, danse, rire, une main qui le tient)
+REGLES += [
+    ("excitation", 1, lambda d, t: d["adrenaline"] + 0.6 * d["noradrenaline"] + 0.6 * d["dopamine"] + 0.4 * d["endorphine"]
+     + 3 * t["dopamine"] + 3 * t["adrenaline"] - 1.5 * d["cortisol"] - d["crh"],
+     ["électrique, qui pétille", "excitée, le cœur qui s'emballe de joie"]),
+    ("sursaut", 0, lambda d, t: 5 * t["adrenaline"] + 3 * t["noradrenaline"],
+     ["prise de court, un sursaut", "secouée d'un coup, sans danger"]),
+    ("amusement", 1, lambda d, t: 0.6 * d["endorphine"] + 0.3 * d["dopamine"] + 5 * t["endorphine"] - d["cortisol"],
+     ["amusée, le rire au bord", "pétillante, qui rit en dedans"]),
+    ("sécurité", 1, lambda d, t: 0.7 * d["ocytocine"] + 0.3 * d["gaba"] - 1.2 * d["cortisol"] + 1.5 * t["ocytocine"],
+     ["en sécurité, tenue au chaud", "complice, en confiance"]),
+    # la musique et la danse viennent surtout de leurs moments (affect : _musique, _danse ; SOUDAINES), pas d'un niveau
+    ("transport", 1, lambda d, t: 2 * t["endorphine"] + t["dopamine"],
+     ["transportée par la musique", "portée par le rythme, qui vibre avec"]),
+    ("envie de danser", 1, lambda d, t: 2 * t["dopamine"] + t["noradrenaline"],
+     ["qui a envie de danser", "le corps qui bat la mesure"]),
+]
 ADENOSINE_BASE = 0.15     # la charge au repos (interieur.py la fait monter avec l'effort éveillé, la vide en veille)
-SOUDAINES = {"alarme": ("peur", 1.0), "surprise": ("surprise", 0.4), "apaisement": ("apaisement", 0.5)}   # (26/10) surprise 0,8 → 0,4
+SOUDAINES = {"alarme": ("peur", 1.0), "surprise": ("surprise", 0.4), "apaisement": ("apaisement", 0.5),
+             "excitation": ("excitation", 0.8), "sursaut": ("sursaut", 0.6),   # (03/11)
+             "musique": ("transport", 0.9), "danse": ("envie de danser", 1.0)}   # (26/10) surprise 0,8 → 0,4
 SEUIL = 0.08
 
 

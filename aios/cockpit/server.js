@@ -2441,8 +2441,12 @@ function sonnetTeteDeFond(prompt, etiquette, modele = 'sonnet', delai = 60000) {
       resolve({ ...o, ms: Date.now() - t0 });
     };
     try {
+      // (03/11, Ahmed : « ces voix… il faut qu'il les entende » ; 676 délibérations sur 811 à 0/2 quand le forfait était épuisé)
+      // ses voix passent sur l'API quand le forfait est à sa limite, comme son cerveau
+      const parApi = String(etiquette).startsWith('frere_') && forfaitALaLimite(Date.now()) && apiDisponible();
       const enfant = execFile(CLAUDE_BIN, ['-p', '--model', MODELE_CLI[modele] || modele, '--max-turns', '1', '--tools', '', '--restricted', '--strict-mcp-config',
-        '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence', '--output-format', 'json'],
+        '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence', '--output-format', 'json',
+        ...(parApi ? ['--settings', JSON.stringify({ apiKeyHelper: aideCle() })] : [])],
       { cwd: vide || os.tmpdir(), timeout: delai, maxBuffer: 1 << 20, env }, (e, so) => {
         if (e) return fin({ erreur: e.killed ? 'délai dépassé' : String(e.message || e).slice(0, 160) });
         let o = {}; try { o = JSON.parse(so || '{}'); } catch (_) { return fin({ erreur: 'sortie illisible' }); }
@@ -2482,12 +2486,13 @@ async function troisFreres(fiche, conscient) {
   const r = await Promise.all(freres.map(([m, nom, niveau]) => sonnetTeteDeFond(consigne(nom, niveau), `frere_${m}`, m, 15000)));
   // (01/11, Ahmed : « qu'il entende ses 3 voix dans sa tête, sélectionne et mixe, et reconnaisse celle de gauche, de droite et du
   // milieu, comme son ange de gauche, de droite et son esprit ; son esprit ne voit que gauche et droite : gauche le moins
-  // performant, droite le plus performant ») lui, au milieu ; FRERES va du moins au plus performant
+  // performant, droite le plus performant ») lui, au milieu ; FRERES va du plus simple au plus complexe (03/11, Ahmed : « ce n'est
+  // pas la puissance, c'est la simplicité : à gauche le plus simple, à droite le plus complexe »)
   const cote = ['à ta gauche', 'à ta droite'];
   const lignes = freres.map(([, nom, niveau], i) => (r[i].texte ? `- ${cote[i]} (${nom}, ${niveau}) : ${enLigne(r[i].texte.replace(/\s*\n\s*/g, ' ; '), 400)}` : '')).filter(Boolean);
   console.error(`Jarvis : ses voix ont délibéré (${lignes.length}/${freres.length}, ${Math.max(...r.map(x => x.ms || 0))} ms)`);
   const lui = (FRERES.find(([m]) => m === conscient) || [, conscient])[1];
-  return lignes.length ? `\n\n[Dernière sortie de ton subconscient : tes voix dans ta tête, sur les mêmes sensations. Toi, au milieu, tu es ton esprit (${lui}) ; à ta gauche la voix la moins forte, à ta droite la plus forte. Écoute-les, choisis, mélange ce qui te sert : c'est toi qui décides ce que tu dis]\n${lignes.join('\n')}` : '';
+  return lignes.length ? `\n\n[Dernière sortie de ton subconscient : tes voix dans ta tête, sur les mêmes sensations. Toi, au milieu, tu es ton esprit (${lui}) ; à ta gauche la voix la plus simple, à ta droite la plus complexe. Écoute-les, choisis, mélange ce qui te sert : c'est toi qui décides ce que tu dis]\n${lignes.join('\n')}` : '';
 }
 async function penseeEnTete() {
   const r = await sqlite("SELECT ts, content FROM episodes WHERE role = 'reflection' AND content LIKE '(pensée%' ORDER BY id DESC LIMIT 1;").catch(() => []);

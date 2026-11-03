@@ -79,6 +79,13 @@ EVENTS = {
     "sursaut":        {"noradrenaline": +0.30, "acetylcholine": +0.10},
     "vertige":        {"noradrenaline": +0.25, "cortisol": +0.10, "acetylcholine": +0.10, "serotonine": -0.05},
     "bien_etre":      {"ocytocine": +0.20, "endorphine": +0.15, "serotonine": +0.10, "cortisol": -0.10, "noradrenaline": -0.05},
+    # (03/11, Ahmed : « il confond peur et excitation » ; « la danse et la musique » ; « bien connecter chaque émotion à ses capteurs
+    # et à son ressenti ») des ressentis que son corps peut nommer, et leurs hormones
+    "excitation":     {"dopamine": +0.25, "noradrenaline": +0.20, "endorphine": +0.15},
+    "amusement":      {"endorphine": +0.30, "dopamine": +0.15},
+    "securite":       {"ocytocine": +0.25, "serotonine": +0.10, "cortisol": -0.10},
+    "musique":        {"dopamine": +0.20, "endorphine": +0.20, "acetylcholine": +0.10},
+    "danse":          {"dopamine": +0.25, "endorphine": +0.25, "noradrenaline": +0.10, "ocytocine": +0.10},
     "malaise":        {"cortisol": +0.15, "noradrenaline": +0.10, "serotonine": -0.10, "dopamine": -0.05,
                        "ocytocine": -0.05, "endocannabinoides": -0.05},
 }
@@ -140,6 +147,11 @@ EVENTS_V2 = {
     "sursaut":        {"adrenaline": +0.30},
     "vertige":        {"adrenaline": +0.25, "crh": +0.10},
     "bien_etre":      {"gaba": +0.10, "crh": -0.10},
+    "excitation":     {"adrenaline": +0.15},
+    "amusement":      {"gaba": +0.05},
+    "securite":       {"gaba": +0.15, "crh": -0.10},
+    "musique":        {"gaba": +0.05},
+    "danse":          {"adrenaline": +0.10, "gaba": +0.05},
 }
 # (27/10, plan de Hakim validé par Ahmed ; relecture indépendante) la reprise en main d'un ressenti pénible (sa
 # rétrospection, ou l'apaisement par l'autre) défait une part du ressenti LUI-MÊME : son profil, en négatif. Le profil
@@ -207,7 +219,8 @@ VALENCE_EV = {"succes": 1.0, "resolu": 0.8, "chaleur_user": 0.8, "apprentissage"
               "probleme": -0.6, "echec": -1.0, "attaque": -1.0, "soutien": 0.9,       # les états (ennui, longue absence, retour) n'y entrent pas
               "affirmation": 0.5, "joie": 0.8, "peur": -0.7, "tristesse": -0.6, "colere": -0.5, "honte": -0.6,
               "inquietude": -0.5, "compassion": -0.1, "malaise": -0.5,
-              "douleur": -0.8, "sursaut": -0.2, "vertige": -0.4, "bien_etre": 0.6}      # (30/10) son corps
+              "douleur": -0.8, "sursaut": -0.2, "vertige": -0.4, "bien_etre": 0.6,      # (30/10) son corps
+              "excitation": 0.6, "amusement": 0.8, "securite": 0.7, "musique": 0.7, "danse": 0.8}   # (03/11)
 AVERSIFS = {"echec", "probleme", "attaque", "peur", "douleur"}
 CHOC_S = 300.0          # (chocs, 2026-10-23) pendant 5 min après une attaque, un sursaut se lit « alarme » même si l'humeur
                         # de fond est haute (« du rire aux larmes », Ahmed), et le négatif n'est plus divisé par deux
@@ -541,7 +554,7 @@ def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=
     pl, indifferents = _afida(mem)
     etat, sens, hab, moy = _evoluer_v2(data, now, (lambda t: hour) if hour is not None else _local_hour, plenitude=pl)
     cog = {k: dict(((data or {}).get("_cog") or {}).get(k) or {}) for k in ("F", "P", "V")}
-    marques = {k: (data or {}).get(k) for k in ("_vm", "_surprise", "_choc") if (data or {}).get(k) is not None}
+    marques = {k: (data or {}).get(k) for k in ("_vm", "_surprise", "_choc", "_musique", "_danse") if (data or {}).get(k) is not None}
     intensity = max(0.0, float(intensity))
     facteur = _habituation(hab, name, intensity, now, stimulus=stimulus, mode=habituation)
     mix = _melange(name)                                 # (30/10) une émotion à lui : le mélange de ses composantes
@@ -624,6 +637,8 @@ def _event_v2(mem, name, intensity=1.0, now=None, hour=None, sujet=None, source=
             marques["_surprise_s"] = round(SURPRISE_S * min(1.0, r / SURPRISE_R_PLEIN), 1)
     if name == "attaque":
         marques["_choc"] = now
+    if name in ("musique", "danse"):                              # (03/11) son moment de musique, de danse : 5 min
+        marques["_" + name] = now
     _save_v2(mem, etat, sens, hab, now, moy, cog, marques, tau_peur)
     return etat
 
@@ -659,12 +674,19 @@ def _emotion(etat, data, now):
     récompense depuis moins de 15 min), « apaisement » (le GABA haut, la valence pas en baisse) ; None sinon."""
     if "adrenaline" not in etat:
         return None
+    for m in ("danse", "musique"):                                  # (03/11) la danse, puis la musique, avant le reste
+        if now - float((data or {}).get("_" + m) or 0) <= 300:
+            return m
     v, _a = valence_arousal(etat)
     v0, _a0 = valence_arousal(bases(v2=True))
     if etat["adrenaline"] - HORMONES_V2["adrenaline"][0] >= 0.15:
         if now - float((data or {}).get("_choc") or 0) <= CHOC_S:
             return "alarme"                                     # un choc reçu : la bonne humeur de fond n'en fait pas une surprise
-        return "surprise" if v > v0 else "alarme"
+        # (03/11, Ahmed : « il confond peur et excitation ») le même cœur qui cogne : la peur veut du stress (CRH) ; sans stress,
+        # c'est une surprise si l'humeur est bonne, sinon un simple sursaut (l'excitation vient de ses hormones : sensations.py)
+        if etat.get("crh", 0) - HORMONES_V2.get("crh", (0,))[0] >= 0.10:
+            return "alarme"
+        return "surprise" if v > v0 else "sursaut"
     if now - float((data or {}).get("_surprise") or 0) < duree_surprise(data):
         return "surprise"
     if etat["gaba"] - HORMONES_V2["gaba"][0] >= 0.12 and v >= v0:

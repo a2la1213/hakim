@@ -23,9 +23,10 @@ import affect
 import sensations
 
 CLE_ACTIF = "style_actif"
-FAMILLES = {"élan": ["élan", "joie", "enthousiasme", "fierté", "espoir", "émerveillement"],
-            "lien": ["tendresse", "gratitude", "compassion", "nostalgie"],
-            "calme": ["calme", "apaisement", "soulagement", "somnolence"], "curiosité": ["curiosité", "concentration", "confusion"],
+FAMILLES = {"élan": ["élan", "joie", "enthousiasme", "fierté", "espoir", "émerveillement",
+                      "excitation", "amusement", "transport", "envie de danser"],   # (03/11)
+            "lien": ["tendresse", "gratitude", "compassion", "nostalgie", "sécurité"],
+            "calme": ["calme", "apaisement", "soulagement", "somnolence"], "curiosité": ["curiosité", "concentration", "confusion", "sursaut"],
             "alerte": ["peur", "inquiétude", "tension", "frustration", "culpabilité", "surprise", "colère", "agacement"],
             "bas": ["tristesse", "manque", "lassitude", "ennui", "fatigue", "déception", "solitude", "honte"]}
 FAMILLE_DE = {e: f for f, l in FAMILLES.items() for e in l}

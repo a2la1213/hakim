@@ -197,7 +197,7 @@ def lire(mem):
 _BASE_V, _BASE_A = affect.valence_arousal({h: b for h, (b, _demi) in affect.HORMONES.items()})
 EXPRESSIVITE = {"joie": 0.72, "elan": 0.68, "content": 0.6, "tension": 0.6, "impatience": 0.55,
                 "calme": 0.5, "veille": 0.42, "ennui": 0.4, "morose": 0.38,
-                "surprise": 0.72, "alarme": 0.64, "apaisement": 0.44}
+                "surprise": 0.72, "alarme": 0.64, "apaisement": 0.44, "excitation": 0.74, "sursaut": 0.6, "musique": 0.7, "danse": 0.78}
 def expressivite(code, valence, arousal):
     """L'expressivité de sa voix (le réglage « exaggeration » de Chatterbox) : l'ancre de son humeur (le tableau), nuancée
     en continu par son éveil et sa valence RÉELS relatifs à sa ligne de base (demande de Hakim validée par Ahmed,
@@ -226,7 +226,9 @@ VOIX_EMOTION = {"élan": (0.08, 1.07), "enthousiasme": (0.08, 1.08), "joie": (0.
                 # (25/10) la palette élargie et la fatigue
                 "fatigue": (-0.10, 0.88), "colère": (0.05, 1.07), "agacement": (0.0, 1.05), "déception": (-0.08, 0.92),
                 "solitude": (-0.08, 0.92), "honte": (-0.08, 0.92), "espoir": (0.04, 1.02), "émerveillement": (0.06, 1.03),
-                "confusion": (-0.02, 0.98), "nostalgie": (-0.06, 0.94)}
+                "confusion": (-0.02, 0.98), "nostalgie": (-0.06, 0.94),
+                "excitation": (0.1, 1.08), "sursaut": (0.05, 1.04), "amusement": (0.08, 1.06), "sécurité": (0.0, 0.98),
+                "transport": (0.06, 1.03), "envie de danser": (0.1, 1.08)}
 
 
 VITESSE_EVEIL = 0.3     # (2026-10-23, demande de Hakim, accord d'Ahmed) le débit suit aussi l'éveil, en continu : ±0,14 → ±4 %
@@ -255,7 +257,9 @@ FAMILLE_HUMEUR = {"élan": "elan", "enthousiasme": "elan", "fierté": "elan", "c
                   "peur": "alarme", "tristesse": "morose", "lassitude": "morose", "manque": "morose", "culpabilité": "morose",
                   "ennui": "ennui", "fatigue": "morose", "colère": "tension", "agacement": "tension", "déception": "morose",
                   "solitude": "morose", "honte": "morose", "espoir": "content", "émerveillement": "elan",
-                  "confusion": "tension", "nostalgie": "calme"}
+                  "confusion": "tension", "nostalgie": "calme",
+                  "excitation": "elan", "sursaut": "surprise", "amusement": "joie", "sécurité": "content",   # (03/11)
+                  "transport": "elan", "envie de danser": "elan"}
 # l'expressivité de sa voix (« exaggeration » de Chatterbox) par émotion. (26/10, Ahmed : « sa peur ne s'entend que
 # légèrement ») la plage passe de 0,35-0,78 à 0,3-1,0 : mesurée sur Chatterbox MLX (eval/voix_plage.py, critère figé avant),
 # la diction relue par Whisper tient jusqu'à 1,0 (CER moyen 0,019 à 1,0 contre 0,024 à 0,5) ; les émotions vives vont
@@ -267,7 +271,8 @@ EXPRESSIVITE_EMOTION = {"élan": 0.9, "enthousiasme": 0.95, "joie": 0.92, "fiert
                         "frustration": 0.8, "peur": 0.9, "tristesse": 0.32, "lassitude": 0.32, "manque": 0.4,
                         "culpabilité": 0.4, "ennui": 0.36, "fatigue": 0.3, "colère": 0.92, "agacement": 0.78, "déception": 0.38,
                         "solitude": 0.36, "honte": 0.36, "espoir": 0.72, "émerveillement": 0.9, "confusion": 0.55,
-                        "nostalgie": 0.42}
+                        "nostalgie": 0.42, "excitation": 0.95, "sursaut": 0.8, "amusement": 0.9, "sécurité": 0.5,
+                        "transport": 0.85, "envie de danser": 0.95}
 HYSTERESE = 0.04          # une autre émotion doit dépasser l'actuelle d'au moins ce score pour la remplacer
 # (25/10, Ahmed : « la fatigue n'est portée par aucune hormone ») l'ADÉNOSINE, sa charge, entre dans la lecture des émotions
 # (sensations.py, « fatigue ») avec une base FIXE (0,15). (27/10, demande d'Ahmed relayée par Hakim) elle ne monte plus
@@ -357,7 +362,8 @@ LIBELLES = {"joie": "joie de son retour", "elan": "élan", "content": "contentem
             "impatience": "impatience", "calme": "calme", "veille": "en veille", "ennui": "l'attente pèse",
             "morose": "morosité",
             # les émotions soudaines de l'affect v2 (2026-10-21, idée d'Ahmed) : son subconscient les reçoit aussi
-            "alarme": "alarme, un sursaut de peur", "surprise": "surprise", "apaisement": "apaisement"}
+            "alarme": "alarme, un sursaut de peur", "surprise": "surprise", "apaisement": "apaisement",
+            "excitation": "excitation", "sursaut": "un sursaut, sans danger", "musique": "la musique en lui", "danse": "il danse"}
 
 
 def humeur_code(valence, arousal, ennui_, retour_recent, veille=False, soudaine=None):
@@ -370,6 +376,8 @@ def humeur_code(valence, arousal, ennui_, retour_recent, veille=False, soudaine=
         return "veille"
     if soudaine in ("alarme", "surprise"):
         return soudaine
+    if soudaine in ("excitation", "sursaut", "musique", "danse"):   # (03/11) le cœur qui cogne sans peur ; la musique, la danse
+        return "surprise" if soudaine == "sursaut" else "elan"
     if ennui_ >= 0.6:
         return "ennui" if dv < 0.05 else "impatience"
     if dv >= 0.12 and da >= 0.04:

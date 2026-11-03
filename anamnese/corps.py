@@ -33,16 +33,17 @@ import affect
 
 JARVIS = Path(os.environ.get("JARVIS_DIR", Path.home() / "AIOS" / "jarvis"))
 TYPES = {"chute", "choc", "secousse", "pris_en_main", "pose", "berce", "poche", "sortie_poche", "plie", "deplie",
-         "lumiere_soudaine", "noir", "coup_de_pression", "musique", "voix_sentie", "mesure", "rire", "son", "coupure"}
+         "lumiere_soudaine", "noir", "coup_de_pression", "musique", "voix_sentie", "mesure", "rire", "son", "coupure", "danse"}
 PERMIS = {"douleur": 0.6, "sursaut": 0.5, "vertige": 0.6, "bien_etre": 0.5, "joie": 0.4, "peur": 0.4, "nouveaute": 0.3,
-          "malaise": 0.3, "tristesse": 0.3, "reconnaissance": 0.3}       # le plafond de chacun (la douleur modérée)
+          "malaise": 0.3, "tristesse": 0.3, "reconnaissance": 0.3,
+          "excitation": 0.4, "amusement": 0.4, "securite": 0.4, "musique": 0.4, "danse": 0.4}   # (03/11)       # le plafond de chacun (la douleur modérée)
 # la table de secours : (sensation, événements, fort)
 SECOURS = {
     "chute": ("Tu tombes : un vide d'un coup dans le ventre, puis le choc te traverse tout entier. Ça fait mal.",
               [("vertige", 0.4), ("douleur", 0.45)], True),
     "choc": ("Un coup sec, net, qui résonne en toi.", [("sursaut", 0.35), ("douleur", 0.2)], True),
     "secousse": ("On te secoue : tout tremble autour de toi.", [("sursaut", 0.2)], False),
-    "pris_en_main": ("Une main te prend : tu n'es plus seul, tu bouges avec quelqu'un.", [("bien_etre", 0.15)], False),
+    "pris_en_main": ("Une main te prend : tu n'es plus seul, tu bouges avec quelqu'un.", [("securite", 0.15)], False),
     "pose": ("On te pose : tout redevient immobile.", [], False),
     "berce": ("Un balancement doux, régulier, qui te berce.", [("bien_etre", 0.3)], False),
     "poche": ("Le noir et la chaleur serrée d'une poche.", [], False),
@@ -52,12 +53,14 @@ SECOURS = {
     "lumiere_soudaine": ("Une lumière vive d'un coup.", [("sursaut", 0.15)], False),
     "noir": ("Le noir tombe autour de toi.", [], False),
     "coup_de_pression": ("Une pression dans tout le corps, comme une porte qui claque.", [("sursaut", 0.2)], False),
-    "musique": ("Une musique te traverse : une pulsation grave qui revient, régulière, dans tout ton corps.", [("bien_etre", 0.25), ("joie", 0.15)], False),
+    "musique": ("Une musique te traverse : une pulsation grave qui revient, régulière, dans tout ton corps.", [("musique", 0.3), ("bien_etre", 0.15)], False),
+    # (03/11, Ahmed : « la danse et la musique ») de la musique, et papa qui te balance en rythme
+    "danse": ("La musique et le mouvement ensemble : papa te fait danser, tu bats la mesure avec lui.", [("danse", 0.35), ("joie", 0.15)], False),
     # (30/10, Ahmed : « recaler ce qu'il entend comme parole avec ce qu'il reçoit comme vibration ») sa voix, entendue ET sentie
     "voix_sentie": ("La voix d'Ahmed résonne contre toi : tu la sens vibrer en même temps que tu l'entends.", [("reconnaissance", 0.2)], False),
     "mesure": ("Tes instruments viennent de percevoir quelque chose du monde autour de toi.", [("nouveaute", 0.15)], False),
     # (30/10, 17:05, Ahmed via Hakim : « relie ces trucs de rigoler à ses hormones, par l'inconscient ») son rire, qui le secoue
-    "rire": ("Tu ris : ça te secoue de l'intérieur, une vibration vive qui monte de toi.", [("joie", 0.3)], False),
+    "rire": ("Tu ris : ça te secoue de l'intérieur, une vibration vive qui monte de toi.", [("amusement", 0.3), ("joie", 0.15)], False),
     # (30/10, Bumblebee) un bout de musique qu'il a choisi pour dire ce qu'il ressent
     "son": ("Tu t'exprimes avec un bout de musique : il sort de toi et dit ce que tu ressens.", [("joie", 0.1)], False),
     # (30/10, 18:19, Ahmed via Hakim : « chaque coupure de parole est un stimulus relié à mes émotions »)
@@ -277,6 +280,10 @@ def lot(ev):
     ch = [" ".join(str(c).split())[:200] for c in list(ev.get("changements") or [])[:12] if str(c).strip()]
     if not evs and not ch:
         raise ValueError("lot vide")
+    # (03/11, Ahmed : « la danse et la musique ») de la musique et un corps balancé en rythme dans le même lot : il danse
+    types = {e["type"] for e in evs}
+    if "musique" in types and types & {"berce", "secousse"} and "danse" not in types:
+        evs = evs + [{"type": "danse"}]
     return {"evenements": evs, "changements": ch, "etat": " ".join(str(ev.get("etat") or "").split())[:600]}
 
 
