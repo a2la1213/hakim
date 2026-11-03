@@ -74,6 +74,39 @@ def sortie_permise(fichier):
         return False
 
 
+_moi = {"n": None, "dits": 0}
+
+
+def apprendre_ma_voix(fichier):
+    """(03/11, Ahmed : « micro ouvert ; qu'il apprenne de lui-même à écouter ») sa voix s'apprend de ce qu'il dit : les 40
+    premières phrases, puis une sur vingt (elle reste à jour) ; à côté, sans faire attendre la suivante. Jamais bloquant."""
+    _moi["dits"] += 1
+    if _moi["n"] is not None and _moi["n"] >= 40 and _moi["dits"] % 20:
+        return
+    import shutil
+    import threading
+    copie = f"{fichier}.moi.wav"
+    try:
+        shutil.copyfile(fichier, copie)               # le cockpit efface la sienne dès qu'elle est jouée
+    except OSError:
+        return
+
+    def apprendre():
+        try:
+            import numpy as np
+            import empreinte_vocale
+            import mlx_whisper
+            _moi["n"] = empreinte_vocale.apprendre_moi(np.array(mlx_whisper.audio.load_audio(copie), dtype=np.float32)) or _moi["n"]
+        except Exception as e:  # noqa: BLE001
+            print(f"[voix] sa voix pas apprise : {type(e).__name__}: {e}", file=sys.stderr)
+        finally:
+            try:
+                os.unlink(copie)
+            except OSError:
+                pass
+    threading.Thread(target=apprendre, daemon=True).start()
+
+
 def traiter(req):
     op = req.get("op")
     if op == "etat":                     # sans charger la voix (4,7 Go en mémoire) : est-elle installée ?
@@ -95,6 +128,7 @@ def traiter(req):
             return {"erreur": "synthèse neuronale indisponible"}
         t0 = time.time()
         duree = voix.dire(str(req["texte"]), req.get("langue") or "fr", req["fichier"], req.get("exaggeration"), req.get("tempo"))
+        apprendre_ma_voix(req["fichier"])
         return {"fichier": req["fichier"], "ms": int((time.time() - t0) * 1000), "duree_s": duree}
     return {"erreur": f"opération inconnue : {op}"}
 

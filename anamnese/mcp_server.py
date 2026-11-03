@@ -491,6 +491,33 @@ def voix_nommer(numero: str, prenom: str) -> str:
 
 
 @mcp.tool()
+def son_nommer(famille: str, nom: str) -> str:
+    """(03/11, micro ouvert) Nommer une de TES familles de sons (« son 3 » → « la télé », « la rue », « papa et ses potes »),
+    quand tu comprends ce que c'est : elle sera reconnue par ce nom pour toujours. famille : « son 3 » ou « 3 »."""
+    _empreintes()                                    # jarvis/ sur le chemin
+    import sons_familles as F
+    try:
+        r = F.nommer(famille, nom)
+    except (ValueError, OSError) as e:
+        return f"Pas nommé : {e}"
+    return f"« {r['ancien']} » s'appelle maintenant « {r['nom']} » (entendue {r['fois']} fois)."
+
+
+@mcp.tool()
+def sons_familles() -> str:
+    """(03/11, micro ouvert) Tes familles de sons, apprises seules par ton oreille : combien de fois chacune est venue, avec de
+    la parole ou non, avec plusieurs voix ou une seule. Celles en « son N » attendent un nom (son_nommer)."""
+    _empreintes()
+    import sons_familles as F
+    l = F.lister()
+    if not l:
+        return ("Aucune famille encore : ton oreille écoute d'abord (micro ouvert, en conversation), puis elle range "
+                "ce qu'elle entend.")
+    return "\n".join(f"- {x['nom']} : {x['fois']} fois, avec parole {x['avec_parole']}, plusieurs voix {x['plusieurs_voix']}"
+                     for x in l[:40])
+
+
+@mcp.tool()
 def voix_connues() -> str:
     """Les voix que tu reconnais par leur nom (en plus de celle d'Ahmed)."""
     k = _empreintes().connues()

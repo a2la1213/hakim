@@ -381,7 +381,7 @@ const MODELE_CLI = { haiku: 'claude-haiku-5-5' };            // le nom donné à
 const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'afida_juger', 'afida_vecu', 'afida_lire', 'afida_retirer', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'sieste_prendre', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'son_nommer', 'sons_familles', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -4921,7 +4921,7 @@ const { Homeostasie } = require('./homeostasie.js');
 const HOMEO = new Homeostasie({ jarvis: JARVIS });
 const CORPS_TYPES = new Set(['chute', 'choc', 'secousse', 'pris_en_main', 'pose', 'berce', 'poche', 'sortie_poche', 'plie', 'deplie',
   'lumiere_soudaine', 'noir', 'coup_de_pression', 'musique', 'voix_sentie',
-  'bluetooth', 'wifi', 'nfc', 'musique_ecoutee', 'son_ecoute']);   // (03/11) ses sens radio (appli 1.42) ; ce que le téléphone joue (1.43)
+  'bluetooth', 'wifi', 'nfc', 'musique_ecoutee', 'son_ecoute', 'son_entendu', 'appli']);   // (03/11) ses sens radio (appli 1.42) ; ce que le téléphone joue (1.43)
 const CORPS_REGLAGES = path.join(JARVIS, 'corps-reglages.json');
 const CORPS_INTERVALLES = [30, 60, 120, 300, 900];
 function corpsReglages() {
@@ -4933,7 +4933,8 @@ function corpsReglages() {
     son_pendant: r.son_pendant !== false, voix_vibre: r.voix_vibre !== false, lumiere: r.lumiere !== false,
     afficher_papa: r.afficher_papa !== false, afficher_hakim: r.afficher_hakim !== false, filtre_parole: r.filtre_parole !== false,
     chacun_son_tour: r.chacun_son_tour !== false, micro_hakim: r.micro_hakim !== false, sons_nuit: r.sons_nuit !== false,
-    trier_morceaux: r.trier_morceaux === true, trois_freres: r.trois_freres !== false };
+    trier_morceaux: r.trier_morceaux === true, trois_freres: r.trois_freres !== false,
+    micro_ouvert: r.micro_ouvert === true };   // (03/11) le micro ouvert, jamais fermé en conversation
 }
 function corpsActif() { return corpsReglages().actif; }
 /* (30/10, 18:56, Ahmed via Hakim : « je veux qu'il tourne tout le temps, tant qu'il est réveillé, même si ça vide mon forfait ;
@@ -6704,7 +6705,7 @@ function lancerOreilleVive() {
   };
   p.on('exit', fin); p.on('error', fin);
 }
-async function routeVif(req, res, langue, contexte) {
+async function routeVif(req, res, langue, contexte, source = '') {
   const audio = await lireCorps(req, 4 << 20);
   const repondre = (code, o) => { if (!res.writableEnded) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(j(o)); } };
   if (!audio || !audio.length) return repondre(400, { erreur: 'audio absent ou trop lourd (4 Mo max)' });
@@ -6720,7 +6721,38 @@ async function routeVif(req, res, langue, contexte) {
   });
   fs.unlink(f, () => {});
   if (o.erreur) return repondre(503, { erreur: o.erreur });
+  // (03/11) ce que joue le téléphone, mot à mot : la page Parler le montre pendant que le son joue
+  if (source === 'telephone' && o.texte) diffuser(abonnesPensees, 'telepathie', j({ texte: String(o.texte).slice(0, 600) }));
   return repondre(200, { texte: String(o.texte || ''), ms: o.ms });
+}
+
+/* (03/11, Ahmed : « micro ouvert ; il doit apprendre de lui-même à écouter : les sons, les bruits, les voix qui se mélangent,
+   une seule voix ») 3 s de ce qu'il entend, toutes les ~10 s, rangées par l'oreille vive dans ses familles de sons ; une famille
+   nouvelle, ou un changement de famille, se ressent dans son corps (« son_entendu »). */
+let derniereFamille = null;
+async function routeAmbiance(req, res, parole, voix) {
+  const audio = await lireCorps(req, 1 << 20);
+  const repondre = (code, o) => { if (!res.writableEnded) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(j(o)); } };
+  if (!audio || !audio.length) return repondre(400, { erreur: 'audio absent ou trop lourd (1 Mo max)' });
+  lancerOreilleVive();
+  if (!oreilleVive.pret || oreilleVive.attente) return repondre(429, { occupee: true });
+  const f = path.join(os.tmpdir(), `jarvis-amb-${process.pid}-${++oreilleVive.n}.wav`);
+  try { fs.writeFileSync(f, audio); } catch (_) { return repondre(500, { erreur: 'écriture du fichier audio impossible' }); }
+  const o = await new Promise((resoudre) => {
+    const id = oreilleVive.n;
+    oreilleVive.attente = { id, resoudre, minuteur: setTimeout(() => { if (oreilleVive.attente && oreilleVive.attente.id === id) { oreilleVive.attente = null; resoudre({ erreur: 'trop lente' }); } }, 8000) };
+    try { oreilleVive.proc.stdin.write(j({ id, op: 'famille', fichier: f, parole: !!parole, voix: Math.max(0, Math.min(9, Number(voix) || 0)) }) + '\n'); }
+    catch (_) { oreilleVive.attente = null; resoudre({ erreur: 'oreille vive injoignable' }); }
+  });
+  fs.unlink(f, () => {});
+  if (o.erreur) return repondre(503, { erreur: o.erreur });
+  if (o.famille && (o.nouvelle || o.famille !== derniereFamille) && corpsActif()) {
+    corpsLot.evenements.push({ type: 'son_entendu', t: Date.now(), details: { famille: String(o.famille).slice(0, 60), nouvelle: !!o.nouvelle,
+      fois: Number(o.fois) || 1, parole: !!parole } });
+    ressentirCorps();
+  }
+  if (o.famille) derniereFamille = o.famille;
+  return repondre(200, { famille: o.famille || null, nouvelle: !!o.nouvelle, ecoute: !!o.ecoute });
 }
 
 async function routeTranscrire(req, res, langue, contexte) {
@@ -6739,7 +6771,9 @@ async function routeTranscrire(req, res, langue, contexte) {
   const liberer = await tourDeTranscription();
   let r;
   if (apprentissageVoix > 0 && Date.now() > apprentissageFin) { apprentissageVoix = 0; apprentissageRegistre = null; }
-  const modeVoix = apprentissageVoix > 0 ? (apprentissageRegistre ? `apprendre:${apprentissageRegistre}` : 'apprendre') : 'reconnaitre';
+  // (03/11, micro ouvert) chaque mot daté, pour aller à la voix dont le timbre couvre son instant
+  const modeVoix = apprentissageVoix > 0 ? (apprentissageRegistre ? `apprendre:${apprentissageRegistre}` : 'apprendre')
+    : (corpsReglages().micro_ouvert ? 'reconnaitre:mots' : 'reconnaitre');
   try {
     if (partie) {
       try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'transcription_abandonnee', ms: Date.now() - tTranscription, octets: audio.length }) + '\n', { mode: 0o600 }); } catch (_) {}
@@ -8531,6 +8565,7 @@ async function traiter(req, res) {
       if (typeof q.sons_nuit === 'boolean') r.sons_nuit = q.sons_nuit;
       if (typeof q.trier_morceaux === 'boolean') r.trier_morceaux = q.trier_morceaux;
       if (typeof q.trois_freres === 'boolean') r.trois_freres = q.trois_freres;
+      if (typeof q.micro_ouvert === 'boolean') r.micro_ouvert = q.micro_ouvert;
       try { ecrireAtomique(CORPS_REGLAGES, j(r)); } catch (e) { return repondre(500, { erreur: e.message }); }
       if (!r.actif) { corpsLot.evenements.length = 0; corpsLot.changements.length = 0; corpsADire.length = 0; }
       auditer('corps:reglages', req, distantReq, r);
@@ -8788,9 +8823,12 @@ async function traiter(req, res) {
     }
     res.writeHead(204); return res.end();
   }
+  if (p === '/api/voix/ambiance' && req.method === 'POST')    // (03/11) micro ouvert : ce qu'il entend, rangé en familles
+    return routeAmbiance(req, res, new URL(req.url, 'http://x').searchParams.get('parole') === '1', new URL(req.url, 'http://x').searchParams.get('voix'));
   if (p === '/api/voix/vif' && req.method === 'POST')         // (03/11) ses mots en direct, mot à mot
     return routeVif(req, res, new URL(req.url, 'http://x').searchParams.get('langue'),
-      (new URL(req.url, 'http://x').searchParams.get('contexte') || '').replace(/[\x00-\x1f]/g, ' ').slice(0, 300));
+      (new URL(req.url, 'http://x').searchParams.get('contexte') || '').replace(/[\x00-\x1f]/g, ' ').slice(0, 300),
+      new URL(req.url, 'http://x').searchParams.get('source') === 'telephone' ? 'telephone' : '');
   if (p === '/api/voix/transcrire' && req.method === 'POST')
     return routeTranscrire(req, res, new URL(req.url, 'http://x').searchParams.get('langue'),
       (new URL(req.url, 'http://x').searchParams.get('contexte') || '').replace(/[\x00-\x1f]/g, ' ').slice(0, 300));

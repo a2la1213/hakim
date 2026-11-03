@@ -132,7 +132,7 @@ def transcrire(fichier, langue=None, contexte="", voix=None, avec_temps=False):
     amorce = base + (" " + contexte.strip()[-200:] if contexte and contexte.strip() else "")
     exacte = os.environ.get("JARVIS_PROSODIE_EXACTE") == "1"     # le temps de chaque mot : ~1 s de plus par transcription
     r = mlx_whisper.transcribe(audio, path_or_hf_repo=MODELE, initial_prompt=amorce, language=langue,
-                               condition_on_previous_text=False, word_timestamps=exacte or avec_temps)
+                               condition_on_previous_text=False, word_timestamps=exacte or avec_temps or voix == "reconnaitre:mots")   # (03/11) micro ouvert : chaque mot à sa voix
     texte = filtrer_segments(r.get("segments") or [{"text": r.get("text")}], base)
     sortie = {"texte": texte, "langue": r.get("language"), "ms": int((time.time() - t0) * 1000)}
     if avec_temps:
@@ -159,7 +159,7 @@ def transcrire(fichier, langue=None, contexte="", voix=None, avec_temps=False):
                         sortie["voix"]["appris"] = n
                 else:
                     sortie["voix"]["pas_appris"] = "moins de 3 s d'audio"
-            elif voix == "reconnaitre":
+            elif str(voix).startswith("reconnaitre"):
                 # la prosodie mot par mot (2026-10-20) : les mots appuyés, le contour de fin — des indices
                 try:
                     import prosodie
@@ -181,7 +181,9 @@ def transcrire(fichier, langue=None, contexte="", voix=None, avec_temps=False):
                 # plusieurs voix dans le même message : le texte est étiqueté par voix
                 etiquete, resume = empreinte_vocale.etiqueter(brut, segments_gardes(r.get("segments") or [], base),
                                                             nouveau_tour=not (contexte and contexte.strip()))
-                if etiquete and resume and (resume["autres"] or resume["plusieurs"]):
+                if resume and resume.get("moi"):                        # (03/11) sa propre voix entendue : mise de côté
+                    sortie["moi"] = resume["moi"]
+                if etiquete is not None and resume and (resume["autres"] or resume["plusieurs"] or resume.get("moi")):
                     sortie["texte"] = etiquete
                     sortie["voix"] = {**(sortie.get("voix") or {}), "locuteurs": resume["voix"],
                                       "verdict": "plusieurs" if resume["plusieurs"] and resume["ahmed"]

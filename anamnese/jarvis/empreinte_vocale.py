@@ -245,9 +245,42 @@ def oublier(nom, fichier=None):
     return len(k) - len(reste)
 
 
-def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None):
-    """segments : [{start, end, text}] (gardés par stt). Rend (texte étiqueté, résumé) ; résumé = {"voix": [...],
-    "plusieurs": bool, "ahmed": bool}. Sans voix reconnaissable : (None, None)."""
+# ---- (03/11, Ahmed : « micro ouvert, jamais fermé ; il doit apprendre de lui-même à écouter et focaliser son attention ; si
+# plusieurs voix se mélangent, il doit pouvoir séparer chaque voix selon son timbre ») ----
+# - SA propre voix : apprise de ce qu'il dit (sa voix de synthèse, voix_serveur « dire »), sans rien demander à personne ;
+#   ce qui sonne comme lui est mis de côté (« moi ») : c'est l'écho de sa voix, pas papa qui parle.
+# - Mot à mot : quand Whisper date les mots, le segment est écouté par fenêtres de 1,5 s (pas de 0,75 s) ; chaque mot va à
+#   la voix de la fenêtre la plus proche de son instant, même au milieu d'une phrase. Une fenêtre isolée qui ne ressemble à
+#   personne (à cheval sur deux voix) ne crée pas de voix : il en faut deux de suite.
+MOI = Path.home() / "AIOS" / "jarvis" / "empreinte-moi.json"
+MOI_MAX, SEUIL_MOI = 40, 0.5
+FENETRE_S, PAS_S = 1.5, 0.75
+
+
+def apprendre_moi(audio, fichier=None):
+    """Un échantillon de SA voix (ce qu'il vient de dire) ; rend le nombre d'échantillons, ou None si trop court."""
+    v = embedding(audio)
+    if v is None:
+        return None
+    f = Path(fichier or MOI)
+    d = _lire(f) or {"vecteurs": []}
+    d["vecteurs"] = (d.get("vecteurs", []) + [v.round(5).tolist()])[-MOI_MAX:]
+    m = np.mean(np.array(d["vecteurs"]), axis=0)
+    d["moyenne"] = (m / (np.linalg.norm(m) or 1.0)).round(5).tolist()
+    d["maj"] = time.time()
+    _ecrire(f, d)
+    return len(d["vecteurs"])
+
+
+def _moyenne_moi(fichier=None):
+    d = _lire(fichier or MOI)
+    return np.array(d["moyenne"]) if d and d.get("moyenne") and len(d.get("vecteurs", [])) >= 3 else None
+
+
+def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None, moi=None):
+    """segments : [{start, end, text[, words]}] (gardés par stt). Rend (texte étiqueté, résumé) ; résumé = {"voix": [...],
+    "plusieurs": bool, "ahmed": bool, "autres": [...], "moi": ce qu'il a entendu de SA voix ou ""}. Le texte rendu peut
+    être vide (tout était sa voix). Sans voix reconnaissable : (None, None)."""
     t = time.time() if maintenant is None else maintenant
     _charger_salle(t)
     if t - _salle["ts"] > SALLE_DUREE_S:
@@ -258,53 +291,116 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None)
     d = _lire(fichier)
     moyenne = np.array(d["moyenne"]) if d and d.get("moyenne") and len(d.get("vecteurs", [])) >= 2 else None
     ahmed = (lambda v: score_ahmed(v, d)) if moyenne is not None else None
+    sa_voix = _moyenne_moi(moi)
     nommees = [(x["nom"], np.array(x["moyenne"])) for x in connues()]
     a = np.asarray(audio, dtype=np.float32)
-    morceaux, vus = [], []
+
+    def connu(v):
+        """La voix d'un vecteur parmi celles qu'il connaît (lui, Ahmed, les nommées, celles de la salle) ; None : inconnue."""
+        sm = float(np.dot(v, sa_voix)) if sa_voix is not None else -1.0
+        sa = ahmed(v) if ahmed else -1.0
+        proches = [(float(np.dot(v, x["c"])), x) for x in _salle["voix"]]
+        s, x = max(proches, key=lambda p: p[0]) if proches else (-1.0, None)
+        sn = max((float(np.dot(v, c)) for _n, c in nommees), default=-1.0)
+        if sm >= SEUIL_MOI and sm > max(sa, s, sn) + 0.05:
+            return "moi", None
+        if sa >= SEUIL_AHMED:
+            return "Ahmed", None
+        if nommees and sn >= SEUIL_AHMED:
+            return max(nommees, key=lambda p: float(np.dot(v, p[1])))[0], None          # une voix connue, par son nom
+        if sa >= SEUIL_DOUTE and sa > max(s, sn) + 0.1:
+            # (2026-10-20) une phrase d'Ahmed dans un registre inhabituel : plus proche de lui que de toute autre voix
+            # entendue — c'est lui, pas une « voix 3 »
+            return "Ahmed", None
+        if x is not None and s >= SEUIL_MEME_VOIX:
+            return x["nom"], x
+        return None, None
+
+    def ajouter(v, x=None):
+        if x is not None:
+            x["c"] = (x["c"] * x["n"] + v) / (x["n"] + 1)
+            x["c"] /= (np.linalg.norm(x["c"]) or 1.0)
+            x["n"] += 1
+            return x["nom"]
+        nom = f"voix {len(_salle['voix']) + (2 if moyenne is not None else 1)}"
+        _salle["voix"].append({"nom": nom, "c": v / (np.linalg.norm(v) or 1.0), "n": 1})
+        return nom
+
+    def qui_segment(brut):
+        v = embedding(brut, SEGMENT_MIN_S) if len(brut) >= SEGMENT_MIN_S * TAUX else None
+        if v is None:
+            return _salle["dernier"] or ("Ahmed" if moyenne is not None else "voix 1")
+        q, x = connu(v)
+        return q if q in ("moi", "Ahmed") or (q and x is None) else ajouter(v, x)
+
+    def unites_mot_a_mot(sg, mots):
+        """[(qui, texte)] : chaque mot à la voix de la fenêtre la plus proche de son instant."""
+        debut, fin = float(sg.get("start", 0)), float(sg.get("end", 0))
+        centres, fen = [], []
+        p = debut
+        while p + FENETRE_S <= fin + 1e-6:
+            v = embedding(a[int(p * TAUX):int((p + FENETRE_S) * TAUX)], SEGMENT_MIN_S)
+            fen.append([v, *(connu(v) if v is not None else (None, None))])
+            centres.append(p + FENETRE_S / 2)
+            p += PAS_S
+        for k, (v, q, x) in enumerate(fen):          # une inconnue : une voix neuve si sa voisine est inconnue aussi
+            if v is None or q is not None:
+                continue
+            voisine = [fen[i] for i in (k - 1, k + 1) if 0 <= i < len(fen) and fen[i][0] is not None]
+            if any(w[1] is None and float(np.dot(v, w[0])) >= SEUIL_MEME_VOIX for w in voisine) or len(fen) == 1:
+                nom = ajouter(v)
+                for w in fen[k:]:                    # ses voisines qui lui ressemblent : la même voix
+                    if w[1] is None and w[0] is not None and float(np.dot(v, w[0])) >= SEUIL_MEME_VOIX:
+                        w[1] = nom
+            elif voisine:
+                fen[k][1] = next((w[1] for w in voisine if w[1]), None)
+        for v, q, x in fen:                           # les voix de la salle apprennent de chaque fenêtre
+            if v is not None and x is not None:
+                ajouter(v, x)
+        sortie = []
+        for w, ma, mb in mots:
+            k = min(range(len(centres)), key=lambda i: abs(centres[i] - (ma + mb) / 2))
+            q = fen[k][1] or _salle["dernier"] or ("Ahmed" if moyenne is not None else "voix 1")
+            if sortie and sortie[-1][0] == q:
+                sortie[-1][1].append(w)
+            else:
+                sortie.append((q, [w]))
+        return [(q, " ".join(ws)) for q, ws in sortie]
+
+    morceaux, vus, de_moi = [], [], []
     for sg in segments:
         texte = str(sg.get("text") or "").strip()
         if not texte:
             continue
-        brut = a[int(max(0.0, sg.get("start", 0)) * TAUX):int(max(0.0, sg.get("end", 0)) * TAUX)]
-        v = embedding(brut, SEGMENT_MIN_S) if len(brut) >= SEGMENT_MIN_S * TAUX else None
-        sa = ahmed(v) if (v is not None and ahmed) else -1.0
-        proches = [(float(np.dot(v, x["c"])), x) for x in _salle["voix"]] if v is not None else []
-        s, x = max(proches, key=lambda p: p[0]) if proches else (-1.0, None)
-        sn = max((float(np.dot(v, c)) for _n, c in nommees), default=-1.0) if v is not None else -1.0
-        if v is None:
-            qui = _salle["dernier"] or ("Ahmed" if moyenne is not None else "voix 1")
-        elif sa >= SEUIL_AHMED:
-            qui = "Ahmed"
-        elif nommees and sn >= SEUIL_AHMED:
-            qui = max(nommees, key=lambda p: float(np.dot(v, p[1])))[0]           # une voix connue, par son nom
-        elif sa >= SEUIL_DOUTE and sa > max(s, sn) + 0.1:
-            # (2026-10-20) une phrase d'Ahmed dans un registre inhabituel : plus proche de lui que de toute autre voix
-            # entendue — c'est lui, pas une « voix 3 »
-            qui = "Ahmed"
+        mots = [(str(w.get("word") or "").strip(), float(w.get("start", 0)), float(w.get("end", 0)))
+                for w in (sg.get("words") or []) if str(w.get("word") or "").strip()]
+        if mots and float(sg.get("end", 0)) - float(sg.get("start", 0)) >= 2 * FENETRE_S:
+            unites = unites_mot_a_mot(sg, mots)
         else:
-            if x is not None and s >= SEUIL_MEME_VOIX:
-                x["c"] = (x["c"] * x["n"] + v) / (x["n"] + 1)
-                x["c"] /= (np.linalg.norm(x["c"]) or 1.0)
-                x["n"] += 1
-                qui = x["nom"]
-            else:
-                qui = f"voix {len(_salle['voix']) + (2 if moyenne is not None else 1)}"
-                _salle["voix"].append({"nom": qui, "c": v, "n": 1})
-        if qui not in vus:
-            vus.append(qui)
-        etiquette = qui != "Ahmed" and qui != _salle["dernier"] or (qui == "Ahmed" and _salle["dernier"] not in (None, "Ahmed"))
-        morceaux.append(f"[{qui}] {texte}" if etiquette else texte)
-        _salle["dernier"] = qui
+            brut = a[int(max(0.0, sg.get("start", 0)) * TAUX):int(max(0.0, sg.get("end", 0)) * TAUX)]
+            unites = [(qui_segment(brut), texte)]
+        for qui, bout in unites:
+            if qui == "moi":                          # sa propre voix : mise de côté
+                de_moi.append(bout)
+                continue
+            if qui not in vus:
+                vus.append(qui)
+            etiquette = qui != "Ahmed" and qui != _salle["dernier"] or (qui == "Ahmed" and _salle["dernier"] not in (None, "Ahmed"))
+            morceaux.append(f"[{qui}] {bout}" if etiquette else bout)
+            _salle["dernier"] = qui
     try:
         _sauver_salle()
     except OSError:
         pass
+    autres = [q for q in vus if q != "Ahmed"]
+    resume = {"voix": vus, "plusieurs": len(vus) >= 2, "ahmed": "Ahmed" in vus, "autres": autres, "moi": " ".join(de_moi)}
+    if de_moi:
+        return " ".join(morceaux), resume
     if not morceaux:
         return None, None
-    autres = [q for q in vus if q != "Ahmed"]
     if moyenne is None and len(vus) < 2:                    # sans empreinte, une seule voix : rien à dire
         return None, None
-    return " ".join(morceaux), {"voix": vus, "plusieurs": len(vus) >= 2, "ahmed": "Ahmed" in vus, "autres": autres}
+    return " ".join(morceaux), resume
 
 
 def reinitialiser(portee="tout", fichier=None):

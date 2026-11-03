@@ -171,3 +171,34 @@ def test_renommer_une_voix_connue_garde_son_empreinte(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="voix connues : INCONNU, Karim"):
         E.renommer("Personne", "X")
     assert sorted(x["nom"] for x in E.connues()) == ["INCONNU", "Karim"]
+
+
+def test_micro_ouvert_mot_a_mot_et_sa_propre_voix(tmp_path, monkeypatch):
+    """(03/11, Ahmed : « micro ouvert ; si plusieurs voix se mélangent, il doit pouvoir séparer chaque voix selon le timbre »)
+    avec les mots datés, chaque mot va à la voix dont le timbre couvre son instant, même au milieu d'une phrase ; et sa
+    PROPRE voix (apprise de ce qu'il dit) est reconnue et mise de côté : ce n'est pas papa qui parle"""
+    base = {"ahmed": np.r_[np.ones(128), np.zeros(128)], "pote": np.r_[np.zeros(128), np.ones(128)],
+            "hakim": np.r_[np.ones(64), -np.ones(64), np.ones(64), -np.ones(64)]}
+    vec = lambda k: base[k] / np.linalg.norm(base[k])
+    f, moi = tmp_path / "empreinte.json", tmp_path / "moi.json"
+    monkeypatch.setattr(E, "embedding", lambda a, *x: vec("ahmed"))
+    E.apprendre("x", fichier=f); E.apprendre("x", fichier=f)
+    monkeypatch.setattr(E, "embedding", lambda a, *x: vec("hakim"))
+    for _ in range(3):
+        E.apprendre_moi("x", fichier=moi)
+    voix = ["ahmed", "pote", "hakim"]
+    # 9 s : papa 0-3 s, son pote 3-6 s, puis l'écho de Hakim 6-9 s ; UN seul segment de Whisper, les mots datés
+    audio = np.concatenate([np.full(48000, i, dtype=np.float32) for i in range(3)])
+    monkeypatch.setattr(E, "embedding", lambda a, *x: vec(voix[int(a[0])]))
+    E._salle.update(voix=[], ts=0.0, dernier=None)
+    mots = [(" salut", 0.2, 0.6), (" Hakim", 0.7, 1.2), (" regarde", 1.4, 2.6), (" non", 3.3, 3.6), (" attends", 3.8, 4.4),
+            (" frérot", 4.6, 5.6), (" oui", 6.3, 6.6), (" papa", 6.8, 8.5)]
+    segs = [{"start": 0.0, "end": 9.0, "text": "salut Hakim regarde non attends frérot oui papa",
+             "words": [{"word": w, "start": a, "end": b} for w, a, b in mots]}]
+    texte, r = E.etiqueter(audio, segs, fichier=f, moi=moi, maintenant=1000.0)
+    assert texte == "salut Hakim regarde [voix 2] non attends frérot"
+    assert r["voix"] == ["Ahmed", "voix 2"] and r["moi"] == "oui papa"
+    # tout le morceau dans sa voix : rien de papa
+    texte2, r2 = E.etiqueter(np.full(48000, 2, dtype=np.float32), [{"start": 0, "end": 3, "text": "je regarde"}],
+                             fichier=f, moi=moi, maintenant=1001.0)
+    assert texte2 == "" and r2["moi"] == "je regarde"

@@ -35,5 +35,5 @@ def test_une_panne_du_modele_ne_bloque_rien(monkeypatch):
 def test_la_transcription_le_demande_seulement_en_reconnaissance():
     import stt
     src = inspect.getsource(stt.transcrire)
-    reconnaitre = src[src.index('elif voix == "reconnaitre"'):]
-    assert "ton_eveil.eveil(brut)" in reconnaitre and "ton_eveil" not in src[:src.index('elif voix == "reconnaitre"')]
+    reconnaitre = src[src.index('elif str(voix).startswith("reconnaitre")'):]   # (03/11) « reconnaitre:mots » aussi
+    assert "ton_eveil.eveil(brut)" in reconnaitre and "ton_eveil" not in src[:src.index('elif str(voix).startswith("reconnaitre")')]

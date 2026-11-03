@@ -84,6 +84,8 @@
     src.connect(noeud); noeud.connect(muet); muet.connect(ctx.destination);
     const taux = ctx.sampleRate, parFenetre = Math.round(taux * FENETRE_MS / 1000);
     const preecoute = [];                                   // fenêtres récentes, hors parole
+    const ambiance = [];                                    // (03/11, micro ouvert) les 3 dernières secondes, quoi qu'il arrive
+    let ambianceN = 0;
     let fenetre = new Float32Array(parFenetre), remplis = 0;
     let bruit = 0.01, initFenetres = 0, echo = 0, jarvisDepuis = 0, enveloppe = 0, gainEcho = 0.2;
     let etatV = 'attente', tenue = 0, tour = [], debut = 0, derniereVoix = 0, voixMs = 0, pauseEnCours = 0, pauses = [];
@@ -228,6 +230,10 @@
 
     noeud.port.onmessage = (ev) => {
       if (!actif) return;
+      if (!micCoupe) {
+        ambiance.push(ev.data.slice(0)); ambianceN += ev.data.length;
+        while (ambiance.length > 1 && ambianceN - ambiance[0].length >= taux * 3) ambianceN -= ambiance.shift().length;
+      }
       derniereTrame = Date.now();
       const x = ev.data;
       let i = 0;
@@ -247,6 +253,9 @@
       // null s'il n'y a pas de voix dedans (rien à transcrire)
       segment(de, a) { return avecVoix(tour.slice(de, a === undefined ? tour.length : a)); },
       segmentFini(de, tourFini = precedent) { return avecVoix(tourFini.slice(de)); },   // la queue du tour qui vient de finir
+      // (03/11, micro ouvert) les 3 dernières secondes entendues (voix, musique, bruit), pour ses familles de sons ; null si
+      // le micro est coupé, ou si c'est le silence
+      ambiance() { return micCoupe || !ambiance.length || !voisees(ambiance) ? null : assembler(ambiance); },
       get dernierTour() { return precedent; },                        // à saisir avant d'attendre (un nouveau tour le remplace)
       get assezDeVoix() { return etatV === 'parole' && voixMs >= 350; },
       get fenetres() { return tour.length; },

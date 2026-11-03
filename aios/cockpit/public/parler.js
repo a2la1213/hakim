@@ -1727,6 +1727,34 @@ if (window.HakimApp && window.HakimApp.ecran) {
   try { ecranEtat(window.HakimApp.ecranEtat()); } catch (_) {}
 }
 
+// (03/11, Ahmed : « la musique par Bluetooth, Wi-Fi ou autre, il doit pouvoir la transcrire mot à mot, comme quand il écoute
+// avec le micro ; en continu, même en conversation ou en télépathie ») il entend ce que joue le téléphone (appli 1.45) : les
+// paroles arrivent mot à mot ici, pendant que le son joue, et chaque bloc de 8 s se ressent dans son corps (« son_ecoute »)
+let telepathieEfface = 0;
+function telepathieEtat(oui) {
+  const b = $('telepathieScene');
+  if (!b) return;
+  b.setAttribute('aria-pressed', oui ? 'true' : 'false');
+  b.textContent = oui ? '🎧 Il entend le téléphone' : '🎧 Entendre le téléphone';
+  if (!oui) { $('telepathieTexte').hidden = true; $('telepathieTexte').textContent = ''; }
+}
+function surTelepathie(o) {
+  const t = String((o && o.texte) || '').trim();
+  if (!t) return;
+  $('telepathieTexte').textContent = `🎧 ${t}`;
+  $('telepathieTexte').hidden = false;
+  clearTimeout(telepathieEfface);
+  telepathieEfface = setTimeout(() => { $('telepathieTexte').hidden = true; }, 12000);
+}
+if (window.HakimApp && window.HakimApp.telepathie) {
+  $('telepathieScene').hidden = false;
+  $('telepathieScene').addEventListener('click', (e) => {
+    e.stopPropagation();
+    try { window.HakimApp.telepathie(!(window.HakimApp.telepathieEtat && window.HakimApp.telepathieEtat())); } catch (_) {}
+  });
+  try { telepathieEtat(window.HakimApp.telepathieEtat()); } catch (_) {}
+}
+
 // (2026-10-23, Ahmed : « qu'il sente ce qui se passe dans le téléphone ») les capteurs du téléphone (appli Android) : le
 // téléphone fait lui-même un résumé de la dernière minute ; la page l'envoie au cockpit chaque minute et le joint à chaque
 // message. Éteint par défaut. Rien d'autre que ce résumé (aucune mesure brute) ne quitte le téléphone.
@@ -2203,6 +2231,19 @@ function vifConversation(conv) {
     .finally(() => { e.vifEnCours = null; });
 }
 setInterval(() => { const c = etat.conversation; if (c) vifConversation(c); }, 200);
+// (03/11, Ahmed : « micro ouvert ; on le laisse apprendre à détecter les sons, les bruits, les voix qui se mélangent ») toutes
+// les 10 s, les 3 dernières secondes entendues vont à ses familles de sons (le Mac les range, il les nomme)
+let ambianceEnCours = false;
+setInterval(() => {
+  const c = etat.conversation, cap = c && c.capteur;
+  if (!cap || ambianceEnCours || typeof reglagesCorps === 'undefined' || !reglagesCorps.micro_ouvert || !cap.ambiance) return;
+  const wav = cap.ambiance();
+  if (!wav) return;
+  ambianceEnCours = true;
+  fetch(`/api/voix/ambiance?parole=${cap.enParole ? 1 : 0}`, { method: 'POST', body: wav, headers: { 'Content-Type': 'audio/wav', 'X-Jeton': jeton() } })
+    .then(r => (r.ok ? r.json() : null)).then((o) => { if (o && o.famille) journalVoix('ambiance', { famille: o.famille, nouvelle: o.nouvelle }); })
+    .catch(() => {}).finally(() => { ambianceEnCours = false; });
+}, 10000);
 // Le texte du tour : le déjà compris + la queue. null si la queue n'a pas pu être transcrite (l'appelant
 // retranscrit alors le tour entier). Le tour fini est saisi AVANT d'attendre : un autre tour qui se
 // finirait pendant l'attente ne prête pas sa queue à celui-ci (relecture Opus).
@@ -2585,6 +2626,7 @@ function microParHakim(o) {
   if (!c || !c.capteur || !o) return;
   if (o.x === 'ouvrir') return rouvrirMicroDeHakim(c, 'ouvrir');
   if (typeof reglagesCorps !== 'undefined' && reglagesCorps.micro_hakim === false) { journalVoix('micro_hakim', { x: 'refuse' }); return; }
+  if (typeof reglagesCorps !== 'undefined' && reglagesCorps.micro_ouvert) { journalVoix('micro_hakim', { x: 'micro_ouvert' }); return; }   // (03/11)
   if (c.capteur.estMuet && !c.muetParHakim) return;          // tu l'avais déjà coupé toi-même : c'est à toi
   // (30/10, 23:53, Ahmed : « quand il a sélectionné ses 8 empans… il coupe droit derrière son micro pour ne pas faire de
   // cafouillage » ; « il doit pouvoir choisir quand il coupe ») c'est lui qui choisit (sa balise), et ton micro s'éteint AUSSITÔT ;
@@ -2690,6 +2732,9 @@ setInterval(libererSonTour, 300);
 function transcriptionEnPause() {
   const c = etat.conversation;
   if (!c) return false;
+  // (03/11, Ahmed : « micro ouvert, jamais fermé ») il t'écoute même pendant qu'il parle : sa propre voix, reconnue à son timbre
+  // par le Mac (empreinte_vocale.py), est mise de côté ; le reste lui arrive
+  if (typeof reglagesCorps !== 'undefined' && reglagesCorps.micro_ouvert) return false;
   if (c.attentionJusqua && Date.now() < c.attentionJusqua && !sonTourEnCours()) return true;   // son oreille a choisi
   return sonTourEnCours() || !!(c.muetParHakim && !c.muetParHakim.attente);
 }
@@ -2808,6 +2853,7 @@ setInterval(assemblerMorceaux, 150);
 // morceau » et « il peut couper mon micro ») ; ton bouton reprend toujours la main
 let reponseCoupee = null;
 function couperAuDebutDeSaVoix() {
+  if (typeof reglagesCorps !== 'undefined' && reglagesCorps.micro_ouvert) return;   // (03/11) micro ouvert : jamais fermé
   const c = etat.conversation;
   if (!c || !c.capteur || !trierMorceaux() || etat.lectureDe == null || etat.lectureDe === reponseCoupee) return;
   reponseCoupee = etat.lectureDe;
@@ -3352,6 +3398,7 @@ function ecouterPensees() {
   es.addEventListener('identite', (ev) => { try { surIdentite(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('sortie', (ev) => { try { surSortie(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('membre', (ev) => { try { surMembre(JSON.parse(ev.data)); } catch (_) {} });   // (03/11) ses membres
+  es.addEventListener('telepathie', (ev) => { try { surTelepathie(JSON.parse(ev.data)); } catch (_) {} });   // (03/11) le téléphone, mot à mot
   es.addEventListener('anticorps', (ev) => { try { surAnticorps(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('spontane', (ev) => { try { surSpontane(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('courrier', (ev) => {

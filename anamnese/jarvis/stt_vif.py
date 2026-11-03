@@ -6,6 +6,9 @@ qui part à Hakim reste celui de la grande oreille.
 
 Un processus qui reste en vie : une ligne JSON par demande sur l'entrée {id, fichier, langue, contexte}, une ligne par
 réponse {id, texte, ms} ou {id, erreur}.
+
+(03/11, micro ouvert) {id, op: "famille", fichier, parole, voix} : 3 s d'ambiance rangées dans ses familles de sons
+(sons_familles.py), par ce que l'encodeur de ce même Whisper en comprend → {id, famille, nouvelle, fois} ou {id, ecoute}.
 """
 import json
 import os
@@ -31,6 +34,26 @@ def transcrire(mlx_whisper, fichier, langue=None, contexte=""):
     return {"texte": texte, "langue": r.get("language"), "ms": int((time.time() - t0) * 1000)}
 
 
+def forme(fichier):
+    """Ce que l'encodeur comprend de 3 s de son : la moyenne et l'écart de ses sorties dans le temps (2 × 768 nombres)."""
+    import mlx.core as mx
+    import numpy as np
+    from mlx_whisper.audio import N_FRAMES, load_audio, log_mel_spectrogram, pad_or_trim
+    from mlx_whisper.transcribe import ModelHolder
+    modele = ModelHolder.get_model(MODELE, mx.float16)
+    mel = log_mel_spectrogram(load_audio(fichier), n_mels=modele.dims.n_mels)
+    x = modele.encoder(pad_or_trim(mel, N_FRAMES, axis=-2).astype(mx.float16)[None])[0]
+    v = np.array(x[: max(1, mel.shape[0] // 2)].astype(mx.float32))
+    return np.concatenate([v.mean(axis=0), v.std(axis=0)])
+
+
+def famille(fichier, parole=None, voix=0):
+    import sons_familles
+    t0 = time.time()
+    r = sons_familles.entendre(forme(fichier), parole=parole, voix=voix)
+    return {**(r or {"ecoute": True}), "ms": int((time.time() - t0) * 1000)}
+
+
 def main():
     import mlx_whisper
     import numpy as np
@@ -42,7 +65,10 @@ def main():
         except ValueError:
             continue
         try:
-            sortie = transcrire(mlx_whisper, str(d["fichier"]), d.get("langue") or None, str(d.get("contexte") or ""))
+            if d.get("op") == "famille":
+                sortie = famille(str(d["fichier"]), bool(d.get("parole")), int(d.get("voix") or 0))
+            else:
+                sortie = transcrire(mlx_whisper, str(d["fichier"]), d.get("langue") or None, str(d.get("contexte") or ""))
         except Exception as e:  # noqa: BLE001  (une demande ratée ne tue pas l'oreille)
             sortie = {"erreur": str(e)[:200]}
         print(json.dumps({"id": d.get("id"), **sortie}, ensure_ascii=False), flush=True)

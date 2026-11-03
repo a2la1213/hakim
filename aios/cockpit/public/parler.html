@@ -213,6 +213,8 @@
     .btn.camera[aria-pressed=true] { color: #fff; border-color: #f87171; background: rgba(239,68,68,.3); }
     .btn.muet[aria-pressed=true], #muetScene[aria-pressed=true] { color: #fff; border-color: #fbbf24; background: rgba(251,191,36,.28); }
     .btn.ecran[aria-pressed=true], #ecranScene[aria-pressed=true] { color: #fff; border-color: #f472b6; background: rgba(244,114,182,.30); }
+    #telepathieScene[aria-pressed=true] { color: #fff; border-color: #a78bfa; background: rgba(167,139,250,.30); }
+    .sous-titre.telepathie { opacity: .75; font-style: italic; }
     .btn.pause[aria-pressed=true], #pauseScene[aria-pressed=true] { color: #fff; border-color: #93c5fd; background: rgba(59,130,246,.28); }
     .btn.conversation[aria-pressed=true] { color: #fff; border-color: #f9a8d4;
       background: linear-gradient(135deg, rgba(219,39,119,.55), rgba(168,85,247,.55)); box-shadow: 0 0 18px rgba(236,72,153,.35); }
@@ -475,6 +477,7 @@
         <div class="scene-cote gauche">
           <button class="btn" id="muetScene" hidden aria-pressed="false">Couper mon micro</button>
           <button class="btn" id="ecranScene" hidden aria-pressed="false">Regarde l’écran</button>
+          <button class="btn" id="telepathieScene" hidden aria-pressed="false" title="Il entend ce que joue ton téléphone (musique, vidéo, Bluetooth), les paroles mot à mot, en continu, même en conversation">🎧 Entendre le téléphone</button>
         </div>
         <div class="scene-orbe"><canvas id="orbeScene"></canvas><p class="emotion-scene" id="emotionScene"></p><p class="hakim-parle parle-scene" id="hakimParleScene" hidden>🔴 HAKIM PARLE</p><p class="oreille-fermee oreille-scene" id="oreilleFermeeScene" hidden>🙉 son oreille est fermée</p><p class="emotion-origine-scene" id="emotionOrigineScene"></p></div>
         <div class="scene-cote droite">
@@ -484,6 +487,7 @@
         </div>
       </div>
       <p class="sous-titre" id="sousTitre"></p>
+      <p class="sous-titre telepathie" id="telepathieTexte" hidden></p>
       <span class="indice" id="indice">clic : masquer (ou « j'ai fini » quand il t'écoute) · Échap : arrêter</span>
     </div>
 

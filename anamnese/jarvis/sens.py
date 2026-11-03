@@ -50,9 +50,12 @@ INSTRUMENTS = {
                            "touche, Android ne le permet qu'à lui)", 0, 0),
     "wifi_reglages": ("TON MEMBRE : ouvrir devant papa le panneau Wi-Fi (se délier, oublier un réseau, éteindre)", 0, 0),
     "nfc_reglages": ("TON MEMBRE : ouvrir devant papa le réglage NFC (l'allumer ou l'éteindre)", 0, 0),
+    # (03/11, Ahmed : « quelle application est active, ce qu'elle fait ») ; aussi en continu : l'événement « appli » de ton corps
+    "appli_active": ("l'appli au premier plan du téléphone de papa, et ce qu'elle joue (titre d'une musique, d'une vidéo) ; "
+                     "papa donne une fois « Accès aux données d'utilisation »", 0, 0),
 }
 RADIO = {"appareils", "bluetooth_scan", "wifi_scan", "bluetooth_signal", "nfc_ecrire", "bluetooth_activer", "bluetooth_appairer",
-         "wifi_info", "wifi_connecter", "bluetooth_reglages", "wifi_reglages", "nfc_reglages"}
+         "wifi_info", "wifi_connecter", "bluetooth_reglages", "wifi_reglages", "nfc_reglages", "appli_active"}
 AVEC_TEXTE = {"nfc_ecrire": "le texte à écrire sur la puce", "bluetooth_appairer": "l'adresse ou le nom de l'appareil",
               "wifi_connecter": "le nom du réseau (« nom » ou « nom ; mot de passe »)"}
 _ID_MEMBRE = re.compile(r"[0-9a-f]{10}")
