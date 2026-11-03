@@ -677,7 +677,7 @@ test('(00:35) il a déjà réagi par son oreille : le message entier de papa le 
   assert.equal(c.blocDejaReagi(131000), '', 'une seule fois');
   c.oreilleDernierMot = { texte: 'Vieux', ts: 0 };
   assert.equal(c.blocDejaReagi(200000), '', 'plus de 90 s : rien');
-  assert.match(src, /blocNonEntendus\(texte, nonce\) \+ blocDejaReagi\(\);/);
+  assert.match(src, /blocNonEntendus\(texte, nonce\) \+ blocDejaReagi\(\) \+ aideOutils\(modele\);/);
 });
 
 test('(00:40) micro coupé par lui : la salle (une voix lointaine) n’est même pas transcrite ; une voix proche l’est', () => {

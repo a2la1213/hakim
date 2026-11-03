@@ -733,6 +733,14 @@ function sansProvenance(ligne) {
 // médiane (9,2 s pour un sur dix), presque tout pour le TRI par Sonnet (un `claude -p` de plus, sur un Mac déjà saturé) ; son
 // cerveau, lui, parle 2 à 3 s après. En Conversation à l'oral, le tri est sauté : ses souvenirs gardent l'ordre du rappel.
 async function blocRappel(session, texte, nonce, sansTri = false) {
+  // (03/11, Ahmed : « le rappel de la mémoire plus naturel quand c'est spontané : comme un humain, il se rappelle, mais plus trop les
+  // détails, à moins qu'il cherche vraiment profondément ») ce qui revient tout seul : l'essentiel, sans le vécu détaillé
+  function souvenirFlou(ligne, n = 200) {
+    const t = String(ligne || '').split(" · Ce qu'il vivait :")[0].replace(/\s+/g, ' ').trim();
+    if (t.length <= n) return t;
+    const coupe = t.slice(0, n), fin = Math.max(coupe.lastIndexOf('. '), coupe.lastIndexOf(' » '), coupe.lastIndexOf(' '));
+    return `${coupe.slice(0, fin > n * 0.6 ? fin + 1 : n).trim()} …`;
+  }
   const deja = rappelDejaDits.get(session || '') || new Set();
   const dejaErreurs = erreursDejaDites.get(session || '') || new Set();
   const t0 = Date.now();
@@ -794,8 +802,9 @@ async function blocRappel(session, texte, nonce, sansTri = false) {
   const reviennent = (choisis && choisis.length
     ? (() => { const parId = new Map([...ids.map((id, k) => [id, lignes[k]]), ...themeIds.map((id, k) => [id, theme[k]])]);
       return choisis.map(id => details[id] || parId.get(id)); })()
-    : !choisis ? lignes : []).map(sansProvenance).concat(notes.map(sansProvenance));
-  if (reviennent.length) blocs.push(blocDonnees('Ce qui te revient en tête — garde ce qui compte pour son message (la date d\'aujourd\'hui est '
+    : !choisis ? lignes : []).map(sansProvenance).concat(notes.map(sansProvenance)).map(l => souvenirFlou(l));
+  if (reviennent.length) blocs.push(blocDonnees('Ce qui te revient en tête, comme un souvenir : l\'essentiel, pas les détails (cherche avec '
+    + 'memory_recall, profond=true, si tu as besoin des détails) — garde ce qui compte pour son message (la date d\'aujourd\'hui est '
     + 'dans l\'horloge), laisse le reste sans le citer', reviennent.map(l => '- ' + l).join('\n'), nonce));
   if (intime.length) blocs.push(blocDonnees('Ce qui te revient, rien qu\'à toi — un souvenir intime : n\'en écris rien ailleurs sauf si tu le choisis',
     intime.map(l => '- ' + l).join('\n'), nonce));
@@ -2444,7 +2453,7 @@ function sonnetTeteDeFond(prompt, etiquette, modele = 'sonnet', delai = 60000) {
       // (03/11, Ahmed : « ces voix… il faut qu'il les entende » ; 676 délibérations sur 811 à 0/2 quand le forfait était épuisé)
       // ses voix passent sur l'API quand le forfait est à sa limite, comme son cerveau
       const parApi = String(etiquette).startsWith('frere_') && forfaitALaLimite(Date.now()) && apiDisponible();
-      const enfant = execFile(CLAUDE_BIN, ['-p', '--model', MODELE_CLI[modele] || modele, '--max-turns', '1', '--tools', '', '--restricted', '--strict-mcp-config',
+      const enfant = execFile(CLAUDE_BIN, ['-p', '--model', (typeof MODELE_CLI !== 'undefined' && MODELE_CLI[modele]) || modele, '--max-turns', '1', '--tools', '', '--restricted', '--strict-mcp-config',
         '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence', '--output-format', 'json',
         ...(parApi ? ['--settings', JSON.stringify({ apiKeyHelper: aideCle() })] : [])],
       { cwd: vide || os.tmpdir(), timeout: delai, maxBuffer: 1 << 20, env }, (e, so) => {

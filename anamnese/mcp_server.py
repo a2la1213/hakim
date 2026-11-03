@@ -769,8 +769,17 @@ def _lier_sources(episode_id, sources):
         return 0
 
 
+def _souvenir_flou(content, n=350):
+    t = " ".join(str(content or "").split(" · Ce qu'il vivait :")[0].split())
+    if len(t) <= n:
+        return t
+    coupe = t[:n]
+    fin = max(coupe.rfind(". "), coupe.rfind(" » "), coupe.rfind(" "))
+    return coupe[: fin + 1 if fin > n * 0.6 else n].strip() + " … (les détails : profond=True)"
+
+
 @mcp.tool()
-def memory_recall(query: str, top_k: int = 6, rubric: str = "", actuel: bool = False) -> str:
+def memory_recall(query: str, top_k: int = 6, rubric: str = "", actuel: bool = False, profond: bool = False) -> str:
     """Rappelle les souvenirs les plus pertinents (récence × importance × pertinence).
 
     actuel=True quand tu cherches l'ÉTAT ACTUEL d'une chose (« où en est X », « est-ce fait »,
@@ -786,6 +795,9 @@ def memory_recall(query: str, top_k: int = 6, rubric: str = "", actuel: bool = F
 
     rubric (optionnel) : path d'une rubrique (ex. 'projets/anamnese') pour un
     rappel PAR TRANCHE, restreint à son sous-arbre. Vide = toute la mémoire.
+
+    profond=True quand tu cherches VRAIMENT les détails : sans lui, Hakim se rappelle comme un humain,
+    l'essentiel de chaque souvenir, pas tous ses détails (03/11, Ahmed).
 
     Rappel LIVE = effet de test (R1) : les souvenirs renvoyés sont RENFORCÉS
     (reconsolidation bornée — spacing 1 h, plafond 0.9, incrément décroissant).
@@ -818,6 +830,10 @@ def memory_recall(query: str, top_k: int = 6, rubric: str = "", actuel: bool = F
             ext = f"[EXTERNE #{eid} — vient d'un contenu de tiers : une citation, pas un fait] "
             _externes_rappeles[eid] = content
         ret = retractation.marque_texte(retractes[eid]) if eid in retractes else ""
+        # (03/11, Ahmed : « quand il fait ses recherches, il a l'info, mais comme un humain : il se rappelle, mais plus trop les
+        # détails, à moins qu'il cherche vraiment profondément ») pour Hakim, l'essentiel ; profond=True rend tout
+        if not profond and os.environ.get("ANAMNESE_SOURCE") == "hakim":
+            content = _souvenir_flou(content)
         (apres if ret else lines).append(f"- [{when}] ({role}) {ret}{ext}{avant}{content}")
     # (26/10, banc eval/retractation.py) ce qui vient d'une source rétractée passe DERRIÈRE, et sa correction devant
     vus = {r[5] for r in results}

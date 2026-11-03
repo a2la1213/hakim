@@ -27,16 +27,15 @@ function monde({ forfaitALaLimite = true } = {}) {
   return { ctx, f: ctx.f };
 }
 
-test('sous 50 $ de la journée l’API sert de relais ; à 50 $ elle est fermée et Hakim passe au local', () => {
+test('(01/11, Ahmed : « sans bride ») plus de plafond : l’API sert de relais quoi qu’elle ait coûté dans la journée', () => {
   const { f } = monde();
   f.noterJetons({ source: 'api', cout_usd: 49.5 });
   assert.equal(f.sourcePour('auto'), 'api');
+  f.noterJetons({ source: 'api', cout_usd: 500 });
+  assert.equal(f.plafondApiAtteint(), false);
+  assert.equal(f.apiPermise(), true);
+  assert.equal(f.sourcePour('auto'), 'api');
   assert.equal(f.sourceSuivante('abonnement', 'auto'), 'api');
-  f.noterJetons({ source: 'api', cout_usd: 0.6 });
-  assert.equal(f.plafondApiAtteint(), true);
-  assert.equal(f.apiPermise(), false);
-  assert.equal(f.sourcePour('auto'), 'local');
-  assert.equal(f.sourceSuivante('abonnement', 'auto'), 'local');
 });
 
 test('Ahmed qui impose l’API dans les réglages passe outre : c’est son geste', () => {
@@ -55,18 +54,10 @@ test('seule l’API compte (pas l’équivalent du forfait), et seulement celle 
   assert.equal(f.sourcePour('auto'), 'api');
 });
 
-test('Ahmed est prévenu une seule fois par jour, au tour qui franchit le plafond', () => {
+test('(01/11) sans plafond, aucune alerte de plafond', () => {
   const { f, ctx } = monde();
-  f.noterJetons({ source: 'api', cout_usd: 30 });
+  f.noterJetons({ source: 'api', cout_usd: 80 });
   assert.equal(ctx.notifs.length, 0);
-  f.noterJetons({ source: 'api', cout_usd: 25 });
-  assert.equal(ctx.notifs.length, 1);
-  assert.match(ctx.notifs[0][0], /50 \$/);
-  f.noterJetons({ source: 'api', cout_usd: 5 });
-  assert.equal(ctx.notifs.length, 1, 'pas une deuxième fois le même jour');
-  ctx.jour = '2026-10-28';
-  f.noterJetons({ source: 'api', cout_usd: 60 });
-  assert.equal(ctx.notifs.length, 2, 'le lendemain, de nouveau');
 });
 
 test('sur l’API son cache est gardé 1 h (5 min par défaut) ; sur le forfait rien ne change, et jamais de clé dans l’environnement', () => {
