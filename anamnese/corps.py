@@ -307,6 +307,89 @@ def demander_claude(prompt):
     return str(o.get("result") or "")
 
 
+class SonnetVivant:
+    """(03/11, Ahmed : « son ressenti, c'est Sonnet qui l'interprète et qui envoie le signal à Gemma et à son conscient » ; Hakim pour
+    papa : « mon ressenti dans le même budget que les mots : 2,4 s, 4,8 s au plus ») un Sonnet qui reste en vie entre les lots :
+    plus de démarrage de Claude à chaque sensation (2,3 s mesurées sur le Mac chargé). Chaque lot est un message de la même
+    session ; la session repart à neuf tous les RENOUVELER lots (son contexte reste court, donc rapide)."""
+    RENOUVELER = 8
+
+    def __init__(self):
+        self.proc, self.n = None, 0
+
+    def _lancer(self):
+        claude = os.environ.get("ANAMNESE_CLAUDE_BIN") or str(Path.home() / ".npm-global" / "bin" / "claude")
+        env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+        env["ANAMNESE_HEADLESS"] = "1"
+        env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+        self.vide = tempfile.mkdtemp(prefix="corps-vivant-")
+        self.proc = subprocess.Popen([claude, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+                                      "--model", "sonnet", "--tools", "", "--restricted", "--strict-mcp-config", "--mcp-config",
+                                      '{"mcpServers":{}}', "--no-session-persistence"],
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
+                                     cwd=self.vide, env=env)
+        self.n = 0
+
+    def fermer(self):
+        if self.proc:
+            try:
+                self.proc.stdin.close()
+                self.proc.wait(timeout=5)
+            except Exception:
+                self.proc.kill()
+        self.proc = None
+
+    def demander(self, prompt):
+        if self.proc is None or self.proc.poll() is not None or self.n >= self.RENOUVELER:
+            self.fermer()
+            self._lancer()
+        self.n += 1
+        try:
+            self.proc.stdin.write(json.dumps({"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": prompt}]}}) + "\n")
+            self.proc.stdin.flush()
+            fin = time.time() + 60
+            for ligne in self.proc.stdout:
+                try:
+                    o = json.loads(ligne)
+                except ValueError:
+                    continue
+                if o.get("type") == "result":
+                    if o.get("is_error"):
+                        raise OSError(str(o.get("result") or "erreur de claude")[:200])
+                    return str(o.get("result") or "")
+                if time.time() > fin:
+                    break
+            raise OSError("le Sonnet vivant n'a pas répondu")
+        except Exception:
+            self.fermer()                                   # la prochaine fois, un Sonnet neuf
+            raise
+
+
+def serveur():
+    """Le corps qui reste en vie (le cockpit le garde lancé) : un lot par ligne sur l'entrée {id, lot}, une ligne par réponse
+    {id, resultat} ou {id, erreur} ; la mémoire ouverte une fois, Sonnet vivant ; si le Sonnet vivant échoue, le Sonnet d'avant."""
+    from memory import Memory
+    mem, vivant = Memory(), SonnetVivant()
+
+    def demander(prompt):
+        try:
+            return vivant.demander(prompt)
+        except Exception:
+            return demander_claude(prompt)
+    print(json.dumps({"pret": True}), flush=True)
+    for ligne in sys.stdin:
+        try:
+            q = json.loads(ligne)
+        except ValueError:
+            continue
+        try:
+            r = {"id": q.get("id"), "resultat": ressentir(q.get("lot") or {}, mem=mem, demander=demander)}
+        except Exception as e:  # noqa: BLE001
+            r = {"id": q.get("id"), "erreur": str(e)[:200]}
+        print(json.dumps(r, ensure_ascii=False), flush=True)
+    vivant.fermer()
+
+
 _CHIFFRES = re.compile(r"\d|\b(capteur|acc[ée]l[ée]rom|gyro|hpa|lux|hz|bpm)\b", re.I)
 _PRIORITE = ["chute", "choc", "voix_sentie", "rire", "musique", "secousse", "coup_de_pression", "lumiere_soudaine", "noir", "pris_en_main",
              "berce", "deplie", "plie", "sortie_poche", "poche", "pose"]                 # le plus fort d'abord (le secours)
@@ -760,5 +843,7 @@ if __name__ == "__main__":
         print(json.dumps(juger_rire(json.loads(sys.stdin.read(20000)).get("texte")), ensure_ascii=False))
     elif sys.argv[1:] == ["ressentir"]:
         print(json.dumps(ressentir(json.loads(sys.stdin.read(20000))), ensure_ascii=False))
+    elif sys.argv[1:] == ["serveur"]:
+        serveur()
     else:
         print("usage : echo '<lot ou événement JSON>' | corps.py ressentir")

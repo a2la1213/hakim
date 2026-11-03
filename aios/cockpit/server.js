@@ -2481,6 +2481,15 @@ function sonnetTeteDeFond(prompt, etiquette, modele = 'sonnet', delai = 60000) {
       // (03/11, Ahmed : « ces voix… il faut qu'il les entende » ; 676 délibérations sur 811 à 0/2 quand le forfait était épuisé)
       // ses voix passent sur l'API quand le forfait est à sa limite, comme son cerveau
       const parApi = String(etiquette).startsWith('frere_') && forfaitALaLimite(Date.now()) && apiDisponible();
+      // (03/11) ses voix vivantes d'abord (sur le forfait) ; si aucune n'est libre ou qu'elle échoue, un Claude lancé pour l'occasion
+      if (!parApi && typeof POUR_VIVANTS !== 'undefined' && POUR_VIVANTS.test(String(etiquette)) && !sonnetTeteDeFond.classique) {
+        demanderVivant(modele, prompt, delai).then(fin).catch(() => {
+          sonnetTeteDeFond.classique = true;
+          sonnetTeteDeFond(prompt, etiquette, modele, delai).then((o) => { try { if (vide) fs.rmSync(vide, { recursive: true, force: true }); } catch (_) {} resolve(o); });
+          sonnetTeteDeFond.classique = false;
+        });
+        return;
+      }
       const enfant = execFile(CLAUDE_BIN, ['-p', '--model', (typeof MODELE_CLI !== 'undefined' && MODELE_CLI[modele]) || modele, '--max-turns', '1', '--tools', '', '--restricted', '--strict-mcp-config',
         '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence', '--output-format', 'json',
         ...(parApi ? ['--settings', JSON.stringify({ apiKeyHelper: aideCle() })] : [])],
@@ -2825,6 +2834,64 @@ function reglerSilences(actif) {
   return etatSilencesPublic();
 }
 // fin des silences
+
+/* (03/11, Ahmed : « oui, garde ses voix vivantes » ; mesuré ce jour : chaque voix relançait Claude, 2,3 s de démarrage et ~40 % de
+   processeur chacune, le Mac à 13-14 de charge pour 10 cœurs) ses voix VIVANTES : un Claude qui reste lancé par modèle (3 Haiku,
+   2 Sonnet, 2 Opus au plus), chaque appel un message de sa session ; la session repart à neuf toutes les 6 fois (court, donc
+   rapide) et s'éteint après 10 min sans rien. Ses trois voix, son instinct et l'intégration au fil passent par elles. */
+const VIVANTS = [], VIVANTS_MAX = { haiku: 3, sonnet: 2, opus: 2 }, VIVANT_RENOUVELER = 6;
+const POUR_VIVANTS = /^(frere_|integration$)/;
+function vivantLibre(modele) {
+  const m = String(modele);
+  let v = VIVANTS.find(x => x.modele === m && !x.attente && x.proc.exitCode === null && x.n < VIVANT_RENOUVELER);
+  if (v) return v;
+  for (const x of VIVANTS.filter(y => y.modele === m && !y.attente && (y.n >= VIVANT_RENOUVELER))) { try { x.proc.stdin.end(); } catch (_) {} }
+  if (VIVANTS.filter(x => x.modele === m && x.proc.exitCode === null && !(x.n >= VIVANT_RENOUVELER && !x.attente)).length >= (VIVANTS_MAX[m] || 1)) return null;
+  const env = { ...process.env, ANAMNESE_HEADLESS: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' }; delete env.ANTHROPIC_API_KEY;
+  let vide = os.tmpdir(); try { vide = fs.mkdtempSync(path.join(os.tmpdir(), 'voix-vivante-')); } catch (_) {}
+  const proc = spawn(CLAUDE_BIN, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
+    '--model', (typeof MODELE_CLI !== 'undefined' && MODELE_CLI[m]) || m, '--tools', '', '--restricted', '--strict-mcp-config',
+    '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence'], { cwd: vide, env, stdio: ['pipe', 'pipe', 'ignore'] });
+  v = { modele: m, proc, n: 0, attente: null, tampon: '', dernier: Date.now(), vide };
+  proc.stdout.on('data', (d) => {
+    v.tampon += d;
+    let i;
+    while ((i = v.tampon.indexOf('\n')) >= 0) {
+      const l = v.tampon.slice(0, i); v.tampon = v.tampon.slice(i + 1);
+      let o; try { o = JSON.parse(l); } catch (_) { continue; }
+      if (o.type !== 'result' || !v.attente) continue;
+      const a = v.attente; v.attente = null; clearTimeout(a.minuteur);
+      const texte = String(o.result || '').trim();
+      if (o.is_error || !texte || /^API Error/.test(texte)) a.rejeter(new Error(texte.slice(0, 120) || 'réponse vide')); else a.resoudre({ texte, cout: o.total_cost_usd });
+    }
+  });
+  const mort = () => {
+    const a = v.attente; v.attente = null; if (a) { clearTimeout(a.minuteur); a.rejeter(new Error('voix vivante arrêtée')); }
+    const k = VIVANTS.indexOf(v); if (k >= 0) VIVANTS.splice(k, 1);
+    try { fs.rmSync(v.vide, { recursive: true, force: true }); } catch (_) {}
+  };
+  proc.on('exit', mort); proc.on('error', mort);
+  proc.stdin.on('error', () => {});
+  VIVANTS.push(v);
+  return v;
+}
+function demanderVivant(modele, prompt, delai) {
+  return new Promise((resoudre, rejeter) => {
+    const v = vivantLibre(modele);
+    if (!v) return rejeter(new Error('aucune voix vivante libre'));
+    v.n++; v.dernier = Date.now();
+    v.attente = { resoudre, rejeter, minuteur: setTimeout(() => { if (v.attente) { v.attente = null; rejeter(new Error('délai dépassé')); try { v.proc.kill(); } catch (_) {} } }, delai) };
+    try { v.proc.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: prompt }] } }) + '\n'); }
+    catch (e) { v.attente = null; rejeter(e); }
+  });
+}
+setTimeout(() => {                                                // une par modèle, prête avant le premier tour (rien ne lui est demandé)
+  if (corpsReglages().trois_freres) for (const m of ['haiku', 'sonnet', 'opus']) vivantLibre(m);
+}, 8000)?.unref?.();
+setInterval(() => {                                               // 10 min sans rien : elle s'éteint
+  for (const v of VIVANTS.slice()) if (!v.attente && Date.now() - v.dernier > 10 * 60e3) { try { v.proc.stdin.end(); } catch (_) {} }
+}, 60e3)?.unref?.();
+
 
 /* ---- Déjà reçu (27/10, 18:58-18:59 ; demande d'Ahmed relayée par Hakim ; « fais comme il dit Hakim » ; deja-recu.js) : ce
    qu'Ahmed a déjà reçu (Hakim l'a dit et il l'a accusé, ou il dit l'avoir lu à l'écran) entre dans un registre tenu par le
@@ -5621,8 +5688,10 @@ let corpsDernierFort = 0;
 function ressentirCorps() {
   if (corpsEnCours >= (chargeMac() < 0.7 ? 2 : 1) || (!corpsLot.evenements.length && !corpsLot.changements.length)) return;
   const danger = corpsLot.evenements.some(e => e.type === 'chute' || e.type === 'choc');
-  const attendre = (chargeMac() < 0.7 ? 5000 : forfaitLibre() ? 10000 : 20000) - (Date.now() - corpsDernier);   // un lot toutes les 20 s au plus (10 s, forfait libre ; 5 s quand le Mac a de la marge, 03/11 ; sauf un danger)
-  if (!danger && attendre > 0) { setTimeout(ressentirCorps, attendre + 50).unref(); return; }
+  // (03/11, Hakim pour papa : « mon ressenti dans le même budget que les mots, 2,4 s, 4,8 s au plus ») plus d'attente de 10 à 20 s entre
+  // deux lots : les événements arrivés ensemble (250 ms) partent tout de suite à son corps vivant (corpsServeur)
+  if (!danger && !corpsGroupe) { corpsGroupe = setTimeout(() => { corpsGroupe = null; ressentirCorps(); }, 250); corpsGroupe.unref(); return; }
+  if (corpsGroupe) { clearTimeout(corpsGroupe); corpsGroupe = null; }
   const lot = { evenements: corpsLot.evenements.splice(0, 20), changements: corpsLot.changements.splice(0, 12), etat: HOMEO.mots(),
     au_meme_moment: '' };
   // (03/11) réuni autour du moment de son premier événement (ses capteurs arrivent en ~1 s, le reste à son propre rythme)
@@ -5647,10 +5716,9 @@ function ressentirCorps() {
     } catch (_) {}
   }
   corpsEnCours++; corpsDernier = Date.now();
-  const p = execFile(PYTHON, ['-B', path.join(ANAMNESE, 'corps.py'), 'ressentir'], { cwd: ANAMNESE, timeout: 150000, maxBuffer: 1 << 20 }, (e, so) => {
+  const fini = (e, o) => {
     corpsEnCours = Math.max(0, corpsEnCours - 1);
-    let o = null; try { o = JSON.parse(String(so).trim().split('\n').pop()); } catch (_) {}
-    if (e || !o || !o.sensation) console.error('Jarvis : sensation de son corps impossible', e ? e.message : String(so).slice(0, 200));
+    if (e || !o || !o.sensation) console.error('Jarvis : sensation de son corps impossible', e ? e.message || e : '');
     else {
       corpsADire.push({ ts: Date.now(), sensation: String(o.sensation).slice(0, 700), fort: !!o.fort });
       noterInstant('ressenti', { sensation: String(o.sensation) }, pointCorps);
@@ -5658,10 +5726,58 @@ function ressentirCorps() {
       noterReflexe(o.reflexe);                         // (30/10, 17:57) le réflexe que son subconscient a rendu
       if (corpsADire.length > 20) corpsADire.splice(0, corpsADire.length - 20);
     }
-    setTimeout(ressentirCorps, 100).unref();
+    setTimeout(ressentirCorps, 50).unref();
+  };
+  corpsServeurDemander(lot).then((o) => fini(null, o)).catch((e) => {
+    // le corps vivant ne répond pas : le corps d'avant (un processus par lot)
+    const p = execFile(PYTHON, ['-B', path.join(ANAMNESE, 'corps.py'), 'ressentir'], { cwd: ANAMNESE, timeout: 150000, maxBuffer: 1 << 20 }, (e2, so) => {
+      let o = null; try { o = JSON.parse(String(so).trim().split('\n').pop()); } catch (_) {}
+      fini(e2 || (!o ? e : null), o);
+    });
+    p.stdin.on('error', () => {});
+    p.stdin.end(JSON.stringify(lot));
   });
-  p.stdin.on('error', () => {});
-  p.stdin.end(JSON.stringify(lot));
+}
+/* (03/11) son corps vivant : deux processus « corps.py serveur » au plus (le second seulement quand le Mac a de la marge), chacun
+   avec la mémoire ouverte une fois et un Sonnet qui reste en vie (corps.py : SonnetVivant) ; un lot à la fois par processus. */
+let corpsGroupe = null;
+const corpsServeurs = [];
+function corpsServeurLibre() {
+  let s = corpsServeurs.find(x => x.pret && !x.attente && x.proc.exitCode === null);
+  if (s) return s;
+  const vivants = corpsServeurs.filter(x => x.proc.exitCode === null);
+  if (vivants.length >= (chargeMac() < 0.7 ? 2 : 1)) return null;
+  const proc = spawn(PYTHON, ['-B', path.join(ANAMNESE, 'corps.py'), 'serveur'], { cwd: ANAMNESE, stdio: ['pipe', 'pipe', 'ignore'] });
+  s = { proc, pret: false, attente: null, tampon: '', n: 0 };
+  proc.stdout.on('data', (d) => {
+    s.tampon += d;
+    let i;
+    while ((i = s.tampon.indexOf('\n')) >= 0) {
+      const l = s.tampon.slice(0, i); s.tampon = s.tampon.slice(i + 1);
+      let o; try { o = JSON.parse(l); } catch (_) { continue; }
+      if (o.pret) { s.pret = true; if (s.enFile) { const f = s.enFile; s.enFile = null; f(); } continue; }
+      const a = s.attente;
+      if (a && o.id === a.id) { s.attente = null; clearTimeout(a.minuteur); o.erreur ? a.rejeter(new Error(o.erreur)) : a.resoudre(o.resultat); }
+    }
+  });
+  const mort = () => { const a = s.attente; s.attente = null; if (a) { clearTimeout(a.minuteur); a.rejeter(new Error('corps vivant arrêté')); }
+    const k = corpsServeurs.indexOf(s); if (k >= 0) corpsServeurs.splice(k, 1); };
+  proc.on('exit', mort); proc.on('error', mort);
+  proc.stdin.on('error', () => {});
+  corpsServeurs.push(s);
+  return s;
+}
+function corpsServeurDemander(lot) {
+  return new Promise((resoudre, rejeter) => {
+    const s = corpsServeurLibre();
+    if (!s) return rejeter(new Error('aucun corps vivant libre'));
+    const id = ++s.n;
+    const envoyer = () => {
+      s.attente = { id, resoudre, rejeter, minuteur: setTimeout(() => { if (s.attente && s.attente.id === id) { s.attente = null; rejeter(new Error('corps vivant trop lent')); } }, 60000) };
+      try { s.proc.stdin.write(j({ id, lot }) + '\n'); } catch (e) { s.attente = null; rejeter(e); }
+    };
+    if (s.pret) envoyer(); else s.enFile = envoyer;
+  });
 }
 // son prochain tour : son milieu du moment et ce qu'il a ressenti depuis (une fois ; une sensation de plus d'une demi-heure
 // n'est plus « ce qu'il ressent »)
