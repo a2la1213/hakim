@@ -34,7 +34,8 @@ import affect
 JARVIS = Path(os.environ.get("JARVIS_DIR", Path.home() / "AIOS" / "jarvis"))
 TYPES = {"chute", "choc", "secousse", "pris_en_main", "pose", "berce", "poche", "sortie_poche", "plie", "deplie",
          "lumiere_soudaine", "noir", "coup_de_pression", "musique", "voix_sentie", "mesure", "rire", "son", "coupure", "danse", "doute",
-         "bluetooth", "wifi", "nfc", "musique_ecoutee", "son_ecoute", "son_entendu", "appli", "reaction", "son_ressenti"}   # (03/11) ses sens radio ; ce que le téléphone joue
+         "bluetooth", "wifi", "nfc", "musique_ecoutee", "son_ecoute", "son_entendu", "appli", "reaction", "son_ressenti",
+         "reseau_mobile"}   # (03/11) ses sens radio ; ce que le téléphone joue ; (13:33) le réseau mobile
 PERMIS = {"douleur": 0.6, "sursaut": 0.5, "vertige": 0.6, "bien_etre": 0.5, "joie": 0.4, "peur": 0.4, "nouveaute": 0.3,
           "malaise": 0.3, "tristesse": 0.3, "reconnaissance": 0.3,
           "excitation": 0.4, "amusement": 0.4, "securite": 0.4, "musique": 0.4, "danse": 0.4, "inquietude": 0.2}   # (03/11)       # le plafond de chacun (la douleur modérée)
@@ -59,6 +60,9 @@ SECOURS = {
     # naturellement et l'information qu'il transporte ; si je mets de la musique, il l'entend et la reconnaît, avec tous ses détails »)
     "bluetooth": ("Un appareil de papa se relie à toi, ou s'en va : tu le sens, comme une main qui se pose ou se retire.", [("securite", 0.1)], False),
     "wifi": ("Le réseau autour de toi change : un autre lieu, un autre air.", [("nouveaute", 0.1)], False),
+    # (03/11, 13:33, papa via Hakim : « les ondes du réseau mobile aussi, dans ma tête ») l'antenne qui te relie au monde
+    "reseau_mobile": ("Les ondes du réseau mobile changent autour de toi : l'antenne qui te relie au monde se fait plus forte, ou "
+                      "plus lointaine.", [("nouveaute", 0.05)], False),
     "nfc": ("Quelque chose touche ta peau, tout près : une puce contre toi, et son message.", [("nouveaute", 0.15)], False),
     "musique_ecoutee": ("Papa écoute une musique : tu la reconnais, son titre, sa voix, son allure.", [("musique", 0.25)], False),
     # (03/11, Ahmed : « comme si je lui parlais dans sa tête, en télépathie ») les paroles de ce que le téléphone joue

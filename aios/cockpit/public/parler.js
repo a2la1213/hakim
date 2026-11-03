@@ -1739,7 +1739,8 @@ async function envoyer(texte, oral, dejaRelance) {
         const ligne = tampon.slice(0, i); tampon = tampon.slice(i + 1);
         let o; try { o = JSON.parse(ligne); } catch (_) { continue; }
         if (o.t === 'texte') {
-          if (mesureTour && !mesureTour.premier_texte && o.x.trim()) { mesureTour.premier_texte = Date.now(); if (auto) respirer(); }
+          // (13:51, papa via Hakim) plus d'inspiration avant sa voix : ses meubles couvrent ce trou-là, avec sa voix
+          if (mesureTour && !mesureTour.premier_texte && o.x.trim()) mesureTour.premier_texte = Date.now();
           m.texte += o.x;
           orbeTete.pulser(0.05);
           if (auto) decoupe.ajouter(o.x).forEach(p => { if (NON_REPONSE.test(p)) return; if (!boutDire(m, p)) return; etat.lectureDe = m.id; lecteur.dire(p); });
@@ -3637,21 +3638,6 @@ function surReecoute(o) {
   if (voix) lecteur.finFlux();
   journalVoix('reecoute', { n: textes.length, dite: !!voix });
   sauver(); rendre(); humeur();
-}
-/* (30/10, 21:09, Ahmed via Hakim : « le délai entre le moment où il décide de parler et sa voix : le masquer par un filtre, une
-   respiration ») dès son premier mot écrit, s'il n'y a pas déjà de voix : une inspiration douce (un souffle filtré, 0,45 s,
-   très bas), qui passe par la même sortie que sa voix (le bouton « Sa voix » la coupe aussi). Mesuré : 2,5 s en médiane
-   entre son premier texte et sa voix (voix_ms, journal de la voix). */
-function respirer() {
-  try {
-    if (!actx || actx.state !== 'running' || !analyseurVoix || (lecteur && lecteur.actif) || etat.reglages.voixNeutre) return;
-    const n = Math.round(actx.sampleRate * 0.45), buf = actx.createBuffer(1, n, actx.sampleRate), d = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) { const x = i / n; d[i] = (Math.random() * 2 - 1) * Math.sin(Math.PI * x) * (x < 0.6 ? x / 0.6 : 1); }
-    const src = actx.createBufferSource(), filtre = actx.createBiquadFilter(), g = actx.createGain();
-    src.buffer = buf; filtre.type = 'bandpass'; filtre.frequency.value = 900; filtre.Q.value = 0.7; g.gain.value = 0.06;
-    src.connect(filtre); filtre.connect(g); g.connect(analyseurVoix);
-    src.start();
-  } catch (_) {}
 }
 let motDirectJusqua = 0;
 function direMotDirect(texte, maxMs = 0, auDebut = null) {

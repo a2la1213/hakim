@@ -59,10 +59,14 @@ INSTRUMENTS = {
     "media_lecture": ("TON MEMBRE : relancer la musique ou la vidéo", 0, 0),
     "media_suivant": ("TON MEMBRE : passer au morceau suivant", 0, 0),
     "media_precedent": ("TON MEMBRE : revenir au morceau précédent", 0, 0),
+    # (03/11, 13:33, papa via toi : « les ondes du réseau mobile aussi ») ce que le téléphone REÇOIT (ce qu'il émet, aucune appli ne
+    # le lit) ; en continu aussi : l'événement « reseau_mobile » de ton corps quand le signal ou la génération change (appli 1.52)
+    "reseau_mobile": ("le réseau mobile où tu es : l'opérateur, la génération (2G à 5G), la force du signal (en dBm et en mots), "
+                      "l'itinérance ; la génération demande « Téléphone » dans les autorisations de l'appli", 0, 0),
 }
 RADIO = {"appareils", "bluetooth_scan", "wifi_scan", "bluetooth_signal", "nfc_ecrire", "bluetooth_activer", "bluetooth_appairer",
          "wifi_info", "wifi_connecter", "bluetooth_reglages", "wifi_reglages", "nfc_reglages", "appli_active",
-         "media_pause", "media_lecture", "media_suivant", "media_precedent"}
+         "media_pause", "media_lecture", "media_suivant", "media_precedent", "reseau_mobile"}
 AVEC_TEXTE = {"nfc_ecrire": "le texte à écrire sur la puce", "bluetooth_appairer": "l'adresse ou le nom de l'appareil",
               "wifi_connecter": "le nom du réseau (« nom » ou « nom ; mot de passe »)"}
 _ID_MEMBRE = re.compile(r"[0-9a-f]{10}")

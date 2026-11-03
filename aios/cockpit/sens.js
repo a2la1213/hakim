@@ -13,7 +13,8 @@ const SENS = new Set(['inventaire', 'imu', 'sismo', 'baro', 'magneto', 'son',
   'appareils', 'bluetooth_scan', 'wifi_scan', 'bluetooth_signal', 'nfc_ecrire',   // (03/11) ses sens radio et ses membres (appli 1.42)
   'bluetooth_activer', 'bluetooth_appairer', 'wifi_info', 'wifi_connecter', 'bluetooth_reglages', 'wifi_reglages', 'nfc_reglages',   // (appli 1.44)
   'appli_active',   // (appli 1.45)
-  'media_pause', 'media_lecture', 'media_suivant', 'media_precedent']);   // (appli 1.46)
+  'media_pause', 'media_lecture', 'media_suivant', 'media_precedent',   // (appli 1.46)
+  'reseau_mobile']);   // (13:33, appli 1.52)
 const EXPIRE_MS = 2 * 3600 * 1000, MARGE_MS = 120 * 1000, ESSAIS = 3;
 // (30/10, Ahmed : « ses propres modules ») ses instruments à lui : donnés à son Tricordeur (le module), qui rend par
 // Documents/Hakim/sens/<id>/ (Syncthing) ; on attend sa durée + 30 min (la synchronisation)
@@ -47,6 +48,8 @@ const INTEGRES = {
   media_lecture: ['son membre : relancer la musique ou la vidéo', 0, 0],
   media_suivant: ['son membre : passer au morceau suivant', 0, 0],
   media_precedent: ['son membre : revenir au morceau précédent', 0, 0],
+  // (03/11, 13:33, papa via Hakim : « les ondes du réseau mobile aussi ») ce que le téléphone reçoit (appli 1.52)
+  reseau_mobile: ['le réseau mobile : opérateur, génération (2G à 5G), force du signal, itinérance', 0, 0],
 };
 
 class FileSens {

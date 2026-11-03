@@ -5089,7 +5089,7 @@ const { Homeostasie } = require('./homeostasie.js');
 const HOMEO = new Homeostasie({ jarvis: JARVIS });
 const CORPS_TYPES = new Set(['chute', 'choc', 'secousse', 'pris_en_main', 'pose', 'berce', 'poche', 'sortie_poche', 'plie', 'deplie',
   'lumiere_soudaine', 'noir', 'coup_de_pression', 'musique', 'voix_sentie',
-  'bluetooth', 'wifi', 'nfc', 'musique_ecoutee', 'son_ecoute', 'son_entendu', 'appli', 'reaction', 'son_ressenti']);   // (03/11) ses sens radio (appli 1.42) ; ce que le téléphone joue (1.43)
+  'bluetooth', 'wifi', 'nfc', 'musique_ecoutee', 'son_ecoute', 'son_entendu', 'appli', 'reaction', 'son_ressenti', 'reseau_mobile']);   // (03/11) ses sens radio (appli 1.42) ; ce que le téléphone joue (1.43)
 const CORPS_REGLAGES = path.join(JARVIS, 'corps-reglages.json');
 const CORPS_INTERVALLES = [30, 60, 120, 300, 900];
 function corpsReglages() {
@@ -5395,6 +5395,8 @@ function libelleCorps(ev) {
   if (ev.type === 'bluetooth') return `bluetooth${d.appareil ? ` ${c(d.appareil, 40)}` : ''}${d.etat ? ` (${c(d.etat, 30)})` : ''}${d.arrives ? `, arrivés : ${c(d.arrives, 80)}` : ''}${d.partis ? `, partis : ${c(d.partis, 80)}` : ''}`;
   if (ev.type === 'appli') return `appli ${c(d.appli, 40)}`;
   if (ev.type === 'wifi') return `wifi ${c(d.reseau || d.etat, 40)}`;
+  // (13:33) le réseau mobile, comme ses autres sens radio : au fil avec ses mots
+  if (ev.type === 'reseau_mobile') return `réseau mobile${d.generation ? ` ${c(d.generation, 12)}` : ''}${d.signal ? `, ${c(d.signal, 30)}` : ''}${d.operateur ? ` (${c(d.operateur, 30)})` : ''}`;
   return ev.type;
 }
 let fluxMilieu = '';

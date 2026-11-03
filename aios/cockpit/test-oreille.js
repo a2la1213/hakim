@@ -132,18 +132,8 @@ test('(21:13-21:15) « dans ta tête » pour lui aussi : ses réponses et ses pe
   const html = fs.readFileSync(path.join(__dirname, 'public', 'parler.html'), 'utf8');
   assert.match(html, /id="sonHakim" aria-pressed="false"/);
   assert.match(page, /\$\('sonHakim'\)\.addEventListener\('click', \(\) => \{ couperSon\(\); \}\);/);
-  // la respiration : jouée quand rien ne parle, jamais par-dessus sa voix
-  const resp = prendre(page, 'function respirer() {');
-  const joues = [];
-  const noeud = () => ({ connect() {}, frequency: {}, Q: {}, gain: {} });
-  const ctx = { Math, etat: { reglages: {} }, lecteur: { actif: false }, analyseurVoix: {},
-    actx: { state: 'running', sampleRate: 8000, createBuffer: (c, n) => ({ getChannelData: () => new Float32Array(n) }),
-      createBufferSource: () => ({ ...noeud(), start: () => joues.push(1) }), createBiquadFilter: noeud, createGain: noeud } };
-  vm.createContext(ctx); vm.runInContext(resp, ctx);
-  ctx.respirer(); assert.equal(joues.length, 1, 'une inspiration');
-  ctx.lecteur.actif = true; ctx.respirer(); assert.equal(joues.length, 1, 'pas par-dessus sa voix');
-  ctx.lecteur.actif = false; ctx.etat.reglages.voixNeutre = true; ctx.respirer(); assert.equal(joues.length, 1, 'voix neutre : rien');
-  assert.match(page, /mesureTour\.premier_texte = Date\.now\(\); if \(auto\) respirer\(\);/);
+  // (13:51, papa via Hakim) plus d'inspiration avant sa voix : ses meubles couvrent ce trou-là, avec sa voix
+  assert.doesNotMatch(page, /respirer\(\)/);
 });
 
 test('(21:34) « dans ta tête » tient pour lui : ni ses tours de lui-même ni une copie revenue du cockpit ne s’affichent pendant la conversation', () => {
