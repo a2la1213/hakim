@@ -814,6 +814,13 @@ def ancrage(mem, now=None):
     sens = (e.get("sensation_code") or {}).get("mots") or e.get("emotion_humeur") or e.get("humeur")
     if sens:
         lignes.append(f"Ce que tu sens : {sens}")
+    try:                                         # (03/11, « tout coordonné ») ses voix, à sa dernière décision
+        v = json.loads((Path.home() / "AIOS" / "jarvis" / "voix-interieures.json").read_text(encoding="utf-8"))
+        if now - float(v.get("ts") or 0) / 1000 < 3600:
+            lignes.append("Tes voix, à ta dernière décision : " + (f"ton instinct « {v['instinct']} » ; " if v.get("instinct") else "")
+                          + ", ".join(v.get("penchants") or []) + (" (le doute)" if v.get("doute") else ""))
+    except Exception:
+        pass
     try:
         f = Path.home() / "AIOS" / "jarvis" / "corps-sensations.jsonl"
         recents = [json.loads(l) for l in f.read_text(encoding="utf-8").splitlines()[-5:] if l.strip()]
