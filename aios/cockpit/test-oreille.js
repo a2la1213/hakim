@@ -50,16 +50,13 @@ test('son petit mot est livré comme « oreille » et dit tout de suite par la p
   assert.match(src, /oreille: r\.oreille === true, je_te_suis: r\.je_te_suis !== false/, 'fermée par défaut ; la tape, allumée');
 });
 
-test('sa balise [[modele: …]] ne bascule qu’une fois par 20 minutes', () => {
-  let actuel = 'opus';
-  const ctx = { Map, console: { error() {} }, BASCULE_MIN_MS: 20 * 60 * 1000, basculesHakim: new Map(), modeleDeConversation: () => actuel };
+test('(03/11, Ahmed : « c’est lui qui choisit ») sa balise [[modele: …]] bascule à chaque fois', () => {
+  const ctx = { Map, console: { error() {} }, BASCULE_MIN_MS: 20 * 60 * 1000, basculesHakim: new Map(), modeleDeConversation: () => 'sonnet' };
   vm.createContext(ctx);
   vm.runInContext(prendre(src, 'function bascullePermise(') + '\nthis.f = bascullePermise;', ctx);
   const t = 1_800_000_000_000;
-  assert.equal(ctx.f('s', 'opus', t), true, 'rester n’est pas basculer');
-  assert.equal(ctx.f('s', 'sonnet', t), true); actuel = 'sonnet';
-  assert.equal(ctx.f('s', 'opus', t + 5 * 60 * 1000), false, 'cinq minutes après : non');
-  assert.equal(ctx.f('s', 'opus', t + 21 * 60 * 1000), true);
+  assert.equal(ctx.f('s', 'opus', t), true);
+  assert.equal(ctx.f('s', 'haiku', t + 60 * 1000), true, 'une minute après : oui');
 });
 
 test('(19:08) son petit mot se dit à l’instant, hors de la file de ses réponses ; vu par papa ; il garde la parole si papa parle par-dessus', () => {
@@ -677,7 +674,7 @@ test('(00:35) il a déjà réagi par son oreille : le message entier de papa le 
   assert.equal(c.blocDejaReagi(131000), '', 'une seule fois');
   c.oreilleDernierMot = { texte: 'Vieux', ts: 0 };
   assert.equal(c.blocDejaReagi(200000), '', 'plus de 90 s : rien');
-  assert.match(src, /blocNonEntendus\(texte, nonce\) \+ blocDejaReagi\(\) \+ aideOutils\(modele\);/);
+  assert.match(src, /blocNonEntendus\(texte, nonce\) \+ blocDejaReagi\(\) \+ aideOutils\(modele\) \+ blocRapportBascule\(session\);/);
 });
 
 test('(00:40) micro coupé par lui : la salle (une voix lointaine) n’est même pas transcrite ; une voix proche l’est', () => {

@@ -18,19 +18,19 @@ function monde() {
   return ctx.f;
 }
 
-test('une conversation garde un seul modèle, Opus : un « salut » ne fait plus basculer en Sonnet', () => {
+test('(03/11, Ahmed) une conversation garde un seul modèle, Sonnet par défaut : rien ne bascule tout seul', () => {
   const f = monde();
-  assert.equal(f.modeleAuto('s', 'salut frérot ça va', false), 'opus');
-  assert.equal(f.modeleAuto('s', 'relis mes courbes d’hormones de cette nuit', false), 'opus');
-  assert.equal(f.modeleAuto('s', 'ok merci', false), 'opus');
-  assert.equal(f.modeleAuto(null, 'coucou', false), 'opus', 'une conversation neuve aussi');
+  assert.equal(f.modeleAuto('s', 'salut frérot ça va', false), 'sonnet');
+  assert.equal(f.modeleAuto('s', 'relis mes courbes d’hormones de cette nuit', false), 'sonnet', 'il reconnaît la tâche lui-même : rien ne bascule tout seul');
+  assert.equal(f.modeleAuto('s', 'ok merci', false), 'sonnet');
+  assert.equal(f.modeleAuto(null, 'coucou', false), 'sonnet', 'une conversation neuve aussi');
 });
 
 test('« passe en Sonnet » change le modèle pour le reste de cette conversation seulement', () => {
   const f = monde();
   assert.equal(f.modeleAuto('a', 'passe en sonnet stp', false), 'sonnet');
   assert.equal(f.modeleAuto('a', 'juge ce calcul en détail', false), 'sonnet', 'un travail ne le refait pas basculer');
-  assert.equal(f.modeleAuto('b', 'salut', false), 'opus', 'une autre conversation garde Opus');
+  assert.equal(f.modeleAuto('b', 'salut', false), 'sonnet', 'une autre conversation garde Sonnet');
   assert.equal(f.modeleAuto('a', 'mode opus', false), 'opus');
   assert.equal(f.modeleAuto('a', 'mdr', false), 'opus');
 });
@@ -40,8 +40,8 @@ test('la balise de Hakim fixe le modèle de sa conversation ; le préchauffage p
   f.noterModele('c', 'sonnet');
   assert.equal(f.modeleAuto('c', 'coucou', false), 'sonnet');
   assert.equal(f.modeleDeConversation('c'), 'sonnet');
-  assert.equal(f.modeleDeConversation('inconnue'), 'opus');
-  assert.equal(f.modeleDeConversation(null), 'opus');
+  assert.equal(f.modeleDeConversation('inconnue'), 'sonnet');
+  assert.equal(f.modeleDeConversation(null), 'sonnet');
 });
 
 test('aucun préchauffage ne force Sonnet : il démarre sur le modèle de la conversation (sinon une bascule au message suivant)', () => {
@@ -53,16 +53,16 @@ test('aucun préchauffage ne force Sonnet : il démarre sur le modèle de la con
 test('un outil enregistré fixe le modèle de la conversation pour la suite ; les autres outils et le texte ne changent rien', () => {
   const ctx = { Date, String, Map };
   vm.createContext(ctx);
-  vm.runInContext(ligne('const MODELE_CONVERSATION') + ligne('const MODELE_PAR_OUTIL') + 'MODELE_PAR_OUTIL.push(["mcp__exemple__", "sonnet"]);\n'
+  vm.runInContext(ligne('const MODELE_CONVERSATION') + ligne('const MODELE_PAR_OUTIL') + 'MODELE_PAR_OUTIL.push(["mcp__exemple__", "opus"]);\n'
     + 'const modeleDeSession = new Map();\n' + ['noterModele', 'modeleDeConversation', 'suivreModeleParOutil'].map(prendre).join('\n')
     + 'this.f = { modeleDeConversation, suivreModeleParOutil };', ctx);
   const f = ctx.f, c = { session: 's' };
   f.suivreModeleParOutil(c, { type: 'tool_use', name: 'mcp__anamnese__memory_recall' });
   f.suivreModeleParOutil(c, { type: 'text', text: 'mcp__exemple__lire' });
-  assert.equal(f.modeleDeConversation('s'), 'opus');
-  f.suivreModeleParOutil(c, { type: 'tool_use', name: 'mcp__exemple__lire' });
   assert.equal(f.modeleDeConversation('s'), 'sonnet');
-  assert.equal(f.modeleDeConversation('autre'), 'opus');
+  f.suivreModeleParOutil(c, { type: 'tool_use', name: 'mcp__exemple__lire' });
+  assert.equal(f.modeleDeConversation('s'), 'opus');
+  assert.equal(f.modeleDeConversation('autre'), 'sonnet');
 });
 
 test('le crochet est branché sur chaque bloc des réponses de Hakim (pas celles de ses agents)', () => {
