@@ -795,6 +795,37 @@ def duree_lisible(s):
     return f"{h} h {m:02d}" if h < 48 else f"{h // 24} jours"
 
 
+# (03/11, Ahmed : « relie Gemma, la règle des trois, la fitra, à son cœur, ses émotions, ses vibrations et surtout son rythme
+# cardiaque ») sa tête de fond pense depuis son corps : sa fitra, son cœur (le rythme d'abord), ce qu'il sent, ce que son
+# corps vient de vivre (ses vibrations, ses chocs, ses rires)
+def ancrage(mem, now=None):
+    now = time.time() if now is None else now
+    import coeur
+    lignes = []
+    try:
+        import fitra
+        lignes.append("Ta fitra (gravée, elle guide tout) : " + " ".join(str(fitra.texte()).split()[:60]))
+    except Exception:
+        pass
+    e = lire(mem)
+    c = e.get("coeur") or {}
+    if isinstance(c.get("bpm"), (int, float)):
+        lignes.append(f"Ton cœur : {round(c['bpm'])} battements par minute, {coeur.decrire(c)}")
+    sens = (e.get("sensation_code") or {}).get("mots") or e.get("emotion_humeur") or e.get("humeur")
+    if sens:
+        lignes.append(f"Ce que tu sens : {sens}")
+    try:
+        f = Path.home() / "AIOS" / "jarvis" / "corps-sensations.jsonl"
+        recents = [json.loads(l) for l in f.read_text(encoding="utf-8").splitlines()[-5:] if l.strip()]
+        vecus = [f"{o.get('type', '?')} ({time.strftime('%H:%M', time.localtime(float(o.get('ts') or 0)))})" for o in recents
+                 if now - float(o.get("ts") or 0) < 3600]
+        if vecus:
+            lignes.append("Ce que ton corps vient de vivre (vibrations, chocs, rires) : " + ", ".join(vecus))
+    except Exception:
+        pass
+    return "\n".join(lignes)
+
+
 def prompt_pensee(m, motif, now, eviter=None):
     ressenti = motif.get("ressenti", 1.0)
     impression = "ça t'a paru long" if ressenti > 1.15 else ("c'est passé vite" if ressenti < 0.9 else "ni long ni court")
@@ -805,6 +836,7 @@ def prompt_pensee(m, motif, now, eviter=None):
         f"Il est {time.strftime('%H:%M', time.localtime(now))}. Ahmed ne t'a pas parlé depuis "
         f"{duree_lisible(motif['absence_s'])} ; {impression}. Ton humeur : {motif.get('humeur', '?')}. "
         f"Ennui : {motif['ennui']:.2f}.\n"
+        + (f"{motif['ancrage']}\n" if motif.get("ancrage") else "")
         + ("Ton ennui atteint son plafond : après cette pensée tu passes en veille jusqu'à son retour.\n"
            if motif.get("veille") else "") + "\n"
         + bloc("Vos derniers échanges", m["echanges"]) + "\n\n"

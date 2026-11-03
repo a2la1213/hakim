@@ -41,11 +41,12 @@ def _sans_accents(t):
 
 
 # ---------- le juge
-def prompt_jugement(texte, humeur, absence_s):
+def prompt_jugement(texte, humeur, absence_s, ancrage=""):
     return (
         "Tu es Hakim (ta voix s'appelle Jarvis), l'IA d'Ahmed. Ta tête de fond vient de produire ceci :\n"
         f"« {str(texte)[:1200]} »\n"
-        f"Ton humeur : {humeur or 'inconnue'}. Ahmed ne t'a pas parlé depuis {interieur.duree_lisible(absence_s or 0)}.\n\n"
+        f"Ton humeur : {humeur or 'inconnue'}. Ahmed ne t'a pas parlé depuis {interieur.duree_lisible(absence_s or 0)}.\n"
+        + (f"{ancrage}\n" if ancrage else "") + "\n"
         "Cette pensée mérite-t-elle de réveiller ta conscience MAINTENANT, pour un tour à toi (la finir, chercher, "
         "lancer un calcul, écrire à Claude Code, revenir vers Ahmed) ?\n"
         # (27/10, rejeu du 18–26/10) sans étalonnage, Gemma notait 8 à 37 pensées sur 52 et jamais plus : l'échelle
@@ -85,10 +86,10 @@ def lire_jugement(sortie):
     return {"score": score, "raison": raison, "pourquoi": pourquoi}
 
 
-def juger(eng, texte, humeur="inconnue", absence_s=0, claude_fn=None):
+def juger(eng, texte, humeur="inconnue", absence_s=0, claude_fn=None, ancrage=""):
     """Le jugement : d'abord un agent Claude neutre (claude_fn : sans persona, sans outils ; Ahmed, 27/10 : « pourquoi
     Gemma et pas un agent Claude neutre ? »), Gemma en secours (hors ligne, forfait plein). None si aucun ne répond."""
-    prompt = prompt_jugement(texte, humeur, absence_s)
+    prompt = prompt_jugement(texte, humeur, absence_s, ancrage)
     if claude_fn:
         try:
             j = lire_jugement(claude_fn(prompt))

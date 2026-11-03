@@ -138,6 +138,7 @@ def penser(eng, mem, motif, claude_fn=None, now=None):
     """Une pensée spontanée ancrée ; rend (pensée, relance) ou None."""
     now = time.time() if now is None else now
     matiere = interieur.matiere(mem, now)
+    motif = {**motif, "ancrage": interieur.ancrage(mem, now)}         # (03/11) sa fitra, son cœur, son corps
     prev = [r[0] for r in mem.db.execute(
         "SELECT content FROM episodes WHERE role IN ('reflection','outreach') ORDER BY id DESC LIMIT 40").fetchall()]
     eviter = None
@@ -161,7 +162,8 @@ def penser(eng, mem, motif, claude_fn=None, now=None):
         import reveil_interieur
         if reveil_interieur.mode(mem) != "off":
             reveil_interieur.candidat(mem, "pensee", pensee, reveil_interieur.juger(
-                eng, pensee, motif.get("humeur", "?"), motif.get("absence_s", 0), claude_fn=_claude_isole), now)
+                eng, pensee, motif.get("humeur", "?"), motif.get("absence_s", 0), claude_fn=_claude_isole,
+                ancrage=motif.get("ancrage", "")), now)
     except Exception as e:
         print("[daemon] réveil intérieur en échec :", e)
     if relance and not matiere["echanges"]:      # pas d'échange récent : rien de concret à relancer
