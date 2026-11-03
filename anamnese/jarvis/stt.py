@@ -115,7 +115,7 @@ def disponible():
     return True
 
 
-def transcrire(fichier, langue=None, contexte="", voix=None, avec_temps=False):
+def transcrire(fichier, langue=None, contexte="", voix=None, avec_temps=False, musique=False):
     """contexte : ce qui a déjà été transcrit de la même phrase (transcription en continu) ; il guide
     Whisper sur la suite (noms, orthographe, langue). voix : « reconnaitre » (l'empreinte vocale d'Ahmed, un
     indice) ou « apprendre » (Ahmed l'a demandé) ; None : rien. avec_temps : les segments gardés, avec les secondes de
@@ -180,7 +180,7 @@ def transcrire(fichier, langue=None, contexte="", voix=None, avec_temps=False):
                     sortie["ton"] = {"eveil": e, "duree_s": duree}
                 # plusieurs voix dans le même message : le texte est étiqueté par voix
                 etiquete, resume = empreinte_vocale.etiqueter(brut, segments_gardes(r.get("segments") or [], base),
-                                                            nouveau_tour=not (contexte and contexte.strip()))
+                                                            nouveau_tour=not (contexte and contexte.strip()), musique=bool(musique))
                 if resume and resume.get("moi"):                        # (03/11) sa propre voix entendue : mise de côté
                     sortie["moi"] = resume["moi"]
                 if etiquete is not None and resume and (resume["autres"] or resume["plusieurs"] or resume.get("moi")):

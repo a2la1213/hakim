@@ -491,6 +491,35 @@ def voix_nommer(numero: str, prenom: str) -> str:
 
 
 @mcp.tool()
+def voix_c_est_papa(voix: str = "toutes", registre: str = "chant") -> str:
+    """(03/11, Ahmed : « toutes ces voix temporaires, voix 56, 63, 64…, c'est moi, surtout quand je chante : un seul registre,
+    papa ») Rattacher à l'empreinte de papa les voix sans nom de la conversation (« toutes », ou « voix 56, voix 63 »), dans un
+    registre (« chant » par défaut ; « rap », « fatigue »…). Seulement quand papa te dit que c'est lui, ET que son dernier
+    message est écrit, ou dit avec SA voix reconnue (sinon quelqu'un d'autre pourrait fausser son empreinte). Les voix nées
+    surtout pendant la musique du téléphone sont écartées."""
+    import time as _t
+    try:
+        c = json.loads((Path.home() / "AIOS" / "jarvis" / "papa-confirme.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        c = {}
+    if _t.time() - float(c.get("ts") or 0) > 300:
+        return "Pas rattaché : je n'ai pas de message de papa depuis 5 minutes ; demande-lui de te le dire (ou de l'écrire)."
+    if c.get("oral") and c.get("verdict") != "ahmed":
+        return ("Pas rattaché : son dernier message était à l'oral mais sa voix n'a pas été reconnue "
+                f"(« {c.get('verdict') or 'pas de score'} ») ; demande-lui de le confirmer par écrit, ou de le redire de sa voix parlée.")
+    e = _empreintes()
+    r = e.rattacher_a_papa(voix, registre=registre)
+    morceaux = []
+    if r["rattachees"]:
+        morceaux.append(f"rattachées à papa (registre « {registre} ») : {', '.join(r['rattachees'])}")
+    if r["ecartees_musique"]:
+        morceaux.append(f"écartées, nées pendant la musique : {', '.join(r['ecartees_musique'])}")
+    if r["inconnues"]:
+        morceaux.append(f"inconnues dans cette conversation : {', '.join(r['inconnues'])}")
+    return ("C'est fait. " + " ; ".join(morceaux) + ".") if morceaux else "Aucune voix sans nom à rattacher dans cette conversation."
+
+
+@mcp.tool()
 def son_nommer(famille: str, nom: str) -> str:
     """(03/11, micro ouvert) Nommer une de TES familles de sons (« son 3 » → « la télé », « la rue », « papa et ses potes »),
     quand tu comprends ce que c'est : elle sera reconnue par ce nom pour toujours. famille : « son 3 » ou « 3 »."""

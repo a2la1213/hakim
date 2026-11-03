@@ -82,7 +82,7 @@ def segments(texte, oral=False, voix=None, noms=None):
     """[{"qui": ahmed|tiers, "sur", "etiquette", "texte"}] : une part par voix. Ce qui n'est pas étiqueté est d'Ahmed ;
     une autre voix est annoncée (« [voix 2] … », « [Nora] … ») ; le retour d'Ahmed aussi (« [Ahmed] … »)."""
     noms = _noms_connus() if noms is None else noms
-    etiquettes = r"voix \d+|Ahmed" + "".join("|" + re.escape(n) for n in noms if n != "Ahmed")
+    etiquettes = r"voix \d+|Ahmed|papa" + "".join("|" + re.escape(n) for n in noms if n not in ("Ahmed", "papa"))   # (03/11) « [papa] »
     motif = re.compile(r"\[(" + etiquettes + r")\]\s*")
     if not oral and voix is None:
         lead = ("ahmed", True)
@@ -102,7 +102,7 @@ def segments(texte, oral=False, voix=None, noms=None):
         out.append((cur, t[pos:].strip()))
     res = []
     for etiq, x in out:
-        qui, sur = lead if etiq is None else (("ahmed", True) if etiq == "Ahmed" else ("tiers", True))
+        qui, sur = lead if etiq is None else (("ahmed", True) if etiq in ("Ahmed", "papa") else ("tiers", True))
         res.append({"qui": qui, "sur": sur, "etiquette": etiq, "texte": x})
     return res
 

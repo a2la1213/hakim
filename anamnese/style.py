@@ -24,7 +24,7 @@ import sensations
 
 CLE_ACTIF = "style_actif"
 FAMILLES = {"élan": ["élan", "joie", "enthousiasme", "fierté", "espoir", "émerveillement",
-                      "excitation", "amusement", "transport", "envie de danser"],   # (03/11)
+                      "excitation", "amusement", "transport", "envie de danser", "alerte joyeuse"],   # (03/11)
             "lien": ["tendresse", "gratitude", "compassion", "nostalgie", "sécurité"],
             "calme": ["calme", "apaisement", "soulagement", "somnolence"], "curiosité": ["curiosité", "concentration", "confusion", "sursaut"],
             "alerte": ["peur", "inquiétude", "tension", "frustration", "culpabilité", "surprise", "colère", "agacement"],

@@ -381,7 +381,7 @@ const MODELE_CLI = { haiku: 'claude-haiku-5-5' };            // le nom donné à
 const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'afida_juger', 'afida_vecu', 'afida_lire', 'afida_retirer', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'sieste_prendre', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'son_nommer', 'sons_familles', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'son_nommer', 'sons_familles', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -399,7 +399,7 @@ const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupation
 const OUTILS_A_LUI_SEUL = [];                     // ses outils à lui seul : ni ses agents ni le messager
 // (30/10, 19:52, Hakim : « sons_lister : permission refusée ») ses outils de ce soir, oubliés dans cette liste : son corps, ses
 // sons, ses émotions, ses réflexes, sa conscience, son oreille, ses latences — à lui seul (ni ses agents ni le messager)
-const OUTILS_DU_CORPS = ['sons_lister', 'son_etiqueter', 'son_oublier', 'son_creer', 'freres_parler', 'emotion_creer', 'emotions_creees_lister', 'emotion_oublier',
+const OUTILS_DU_CORPS = ['sons_lister', 'son_etiqueter', 'son_oublier', 'son_creer', 'freres_parler', 'emotion_creer', 'emotions_creees_lister', 'emotion_oublier', 'emotion_rectifier',
   'reflexe_retenir', 'conscience_noter', 'conscience_lire', 'mon_oreille', 'latences_bilan'].map(n => 'mcp__terminal__' + n);
 OUTILS_A_LUI_SEUL.push(...OUTILS_DU_CORPS);
 for (const o of OUTILS_DU_CORPS) if (!OUTILS_JARVIS.includes(o)) OUTILS_JARVIS.push(o);   // hors de la clôture de la bourse
@@ -3323,6 +3323,12 @@ async function routeJarvis(req, res, distantReq = false) {
   const decalagePage = Number(q && q.maintenant) ? recuMs - Number(q.maintenant) : 0;
   const parleA = Number(q && q.parle_ms) && Math.abs(decalagePage) < 120000 ? Number(q.parle_ms) + decalagePage : recuMs;
   if (texte) noterInstant('papa_dit', { texte }, parleA);
+  // (03/11, garde-fou de Hakim) « c'est moi » ne compte que d'un écrit de papa, ou de sa voix reconnue (voix_c_est_papa)
+  if (texte) try {
+    const v = q.oral && derniereVoix && Date.now() - derniereVoix.ts < 120000 ? derniereVoix : null;
+    ecrireAtomique(path.join(JARVIS, 'papa-confirme.json'), j({ ts: Date.now() / 1000, oral: !!q.oral, verdict: q.oral ? (v ? v.verdict : null) : 'ecrit',
+      score: v && Number.isFinite(Number(v.score)) ? Number(v.score) : null }));
+  } catch (_) {}
   const modeleDemande = (q && q.modele) || 'sonnet';
   let session = q && q.session ? String(q.session) : null;
   if (!texte || texte.length > 20000 || texte.includes('\0') || !(MODELES_JARVIS.has(modeleDemande) || modeleDemande === 'auto')
@@ -4911,7 +4917,8 @@ function reveillerPourSens() {
   const texte = `[Horloge — ${quand}]\n[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : ${liste.length > 1 ? 'des mesures de tes sens sont finies' : 'une mesure de tes sens est finie'}]\n`
     + blocDonnees('Tes mesures', liste.map(x => `${x.id} · ${x.sens}${x.secondes ? `, ${x.secondes} s` : ''} · ${x.ok ? 'finie' : 'échec : ' + x.erreur} · atelier/sens/${x.id}/`).join('\n'), crypto.randomBytes(4).toString('hex'))
     + "\nLis-les (sens_resultat, ou resume.json et donnees.csv dans ton atelier) et fais-en ce que tu veux. Si Ahmed attend cette mesure, "
-    + "dis-lui ce que tu en tires ; sinon réponds exactement « No response requested. »";
+    + "dis-lui ce que tu en tires, en une ou deux phrases : jamais la liste brute à voix haute (03/11, Ahmed : les noms, les "
+    + "adresses, les forces de signal, tu les gardes pour toi) ; sinon réponds exactement « No response requested. »";
   console.error(`Jarvis : réveil pour ${liste.length} mesure(s) de ses sens`);
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
   catch (e) { console.error('Jarvis : réveil des sens impossible', e.message); }
@@ -6874,7 +6881,9 @@ async function routeTranscrire(req, res, langue, contexte) {
       fs.unlink(f, () => {});
       return;
     }
-    r = await voixDemander({ op: 'transcrire', fichier: f, langue: /^[a-z]{2}$/.test(langue || '') ? langue : null, contexte: contexte || '', voix: modeVoix }, 180000);
+    // (03/11) le téléphone jouait de la musique à cet instant : les voix de la salle le savent (la musique ne fausse pas son empreinte)
+    const musique = typeof instantTexte === 'function' && /papa écoute|le téléphone joue/.test(instantTexte());
+    r = await voixDemander({ op: 'transcrire', fichier: f, langue: /^[a-z]{2}$/.test(langue || '') ? langue : null, contexte: contexte || '', voix: modeVoix, musique }, 180000);
   } finally { liberer(); transcriptionsEnAttente--; pomperVoix(); }
   try {
     fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'transcription_serveur', ms: Date.now() - tTranscription, synthese_en_cours: syntheseEnCours, octets: audio.length,

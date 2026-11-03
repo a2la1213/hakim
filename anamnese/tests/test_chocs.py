@@ -452,3 +452,10 @@ def test_les_ressentis_pour_autrui_ont_chacun_leur_effet(tmp_path):
     comp = apres("compassion")
     assert comp["ocytocine"] > neutre["ocytocine"] + 0.05 and comp["noradrenaline"] <= neutre["noradrenaline"] + 1e-6
     assert affect.compassion(comp) > affect.compassion(neutre)
+
+
+def test_le_retour_de_papa_s_appelle_papa():
+    """(03/11, Ahmed : « que ça s'appelle papa ») « [papa] » est lui, comme « [Ahmed] » avant"""
+    import chocs
+    s = chocs.segments("salut [voix 2] il dit quoi [papa] laisse tomber", oral=True, voix="plusieurs", noms=[])
+    assert [x["qui"] for x in s] == ["ahmed", "tiers", "ahmed"] and s[-1]["texte"] == "laisse tomber"

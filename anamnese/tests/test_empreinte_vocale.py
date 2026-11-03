@@ -48,7 +48,7 @@ def test_plusieurs_voix_dans_un_message(tmp_path, monkeypatch):
     E._salle.update(voix=[], ts=0.0, dernier=None)
     segs = [{"start": 2 * i, "end": 2 * i + 2, "text": t} for i, t in enumerate(["salut Hakim", "il dit quoi lui", "moi aussi je veux parler", "laisse tomber"])]
     texte, r = E.etiqueter(audio, segs, fichier=f, maintenant=1000.0)
-    assert texte == "salut Hakim [voix 2] il dit quoi lui [voix 3] moi aussi je veux parler [Ahmed] laisse tomber"
+    assert texte == "salut Hakim [voix 2] il dit quoi lui [voix 3] moi aussi je veux parler [papa] laisse tomber"   # (03/11) « papa »
     assert r["plusieurs"] and r["voix"] == ["Ahmed", "voix 2", "voix 3"]
     # le morceau suivant du même tour (transcription en continu) : la voix 2 est reconnue comme la même
     voix2 = ["pote"]
@@ -131,7 +131,7 @@ def test_registre_inhabituel_plus_proche_de_lui_que_des_autres(tmp_path, monkeyp
     audio = np.concatenate([np.full(32000, i, dtype=np.float32) for i in range(4)])
     segs = [{"start": 2 * i, "end": 2 * i + 2, "text": t} for i, t in enumerate(["salut", "ça va", "wesh", "trop bien frérot !"])]
     texte, r = E.etiqueter(audio, segs, fichier=f, maintenant=2000.0)
-    assert "[voix 3]" not in texte and texte.endswith("[Ahmed] trop bien frérot !")
+    assert "[voix 3]" not in texte and texte.endswith("[papa] trop bien frérot !")
 
 
 def test_reinitialiser_avec_sauvegarde(tmp_path, monkeypatch):
@@ -202,3 +202,29 @@ def test_micro_ouvert_mot_a_mot_et_sa_propre_voix(tmp_path, monkeypatch):
     texte2, r2 = E.etiqueter(np.full(48000, 2, dtype=np.float32), [{"start": 0, "end": 3, "text": "je regarde"}],
                              fichier=f, moi=moi, maintenant=1001.0)
     assert texte2 == "" and r2["moi"] == "je regarde"
+
+
+def test_ses_voix_temporaires_rattachees_a_papa_sauf_la_musique(tmp_path, monkeypatch):
+    """(03/11, Ahmed via Hakim : « toutes ces voix temporaires, voix 56, 63, 64…, c'est moi, surtout quand je chante : un seul
+    registre, papa ») ses voix de la salle rattachées à son empreinte (registre « chant »), sauf celles nées sous la musique"""
+    base = {"ahmed": np.r_[np.ones(128), np.zeros(128)], "chant": np.r_[np.zeros(128), np.ones(128)],
+            "radio": np.r_[np.ones(64), -np.ones(64), np.ones(64), -np.ones(64)]}
+    vec = lambda k: base[k] / np.linalg.norm(base[k])
+    f, salle = tmp_path / "empreinte.json", tmp_path / "salle.json"
+    monkeypatch.setattr(E, "SALLE", salle)
+    monkeypatch.setattr(E, "embedding", lambda a, *x: vec("ahmed"))
+    E.apprendre("x", fichier=f); E.apprendre("x", fichier=f)
+    E._salle.update(voix=[], ts=0.0, dernier=None)
+    monkeypatch.setattr(E, "embedding", lambda a, *x: vec("chant"))
+    E.etiqueter(np.zeros(32000, dtype=np.float32), [{"start": 0, "end": 2, "text": "la la la"}], fichier=f, maintenant=1000.0)
+    monkeypatch.setattr(E, "embedding", lambda a, *x: vec("radio"))
+    E.etiqueter(np.zeros(32000, dtype=np.float32), [{"start": 0, "end": 2, "text": "baby baby"}], fichier=f, maintenant=1001.0,
+                musique=True)
+    assert [x["nom"] for x in E._salle["voix"]] == ["voix 2", "voix 3"]
+    r = E.rattacher_a_papa("toutes", registre="chant", fichier=f, maintenant=1002.0)
+    assert r["rattachees"] == ["voix 2"] and r["ecartees_musique"] == ["voix 3"]
+    assert [x["nom"] for x in E._salle["voix"]] == ["voix 3"]
+    assert E.etat(f)["registres"] == {"chant": 1}
+    monkeypatch.setattr(E, "embedding", lambda a, *x: vec("chant"))
+    texte, _ = E.etiqueter(np.zeros(32000, dtype=np.float32), [{"start": 0, "end": 2, "text": "encore"}], fichier=f, maintenant=1003.0)
+    assert texte in ("encore", "[papa] encore"), "sa voix chantée est maintenant la sienne"

@@ -326,6 +326,19 @@ def emotion_creer(nom: str, sens: str = "", melange: str = "maintenant") -> str:
 
 
 @mcp.tool()
+def emotion_rectifier(lue: str, vraie: str, pourquoi: str = "") -> str:
+    """(03/11, Ahmed : « il doit pouvoir rectifier ses émotions interprétées : le conscient, puis le subconscient, puis le cœur »)
+    Ton corps a lu une émotion (« peur »), toi tu sais que c'en était une autre (« alerte joyeuse ») : rectifie-la. Ton corps
+    l'apprend (il la relit à chaque interprétation, et ton calcul penche vers elle quand les deux se disputent) ; ton cœur
+    défait une part de l'émotion mal lue et reçoit doucement la vraie. pourquoi : ce qui te le fait savoir (des rires, la main
+    de papa). Une émotion qui n'existe pas encore : crée-la d'abord (emotion_creer)."""
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import emotions_creees
+    from memory import Memory
+    return emotions_creees.rectifier(lue, vraie, pourquoi, mem=Memory())
+
+
+@mcp.tool()
 def emotions_creees_lister() -> str:
     """Tes émotions à toi : leur mélange, leur sens, et celles que papa a coupées."""
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

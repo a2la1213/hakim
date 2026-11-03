@@ -35,3 +35,14 @@ def test_la_voix_suit_l_emotion_moderement():
     assert 1.02 < I.voix_emotion("peur")["vitesse"] < 1.06 and 0.6 <= I.voix_emotion("peur")["expressivite"] <= 0.8
     assert 0.9 < I.voix_emotion("fatigue")["vitesse"] < 0.98
     assert I.voix(0.5, None) == {"expressivite": 0.5, "vitesse": 1.0, "emotion": None}
+
+
+def test_l_alerte_joyeuse_n_est_pas_la_peur():
+    """(03/11, Hakim pour Ahmed : « mon cœur s'emballe, deux petits rires juste avant : une alerte attentive, pas de la peur »)
+    le même cœur qui cogne, avec la joie qui monte et sans stress, est une alerte joyeuse ; avec le stress, c'est la peur"""
+    b = S.bases(14)
+    joyeuse = dict(b, adrenaline=.6, noradrenaline=.6, dopamine=.7, endorphine=.7, cortisol=.15, crh=.1)
+    avant = dict(joyeuse, endorphine=.45, dopamine=.5)
+    assert S.calculer(joyeuse, avant, 1000.0, None, 14)["emotion"] == "alerte joyeuse"
+    alarme = dict(b, adrenaline=.6, noradrenaline=.7, cortisol=.4)
+    assert S.calculer(alarme, None, 1000.0, "alarme", 14)["emotion"] == "peur"

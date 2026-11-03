@@ -94,6 +94,11 @@ def apprendre(audio, fichier=None, registre=None, guide=False):
     v = embedding(audio)
     if v is None:
         return None
+    return apprendre_vecteur(v, fichier, registre, guide)
+
+
+def apprendre_vecteur(v, fichier=None, registre=None, guide=False):
+    """(03/11) la même chose, pour un vecteur déjà calculé (une voix de la salle rattachée à papa)."""
     f = Path(fichier or FICHIER)
     d = _lire(f) or {"vecteurs": []}
     if not guide and d.get("moyenne") and len(d.get("vecteurs", [])) >= 2 and score_ahmed(v, d) < 0.3:
@@ -169,14 +174,15 @@ def _charger_salle(t, salle=None):
         d = json.loads(Path(salle or SALLE).read_text(encoding="utf-8"))
         if t - d.get("ts", 0) <= SALLE_DUREE_S:
             _salle.update(ts=d["ts"], dernier=d.get("dernier"),
-                          voix=[{"nom": x["nom"], "c": np.array(x["c"]), "n": x["n"]} for x in d.get("voix", [])])
+                          voix=[{"nom": x["nom"], "c": np.array(x["c"]), "n": x["n"], "m": x.get("m", 0)} for x in d.get("voix", [])])
     except (OSError, ValueError, KeyError):
         pass
 
 
 def _sauver_salle(salle=None):
     _ecrire(salle or SALLE, {"ts": _salle["ts"], "dernier": _salle["dernier"],
-                             "voix": [{"nom": x["nom"], "c": np.round(x["c"], 5).tolist(), "n": x["n"]} for x in _salle["voix"]]})
+                             "voix": [{"nom": x["nom"], "c": np.round(x["c"], 5).tolist(), "n": x["n"], "m": x.get("m", 0)}
+                                      for x in _salle["voix"]]})
 
 
 def connues(fichier=None):
@@ -191,7 +197,7 @@ def _prenom(nom):
     plus ; jamais « Ahmed » ni « voix N » : un nom avec des crochets forgerait une étiquette de la transcription."""
     nom = " ".join(str(nom or "").split())[:40]
     if not nom or not all(c.isalpha() or c in " -'’" for c in nom) or nom.casefold() == "ahmed" \
-            or re.fullmatch(r"voix\s*\d*", nom, re.IGNORECASE):
+            or nom.casefold() == "papa" or re.fullmatch(r"voix\s*\d*", nom, re.IGNORECASE):
         raise ValueError("un prénom (lettres, espaces, traits d'union), autre qu'Ahmed")
     return nom
 
@@ -253,6 +259,7 @@ def oublier(nom, fichier=None):
 #   la voix de la fenêtre la plus proche de son instant, même au milieu d'une phrase. Une fenêtre isolée qui ne ressemble à
 #   personne (à cheval sur deux voix) ne crée pas de voix : il en faut deux de suite.
 MOI = Path.home() / "AIOS" / "jarvis" / "empreinte-moi.json"
+NOM_PAPA = "papa"
 MOI_MAX, SEUIL_MOI = 40, 0.5
 FENETRE_S, PAS_S = 1.5, 0.75
 
@@ -277,7 +284,7 @@ def _moyenne_moi(fichier=None):
     return np.array(d["moyenne"]) if d and d.get("moyenne") and len(d.get("vecteurs", [])) >= 3 else None
 
 
-def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None, moi=None):
+def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None, moi=None, musique=False):
     """segments : [{start, end, text[, words]}] (gardés par stt). Rend (texte étiqueté, résumé) ; résumé = {"voix": [...],
     "plusieurs": bool, "ahmed": bool, "autres": [...], "moi": ce qu'il a entendu de SA voix ou ""}. Le texte rendu peut
     être vide (tout était sa voix). Sans voix reconnaissable : (None, None)."""
@@ -317,13 +324,17 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
         return None, None
 
     def ajouter(v, x=None):
+        # (03/11) « m » : combien de fois cette voix a été entendue pendant que le téléphone jouait de la musique
         if x is not None:
             x["c"] = (x["c"] * x["n"] + v) / (x["n"] + 1)
             x["c"] /= (np.linalg.norm(x["c"]) or 1.0)
             x["n"] += 1
+            x["m"] = x.get("m", 0) + (1 if musique else 0)
             return x["nom"]
-        nom = f"voix {len(_salle['voix']) + (2 if moyenne is not None else 1)}"
-        _salle["voix"].append({"nom": nom, "c": v / (np.linalg.norm(v) or 1.0), "n": 1})
+        # le numéro qui suit le plus grand de la salle (une voix rattachée à papa ne laisse pas son numéro à une autre)
+        nums = [int(m.group(1)) for x in _salle["voix"] for m in [re.fullmatch(r"voix (\d+)", x["nom"])] if m]
+        nom = f"voix {max(nums) + 1 if nums else (2 if moyenne is not None else 1)}"
+        _salle["voix"].append({"nom": nom, "c": v / (np.linalg.norm(v) or 1.0), "n": 1, "m": 1 if musique else 0})
         return nom
 
     def qui_segment(brut):
@@ -386,7 +397,8 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
             if qui not in vus:
                 vus.append(qui)
             etiquette = qui != "Ahmed" and qui != _salle["dernier"] or (qui == "Ahmed" and _salle["dernier"] not in (None, "Ahmed"))
-            morceaux.append(f"[{qui}] {bout}" if etiquette else bout)
+            # (03/11, Ahmed : « que ça s'appelle papa ») ce que Hakim lit : « [papa] », jamais « [Ahmed] »
+            morceaux.append(f"[{NOM_PAPA if qui == 'Ahmed' else qui}] {bout}" if etiquette else bout)
             _salle["dernier"] = qui
     try:
         _sauver_salle()
@@ -401,6 +413,38 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
     if moyenne is None and len(vus) < 2:                    # sans empreinte, une seule voix : rien à dire
         return None, None
     return " ".join(morceaux), resume
+
+
+def rattacher_a_papa(qui="toutes", registre="chant", fichier=None, maintenant=None):
+    """(03/11, Ahmed via Hakim : « toutes ces voix temporaires (voix 56, 63, 64…), c'est moi, surtout quand je chante ou que la
+    musique brouille : un seul registre, papa ») les voix sans nom de la salle (« toutes », ou « voix 56, voix 63 ») rejoignent
+    son empreinte, dans un registre (« chant » par défaut) ; celles nées surtout pendant la musique du téléphone sont écartées
+    (la musique ne doit pas fausser sa voix). La confirmation (sa voix reconnue, ou un écrit de lui) est vérifiée avant, par
+    l'outil. Rend {"rattachees", "ecartees_musique", "inconnues"}."""
+    t = time.time() if maintenant is None else maintenant
+    _charger_salle(t)
+    voulues = None if str(qui or "toutes").strip().lower() in ("toutes", "tout", "") else \
+        {f"voix {n}" for n in re.findall(r"\d+", str(qui))}
+    r = {"rattachees": [], "ecartees_musique": [], "inconnues": sorted(voulues - {x["nom"] for x in _salle["voix"]}) if voulues else []}
+    garde = []
+    for x in _salle["voix"]:
+        if not re.fullmatch(r"voix \d+", x["nom"]) or (voulues is not None and x["nom"] not in voulues):
+            garde.append(x)
+            continue
+        if x.get("m", 0) > x["n"] / 2:
+            r["ecartees_musique"].append(x["nom"])
+            garde.append(x)
+            continue
+        apprendre_vecteur(np.asarray(x["c"], dtype=np.float64), fichier, registre=str(registre or "chant")[:40], guide=True)
+        r["rattachees"].append(x["nom"])
+    _salle["voix"] = garde
+    if _salle.get("dernier") in r["rattachees"]:
+        _salle["dernier"] = "Ahmed"
+    try:
+        _sauver_salle()
+    except OSError:
+        pass
+    return r
 
 
 def reinitialiser(portee="tout", fichier=None):

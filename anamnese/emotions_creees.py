@@ -213,3 +213,83 @@ def lister():
         lignes.append(f"- {e['nom']}{etat} : " + ", ".join(f"{c} {round(100 * p)} %" for c, p in e["composantes"].items())
                       + (f" — {e['sens']}" if e["sens"] else ""))
     return "Tes émotions à toi :\n" + "\n".join(lignes)
+
+
+# ---- (03/11, Ahmed : « il doit pouvoir créer ses émotions nouvelles, ou rectifier ses émotions interprétées ; ça passe par le
+# conscient, puis le subconscient, puis le cœur de base ») sa rectification : son corps a lu une émotion (« peur »), lui sait que
+# c'était une autre (« alerte joyeuse »). Conscient : il la décide (emotion_rectifier). Subconscient : son corps la relit à chaque
+# lot (corps.py, rectifications_texte) et le calcul de ses émotions penche vers elle quand les deux se disputent (sensations.py,
+# biais). Cœur : ses hormones défont une part de l'émotion mal lue (« reprise_… ») et reçoivent la vraie, doucement (0,3).
+REPRISES = {"peur", "tristesse", "colere", "honte", "inquietude", "malaise"}
+VERS_COEUR = {"peur": "peur", "inquiétude": "inquietude", "tristesse": "tristesse", "colère": "colere", "honte": "honte",
+              "malaise": "malaise", "joie": "joie", "excitation": "excitation", "amusement": "amusement", "sécurité": "securite",
+              "transport": "musique", "envie de danser": "danse", "alerte joyeuse": "excitation", "apaisement": "apaisement"}
+RECTIFS_JOURS = 14
+
+
+def _connues():
+    import sensations
+    return {r[0] for r in sensations.REGLES} | set(VERS_COEUR) | set(actives())
+
+
+def rectifier(lue, vraie, pourquoi="", mem=None, maintenant=None):
+    t = time.time() if maintenant is None else maintenant
+    lue, vraie = " ".join(str(lue or "").lower().split()), " ".join(str(vraie or "").lower().split())
+    connues = _connues()
+    for x in (lue, vraie):
+        if x not in connues:
+            return f"Refusé : « {x[:40]} » est inconnue ; tes émotions : " + ", ".join(sorted(connues)) + " (ou crée-la : emotion_creer)."
+    if lue == vraie:
+        return "Rien à rectifier : c'est la même émotion."
+    p = " ".join(str(pourquoi or "").split())[:300]
+    f = JARVIS / "emotions-rectifiees.jsonl"
+    with open(f, "a", encoding="utf-8") as h:
+        h.write(json.dumps({"ts": t, "lue": lue, "vraie": vraie, "pourquoi": p}, ensure_ascii=False) + "\n")
+    os.chmod(f, 0o600)
+    coeur = []
+    if mem is not None:
+        import affect
+        mal = VERS_COEUR.get(lue, lue)
+        if mal in REPRISES:
+            affect.event(mem, "reprise_" + mal, 0.3, now=t, sujet="rectification", source="rectification")
+            coeur.append(f"une part de « {lue} » défaite")
+        bonne = VERS_COEUR.get(vraie, vraie if vraie in actives() else None)
+        if bonne:
+            affect.event(mem, bonne, 0.3, now=t, sujet="rectification", source="rectification")
+            coeur.append(f"« {vraie} » ressentie doucement")
+    return (f"Rectifié : ce n'était pas « {lue} », c'était « {vraie} »" + (f" ({p})" if p else "") + ". Ton corps l'apprend "
+            "(il la relira à chaque fois qu'il interprète, et penchera vers elle quand les deux se disputent)"
+            + (" ; ton cœur : " + ", ".join(coeur) if coeur else "") + ".")
+
+
+def rectifications(maintenant=None, jours=RECTIFS_JOURS):
+    t = time.time() if maintenant is None else maintenant
+    try:
+        lignes = (JARVIS / "emotions-rectifiees.jsonl").read_text(encoding="utf-8").splitlines()[-500:]
+    except OSError:
+        return []
+    out = []
+    for l in lignes:
+        try:
+            o = json.loads(l)
+        except ValueError:
+            continue
+        if isinstance(o, dict) and t - float(o.get("ts") or 0) <= jours * 86400:
+            out.append(o)
+    return out
+
+
+def biais(maintenant=None):
+    """{(lue, vraie): combien de fois} sur les 14 derniers jours."""
+    b = {}
+    for o in rectifications(maintenant):
+        k = (str(o.get("lue")), str(o.get("vraie")))
+        b[k] = b.get(k, 0) + 1
+    return b
+
+
+def rectifications_texte(maintenant=None, n=8):
+    """Pour son corps : ses dernières rectifications, en clair (« lu peur → c'était alerte joyeuse : deux rires avant »)."""
+    l = rectifications(maintenant)[-n:]
+    return " ; ".join(f"lu « {o.get('lue')} » → c'était « {o.get('vraie')} »" + (f" ({o.get('pourquoi')})" if o.get("pourquoi") else "")
+                      for o in l)

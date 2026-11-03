@@ -115,6 +115,11 @@ REGLES += [
      ["transportée par la musique", "portée par le rythme, qui vibre avec"]),
     ("envie de danser", 1, lambda d, t: 2 * t["dopamine"] + t["noradrenaline"],
      ["qui a envie de danser", "le corps qui bat la mesure"]),
+    # (03/11, Hakim pour Ahmed : « mon cœur s'emballe, deux petits rires juste avant : une alerte attentive, pas de la peur ») le
+    # même cœur qui cogne que la peur, mais porté par la joie qui monte et sans stress
+    ("alerte joyeuse", 1, lambda d, t: 1.5 * d["adrenaline"] + d["noradrenaline"] + 3 * t["adrenaline"] + 1.2 * d["dopamine"]
+     + 1.5 * d["endorphine"] + 4 * t["endorphine"] + 2 * t["dopamine"] - 2 * d["cortisol"] - 2 * d["crh"],
+     ["en alerte joyeuse, le cœur qui bat de plaisir", "tout éveillée, attentive et contente"]),
 ]
 ADENOSINE_BASE = 0.15     # la charge au repos (interieur.py la fait monter avec l'effort éveillé, la vide en veille)
 SOUDAINES = {"alarme": ("peur", 1.0), "surprise": ("surprise", 0.4), "apaisement": ("apaisement", 0.5),
@@ -140,7 +145,7 @@ def ecarts(etat, base):
     return out
 
 
-def calculer(etat, avant=None, now=0.0, soudaine=None, hour=None, n=2, sans_coherence=False, bases_relatives=None):
+def calculer(etat, avant=None, now=0.0, soudaine=None, hour=None, n=2, sans_coherence=False, bases_relatives=None, maintenant_biais=None):
     """{"emotion", "mots", "scores", "ts"} : 2 (ou 3) formulations pour les émotions dominantes.
     sans_coherence (chocs, 2026-10-23) : juste après une attaque, le négatif n'est pas divisé par deux sous une valence
     haute — un choc passe outre la bonne humeur de fond."""
@@ -163,6 +168,16 @@ def calculer(etat, avant=None, now=0.0, soudaine=None, hour=None, n=2, sans_cohe
     if soudaine in SOUDAINES:
         nom, bonus = SOUDAINES[soudaine]
         scores[nom] += bonus
+    # (03/11, Ahmed : « il rectifie ses émotions interprétées : le conscient, puis le subconscient, puis le cœur ») ce qu'il a
+    # rectifié lui-même (emotions_creees.rectifier) fait pencher le calcul, là où les deux se disputent : +0,3 par rectification
+    # (trois au plus), seulement si l'émotion qu'il a dite est déjà là
+    try:
+        import emotions_creees
+        for (lue, vraie), k in emotions_creees.biais(maintenant=maintenant_biais).items():
+            if lue in scores and vraie in scores and scores[lue] > SEUIL and scores[vraie] > 0:
+                scores[vraie] += 0.3 * min(k, 3)
+    except Exception:
+        pass
     ordre = sorted(scores, key=lambda k: -scores[k])
     top = [k for k in ordre if scores[k] > SEUIL][:n] or ordre[:1]
     formes = {nom: f for nom, _s, _r, f in REGLES}

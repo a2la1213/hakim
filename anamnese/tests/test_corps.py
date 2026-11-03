@@ -135,7 +135,7 @@ def test_la_physiologie_chaque_emotion_sa_cause_son_stimulus_son_habitude(J, mem
     assert vus["malaise"][2:4] == ("milieu:energie", "aucune"), "la faim ne s'émousse pas"
     assert vus["joie"][4] == "son corps:musique:●··•●··•●··•●··•", "la nouveauté propre au stimulus"
     assert len(r["evenements"]) == 4 and r["physiologie"][0]["habituation"] == "sensibilisation"
-    assert "E1" in corps.PROMPT.format(permis="", nuit="", evenement="", changements="", etat="", reconnu="", creees="", reflexes="", heure="", recent="", ahmed="", humeur="") or "cause" in corps.PROMPT
+    assert "E1" in corps.PROMPT.format(permis="", nuit="", evenement="", changements="", etat="", reconnu="", rectifs="", creees="", reflexes="", heure="", recent="", ahmed="", humeur="") or "cause" in corps.PROMPT
     # sans cause donnée : le premier stimulus du lot ; un stimulus ordinaire s'habitue normalement
     appels.clear()
     corps.ressentir({"type": "secousse", "details": {}}, mem=mem,
