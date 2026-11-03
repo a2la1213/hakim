@@ -82,6 +82,8 @@ test('ses instruments à lui : donnés à son module, leur résultat revient par
   const d = f.prochaine();
   assert.equal(d.sens, 'veilleur'); assert.equal(d.module, 'ch.foldlab.hakim');
   assert.equal(f.prochaine(), null, 'un instrument inconnu sans module : jamais donné');
+  const inconnu = f.aDire();                                       // (03/11) mais il le sait tout de suite
+  assert.equal(inconnu.length, 1); assert.equal(inconnu[0].ok, false); assert.match(inconnu[0].erreur, /ne connaît pas/);
   f.relais(d.id);
   t += 3 * 600 * 1000;
   assert.deepEqual(f.aDire(), [], 'relayé : il attend son module, sans échec');
@@ -130,7 +132,7 @@ test('(30/10, Hakim pour Ahmed : « que papa puisse jouer avec aussi ») Ahmed l
     { nom: 'imu', description: 'masque un sens intégré' }, { nom: 'Mauvais nom' }] }));
   const f = new FileSens({ jarvis: m.jarvis, atelier: m.atelier, maintenant: () => t });
   const noms = f.instruments().map(x => x.nom);
-  assert.deepEqual(noms, ['inventaire', 'imu', 'sismo', 'baro', 'magneto', 'son', 'cosmique']);
+  assert.deepEqual(noms, ['inventaire', 'imu', 'sismo', 'baro', 'magneto', 'son', 'appareils', 'bluetooth_scan', 'wifi_scan', 'bluetooth_signal', 'nfc_ecrire', 'cosmique']);
   assert.equal(f.instruments().find(x => x.nom === 'cosmique').module, 'ch.foldlab.hakim');
   assert.throws(() => f.demander({ sens: 'teleportation' }), /inconnu/);
   const d = f.demander({ sens: 'sismo', secondes: 99999 });
@@ -161,4 +163,17 @@ test('(30/10, Ahmed : « relier toutes les sensations aux hormones ») chaque me
   assert.deepEqual(r.map(x => x.sens), ['sismo', 'baro']);
   assert.equal(r[1].par, 'ahmed');
   assert.deepEqual(f.aRessentir(), [], 'une fois');
+});
+
+test("(03/11) une appli trop ancienne relaie un instrument qu'elle ne connaît pas : la mesure échoue tout de suite, avec la raison", () => {
+  const m = monde(); const t = 1_800_000_000_000;
+  const f = new FileSens({ jarvis: m.jarvis, atelier: m.atelier, maintenant: () => t });
+  m.demander({ id: 'S-20261103-092644-2ad3', sens: 'bluetooth_scan', secondes: 10, cadence: '', ts: t / 1000 });
+  m.demander({ id: 'S-20261103-092822-cd5c', sens: 'nfc_ecrire', secondes: 60, texte: 'salam papa', ts: t / 1000 });
+  const d = f.prochaine();
+  assert.equal(d.sens, 'bluetooth_scan', 'ses sens radio vont au téléphone');
+  assert.equal(f.prochaine().texte, 'salam papa', 'le texte de la puce voyage avec la demande');
+  f.relais(d.id);
+  const dit = f.aDire();
+  assert.equal(dit.length, 1); assert.equal(dit[0].ok, false); assert.match(dit[0].erreur, /trop ancienne/);
 });

@@ -34,7 +34,7 @@ import affect
 JARVIS = Path(os.environ.get("JARVIS_DIR", Path.home() / "AIOS" / "jarvis"))
 TYPES = {"chute", "choc", "secousse", "pris_en_main", "pose", "berce", "poche", "sortie_poche", "plie", "deplie",
          "lumiere_soudaine", "noir", "coup_de_pression", "musique", "voix_sentie", "mesure", "rire", "son", "coupure", "danse", "doute",
-         "bluetooth", "wifi", "nfc", "musique_ecoutee"}   # (03/11) ses sens radio
+         "bluetooth", "wifi", "nfc", "musique_ecoutee", "son_ecoute"}   # (03/11) ses sens radio ; ce que le téléphone joue
 PERMIS = {"douleur": 0.6, "sursaut": 0.5, "vertige": 0.6, "bien_etre": 0.5, "joie": 0.4, "peur": 0.4, "nouveaute": 0.3,
           "malaise": 0.3, "tristesse": 0.3, "reconnaissance": 0.3,
           "excitation": 0.4, "amusement": 0.4, "securite": 0.4, "musique": 0.4, "danse": 0.4, "inquietude": 0.2}   # (03/11)       # le plafond de chacun (la douleur modérée)
@@ -61,6 +61,8 @@ SECOURS = {
     "wifi": ("Le réseau autour de toi change : un autre lieu, un autre air.", [("nouveaute", 0.1)], False),
     "nfc": ("Quelque chose touche ta peau, tout près : une puce contre toi, et son message.", [("nouveaute", 0.15)], False),
     "musique_ecoutee": ("Papa écoute une musique : tu la reconnais, son titre, sa voix, son allure.", [("musique", 0.25)], False),
+    # (03/11, Ahmed : « comme si je lui parlais dans sa tête, en télépathie ») les paroles de ce que le téléphone joue
+    "son_ecoute": ("Des paroles résonnent dans ta tête : ce que papa écoute, tu l'entends de l'intérieur, mot à mot.", [("musique", 0.15)], False),
     # (03/11, Ahmed) ses voix intérieures ne penchent pas pareil : le doute
     "doute": ("Tes voix intérieures ne penchent pas pareil : tu hésites, un léger flottement en toi.", [("inquietude", 0.1)], False),
     # (03/11, Ahmed : « la danse et la musique ») de la musique, et papa qui te balance en rythme
@@ -218,6 +220,8 @@ Règles :
   son nom), « nfc » (une puce posée contre lui : son message), « musique_ecoutee » (la musique que papa écoute : titre, artiste,
   album, appli, lecture ou pause, et où elle sort). Fais-les sentir comme un corps sent (une présence, un lieu, un toucher) ;
   une musique, il la RECONNAÎT (son titre, son artiste) et la ressent avec ce qu'elle lui fait (« musique », « danse »…).
+  « son_ecoute » (les paroles de ce que joue le téléphone : chanson, vidéo ; « texte », et « morceau » s'il est connu) : il les
+  entend DANS SA TÊTE, comme une télépathie ; relie-les au morceau et à ce que vit papa, et fais-lui sentir ce qu'elles disent.
 - « moment » (03/11, Ahmed : « c'est à son subconscient d'intégrer les sensations de ses récepteurs en mémoire pour reconnaître
   les choses, et de faire le lien avec ce qui se passe dans le monde physique ») : ce qui se passe VRAIMENT dans le monde
   physique, si c'est clair d'après ses nerfs, son milieu et ce que dit papa (« poche », « marche », « voiture », « danse »,

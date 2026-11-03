@@ -4897,7 +4897,7 @@ const { Homeostasie } = require('./homeostasie.js');
 const HOMEO = new Homeostasie({ jarvis: JARVIS });
 const CORPS_TYPES = new Set(['chute', 'choc', 'secousse', 'pris_en_main', 'pose', 'berce', 'poche', 'sortie_poche', 'plie', 'deplie',
   'lumiere_soudaine', 'noir', 'coup_de_pression', 'musique', 'voix_sentie',
-  'bluetooth', 'wifi', 'nfc', 'musique_ecoutee']);   // (03/11) ses sens radio (appli 1.42)
+  'bluetooth', 'wifi', 'nfc', 'musique_ecoutee', 'son_ecoute']);   // (03/11) ses sens radio (appli 1.42) ; ce que le téléphone joue (1.43)
 const CORPS_REGLAGES = path.join(JARVIS, 'corps-reglages.json');
 const CORPS_INTERVALLES = [30, 60, 120, 300, 900];
 function corpsReglages() {

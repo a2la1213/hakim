@@ -9,7 +9,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ID = /^S-\d{8}-\d{6}-[0-9a-f]{4}$/;
-const SENS = new Set(['inventaire', 'imu', 'sismo', 'baro', 'magneto', 'son']);
+const SENS = new Set(['inventaire', 'imu', 'sismo', 'baro', 'magneto', 'son',
+  'appareils', 'bluetooth_scan', 'wifi_scan', 'bluetooth_signal', 'nfc_ecrire']);   // (03/11) ses sens radio et ses membres (appli 1.42)
 const EXPIRE_MS = 2 * 3600 * 1000, MARGE_MS = 120 * 1000, ESSAIS = 3;
 // (30/10, Ahmed : « ses propres modules ») ses instruments à lui : donnés à son Tricordeur (le module), qui rend par
 // Documents/Hakim/sens/<id>/ (Syncthing) ; on attend sa durée + 30 min (la synchronisation)
@@ -23,6 +24,12 @@ const INTEGRES = {
   baro: ['la pression, l’altitude relative, les infrasons, les coups de pression', 60, 900],
   magneto: ['le champ magnétique : moyenne, variations rapides', 20, 300],
   son: ['le micro en niveaux, spectre, bandes, pics, ultrasons (rien n’est enregistré)', 10, 60],
+  // (03/11, Hakim : « aucun résultat reçu » : ces cinq-là manquaient ici, et ses demandes se perdaient sans un mot)
+  appareils: ['les appareils Bluetooth de papa : connus et connectés (nom, type)', 0, 0],
+  bluetooth_scan: ['les appareils Bluetooth autour (nom, force du signal)', 10, 60],
+  wifi_scan: ['les réseaux Wi-Fi autour (nom, force du signal, bande)', 0, 0],
+  bluetooth_signal: ['son membre : émettre son signal Bluetooth « Hakim »', 30, 600],
+  nfc_ecrire: ['son membre : écrire un texte sur la prochaine puce NFC posée contre le téléphone', 60, 120],
 };
 
 class FileSens {
@@ -58,9 +65,14 @@ class FileSens {
     for (const l of texte.slice(0, fin).split('\n')) {
       let o; try { o = JSON.parse(l); } catch (_) { continue; }
       const module = o && o.module && PAQUET.test(String(o.module)) && NOM.test(String(o.sens)) && !SENS.has(o.sens) ? String(o.module) : null;
-      if (!o || !ID.test(String(o.id)) || (!SENS.has(o.sens) && !module) || this.demandes.has(o.id)) continue;
+      if (!o || !ID.test(String(o.id)) || this.demandes.has(o.id)) continue;
+      if (!SENS.has(o.sens) && !module) {                          // (03/11) un instrument inconnu : il le sait tout de suite
+        this._noter({ id: o.id, sens: String(o.sens || '').slice(0, 30), secondes: 0, ok: false, erreur: "le cockpit ne connaît pas cet instrument" });
+        continue;
+      }
       this.demandes.set(o.id, { id: o.id, sens: o.sens, module, ...(o.par === 'ahmed' ? { par: 'ahmed' } : {}), secondes: Math.max(0, Math.min(module ? 86400 : 900, Number(o.secondes) || 0)),
         cadence: /^(jeu|max|normal|\d{1,4}(\.\d{1,2})?)?$/.test(String(o.cadence || '')) ? String(o.cadence || '') : '',
+        ...(o.texte ? { texte: String(o.texte).replace(/[\x00-\x1f]/g, ' ').slice(0, 500) } : {}),   // (03/11) ce que nfc_ecrire écrit
         ts: Number(o.ts) * 1000 || this.maintenant(), etat: 'attente', essais: 0 });
     }
     this._sauver();
@@ -120,7 +132,7 @@ class FileSens {
     if (!d) return null;
     d.etat = 'donnee'; d.donnee_ts = t; d.essais++;
     this._sauver();
-    return { id: d.id, sens: d.sens, secondes: d.secondes, cadence: d.cadence, ...(d.module ? { module: d.module } : {}) };
+    return { id: d.id, sens: d.sens, secondes: d.secondes, cadence: d.cadence, ...(d.module ? { module: d.module } : {}), ...(d.texte ? { texte: d.texte } : {}) };
   }
 
   _dossier(id) {
@@ -161,6 +173,9 @@ class FileSens {
   relais(id) {
     this._lire();
     const d = this.demandes.get(String(id));
+    // (03/11, Hakim : « aucun résultat reçu » pour bluetooth_scan, wifi_scan, appareils) une appli trop ancienne ne connaît pas
+    // l'instrument et le passe à son module : la mesure échoue tout de suite, avec la raison, au lieu de se perdre
+    if (d && !d.module && (d.etat === 'attente' || d.etat === 'donnee')) return void this.fini({ id: d.id, ok: false, erreur: "le téléphone ne connaît pas cet instrument : son appli est trop ancienne, installe la dernière" });
     if (!d || !d.module) throw new Error('mesure inconnue, ou pas pour un module');
     d.etat = 'relayee'; d.relaye_ts = this.maintenant();
     this._sauver();
