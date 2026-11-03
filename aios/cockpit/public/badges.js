@@ -41,6 +41,10 @@
     + '.menu-panneau a:hover{background:rgba(255,255,255,.05)}.menu-panneau a[aria-current="page"]{color:#2dd4bf;background:rgba(45,212,191,.10)}'
     + '.menu-panneau a .pastille{margin-left:auto}.menu-panneau .resume{color:#f3b6b6;font-size:12px;padding:0 12px 6px;margin-top:-4px}'
     + '.annonce-ligne{cursor:pointer}.annonce-ligne:hover{text-decoration:underline}'
+    + '.menu-languette{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:35;width:18px;height:56px;padding:0;border:1px solid rgba(255,255,255,.16);'
+    + 'border-left:0;border-radius:0 12px 12px 0;background:rgba(15,23,28,.72);color:#c9d4dc;font-size:16px;line-height:1;cursor:pointer;'
+    + 'display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}'
+    + '.menu-languette:focus-visible{outline:2px solid #2dd4bf;outline-offset:2px}.menu-languette .point{top:4px;right:3px;width:7px;height:7px}'
     + '[hidden]{display:none !important}';
   document.head.appendChild(style);
 
@@ -102,6 +106,26 @@
     };
     window.addEventListener('popstate', () => { if (!panneau.hidden) cacher(); });
     burger.addEventListener('click', () => (panneau.hidden ? ouvrir() : fermer()));
+    // (03/11, 15:20, Ahmed : « le menu burger aussi en glissant de gauche à droite, et une petite flèche dans un petit conteneur, au
+    // milieu à gauche de l'écran, sur toute l'interface ») la languette « › » l'ouvre ; un glissement parti du bord gauche aussi
+    const languette = document.createElement('button');
+    languette.type = 'button'; languette.className = 'menu-languette'; languette.textContent = '›';
+    languette.setAttribute('aria-label', 'Ouvrir le menu'); languette.setAttribute('aria-controls', 'menu-panneau');
+    languette.addEventListener('click', () => (panneau.hidden ? ouvrir() : fermer()));
+    document.body.appendChild(languette);
+    let glisse = null;
+    document.addEventListener('touchstart', (e) => {
+      const t = e.touches && e.touches[0];
+      glisse = t && panneau.hidden && t.clientX <= 28 ? { x: t.clientX, y: t.clientY } : null;
+    }, { passive: true });
+    document.addEventListener('touchmove', (e) => {
+      const t = glisse && e.touches && e.touches[0];
+      if (!t) return;
+      const dx = t.clientX - glisse.x, dy = Math.abs(t.clientY - glisse.y);
+      if (dy > 60) { glisse = null; return; }                       // un geste vertical : on fait défiler, pas le menu
+      if (dx > 50) { glisse = null; ouvrir(); }
+    }, { passive: true });
+    document.addEventListener('touchend', () => { glisse = null; }, { passive: true });
     voile.addEventListener('click', fermer);
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !panneau.hidden) { fermer(); burger.focus(); } });
     // une page choisie : l'étape « menu ouvert » s'efface d'abord, puis on y va ; « retour » depuis elle revient ici, pas au menu
@@ -118,6 +142,9 @@
       window.addEventListener('popstate', function f() { window.removeEventListener('popstate', f); location.href = aller; });
       history.back();
     });
+    // le point rouge aussi sur la languette, s'il y a du nouveau ailleurs
+    const pointL = point.cloneNode(); languette.appendChild(pointL);
+    new MutationObserver(() => { pointL.hidden = point.hidden; }).observe(point, { attributes: true, attributeFilter: ['hidden'] });
     return { burger, point, liens };
   }
 
