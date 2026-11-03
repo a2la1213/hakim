@@ -2752,14 +2752,14 @@ function vifConversation(conv) {
 function surSouffle(o) {
   if (!etat.conversation || !o || !o.texte) return;
   const texte = String(o.texte).slice(0, 400);
-  const con = o.niveau === 'con';
-  etat.dernierSouffle = { texte, pret: !!o.pret, fini: o.fini === true ? true : o.fini === false ? false : null, pour: String(o.pour || ''), t: Date.now(), niveau: con ? 'con' : 'sub' };
+  const con = o.niveau === 'con' || o.niveau === 'cerveau', cerveauVrai = o.niveau === 'cerveau';
+  etat.dernierSouffle = { texte, pret: !!o.pret, fini: o.fini === true ? true : o.fini === false ? false : null, pour: String(o.pour || ''), t: Date.now(), niveau: String(o.niveau || 'sub') };
   if (o.pret) preparerVoixSouffle(texte);                             // (15:10) sa voix fabriquée d'avance : dite sans attendre
   etat.aCote = (etat.aCote || []).filter(x => x.cle !== 'souffle');
   etat.aCote.push({ ts: Date.now(), cle: 'souffle', html: `<div class="m j brouillon" style="opacity:.75;font-style:italic">`
-    + `<span class="quand">${con ? '💭 il réfléchit' : '✍️ son subconscient'} · ${o.pret ? '🗣️ prête à dire' : 'il attend la suite'}</span><div>${esc(texte)}</div></div>` });
+    + `<span class="quand">${cerveauVrai ? '🧠 son cerveau' : con ? '💭 il réfléchit' : '✍️ son subconscient'} · ${o.pret ? '🗣️ prête à dire' : 'il attend la suite'}</span><div>${esc(texte)}</div></div>` });
   rendre();
-  envoyerParoles('hakim', `${con ? '💭' : o.pret ? '🗣️' : '✍️'} ${texte}`);
+  envoyerParoles('hakim', `${cerveauVrai ? '🧠' : con ? '💭' : o.pret ? '🗣️' : '✍️'} ${texte}`);
 }
 // (15:10, mesuré : la voix met ~2,6 s avant son premier son) le brouillon prêt à dire : sa voix fabriquée pendant que papa parle
 // encore (la synthèse est libre à ce moment-là) ; le suivant remplace le précédent

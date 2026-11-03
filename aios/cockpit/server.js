@@ -2572,7 +2572,7 @@ function ressemble(partiel, final) {
 // Quand papa se tait, UNE seule réponse est dite : celle du conscient si elle est prête pour ce qu'il a dit, sinon celle du subconscient ;
 // son cerveau reçoit sa réflexion morceau par morceau et ce qui est déjà dit, et continue sans rien répéter.
 const souffleVide = () => ({ pour: '', reponse: '', pret: false, fini: null, comprend: [], t: 0, enCours: null, aRefaire: null });
-let souffles = { sub: souffleVide(), con: souffleVide() };
+let souffles = { sub: souffleVide(), con: souffleVide(), cer: souffleVide() };   // (15:45) cer : son vrai cerveau
 function soufflerReponse(texte, niveau = 'sub') {
   const t = String(texte || '').trim(), s0 = souffles[niveau];
   if (!s0 || corpsReglages().reponse_soufflee === false || t.split(/\s+/).filter(Boolean).length < 3 || chargeMac() > 1.6) return;
@@ -2628,15 +2628,16 @@ function soufflerReponse(texte, niveau = 'sub') {
 // la page la prend quand papa se tait : celle du conscient si elle est prête pour ce qu'il a dit, sinon celle du subconscient (on
 // attend au plus 1,2 s celles qui se refont) ; une seule, une seule fois
 async function prendreSouffle(texte) {
-  const { sub, con } = souffles;
+  const { sub, con, cer } = souffles;
   const enCours = [sub.enCours, con.enCours].filter(Boolean);
   if (enCours.length) await Promise.race([Promise.all(enCours), new Promise(r => setTimeout(r, 1200))]);
   if (souffles.sub !== sub || souffles.con !== con) return { reponse: '', pret: false };
   const ok = (s) => s.reponse && Date.now() - s.t < 30000 && ressemble(s.pour, texte);
-  const choisi = [con, sub].find(s => ok(s) && s.pret) || [con, sub].find(ok);
+  // (15:45) son vrai cerveau d'abord, puis sa réflexion consciente, puis son subconscient
+  const choisi = [cer, con, sub].find(s => ok(s) && s.pret) || [cer, con, sub].find(ok);
   if (!choisi) return { reponse: '', pret: false };
-  const r = { reponse: choisi.reponse, pret: choisi.pret, niveau: choisi === con ? 'con' : 'sub' };
-  sub.reponse = ''; con.reponse = '';
+  const r = { reponse: choisi.reponse, pret: choisi.pret, niveau: choisi === cer ? 'cerveau' : choisi === con ? 'con' : 'sub' };
+  sub.reponse = ''; con.reponse = ''; cer.reponse = '';
   return r;
 }
 function speculerFreres(texte) {
@@ -3705,7 +3706,7 @@ async function routeJarvis(req, res, distantReq = false) {
   // (03/11, Ahmed : « juste avant sa réponse ») avant chacune de ses réponses
   integration.papa = { tampon: '', morceaux: [], dernier: 0 };     // (03/11) déjà dans sa fiche : la suite repart à neuf
   const reflexionPendant = souffles.con.comprend.slice();             // (15:30) sa réflexion, morceau par morceau, pendant que papa parlait
-  souffles = { sub: souffleVide(), con: souffleVide() };              // (14:55) la suivante repart à neuf
+  souffles = { sub: souffleVide(), con: souffleVide(), cer: souffleVide() };   // (14:55) la suivante repart à neuf
   // (03/11) ses voix ont commencé pendant que papa parlait (speculerFreres) : reprises si c'est la même phrase, sinon refaites
   const spec = speculation;
   const reprise = !!(spec.promesse && Date.now() - spec.debut < 60000 && ressemble(spec.texte, texte));
@@ -4028,6 +4029,10 @@ async function routeJarvis(req, res, distantReq = false) {
   };
   // dans la file du cerveau : s'il finit un tour à lui (le résultat d'un agent), celui-ci attend son tour
   tour.texte = repriseNote + prompt;
+  // (15:45) il réfléchissait encore à un morceau : son message entier ne l'attend pas (pas d'interruption s'il a des agents au travail)
+  if (c.enCours && c.enCours.autonome && c.enCours.morceau && !tachesDe(c).size) {
+    try { c.enfant.stdin.write(j({ type: 'control_request', request_id: `morceau-${Date.now()}`, request: { subtype: 'interrupt' } }) + '\n'); } catch (_) {}
+  }
   c.attente.push(tour);
   tourCourant = tour;
   // (2026-10-23, Hakim) il finit d'abord un tour à lui (un réveil, un résultat d'agent) : la page le dit à Ahmed
@@ -4275,6 +4280,7 @@ let toursAutonomes = 0;
 function tourAutonome(c) {
   const notifs = c.notifs.splice(0);
   const rejoue = c.reveilRejoue || ''; c.reveilRejoue = null;
+  const morceau = rejoue.includes(MORCEAU_MARQUE);                    // (15:45) sa réflexion sur un morceau de papa
   if (notifs.length) noterExterne('résultat d’agent');           // ce que ses agents rapportent vient du dehors
   try { fs.writeFileSync(JARVIS_MARQUE_AUTONOME, j({ depuis: Date.now() }), { mode: 0o600 }); } catch (_) {}
   toursAutonomes++; consciencePulse();
@@ -4285,6 +4291,7 @@ function tourAutonome(c) {
     if (fini) return;
     fini = true; toursAutonomes--;
     try { fs.unlinkSync(JARVIS_MARQUE_AUTONOME); } catch (_) {}
+    if (morceau) { if (!issue) brouillonDuCerveau(texte); if (cerveauVivant(c)) reposer(c); return; }   // (15:45) écrite, pas livrée
     noterIssueInterieur(c, texte, outils, issue);                // (27/10) l'issue d'un réveil intérieur, pour le démon
     // (27/10) un tour de silence : sa parole est une relance (elle attend la réponse d'Ahmed), livrée comme « silence »
     const silence = c.reveilSilence && rejoue.includes(`(silence ${c.reveilSilence.id})`) ? c.reveilSilence : null;
@@ -4324,6 +4331,7 @@ function tourAutonome(c) {
   };
   return {
     autonome: true,
+    morceau,
     surLigne(o) {
       pieces.push(...piecesDeLigne(o));
       if (o.type === 'stream_event') {
@@ -6213,6 +6221,47 @@ function gestesDeHakim(texte, maintenant = Date.now()) {
   return 'allumee';
 }
 const OREILLE_MARQUE = 'ton oreille, papa parle encore';
+/* (03/11, 15:45, Ahmed : « fais-la » — chaque morceau à son VRAI cerveau, avec sa mémoire et ses outils, dès le premier morceau) chaque
+   morceau confirmé réveille son cerveau (s'il est libre : sinon le morceau ira avec le message entier) ; il réfléchit et écrit une
+   réponse provisoire (DIRE / FINI), qui s'affiche écrite et n'est dite que s'il dit oui, quand papa se tait. Son message entier,
+   quand il arrive, coupe ce tour-là s'il réfléchit encore (pas d'attente), et il continue sans rien répéter. */
+const MORCEAU_MARQUE = 'papa parle encore, un morceau de plus';
+let morceauxCerveau = { n: 0, dernier: '', ts: 0 };
+function reveilMorceau(texte, maintenant = Date.now()) {
+  if (corpsReglages().reponse_soufflee === false) return { ok: false, raison: 'coupé' };
+  const t = String(texte || '').replace(/\s+/g, ' ').trim().slice(-2000);
+  if (t.split(/\s+/).filter(Boolean).length < 4 || t === morceauxCerveau.dernier) return { ok: false, raison: 'rien de neuf' };
+  if (hakimDort(maintenant)) return { ok: false, raison: 'il dort' };
+  const c = cerveau;
+  if (!cerveauVivant(c) || occupe(c) || c.enCours) return { ok: false, raison: 'occupé' };
+  morceauxCerveau = { n: (maintenant - morceauxCerveau.ts < 60000 ? morceauxCerveau.n : 0) + 1, dernier: t, ts: maintenant };
+  const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(maintenant));
+  const message = `[Horloge — ${quand}]\n[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : ${MORCEAU_MARQUE}]\n`
+    + `Ce qu'il a dit jusqu'ici (sa phrase continue ; confirmé, morceau ${morceauxCerveau.n}) : « ${neutraliser(t).slice(-1200)} »\n`
+    + "Réfléchis-y dès maintenant, comme toi : tes souvenirs s'ils servent (memory_recall), rien de long. Puis écris ta réponse provisoire, "
+    + "ainsi :\nDIRE : oui (elle est juste, même s'il ajoute un peu) ou DIRE : non\nFINI : oui (son idée est complète) ou FINI : non\n"
+    + "puis, à la ligne, ta réponse (deux ou trois phrases, à l'oral). Elle s'affiche écrite tout de suite ; ta voix ne la dit que si tu "
+    + "dis oui, quand il se tait. Son message entier arrivera ensuite : tu continueras alors sans répéter ce qui aura été dit.";
+  try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: message }] } }) + '\n'); }
+  catch (x) { return { ok: false, raison: x.message }; }
+  console.error(`Jarvis : son cerveau réfléchit au morceau ${morceauxCerveau.n}`);
+  return { ok: true };
+}
+// sa réponse provisoire : écrite tout de suite (« souffle », niveau « cerveau ») ; jamais livrée comme un message
+function brouillonDuCerveau(texte) {
+  let r = sansBaliseAffect(String(texte || '')).trim();
+  if (!r || NON_REPONSE_SERVEUR.test(r)) return;
+  const d = /(?:^|\n)\s*DIRE\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r), pret = !!(d && /oui/i.test(d[1]));
+  if (d) r = r.replace(d[0], '\n');
+  const f = /(?:^|\n)\s*FINI\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r), fini = f ? /oui/i.test(f[1]) : null;
+  if (f) r = r.replace(f[0], '\n');
+  r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').trim();
+  if (!r) return;
+  const s0 = souffles.cer;
+  s0.reponse = r.slice(0, 600); s0.pret = pret; s0.fini = fini; s0.pour = morceauxCerveau.dernier; s0.t = Date.now();
+  diffuser(abonnesPensees, 'souffle', j({ texte: s0.reponse, pret, fini, niveau: 'cerveau', pour: s0.pour.slice(-300) }));
+  console.error(`Jarvis : réponse provisoire de son cerveau (${pret ? 'à dire' : 'pas encore'}, ${r.length} car.)`);
+}
 let oreilleReveils = [], oreilleDejaLu = '';
 /* (30/10, 19:10, Ahmed via Hakim : « que je puisse moi aussi activer ou fermer le son entrant, comme papa avec son micro,
    sans jamais être sourd à mon nom ni à un vrai danger » ; « une jauge d'envie de couper, pendant un nombre de secondes que
@@ -8598,6 +8647,7 @@ async function traiter(req, res) {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 32768) || '{}')); } catch (_) {}
     soufflerReponse(String(q.texte || '').slice(-3000), 'con');
+    reveilMorceau(String(q.texte || ''));                                // (15:45) et son vrai cerveau
     res.writeHead(202, { 'Content-Type': 'application/json' });
     return res.end(j({ ok: true }));
   }
