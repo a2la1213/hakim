@@ -235,48 +235,57 @@ function choisirMeuble({ avant } = {}, prets = [...meublesPrets.values()], etatM
   dernierMeuble = h.nom; dernierEtaitVoix = h.voix;
   return h;
 }
-// (14:20, Ahmed : « que ces trucs pour meubler s'étalent sur toute la durée de la pause, et que la transition se fasse de façon
-// propre, naturelle et graduelle : entre « mmh » et « euh », ça donnerait « mmmheuuu » ») un meuble TENU ; (14:33, Ahmed : « le mmh
-// et le alors : comme plusieurs voix parallèles légèrement décalées, un canon ») plus de grains pris au hasard : sa voyelle la plus
-// tenue (la plus périodique et la plus forte, plutôt vers la fin du mot) est bouclée PÉRIODE PAR PÉRIODE, comme on étire un mot
-// (« euuuuh », « mmmmh », « alooooors ») : une seule voix, la même note. Ses bords sans voix sont retirés ; le début et la fin du
-// mot restent ; sans voyelle tenue (que du souffle), il n'est pas étiré. Les fondus entre deux meubles : le lecteur (FONDU).
-function tenirMeuble(buf, duree) {
+// (14:20, Ahmed : « que ces trucs pour meubler s'étalent sur toute la durée de la pause ») ; (14:40, Ahmed : « la transition, c'est
+// juste rallonger la note, le timbre du mot précédent, et faire émerger progressivement le mot suivant, sans rien mélanger : pas une
+// répétition, une extension temporelle, comme la dernière lettre en slow motion sans en modifier le timbre ; et pour le meuble
+// suivant, l'inverse : sa première lettre commence lentement, au même rythme que le dernier instant du premier, et accélère
+// progressivement. m + alors = « mmmaaalors » : le m décélère jusqu'à la vitesse minimale, le a repart de là et accélère ») un meuble
+// au RALENTI : sa voix rejouée à vitesse variable, sans changer sa hauteur ni son timbre (WSOLA : des tranches de 20 ms posées tous
+// les 10 ms, chacune prise là où elle prolonge le mieux la précédente). Sa vitesse part de vDebut (la vitesse où le meuble d'avant
+// s'est arrêté) et accélère jusqu'à la normale sur sa première lettre ; à la normale au milieu ; elle décélère sur sa dernière
+// lettre jusqu'à vFin, la plus lente, calculée pour qu'il dure ce qu'on veut. Rend { tampon, vFin } : le meuble suivant repart de vFin.
+function ralentirMeuble(buf, duree, vDebut = 0.35) {
   const sr = buf.sampleRate, d = buf.getChannelData(0);
-  // l'analyse (ses bords, sa voyelle) ne se fait qu'une fois par meuble : gardée sur sa voix
   const an = buf._boucle || (buf._boucle = analyserMeuble(d, sr));
-  if (!an.max) return buf;
-  const voix = d.subarray(an.a, an.b + 1), n = voix.length, meilleur = an.meilleur;
-  const total = Math.max(n, Math.round(duree * sr));
-  let sortieVoix = voix;
-  if (meilleur && total > n) {
-    // la boucle : un nombre entier de périodes (~60 ms), recousue sur 3 ms à chaque tour (pas de clic)
-    const T = meilleur.lag, s0 = meilleur.p0, cx = Math.min(Math.round(0.003 * sr), T >> 1);
-    let k = Math.max(2, Math.round(0.06 * sr / T));
-    while (k > 1 && s0 + k * T + cx >= n) k--;                      // la couture reste dans sa voix
-    const L = k * T;
-    if (k >= 2) {
-      const tours = Math.max(0, Math.ceil((total - n) / L));
-      const o = new Float32Array(n + tours * L);
-      o.set(voix.subarray(0, s0 + L));
-      let w = s0 + L;
-      for (let t = 0; t < tours; t++) {
-        for (let i = 0; i < L; i++) o[w + i] = voix[s0 + i];
-        for (let i = 0; i < cx; i++) { const q = i / cx; o[w + i] = o[w + i] * q + voix[s0 + L + i] * (1 - q); }   // la couture
-        w += L;
+  if (!an.max) return { tampon: buf, vFin: vDebut };
+  const voix = d.subarray(an.a, an.b + 1), D = voix.length;
+  const Hs = Math.round(0.01 * sr), N = 2 * Hs, tol = Math.round(0.012 * sr);
+  if (D < 4 * N) return { tampon: buf, vFin: vDebut };
+  // sa première lettre (A) accélère ; sa dernière (B) décélère sur sa première moitié, puis tient le ralenti le plus lent (le cœur de
+  // la transition) jusqu'au bout
+  const A = Math.min(Math.round(0.12 * sr), Math.round(D * 0.3)), B = Math.min(Math.round(0.25 * sr), Math.round(D * 0.5));
+  const lisse = (q) => q * q * (3 - 2 * q);
+  const vitesse = (x, vFin) => (x < A ? vDebut + (1 - vDebut) * lisse(x / A) : x < D - B ? 1 : 1 - (1 - vFin) * lisse(Math.min(1, 2 * (x - (D - B)) / B)));
+  const pas = Math.max(1, Math.round(0.002 * sr));
+  const dureeAvec = (vFin) => { let t = 0; for (let x = 0; x < D; x += pas) t += pas / vitesse(x, vFin); return t / sr; };
+  // la vitesse la plus lente, au bout : ce qu'il faut pour durer « duree » (jamais plus lent que 1/30)
+  let lo = 0.033, hi = 1;
+  if (dureeAvec(lo) <= duree) hi = lo;
+  else for (let k = 0; k < 28; k++) { const m = (lo + hi) / 2; if (dureeAvec(m) > duree) lo = m; else hi = m; }
+  const vFin = Math.min(1, hi);
+  const total = Math.round(dureeAvec(vFin) * sr);
+  const out = new Float32Array(total + 2 * N), fen = new Float32Array(N);
+  for (let i = 0; i < N; i++) fen[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / N);
+  let x = 0, prec = 0, w = 0;
+  while (w < total && x < D - N) {
+    let c = Math.min(D - N - 1, Math.round(x));
+    if (w > 0) {                                                   // la tranche qui prolonge le mieux la précédente
+      const nat = prec + Hs, lo2 = Math.max(0, c - tol), hi2 = Math.min(D - N - 1, c + tol);
+      let best = c, score = -Infinity;
+      for (let k = lo2; k <= hi2; k++) {
+        let t = 0;
+        for (let i = 0; i < N; i += 3) t += (nat + i < D ? voix[nat + i] : 0) * voix[k + i];
+        if (t > score) { score = t; best = k; }
       }
-      o.set(voix.subarray(s0 + L), w);                            // la fin du mot, après la voyelle tenue
-      sortieVoix = o;
+      c = best;
     }
+    for (let i = 0; i < N; i++) out[w + i] += voix[c + i] * fen[i];
+    prec = c; w += Hs; x += Hs * vitesse(x, vFin);
   }
-  const lon = Math.min(sortieVoix.length, Math.max(n, total));
-  const out = actx.createBuffer(1, lon, sr), o = out.getChannelData(0);
-  o.set(sortieVoix.subarray(0, lon));
-  const entree = Math.min(lon, Math.round(0.01 * sr));              // pas de clic à l'attaque
-  for (let i = 0; i < entree; i++) o[i] *= i / entree;
-  const sortie = Math.min(lon, Math.round(0.15 * sr));              // il s'éteint en douceur
-  for (let i = 0; i < sortie; i++) o[lon - 1 - i] *= i / sortie;
-  return out;
+  const lon = Math.max(N, Math.min(out.length, w + Hs));
+  const tampon = actx.createBuffer(1, lon, sr), o = tampon.getChannelData(0);
+  o.set(out.subarray(0, lon));
+  return { tampon, vFin };
 }
 // ses bords sans voix, et sa voyelle la plus tenue : des fenêtres de 40 ms ; la période (70 à 400 Hz) par autocorrélation normalisée
 function analyserMeuble(d, sr) {
@@ -350,16 +359,10 @@ function creerLecteurNeuronal() {
   // COUVRIR_MAX secondes d'affilée (un outil très long : le silence revient).
   // (14:31, Ahmed : « 3 s de blanc : je meuble entre 0,2 s et 2,8 s ») le premier meuble part 0,2 s après sa voix
   const HESITER_APRES = 0.2, HESITER_AVANT = 1.0, ENTRE_MEUBLES = 0.12, COUVRIR_MAX = 90;
-  // (14:20, Ahmed : « qu'ils s'étalent sur toute la pause, et que la transition entre deux se fasse de façon propre, naturelle et
-  // graduelle : entre « mmh » et « euh », ça donnerait « mmmheuuu » ») chaque meuble entre et sort en fondu ; le suivant commence
-  // dans la fin du précédent (FONDU) ; sa réponse, quand elle part, prend la place du meuble en fondu aussi (FONDU_REPONSE)
-  // (14:31, Ahmed : « les 0,2 s de fin et les 0,2 s du début du suivant font les 0,4 s de transition, sinon ça sonne bizarre ») le
-  // suivant commence 0,2 s avant la fin du précédent (FONDU) et monte en 0,2 s ; le précédent s'efface sur ses 0,4 dernières
-  // secondes (FONDU_SORTIE), sur sa voyelle tenue ; les courbes gardent la puissance constante (pas de creux au milieu). Sa
-  // réponse part tout de suite, et le meuble s'efface 0,2 s par-dessus (FONDU_REPONSE)
-  const FONDU = 0.2, FONDU_SORTIE = 0.4, FONDU_REPONSE = 0.2;
-  // une courbe à puissance constante (sinus montant, cosinus descendant), de 0 à g ou de g à 0
-  const courbe = (sens, g) => { const c = new Float32Array(32); for (let i = 0; i < 32; i++) { const q = i / 31; c[i] = g * (sens === 'monte' ? Math.sin(q * Math.PI / 2) : Math.cos(q * Math.PI / 2)); } return c; };
+  // (14:20-14:31) les meubles se fondaient l'un dans l'autre (fondus croisés de 0,15 puis 0,4 s) : remplacé à 14:40
+  // (14:40, Ahmed : « sans rien mélanger ») plus de fondus croisés : un meuble ralenti au bout (ralentirMeuble), le suivant qui repart
+  // de cette vitesse, l'un APRÈS l'autre ; sa réponse, quand elle part, arrête le meuble en 30 ms et commence juste après
+  const FONDU_REPONSE = 0.03;
   let trou = null, avant = null, aParle = false, couvre = 0, attendre = false, dejaParle = false;
   const vraiesSources = () => [...sources].some(s => !s._hesitation);   // une hésitation ne fait pas de lui un « déjà parti »
   // sa réponse s'écrit, se prépare, ou attend sa voix (la fin du texte n'est pas la fin de ce qu'il a à dire)
@@ -575,13 +578,6 @@ function creerLecteurNeuronal() {
     src.connect(force); force.connect(analyseurVoix);
     src.start(t);
     const joue = Math.min(x.pret.duration / vitesse, x.dureeMax > 0 ? x.dureeMax : Infinity);   // (13:30) sa durée au plus
-    if (x.hesitation && force.gain.setValueCurveAtTime) {          // (14:20, 14:31) un meuble monte en 0,2 s, s'efface sur 0,4 s
-      const gv = force.gain.value, fe = Math.min(FONDU, joue / 4), fs = Math.min(FONDU_SORTIE, joue / 2);
-      try {
-        force.gain.setValueCurveAtTime(courbe('monte', gv), t, fe);
-        force.gain.setValueCurveAtTime(courbe('descend', gv), t + joue - fs, fs);
-      } catch (_) {}
-    }
     if (joue < x.pret.duration / vitesse) { try { src.stop(t + joue); } catch (_) {} }
     prochainDebut = t + joue + 0.05;
     src._texte = x.hesitation ? '' : x.texte; src._hesitation = !!x.hesitation; src._auto = !!x.auto; src._gain = force;
@@ -634,10 +630,10 @@ function creerLecteurNeuronal() {
             else if (gg && gg.cancelScheduledValues) { gg.cancelScheduledValues(now); gg.setValueAtTime(gg.value, now); }
             if (gg && gg.linearRampToValueAtTime) gg.linearRampToValueAtTime(0, now + FONDU_REPONSE);
           } catch (_) {}
-          try { s2.stop(now + FONDU_REPONSE + 0.02); } catch (_) {}
-          s2._fin = Math.min(s2._fin, now + FONDU_REPONSE + 0.02);
+          try { s2.stop(now + FONDU_REPONSE); } catch (_) {}
+          s2._fin = Math.min(s2._fin, now + FONDU_REPONSE);
         }
-        prochainDebut = now + 0.03;
+        prochainDebut = now + FONDU_REPONSE + 0.005;                 // juste après le meuble, pas par-dessus
       }
       // (Avant le 2026-10-17, une machine lente attendait 8 s de voix d'avance, voire la fin de tout le
       // texte, avant de parler : c'est ce qu'Ahmed entendait. Le découpage aux virgules remplace l'attente.)
@@ -676,16 +672,16 @@ function creerLecteurNeuronal() {
     const y = lots[0];
     if (y && (y.pret || y.erreur)) return false;                                  // la suite est là : pomper la programme
     // (13:31) presque prête ou pas : le meuble part quand même, la suite le coupera net en arrivant
-    const h = L.hesitation({ avant: !dejaParle });
+    const h = L.hesitation({ avant: !dejaParle, suite: [...sources].some(s2 => s2._auto) });   // (14:40) à la suite d'un meuble
     if (!h || !h.pret || !h.pret.duration) return false;
     journalVoix('hesitation', { texte: h.texte, ...(!dejaParle ? { avant: true } : {}) });
     // (14:20) il commence dans la fin du meuble qui joue encore : ils se fondent l'un dans l'autre (« mmmheuuu »)
     const finMeubles = Math.max(0, ...[...sources].map(s2 => s2._fin));
-    const t = Math.max(actx.currentTime + 0.03, finMeubles - FONDU);
+    const t = Math.max(actx.currentTime + 0.03, finMeubles);          // (14:40) juste après le précédent, sans le chevaucher
     programmer({ pret: h.pret, texte: h.texte, langue: 'fr', hesitation: true, auto: true, volume: h.volume, dureeMax: h.dureeMax, brut: h.brut }, t);
     // le suivant se prépare juste avant la fin de celui-ci, pour s'y fondre
     clearTimeout(trou);
-    trou = setTimeout(hesiter, Math.max(0, (prochainDebut - 0.05 - FONDU - 0.15 - actx.currentTime) * 1000));
+    trou = setTimeout(hesiter, Math.max(0, (prochainDebut - 0.05 - 0.15 - actx.currentTime) * 1000));
     return true;
   }
 
@@ -815,12 +811,18 @@ const finLecture = () => {
 lecteurNeuronal.surFin = finLecture;
 // (03/11) un trou dans sa réponse : un de ses meubles, choisi par son subconscient, seulement pendant une réponse dite à voix
 // haute (pas une réécoute) et quand papa ne parle pas
+let vitesseFinMeuble = 0.35;
 lecteurNeuronal.hesitation = (o) => {
   const h = choisirMeuble(o);
   if (!h || !h.pret || !h.voix) return h;
-  // (14:20) tenu un peu plus longtemps que sa voix (0,6 à 1,5 s de plus), jamais plus que sa durée au plus : il s'étale sur la pause
+  // (14:20) un peu plus long que sa voix (0,6 à 1,5 s de plus), jamais plus que sa durée au plus : il s'étale sur la pause ;
+  // (14:40) au ralenti, et il repart de la vitesse où le meuble d'avant s'est arrêté (après sa voix : un départ lent, 0,35)
   const voulu = h.pret.duration + 0.6 + Math.random() * 0.9, cible = h.dureeMax > 0 ? Math.min(h.dureeMax, voulu) : voulu;
-  try { return { ...h, pret: tenirMeuble(h.pret, cible), dureeMax: 0 }; } catch (_) { return h; }
+  try {
+    const r = ralentirMeuble(h.pret, cible, o && o.suite ? vitesseFinMeuble : 0.35);
+    vitesseFinMeuble = r.vFin;
+    return { ...h, pret: r.tampon, dureeMax: 0 };
+  } catch (_) { return h; }
 };
 lecteurNeuronal.peutHesiter = () => etat.reponseVoix != null && jarvisPeutParler();
 if (lecteurSysteme) lecteurSysteme.surFin = finLecture;
