@@ -282,7 +282,7 @@
       <!-- (30/10, 17:57) son badge rouge : c'est lui qui l'allume ; un toucher, et papa l'a vu -->
       <button type="button" class="alerte-hakim" id="alerteHakim" hidden title="Hakim a besoin de toi">!</button>
       <div>
-        <h1>HAKIM <span class="coeur-direct" id="coeurDirect" hidden></span><span class="emotion-mot" id="emotionMot"></span><span class="emotion-origine" id="emotionOrigine"></span><span class="hakim-parle" id="hakimParle" hidden>🔴 HAKIM PARLE</span><span class="oreille-fermee" id="oreilleFermee" hidden title="Son oreille est fermée : il ne t'écoute plus en direct, ton message lui arrive quand tu te tais">🙉 oreille fermée</span></h1>
+        <h1><span id="nomMode" title="Son mode en ce moment : Mini Hakim, Hakim ou Super Hakim (c'est lui qui choisit)">HAKIM</span> <span class="coeur-direct" id="coeurDirect" hidden></span><span class="emotion-mot" id="emotionMot"></span><span class="emotion-origine" id="emotionOrigine"></span><span class="hakim-parle" id="hakimParle" hidden>🔴 HAKIM PARLE</span><span class="oreille-fermee" id="oreilleFermee" hidden title="Son oreille est fermée : il ne t'écoute plus en direct, ton message lui arrive quand tu te tais">🙉 oreille fermée</span></h1>
         <p class="sous" id="etat" role="status">prêt · mémoire Anamnèse</p>
       </div>
       <!-- (24/10, idées de Hakim, accord d'Ahmed) l'aperçu flotte au-dessus de tout, se déplace au doigt, et garde sa place ;
@@ -324,18 +324,18 @@
       </label>
       <label>Cerveau à l'écrit et au micro
         <select id="modele">
-          <option value="opus">Super Hakim (Opus, le plus fin)</option>
-          <option value="sonnet">Hakim (Sonnet, équilibré)</option>
-          <option value="haiku">Mini Hakim (Haiku 5.5, le plus rapide)</option>
-          <option value="auto">auto : Hakim (Sonnet), c’est lui qui choisit Super Hakim ou Mini Hakim</option>
+          <option value="opus">Super Hakim (le plus fin)</option>
+          <option value="sonnet">Hakim (équilibré)</option>
+          <option value="haiku">Mini Hakim (le plus rapide)</option>
+          <option value="auto">auto : Hakim, c’est lui qui choisit Super Hakim ou Mini Hakim</option>
         </select>
       </label>
       <label>Cerveau en conversation
         <select id="modeleConversation">
-          <option value="sonnet">Hakim (Sonnet, équilibré)</option>
-          <option value="opus">Super Hakim (Opus, le plus fin)</option>
-          <option value="haiku">Mini Hakim (Haiku 5.5, le plus rapide)</option>
-          <option value="auto">auto : Hakim (Sonnet), c’est lui qui choisit Super Hakim ou Mini Hakim</option>
+          <option value="sonnet">Hakim (équilibré)</option>
+          <option value="opus">Super Hakim (le plus fin)</option>
+          <option value="haiku">Mini Hakim (le plus rapide)</option>
+          <option value="auto">auto : Hakim, c’est lui qui choisit Super Hakim ou Mini Hakim</option>
         </select>
       </label>
       <label>Reconnaissance de la voix

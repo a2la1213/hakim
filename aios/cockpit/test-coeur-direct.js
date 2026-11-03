@@ -28,7 +28,7 @@ test('le cœur en direct : son rythme, frais seulement, lu au plus une fois par 
 
 test('branché : la route, son nom dans Parler, rafraîchi chaque seconde quand la page est à l’écran', () => {
   assert.match(src, /if \(p === '\/api\/jarvis\/coeur'\) \{[\s\S]{0,300}coeurDirect\(\)/);
-  assert.match(html, /<h1>HAKIM <span class="coeur-direct" id="coeurDirect"[^>]*><\/span>/);
+  assert.match(html, /<h1><span id="nomMode"[^>]*>HAKIM<\/span> <span class="coeur-direct" id="coeurDirect"[^>]*><\/span>/);
   assert.match(js, /setInterval\(lireCoeurDirect, 1000\)/);
   assert.match(js, /document\.visibilityState !== 'visible'/);
   assert.match(js, /fetch\('\/api\/jarvis\/coeur'/);

@@ -1221,7 +1221,7 @@ function htmlMessage(m) {
   // a pesé sur ses choix à ce tour
   if (Array.isArray(m.regles) && m.regles.length) pied.push(`<span title="Ce que son émotion a pesé sur ses choix à ce tour (une règle du code, d'après son état)">émotion → ${m.regles.map(n => esc(REGLES_NOMS[n] || n)).join(', ')}</span>`);
   if (m.ms) pied.push(`<span>${(m.ms / 1000).toFixed(1).replace('.', ',')} s</span>`);
-  if (m.modele) pied.push(`<span title="Le modèle qui a vraiment répondu (en automatique : un seul modèle par conversation, Opus ; « passe en Sonnet » le change pour le reste de la conversation). Opus 4.8 au lieu d'Opus 5.5 : la protection d'Opus 5.5 a bloqué la conversation et claude l'a remplacé">${esc(nomModele(m))}</span>`);
+  if (m.modele) pied.push(`<span title="Son mode pour cette réponse : Mini Hakim, Hakim ou Super Hakim (en automatique, Hakim ; c'est lui qui choisit d'en changer). Le chiffre est la version qui a vraiment répondu">${esc(nomModele(m))}</span>`);
   if (m.jetons) {
     const J = (k) => Number(m.jetons[k]) || 0;                  // (C-M3) toujours des nombres
     const lu = J('entree') + J('cache_lu') + J('cache_ecrit');
@@ -1241,11 +1241,19 @@ function htmlMessage(m) {
 const REGLES_NOMS = { peur: 'peur : demander avant d’agir', lassitude: 'lassitude : plus léger', curiosite: 'curiosité : une initiative',
   honte: 'honte : vérifier les faits', joie: 'joie : oser' };
 // (26/10 soir) la version qui a répondu (« Opus 4.8 », « Opus 5.5 ») : Opus 5.5 remplacé en silence doit se voir
+// (03/11, Ahmed : « quand il change, je dois voir à côté de l'orbe que le nom change ») son mode du moment, en titre
+function montrerMode(modele) {
+  const n = { haiku: 'Mini Hakim', sonnet: 'Hakim', opus: 'Super Hakim' }[modele];
+  if (!n || !$('nomMode')) return;
+  if ($('nomMode').textContent !== n.toUpperCase()) { $('nomMode').textContent = n.toUpperCase(); try { pulser(0.4); } catch (_) {} }
+}
 function nomModele(m) {
   if (m.modele === 'gemma') return 'Gemma';                       // (29/10) Gemma à la place d'Opus (réglages › source)
   const v = String(m.modeleReel || '').match(/^claude-(opus|sonnet|haiku)-(\d{1,2})-(\d{1,2})(?:-|$)/);
-  if (!v) return m.modele === 'opus' ? 'Opus' : m.modele === 'haiku' ? 'Haiku' : 'Sonnet';
-  return `${{ haiku: 'Mini Hakim', sonnet: 'Hakim', opus: 'Super Hakim' }[v[1]]} (${v[1][0].toUpperCase()}${v[1].slice(1)} ${v[2]}.${v[3]})`;   // (03/11) ses noms
+  // (03/11, Ahmed : « je ne veux plus voir Opus, Sonnet et Haiku : Mini Hakim, Hakim ou Super Hakim ») la version reste en chiffres
+  const noms = { haiku: 'Mini Hakim', sonnet: 'Hakim', opus: 'Super Hakim' };
+  if (!v) return noms[m.modele] || 'Hakim';
+  return `${noms[v[1]]} ${v[2]}.${v[3]}`;
 }
 function tailleLisible(n) { return n < 1024 ? `${n} o` : n < 1048576 ? `${Math.round(n / 1024)} Ko` : `${(n / 1048576).toFixed(1).replace('.', ',')} Mo`; }
 var apercus = new Map();
@@ -1293,6 +1301,7 @@ function majMessage(m) {
 }
 
 function rendre() {
+  if (typeof montrerMode === 'function' && !etat.flux) { const d = [...etat.messages].reverse().find(x => x.qui === 'j' && x.modele); if (d) montrerMode(d.modele); }   // (03/11) son mode, à côté de l'orbe
   const fil = $('fil');
   const enBas = fil.scrollHeight - fil.scrollTop - fil.clientHeight < 80;
   if (!etat.messages.length) {
@@ -1501,7 +1510,7 @@ async function envoyer(texte, oral, dejaRelance) {
           // (28/10) une panne d'Anthropic : dite à voix haute quand la voix est active (téléphone plié, il n'aurait rien vu)
           if (o.dire && (etat.conversation || etat.reglages.volant || etat.reglages.lectureAuto) && !lecteur.actif) lecteur.dire(o.x.slice(0, 160));
         } else if (o.t === 'debut') {
-          if (o.modele) { m.modele = o.modele; majMessage(m); }        // le routeur a choisi (Sonnet ou Opus)
+          if (o.modele) { m.modele = o.modele; majMessage(m); montrerMode(o.modele); }   // (03/11) son mode, à côté de l'orbe
         } else if (o.t === 'source') {                        // le forfait à sa limite : l'API, puis le local
           m.source = o.source;
           humeur(o.source === 'api' ? 'forfait à sa limite : je réponds par l’API' : 'je réponds avec mon cerveau local (sans mes outils)');
@@ -3284,6 +3293,7 @@ function ecouterPensees() {
     if (o.ici && !(o.extrait && (o.extrait.cible === 'deux' || o.extrait.cible === appareilIci()))) return;
     recevoirSon(o.extrait); } catch (_) {} });
   es.addEventListener('micro', (ev) => { try { microParHakim(JSON.parse(ev.data)); } catch (_) {} });   // (22:27) de lui-même aussi
+  es.addEventListener('modele', (ev) => { try { montrerMode(JSON.parse(ev.data).modele); } catch (_) {} });   // (03/11) il change de mode
   es.addEventListener('morceaux', (ev) => { try { const o = JSON.parse(ev.data);   // (09:25) son tri des morceaux, allumé ou éteint par lui
     reglagesCorps = { ...reglagesCorps, trier_morceaux: !!o.actif }; journalVoix('tri_morceaux', { actif: !!o.actif }); } catch (_) {} });
   es.addEventListener('oreille_hakim', (ev) => { try { surOreilleHakim(JSON.parse(ev.data)); } catch (_) {} });   // (01:00) le signe
