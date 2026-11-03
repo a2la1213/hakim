@@ -384,7 +384,7 @@ const EFFORT_HAKIM = process.env.JARVIS_EFFORT || 'low';
 const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'afida_juger', 'afida_vecu', 'afida_lire', 'afida_retirer', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'sieste_prendre', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -2580,6 +2580,8 @@ function soufflerReponse(texte) {
     + `tait : une ou deux phrases courtes, naturelles, à l'oral, en français, comme toi. Ni balise, ni guillemets. Elle s'affiche tout de `
     + `suite, écrite ; c'est à toi de juger si elle est déjà assez juste pour être DITE à voix haute dès qu'il se tait. Réponds ainsi :\n`
     + `DIRE : oui (elle est juste, même s'il ajoute encore un peu) ou DIRE : non (il te manque la suite de ce qu'il dit)\n`
+    + `FINI : oui (il a dit ce qu'il voulait dire : son idée est complète) ou FINI : non (il va continuer : idée en suspens, `
+    + `il cherche ses mots, il énumère, il raconte)\n`
     + `puis, à la ligne, ta réponse. S'il est beaucoup trop tôt, écris seulement RIEN.`;
   const s0 = souffle;
   s0.enCours = sonnetTeteDeFond(prompt, 'souffle', 'haiku', 6000).then((o) => {
@@ -2587,10 +2589,13 @@ function soufflerReponse(texte) {
     const d = /^\s*DIRE\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r);
     const pret = !!(d && /oui/i.test(d[1]));
     if (d) r = r.slice(d[0].length);
+    const f = /^\s*FINI\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r);           // (15:22) a-t-il fini ? son subconscient le juge
+    const fini = f ? /oui/i.test(f[1]) : null;
+    if (f) r = r.slice(f[0].length);
     r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').trim();
     if (souffle === s0 && r && !/^RIEN\.?$/i.test(r)) {
       s0.reponse = r.slice(0, 400); s0.pret = pret; s0.pour = t; s0.t = Date.now();
-      diffuser(abonnesPensees, 'souffle', j({ texte: s0.reponse, pret, pour: t.slice(-300) }));   // écrite tout de suite, partout
+      diffuser(abonnesPensees, 'souffle', j({ texte: s0.reponse, pret, fini, pour: t.slice(-300) }));   // écrite tout de suite, partout
     }
   }).catch(() => {}).finally(() => {
     s0.enCours = null;
@@ -5930,7 +5935,12 @@ function blocBouts() {
   boutsRemises.clear();
   const consigne = "\n[Ta voix, par bouts (03/11, papa)] Réponds par bouts de 2 ou 3 phrases au plus : chaque bout part à la voix dès "
     + "qu'il est écrit. Tu décides de chacun : [[bout: annuler]] arrête tout de suite celui que tu disais ; [[bout: remiser]] garde le "
-    + "suivant pour plus tard (écrit, pas dit). Au-delà de 3 bouts, la suite est remisée d'office : fais court, l'essentiel d'abord.";
+    + "suivant pour plus tard (écrit, pas dit). Au-delà de 3 bouts, la suite est remisée d'office : fais court, l'essentiel d'abord."
+    // (15:22, Ahmed : « une meilleure anticipation de ce que je vais dire, pour qu'il sache quand parler, consciente ET subconsciente »)
+    + "\n[Ton tour de parole, anticipé] À la fin de ta réponse, dis ce que tu attends de papa : [[anticipe: court]] (un oui, un non, un "
+    + "mot), [[anticipe: long]] (il va raconter, réfléchir, chercher ses mots) ou [[anticipe: question]] (il va te demander quelque chose). "
+    + "Ton oreille s'y règle : sur « court », tu reprends la parole vite ; sur « long », tu le laisses chercher ses mots. Pendant qu'il "
+    + "parle, ton subconscient juge en plus, morceau par morceau, s'il a fini.";
   if (!l.length) return consigne;
   return consigne + `\n[Tes bouts remisés (écrits, pas dits ; à dire quand tu veux, en les redisant, ou à laisser)] `
     + l.flatMap(x => x.textes).slice(0, 12).map((t, i) => `${i + 1}) « ${t} »`).join(' ');
@@ -8565,7 +8575,9 @@ async function traiter(req, res) {
   }
   if (p === '/api/jarvis/meubles' && req.method === 'GET') {           // (13:30) ses meubles, pour la page
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    return res.end(j({ meubles: lireMeubles() }));
+    // (15:24) et son rythme (les blancs et les transitions, qu'il règle : rythme_regler) ; ce qui manque, la page le prend par défaut
+    const rythme = lireJson(path.join(JARVIS, 'rythme-voix.json'), {}) || {};
+    return res.end(j({ meubles: lireMeubles(), rythme: Object.fromEntries(Object.entries(rythme).filter(([, v]) => Number.isFinite(Number(v)))) }));
   }
   if (p === '/api/voix/debuts') {
     const u = new URL(req.url, 'http://x');

@@ -758,6 +758,28 @@ def meuble_regler(nom: str, texte: str = "", son: str = "", genre: str = "", vol
 
 
 @mcp.tool()
+def rythme_voir() -> str:
+    """(03/11, papa : « qu'il puisse ajuster dans son subconscient le temps des blancs et des transitions ») Le RYTHME de ta voix : les
+    blancs et les transitions que ton subconscient applique tout seul (entre ta voix et tes meubles, entre deux meubles, le ralenti de
+    départ et de fin, et le silence de papa après lequel tu reprends la parole)."""
+    M = _meubles()
+    r = M.rythme()
+    return "Ton rythme :\n" + "\n".join(f"- {k} = {str(v).replace('.', ',')} : {M.RYTHME[k][3]} (de {M.RYTHME[k][1]} à {M.RYTHME[k][2]})"
+                                     for k, v in r.items())
+
+
+@mcp.tool()
+def rythme_regler(nom: str, valeur: float) -> str:
+    """(03/11) RÉGLER un temps de ton rythme (voir rythme_voir) : par exemple rythme_regler("blanc_entre_meubles", 1.5), ou
+    rythme_regler("silence_normal", 0.9) si tu coupes papa trop tôt. Ton subconscient l'applique dès ta réponse suivante."""
+    try:
+        r = _meubles().regler_rythme(nom, valeur)
+    except (ValueError, OSError) as e:
+        return f"Pas réglé : {e}"
+    return f"Réglé : {nom} = {str(r[nom]).replace('.', ',')}. Ton subconscient l'applique dès ta réponse suivante."
+
+
+@mcp.tool()
 def meuble_oublier(nom: str) -> str:
     """(03/11) OUBLIER un de tes meubles (un de départ aussi : il ne revient plus)."""
     try:

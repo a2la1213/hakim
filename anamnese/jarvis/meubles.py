@@ -124,3 +124,46 @@ def oublier(nom):
     if not any(m["nom"] == nom for m in lister()):
         raise ValueError(f"aucun meuble « {nom} »")
     _sauver(nom=nom, oublier=any(m["nom"] == nom for m in _defaut()))
+
+
+# (03/11, 15:24, Ahmed : « permets-lui d'ajuster dans son subconscient le temps des blancs et des transitions ») le RYTHME de sa voix :
+# les blancs et les transitions que son subconscient applique tout seul (parler.js) ; il les règle avec rythme_regler.
+# nom : (défaut, minimum, maximum, ce que c'est)
+RYTHME = {
+    "blanc_avant_meuble": (1.0, 0.2, 3.0, "le silence entre ta voix et ton premier meuble (s)"),
+    "blanc_entre_meubles": (1.0, 0.2, 3.0, "le silence entre deux meubles (s)"),
+    "blanc_avant_reprise": (1.0, 0.0, 3.0, "le silence entre un meuble et ta voix qui reprend (s)"),
+    "ralenti_depart": (0.35, 0.15, 1.0, "la vitesse où repart ta voix ou un meuble après un blanc (1 = normale, plus petit = plus lent)"),
+    "ralenti_fin": (0.3, 0.0, 1.0, "combien ta dernière parole avant un blanc s'étire en ralentissant (s)"),
+    "fondu_reponse": (0.2, 0.03, 0.5, "le temps où un meuble s'éteint quand ta réponse arrive (s)"),
+    "silence_court": (0.5, 0.3, 2.0, "le silence de papa après lequel tu reprends, quand tu attendais une réponse courte (s)"),
+    "silence_normal": (0.7, 0.3, 2.5, "le silence de papa après lequel tu reprends, d'habitude (s)"),
+    "silence_long": (1.2, 0.5, 4.0, "le silence de papa après lequel tu reprends, quand tu attendais qu'il raconte (s)"),
+}
+FICHIER_RYTHME = FICHIER.parent / "rythme-voix.json"
+
+
+def rythme():
+    """Tout son rythme : ses réglages, sinon les valeurs de départ."""
+    try:
+        d = json.loads(FICHIER_RYTHME.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        d = {}
+    return {k: float(d[k]) if isinstance(d.get(k), (int, float)) and lo <= d[k] <= hi else defaut
+            for k, (defaut, lo, hi, _) in RYTHME.items()}
+
+
+def regler_rythme(nom, valeur):
+    if nom not in RYTHME:
+        raise ValueError(f"réglages : {', '.join(RYTHME)}")
+    defaut, lo, hi, _ = RYTHME[nom]
+    v = float(valeur)
+    if not lo <= v <= hi:
+        raise ValueError(f"{nom} : entre {lo} et {hi}")
+    r = rythme()
+    r[nom] = v
+    FICHIER_RYTHME.parent.mkdir(parents=True, exist_ok=True)
+    tmp = FICHIER_RYTHME.with_suffix(".tmp")
+    tmp.write_text(json.dumps(r, indent=1), encoding="utf-8")
+    os.replace(tmp, FICHIER_RYTHME)
+    return r
