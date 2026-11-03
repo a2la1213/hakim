@@ -104,3 +104,21 @@ def test_ses_membres_la_premiere_fois_papa_autorise(tmp_path, monkeypatch):
     (tmp_path / "membres-permis.json").write_text(json.dumps({"bluetooth_signal": True, "nfc_ecrire": True}))
     assert sens.demander("nfc_ecrire", 60, texte="bonjour papa")["texte"] == "bonjour papa"
     assert sens.demander("imu", 10)["sens"] == "imu", "ses anciens sens restent libres"
+
+
+def test_ses_gestes_radio_et_jamais_le_mot_de_passe_du_wifi(tmp_path, monkeypatch):
+    """(03/11, Ahmed : « toutes les actions du Bluetooth, du Wi-Fi et du NFC ») ses nouveaux gestes passent par l'accord de papa ;
+    la carte de papa montre le nom du réseau, jamais son mot de passe"""
+    monkeypatch.setattr(sens, "JARVIS", tmp_path)
+    import pytest
+    for g in ("bluetooth_activer", "bluetooth_appairer", "wifi_info", "wifi_connecter", "bluetooth_reglages", "wifi_reglages",
+              "nfc_reglages"):
+        assert g in sens.INSTRUMENTS and g in sens.RADIO, g
+    with pytest.raises(sens.Refus, match="texte"):
+        sens.demander("wifi_connecter", 60)
+    with pytest.raises(sens.Refus, match="la première fois"):
+        sens.demander("wifi_connecter", 60, texte="Maison ; secret123")
+    carte = (tmp_path / "membres-demandes.jsonl").read_text(encoding="utf-8")
+    assert "Maison" in carte and "secret123" not in carte
+    (tmp_path / "membres-permis.json").write_text(json.dumps({"wifi_connecter": True}))
+    assert sens.demander("wifi_connecter", 60, texte="Maison ; secret123")["texte"] == "Maison ; secret123"

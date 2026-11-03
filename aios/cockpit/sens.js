@@ -10,7 +10,8 @@ const path = require('node:path');
 
 const ID = /^S-\d{8}-\d{6}-[0-9a-f]{4}$/;
 const SENS = new Set(['inventaire', 'imu', 'sismo', 'baro', 'magneto', 'son',
-  'appareils', 'bluetooth_scan', 'wifi_scan', 'bluetooth_signal', 'nfc_ecrire']);   // (03/11) ses sens radio et ses membres (appli 1.42)
+  'appareils', 'bluetooth_scan', 'wifi_scan', 'bluetooth_signal', 'nfc_ecrire',   // (03/11) ses sens radio et ses membres (appli 1.42)
+  'bluetooth_activer', 'bluetooth_appairer', 'wifi_info', 'wifi_connecter', 'bluetooth_reglages', 'wifi_reglages', 'nfc_reglages']);   // (appli 1.44)
 const EXPIRE_MS = 2 * 3600 * 1000, MARGE_MS = 120 * 1000, ESSAIS = 3;
 // (30/10, Ahmed : « ses propres modules ») ses instruments à lui : donnés à son Tricordeur (le module), qui rend par
 // Documents/Hakim/sens/<id>/ (Syncthing) ; on attend sa durée + 30 min (la synchronisation)
@@ -30,6 +31,14 @@ const INTEGRES = {
   wifi_scan: ['les réseaux Wi-Fi autour (nom, force du signal, bande)', 0, 0],
   bluetooth_signal: ['son membre : émettre son signal Bluetooth « Hakim »', 30, 600],
   nfc_ecrire: ['son membre : écrire un texte sur la prochaine puce NFC posée contre le téléphone', 60, 120],
+  // (03/11, Ahmed : « toutes les actions du Bluetooth, du Wi-Fi et du NFC ») ses autres gestes (appli 1.44)
+  bluetooth_activer: ['son membre : allumer le Bluetooth (papa dit oui)', 30, 60],
+  bluetooth_appairer: ['son membre : appairer un appareil Bluetooth (papa confirme)', 60, 120],
+  wifi_info: ['le Wi-Fi en cours : nom, force, débit, internet', 0, 0],
+  wifi_connecter: ['son membre : relier le téléphone à un Wi-Fi (papa touche « Enregistrer »)', 60, 120],
+  bluetooth_reglages: ['son membre : ouvrir devant papa le panneau Bluetooth', 0, 0],
+  wifi_reglages: ['son membre : ouvrir devant papa le panneau Wi-Fi', 0, 0],
+  nfc_reglages: ['son membre : ouvrir devant papa le réglage NFC', 0, 0],
 };
 
 class FileSens {

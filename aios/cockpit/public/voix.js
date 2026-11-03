@@ -408,8 +408,12 @@
   // Un point après une abréviation (M., Mme, p. ex.), une initiale ou un numéro de liste (1.)
   // ne finit pas la phrase.
   const ABREVIATION = /(?:^|[\s(«"])(?:\p{L}|\d+|M|Mme|Mlle|Mr|Dr|Pr|St|Ste|ex|cf|env|vol|n°|av|apr|J\.-C)\.$/iu;
-  function decoupeur() {
-    let tampon = '';
+  /* (03/11, Ahmed : « quand il écrit, ça doit parler mot à mot, ce sera plus rapide ») « vif » : ses tout premiers mots partent
+     sans attendre la fin de la phrase (une proposition finie dès 20 caractères, sinon ~5 mots complets dès 30) ; ensuite, des
+     phrases entières comme avant : il écrit bien plus vite qu'il ne parle, seule la première attente compte. Jamais dans une
+     formule ou une balise ouverte, jamais entre deux chiffres (« 12 000 »). */
+  function decoupeur({ vif = false } = {}) {
+    let tampon = '', premiers = vif;
     const FIN = /[.!?…؟]+(?:\s?["»”)])*(?=\s)|\n+/g;
     return {
       ajouter(x) {
@@ -427,6 +431,16 @@
           dernier = fin;
         }
         tampon = tampon.slice(dernier);
+        if (out.length) premiers = false;
+        if (premiers) {
+          const z = zonesFormules(tampon), ouverte = tampon.lastIndexOf('[[') > tampon.lastIndexOf(']]');
+          let i = -1;
+          for (const v of tampon.matchAll(/[,;:](?=\s)/g)) if (v.index + 1 >= 20 && !dansZone(z, v.index)) i = v.index + 1;
+          if (i < 0 && tampon.trim().length >= 30)
+            for (let k = tampon.length - 1; k > 0; k--)
+              if (tampon[k] === ' ' && !(/\d/.test(tampon[k - 1]) && /\d/.test(tampon[k + 1] || '')) && !dansZone(z, k) && tampon.slice(0, k).trim().length >= 20) { i = k; break; }
+          if (i > 0 && !ouverte) { out.push(tampon.slice(0, i).trim()); tampon = tampon.slice(i).replace(/^\s+/, ''); premiers = false; }
+        }
         if (tampon.length > LONGUEUR_MAX) {     // phrase interminable : coupe à la dernière virgule, sinon au dernier espace
           const z = zonesFormules(tampon);
           const virgule = tampon.lastIndexOf(', ', LONGUEUR_MAX);

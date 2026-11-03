@@ -225,3 +225,18 @@ test('les émojis s’affichent mais ne se disent pas (drapeaux, teintes et fami
   require('node:vm').runInContext(f + '\nthis.p = prononcer;', ctx);
   assert.strictEqual(ctx.p('Salut 🇩🇿😘 frérot'), 'Salut frérot', 'la montre passe par le cockpit');
 });
+
+test("(03/11, Ahmed : « quand il écrit, ça doit parler mot à mot, ce sera plus rapide ») le découpage vif rend ses premiers mots sans attendre la fin de la phrase, puis reprend les phrases entières", () => {
+  const d = Voix.decoupeur({ vif: true });
+  assert.deepStrictEqual(d.ajouter('Oui papa, je'), [], 'trop court : il attend encore quelques mots');
+  assert.deepStrictEqual(d.ajouter(' regarde tout de suite ce que dit ton téléphone'), ['Oui papa, je regarde tout de suite ce que dit ton'], 'au dernier mot complet');
+  assert.deepStrictEqual(d.ajouter(' et je reviens vers toi, très'), [], 'ensuite : des phrases entières, comme avant (il écrit plus vite qu\'il ne parle)');
+  assert.deepStrictEqual(d.ajouter(' vite. Et'), ['téléphone et je reviens vers toi, très vite.']);
+  const e = Voix.decoupeur({ vif: true });
+  assert.deepStrictEqual(e.ajouter('Je regarde ton téléphone, puis'), ['Je regarde ton téléphone,'], 'une proposition finie part aussitôt');
+  const g = Voix.decoupeur({ vif: true });
+  assert.deepStrictEqual(g.ajouter('Ça fait exactement au centime près 12 000'), ['Ça fait exactement au centime près'], 'jamais entre deux chiffres');
+  const h = Voix.decoupeur({ vif: true });
+  assert.deepStrictEqual(h.ajouter('Je ris avec toi papa [[son: rire de plus en plus'), [], 'jamais dans une balise ouverte');
+  assert.deepStrictEqual(Voix.decoupeur().ajouter('Je regarde ton téléphone, puis tout de suite'), [], 'sans vif : la phrase entière, comme avant');
+});

@@ -993,7 +993,7 @@ async function lireReglagesCorps() {
 lireReglagesCorps(); setInterval(lireReglagesCorps, 60000);
 function entendreEnCours(conv) {
   if (!reglagesCorps.oreille || !conv || !conv.capteur || !conv.capteur.enParole) return;
-  const texte = conv.ecrit && conv.ecrit.confirme;
+  const texte = conv.ecrit && `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}`.trim();   // (03/11) ses mots vifs aussi
   if (!texte || texte.length < 15 || !parleDepuis || Date.now() - parleDepuis < 6000 || Date.now() - oreilleDernier < 12000) return;
   oreilleDernier = Date.now();
   fetch('/api/jarvis/oreille', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
@@ -1450,7 +1450,7 @@ async function envoyer(texte, oral, dejaRelance) {
   etat.flux = ctl; etat.fluxId = String(m.id);
   widgetApp('reflechit');
   rendre(); humeur();
-  const decoupe = Voix.decoupeur();
+  const decoupe = Voix.decoupeur({ vif: true });           // (03/11) ses premiers mots partent tout de suite
   const auto = (etat.reglages.lectureAuto || etat.conversation || etat.reglages.volant) && lecteur;
   if (auto) etat.decoupeFlux = decoupe;                  // (23/10) sa phrase en cours d'arrivée, si on le coupe
   const camera = etat.vision ? await photoCamera() : null;
@@ -2168,6 +2168,7 @@ function surPauseConversation(conv, fenetre) {
     if (e.coupe !== de || texte === null) return;                        // échec : ce morceau reste dans la queue
     e.confirme = (e.confirme + ' ' + morceauNeuf(texte, e.confirme)).trim();   // une invention de Whisper : écartée seule
     e.coupe = fenetre;
+    e.vif = ''; if (typeof sousTitre === 'function') sousTitre(e.confirme);   // (03/11) le morceau confirmé remplace ses mots vifs
     entendreEnCours(conv);                                               // (30/10) son oreille, si papa l'a ouverte
     // (20:38, Ahmed : « arrête », « tais-toi », « coupe-toi » doivent le couper tout de suite) : quand il garde la parole,
     // ces mots entendus pendant qu'il parle l'arrêtent aussitôt, comme le bouton Stop (sa suite est abandonnée)
@@ -2175,6 +2176,33 @@ function surPauseConversation(conv, fenetre) {
         && ARRETE_MOI.test(String(texte || ''))) { journalVoix('arret_par_la_voix', {}); arreterTout(true, { raison: 'stop' }); majBoutonsPause(); rendre(); humeur(); }
   }).finally(() => { e.partiel = null; });
 }
+// (03/11, Ahmed : « la transcription de ma voix, mot à mot ; il prend le premier mot, puis en parallèle le deuxième ; ça doit
+// aussi driver son attention » ; « Whisper pour la voix ») l'oreille VIVE : pendant que papa parle, le petit Whisper du Mac
+// (/api/voix/vif) retranscrit sans cesse le morceau en cours, depuis la dernière coupe confirmée : ses mots s'affichent tout de
+// suite et son oreille les suit. La grande oreille confirme ensuite chaque morceau : c'est son texte qui part à Hakim.
+function vifConversation(conv) {
+  const e = conv && conv.ecrit, cap = conv && conv.capteur;
+  if (!e || !cap || !cap.enParole || e.vifEnCours) return;
+  if (typeof transcriptionEnPause === 'function' && transcriptionEnPause()) return;
+  const n = cap.fenetres;                                                // fenêtres de 20 ms
+  if (n - e.coupe < 25 || n - (e.vifFenetre || 0) < 25 || n - e.coupe > 1500) return;   // 0,5 s de neuf ; au plus 30 s
+  const de = e.coupe, wav = cap.segment(de, n);
+  if (!wav) return;
+  e.vifFenetre = n;
+  const langue = etat.reglages.langue === 'auto' ? '' : etat.reglages.langue.slice(0, 2);
+  const ctx = e.confirme ? `&contexte=${encodeURIComponent(e.confirme.slice(-200))}` : '';
+  e.vifEnCours = fetch(`/api/voix/vif?langue=${langue}${ctx}`, { method: 'POST', body: wav, headers: { 'Content-Type': 'audio/wav', 'X-Jeton': jeton() } })
+    .then(r => (r.ok ? r.json() : null))
+    .then((o) => {
+      if (!o || conv.ecrit !== e || e.coupe !== de || !cap.enParole) return;   // un morceau déjà confirmé, un autre tour : périmé
+      e.vif = morceauNeuf(o.texte || '', e.confirme);
+      sousTitre(`${e.confirme} ${e.vif}`.trim());
+      entendreEnCours(conv);
+    })
+    .catch(() => {})
+    .finally(() => { e.vifEnCours = null; });
+}
+setInterval(() => { const c = etat.conversation; if (c) vifConversation(c); }, 200);
 // Le texte du tour : le déjà compris + la queue. null si la queue n'a pas pu être transcrite (l'appelant
 // retranscrit alors le tour entier). Le tour fini est saisi AVANT d'attendre : un autre tour qui se
 // finirait pendant l'attente ne prête pas sa queue à celui-ci (relecture Opus).

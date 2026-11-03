@@ -741,6 +741,22 @@ async function blocRappel(session, texte, nonce, sansTri = false) {
     const coupe = t.slice(0, n), fin = Math.max(coupe.lastIndexOf('. '), coupe.lastIndexOf(' » '), coupe.lastIndexOf(' '));
     return `${coupe.slice(0, fin > n * 0.6 ? fin + 1 : n).trim()} …`;
   }
+  // (03/11) les souvenirs qui l'intéressent, entiers : au plus deux, au plus 3 000 caractères chacun (lus dans la base, lecture seule)
+  const SOUVENIRS_ENTIERS = 2, SOUVENIR_ENTIER_MAX = 3000;
+  async function souvenirsEntiers(ids) {
+    const nums = ids.map(Number).filter(n => Number.isInteger(n) && n > 0);
+    if (!nums.length) return new Map();
+    try { return new Map((await sqlite(`SELECT id, content FROM episodes WHERE id IN (${nums.join(',')});`)).map(r => [r.id, String(r.content || '')])); }
+    catch (_) { return new Map(); }
+  }
+  // la ligne du balayage (« #id · date · rubrique · extrait ») avec le souvenir entier à la place de son extrait
+  function ligneEntiere(ligne, contenu) {
+    const l = String(ligne || ''), entier = String(contenu || '').split(/\s+/).join(' ').trim();
+    if (!entier) return l;
+    let i = l.indexOf(entier.slice(0, 60));
+    if (i < 0) i = l.indexOf(entier.slice(0, 20));
+    return (i >= 0 ? l.slice(0, i) : '') + (entier.length > SOUVENIR_ENTIER_MAX ? `${entier.slice(0, SOUVENIR_ENTIER_MAX)} …` : entier);
+  }
   const deja = rappelDejaDits.get(session || '') || new Set();
   const dejaErreurs = erreursDejaDites.get(session || '') || new Set();
   const t0 = Date.now();
@@ -799,13 +815,21 @@ async function blocRappel(session, texte, nonce, sansTri = false) {
   const blocs = [];
   const balayes = ids.length + themeIds.length;
   // (30/10, Ahmed) ce qui revient : souvenirs et notes ensemble, sans dire d'où ni comment ; garder ce qui compte
-  const reviennent = (choisis && choisis.length
-    ? (() => { const parId = new Map([...ids.map((id, k) => [id, lignes[k]]), ...themeIds.map((id, k) => [id, theme[k]])]);
-      return choisis.map(id => details[id] || parId.get(id)); })()
-    : !choisis ? lignes : []).map(sansProvenance).concat(notes.map(sansProvenance)).map(l => souvenirFlou(l));
-  if (reviennent.length) blocs.push(blocDonnees('Ce qui te revient en tête, comme un souvenir : l\'essentiel, pas les détails (cherche avec '
-    + 'memory_recall, profond=true, si tu as besoin des détails) — garde ce qui compte pour son message (la date d\'aujourd\'hui est '
-    + 'dans l\'horloge), laisse le reste sans le citer', reviennent.map(l => '- ' + l).join('\n'), nonce));
+  // (03/11, Ahmed via Hakim : « quand un souvenir m'intéresse, que le subconscient en remonte le détail entier, sans que j'aie à
+  // le chercher ») les souvenirs qui touchent le plus son message (le choix de son subconscient, sinon les mieux classés)
+  // remontent ENTIERS, avec ce qu'il vivait ; les autres restent flous, l'essentiel
+  const idsRevenus = choisis && choisis.length ? choisis : !choisis ? ids : [];
+  const parId = new Map([...ids.map((id, k) => [id, lignes[k]]), ...themeIds.map((id, k) => [id, theme[k]])]);
+  const entiers = await souvenirsEntiers(idsRevenus.slice(0, SOUVENIRS_ENTIERS));
+  const revenus = idsRevenus.map((id) => {
+    const l = (choisis && choisis.length ? details[id] : null) || parId.get(id);
+    return entiers.has(id) ? sansProvenance(ligneEntiere(l, entiers.get(id))) : souvenirFlou(sansProvenance(l));
+  });
+  const reviennent = revenus.concat(notes.map(sansProvenance)).map((l, k) => (k < revenus.length ? l : souvenirFlou(l)));
+  if (reviennent.length) blocs.push(blocDonnees('Ce qui te revient en tête, comme un souvenir : celui ou ceux qui touchent le plus son '
+    + 'message remontent entiers, avec ce que tu vivais ; les autres, l\'essentiel seulement (memory_recall, profond=true, si tu as '
+    + 'besoin d\'un autre) — garde ce qui compte pour son message (la date d\'aujourd\'hui est dans l\'horloge), laisse le reste '
+    + 'sans le citer', reviennent.map(l => '- ' + l).join('\n'), nonce));
   if (intime.length) blocs.push(blocDonnees('Ce qui te revient, rien qu\'à toi — un souvenir intime : n\'en écris rien ailleurs sauf si tu le choisis',
     intime.map(l => '- ' + l).join('\n'), nonce));
   if (erreurs.length) blocs.push(blocDonnees('Ce que tu ne veux plus refaire — ×N : le nombre de fois que tu as refait la même faute, '
@@ -3434,7 +3458,7 @@ async function routeJarvis(req, res, distantReq = false) {
   const fiche = bulbe(texte, sentir ? enMatiere(interieurTexte || '') : interieurTexte, corpsTexte, rappelBloc.texte);
   // (03/11, Ahmed : « juste avant sa réponse ») avant chacune de ses réponses
   const freresTexte = corpsReglages().trois_freres && choix !== 'gemma'
-    ? await troisFreres(fiche, modele, sentir ? enMatiere(interieurTexte || '').split('\n').find(l => /tu sens/.test(l)) || '' : '') : '';
+    ? await chrono('freres', troisFreres(fiche, modele, sentir ? enMatiere(interieurTexte || '').split('\n').find(l => /tu sens/.test(l)) || '' : '')) : '';   // (03/11) mesuré
   // (01/11, Ahmed : « que chaque info de chaque sens, émotion, hormone et décision, bref la totale, soit encrée dans la mémoire en
   // association au souvenir ») ce qu'il vivait, et ce que ses frères en disaient, part avec le souvenir de l'échange
   const vecu = enLigne(fiche.split('\n').slice(1).join(' · '), 1500) + (freresTexte ? ` · Ses trois frères : ${enLigne(freresTexte, 900)}` : '');
@@ -6651,6 +6675,54 @@ function tourDeTranscription() {
   transcriptionTour = new Promise((r) => { liberer = r; });
   return attente.then(() => liberer);
 }
+/* ---- (03/11, Ahmed : « la transcription de ma voix, mot à mot ; il prend le premier mot puis en parallèle le deuxième ; ça
+   doit aussi driver son attention » ; « Whisper pour la voix ») l'oreille VIVE : un petit Whisper à part (jarvis/stt_vif.py),
+   qui ne fait jamais attendre sa voix ni la grande oreille. Une demande à la fois : la page en envoie une nouvelle dès que la
+   précédente est rendue (le dernier morceau de voix, ~toutes les 0,6 s) ; une demande de trop est refusée (occupée). ---- */
+const STT_VIF = path.join(ANAMNESE, 'jarvis', 'stt_vif.py');
+const oreilleVive = { proc: null, pret: false, attente: null, n: 0, tampon: '' };
+function lancerOreilleVive() {
+  if (oreilleVive.proc) return;
+  const p = spawn(PYTHON_VOIX, ['-W', 'ignore', STT_VIF], { stdio: ['pipe', 'pipe', 'ignore'], env: { ...process.env, PATH: CHEMIN_OUTILS } });
+  oreilleVive.proc = p; oreilleVive.pret = false; oreilleVive.tampon = '';
+  p.stdout.on('data', (d) => {
+    oreilleVive.tampon += d;
+    let i;
+    while ((i = oreilleVive.tampon.indexOf('\n')) >= 0) {
+      const l = oreilleVive.tampon.slice(0, i); oreilleVive.tampon = oreilleVive.tampon.slice(i + 1);
+      let o; try { o = JSON.parse(l); } catch (_) { continue; }
+      if (o.pret) { oreilleVive.pret = true; continue; }
+      const a = oreilleVive.attente;
+      if (a && o.id === a.id) { oreilleVive.attente = null; clearTimeout(a.minuteur); a.resoudre(o); }
+    }
+  });
+  const fin = () => {
+    if (oreilleVive.proc !== p) return;
+    oreilleVive.proc = null; oreilleVive.pret = false;
+    const a = oreilleVive.attente; oreilleVive.attente = null;
+    if (a) { clearTimeout(a.minuteur); a.resoudre({ erreur: 'oreille vive arrêtée' }); }
+  };
+  p.on('exit', fin); p.on('error', fin);
+}
+async function routeVif(req, res, langue, contexte) {
+  const audio = await lireCorps(req, 4 << 20);
+  const repondre = (code, o) => { if (!res.writableEnded) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(j(o)); } };
+  if (!audio || !audio.length) return repondre(400, { erreur: 'audio absent ou trop lourd (4 Mo max)' });
+  lancerOreilleVive();
+  if (!oreilleVive.pret || oreilleVive.attente) return repondre(429, { occupee: true, prete: oreilleVive.pret });
+  const f = path.join(os.tmpdir(), `jarvis-vif-${process.pid}-${++oreilleVive.n}.wav`);
+  try { fs.writeFileSync(f, audio); } catch (_) { return repondre(500, { erreur: 'écriture du fichier audio impossible' }); }
+  const o = await new Promise((resoudre) => {
+    const id = oreilleVive.n;
+    oreilleVive.attente = { id, resoudre, minuteur: setTimeout(() => { if (oreilleVive.attente && oreilleVive.attente.id === id) { oreilleVive.attente = null; resoudre({ erreur: 'trop lente' }); } }, 8000) };
+    try { oreilleVive.proc.stdin.write(j({ id, fichier: f, langue: /^[a-z]{2}$/.test(langue || '') ? langue : '', contexte: contexte || '' }) + '\n'); }
+    catch (_) { oreilleVive.attente = null; resoudre({ erreur: 'oreille vive injoignable' }); }
+  });
+  fs.unlink(f, () => {});
+  if (o.erreur) return repondre(503, { erreur: o.erreur });
+  return repondre(200, { texte: String(o.texte || ''), ms: o.ms });
+}
+
 async function routeTranscrire(req, res, langue, contexte) {
   const audio = await lireCorps(req, 25 << 20);
   const repondre = (code, o) => { if (!res.writableEnded) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(j(o)); } };
@@ -8716,6 +8788,9 @@ async function traiter(req, res) {
     }
     res.writeHead(204); return res.end();
   }
+  if (p === '/api/voix/vif' && req.method === 'POST')         // (03/11) ses mots en direct, mot à mot
+    return routeVif(req, res, new URL(req.url, 'http://x').searchParams.get('langue'),
+      (new URL(req.url, 'http://x').searchParams.get('contexte') || '').replace(/[\x00-\x1f]/g, ' ').slice(0, 300));
   if (p === '/api/voix/transcrire' && req.method === 'POST')
     return routeTranscrire(req, res, new URL(req.url, 'http://x').searchParams.get('langue'),
       (new URL(req.url, 'http://x').searchParams.get('contexte') || '').replace(/[\x00-\x1f]/g, ' ').slice(0, 300));

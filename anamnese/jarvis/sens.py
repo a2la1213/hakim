@@ -37,8 +37,24 @@ INSTRUMENTS = {
     "bluetooth_signal": ("TON MEMBRE : émettre ton signal Bluetooth « Hakim », que les appareils autour voient", 30, 600),
     "nfc_ecrire": ("TON MEMBRE : écrire un texte (texte=…) sur la prochaine puce NFC que papa pose contre le téléphone "
                    "(il a 60 s pour la poser)", 60, 120),
+    # (03/11, Ahmed : « toutes les actions du Bluetooth, du Wi-Fi et du NFC, pas seulement scanner ») ce qu'Android laisse faire
+    # à une appli ; ce qu'il réserve à papa (déconnecter, oublier, éteindre, allumer le NFC) : le panneau s'ouvre devant lui.
+    # L'appli doit être à l'écran pour ce qui s'y ouvre.
+    "bluetooth_activer": ("TON MEMBRE : allumer le Bluetooth (Android demande à papa de dire oui)", 30, 60),
+    "bluetooth_appairer": ("TON MEMBRE : appairer un appareil Bluetooth (texte=son adresse, ou son nom vu au dernier "
+                           "bluetooth_scan) ; papa confirme le code", 60, 120),
+    "wifi_info": ("le Wi-Fi où tu es relié : son nom, sa force, son débit, sa bande, et si internet passe", 0, 0),
+    "wifi_connecter": ("TON MEMBRE : relier le téléphone à un Wi-Fi (texte=« nom » ou « nom ; mot de passe ») ; papa touche "
+                       "« Enregistrer », puis le téléphone s'y relie", 60, 120),
+    "bluetooth_reglages": ("TON MEMBRE : ouvrir devant papa le panneau Bluetooth (déconnecter, oublier, éteindre : c'est lui qui "
+                           "touche, Android ne le permet qu'à lui)", 0, 0),
+    "wifi_reglages": ("TON MEMBRE : ouvrir devant papa le panneau Wi-Fi (se délier, oublier un réseau, éteindre)", 0, 0),
+    "nfc_reglages": ("TON MEMBRE : ouvrir devant papa le réglage NFC (l'allumer ou l'éteindre)", 0, 0),
 }
-RADIO = {"appareils", "bluetooth_scan", "wifi_scan", "bluetooth_signal", "nfc_ecrire"}
+RADIO = {"appareils", "bluetooth_scan", "wifi_scan", "bluetooth_signal", "nfc_ecrire", "bluetooth_activer", "bluetooth_appairer",
+         "wifi_info", "wifi_connecter", "bluetooth_reglages", "wifi_reglages", "nfc_reglages"}
+AVEC_TEXTE = {"nfc_ecrire": "le texte à écrire sur la puce", "bluetooth_appairer": "l'adresse ou le nom de l'appareil",
+              "wifi_connecter": "le nom du réseau (« nom » ou « nom ; mot de passe »)"}
 _ID_MEMBRE = re.compile(r"[0-9a-f]{10}")
 
 
@@ -106,11 +122,11 @@ def demander(sens, secondes=0, cadence="", texte=""):
     if sens not in INSTRUMENTS and sens not in a_lui:
         raise Refus(f"sens inconnu : « {sens[:40]} » (sens_lister pour la liste)")
     texte = " ".join(str(texte or "").split())[:500]
-    if sens == "nfc_ecrire" and not texte:
-        raise Refus("nfc_ecrire : le texte à écrire sur la puce (texte=…)")
+    if sens in AVEC_TEXTE and not texte:
+        raise Refus(f"{sens} : {AVEC_TEXTE[sens]} (texte=…)")
     # (03/11, Ahmed : « il a le droit à tout, mais au début il demande toujours l'autorisation ») la première fois, papa décide
     if sens in RADIO and not permis().get(sens):
-        demander_permission(sens, texte)
+        demander_permission(sens, texte.split(";")[0].strip() if sens == "wifi_connecter" else texte)   # jamais le mot de passe
         raise Refus(f"la première fois, papa autorise « {sens} » : ta demande lui est partie (une carte dans Parler). "
                     "Réessaie après son oui ; ensuite, ce sera libre.")
     _, defaut, maximum = INSTRUMENTS[sens] if sens in INSTRUMENTS else a_lui[sens][:3]
