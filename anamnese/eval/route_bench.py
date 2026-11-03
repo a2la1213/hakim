@@ -89,7 +89,7 @@ def mots_cles(paths):
             cible = "/".join(p.split("/")[: i + 1])
             for v in {seg, seg.replace("-", " "), seg.replace("-", "")}:
                 kw[sans_accents(v)] = cible
-    kw["atelier3d"] = "projets/chantier3d" if "projets/chantier3d" in paths else kw.get("atelier3d")
+    kw["batiscope"] = "projets/batelia" if "projets/batelia" in paths else kw.get("batiscope")
     return {k: v for k, v in kw.items() if v}
 
 

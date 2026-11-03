@@ -84,7 +84,7 @@ Nouveaux outils dans `mcp_server.py` (fins wrappers de taxonomy) :
 `memory_store_in`.
 
 **`memory_store` enrichi** : son retour indique désormais le ROUTAGE —
-`« Mémorisé (semantic, imp 0.8) → projets/atelier3d (conf 0.71) »` ou
+`« Mémorisé (semantic, imp 0.8) → projets/batiscope (conf 0.71) »` ou
 `« → ORPHELIN (aucune rubrique assez proche) »`. C'est le signal qui me permet
 de décider en-session : créer un nœud, reclasser, ou laisser.
 

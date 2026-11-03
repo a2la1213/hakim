@@ -6,7 +6,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const P = require('./passkey.js');
 
-const RP = 'mac.exemple.ts.net', ORIGINE = `https://${RP}`;
+const RP = 'macbook-air.tail9bec0c.ts.net', ORIGINE = `https://${RP}`;
 
 const { telephone: tel } = require('./telephone-logiciel.js');
 const telephone = () => tel(RP);

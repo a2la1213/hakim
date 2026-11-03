@@ -16,7 +16,7 @@ def _mem(tmp_path):
 
 def test_propose_utilise_par_lecture_ou_recouvrement_puis_correction(tmp_path):
     m = _mem(tmp_path)
-    cafe = m.add("episodic", "Ahmed boit son café serré chaque matin vers sept heures à Exempleville", embedding=[])
+    cafe = m.add("episodic", "Ahmed boit son café serré chaque matin vers sept heures à Morges", embedding=[])
     robot = m.add("episodic", "Le robot ressent ses hormones par équations différentielles", embedding=[])
     rien = m.add("episodic", "Un devis de cuisine envoyé au client", embedding=[])
     avant = (m.db.execute("SELECT COUNT(*), SUM(importance) FROM episodes").fetchone())

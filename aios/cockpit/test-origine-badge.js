@@ -25,7 +25,7 @@ test('le badge dit d’où vient l’émotion, en court à côté du mot et en e
   const f = monter();
   assert.deepStrictEqual({ ...f({ type: 'empathie', texte: 'par empathie, pour Ahmed' }) },
     { court: 'par empathie', texte: 'par empathie, pour Ahmed', classe: 'origine-empathie' });
-  assert.strictEqual(f({ type: 'mixte', texte: 'par empathie (pour Nora) et pour lui-même' }).court, 'empathie et pour lui');
+  assert.strictEqual(f({ type: 'mixte', texte: 'par empathie (pour Lala) et pour lui-même' }).court, 'empathie et pour lui');
   assert.strictEqual(f({ type: 'soi', texte: 'pour lui-même, après un soutien' }).court, 'pour lui');
   assert.deepStrictEqual({ ...f({ type: 'pente', texte: 'pente, sans cause marquée' }) },
     { court: 'pente, sans cause', texte: 'pente, sans cause marquée', classe: 'origine-pente' });

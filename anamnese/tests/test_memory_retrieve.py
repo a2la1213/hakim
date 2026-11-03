@@ -25,15 +25,15 @@ def mem(tmp_path):
 
 
 def _seed_slices(mem):
-    """2 tranches (projets/*, savoir-applecture) + 1 épisode jamais routé.
+    """2 tranches (projets/*, savoir-deepquran) + 1 épisode jamais routé.
 
     Depuis le routage LIVE, add() route À L'ÉCRITURE tout épisode À embedding
     non vide (les store_in ci-dessus ont construit les centroïdes) : pour
     rester « jamais routé », l'épisode témoin est SANS embedding (le routage
     live le saute par construction — centroïde impossible)."""
     mem.store_in("anamnese memoire rubriques", "projets/anamnese", embedding=[1.0, 0.0])
-    mem.store_in("atelier3d pricing stripe", "projets/atelier3d", embedding=[0.9, 0.1])
-    mem.store_in("tafsir sourate applecture", "savoir-applecture", embedding=[0.0, 1.0])
+    mem.store_in("batiscope pricing stripe", "projets/batiscope", embedding=[0.9, 0.1])
+    mem.store_in("tafsir sourate deepquran", "savoir-deepquran", embedding=[0.0, 1.0])
     mem.add("user", "episode jamais route")
 
 
@@ -107,8 +107,8 @@ def test_retrieve_rubric_filters_to_subtree(mem):
     res = mem.retrieve("memoire", [1.0, 0.0], rubric="projets")
     contents = [r[3] for r in res]
     assert "anamnese memoire rubriques" in contents
-    assert "atelier3d pricing stripe" in contents  # descendant du sous-arbre
-    assert all("applecture" not in c for c in contents)  # autre tranche exclue
+    assert "batiscope pricing stripe" in contents  # descendant du sous-arbre
+    assert all("deepquran" not in c for c in contents)  # autre tranche exclue
     assert all("jamais route" not in c for c in contents)  # non routé exclu
 
     # sous-arbre plus fin : une seule tranche
@@ -128,8 +128,8 @@ def test_retrieve_without_rubric_unchanged(mem):
     contents = {r[3] for r in default}
     assert contents == {
         "anamnese memoire rubriques",
-        "atelier3d pricing stripe",
-        "tafsir sourate applecture",
+        "batiscope pricing stripe",
+        "tafsir sourate deepquran",
         "episode jamais route",
     }
 

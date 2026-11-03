@@ -76,14 +76,14 @@ def test_texte_pdf_image_lus_directement(racine, tmp_path):
 
 def test_chercher_par_nom_sans_secrets(racine):
     (racine / "Projets").mkdir()
-    (racine / "Projets" / "Devis Exemplia.pdf").write_bytes(b"x")
+    (racine / "Projets" / "Devis Vilmarkt.pdf").write_bytes(b"x")
     (racine / "devis-ancien.docx").write_bytes(b"x")
     (racine / ".env.devis").write_text("SECRET")
     (racine / "node_modules").mkdir()
     (racine / "node_modules" / "devis.js").write_text("x")
     trouves = fichiers.chercher("devis", [racine])
     noms = sorted(Path(p).name for p in trouves)
-    assert noms == ["Devis Exemplia.pdf", "devis-ancien.docx"]
+    assert noms == ["Devis Vilmarkt.pdf", "devis-ancien.docx"]
 
 
 def test_word_par_textutil(racine, tmp_path):
@@ -225,13 +225,13 @@ def test_icloud_lisible_mais_pas_la_bibliotheque(tmp_path):
 
 def test_lister_un_dossier_et_chercher_dans_le_contenu(racine):
     (racine / "Projets" / "app").mkdir(parents=True)
-    (racine / "Projets" / "app" / "main.py").write_text("print('bonjour')\n# TODO : relancer Exemplia\n")
+    (racine / "Projets" / "app" / "main.py").write_text("print('bonjour')\n# TODO : relancer Vilmarkt\n")
     (racine / "Projets" / ".cache").mkdir()
-    (racine / "Projets" / "token.txt").write_text("relancer Exemplia")
+    (racine / "Projets" / "token.txt").write_text("relancer Vilmarkt")
     chemin, elements = fichiers.lister(str(racine / "Projets"), [racine])
     assert "[dossier] app/" in elements and not any(".cache" in e for e in elements)
     assert any("token.txt" in e and "secret" in e for e in elements)
-    trouves = fichiers.chercher_contenu("exemplia", str(racine), [racine])
+    trouves = fichiers.chercher_contenu("vilmarkt", str(racine), [racine])
     assert len(trouves) == 1 and "main.py:2" in trouves[0]
 
 
@@ -259,7 +259,7 @@ def test_chercher_dans_le_journal_brut_archives_comprises(tmp_path):
     import fichiers
     (tmp_path / "archives").mkdir()
     (tmp_path / "archives" / "journal-2026-10.jsonl").write_text(
-        json.dumps({"ts": 1792000000000, "qui": "ahmed", "texte": "On garde la qibla à 121,6 degrés depuis Exempleville."}) + "\n", encoding="utf-8")
+        json.dumps({"ts": 1792000000000, "qui": "ahmed", "texte": "On garde la qibla à 121,6 degrés depuis Lausanne."}) + "\n", encoding="utf-8")
     (tmp_path / "journal.jsonl").write_text(
         json.dumps({"ts": 1792200000000, "qui": "jarvis", "texte": "La QIBLA est confirmée, 121,63°."}) + "\n"
         + json.dumps({"ts": 1792200001000, "qui": "ahmed", "texte": "parlons d'autre chose"}) + "\n", encoding="utf-8")

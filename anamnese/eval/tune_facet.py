@@ -2,7 +2,7 @@
 
 Question mesurée : « ajouter `W_FACET * facet_overlap(facettes de la requête,
 facettes de l'épisode)` au score live améliore-t-il precision@6 sur la vraie
-base backfillée (3.5a : facets=200, ~49% des épisodes taggés — les AppLecture
+base backfillée (3.5a : facets=200, ~49% des épisodes taggés — les DeepQuran
 arabes n'ont pas de facettes, tokenizer latin) ? ». Le candidat
 `make_score_facet` extrait les facettes de la REQUÊTE
 (`facets_extract.extract_facets`, lexical déterministe) et ajoute :

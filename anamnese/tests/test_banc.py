@@ -162,7 +162,7 @@ def test_comparer_deux_runs_apparies():
 # --- pièges --------------------------------------------------------------------------------
 
 def test_pieges_terme_absent_et_rappel_negatif(tmp_path):
-    db = _base(tmp_path, [("semantic", "Exemplia tourne sur PostgreSQL 16 " + LONG, "projets/v", 1.0)])
+    db = _base(tmp_path, [("semantic", "Vilmarkt tourne sur PostgreSQL 16 " + LONG, "projets/v", 1.0)])
     candidats = [{"question": "Quelle version de PostgreSQL ?", "terme_discriminant": "PostgreSQL 16"},
                  {"question": "Quel est le nom du chat du serveur ?", "terme_discriminant": "Moustache"},
                  {"question": "Quel registrar pour le domaine ?", "terme_discriminant": "registrar"},

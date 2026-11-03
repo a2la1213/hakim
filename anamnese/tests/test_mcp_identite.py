@@ -43,7 +43,7 @@ def _accepter_tout(mem):
         assert identity.trancher(mem, p["id"], True)[0]
 
 
-# X1 (2026-10-20, retour d’un ami d’Ahmed, accord d'Ahmed) : self_append et self_update ne font plus que PROPOSER ;
+# X1 (2026-10-20, retour de Jiab77, accord d'Ahmed) : self_append et self_update ne font plus que PROPOSER ;
 # l'identité ne change qu'après la décision d'Ahmed (identity.trancher, appelé par le cockpit).
 
 def test_self_append_propose_et_ahmed_tranche(srv):

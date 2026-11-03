@@ -70,7 +70,7 @@ def _ep(id_, emb=(0.5, 0.5), content="contenu sans mot commun"):
 
 def test_bonus_episode_partageant_des_facettes_pas_les_autres():
     """Épisode partageant des facettes : +W*Jaccard exactement ; facettes
-    disjointes ou épisode sans facette (AppLecture arabe) : score live pur."""
+    disjointes ou épisode sans facette (DeepQuran arabe) : score live pur."""
     live = make_score_live(NOW)
     cand = make_score_facet(_FACETS, 0.3, now=NOW)
     q_emb = [1.0, 0.0]

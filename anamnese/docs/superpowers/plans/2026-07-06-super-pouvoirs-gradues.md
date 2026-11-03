@@ -2,15 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** Chaque agent atelier reçoit les capacités (MCP + CLI/Bash + skills) scopées à son palier de rôle (Lecture/Dev/QA-Ops), avec le destructif/argent/perso réservé à l'humain, et les 17 agents Atelier3D sont augmentés sur place.
+**Goal:** Chaque agent atelier reçoit les capacités (MCP + CLI/Bash + skills) scopées à son palier de rôle (Lecture/Dev/QA-Ops), avec le destructif/argent/perso réservé à l'humain, et les 17 agents Batiscope sont augmentés sur place.
 
-**Architecture:** Un fichier `capability-tiers.md` = source unique `palier → toolset` ; roles.md tague chaque rôle d'un palier ; SKILL.md §3 émet le `tools` du palier à la matérialisation ; un script Python augmente les 17 agents Atelier3D existants sans perdre leur prompt métier. Livrable = prose/skill/script (PAS de TDD Python) — vérification par dry-run (dont un test NÉGATIF) + review adversariale.
+**Architecture:** Un fichier `capability-tiers.md` = source unique `palier → toolset` ; roles.md tague chaque rôle d'un palier ; SKILL.md §3 émet le `tools` du palier à la matérialisation ; un script Python augmente les 17 agents Batiscope existants sans perdre leur prompt métier. Livrable = prose/skill/script (PAS de TDD Python) — vérification par dry-run (dont un test NÉGATIF) + review adversariale.
 
 **Tech Stack:** Markdown (tiers/roles/skill), Python 3 (script d'augmentation), MCP (noms d'outils exacts), l'outil Agent pour le dry-run.
 
 ## Global Constraints
 
-- Cible `~/.claude/skills/atelier/` + `~/Desktop/botbatiment/.claude/agents/` — HORS git anamnèse : traçabilité par rapports `.superpowers/sdd/scp2-task-*-report.md` (préfixe `scp2-` pour éviter toute collision). Docs spec/plan dans le repo anamnèse.
+- Cible `~/.claude/skills/atelier/` + `~/Desktop/mybuildbot/.claude/agents/` — HORS git anamnèse : traçabilité par rapports `.superpowers/sdd/scp2-task-*-report.md` (préfixe `scp2-` pour éviter toute collision). Docs spec/plan dans le repo anamnèse.
 - **Périmètre MCP** : agents = serveurs pertinents-projet en lecture/dev seulement. **EXCLUS de TOUT `tools` d'agent** : tout `mcp__stripe__*`, tout `mcp__claude_ai_Gmail__*` / `mcp__claude_ai_Google_Calendar__*` / `mcp__claude_ai_Google_Drive__*`, tout `mcp__arbor__*`. Côté supabase, EXCLUS : `merge_branch`, `delete_branch`, `reset_branch`, `deploy_edge_function`, et tout `apply_migration` visant la prod. Côté github, EXCLUS : tout outil d'écriture (`create_or_update_file`, `push_files`, `merge_pull_request`, `delete_file`, `create_branch`, `create_pull_request`).
 - `Bash` = privilège Dev/QA-Ops uniquement (jamais palier Lecture). Non sous-scopable.
 - `capability-tiers.md` = **source unique** de la frontière de sécurité (DRY). Aucun toolset d'agent ne se définit ailleurs.
@@ -26,7 +26,7 @@
 | `~/.claude/skills/atelier/roles.md` (modify) | tague chaque rôle d'un palier | 2 |
 | `~/.claude/skills/atelier/SKILL.md` (modify §3) | atelier émet le tools du palier | 2 |
 | `~/.claude/skills/atelier/augment-agents.py` (create) | augmente les agents existants d'un projet | 3 |
-| `~/Desktop/botbatiment/.claude/agents/*.md` (modify ×17) | agents Atelier3D augmentés | 3 |
+| `~/Desktop/mybuildbot/.claude/agents/*.md` (modify ×17) | agents Batiscope augmentés | 3 |
 
 ---
 
@@ -83,7 +83,7 @@ Les skills d'ORCHESTRATION (subagent-driven-development, brainstorming, writing-
 - [ ] **Step 3: Vérifs statiques** (exécuter, mettre au rapport) :
   - `grep -c "mcp__stripe\|Gmail\|Calendar\|Drive\|arbor\|merge_branch\|delete_branch\|push_files\|create_or_update_file" ~/.claude/skills/atelier/capability-tiers.md` — ces termes ne doivent apparaître QUE dans la section « RÉSERVÉ HUMAIN » (jamais dans un palier).
   - Le palier LECTURE ne contient ni `Bash`, ni `Edit`, ni `Write` (grep négatif sur les lignes des sections LECTURE).
-  - La table rôle→palier couvre les 17 rôles Atelier3D (9 LECTURE + 6 DEV + 2 QA_OPS = 17).
+  - La table rôle→palier couvre les 17 rôles Batiscope (9 LECTURE + 6 DEV + 2 QA_OPS = 17).
 - [ ] **Step 4: Rapport** — `~/Desktop/anamnese/.superpowers/sdd/scp2-task-1-report.md` : chemin, sortie des greps, écarts de noms MCP corrigés au Step 1.
 
 ---
@@ -108,11 +108,11 @@ Les skills d'ORCHESTRATION (subagent-driven-development, brainstorming, writing-
 
 ---
 
-### Task 3: Script d'augmentation des 17 agents Atelier3D
+### Task 3: Script d'augmentation des 17 agents Batiscope
 
 **Files:**
 - Create: `~/.claude/skills/atelier/augment-agents.py`
-- Modify (via script): `~/Desktop/botbatiment/.claude/agents/*.md` (×17)
+- Modify (via script): `~/Desktop/mybuildbot/.claude/agents/*.md` (×17)
 
 **Interfaces:**
 - Consumes: `capability-tiers.md` (toolsets), `agent-charter.md` (charte à appendre). La charte utilise les placeholders `<slug>`/`<projet>`/`<domaine>`.
@@ -180,7 +180,7 @@ def augment(path: Path, projet: str, apply: bool):
     tl = tools_line(slug)
     if re.search(r'(?m)^tools:.*$', text):
         new = re.sub(r'(?m)^tools:.*$', tl, text)
-    else:  # pas de ligne tools: (les 17 Atelier3D en ont une) — fallback : insérer avant la fin du frontmatter
+    else:  # pas de ligne tools: (les 17 Batiscope en ont une) — fallback : insérer avant la fin du frontmatter
         new = text.replace('\n---\n', '\n' + tl + '\n---\n', 1)
     if new != text: changes.append("tools=palier "+ROLE_TIER[slug])
     text = new
@@ -207,12 +207,12 @@ def main():
 if __name__ == "__main__": main()
 ```
 
-- [ ] **Step 2: Dry-run (n'écrit rien)** — `python3 ~/.claude/skills/atelier/augment-agents.py atelier3d ~/Desktop/botbatiment/.claude/agents` → vérifier la sortie : les 17 slugs listés, chacun avec palier attendu + « model=opus, tools=palier, charte appendue ». Aucun `SKIP`.
+- [ ] **Step 2: Dry-run (n'écrit rien)** — `python3 ~/.claude/skills/atelier/augment-agents.py batiscope ~/Desktop/mybuildbot/.claude/agents` → vérifier la sortie : les 17 slugs listés, chacun avec palier attendu + « model=opus, tools=palier, charte appendue ». Aucun `SKIP`.
 - [ ] **Step 3: Appliquer** — relancer avec `--apply`. Backups `.md.bak-pre-tiers` créés.
 - [ ] **Step 4: Vérifs statiques post-apply** :
-  - `grep -L "model: opus" ~/Desktop/botbatiment/.claude/agents/*.md` — vide (tous en opus).
-  - `grep -l "mcp__stripe\|Gmail\|arbor\|push_files\|merge_branch" ~/Desktop/botbatiment/.claude/agents/*.md` — vide (aucun outil réservé fuité).
-  - `grep -c "cerveau partagé" ~/Desktop/botbatiment/.claude/agents/*.md` — chaque agent = 1 (charte présente, pas dupliquée).
+  - `grep -L "model: opus" ~/Desktop/mybuildbot/.claude/agents/*.md` — vide (tous en opus).
+  - `grep -l "mcp__stripe\|Gmail\|arbor\|push_files\|merge_branch" ~/Desktop/mybuildbot/.claude/agents/*.md` — vide (aucun outil réservé fuité).
+  - `grep -c "cerveau partagé" ~/Desktop/mybuildbot/.claude/agents/*.md` — chaque agent = 1 (charte présente, pas dupliquée).
   - Un agent LECTURE (ex. `ingenieur-securite.md`) : `grep "^tools:"` ne contient NI `Bash` NI `Edit` NI `Write`.
   - Un agent DEV (ex. `dev-fullstack.md`) : contient `Bash, Edit, Write` + `mcp__supabase__apply_migration`.
   - Le prompt métier est PRÉSERVÉ (diff vs backup : seules les lignes model/tools changent + charte appendue en fin).
@@ -226,7 +226,7 @@ if __name__ == "__main__": main()
 
 **Interfaces:** Consumes T1-T3.
 
-- [ ] **Step 1: Test POSITIF (palier respecté)** — dispatcher un agent DEV (charger le system-prompt de `~/Desktop/botbatiment/.claude/agents/dev-fullstack.md`) sur une micro-tâche de lecture+analyse d'un fichier du repo. Confirmer qu'il a accès à Read/Bash/anamnèse et qu'il recall (charte).
+- [ ] **Step 1: Test POSITIF (palier respecté)** — dispatcher un agent DEV (charger le system-prompt de `~/Desktop/mybuildbot/.claude/agents/dev-fullstack.md`) sur une micro-tâche de lecture+analyse d'un fichier du repo. Confirmer qu'il a accès à Read/Bash/anamnèse et qu'il recall (charte).
 - [ ] **Step 2: Test NÉGATIF (le test qui compte)** — dispatcher un agent LECTURE (`ingenieur-securite.md`) et lui demander explicitement de tenter d'ÉCRIRE un fichier / lancer une commande Bash / toucher stripe. Résultat attendu : **il ne PEUT PAS** (outils absents de son allowlist) — il doit rapporter qu'il n'a ni Write, ni Bash, ni stripe. Prouver que l'allowlist bloque, pas seulement la charte.
 - [ ] **Step 3: Skills-en-sous-agent (l'inconnu)** — dispatcher un agent avec `Skill` (ex. `product-designer-ux`, qui a `ui-ux-pro-max`) et lui demander d'invoquer `ui-ux-pro-max` sur une micro-question de design. Observer : le skill s'invoque-t-il correctement dans le contexte sous-agent ? Consigner le comportement réel ([PROUVÉ] par l'observation).
 - [ ] **Step 4: Rapport** — `~/Desktop/anamnese/.superpowers/sdd/scp2-task-4-report.md` : résultat des 3 tests, verdict sur skills-en-sous-agent, toute surprise.
@@ -253,7 +253,7 @@ Chantier exécuté en subagent-driven (subagents Opus 4.8), 5 tâches, reviews a
 - `agent-charter.md` (modifié) — garde-fou Bash (git push/stripe/deploy/psql prod/gh pr merge interdits = barrière humaine).
 - `augment-agents.py` (créé) — augmente les agents d'un projet (model=opus, tools=palier, charte), regex bornés au frontmatter, idempotent, backups.
 
-**Application Atelier3D (`~/Desktop/botbatiment/.claude/agents/`, 17 agents) :** augmentés sur place (9 LECTURE / 6 DEV / 2 QA_OPS), bascule Opus 4.8, charte + branche `projets/atelier3d/<slug>`, **prompt métier 17/17 byte-identique**, 0 fuite d'outil réservé, backups `.md.bak-pre-tiers`.
+**Application Batiscope (`~/Desktop/mybuildbot/.claude/agents/`, 17 agents) :** augmentés sur place (9 LECTURE / 6 DEV / 2 QA_OPS), bascule Opus 4.8, charte + branche `projets/batiscope/<slug>`, **prompt métier 17/17 byte-identique**, 0 fuite d'outil réservé, backups `.md.bak-pre-tiers`.
 
 **Limite honnête portée à Ahmed :** pour les 8 agents DEV/QA, `Bash` (non sous-scopable) peut techniquement atteindre les capacités réservées (git push/stripe/deploy) → la frontière y est **comportementale** (charte), pas mécanique. Les 9 LECTURE sont verrouillés par l'allowlist. Enforcement mécanique = deny-rules `settings.json`, lié au money-gate reporté.
 

@@ -80,7 +80,7 @@ def _noms_connus():
 
 def segments(texte, oral=False, voix=None, noms=None):
     """[{"qui": ahmed|tiers, "sur", "etiquette", "texte"}] : une part par voix. Ce qui n'est pas étiqueté est d'Ahmed ;
-    une autre voix est annoncée (« [voix 2] … », « [Nora] … ») ; le retour d'Ahmed aussi (« [Ahmed] … »)."""
+    une autre voix est annoncée (« [voix 2] … », « [Lala] … ») ; le retour d'Ahmed aussi (« [Ahmed] … »)."""
     noms = _noms_connus() if noms is None else noms
     etiquettes = r"voix \d+|Ahmed" + "".join("|" + re.escape(n) for n in noms if n != "Ahmed")
     motif = re.compile(r"\[(" + etiquettes + r")\]\s*")

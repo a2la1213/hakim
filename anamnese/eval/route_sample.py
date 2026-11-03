@@ -2,7 +2,7 @@
 
 Imprime, sur la VRAIE base (`config.DB_PATH`), ce que la passe RÈGLES de
 `routing.route_all` ferait : compte par rubrique, et pour CHAQUE mot-clé
-Unification/AppLecture la liste des épisodes matchés (id + extrait 80 chars).
+Unification/DeepQuran la liste des épisodes matchés (id + extrait 80 chars).
 C'est le document à relire avec Ahmed avant d'autoriser toute écriture.
 
 GARANTIES de non-écriture :
@@ -60,7 +60,7 @@ def main():
 
         for title, keywords in (
             ("Unification", routing.UNIFICATION_KEYWORDS),
-            ("AppLecture", routing.QURAN_KEYWORDS),
+            ("DeepQuran", routing.QURAN_KEYWORDS),
         ):
             print(f"\n== Hits par mot-clé {title} ==")
             for kw in keywords:

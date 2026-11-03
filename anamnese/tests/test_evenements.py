@@ -78,7 +78,7 @@ def test_chaque_souvenir_garde_son_auteur(tmp_path, monkeypatch, journal):
     monkeypatch.setattr(mcp_server, "_mem", mem)
     monkeypatch.setattr(mcp_server, "_embed", lambda text: None)
     monkeypatch.setenv("ANAMNESE_SOURCE", "hakim")
-    r1 = mcp_server.memory_store("[Hakim, essai, 2026-10-19] La qibla depuis Exempleville est à 121,6°.", kind="semantic")
+    r1 = mcp_server.memory_store("[Hakim, essai, 2026-10-19] La qibla depuis Lausanne est à 121,6°.", kind="semantic")
     monkeypatch.delenv("ANAMNESE_SOURCE")
     r2 = mcp_server.memory_store("[Anamnèse, essai, 2026-10-19] Le journal d'événements est né ce soir.", kind="semantic")
     import re

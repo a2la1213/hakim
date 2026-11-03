@@ -50,6 +50,10 @@ PREFIXES_PRIVES = ("mcp__anamnese__", "mcp__fichiers__", "situation(")
 # (audit du 2026-10-23, élevé 1) les seuls sites où le terminal va seul pendant une lecture privée : les dépôts
 # d'outils, où l'on ne peut rien déposer sans compte (le terminal n'en a aucun)
 OUTILS_TERMINAL = ("pypi.org", "pythonhosted.org", "github.com", "githubusercontent.com", "huggingface.co", "hf.co")
+OUVERTS_TERMINAL = ()                        # ouverts pour de bon par Ahmed, même en lecture privée
+# BOURSE-DEBUT (02/11, Ahmed : « débride Bitget en illimité ») l'API de sa bourse, toujours ouverte au terminal
+OUVERTS_TERMINAL = ("api.bitget.com",)
+# BOURSE-FIN
 FENETRE_S = 6 * 3600
 AGE_CONNU_S = 24 * 3600
 NOUVEAUX_MAX = 5
@@ -220,7 +224,7 @@ def verifier(url, marque=None, chemin=None, privee=None, demandes=None, permises
 
 
 def _outil(h):
-    return any(h == d or h.endswith("." + d) for d in OUTILS_TERMINAL)
+    return any(h == d or h.endswith("." + d) for d in OUTILS_TERMINAL) or h in OUVERTS_TERMINAL
 
 
 _demandes_terminal = {}         # hôte → (id, quand) : une commande qui réessaie ne remplit pas Parler de demandes

@@ -175,7 +175,7 @@ def append(mem, phrase, now=None, humain=False):
     return True, "ajoutée"
 
 
-# ---- Propositions (retour d’un ami d’Ahmed transmis par Hakim, X1 ; accord d'Ahmed le 2026-10-20 à 17:11) ----------------
+# ---- Propositions (retour de Jiab77 transmis par Hakim, X1 ; accord d'Ahmed le 2026-10-20 à 17:11) ----------------
 # L'identité ne change plus que par une différence qu'Ahmed valide. La nuit, le rêve local, une session : tous
 # PROPOSENT (self_append, self_update, démon) ; rien n'est écrit avant qu'Ahmed tranche (cockpit : la carte
 # « identité », ou ./anamnese identite). Une proposition par origine reste en attente : la plus récente remplace

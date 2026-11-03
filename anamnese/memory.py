@@ -35,7 +35,7 @@ WM_TOUCH_ROLES = ("user", "assistant", "semantic", "episodic", "reasoning")
 
 
 # Plancher de pertinence d'une compétence proposée au briefing (relecture 2026-10-16 : sans
-# plancher, un focus « banc / voix » proposait lexique_applecture à 0,29). À ajuster par Ahmed.
+# plancher, un focus « banc / voix » proposait lexique_deepquran à 0,29). À ajuster par Ahmed.
 COMPETENCE_PERTINENCE_MIN = 0.35
 
 

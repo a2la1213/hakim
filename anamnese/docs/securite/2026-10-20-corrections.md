@@ -6,7 +6,7 @@ Ce document rassemble toutes les corrections de sécurité de Hakim, dans l'ordr
 
 - **JARVIS 2** : audit du cœur (Anamnèse), fait en mission lecture seule.
 - **Audit du cockpit** : relecture indépendante d'Opus, faite dans la session de Claude Code.
-- **Retour d’un ami d’Ahmed** : transmis par Hakim, accord d'Ahmed à 17:11 (X1 provenance) et à 17:27 (trois points).
+- **Retour de Jiab77** : transmis par Hakim, accord d'Ahmed à 17:11 (X1 provenance) et à 17:27 (trois points).
 
 ## Plan d'Ahmed (16:57)
 

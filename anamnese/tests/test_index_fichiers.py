@@ -21,7 +21,7 @@ def idx(tmp_path, monkeypatch):
     monkeypatch.setattr(index_fichiers, "_embed", faux_embed)
     racine = tmp_path / "Desktop"
     (racine / "projet").mkdir(parents=True)
-    (racine / "projet" / "devis.md").write_text("Devis Exemplia : refonte du site, 3200 CHF, livraison fin novembre.", encoding="utf-8")
+    (racine / "projet" / "devis.md").write_text("Devis Vilmarkt : refonte du site, 3200 CHF, livraison fin novembre.", encoding="utf-8")
     (racine / "projet" / "notes.txt").write_text("Recette du couscous de ma mère : semoule, pois chiches, légumes.", encoding="utf-8")
     (racine / "projet" / "cles.txt").write_text("ANTHROPIC_API_KEY=sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd et le devis", encoding="utf-8")
     (racine / ".cache").mkdir()
@@ -36,7 +36,7 @@ def test_le_bon_document_par_le_sens_et_rien_de_cache(idx):
     racine, base = idx
     n = index_fichiers.indexer([racine], base=base, budget_s=60)
     assert n == 2                         # « cles.txt » : un nom de secret (JARVIS 2, H1) — jamais indexé
-    r = index_fichiers.chercher("le devis du site Exemplia", base=base, n=3)
+    r = index_fichiers.chercher("le devis du site Vilmarkt", base=base, n=3)
     assert r[0]["chemin"].endswith("devis.md")
     chemins = [x["chemin"] for x in index_fichiers.chercher("devis", base=base, n=10)]
     assert not any(".cache" in c or "node_modules" in c or c.endswith("cles.txt") for c in chemins)
@@ -54,7 +54,7 @@ def test_incremental_et_fichiers_disparus(idx):
     assert index_fichiers.indexer([racine], base=base, budget_s=60) == 1
     (racine / "projet" / "devis.md").unlink()
     index_fichiers.indexer([racine], base=base, budget_s=60)
-    assert not any(x["chemin"].endswith("devis.md") for x in index_fichiers.chercher("devis Exemplia", base=base, n=10))
+    assert not any(x["chemin"].endswith("devis.md") for x in index_fichiers.chercher("devis Vilmarkt", base=base, n=10))
 
 
 def test_le_demon_indexe_la_nuit_une_fois_par_heure(tmp_path, monkeypatch):
@@ -121,4 +121,4 @@ def test_un_dossier_de_ses_zones_echange_contre_un_lien_n_est_pas_lu(idx, tmp_pa
     index_fichiers.indexer([racine], base=base, budget_s=60)
     extraits = " ".join(e for (e,) in sqlite3.connect(base).execute("SELECT extrait FROM fichiers"))
     assert "SECRET" not in extraits and "4471" not in extraits
-    assert "Devis Exemplia" in extraits                                     # le reste est indexé
+    assert "Devis Vilmarkt" in extraits                                     # le reste est indexé

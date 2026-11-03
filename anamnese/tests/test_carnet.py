@@ -9,7 +9,7 @@ def test_prediction_figee_temoignee_puis_tranchee_et_calibree(tmp_path):
     f = tmp_path / "p.jsonl"
     a = carnet.figer("Le pentagone exact donne φ à 10⁻¹² près", 0.9, "ce soir", fichier=f)
     b = carnet.figer("Le quasi-cristal a 5 pics principaux", 0.6, fichier=f)
-    c = carnet.figer("Il pleuvra demain à Exempleville", 0.3, fichier=f)
+    c = carnet.figer("Il pleuvra demain à Lausanne", 0.3, fichier=f)
     assert any(e.get("type") == "prediction" and e["donnees"]["id"] == a["id"] for e in evenements.lire())   # témoin chaîné
     carnet.trancher(a["id"], True, fichier=f)
     carnet.trancher(b["id"], False, "4 pics", fichier=f)

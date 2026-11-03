@@ -57,9 +57,9 @@ def test_seed_skeleton_inserts_all_paths_and_is_idempotent(db):
     root = _rubric_row(db, "projets")
     assert root[2] is None and root[3] == 0 and root[1] == "projets"
 
-    # feuille profonde : depth 2, parent = id de projets/atelier3d, label = dernier segment
-    parent = _rubric_row(db, "projets/atelier3d")
-    leaf = _rubric_row(db, "projets/atelier3d/modelisation")
+    # feuille profonde : depth 2, parent = id de projets/batiscope, label = dernier segment
+    parent = _rubric_row(db, "projets/batiscope")
+    leaf = _rubric_row(db, "projets/batiscope/modelisation")
     assert leaf[3] == 2
     assert leaf[2] == parent[0]
     assert leaf[1] == "modelisation"
@@ -108,24 +108,24 @@ def test_subtree_paths_returns_descendants_only(db):
     sub = rubrics.subtree_paths(db, "projets")
     assert set(sub) == {
         "projets",
-        "projets/atelier3d",
-        "projets/atelier3d/modelisation",
-        "projets/atelier3d/pricing-stripe",
-        "projets/atelier3d/qa",
+        "projets/batiscope",
+        "projets/batiscope/modelisation",
+        "projets/batiscope/pricing-stripe",
+        "projets/batiscope/qa",
         "projets/anamnese",
         "projets/anamnese/daemon-consolidation",
         "projets/anamnese/memoire-2.0",
         "projets/unification",
     }
-    assert "savoir-applecture" not in sub
+    assert "savoir-deepquran" not in sub
     assert "projets-archives" not in sub
 
     # sous-arbre intermédiaire
-    assert set(rubrics.subtree_paths(db, "projets/atelier3d")) == {
-        "projets/atelier3d",
-        "projets/atelier3d/modelisation",
-        "projets/atelier3d/pricing-stripe",
-        "projets/atelier3d/qa",
+    assert set(rubrics.subtree_paths(db, "projets/batiscope")) == {
+        "projets/batiscope",
+        "projets/batiscope/modelisation",
+        "projets/batiscope/pricing-stripe",
+        "projets/batiscope/qa",
     }
 
 
@@ -137,7 +137,7 @@ def test_rubric_tree_respects_root_and_max_depth(db):
     assert [n["path"] for n in tree] == [
         "projets",
         "projets/anamnese",
-        "projets/atelier3d",
+        "projets/batiscope",
         "projets/unification",
     ]  # trié par path, depth<=1, aucun depth 2
     for node in tree:
@@ -173,16 +173,16 @@ def test_attach_episode_counts_centroid_and_reattach(db):
     assert _centroid(db, "projets/anamnese") == pytest.approx([0.5, 0.5, 0.0, 0.0])
 
     # ré-attacher le 1er ailleurs : ancien count redescend à 1, pas de double comptage
-    rubrics.attach_episode(db, e1, "projets/atelier3d", conf=0.7, now=2200.0)
+    rubrics.attach_episode(db, e1, "projets/batiscope", conf=0.7, now=2200.0)
     assert _rubric_row(db, "projets/anamnese")[4] == 1
-    assert _rubric_row(db, "projets/atelier3d")[4] == 1
+    assert _rubric_row(db, "projets/batiscope")[4] == 1
     # le centroïde de l'ancienne rubrique ré-équilibre sur ce qui reste (e2)
     assert _centroid(db, "projets/anamnese") == pytest.approx([0.0, 1.0, 0.0, 0.0])
-    assert _centroid(db, "projets/atelier3d") == pytest.approx([1.0, 0.0, 0.0, 0.0])
+    assert _centroid(db, "projets/batiscope") == pytest.approx([1.0, 0.0, 0.0, 0.0])
     ep = db.execute(
         "SELECT rubric_id, rubric_conf, routed_ts FROM episodes WHERE id=?", (e1,)
     ).fetchone()
-    assert ep == (rubrics.get_rubric_id(db, "projets/atelier3d"), 0.7, 2200.0)
+    assert ep == (rubrics.get_rubric_id(db, "projets/batiscope"), 0.7, 2200.0)
 
     # ré-attacher au MÊME endroit : conf/ts rafraîchis, count/centroïde inchangés
     rubrics.attach_episode(db, e2, "projets/anamnese", conf=0.95, now=2300.0)
@@ -243,30 +243,30 @@ def test_attach_empty_embedding_does_not_bias_centroid(db):
     assert _centroid(db, "projets/anamnese") == pytest.approx([0.5, 0.5])
 
     # détacher un valide : centroïde = moyenne des valides restants
-    rubrics.attach_episode(db, e1, "projets/atelier3d", conf=0.7, now=2300.0)
+    rubrics.attach_episode(db, e1, "projets/batiscope", conf=0.7, now=2300.0)
     row = _rubric_row(db, "projets/anamnese")
     assert row[4] == 2 and row[6] == 1
     assert _centroid(db, "projets/anamnese") == pytest.approx([0.0, 1.0])
 
     # détacher l'épisode à embedding vide : centroïde et centroid_n intacts
-    rubrics.attach_episode(db, e_vide, "projets/atelier3d", conf=0.5, now=2400.0)
+    rubrics.attach_episode(db, e_vide, "projets/batiscope", conf=0.5, now=2400.0)
     row = _rubric_row(db, "projets/anamnese")
     assert row[4] == 1 and row[6] == 1
     assert _centroid(db, "projets/anamnese") == pytest.approx([0.0, 1.0])
     # ... et il n'a pas non plus pollué la rubrique d'arrivée
-    row_b = _rubric_row(db, "projets/atelier3d")
+    row_b = _rubric_row(db, "projets/batiscope")
     assert row_b[4] == 2 and row_b[6] == 1
-    assert _centroid(db, "projets/atelier3d") == pytest.approx([1.0, 0.0])
+    assert _centroid(db, "projets/batiscope") == pytest.approx([1.0, 0.0])
 
     # dernier embedding valide détaché : centroïde NULL, centroid_n retombe à 0
-    rubrics.attach_episode(db, e2, "projets/atelier3d", conf=0.8, now=2500.0)
+    rubrics.attach_episode(db, e2, "projets/batiscope", conf=0.8, now=2500.0)
     row = _rubric_row(db, "projets/anamnese")
     assert row[4] == 0 and row[6] == 0
     assert _centroid(db, "projets/anamnese") is None
     # rubrique d'arrivée : ordre valide → vide → valide, moyenne exacte aussi
-    row_b = _rubric_row(db, "projets/atelier3d")
+    row_b = _rubric_row(db, "projets/batiscope")
     assert row_b[4] == 3 and row_b[6] == 2
-    assert _centroid(db, "projets/atelier3d") == pytest.approx([0.5, 0.5])
+    assert _centroid(db, "projets/batiscope") == pytest.approx([0.5, 0.5])
 
 
 # --- Cas 8 : DB migrée avec l'ancienne Phase 1A (rubrics SANS centroid_n) — ALTER idempotent ---

@@ -33,7 +33,7 @@ def routed_db(tmp_path):
     """DB migrée + squelette, 2 centroïdes 2D posés à la main.
 
     Une requête d'embedding [1,0] route vers projets/anamnese (cos=1.0),
-    [0,1] vers savoir-applecture. Pas d'épisodes en table : le score_fn ne lit
+    [0,1] vers savoir-deepquran. Pas d'épisodes en table : le score_fn ne lit
     la DB que pour router la requête + résoudre le sous-arbre de rubriques.
     """
     conn = sqlite3.connect(str(tmp_path / "t.db"))
@@ -45,7 +45,7 @@ def routed_db(tmp_path):
     )
     conn.execute(
         "UPDATE rubrics SET centroid='[0.0, 1.0]', centroid_n=1 "
-        "WHERE path='savoir-applecture'"
+        "WHERE path='savoir-deepquran'"
     )
     conn.commit()
     yield conn
@@ -74,7 +74,7 @@ def _ep(id_, emb, rubric_id, content="contenu sans mot commun"):
 def test_bonus_same_rubric_not_other(routed_db):
     """Épisode de la rubrique cible : +W exactement ; autre rubrique : score live."""
     ep_meme = _ep(1, [0.5, 0.5], _rid(routed_db, "projets/anamnese"))
-    ep_autre = _ep(2, [0.5, 0.5], _rid(routed_db, "savoir-applecture"))
+    ep_autre = _ep(2, [0.5, 0.5], _rid(routed_db, "savoir-deepquran"))
     live = make_score_live(NOW)
     cand = make_score_rubric(routed_db, 0.2, now=NOW)
 
@@ -100,7 +100,7 @@ def test_w_zero_identique_au_live(routed_db):
     cand0 = make_score_rubric(routed_db, 0.0, now=NOW)
     eps = [
         _ep(1, [0.5, 0.5], _rid(routed_db, "projets/anamnese")),
-        _ep(2, [0.5, 0.5], _rid(routed_db, "savoir-applecture")),
+        _ep(2, [0.5, 0.5], _rid(routed_db, "savoir-deepquran")),
         _ep(3, [0.5, 0.5], None),  # jamais routé
     ]
     for ep in eps:
@@ -154,7 +154,7 @@ def _embed_synthetique(text):
 def _episodes_gate(conn):
     return [
         _ep(1, [0.8, 0.6], _rid(conn, "projets/anamnese")),  # A : rubrique cible
-        _ep(2, [1.0, 0.0], _rid(conn, "savoir-applecture")),  # B : plus similaire
+        _ep(2, [1.0, 0.0], _rid(conn, "savoir-deepquran")),  # B : plus similaire
     ]
 
 
@@ -200,7 +200,7 @@ def test_retrieve_reste_le_live_pur_sans_terme_rubrique(tmp_path):
     migrations.migrate(m.db)
     rubrics.seed_skeleton(m.db, now=1000.0)
     m.store_in("episode rubrique cible", "projets/anamnese", embedding=[0.8, 0.6])
-    m.store_in("episode distracteur", "savoir-applecture", embedding=[1.0, 0.0])
+    m.store_in("episode distracteur", "savoir-deepquran", embedding=[1.0, 0.0])
     # centroïdes posés pour qu'une requête [1,0] ROUTERAIT vers projets/anamnese
     # (le sous-arbre de A) si retrieve routait — il ne doit PAS le faire.
     m.db.execute(
@@ -209,7 +209,7 @@ def test_retrieve_reste_le_live_pur_sans_terme_rubrique(tmp_path):
     )
     m.db.execute(
         "UPDATE rubrics SET centroid='[0.0, 1.0]', centroid_n=1 "
-        "WHERE path='savoir-applecture'"
+        "WHERE path='savoir-deepquran'"
     )
     m.db.commit()
 

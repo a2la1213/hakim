@@ -74,12 +74,12 @@ def test_rubric_tree_tool_lists_with_counts(srv):
 
     out = _fn(mod, "rubric_tree")()  # défauts = tout l'arbre
     assert "projets/anamnese — 1" in out
-    assert "savoir-applecture — 0" in out
+    assert "savoir-deepquran — 0" in out
 
     scoped = _fn(mod, "rubric_tree")("projets", 1)
-    assert "projets/atelier3d" in scoped
-    assert "projets/atelier3d/qa" not in scoped  # depth 2 exclu
-    assert "savoir-applecture" not in scoped  # hors sous-arbre
+    assert "projets/batiscope" in scoped
+    assert "projets/batiscope/qa" not in scoped  # depth 2 exclu
+    assert "savoir-deepquran" not in scoped  # hors sous-arbre
 
 
 # --- Cas 4c : memory_store_in stocke ET rattache (conf 1.0, compteur) ---
@@ -108,13 +108,13 @@ def test_memory_store_in_tool_stores_and_attaches(srv):
 def test_memory_recall_rubric_filters_slice(srv):
     mod, mem = srv
     mem.store_in("decision anamnese rappel", "projets/anamnese")
-    mem.store_in("tafsir rappel applecture", "savoir-applecture")
+    mem.store_in("tafsir rappel deepquran", "savoir-deepquran")
     recall = _fn(mod, "memory_recall")
 
     everything = recall("rappel")  # sans rubric = comportement actuel
     assert "decision anamnese rappel" in everything
-    assert "tafsir rappel applecture" in everything
+    assert "tafsir rappel deepquran" in everything
 
     sliced = recall("rappel", rubric="projets")
     assert "decision anamnese rappel" in sliced
-    assert "applecture" not in sliced
+    assert "deepquran" not in sliced

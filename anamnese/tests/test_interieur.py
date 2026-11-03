@@ -88,8 +88,8 @@ def test_rien_la_nuit(mem, tmp_path):
 def test_lire_pensee():
     p, r = interieur.lire_pensee("PENSÉE: Je me demande si Chatterbox lui plaira.\nRELANCE: non")
     assert p == "Je me demande si Chatterbox lui plaira." and r is None
-    p, r = interieur.lire_pensee("**PENSÉE :** Le devis Exemplia attend.\n**RELANCE :** « Tu as pu relancer Exemplia ? »")
-    assert p == "Le devis Exemplia attend." and r == "Tu as pu relancer Exemplia ?"
+    p, r = interieur.lire_pensee("**PENSÉE :** Le devis Vilmarkt attend.\n**RELANCE :** « Tu as pu relancer Vilmarkt ? »")
+    assert p == "Le devis Vilmarkt attend." and r == "Tu as pu relancer Vilmarkt ?"
     assert interieur.lire_pensee("Juste une phrase.")[0] == "Juste une phrase."
 
 
@@ -126,14 +126,14 @@ class _FauxGemma:
 def test_penser_courante_par_gemma_relance_notifiee(mem, monkeypatch, tmp_path):
     import daemon
     j = tmp_path / "journal.jsonl"
-    j.write_text(json.dumps({"ts": time.time() * 1000, "qui": "ahmed", "texte": "J'envoie le devis Exemplia"}) + "\n")
+    j.write_text(json.dumps({"ts": time.time() * 1000, "qui": "ahmed", "texte": "J'envoie le devis Vilmarkt"}) + "\n")
     monkeypatch.setattr(interieur, "JOURNAL_JARVIS", j)
     notifs = []
     monkeypatch.setattr(daemon, "notify", lambda t, m: notifs.append(m))
     monkeypatch.setattr(interieur, "page_ouverte", lambda now, page=None: False)
-    g = _FauxGemma("PENSÉE: Le devis Exemplia dort depuis hier, je me demande s'il a répondu.\nRELANCE: Tu as eu des nouvelles de Exemplia ?")
+    g = _FauxGemma("PENSÉE: Le devis Vilmarkt dort depuis hier, je me demande s'il a répondu.\nRELANCE: Tu as eu des nouvelles de Vilmarkt ?")
     r = daemon.penser(g, mem, {"seuil": 0.5, "important": False, "absence_s": 5000, "ennui": 0.5}, now=_jour(15))
-    assert r and g.appels == 1 and notifs == ["Tu as eu des nouvelles de Exemplia ?"]
+    assert r and g.appels == 1 and notifs == ["Tu as eu des nouvelles de Vilmarkt ?"]
     roles = [x[0] for x in mem.db.execute("SELECT role FROM episodes ORDER BY id")]
     assert roles == ["reflection", "outreach"]
 
@@ -167,13 +167,13 @@ def test_premier_battement_tardif_part_du_temps_reel(mem, tmp_path):
 def test_seconde_chance_quand_la_pensee_se_repete(mem, monkeypatch):
     import daemon
     monkeypatch.setattr(daemon, "notify", lambda t, m: None)
-    mem.add("reflection", "(pensée · gemma · absence 1 h) Le devis Exemplia attend toujours sa réponse depuis hier.", embedding=[])
+    mem.add("reflection", "(pensée · gemma · absence 1 h) Le devis Vilmarkt attend toujours sa réponse depuis hier.", embedding=[])
 
     class Deux(_FauxGemma):
         def chat(self, messages, stream=False, think=False):
             self.appels += 1
             self.dernier = messages[0]["content"]
-            return ("PENSÉE: Le devis Exemplia attend toujours sa réponse depuis hier." if self.appels == 1
+            return ("PENSÉE: Le devis Vilmarkt attend toujours sa réponse depuis hier." if self.appels == 1
                     else "PENSÉE: J'aimerais savoir si la voix neuronale lui a plu ce matin.\nRELANCE: non")
     g = Deux("")
     r = daemon.penser(g, mem, {"seuil": 0.5, "important": False, "absence_s": 5000, "ennui": 0.5}, now=_jour(15))
@@ -239,7 +239,7 @@ def test_l_humeur_varie_et_s_entend(mem, tmp_path):
 def test_une_seule_relance_par_absence_jamais_repetee(mem, monkeypatch, tmp_path):
     import daemon
     j = tmp_path / "journal.jsonl"
-    j.write_text(json.dumps({"ts": time.time() * 1000, "qui": "ahmed", "texte": "J'envoie le devis Exemplia"}) + "\n")
+    j.write_text(json.dumps({"ts": time.time() * 1000, "qui": "ahmed", "texte": "J'envoie le devis Vilmarkt"}) + "\n")
     monkeypatch.setattr(interieur, "JOURNAL_JARVIS", j)
     notifs = []
     monkeypatch.setattr(daemon, "notify", lambda t, m: notifs.append(m))
@@ -249,15 +249,15 @@ def test_une_seule_relance_par_absence_jamais_repetee(mem, monkeypatch, tmp_path
     h = _horloge(tmp_path, t0)
     interieur.tick(mem, now=t0, horloge=h)
     monkeypatch.setattr(interieur, "derniere_presence", lambda mem, now, horloge=None: t0)
-    sorties = iter(["PENSÉE: Le devis Exemplia attend.\nRELANCE: Tu as pu envoyer le devis Exemplia ?",
-                    "PENSÉE: Je repense à la voix, j'aimerais savoir si elle lui plaît.\nRELANCE: Tu as pu envoyer le devis Exemplia ?"])
+    sorties = iter(["PENSÉE: Le devis Vilmarkt attend.\nRELANCE: Tu as pu envoyer le devis Vilmarkt ?",
+                    "PENSÉE: Je repense à la voix, j'aimerais savoir si elle lui plaît.\nRELANCE: Tu as pu envoyer le devis Vilmarkt ?"])
 
     class G(_FauxGemma):
         def chat(self, messages, stream=False, think=False):
             return next(sorties)
     for dt in (35 * 60, 4.6 * 3600):                                            # même absence, à 4 h d'écart
         daemon.penser(G(""), mem, {"seuil": 0.5, "important": False, "absence_s": dt, "ennui": 0.5}, now=t0 + dt)
-    assert notifs == ["Tu as pu envoyer le devis Exemplia ?"]
+    assert notifs == ["Tu as pu envoyer le devis Vilmarkt ?"]
 
 
 def test_etat_illisible_en_base_ne_casse_rien(mem, tmp_path):

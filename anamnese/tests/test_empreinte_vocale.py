@@ -84,9 +84,9 @@ def test_nommer_avec_le_numero_seul(tmp_path, monkeypatch):
     monkeypatch.setattr(E, "CONNUES", tmp_path / "connues.json")
     E._salle.update(voix=[{"nom": f"voix {k}", "c": _unit(np.eye(256)[k]), "n": 3} for k in (2, 10)], ts=time.time(), dernier="voix 10")
     E._sauver_salle()
-    for numero, nom in (("10", "Nora"), ("Voix 2", "Karim")):
+    for numero, nom in (("10", "Lala"), ("Voix 2", "Karim")):
         assert E.nommer(numero, nom) == nom
-    assert sorted(x["nom"] for x in E.connues()) == ["Karim", "Nora"] and E._salle["dernier"] == "Nora"
+    assert sorted(x["nom"] for x in E.connues()) == ["Karim", "Lala"] and E._salle["dernier"] == "Lala"
     with pytest.raises(ValueError, match="voix présentes"):
         E.nommer("voix 99", "Personne")
 

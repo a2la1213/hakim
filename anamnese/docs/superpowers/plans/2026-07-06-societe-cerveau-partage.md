@@ -114,7 +114,7 @@ les sessions Claude Code. Applique cette charte EN PLUS de ton rôle.
 ```
 
 - [ ] **Step 3: §1 Cadrage** (là où l'orchestrateur charge la mémoire) — ajouter une puce :
-> - Note le **slug-projet** (kebab-case, ex. `botbatiment`) qui servira de racine de branche `projets/<slug-projet>` pour toute la mémoire de cette société d'agents.
+> - Note le **slug-projet** (kebab-case, ex. `mybuildbot`) qui servira de racine de branche `projets/<slug-projet>` pour toute la mémoire de cette société d'agents.
 
 - [ ] **Step 4: roles.md — note en tête** — après la ligne « Pour matérialiser un agent … » ajouter :
 > **Toute matérialisation appende la charte `agent-charter.md`** (cerveau partagé Anamnèse : recall au début, contribution du durable dans la branche du domaine à la fin, discipline objectif/subjectif + auto-réfutation, provenance `[<slug>]`). Les prompts-noyaux ci-dessous n'ont donc PAS à répéter la mémoire ni la discipline.

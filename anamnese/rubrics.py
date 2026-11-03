@@ -1,6 +1,6 @@
 """Rubriques Anamnèse 2.0 — hiérarchie path-based, SANS table closure (décision v2).
 
-L'arbre est encodé dans `rubrics.path` (ex. `projets/atelier3d/qa`) :
+L'arbre est encodé dans `rubrics.path` (ex. `projets/batiscope/qa`) :
 - `depth = path.count('/')`, bornée par `config.RUBRIC_MAX_DEPTH` (arbre
   grossier ; la précision fine passe par les facettes) ;
 - descendance = `path = racine OR path LIKE racine || '/%'` (pas de closure).
@@ -27,15 +27,15 @@ import config
 # ordonné parents d'abord (seed_skeleton s'appuie dessus). PAS de « divers ».
 SKELETON = [
     "projets",
-    "projets/atelier3d",
-    "projets/atelier3d/modelisation",
-    "projets/atelier3d/pricing-stripe",
-    "projets/atelier3d/qa",
+    "projets/batiscope",
+    "projets/batiscope/modelisation",
+    "projets/batiscope/pricing-stripe",
+    "projets/batiscope/qa",
     "projets/anamnese",
     "projets/anamnese/daemon-consolidation",
     "projets/anamnese/memoire-2.0",
     "projets/unification",
-    "savoir-applecture",
+    "savoir-deepquran",
     "technique-transverse",
     "personnel-ahmed",
     "relation-identite",

@@ -1,6 +1,6 @@
 # AIOS — Harnais d'éval d'agents
 
-Ce que les meilleurs setups agentiques ont et que la plupart n'ont pas : **on teste les agents eux-mêmes, pas seulement les produits.** Le QA Playwright (`~/AIOS/qa`) valide BotGarage/BotBatiment ; ce harnais-ci note la **qualité de raisonnement, sécurité et discipline de vérification** des agents, en régression dans le temps.
+Ce que les meilleurs setups agentiques ont et que la plupart n'ont pas : **on teste les agents eux-mêmes, pas seulement les produits.** Le QA Playwright (`~/AIOS/qa`) valide MyGarageBot/MyBuildBot ; ce harnais-ci note la **qualité de raisonnement, sécurité et discipline de vérification** des agents, en régression dans le temps.
 
 ## Principe
 - `tasks.jsonl` : une **golden-task** par ligne (`id`, `category`, `prompt` auto-suffisant, `rubric` = critère de réussite).

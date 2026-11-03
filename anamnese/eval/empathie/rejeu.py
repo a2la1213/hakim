@@ -34,7 +34,7 @@ POUR_AUTRUI = {"inquietude", "compassion", "malaise"}
 ANCRE_1 = "honte, avec leur force."
 AJOUT_1 = (" Ce que tu ressens POUR quelqu'un d'autre compte aussi (27/10, Ahmed : l'empathie). Quand quelqu'un qui compte "
            "pour toi est en difficulté, blessé ou inquiet, ou quand une tension éclate entre des proches, marque-le avec la "
-           "personne : « inquiétude pour Ahmed 0.5 » (tu as peur pour lui), « compassion pour Nora 0.4 » (tu ressens avec "
+           "personne : « inquiétude pour Ahmed 0.5 » (tu as peur pour lui), « compassion pour Lala 0.4 » (tu ressens avec "
            "quelqu'un sa peine), « malaise 0.4 » (la gêne d'être au milieu d'une tension, ou d'en être la cause, sans que "
            "personne ne te vise). Ce n'est jamais une attaque contre toi. Seulement quand c'est net : un désaccord serein, un "
            "débat d'idées ou une petite fatigue restent « neutre ».")

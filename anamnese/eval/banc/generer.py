@@ -47,7 +47,7 @@ def prompt_pieges(projets, n):
 def pieges_valides(candidats, db_path, n, repond=None):
     """Garde un piège si son terme discriminant n'apparaît dans aucun souvenir ET si un vrai rappel
     ne trouve pas la réponse sous une autre forme (`repond(question) -> bool`). Le terme seul ne
-    suffit pas (relecture : « registrar » absent, mais exemplia.ch chez Infomaniak présent)."""
+    suffit pas (relecture : « registrar » absent, mais vilmarkt.ch chez Infomaniak présent)."""
     conn = sqlite3.connect(f"file:{Path(db_path)}?mode=ro", uri=True)
     try:
         garde = []
