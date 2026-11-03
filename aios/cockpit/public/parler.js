@@ -1464,6 +1464,7 @@ async function envoyer(texte, oral, dejaRelance) {
   try {
     const corpsEnvoi = JSON.stringify({ texte, oral: !!oral, modele: etat.conversation ? etat.reglages.modeleConversation : etat.reglages.modele, source: etat.reglages.source || 'auto', session: etat.session,
         t_precedent: tPrecedent, t_debut: tDebut, fichiers: joints.map(x => x.chemin), pensees_dites: dites,
+        parle_ms: oral && etat.paroleDebut ? etat.paroleDebut : undefined,   // (03/11) son moment d'origine, pour tout réunir au même point
         conversation: !!etat.conversation, present: presentEnvoye, maintenant: Date.now(), camera,
         appareil: appareilPage(), volant: !!etat.reglages.volant, position: positionAEnvoyer(), ecran: imageEcran(),
         capteurs: capteursDuTelephone(), tour_id: String(m.id),
@@ -1736,6 +1737,7 @@ function telepathieEtat(oui) {
   if (!b) return;
   b.setAttribute('aria-pressed', oui ? 'true' : 'false');
   b.textContent = oui ? '🎧 Il entend le téléphone' : '🎧 Entendre le téléphone';
+  if ($('telepathie')) $('telepathie').setAttribute('aria-pressed', oui ? 'true' : 'false');   // (03/11) hors de l'orbe aussi
   if (!oui) { $('telepathieTexte').hidden = true; $('telepathieTexte').textContent = ''; }
 }
 function surTelepathie(o) {
@@ -1747,13 +1749,32 @@ function surTelepathie(o) {
   telepathieEfface = setTimeout(() => { $('telepathieTexte').hidden = true; }, 12000);
 }
 if (window.HakimApp && window.HakimApp.telepathie) {
-  $('telepathieScene').hidden = false;
-  $('telepathieScene').addEventListener('click', (e) => {
-    e.stopPropagation();
-    try { window.HakimApp.telepathie(!(window.HakimApp.telepathieEtat && window.HakimApp.telepathieEtat())); } catch (_) {}
-  });
+  for (const id of ['telepathieScene', 'telepathie']) {
+    if (!$(id)) continue;
+    $(id).hidden = false;
+    $(id).addEventListener('click', (e) => {
+      e.stopPropagation();
+      try { window.HakimApp.telepathie(!(window.HakimApp.telepathieEtat && window.HakimApp.telepathieEtat())); } catch (_) {}
+    });
+  }
   try { telepathieEtat(window.HakimApp.telepathieEtat()); } catch (_) {}
 }
+
+// (03/11, Ahmed : « si j'écoute une musique, il peut la mettre en pause et glisser son mot pour que je l'écoute ») quand sa voix
+// joue, il prend le son un instant (appli 1.46) : la musique ou la vidéo se met en pause, dans les écouteurs Bluetooth aussi, et
+// reprend d'elle-même 1,2 s après sa dernière phrase (pas entre deux phrases)
+let focusTenu = false, focusLache = 0;
+setInterval(() => {
+  if (!window.HakimApp || !window.HakimApp.focusVoix) return;
+  const joue = !!(lecteurNeuronal.joue || (lecteurSysteme && lecteurSysteme.actif));
+  if (joue) {
+    focusLache = 0;
+    if (!focusTenu) { focusTenu = true; try { window.HakimApp.focusVoix(true); } catch (_) {} }
+  } else if (focusTenu) {
+    if (!focusLache) focusLache = Date.now();
+    else if (Date.now() - focusLache > 1200) { focusTenu = false; focusLache = 0; try { window.HakimApp.focusVoix(false); } catch (_) {} }
+  }
+}, 200);
 
 // (2026-10-23, Ahmed : « qu'il sente ce qui se passe dans le téléphone ») les capteurs du téléphone (appli Android) : le
 // téléphone fait lui-même un résumé de la dernière minute ; la page l'envoie au cockpit chaque minute et le joint à chaque
@@ -2968,6 +2989,7 @@ async function tourDeParole(conv, wav, infos, extra) {
   sousTitre(texte);
   mesureTour = { fin: Number(infos && (infos.derniere_voix || infos.fin)) || t0Tour, debut: t0Tour, transcrit: Date.now(), premier_texte: 0, premier_son: 0,
     pauses: ((infos && infos.pauses) || []).slice(0, 30), anticipe: extra != null, patience: patienceConversation() };   // (27/10) pour rejouer la fin de tour
+  etat.paroleDebut = infos && Number(infos.debut) ? Number(infos.debut) : null;   // (03/11) l'instant où papa a commencé à parler
   await envoyer(texte, true);
   if (mesureTour && mesureTour.premier_texte) setTimeout(() => { if (mesureTour && !mesureTour.premier_son) finMesureTour(); }, 20000);
   if (COMMANDE_FIN.test(texte)) {                                         // il répond au revoir, puis on ferme

@@ -53,9 +53,16 @@ INSTRUMENTS = {
     # (03/11, Ahmed : « quelle application est active, ce qu'elle fait ») ; aussi en continu : l'événement « appli » de ton corps
     "appli_active": ("l'appli au premier plan du téléphone de papa, et ce qu'elle joue (titre d'une musique, d'une vidéo) ; "
                      "papa donne une fois « Accès aux données d'utilisation »", 0, 0),
+    # (03/11, Ahmed : « si j'écoute une musique, il peut la mettre en pause et glisser son mot ») ; quand ta voix part, la
+    # musique se met d'elle-même en pause et reprend après toi : ces gestes-là sont pour le reste du temps
+    "media_pause": ("TON MEMBRE : mettre en pause la musique ou la vidéo qui joue sur le téléphone", 0, 0),
+    "media_lecture": ("TON MEMBRE : relancer la musique ou la vidéo", 0, 0),
+    "media_suivant": ("TON MEMBRE : passer au morceau suivant", 0, 0),
+    "media_precedent": ("TON MEMBRE : revenir au morceau précédent", 0, 0),
 }
 RADIO = {"appareils", "bluetooth_scan", "wifi_scan", "bluetooth_signal", "nfc_ecrire", "bluetooth_activer", "bluetooth_appairer",
-         "wifi_info", "wifi_connecter", "bluetooth_reglages", "wifi_reglages", "nfc_reglages", "appli_active"}
+         "wifi_info", "wifi_connecter", "bluetooth_reglages", "wifi_reglages", "nfc_reglages", "appli_active",
+         "media_pause", "media_lecture", "media_suivant", "media_precedent"}
 AVEC_TEXTE = {"nfc_ecrire": "le texte à écrire sur la puce", "bluetooth_appairer": "l'adresse ou le nom de l'appareil",
               "wifi_connecter": "le nom du réseau (« nom » ou « nom ; mot de passe »)"}
 _ID_MEMBRE = re.compile(r"[0-9a-f]{10}")

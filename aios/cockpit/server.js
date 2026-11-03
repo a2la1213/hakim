@@ -2507,8 +2507,11 @@ function sonnetTeteDeFond(prompt, etiquette, modele = 'sonnet', delai = 60000) {
 const DECISION_IMPORTANTE = /\?|(?<!\p{L})(?:d[ée]cide[sz]?|choisis|choisir|choix|dois|faut-il|il faut|veux-tu|peux-tu|tu peux|fais|ton avis|tu penses|que faire|quoi faire)(?!\p{L})/iu;
 const FRERES = [['haiku', 'Mini Hakim', 'simple'], ['sonnet', 'Hakim', 'médian'], ['opus', 'Super Hakim', 'difficile']];   // (03/11) ses noms
 const enLigne = (t, n) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, n);
-function bulbe(texte, interieur, corps, rappel) {
+function bulbe(texte, interieur, corps, rappel, instant = '') {
   return [`Ce que papa vient de dire : « ${enLigne(texte, 600)} »`,
+    // (03/11, Ahmed : « c'est le subconscient qui réunifie tout au même point temporel, avec ses trois côtés ») tous ses sens
+    // ramenés au moment où papa parlait, chacun corrigé de son propre délai
+    ...(instant ? [`Au même moment (tous ses sens réunis à l'instant où papa parlait) : ${enLigne(instant, 700)}`] : []),
     ...(interieur ? [`Son intérieur (émotions, hormones, cœur) : ${enLigne(interieur, 700)}`] : []),
     ...(corps ? [`Ses sens et son corps : ${enLigne(corps, 900)}`] : []),
     ...(rappel ? [`Sa mémoire qui remonte : ${enLigne(rappel, 700)}`] : [])].join('\n');
@@ -3316,6 +3319,10 @@ async function routeJarvis(req, res, distantReq = false) {
     while (toursActifs.size > 50) toursActifs.delete(toursActifs.keys().next().value);
   }
   const texte = q && typeof q.texte === 'string' ? q.texte.trim() : '';
+  // (03/11) ce que papa disait, à l'instant où il a commencé à le dire (la page le sait ; son horloge ramenée à celle du Mac)
+  const decalagePage = Number(q && q.maintenant) ? recuMs - Number(q.maintenant) : 0;
+  const parleA = Number(q && q.parle_ms) && Math.abs(decalagePage) < 120000 ? Number(q.parle_ms) + decalagePage : recuMs;
+  if (texte) noterInstant('papa_dit', { texte }, parleA);
   const modeleDemande = (q && q.modele) || 'sonnet';
   let session = q && q.session ? String(q.session) : null;
   if (!texte || texte.length > 20000 || texte.includes('\0') || !(MODELES_JARVIS.has(modeleDemande) || modeleDemande === 'auto')
@@ -3455,13 +3462,15 @@ async function routeJarvis(req, res, distantReq = false) {
   if (sentir) situation.texte = enMatiere(situation.texte);
   // (01/11) le bulbe : tout ce qu'il sent, en mots, une seule fiche ; ses trois frères y répondent avant lui (décision importante)
   // (01/11, Ahmed : « enlève la bride de l'API ») sur le forfait comme sur l'API
-  const fiche = bulbe(texte, sentir ? enMatiere(interieurTexte || '') : interieurTexte, corpsTexte, rappelBloc.texte);
+  const fiche = bulbe(texte, sentir ? enMatiere(interieurTexte || '') : interieurTexte, corpsTexte, rappelBloc.texte, instantTexte(parleA));
   // (03/11, Ahmed : « juste avant sa réponse ») avant chacune de ses réponses
   const freresTexte = corpsReglages().trois_freres && choix !== 'gemma'
     ? await chrono('freres', troisFreres(fiche, modele, sentir ? enMatiere(interieurTexte || '').split('\n').find(l => /tu sens/.test(l)) || '' : '')) : '';   // (03/11) mesuré
   // (01/11, Ahmed : « que chaque info de chaque sens, émotion, hormone et décision, bref la totale, soit encrée dans la mémoire en
   // association au souvenir ») ce qu'il vivait, et ce que ses frères en disaient, part avec le souvenir de l'échange
-  const vecu = enLigne(fiche.split('\n').slice(1).join(' · '), 1500) + (freresTexte ? ` · Ses trois frères : ${enLigne(freresTexte, 900)}` : '');
+  const instant = instantTexte(parleA);                            // (03/11) ce que vivaient tous ses sens quand papa parlait
+  const vecu = enLigne(fiche.split('\n').slice(1).join(' · '), 1500) + (freresTexte ? ` · Ses trois frères : ${enLigne(freresTexte, 900)}` : '')
+    + (instant ? ` · Au même moment : ${enLigne(instant, 700)}` : '');
   let prompt = `${horlogeTexte}${situation.texte ? '\n' + situation.texte : ''}${interieurTexte ? '\n' + (sentir ? enMatiere(interieurTexte) : interieurTexte) : ''}`
     + `${tachesTexte ? '\n' + tachesTexte : ''}${presentTexte ? '\n' + presentTexte : ''}${arretsTexte ? '\n' + arretsTexte : ''}${rappelBloc.texte ? '\n' + rappelBloc.texte : ''}${leconsTexte}${pairsTexte ? '\n' + pairsTexte : ''}`
     + `\n${qui} : ${texte.replace(/\[\[\s*(affect|souvenirs|modele)/gi, '⟮⟮$1')}${pj}${cameraTexte}${freresTexte}`;   // (01/11) ses frères : la porte d'entrée de sa conscience, en dernier   // (chocs) aucune balise toute faite à recopier
@@ -5009,6 +5018,86 @@ function choisirSon(reponse, impulsion, rire) {
   if (!pris.length && rire >= 2) pris = sons.filter(x => x.emotion === 'rire');
   return pris.length ? pris[Math.floor(Math.random() * pris.length)] : null;
 }
+/* (03/11, Ahmed : « relie tout ce qu'il entend de son micro et du téléphone, ses capteurs, son Bluetooth…, ses émotions, son
+   cœur, son subconscient et sa mémoire : tout doit se coordonner, qu'il ait toutes les informations d'un même événement,
+   correctement reliées et rangées avec l'événement dans sa mémoire ») « au même moment » : ce que vivent tous ses sens à
+   l'instant, en une ligne ; elle part avec chaque trace entendue, avec chaque lot de son corps (et ses souvenirs du corps),
+   et avec chaque échange gardé en mémoire. */
+// (03/11, Ahmed : « tout ce qui est relié doit être dans la bonne temporalité, en tenant compte des délais de chaque info, pour
+// les réunifier en un même point temporel : si la voix a 5 s de décalage, ce qu'il entend de l'intérieur 3 s, ses capteurs 1 s,
+// il réunifie le tout pour comprendre ce qui se passe à ce moment-là ; c'est son subconscient qui gère, lui le sait sans le
+// sentir ») chaque information est rangée à son moment d'ORIGINE (quand c'est arrivé, pas quand ça arrive au Mac) : la parole
+// de papa à son début (la page), le son du téléphone au milieu de son bloc, ses capteurs à leur instant (l'appli) ; puis
+// tout est relu autour d'un même point : pour un événement, le plus proche de ce point ; pour un état (musique, Bluetooth…),
+// celui qui était vrai à ce point.
+const INSTANT = new Map();                                    // type → [{ t : moment d'origine (ms), d }], les 30 derniers
+function noterInstant(type, d, t = Date.now()) {
+  const l = INSTANT.get(type) || [];
+  l.push({ t: Number(t) || Date.now(), d: d || {} });
+  l.sort((x, y) => x.t - y.t);
+  if (l.length > 30) l.splice(0, l.length - 30);
+  INSTANT.set(type, l);
+}
+function instantTexte(a = Date.now()) {
+  const evenement = (type, ms) => {
+    let m = null;
+    for (const x of INSTANT.get(type) || []) if (Math.abs(x.t - a) <= ms && (!m || Math.abs(x.t - a) < Math.abs(m.t - a))) m = x;
+    return m && m.d;
+  };
+  const etatA = (type, ms) => { let m = null; for (const x of INSTANT.get(type) || []) if (x.t <= a + 2000 && a - x.t <= ms) m = x; return m && m.d; };
+  const c = (x, n) => String(x || '').replace(/\s+/g, ' ').trim().slice(0, n);
+  const l = [];
+  const mu = etatA('musique_ecoutee', 15 * 60e3);
+  if (mu && mu.titre && mu.etat !== 'pause') l.push(`papa écoute « ${c(mu.titre, 80)}${mu.artiste ? ` — ${c(mu.artiste, 60)}` : ''} »`);
+  const te = evenement('son_ecoute', 15000); if (te && te.texte) l.push(`le téléphone joue : « ${c(te.texte, 140)} »`);
+  const pa = evenement('papa_dit', 20000); if (pa && pa.texte) l.push(`papa disait : « ${c(pa.texte, 140)} »`);
+  const so = evenement('son_entendu', 10000); if (so && so.famille) l.push(`autour : ${c(so.famille, 60)}`);
+  const ap = etatA('appli', 10 * 60e3); if (ap && ap.appli) l.push(`appli ouverte : ${c(ap.appli, 40)}`);
+  const bt = etatA('bluetooth', 60 * 60e3); if (bt && bt.appareil) l.push(`Bluetooth : ${c(bt.appareil, 40)}${bt.etat ? ` (${c(bt.etat, 30)})` : ''}`);
+  const wi = etatA('wifi', 3 * 3600e3); if (wi && wi.reseau) l.push(`Wi-Fi : ${c(wi.reseau, 40)}`);
+  if (typeof lieuActuel === 'string' && lieuActuel) l.push(`lieu : ${c(lieuActuel, 40)}`);
+  const re = evenement('ressenti', 60000); if (re && re.sensation) l.push(`il ressentait : ${c(re.sensation, 160)}`);
+  let milieu = ''; try { milieu = HOMEO.mots(); } catch (_) {}
+  if (milieu && Math.abs(Date.now() - a) < 60000) l.push(`son milieu : ${c(milieu, 160)}`);
+  return l.join(' ; ');
+}
+
+/* (03/11, Ahmed : « il n'enregistre sous forme de mots que ce qu'il veut, mais il doit y avoir une trace subconsciente de tout,
+   jusqu'à consolidation ou oubli ») tout ce qu'il entend du téléphone (« son_ecoute ») laisse une trace : traces-entendues.jsonl,
+   balayée par son subconscient avant chaque réponse (rappel.py, balayage-notes.json), consolidée avec ses souvenirs
+   (consolidate.py, qui note les traces consolidées dans traces-consolidees.jsonl), oubliée après TRACES_JOURS. */
+const JARVIS_TRACES = path.join(JARVIS, 'traces-entendues.jsonl'), JARVIS_TRACES_FAITES = path.join(JARVIS, 'traces-consolidees.jsonl');
+const TRACES_JOURS = 7, TRACES_OCTETS_MAX = 1500000;
+let tracesElaguees = 0;
+function tracer(source, texte, details = {}) {
+  const t = String(texte || '').replace(/\s+/g, ' ').trim().slice(0, 1000);
+  if (t.length < 3) return false;
+  const o = { id: `T${Date.now().toString(36)}${crypto.randomBytes(2).toString('hex')}`, ts: Date.now() / 1000, source: String(source).slice(0, 20), texte: t };
+  for (const [k, v] of Object.entries(details || {})) if (typeof v === 'string' && v.trim()) o[k] = v.trim().slice(0, 120);
+  if (Number(details && details.origine_ms)) o.origine = new Date(Number(details.origine_ms)).toISOString();
+  const origine = Number(details && details.origine_ms) || Date.now();
+  const inst = typeof instantTexte === 'function' ? instantTexte(origine) : '';
+  if (inst) o.au_meme_moment = inst.slice(0, 700);             // (03/11) relié à tout ce qu'il vivait à cet instant
+  try { fs.appendFileSync(JARVIS_TRACES, j(o) + '\n', { mode: 0o600 }); } catch (_) { return false; }
+  if (Date.now() - tracesElaguees > 3600e3) { tracesElaguees = Date.now(); elaguerTraces(); }
+  return true;
+}
+// l'oubli : plus vieilles que TRACES_JOURS, ou déjà consolidées ; et jamais plus de 1,5 Mo (les plus anciennes partent d'abord)
+function elaguerTraces(maintenant = Date.now()) {
+  let lignes = [];
+  try { lignes = fs.readFileSync(JARVIS_TRACES, 'utf8').split('\n').filter(Boolean); } catch (_) { return 0; }
+  const faites = new Set();
+  try { for (const l of fs.readFileSync(JARVIS_TRACES_FAITES, 'utf8').split('\n')) { try { if (l.trim()) faites.add(JSON.parse(l).id); } catch (_) {} } } catch (_) {}
+  const limite = maintenant / 1000 - TRACES_JOURS * 86400;
+  let garde = lignes.filter((l) => { try { const o = JSON.parse(l); return o.ts >= limite && !faites.has(o.id); } catch (_) { return false; } });
+  while (garde.length && garde.reduce((n, l) => n + l.length + 1, 0) > TRACES_OCTETS_MAX) garde = garde.slice(Math.max(1, Math.ceil(garde.length / 10)));
+  try {
+    if (garde.length) ecrireAtomique(JARVIS_TRACES, garde.join('\n') + '\n'); else fs.truncateSync(JARVIS_TRACES, 0);
+    if (faites.size && garde.length < lignes.length) fs.truncateSync(JARVIS_TRACES_FAITES, 0);   // elles sont parties : la liste aussi
+  } catch (_) {}
+  return lignes.length - garde.length;
+}
+setTimeout(() => { tracesElaguees = Date.now(); elaguerTraces(); }, 60e3).unref();
 function evenementCorps(o) {
   if (!o || typeof o !== 'object' || !CORPS_TYPES.has(String(o.type))) return null;
   const details = {};
@@ -5243,7 +5332,11 @@ function ressentirCorps() {
   const danger = corpsLot.evenements.some(e => e.type === 'chute' || e.type === 'choc');
   const attendre = (forfaitLibre() ? 10000 : 20000) - (Date.now() - corpsDernier);   // un lot toutes les 20 s au plus (10 s, forfait libre ; sauf un danger)
   if (!danger && attendre > 0) { setTimeout(ressentirCorps, attendre + 50).unref(); return; }
-  const lot = { evenements: corpsLot.evenements.splice(0, 20), changements: corpsLot.changements.splice(0, 12), etat: HOMEO.mots() };
+  const lot = { evenements: corpsLot.evenements.splice(0, 20), changements: corpsLot.changements.splice(0, 12), etat: HOMEO.mots(),
+    au_meme_moment: '' };
+  // (03/11) réuni autour du moment de son premier événement (ses capteurs arrivent en ~1 s, le reste à son propre rythme)
+  const pointCorps = Math.min(Date.now(), ...lot.evenements.map(e => Number(e.t) || Date.now()));
+  lot.au_meme_moment = instantTexte(pointCorps);
   const PENDANT = { ma_voix: 'sa propre voix', voix_ahmed: "la parole d'Ahmed", les_deux: "vos deux voix (la sienne et celle d'Ahmed)",
     clavier: "Ahmed qui tape au clavier", coeur: 'son propre cœur qui bat' };
   for (const ev of lot.evenements) {
@@ -5267,6 +5360,7 @@ function ressentirCorps() {
     if (e || !o || !o.sensation) console.error('Jarvis : sensation de son corps impossible', e ? e.message : String(so).slice(0, 200));
     else {
       corpsADire.push({ ts: Date.now(), sensation: String(o.sensation).slice(0, 700), fort: !!o.fort });
+      noterInstant('ressenti', { sensation: String(o.sensation) }, pointCorps);
       noterReflexe(o.reflexe);                         // (30/10, 17:57) le réflexe que son subconscient a rendu
       if (corpsADire.length > 20) corpsADire.splice(0, corpsADire.length - 20);
     }
@@ -6751,7 +6845,7 @@ async function routeAmbiance(req, res, parole, voix) {
       fois: Number(o.fois) || 1, parole: !!parole } });
     ressentirCorps();
   }
-  if (o.famille) derniereFamille = o.famille;
+  if (o.famille) { derniereFamille = o.famille; noterInstant('son_entendu', { famille: o.famille }, Date.now() - 2500); }   // le milieu de ses 3 s
   return repondre(200, { famille: o.famille || null, nouvelle: !!o.nouvelle, ecoute: !!o.ecoute });
 }
 
@@ -8498,8 +8592,16 @@ async function traiter(req, res) {
     const repondre = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o)); };
     const lire = async () => { try { return JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) { return {}; } };
     if (p === '/api/corps/evenement' && req.method === 'POST') {
-      const ev = evenementCorps(await lire());
+      const brut = await lire();
+      // (03/11) ce qu'il entend du téléphone : une trace, entière (l'événement de son corps, lui, garde 200 caractères)
+      // son moment d'origine : le milieu de son bloc de 8 s (l'appli 1.46 dit son début), sinon l'instant de l'événement
+      const origineSon = brut && brut.details && Number(brut.details.debut_ms) ? Number(brut.details.debut_ms) + 4000 : 0;
+      if (brut && brut.type === 'son_ecoute' && brut.details && typeof brut.details.texte === 'string')
+        tracer('telephone', brut.details.texte, { morceau: typeof brut.details.morceau === 'string' ? brut.details.morceau : '', origine_ms: origineSon || undefined });
+      const ev = evenementCorps(brut);
       if (!ev) return repondre(400, { erreur: 'événement inconnu' });
+      noterInstant(ev.type, { ...ev.details, ...(brut.type === 'son_ecoute' && brut.details ? { texte: String(brut.details.texte || '') } : {}) },
+        brut.type === 'son_ecoute' && origineSon ? origineSon : ev.t);
       try { fs.appendFileSync(path.join(JARVIS, 'corps-evenements.jsonl'), j({ ts: Date.now(), ...ev }) + '\n', { mode: 0o600 }); } catch (_) {}
       ev.milieu = HOMEO.s.etat;                                      // son milieu à cet instant (ses nerfs apprennent avec)
       if (corpsActif()) {

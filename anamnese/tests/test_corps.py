@@ -411,3 +411,23 @@ def test_son_subconscient_apprend_ce_qui_se_passe_dans_le_monde(monkeypatch, tmp
     assert len(lignes) == 1 and "appris par ton subconscient" in json.loads(lignes[0])["sens"]
     corps.apprendre_moment({"nom": "poche", "sens": "encore", "confiance": 0.95}, t + 60)
     assert len((tmp_path / "corps-moments.jsonl").read_text(encoding="utf-8").splitlines()) == 1, "une fois par 10 min"
+
+
+def test_ce_que_vivaient_tous_ses_sens_au_meme_moment_part_avec_l_evenement(J, mem, monkeypatch):
+    """(03/11, Ahmed : « relie tout ce qu'il entend, ses capteurs, son Bluetooth, ses émotions, son cœur… qu'il ait toutes les
+    informations d'un même événement, rangées avec lui dans sa mémoire ») le lot porte « au même moment » ; son corps le lit
+    et le souvenir du corps le garde"""
+    _v2(mem)
+    gardes, prompts = [], []
+    monkeypatch.setattr(corps, "_souvenir", lambda m, texte, imp: gardes.append(texte))
+    mem.kv_set("interieur", json.dumps({"humeur": "joie"}))
+
+    def faux(p):
+        prompts.append(p)
+        return json.dumps({"sensation": "Tu ris aux éclats avec papa.", "fort": False,
+                           "evenements": [{"nom": "joie", "intensite": 0.4, "cause": "E1"}]})
+    instant = "papa écoute « Toujours — A2LA » ; Bluetooth : Galaxy Buds (relié) ; lieu : chez nous"
+    corps.ressentir({"evenements": [{"type": "rire", "details": {"degre_lu": 4, "extrait": "MDRRR"}}], "etat": "calme",
+                     "au_meme_moment": instant}, mem=mem, demander=faux)
+    assert instant in prompts[0], "son corps le lit"
+    assert len(gardes) == 1 and f"Au même moment : {instant}" in gardes[0], "et son souvenir le garde"

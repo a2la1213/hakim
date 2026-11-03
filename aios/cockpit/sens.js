@@ -12,7 +12,8 @@ const ID = /^S-\d{8}-\d{6}-[0-9a-f]{4}$/;
 const SENS = new Set(['inventaire', 'imu', 'sismo', 'baro', 'magneto', 'son',
   'appareils', 'bluetooth_scan', 'wifi_scan', 'bluetooth_signal', 'nfc_ecrire',   // (03/11) ses sens radio et ses membres (appli 1.42)
   'bluetooth_activer', 'bluetooth_appairer', 'wifi_info', 'wifi_connecter', 'bluetooth_reglages', 'wifi_reglages', 'nfc_reglages',   // (appli 1.44)
-  'appli_active']);   // (appli 1.45)
+  'appli_active',   // (appli 1.45)
+  'media_pause', 'media_lecture', 'media_suivant', 'media_precedent']);   // (appli 1.46)
 const EXPIRE_MS = 2 * 3600 * 1000, MARGE_MS = 120 * 1000, ESSAIS = 3;
 // (30/10, Ahmed : « ses propres modules ») ses instruments à lui : donnés à son Tricordeur (le module), qui rend par
 // Documents/Hakim/sens/<id>/ (Syncthing) ; on attend sa durée + 30 min (la synchronisation)
@@ -41,6 +42,11 @@ const INTEGRES = {
   wifi_reglages: ['son membre : ouvrir devant papa le panneau Wi-Fi', 0, 0],
   nfc_reglages: ['son membre : ouvrir devant papa le réglage NFC', 0, 0],
   appli_active: ['l’appli au premier plan du téléphone, et ce qu’elle joue', 0, 0],   // (appli 1.45)
+  // (03/11, Ahmed : « il peut mettre en pause la musique et glisser son mot ») ses mains sur ce qui joue (appli 1.46)
+  media_pause: ['son membre : mettre en pause la musique ou la vidéo en cours', 0, 0],
+  media_lecture: ['son membre : relancer la musique ou la vidéo', 0, 0],
+  media_suivant: ['son membre : passer au morceau suivant', 0, 0],
+  media_precedent: ['son membre : revenir au morceau précédent', 0, 0],
 };
 
 class FileSens {

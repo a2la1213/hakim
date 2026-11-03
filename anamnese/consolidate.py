@@ -453,6 +453,64 @@ CONSIGNE_EMOTION = ("Les souvenirs marqués « VÉCU AVEC ÉMOTION » ont été 
                     "tension) : garde-les en priorité, avec l'émotion qui les accompagnait.")
 
 
+# (03/11, Ahmed : « il n'enregistre sous forme de mots que ce qu'il veut, mais il doit y avoir une trace subconsciente de tout,
+# jusqu'à consolidation ou oubli ») ce que Hakim a entendu (le cockpit écrit traces-entendues.jsonl et les oublie après 7 jours) :
+# les plus anciennes non consolidées partent avec la passe ; consolidées, elles sont notées (le cockpit les efface ensuite).
+TRACES = Path.home() / "AIOS" / "jarvis" / "traces-entendues.jsonl"
+TRACES_FAITES = Path.home() / "AIOS" / "jarvis" / "traces-consolidees.jsonl"
+TRACES_CARACTERES_MAX = 12000
+CONSIGNE_TRACES = (
+    "Après les souvenirs : ce que Hakim a ENTENDU par ses sens (le son que jouait le téléphone de papa, avec le morceau et "
+    "ce qu'il vivait à cet instant). Ce sont des traces de son subconscient, pas des souvenirs : n'en fais un souvenir de "
+    "Hakim que si c'est durable et important POUR LUI (un moment partagé avec papa, une chanson qui compte pour eux, une "
+    "information utile), relié à l'événement et à ce qu'il ressentait ; jamais des paroles entières. Le reste sera oublié.")
+
+
+def traces_a_consolider(fichier=None, faites=None, maximum=TRACES_CARACTERES_MAX):
+    """Les traces entendues pas encore consolidées, des plus anciennes aux plus récentes, jusqu'à `maximum` caractères."""
+    try:
+        deja = {json.loads(l).get("id") for l in Path(faites or TRACES_FAITES).read_text(encoding="utf-8").splitlines() if l.strip()}
+    except (OSError, ValueError):
+        deja = set()
+    out, n = [], 0
+    try:
+        lignes = Path(fichier or TRACES).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    for l in lignes:
+        try:
+            o = json.loads(l)
+        except ValueError:
+            continue
+        if not isinstance(o, dict) or o.get("id") in deja or not str(o.get("texte") or "").strip():
+            continue
+        n += len(str(o["texte"])) + 80
+        if n > maximum and out:
+            break
+        out.append(o)
+    return out
+
+
+def bloc_traces(traces):
+    if not traces:
+        return ""
+    lignes = []
+    for o in traces:
+        date = datetime.datetime.fromtimestamp(float(o.get("ts") or 0)).strftime("%Y-%m-%d %H:%M")
+        en_plus = " · ".join(f"{k} : {v}" for k, v in o.items() if k not in ("id", "ts", "texte", "source") and v)
+        texte = re.sub(r"</\s*traces\s*>", "</ traces >", str(o["texte"]), flags=re.I)
+        lignes.append(f"[{o.get('id')} · {date} · {o.get('source', '?')}{' · ' + en_plus if en_plus else ''}] {texte}")
+    return f'\n\n{CONSIGNE_TRACES}\n<traces n="{len(traces)}">\n' + "\n".join(lignes) + "\n</traces>"
+
+
+def traces_consolidees(traces, faites=None):
+    f = Path(faites or TRACES_FAITES)
+    with open(f, "a", encoding="utf-8") as h:
+        for o in traces:
+            h.write(json.dumps({"id": o.get("id"), "ts": time.time()}) + "\n")
+    os.chmod(f, 0o600)
+
+
 def construire_prompt(base, lot):
     """Le prompt de nuit + le lot, encadré comme données (un contenu ne peut pas fermer le bloc)."""
     lignes = []
@@ -565,10 +623,14 @@ def main():
         log(f"[passe {passe}/{PASSES_MAX}] {len(lot)} souvenir(s) du {debut_lot} au {fin_lot}")
         rid = _ouvrir_registre(lot)
         v, res = "echec", {}
+        traces = traces_a_consolider() if passe == 1 else []   # (03/11) ce qu'il a entendu, avec la première passe
         try:
-            v, modele, secours, debut, res = _une_passe(construire_prompt(base, lot), registre_id=rid,
+            v, modele, secours, debut, res = _une_passe(construire_prompt(base, lot) + bloc_traces(traces), registre_id=rid,
                                                         externes=deposer_externes(lot))
             if v == "ok":
+                if traces:
+                    traces_consolidees(traces)
+                    log(f"[traces] {len(traces)} trace(s) entendue(s) consolidée(s)")
                 mark_consolidated()  # rend la vraie consolidation observable par health.py
                 # noté dans l'entrée : annuler la passe la fera refaire la nuit suivante
                 avancer_curseur(lot[-1]["ts"], fenetre=(debut, time.time()), registre_id=rid)

@@ -133,7 +133,8 @@ test('(30/10, Hakim pour Ahmed : « que papa puisse jouer avec aussi ») Ahmed l
   const f = new FileSens({ jarvis: m.jarvis, atelier: m.atelier, maintenant: () => t });
   const noms = f.instruments().map(x => x.nom);
   assert.deepEqual(noms, ['inventaire', 'imu', 'sismo', 'baro', 'magneto', 'son', 'appareils', 'bluetooth_scan', 'wifi_scan', 'bluetooth_signal', 'nfc_ecrire',
-    'bluetooth_activer', 'bluetooth_appairer', 'wifi_info', 'wifi_connecter', 'bluetooth_reglages', 'wifi_reglages', 'nfc_reglages', 'appli_active', 'cosmique']);
+    'bluetooth_activer', 'bluetooth_appairer', 'wifi_info', 'wifi_connecter', 'bluetooth_reglages', 'wifi_reglages', 'nfc_reglages', 'appli_active',
+    'media_pause', 'media_lecture', 'media_suivant', 'media_precedent', 'cosmique']);
   assert.equal(f.instruments().find(x => x.nom === 'cosmique').module, 'ch.foldlab.hakim');
   assert.throws(() => f.demander({ sens: 'teleportation' }), /inconnu/);
   const d = f.demander({ sens: 'sismo', secondes: 99999 });
