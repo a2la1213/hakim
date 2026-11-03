@@ -135,6 +135,10 @@ def transcrire(fichier, langue=None, contexte="", voix=None, avec_temps=False, m
                                condition_on_previous_text=False, word_timestamps=exacte or avec_temps or voix == "reconnaitre:mots")   # (03/11) micro ouvert : chaque mot à sa voix
     texte = filtrer_segments(r.get("segments") or [{"text": r.get("text")}], base)
     sortie = {"texte": texte, "langue": r.get("language"), "ms": int((time.time() - t0) * 1000)}
+    if exacte or avec_temps or voix == "reconnaitre:mots":           # (03/11) le temps de chaque mot, pour le fil, à la milliseconde
+        sortie["mots"] = [[w["word"].strip(), round(float(w["start"]), 3), round(float(w["end"]), 3)]
+                          for sg in segments_gardes(r.get("segments") or [], base) for w in (sg.get("words") or [])
+                          if (w.get("word") or "").strip()]
     if avec_temps:
         sortie["segments"] = [{"debut": float(sg.get("start", 0)), "fin": float(sg.get("end", 0)), "texte": (sg.get("text") or "").strip(),
                                "mots": [[w["word"].strip(), float(w["start"]), float(w["end"])] for w in (sg.get("words") or [])

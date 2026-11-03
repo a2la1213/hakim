@@ -55,6 +55,27 @@
     return meilleur > 0.5 && lag ? sr / lag : null;
   }
 
+  // (03/11, la troisième oreille) la hauteur d'une voix qui chante (70 à 1 200 Hz) sur ~40 ms, par autocorrélation ; 0 sinon
+  function hauteurChant(f, taux) {
+    const d = Math.max(1, Math.round(taux / 16000)), sr = taux / d, n = Math.floor(f.length / d);
+    const x = new Float32Array(n);
+    for (let i = 0; i < n; i++) { let s = 0; for (let k = 0; k < d; k++) s += f[i * d + k]; x[i] = s / d; }
+    let r0 = 0; for (let i = 0; i < n; i++) r0 += x[i] * x[i];
+    if (r0 <= 1e-6) return 0;
+    const lmin = Math.floor(sr / 1200), lmax = Math.min(n - 2, Math.ceil(sr / 70));
+    const rs = new Float32Array(lmax + 2);
+    let meilleur = 0;
+    for (let l = lmin; l <= lmax; l++) {
+      let r = 0; for (let i = 0; i + l < n; i++) r += x[i] * x[i + l];
+      rs[l] = r / (r0 * (n - l) / n);
+      if (rs[l] > meilleur) meilleur = rs[l];
+    }
+    if (meilleur <= 0.55) return 0;
+    // le PREMIER sommet presque aussi haut que le meilleur : la vraie période, pas l'un de ses multiples (une octave trop bas)
+    for (let l = lmin + 1; l < lmax; l++) if (rs[l] >= 0.9 * meilleur && rs[l] >= rs[l - 1] && rs[l] >= rs[l + 1]) return Math.round(sr / l);
+    return 0;
+  }
+
   function reechantillonner(f32, de, vers) {
     if (de === vers) return f32;
     const r = de / vers, n = Math.floor(f32.length / r), out = new Float32Array(n);
@@ -82,6 +103,29 @@
     }
     const muet = ctx.createGain(); muet.gain.value = 0;     // tiré par la destination, sans rien jouer
     src.connect(noeud); noeud.connect(muet); muet.connect(ctx.destination);
+    // (03/11, Ahmed : « une partie qui capte les sons : aigus, graves, basses, leur variation, calés à la seconde ») toutes les
+    // 100 ms, le niveau et trois bandes (graves < 250 Hz, médiums, aigus > 2 kHz) ; chaque seconde, les dix trames à o.surSons
+    if (o.surSons) {
+      const an = ctx.createAnalyser();
+      an.fftSize = 2048; an.smoothingTimeConstant = 0;
+      src.connect(an);
+      const spectre = new Float32Array(an.frequencyBinCount), temps = new Float32Array(an.fftSize);
+      const hz = ctx.sampleRate / an.fftSize, b1 = Math.round(250 / hz), b2 = Math.round(2000 / hz), b3 = Math.round(8000 / hz);
+      let trames = [], t0 = 0;
+      const bande = (a, b) => { let x = 0; for (let i = a; i < b; i++) x += Math.pow(10, spectre[i] / 20); return x / Math.max(1, b - a); };
+      const minuterie = setInterval(() => {
+        if (!actif) { clearInterval(minuterie); return; }
+        if (micCoupe) { trames = []; return; }
+        an.getFloatFrequencyData(spectre); an.getFloatTimeDomainData(temps);
+        let e = 0; for (let i = 0; i < temps.length; i++) e += temps[i] * temps[i];
+        if (!trames.length) t0 = Date.now() - 100;
+        // la troisième oreille : la hauteur de la voix (f0) et sa brillance (le centre du spectre, en Hz)
+        let sa = 0, sfa = 0; for (let i = 1; i < b3; i++) { const v = Math.pow(10, spectre[i] / 20); sa += v; sfa += v * i * hz; }
+        trames.push([+Math.sqrt(e / temps.length).toFixed(4), +bande(1, b1).toFixed(5), +bande(b1, b2).toFixed(5), +bande(b2, b3).toFixed(5),
+          hauteurChant(temps, ctx.sampleRate), sa > 0 ? Math.round(sfa / sa) : 0]);
+        if (trames.length >= 10) { try { o.surSons(t0, 100, trames); } catch (_) {} trames = []; }
+      }, 100);
+    }
     const taux = ctx.sampleRate, parFenetre = Math.round(taux * FENETRE_MS / 1000);
     const preecoute = [];                                   // fenêtres récentes, hors parole
     const ambiance = [];                                    // (03/11, micro ouvert) les 3 dernières secondes, quoi qu'il arrive

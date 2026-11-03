@@ -117,7 +117,7 @@ def traiter(req):
         if not stt.disponible():
             return {"erreur": "mlx-whisper n'est pas installé"}
         return stt.transcrire(req["fichier"], req.get("langue"), req.get("contexte") or "", req.get("voix"),
-                              musique=bool(req.get("musique")))   # (03/11) le téléphone jouait : ses voix de la salle le savent
+                              avec_temps=bool(req.get("avec_temps")), musique=bool(req.get("musique")))   # (03/11) le téléphone jouait : ses voix de la salle le savent
     if op == "empreinte_reinitialiser":       # (2026-10-20) sans charger aucun modèle
         import empreinte_vocale
         return empreinte_vocale.reinitialiser(str(req.get("portee") or "tout"))

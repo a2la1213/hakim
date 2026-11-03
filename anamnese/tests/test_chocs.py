@@ -459,3 +459,10 @@ def test_le_retour_de_papa_s_appelle_papa():
     import chocs
     s = chocs.segments("salut [voix 2] il dit quoi [papa] laisse tomber", oral=True, voix="plusieurs", noms=[])
     assert [x["qui"] for x in s] == ["ahmed", "tiers", "ahmed"] and s[-1]["texte"] == "laisse tomber"
+
+
+def test_le_doute_entre_deux_voix_n_est_pas_sur():
+    """(03/11) « [papa ou Ali ?] » : peut-être papa, jamais sûr"""
+    import chocs
+    s = chocs.segments("salut [papa ou Ali ?] t'es nul [voix 3] ouais", oral=True, voix="plusieurs", noms=[])
+    assert [(x["qui"], x["sur"]) for x in s] == [("ahmed", False), ("ahmed", False), ("tiers", True)]

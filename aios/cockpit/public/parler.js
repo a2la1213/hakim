@@ -2256,13 +2256,13 @@ function delaiTranscription(octets, type) {
 }
 // Rend le texte ('' si rien n'a été dit), ou null si la transcription a ÉCHOUÉ (processus voix arrêté,
 // délai) : un échec ne doit jamais passer pour du silence (relecture Opus : 3,6 s de phrase perdues).
-async function transcrireVite(audio, type, contexte) {
+async function transcrireVite(audio, type, contexte, temps = '') {
   const langue = etat.reglages.langue === 'auto' ? '' : etat.reglages.langue.slice(0, 2);
   const ctx = contexte ? `&contexte=${encodeURIComponent(contexte.slice(-200))}` : '';
   const ctl = new AbortController(), t0 = Date.now();
   const minuteur = setTimeout(() => ctl.abort(), delaiTranscription(audio.size || 0, type));   // (2026-10-21) jamais sans fin
   try {
-    const transcrire = () => fetch(`/api/voix/transcrire?langue=${langue}${ctx}`, { method: 'POST', body: audio, signal: ctl.signal,
+    const transcrire = () => fetch(`/api/voix/transcrire?langue=${langue}${ctx}${temps}`, { method: 'POST', body: audio, signal: ctl.signal,
       headers: { 'Content-Type': type || 'audio/wav', 'X-Jeton': jeton() } });
     let r = await transcrire();
     if (r.status === 403 && await rafraichirJeton()) r = await transcrire();   // (23/10) le cockpit a redémarré entre-temps
@@ -2300,7 +2300,7 @@ function surPauseConversation(conv, fenetre) {
   conv.partielA = Date.now();
   const de = e.coupe, wav = conv.capteur.segment(de, fenetre);
   if (!wav) return;                                                      // pas de voix dans ce morceau
-  e.partiel = transcrireVite(wav, 'audio/wav', e.confirme).then((texte) => {
+  e.partiel = transcrireVite(wav, 'audio/wav', e.confirme, typeof tempsMorceau === 'function' ? tempsMorceau(conv.capteur, de, fenetre) : '').then((texte) => {
     if (e.coupe !== de || texte === null) return;                        // échec : ce morceau reste dans la queue
     e.confirme = (e.confirme + ' ' + morceauNeuf(texte, e.confirme)).trim();   // une invention de Whisper : écartée seule
     e.coupe = fenetre;
@@ -2316,6 +2316,11 @@ function surPauseConversation(conv, fenetre) {
 // aussi driver son attention » ; « Whisper pour la voix ») l'oreille VIVE : pendant que papa parle, le petit Whisper du Mac
 // (/api/voix/vif) retranscrit sans cesse le morceau en cours, depuis la dernière coupe confirmée : ses mots s'affichent tout de
 // suite et son oreille les suit. La grande oreille confirme ensuite chaque morceau : c'est son texte qui part à Hakim.
+// (03/11) l'instant d'origine d'un morceau du tour (fenêtres de 20 ms [de, a[) et sa clé : ses mots entrent au fil à leur moment
+function tempsMorceau(cap, de, a) {
+  const t0 = Number(cap && cap.debutTour) > 0 ? Number(cap.debutTour) + de * 20 : 0;
+  return t0 ? `&t0=${t0}&ms=${Math.max(0, a - de) * 20}&maintenant=${Date.now()}&cle=${encodeURIComponent(`${cap.debutTour}-${de}`)}` : '';
+}
 function vifConversation(conv) {
   const e = conv && conv.ecrit, cap = conv && conv.capteur;
   if (!e || !cap || !cap.enParole || e.vifEnCours) return;
@@ -2328,8 +2333,7 @@ function vifConversation(conv) {
   const langue = etat.reglages.langue === 'auto' ? '' : etat.reglages.langue.slice(0, 2);
   const ctx = e.confirme ? `&contexte=${encodeURIComponent(e.confirme.slice(-200))}` : '';
   // (03/11) l'instant d'origine du morceau (son début, sa durée) : chaque mot entre au fil du Mac à son moment
-  const t0 = Number(cap.debutTour) > 0 ? Number(cap.debutTour) + de * 20 : 0;
-  const temps = t0 ? `&t0=${t0}&ms=${(n - de) * 20}&maintenant=${Date.now()}&cle=${encodeURIComponent(`${cap.debutTour}-${de}`)}` : '';
+  const temps = tempsMorceau(cap, de, n);
   e.vifEnCours = fetch(`/api/voix/vif?langue=${langue}${ctx}${temps}`, { method: 'POST', body: wav, headers: { 'Content-Type': 'audio/wav', 'X-Jeton': jeton() } })
     .then(r => (r.ok ? r.json() : null))
     .then((o) => {
@@ -2364,7 +2368,7 @@ async function texteDuTour(conv) {
   const tourFini = capteur.enParole ? null : capteur.dernierTour;
   if (e.partiel) await e.partiel;                                        // le morceau en cours d'abord
   const morceau = tourFini ? capteur.segmentFini(e.coupe, tourFini) : capteur.segment(e.coupe);
-  const queue = morceau ? await transcrireVite(morceau, 'audio/wav', e.confirme) : '';   // la queue n'est souvent que du silence
+  const queue = morceau ? await transcrireVite(morceau, 'audio/wav', e.confirme, tourFini || typeof tempsMorceau !== 'function' ? '' : tempsMorceau(capteur, e.coupe, capteur.fenetres)) : '';   // la queue n'est souvent que du silence
   if (queue === null) return null;
   return (e.confirme + ' ' + morceauNeuf(queue, e.confirme)).trim();
 }
@@ -2540,6 +2544,12 @@ async function basculerConversation() {
       },
       surFin: (wav, infos, extra) => tourDeParole(conv, wav, infos, extra),
       surPiste: (rendue) => journalVoix(rendue ? 'piste_rendue' : 'piste_prise'),     // (2026-10-23) un appel prend le micro
+      // (03/11) les sons du micro, à la seconde (micro ouvert) : graves, médiums, aigus, leur variation, au fil du Mac
+      surSons: (t0, pas, trames) => {
+        if (typeof reglagesCorps === 'undefined' || !reglagesCorps.micro_ouvert) return;
+        fetch('/api/voix/son-flux', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+          body: JSON.stringify({ source: 'micro', t0, pas_ms: pas, trames, maintenant: Date.now() }) }).catch(() => {});
+      },
     });
   } catch (e) {
     if (etat.conversation !== conv) return;

@@ -37,3 +37,60 @@ test('les mots, le son du téléphone et les sensations se rangent au même fil,
   const l = c.fluxLiens(T + 1000, 1500);                               // la sensation et les mots de son instant, liés
   assert.ok(l.includes('secousse') && l.includes('tu sens ça') && l.includes('baby'));
 });
+
+test('(03/11) chaque mot à sa milliseconde : quand l\'oreille donne le temps de chaque mot, il est pris tel quel', () => {
+  const c = monde(), T = 1_800_000_000_000;
+  c.fluxMots('papa', 's1', 'na na hey', T, 3000, [[0.12, 0.40], [0.95, 1.30], [2.481, 2.9]]);
+  assert.deepEqual(c.FLUX.map(x => x.t - T), [120, 950, 2481]);
+});
+
+test('(03/11) ses voix commencent pendant que papa parle : reprises si la phrase finale est la même (ou la suite), sinon refaites', () => {
+  const debut = src.indexOf('function ressemble('), fin = src.indexOf('\n}\n', debut) + 2;
+  const ctx = { String, Set, Math }; vm.createContext(ctx);
+  vm.runInContext(src.slice(debut, fin) + '\nthis.f = ressemble;', ctx);
+  assert.ok(ctx.f('je te chante une chanson mon fils écoute', 'je te chante une chanson mon fils écoute bien ça'));
+  assert.ok(!ctx.f('je te chante une chanson', 'non attends on parle de la bourse maintenant tu vois ce que je veux dire'));
+  assert.ok(!ctx.f('oui', 'oui je veux que tu regardes tout le dossier de la semaine dernière et que tu me dises'));
+});
+
+test('(03/11) les sons, à la seconde : graves, médiums, aigus, leur variation et le rythme, résumés pour son fil', () => {
+  const debut = src.indexOf('function resumeSon('), fin = src.indexOf('\n}\n', debut) + 2;
+  const ctx = { String, Math, Number, Array }; vm.createContext(ctx);
+  vm.runInContext(src.slice(debut, fin) + '\nthis.f = resumeSon;', ctx);
+  const calme = Array.from({ length: 10 }, () => [0.02, 0.01, 0.01, 0.005]);
+  const fort = Array.from({ length: 10 }, (_, i) => [0.3, i % 5 === 0 ? 0.6 : 0.2, 0.15, 0.08]);   // une basse qui frappe 2 fois
+  const r = ctx.f(fort, calme);
+  assert.match(r, /graves/); assert.match(r, /↑/); assert.match(r, /2 coups/);
+  assert.equal(ctx.f(Array.from({ length: 10 }, () => [0.0005, 0, 0, 0]), null), '', 'le silence : rien');
+});
+
+test('(03/11) la grande oreille confirme : ses temps exacts remplacent les mots approchés de l\'oreille vive, sans doublon', () => {
+  const c = monde(), T = 1_800_000_000_000;
+  c.fluxMots('papa', 's1', 'la la la', T, 3000);                       // l'oreille vive : étalés
+  c.fluxMots('papa', 's1', 'la la la', T, 3000, [[0.1, 0.3], [0.7, 0.9], [2.05, 2.3]]);   // la grande oreille : exacts
+  assert.deepEqual(c.FLUX.map(x => x.t - T), [100, 700, 2050]);
+});
+
+test('(03/11) la troisième oreille : le ton de la voix, ses notes et leur longueur tenue, calées à leur instant', () => {
+  const debut = src.indexOf('const NOTES = '), fin = src.indexOf('\n}\n', src.indexOf('function notesVoix(')) + 2;
+  const ctx = { String, Math, Number, Array }; vm.createContext(ctx);
+  vm.runInContext(src.slice(debut, fin) + '\nthis.f = notesVoix;', ctx);
+  const T = 1_800_000_000_000;
+  // [niveau, graves, médiums, aigus, f0, brillance] : un La3 tenu 0,6 s, un silence, puis un Do4 0,3 s
+  const tr = [...Array(6).fill([0.2, 0.1, 0.1, 0.02, 220, 1500]), [0.001, 0, 0, 0, 0, 0], ...Array(3).fill([0.2, 0.1, 0.1, 0.02, 262, 1600])];
+  const n = ctx.f(tr, T, 100);
+  assert.equal(n.length, 2);
+  assert.equal(n[0].note, 'La3'); assert.equal(n[0].t, T); assert.equal(n[0].duree, 600); assert.ok(n[0].tenue);
+  assert.equal(n[1].note, 'Do4'); assert.equal(n[1].t, T + 700); assert.equal(n[1].duree, 300); assert.ok(!n[1].tenue);
+  assert.equal(n[0].registre, 'médium'); assert.equal(ctx.f([[0.2, 0, 0, 0, 0, 0]], T, 100).length, 0, 'sans hauteur : aucune note');
+});
+
+test('(03/11, « un pavé en morceaux de 2 ou 3 phrases, intégrés au fur et à mesure ») un morceau part dès 2 phrases (ou 30 mots)', () => {
+  const debut = src.indexOf('function morceauPret('), fin = src.indexOf('\n}\n', debut) + 2;
+  const ctx = { String }; vm.createContext(ctx);
+  vm.runInContext(src.slice(debut, fin) + '\nthis.f = morceauPret;', ctx);
+  assert.deepEqual(ctx.f('Salut mon fils.'), [null, 'Salut mon fils.'], 'une phrase : il attend la suivante');
+  assert.deepEqual(ctx.f('Salut mon fils. Écoute bien ce son. Et puis'), ['Salut mon fils. Écoute bien ce son.', 'Et puis']);
+  const long = Array(32).fill('la').join(' ');
+  assert.deepEqual(ctx.f(long), [long, ''], 'une phrase sans fin de 30 mots : elle part quand même');
+});

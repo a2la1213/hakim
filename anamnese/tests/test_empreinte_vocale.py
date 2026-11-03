@@ -228,3 +228,33 @@ def test_ses_voix_temporaires_rattachees_a_papa_sauf_la_musique(tmp_path, monkey
     monkeypatch.setattr(E, "embedding", lambda a, *x: vec("chant"))
     texte, _ = E.etiqueter(np.zeros(32000, dtype=np.float32), [{"start": 0, "end": 2, "text": "encore"}], fichier=f, maintenant=1003.0)
     assert texte in ("encore", "[papa] encore"), "sa voix chantée est maintenant la sienne"
+
+
+def test_son_subconscient_reconnait_apprend_et_doute(tmp_path, monkeypatch):
+    """(03/11, Ahmed : « la reconnaissance du premier abord est consciente ; puis le tri et la reconnaissance se font dans le
+    subconscient, qui envoie juste le nom de celui qui parle, ou son doute entre qui et qui ; plus les voix parlent, plus il
+    note que c'est moi ») une voix sûre enrichit seule son empreinte ; deux voix trop proches : « [papa ou Ali ?] »"""
+    rng = np.random.default_rng(3)
+    base_papa, base_ali = rng.normal(0, 1, 256), rng.normal(0, 1, 256)
+    vec = lambda b, bruit=0.0: (lambda x: x / np.linalg.norm(x))(b + bruit * rng.normal(0, 1, 256))
+    f, connues = tmp_path / "empreinte.json", tmp_path / "connues.json"
+    monkeypatch.setattr(E, "CONNUES", connues)
+    monkeypatch.setattr(E, "SALLE", tmp_path / "salle.json")
+    monkeypatch.setattr(E, "embedding", lambda a, *x: vec(base_papa))
+    E.apprendre("x", fichier=f); E.apprendre("x", fichier=f)
+    import json as _j
+    connues.write_text(_j.dumps([{"nom": "Ali", "moyenne": vec(base_ali).round(5).tolist(), "n": 3, "cree": 0}]))
+    E._salle.update(voix=[], ts=0.0, dernier=None)
+    E._appris.clear()
+    # papa, bien reconnu : son empreinte s'enrichit seule (une fois toutes les 2 min au plus)
+    monkeypatch.setattr(E, "embedding", lambda a, *x: vec(base_papa, 0.3))
+    avant = E.etat(f)["echantillons"]
+    E.etiqueter(np.zeros(32000, dtype=np.float32), [{"start": 0, "end": 2, "text": "salut"}], fichier=f, maintenant=1000.0)
+    assert E.etat(f)["echantillons"] == avant + 1 and E.etat(f)["registres"].get("appris seul") == 1
+    E.etiqueter(np.zeros(32000, dtype=np.float32), [{"start": 0, "end": 2, "text": "encore"}], fichier=f, maintenant=1010.0)
+    assert E.etat(f)["echantillons"] == avant + 1, "pas plus d'une fois toutes les 2 min"
+    # une voix entre papa et Ali : le doute, avec les deux noms
+    milieu = vec(base_papa + base_ali)
+    monkeypatch.setattr(E, "embedding", lambda a, *x: milieu)
+    texte, r = E.etiqueter(np.zeros(32000, dtype=np.float32), [{"start": 0, "end": 2, "text": "c'est qui"}], fichier=f, maintenant=1200.0)
+    assert texte == "[papa ou Ali ?] c'est qui" and r["doute"] == ["papa ou Ali ?"]

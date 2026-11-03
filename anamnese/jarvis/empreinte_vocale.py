@@ -260,6 +260,14 @@ def oublier(nom, fichier=None):
 #   personne (à cheval sur deux voix) ne crée pas de voix : il en faut deux de suite.
 MOI = Path.home() / "AIOS" / "jarvis" / "empreinte-moi.json"
 NOM_PAPA = "papa"
+# (03/11, Ahmed : « la reconnaissance du premier abord est consciente ; puis le tri et la reconnaissance se font dans le subconscient,
+# qui envoie juste le nom de celui qui parle, ou son doute entre qui et qui ; plus les voix parlent, plus il note que c'est moi »)
+# - une voix SÛRE (au moins 0,7, et 0,15 au-dessus de toute autre) enrichit seule son empreinte : celle de papa (registre « appris
+#   seul ») ou celle d'une voix nommée ; une fois toutes les 2 min au plus par personne, jamais pendant la musique du téléphone ;
+# - deux personnes connues trop proches (au moins 0,5 chacune, moins de 0,08 d'écart) : « [papa ou Ali ?] ».
+SUR, MARGE_SURE, APPRENDRE_S = 0.7, 0.15, 120
+SEUIL_DOUTE_ENTRE, ECART_DOUTE = 0.5, 0.08
+_appris = {}                                             # qui → la dernière fois que son empreinte s'est enrichie seule
 MOI_MAX, SEUIL_MOI = 40, 0.5
 FENETRE_S, PAS_S = 1.5, 0.75
 
@@ -308,13 +316,23 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
         sa = ahmed(v) if ahmed else -1.0
         proches = [(float(np.dot(v, x["c"])), x) for x in _salle["voix"]]
         s, x = max(proches, key=lambda p: p[0]) if proches else (-1.0, None)
-        sn = max((float(np.dot(v, c)) for _n, c in nommees), default=-1.0)
+        noms = sorted(((float(np.dot(v, c)), n) for n, c in nommees), reverse=True)
+        sn = noms[0][0] if noms else -1.0
         if sm >= SEUIL_MOI and sm > max(sa, s, sn) + 0.05:
             return "moi", None
+        # (03/11) le doute entre deux personnes connues : les deux noms
+        cands = sorted(([(sa, "Ahmed")] if ahmed else []) + noms, reverse=True)
+        if len(cands) >= 2 and cands[0][0] >= SEUIL_AHMED and cands[1][0] >= SEUIL_DOUTE_ENTRE and cands[0][0] - cands[1][0] < ECART_DOUTE:
+            a, b = (NOM_PAPA if n == "Ahmed" else n for _, n in cands[:2])
+            return f"{a} ou {b} ?", None
         if sa >= SEUIL_AHMED:
+            if sa >= SUR and sa - max(s, sn, sm) >= MARGE_SURE:
+                surs["Ahmed"] = v
             return "Ahmed", None
         if nommees and sn >= SEUIL_AHMED:
-            return max(nommees, key=lambda p: float(np.dot(v, p[1])))[0], None          # une voix connue, par son nom
+            if sn >= SUR and sn - max(s, sa, sm) >= MARGE_SURE:
+                surs[noms[0][1]] = v
+            return noms[0][1], None          # une voix connue, par son nom
         if sa >= SEUIL_DOUTE and sa > max(s, sn) + 0.1:
             # (2026-10-20) une phrase d'Ahmed dans un registre inhabituel : plus proche de lui que de toute autre voix
             # entendue — c'est lui, pas une « voix 3 »
@@ -379,6 +397,7 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
         return [(q, " ".join(ws)) for q, ws in sortie]
 
     morceaux, vus, de_moi = [], [], []
+    surs = {}                                             # (03/11) qui → un vecteur sûr de ce morceau, pour l'enrichir seul
     for sg in segments:
         texte = str(sg.get("text") or "").strip()
         if not texte:
@@ -404,8 +423,21 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
         _sauver_salle()
     except OSError:
         pass
+    if not musique:                                       # (03/11) son subconscient enrichit seul les empreintes sûres
+        for qui, v in surs.items():
+            if t - _appris.get(qui, 0) < APPRENDRE_S:
+                continue
+            _appris[qui] = t
+            try:
+                if qui == "Ahmed":
+                    apprendre_vecteur(v, fichier, registre="appris seul")
+                else:
+                    _enrichir_connue(qui, v)
+            except (OSError, ValueError):
+                pass
     autres = [q for q in vus if q != "Ahmed"]
-    resume = {"voix": vus, "plusieurs": len(vus) >= 2, "ahmed": "Ahmed" in vus, "autres": autres, "moi": " ".join(de_moi)}
+    resume = {"voix": vus, "plusieurs": len(vus) >= 2, "ahmed": "Ahmed" in vus, "autres": autres, "moi": " ".join(de_moi),
+              "doute": [q for q in vus if q.endswith(" ?")]}
     if de_moi:
         return " ".join(morceaux), resume
     if not morceaux:
@@ -413,6 +445,20 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
     if moyenne is None and len(vus) < 2:                    # sans empreinte, une seule voix : rien à dire
         return None, None
     return " ".join(morceaux), resume
+
+
+def _enrichir_connue(nom, v, fichier=None):
+    """(03/11) une voix nommée, reconnue sûrement : son empreinte suit doucement (la moyenne de ses 200 dernières fois au plus)."""
+    k = connues(fichier)
+    for x in k:
+        if x["nom"] == nom:
+            n = min(int(x.get("n") or 1), 200)
+            m = (np.array(x["moyenne"]) * n + np.asarray(v)) / (n + 1)
+            x["moyenne"] = (m / (np.linalg.norm(m) or 1.0)).round(5).tolist()
+            x["n"] = int(x.get("n") or 1) + 1
+            _ecrire(fichier or CONNUES, k)
+            return x["n"]
+    return None
 
 
 def rattacher_a_papa(qui="toutes", registre="chant", fichier=None, maintenant=None):
