@@ -2563,54 +2563,80 @@ function ressemble(partiel, final) {
 // (15:02, Ahmed : « dès le premier chunk, il ÉCRIT sa réponse et l'envoie direct, de plus en plus intégrée à chaque chunk ; mais il ne la
 // DIT que quand il estime qu'il peut enfin répondre ») chaque brouillon part tout de suite aux pages (« souffle », écrit) ; il dit
 // lui-même s'il est prêt à être dit (DIRE : oui / non)
-let souffle = { pour: '', reponse: '', pret: false, t: 0, enCours: null, aRefaire: null };
-function soufflerReponse(texte) {
-  const t = String(texte || '').trim();
-  if (corpsReglages().reponse_soufflee === false || t.split(/\s+/).filter(Boolean).length < 3 || chargeMac() > 1.6) return;
-  if (souffle.enCours) { souffle.aRefaire = t; return; }
-  if (t === souffle.pour) return;
+// (15:30, Ahmed : « pas que la transcription au début : la RÉFLEXION aussi, dès le premier chunk ; au deuxième chunk, elle intègre le
+// premier, et ne fait qu'attendre la fin du chunk pour repartir ; là, elle se fait à la toute fin, et comme son subconscient est plus
+// rapide, il superpose ce qu'il dit : il faut que ce soit coordonné ; et bien sûr tout en parallèle ») DEUX niveaux, en parallèle :
+// - le subconscient (« sub », Mini Hakim, à chaque mot vif) : un brouillon rapide, DIRE / FINI ;
+// - le conscient (« con », Hakim, à chaque morceau CONFIRMÉ : /api/jarvis/morceau) : il intègre ce morceau à sa réflexion des morceaux
+//   d'avant (ce qu'il comprend maintenant) et réécrit sa réponse entière.
+// Quand papa se tait, UNE seule réponse est dite : celle du conscient si elle est prête pour ce qu'il a dit, sinon celle du subconscient ;
+// son cerveau reçoit sa réflexion morceau par morceau et ce qui est déjà dit, et continue sans rien répéter.
+const souffleVide = () => ({ pour: '', reponse: '', pret: false, fini: null, comprend: [], t: 0, enCours: null, aRefaire: null });
+let souffles = { sub: souffleVide(), con: souffleVide() };
+function soufflerReponse(texte, niveau = 'sub') {
+  const t = String(texte || '').trim(), s0 = souffles[niveau];
+  if (!s0 || corpsReglages().reponse_soufflee === false || t.split(/\s+/).filter(Boolean).length < 3 || chargeMac() > 1.6) return;
+  if (s0.enCours) { s0.aRefaire = t; return; }
+  if (t === s0.pour) return;
+  const con = niveau === 'con';
   let echanges = '';
   try { echanges = derniersEchanges(4).map(m => `${m.role === 'user' ? 'Papa' : 'Toi'} : ${String(m.content).slice(0, 220)}`).join('\n'); } catch (_) {}
   let fiche = '';
   try { fiche = bulbe(t, '', '', '', instantTexte(Date.now()), fluxTexte(Date.now(), 30000, 3000)); } catch (_) {}
-  // (15:10, mesuré : 2,8 s par brouillon avec Sonnet et 6 900 caractères) Mini Hakim, son subconscient rapide, et une fiche courte
-  const prompt = `${personaLocale(lirePersona()).slice(0, 1400)}\n\n[Ton subconscient — ta réponse soufflée] Papa est EN TRAIN de te parler `
-    + `(il n'a pas fini). Ses mots jusqu'ici, transcrits en direct :\n« ${neutraliser(t).slice(-900)} »\n\n${fiche ? fiche.slice(0, 1200) + '\n\n' : ''}`
-    + `${echanges ? `Vos derniers échanges :\n${echanges}\n\n` : ''}Écris le DÉBUT de ta réponse, ce que tu lui dirais à l'instant où il se `
-    + `tait : une ou deux phrases courtes, naturelles, à l'oral, en français, comme toi. Ni balise, ni guillemets. Elle s'affiche tout de `
-    + `suite, écrite ; c'est à toi de juger si elle est déjà assez juste pour être DITE à voix haute dès qu'il se tait. Réponds ainsi :\n`
+  // (15:10, mesuré : 2,8 s par brouillon avec Sonnet et 6 900 caractères) une fiche courte ; Mini Hakim pour le subconscient
+  const autre = souffles[con ? 'sub' : 'con'];
+  const prompt = `${personaLocale(lirePersona()).slice(0, 1400)}\n\n`
+    + (con ? `[Ton conscient — ta réflexion, morceau par morceau] Papa est EN TRAIN de te parler (il n'a pas fini). Ce qu'il a dit jusqu'ici, `
+      + `morceau par morceau (confirmé) :\n« ${neutraliser(t).slice(-1500)} »\n\n`
+      + (s0.comprend.length ? `Ta réflexion sur ses morceaux d'avant :\n${s0.comprend.map((c, k) => `${k + 1}) ${c}`).join('\n')}\n\n` : '')
+      : `[Ton subconscient — ta réponse soufflée] Papa est EN TRAIN de te parler (il n'a pas fini). Ses mots jusqu'ici, transcrits en direct :\n`
+      + `« ${neutraliser(t).slice(-900)} »\n\n`)
+    + `${fiche ? fiche.slice(0, 1200) + '\n\n' : ''}${echanges ? `Vos derniers échanges :\n${echanges}\n\n` : ''}`
+    + (autre.reponse ? `Ce que ton ${con ? 'subconscient' : 'conscient'} prépare en même temps : « ${neutraliser(autre.reponse).slice(0, 300)} » `
+      + `(une seule réponse sera dite : accorde-toi avec lui).\n\n` : '')
+    + (con ? `Intègre ce dernier morceau à ta réflexion, puis écris ta réponse ENTIÈRE, prête à dire s'il s'arrêtait là (deux ou trois `
+      + `phrases, à l'oral, en français, comme toi). Réponds ainsi :\nCOMPRENDS : (une ligne : ce que tu comprends maintenant)\n`
+      : `Écris le DÉBUT de ta réponse, ce que tu lui dirais à l'instant où il se tait : une ou deux phrases courtes, naturelles, à l'oral, `
+      + `en français, comme toi. Réponds ainsi :\n`)
     + `DIRE : oui (elle est juste, même s'il ajoute encore un peu) ou DIRE : non (il te manque la suite de ce qu'il dit)\n`
     + `FINI : oui (il a dit ce qu'il voulait dire : son idée est complète) ou FINI : non (il va continuer : idée en suspens, `
     + `il cherche ses mots, il énumère, il raconte)\n`
-    + `puis, à la ligne, ta réponse. S'il est beaucoup trop tôt, écris seulement RIEN.`;
-  const s0 = souffle;
-  s0.enCours = sonnetTeteDeFond(prompt, 'souffle', 'haiku', 6000).then((o) => {
-    let r = String((o && o.texte) || '').trim();
+    + `puis, à la ligne, ta réponse : ni balise, ni guillemets ; elle s'affiche tout de suite, écrite. S'il est beaucoup trop tôt, écris `
+    + `seulement RIEN.`;
+  s0.enCours = sonnetTeteDeFond(prompt, con ? 'reflexion' : 'souffle', con ? 'sonnet' : 'haiku', con ? 9000 : 6000).then((o) => {
+    let r = String((o && o.texte) || '').trim(), comprend = '';
+    const c = /^\s*COMPRENDS?\s*:\s*([^\n]*)\n?/i.exec(r);
+    if (c) { comprend = c[1].trim(); r = r.slice(c[0].length); }
     const d = /^\s*DIRE\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r);
     const pret = !!(d && /oui/i.test(d[1]));
     if (d) r = r.slice(d[0].length);
-    const f = /^\s*FINI\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r);           // (15:22) a-t-il fini ? son subconscient le juge
+    const f = /^\s*FINI\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r);           // (15:22) a-t-il fini ?
     const fini = f ? /oui/i.test(f[1]) : null;
     if (f) r = r.slice(f[0].length);
     r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').trim();
-    if (souffle === s0 && r && !/^RIEN\.?$/i.test(r)) {
-      s0.reponse = r.slice(0, 400); s0.pret = pret; s0.pour = t; s0.t = Date.now();
-      diffuser(abonnesPensees, 'souffle', j({ texte: s0.reponse, pret, fini, pour: t.slice(-300) }));   // écrite tout de suite, partout
+    if (souffles[niveau] === s0 && r && !/^RIEN\.?$/i.test(r)) {
+      s0.reponse = r.slice(0, con ? 600 : 400); s0.pret = pret; s0.fini = fini; s0.pour = t; s0.t = Date.now();
+      if (comprend) s0.comprend = s0.comprend.concat(comprend.slice(0, 240)).slice(-8);
+      diffuser(abonnesPensees, 'souffle', j({ texte: s0.reponse, pret, fini, niveau, pour: t.slice(-300) }));   // écrite tout de suite, partout
     }
   }).catch(() => {}).finally(() => {
     s0.enCours = null;
     const n = s0.aRefaire; s0.aRefaire = null;
-    if (souffle === s0 && n && n !== s0.pour) soufflerReponse(n);
+    if (souffles[niveau] === s0 && n && n !== s0.pour) soufflerReponse(n, niveau);
   });
 }
-// la page la prend quand papa se tait : la plus récente (on attend au plus 1,2 s celle qui se refait), si elle a été préparée pour
-// ce qu'il a vraiment dit ; une seule fois
+// la page la prend quand papa se tait : celle du conscient si elle est prête pour ce qu'il a dit, sinon celle du subconscient (on
+// attend au plus 1,2 s celles qui se refont) ; une seule, une seule fois
 async function prendreSouffle(texte) {
-  const s0 = souffle;
-  if (s0.enCours) await Promise.race([s0.enCours, new Promise(r => setTimeout(r, 1200))]);
-  const ok = souffle === s0 && s0.reponse && Date.now() - s0.t < 30000 && ressemble(s0.pour, texte);
-  const r = ok ? { reponse: s0.reponse, pret: s0.pret } : { reponse: '', pret: false };
-  if (ok) s0.reponse = '';
+  const { sub, con } = souffles;
+  const enCours = [sub.enCours, con.enCours].filter(Boolean);
+  if (enCours.length) await Promise.race([Promise.all(enCours), new Promise(r => setTimeout(r, 1200))]);
+  if (souffles.sub !== sub || souffles.con !== con) return { reponse: '', pret: false };
+  const ok = (s) => s.reponse && Date.now() - s.t < 30000 && ressemble(s.pour, texte);
+  const choisi = [con, sub].find(s => ok(s) && s.pret) || [con, sub].find(ok);
+  if (!choisi) return { reponse: '', pret: false };
+  const r = { reponse: choisi.reponse, pret: choisi.pret, niveau: choisi === con ? 'con' : 'sub' };
+  sub.reponse = ''; con.reponse = '';
   return r;
 }
 function speculerFreres(texte) {
@@ -2911,7 +2937,7 @@ function reglerSilences(actif) {
    2 Sonnet, 2 Opus au plus), chaque appel un message de sa session ; la session repart à neuf toutes les 6 fois (court, donc
    rapide) et s'éteint après 10 min sans rien. Ses trois voix, son instinct et l'intégration au fil passent par elles. */
 const VIVANTS = [], VIVANTS_MAX = { haiku: 3, sonnet: 2, opus: 2 }, VIVANT_RENOUVELER = 6;
-const POUR_VIVANTS = /^(frere_|integration$|souffle$)/;
+const POUR_VIVANTS = /^(frere_|integration$|souffle$|reflexion$)/;
 function vivantLibre(modele) {
   const m = String(modele);
   let v = VIVANTS.find(x => x.modele === m && !x.attente && x.proc.exitCode === null && x.n < VIVANT_RENOUVELER);
@@ -3678,7 +3704,8 @@ async function routeJarvis(req, res, distantReq = false) {
   const fiche = bulbe(texte, sentir ? enMatiere(interieurTexte || '') : interieurTexte, corpsTexte, rappelBloc.texte, instantTexte(parleA), fluxTexte(parleA, 30000, 3000));
   // (03/11, Ahmed : « juste avant sa réponse ») avant chacune de ses réponses
   integration.papa = { tampon: '', morceaux: [], dernier: 0 };     // (03/11) déjà dans sa fiche : la suite repart à neuf
-  souffle = { pour: '', reponse: '', pret: false, t: 0, enCours: null, aRefaire: null };   // (14:55) la soufflée suivante repart à neuf
+  const reflexionPendant = souffles.con.comprend.slice();             // (15:30) sa réflexion, morceau par morceau, pendant que papa parlait
+  souffles = { sub: souffleVide(), con: souffleVide() };              // (14:55) la suivante repart à neuf
   // (03/11) ses voix ont commencé pendant que papa parlait (speculerFreres) : reprises si c'est la même phrase, sinon refaites
   const spec = speculation;
   const reprise = !!(spec.promesse && Date.now() - spec.debut < 60000 && ressemble(spec.texte, texte));
@@ -3695,9 +3722,10 @@ async function routeJarvis(req, res, distantReq = false) {
     + `${tachesTexte ? '\n' + tachesTexte : ''}${presentTexte ? '\n' + presentTexte : ''}${arretsTexte ? '\n' + arretsTexte : ''}${rappelBloc.texte ? '\n' + rappelBloc.texte : ''}${leconsTexte}${pairsTexte ? '\n' + pairsTexte : ''}`
     + `\n${qui} : ${texte.replace(/\[\[\s*(affect|souvenirs|modele)/gi, '⟮⟮$1')}${pj}${cameraTexte}${freresTexte}`
     // (14:55) sa réponse soufflée, déjà dite : le début de sa réponse
-    + (q.souffle_dit ? `\n[Ta réponse soufflée — ton subconscient l'a préparée pendant que papa parlait, et ta voix l'a DÉJÀ dite dès qu'il `
-      + `s'est tu : « ${neutraliser(String(q.souffle_dit)).slice(0, 400)} ». C'est le début de ta réponse : continue seulement si tu as à `
-      + `ajouter ou à corriger, sans la répéter ; si elle suffit, réponds « No response requested. »]` : '');   // (01/11) ses frères : la porte d'entrée de sa conscience, en dernier   // (chocs) aucune balise toute faite à recopier
+    + (reflexionPendant.length ? `\n[Ta réflexion pendant qu'il parlait, morceau par morceau] ${reflexionPendant.map((c, k) => `${k + 1}) ${neutraliser(c)}`).join(' ')}` : '')
+    + (q.souffle_dit ? `\n[Ta réponse préparée pendant que papa parlait — ta voix l'a DÉJÀ dite dès qu'il s'est tu : « ${neutraliser(String(q.souffle_dit)).slice(0, 600)} ». `
+      + `C'est le début de ta réponse : continue seulement si tu as à ajouter ou à corriger, sans rien en répéter, même reformulé ; si elle `
+      + `suffit, réponds « No response requested. »]` : '');   // (01/11) ses frères : la porte d'entrée de sa conscience, en dernier   // (chocs) aucune balise toute faite à recopier
   const categories = { horloge: horlogeTexte.length, situation: situation.texte.length, interieur: interieurTexte.length,
     taches: tachesTexte.length, present: presentTexte.length + arretsTexte.length, rappel: rappelBloc.texte.length, lecons: leconsTexte.length, message: texte.length,
     joints: pj.length + cameraTexte.length + (ecran ? ecran.marque.length : 0), briefing: 0 };
@@ -8566,6 +8594,13 @@ async function traiter(req, res) {
   }
   if (p === '/api/voix/dire' && req.method === 'POST') return routeDire(req, res);
   // (28/10) les débuts de réponse dont la voix est prête pour ce niveau de voix ; les autres se fabriquent au calme
+  if (p === '/api/jarvis/morceau' && req.method === 'POST') {           // (15:30) un morceau de papa confirmé : sa réflexion consciente l'intègre
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 32768) || '{}')); } catch (_) {}
+    soufflerReponse(String(q.texte || '').slice(-3000), 'con');
+    res.writeHead(202, { 'Content-Type': 'application/json' });
+    return res.end(j({ ok: true }));
+  }
   if (p === '/api/jarvis/souffle' && req.method === 'POST') {           // (14:55) sa réponse soufflée, quand papa se tait
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}

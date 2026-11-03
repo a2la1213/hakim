@@ -2678,6 +2678,10 @@ function surPauseConversation(conv, fenetre) {
     e.confirme = (e.confirme + ' ' + morceauNeuf(texte, e.confirme)).trim();   // une invention de Whisper : écartée seule
     e.coupe = fenetre;
     e.vif = ''; if (typeof ligneEnDirectMontrer === 'function') ligneEnDirectMontrer(conv); else if (typeof sousTitre === 'function') sousTitre(e.confirme);   // (03/11) le morceau confirmé remplace ses mots vifs
+    // (15:30, Ahmed : « la réflexion aussi dès le premier chunk, et au deuxième elle intègre le premier ») chaque morceau confirmé part à
+    // sa réflexion consciente, tout de suite, en parallèle
+    if (e.confirme && typeof jeton === 'function') fetch('/api/jarvis/morceau', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ texte: e.confirme.slice(-3000) }) }).catch(() => {});
     entendreEnCours(conv);                                               // (30/10) son oreille, si papa l'a ouverte
     // (20:38, Ahmed : « arrête », « tais-toi », « coupe-toi » doivent le couper tout de suite) : quand il garde la parole,
     // ces mots entendus pendant qu'il parle l'arrêtent aussitôt, comme le bouton Stop (sa suite est abandonnée)
@@ -2743,13 +2747,14 @@ function vifConversation(conv) {
 function surSouffle(o) {
   if (!etat.conversation || !o || !o.texte) return;
   const texte = String(o.texte).slice(0, 400);
-  etat.dernierSouffle = { texte, pret: !!o.pret, fini: o.fini === true ? true : o.fini === false ? false : null, pour: String(o.pour || ''), t: Date.now() };
+  const con = o.niveau === 'con';
+  etat.dernierSouffle = { texte, pret: !!o.pret, fini: o.fini === true ? true : o.fini === false ? false : null, pour: String(o.pour || ''), t: Date.now(), niveau: con ? 'con' : 'sub' };
   if (o.pret) preparerVoixSouffle(texte);                             // (15:10) sa voix fabriquée d'avance : dite sans attendre
   etat.aCote = (etat.aCote || []).filter(x => x.cle !== 'souffle');
   etat.aCote.push({ ts: Date.now(), cle: 'souffle', html: `<div class="m j brouillon" style="opacity:.75;font-style:italic">`
-    + `<span class="quand">${o.pret ? '🗣️ prête à dire' : '✍️ il écrit encore'}</span><div>${esc(texte)}</div></div>` });
+    + `<span class="quand">${con ? '💭 il réfléchit' : '✍️ son subconscient'} · ${o.pret ? '🗣️ prête à dire' : 'il attend la suite'}</span><div>${esc(texte)}</div></div>` });
   rendre();
-  envoyerParoles('hakim', `${o.pret ? '🗣️' : '✍️'} ${texte}`);
+  envoyerParoles('hakim', `${con ? '💭' : o.pret ? '🗣️' : '✍️'} ${texte}`);
 }
 // (15:10, mesuré : la voix met ~2,6 s avant son premier son) le brouillon prêt à dire : sa voix fabriquée pendant que papa parle
 // encore (la synthèse est libre à ce moment-là) ; le suivant remplace le précédent
