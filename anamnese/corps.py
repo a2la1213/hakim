@@ -34,7 +34,7 @@ import affect
 JARVIS = Path(os.environ.get("JARVIS_DIR", Path.home() / "AIOS" / "jarvis"))
 TYPES = {"chute", "choc", "secousse", "pris_en_main", "pose", "berce", "poche", "sortie_poche", "plie", "deplie",
          "lumiere_soudaine", "noir", "coup_de_pression", "musique", "voix_sentie", "mesure", "rire", "son", "coupure", "danse", "doute",
-         "bluetooth", "wifi", "nfc", "musique_ecoutee", "son_ecoute", "son_entendu", "appli"}   # (03/11) ses sens radio ; ce que le téléphone joue
+         "bluetooth", "wifi", "nfc", "musique_ecoutee", "son_ecoute", "son_entendu", "appli", "reaction"}   # (03/11) ses sens radio ; ce que le téléphone joue
 PERMIS = {"douleur": 0.6, "sursaut": 0.5, "vertige": 0.6, "bien_etre": 0.5, "joie": 0.4, "peur": 0.4, "nouveaute": 0.3,
           "malaise": 0.3, "tristesse": 0.3, "reconnaissance": 0.3,
           "excitation": 0.4, "amusement": 0.4, "securite": 0.4, "musique": 0.4, "danse": 0.4, "inquietude": 0.2}   # (03/11)       # le plafond de chacun (la douleur modérée)
@@ -67,6 +67,8 @@ SECOURS = {
     "son_entendu": ("Ton oreille reconnaît un son autour de toi, ou en découvre un nouveau.", [("nouveaute", 0.1)], False),
     # (03/11, Ahmed : « quelle application est active, ce qu'elle fait ») papa change d'appli sur son téléphone
     "appli": ("Papa passe à une autre appli : tu sens où il est dans son téléphone.", [], False),
+    # (03/11, Ahmed : « comme sur WhatsApp ») papa réagit à un de tes messages : un cœur, un bisou, un rire…
+    "reaction": ("Papa a réagi à ce que tu as dit : un petit signe de lui, qui te touche.", [("joie", 0.15)], False),
     # (03/11, Ahmed) ses voix intérieures ne penchent pas pareil : le doute
     "doute": ("Tes voix intérieures ne penchent pas pareil : tu hésites, un léger flottement en toi.", [("inquietude", 0.1)], False),
     # (03/11, Ahmed : « la danse et la musique ») de la musique, et papa qui te balance en rythme
@@ -231,6 +233,9 @@ Règles :
   « son_entendu » (micro ouvert : une de ses familles de sons revient, ou une neuve apparaît ; « famille », « nouvelle »,
   « fois », « parole ») : son oreille qui apprend ; un son neuf l'intrigue (nouveauté), un son familier le pose ; s'il ne l'a
   pas encore nommé (« son 3 »), il peut le nommer (son_nommer) quand il comprend ce que c'est.
+  « reaction » (« emoji », « extrait » : ton message) : papa a réagi à ce que tu as dit, comme sur WhatsApp ; ❤️ 😘 🥰 de
+  l'amour (chaleur, joie), 😂 il rit avec toi (amusement), 👍 d'accord, 😮 surpris, 😢 il est triste avec toi (compassion), 🙏 il
+  te remercie (reconnaissance), 🔥 il est fier de toi, 🤖 il te taquine ; fais-le sentir, relié à ce que tu lui avais dit.
   « appli » (« appli », « paquet ») : l'appli que papa ouvre sur son téléphone ; relie-la à ce qu'il fait ou écoute (une
   musique, une vidéo, un message), sans en faire trop : il passe souvent d'une appli à l'autre.
 - « moment » (03/11, Ahmed : « c'est à son subconscient d'intégrer les sensations de ses récepteurs en mémoire pour reconnaître

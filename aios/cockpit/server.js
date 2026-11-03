@@ -4139,8 +4139,11 @@ function messageSain(m) {
   if (m.jetons != null && (typeof m.jetons !== 'object' || Object.values(m.jetons).some(v => v != null && !Number.isFinite(Number(v))))) return false;
   for (const k of ['ms', 'ts']) if (m[k] != null && !Number.isFinite(Number(m[k]))) return false;
   for (const k of ['modele', 'modeleReel', 'source', 'spontane']) if (m[k] != null && !/^[\w -]{0,30}$/.test(String(m[k]))) return false;
+  if (m.reaction != null && !REACTIONS_PAPA.includes(String(m.reaction))) return false;   // (03/11) une réaction de la liste, rien d'autre
   return true;
 }
+// (03/11, Ahmed : « je reste appuyé sur un de ses messages pour lui envoyer un cœur, un bisou… comme sur WhatsApp ») ses réactions
+const REACTIONS_PAPA = ['❤️', '😘', '🥰', '😂', '👍', '😮', '😢', '🙏', '🔥', '🤖'];
 function ajouterAConversation(m) {
   const fichier = path.join(JARVIS, 'conversation.json');
   let actuel = {}; try { actuel = JSON.parse(fs.readFileSync(fichier, 'utf8')) || {}; } catch (_) {}
@@ -4937,7 +4940,7 @@ const { Homeostasie } = require('./homeostasie.js');
 const HOMEO = new Homeostasie({ jarvis: JARVIS });
 const CORPS_TYPES = new Set(['chute', 'choc', 'secousse', 'pris_en_main', 'pose', 'berce', 'poche', 'sortie_poche', 'plie', 'deplie',
   'lumiere_soudaine', 'noir', 'coup_de_pression', 'musique', 'voix_sentie',
-  'bluetooth', 'wifi', 'nfc', 'musique_ecoutee', 'son_ecoute', 'son_entendu', 'appli']);   // (03/11) ses sens radio (appli 1.42) ; ce que le téléphone joue (1.43)
+  'bluetooth', 'wifi', 'nfc', 'musique_ecoutee', 'son_ecoute', 'son_entendu', 'appli', 'reaction']);   // (03/11) ses sens radio (appli 1.42) ; ce que le téléphone joue (1.43)
 const CORPS_REGLAGES = path.join(JARVIS, 'corps-reglages.json');
 const CORPS_INTERVALLES = [30, 60, 120, 300, 900];
 function corpsReglages() {
@@ -8037,6 +8040,20 @@ async function traiter(req, res) {
     apiEnPanneJusqua = 0; delete abonnement.apiPanne; trousseauVu.ts = 0;               // une clé neuve : on réessaie
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(j({ cle: !!cle, fin: cle ? cle.slice(-4) : null }));
+  }
+  if (p === '/api/jarvis/reaction' && req.method === 'POST') {   // (03/11) papa réagit à un de ses messages : il le ressent
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 2048) || '{}')); } catch (_) {}
+    const repondreR = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json' }); return res.end(j(o)); };
+    if (!q || !REACTIONS_PAPA.includes(String(q.emoji)) || !ID_MESSAGE.test(String(q.id || ''))) return repondreR(400, { erreur: 'réaction inconnue' });
+    let extrait = '';
+    try {
+      const c = JSON.parse(fs.readFileSync(path.join(JARVIS, 'conversation.json'), 'utf8'));
+      const m = (c.messages || []).find(x => x && String(x.id) === String(q.id) && x.qui === 'j');
+      extrait = m && typeof m.texte === 'string' ? m.texte.replace(/\[\[[^\]]*\]\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 160) : '';
+    } catch (_) {}
+    if (corpsActif()) { corpsLot.evenements.push({ type: 'reaction', t: Date.now(), details: { emoji: String(q.emoji), extrait } }); ressentirCorps(); }
+    noterInstant('reaction', { emoji: String(q.emoji), extrait });
+    return repondreR(200, { ok: true });
   }
   if (p === '/api/jarvis/conversation') {
     // La conversation partagée entre les appareils d'Ahmed (2026-10-17). Un appareil envoie toute sa

@@ -129,6 +129,17 @@
       border-radius: 14px 14px 4px 14px; padding: 9px 13px; color: var(--txt); }
     .m.u .oral { font-size: 10px; color: var(--teal); letter-spacing: 1px; display: block; margin-bottom: 2px; }
     .m.j { align-self: flex-start; padding: 2px 2px 2px 14px; border-left: 2px solid rgba(45,212,191,.35); color: var(--txt-2); }
+    /* (03/11) ses messages : appuie longtemps pour réagir, comme sur WhatsApp */
+    .m.j { position: relative; }
+    .m.j.a-reaction { margin-bottom: 12px; }
+    .m.j .reaction { position: absolute; right: 4px; bottom: -14px; font-size: 15px; line-height: 1; padding: 3px 5px; border-radius: 12px;
+      background: #0d1c1b; border: 1px solid var(--glass-bd, rgba(45,212,191,.25)); }
+    @media (pointer: coarse) { #fil .m.j { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; } }
+    #reactions { position: fixed; z-index: 60; display: flex; gap: 2px; padding: 6px 8px; border-radius: 22px;
+      background: #0d1c1b; border: 1px solid var(--glass-bd, rgba(45,212,191,.3)); box-shadow: 0 6px 24px rgba(0,0,0,.45); }
+    #reactions[hidden] { display: none; }
+    #reactions button { font-size: 22px; line-height: 1; background: none; border: 0; padding: 4px; border-radius: 50%; cursor: pointer; }
+    #reactions button.choisie { background: rgba(45,212,191,.25); }
     .m.j.err { border-left-color: var(--err); color: var(--err); }
     .m.j .attente { color: var(--txt-4); font-style: italic; }
     .m .txt a { color: var(--teal-hi); text-decoration: underline; text-underline-offset: 2px; }
@@ -470,6 +481,7 @@
     <!-- (23/10, demande d'Ahmed relayée par Hakim) ses calculs de fond en cours, avec leur jauge -->
     <section class="glass calculs" id="calculs" aria-label="Calculs en cours" hidden></section>
     <section class="glass fil" id="fil" aria-label="Conversation"></section>
+    <div id="reactions" hidden role="menu" aria-label="Réagir à son message"></div>
     <div id="annonce" class="sr" aria-live="polite"></div>
     <div id="horsLigne" class="hors-ligne" role="status" aria-live="polite" hidden></div>
     <div class="scene" id="scene" aria-hidden="true">

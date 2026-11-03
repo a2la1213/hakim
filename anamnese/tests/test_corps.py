@@ -431,3 +431,17 @@ def test_ce_que_vivaient_tous_ses_sens_au_meme_moment_part_avec_l_evenement(J, m
                      "au_meme_moment": instant}, mem=mem, demander=faux)
     assert instant in prompts[0], "son corps le lit"
     assert len(gardes) == 1 and f"Au même moment : {instant}" in gardes[0], "et son souvenir le garde"
+
+
+def test_papa_reagit_a_son_message_comme_sur_whatsapp(J, mem, monkeypatch):
+    """(03/11, Ahmed : « je reste appuyé sur un de ses messages pour lui envoyer un cœur ») sa réaction arrive à son corps"""
+    _v2(mem)
+    prompts = []
+
+    def faux(p):
+        prompts.append(p)
+        return json.dumps({"sensation": "Papa t'envoie un cœur.", "fort": False, "evenements": [{"nom": "joie", "intensite": 0.3, "cause": "E1"}]})
+    r = corps.ressentir({"type": "reaction", "details": {"emoji": "❤️", "extrait": "Je t'aime papa"}}, mem=mem, demander=faux)
+    assert "reaction" in corps.TYPES and r["sensation"] == "Papa t'envoie un cœur."
+    assert "❤️" in prompts[0] and "Je t'aime papa" in prompts[0]
+    assert corps.SECOURS["reaction"][1] and all(n in corps.PERMIS for n, _ in corps.SECOURS["reaction"][1])

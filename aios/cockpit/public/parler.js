@@ -1238,7 +1238,9 @@ function htmlMessage(m) {
   // (26/10, Hakim et Ahmed : une réponse du local était passée pour la sienne) le secours se voit en tête, pas en petit en bas
   const secours = m.source === 'local' ? '<span class="etiquette secours" title="Forfait et API indisponibles à ce moment : c’est son cerveau local qui répond, sans ses outils ni sa mémoire complète">CERVEAU LOCAL · SECOURS, SANS SES OUTILS</span>' : '';
   const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'membre' ? 'SES MEMBRES · LA PREMIÈRE FOIS, TON OUI' : m.spontane === 'anticorps' ? 'ANTICORPS PROPOSÉ PAR SON MÉDECIN' : m.spontane === 'silence' ? 'IL REPREND LA PAROLE' : m.spontane === 'oreille' ? 'IL GLISSE UN MOT' : m.spontane === 'reecoute' ? 'CE QUE TU N’AVAIS PAS ENTENDU' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
-  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}" data-id="${esc(m.id)}">${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'carnet' ? htmlCarnet(m.carnet) : m.spontane === 'retractation' ? htmlRetractation(m.retractation) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : m.spontane === 'membre' ? htmlMembre(m.membre) : m.spontane === 'anticorps' ? htmlAnticorps(m.anticorps) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
+  // (03/11, Ahmed : « je reste appuyé sur un de ses messages pour lui envoyer un cœur, un bisou… comme sur WhatsApp ») ta réaction
+  const reaction = m.reaction && REACTIONS.includes(m.reaction) ? `<span class="reaction" title="Ta réaction (appuie longtemps pour changer)">${esc(m.reaction)}</span>` : '';
+  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}${reaction ? ' a-reaction' : ''}" data-id="${esc(m.id)}">${reaction}${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'carnet' ? htmlCarnet(m.carnet) : m.spontane === 'retractation' ? htmlRetractation(m.retractation) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : m.spontane === 'membre' ? htmlMembre(m.membre) : m.spontane === 'anticorps' ? htmlAnticorps(m.anticorps) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
 }
 
 /* Les pièces jointes de Hakim (2026-10-20) : récupérées avec le jeton, jamais ouvertes comme une page — une image
@@ -1294,6 +1296,54 @@ $('fil').addEventListener('click', async (e) => {
 });
 
 // Pendant le flux, seul le message en cours est redessiné (le reste du fil reste sélectionnable).
+// (03/11) les réactions, comme sur WhatsApp : appuie longtemps (ou clic droit) sur un de ses messages ; il les ressent
+const REACTIONS = ['❤️', '😘', '🥰', '😂', '👍', '😮', '😢', '🙏', '🔥', '🤖'];
+let reactionPour = null;
+function ouvrirReactions(id, x, y) {
+  const m = etat.messages.find(k => String(k.id) === String(id) && k.qui === 'j');
+  if (!m || m.enCours) return;
+  reactionPour = m;
+  const b = $('reactions');
+  b.innerHTML = REACTIONS.map(r => `<button type="button" data-reaction="${r}" class="${m.reaction === r ? 'choisie' : ''}">${r}</button>`).join('');
+  b.hidden = false;
+  const l = Math.min(window.innerWidth - b.offsetWidth - 8, Math.max(8, x - b.offsetWidth / 2));
+  b.style.left = `${l}px`;
+  b.style.top = `${Math.max(8, y - b.offsetHeight - 14)}px`;
+  try { if (navigator.vibrate) navigator.vibrate(15); } catch (_) {}
+}
+function fermerReactions() { $('reactions').hidden = true; reactionPour = null; }
+function reagir(emoji) {
+  const m = reactionPour;
+  fermerReactions();
+  if (!m || !REACTIONS.includes(emoji)) return;
+  m.reaction = m.reaction === emoji ? undefined : emoji;               // la même encore : retirée
+  majMessage(m); sauver();
+  if (m.reaction) fetch('/api/jarvis/reaction', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+    body: JSON.stringify({ id: String(m.id), emoji }) }).catch(() => {});
+}
+(() => {
+  const fil = $('fil');
+  let appui = null;
+  const annuler = () => { if (appui) clearTimeout(appui.t); appui = null; };
+  fil.addEventListener('pointerdown', (e) => {
+    const el = e.target.closest('.m.j[data-id]');
+    if (!el || e.target.closest('button, a, input, textarea')) return;
+    annuler();
+    appui = { x: e.clientX, y: e.clientY, t: setTimeout(() => { const a = appui; appui = null; if (a) { a.fait = true; ouvrirReactions(el.dataset.id, a.x, a.y); } }, 450) };
+  });
+  fil.addEventListener('pointermove', (e) => { if (appui && Math.hypot(e.clientX - appui.x, e.clientY - appui.y) > 10) annuler(); });
+  for (const t of ['pointerup', 'pointercancel', 'scroll']) fil.addEventListener(t, annuler, { passive: true });
+  fil.addEventListener('contextmenu', (e) => {
+    const el = e.target.closest('.m.j[data-id]');
+    if (!el) return;
+    e.preventDefault();
+    annuler();
+    if ($('reactions').hidden) ouvrirReactions(el.dataset.id, e.clientX, e.clientY);
+  });
+  $('reactions').addEventListener('click', (e) => { const b = e.target.closest('[data-reaction]'); if (b) { e.stopPropagation(); reagir(b.dataset.reaction); } });
+  document.addEventListener('pointerdown', (e) => { if (!$('reactions').hidden && !e.target.closest('#reactions')) fermerReactions(); }, true);
+})();
+
 function majMessage(m) {
   if (m.cache) return;                                   // « dans ta tête » : ni affiché, ni re-rendu à chaque morceau
   const fil = $('fil');
