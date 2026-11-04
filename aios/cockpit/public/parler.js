@@ -2823,7 +2823,7 @@ function surSouffle(o) {
   // dire s'écrit au MÊME instant que sa voix la dit, dès que sa voix est faite et que ton tour est fini (jamais pendant ton tour :
   // relecture du 16/10, son écho transcrit) ; celle qui attend la suite s'écrit seule, comme ce qu'il pense sans le dire
   etat.pensee = s;
-  preparerVoixSouffle(texte, niveau, () => direPenseeSiPossible());
+  if (s.pret) preparerVoixSouffle(texte, niveau, () => direPenseeSiPossible());   // (17:10, audit) seulement celle qu'il dira
   if (!s.pret) {
     if (!enTelepathie()) { montrerPensee('🧠 il pense · pas encore à dire', texte); envoyerParoles('hakim', `🧠 ${texte}`); }
     return;

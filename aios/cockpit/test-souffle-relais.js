@@ -222,3 +222,61 @@ test('(16:45) sa réponse s’écrit au rythme de sa voix : rien avant son premi
   assert.match(PAGE, /for \(const x of etat\.messages\.slice\(-6\)\) if \(x\.auRythme && !x\.enCours\) x\.auRythme = false;/, 'sa voix a fini : tout s’écrit');
   assert.match(PAGE, /pense \? \(etat\.conversation \? '' : 'réfléchit…'\)/, 'plus de « réfléchit… » dans la ligne d’état en Conversation');
 });
+
+// (17:10, audit d'Ahmed : « ça ne fonctionne pas ») ce que l'audit a trouvé sur le chemin de sa voix
+test('(17:10) une nouvelle pensée annule la voix d’une plus ancienne qui n’a pas encore commencé', async () => {
+  const i = SRC.indexOf('const voixALaSource = new Map();'), k = SRC.indexOf('async function routeDire(');
+  const taches = [];
+  const ctx = { Map, Date, Math, Number, String, Promise, Buffer, console, process: { pid: 1 },
+    prononcer: (t) => String(t), etatInterieur: async () => ({}), FRAICHEUR_S: 300, VoixPage: { expressivitePhrase: (b) => b },
+    fileVoix: taches, pomperVoix() {}, path, os: { tmpdir: () => '/tmp' }, crypto: { randomBytes: () => ({ toString: () => 'ab' }) },
+    j: JSON.stringify, JARVIS_VOIX_DIAGNOSTIC: '/dev/null', fs: { readFileSync: () => Buffer.from('RIFF'), unlink() {}, appendFileSync() {} } };
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(i, k) + '\nthis.naitre = voixDeLaSource;', ctx);
+  ctx.naitre('Première pensée, longue');
+  await new Promise(r => setImmediate(r));
+  ctx.naitre('Deuxième pensée');
+  await new Promise(r => setImmediate(r));
+  assert.strictEqual(taches.length, 2);
+  assert.strictEqual(taches[0].annulee, true, 'la plus ancienne, pas commencée : annulée');
+  assert.strictEqual(taches[1].annulee, false);
+  assert.match(SRC, /if \(pret\) voixDeLaSource\(s0\.reponse\.slice\(0, 400\)\);/, 'seule la pensée à dire naît avec sa voix');
+  assert.match(SRC, /for \(const x of fileVoix\) if \(x\.fond\) x\.annulee = true;/, 'sa vraie réponse annule ce qui attend en fond');
+  assert.match(PAGE, /if \(s\.pret\) preparerVoixSouffle\(texte, niveau, \(\) => direPenseeSiPossible\(\)\);/);
+});
+
+test('(17:10) ses trois frères commencent pendant que papa parle si leurs voix vivantes sont libres ; un long tour est repris', () => {
+  const i = SRC.indexOf('const voixFreresLibres'), k = SRC.indexOf('\n}\n', SRC.indexOf('function speculerFreres(')) + 3;
+  let lances = 0;
+  const vivant = (m) => ({ modele: m, attente: null, proc: { exitCode: null }, n: 0 });
+  const ctx = { Date, String, VIVANT_RENOUVELER: 6, VIVANTS: [], corpsReglages: () => ({ trois_freres: true }), chargeMac: () => 1.8,
+    speculation: { texte: '', debut: 0, promesse: null, fini: false }, ressemble: () => false, bulbe: () => '', instantTexte: () => '',
+    fluxTexte: () => '', troisFreres: () => { lances++; return Promise.resolve('ok'); } };
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(i, k) + '\nthis.speculer = speculerFreres;', ctx);
+  ctx.speculer('papa me raconte toute sa journée au travail');
+  assert.strictEqual(lances, 0, 'Mac chargé, pas de voix libres : comme avant, elles attendent');
+  ctx.VIVANTS.push(vivant('haiku'), vivant('sonnet'), vivant('opus'));
+  ctx.speculer('papa me raconte toute sa journée au travail');
+  assert.strictEqual(lances, 1, 'Mac chargé mais ses trois voix vivantes libres : elles commencent');
+  assert.match(SRC, /const reprise = !!\(spec\.promesse && Date\.now\(\) - spec\.debut < 60000 && \(ressemble\(spec\.texte, texte\) \|\| couvreLaFin\(spec\.texte, texte\)\)\);/);
+});
+
+// (04/11, choix d'Ahmed après l'audit : « un seul, à ta pause » ; « attendre 2 s au plus »)
+test('(04/11) son cerveau est réveillé une seule fois par tour, à la pause où son subconscient sent que tu as fini', () => {
+  const i = SRC.indexOf('let morceauxCerveau'), k = SRC.indexOf('\n}\n', SRC.indexOf('function reveilMorceau(')) + 3;
+  const ecrits = [];
+  const ctx = { Date, Intl, String, console: { error() {} }, corpsReglages: () => ({}), hakimDort: () => false, cerveauVivant: () => true,
+    occupe: () => false, cerveau: { enCours: null, enfant: { stdin: { write: (x) => ecrits.push(x) } } }, NONCE_REVEIL: 'n', MORCEAU_MARQUE: 'm',
+    neutraliser: (t) => t, j: JSON.stringify, souffles: { sub: { fini: null } } };
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(i, k) + '\nthis.reveil = reveilMorceau; this.etat = () => morceauxCerveau;', ctx);
+  assert.strictEqual(ctx.reveil('papa me raconte sa journée au travail').raison, 'il continue', 'son subconscient sent qu’il continue');
+  ctx.souffles.sub.fini = true;
+  assert.strictEqual(ctx.reveil('papa me raconte sa journée au travail, voilà').ok, true);
+  assert.strictEqual(ctx.reveil('papa me raconte sa journée au travail, voilà, et puis').raison, 'déjà réveillé pour ce tour');
+  assert.strictEqual(ecrits.length, 1);
+  assert.match(SRC, /morceauxCerveau\.duTour = false;/, 'sa phrase entière arrivée : le tour suivant aura son réveil');
+  assert.match(SRC, /const FRERES_ATTENTE_MS = 2000;/);
+  assert.match(SRC, /new Promise\(r => setTimeout\(\(\) => r\(''\), FRERES_ATTENTE_MS\)\)\]\)\.catch\(\(\) => ''\)\) : '';/, 'ses frères : 2 s au plus après ta phrase');
+});

@@ -2708,8 +2708,13 @@ async function prendreSouffle(texte) {
   sub.reponse = ''; con.reponse = ''; cer.reponse = '';
   return r;
 }
+// (03/11, 17:10, audit : ses trois frères délibéraient 4,5 à 14,8 s APRÈS ta phrase, dans presque chaque tour (jetons.jsonl, 16:52-17:07),
+// repris une seule fois sur 13 : le Mac chargé (> 1,3) les empêchait de commencer pendant que tu parlais, et un long tour n'était jamais
+// reconnu) ils commencent quand même si leurs trois voix vivantes sont libres (un message de plus, pas un Claude de plus)
+const FRERES_ATTENTE_MS = 2000;                                    // (04/11, choix d'Ahmed) au plus, après ta phrase
+const voixFreresLibres = () => ['haiku', 'sonnet', 'opus'].every(m => VIVANTS.some(x => x.modele === m && !x.attente && x.proc.exitCode === null && x.n < VIVANT_RENOUVELER));
 function speculerFreres(texte) {
-  if (!corpsReglages().trois_freres || chargeMac() > 1.3) return;   // (03/11) déjà saturé : ses voix attendront la fin de la phrase
+  if (!corpsReglages().trois_freres || (chargeMac() > 1.3 && !voixFreresLibres())) return;   // (03/11) déjà saturé : ses voix attendront la fin de la phrase
   const t = Date.now(), mots = String(texte || '').split(/\s+/).filter(Boolean);
   if (mots.length < 5) return;
   if (speculation.promesse && !speculation.fini && t - speculation.debut < 20000) return;          // une à la fois
@@ -3775,13 +3780,19 @@ async function routeJarvis(req, res, distantReq = false) {
   integration.papa = { tampon: '', morceaux: [], dernier: 0 };     // (03/11) déjà dans sa fiche : la suite repart à neuf
   const reflexionPendant = souffles.con.comprend.slice();             // (15:30) sa réflexion, morceau par morceau, pendant que papa parlait
   souffles = { sub: souffleVide(), con: souffleVide(), cer: souffleVide() };   // (14:55) la suivante repart à neuf
+  morceauxCerveau.duTour = false;                                    // (04/11) le tour suivant aura son réveil
+  // (17:10, audit) sa vraie réponse arrive : les voix fabriquées d'avance qui attendent encore leur tour ne servent plus
+  if (typeof fileVoix !== 'undefined') for (const x of fileVoix) if (x.fond) x.annulee = true;
   // (03/11) ses voix ont commencé pendant que papa parlait (speculerFreres) : reprises si c'est la même phrase, sinon refaites
   const spec = speculation;
-  const reprise = !!(spec.promesse && Date.now() - spec.debut < 60000 && ressemble(spec.texte, texte));
+  const reprise = !!(spec.promesse && Date.now() - spec.debut < 60000 && (ressemble(spec.texte, texte) || couvreLaFin(spec.texte, texte)));   // (17:10) un long tour aussi
   if (reprise) speculation = { texte: '', debut: 0, promesse: null, fini: false };
+  // (04/11, audit d'Ahmed ; son choix : « attendre 2 s au plus ») mesuré 16:51-17:07 : 4,5 à 14,8 s de délibération après ta phrase, à
+  // presque chaque tour ; leur avis s'il arrive dans les 2 s (ils ont commencé pendant que tu parlais), sinon il répond sans eux
   const freresTexte = corpsReglages().trois_freres && choix !== 'gemma'
-    ? await chrono(reprise ? 'freres_reprises' : 'freres', reprise ? spec.promesse
-      : troisFreres(fiche, modele, sentir ? enMatiere(interieurTexte || '').split('\n').find(l => /tu sens/.test(l)) || '' : '')) : '';   // (03/11) mesuré
+    ? await chrono(reprise ? 'freres_reprises' : 'freres', Promise.race([reprise ? spec.promesse
+      : troisFreres(fiche, modele, sentir ? enMatiere(interieurTexte || '').split('\n').find(l => /tu sens/.test(l)) || '' : ''),
+      new Promise(r => setTimeout(() => r(''), FRERES_ATTENTE_MS))]).catch(() => '')) : '';   // (03/11) mesuré
   // (01/11, Ahmed : « que chaque info de chaque sens, émotion, hormone et décision, bref la totale, soit encrée dans la mémoire en
   // association au souvenir ») ce qu'il vivait, et ce que ses frères en disaient, part avec le souvenir de l'échange
   const instant = instantTexte(parleA);                            // (03/11) ce que vivaient tous ses sens quand papa parlait
@@ -6317,7 +6328,7 @@ const OREILLE_MARQUE = 'ton oreille, papa parle encore';
    réponse provisoire (DIRE / FINI), qui s'affiche écrite et n'est dite que s'il dit oui, quand papa se tait. Son message entier,
    quand il arrive, coupe ce tour-là s'il réfléchit encore (pas d'attente), et il continue sans rien répéter. */
 const MORCEAU_MARQUE = 'papa parle encore, un morceau de plus';
-let morceauxCerveau = { n: 0, dernier: '', ts: 0 };
+let morceauxCerveau = { n: 0, dernier: '', ts: 0, duTour: false };
 function reveilMorceau(texte, maintenant = Date.now()) {
   if (corpsReglages().reponse_soufflee === false) return { ok: false, raison: 'coupé' };
   const t = String(texte || '').replace(/\s+/g, ' ').trim().slice(-2000);
@@ -6325,7 +6336,12 @@ function reveilMorceau(texte, maintenant = Date.now()) {
   if (hakimDort(maintenant)) return { ok: false, raison: 'il dort' };
   const c = cerveau;
   if (!cerveauVivant(c) || occupe(c) || c.enCours) return { ok: false, raison: 'occupé' };
-  morceauxCerveau = { n: (maintenant - morceauxCerveau.ts < 60000 ? morceauxCerveau.n : 0) + 1, dernier: t, ts: maintenant };
+  // (04/11, audit d'Ahmed ; son choix : « un seul, à ta pause ») mesuré 16:51-17:07 : un réveil à chaque morceau, ~150 000 jetons relus
+  // chaque fois, une seule pensée dite sur 20 tours, et son cerveau encombré quand ta phrase entière arrive ; désormais UN réveil par
+  // tour, à la pause où son subconscient sent que tu as dit ce que tu voulais dire (FINI : oui)
+  if (morceauxCerveau.duTour) return { ok: false, raison: 'déjà réveillé pour ce tour' };
+  if (souffles.sub.fini !== true) return { ok: false, raison: 'il continue' };
+  morceauxCerveau = { n: (maintenant - morceauxCerveau.ts < 60000 ? morceauxCerveau.n : 0) + 1, dernier: t, ts: maintenant, duTour: true };
   const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(maintenant));
   const message = `[Horloge — ${quand}]\n[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : ${MORCEAU_MARQUE}]\n`
     + `Ce qu'il a dit jusqu'ici (sa phrase continue ; confirmé, morceau ${morceauxCerveau.n}) : « ${neutraliser(t).slice(-1200)} »\n`
@@ -6351,7 +6367,9 @@ function brouillonDuCerveau(texte) {
   if (!r) return;
   const s0 = souffles.cer;
   s0.reponse = r.slice(0, 600); s0.pret = pret; s0.fini = fini; s0.pour = morceauxCerveau.dernier; s0.t = Date.now();
-  voixDeLaSource(s0.reponse.slice(0, 400));                            // (16:45) sa voix naît avec sa pensée, ici, avant la page
+  // (16:45) sa voix naît avec sa pensée, ici, avant la page ; (17:10, audit : chaque pensée, dite ou non, 75 à 214 caractères, prenait
+  // Chatterbox 3 à 14 s, et sa vraie réponse attendait derrière jusqu'à 20 s) seulement celle qu'il juge à dire
+  if (pret) voixDeLaSource(s0.reponse.slice(0, 400));
   diffuser(abonnesPensees, 'souffle', j({ texte: s0.reponse, pret, fini, niveau: 'cerveau', pour: s0.pour.slice(-300) }));
   console.error(`Jarvis : réponse provisoire de son cerveau (${pret ? 'à dire' : 'pas encore'}, ${r.length} car.)`);
 }
@@ -7343,7 +7361,9 @@ function voixDeLaSource(texteBrut) {
   const texte = cleVoixSource(texteBrut);
   if (!texte || texte.length > 1500 || voixALaSource.has(texte)) return null;
   for (const [k, x] of voixALaSource) if (Date.now() - x.t > 60000) voixALaSource.delete(k);
-  const entree = { t: Date.now(), promesse: null };
+  const entree = { t: Date.now(), promesse: null, tache: null };
+  // (17:10) une pensée plus ancienne, dont la voix n'a pas encore commencé : annulée (la nouvelle la remplace)
+  for (const x of voixALaSource.values()) if (x.tache && fileVoix.includes(x.tache)) x.tache.annulee = true;
   voixALaSource.set(texte, entree);
   entree.promesse = (async () => {
     let emotion = null, tempo = null;                                     // le niveau et le débit que la page lui donnerait
@@ -7356,6 +7376,7 @@ function voixDeLaSource(texteBrut) {
     } catch (_) {}
     const tache = { texte, langue: 'fr', annulee: false, emotion, tempo, fond: true,
       fichier: path.join(os.tmpdir(), `jarvis-voix-source-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.wav`) };
+    entree.tache = tache;
     const r = await new Promise((resolve) => { tache.recu = Date.now(); tache.fin = resolve; fileVoix.push(tache); pomperVoix(); });
     if (r.erreur) { fs.unlink(tache.fichier, () => {}); return null; }
     try {
