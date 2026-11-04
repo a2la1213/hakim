@@ -148,6 +148,14 @@ const synthTelephone = window.HakimApp && window.HakimApp.voixTelephone ? (() =>
   const voix = () => { try { return JSON.parse(window.HakimApp.voixTelephoneListe ? window.HakimApp.voixTelephoneListe() : '[]')
     .map(v => ({ name: v.name, voiceURI: v.name, lang: v.lang, localService: !!v.local, default: false })); } catch (_) { return []; } };
   const homme = () => voix().filter(v => /^fr/i.test(v.lang)).find(v => /SMTm\d|x-fr[bd]|\bmale\b|homme/i.test(v.name) && !/female|SMTf/i.test(v.name));
+  // ce que la voix du téléphone reçoit : le texte, le débit (son émotion), la langue, la voix choisie dans les réglages ; sinon (le
+  // lecteur prend la première voix française, souvent une femme) une voix d'homme
+  const argumentsDe = (u) => {
+    const debit = (Number(u.rate) || 1) * (typeof tempoVoix === 'function' ? tempoVoix() : 1);
+    const choisie = typeof etat !== 'undefined' && (/^ar/i.test(String(u.lang || '')) ? etat.reglages.voixAr : etat.reglages.voixFr) ? u.voice : null;
+    const v = choisie && choisie.name ? choisie : (/^ar/i.test(String(u.lang || '')) ? null : homme());
+    return [String(u.text || ''), debit, String(u.lang || 'fr-FR'), v ? String(v.name) : ''];
+  };
   const hauteur = () => {
     const e = typeof etat !== 'undefined' && etat.interieur && !etat.reglages.voixNeutre ? Number(etat.interieur.expressivite) : NaN;
     return Number.isFinite(e) ? Math.max(0.85, Math.min(1.1, 0.95 + (e - 0.5) * 0.4)) : 0.95;
@@ -165,16 +173,15 @@ const synthTelephone = window.HakimApp && window.HakimApp.voixTelephone ? (() =>
   return {
     speak(u) {
       const id = `t${++n}`; enAttente.set(id, u);
-      const debit = (Number(u.rate) || 1) * (typeof tempoVoix === 'function' ? tempoVoix() : 1);
       try {
         if (window.HakimApp.voixTelephoneVoix) {
-          // la voix choisie dans les réglages ; sinon (le lecteur prend la première voix française, souvent une femme) une voix d'homme
-          const choisie = typeof etat !== 'undefined' && (/^ar/i.test(String(u.lang || '')) ? etat.reglages.voixAr : etat.reglages.voixFr) ? u.voice : null;
-          const v = choisie && choisie.name ? choisie : (/^ar/i.test(String(u.lang || '')) ? null : homme());
-          window.HakimApp.voixTelephoneVoix(id, String(u.text || ''), debit, String(u.lang || 'fr-FR'), v ? String(v.name) : '', hauteur());
-        } else window.HakimApp.voixTelephone(id, String(u.text || ''), debit, String(u.lang || 'fr-FR'));
+          const [texte, debit, langue, nom] = argumentsDe(u);
+          window.HakimApp.voixTelephoneVoix(id, texte, debit, langue, nom, hauteur());
+        } else window.HakimApp.voixTelephone(id, String(u.text || ''), (Number(u.rate) || 1) * (typeof tempoVoix === 'function' ? tempoVoix() : 1), String(u.lang || 'fr-FR'));
       } catch (_) { window.HakimVoixTel('fin', id); }
     },
+    // (1.60, 04/11) sa voix calculée d'avance sur le téléphone, avec exactement ce que speak lui donnera ensuite
+    prepare(u) { try { if (window.HakimApp.voixTelephonePreparer) window.HakimApp.voixTelephonePreparer(...argumentsDe(u)); } catch (_) {} },
     cancel() { const fins = [...enAttente.values()]; enAttente.clear(); try { window.HakimApp.voixTelephoneArreter(); } catch (_) {} fins.forEach(u => u.onend && u.onend()); },
     getVoices() { return voix(); },
     // (04/11, capture d'Ahmed : la page vide dans l'appli 1.55) la page écoute « voiceschanged » sur la voix du système : sans ces
@@ -2986,6 +2993,10 @@ function recevoirBout(s, n, tour) {
     // (un plus ancien en attente est remplacé) ; trop vieux (6 s) quand elle se tait : oublié
     if (lecteurSysteme.actif) {
       if (bouts.attenteTel) montrerPensee('🧠 il pense, sans le dire', bouts.attenteTel.texte, true);   // remplacé : pensé, pas dit
+      // (1.60, Ahmed : « chaque cœur qui traite le même chunk sur le Mac et sur le smartphone doit être relié et coordonné ») ce qu'il
+      // dira (son meuble compris) : sa voix se calcule déjà sur le téléphone, pendant que la précédente se dit
+      b.dit = meublerSaut(b);
+      if (typeof lecteurSysteme.preparer === 'function') lecteurSysteme.preparer(b.dit);
       bouts.attenteTel = b; return;
     }
     direBoutTelephone(conv, b);
@@ -3031,7 +3042,7 @@ function direBoutTelephone(conv, b) {
   bouts.dits.push(b.texte);
   conv.souffleParle = true; conv.penseeDite = bouts.dits.join(' ');
   montrerPensee('🧠 sa pensée', b.texte, true); envoyerParoles('hakim', `🧠 ${b.texte}`);
-  lecteurSysteme.dire(meublerSaut(b));                                  // (04/11) un saut de pensée : meublé
+  lecteurSysteme.dire(b.dit != null ? b.dit : meublerSaut(b));         // (04/11) un saut de pensée : meublé (choisi d'avance s'il attendait)
   bouts.dernierDit = b.n;
 }
 function boutTelephoneSuivant() {

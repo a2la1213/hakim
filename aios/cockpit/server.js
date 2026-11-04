@@ -2652,9 +2652,9 @@ function soufflerReponse(texte, niveau = 'sub') {
     + (autre.reponse ? `Ce que ton ${con ? 'subconscient' : 'conscient'} prépare en même temps : « ${neutraliser(autre.reponse).slice(0, 300)} » `
       + `(une seule réponse sera dite : accorde-toi avec lui).\n\n` : '')
     + (con ? `Intègre ce dernier morceau à ta réflexion, puis écris ta réponse ENTIÈRE, prête à dire s'il s'arrêtait là (deux ou trois `
-      + `phrases, à l'oral, en français, comme toi). Réponds ainsi :\nCOMPRENDS : (une ligne : ce que tu comprends maintenant)\n`
+      + `phrases, à l'oral, ${LANGUE_ORALE}, comme toi). Réponds ainsi :\nCOMPRENDS : (une ligne : ce que tu comprends maintenant)\n`
       : `Écris le DÉBUT de ta réponse, ce que tu lui dirais à l'instant où il se tait : une ou deux phrases courtes, naturelles, à l'oral, `
-      + `en français, comme toi. Réponds ainsi :\n`)
+      + `${LANGUE_ORALE}, comme toi. Réponds ainsi :\n`)
     + `DIRE : oui (elle est juste, même s'il ajoute encore un peu) ou DIRE : non (il te manque la suite de ce qu'il dit)\n`
     + `FINI : oui (il a dit ce qu'il voulait dire : son idée est complète) ou FINI : non (il va continuer : idée en suspens, `
     + `il cherche ses mots, il énumère, il raconte)\n`
@@ -2750,6 +2750,12 @@ const placesVivant = (m) => VIVANTS.filter(x => x.modele === m && !x.attente && 
 // par une, au fur et à mesure » ; « oui, sans garde-fous ») chaque MOT (avec ses petits mots d'avant : « le chat », « à la maison ») est
 // un morceau ; un petit mot en fin d'envoi attend le mot qui le suit ; toutes les pistes prises : les mots qui arrivent rejoignent celle
 // qui attend
+// (04/11, Ahmed : « pour l'arabe, rajoute-lui la darija algérienne, marocaine et tunisienne, et l'arabe littéraire ; faisable en
+// parallèle au français, à l'anglais et à l'arabe qu'il a déjà ? » ; « oui, fais tout ») il parle dans la langue où papa lui parle,
+// mélangées comme il les mélange ; l'arabe et la darija en lettres arabes : sa voix arabe les dit, sa voix française dit le reste
+const LANGUE_ORALE = `dans la langue où papa te parle (le français, l'anglais, l'arabe littéraire ou sa darija : algérienne, marocaine ou `
+  + `tunisienne, la même que lui), mélangées comme il les mélange ; l'arabe et la darija toujours en lettres arabes, jamais en lettres `
+  + `latines ni avec des chiffres (3, 7, 9)`;
 // (04/11, Ahmed : « avec la voix du smartphone ça va plus vite ; si ça marche, on remet le chunk par phrase (jusqu'au point) ou par
 // partie de phrase (jusqu'à la virgule) au lieu du mot » ; « sinon ça rafale trop ») un morceau = une proposition finie (virgule, point,
 // point-virgule, deux-points, ! ?) ; sans ponctuation (Whisper n'en met pas toujours), 12 mots au plus ; le reste attend la suite
@@ -2840,7 +2846,7 @@ function lancerPiste(m) {
       // (04/11, Ahmed : « il ne doit pas dire toutes ses pensées, seulement celles qu'il estime pertinentes, sinon ça rafale trop »)
       + `Le plus souvent : DIRE : non. Tu ne dis oui que si c'est vraiment pertinent maintenant (une vraie réaction, une réponse utile, `
       + `une question qui compte), pas pour meubler ni pour montrer que tu écoutes.\npuis, à la ligne, le bout SUIVANT de ta réponse, celui qui continue ce que tu as déjà commencé sans rien en `
-      + `répéter : à l'oral, en français, comme toi, quelques mots (huit au plus). Il est dit tout de suite, à la suite des bouts d'avant.`
+      + `répéter : à l'oral, ${LANGUE_ORALE}, comme toi, quelques mots (huit au plus). Il est dit tout de suite, à la suite des bouts d'avant.`
       // (04/11, Ahmed : « j'ai l'impression qu'il hésite ; enlève-lui cette hésitation, qu'il prononce direct son premier chunk avec
       // confiance » ; capture : « Je t'écoute, papa, continue… Laisse-moi finir d'écouter, puis je te dis vraiment ») pas d'attente
       + `\nAvec assurance : tu réponds DÉJÀ à ce que tu devines, comme si tu avais compris. Jamais « je t'écoute », « continue », « vas-y », `

@@ -508,6 +508,18 @@
           synth.speak(u);
         }
       },
+      // (04/11, Ahmed : « chaque cœur qui traite le même chunk sur le Mac et sur le smartphone doit être relié et coordonné ») la voix
+      // d'une phrase à venir, calculée d'avance par la voix qui sait le faire (celle du téléphone : synth.prepare), découpée comme dire()
+      preparer(phrase) {
+        if (typeof synth.prepare !== 'function') return;
+        for (const seg of prononcable(phrase)) {
+          const u = new Enonce(seg.texte);
+          const v = voixPour(seg.langue);
+          if (v) { u.voice = v; u.lang = v.lang; } else u.lang = seg.langue === 'ar' ? 'ar-SA' : 'fr-FR';
+          u.rate = (typeof vitesse === 'function' ? vitesse() : vitesse) || 1;
+          synth.prepare(u);
+        }
+      },
       arreter() { enCours.clear(); synth.cancel(); },
       get actif() { return enCours.size > 0; },
     };

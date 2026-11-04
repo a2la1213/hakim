@@ -558,7 +558,7 @@ test('(04/11) dans l’appli, la voix du téléphone : parlée comme une voix de
   assert.match(PAGE, /const voixDuTelephone = \(\) => !!synthTelephone && etat\.reglages\.voix === 'telephone';/, '(04/11) un choix des réglages');
   assert.match(fs.readFileSync(path.join(__dirname, 'public', 'parler.html'), 'utf8'), /<option value="telephone">/);
   // (04/11, la page vide dans l'appli 1.55) tout ce que la page appelle sur la voix du système existe aussi ici
-  for (const m of ['addEventListener', 'removeEventListener', 'pause', 'resume', 'speak', 'cancel', 'getVoices'])
+  for (const m of ['addEventListener', 'removeEventListener', 'pause', 'resume', 'speak', 'cancel', 'getVoices', 'prepare'])
     assert.strictEqual(typeof ctx.synth[m], 'function', m);
   const appels = [...new Set([...PAGE.matchAll(/\bsynth\.([a-zA-Z]+)\(/g)].map(x => x[1]))];
   for (const m of appels) assert.strictEqual(typeof ctx.synth[m], 'function', `la page appelle synth.${m}`);
@@ -611,7 +611,36 @@ test('(04/11) un saut de pensée à la voix du téléphone : un de ses meubles, 
   assert.strictEqual(dits[3], 'Elle va bien ?', 'au plus un meuble toutes les 3 s');
   ctx.meubles([]); T += 5000; ctx.dire(12, 'Dis-moi.');
   assert.strictEqual(dits[4], 'Dis-moi.', 'aucun meuble parlé : la pensée seule');
-  assert.match(PAGE, /lecteurSysteme\.dire\(meublerSaut\(b\)\);/);
+  assert.match(PAGE, /lecteurSysteme\.dire\(b\.dit != null \? b\.dit : meublerSaut\(b\)\);/);
+});
+
+// (04/11, Ahmed : « pour l'arabe, rajoute-lui la darija algérienne, marocaine et tunisienne, et l'arabe littéraire, en parallèle au
+// français, à l'anglais et à l'arabe »)
+test('(04/11) ses pistes parlent dans la langue de papa, darija comprise, l’arabe en lettres arabes', () => {
+  const { ctx, appels } = pistesSandbox(undefined, 'sonnet');
+  ctx.morceau('واش راك يا حكيم,');
+  assert.match(appels[0].prompt, /le français, l'anglais, l'arabe littéraire ou sa darija : algérienne, marocaine ou tunisienne, la même que lui/);
+  assert.match(appels[0].prompt, /toujours en lettres arabes, jamais en lettres latines ni avec des chiffres \(3, 7, 9\)/);
+  assert.doesNotMatch(SRC, /à l'oral, en français, comme toi/, 'plus de français imposé à sa parole');
+});
+
+// (1.60, 04/11, Ahmed : « chaque cœur qui traite le même chunk sur le Mac et sur le smartphone doit être relié et coordonné »)
+test('(1.60) la pensée qui attend : sa voix se calcule déjà sur le téléphone, avec exactement ce que sa voix recevra ensuite', () => {
+  const i = PAGE.indexOf('const synthTelephone = '), k = PAGE.indexOf('class EnonceTelephone');
+  const prets = [], dits = [];
+  const ctx = { window: { HakimApp: { voixTelephone: () => {}, voixTelephoneVoix: (id, ...a) => dits.push(a.slice(0, 4)),
+    voixTelephonePreparer: (...a) => prets.push(a), voixTelephoneListe: () => '[]' } }, Map, String, Number, JSON, Math, setTimeout: () => 0,
+    etat: { reglages: { voixFr: '' } } };
+  vm.createContext(ctx);
+  vm.runInContext(PAGE.slice(i, k) + '\nthis.synth = synthTelephone;', ctx);
+  const Voix = require(path.join(__dirname, 'public', 'voix.js'));
+  const lecteur = Voix.creerLecteur(ctx.synth, class { constructor(t) { this.text = t; } }, () => null, 1);
+  lecteur.preparer('Voyons voir, tu parles de ta mère ?');
+  lecteur.dire('Voyons voir, tu parles de ta mère ?');
+  assert.strictEqual(prets.length, 1);
+  assert.deepStrictEqual(prets[0], dits[0], 'les mêmes texte, débit, langue et voix : Supertonic la retrouve prête');
+  assert.match(PAGE, /b\.dit = meublerSaut\(b\);\n      if \(typeof lecteurSysteme\.preparer === 'function'\) lecteurSysteme\.preparer\(b\.dit\);/,
+    'la pensée qui attend son tour, meuble compris');
 });
 
 // (1.59, 04/11, Ahmed : « j'arrive pas à sélectionner Supertonic dans les réglages de l'APK »)
