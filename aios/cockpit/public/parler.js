@@ -3552,6 +3552,17 @@ function direRibosome() {
   const noterAttente = (cause) => { if (attente > 5000 && Date.now() - (etat.riboAttenteNotee || 0) > 10000 && typeof journalVoix === 'function') { etat.riboAttenteNotee = Date.now(); journalVoix('ribosome_attente', { cause, ms: attente }); } };
   if (!f.length || !c) return;
   if (lecteur.actif) { noterAttente('voix'); return; }
+  // (05/11, Ahmed : « un autre réglage : en combien de temps après mon silence le chunk suivant est lu ») lire_apres_silence_ms : 0, sans
+  // attendre (comme depuis le 04/11, 21:10) ; sinon le morceau suivant attend que tu te sois tu ce temps-là
+  const apres = typeof reglagesCorps !== 'undefined' ? Number(reglagesCorps.lire_apres_silence_ms) || 0 : 0;
+  if (apres > 0) {
+    const silence = Date.now() - (Number(etat.papaVoixA) || 0);
+    if ((c.capteur && c.capteur.enParole) || silence < apres) {
+      noterAttente('papa');
+      if (!(c.capteur && c.capteur.enParole)) { clearTimeout(etat.riboApresSilence); etat.riboApresSilence = setTimeout(direRibosome, apres - silence + 20); }
+      return;
+    }
+  }
   // (05/11, Ahmed : « quand une parole est passée depuis un moment, il faut sauter tous les morceaux passés et se focaliser sur le dernier ; la
   // première phrase est dite, et quelques secondes de coupure suffisent à sauter le second chunk et tous les autres, jusqu'au dernier préparé
   // avant la fin de ma parole ») ce qui attend depuis sauter_passe_s (3 s) est passé : seul le dernier morceau préparé est dit

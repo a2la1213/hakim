@@ -104,3 +104,28 @@ test('ce qui attend depuis 3 s est passé : seul le dernier morceau préparé es
   assert.match(SRC, /sauter_passe: r\.sauter_passe !== false, sauter_passe_s: /);
   assert.match(fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8'), /\['sauter_passe', /);
 });
+
+// (05/11, Ahmed : « un autre réglage : en combien de temps après mon silence le chunk suivant est lu »)
+test('lu après ton silence : 0, sans attendre ; réglé, il attend que tu te sois tu ce temps-là', () => {
+  const t = 1_800_000_000_000;
+  const monter = (ms, enParole, papaVoixA) => {
+    const minuteries = [];
+    const ctx = { Math, Number, Date: { now: () => t }, minuteries,
+      reglagesCorps: { lire_apres_silence_ms: ms, sauter_passe: false },
+      etat: { riboFile: [{ tour: 4, texte: 'deux', recu: t - 100 }], conversation: { capteur: { enParole } }, papaVoixA },
+      lecteur: { actif: false }, journalVoix: () => {}, clearTimeout: () => {}, setTimeout: (f, d) => { minuteries.push(d); return 1; } };
+    vm.createContext(ctx);
+    const src = prendre(PAGE, 'direRibosome');
+    vm.runInContext(src.slice(0, src.indexOf('  const tour = f[0].tour, lot')) + '  this.dit = true;\n}\nthis.f = direRibosome;', ctx);
+    ctx.f();
+    return { dit: !!ctx.dit, minuteries };
+  };
+  assert.strictEqual(monter(0, true, t).dit, true, '0 : sans attendre, même pendant que tu parles');
+  assert.strictEqual(monter(800, true, t).dit, false, 'tu parles : il attend');
+  const tu = monter(800, false, t - 300);
+  assert.strictEqual(tu.dit, false, 'tu t’es tu depuis 0,3 s sur 0,8 : il attend encore');
+  assert.deepStrictEqual([...tu.minuteries], [520], 'et il se relance pile à la fin');
+  assert.strictEqual(monter(800, false, t - 900).dit, true, 'tu t’es tu depuis 0,9 s : lu');
+  assert.match(SRC, /lire_apres_silence_ms: Number\.isFinite/);
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8'), /\['lire_apres_silence_ms', /);
+});
