@@ -232,7 +232,7 @@ test('lot 4 : les demandes sensibles, en français, en anglais, en arabe ; pas l
 
 test('lot 4 : branché dans son tour', () => {
   assert.match(src, /const voixBloc = blocVoixTierce\(q, texte, verdictDuTour\(q\)\);/);
-  assert.match(src, /\+ tempsLibre\.texte \+ immuniteBloc\.texte \+ voixBloc\.texte \+ corpsTexte \+ blocNonEntendus\(texte, nonce\) \+ blocDejaReagi\(\) \+ aideOutils\(modele\) \+ blocRapportBascule\(session\);/);   // (30/10) + ses réponses non entendues
+  assert.match(src, /\+ tempsLibre\.texte \+ immuniteBloc\.texte \+ voixBloc\.texte \+ principaleTexte \+ corpsTexte \+ blocNonEntendus\(texte, nonce\) \+ blocDejaReagi\(\) \+ aideOutils\(modele\) \+ blocRapportBascule\(session\);/);   // (30/10) + ses réponses non entendues
 });
 
 // ---- (29/10, Ahmed : « tu peux ajouter tout ça avant dans le cockpit ») la page Immunité
