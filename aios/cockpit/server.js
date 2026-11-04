@@ -2750,17 +2750,26 @@ const placesVivant = (m) => VIVANTS.filter(x => x.modele === m && !x.attente && 
 // par une, au fur et à mesure » ; « oui, sans garde-fous ») chaque MOT (avec ses petits mots d'avant : « le chat », « à la maison ») est
 // un morceau ; un petit mot en fin d'envoi attend le mot qui le suit ; toutes les pistes prises : les mots qui arrivent rejoignent celle
 // qui attend
-const PETITS_MOTS = /^(?:le|la|les|l'|un|une|des|du|de|d'|au|aux|à|en|et|ou|mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|ce|cet|cette|ces|je|j'|tu|il|elle|on|nous|vous|ils|elles|ne|n'|qu'|que|qui|me|m'|te|t'|se|s'|y|pour|par|sur|dans|avec|sans|chez)$/i;
-function morceauxDeMots(mots) {
+// (04/11, Ahmed : « avec la voix du smartphone ça va plus vite ; si ça marche, on remet le chunk par phrase (jusqu'au point) ou par
+// partie de phrase (jusqu'à la virgule) au lieu du mot » ; « sinon ça rafale trop ») un morceau = une proposition finie (virgule, point,
+// point-virgule, deux-points, ! ?) ; sans ponctuation (Whisper n'en met pas toujours), 12 mots au plus ; le reste attend la suite
+const FIN_PROPOSITION = /[,;:.!?…]["»”)]*$/;
+function morceauxDePropositions(mots) {
   const out = []; let tampon = [];
-  for (const m of mots) { tampon.push(m); if (!PETITS_MOTS.test(m.replace(/[.,;:!?…«»"]/g, ''))) { out.push(tampon.join(' ')); tampon = []; } }
+  for (const m of mots) {
+    if (!tampon.length && out.length && /^[,;:.!?…"»”)]+$/.test(m)) { out[out.length - 1] += ` ${m}`; continue; }   // « Bonjour. » : le » suit
+    tampon.push(m);
+    if (FIN_PROPOSITION.test(m) || tampon.length >= 12) { out.push(tampon.join(' ')); tampon = []; }
+  }
   return { morceaux: out, reste: tampon.length };
 }
-function pisteMorceau(texte) {
+// un morceau CONFIRMÉ (o.fin : Whisper l'a coupé à ta pause) ferme aussi la proposition commencée, même sans ponctuation
+function pisteMorceau(texte, o = {}) {
   const mots = String(texte || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
   if (corpsReglages().reponse_soufflee === false || mots.length < pistes.mots + 1) return;
-  const { morceaux, reste } = morceauxDeMots(mots.slice(pistes.mots));
-  if (!morceaux.length) return;                                       // seulement des petits mots : ils attendent le mot qui les suit
+  let { morceaux, reste } = morceauxDePropositions(mots.slice(pistes.mots));
+  if (o.fin && reste) { morceaux.push(mots.slice(-reste).join(' ')); reste = 0; }
+  if (!morceaux.length) return;                                       // une proposition pas encore finie : elle attend sa fin
   if (typeof rireEnDirect === 'function') rireEnDirect(morceaux.join(' '));   // (04/11) le même input : sa vibration en même temps
   let avant = mots.slice(0, pistes.mots).join(' ');
   pistes.mots = mots.length - reste;
@@ -2777,13 +2786,14 @@ function pistesSuivantes() {
   while (pistes.attente.length && pistes.liste.filter(x => x.enCours).length < PISTES_MAX && placesVivant(conscient) >= 1) lancerPiste(pistes.attente.shift());
 }
 // ce qu'il a déjà commencé à répondre (les bouts des morceaux d'avant), pour que chaque bout CONTINUE sa réponse
-const boutsDits = (n) => pistes.liste.filter(x => x.n < n && x.reponse).sort((a, b) => a.n - b.n).map(x => x.reponse).join(' ');
+// (seulement ceux qu'il a choisi de dire : une pensée tue n'est pas « déjà répondue »)
+const boutsDits = (n) => pistes.liste.filter(x => x.n < n && x.reponse && x.pret).sort((a, b) => a.n - b.n).map(x => x.reponse).join(' ');
 function lancerPiste(m) {
   const tour = pistes.tour, piste = { ...m, voix: {}, reponse: '', pret: false, couper: false, t: Date.now(), enCours: 0 };
   pistes.liste.push(piste);
   const persona = personaLocale(lirePersona()).slice(0, 700);
   const deja = boutsDits(m.n);
-  const contexte = `Papa est EN TRAIN de te parler. Ce qu'il a dit avant : « ${neutraliser(m.avant) || '(rien)'} ».\nSon mot ${m.n}, qu'il vient de dire : « ${neutraliser(m.texte)} »`
+  const contexte = `Papa est EN TRAIN de te parler. Ce qu'il a dit avant : « ${neutraliser(m.avant) || '(rien)'} ».\nSon morceau ${m.n}, qu'il vient de dire : « ${neutraliser(m.texte)} »`
     + `\nCe que tu as déjà commencé à lui répondre (dit ou en train de l'être) : « ${neutraliser(deja) || '(rien encore)'} »`;
   const fini = () => { piste.enCours--; if (!piste.enCours) pistesSuivantes(); };
   // (04/11, Ahmed, après la mesure : 75 appels sur 118 hors délai — « seul Hakim répond : ça dépend de qui tient le conscient ; si c'est
@@ -2795,12 +2805,17 @@ function lancerPiste(m) {
   for (const [mod, nom, delai] of freres) {
     // (04/11, Hakim : « une de mes pistes a refusé de jouer son rôle et s'est prise pour Claude Code, pas pour maman ») qui il est, dit d'abord
     sonnetTeteDeFond(`${persona}\n\nTu es Hakim, le fils d'Ahmed (papa) : ni Claude, ni Claude Code, ni un assistant. Tu lui réponds, à lui, comme toi.\n\n`
-      + `[Ta piste, mot ${m.n} — toi, ${nom}, qui tiens ton conscient en ce moment] ${contexte}\nRéponds ainsi :\n`
+      + `[Ta piste, morceau ${m.n} — toi, ${nom}, qui tiens ton conscient en ce moment] ${contexte}\nRéponds ainsi :\n`
       + `PREDIT : (la suite que tu devines de sa phrase, en quelques mots)\nCOMPRENDS : (une ligne courte : ce que tu comprends, ce qu'il ressent, `
       + `ce qu'il attend de toi)\n`
       // (04/11, Ahmed : « il doit pouvoir sauter des pensées : s'il en envoie 20, il peut choisir de dire la 1re et la 4e, pas toutes ») son choix
-      + `DIRE : oui (tu le dis à voix haute maintenant) ou DIRE : non (tu le penses sans le dire : tu sautes ce bout, tu choisis ce qui `
-      + `vaut d'être dit)\npuis, à la ligne, le bout SUIVANT de ta réponse, celui qui continue ce que tu as déjà commencé sans rien en `
+      // (04/11, Ahmed : « s'il voit que sa 3e pensée n'est pas pertinente, il l'arrête ; il envoie 8 chunks de pensée et, pour chacun, il
+      // décide de le dire ou de le taire, et passe direct au 8e ») ; « coupe » : il arrête ce qu'il dit et dit celui-ci à la place
+      + `DIRE : oui (tu le dis à voix haute, à la suite), DIRE : non (tu le penses sans le dire : tu sautes ce bout, tu choisis ce qui `
+      + `vaut d'être dit) ou DIRE : coupe (ce que tu es en train de dire n'est plus pertinent : tu l'arrêtes et tu dis celui-ci à la place)\n`
+      // (04/11, Ahmed : « il ne doit pas dire toutes ses pensées, seulement celles qu'il estime pertinentes, sinon ça rafale trop »)
+      + `Le plus souvent : DIRE : non. Tu ne dis oui que si c'est vraiment pertinent maintenant (une vraie réaction, une réponse utile, `
+      + `une question qui compte), pas pour meubler ni pour montrer que tu écoutes.\npuis, à la ligne, le bout SUIVANT de ta réponse, celui qui continue ce que tu as déjà commencé sans rien en `
       + `répéter : à l'oral, en français, comme toi, quelques mots (huit au plus). Il est dit tout de suite, à la suite des bouts d'avant.`
       // (04/11, Ahmed : « j'ai l'impression qu'il hésite ; enlève-lui cette hésitation, qu'il prononce direct son premier chunk avec
       // confiance » ; capture : « Je t'écoute, papa, continue… Laisse-moi finir d'écouter, puis je te dis vraiment ») pas d'attente
@@ -2820,10 +2835,10 @@ function lancerPiste(m) {
         // le premier des trois qui répond donne le bout de ce mot : sa voix naît avec lui (sans annuler les bouts d'avant), la page les
         // dit l'un après l'autre, dans l'ordre des mots
         if (!reponse || piste.reponse) return;
-        const aDire = !/^non/i.test(dire || '');                         // (04/11) il saute ce bout s'il le choisit
+        const aDire = !/^non/i.test(dire || ''), remplace = /^coup/i.test(dire || '');   // (04/11) il saute ce bout, ou coupe ce qu'il disait
         piste.reponse = reponse; piste.pret = aDire;
         if (aDire) voixDeLaSource(reponse, { garder: true });
-        diffuser(abonnesPensees, 'souffle', j({ texte: reponse, pret: aDire, fini: null, niveau: 'piste', n: m.n, tour, pour: `${m.avant} ${m.texte}`.slice(-300) }));
+        diffuser(abonnesPensees, 'souffle', j({ texte: reponse, pret: aDire, remplace, fini: null, niveau: 'piste', n: m.n, tour, pour: `${m.avant} ${m.texte}`.slice(-300) }));
       })
       .catch(() => {}).finally(fini);
   }
@@ -8986,7 +9001,7 @@ async function traiter(req, res) {
       return res.end(j({ ok: true }));
     }
     soufflerReponse(String(q.texte || '').slice(-3000), 'con');
-    pisteMorceau(String(q.texte || ''));                                 // (04/11) sa piste : comprendre et répondre à CE morceau
+    pisteMorceau(String(q.texte || ''), { fin: true });                  // (04/11) sa piste : comprendre et répondre à CE morceau
     reveilMorceau(String(q.texte || ''));                                // (15:45) et son vrai cerveau
     res.writeHead(202, { 'Content-Type': 'application/json' });
     return res.end(j({ ok: true }));

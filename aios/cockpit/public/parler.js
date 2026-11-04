@@ -905,6 +905,7 @@ const lecteur = {
   get enPause() { return lecteurNeuronal.enPause; },
 };
 const finLecture = () => {
+  if (typeof boutTelephoneSuivant === 'function') setTimeout(boutTelephoneSuivant, 0);   // (04/11) le bout qui attendait sa voix
   if (lecteur.actif) return;
   if (etat.conversation) etat.conversation.penseeEnPause = false;     // (04/11) sa pensée dite : ton tour reprend la main
   for (const x of etat.messages.slice(-6)) if (x.auRythme && !x.enCours) x.auRythme = false;   // (16:45) sa voix a fini : tout s'écrit
@@ -2932,7 +2933,7 @@ function surSouffle(o) {
   const niveau = o.niveau === 'cerveau' ? 'cerveau' : o.niveau === 'piste' ? 'piste' : o.niveau === 'con' ? 'con' : 'sub';   // (04/11) ses pistes
   const rebond = o.rebond != null && Number.isFinite(Number(o.rebond)) ? Number(o.rebond) : null;
   const s = { texte, pret: !!o.pret, fini: o.fini === true ? true : o.fini === false ? false : null, rebond, pour: String(o.pour || ''), t: Date.now(), niveau,
-    couper: o.couper === true };                                         // (04/11) son choix de te couper la parole
+    couper: o.couper === true, remplace: o.remplace === true };          // (04/11) son choix de te couper la parole, ou de se couper lui
   etat.souffles = { ...(etat.souffles || {}), [niveau]: s };
   etat.dernierSouffle = s;
   if (niveau === 'sub') etat.conversation.brouillons = (etat.conversation.brouillons || 0) + 1;   // (16:00) combien pendant ce tour
@@ -2972,12 +2973,20 @@ function recevoirBout(s, n, tour) {
   if (typeof voixDuTelephone === 'function' && voixDuTelephone()) {
     const motsDe = (x) => String(x).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(m => m.length > 2), m1 = motsDe(b.texte);
     if (n < bouts.prochain || (m1.length && bouts.dits.some(d => { const m2 = new Set(motsDe(d)); return m1.filter(m => m2.has(m)).length / m1.length >= 0.75; }))) return;
-    bouts.prochain = n + 1; bouts.dits.push(b.texte);
-    conv.souffleParle = true; conv.penseeDite = bouts.dits.join(' ');
-    montrerPensee('🧠 sa pensée', b.texte, true); envoyerParoles('hakim', `🧠 ${b.texte}`);
-    lecteurSysteme.dire(b.texte);
+    bouts.prochain = n + 1;
+    // (04/11, Ahmed : « s'il voit que sa 3e pensée n'est pas pertinente, il l'arrête ») il coupe ce qu'il disait et dit celle-ci
+    if (s.remplace && lecteurSysteme.actif) { if (bouts.attenteTel) montrerPensee('🧠 il pense, sans le dire', bouts.attenteTel.texte, true); bouts.attenteTel = null; lecteurSysteme.arreter(); }
+    // (04/11, Ahmed : « sinon ça rafale trop ») jamais de file de bouts : sa voix parle encore, le plus récent attend qu'elle se taise
+    // (un plus ancien en attente est remplacé) ; trop vieux (6 s) quand elle se tait : oublié
+    if (lecteurSysteme.actif) {
+      if (bouts.attenteTel) montrerPensee('🧠 il pense, sans le dire', bouts.attenteTel.texte, true);   // remplacé : pensé, pas dit
+      bouts.attenteTel = b; return;
+    }
+    direBoutTelephone(conv, b);
     return;
   }
+  // (04/11) il coupe ce qu'il disait : les bouts d'avant, pas encore dits, sont tus
+  if (s.remplace) { for (const k of [...bouts.liste.keys()]) if (k < n) bouts.liste.delete(k); if (lecteurNeuronal.actif) lecteurNeuronal.arreter(); }
   bouts.liste.set(n, b);
   if (!actx || actx.state === 'closed') { b.rate = true; return direBouts(); }
   fetch('/api/voix/dire', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
@@ -2986,6 +2995,18 @@ function recevoirBout(s, n, tour) {
     .then(ab => actx.decodeAudioData(ab))
     .then((buf) => { b.buf = buf; direBouts(); })
     .catch(() => { b.rate = true; direBouts(); });
+}
+function direBoutTelephone(conv, b) {
+  bouts.dits.push(b.texte);
+  conv.souffleParle = true; conv.penseeDite = bouts.dits.join(' ');
+  montrerPensee('🧠 sa pensée', b.texte, true); envoyerParoles('hakim', `🧠 ${b.texte}`);
+  lecteurSysteme.dire(b.texte);
+}
+function boutTelephoneSuivant() {
+  const b = typeof bouts !== 'undefined' ? bouts.attenteTel : null, conv = etat.conversation;
+  if (!b || !conv || (lecteurSysteme && lecteurSysteme.actif)) return;
+  bouts.attenteTel = null;
+  if (Date.now() - b.t < 6000) direBoutTelephone(conv, b); else montrerPensee('🧠 il pense, sans le dire', b.texte, true);
 }
 // (04/11, Ahmed : « je veux qu'il prononce son premier chunk direct dès qu'il le reçoit, il n'attend pas le 2e ») chaque bout part dès que
 // sa voix est prête, dans l'ordre où ils arrivent ; un bout plus ancien que le dernier dit est sauté (jamais d'attente d'un mot manquant)

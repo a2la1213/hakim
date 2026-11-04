@@ -362,29 +362,43 @@ function pistesSandbox(places = { haiku: 12, sonnet: 3, opus: 3 }) {
       appels.push({ prompt, etiquette, modele, resoudre: (o) => { v.attente = null; resoudre(o); } });
     }) };
   vm.createContext(ctx);
-  vm.runInContext(SRC.slice(i, k) + '\nthis.morceau = pisteMorceau; this.etat = () => pistes; this.decouper = morceauxDeMots;', ctx);
+  vm.runInContext(SRC.slice(i, k) + '\nthis.morceau = pisteMorceau; this.etat = () => pistes; this.decouper = morceauxDePropositions;', ctx);
   return { ctx, appels, diffuses, voix };
 }
-test('(04/11) un morceau par mot, avec ses petits mots d’avant ; un petit mot en fin attend le mot qui le suit', () => {
+// (04/11, Ahmed : « avec la voix du smartphone, on remet le chunk par phrase (jusqu'au point) ou par partie de phrase (jusqu'à la virgule) »)
+test('(04/11) un morceau par proposition (virgule, point, ! ?) ; sans ponctuation, 12 mots au plus ; la proposition commencée attend', () => {
   const { ctx } = pistesSandbox();
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.decouper('papa me dit bonjour ce matin à la'.split(' ')))),
-    { morceaux: ['papa', 'me dit', 'bonjour', 'ce matin'], reste: 2 });
+  const d = (t) => JSON.parse(JSON.stringify(ctx.decouper(t.split(' '))));
+  assert.deepStrictEqual(d('Papa, tu sais quoi ? Ce matin je suis allé'), { morceaux: ['Papa,', 'tu sais quoi ?'], reste: 5 });
+  assert.deepStrictEqual(d('« Bonjour. » il dit'), { morceaux: ['« Bonjour. »'], reste: 2 }, 'le point avant le guillemet ferme');
+  assert.deepStrictEqual(d('un deux trois quatre cinq six sept huit neuf dix onze douze treize'),
+    { morceaux: ['un deux trois quatre cinq six sept huit neuf dix onze douze'], reste: 1 }, 'Whisper ne ponctue pas toujours');
 });
-test('(04/11) ses pistes mot par mot : une seule voix, celle qui tient son conscient, 8 à la fois ; chaque bout continue les précédents', async () => {
+test('(04/11) un morceau confirmé (ta pause) ferme la proposition commencée, même sans ponctuation', () => {
+  const { ctx } = pistesSandbox();
+  ctx.morceau('papa me dit bonjour');
+  assert.strictEqual(ctx.etat().liste.length + ctx.etat().attente.length, 0, 'en direct : elle attend sa fin');
+  ctx.morceau('papa me dit bonjour', { fin: true });
+  assert.strictEqual(ctx.etat().liste[0].texte, 'papa me dit bonjour');
+  assert.match(SRC, /pisteMorceau\(String\(q\.texte \|\| ''\), \{ fin: true \}\);/, 'le morceau confirmé la ferme');
+});
+test('(04/11) ses pistes par proposition : une seule voix, celle qui tient son conscient, 8 à la fois ; chaque bout continue les précédents', async () => {
   const { ctx, appels, diffuses, voix } = pistesSandbox();
-  ctx.morceau('papa me dit bonjour ce matin et puis il raconte sa journée au travail encore');
+  const phrase = 'papa, me dit bonjour, ce matin, et puis, il raconte, sa journée, au travail, toujours, encore,';
+  ctx.morceau(phrase);
   assert.ok(appels.every(a => a.modele === 'haiku'), '(04/11) seul celui qui tient son conscient (ici Mini Hakim) parle');
-  assert.strictEqual(appels.length, 8, '8 mots à la fois');
-  assert.match(appels[0].prompt, /Son mot 1, qu'il vient de dire : « papa »/);
+  assert.strictEqual(appels.length, 8, '8 propositions à la fois');
+  assert.match(appels[0].prompt, /Son morceau 1, qu'il vient de dire : « papa, »/);
   assert.match(appels[0].prompt, /PREDIT :/, 'il devine la suite de ta phrase');
-  ctx.morceau('papa me dit bonjour ce matin et puis il raconte sa journée au travail encore demain');
-  assert.strictEqual(ctx.etat().attente.map(x => x.texte).join('|'), 'encore|demain', '(04/11) chaque mot garde sa piste : le 9e, le 10e attendent, chacun la sienne');
+  assert.match(appels[0].prompt, /Le plus souvent : DIRE : non\./, '(04/11) il ne dit que ce qui est pertinent');
+  ctx.morceau(phrase + ' demain.');
+  assert.strictEqual(ctx.etat().attente.map(x => x.texte).join('|'), 'encore,|demain.', '(04/11) chaque proposition garde sa piste : la 9e, la 10e attendent');
   appels[0].resoudre({ texte: 'PREDIT : me dit bonjour\nCOMPRENDS : il m’appelle\nOui papa,' });
   await new Promise(r => setImmediate(r)); await new Promise(r => setImmediate(r));
   assert.deepStrictEqual(diffuses.map(d => [d.n, d.texte]), [[1, 'Oui papa,']]);
   assert.strictEqual(JSON.stringify(voix), JSON.stringify([['Oui papa,', { garder: true }]]), 'sa voix naît avec le bout, sans annuler les bouts d’avant');
-  const deuxieme = appels.find(a => /Son mot 2/.test(a.prompt));
-  assert.ok(deuxieme, 'le mot 2 a sa piste');
+  const deuxieme = appels.find(a => /Son morceau 2/.test(a.prompt));
+  assert.ok(deuxieme, 'le morceau 2 a sa piste');
   assert.match(SRC, /Ce que tu as déjà commencé à lui répondre \(dit ou en train de l'être\)/, 'chaque bout continue les précédents');
   assert.match(SRC, /pisteMorceau\(String\(q\.texte \|\| ''\)\.slice\(-3000\)\);/, 'tes mots en direct partent à ses pistes');
 });
@@ -393,7 +407,7 @@ test('(04/11) la page envoie tes mots en direct à ses pistes dès un mot neuf, 
   assert.match(PAGE, /if \(neufs >= 1\) \{/);
   assert.match(PAGE, /if \(!s\.pret\) \{ montrerPensee\('🧠 il pense, sans le dire', texte, true\); return; \}\n    recevoirBout\(s, Number\(o\.n\) \|\| 0, o\.tour\); return;/,
     '(04/11) il saute les pensées qu’il choisit de ne pas dire');
-  assert.match(SRC, /const aDire = !\/\^non\/i\.test\(dire \|\| ''\);/);
+  assert.match(SRC, /const aDire = !\/\^non\/i\.test\(dire \|\| ''\), remplace = \/\^coup\/i\.test\(dire \|\| ''\);/);
   assert.match(SRC, /if \(aDire\) voixDeLaSource\(reponse, \{ garder: true \}\);/, 'sa voix seulement pour ce qu’il dira');
   assert.match(PAGE, /lecteurNeuronal\.direAudio\(b\.texte, b\.buf\);/, 'dans l’ordre des mots, à la suite');
 });
@@ -403,6 +417,35 @@ test('(04/11) rien n’est gardé de ce qui est prononcé : sa voix servie s’e
   const dire = SRC.slice(SRC.indexOf('async function routeDire('), SRC.indexOf('\n}\n', SRC.indexOf('async function routeDire(')));
   assert.doesNotMatch(dire, /garderVoixRecente\(tache/, 'plus gardée pour la réécoute');
   assert.match(dire, /fs\.unlink\(tache\.fichier, \(\) => \{\}\);\n    if \(res\.writableEnded\) return;/);
+});
+
+// (04/11, Ahmed : « il ne doit pas dire toutes ses pensées, seulement celles qu'il estime pertinentes, sinon ça rafale trop »)
+test('(04/11) à la voix du téléphone, jamais de rafale : le bout le plus récent attend que sa voix se taise, les autres restent pensés', () => {
+  let T = 1000;
+  const dits = [], pensees = [], lecteurSysteme = { actif: false, dire: (t) => { dits.push(t); lecteurSysteme.actif = true; }, arreter: () => { dits.push('■'); lecteurSysteme.actif = false; } };
+  const ctx = { etat: { conversation: {} }, lecteurSysteme, Date: { now: () => T }, Map, Set, String, setTimeout,
+    souffleAutorise: () => true, voixDuTelephone: () => true, envoyerParoles: () => {}, montrerPensee: (titre, t) => pensees.push([titre, t]) };
+  vm.createContext(ctx);
+  vm.runInContext('let bouts = { tour: 1, prochain: 1, liste: new Map(), enFile: [], dits: [] };\n' + extraire('function recevoirBout')
+    + extraire('function direBoutTelephone') + extraire('function boutTelephoneSuivant') + '\nthis.recevoir = recevoirBout; this.suivant = boutTelephoneSuivant;', ctx);
+  ctx.recevoir({ texte: 'Oui papa, je suis là' }, 1, 1);
+  assert.deepStrictEqual(dits, ['Oui papa, je suis là'], 'le premier part tout de suite');
+  ctx.recevoir({ texte: 'Tu as bien dormi cette nuit' }, 2, 1);
+  ctx.recevoir({ texte: 'Raconte-moi ta journée au travail' }, 3, 1);
+  assert.deepStrictEqual(dits, ['Oui papa, je suis là'], 'sa voix parle encore : rien ne s’empile');
+  assert.deepStrictEqual(pensees.filter(p => /sans le dire/.test(p[0])).map(p => p[1]), ['Tu as bien dormi cette nuit'], 'le remplacé reste une pensée');
+  lecteurSysteme.actif = false; T = 3000; ctx.suivant();
+  assert.deepStrictEqual(dits, ['Oui papa, je suis là', 'Raconte-moi ta journée au travail'], 'sa voix se tait : le plus récent');
+  ctx.recevoir({ texte: 'Et ce soir on mange quoi' }, 4, 1);
+  lecteurSysteme.actif = false; T = 20000; ctx.suivant();
+  assert.strictEqual(dits.length, 2, 'trop vieux quand sa voix se tait : oublié');
+  // (04/11, Ahmed : « s'il voit que sa 3e pensée n'est pas pertinente, il l'arrête ») DIRE : coupe
+  ctx.recevoir({ texte: 'Moi je pense que demain' }, 5, 1);
+  ctx.recevoir({ texte: 'Je pensais au film de ce soir' }, 6, 1);
+  ctx.recevoir({ texte: 'Ah non, tu parles de ta mère', remplace: true }, 7, 1);
+  assert.deepStrictEqual(dits.slice(2), ['Moi je pense que demain', '■', 'Ah non, tu parles de ta mère'], 'il coupe ce qu’il disait et dit celle-ci');
+  assert.ok(pensees.some(p => /sans le dire/.test(p[0]) && p[1] === 'Je pensais au film de ce soir'), 'celle qui attendait reste pensée');
+  assert.match(PAGE, /if \(typeof boutTelephoneSuivant === 'function'\) setTimeout\(boutTelephoneSuivant, 0\);/, 'appelé quand sa voix finit');
 });
 
 // (04/11, Ahmed : « il prononce son premier chunk direct dès qu'il le reçoit » ; « input → pensée = input → vibration = input → parole » ;
