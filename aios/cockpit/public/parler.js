@@ -1096,7 +1096,7 @@ lecteurNeuronal.surSegment = (t, duree) => {
     const cap = etat.conversation && etat.conversation.capteur;
     if (cap && Number(cap.debutTour) > 0) journalVoix('bout_dit', { depuis_ton_debut_ms: Date.now() - Number(cap.debutTour), premier: bouts.dits.length - bouts.enFile.length === 1 });
     if (etat.conversation) etat.conversation.penseeDite = bouts.dits.slice(bouts.base || 0, bouts.dits.length - bouts.enFile.length).join(' ');   // (04/11) vraiment dit, depuis ton dernier message
-    montrerPensee('🧠 sa pensée', t, true); envoyerParoles('hakim', `🧠 ${t}`);   // (04/11) chaque pensée dite, seule, dans la sienne
+    // (04/11, Ahmed : « qu'il parle sans écrire : il n'écrit pas ses pensées dites, seulement ses pensées sans les dire ») dite : pas écrite
   }
   // (16:45) le bout que sa voix commence : sa réponse s'écrit jusque-là, au même instant
   const mR = etat.lectureDe != null ? etat.messages.find(x => String(x.id) === String(etat.lectureDe)) : null;
@@ -2974,9 +2974,13 @@ function lireAnticipe(texte) {
 // sa réflexion ou son cerveau) écrasait celui de son subconscient, sa voix d'avance comprise
 // (16:20, Ahmed : « on laisse le mode Conversation avec sa pensée du cerveau écrite, en parallèle à Chatterbox ») seule sa pensée (son
 // cerveau) s'écrit, à côté, pendant que tu parles ; son subconscient et sa réflexion travaillent sans s'écrire ; en Télépathie, rien
+// (04/11, capture d'Ahmed : « tu peux filtrer ses pensées parasites ? ») le modèle qui refuse le cadre ou parle de lui-même n'est pas
+// Hakim : ni écrit, ni dit (le Mac les jette déjà ; ici pour toutes ses pensées, celles du cerveau comprises)
+const PENSEE_PARASITE = /je ne (?:vais|peux) pas (?:non plus )?(?:reprendre|suivre|produire|continuer) (?:ce|cette|le|la|de|des|dans)|je ne (?:vais |peux )?(?:pas )?répond(?:re|s) (?:pas )?dans ce (?:format|cadre)|\bje ne joue pas (?:le |la |les |ce |cette |de |d['’]|à |hakim|son |ses )|\bje ne suis pas hakim\b|mise en scène d['’]une voix|\bI (?:won['’]t|can['’]t|cannot) (?:play|continue|take on|adopt|pretend)|\brole-?play\b/i;
 function surSouffle(o) {
   if (!etat.conversation || !o || !o.texte) return;
   if (o.niveau === 'papa') { montrerMorceauPapa(o); return; }        // (04/11) tes mots, morceau par morceau
+  if (PENSEE_PARASITE.test(String(o.texte))) { journalVoix('pensee_parasite', { niveau: o.niveau || 'sub' }); return; }
   const texte = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 400);   // (16:35) jamais ses balises
   if (!texte) return;
   const niveau = o.niveau === 'cerveau' ? 'cerveau' : o.niveau === 'piste' ? 'piste' : o.niveau === 'con' ? 'con' : 'sub';   // (04/11) ses pistes
@@ -3112,7 +3116,7 @@ function meublerSaut(b) {
 function direBoutTelephone(conv, b) {
   bouts.dits.push(b.texte);
   conv.souffleParle = true; conv.penseeDite = bouts.dits.slice(bouts.base || 0).join(' ');
-  montrerPensee('🧠 sa pensée', b.texte, true); envoyerParoles('hakim', `🧠 ${b.texte}`);
+  // (04/11, Ahmed : « il parle sans écrire ; il n'écrit que ses pensées sans les dire ») dite : pas écrite
   for (const x of b.dit || meublerSaut(b)) lecteurSysteme.dire(x);     // (04/11) un saut de pensée : meublé (choisi d'avance s'il attendait)
   bouts.dernierDit = b.n;
 }
@@ -3237,7 +3241,7 @@ function direSouffle(conv, s, par) {
   noterEcartSouffle(conv, s, true, par, !!buf);
   journalVoix('souffle', { pris: true, dit: true, par, mots: s.texte.split(/\s+/).length, voix_prete: !!buf });
   etat.reponseVoix = 'souffle';
-  montrerPensee('🧠 sa pensée', s.texte, true); envoyerParoles('hakim', `🧠 ${s.texte}`);   // (04/11) dans les deux modes, une pensée par élément
+  // (04/11, Ahmed : « il parle sans écrire ; il n'écrit que ses pensées sans les dire ») sa pensée dite : sa voix seulement
   if (buf) lecteurNeuronal.direAudio(s.texte, buf); else lecteur.dire(s.texte);
   if (par !== 'serveur') fetch('/api/jarvis/souffle', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
     body: JSON.stringify({ dit: s.texte }) }).catch(() => {});

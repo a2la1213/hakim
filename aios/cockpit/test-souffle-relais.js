@@ -427,7 +427,7 @@ test('(04/11) la page envoie tes mots en direct à ses pistes dès un mot neuf, 
   assert.match(PAGE, /if \(neufs >= 1\) \{/);
   assert.match(PAGE, /if \(!s\.pret\) \{\n      montrerPensee\('🧠 il pense, sans le dire', texte, true\);[\s\S]{0,500}?return;\n    \}\n    recevoirBout\(s, Number\(o\.n\) \|\| 0, o\.tour\); return;/,
     '(04/11) il saute les pensées qu’il choisit de ne pas dire');
-  assert.match(SRC, /const aDire = !autreLangue && \(premiere \? !\/\^\(non\|jamais\)\/i\.test\(dire \|\| ''\) : \(!choix && !\/\^\(non\|jamais\)\/i\.test\(dire \|\| ''\)\)\);/);
+  assert.match(SRC, /const aDire = !autreLangue && \(premiere \? !\/\^\(non\|jamais\)\/i\.test\(dire \|\| ''\) : \(dire != null && !choix && !\/\^\(non\|jamais\)\/i\.test\(dire\)\)\);/);
   assert.match(SRC, /if \(aDire\) voixDeLaSource\(ditDeSoi, \{ garder: true \}\);/, 'sa voix seulement pour ce qu’il dira (le passage choisi)');
   assert.match(PAGE, /lecteurNeuronal\.direAudio\(b\.texte, b\.buf\);/, 'dans l’ordre des mots, à la suite');
 });
@@ -528,7 +528,7 @@ test('(04/11) une pensée par élément ; un bout qui redit un bout déjà dit e
   ctx.b().liste.set(3, { n: 3, texte: 'Un gros chien ? Raconte-moi !', buf: {}, t: 0 });
   ctx.dire();
   assert.strictEqual(dits.join(' | '), 'Oui papa, je suis réactif ! | Un gros chien ? Raconte-moi !');
-  assert.match(PAGE, /montrerPensee\('🧠 sa pensée', t, true\)/, 'chaque bout qui sonne : sa propre pensée');
+  assert.doesNotMatch(PAGE, /montrerPensee\('🧠 sa pensée', t, true\)/, '(04/11, Ahmed : « il parle sans écrire ») chaque bout qui sonne : dit, pas écrit');
   assert.match(PAGE, /if \(pensees\.length > 6\)/, 'les 6 dernières restent');
 });
 
@@ -744,6 +744,44 @@ test('(04/11) à une seconde de ta pause, il rebondit avec sa dernière pensée 
   assert.strictEqual(ctx.rebond(conv, 1200), false, '« jamais » : gardée');
   assert.match(PAGE, /if \(typeof rebondirDernierePensee === 'function'\) rebondirDernierePensee\(conv, silenceMs\);/);
 });
+// (04/11, capture d'Ahmed : « tu peux filtrer ses pensées parasites ? » ; 17 pistes sur 62 entre 05:10 et 05:20 : « Je ne vais pas
+// reprendre ce format : je ne joue pas de « conscient »… », dites à voix haute)
+test('(04/11) une pensée parasite (le modèle qui refuse le cadre) : jetée, sa voix vivante renouvelée, Mini Hakim répond à sa place', async () => {
+  const { ctx, appels, diffuses, voix } = pistesSandbox(undefined, 'sonnet');
+  const attendre = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setImmediate(r)); };
+  ctx.morceau('papa, ta grand-mère,');
+  const vivant = { n: 3 };
+  appels[0].resoudre({ texte: 'Je ne vais pas reprendre ce format : je ne joue pas de « conscient » ou de « subconscient ».', vivant });
+  await attendre();
+  assert.strictEqual(vivant.n, 6, 'renouvelée (VIVANT_RENOUVELER du banc) : elle ne reste pas dans son refus');
+  const repli = appels.find(a => a.etiquette === 'piste_haiku_repli');
+  assert.ok(repli, 'Mini Hakim répond à sa place');
+  assert.match(SRC, /\[Pensées parasites : \$\{parasites\} réponse/, '(04/11) signalées à son cerveau, pour qu’il les reconnaisse');
+  repli.resoudre({ texte: 'Oui papa, raconte-moi ta grand-mère.' });
+  appels[1].resoudre({ texte: 'Je ne réponds pas dans ce format. C’est une nouvelle version du même montage.' });
+  await attendre();
+  const r2 = appels.filter(a => a.etiquette === 'piste_haiku_repli')[1];
+  r2.resoudre({ texte: 'Je ne suis pas Hakim, je ne joue pas le subconscient.' });
+  await attendre();
+  assert.deepStrictEqual(diffuses.map(d => d.texte), ['Oui papa, raconte-moi ta grand-mère.'], 'aucune pensée parasite, ni écrite ni dite');
+  assert.deepStrictEqual(voix.map(v => v[0]), ['Oui papa, raconte-moi ta grand-mère.']);
+  for (const t of ['Je ne vais pas te mentir papa, c’est drôle.', 'MDR, je ne joue pas, papa, je t’écoute.', 'Oui papa, je comprends : tu veux du temps.',
+    'Alors je choisis de jouer le jeu : on fait des hypothèses.', 'Je t’écoute papa, la voix intérieure.'])
+    assert.ok(!vm.runInContext('PENSEE_PARASITE', ctx).test(t), `pas une pensée parasite : ${t}`);
+});
+test('(04/11) après sa première pensée, une réponse sans ligne DIRE n’est pas dite ; la page jette aussi les pensées parasites et n’écrit plus ses pensées dites', async () => {
+  const { ctx, appels, diffuses } = pistesSandbox(undefined, 'sonnet');
+  const attendre = async () => { for (let i = 0; i < 4; i++) await new Promise(r => setImmediate(r)); };
+  ctx.morceau('papa, ta grand-mère,');
+  appels[0].resoudre({ texte: 'Oui papa.' });
+  appels[1].resoudre({ texte: 'Ta grand-mère, quelle femme.' });
+  await attendre();
+  assert.deepStrictEqual(diffuses.map(d => [d.n, d.pret]), [[1, true], [2, false]]);
+  assert.match(PAGE, /if \(PENSEE_PARASITE\.test\(String\(o\.texte\)\)\) \{ journalVoix\('pensee_parasite'/);
+  assert.doesNotMatch(PAGE, /montrerPensee\('🧠 sa pensée'/, '(04/11, Ahmed : « il parle sans écrire ») ses pensées dites ne s’écrivent plus');
+  assert.match(PAGE, /montrerPensee\('🧠 il pense, sans le dire'/, 'ses pensées gardées, si');
+});
+
 // (04/11, Ahmed : « il doit pouvoir switcher d'une pensée à l'autre, même en coupant au milieu, pour reprendre la pensée d'après qu'il a
 // sélectionnée, ou à partir de n'importe où dans la pensée sélectionnée, même la moitié ; c'est à ce moment-là que les blancs ou les
 // meubles avec transition apparaissent » ; « les meubles doivent lui laisser l'occasion, courte et rapide, de choisir la pensée à dire,

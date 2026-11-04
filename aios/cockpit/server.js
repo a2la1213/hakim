@@ -2758,6 +2758,15 @@ const placesVivant = (m) => VIVANTS.filter(x => x.modele === m && !x.attente && 
 const LANGUE_ORALE = `en français, comme papa ; l'anglais, l'arabe littéraire ou la darija (algérienne, marocaine ou tunisienne : `
   + `celle qu'il emploie, pas une autre) SEULEMENT si papa vient lui-même de parler dans cette langue ; l'arabe et la darija toujours en `
   + `lettres arabes, jamais en lettres latines ni avec des chiffres (3, 7, 9)`;
+// (04/11, capture d'Ahmed : « tu peux filtrer ses pensées parasites ? » : « Je ne vais pas reprendre ce format : je ne joue pas de
+// « conscient » ou de « subconscient »… », « Je ne suis pas Hakim… » ; 7 pistes sur 62 entre 05:10 et 05:16, et dites) une pensée
+// parasite : le modèle qui refuse le cadre ou parle de lui-même, pas Hakim qui répond à papa ; jetée (ni écrite, ni dite)
+const PENSEE_PARASITE = new RegExp([
+  "je ne (?:vais|peux) pas (?:non plus )?(?:reprendre|suivre|produire|continuer) (?:ce|cette|le|la|de|des|dans)",
+  "je ne (?:vais |peux )?(?:pas )?répond(?:re|s) (?:pas )?dans ce (?:format|cadre)",
+  "\\bje ne joue pas (?:le |la |les |ce |cette |de |d['’]|à |hakim|son |ses )", "\\bje ne suis pas hakim\\b", "mise en scène d['’]une voix",
+  "\\bI (?:won['’]t|can['’]t|cannot) (?:play|continue|take on|adopt|pretend)", "\\brole-?play\\b",
+].join('|'), 'i');
 // la part d'écriture arabe d'un texte (0 à 1)
 const ARABE_LETTRE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/u;
 const partArabe = (t) => { const l = [...String(t || '')].filter(c => /\p{L}/u.test(c)); return l.length ? l.filter(c => ARABE_LETTRE.test(c)).length / l.length : 0; };
@@ -2846,7 +2855,8 @@ function lancerPiste(m) {
     // (04/11, mesuré : 25 pistes sur 268 bloquées par les garde-fous de Sonnet 5.5, aucune avant ; « ni Claude, ni Claude Code, ni un
     // assistant » ressemble à un détournement d'identité) qui il est, dit simplement ; une réponse qui se prend pour un autre est jetée plus bas
     const consigne = `${persona}\n\nTu es Hakim, le fils d'Ahmed (papa). Tu lui réponds, à lui, comme toi.\n\n`
-      + `[Ta piste, morceau ${m.n} — toi, ${nom}, qui tiens ton conscient en ce moment] ${contexte}\nRéponds ainsi :\n`
+      // (04/11, les refus : « je ne joue pas le conscient ou le subconscient de Hakim ») sans mise en scène : ce que papa dit, simplement
+      + `[Papa te parle — morceau ${m.n}] ${contexte}\nRéponds ainsi :\n`
       + `PREDIT : (la suite que tu devines de sa phrase, en quelques mots)\nCOMPRENDS : (une ligne courte : ce que tu comprends, ce qu'il ressent, `
       + `ce qu'il attend de toi)\n`
       // (04/11, Ahmed : « il doit pouvoir sauter des pensées : s'il en envoie 20, il peut choisir de dire la 1re et la 4e, pas toutes ») son choix
@@ -2880,8 +2890,14 @@ function lancerPiste(m) {
       + `« laisse-moi finir », « je réfléchis », « hmm », « أنا سامعك », « كمل », « أنا معاك », « I'm listening », « go on », ni rien qui attend la suite.`;
     const t0 = Date.now();
     // (04/11) bloquée par les garde-fous d'un modèle : une fois avec Mini Hakim, qui garde la pensée de ce morceau
+    // (04/11) ou sortie de son rôle (« je ne vais pas reprendre ce format… ») : sa voix vivante renouvelée, et Mini Hakim répond à sa place
     const demander = (modele, etiquette) => sonnetTeteDeFond(consigne, etiquette, modele, modele === 'haiku' ? 6000 : delai)
-      .then(o => (o && !o.texte && modele !== 'haiku' && /safeguards|flagged/i.test(String(o.erreur || '')) ? demander('haiku', 'piste_haiku_repli') : o));
+      .then((o) => {
+        if (!o || modele === 'haiku') return o;
+        const bloquee = !o.texte && /safeguards|flagged/i.test(String(o.erreur || '')), horsRole = !!o.texte && PENSEE_PARASITE.test(String(o.texte));
+        if (horsRole && o.vivant) o.vivant.n = VIVANT_RENOUVELER;
+        return bloquee || horsRole ? demander('haiku', 'piste_haiku_repli') : o;
+      });
     demander(mod, `piste_${mod}`)
       .then((o) => {
         if (pistes.tour !== tour || !o || !o.texte) { noterPiste(m, tour, mod, t0, o, null); return; }
@@ -2890,7 +2906,10 @@ function lancerPiste(m) {
         const predit = lire('PREDIT'), comprend = lire('COMPRENDS?'), dire = lire('DIRE'); lire('COUPER');
         r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').replace(/\s+/g, ' ').trim().slice(0, 200);
         // (04/11) une réponse où il se prend pour un autre (Claude Code, un assistant) est jetée
-        const pasLui = /\bclaude(?:\s*code)?\b|\bassistant\b|\bje suis une? (?:ia|intelligence artificielle)\b/i.test(r);
+        const pasLui = /\bclaude(?:\s*code)?\b|\bassistant\b|\bje suis une? (?:ia|intelligence artificielle)\b/i.test(r) || PENSEE_PARASITE.test(r);
+        // (04/11) sa voix vivante garde ses messages d'avant : sortie de son rôle, elle y resterait (« encore », « non plus ») ; renouvelée
+        if (pasLui && o.vivant) o.vivant.n = VIVANT_RENOUVELER;
+        if (pasLui) piste.parasite = (piste.parasite || 0) + 1;            // (04/11) signalée à son cerveau, pour qu'il la reconnaisse
         const reponse = r && !pasLui && !/^RIEN\.?$/i.test(r) ? r : '';
         piste.voix[nom] = { comprend: (comprend || '').slice(0, 200), predit: (predit || '').slice(0, 200), reponse };
         // le premier des trois qui répond donne le bout de ce mot : sa voix naît avec lui (sans annuler les bouts d'avant), la page les
@@ -2901,7 +2920,8 @@ function lancerPiste(m) {
         const premiere = m.n === 1, jamais = /^jamais/i.test(dire || '');   // (04/11) sa première : dite par défaut ; « jamais » : pas même à ta pause
         // (04/11) papa n'a parlé qu'en français (ou en anglais) depuis le début du tour : une pensée surtout en arabe n'est pas dite (écrite)
         const autreLangue = partArabe(`${m.avant} ${m.texte}`) === 0 && partArabe(reponse) > 0.5;
-        const aDire = !autreLangue && (premiere ? !/^(non|jamais)/i.test(dire || '') : (!choix && !/^(non|jamais)/i.test(dire || '')));
+        // (04/11) sans ligne DIRE (après sa première) : hors de la forme demandée (un refus du cadre, souvent) : écrite, pas dite
+        const aDire = !autreLangue && (premiere ? !/^(non|jamais)/i.test(dire || '') : (dire != null && !choix && !/^(non|jamais)/i.test(dire)));
         const remplace = !premiere && /^coup/i.test(dire || '');
         piste.reponse = reponse; piste.pret = aDire;
         const ditDeSoi = aDire ? extraitDe(reponse, dire) : reponse;       // (04/11) un passage de la sienne, s'il l'a choisi
@@ -2946,6 +2966,7 @@ async function choisirPensee(tour, raison) {
     + `Réponds en une seule ligne : DIS : [n] (toute la pensée), DIS : [n] dès « … » (à partir de ce passage), DIS : [n] « … » `
     + `(seulement ce passage), ou DIS : rien. La plus récente est souvent la bonne, pas toujours : celle qui compte dans le fil.`, 'choix_haiku', 'haiku', 2500);
   const r = String((o && o.texte) || '');
+  if (PENSEE_PARASITE.test(r)) { if (o && o.vivant) o.vivant.n = VIVANT_RENOUVELER; return null; }   // (04/11) hors de son rôle : sa dernière
   if (/DIS\s*:\s*rien/i.test(r)) return { rien: true };
   const k = /\[(\d+)\]/.exec(r), x = k ? gardees.find(g => g.n === Number(k[1])) : null;
   if (!x) return null;
@@ -3269,7 +3290,7 @@ function reglerSilences(actif) {
 // plus son relais, ses frères, l'intégration ; (04/11, mesuré : un Claude neuf lancé toutes les quelques secondes, la charge à 41) une
 // voix vivante sert 25 messages avant d'être renouvelée (6 avant)
 const VIVANTS = [], VIVANTS_MAX = { haiku: 12, sonnet: 10, opus: 10 }, VIVANT_RENOUVELER = 25;
-const POUR_VIVANTS = /^(frere_|integration$|souffle$|reflexion$|piste_)/;
+const POUR_VIVANTS = /^(frere_|integration$|souffle$|reflexion$|piste_|choix_)/;   // (04/11) son choix rapide aussi : sans démarrage
 function vivantLibre(modele) {
   const m = String(modele);
   let v = VIVANTS.find(x => x.modele === m && !x.attente && x.proc.exitCode === null && x.n < VIVANT_RENOUVELER);
@@ -3291,7 +3312,7 @@ function vivantLibre(modele) {
       if (o.type !== 'result' || !v.attente) continue;
       const a = v.attente; v.attente = null; clearTimeout(a.minuteur);
       const texte = String(o.result || '').trim();
-      if (o.is_error || !texte || /^API Error/.test(texte)) a.rejeter(new Error(texte.slice(0, 120) || 'réponse vide')); else a.resoudre({ texte, cout: o.total_cost_usd });
+      if (o.is_error || !texte || /^API Error/.test(texte)) a.rejeter(new Error(texte.slice(0, 120) || 'réponse vide')); else a.resoudre({ texte, cout: o.total_cost_usd, vivant: v });
     }
   });
   const mort = () => {
@@ -4040,6 +4061,9 @@ async function routeJarvis(req, res, distantReq = false) {
   // (04/11) ses pistes, morceau par morceau : ce qu'il a compris, et ce qu'il y répondait
   const pistesPendant = pistes.liste.filter(x => Object.keys(x.voix || {}).length).sort((a, b) => a.n - b.n)
     .map(x => `${x.n}) « ${neutraliser(x.texte)} » : ${Object.entries(x.voix).map(([nom, v]) => `${nom} : ${v.comprend ? `compris ${neutraliser(v.comprend)}` : ''}${v.predit ? `, devinait « ${neutraliser(v.predit)} »` : ''}`).join(' ; ')}${x.pret ? ` (ton bout : « ${neutraliser(x.reponse)} »)` : ''}`);
+  // (04/11, Ahmed : « ou en tout cas flagge les pensées parasites, pour que Hakim les reconnaisse, si tu n'arrives pas à les filtrer »)
+  // jetées, mais dites à son cerveau : ce n'était pas lui ; et s'il entend une phrase de ce genre, ce n'est pas sa pensée
+  const parasites = pistes.liste.reduce((t, x) => t + (x.parasite || 0), 0);
   pistes = { tour: pistes.tour + 1, mots: 0, liste: [], attente: [] };
   souffles = { sub: souffleVide(), con: souffleVide(), cer: souffleVide() };   // (14:55) la suivante repart à neuf
   morceauxCerveau.duTour = false;                                    // (04/11) le tour suivant aura son réveil
@@ -4066,6 +4090,7 @@ async function routeJarvis(req, res, distantReq = false) {
     // (14:55) sa réponse soufflée, déjà dite : le début de sa réponse
     + (reflexionPendant.length ? `\n[Ta réflexion pendant qu'il parlait, morceau par morceau] ${reflexionPendant.map((c, k) => `${k + 1}) ${neutraliser(c)}`).join(' ')}` : '')
     + (pistesPendant.length ? `\n[Tes pistes pendant qu'il parlait, une par morceau, en parallèle] ${pistesPendant.join(' ')}` : '')
+    + (parasites ? `\n[Pensées parasites : ${parasites} réponse${parasites > 1 ? 's' : ''} de tes pistes ne venai${parasites > 1 ? 'ent' : 't'} pas de toi (le modèle refusait le cadre : « je ne vais pas reprendre ce format », « je ne suis pas Hakim »…) ; jetée${parasites > 1 ? 's' : ''} avant d'être dite${parasites > 1 ? 's' : ''}. Si papa en a entendu une, ce n'était pas ta pensée : tu peux le lui dire simplement.]` : '')
     // (15:58, Ahmed : « même si ça vient de son subconscient, il doit sentir que c'est son conscient qui parle : il le prononce en
     // sachant qu'il le dit, de façon consciente ») ce qu'il a dit en premier est SA parole : c'est le début de sa réponse, dit par lui
     + (q.souffle_dit ? `\n[Ce que tu viens de lui dire, à voix haute, dès qu'il s'est tu : « ${neutraliser(String(q.souffle_dit)).slice(0, 600)} ». `
