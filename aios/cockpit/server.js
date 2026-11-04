@@ -2719,51 +2719,62 @@ const voixFreresLibres = () => ['haiku', 'sonnet', 'opus'].every(m => VIVANTS.so
    temps : l'une COMPREND ce morceau, l'autre prépare SA réponse à ce morceau ; jusqu'à 4 morceaux à la fois (8 voix) ; un morceau de
    plus attend qu'une piste se libère. Ce qu'il comprend part à son cerveau avec la phrase entière ; sa réponse, s'il la juge à dire,
    devient sa pensée (dite à ta pause, ou en te coupant s'il le choisit). */
-const PISTES_MAX = 4;
-let pistes = { tour: 0, vu: '', liste: [], attente: [] };
-const placesHaiku = () => VIVANTS.filter(x => x.modele === 'haiku' && !x.attente && x.proc.exitCode === null && x.n < VIVANT_RENOUVELER).length
-  + Math.max(0, VIVANTS_MAX.haiku - VIVANTS.filter(x => x.modele === 'haiku' && x.proc.exitCode === null).length);
-function pisteMorceau(texteConfirme) {
-  const t = String(texteConfirme || '').replace(/\s+/g, ' ').trim();
-  if (!t || t === pistes.vu || corpsReglages().reponse_soufflee === false) return;
-  const neuf = t.startsWith(pistes.vu) ? t.slice(pistes.vu.length).trim() : t.slice(-400);
-  const avant = t.startsWith(pistes.vu) ? pistes.vu : t.slice(0, -neuf.length);
-  pistes.vu = t;
-  if (neuf.split(/\s+/).filter(Boolean).length < 2) return;
+// (04/11, Ahmed : « ça veut dire 8 paires de chunks au total : 1 CPU par parole-réponse ») 8 morceaux à la fois, compris et répondus
+// dans le même appel (une paire = un processus par voix)
+const PISTES_MAX = 8;
+let pistes = { tour: 0, mots: 0, liste: [], attente: [] };
+// (04/11, Ahmed : « ce n'est pas que des Mini Hakim, c'est les 3 ensemble, ça sera rapide ») chaque piste : ses TROIS voix en même
+// temps, Mini Hakim, Hakim, Super Hakim (chacune son processus) ; chacune comprend le morceau et y répond ; la première réponse à dire
+// devient sa pensée (vite), les autres enrichissent ce que son cerveau reçoit. Mini Hakim part toujours ; Hakim et Super Hakim, s'il
+// leur reste une place (jamais un Claude de plus que le pool)
+const FRERES_PISTE = [['haiku', 'Mini Hakim', 6000], ['sonnet', 'Hakim', 9000], ['opus', 'Super Hakim', 9000]];
+const placesVivant = (m) => VIVANTS.filter(x => x.modele === m && !x.attente && x.proc.exitCode === null && x.n < VIVANT_RENOUVELER).length
+  + Math.max(0, (VIVANTS_MAX[m] || 0) - VIVANTS.filter(x => x.modele === m && x.proc.exitCode === null).length);
+// (04/11, Ahmed : « pendant qu'il comprend, il prépare direct sa réponse ; mettons mon chunk et son chunk au même moment ») ses pistes
+// partent sur tes mots EN DIRECT (la page les envoie dès 6 mots neufs, ou une fin de proposition), plus seulement sur le morceau
+// confirmé ; les mots déjà partis ne repartent pas (compte de mots, la dernière révision de Whisper ne refait pas une piste)
+function pisteMorceau(texte) {
+  const mots = String(texte || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  if (corpsReglages().reponse_soufflee === false || mots.length < pistes.mots + 2) return;
+  const neuf = mots.slice(pistes.mots).join(' '), avant = mots.slice(0, pistes.mots).join(' ');
+  pistes.mots = mots.length;
   pistes.attente.push({ n: pistes.liste.length + pistes.attente.length + 1, texte: neuf.slice(-500), avant: avant.slice(-900) });
   pistesSuivantes();
 }
 function pistesSuivantes() {
-  while (pistes.attente.length && pistes.liste.filter(x => x.enCours).length < PISTES_MAX && placesHaiku() >= 2) lancerPiste(pistes.attente.shift());
+  while (pistes.attente.length && pistes.liste.filter(x => x.enCours).length < PISTES_MAX && placesVivant('haiku') >= 1) lancerPiste(pistes.attente.shift());
 }
 function lancerPiste(m) {
-  const tour = pistes.tour, piste = { ...m, comprend: '', reponse: '', pret: false, couper: false, t: Date.now(), enCours: 2 };
+  const tour = pistes.tour, piste = { ...m, voix: {}, reponse: '', pret: false, couper: false, t: Date.now(), enCours: 0 };
   pistes.liste.push(piste);
   const persona = personaLocale(lirePersona()).slice(0, 700);
   const contexte = `Papa est EN TRAIN de te parler. Ce qu'il a dit avant : « ${neutraliser(m.avant) || '(rien)'} ».\nSon morceau ${m.n}, qu'il vient de dire : « ${neutraliser(m.texte)} »`;
   const fini = () => { piste.enCours--; if (!piste.enCours) pistesSuivantes(); };
-  sonnetTeteDeFond(`${persona}\n\n[Ta piste d'écoute, morceau ${m.n}] ${contexte}\nEn UNE ligne courte : ce que tu comprends de CE morceau (ce qu'il dit, `
-    + `ce qu'il ressent, ce qu'il attend de toi). Rien d'autre.`, 'piste_ecoute', 'haiku', 6000)
-    .then((o) => { if (pistes.tour === tour && o && o.texte) piste.comprend = String(o.texte).replace(/\s+/g, ' ').trim().slice(0, 200); })
-    .catch(() => {}).finally(fini);
-  sonnetTeteDeFond(`${persona}\n\n[Ta piste de parole, morceau ${m.n}] ${contexte}\nTa réponse à CE morceau, à l'oral, en français, comme toi : UNE phrase `
-    + `courte (quinze mots au plus). Réponds ainsi :\nDIRE : oui (ça vaut d'être dit maintenant, à sa pause) ou DIRE : non\nCOUPER : oui (tu lui `
-    + `coupes la parole tout de suite, ton choix, quand ça ne peut pas attendre) ou COUPER : non\npuis, à la ligne, ta réponse.`, 'piste_parole', 'haiku', 6000)
-    .then((o) => {
-      if (pistes.tour !== tour || !o || !o.texte) return;
-      let r = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ');
-      const d = /(?:^|\n)\s*DIRE\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r); if (d) r = r.replace(d[0], '\n');
-      const c = /(?:^|\n)\s*COUPER\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r); if (c) r = r.replace(c[0], '\n');
-      r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
-      if (!r || /^RIEN\.?$/i.test(r)) return;
-      piste.reponse = r; piste.pret = !!(d && /oui/i.test(d[1])); piste.couper = !!(c && /oui/i.test(c[1]));
-      if (!piste.pret) return;
-      // la plus récente des pistes à dire devient sa pensée : sa voix naît avec elle, la page la dit à ta pause (ou te coupe)
-      if (pistes.liste.some(x => x.n > piste.n && x.pret)) return;
-      voixDeLaSource(r);
-      diffuser(abonnesPensees, 'souffle', j({ texte: r, pret: true, fini: null, couper: piste.couper, niveau: 'piste', pour: `${m.avant} ${m.texte}`.slice(-300) }));
-    })
-    .catch(() => {}).finally(fini);
+  const freres = FRERES_PISTE.filter(([mod], k) => k === 0 || placesVivant(mod) >= 1);
+  piste.enCours = freres.length;
+  for (const [mod, nom, delai] of freres) {
+    sonnetTeteDeFond(`${persona}\n\n[Ta piste, morceau ${m.n} — toi, ${nom}, avec tes deux autres voix en même temps] ${contexte}\nRéponds ainsi :\n`
+      + `COMPRENDS : (une ligne courte : ce que tu comprends de CE morceau, ce qu'il ressent, ce qu'il attend de toi)\n`
+      + `DIRE : oui (ta réponse vaut d'être dite maintenant, à sa pause) ou DIRE : non\nCOUPER : oui (tu lui coupes la parole tout de suite, `
+      + `ton choix, quand ça ne peut pas attendre) ou COUPER : non\npuis, à la ligne, ta réponse à CE morceau : à l'oral, en français, comme `
+      + `toi, UNE phrase courte (quinze mots au plus).`, `piste_${mod}`, mod, delai)
+      .then((o) => {
+        if (pistes.tour !== tour || !o || !o.texte) return;
+        let r = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ');
+        const lire = (cle) => { const x = new RegExp(`(?:^|\\n)\\s*${cle}\\s*:\\s*([^\\n]*)\\n?`, 'i').exec(r); if (x) r = r.replace(x[0], '\n'); return x ? x[1].trim() : null; };
+        const comprend = lire('COMPRENDS?'), dire = lire('DIRE'), couper = lire('COUPER');
+        r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
+        const reponse = r && !/^RIEN\.?$/i.test(r) ? r : '';
+        piste.voix[nom] = { comprend: (comprend || '').slice(0, 200), reponse };
+        const pret = /^oui/i.test(dire || '');
+        // la première réponse à dire, des trois, devient sa pensée (si aucune piste plus récente n'en a déjà une)
+        if (!reponse || !pret || piste.pret || pistes.liste.some(x => x.n > piste.n && x.pret)) return;
+        piste.reponse = reponse; piste.pret = true; piste.couper = /^oui/i.test(couper || '');
+        voixDeLaSource(reponse);
+        diffuser(abonnesPensees, 'souffle', j({ texte: reponse, pret: true, fini: null, couper: piste.couper, niveau: 'piste', pour: `${m.avant} ${m.texte}`.slice(-300) }));
+      })
+      .catch(() => {}).finally(fini);
+  }
 }
 function speculerFreres(texte) {
   if (!corpsReglages().trois_freres || (chargeMac() > 1.3 && !voixFreresLibres())) return;   // (03/11) déjà saturé : ses voix attendront la fin de la phrase
@@ -3063,7 +3074,8 @@ function reglerSilences(actif) {
    2 Sonnet, 2 Opus au plus), chaque appel un message de sa session ; la session repart à neuf toutes les 6 fois (court, donc
    rapide) et s'éteint après 10 min sans rien. Ses trois voix, son instinct et l'intégration au fil passent par elles. */
 // (04/11) haiku 3 → 10 : ses pistes (4 morceaux à la fois, 2 voix chacun), son subconscient en relais, ses frères, l'intégration
-const VIVANTS = [], VIVANTS_MAX = { haiku: 10, sonnet: 2, opus: 2 }, VIVANT_RENOUVELER = 6;
+// (04/11, Ahmed : « c'est les 3 ensemble » ; « 8 paires ») haiku 12 (8 pistes, son relais, ses frères, l'intégration), sonnet et opus 3
+const VIVANTS = [], VIVANTS_MAX = { haiku: 12, sonnet: 3, opus: 3 }, VIVANT_RENOUVELER = 6;
 const POUR_VIVANTS = /^(frere_|integration$|souffle$|reflexion$|piste_)/;
 function vivantLibre(modele) {
   const m = String(modele);
@@ -3833,9 +3845,9 @@ async function routeJarvis(req, res, distantReq = false) {
   integration.papa = { tampon: '', morceaux: [], dernier: 0 };     // (03/11) déjà dans sa fiche : la suite repart à neuf
   const reflexionPendant = souffles.con.comprend.slice();             // (15:30) sa réflexion, morceau par morceau, pendant que papa parlait
   // (04/11) ses pistes, morceau par morceau : ce qu'il a compris, et ce qu'il y répondait
-  const pistesPendant = pistes.liste.filter(x => x.comprend || x.reponse).sort((a, b) => a.n - b.n)
-    .map(x => `${x.n}) ${x.comprend ? `compris : ${neutraliser(x.comprend)}` : ''}${x.comprend && x.reponse ? ' ; ' : ''}${x.reponse ? `ta réponse : ${neutraliser(x.reponse)}` : ''}`);
-  pistes = { tour: pistes.tour + 1, vu: '', liste: [], attente: [] };
+  const pistesPendant = pistes.liste.filter(x => Object.keys(x.voix || {}).length).sort((a, b) => a.n - b.n)
+    .map(x => `${x.n}) ${Object.entries(x.voix).map(([nom, v]) => `${nom} : ${v.comprend ? `compris ${neutraliser(v.comprend)}` : ''}${v.comprend && v.reponse ? ', ' : ''}${v.reponse ? `répondu « ${neutraliser(v.reponse)} »` : ''}`).join(' ; ')}${x.pret ? ` (dit : « ${neutraliser(x.reponse)} »)` : ''}`);
+  pistes = { tour: pistes.tour + 1, mots: 0, liste: [], attente: [] };
   souffles = { sub: souffleVide(), con: souffleVide(), cer: souffleVide() };   // (14:55) la suivante repart à neuf
   morceauxCerveau.duTour = false;                                    // (04/11) le tour suivant aura son réveil
   // (17:10, audit) sa vraie réponse arrive : les voix fabriquées d'avance qui attendent encore leur tour ne servent plus
@@ -8890,6 +8902,11 @@ async function traiter(req, res) {
   if (p === '/api/jarvis/morceau' && req.method === 'POST') {           // (15:30) un morceau de papa confirmé : sa réflexion consciente l'intègre
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 32768) || '{}')); } catch (_) {}
+    if (q.direct) {                                                     // (04/11) tes mots en direct : seulement ses pistes
+      pisteMorceau(String(q.texte || '').slice(-3000));
+      res.writeHead(202, { 'Content-Type': 'application/json' });
+      return res.end(j({ ok: true }));
+    }
     soufflerReponse(String(q.texte || '').slice(-3000), 'con');
     pisteMorceau(String(q.texte || ''));                                 // (04/11) sa piste : comprendre et répondre à CE morceau
     reveilMorceau(String(q.texte || ''));                                // (15:45) et son vrai cerveau

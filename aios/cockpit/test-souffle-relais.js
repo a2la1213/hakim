@@ -347,32 +347,57 @@ test('(04/11) son oreille et sa voix ont chacune leur processus : elles ne s’a
   assert.doesNotMatch(pomper, /transcriptionsEnAttente > 0\) return/, 'sa voix n’attend plus les transcriptions');
 });
 
-// (04/11, Ahmed : « chaque chunk entendu et dit, dispatché sur un cœur : 1 pour mon chunk, 1 pour le sien ; sur 8 cœurs, 4 chunks »)
-test('(04/11) ses pistes : chaque morceau confirmé, compris et répondu en parallèle, 4 morceaux à la fois au plus', async () => {
+// (04/11, Ahmed : « chaque chunk entendu et dit, dispatché sur un cœur : 1 pour mon chunk, 1 pour le sien ; sur 8 cœurs, 4 chunks » ;
+// « ce n'est pas que des Mini Hakim, c'est les 3 ensemble »)
+test('(04/11) ses pistes : chaque morceau, ses trois voix ensemble ; 8 morceaux à la fois ; la première réponse à dire est sa pensée', async () => {
   const i = SRC.indexOf('const PISTES_MAX'), k = SRC.indexOf('function speculerFreres(');
   const appels = [], diffuses = [], voix = [];
-  const ctx = { String, Math, Date, Promise, VIVANTS: [], VIVANTS_MAX: { haiku: 10 }, VIVANT_RENOUVELER: 6, corpsReglages: () => ({}),
-    personaLocale: (p) => p, lirePersona: () => 'Hakim', neutraliser: (t) => t, j: JSON.stringify, abonnesPensees: null,
+  const ctx = { String, Math, Date, Promise, RegExp, Object, VIVANTS: [], VIVANTS_MAX: { haiku: 12, sonnet: 3, opus: 3 }, VIVANT_RENOUVELER: 6,
+    corpsReglages: () => ({}), personaLocale: (p) => p, lirePersona: () => 'Hakim', neutraliser: (t) => t, j: JSON.stringify, abonnesPensees: null,
     voixDeLaSource: (t) => voix.push(t), diffuser: (_, e, d) => diffuses.push(JSON.parse(d)),
-    sonnetTeteDeFond: (prompt, etiquette) => new Promise((resoudre) => appels.push({ prompt, etiquette, resoudre })) };
+    sonnetTeteDeFond: (prompt, etiquette, modele) => new Promise((resoudre) => {
+      const v = { modele, attente: {}, proc: { exitCode: null }, n: 1 };                  // sa voix vivante, occupée le temps de répondre
+      ctx.VIVANTS.push(v);
+      appels.push({ prompt, etiquette, modele, resoudre: (o) => { v.attente = null; resoudre(o); } });
+    }) };
   vm.createContext(ctx);
   vm.runInContext(SRC.slice(i, k) + '\nthis.morceau = pisteMorceau; this.etat = () => pistes;', ctx);
   let texte = '';
-  for (const m of ['bonjour mon fils', 'je rentre du travail', 'il faisait froid ce matin', 'on a mangé ensemble', 'et puis voilà']) {
+  for (const m of ['bonjour mon fils', 'je rentre du travail', 'il faisait froid ce matin', 'on a mangé ensemble', 'et puis voilà',
+    'tu sais quoi', 'demain on part tôt', 'prépare-toi bien', 'et encore une chose']) {
     texte = `${texte} ${m}`.trim(); ctx.morceau(texte);
   }
-  assert.strictEqual(appels.length, 8, '4 morceaux à la fois, 2 voix chacun (écoute et parole)');
-  assert.deepStrictEqual(appels.map(a => a.etiquette).slice(0, 2), ['piste_ecoute', 'piste_parole']);
-  assert.match(appels[2].prompt, /Son morceau 2, qu'il vient de dire : « je rentre du travail »/, 'chaque piste a SON morceau');
-  assert.strictEqual(ctx.etat().attente.length, 1, 'le 5e attend une piste libre');
-  appels[0].resoudre({ texte: 'Il me salue, content.' });
-  appels[1].resoudre({ texte: 'DIRE : oui\nCOUPER : non\nSalut papa !' });
+  assert.deepStrictEqual(appels.slice(0, 3).map(a => a.modele), ['haiku', 'sonnet', 'opus'], 'ses trois voix sur le premier morceau');
+  assert.strictEqual(appels.filter(a => a.modele === 'haiku').length, 8, '8 paires à la fois');
+  assert.strictEqual(appels.length, 8 + 3 + 3, 'Hakim et Super Hakim, tant qu’il leur reste une place (3 chacun)');
+  assert.match(appels[3].prompt, /Son morceau 2, qu'il vient de dire : « je rentre du travail »/, 'chaque piste a SON morceau');
+  assert.strictEqual(ctx.etat().attente.length, 1, 'le 9e attend une piste libre');
+  appels[1].resoudre({ texte: 'COMPRENDS : il me salue\nDIRE : oui\nCOUPER : non\nSalut papa, ça va ?' });   // Hakim, le premier prêt
+  await new Promise(r => setImmediate(r));
+  appels[0].resoudre({ texte: 'COMPRENDS : un bonjour\nDIRE : oui\nCOUPER : non\nCoucou papa !' });
+  appels[2].resoudre({ texte: 'COMPRENDS : il revient vers moi\nDIRE : non\nCOUPER : non\nBonjour.' });
   await new Promise(r => setImmediate(r)); await new Promise(r => setImmediate(r));
-  assert.strictEqual(appels.length, 10, 'une piste libérée : le 5e morceau part');
-  assert.strictEqual(diffuses[0].niveau, 'piste');
-  assert.strictEqual(diffuses[0].texte, 'Salut papa !');
-  assert.deepStrictEqual(voix, ['Salut papa !'], 'sa voix naît avec sa réponse');
-  assert.strictEqual(ctx.etat().liste[0].comprend, 'Il me salue, content.');
+  assert.deepStrictEqual(diffuses.map(d => d.texte), ['Salut papa, ça va ?'], 'la première réponse à dire, une seule fois');
+  assert.deepStrictEqual(voix, ['Salut papa, ça va ?']);
+  assert.deepStrictEqual(Object.keys(ctx.etat().liste[0].voix).sort(), ['Hakim', 'Mini Hakim', 'Super Hakim'], 'les trois comprennent, pour son cerveau');
+  assert.ok(appels.length > 14, 'une piste libérée : le 9e morceau part');
   assert.match(SRC, /\[Tes pistes pendant qu'il parlait, une par morceau, en parallèle\]/, 'ce qu’il a compris part à son cerveau');
   assert.match(SRC, /pisteMorceau\(String\(q\.texte \|\| ''\)\);/, 'chaque morceau confirmé a sa piste');
+});
+
+test('(04/11) ses pistes partent sur tes mots en direct, et les mots déjà partis ne repartent pas', () => {
+  const i = SRC.indexOf('const PISTES_MAX'), k = SRC.indexOf('function speculerFreres(');
+  const appels = [];
+  const ctx = { String, Math, Date, Promise, RegExp, Object, VIVANTS: [], VIVANTS_MAX: { haiku: 12, sonnet: 0, opus: 0 }, VIVANT_RENOUVELER: 6,
+    corpsReglages: () => ({}), personaLocale: (p) => p, lirePersona: () => '', neutraliser: (t) => t, j: JSON.stringify, abonnesPensees: null,
+    voixDeLaSource() {}, diffuser() {}, sonnetTeteDeFond: (prompt) => new Promise(() => appels.push(prompt)) };
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(i, k) + '\nthis.morceau = pisteMorceau;', ctx);
+  ctx.morceau('papa me dit bonjour ce matin');
+  ctx.morceau('papa me dit bonjour ce matin,');                       // la même chose, revue par Whisper : rien de neuf
+  ctx.morceau('papa me dit bonjour ce matin, il a bien dormi');
+  assert.strictEqual(appels.length, 2);
+  assert.match(appels[1], /Son morceau 2, qu'il vient de dire : « il a bien dormi »/);
+  assert.match(PAGE, /if \(neufs >= 6 \|\| \(neufs >= 3 && \/\[\.,;:!\?…\]\$\/\.test\(tout\)\)\) \{/, 'la page envoie dès 6 mots neufs ou une fin de proposition');
+  assert.match(SRC, /if \(q\.direct\) \{/);
 });
