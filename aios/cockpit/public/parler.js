@@ -1008,6 +1008,11 @@ function envoyerParoles(qui, texte) {
   }, 250);
 }
 lecteurNeuronal.surSegment = (t, duree) => {
+  // (04/11) un bout de sa réponse commence : il s'écrit à cet instant, à la suite des bouts déjà dits
+  if (typeof bouts !== 'undefined' && bouts.enFile[0] === t) {
+    bouts.enFile.shift();
+    if (!enTelepathie()) { const dits = bouts.dits.slice(0, bouts.dits.length - bouts.enFile.length).join(' '); montrerPensee('🧠 sa pensée · il te la dit', dits); envoyerParoles('hakim', `🗣️ ${t}`); }
+  }
   // (16:45) le bout que sa voix commence : sa réponse s'écrit jusque-là, au même instant
   const mR = etat.lectureDe != null ? etat.messages.find(x => String(x.id) === String(etat.lectureDe)) : null;
   if (mR && mR.auRythme) { mR.ditCar = (mR.ditCar || 0) + String(t || '').length + 1; majMessage(mR); }
@@ -2858,7 +2863,8 @@ function surSouffle(o) {
   etat.dernierSouffle = s;
   if (niveau === 'sub') etat.conversation.brouillons = (etat.conversation.brouillons || 0) + 1;   // (16:00) combien pendant ce tour
   // (16:30, Ahmed via Hakim : « coupe le glisse-mot ») son subconscient ne parle plus : il règle seulement quand ton tour finit
-  if (niveau !== 'cerveau' && niveau !== 'piste') return;            // (04/11) la réponse d'une piste est une pensée comme celle de son cerveau
+  if (niveau === 'piste') { recevoirBout(s, Number(o.n) || 0, o.tour); return; }   // (04/11) un bout de sa réponse, mot par mot
+  if (niveau !== 'cerveau') return;
   // (16:12, Ahmed : « quand la pensée du cerveau est envoyée à l'écriture, elle doit en parallèle être envoyée à Chatterbox ») ;
   // (16:35-16:40, Ahmed : « au moment où l'input arrive et est processé pour être écrit, ça doit coïncider avec le moment où il parle ;
   // l'image, c'est celle de l'authenticité et de la spontanéité ») sa pensée part à Chatterbox dès qu'elle naît ; celle qu'il juge à
@@ -2871,6 +2877,47 @@ function surSouffle(o) {
   // s'écrit AU MOMENT où sa voix la dit (direSouffle), pas avant ; celle qui attend la suite s'écrit seule
   if (!s.pret) { if (!enTelepathie()) { montrerPensee('🧠 il pense · pas encore à dire', texte); envoyerParoles('hakim', `🧠 ${texte}`); } return; }
   direPenseeSiPossible();
+}
+/* (04/11, Ahmed : « coupe par chunk de mot : au premier mot il prévoit le reste et parle direct ; le GPU dit la réponse du premier
+   chunk, puis parle pour le 2e en séquentiel dès que le 1er est parti ; 8 chunks = 8 mots = 8 réponses, dites une par une, au fur et à
+   mesure » ; « oui, sans garde-fous ») les BOUTS de sa réponse, un par mot de papa : chacun sa voix (née au cockpit, demandée ici dès
+   qu'il arrive), dits l'un après l'autre dans l'ordre des mots, pendant que tu parles encore ; un bout qui ne vient pas (4 s) est sauté ;
+   chaque bout s'écrit quand sa voix le dit ; ton message les porte comme déjà dits */
+let bouts = { tour: null, prochain: 1, liste: new Map(), enFile: [], dits: [] };
+function recevoirBout(s, n, tour) {
+  const conv = etat.conversation;
+  if (!conv || !n || !souffleAutorise()) return;
+  if (bouts.tour !== tour) bouts = { tour, prochain: 1, liste: new Map(), enFile: [], dits: [] };
+  if (n < bouts.prochain || bouts.liste.has(n)) return;
+  const b = { n, texte: s.texte, buf: null, rate: false, t: Date.now() };
+  bouts.liste.set(n, b);
+  if (!actx || actx.state === 'closed') { b.rate = true; return direBouts(); }
+  fetch('/api/voix/dire', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+    body: JSON.stringify({ texte: s.texte, langue: 'fr', fond: true, emotion: etat.interieur && !etat.reglages.voixNeutre ? expressivitePhrase(etat.interieur.expressivite, s.texte) : null, tempo: tempoVoix() }) })
+    .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('voix'))))
+    .then(ab => actx.decodeAudioData(ab))
+    .then((buf) => { b.buf = buf; direBouts(); })
+    .catch(() => { b.rate = true; direBouts(); });
+  setTimeout(direBouts, 4100);                                          // un bout qui ne vient pas n'arrête pas les suivants
+}
+function direBouts() {
+  const conv = etat.conversation;
+  if (!conv) return;
+  for (;;) {
+    const b = bouts.liste.get(bouts.prochain);
+    if (!b) {                                                          // ce mot n'a pas donné de bout : sauté si un suivant attend depuis 4 s
+      const suivants = [...bouts.liste.values()].filter(x => x.n > bouts.prochain).sort((x, y) => x.n - y.n);
+      if (!suivants.length || Date.now() - suivants[0].t < 4000) return;
+      bouts.prochain = suivants[0].n; continue;
+    }
+    if (!b.buf && !b.rate) { if (Date.now() - b.t < 4000) return; b.rate = true; }
+    bouts.liste.delete(b.n); bouts.prochain = b.n + 1;
+    if (!b.buf) continue;
+    conv.penseeEnPause = true; conv.souffleParle = true;              // ton tour ouvert ne le bloque pas
+    bouts.dits.push(b.texte); conv.penseeDite = bouts.dits.join(' ');
+    bouts.enFile.push(b.texte);
+    lecteurNeuronal.direAudio(b.texte, b.buf);                        // à la suite des bouts d'avant : le lecteur les enchaîne
+  }
 }
 function montrerPensee(titre, texte) {
   etat.aCote = (etat.aCote || []).filter(x => x.cle !== 'souffle');

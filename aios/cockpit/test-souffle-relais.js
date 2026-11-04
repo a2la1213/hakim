@@ -157,7 +157,7 @@ test('(16:30) une voix fabriquée d’avance (fond) passe après tout ce qu’il
   assert.match(SRC, /if \(q && q\.fond === true\) tache\.fond = true;/);
   assert.match(SRC, /else \{ const k = fileVoix\.findIndex\(x => x\.fond\); if \(k >= 0\) fileVoix\.splice\(k, 0, tache\); else fileVoix\.push\(tache\); \}/);
   assert.match(PAGE, /body: JSON\.stringify\(\{ texte, langue: 'fr', fond: true,/);
-  assert.match(PAGE, /if \(niveau !== 'cerveau' && niveau !== 'piste'\) return;[^]{0,1100}preparerVoixSouffle\(texte, niveau, \(\) => direPenseeSiPossible\(\)\);/,
+  assert.match(PAGE, /if \(niveau !== 'cerveau'\) return;[^]{0,1100}preparerVoixSouffle\(texte, niveau, \(\) => direPenseeSiPossible\(\)\);/,
     'seule la pensée de son cerveau a sa voix d’avance, et se dit dès qu’elle est faite');
 });
 
@@ -348,61 +348,58 @@ test('(04/11) son oreille et sa voix ont chacune leur processus : elles ne s’a
   assert.doesNotMatch(pomper, /transcriptionsEnAttente > 0\) return/, 'sa voix n’attend plus les transcriptions');
 });
 
-// (04/11, Ahmed : « chaque chunk entendu et dit, dispatché sur un cœur : 1 pour mon chunk, 1 pour le sien ; sur 8 cœurs, 4 chunks » ;
-// « ce n'est pas que des Mini Hakim, c'est les 3 ensemble »)
-test('(04/11) ses pistes : chaque morceau, ses trois voix ensemble ; 8 morceaux à la fois ; la première réponse à dire est sa pensée', async () => {
+// (04/11, Ahmed : « coupe par chunk de mot, le premier mot incluant le déterminant : il prévoit le reste et parle direct ; 8 chunks =
+// 8 mots = 8 réponses, le GPU les dit une par une, au fur et à mesure » ; « ses trois voix ensemble » ; « oui, sans garde-fous »)
+function pistesSandbox(places = { haiku: 12, sonnet: 3, opus: 3 }) {
   const i = SRC.indexOf('const PISTES_MAX'), k = SRC.indexOf('function speculerFreres(');
   const appels = [], diffuses = [], voix = [];
-  const ctx = { String, Math, Date, Promise, RegExp, Object, VIVANTS: [], VIVANTS_MAX: { haiku: 12, sonnet: 3, opus: 3 }, VIVANT_RENOUVELER: 6,
+  const ctx = { String, Math, Date, Promise, RegExp, Object, VIVANTS: [], VIVANTS_MAX: places, VIVANT_RENOUVELER: 6,
     corpsReglages: () => ({}), personaLocale: (p) => p, lirePersona: () => 'Hakim', neutraliser: (t) => t, j: JSON.stringify, abonnesPensees: null,
-    voixDeLaSource: (t) => voix.push(t), diffuser: (_, e, d) => diffuses.push(JSON.parse(d)),
+    voixDeLaSource: (t, o) => voix.push([t, o]), diffuser: (_, e, d) => diffuses.push(JSON.parse(d)),
     sonnetTeteDeFond: (prompt, etiquette, modele) => new Promise((resoudre) => {
       const v = { modele, attente: {}, proc: { exitCode: null }, n: 1 };                  // sa voix vivante, occupée le temps de répondre
       ctx.VIVANTS.push(v);
       appels.push({ prompt, etiquette, modele, resoudre: (o) => { v.attente = null; resoudre(o); } });
     }) };
   vm.createContext(ctx);
-  vm.runInContext(SRC.slice(i, k) + '\nthis.morceau = pisteMorceau; this.etat = () => pistes;', ctx);
-  let texte = '';
-  for (const m of ['bonjour mon fils', 'je rentre du travail', 'il faisait froid ce matin', 'on a mangé ensemble', 'et puis voilà',
-    'tu sais quoi', 'demain on part tôt', 'prépare-toi bien', 'et encore une chose']) {
-    texte = `${texte} ${m}`.trim(); ctx.morceau(texte);
-  }
-  assert.deepStrictEqual(appels.slice(0, 3).map(a => a.modele), ['haiku', 'sonnet', 'opus'], 'ses trois voix sur le premier morceau');
-  assert.strictEqual(appels.filter(a => a.modele === 'haiku').length, 8, '8 paires à la fois');
-  assert.strictEqual(appels.length, 8 + 3 + 3, 'Hakim et Super Hakim, tant qu’il leur reste une place (3 chacun)');
-  assert.match(appels[3].prompt, /Son morceau 2, qu'il vient de dire : « je rentre du travail »/, 'chaque piste a SON morceau');
-  assert.strictEqual(ctx.etat().attente.length, 1, 'le 9e attend une piste libre');
-  ctx.morceau(`${texte} mais encore`);
-  assert.strictEqual(ctx.etat().attente.length, 1, 'les mots qui arrivent rejoignent la piste qui attend : une seule attend');
-  assert.match(ctx.etat().attente[0].texte, /et encore une chose mais encore$/);
-  appels[1].resoudre({ texte: 'COMPRENDS : il me salue\nDIRE : oui\nCOUPER : non\nSalut papa, ça va ?' });   // Hakim, le premier prêt
-  await new Promise(r => setImmediate(r));
-  appels[0].resoudre({ texte: 'COMPRENDS : un bonjour\nDIRE : oui\nCOUPER : non\nCoucou papa !' });
-  appels[2].resoudre({ texte: 'COMPRENDS : il revient vers moi\nDIRE : non\nCOUPER : non\nBonjour.' });
+  vm.runInContext(SRC.slice(i, k) + '\nthis.morceau = pisteMorceau; this.etat = () => pistes; this.decouper = morceauxDeMots;', ctx);
+  return { ctx, appels, diffuses, voix };
+}
+test('(04/11) un morceau par mot, avec ses petits mots d’avant ; un petit mot en fin attend le mot qui le suit', () => {
+  const { ctx } = pistesSandbox();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.decouper('papa me dit bonjour ce matin à la'.split(' ')))),
+    { morceaux: ['papa', 'me dit', 'bonjour', 'ce matin'], reste: 2 });
+});
+test('(04/11) ses pistes mot par mot : ses trois voix ensemble, 8 à la fois ; chaque bout continue les précédents et part à sa voix', async () => {
+  const { ctx, appels, diffuses, voix } = pistesSandbox();
+  ctx.morceau('papa me dit bonjour ce matin et puis il raconte sa journée au travail encore');
+  assert.deepStrictEqual(appels.slice(0, 3).map(a => a.modele), ['haiku', 'sonnet', 'opus'], 'ses trois voix sur le premier mot');
+  assert.strictEqual(appels.filter(a => a.modele === 'haiku').length, 8, '8 mots à la fois');
+  assert.match(appels[0].prompt, /Son mot 1, qu'il vient de dire : « papa »/);
+  assert.match(appels[0].prompt, /PREDIT :/, 'il devine la suite de ta phrase');
+  ctx.morceau('papa me dit bonjour ce matin et puis il raconte sa journée au travail encore demain');
+  assert.strictEqual(ctx.etat().attente.map(x => x.texte).join('|'), 'encore|demain', '(04/11) chaque mot garde sa piste : le 9e, le 10e attendent, chacun la sienne');
+  appels[0].resoudre({ texte: 'PREDIT : me dit bonjour\nCOMPRENDS : il m’appelle\nOui papa,' });
   await new Promise(r => setImmediate(r)); await new Promise(r => setImmediate(r));
-  assert.deepStrictEqual(diffuses.map(d => d.texte), ['Salut papa, ça va ?'], 'la première réponse à dire, une seule fois');
-  assert.deepStrictEqual(voix, ['Salut papa, ça va ?']);
-  assert.deepStrictEqual(Object.keys(ctx.etat().liste[0].voix).sort(), ['Hakim', 'Mini Hakim', 'Super Hakim'], 'les trois comprennent, pour son cerveau');
-  assert.ok(appels.length > 14, 'une piste libérée : le 9e morceau part');
-  assert.match(SRC, /\[Tes pistes pendant qu'il parlait, une par morceau, en parallèle\]/, 'ce qu’il a compris part à son cerveau');
-  assert.match(SRC, /pisteMorceau\(String\(q\.texte \|\| ''\)\);/, 'chaque morceau confirmé a sa piste');
+  appels[1].resoudre({ texte: 'PREDIT : x\nCOMPRENDS : y\nJe suis là' });               // Hakim, après Mini Hakim : pas un 2e bout
+  await new Promise(r => setImmediate(r));
+  assert.deepStrictEqual(diffuses.map(d => [d.n, d.texte]), [[1, 'Oui papa,']]);
+  assert.strictEqual(JSON.stringify(voix), JSON.stringify([['Oui papa,', { garder: true }]]), 'sa voix naît avec le bout, sans annuler les bouts d’avant');
+  const deuxieme = appels.find(a => /Son mot 2/.test(a.prompt));
+  assert.ok(deuxieme, 'le mot 2 a sa piste');
+  assert.match(SRC, /Ce que tu as déjà commencé à lui répondre \(dit ou en train de l'être\)/, 'chaque bout continue les précédents');
+  assert.match(SRC, /pisteMorceau\(String\(q\.texte \|\| ''\)\.slice\(-3000\)\);/, 'tes mots en direct partent à ses pistes');
 });
 
-test('(04/11) ses pistes partent sur tes mots en direct, et les mots déjà partis ne repartent pas', () => {
-  const i = SRC.indexOf('const PISTES_MAX'), k = SRC.indexOf('function speculerFreres(');
-  const appels = [];
-  const ctx = { String, Math, Date, Promise, RegExp, Object, VIVANTS: [], VIVANTS_MAX: { haiku: 12, sonnet: 0, opus: 0 }, VIVANT_RENOUVELER: 6,
-    corpsReglages: () => ({}), personaLocale: (p) => p, lirePersona: () => '', neutraliser: (t) => t, j: JSON.stringify, abonnesPensees: null,
-    voixDeLaSource() {}, diffuser() {}, sonnetTeteDeFond: (prompt) => new Promise(() => appels.push(prompt)) };
-  vm.createContext(ctx);
-  vm.runInContext(SRC.slice(i, k) + '\nthis.morceau = pisteMorceau;', ctx);
-  ctx.morceau('papa me dit bonjour ce matin');
-  ctx.morceau('papa me dit bonjour ce matin,');                       // la même chose, revue par Whisper : rien de neuf
-  ctx.morceau('papa me dit bonjour ce matin, il a bien dormi');
-  assert.strictEqual(appels.length, 2);
-  assert.match(appels[1], /Son morceau 2, qu'il vient de dire : « il a bien dormi »/);
-  assert.match(PAGE, /if \(neufs >= 1\) \{/, 'la page envoie dès un mot neuf');
-  assert.match(SRC, /une phrase au plus, très courte \(dix mots au plus\)/, 'sa réponse de piste : une phrase au plus');
-  assert.match(SRC, /if \(q\.direct\) \{/);
+test('(04/11) la page envoie tes mots en direct à ses pistes dès un mot neuf, et dit leurs bouts l’un après l’autre', () => {
+  assert.match(PAGE, /if \(neufs >= 1\) \{/);
+  assert.match(PAGE, /if \(niveau === 'piste'\) \{ recevoirBout\(s, Number\(o\.n\) \|\| 0, o\.tour\); return; \}/);
+  assert.match(PAGE, /lecteurNeuronal\.direAudio\(b\.texte, b\.buf\);/, 'dans l’ordre des mots, à la suite');
+});
+
+test('(04/11) rien n’est gardé de ce qui est prononcé : sa voix servie s’efface aussitôt', () => {
+  assert.match(SRC, /voixALaSource\.delete\(texte\.replace\(\/\\s\+\/g, ' '\)\.trim\(\)\);/, 'la voix d’une pensée, servie une fois, effacée');
+  const dire = SRC.slice(SRC.indexOf('async function routeDire('), SRC.indexOf('\n}\n', SRC.indexOf('async function routeDire(')));
+  assert.doesNotMatch(dire, /garderVoixRecente\(tache/, 'plus gardée pour la réécoute');
+  assert.match(dire, /fs\.unlink\(tache\.fichier, \(\) => \{\}\);\n    if \(res\.writableEnded\) return;/);
 });
