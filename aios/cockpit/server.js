@@ -3432,11 +3432,42 @@ const RIBOSOME_LECTEURS = [['haiku', 'Mini Hakim', 3000], ['opus', 'Super Hakim'
 // tout ce qui continue sa réponse) à 5 (presque rien) ; sa vitesse, l'attente de ses lecteurs ; sans réglage : stringent (4) et rapide
 const RIBOSOME_REGLAGE = path.join(JARVIS, 'ribosome-reglage.json');
 const RIBOSOME_VITESSES = { rapide: 2000, normale: 3000, posee: 6000 };
-// (04/11, 17:55-17:59, Ahmed : « juste au moment où il reçoit le signal parasite, il faut automatiquement accélérer le ribosome » ; « 3 ou 4 fois
-// pour la vitesse max » ; « pour le chunk suivant » ; « et quand je reprends la parole, juste après que j'ai marqué une pause ») sa vitesse
-// max : 0,35 s (3,5 fois plus vite que 1,2 s), pour le seul paquet suivant ; mesuré (300 paquets) : ses lecteurs répondent en 1 à 1,6 s, donc
-// à cette vitesse, le paquet passe le plus souvent tel quel, sans tri
-const RIBOSOME_VITESSE_MAX = 350;
+// (04/11, 17:55-17:59, Ahmed : « juste au moment où il reçoit le signal parasite, il faut automatiquement accélérer le ribosome » ; « pour le
+// chunk suivant » ; « et quand je reprends la parole, juste après que j'ai marqué une pause ») sa vitesse max, pour le seul paquet suivant
+// (18:05, Ahmed : « mesure la vitesse max avant saturation, et fais que cette vitesse max soit le plafond de vitesse ») mesuré sur ses 681
+// paquets (13:39-18:01) : lus en 1 s : 16 % ; 1,2 s : 42 % ; 1,6 s : 73 % ; 2 s : 87 % ; 3 s : 93 % ; au-delà de 2 s, 200 ms de plus
+// n'ajoutent plus que 2 points : sa saturation (en deçà, ses lecteurs n'ont pas le temps et le paquet passe tel quel, sans tri). Sa vitesse
+// max est ce coude, remesuré toutes les 10 min sur ses 500 derniers paquets ; aucune de ses vitesses ne va plus vite
+const RIBOSOME_VITESSE_MAX_DEFAUT = 2000;
+function vitesseMaxMesuree(lignes) {
+  const paquets = [];
+  for (const l of lignes) {
+    let p = null; try { p = JSON.parse(l); } catch (_) { continue; }
+    if (!p || p.ribosome == null || !Array.isArray(p.lecteurs)) continue;
+    const lus = p.lecteurs.filter(x => x && x.garde != null).map(x => Number(x.ms)).filter(Number.isFinite);
+    paquets.push({ lu: lus.length ? Math.min(...lus) : Infinity, attente: Number(p.vitesse_ms) || 3000 });   // (sans vitesse notée : 3 s, avant 16:50)
+  }
+  const derniers = paquets.slice(-500);
+  if (derniers.length < 100) return RIBOSOME_VITESSE_MAX_DEFAUT;
+  // la part des paquets lus en x ms, parmi ceux qui ont attendu au moins x ms (50 au moins)
+  const part = (x) => { const b = derniers.filter(p => p.attente >= x); return b.length >= 50 ? b.filter(p => p.lu <= x).length / b.length : null; };
+  let plafond = 0;
+  for (let x = 1000; x <= 3000; x += 100) plafond = Math.max(plafond, part(x) || 0);
+  if (plafond === 0) return 3000;                                     // rien n'est lu : il attend le plus longtemps permis
+  for (let x = 1000; x <= 2800; x += 100) {
+    const a = part(x), b = part(x + 200);
+    if (a != null && b != null && a >= plafond / 2 && b - a < 0.03) return x;
+  }
+  return RIBOSOME_VITESSE_MAX_DEFAUT;
+}
+const vitesseMaxLue = { t: 0, ms: RIBOSOME_VITESSE_MAX_DEFAUT };
+function vitesseMax() {
+  if (Date.now() - vitesseMaxLue.t > 10 * 60e3) {
+    vitesseMaxLue.t = Date.now();
+    try { vitesseMaxLue.ms = vitesseMaxMesuree(fs.readFileSync(JOURNAL_PISTES, 'utf8').split('\n')); } catch (_) {}
+  }
+  return vitesseMaxLue.ms;
+}
 let ribosomeAuMax = null;
 const RIBOSOME_STRINGENCES = {
   1: { mots: 0, consigne: 'garde tout ce qui continue ta réponse' },
@@ -3449,14 +3480,15 @@ const RIBOSOME_STRINGENCES = {
 // de base (son outil), plus vite quand il est éveillé, quand des pensées attendent, quand papa parle encore ; plus posée quand il est calme ;
 // entre 1,2 et 6 s ; sa stringence reste à son conscient (ribosome_regler)
 function vitesseSubconsciente(base, r) {
-  if (typeof ribosomeAuMax !== 'undefined' && ribosomeAuMax) { ribosomeAuMax = null; return RIBOSOME_VITESSE_MAX; }   // (17:58) voir RIBOSOME_VITESSE_MAX
+  const vmax = vitesseMax();                                           // (18:05) son plafond, mesuré : voir RIBOSOME_VITESSE_MAX_DEFAUT
+  if (typeof ribosomeAuMax !== 'undefined' && ribosomeAuMax) { ribosomeAuMax = null; return vmax; }   // (17:58) le paquet suivant, au plus vite
   const e = (typeof lui !== 'undefined' && lui && lui.interieur) || {}, a = Number.isFinite(e.arousal) ? e.arousal : 0.4;
   let d = Number(base) || 3000;
   d *= 1.3 - 0.6 * Math.max(0, Math.min(1, a));                       // éveil 0 : ×1,3 ; éveil 1 : ×0,7
   const attente = (r && r.attente ? r.attente.length : 0);
   if (attente >= 3) d *= 0.7; else if (attente >= 1) d *= 0.85;
   if (Date.now() - (Number(derniereParolePapa) || 0) < 1500) d *= 0.85;   // papa parle encore
-  return Math.round(Math.max(1200, Math.min(6000, d)));
+  return Math.round(Math.max(vmax, Math.min(6000, d)));
 }
 function reglageRibosome() {
   let r = {}; try { r = JSON.parse(fs.readFileSync(RIBOSOME_REGLAGE, 'utf8')) || {}; } catch (_) {}

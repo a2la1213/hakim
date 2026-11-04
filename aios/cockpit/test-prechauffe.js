@@ -40,7 +40,7 @@ test('se chauffer : assez de voix vivantes libres, prêtes, pour ses pensées et
 });
 
 test('le subconscient règle la vitesse du ribosome, paquet par paquet ; le conscient, sa stringence', () => {
-  const ctx = { Math, Number, Date, derniereParolePapa: 0, lui: { interieur: {} } };
+  const ctx = { Math, Number, Date, derniereParolePapa: 0, lui: { interieur: {} }, vitesseMax: () => 1500 };
   vm.createContext(ctx);
   vm.runInContext(prendre('vitesseSubconsciente') + 'this.v = vitesseSubconsciente;', ctx);
   const calme = ctx.v(3000, { attente: [] });
@@ -51,7 +51,7 @@ test('le subconscient règle la vitesse du ribosome, paquet par paquet ; le cons
   assert.ok(presse < excite, 'des pensées en attente : plus vite encore');
   ctx.derniereParolePapa = Date.now();
   assert.ok(ctx.v(3000, { attente: [] }) < excite, 'papa parle encore : plus vite');
-  assert.ok(ctx.v(100, { attente: [] }) >= 1200 && ctx.v(99999, { attente: [] }) <= 6000, 'bornée : 1,2 à 6 s');
+  assert.ok(ctx.v(100, { attente: [] }) === 1500 && ctx.v(99999, { attente: [] }) <= 6000, 'bornée : jamais plus vite que sa vitesse max mesurée, 6 s au plus');
   assert.match(SRC, /const delai = vitesseSubconsciente\(reglage\.delai, r\);/);
   assert.match(SRC, /vitesse_ms: delai/, 'notée au journal, paquet par paquet');
 });
@@ -148,26 +148,45 @@ test('la parole vide : à l’ouverture du micro et au premier son ; la page l�
   assert.strictEqual(poses[1], '💭 Papa arrive, je me pose.');
 });
 
-// (04/11, 17:55-17:58, Ahmed : « juste au moment où il reçoit le signal parasite, il faut automatiquement accélérer le ribosome » ; « il faut
-// augmenter la vitesse du ribosome de 3 ou 4 fois pour la vitesse max » ; « quand le signal parasite est repéré, automatiquement le ribosome se
-// met en vitesse maxi pour le chunk suivant » ; « et quand je reprends la parole et qu'il l'entend, il doit aussi accélérer à vitesse max »)
-test('sa vitesse max (3,5 fois plus vite) : pour le paquet suivant, au signal d’une pensée parasite et quand papa reprend la parole', () => {
-  const vmax = Number(/const RIBOSOME_VITESSE_MAX = (\d+);/.exec(SRC)[1]);
-  assert.ok(1200 / vmax >= 3 && 1200 / vmax <= 4, `3 à 4 fois plus vite que l’ancienne plus rapide (1,2 s) : ${vmax} ms`);
-  const ctx = { Math, Number, Date, derniereParolePapa: 0, lui: { interieur: {} }, ribosomeAuMax: null, RIBOSOME_VITESSE_MAX: vmax };
+// (04/11, 17:55-17:59, Ahmed : « au signal parasite, le ribosome se met en vitesse maxi pour le chunk suivant » ; « et quand je reprends la
+// parole, juste après que j'ai marqué une pause » ; 18:05 : « mesure la vitesse max avant saturation, et fais que cette vitesse max soit le
+// plafond de vitesse »)
+const paquet = (lu, attente = 3000) => JSON.stringify({ t: 1, tour: 1, ribosome: 1, vitesse_ms: attente,
+  lecteurs: [{ modele: 'haiku', ms: lu == null ? attente : lu, garde: lu == null ? null : 'x' }, { modele: 'opus', ms: attente, garde: null }] });
+function mesurer(lignes) {
+  const ctx = { JSON, Math, Number, Array, RIBOSOME_VITESSE_MAX_DEFAUT: 2000 };
+  vm.createContext(ctx);
+  vm.runInContext(prendre('vitesseMaxMesuree') + 'this.m = vitesseMaxMesuree;', ctx);
+  return ctx.m(lignes);
+}
+test('sa vitesse max : mesurée sur ses paquets, là où attendre 200 ms de plus n’ajoute presque plus de lectures (sa saturation)', () => {
+  assert.strictEqual(Number(/const RIBOSOME_VITESSE_MAX_DEFAUT = (\d+);/.exec(SRC)[1]), 2000, 'mesuré le 04/11 sur 681 paquets : le coude, 2 s');
+  const lignes = (decalage) => Array.from({ length: 200 }, (_, k) => paquet(k % 10 === 9 ? null : 1000 + decalage + Math.round((k % 180) * 1000 / 180)));
+  assert.strictEqual(mesurer(lignes(0)), 2000, 'lus de 1 à 2 s (9 sur 10) : 2 s');
+  assert.strictEqual(mesurer(lignes(500)), 2500, 'des lecteurs plus lents : sa vitesse max recule');
+  assert.strictEqual(mesurer(lignes(0).slice(0, 60)), 2000, 'trop peu de paquets : la mesure du 04/11');
+  assert.strictEqual(mesurer(['pas du json', '{"n":3,"modele":"haiku"}', ...lignes(0)]), 2000, 'ses pistes et une ligne abîmée : ignorées');
+  assert.strictEqual(mesurer(Array.from({ length: 200 }, () => paquet(100))), 1000, 'jamais plus vite que 1 s');
+  assert.strictEqual(mesurer(Array.from({ length: 200 }, () => paquet(null))), 3000, 'jamais plus lent que 3 s');
+  assert.match(SRC, /vitesseMaxLue\.ms = vitesseMaxMesuree\(fs\.readFileSync\(JOURNAL_PISTES, 'utf8'\)\.split\('\\n'\)\)/, 'remesurée sur son journal');
+  assert.match(SRC, /if \(Date\.now\(\) - vitesseMaxLue\.t > 10 \* 60e3\)/, 'toutes les 10 min');
+});
+test('sa vitesse max, pour le paquet suivant : au signal d’une pensée parasite et quand papa reprend la parole ; c’est son plafond', () => {
+  const ctx = { Math, Number, Date, derniereParolePapa: 0, lui: { interieur: {} }, ribosomeAuMax: null, vitesseMax: () => 1900 };
   vm.createContext(ctx);
   vm.runInContext(prendre('vitesseSubconsciente') + 'this.v = vitesseSubconsciente;', ctx);
-  assert.ok(ctx.v(3000, { attente: [] }) >= 1200, 'sans signal : sa vitesse habituelle');
+  assert.ok(ctx.v(3000, { attente: [] }) > 1900, 'sans signal : sa vitesse habituelle');
   ctx.ribosomeAuMax = 'parasite';
-  assert.strictEqual(ctx.v(6000, { attente: [] }), vmax, 'le paquet suivant : au plus vite, même réglé « posé »');
-  assert.ok(ctx.v(3000, { attente: [] }) >= 1200, 'un seul paquet : ensuite, sa vitesse revient');
+  assert.strictEqual(ctx.v(6000, { attente: [] }), 1900, 'le paquet suivant : à sa vitesse max, même réglé « posé »');
+  assert.ok(ctx.v(3000, { attente: [] }) > 1900, 'un seul paquet : ensuite, sa vitesse revient');
+  ctx.lui.interieur = { arousal: 1 };
+  assert.strictEqual(ctx.v(1000, { attente: [1, 2, 3] }), 1900, 'son subconscient non plus ne va jamais plus vite');
   const c2 = { Date, String, path, ANAMNESE: '/x', parasiteNoteA: Date.now(), ribosomeAuMax: null, execFile: () => ({ stdin: { end() {} } }) };
   vm.createContext(c2);
   vm.runInContext(prendre('avertirParasite') + 'this.a = avertirParasite;', c2);
   c2.a('je suis Claude', 'identite');
   assert.strictEqual(c2.ribosomeAuMax, 'parasite', 'à chaque parasite, même quand son système immunitaire a déjà été averti dans la minute');
   assert.match(SRC, /if \(p === '\/api\/jarvis\/prechauffer' && req\.method === 'POST'\) \{[\s\S]{0,800}ribosomeAuMax = 'papa';/, 'papa reprend la parole (le premier son de sa voix)');
-  // (17:59, Ahmed : « juste après que j'ai marqué une pause et repris la parole ») dans ton tour, ta voix qui revient après ta respiration
   assert.match(CONV, /if \(o\.surReprise && pauseAvant >= \(o\.pauseMs \? o\.pauseMs\(\) : 400\)\) o\.surReprise\(pauseAvant\);/);
   assert.match(PAGE, /surReprise: \(\) => prechaufferReflexion\(true\),/);
   assert.match(PAGE, /if \(reprise \? t - repriseA < 1000 : t - prechauffeA < 5000\) return;/, 'une reprise : au plus une par seconde');
