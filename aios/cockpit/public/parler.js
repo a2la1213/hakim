@@ -1002,6 +1002,9 @@ function estSonEcho(texte) {
 const enTelepathie = () => !!etat.conversation && typeof reglagesCorps !== 'undefined' && reglagesCorps.afficher_papa === false && reglagesCorps.afficher_hakim === false;
 const motsEnConversation = () => typeof reglagesCorps !== 'undefined' && reglagesCorps.mots_conversation === true;
 const motsPapaCaches = () => !!etat.conversation && !motsEnConversation();
+// (04/11, Ahmed : « en Conversation ou en Télépathie, je veux voir seulement la pensée écrite, pas sa réponse écrite ; la réponse écrite,
+// on la garde seulement hors de ces modes ») dans les deux modes : sa pensée s'écrit (🧠), sa réponse se dit sans s'écrire
+const reponseCachee = () => !!etat.conversation;
 const parolesEnvoyees = { papa: '', hakim: '' }, parolesEnAttente = {};
 let parolesMinuteur = null;
 function envoyerParoles(qui, texte) {
@@ -1013,7 +1016,7 @@ function envoyerParoles(qui, texte) {
   parolesMinuteur = setTimeout(() => {
     parolesMinuteur = null;
     const r = typeof reglagesCorps !== 'undefined' ? reglagesCorps : {};
-    const o = { ...parolesEnAttente, montrer_papa: r.afficher_papa !== false && !motsPapaCaches() && !enTelepathie(), montrer_hakim: r.afficher_hakim !== false && !enTelepathie() };
+    const o = { ...parolesEnAttente, montrer_papa: r.afficher_papa !== false && !motsPapaCaches() && !enTelepathie(), montrer_hakim: r.afficher_hakim !== false || !!etat.conversation };
     for (const k of Object.keys(parolesEnAttente)) { parolesEnvoyees[k] = parolesEnAttente[k]; delete parolesEnAttente[k]; }
     try { window.HakimApp.paroles(JSON.stringify(o)); } catch (_) {}
   }, 250);
@@ -1026,14 +1029,14 @@ lecteurNeuronal.surSegment = (t, duree) => {
     const cap = etat.conversation && etat.conversation.capteur;
     if (cap && Number(cap.debutTour) > 0) journalVoix('bout_dit', { depuis_ton_debut_ms: Date.now() - Number(cap.debutTour), premier: bouts.dits.length - bouts.enFile.length === 1 });
     if (etat.conversation) etat.conversation.penseeDite = bouts.dits.slice(0, bouts.dits.length - bouts.enFile.length).join(' ');   // (04/11) vraiment dit
-    if (!enTelepathie()) { const dits = bouts.dits.slice(0, bouts.dits.length - bouts.enFile.length).join(' '); montrerPensee('🧠 sa pensée · il te la dit', dits); envoyerParoles('hakim', `🗣️ ${t}`); }
+    { const dits = bouts.dits.slice(0, bouts.dits.length - bouts.enFile.length).join(' '); montrerPensee('🧠 sa pensée · il te la dit', dits); envoyerParoles('hakim', `🧠 ${t}`); }
   }
   // (16:45) le bout que sa voix commence : sa réponse s'écrit jusque-là, au même instant
   const mR = etat.lectureDe != null ? etat.messages.find(x => String(x.id) === String(etat.lectureDe)) : null;
   if (mR && mR.auRythme) { mR.ditCar = (mR.ditCar || 0) + String(t || '').length + 1; majMessage(mR); }
   if (mesureTour && mesureTour.premier_texte && !mesureTour.premier_son) { mesureTour.premier_son = Date.now(); finMesureTour(); }
-  noterParole(t); noterMorceau(t, duree); if (!enTelepathie()) sousTitre(t);   // (16:08) en Télépathie, rien d'écrit
-  envoyerParoles('hakim', t);                                         // (14:47) ce qu'il dit, sous l'orbe de l'appli
+  noterParole(t); noterMorceau(t, duree); if (!reponseCachee()) sousTitre(t);   // (16:08 ; 04/11) en Conversation et en Télépathie, sa réponse ne s'écrit pas
+  if (!reponseCachee()) envoyerParoles('hakim', t);                   // (14:47) ce qu'il dit, sous l'orbe de l'appli ; (04/11) hors des deux modes
   couperAuDebutDeSaVoix();                                             // (09:12)
 };
 lecteurNeuronal.surPanne = noterPanneVoix;
@@ -1811,7 +1814,7 @@ function rendre() {
   const caches = Math.max(0, etat.messages.length - etat.fenetre);
   // (21:00) « dans sa tête » : pas affichés ; (21:34) et pour lui, pendant la conversation, TOUT ce qu'il a dit depuis qu'elle
   // a commencé (ses réponses, ses petits mots, ses tours de lui-même, même revenus par la synchro) : seulement sa voix
-  const tete = etat.conversation && typeof reglagesCorps !== 'undefined' && reglagesCorps.afficher_hakim === false ? (etat.conversation.debut || 0) : null;
+  const tete = reponseCachee() ? (etat.conversation.debut || 0) : null;   // (04/11) en Conversation et en Télépathie, sa réponse ne s'écrit pas
   const vus = etat.messages.slice(-etat.fenetre)
     .filter(m => !m.cache && !(tete != null && m.qui === 'j' && (Number(m.ts) || Number(m.id) || Date.now()) >= tete));
   // (26/10) des éléments montrés dans le fil sans être des messages de la conversation (etat.aCote : [{ ts, html }], fournis
@@ -1932,7 +1935,8 @@ async function envoyer(texte, oral, dejaRelance) {
   }
   const souffleDit = oral && etat.conversation && (etat.conversation.souffleDit || etat.conversation.penseeDite) ? (etat.conversation.souffleDit || etat.conversation.penseeDite) : '';
   if (etat.conversation) { etat.conversation.souffleDit = ''; etat.conversation.penseeDite = ''; }
-  if (typeof retirerSouffle === 'function') retirerSouffle();               // (15:02) sa vraie réponse prend la place du brouillon
+  // (15:02) sa vraie réponse prend la place du brouillon ; (04/11) en Conversation et en Télépathie, sa pensée reste : sa réponse ne s'écrit pas
+  if (typeof retirerSouffle === 'function' && !(oral && reponseCachee())) retirerSouffle();
   arreterTout(true, { garder: true, raison: 'message', garderVoix: !!souffleDit });
   $('q').value = ''; ajuster();
   const avant = etat.messages.filter(x => x.qui === 'u' && x.ts);
@@ -1944,7 +1948,7 @@ async function envoyer(texte, oral, dejaRelance) {
   if (!dejaRelance) etat.messages.push({ id: nouvelId(), qui: 'u', texte, oral: !!oral, ts: Date.now(), joints: joints.map(x => x.nom), ...(enTete ? { cache: true } : {}) });
   // (21:13, Ahmed : « dans ce mode, ses paroles aussi ne s'affichent plus, seulement sa voix ») la case « ses paroles »
   const m = { id: nouvelId(), qui: 'j', texte: souffleDit ? `${souffleDit} ` : '', outils: [], enCours: true,
-    ...(oral && etat.conversation && typeof reglagesCorps !== 'undefined' && reglagesCorps.afficher_hakim === false ? { cache: true } : {}),
+    ...(oral && reponseCachee() ? { cache: true } : {}),                    // (04/11) dans les deux modes : dite, pas écrite
     // (16:45, Ahmed : « que la réflexion soit inexistante par défaut, remplacée par la pensée qui sort au même moment du haut-parleur
     // et en message sur l'interface ») en Conversation, sa réponse s'écrit au rythme de sa voix : rien (ni « réfléchit… ») avant son
     // premier son, puis ce que sa voix a dit ; tout, quand sa voix a fini
@@ -2894,7 +2898,7 @@ function surSouffle(o) {
   // (04/11, Ahmed : « dès que le premier chunk est écrit, il le prononce ») sa voix la dit dès qu'elle est faite et que tu marques une pause ;
   // (04/11 : « la pensée doit être aussi rapide que la parole : le même chunk pour la pensée et pour la parole ») celle qu'il dira
   // s'écrit AU MOMENT où sa voix la dit (direSouffle), pas avant ; celle qui attend la suite s'écrit seule
-  if (!s.pret) { if (!enTelepathie()) { montrerPensee('🧠 il pense · pas encore à dire', texte); envoyerParoles('hakim', `🧠 ${texte}`); } return; }
+  if (!s.pret) { montrerPensee('🧠 il pense · pas encore à dire', texte); envoyerParoles('hakim', `🧠 ${texte}`); return; }
   direPenseeSiPossible();
 }
 /* (04/11, Ahmed : « coupe par chunk de mot : au premier mot il prévoit le reste et parle direct ; le GPU dit la réponse du premier
@@ -3021,7 +3025,7 @@ function direSouffle(conv, s, par) {
   noterEcartSouffle(conv, s, true, par, !!buf);
   journalVoix('souffle', { pris: true, dit: true, par, mots: s.texte.split(/\s+/).length, voix_prete: !!buf });
   etat.reponseVoix = 'souffle';
-  if (!enTelepathie()) { montrerPensee('🧠 sa pensée · il te la dit', s.texte); envoyerParoles('hakim', `🗣️ ${s.texte}`); }
+  montrerPensee('🧠 sa pensée · il te la dit', s.texte); envoyerParoles('hakim', `🧠 ${s.texte}`);   // (04/11) dans les deux modes
   if (buf) lecteurNeuronal.direAudio(s.texte, buf); else lecteur.dire(s.texte);
   if (par !== 'serveur') fetch('/api/jarvis/souffle', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
     body: JSON.stringify({ dit: s.texte }) }).catch(() => {});
@@ -4767,7 +4771,7 @@ function surSpontane(m) {
   if (m.spontane === 'oreille') {
     // (20:14, papa : « mes petits mots s'affichent 4 à 5 s avant sa voix ») ils apparaissent avec sa voix (6 s au plus d'attente)
     let affiche = false;
-    const cache = !!etat.conversation && typeof reglagesCorps !== 'undefined' && reglagesCorps.afficher_hakim === false;   // (21:13) dit, pas écrit
+    const cache = reponseCachee();   // (21:13) dit, pas écrit ; (04/11) dans les deux modes
     const afficher = () => { if (affiche) return; affiche = true; etat.messages.push({ id: m.id, qui: 'j', spontane: 'oreille', texte: m.texte, ts: m.ts, ...(cache ? { cache: true } : {}) }); sauver(); rendre(); };
     setTimeout(afficher, (etat.conversation && !NON_REPONSE.test(m.texte)) ? 3000 : 0);
     journalVoix('oreille_mot', { car: String(m.texte || '').length, papa_parle: !!(etat.conversation && etat.conversation.capteur && etat.conversation.capteur.enParole) });

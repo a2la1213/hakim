@@ -125,7 +125,8 @@ test('(21:00) deux modes : tes paroles « dans sa tête » (pas affichées, son 
 });
 
 test('(21:13-21:15) « dans ta tête » pour lui aussi : ses réponses et ses petits mots dits, pas écrits ; un bouton pour couper sa voix ; une respiration masque l’attente', () => {
-  assert.match(page, /oral && etat\.conversation && typeof reglagesCorps !== 'undefined' && reglagesCorps\.afficher_hakim === false \? \{ cache: true \}/, 'sa réponse orale cachée');
+  assert.match(page, /\.\.\.\(oral && reponseCachee\(\) \? \{ cache: true \} : \{\}\),/, 'sa réponse orale cachée (04/11 : dans les deux modes)');
+  assert.match(page, /const reponseCachee = \(\) => !!etat\.conversation;/);
   const i = page.indexOf("if (m.spontane === 'oreille') {"), bloc = page.slice(i, page.indexOf('\n    return;\n  }', i));
   assert.match(bloc, /\.\.\.\(cache \? \{ cache: true \} : \{\}\)/, 'son petit mot caché');
   assert.match(page, /function majMessage\(m\) \{\n  if \(m\.cache\) return;/, 'jamais remis à l’écran par le flux');
@@ -138,16 +139,16 @@ test('(21:13-21:15) « dans ta tête » pour lui aussi : ses réponses et ses pe
 
 test('(21:34) « dans ta tête » tient pour lui : ni ses tours de lui-même ni une copie revenue du cockpit ne s’affichent pendant la conversation', () => {
   const i = page.indexOf('function rendre() {'), bloc = page.slice(i, page.indexOf('\n}\n', i));
-  const filtre = bloc.match(/const tete = (.+);\n  const vus = etat\.messages\.slice\(-etat\.fenetre\)\n    \.filter\((.+)\);/);
+  const filtre = bloc.match(/const tete = (.+?);[^\n]*\n  const vus = etat\.messages\.slice\(-etat\.fenetre\)\n    \.filter\((.+)\);/);
   assert.ok(filtre, 'le filtre du rendu');
-  const vus = (messages, conversation, afficher_hakim) => vm.runInContext(`(() => { const tete = ${filtre[1]}; return etat.messages.filter(${filtre[2]}); })()`,
-    vm.createContext({ Number, Date, etat: { messages, conversation }, reglagesCorps: { afficher_hakim } }));
+  // (04/11, Ahmed : « en Conversation ou en Télépathie, seulement la pensée écrite, pas sa réponse ») plus de case : caché dans les deux modes
+  const vus = (messages, conversation) => vm.runInContext(`(() => { const reponseCachee = () => !!etat.conversation; const tete = ${filtre[1]}; return etat.messages.filter(${filtre[2]}); })()`,
+    vm.createContext({ Number, Date, etat: { messages, conversation } }));
   const avant = { id: 'a', qui: 'j', texte: 'avant', ts: 1000 }, papa = { id: 'p', qui: 'u', texte: 'papa', ts: 6000 };
   const lui = { id: 'l', qui: 'j', spontane: 'resultat', texte: 'de lui-même', ts: 6000 }, enCours = { id: 99999999999999, qui: 'j', texte: '' };
   const tous = [avant, papa, lui, enCours];
-  assert.deepEqual(vus(tous, { debut: 5000 }, false).map(m => m.id), ['a', 'p'], 'seulement sa voix pendant la conversation');
-  assert.deepEqual(vus(tous, { debut: 5000 }, true).map(m => m.id), ['a', 'p', 'l', 99999999999999], 'case cochée : tout s’affiche');
-  assert.deepEqual(vus(tous, null, false).map(m => m.id), ['a', 'p', 'l', 99999999999999], 'après la conversation : relisible');
+  assert.deepEqual(vus(tous, { debut: 5000 }).map(m => m.id), ['a', 'p'], 'seulement sa voix pendant la conversation');
+  assert.deepEqual(vus(tous, null).map(m => m.id), ['a', 'p', 'l', 99999999999999], 'après la conversation : relisible');
   assert.match(page, /const conv = \{ capteur: null, enAttente: 0, debut: Date\.now\(\) \};/);
   assert.match(page, /for \(const m of messages\) if \(m && caches\.has\(String\(m\.id\)\)\) m\.cache = true;/, 'la synchro garde le « caché »');
   assert.equal((page.match(/garderCaches\(o\.messages\);\n\s+etat\.messages = o\.messages;/g) || []).length, 2, 'les deux chemins de la synchro');
@@ -856,7 +857,7 @@ test('(31/10, 09:12-09:42) trier chaque morceau : transcrits et classés un à u
   ctx.reglagesCorps.trier_morceaux = false; ctx.etat.lectureDe = 9; ctx.couperAuDebutDeSaVoix();
   assert.equal(coupes.length, 2, 'éteint : rien');
   assert.match(page, /if \(trierMorceaux\(\)\) \{[^]*?garderMorceau\(conv, wav, infos\); return;\s*\}\s*conv\.sonsEnAttente = /);
-  assert.match(page, /noterParole\(t\); noterMorceau\(t, duree\); if \(!enTelepathie\(\)\) sousTitre\(t\);[^\n]*\n  envoyerParoles\('hakim', t\);[^\n]*\n  couperAuDebutDeSaVoix\(\);/);
+  assert.match(page, /noterParole\(t\); noterMorceau\(t, duree\); if \(!reponseCachee\(\)\) sousTitre\(t\);[^\n]*\n  if \(!reponseCachee\(\)\) envoyerParoles\('hakim', t\);[^\n]*\n  couperAuDebutDeSaVoix\(\);/);
 });
 
 test('(09:12) le tri d’un morceau par son subconscient (serveur)', async () => {
