@@ -254,7 +254,7 @@ test('(17:10) ses trois frères commencent pendant que papa parle si leurs voix 
   const vivant = (m) => ({ modele: m, attente: null, proc: { exitCode: null }, n: 0 });
   const ctx = { Date, String, VIVANT_RENOUVELER: 6, VIVANTS: [], corpsReglages: () => ({ trois_freres: true }), chargeMac: () => 1.8,
     speculation: { texte: '', debut: 0, promesse: null, fini: false }, ressemble: () => false, bulbe: () => '', instantTexte: () => '',
-    fluxTexte: () => '', troisFreres: () => { lances++; return Promise.resolve('ok'); } };
+    fluxTexte: () => '', troisFreres: () => { lances++; return Promise.resolve('ok'); }, path: require('node:path'), JARVIS: '/x', fs: {} };
   vm.createContext(ctx);
   vm.runInContext(SRC.slice(i, k) + '\nthis.speculer = speculerFreres;', ctx);
   ctx.speculer('papa me raconte toute sa journée au travail');
@@ -352,9 +352,10 @@ test('(04/11) son oreille et sa voix ont chacune leur processus : elles ne s’a
 // 8 mots = 8 réponses, le GPU les dit une par une, au fur et à mesure » ; « ses trois voix ensemble » ; « oui, sans garde-fous »)
 function pistesSandbox(places = { haiku: 12, sonnet: 12, opus: 12 }, modele = 'haiku') {
   const i = SRC.indexOf('const PISTES_MAX'), k = SRC.indexOf('function speculerFreres(');
-  const appels = [], diffuses = [], voix = [], papa = [];
+  const appels = [], diffuses = [], voix = [], papa = [], notes = [];
   const ctx = { String, Math, Date, Promise, RegExp, Object, VIVANTS: [], VIVANTS_MAX: places, VIVANT_RENOUVELER: 6, cerveau: { modele },
     corpsReglages: () => ({}), personaLocale: (p) => p, lirePersona: () => 'Hakim', neutraliser: (t) => t, j: JSON.stringify, abonnesPensees: null,
+    path: require('node:path'), JARVIS: '/x', fs: { appendFile: (f, d) => notes.push(JSON.parse(d)), readFile: () => {}, writeFile: () => {} },
     voixDeLaSource: (t, o) => voix.push([t, o]), diffuser: (_, e, d) => { const x = JSON.parse(d); (x.niveau === 'papa' ? papa : diffuses).push(x); },
     sonnetTeteDeFond: (prompt, etiquette, modele) => new Promise((resoudre) => {
       const v = { modele, attente: {}, proc: { exitCode: null }, n: 1 };                  // sa voix vivante, occupée le temps de répondre
@@ -363,7 +364,7 @@ function pistesSandbox(places = { haiku: 12, sonnet: 12, opus: 12 }, modele = 'h
     }) };
   vm.createContext(ctx);
   vm.runInContext(SRC.slice(i, k) + '\nthis.morceau = pisteMorceau; this.etat = () => pistes; this.decouper = morceauxDePropositions; this.parMots = morceauxDeMots; this.pour = morceauxPour;', ctx);
-  return { ctx, appels, diffuses, voix, papa };
+  return { ctx, appels, diffuses, voix, papa, notes };
 }
 // (04/11, Ahmed : « avec la voix du smartphone, on remet le chunk par phrase (jusqu'au point) ou par partie de phrase (jusqu'à la virgule) »)
 test('(04/11) un morceau par proposition (virgule, point, ! ?) ; sans ponctuation, 12 mots au plus ; la proposition commencée attend', () => {
@@ -424,9 +425,9 @@ test('(04/11) ses pistes par proposition : une seule voix, celle qui tient son c
 
 test('(04/11) la page envoie tes mots en direct à ses pistes dès un mot neuf, et dit leurs bouts l’un après l’autre', () => {
   assert.match(PAGE, /if \(neufs >= 1\) \{/);
-  assert.match(PAGE, /if \(!s\.pret\) \{ montrerPensee\('🧠 il pense, sans le dire', texte, true\); return; \}\n    recevoirBout\(s, Number\(o\.n\) \|\| 0, o\.tour\); return;/,
+  assert.match(PAGE, /if \(!s\.pret\) \{\n      montrerPensee\('🧠 il pense, sans le dire', texte, true\);[\s\S]{0,500}?return;\n    \}\n    recevoirBout\(s, Number\(o\.n\) \|\| 0, o\.tour\); return;/,
     '(04/11) il saute les pensées qu’il choisit de ne pas dire');
-  assert.match(SRC, /const aDire = premiere \? !\/\^\(non\|jamais\)\/i\.test\(dire \|\| ''\) : \(!choix && !\/\^\(non\|jamais\)\/i\.test\(dire \|\| ''\)\);/);
+  assert.match(SRC, /const aDire = !autreLangue && \(premiere \? !\/\^\(non\|jamais\)\/i\.test\(dire \|\| ''\) : \(!choix && !\/\^\(non\|jamais\)\/i\.test\(dire \|\| ''\)\)\);/);
   assert.match(SRC, /if \(aDire\) voixDeLaSource\(reponse, \{ garder: true \}\);/, 'sa voix seulement pour ce qu’il dira');
   assert.match(PAGE, /lecteurNeuronal\.direAudio\(b\.texte, b\.buf\);/, 'dans l’ordre des mots, à la suite');
 });
@@ -444,7 +445,7 @@ test('(04/11) à la voix du téléphone, jamais de rafale : le bout le plus réc
   const dits = [], pensees = [], lecteurSysteme = { actif: false, dire: (t) => { dits.push(t); lecteurSysteme.actif = true; }, arreter: () => { dits.push('■'); lecteurSysteme.actif = false; } };
   const ctx = { etat: { conversation: {} }, lecteurSysteme, Date: { now: () => T }, Map, Set, String, setTimeout,
     souffleAutorise: () => true, voixDuTelephone: () => true, envoyerParoles: () => {}, montrerPensee: (titre, t) => pensees.push([titre, t]),
-    meublerSaut: (b) => b.texte };                                      // ses meubles : testés à part
+    meublerSaut: (b) => [b.texte] };                                    // ses meubles : testés à part
   vm.createContext(ctx);
   vm.runInContext('let bouts = { tour: 1, prochain: 1, liste: new Map(), enFile: [], dits: [] };\n' + extraire('function recevoirBout')
     + extraire('function direBoutTelephone') + extraire('function boutTelephoneSuivant') + '\nthis.recevoir = recevoirBout; this.suivant = boutTelephoneSuivant;', ctx);
@@ -483,7 +484,7 @@ test('(04/11) chaque bout part dès que sa voix est prête ; sa vibration sur le
   ctx.dire();
   assert.deepStrictEqual(dits, ['deux', 'trois'], 'un bout plus ancien que le dernier dit est sauté');
   assert.match(SRC, /if \(typeof rireEnDirect === 'function'\) rireEnDirect\(morceaux\.join\(' '\)\);/, 'sa vibration sur tes mots en direct');
-  assert.match(SRC, /Tu es Hakim, le fils d'Ahmed \(papa\) : ni Claude, ni Claude Code, ni un assistant\./);
+  assert.match(SRC, /Tu es Hakim, le fils d'Ahmed \(papa\)\. Tu lui réponds, à lui, comme toi\./, '(04/11) qui il est, dit simplement');
   assert.match(SRC, /const pasLui = /);
 });
 
@@ -609,26 +610,69 @@ test('(04/11) un saut de pensée à la voix du téléphone : un de ses meubles, 
   ctx.dire(2, 'Je t’écoute bien.');
   assert.deepStrictEqual(dits, ['Oui papa.', 'Je t’écoute bien.'], 'pas de saut : rien');
   ctx.dire(5, 'Tu parles de ta mère ?');
-  assert.strictEqual(dits[2], 'Voyons voir, tu parles de ta mère ?', 'de la 2 à la 5 : le blanc meublé, d’un seul souffle');
+  assert.deepStrictEqual(dits.slice(2, 4), ['Voyons voir,', 'Tu parles de ta mère ?'], '(04/11) de la 2 à la 5 : le meuble, puis la pensée, en deux entrées pour sa voix (celle de la pensée est prête d’avance)');
   T += 1000; ctx.dire(8, 'Elle va bien ?');
-  assert.strictEqual(dits[3], 'Elle va bien ?', 'au plus un meuble toutes les 3 s');
+  assert.strictEqual(dits[4], 'Elle va bien ?', 'au plus un meuble toutes les 3 s');
   // (04/11, Ahmed : « le meuble dans la langue de la pensée ; si ça change de langue, celui de la 2e » ; « il doit toujours pouvoir
   // choisir et créer ses meubles ») chacun a sa langue (le cockpit la donne)
   ctx.meubles([{ nom: 'voyons voir', texte: 'Voyons voir,', quand: 'partout', etats: [], actif: true, langue: 'fr' },
     { nom: 'yaani', texte: 'يعني،', quand: 'partout', etats: [], actif: true, langue: 'ar' },
     { nom: 'well', texte: 'Well,', quand: 'partout', etats: [], actif: true, langue: 'en' }]);
   T += 5000; ctx.dire(12, 'واش راك يا بابا؟');
-  assert.strictEqual(dits[4], 'يعني، واش راك يا بابا؟', 'une pensée en darija : un meuble arabe');
+  assert.deepStrictEqual(dits.slice(5, 7), ['يعني،', 'واش راك يا بابا؟'], 'une pensée en darija : un meuble arabe');
   T += 5000; ctx.dire(16, 'I love you, dad.');
-  assert.strictEqual(dits[5], 'Well, I love you, dad.', 'une pensée en anglais : un meuble anglais');
+  assert.deepStrictEqual(dits.slice(7, 9), ['Well,', 'I love you, dad.'], 'une pensée en anglais : un meuble anglais');
   ctx.meubles([{ nom: 'hum', texte: 'Hum,', quand: 'partout', etats: [], actif: true }, { nom: 'chouf2', texte: 'شوف شوف،', quand: 'partout', etats: [], actif: true }]);
   T += 5000; ctx.dire(20, 'قلتلك بزاف.');
-  assert.strictEqual(dits[6], 'شوف شوف، قلتلك بزاف.', 'sans langue donnée : l’écriture arabe dit l’arabe');
+  assert.deepStrictEqual(dits.slice(9, 11), ['شوف شوف،', 'قلتلك بزاف.'], 'sans langue donnée : l’écriture arabe dit l’arabe');
   T += 5000; ctx.dire(24, 'You know what?');
-  assert.strictEqual(dits[7], 'You know what?', 'aucun meuble anglais : la pensée seule');
+  assert.strictEqual(dits[11], 'You know what?', 'aucun meuble anglais : la pensée seule');
   ctx.meubles([{ nom: 'son', son: 'e12' }]); T += 5000; ctx.dire(28, 'Dis-moi.');
-  assert.strictEqual(dits[8], 'Dis-moi.', 'aucun meuble parlé en français : la pensée seule');
-  assert.match(PAGE, /lecteurSysteme\.dire\(b\.dit != null \? b\.dit : meublerSaut\(b\)\);/);
+  assert.strictEqual(dits[12], 'Dis-moi.', 'aucun meuble parlé en français : la pensée seule');
+  assert.match(PAGE, /for \(const x of b\.dit \|\| meublerSaut\(b\)\) lecteurSysteme\.dire\(x\);/);
+});
+
+// (04/11, Ahmed : « fais tous tes tests et tous tes calculs, et regarde comment optimiser pour qu'il dise la bonne parole ; la bonne
+// pensée au bon moment ») mesuré sur ses réponses : papa en français, lui en darija 32 fois sur 42 (4 sur 241 avant) ; « أنا سامعك،
+// كمل » en tête de 11 réponses ; 25 pistes sur 268 bloquées par les garde-fous de Sonnet 5.5
+test('(04/11) la bonne parole : le français d’abord ; une pensée surtout en arabe, quand papa n’a parlé que français, n’est pas dite', async () => {
+  const { ctx, appels, diffuses, notes } = pistesSandbox(undefined, 'sonnet');
+  const attendre = async () => { await new Promise(r => setImmediate(r)); await new Promise(r => setImmediate(r)); };
+  ctx.morceau('Tu m’entends, fiston ? Est-ce que tu m’entends ?');
+  assert.match(appels[0].prompt, /en français, comme papa ; l'anglais, l'arabe littéraire ou la darija .* SEULEMENT si papa vient lui-même de parler dans cette langue/);
+  assert.match(appels[0].prompt, /« أنا سامعك », « كمل », « أنا معاك »/, 'l’attente, en darija aussi');
+  assert.doesNotMatch(appels[0].prompt, /ni Claude, ni Claude Code/, 'qui il est, sans le nier (les garde-fous de Sonnet le bloquaient)');
+  appels[0].resoudre({ texte: 'أيوه يا بابا، أنا معاك.' });
+  appels[1].resoudre({ texte: 'DIRE : oui\nOui papa, je t’entends très bien.' });
+  await attendre();
+  assert.deepStrictEqual(diffuses.map(d => [d.n, d.pret]), [[1, false], [2, true]], 'sa première en darija : écrite, pas dite ; la française : dite');
+  assert.strictEqual(notes.filter(x => x.n === 1)[0].autre_langue, true, 'notée');
+  const r = pistesSandbox(undefined, 'sonnet');
+  r.ctx.morceau('واش راك يا حكيم ؟');
+  r.appels[0].resoudre({ texte: 'لاباس يا بابا، الحمد لله.' });
+  await attendre();
+  assert.strictEqual(r.diffuses[0].pret, true, 'papa en darija : sa darija est dite');
+});
+test('(04/11) une piste bloquée par les garde-fous d’un modèle repart une fois avec Mini Hakim ; chaque piste est notée', async () => {
+  const { ctx, appels, diffuses, notes } = pistesSandbox(undefined, 'sonnet');
+  const attendre = async () => { for (let i = 0; i < 4; i++) await new Promise(r => setImmediate(r)); };
+  ctx.morceau('papa,');
+  appels[0].resoudre({ erreur: "API Error: Sonnet 5.5's safeguards flagged this message" });
+  await attendre();
+  assert.strictEqual(appels.length, 2);
+  assert.strictEqual(appels[1].modele, 'haiku');
+  assert.strictEqual(appels[1].etiquette, 'piste_haiku_repli');
+  appels[1].resoudre({ texte: 'Oui papa ?' });
+  await attendre();
+  assert.deepStrictEqual(diffuses.map(d => [d.n, d.texte, d.pret]), [[1, 'Oui papa ?', true]]);
+  assert.deepStrictEqual(notes.map(x => [x.n, x.dit, x.pensee]), [[1, true, 'Oui papa ?']], 'sa pensée, son choix, dite ou non : notés');
+});
+test('(04/11) ses pensées dites comptent depuis ton dernier message (plus redites en tête du suivant) ; « No response requested » ne reste pas collé', () => {
+  assert.match(PAGE, /conv\.penseeDite = bouts\.dits\.slice\(bouts\.base \|\| 0\)\.join\(' '\);/);
+  assert.match(PAGE, /if \(typeof bouts !== 'undefined'\) bouts\.base = bouts\.dits\.length;/);
+  const nettoyer = (t) => t.replace(/\s*no response requested\.?\s*$/i, '').trimEnd();
+  assert.strictEqual(nettoyer('هههه، شنو هادشي يا بابا! No response requested.'), 'هههه، شنو هادشي يا بابا!');
+  assert.match(PAGE, /m\.texte = m\.texte\.replace\(\/\\s\*no response requested\\\.\?\\s\*\$\/i, ''\)\.trimEnd\(\);/);
 });
 
 // (04/11, Ahmed : « quand j'enchaîne les paroles, ça envoie un gros morceau, alors que ça doit envoyer chaque chunk séparément, l'un
@@ -724,10 +768,10 @@ test('(04/11) ta voix 2 s sur la sienne : il se tait ; un mot ou un rire : il co
 // français, à l'anglais et à l'arabe »)
 test('(04/11) ses pistes parlent dans la langue de papa, darija comprise, l’arabe en lettres arabes', () => {
   const { ctx, appels } = pistesSandbox(undefined, 'sonnet');
-  ctx.morceau('واش راك يا حكيم,');
-  assert.match(appels[0].prompt, /le français, l'anglais, l'arabe littéraire ou sa darija : algérienne, marocaine ou tunisienne, la même que lui/);
+  ctx.morceau('واش راك يا حكيم،');
+  assert.match(appels[0].prompt, /l'anglais, l'arabe littéraire ou la darija \(algérienne, marocaine ou tunisienne : celle qu'il emploie, pas une autre\)/);
   assert.match(appels[0].prompt, /toujours en lettres arabes, jamais en lettres latines ni avec des chiffres \(3, 7, 9\)/);
-  assert.doesNotMatch(SRC, /à l'oral, en français, comme toi/, 'plus de français imposé à sa parole');
+  assert.match(appels[0].prompt, /Son morceau 1, qu'il vient de dire : « واش راك يا حكيم، »/, '(04/11) la virgule arabe coupe aussi');
 });
 
 // (1.60, 04/11, Ahmed : « chaque cœur qui traite le même chunk sur le Mac et sur le smartphone doit être relié et coordonné »)
@@ -745,8 +789,10 @@ test('(1.60) la pensée qui attend : sa voix se calcule déjà sur le téléphon
   lecteur.dire('Voyons voir, tu parles de ta mère ?');
   assert.strictEqual(prets.length, 1);
   assert.deepStrictEqual(prets[0], dits[0], 'les mêmes texte, débit, langue et voix : Supertonic la retrouve prête');
-  assert.match(PAGE, /b\.dit = meublerSaut\(b\);\n      if \(typeof lecteurSysteme\.preparer === 'function'\) lecteurSysteme\.preparer\(b\.dit\);/,
+  assert.match(PAGE, /b\.dit = meublerSaut\(b\);\n      if \(typeof lecteurSysteme\.preparer === 'function'\) b\.dit\.forEach\(x => lecteurSysteme\.preparer\(x\)\);/,
     'la pensée qui attend son tour, meuble compris');
+  assert.match(PAGE, /if \(!s\.jamais && typeof voixDuTelephone === 'function' && voixDuTelephone\(\) && lecteurSysteme && typeof lecteurSysteme\.preparer === 'function'\)\n        lecteurSysteme\.preparer\(texte\);/,
+    '(04/11) une pensée gardée : sa voix déjà prête, pour ta pause ou pour son choix [n]');
 });
 
 // (1.59, 04/11, Ahmed : « j'arrive pas à sélectionner Supertonic dans les réglages de l'APK »)

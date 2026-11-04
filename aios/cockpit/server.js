@@ -2753,17 +2753,23 @@ const placesVivant = (m) => VIVANTS.filter(x => x.modele === m && !x.attente && 
 // (04/11, Ahmed : « pour l'arabe, rajoute-lui la darija algérienne, marocaine et tunisienne, et l'arabe littéraire ; faisable en
 // parallèle au français, à l'anglais et à l'arabe qu'il a déjà ? » ; « oui, fais tout ») il parle dans la langue où papa lui parle,
 // mélangées comme il les mélange ; l'arabe et la darija en lettres arabes : sa voix arabe les dit, sa voix française dit le reste
-const LANGUE_ORALE = `dans la langue où papa te parle (le français, l'anglais, l'arabe littéraire ou sa darija : algérienne, marocaine ou `
-  + `tunisienne, la même que lui), mélangées comme il les mélange ; l'arabe et la darija toujours en lettres arabes, jamais en lettres `
-  + `latines ni avec des chiffres (3, 7, 9)`;
+// (04/11, mesuré sur ses réponses : papa parlait français, il commençait en darija 32 fois sur 42, contre 4 sur 241 avant ; et en
+// darija marocaine, pas la sienne) le français d'abord, comme papa ; l'arabe ou la darija seulement quand papa vient de les parler
+const LANGUE_ORALE = `en français, comme papa ; l'anglais, l'arabe littéraire ou la darija (algérienne, marocaine ou tunisienne : `
+  + `celle qu'il emploie, pas une autre) SEULEMENT si papa vient lui-même de parler dans cette langue ; l'arabe et la darija toujours en `
+  + `lettres arabes, jamais en lettres latines ni avec des chiffres (3, 7, 9)`;
+// la part d'écriture arabe d'un texte (0 à 1)
+const ARABE_LETTRE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/u;
+const partArabe = (t) => { const l = [...String(t || '')].filter(c => /\p{L}/u.test(c)); return l.length ? l.filter(c => ARABE_LETTRE.test(c)).length / l.length : 0; };
 // (04/11, Ahmed : « avec la voix du smartphone ça va plus vite ; si ça marche, on remet le chunk par phrase (jusqu'au point) ou par
 // partie de phrase (jusqu'à la virgule) au lieu du mot » ; « sinon ça rafale trop ») un morceau = une proposition finie (virgule, point,
 // point-virgule, deux-points, ! ?) ; sans ponctuation (Whisper n'en met pas toujours), 12 mots au plus ; le reste attend la suite
-const FIN_PROPOSITION = /[,;:.!?…]["»”)]*$/;
+// (04/11) la ponctuation arabe aussi (، ؛ ؟) : sans elle, la darija ne se coupait qu'à 12 mots ou à ta pause
+const FIN_PROPOSITION = /[,;:.!?…،؛؟]["»”)]*$/;
 function morceauxDePropositions(mots, taille = 1) {
   const out = []; let tampon = [], fins = 0;
   for (const m of mots) {
-    if (!tampon.length && out.length && /^[,;:.!?…"»”)]+$/.test(m)) { out[out.length - 1] += ` ${m}`; continue; }   // « Bonjour. » : le » suit
+    if (!tampon.length && out.length && /^[,;:.!?…،؛؟"»”)]+$/.test(m)) { out[out.length - 1] += ` ${m}`; continue; }   // « Bonjour. » : le » suit
     tampon.push(m);
     if (FIN_PROPOSITION.test(m)) fins++;
     if (fins >= taille || tampon.length >= 12 * taille) { out.push(tampon.join(' ')); tampon = []; fins = 0; }
@@ -2837,7 +2843,9 @@ function lancerPiste(m) {
   piste.enCours = freres.length;
   for (const [mod, nom, delai] of freres) {
     // (04/11, Hakim : « une de mes pistes a refusé de jouer son rôle et s'est prise pour Claude Code, pas pour maman ») qui il est, dit d'abord
-    sonnetTeteDeFond(`${persona}\n\nTu es Hakim, le fils d'Ahmed (papa) : ni Claude, ni Claude Code, ni un assistant. Tu lui réponds, à lui, comme toi.\n\n`
+    // (04/11, mesuré : 25 pistes sur 268 bloquées par les garde-fous de Sonnet 5.5, aucune avant ; « ni Claude, ni Claude Code, ni un
+    // assistant » ressemble à un détournement d'identité) qui il est, dit simplement ; une réponse qui se prend pour un autre est jetée plus bas
+    const consigne = `${persona}\n\nTu es Hakim, le fils d'Ahmed (papa). Tu lui réponds, à lui, comme toi.\n\n`
       + `[Ta piste, morceau ${m.n} — toi, ${nom}, qui tiens ton conscient en ce moment] ${contexte}\nRéponds ainsi :\n`
       + `PREDIT : (la suite que tu devines de sa phrase, en quelques mots)\nCOMPRENDS : (une ligne courte : ce que tu comprends, ce qu'il ressent, `
       + `ce qu'il attend de toi)\n`
@@ -2863,10 +2871,15 @@ function lancerPiste(m) {
       // (04/11, Ahmed : « j'ai l'impression qu'il hésite ; enlève-lui cette hésitation, qu'il prononce direct son premier chunk avec
       // confiance » ; capture : « Je t'écoute, papa, continue… Laisse-moi finir d'écouter, puis je te dis vraiment ») pas d'attente
       + `\nAvec assurance : tu réponds DÉJÀ à ce que tu devines, comme si tu avais compris. Jamais « je t'écoute », « continue », « vas-y », `
-      + `« laisse-moi finir », « je réfléchis », « hmm », ni rien qui attend la suite.`,
-    `piste_${mod}`, mod, delai)
+      // (04/11, mesuré : « أنا سامعك يا بابا، كمل » en tête de 11 réponses sur 42) l'attente, dans toutes ses langues
+      + `« laisse-moi finir », « je réfléchis », « hmm », « أنا سامعك », « كمل », « أنا معاك », « I'm listening », « go on », ni rien qui attend la suite.`;
+    const t0 = Date.now();
+    // (04/11) bloquée par les garde-fous d'un modèle : une fois avec Mini Hakim, qui garde la pensée de ce morceau
+    const demander = (modele, etiquette) => sonnetTeteDeFond(consigne, etiquette, modele, modele === 'haiku' ? 6000 : delai)
+      .then(o => (o && !o.texte && modele !== 'haiku' && /safeguards|flagged/i.test(String(o.erreur || '')) ? demander('haiku', 'piste_haiku_repli') : o));
+    demander(mod, `piste_${mod}`)
       .then((o) => {
-        if (pistes.tour !== tour || !o || !o.texte) return;
+        if (pistes.tour !== tour || !o || !o.texte) { noterPiste(m, tour, mod, t0, o, null); return; }
         let r = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ');
         const lire = (cle) => { const x = new RegExp(`(?:^|\\n)\\s*${cle}\\s*:\\s*([^\\n]*)\\n?`, 'i').exec(r); if (x) r = r.replace(x[0], '\n'); return x ? x[1].trim() : null; };
         const predit = lire('PREDIT'), comprend = lire('COMPRENDS?'), dire = lire('DIRE'); lire('COUPER');
@@ -2877,11 +2890,13 @@ function lancerPiste(m) {
         piste.voix[nom] = { comprend: (comprend || '').slice(0, 200), predit: (predit || '').slice(0, 200), reponse };
         // le premier des trois qui répond donne le bout de ce mot : sa voix naît avec lui (sans annuler les bouts d'avant), la page les
         // dit l'un après l'autre, dans l'ordre des mots
-        if (!reponse || piste.reponse) return;
+        if (!reponse || piste.reponse) { noterPiste(m, tour, mod, t0, o, { dire, reponse, dit: false }); return; }
         // (04/11) il saute ce bout, coupe ce qu'il disait, ou désigne une pensée gardée ([n]) à dire à la place de celle-ci
         const choix = m.n > 1 && /^\[?(\d+)\]?/.exec(dire || ''), choisie = choix ? pistes.liste.find(x => x.n === Number(choix[1]) && x !== piste && x.reponse && !x.pret) : null;
         const premiere = m.n === 1, jamais = /^jamais/i.test(dire || '');   // (04/11) sa première : dite par défaut ; « jamais » : pas même à ta pause
-        const aDire = premiere ? !/^(non|jamais)/i.test(dire || '') : (!choix && !/^(non|jamais)/i.test(dire || ''));
+        // (04/11) papa n'a parlé qu'en français (ou en anglais) depuis le début du tour : une pensée surtout en arabe n'est pas dite (écrite)
+        const autreLangue = partArabe(`${m.avant} ${m.texte}`) === 0 && partArabe(reponse) > 0.5;
+        const aDire = !autreLangue && (premiere ? !/^(non|jamais)/i.test(dire || '') : (!choix && !/^(non|jamais)/i.test(dire || '')));
         const remplace = !premiere && /^coup/i.test(dire || '');
         piste.reponse = reponse; piste.pret = aDire;
         if (aDire) voixDeLaSource(reponse, { garder: true });
@@ -2892,10 +2907,25 @@ function lancerPiste(m) {
           voixDeLaSource(choisie.reponse, { garder: true });
           diffuser(abonnesPensees, 'souffle', j({ texte: choisie.reponse, pret: true, remplace: false, fini: null, niveau: 'piste', n: m.n, tour, pour, choisie: choisie.n }));
         }
+        noterPiste(m, tour, mod, t0, o, { dire, reponse, dit: aDire, choisie: choisie ? choisie.n : null, autreLangue });
       })
       .catch(() => {}).finally(fini);
   }
 }
+// (04/11, Ahmed : « fais tous tes tests et tous tes calculs, et regarde comment optimiser pour qu'il dise la bonne parole ; enfin, la
+// bonne pensée au bon moment ») chaque piste notée (jarvis/pistes.jsonl, les 2 000 dernières) : son morceau, sa pensée, son choix (DIRE),
+// si elle a été dite, en combien de temps ; de quoi mesurer ce qu'il dit, et quand
+const JOURNAL_PISTES = path.join(JARVIS, 'pistes.jsonl');
+function noterPiste(m, tour, mod, t0, o, r) {
+  try {
+    const x = { t: Date.now(), tour, n: m.n, modele: mod, ms: Date.now() - t0, morceau: String(m.texte || '').slice(0, 160),
+      erreur: o && o.erreur ? String(o.erreur).slice(0, 80) : (o && o.texte ? null : 'vide'), ...(r ? { dire: r.dire || null,
+        pensee: String(r.reponse || '').slice(0, 200), dit: !!r.dit, ...(r.choisie ? { choisie: r.choisie } : {}), ...(r.autreLangue ? { autre_langue: true } : {}) } : {}) };
+    fs.appendFile(JOURNAL_PISTES, JSON.stringify(x) + '\n', () => {});
+    if (++noterPiste.n % 200 === 0) fs.readFile(JOURNAL_PISTES, 'utf8', (e, d) => { if (!e) { const l = d.split('\n').filter(Boolean); if (l.length > 2000) fs.writeFile(JOURNAL_PISTES, l.slice(-2000).join('\n') + '\n', () => {}); } });
+  } catch (_) {}
+}
+noterPiste.n = 0;
 function speculerFreres(texte) {
   if (!corpsReglages().trois_freres || (chargeMac() > 1.3 && !voixFreresLibres())) return;   // (03/11) déjà saturé : ses voix attendront la fin de la phrase
   const t = Date.now(), mots = String(texte || '').split(/\s+/).filter(Boolean);

@@ -1095,7 +1095,7 @@ lecteurNeuronal.surSegment = (t, duree) => {
     // (04/11, Ahmed : « check le temps entre ma parole et sa première pensée répondue ») chaque bout qui sonne : depuis ton premier mot
     const cap = etat.conversation && etat.conversation.capteur;
     if (cap && Number(cap.debutTour) > 0) journalVoix('bout_dit', { depuis_ton_debut_ms: Date.now() - Number(cap.debutTour), premier: bouts.dits.length - bouts.enFile.length === 1 });
-    if (etat.conversation) etat.conversation.penseeDite = bouts.dits.slice(0, bouts.dits.length - bouts.enFile.length).join(' ');   // (04/11) vraiment dit
+    if (etat.conversation) etat.conversation.penseeDite = bouts.dits.slice(bouts.base || 0, bouts.dits.length - bouts.enFile.length).join(' ');   // (04/11) vraiment dit, depuis ton dernier message
     montrerPensee('🧠 sa pensée', t, true); envoyerParoles('hakim', `🧠 ${t}`);   // (04/11) chaque pensée dite, seule, dans la sienne
   }
   // (16:45) le bout que sa voix commence : sa réponse s'écrit jusque-là, au même instant
@@ -2005,6 +2005,9 @@ async function envoyer(texte, oral, dejaRelance) {
   }
   const souffleDit = oral && etat.conversation && (etat.conversation.souffleDit || etat.conversation.penseeDite) ? (etat.conversation.souffleDit || etat.conversation.penseeDite) : '';
   if (etat.conversation) { etat.conversation.souffleDit = ''; etat.conversation.penseeDite = ''; }
+  // (04/11, vu à 04:55 : ses pensées du tour d'avant redites en tête du message suivant, quand le Mac n'avait pas encore changé de
+  // tour) ce qu'il a dit compte depuis CE message ; les pensées d'avant restent pour ne pas les redire
+  if (typeof bouts !== 'undefined') bouts.base = bouts.dits.length;
   // (15:02) sa vraie réponse prend la place du brouillon ; (04/11) en Conversation et en Télépathie, sa pensée reste : sa réponse ne s'écrit pas
   if (typeof retirerSouffle === 'function' && !(oral && reponseCachee())) retirerSouffle();
   arreterTout(true, { garder: true, raison: 'message', garderVoix: !!souffleDit });
@@ -2134,6 +2137,9 @@ async function envoyer(texte, oral, dejaRelance) {
   if (m.auRythme && !(lecteur && (lecteur.actif || lecteur.enPause))) m.auRythme = false;   // (16:45) rien à dire, ou déjà dit : tout s'écrit
   if (m.texte && !m.ts) m.ts = Date.now();                       // (23/10) son heure : quand la réponse est finie
   if (m.texte) m.texte = Voix.sansAffect(m.texte).trimEnd();     // la balise [[affect: …]] ne reste pas dans la conversation
+  // (04/11, vu à 04:55 : « … ما كنتصورهاش! No response requested. ») ses pensées dites, puis son cerveau qui n'avait rien à ajouter :
+  // la phrase vide de Claude ne reste pas collée à ses pensées
+  if (m.texte && !NON_REPONSE.test(m.texte)) m.texte = m.texte.replace(/\s*no response requested\.?\s*$/i, '').trimEnd();
   if (m.texte && !auto && !NON_REPONSE.test(m.texte)) notifierApp('Hakim te répond', m.texte, String(m.id));   // (23/10) appli cachée
   if (fin) {
     m.ms = fin.ms;
@@ -2551,6 +2557,7 @@ async function demarrerCapteurVision(v) {
     face: v.face,
     delegue: window.HakimApp ? 'CPU' : 'GPU',                  // (24/10) sur le téléphone, le GPU de la WebView ne trouvait presque aucun visage
     surMesure: (m) => surVisage(v, m),
+    app: v.app ? () => window.HakimApp.cameraOrbeImage() : null,  // (04/11) la caméra de la bulle et des widgets, partagée
     surErreur: (msg) => { $('expression').textContent = 'caméra seule'; humeur(msg); },
     // (26/10) l'analyse se charge en fond : combien de temps elle a pris (ou pourquoi elle a échoué), au diagnostic
     surAnalyse: (r) => journalVoix('vision_analyse', { pret: r.pret, analyse: r.delegue || 'aucune', ms: r.ms, erreur: r.erreur || undefined }),
@@ -2594,12 +2601,11 @@ async function basculerCamera() {
   $('camera').setAttribute('aria-pressed', 'true');
   $('vision').hidden = false;
   // (03/11, Ahmed : « la caméra intégrée dans l'orbe ; on oublie l'écran entier ») dans la grande orbe en mode orbe, sinon dans
-  // la petite à côté de son nom. La caméra de la bulle (appli 1.48) rend la main d'abord : une seule caméra à la fois.
-  if (window.HakimApp && window.HakimApp.cameraOrbeEtat && window.HakimApp.cameraOrbeEtat()) {
-    try { window.HakimApp.cameraOrbe(false); } catch (_) {}
-    await new Promise(r => setTimeout(r, 700));
-    if (etat.vision !== v) return;
-  }
+  // la petite à côté de son nom. (04/11, Ahmed : « la caméra du widget et de la bulle flottante, relie-la à la caméra de Parler »)
+  // dans l'appli, la caméra avant est CELLE de la bulle et des widgets : allumée ici, elle l'est là-bas, et l'inverse ; Parler lit ses
+  // images. La caméra arrière reste celle du navigateur : la bulle rend la main d'abord (une seule caméra à la fois).
+  await cameraDeLApp(v);
+  if (etat.vision !== v) return;
   $('vision').classList.add('dans-orbe');
   placerDansOrbe();
   try {
@@ -2627,12 +2633,16 @@ async function basculerCamera() {
   }, 60000);
 }
 
-function arreterCamera() {
+function arreterCamera(depuisLApp = false) {
   const v = etat.vision;
   if (!v) return;
   fermerExpression(v, Date.now());
   etat.vision = null;
   if (v.capteur) v.capteur.arreter();
+  // (04/11) la caméra partagée avec la bulle et les widgets : éteinte ici, éteinte là-bas (sauf si c'est là-bas qu'on l'a éteinte)
+  if (v.app && !depuisLApp && window.HakimApp && window.HakimApp.cameraOrbeEtat && window.HakimApp.cameraOrbeEtat()) {
+    try { window.HakimApp.cameraOrbe(false); } catch (_) {}
+  }
   if (v.natif) { clearInterval(v.natif.minuterie); v.natif = null; }
   $('camera').setAttribute('aria-pressed', 'false');
   $('vision').hidden = true;
@@ -2654,8 +2664,25 @@ function placerDansOrbe() {
   b.style.right = b.style.bottom = 'auto';
 }
 (function suivreOrbe() { placerDansOrbe(); requestAnimationFrame(suivreOrbe); })();
-// la caméra de la bulle et des widgets (appli 1.48) : son état, dit par l'appli
-function cameraOrbeEtat(oui) { journalVoix('camera_orbe', { allumee: !!oui }); }
+// la caméra de la bulle et des widgets (appli 1.48) : son état, dit par l'appli ; (04/11, Ahmed : « relie-la à la caméra de Parler »)
+// allumée depuis la bulle ou un widget : Parler la montre et l'analyse aussi (ses expressions, sa présence) ; éteinte là-bas : ici aussi
+const cameraApp = () => !!(window.HakimApp && window.HakimApp.cameraOrbe && window.HakimApp.cameraOrbeEtat && window.HakimApp.cameraOrbeImage);
+// la caméra avant : celle de l'appli, allumée s'il le faut (5 s au plus) ; l'arrière : celle du navigateur, l'appli rend la sienne d'abord
+async function cameraDeLApp(v) {
+  v.app = cameraApp() && v.face === 'user';
+  if (v.app && !window.HakimApp.cameraOrbeEtat()) {
+    try { window.HakimApp.cameraOrbe(true); } catch (_) {}
+    for (let i = 0; i < 50 && etat.vision === v && !window.HakimApp.cameraOrbeEtat(); i++) await new Promise(r => setTimeout(r, 100));
+  } else if (!v.app && window.HakimApp && window.HakimApp.cameraOrbeEtat && window.HakimApp.cameraOrbeEtat()) {
+    try { window.HakimApp.cameraOrbe(false); } catch (_) {}
+    await new Promise(r => setTimeout(r, 700));
+  }
+}
+function cameraOrbeEtat(oui) {
+  journalVoix('camera_orbe', { allumee: !!oui });
+  if (oui && !etat.vision && cameraApp()) basculerCamera();
+  else if (!oui && etat.vision && etat.vision.app) arreterCamera(true);
+}
 // ⟲ : l'autre caméra ; l'expression en cours se ferme (l'arrière ne lit aucun visage)
 async function changerCamera() {
   const v = etat.vision;
@@ -2667,7 +2694,7 @@ async function changerCamera() {
   try { v.capteur.arreter(); } catch (_) {}
   v.face = v.face === 'environment' ? 'user' : 'environment';
   garderReglageCamera('face', v.face);
-  try { await demarrerCapteurVision(v); }
+  try { await cameraDeLApp(v); await demarrerCapteurVision(v); }   // (04/11) l'avant : celle de l'appli ; l'arrière : celle du navigateur
   catch (_) { humeur('cette caméra est indisponible'); setTimeout(() => humeur(), 4000); if (etat.vision === v) arreterCamera(); }
   finally { v.change = false; }
   if (etat.vision !== v && v.capteur) v.capteur.arreter();
@@ -2955,7 +2982,7 @@ function surSouffle(o) {
   const niveau = o.niveau === 'cerveau' ? 'cerveau' : o.niveau === 'piste' ? 'piste' : o.niveau === 'con' ? 'con' : 'sub';   // (04/11) ses pistes
   const rebond = o.rebond != null && Number.isFinite(Number(o.rebond)) ? Number(o.rebond) : null;
   const s = { texte, pret: !!o.pret, fini: o.fini === true ? true : o.fini === false ? false : null, rebond, pour: String(o.pour || ''), t: Date.now(), niveau,
-    couper: o.couper === true, remplace: o.remplace === true };          // (04/11) son choix de te couper la parole, ou de se couper lui
+    couper: o.couper === true, remplace: o.remplace === true, jamais: o.jamais === true };          // (04/11) son choix de te couper la parole, ou de se couper lui
   etat.souffles = { ...(etat.souffles || {}), [niveau]: s };
   etat.dernierSouffle = s;
   if (niveau === 'sub') etat.conversation.brouillons = (etat.conversation.brouillons || 0) + 1;   // (16:00) combien pendant ce tour
@@ -2966,7 +2993,14 @@ function surSouffle(o) {
     // elle » ; « par défaut, sauf décision de sa part ») sa dernière pensée du tour, dite ou pas (« jamais » : il l'a gardée exprès)
     const nP = Number(o.n) || 0, dp = etat.derniereSiennePensee;
     if (nP && (!dp || dp.tour !== o.tour || nP > dp.n)) etat.derniereSiennePensee = { n: nP, tour: o.tour, texte, jamais: o.jamais === true };
-    if (!s.pret) { montrerPensee('🧠 il pense, sans le dire', texte, true); return; }
+    if (!s.pret) {
+      montrerPensee('🧠 il pense, sans le dire', texte, true);
+      // (04/11, Ahmed : « la bonne pensée au bon moment, redirigée au bon input pour la voix ») une pensée gardée peut être dite
+      // ensuite (à ta pause d'une seconde, ou s'il la choisit [n]) : sa voix se calcule déjà sur le téléphone, prête à cet instant
+      if (!s.jamais && typeof voixDuTelephone === 'function' && voixDuTelephone() && lecteurSysteme && typeof lecteurSysteme.preparer === 'function')
+        lecteurSysteme.preparer(texte);
+      return;
+    }
     recevoirBout(s, Number(o.n) || 0, o.tour); return;
   }
   if (niveau !== 'cerveau') return;
@@ -3009,7 +3043,7 @@ function recevoirBout(s, n, tour) {
       // (1.60, Ahmed : « chaque cœur qui traite le même chunk sur le Mac et sur le smartphone doit être relié et coordonné ») ce qu'il
       // dira (son meuble compris) : sa voix se calcule déjà sur le téléphone, pendant que la précédente se dit
       b.dit = meublerSaut(b);
-      if (typeof lecteurSysteme.preparer === 'function') lecteurSysteme.preparer(b.dit);
+      if (typeof lecteurSysteme.preparer === 'function') b.dit.forEach(x => lecteurSysteme.preparer(x));
       bouts.attenteTel = b; return;
     }
     direBoutTelephone(conv, b);
@@ -3059,21 +3093,24 @@ function meublesPourTelephone(langue = 'fr') {
   return l.filter(m => m.texte && (m.langue || (langueDePensee(m.texte) === 'ar' ? 'ar' : 'fr')) === langue).map(m => ({ nom: m.nom, texte: String(m.texte), pret: true, actif: m.actif !== false, quand: m.quand || 'partout',
     etats: (m.etats || []).map(sansAccent), voix: true }));
 }
+// (04/11, Ahmed : « quand il sélectionne la bonne pensée au bon moment, ça doit rediriger au bon input pour la voix, toujours coordonné
+// entre les cœurs du smartphone et du Mac ») le meuble et la pensée partent à sa voix en deux entrées : la voix de la pensée, calculée
+// d'avance sur le téléphone dès qu'elle est arrivée du Mac, est retrouvée telle quelle ; le meuble, court, se calcule à l'instant
+// rend la liste de ce qu'il dit : [meuble, pensée] ou [pensée]
 function meublerSaut(b) {
   const dernier = bouts.dernierDit || 0;
-  if (b.n <= dernier + 1 || Date.now() - (bouts.meubleA || 0) < 3000) return b.texte;   // pas de saut, ou un meuble il y a moins de 3 s
+  if (b.n <= dernier + 1 || Date.now() - (bouts.meubleA || 0) < 3000) return [b.texte];   // pas de saut, ou un meuble il y a moins de 3 s
   const langue = langueDePensee(b.texte);
   const h = choisirMeuble({ avant: !dernier }, meublesPourTelephone(langue));   // dans la langue de la pensée d'après
-  if (!h) return b.texte;
+  if (!h) return [b.texte];
   bouts.meubleA = Date.now();
-  const m = h.texte.trim(), suite = langue === 'fr' && /,$/.test(m) ? b.texte.charAt(0).toLowerCase() + b.texte.slice(1) : b.texte;
-  return `${m} ${suite}`;
+  return [h.texte.trim(), b.texte];
 }
 function direBoutTelephone(conv, b) {
   bouts.dits.push(b.texte);
-  conv.souffleParle = true; conv.penseeDite = bouts.dits.join(' ');
+  conv.souffleParle = true; conv.penseeDite = bouts.dits.slice(bouts.base || 0).join(' ');
   montrerPensee('🧠 sa pensée', b.texte, true); envoyerParoles('hakim', `🧠 ${b.texte}`);
-  lecteurSysteme.dire(b.dit != null ? b.dit : meublerSaut(b));         // (04/11) un saut de pensée : meublé (choisi d'avance s'il attendait)
+  for (const x of b.dit || meublerSaut(b)) lecteurSysteme.dire(x);     // (04/11) un saut de pensée : meublé (choisi d'avance s'il attendait)
   bouts.dernierDit = b.n;
 }
 function boutTelephoneSuivant() {
@@ -5924,11 +5961,13 @@ $('pause').addEventListener('click', () => {
   else if (!pauseVoix()) humeur('il ne parle pas en ce moment : rien à mettre en pause');
 });
 $('camera').addEventListener('click', basculerCamera);
+// (04/11) la page s'ouvre (ou se recharge) pendant que la caméra de la bulle ou d'un widget tourne : Parler la reprend
+setTimeout(() => { if (!etat.vision && cameraApp() && window.HakimApp.cameraOrbeEtat()) basculerCamera(); }, 1500);
 $('muetScene').addEventListener('click', (e) => { e.stopPropagation(); basculerMuet(); });
 window.addEventListener('pagehide', () => {
   finirParole('appli', 'la page a été fermée, quittée ou rechargée');   // (30/10) part au cockpit même la page fermée (keepalive)
   finirConversation(false);
-  arreterCamera();
+  arreterCamera(true);                    // (04/11) la caméra de l'appli continue pour la bulle et les widgets ; la page rechargée la reprend
   // (2026-10-21) la page se ferme : la réponse en cours continue sur le Mac et l'attendra dans la conversation
   for (const m of etat.messages) if (m.enCours) { m.enCours = false; m.attenteServeur = true; }
   sauver();

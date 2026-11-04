@@ -99,3 +99,30 @@ test('(04/11) les photos de la bulle et de la caméra arrière sont des photos d
   assert.strictEqual((SRC.match(/PHOTO_CAMERA\.test\(/g) || []).length, 2, 'le même filtre pour la ligne [Caméra …] et pour l’effacement');
   assert.doesNotMatch(SRC, /camera-\[0-9T\]\+\\\.jpg\$\//, 'plus l’ancien filtre');
 });
+
+// (04/11, Ahmed : « la caméra du widget et de la bulle flottante, faut la relier à la caméra de l'interface Parler »)
+test('(04/11) une seule caméra avant dans l’appli : la bulle l’allume, Parler la montre et l’analyse ; éteinte d’un côté, éteinte de l’autre', async () => {
+  const appels = [], journal = [];
+  let allumee = false;
+  const ctx = { etat: {}, journalVoix: (e, d) => journal.push([e, d]), setTimeout: (f) => { f(); return 0; },
+    window: { HakimApp: { cameraOrbe: (oui) => { appels.push(oui); allumee = oui; }, cameraOrbeEtat: () => allumee, cameraOrbeImage: () => '' } },
+    basculerCamera: () => appels.push('parler-allume'), arreterCamera: (depuisLApp) => appels.push(depuisLApp ? 'parler-eteint-par-l-appli' : 'parler-eteint') };
+  vm.createContext(ctx);
+  const i = src.indexOf('const cameraApp'), k = src.indexOf('// ⟲ : l');
+  vm.runInContext(src.slice(i, k) + '\nthis.etatApp = cameraOrbeEtat; this.deLApp = cameraDeLApp;', ctx);
+  ctx.etatApp(true);
+  assert.deepStrictEqual(appels, ['parler-allume'], 'allumée depuis la bulle : Parler la prend');
+  ctx.etat.vision = { app: true };
+  ctx.etatApp(false);
+  assert.deepStrictEqual(appels.slice(1), ['parler-eteint-par-l-appli'], 'éteinte depuis la bulle : Parler s’éteint, sans la rallumer');
+  const v = { face: 'user' }; ctx.etat.vision = v;
+  await ctx.deLApp(v);
+  assert.strictEqual(v.app, true); assert.strictEqual(allumee, true, 'allumée depuis Parler : la caméra de l’appli s’allume');
+  v.face = 'environment';
+  await ctx.deLApp(v);
+  assert.strictEqual(v.app, false); assert.strictEqual(allumee, false, 'l’arrière : l’appli rend sa caméra d’abord');
+  const vision = fs.readFileSync(path.join(__dirname, 'public', 'vision.js'), 'utf8');
+  assert.match(vision, /const app = o\.app && face === 'user' \? fluxDeLApp\(o\.app\) : null;/, 'Parler lit les images de la caméra de l’appli');
+  assert.match(src, /app: v\.app \? \(\) => window\.HakimApp\.cameraOrbeImage\(\) : null,/);
+  assert.match(src, /arreterCamera\(true\);\s+\/\/ \(04\/11\) la caméra de l'appli continue/, 'la page qui se ferme ne l’éteint pas pour la bulle');
+});

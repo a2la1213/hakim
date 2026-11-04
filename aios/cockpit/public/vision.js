@@ -41,14 +41,40 @@
 
   // (24/10, idée de Hakim, accord d'Ahmed) o.face : « user » (avant, par défaut) ou « environment » (arrière, pour montrer
   // un objet ou un document) ; avec l'arrière, AUCUNE analyse de visage (ce n'est pas Ahmed qu'on filme)
+  // (04/11, Ahmed : « la caméra du widget et de la bulle flottante, relie-la à la caméra de l'interface Parler ») o.app : la caméra de
+  // l'appli (celle de la bulle et des widgets), une seule pour tous ; ses images (JPEG en base64) dessinées dans une toile dont le flux
+  // nourrit la vidéo : l'aperçu, l'analyse du visage et les photos marchent comme avec la caméra du navigateur
+  function fluxDeLApp(lire) {
+    const c = document.createElement('canvas'), cx = c.getContext('2d');
+    c.width = 240; c.height = 320;
+    const flux = c.captureStream(10);
+    let derniere = '', enCours = false;
+    const pomper = async () => {
+      if (enCours) return;
+      const b64 = lire();
+      if (!b64 || b64 === derniere) return;
+      derniere = b64; enCours = true;
+      try {
+        const bm = await createImageBitmap(new Blob([Uint8Array.from(atob(b64), x => x.charCodeAt(0))], { type: 'image/jpeg' }));
+        if (c.width !== bm.width || c.height !== bm.height) { c.width = bm.width; c.height = bm.height; }
+        cx.drawImage(bm, 0, 0); bm.close();
+      } catch (_) {} finally { enCours = false; }
+    };
+    const pompe = setInterval(pomper, 100);
+    pomper();
+    return { flux, arreter: () => clearInterval(pompe) };
+  }
   async function demarrer(o) {
     const face = o.face === 'environment' ? 'environment' : 'user';
-    const flux = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: face }, audio: false });
+    const app = o.app && face === 'user' ? fluxDeLApp(o.app) : null;
+    const flux = app ? app.flux : await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: face }, audio: false });
     const video = o.video;
     video.srcObject = flux;
     video.muted = true;
-    try { await video.play(); }
-    catch (e) { flux.getTracks().forEach(p => p.stop()); video.srcObject = null; throw e; }   // jamais de caméra allumée orpheline
+    try {
+      // la caméra de l'appli met un instant à donner sa première image : 8 s au plus
+      await (app ? Promise.race([video.play(), new Promise((_, non) => setTimeout(() => non(new Error('aucune image de la caméra de l’appli')), 8000))]) : video.play());
+    } catch (e) { if (app) app.arreter(); flux.getTracks().forEach(p => p.stop()); video.srcObject = null; throw e; }   // jamais de caméra allumée orpheline
     let lm = null, delegue = 'aucune';
     // (24/10, Hakim : « personne dans le cadre » alors qu'Ahmed est bien visible) ce que l'analyse voit vraiment, pour le
     // diagnostic : images analysées, visages trouvés (points du visage), dont avec coefficients d'expression
@@ -132,6 +158,7 @@
       arreter() {
         actif = false;
         clearInterval(minuterie);
+        if (app) app.arreter();
         try { if (lm) lm.close(); } catch (_) {}
         flux.getTracks().forEach(p => p.stop());
         video.srcObject = null;
@@ -139,7 +166,7 @@
       get analyse() { return !!lm; },
       get delegue() { return delegue; },
       get stats() { return { ...stats }; },
-      face,
+      face, app: !!app,
     };
   }
 
