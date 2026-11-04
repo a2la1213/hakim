@@ -147,6 +147,9 @@ const synthTelephone = window.HakimApp && window.HakimApp.voixTelephone ? (() =>
     speak(u) { const id = `t${++n}`; enAttente.set(id, u); try { window.HakimApp.voixTelephone(id, String(u.text || ''), Number(u.rate) || 1, String(u.lang || 'fr-FR')); } catch (_) { window.HakimVoixTel('fin', id); } },
     cancel() { const fins = [...enAttente.values()]; enAttente.clear(); try { window.HakimApp.voixTelephoneArreter(); } catch (_) {} fins.forEach(u => u.onend && u.onend()); },
     getVoices() { return []; },
+    // (04/11, capture d'Ahmed : la page vide dans l'appli 1.55) la page écoute « voiceschanged » sur la voix du système : sans ces
+    // méthodes, elle s'arrêtait net au chargement
+    addEventListener() {}, removeEventListener() {}, pause() {}, resume() {}, speaking: false, pending: false,
   };
 })() : null;
 class EnonceTelephone { constructor(t) { this.text = t; } }

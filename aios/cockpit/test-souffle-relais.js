@@ -489,5 +489,10 @@ test('(04/11) dans l’appli, la voix du téléphone : parlée comme une voix de
   ctx.synth.speak({ text: 'encore', onend: () => evts.push('coupée') }); ctx.synth.cancel();
   assert.deepStrictEqual(evts.slice(-1), ['coupée'], 'Stop : la phrase en cours finit tout de suite');
   assert.match(PAGE, /get impl\(\) \{ if \(voixDuTelephone\(\) && lecteurSysteme\) return lecteurSysteme;/, 'par défaut dans l’appli');
+  // (04/11, la page vide dans l'appli 1.55) tout ce que la page appelle sur la voix du système existe aussi ici
+  for (const m of ['addEventListener', 'removeEventListener', 'pause', 'resume', 'speak', 'cancel', 'getVoices'])
+    assert.strictEqual(typeof ctx.synth[m], 'function', m);
+  const appels = [...new Set([...PAGE.matchAll(/\bsynth\.([a-zA-Z]+)\(/g)].map(x => x[1]))];
+  for (const m of appels) assert.strictEqual(typeof ctx.synth[m], 'function', `la page appelle synth.${m}`);
   assert.match(SRC, /if \(Date\.now\(\) - voixTelephoneA < 60000\) return null;/, 'le Mac ne fabrique plus la voix de ses pensées');
 });
