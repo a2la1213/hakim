@@ -10569,6 +10569,12 @@ async function traiter(req, res) {
         if (refus) { auditer('immunite:juger', req, distantReq, { empreinte, verdict, ok: false, refus }); res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: refus, presence: true })); }
       }                                                      // (30/10) audité : « il ne se passe rien » et on ne savait pas pourquoi
       args = ['juger', empreinte, verdict];
+    } else if (action === 'pas_parasite') {                 // (04/11) une pensée jetée à tort par son filtre : ta présence
+      if (!/^[0-9a-f]{16}$/.test(empreinte)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'incident invalide' })); }
+      const refus = exigerPresence(req, distantReq, q, `immunite:pas_parasite:${empreinte}`);
+      if (refus) { auditer('immunite:pas_parasite', req, distantReq, { empreinte, ok: false, refus }); res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: refus, presence: true })); }
+      args = ['pas-parasite', empreinte];
+      premissesImmunite.vu = 0;                              // un signe appris retiré : relu tout de suite
     } else if (action === 'soi') {                          // (04/11) une usurpation qui venait de papa ou de Hakim : sa présence
       const qui = String(q.qui || '');
       if (!/^[0-9a-f]{16}$/.test(empreinte) || !['papa', 'hakim'].includes(qui)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'incident ou voix invalide' })); }

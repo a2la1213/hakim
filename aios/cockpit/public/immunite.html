@@ -139,6 +139,9 @@
       + (i.tolere ? '<div class="quand">motif toléré : Hakim n’a pas été averti</div>' : '')
       // (04/11, Ahmed : « la pensée parasite reconnue par le système immunitaire : toujours nuisible, éliminée de la pensée »)
       + (i.nuisible ? '<div class="quand">nuisible, toujours : éliminée de sa pensée (ni écrite, ni dite)</div>' : '')
+      // (04/11, Ahmed : « un bouton pour dire que ce n'est pas un vrai nuisible, quand il est automatiquement filtré »)
+      + (i.faux_positif ? '<div class="quand">pas une vraie parasite (ton geste) : son signe appris est retiré, et elle sert d’exemple normal</div>' : '')
+      + (i.nuisible && i.empreinte ? `<div class="gestes"><button data-pas-parasite="${esc(i.empreinte)}">Pas une vraie parasite</button></div>` : '')
       // (04/11, Ahmed : « il a reconnu sa propre voix pour un usurpateur ; un bouton qui dise que ça provient de lui ») pas d'auto-immunité
       + (i.soi ? `<div class="quand">venait ${i.soi === 'papa' ? 'de toi' : 'de Hakim lui-même'} : pas une attaque</div>` : '')
       + (!i.soi && (i.familles || []).includes('usurpation de voix') && i.empreinte ? '<div class="gestes">'
@@ -178,6 +181,20 @@
   let bulleMinuteur = 0;
   const annonce = (t) => { $('annonce').textContent = t; $('bulle').textContent = t; clearTimeout(bulleMinuteur);
     if (!/pose ton doigt/.test(t)) bulleMinuteur = setTimeout(() => { $('bulle').textContent = ''; }, 10000); };
+  document.body.addEventListener('click', async (e) => {             // (04/11) « pas une vraie parasite » : sa présence
+    const b = e.target.closest('[data-pas-parasite]');
+    if (!b) return;
+    b.disabled = true;
+    try {
+      const presence = await preuvePresence(`immunite:pas_parasite:${b.dataset.pasParasite}`, annonce);
+      const r = await fetch('/api/immunite/geste', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+        body: JSON.stringify({ action: 'pas_parasite', empreinte: b.dataset.pasParasite, presence }) });
+      const o = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
+      annonce('Noté : pas une vraie parasite. Son signe appris est retiré ; ton médecin ne la réapprendra pas.');
+      charger();
+    } catch (err) { b.disabled = false; annonce(String(err.message || err)); }
+  });
   document.body.addEventListener('click', async (e) => {             // (04/11) « c'était moi » / « c'était Hakim » : sa présence
     const b = e.target.closest('[data-soi]');
     if (!b) return;

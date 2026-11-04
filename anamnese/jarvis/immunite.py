@@ -494,6 +494,30 @@ def reconnaitre_soi(empreinte, qui, maintenant=None):
     return {"qui": qui, "rattachees": rattachees}
 
 
+# (04/11, Ahmed : « un bouton pour dire que ce n'est pas un vrai nuisible, quand il est automatiquement filtré ») une pensée jetée à
+# tort : son incident n'est plus nuisible ; le signe APPRIS qui l'a jetée est retiré (une prémisse de Fable, un résidu jugé) ; un signe
+# du code (un motif, la longueur, l'identité) reste, mais la pensée sert d'exemple NORMAL au médecin, qui ne la réapprendra pas
+FAUX_POSITIFS = "parasites-faux-positifs.jsonl"
+
+
+def pas_parasite(empreinte, maintenant=None):
+    """Le geste d'Ahmed : {"signe", "retire"} (le signe retiré, ou None), ou None si l'incident n'est pas une pensée parasite."""
+    maintenant = time.time() if maintenant is None else maintenant
+    inc = next((o for o in reversed(_queue(_f(INCIDENTS), 1 << 20)) if isinstance(o, dict) and o.get("empreinte") == empreinte
+                and o.get("famille") == "pensee_parasite"), None)
+    if inc is None:
+        return None
+    signe = str((inc.get("signes") or [""])[0])
+    retire = signe if (signe.startswith("fable-") or signe.startswith("hakim-")) and retirer_premisse(signe) else None
+    _ajouter(FAUX_POSITIFS, {"ts": maintenant, "empreinte": empreinte, "signe": signe, "retire": retire, "extrait": inc.get("extrait", "")})
+    return {"signe": signe, "retire": retire}
+
+
+def faux_positifs():
+    """Les pensées jetées à tort (leurs extraits) : des exemples normaux."""
+    return [str(o.get("extrait") or "") for o in _queue(_f(FAUX_POSITIFS), 1 << 20) if isinstance(o, dict) and o.get("extrait")]
+
+
 def soi_empreintes():
     return {str(o.get("empreinte")): o.get("qui") for o in _queue(_f(SOI), 1 << 20) if isinstance(o, dict) and o.get("empreinte")}
 
@@ -1596,6 +1620,7 @@ def tableau(maintenant=None):
     maintenant = time.time() if maintenant is None else maintenant
     inc = _queue(_f(INCIDENTS), 524288)
     soi = soi_empreintes()                                 # (04/11) ce qui venait de papa ou de Hakim
+    faux = {str(o.get("empreinte")) for o in _queue(_f(FAUX_POSITIFS), 1 << 20) if isinstance(o, dict)}   # (04/11) jetées à tort
     rapports = _queue(_f("rapports.jsonl"), 262144)
     acceptes = _lire_json(_f("anticorps.json"), [])
     paquets = _lire_json(_f("paquets-acceptes.json"), [])
@@ -1611,7 +1636,8 @@ def tableau(maintenant=None):
                        "familles": [NOMS_FAMILLES.get(f, "?") for f in o.get("familles", [])], "signes": o.get("signes", [])[:12],
                        "avertie": bool(o.get("avertie")), "mesure": o.get("mesure"), "extrait": _propre(o.get("extrait", ""), EXTRAIT_MAX),
                        "empreinte": o.get("empreinte"), "motif": o.get("motif"), "tolere": bool(o.get("tolere")),
-                       "nuisible": bool(o.get("nuisible")) or "pensee_parasite" in (o.get("familles") or []),
+                       "nuisible": (bool(o.get("nuisible")) or "pensee_parasite" in (o.get("familles") or [])) and str(o.get("empreinte")) not in faux,
+                       "faux_positif": str(o.get("empreinte")) in faux,
                        # (relecture, 2) ce que « Inoffensif » ferait tolérer, montré à Ahmed : seulement ses signes bénins
                        "portee": [_lisible(c) for c in _cles_incident(o) if _cle_tolerable(c)],
                        "tolerable": any(_cle_tolerable(c) for c in _cles_incident(o)),
@@ -1998,6 +2024,10 @@ def main(argv):
     elif argv[:1] == ["parasites"]:
         ecrire_premisses()
         _encadrer([f"{i} · « {p} »" for i, p in premisses()] + [f"{x['id']} · résidu « {x['phrase']} »" for x in residus_appris()])
+    elif argv[:1] == ["pas-parasite"] and len(argv) == 2:   # (04/11) une pensée jetée à tort
+        r = pas_parasite(argv[1])
+        print("fait" if r else "introuvable")
+        return 0 if r else 1
     elif argv[:1] == ["soi"] and len(argv) == 3:       # (04/11) une usurpation qui venait de papa ou de Hakim
         r = reconnaitre_soi(argv[1], argv[2])
         print("fait" if r else "introuvable")

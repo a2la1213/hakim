@@ -480,6 +480,10 @@ def apprendre_parasites(maintenant=None, consulter_fn=None, journal=None, repons
                                                                           or porte_residu(o["pensee"])))
     lignes_p = [o for o in lignes if estp(o)][-40:]
     parasites = [str(o.get("texte_parasite") or o.get("pensee") or "") for o in lignes_p]
+    # (04/11) ce que papa a dit jeté à tort n'est plus une parasite pour Fable
+    faux = [f[:120] for f in immunite.faux_positifs() if f]
+    lignes_p = [o for o in lignes_p if not any(str(o.get("texte_parasite") or o.get("pensee") or "").startswith(f) for f in faux)]
+    parasites = [str(o.get("texte_parasite") or o.get("pensee") or "") for o in lignes_p]
     parasites = [p for p in parasites if p]
     entrees_p = [str(o.get("morceau") or "") for o in lignes_p if o.get("morceau")]
     # (04/11) ses résidus marqués ailleurs (pas son doute, qui n'est pas une parasite) et ce que papa a jugé nuisible
@@ -499,7 +503,7 @@ def apprendre_parasites(maintenant=None, consulter_fn=None, journal=None, repons
     if not parasites:
         return None
     lignes_n = [o for o in lignes if o.get("pensee") and not o.get("erreur") and not estp(o)][-120:]
-    normales = [str(o["pensee"]) for o in lignes_n]
+    normales = [str(o["pensee"]) for o in lignes_n] + immunite.faux_positifs()[-30:]   # (04/11) ce que papa a dit jeté à tort
     entrees_n = [str(o.get("morceau") or "") for o in lignes_n if o.get("morceau")]
     if reponses is None:
         reponses = [str(o.get("hakim") or "") for o in _lignes(ECHANGES, 3000) if o.get("hakim")]

@@ -1370,3 +1370,11 @@ test('(relecture) Immunité montre quand et comment ses chemins ont changé', ()
   assert.match(IMMU, /<h3 style="margin-top:10px">Ses derniers changements<\/h3>/);
   assert.match(IMMU, /const hist = \(d\.historique \|\| \[\]\)\.slice\(-20\)/);
 });
+// (04/11, Ahmed : « rajoute un bouton dans Système immunitaire pour dire que ce n'est pas un vrai nuisible, quand il est filtré »)
+test('(04/11) « Pas une vraie parasite » : sur une pensée filtrée, avec ta présence', () => {
+  const IMMU = fs.readFileSync(path.join(__dirname, 'public', 'immunite.html'), 'utf8');
+  assert.match(IMMU, /\(i\.nuisible && i\.empreinte \? `<div class="gestes"><button data-pas-parasite="\$\{esc\(i\.empreinte\)\}">Pas une vraie parasite<\/button><\/div>`/);
+  assert.match(IMMU, /preuvePresence\(`immunite:pas_parasite:\$\{b\.dataset\.pasParasite\}`, annonce\)/);
+  assert.match(SRC, /const refus = exigerPresence\(req, distantReq, q, `immunite:pas_parasite:\$\{empreinte\}`\);/);
+  assert.match(SRC, /args = \['pas-parasite', empreinte\];/);
+});
