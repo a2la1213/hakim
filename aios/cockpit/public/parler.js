@@ -2864,10 +2864,11 @@ function surSouffle(o) {
   // relecture du 16/10, son écho transcrit) ; celle qui attend la suite s'écrit seule, comme ce qu'il pense sans le dire
   etat.pensee = s;
   if (s.pret) preparerVoixSouffle(texte, niveau, () => direPenseeSiPossible());   // (17:10, audit) seulement celle qu'il dira
-  // (04/11, Ahmed : « dès que le premier chunk est écrit, il le prononce ») elle s'écrit tout de suite, et sa voix la dit dès qu'elle est
-  // faite et que tu marques une pause
-  if (!enTelepathie()) { montrerPensee(s.pret ? '🧠 sa pensée' : '🧠 il pense · pas encore à dire', texte); envoyerParoles('hakim', `🧠 ${texte}`); }
-  if (s.pret) direPenseeSiPossible();
+  // (04/11, Ahmed : « dès que le premier chunk est écrit, il le prononce ») sa voix la dit dès qu'elle est faite et que tu marques une pause ;
+  // (04/11 : « la pensée doit être aussi rapide que la parole : le même chunk pour la pensée et pour la parole ») celle qu'il dira
+  // s'écrit AU MOMENT où sa voix la dit (direSouffle), pas avant ; celle qui attend la suite s'écrit seule
+  if (!s.pret) { if (!enTelepathie()) { montrerPensee('🧠 il pense · pas encore à dire', texte); envoyerParoles('hakim', `🧠 ${texte}`); } return; }
+  direPenseeSiPossible();
 }
 function montrerPensee(titre, texte) {
   etat.aCote = (etat.aCote || []).filter(x => x.cle !== 'souffle');
