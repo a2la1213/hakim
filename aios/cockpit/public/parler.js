@@ -1569,8 +1569,10 @@ function texteAuRythme(m) {
 function htmlMessage(m) {
   if (m.qui === 'j' && m.auRythme) {
     const vu = texteAuRythme(m);
-    if (!vu) return `<div class="m j" data-id="${esc(m.id)}" hidden></div>`;   // rien avant sa voix : ni « réfléchit… », ni texte
-    m = { ...m, texte: vu, outils: [] };
+    // rien avant sa voix : ni « réfléchit… », ni texte ; (04/11, Ahmed : « remets les badges qui montrent ce qu'il utilise comme outil,
+    // et qu'ils partent aussi à chaque chunk ») sauf ses outils : leurs badges s'affichent dès qu'il les prend, puis avec chaque bout dit
+    if (!vu && !(m.outils || []).length) return `<div class="m j" data-id="${esc(m.id)}" hidden></div>`;
+    m = { ...m, texte: vu };
   }
   const heure = heureMessage(quandMessage(m));
   // (15:38, Ahmed : « que Hakim puisse mettre les mêmes smileys que moi sur mes messages ») sa réaction, en bas à gauche

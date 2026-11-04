@@ -219,7 +219,8 @@ test('(16:45) sa réponse s’écrit au rythme de sa voix : rien avant son premi
   assert.ok(vu.startsWith('Bonjour papa, je suis là'), vu);
   assert.ok(!/bien/.test(vu), 'la suite attend sa voix');
   assert.strictEqual(ctx.vu({ texte, ditCar: 9999 }), texte);
-  assert.match(PAGE, /if \(!vu\) return `<div class="m j" data-id="\$\{esc\(m\.id\)\}" hidden><\/div>`;/, 'ni « réfléchit… » ni texte avant sa voix');
+  assert.match(PAGE, /if \(!vu && !\(m\.outils \|\| \[\]\)\.length\) return `<div class="m j" data-id="\$\{esc\(m\.id\)\}" hidden><\/div>`;/, 'ni « réfléchit… » ni texte avant sa voix');
+  assert.match(PAGE, /m = \{ \.\.\.m, texte: vu \};/, '(04/11) ses badges d’outils restent, à chaque bout');
   assert.match(PAGE, /if \(mR && mR\.auRythme\) \{ mR\.ditCar = \(mR\.ditCar \|\| 0\) \+ String\(t \|\| ''\)\.length \+ 1; majMessage\(mR\); \}/, 'chaque bout qui part dévoile la suite');
   assert.match(PAGE, /for \(const x of etat\.messages\.slice\(-6\)\) if \(x\.auRythme && !x\.enCours\) x\.auRythme = false;/, 'sa voix a fini : tout s’écrit');
   assert.match(PAGE, /pense \? \(etat\.conversation \? '' : 'réfléchit…'\)/, 'plus de « réfléchit… » dans la ligne d’état en Conversation');
