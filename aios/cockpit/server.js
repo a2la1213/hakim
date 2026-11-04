@@ -6746,7 +6746,8 @@ function corpsReglages() {
     filtre_gemma: r.filtre_gemma !== false,   // (04/11, Ahmed) ses mots à risque passent par Gemma avant Claude
     elagage: r.elagage !== false,
     epissage: r.epissage !== false,
-    oreille_interne_route: r.oreille_interne_route !== false,   // (04/11, 18:50, Ahmed : « la même route que le microphone ») ce que le téléphone joue : ses pensées, sa parole à la pause du son
+    oreille_interne_route: r.oreille_interne_route !== false,
+    cascade: r.cascade !== false,   // (04/11, 20:10) la séparation en cascade de ce qu'il entend : ses voix une à une, ses instruments   // (04/11, 18:50, Ahmed : « la même route que le microphone ») ce que le téléphone joue : ses pensées, sa parole à la pause du son
     musique_pause: r.musique_pause !== false };   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
 }
 function corpsActif() { return corpsReglages().actif; }
@@ -9377,9 +9378,35 @@ function lancerOreilleVive() {
    subconscient. Une demande à la fois ; de trop, elle est laissée (la suivante arrive dans 10 s). Rien de l'audio n'est gardé. */
 const SEPARATION = path.join(ANAMNESE, 'jarvis', 'separation.py');
 const PYTHON_SEPARATION = path.join(ANAMNESE, 'jarvis', '.venv-separation', 'bin', 'python');
-const separation = { proc: null, pret: false, attente: null, ids: 0, tampon: '', corps: 0 };
+const separation = { proc: null, pret: false, attente: null, ids: 0, tampon: '', corps: 0, suivante: null };
+// (04/11, 18:55-20:10, Ahmed : « séparer parole / background / musique… si le background contient des voix, le séparer encore… jusqu'à 8 voix…
+// un instrument par cœur » ; 20:10 : « c'est toi qui dois tout brancher, ton fils, tu le connais par cœur ») la cascade (jarvis/cascade.py) :
+// chauffée dès qu'elle est prête (17 s la première fois) ; le bloc entier du téléphone la demande, avec ses voix en fichiers (voix_dossier) ;
+// le micro, sa scène seulement (ses voix passent déjà par le micro de papa) ; réglage cascade (oui par défaut)
+const cascadeAllumee = () => typeof corpsReglages !== 'function' || corpsReglages().cascade !== false;
+function separationPrete() {
+  separation.pret = true;
+  if (!cascadeAllumee()) return;
+  separation.attente = { id: 0, chauffe: true, fichier: null, minuteur: setTimeout(() => {
+    if (separation.attente && separation.attente.chauffe) { separation.attente = null; separationSuivante(); }
+  }, 30000) };
+  try { separation.proc.stdin.write(j({ id: 0, chauffer: true }) + '\n'); } catch (_) { clearTimeout(separation.attente.minuteur); separation.attente = null; }
+}
+// un fichier de voix rendu par la cascade : seulement dans le dossier temporaire, et seulement les siens
+const wavDeVoix = (f) => typeof f === 'string' && path.dirname(f) === os.tmpdir() && /^jarvis-sep-[\w.-]{1,80}\.wav$/.test(path.basename(f));
+function effacerVoix(o) { for (const v of (o && Array.isArray(o.voix_separees) ? o.voix_separees : [])) if (v && wavDeVoix(v.wav)) fs.unlink(v.wav, () => {}); }
+// au démarrage : les fichiers de voix d'un plantage (plus d'une minute)
+function effacerVoixPerdues() {
+  try {
+    for (const n of fs.readdirSync(os.tmpdir())) {
+      const f = path.join(os.tmpdir(), n);
+      if (wavDeVoix(f) && Date.now() - fs.statSync(f).mtimeMs > 60000) fs.unlink(f, () => {});
+    }
+  } catch (_) {}
+}
 function lancerSeparation() {
   if (separation.proc || !fs.existsSync(PYTHON_SEPARATION)) return;
+  effacerVoixPerdues();
   const p = spawn(PYTHON_SEPARATION, ['-W', 'ignore', SEPARATION], { stdio: ['pipe', 'pipe', 'ignore'], env: { ...process.env, PATH: CHEMIN_OUTILS } });
   separation.proc = p; separation.pret = false; separation.tampon = '';
   p.stdout.on('data', (d) => {
@@ -9388,34 +9415,88 @@ function lancerSeparation() {
     while ((i = separation.tampon.indexOf('\n')) >= 0) {
       const l = separation.tampon.slice(0, i); separation.tampon = separation.tampon.slice(i + 1);
       let o; try { o = JSON.parse(l); } catch (_) { continue; }
-      if (o.pret) { separation.pret = true; continue; }
+      if (o.pret) { separationPrete(); continue; }
       separationRecue(o);
     }
   });
   const fin = () => { if (separation.proc !== p) return; separation.proc = null; separation.pret = false; const a = separation.attente; separation.attente = null; if (a) { clearTimeout(a.minuteur); fs.unlink(a.fichier, () => {}); } };
   p.on('exit', fin); p.on('error', fin);
 }
-function separerSon(fichier, src) {
+function separerSon(fichier, src, o = {}) {
   lancerSeparation();
+  const cascade = (o.cascade || src === 'micro') && cascadeAllumee();
+  // (20:10) le bloc entier du téléphone ne se perd pas : il attend sa place (une seule) derrière la demande en cours ou la chauffe
+  if (separation.pret && separation.attente && o.cascade && cascade) {
+    if (separation.suivante) fs.unlink(separation.suivante.fichier, () => {});
+    separation.suivante = { fichier, src, o };
+    return true;
+  }
   if (!separation.pret || separation.attente) { fs.unlink(fichier, () => {}); return false; }
   const id = ++separation.ids;
-  separation.attente = { id, src, fichier, minuteur: setTimeout(() => {
-    if (separation.attente && separation.attente.id === id) { separation.attente = null; fs.unlink(fichier, () => {}); }
-  }, 15000) };
-  try { separation.proc.stdin.write(j({ id, fichier }) + '\n'); return true; }
+  separation.attente = { id, src, fichier, cle: o.cle || '', debut: Number(o.debut) || 0, voix: !!(o.cascade && cascade), minuteur: setTimeout(() => {
+    if (separation.attente && separation.attente.id === id) { separation.attente = null; fs.unlink(fichier, () => {}); separationSuivante(); }
+  }, cascade ? 20000 : 15000) };
+  const demande = { id, fichier, ...(cascade ? { cascade: true, ...(o.cascade ? { voix_dossier: os.tmpdir() } : {}) } : {}) };
+  try { separation.proc.stdin.write(j(demande) + '\n'); return true; }
   catch (_) { clearTimeout(separation.attente.minuteur); separation.attente = null; fs.unlink(fichier, () => {}); return false; }
+}
+function separationSuivante() {
+  const x = separation.suivante; separation.suivante = null;
+  if (x) separerSon(x.fichier, x.src, x.o);
+}
+// (20:10) ses voix, transcrites une à une par l'oreille vive, après papa (jamais devant lui), les plus fortes d'abord ; 30 s au plus
+const voixATranscrire = [];
+let voixTranscriptionEnCours = false;
+function transcrireVoixSuivante() {
+  if (voixTranscriptionEnCours) return;
+  while (voixATranscrire.length && Date.now() - voixATranscrire[0].t > 30000) fs.unlink(voixATranscrire.shift().wav, () => {});
+  const x = voixATranscrire[0];
+  if (!x) return;
+  if (typeof papaParle === 'function' && papaParle()) { setTimeout(transcrireVoixSuivante, 500); return; }
+  voixTranscriptionEnCours = true;
+  oreilleDemander({ fichier: x.wav, langue: '', contexte: '' }, false).then((r) => {
+    voixTranscriptionEnCours = false;
+    if (r && r.occupee) { setTimeout(transcrireVoixSuivante, 400); return; }
+    voixATranscrire.shift(); fs.unlink(x.wav, () => {});
+    const t = r && r.texte ? String(r.texte).replace(/\s+/g, ' ').trim() : '';
+    if (t && typeof entendreMorceau === 'function') { try { entendreMorceau(t, { source: 'telephone', voix: x.voix, cle: x.cle, fin: true }); } catch (_) {} }
+    transcrireVoixSuivante();
+  }, () => { voixTranscriptionEnCours = false; });
+}
+// (20:10) ce que la cascade a trouvé : sa scène et ses instruments au fil et à son instant ; au moins deux voix du téléphone : chacune sa
+// route (la route du bloc mélangé s'arrête là, pour ne pas penser deux fois les mêmes mots) ; une seule voix : la route du téléphone l'a déjà
+function cascadeRecue(o, a) {
+  const t = a.debut > 1e12 ? a.debut : Date.now() - 8000, source = a.src === 'micro' ? 'autour' : 'du téléphone';
+  if (o.texte_cascade) {
+    const scene = neutraliser(String(o.texte_cascade).slice(0, 600));
+    fluxAjouter(`cascade_${a.src}`, scene, t);
+    noterInstant('cascade', { texte: scene, source }, t);
+  }
+  const voix = (Array.isArray(o.voix_separees) ? o.voix_separees : []).filter(v => v && wavDeVoix(v.wav));
+  const garder = a.voix && a.src === 'telephone' ? voix.filter(v => !v.moi) : [];
+  if (garder.length < 2) { effacerVoix(o); return; }
+  const bloc = entendus.get('telephone|'), b = bloc && a.cle ? bloc.blocs.get(a.cle) : null;
+  if (b) b.fini = true;
+  const choisies = garder.slice().sort((x, y) => (Number(y.volume_db) || -99) - (Number(x.volume_db) || -99)).slice(0, 3);
+  for (const v of voix) if (!choisies.includes(v)) fs.unlink(v.wav, () => {});
+  for (const v of choisies) voixATranscrire.push({ wav: v.wav, voix: String(v.nom || `voix ${Number(v.numero) || 0}`).slice(0, 40), cle: `${a.cle || 't'}#${Number(v.numero) || 0}`, t: Date.now() });
+  transcrireVoixSuivante();
 }
 function separationRecue(o) {
   const a = separation.attente;
-  if (!a || o.id !== a.id) return;
+  if (a && a.chauffe && o && o.chaud) { separation.attente = null; clearTimeout(a.minuteur); separationSuivante(); return; }   // (20:10) chauffée
+  if (!a || o.id !== a.id) { if (o && o.voix_separees) effacerVoix(o); return; }
   separation.attente = null; clearTimeout(a.minuteur); fs.unlink(a.fichier, () => {});
+  if (separation.suivante) separationSuivante();
+  if (o.voix_separees || o.texte_cascade) cascadeRecue(o, a);
   if (o.erreur || !o.texte) return;
   const t = Date.now() - 2000, source = a.src === 'micro' ? 'autour' : 'du téléphone';
   fluxAjouter(`separe_${a.src}`, o.texte, t);
   noterInstant('musique_separee', { texte: o.texte, source }, t);
   if (Date.now() - separation.corps >= 15000 && corpsActif()) {
     separation.corps = Date.now();
-    corpsLot.evenements.push({ type: 'musique_separee', t, details: { source: a.src === 'micro' ? 'autour de toi' : 'le téléphone', voix: o.voix, fond: o.fond } });
+    corpsLot.evenements.push({ type: 'musique_separee', t, details: { source: a.src === 'micro' ? 'autour de toi' : 'le téléphone', voix: o.voix, fond: o.fond,
+      ...(o.texte_cascade ? { cascade: String(o.texte_cascade).slice(0, 400), instruments: o.instruments } : {}) } });   // (20:10) la cascade
     ressentirCorps();
   }
 }
@@ -9496,7 +9577,7 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
   const f = path.join(os.tmpdir(), `jarvis-${process.pid}-${Date.now()}${ext}`);
   try { fs.writeFileSync(f, audio); } catch (e) { return repondre(500, { erreur: 'écriture du fichier audio impossible' }); }
   // (04/11) le son du téléphone (sa musique) : séparé en parallèle, voix et fond
-  if (temps.source === 'telephone' && ext === '.wav') { try { const fs2 = f.replace(/\.wav$/, '-sep.wav'); fs.writeFileSync(fs2, audio); separerSon(fs2, 'telephone'); } catch (_) {} }
+  if (temps.source === 'telephone' && ext === '.wav') { try { const fs2 = f.replace(/\.wav$/, '-sep.wav'); fs.writeFileSync(fs2, audio); separerSon(fs2, 'telephone', { cascade: true, cle: String(temps.cle || ''), debut: Number(temps.debut_ms) || 0 }); } catch (_) {} }   // (20:10) le bloc entier : la cascade
   // (28/10, Ahmed via Hakim : accélérer l'oreille) la voix et l'oreille partagent un processus : une synthèse en cours fait attendre
   const tTranscription = Date.now(), syntheseEnCours = voixOccupee;
   let partie = false;
