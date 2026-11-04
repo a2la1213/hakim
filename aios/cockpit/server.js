@@ -2754,20 +2754,35 @@ const placesVivant = (m) => VIVANTS.filter(x => x.modele === m && !x.attente && 
 // partie de phrase (jusqu'à la virgule) au lieu du mot » ; « sinon ça rafale trop ») un morceau = une proposition finie (virgule, point,
 // point-virgule, deux-points, ! ?) ; sans ponctuation (Whisper n'en met pas toujours), 12 mots au plus ; le reste attend la suite
 const FIN_PROPOSITION = /[,;:.!?…]["»”)]*$/;
-function morceauxDePropositions(mots) {
-  const out = []; let tampon = [];
+function morceauxDePropositions(mots, taille = 1) {
+  const out = []; let tampon = [], fins = 0;
   for (const m of mots) {
     if (!tampon.length && out.length && /^[,;:.!?…"»”)]+$/.test(m)) { out[out.length - 1] += ` ${m}`; continue; }   // « Bonjour. » : le » suit
     tampon.push(m);
-    if (FIN_PROPOSITION.test(m) || tampon.length >= 12) { out.push(tampon.join(' ')); tampon = []; }
+    if (FIN_PROPOSITION.test(m)) fins++;
+    if (fins >= taille || tampon.length >= 12 * taille) { out.push(tampon.join(' ')); tampon = []; fins = 0; }
   }
   return { morceaux: out, reste: tampon.length };
 }
+// (04/11, Mini Hakim, avant les propositions) chaque MOT (avec ses petits mots d'avant : « le chat », « à la maison ») est un morceau ;
+// un petit mot en fin d'envoi attend le mot qui le suit
+const PETITS_MOTS = /^(?:le|la|les|l'|un|une|des|du|de|d'|au|aux|à|en|et|ou|mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|ce|cet|cette|ces|je|j'|tu|il|elle|on|nous|vous|ils|elles|ne|n'|qu'|que|qui|me|m'|te|t'|se|s'|y|pour|par|sur|dans|avec|sans|chez)$/i;
+function morceauxDeMots(mots) {
+  const out = []; let tampon = [];
+  for (const m of mots) { tampon.push(m); if (!PETITS_MOTS.test(m.replace(/[.,;:!?…«»"]/g, ''))) { out.push(tampon.join(' ')); tampon = []; } }
+  return { morceaux: out, reste: tampon.length };
+}
+// (04/11, Ahmed : « selon le mode, c'est la pensée de Mini Hakim, Hakim ou Super Hakim : Mini Hakim prend chaque mot pour le chunk ;
+// Hakim, rien ne bouge, c'est parfait ; Super Hakim prend un chunk deux fois plus grand ») la taille suit qui tient son conscient
+function morceauxPour(modele, mots) {
+  return modele === 'haiku' ? morceauxDeMots(mots) : morceauxDePropositions(mots, modele === 'opus' ? 2 : 1);
+}
+const modeleConscient = () => (typeof cerveau !== 'undefined' && cerveau && ['haiku', 'sonnet', 'opus'].includes(cerveau.modele) ? cerveau.modele : 'sonnet');
 // un morceau CONFIRMÉ (o.fin : Whisper l'a coupé à ta pause) ferme aussi la proposition commencée, même sans ponctuation
 function pisteMorceau(texte, o = {}) {
   const mots = String(texte || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
   if (corpsReglages().reponse_soufflee === false || mots.length < pistes.mots + 1) return;
-  let { morceaux, reste } = morceauxDePropositions(mots.slice(pistes.mots));
+  let { morceaux, reste } = morceauxPour(modeleConscient(), mots.slice(pistes.mots));
   if (o.fin && reste) { morceaux.push(mots.slice(-reste).join(' ')); reste = 0; }
   if (!morceaux.length) return;                                       // une proposition pas encore finie : elle attend sa fin
   if (typeof rireEnDirect === 'function') rireEnDirect(morceaux.join(' '));   // (04/11) le même input : sa vibration en même temps
@@ -2782,7 +2797,7 @@ function pisteMorceau(texte, o = {}) {
   pistesSuivantes();
 }
 function pistesSuivantes() {
-  const conscient = typeof cerveau !== 'undefined' && cerveau && ['haiku', 'sonnet', 'opus'].includes(cerveau.modele) ? cerveau.modele : 'sonnet';
+  const conscient = modeleConscient();
   while (pistes.attente.length && pistes.liste.filter(x => x.enCours).length < PISTES_MAX && placesVivant(conscient) >= 1) lancerPiste(pistes.attente.shift());
 }
 // ce qu'il a déjà commencé à répondre (les bouts des morceaux d'avant), pour que chaque bout CONTINUE sa réponse
@@ -2799,7 +2814,7 @@ function lancerPiste(m) {
   // (04/11, Ahmed, après la mesure : 75 appels sur 118 hors délai — « seul Hakim répond : ça dépend de qui tient le conscient ; si c'est
   // Mini Hakim, c'est lui qui lance la parole ; Hakim, lui ; Super Hakim, lui ; les trois sont là pour juger le subconscient, pas pour
   // parler en même temps ») une seule voix par piste : celle qui tient son conscient en ce moment (le modèle de son cerveau)
-  const conscient = typeof cerveau !== 'undefined' && cerveau && ['haiku', 'sonnet', 'opus'].includes(cerveau.modele) ? cerveau.modele : 'sonnet';
+  const conscient = modeleConscient();
   const freres = FRERES_PISTE.filter(([mod]) => mod === conscient);
   piste.enCours = freres.length;
   for (const [mod, nom, delai] of freres) {

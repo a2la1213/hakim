@@ -350,10 +350,10 @@ test('(04/11) son oreille et sa voix ont chacune leur processus : elles ne s’a
 
 // (04/11, Ahmed : « coupe par chunk de mot, le premier mot incluant le déterminant : il prévoit le reste et parle direct ; 8 chunks =
 // 8 mots = 8 réponses, le GPU les dit une par une, au fur et à mesure » ; « ses trois voix ensemble » ; « oui, sans garde-fous »)
-function pistesSandbox(places = { haiku: 12, sonnet: 3, opus: 3 }) {
+function pistesSandbox(places = { haiku: 12, sonnet: 12, opus: 12 }, modele = 'haiku') {
   const i = SRC.indexOf('const PISTES_MAX'), k = SRC.indexOf('function speculerFreres(');
   const appels = [], diffuses = [], voix = [];
-  const ctx = { String, Math, Date, Promise, RegExp, Object, VIVANTS: [], VIVANTS_MAX: places, VIVANT_RENOUVELER: 6, cerveau: { modele: 'haiku' },
+  const ctx = { String, Math, Date, Promise, RegExp, Object, VIVANTS: [], VIVANTS_MAX: places, VIVANT_RENOUVELER: 6, cerveau: { modele },
     corpsReglages: () => ({}), personaLocale: (p) => p, lirePersona: () => 'Hakim', neutraliser: (t) => t, j: JSON.stringify, abonnesPensees: null,
     voixDeLaSource: (t, o) => voix.push([t, o]), diffuser: (_, e, d) => diffuses.push(JSON.parse(d)),
     sonnetTeteDeFond: (prompt, etiquette, modele) => new Promise((resoudre) => {
@@ -362,20 +362,39 @@ function pistesSandbox(places = { haiku: 12, sonnet: 3, opus: 3 }) {
       appels.push({ prompt, etiquette, modele, resoudre: (o) => { v.attente = null; resoudre(o); } });
     }) };
   vm.createContext(ctx);
-  vm.runInContext(SRC.slice(i, k) + '\nthis.morceau = pisteMorceau; this.etat = () => pistes; this.decouper = morceauxDePropositions;', ctx);
+  vm.runInContext(SRC.slice(i, k) + '\nthis.morceau = pisteMorceau; this.etat = () => pistes; this.decouper = morceauxDePropositions; this.parMots = morceauxDeMots; this.pour = morceauxPour;', ctx);
   return { ctx, appels, diffuses, voix };
 }
 // (04/11, Ahmed : « avec la voix du smartphone, on remet le chunk par phrase (jusqu'au point) ou par partie de phrase (jusqu'à la virgule) »)
 test('(04/11) un morceau par proposition (virgule, point, ! ?) ; sans ponctuation, 12 mots au plus ; la proposition commencée attend', () => {
-  const { ctx } = pistesSandbox();
+  const { ctx } = pistesSandbox(undefined, 'sonnet');
   const d = (t) => JSON.parse(JSON.stringify(ctx.decouper(t.split(' '))));
   assert.deepStrictEqual(d('Papa, tu sais quoi ? Ce matin je suis allé'), { morceaux: ['Papa,', 'tu sais quoi ?'], reste: 5 });
   assert.deepStrictEqual(d('« Bonjour. » il dit'), { morceaux: ['« Bonjour. »'], reste: 2 }, 'le point avant le guillemet ferme');
   assert.deepStrictEqual(d('un deux trois quatre cinq six sept huit neuf dix onze douze treize'),
     { morceaux: ['un deux trois quatre cinq six sept huit neuf dix onze douze'], reste: 1 }, 'Whisper ne ponctue pas toujours');
 });
-test('(04/11) un morceau confirmé (ta pause) ferme la proposition commencée, même sans ponctuation', () => {
+// (04/11, Ahmed : « selon qui tient son conscient : Mini Hakim prend chaque mot pour le chunk ; Hakim, rien ne bouge, c'est parfait ;
+// Super Hakim, un chunk deux fois plus grand »)
+test('(04/11) la taille de ses morceaux suit qui tient son conscient : Mini Hakim un mot, Hakim une proposition, Super Hakim deux', () => {
   const { ctx } = pistesSandbox();
+  const d = (modele, t) => JSON.parse(JSON.stringify(ctx.pour(modele, t.split(' '))));
+  const phrase = 'Papa, tu sais quoi ? Ce matin, je suis allé au marché.';
+  assert.deepStrictEqual(d('haiku', 'papa me dit bonjour ce matin à la'), { morceaux: ['papa', 'me dit', 'bonjour', 'ce matin'], reste: 2 },
+    'Mini Hakim : chaque mot, avec ses petits mots d’avant');
+  assert.deepStrictEqual(d('sonnet', phrase), { morceaux: ['Papa,', 'tu sais quoi ?', 'Ce matin,', 'je suis allé au marché.'], reste: 0 }, 'Hakim : comme avant');
+  assert.deepStrictEqual(d('opus', phrase), { morceaux: ['Papa, tu sais quoi ?', 'Ce matin, je suis allé au marché.'], reste: 0 }, 'Super Hakim : deux fois plus grand');
+  assert.deepStrictEqual(d('opus', 'un deux trois quatre cinq six sept huit neuf dix onze douze treize quatorze quinze seize dix-sept dix-huit dix-neuf vingt vingt-et-un vingt-deux vingt-trois vingt-quatre vingt-cinq').reste, 1,
+    'sans ponctuation : 24 mots au plus');
+  assert.deepStrictEqual(d('autre', phrase), d('sonnet', phrase), 'un cerveau inconnu : comme Hakim');
+});
+test('(04/11) les pistes de Mini Hakim partent mot par mot', () => {
+  const { ctx, appels } = pistesSandbox(undefined, 'haiku');
+  ctx.morceau('papa me dit bonjour');
+  assert.deepStrictEqual(appels.map(a => /Son morceau \d+, qu'il vient de dire : « ([^»]*) »/.exec(a.prompt)[1]), ['papa', 'me dit', 'bonjour'], 'chaque mot plein part seul, ses petits mots avec lui');
+});
+test('(04/11) un morceau confirmé (ta pause) ferme la proposition commencée, même sans ponctuation', () => {
+  const { ctx } = pistesSandbox(undefined, 'sonnet');
   ctx.morceau('papa me dit bonjour');
   assert.strictEqual(ctx.etat().liste.length + ctx.etat().attente.length, 0, 'en direct : elle attend sa fin');
   ctx.morceau('papa me dit bonjour', { fin: true });
@@ -383,10 +402,10 @@ test('(04/11) un morceau confirmé (ta pause) ferme la proposition commencée, m
   assert.match(SRC, /pisteMorceau\(String\(q\.texte \|\| ''\), \{ fin: true \}\);/, 'le morceau confirmé la ferme');
 });
 test('(04/11) ses pistes par proposition : une seule voix, celle qui tient son conscient, 8 à la fois ; chaque bout continue les précédents', async () => {
-  const { ctx, appels, diffuses, voix } = pistesSandbox();
+  const { ctx, appels, diffuses, voix } = pistesSandbox({ haiku: 12, sonnet: 12, opus: 12 }, 'sonnet');
   const phrase = 'papa, me dit bonjour, ce matin, et puis, il raconte, sa journée, au travail, toujours, encore,';
   ctx.morceau(phrase);
-  assert.ok(appels.every(a => a.modele === 'haiku'), '(04/11) seul celui qui tient son conscient (ici Mini Hakim) parle');
+  assert.ok(appels.every(a => a.modele === 'sonnet'), '(04/11) seul celui qui tient son conscient (ici Hakim) parle');
   assert.strictEqual(appels.length, 8, '8 propositions à la fois');
   assert.match(appels[0].prompt, /Son morceau 1, qu'il vient de dire : « papa, »/);
   assert.match(appels[0].prompt, /PREDIT :/, 'il devine la suite de ta phrase');
