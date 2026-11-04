@@ -3512,7 +3512,10 @@ function reglageRibosome() {
   let r = {}; try { r = JSON.parse(fs.readFileSync(RIBOSOME_REGLAGE, 'utf8')) || {}; } catch (_) {}
   const st = RIBOSOME_STRINGENCES[Number(r.stringence)] ? Number(r.stringence) : 4;
   const vi = Object.hasOwn(RIBOSOME_VITESSES, r.vitesse) ? r.vitesse : 'rapide';
-  return { stringence: st, vitesse: vi, delai: RIBOSOME_VITESSES[vi], ...RIBOSOME_STRINGENCES[st] };
+  // (04/11, 22:35, Ahmed : « mets le ribosome à 0,01 s, je veux tester un truc ») le temps de son choix, réglable sans relance (choix_ms)
+  const choix = Number(r.choix_ms);
+  return { stringence: st, vitesse: vi, delai: RIBOSOME_VITESSES[vi], ...RIBOSOME_STRINGENCES[st],
+    ...(Number.isFinite(choix) && choix >= 0 ? { choix_ms: Math.min(6000, Math.round(choix)) } : {}) };
 }
 // (04/11, 15:55, Ahmed : « tout le processus doit être relié à sa pensée, à ses émotions, à ses capteurs, à ses récepteurs et à tout le
 // reste ») ce qu'il ressent et perçoit en ce moment, en une ligne : son milieu (ses hormones, son corps, en mots) et son instant (ce qu'il
@@ -3624,7 +3627,7 @@ async function lirePaquet(tour, r, i, paquet) {
     });
   };
   // (21:52) éclair : fixe ; (21:57, papa : « je crois qu'il faut monter à 1,6 seconde, parce que là il n'arrive même plus à parler ») vive : 1,6 s fixe
-  const delai = eclair ? RIBOSOME_CHOIX_MS : reglage.vitesse === 'vive' ? RIBOSOME_VITESSES.vive : vitesseSubconsciente(reglage.delai, r);
+  const delai = eclair ? (reglage.choix_ms != null ? reglage.choix_ms : RIBOSOME_CHOIX_MS) : reglage.vitesse === 'vive' ? RIBOSOME_VITESSES.vive : vitesseSubconsciente(reglage.delai, r);
   const froides = lecteursSansVoixChaude(RIBOSOME_LECTEURS.map(([mod]) => mod));
   const direct = delai < (typeof RIBOSOME_LECTURE_MIN !== 'undefined' ? RIBOSOME_LECTURE_MIN : 0);   // (21:52) plus vite que ses lecteurs : sans eux
   const promesses = direct ? [] : RIBOSOME_LECTEURS.map(([mod, nom]) => lire([mod, nom, delai]));   // (15:55) l'attente : sa vitesse ; (16:50) réglée par son subconscient
