@@ -253,6 +253,8 @@
         if (!tenueVoix && course >= COURSE_MS) {              // elle tient : c'est une voix, depuis son début
           tenueVoix = true;
           if (pauseAvant >= 600) pauses.push(pauseAvant);     // une hésitation : une pause de plus de 0,6 s
+          // (04/11, 17:59, Ahmed : « juste après que j'ai marqué une pause et repris la parole ») ta voix revient après ta respiration
+          if (o.surReprise && pauseAvant >= (o.pauseMs ? o.pauseMs() : 400)) o.surReprise(pauseAvant);
           voixMs += course - FENETRE_MS;
         }
       } else if (course && ++creux > CREUX_MAX) {             // le son s'arrête : trop court pour une voix, c'était un éclat

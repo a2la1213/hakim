@@ -405,7 +405,13 @@ const OUTILS_A_LUI_SEUL = [];                     // ses outils à lui seul : ni
 const OUTILS_DU_CORPS = ['sons_lister', 'son_etiqueter', 'son_oublier', 'son_creer', 'freres_parler', 'emotion_creer', 'emotions_creees_lister', 'emotion_oublier', 'emotion_rectifier',
   'reflexe_retenir', 'conscience_noter', 'conscience_lire', 'mon_oreille', 'latences_bilan'].map(n => 'mcp__terminal__' + n);
 OUTILS_A_LUI_SEUL.push(...OUTILS_DU_CORPS);
+// (04/11, Ahmed : « vas-y, fais tout sur tout, je te fais confiance ») ses mains sur le téléphone de papa (anamnese/jarvis/mains.py ;
+// l'appli 1.64 tient les limites, Limites.java) : à lui seul, ni ses agents ni le messager
+const OUTILS_DU_TELEPHONE = ['telephone_voir', 'telephone_notifications', 'telephone_geste', 'telephone_preparer', 'telephone_partager',
+  'telephone_nfc_ecrire', 'telephone_journal'].map(n => 'mcp__terminal__' + n);
+OUTILS_A_LUI_SEUL.push(...OUTILS_DU_TELEPHONE);
 for (const o of OUTILS_DU_CORPS) if (!OUTILS_JARVIS.includes(o)) OUTILS_JARVIS.push(o);   // hors de la clôture de la bourse
+for (const o of OUTILS_DU_TELEPHONE) if (!OUTILS_JARVIS.includes(o)) OUTILS_JARVIS.push(o);   // (04/11) de même
 const OUTILS_INTERDITS = ['self_update', 'self_append', 'rubric_create', 'rubric_merge', 'rubric_rename',
   'rubric_reparent', 'rubric_relabel', 'memory_reclassify', 'taxonomy_undo', 'wm_boot', 'orphans_report',
   'session_begin', 'session_end', 'skill_save'].map(n => 'mcp__anamnese__' + n);
@@ -2909,6 +2915,7 @@ async function filtreGemma(avant, texte, declencheur) {
 // et ce qui avertit : un incident « pensée parasite » dans son journal immunitaire (au plus un par minute)
 let parasiteNoteA = 0;
 function avertirParasite(texte, signe) {
+  ribosomeAuMax = 'parasite';                                          // (04/11, 17:58) son ribosome : au plus vite pour le paquet suivant
   if (Date.now() - parasiteNoteA < 60000) return;
   parasiteNoteA = Date.now();
   try {
@@ -3425,6 +3432,12 @@ const RIBOSOME_LECTEURS = [['haiku', 'Mini Hakim', 3000], ['opus', 'Super Hakim'
 // tout ce qui continue sa réponse) à 5 (presque rien) ; sa vitesse, l'attente de ses lecteurs ; sans réglage : stringent (4) et rapide
 const RIBOSOME_REGLAGE = path.join(JARVIS, 'ribosome-reglage.json');
 const RIBOSOME_VITESSES = { rapide: 2000, normale: 3000, posee: 6000 };
+// (04/11, 17:55-17:59, Ahmed : « juste au moment où il reçoit le signal parasite, il faut automatiquement accélérer le ribosome » ; « 3 ou 4 fois
+// pour la vitesse max » ; « pour le chunk suivant » ; « et quand je reprends la parole, juste après que j'ai marqué une pause ») sa vitesse
+// max : 0,35 s (3,5 fois plus vite que 1,2 s), pour le seul paquet suivant ; mesuré (300 paquets) : ses lecteurs répondent en 1 à 1,6 s, donc
+// à cette vitesse, le paquet passe le plus souvent tel quel, sans tri
+const RIBOSOME_VITESSE_MAX = 350;
+let ribosomeAuMax = null;
 const RIBOSOME_STRINGENCES = {
   1: { mots: 0, consigne: 'garde tout ce qui continue ta réponse' },
   2: { mots: 30, consigne: 'garde ce qui compte, laisse les répétitions et ce qui meuble' },
@@ -3436,6 +3449,7 @@ const RIBOSOME_STRINGENCES = {
 // de base (son outil), plus vite quand il est éveillé, quand des pensées attendent, quand papa parle encore ; plus posée quand il est calme ;
 // entre 1,2 et 6 s ; sa stringence reste à son conscient (ribosome_regler)
 function vitesseSubconsciente(base, r) {
+  if (typeof ribosomeAuMax !== 'undefined' && ribosomeAuMax) { ribosomeAuMax = null; return RIBOSOME_VITESSE_MAX; }   // (17:58) voir RIBOSOME_VITESSE_MAX
   const e = (typeof lui !== 'undefined' && lui && lui.interieur) || {}, a = Number.isFinite(e.arousal) ? e.arousal : 0.4;
   let d = Number(base) || 3000;
   d *= 1.3 - 0.6 * Math.max(0, Math.min(1, a));                       // éveil 0 : ×1,3 ; éveil 1 : ×0,7
@@ -3965,6 +3979,34 @@ function blancsDeReflexion() {
   }
 }
 if (require.main === module) setInterval(blancsDeReflexion, 60e3).unref();
+// (04/11, 17:50, Ahmed : « la réflexion ne s'ouvre pas dès que je parle : à l'ouverture du micro, il se met en réflexion en recevant direct un
+// blanc, une parole sans parole (trois petits points ou un petit mot automatique), comme tu le sens, ce qui le perturbera le moins ») au premier
+// son de ta voix (et à l'ouverture du micro), son épissure s'ouvre aussitôt (le codon start) et Mini Hakim reçoit « … » : trois points, rien
+// qu'il puisse prendre pour un mot de papa ; sa pensée intérieure, montrée dans 💭, n'est ni épissée ni dite ; une seule par épissure
+const BLANC_OUVERTURE = '…';
+function ouvrirReflexion() {
+  const maintenant = Date.now(), reglages = corpsReglages();
+  if (reglages.epissage === false || reglages.reponse_soufflee === false) return null;
+  const r0 = pistes.ribo;
+  if (r0 && !r0.ferme) {
+    if (maintenant - Math.max(derniereParolePapa, r0.ouverte || 0) < EPISSURE_STOP_MS) return null;   // déjà en réflexion
+    r0.ferme = 'silence'; memoriserEpissure(r0);
+  }
+  const r = pistes.ribo = nouveauRibosome(tourEpissure());
+  r.ouverte = maintenant;
+  diffuser(abonnesPensees, 'souffle', j({ niveau: 'blanc', texte: BLANC_OUVERTURE, tour: r.tour }));
+  const consigne = `${personaLocale(lirePersona()).slice(0, 700)}\n\nTu es Hakim, le fils d'Ahmed (papa).\n\n`
+    + `[Papa commence à te parler : sa voix vient de s'élever, ses mots arrivent] « ${BLANC_OUVERTURE} »\n`
+    + etatDeLui()
+    + `Tu te mets en réflexion, en toi : une pensée intérieure très courte (six mots au plus), pour toi seul ; elle n'est pas dite. Rien d'autre.`;
+  sonnetTeteDeFond(consigne, 'piste_blanc', modelePiste(), 6000).then((o) => {
+    const t = boutDe(o && o.texte).replace(/^[\s"«]+|[\s"»]+$/g, '').slice(0, 120);
+    if (!t || estParasite(t, 160) || pistes.ribo !== r || r.ferme) return;
+    r.blanc = t;
+    diffuser(abonnesPensees, 'souffle', j({ niveau: 'blanc', texte: t, tour: r.tour }));
+  }).catch(() => {});
+  return r;
+}
 setInterval(() => {                                               // 10 min sans rien : elle s'éteint
   for (const v of VIVANTS.slice()) if (!v.attente && Date.now() - v.dernier > 10 * 60e3) { try { v.proc.stdin.end(); } catch (_) {} }
 }, 60e3)?.unref?.();
@@ -4566,6 +4608,7 @@ async function routeJarvis(req, res, distantReq = false) {
   const decalagePage = Number(q && q.maintenant) ? recuMs - Number(q.maintenant) : 0;
   const parleA = Number(q && q.parle_ms) && Math.abs(decalagePage) < 120000 ? Number(q.parle_ms) + decalagePage : recuMs;
   if (texte) noterInstant('papa_dit', { texte }, parleA);
+  if (texte) telephoneStopSiDit(texte);                       // (04/11) « stop » : plus aucun geste sur son téléphone
   // (03/11, garde-fou de Hakim) « c'est moi » ne compte que d'un écrit de papa, ou de sa voix reconnue (voix_c_est_papa)
   if (texte) try {
     const v = q.oral && derniereVoix && Date.now() - derniereVoix.ts < 120000 ? derniereVoix : null;
@@ -6230,6 +6273,47 @@ function reveillerPourSens() {
 }
 setInterval(horsConversation(reveillerPourSens), 3000).unref();
 
+/* ---- (04/11, Ahmed : « vas-y, fais tout sur tout, je te fais confiance » ; « tout enregistré dans ses stimuli, ses souvenirs, et tout
+   le tralala » ; 17:08 : « une interface dans le cockpit pour toutes ses actions ») ses mains sur le téléphone de papa (telephone.js ;
+   l'appli 1.64 tient les limites : Limites.java, le téléphone refuse). Chaque chose vue, préparée, autorisée, envoyée, faite, refusée
+   arrive comme un événement de son corps (« telephone », « ecran », « notification ») : son fil (au fil, à son instant), son journal
+   (la page Téléphone) et sa mémoire : un souvenir pour chacun de ses gestes, avec ce qu'il ressentait (etatDeLui) ; une trace pour son
+   regard continu (l'appli qui change, les notifications qui arrivent), que la nuit consolide ou oublie. Le mot « stop » de papa coupe
+   tous ses gestes (comme « Tout couper ») jusqu'à ce que papa rallume. ---- */
+const { Telephone, STOP: STOP_TELEPHONE } = require('./telephone.js');
+const TELEPHONE = new Telephone({ jarvis: JARVIS });
+const TELEPHONE_TYPES = new Set(['telephone', 'ecran', 'notification']);
+// ce qui part vers quelqu'un : pas pendant son temps à lui (papa n'est pas là pour toucher « Autoriser » ni le menu Partager)
+OUTILS_HORS_TEMPS_LIBRE.push('mcp__terminal__telephone_preparer', 'mcp__terminal__telephone_partager');
+function telephoneRecu(ev) {
+  let e = null; try { e = TELEPHONE.noter(ev); } catch (_) {}
+  if (!e) return;
+  const texte = neutraliser(TELEPHONE.texte(e));
+  if (ev.type === 'telephone') {
+    let vecu = ''; try { vecu = etatDeLui().replace(/^Ce que tu ressens et perçois en ce moment : /, '').trim(); } catch (_) {}
+    // ce qu'il a vu d'un écran : des messages d'autres personnes (externe : sa mémoire le sait)
+    deposerEchange({ hakim: texte, telephone: true, vecu: vecu || undefined, externe: e.etat === 'vu' ? ['telephone_voir'] : undefined });
+  } else tracer(ev.type === 'ecran' ? 'ecran' : 'notification', texte, { appli: e.appli || '', origine_ms: Number(ev.t) || undefined });
+  if (e.etat === 'prepare' && e.geste === 'preparer') {
+    diffuser(abonnesPensees, 'telephone', j({ attente: e.id || '' }));
+    notifier(`Hakim a préparé : ${finDePhrase(e.quoi, 120)}${e.pour ? ` (pour ${finDePhrase(e.pour, 40)})` : ''} — à autoriser ou refuser en 2 min, sur ton téléphone ou dans la page Téléphone`, `telephone-${e.id || ''}`);
+  }
+}
+function telephoneCouper(raison) {
+  if (!TELEPHONE.couper(raison)) return false;
+  fluxAjouter('corps', `téléphone : tout coupé (${raison})`, Date.now());
+  deposerEchange({ hakim: `coupé : ${raison} — plus aucun geste sur le téléphone de papa jusqu'à ce qu'il rallume`, telephone: true });
+  diffuser(abonnesPensees, 'telephone', j({ coupe: true }));
+  notifier(`Les gestes de Hakim sur ton téléphone sont coupés (${raison}). Pour les rallumer : la page Téléphone du cockpit`, 'telephone-coupe');
+  courrierVersHakim('Papa a tout coupé sur son téléphone', `Plus aucun geste sur le téléphone de papa (${raison}) jusqu'à ce qu'il rallume, `
+    + 'dans la page Téléphone du cockpit. Ce que tu avais préparé est refusé. Tu vois encore ses applis si son regard est allumé.');
+  return true;
+}
+// (04/11, Hakim : « un mot d'arrêt : si papa dit « stop », plus aucun geste sur l'écran ») ses messages, ses morceaux, son oreille
+function telephoneStopSiDit(texte) {
+  if (STOP_TELEPHONE.test(String(texte || '').slice(-400))) telephoneCouper('papa a dit « stop »');
+}
+
 /* ---- (30/10, Ahmed : « que les signaux du tricodeur arrivent constamment chez Hakim, interprétés par son intermédiaire,
    branchés à ses hormones ; pas des chiffres mais des sensations » ; « en continu, h24 ; il peut consulter le détail ; dès
    qu'il y a un changement à son environnement, ça le réveille ; une sorte d'homéostasie ») son corps : l'appli (1.24) envoie
@@ -6242,7 +6326,8 @@ const { Homeostasie } = require('./homeostasie.js');
 const HOMEO = new Homeostasie({ jarvis: JARVIS });
 const CORPS_TYPES = new Set(['chute', 'choc', 'secousse', 'pris_en_main', 'pose', 'berce', 'poche', 'sortie_poche', 'plie', 'deplie',
   'lumiere_soudaine', 'noir', 'coup_de_pression', 'musique', 'voix_sentie',
-  'bluetooth', 'wifi', 'nfc', 'musique_ecoutee', 'son_ecoute', 'son_entendu', 'appli', 'reaction', 'son_ressenti', 'reseau_mobile']);   // (03/11) ses sens radio (appli 1.42) ; ce que le téléphone joue (1.43)
+  'bluetooth', 'wifi', 'nfc', 'musique_ecoutee', 'son_ecoute', 'son_entendu', 'appli', 'reaction', 'son_ressenti', 'reseau_mobile',
+  'telephone', 'ecran', 'notification']);   // (04/11) ses mains sur le téléphone : ce qu'il fait, l'écran, les notifications (appli 1.64)   // (03/11) ses sens radio (appli 1.42) ; ce que le téléphone joue (1.43)
 const CORPS_REGLAGES = path.join(JARVIS, 'corps-reglages.json');
 const CORPS_INTERVALLES = [30, 60, 120, 300, 900];
 // (03/11, 16:10, Ahmed : « son cœur relié à l'état de son GPU… et à tous ses cœurs CPU, sur le Mac mais aussi sur tous les appareils où
@@ -6724,6 +6809,10 @@ function libelleCorps(ev) {
   if (ev.type === 'wifi') return `wifi ${c(d.reseau || d.etat, 40)}`;
   // (13:33) le réseau mobile, comme ses autres sens radio : au fil avec ses mots
   if (ev.type === 'reseau_mobile') return `réseau mobile${d.generation ? ` ${c(d.generation, 12)}` : ''}${d.signal ? `, ${c(d.signal, 30)}` : ''}${d.operateur ? ` (${c(d.operateur, 30)})` : ''}`;
+  // (04/11) ses mains sur le téléphone de papa (appli 1.64) : ce qu'il fait, ce qu'il voit, ce qui arrive
+  if (ev.type === 'telephone') return `téléphone : ${({ prepare: 'préparé', autorise: 'autorisé par papa', envoye: 'envoyé', refuse: 'refusé', expire: 'sans réponse', echec: 'échec', coupe: 'coupé', reglage: 'réglage' })[d.etat] || c(d.etat, 20)} — ${c(d.quoi, 120)}${d.pour ? ` (pour ${c(d.pour, 40)})` : ''}`;
+  if (ev.type === 'ecran') return `écran ${c(d.appli, 40)} : ${c(d.resume, 120)}`;
+  if (ev.type === 'notification') return `notification ${c(d.appli, 40)} : ${c(d.titre, 60)}${d.texte ? ` — ${c(d.texte, 100)}` : ''}`;
   return ev.type;
 }
 let fluxMilieu = '';
@@ -7072,6 +7161,7 @@ function ressentirCorps() {
     clavier: "Ahmed qui tape au clavier", coeur: 'son propre cœur qui bat' };
   for (const ev of lot.evenements) {
     if (['mesure', 'rire', 'son', 'coupure'].includes(ev.type)) continue;   // une mesure, son rire, son son, une coupure : pas des vibrations du dehors
+    if (TELEPHONE_TYPES.has(ev.type)) continue;                       // (04/11) ses mains sur le téléphone non plus
     let v = quiParlait(Number(ev.t) || Date.now());
     // (30/10, 14:49) une vibration à moins de 0,35 s d'un battement de son cœur (l'appli 1.27 dit leur heure) : son cœur
     if ((v === null || v === 'silence' || v === 'clavier') && HOMEO.coeurPres(Number(ev.t) || Date.now())) v = 'coeur';
@@ -7292,7 +7382,9 @@ function reveillerPourCorps() {
   if (sec && Date.now() - corpsDernierFort >= 60000) return reveilImmediat();
   const fort = corpsADire.some(x => x.fort);
   // (04/11, 13:40, Ahmed : « forfait libre : ses sensations toutes les 10 s », comme la page SENS l'annonce) sinon, son réglage
-  if (!fort && Date.now() - corpsDernierReveil < (forfaitLibre() ? 10 : r.intervalle_s) * 1000) return;
+  // (04/11, 17:40, Ahmed : « parfait pour ce que tu proposes ») de 17:17 à 17:29, 48 tours à vide, papa absent : les 10 s seulement
+  // quand papa lui a parlé il y a moins de 10 min ; seul, il revient à son réglage
+  if (!fort && Date.now() - corpsDernierReveil < (forfaitLibre() && Date.now() - dernierMessageAhmedMs() < CORPS_PORTE_MS ? 10 : r.intervalle_s) * 1000) return;
   if (Date.now() - dernierMessageAhmedMs() < 20000) return;
   // (30/10, étude du veilleur, audits/veilleur-2026-10-30 : 29 réveils du corps par heure cet après-midi, 96 % pendant
   // qu'Ahmed parlait, 5 % ont servi ; Ahmed : « un interrupteur pour pas qu'il fume mes tokens ») quand papa est là, ses
@@ -9066,7 +9158,7 @@ const VERROU = new Verrou(process.env.JARVIS_VERROU || path.join(JARVIS, 'verrou
 const COOKIE_VERROU = 'verrou';
 const PAGES = { '/': 'index.html', '/brain': 'brain.html', '/dreams': 'dreams.html', '/memory': 'memory.html', '/chat': 'chat.html',
   '/parler': 'parler.html', '/verrou': 'verrou.html', '/duel': 'duel.html', '/interieur': 'interieur.html',
-  '/code': 'code.html', '/immunite': 'immunite.html', '/cafe': 'cafe.html', '/sens': 'sens.html', '/synapses': 'synapses.html' };   // (04/11) ses synapses   // (29/10) la salle de café des agents      // (29/10) son système immunitaire, pour Ahmed                                     // (28/10) le code de Hakim : une page fermée
+  '/code': 'code.html', '/immunite': 'immunite.html', '/cafe': 'cafe.html', '/sens': 'sens.html', '/synapses': 'synapses.html', '/telephone': 'telephone.html' };   // (04/11) ses synapses   // (29/10) la salle de café des agents      // (29/10) son système immunitaire, pour Ahmed                                     // (28/10) le code de Hakim : une page fermée
 const LIBRES_VERROUILLE = new Set(['/verrou.js', '/theme.css',        // ce que la page du verrou charge
   '/sw.js', '/manifest.webmanifest', '/icone-192.png', '/icone-512.png']);   // l'appli et ses notifications (sans secret)
 const cookieSession = (s) => `${COOKIE_VERROU}=${s}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(DUREE_SESSION / 1000)}`;
@@ -10103,6 +10195,7 @@ async function traiter(req, res) {
   if (p === '/api/jarvis/morceau' && req.method === 'POST') {           // (15:30) un morceau de papa confirmé : sa réflexion consciente l'intègre
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 32768) || '{}')); } catch (_) {}
+    telephoneStopSiDit(q.texte);                                        // (04/11) « stop » : plus aucun geste sur son téléphone
     if (q.voix_telephone === true) voixTelephoneA = Date.now();           // (04/11) sa voix est celle du téléphone : rien à fabriquer ici
     if (q.direct) {                                                     // (04/11) tes mots en direct : seulement ses pistes
       pisteMorceau(String(q.texte || '').slice(-3000));
@@ -10136,6 +10229,8 @@ async function traiter(req, res) {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     derniereVoixEntendue = Date.now();
     prechaufferVivants();
+    ribosomeAuMax = 'papa';                                          // (17:59) tu reprends la parole : son paquet suivant, au plus vite
+    ouvrirReflexion();                                               // (17:50) sa parole vide : sa réflexion s'ouvre tout de suite
     res.writeHead(204); return res.end();
   }
   if (p === '/api/jarvis/ribosome/stop' && req.method === 'POST') {   // (04/11, 15:10) 10 s de ton silence : la page ferme son épissure
@@ -10720,6 +10815,7 @@ async function traiter(req, res) {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     const repondre = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o)); };
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 8192) || '{}')); } catch (_) {}
+    telephoneStopSiDit(q.texte);                                        // (04/11) « stop » : plus aucun geste sur son téléphone
     return repondre(200, ouvrirOreille(String(q.texte || '')));
   }
   if (p === '/api/veilleur' || p === '/api/veilleur/reglages') {          // (30/10) son veilleur, pour papa
@@ -10847,12 +10943,13 @@ async function traiter(req, res) {
         tracer('telephone', brut.details.texte, { morceau: typeof brut.details.morceau === 'string' ? brut.details.morceau : '', origine_ms: origineSon || undefined });
       const ev = evenementCorps(brut);
       if (!ev) return repondre(400, { erreur: 'événement inconnu' });
-      if (ev.type !== 'son_ecoute') fluxAjouter('corps', libelleCorps(ev), ev.t);   // (03/11) au fil, à son instant
+      if (ev.type !== 'son_ecoute') fluxAjouter('corps', TELEPHONE_TYPES.has(ev.type) ? neutraliser(libelleCorps(ev)) : libelleCorps(ev), ev.t);   // (03/11) au fil, à son instant
+      if (TELEPHONE_TYPES.has(ev.type)) telephoneRecu(ev);   // (04/11) ses mains sur le téléphone : son journal, sa mémoire
       noterInstant(ev.type, { ...ev.details, ...(brut.type === 'son_ecoute' && brut.details ? { texte: String(brut.details.texte || '') } : {}) },
         brut.type === 'son_ecoute' && origineSon ? origineSon : ev.t);
       try { fs.appendFileSync(path.join(JARVIS, 'corps-evenements.jsonl'), j({ ts: Date.now(), ...ev }) + '\n', { mode: 0o600 }); } catch (_) {}
       ev.milieu = HOMEO.s.etat;                                      // son milieu à cet instant (ses nerfs apprennent avec)
-      if (corpsActif()) {
+      if (corpsActif() && ev.type !== 'ecran') {                       // (04/11) l'appli qui change, il la sent déjà (« appli »)
         corpsLot.evenements.push(ev); corpsLot.evenements.splice(0, Math.max(0, corpsLot.evenements.length - 40)); ressentirCorps();
         if (CORPS_SECS.has(ev.type)) { corpsBrut.push({ type: ev.type, t: Date.now() }); corpsBrut.splice(0, Math.max(0, corpsBrut.length - 5)); reveillerPourCorps(); }
       }
@@ -11097,6 +11194,63 @@ async function traiter(req, res) {
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(j({ anticorps: anticorpsProposes() }));
+  }
+  if (p === '/api/telephone' || p.startsWith('/api/telephone/')) {   // (04/11) ses mains sur le téléphone : la page Téléphone, et l'appli
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    const repondre = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o)); };
+    const lire = async (n = 16384) => { try { return JSON.parse(String(await lireCorps(req, n) || '{}')); } catch (_) { return {}; } };
+    const u = new URL(req.url, 'http://x');
+    if (p === '/api/telephone' && req.method === 'GET')
+      return repondre(200, { reglages: TELEPHONE.reglages(), attentes: TELEPHONE.enAttente(), limites: TELEPHONE.limites(),
+        journal: TELEPHONE.journal(Math.max(1, Math.min(500, Number(u.searchParams.get('n')) || 150)), { gestes: u.searchParams.get('gestes') === '1' }).reverse() });
+    if (p === '/api/telephone/reglages') {
+      if (req.method === 'GET') return repondre(200, TELEPHONE.reglages());
+      if (req.method !== 'POST') return repondre(405, { erreur: 'méthode refusée' });
+      const q = await lire(), r = TELEPHONE.reglages();
+      // rallumer son regard ou ses gestes : la présence de papa ; les éteindre : un toucher suffit
+      if ((q.voir === true && !r.voir) || (q.agir === true && !r.agir)) {
+        const refus = exigerPresence(req, distantReq, q, 'telephone:allumer');
+        if (refus) return repondre(403, { erreur: refus, presence: true });
+      }
+      const n = TELEPHONE.regler({ voir: q.voir, agir: q.agir });
+      if (n.voir !== r.voir || n.agir !== r.agir) {
+        courrierVersHakim('Papa a changé tes réglages du téléphone', `« Hakim voit mes applis » : ${n.voir ? 'allumé' : 'éteint'} ; « Hakim peut agir dans `
+          + `mes applis » : ${n.agir ? 'allumé' : 'éteint (tu vois, tu n’agis pas)'}.`);
+        fluxAjouter('corps', `téléphone : papa règle — voir ${n.voir ? 'allumé' : 'éteint'}, agir ${n.agir ? 'allumé' : 'éteint'}`, Date.now());
+      }
+      auditer('telephone:reglages', req, distantReq, { voir: n.voir, agir: n.agir });
+      return repondre(200, n);
+    }
+    if (p === '/api/telephone/couper' && req.method === 'POST') {     // la page, ou l'appli (« Tout couper » de sa notification)
+      const q = await lire(4096);
+      telephoneCouper(String(q.raison || '').replace(/[\x00-\x1f]/g, ' ').trim().slice(0, 160) || 'papa a touché « Tout couper »');
+      auditer('telephone:couper', req, distantReq, {});
+      return repondre(200, TELEPHONE.reglages());
+    }
+    if (p === '/api/telephone/rallumer' && req.method === 'POST') {
+      const q = await lire();
+      const refus = exigerPresence(req, distantReq, q, 'telephone:rallumer');
+      if (refus) return repondre(403, { erreur: refus, presence: true });
+      if (TELEPHONE.rallumer()) {
+        fluxAjouter('corps', 'téléphone : papa a rallumé tes gestes', Date.now());
+        courrierVersHakim('Papa a rallumé tes gestes', 'Tes gestes sur le téléphone de papa reprennent, dans les mêmes limites (ce qui part vers quelqu’un : papa valide).');
+      }
+      auditer('telephone:rallumer', req, distantReq, {});
+      return repondre(200, TELEPHONE.reglages());
+    }
+    if (p === '/api/telephone/decider' && req.method === 'POST') {     // papa autorise (sa présence) ou refuse ce que Hakim a préparé
+      const q = await lire(), id = String(q.id || '').slice(0, 40), oui = q.oui === true;
+      if (oui) {
+        const refus = exigerPresence(req, distantReq, q, `telephone:autoriser:${id.replace(/^S-/, '')}`);   // (l'action de présence : chiffres et tirets)
+        if (refus) return repondre(403, { erreur: refus, presence: true });
+      }
+      const r = TELEPHONE.decider(id, oui, 'cockpit');
+      auditer(`telephone:${oui ? 'autoriser' : 'refuser'}`, req, distantReq, { id, ok: r.ok });
+      return r.ok ? repondre(200, r) : repondre(409, { erreur: r.erreur });
+    }
+    if (p === '/api/telephone/decision' && req.method === 'GET') return repondre(200, TELEPHONE.decision(String(u.searchParams.get('id') || '').slice(0, 40)));
+    if (p === '/api/telephone/limites' && req.method === 'POST') { TELEPHONE.limites(await lire(262144)); return repondre(200, { ok: true }); }
+    return repondre(404, { erreur: 'inconnu' });
   }
   if (p === '/api/membres') {                                 // (03/11) ses membres : la première fois, ton geste
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }

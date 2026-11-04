@@ -8,20 +8,22 @@
   --radius: 16px;
 }
 * { box-sizing: border-box; margin: 0; }
-html { color-scheme: dark; }
+/* (04/11, 17:35, Ahmed, capture : « sur smartphone, tout doit tenir sur l'écran ») rien ne déborde en largeur */
+html { color-scheme: dark; overflow-x: hidden; }
 body.shell {
   min-height: 100vh; color: var(--txt-2);
   font: 14px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: radial-gradient(ellipse 80% 50% at 70% -10%, #0b2a2e 0%, #04141a 45%, #030a0c 100%);
   background-attachment: fixed; padding: 18px; position: relative; overflow-x: hidden;
+  overflow-x: clip; max-width: 100vw; overflow-wrap: anywhere;
 }
 /* aurores décoratives */
 body.shell::before, body.shell::after {
   content: ''; position: fixed; pointer-events: none; z-index: 0;
 }
-body.shell::before { top: -80px; left: -60px; width: 420px; height: 280px;
+body.shell::before { top: -80px; left: -60px; width: min(420px, 100vw); height: 280px;
   background: radial-gradient(ellipse, rgba(45,212,191,.10), transparent 70%); }
-body.shell::after { bottom: -100px; right: -40px; width: 400px; height: 260px;
+body.shell::after { bottom: -100px; right: 0; width: min(400px, 100vw); height: 260px;
   background: radial-gradient(ellipse, rgba(249,168,212,.06), transparent 70%); }
 
 /* ---- nav ---- */

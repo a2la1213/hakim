@@ -3144,6 +3144,7 @@ function surSouffle(o) {
   if (o.niveau === 'papa') { montrerMorceauPapa(o); return; }        // (04/11) tes mots, morceau par morceau
   if (o.niveau === 'ribosome') { surRibosome(o); return; }           // (04/11, 11:50) son ribosome a lu une pensée
   if (o.niveau === 'ribosome_stop') { arreterEpissure(o.cause || 'outil', o.tour); return; }   // (04/11, 15:10) ta demande d'outil
+  if (o.niveau === 'blanc') { surBlanc(o); return; }                 // (04/11, 17:50) sa parole vide : sa réflexion s'ouvre
   // (04/11, Ahmed : « mes pensées parasites sont bien flagguées ; maintenant il faut la jeter sans la calculer, sinon ça alourdit tout »)
   // jetée : ni écrite, ni dite, ni sa dernière pensée, ni une voix calculée d'avance ; trop longue (coupée au milieu d'un mot) aussi
   // (04/11) Super Hakim qui a choisi de grands morceaux : ses pensées peuvent être plus longues (o.limite, donnée par le cockpit)
@@ -3388,7 +3389,7 @@ const TITRE_EPISSURE = '💭 sa pensée interne · 🗣 sa parole épissée';
 // (04/11, 15:35, Ahmed : « je ne vois pas l'épissure se faire au fur et à mesure ; ça me balance juste le bloc ») chaque pensée qui arrive se
 // colle tout de suite au bout de sa parole, en attente (pâle) ; son ribosome la trie ensuite : gardée dans 🗣, laissée dans 💭
 const attenteDe = (p) => [...p.textes.join(' ').matchAll(MOTS_EPISSES)].map(m => m[0]).slice(Number(p.lus) || 0).join(' ');
-const htmlEpissure = (p) => `<div class="interne" style="opacity:.6">💭 ${esc(p.interne || '…')}</div>` + `<div class="dit" style="font-style:normal;margin-top:4px">🗣 « ${[p.episse ? esc(p.episse) : '', attenteDe(p) ? `<span class="attente" style="opacity:.45;font-style:italic">${esc(attenteDe(p))}</span>` : ''].filter(Boolean).join(' ') || '…'} »</div>` + (p.coupure ? `<div class="coupure" style="font-style:normal;margin-top:2px">${p.coupure === 'continue' ? '✋ coupé : il finit ce qu’il disait' : '✋ coupé : il te laisse la parole'}</div>` : '');
+const htmlEpissure = (p) => `<div class="interne" style="opacity:.6">💭 ${esc(p.interne || p.blanc || '…')}</div>` + `<div class="dit" style="font-style:normal;margin-top:4px">🗣 « ${[p.episse ? esc(p.episse) : '', attenteDe(p) ? `<span class="attente" style="opacity:.45;font-style:italic">${esc(attenteDe(p))}</span>` : ''].filter(Boolean).join(' ') || '…'} »</div>` + (p.coupure ? `<div class="coupure" style="font-style:normal;margin-top:2px">${p.coupure === 'continue' ? '✋ coupé : il finit ce qu’il disait' : '✋ coupé : il te laisse la parole'}</div>` : '');
 // (04/11, 12:05) un pavé par tour : la réponse d'un tour fini rejoint le sien, même quand papa a déjà repris (les 8 derniers gardés)
 function paveDe(tour) {
   etat.paves = etat.paves || {};
@@ -3398,6 +3399,13 @@ function paveDe(tour) {
     for (const t of tours.slice(0, Math.max(0, tours.length - 8))) delete etat.paves[t];
   }
   return etat.paves[tour];
+}
+// (04/11, 17:50, Ahmed : « à l'ouverture du micro, il se met en réflexion en recevant direct un blanc ») son épissure s'ouvre au premier son de
+// ta voix ; sa première pensée intérieure (jamais dite) dans 💭, jusqu'à ses vraies pensées
+function surBlanc(o) {
+  const p = paveDe(o.tour);
+  if (o.texte !== '…') p.blanc = String(o.texte).slice(0, 120);
+  poserPave(p.cle, TITRE_EPISSURE, htmlEpissure(p));
 }
 function ajouterAuPave(tour, texte) {
   const p = paveDe(tour);
@@ -3970,6 +3978,7 @@ async function basculerConversation() {
   etat.conversation = conv;
   if (canalOnglets) try { canalOnglets.postMessage({ type: 'conversation', id: idOnglet }); } catch (_) {}   // (23:05) un seul onglet
   $('conversation').setAttribute('aria-pressed', 'true');
+  prechaufferReflexion();                                // (04/11, 17:50) à l'ouverture du micro : sa parole vide, sa réflexion ouverte
   humeur('ouverture du micro…');
   try {
     conv.capteur = await Conversation.demarrer({
@@ -3982,6 +3991,7 @@ async function basculerConversation() {
       surNiveau: (n) => { etat.niveauMicro = n; voixAuCorps(n); if (document.visibilityState === 'hidden') { micEnFond++; alimenterBulle(n); } },
       // (13:25, papa : « aucun « je t'écoute » ») rien à la place de ses mots : ils s'affichent dès le premier
       surSon: () => prechaufferReflexion(),
+      surReprise: () => prechaufferReflexion(true),      // (04/11, 17:59) tu reprends la parole après ta pause : son ribosome au plus vite
       surDebut: () => { conv.morceauPapa = null; conv.finDemandee = false; conv.finAnticipee = false; conv.souffleLocal = false; conv.brouillons = 0; conv.penseeEnPause = false; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre(''); humeur(); },
       surPause: (fenetre) => surPauseConversation(conv, fenetre),
       surSilence: (ms) => { if (conv.capteur && conv.capteur.enParole) { compteARebours(ms); anticiperConversation(conv, ms); } },
@@ -6719,9 +6729,12 @@ if ($('relancerPublier')) {
 
 // (04/11, 16:50, Ahmed : « il commence sa réflexion dès qu'une voix se fait entendre, avant même qu'elle parle : une parole vide au tout début
 // de la voix déclenche la réflexion ») au premier son, ses voix de réflexion se chauffent au cockpit (au plus une fois toutes les 5 s)
-let prechauffeA = 0;
-function prechaufferReflexion() {
-  if (Date.now() - prechauffeA < 5000 || typeof voixEpissee !== 'function' || !voixEpissee()) return;
-  prechauffeA = Date.now();
+// (17:59, Ahmed : « quand je reprends la parole, juste après que j'ai marqué une pause ») une reprise : au plus une par seconde
+let prechauffeA = 0, repriseA = 0;
+function prechaufferReflexion(reprise = false) {
+  if (typeof voixEpissee !== 'function' || !voixEpissee()) return;
+  const t = Date.now();
+  if (reprise ? t - repriseA < 1000 : t - prechauffeA < 5000) return;
+  if (reprise) repriseA = t; else prechauffeA = t;
   fetch('/api/jarvis/prechauffer', { method: 'POST', headers: { 'X-Jeton': jeton() } }).catch(() => {});
 }

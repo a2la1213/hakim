@@ -184,6 +184,10 @@ def _texte_souvenir(e):
         cadre.append(f"depuis {e['appareil']}")
     if e.get("externe"):                          # (H6 + X1) ce tour a lu un contenu de tiers
         cadre.append("après lecture de contenu externe (" + ", ".join(_nom_outil(o) for o in e["externe"][:5]) + ")")
+    if e.get("telephone"):                       # (04/11, Ahmed : « tout enregistré ») ses mains sur le téléphone de papa (le cockpit)
+        vecu = " ".join(_masquer(str(e.get("vecu") or "")).split())[:1500]
+        return (f"[Hakim, sur le téléphone de papa — {', '.join(cadre)}] {_court(_masquer(e.get('hakim', '')))}"
+                + (f" · Ce qu'il vivait : {vecu}" if vecu else ""))
     if e.get("de_lui_meme"):
         return f"[Hakim, de lui-même — {', '.join(cadre)}] {_court(_masquer(e.get('hakim', '')))}"
     if e.get("voix") == "autre":                 # l'empreinte vocale : probablement pas Ahmed (un invité, la télé)

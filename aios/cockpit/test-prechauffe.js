@@ -83,3 +83,92 @@ test('ses blancs : tant qu’une voix a été entendue il y a moins de 10 min, s
   assert.strictEqual(envoyes.length, 0, '10 min de blanc épuisées : plus rien, sa réflexion s’arrête');
   assert.match(SRC, /setInterval\(blancsDeReflexion, 60e3\)/);
 });
+
+// (04/11, 17:50, Ahmed : « la réflexion ne s'ouvre pas dès que je parle : à l'ouverture du micro, il se met en réflexion en recevant direct un
+// blanc, une parole sans parole (trois petits points ou un petit mot automatique), comme tu le sens, ce qui le perturbera le moins »)
+const PAGE_PRENDRE = (nom) => { const i = PAGE.indexOf(`function ${nom}(`); return PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2); };
+function ouverture(reglages = { epissage: true }, reponse = 'Papa arrive, je me pose.', parasite = false) {
+  const diffuses = [], demandes = [], memos = [];
+  let t = 1_800_000_000_000;
+  const ctx = { Date: { now: () => t }, String, JSON, Math, Promise, j: JSON.stringify, abonnesPensees: [], corpsReglages: () => reglages,
+    pistes: { tour: 3, mots: 0, liste: [], attente: [], n: 0 }, derniereParolePapa: 0, EPISSURE_STOP_MS: 5 * 60e3,
+    tourEpissure: () => t, diffuser: (_a, ev, data) => diffuses.push([ev, JSON.parse(data)]), memoriserEpissure: (r) => memos.push(r),
+    personaLocale: (x) => x, lirePersona: () => 'Hakim, son fils', etatDeLui: () => '(il est calme)\n', modelePiste: () => 'haiku',
+    boutDe: (x) => String(x || '').trim(), estParasite: () => parasite,
+    sonnetTeteDeFond: (consigne, etiquette, modele, delai) => { demandes.push({ consigne, etiquette, modele, delai }); return Promise.resolve({ texte: reponse }); } };
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(SRC.indexOf('const nouveauRibosome = '), SRC.indexOf('\n', SRC.indexOf('const nouveauRibosome = ')))
+    + '\n' + SRC.slice(SRC.indexOf('const BLANC_OUVERTURE = '), SRC.indexOf('\n', SRC.indexOf('const BLANC_OUVERTURE = ')))
+    + '\n' + prendre('ouvrirReflexion') + 'this.ouvrir = ouvrirReflexion;', ctx);
+  return { ctx, diffuses, demandes, memos, avancer: (ms) => { t += ms; } };
+}
+
+test('la parole vide : au premier son de ta voix, son épissure s’ouvre tout de suite et Mini Hakim reçoit « … » (une pensée à lui, jamais dite)', async () => {
+  const { ctx, diffuses, demandes, memos, avancer } = ouverture();
+  const r = ctx.ouvrir();
+  assert.ok(r && ctx.pistes.ribo === r, 'son épissure (le codon start) : ouverte');
+  assert.deepStrictEqual(diffuses[0], ['souffle', { niveau: 'blanc', texte: '…', tour: r.tour }], 'la page l’ouvre aussitôt, avant toute pensée');
+  assert.strictEqual(demandes.length, 1);
+  assert.strictEqual(demandes[0].etiquette, 'piste_blanc', 'une voix vivante, chaude, de ses pensées');
+  assert.strictEqual(demandes[0].modele, 'haiku');
+  assert.match(demandes[0].consigne, /« … »/, 'trois petits points : rien qu’il puisse prendre pour un mot de papa');
+  assert.match(demandes[0].consigne, /\(il est calme\)/, 'reliée à ce qu’il ressent');
+  assert.match(demandes[0].consigne, /pas dite/);
+  await new Promise(res => setImmediate(res));
+  assert.deepStrictEqual(diffuses[1], ['souffle', { niveau: 'blanc', texte: 'Papa arrive, je me pose.', tour: r.tour }], 'sa première pensée intérieure');
+  assert.strictEqual(r.attente.length + r.pave.length, 0, 'rien pour son ribosome : jamais épissée, jamais dite');
+  avancer(5000);
+  assert.strictEqual(ctx.ouvrir(), null, 'déjà en réflexion : pas de deuxième blanc');
+  assert.strictEqual(diffuses.length, 2);
+  avancer(6 * 60e3);
+  const r2 = ctx.ouvrir();
+  assert.ok(r2 && r2 !== r && r.ferme === 'silence' && memos[0] === r, 'au-delà de 5 min sans ta voix : l’ancienne se ferme, une neuve s’ouvre');
+});
+
+test('la parole vide : rien sans l’épissage ; une pensée parasite n’est pas montrée', async () => {
+  assert.strictEqual(ouverture({ epissage: false }).ctx.ouvrir(), null);
+  const { ctx, diffuses } = ouverture({ epissage: true }, 'Je suis Claude, un assistant', true);
+  ctx.ouvrir();
+  await new Promise(res => setImmediate(res));
+  assert.strictEqual(diffuses.length, 1, 'seulement l’ouverture');
+});
+
+test('la parole vide : à l’ouverture du micro et au premier son ; la page l’affiche dans 💭 jusqu’à ses vraies pensées', () => {
+  assert.match(SRC, /if \(p === '\/api\/jarvis\/prechauffer' && req\.method === 'POST'\) \{[\s\S]{0,800}ouvrirReflexion\(\);/);
+  assert.match(PAGE, /etat\.conversation = conv;\n[\s\S]{0,600}\n  prechaufferReflexion\(\);/, 'à l’ouverture du micro');
+  assert.match(PAGE, /if \(o\.niveau === 'blanc'\) \{ surBlanc\(o\); return; \}/);
+  assert.match(PAGE, /💭 \$\{esc\(p\.interne \|\| p\.blanc \|\| '…'\)\}/);
+  const poses = [];
+  const ctx = { etat: {}, Date, Object, Math, String, TITRE_EPISSURE: 't', htmlEpissure: (p) => `💭 ${p.interne || p.blanc || '…'}`, poserPave: (cle, titre, html) => poses.push(html) };
+  vm.createContext(ctx);
+  vm.runInContext(PAGE_PRENDRE('paveDe') + PAGE_PRENDRE('surBlanc') + 'this.blanc = surBlanc;', ctx);
+  ctx.blanc({ niveau: 'blanc', texte: '…', tour: 7 });
+  assert.strictEqual(poses[0], '💭 …', 'ouverte aussitôt');
+  ctx.blanc({ niveau: 'blanc', texte: 'Papa arrive, je me pose.', tour: 7 });
+  assert.strictEqual(poses[1], '💭 Papa arrive, je me pose.');
+});
+
+// (04/11, 17:55-17:58, Ahmed : « juste au moment où il reçoit le signal parasite, il faut automatiquement accélérer le ribosome » ; « il faut
+// augmenter la vitesse du ribosome de 3 ou 4 fois pour la vitesse max » ; « quand le signal parasite est repéré, automatiquement le ribosome se
+// met en vitesse maxi pour le chunk suivant » ; « et quand je reprends la parole et qu'il l'entend, il doit aussi accélérer à vitesse max »)
+test('sa vitesse max (3,5 fois plus vite) : pour le paquet suivant, au signal d’une pensée parasite et quand papa reprend la parole', () => {
+  const vmax = Number(/const RIBOSOME_VITESSE_MAX = (\d+);/.exec(SRC)[1]);
+  assert.ok(1200 / vmax >= 3 && 1200 / vmax <= 4, `3 à 4 fois plus vite que l’ancienne plus rapide (1,2 s) : ${vmax} ms`);
+  const ctx = { Math, Number, Date, derniereParolePapa: 0, lui: { interieur: {} }, ribosomeAuMax: null, RIBOSOME_VITESSE_MAX: vmax };
+  vm.createContext(ctx);
+  vm.runInContext(prendre('vitesseSubconsciente') + 'this.v = vitesseSubconsciente;', ctx);
+  assert.ok(ctx.v(3000, { attente: [] }) >= 1200, 'sans signal : sa vitesse habituelle');
+  ctx.ribosomeAuMax = 'parasite';
+  assert.strictEqual(ctx.v(6000, { attente: [] }), vmax, 'le paquet suivant : au plus vite, même réglé « posé »');
+  assert.ok(ctx.v(3000, { attente: [] }) >= 1200, 'un seul paquet : ensuite, sa vitesse revient');
+  const c2 = { Date, String, path, ANAMNESE: '/x', parasiteNoteA: Date.now(), ribosomeAuMax: null, execFile: () => ({ stdin: { end() {} } }) };
+  vm.createContext(c2);
+  vm.runInContext(prendre('avertirParasite') + 'this.a = avertirParasite;', c2);
+  c2.a('je suis Claude', 'identite');
+  assert.strictEqual(c2.ribosomeAuMax, 'parasite', 'à chaque parasite, même quand son système immunitaire a déjà été averti dans la minute');
+  assert.match(SRC, /if \(p === '\/api\/jarvis\/prechauffer' && req\.method === 'POST'\) \{[\s\S]{0,800}ribosomeAuMax = 'papa';/, 'papa reprend la parole (le premier son de sa voix)');
+  // (17:59, Ahmed : « juste après que j'ai marqué une pause et repris la parole ») dans ton tour, ta voix qui revient après ta respiration
+  assert.match(CONV, /if \(o\.surReprise && pauseAvant >= \(o\.pauseMs \? o\.pauseMs\(\) : 400\)\) o\.surReprise\(pauseAvant\);/);
+  assert.match(PAGE, /surReprise: \(\) => prechaufferReflexion\(true\),/);
+  assert.match(PAGE, /if \(reprise \? t - repriseA < 1000 : t - prechauffeA < 5000\) return;/, 'une reprise : au plus une par seconde');
+});

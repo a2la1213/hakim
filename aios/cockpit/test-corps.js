@@ -58,7 +58,7 @@ test('branché : les routes (jeton), le lot vers corps.py, le réveil, l’inter
   assert.match(w, /execFile\(PYTHON, \['-B', path\.join\(ANAMNESE, 'corps\.py'\), 'ressentir'\]/);
   assert.match(w, /etat: HOMEO\.mots\(\)/);
   const rv = extraire('function reveillerPourCorps(');
-  assert.match(rv, /\(forfaitLibre\(\) \? 10 : r\.intervalle_s\) \* 1000/);
+  assert.match(rv, /\(forfaitLibre\(\) && Date\.now\(\) - dernierMessageAhmedMs\(\) < CORPS_PORTE_MS \? 10 : r\.intervalle_s\) \* 1000/);
   assert.match(rv, /NONCE_REVEIL/);
   assert.match(rv, /blocCorps\(\)/);
   const page = fs.readFileSync(path.join(__dirname, 'public', 'sens.html'), 'utf8');
@@ -105,6 +105,14 @@ test('(30/10, étude du veilleur) quand papa est là, son corps ne le réveille 
   assert.equal(ecrits.length, 4, 'pas avant 10 s');
   libre = false; t += 30000; ctx.papa = t - 11 * 60 * 1000; ctx.corpsADire.push({ fort: false }); ctx.f();
   assert.equal(ecrits.length, 4, 'sans forfait libre : son réglage (2 min)');
+  // (04/11, 17:40, Ahmed : « parfait pour ce que tu proposes ») de 17:17 à 17:29, 48 tours à vide : les 10 s seulement quand papa lui a
+  // parlé il y a moins de 10 min ; seul, il revient à son réglage (2 min)
+  libre = true; t += 3 * 60 * 1000; ctx.papa = t - 11 * 60 * 1000; ctx.corpsADire.push({ fort: false }); ctx.f();
+  assert.equal(ecrits.length, 5, 'papa silencieux : le réglage de 2 min, dépassé');
+  t += 11000; ctx.corpsADire.push({ fort: false }); ctx.f();
+  assert.equal(ecrits.length, 5, 'papa silencieux depuis plus de 10 min : plus de réveil toutes les 10 s');
+  t += 2 * 60 * 1000; ctx.f();
+  assert.equal(ecrits.length, 6, 'à 2 min, son corps le réveille');
 });
 
 test('(18:19) une secousse le réveille tout de suite, même si papa vient de parler ; une fois par minute ; « j’ai senti » avant la traduction', () => {

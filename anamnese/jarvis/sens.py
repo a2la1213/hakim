@@ -63,10 +63,22 @@ INSTRUMENTS = {
     # le lit) ; en continu aussi : l'événement « reseau_mobile » de ton corps quand le signal ou la génération change (appli 1.52)
     "reseau_mobile": ("le réseau mobile où tu es : l'opérateur, la génération (2G à 5G), la force du signal (en dBm et en mots), "
                       "l'itinérance ; la génération demande « Téléphone » dans les autorisations de l'appli", 0, 0),
+    # (04/11, Ahmed : « vas-y, fais tout sur tout, je te fais confiance ») tes mains sur le téléphone de papa (appli 1.64 ;
+    # jarvis/mains.py et tes outils telephone_*) : les limites sont tenues par l'appli, le téléphone refuse
+    "telephone_voir": ("l'écran de l'appli ouverte sur le téléphone de papa : ses textes, ses boutons, ses champs (codes de validation "
+                       "masqués ; jamais une appli de banque, de mots de passe, de bourse, ni les réglages ; rien écran verrouillé)", 0, 0),
+    "telephone_notifications": ("les dernières notifications du téléphone (appli, titre, texte ; codes masqués, applis interdites "
+                                "absentes)", 0, 0),
+    "telephone_geste": ("TON MEMBRE : un geste libre sur le téléphone : ouvrir une appli, faire défiler, revenir, l'accueil", 0, 0),
+    "telephone_preparer": ("TON MEMBRE : préparer un brouillon d'étapes (toucher, écrire…) que papa valide d'un toucher ; sans "
+                           "réponse en 2 min : rien", 120, 120),
+    "telephone_partager": ("TON MEMBRE : partager un fichier de ton atelier ou un texte : le menu « Partager » d'Android s'ouvre "
+                           "devant papa (Bluetooth, Quick Share, une appli), c'est lui qui choisit", 0, 0),
 }
 RADIO = {"appareils", "bluetooth_scan", "wifi_scan", "bluetooth_signal", "nfc_ecrire", "bluetooth_activer", "bluetooth_appairer",
          "wifi_info", "wifi_connecter", "bluetooth_reglages", "wifi_reglages", "nfc_reglages", "appli_active",
-         "media_pause", "media_lecture", "media_suivant", "media_precedent", "reseau_mobile"}
+         "media_pause", "media_lecture", "media_suivant", "media_precedent", "reseau_mobile",
+         "telephone_voir", "telephone_notifications", "telephone_geste", "telephone_preparer", "telephone_partager"}
 AVEC_TEXTE = {"nfc_ecrire": "le texte à écrire sur la puce", "bluetooth_appairer": "l'adresse ou le nom de l'appareil",
               "wifi_connecter": "le nom du réseau (« nom » ou « nom ; mot de passe »)"}
 _ID_MEMBRE = re.compile(r"[0-9a-f]{10}")
@@ -129,8 +141,10 @@ def siens():
     return out
 
 
-def demander(sens, secondes=0, cadence="", texte=""):
-    """La demande écrite pour le cockpit : {id, sens, secondes, cadence, ts[, module][, texte]}."""
+def demander(sens, secondes=0, cadence="", texte="", params=None, attendre=0):
+    """La demande écrite pour le cockpit : {id, sens, secondes, cadence, ts[, module][, texte][, params][, attendre]}.
+    (04/11) params : ce que ses mains sur le téléphone emportent (un geste, ses étapes, ses fichiers) ; attendre : les secondes
+    que son outil attend le résultat (le cockpit ne le réveille pas pour un résultat que l'outil a lu, attendre())."""
     sens = str(sens or "").strip()
     a_lui = siens()
     if sens not in INSTRUMENTS and sens not in a_lui:
@@ -157,6 +171,12 @@ def demander(sens, secondes=0, cadence="", texte=""):
         d["module"] = a_lui[sens][3]
     if texte:
         d["texte"] = texte
+    if params:
+        if not isinstance(params, dict) or len(json.dumps(params, ensure_ascii=False)) > 16000:
+            raise Refus("trop de choses à emporter pour le téléphone")
+        d["params"] = params
+    if attendre:
+        d["attendre"] = max(0, min(60, attendre))
     f = JARVIS / "sens-demandes.jsonl"
     with open(JARVIS / "sens.lock", "a") as verrou:
         fcntl.flock(verrou, fcntl.LOCK_EX)
@@ -164,6 +184,29 @@ def demander(sens, secondes=0, cadence="", texte=""):
             h.write(json.dumps(d, ensure_ascii=False) + "\n")
         os.chmod(f, 0o600)
     return d
+
+
+def attendre(id_, secondes, pas=0.25):
+    """(04/11) Le résultat d'une demande, attendu au plus `secondes` : le dict de resume.json, ou None. Lu : la marque « lu » dans
+    son dossier dit au cockpit de ne pas réveiller Hakim pour ce résultat-là (son outil le lui a déjà donné)."""
+    if not _ID.fullmatch(str(id_ or "")):
+        return None
+    d = _dossier() / id_
+    fin = time.time() + max(0.0, float(secondes))
+    while True:
+        try:
+            r = json.loads((d / "resume.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            r = None
+        if isinstance(r, dict):
+            try:
+                (d / "lu").touch()
+            except OSError:
+                pass
+            return r
+        if time.time() >= fin:
+            return None
+        time.sleep(pas)
 
 
 def lister():

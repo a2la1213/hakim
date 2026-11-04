@@ -14,7 +14,9 @@ const SENS = new Set(['inventaire', 'imu', 'sismo', 'baro', 'magneto', 'son',
   'bluetooth_activer', 'bluetooth_appairer', 'wifi_info', 'wifi_connecter', 'bluetooth_reglages', 'wifi_reglages', 'nfc_reglages',   // (appli 1.44)
   'appli_active',   // (appli 1.45)
   'media_pause', 'media_lecture', 'media_suivant', 'media_precedent',   // (appli 1.46)
-  'reseau_mobile']);   // (13:33, appli 1.52)
+  'reseau_mobile',   // (13:33, appli 1.52)
+  // (04/11, Ahmed : « tout sur tout ») ses mains sur le téléphone (appli 1.64 ; telephone.js, anamnese/jarvis/mains.py)
+  'telephone_voir', 'telephone_notifications', 'telephone_geste', 'telephone_preparer', 'telephone_partager']);
 const EXPIRE_MS = 2 * 3600 * 1000, MARGE_MS = 120 * 1000, ESSAIS = 3;
 // (30/10, Ahmed : « ses propres modules ») ses instruments à lui : donnés à son Tricordeur (le module), qui rend par
 // Documents/Hakim/sens/<id>/ (Syncthing) ; on attend sa durée + 30 min (la synchronisation)
@@ -59,6 +61,7 @@ class FileSens {
     this.fichier = path.join(jarvis, 'sens-demandes.jsonl');
     this.etatFichier = path.join(jarvis, 'sens-etat.json');
     this.lu = 0; this.demandes = new Map(); this.dire = []; this.ressentir = [];
+    this.differes = [];                       // (04/11) des fins que son outil attend : dites seulement s'il ne les a pas lues
     try {
       const e = JSON.parse(fs.readFileSync(this.etatFichier, 'utf8'));
       this.lu = Number(e.lu) || 0;
@@ -93,6 +96,10 @@ class FileSens {
       this.demandes.set(o.id, { id: o.id, sens: o.sens, module, ...(o.par === 'ahmed' ? { par: 'ahmed' } : {}), secondes: Math.max(0, Math.min(module ? 86400 : 900, Number(o.secondes) || 0)),
         cadence: /^(jeu|max|normal|\d{1,4}(\.\d{1,2})?)?$/.test(String(o.cadence || '')) ? String(o.cadence || '') : '',
         ...(o.texte ? { texte: String(o.texte).replace(/[\x00-\x1f]/g, ' ').slice(0, 500) } : {}),   // (03/11) ce que nfc_ecrire écrit
+        // (04/11) ce que ses mains emportent (un geste, ses étapes, ses fichiers) : un objet, 16 000 caractères au plus ; et les secondes
+        // que son outil attend le résultat (un résultat lu par l'outil ne le réveille pas)
+        ...(o.params && typeof o.params === 'object' && !Array.isArray(o.params) && JSON.stringify(o.params).length <= 16000 ? { params: o.params } : {}),
+        ...(Number(o.attendre) > 0 ? { attendre: Math.min(60, Number(o.attendre)) } : {}),
         ts: Number(o.ts) * 1000 || this.maintenant(), etat: 'attente', essais: 0 });
     }
     this._sauver();
@@ -100,12 +107,14 @@ class FileSens {
 
   _echec(d, erreur) {
     d.etat = 'echec';
-    this._noter({ id: d.id, sens: d.sens, secondes: d.secondes, ok: false, erreur, ...(d.par ? { par: d.par } : {}) });
+    this._noter({ id: d.id, sens: d.sens, secondes: d.secondes, ok: false, erreur, ...(d.par ? { par: d.par } : {}) }, d);
   }
 
-  _noter(o) {
+  _noter(o, d = null) {
     try { fs.appendFileSync(path.join(this.jarvis, 'sens-resultats.jsonl'), JSON.stringify({ ...o, ts: this.maintenant() / 1000 }) + '\n', { mode: 0o600 }); } catch (_) {}
-    if (o.par !== 'ahmed') this.dire.push(o);                       // une mesure d'Ahmed ne réveille pas Hakim
+    // (04/11) son outil attend ce résultat (telephone_voir…) : dit seulement s'il ne l'a pas lu, 3 s après la fin de son attente
+    if (o.par !== 'ahmed' && d && d.attendre) this.differes.push({ o, jusqua: Math.max(this.maintenant(), Number(d.ts) + d.attendre * 1000) + 3000 });
+    else if (o.par !== 'ahmed') this.dire.push(o);                  // une mesure d'Ahmed ne réveille pas Hakim
     this.ressentir.push(o);                                         // (30/10) mais toutes se ressentent (son corps)
     this._sauver();
   }
@@ -152,7 +161,8 @@ class FileSens {
     if (!d) return null;
     d.etat = 'donnee'; d.donnee_ts = t; d.essais++;
     this._sauver();
-    return { id: d.id, sens: d.sens, secondes: d.secondes, cadence: d.cadence, ...(d.module ? { module: d.module } : {}), ...(d.texte ? { texte: d.texte } : {}) };
+    return { id: d.id, sens: d.sens, secondes: d.secondes, cadence: d.cadence, ...(d.module ? { module: d.module } : {}), ...(d.texte ? { texte: d.texte } : {}),
+      ...(d.params ? { params: d.params } : {}) };
   }
 
   _dossier(id) {
@@ -185,7 +195,7 @@ class FileSens {
     const o = { id: d.id, sens: d.sens, secondes: d.secondes, ok: !!ok, erreur: String(erreur || '').slice(0, 300), resume: resume && typeof resume === 'object' ? resume : {} };
     this._ecrire(path.join(this._dossier(d.id), 'resume.json'), Buffer.from(JSON.stringify(o, null, 1)));
     d.etat = o.ok ? 'fini' : 'echec';
-    this._noter({ id: o.id, sens: o.sens, secondes: o.secondes, ok: o.ok, erreur: o.erreur, ...(d.par ? { par: d.par } : {}) });
+    this._noter({ id: o.id, sens: o.sens, secondes: o.secondes, ok: o.ok, erreur: o.erreur, ...(d.par ? { par: d.par } : {}) }, d);
     return o;
   }
 
@@ -218,8 +228,21 @@ class FileSens {
   // (30/10, Ahmed : « relier toutes les sensations aux hormones ») les fins à ressentir, la sienne ou celle d'Ahmed (une fois)
   aRessentir() { return this.ressentir.splice(0); }
 
-  // les fins pas encore dites à Hakim (une fois)
-  aDire() { this._lire(); this._relayees(); return this.dire.splice(0); }
+  // (04/11) son outil a-t-il lu ce résultat ? (anamnese/jarvis/sens.py, attendre : la marque « lu » dans son dossier)
+  _lu(id) { try { return fs.lstatSync(path.join(this.atelier, 'sens', String(id), 'lu')).isFile(); } catch (_) { return false; } }
+
+  // les fins pas encore dites à Hakim (une fois) ; celles que son outil attendait : seulement s'il ne les a pas lues
+  aDire() {
+    this._lire(); this._relayees();
+    const t = this.maintenant();
+    this.differes = this.differes.filter((x) => {
+      if (this._lu(x.o.id)) return false;
+      if (t < x.jusqua) return true;
+      this.dire.push(x.o);
+      return false;
+    });
+    return this.dire.splice(0);
+  }
 }
 
 module.exports = { FileSens, ID };
