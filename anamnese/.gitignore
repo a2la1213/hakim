@@ -9,3 +9,4 @@ eval/data/
 # Banc d'épreuves : questions et réponses tirées de la mémoire personnelle
 eval/banc/*.jsonl
 eval/banc/bases/
+.venv-separation/

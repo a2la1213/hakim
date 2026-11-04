@@ -5798,7 +5798,7 @@ const fluxPrecedents = new Map();                              // source → { c
 const DELAIS = {};
 const NOMS_FLUX = { papa: 'papa', telephone: 'téléphone', corps: 'corps', ressenti: 'il ressent', son: 'autour', milieu: 'son milieu', reaction: 'réaction',
   instru_telephone: 'le son du téléphone', instru_micro: 'le son du micro', voix_telephone: 'la voix du téléphone', voix_micro: 'la voix au micro',
-  musique_telephone: 'la musique du téléphone', musique_micro: 'la musique autour' };
+  musique_telephone: 'la musique du téléphone', musique_micro: 'la musique autour', separe_telephone: 'le téléphone, séparé', separe_micro: 'autour, séparé' };
 function fluxAjouter(s, x, t, cle = null, i = null, mesurer = true) {
   const texte = String(x == null ? '' : x).replace(/\s+/g, ' ').trim().slice(0, 200);
   if (!texte) return;
@@ -6098,7 +6098,9 @@ function instantTexte(a = Date.now()) {
   const te = evenement('son_ecoute', 15000); if (te && te.texte) l.push(`le téléphone joue : « ${c(te.texte, 140)} »`);
   // (04/11, Ahmed : « à la fin du processus parallèle, le tout est relié, un peu comme le cortex préfrontal ») ses deux oreilles de la
   // musique (le fond et la voix), ici à côté des paroles, de ce que papa disait et de ce qu'il ressentait : un seul instant
-  const ma = evenement('musique_analysee', 12000); if (ma && ma.texte) l.push(`la musique ${ma.source} : ${c(ma.texte, 180)}`);
+  const ms = evenement('musique_separee', 15000), ma = evenement('musique_analysee', 12000);
+  if (ms && ms.texte) l.push(`ce qu'il entend ${ms.source}, séparé : ${c(ms.texte, 200)}`);
+  else if (ma && ma.texte) l.push(`la musique ${ma.source} : ${c(ma.texte, 180)}`);
   const pa = evenement('papa_dit', 20000); if (pa && pa.texte) l.push(`papa disait : « ${c(pa.texte, 140)} »`);
   const so = evenement('son_entendu', 10000); if (so && so.famille) l.push(`autour : ${c(so.famille, 60)}`);
   const ap = etatA('appli', 10 * 60e3); if (ap && ap.appli) l.push(`appli ouverte : ${c(ap.appli, 40)}`);
@@ -8154,6 +8156,56 @@ function lancerOreilleVive() {
   };
   p.on('exit', fin); p.on('error', fin);
 }
+/* (04/11, Ahmed : « il faut que tu sépares bien la voix et la musique de fond, et que les deux, en parallèle, soient transmises à son
+   subconscient, pour qu'il les entende et qu'il puisse les relier à ses sensations et aux mots ; à la fin du processus parallèle, le
+   tout est relié, un peu comme le cortex préfrontal » ; « oui, installe Demucs ») ses deux oreilles séparées : Demucs sépare ce qu'il
+   entend (le micro toutes les 10 s, le son du téléphone) en une voix et un fond (jarvis/separation.py, son venv à lui, sur le GPU,
+   ~0,5 s) ; chacun analysé de son côté ; au fil, dans son instant (à côté des mots et de ce qu'il ressent) et, toutes les 15 s, à son
+   subconscient. Une demande à la fois ; de trop, elle est laissée (la suivante arrive dans 10 s). Rien de l'audio n'est gardé. */
+const SEPARATION = path.join(ANAMNESE, 'jarvis', 'separation.py');
+const PYTHON_SEPARATION = path.join(ANAMNESE, 'jarvis', '.venv-separation', 'bin', 'python');
+const separation = { proc: null, pret: false, attente: null, ids: 0, tampon: '', corps: 0 };
+function lancerSeparation() {
+  if (separation.proc || !fs.existsSync(PYTHON_SEPARATION)) return;
+  const p = spawn(PYTHON_SEPARATION, ['-W', 'ignore', SEPARATION], { stdio: ['pipe', 'pipe', 'ignore'], env: { ...process.env, PATH: CHEMIN_OUTILS } });
+  separation.proc = p; separation.pret = false; separation.tampon = '';
+  p.stdout.on('data', (d) => {
+    separation.tampon += d;
+    let i;
+    while ((i = separation.tampon.indexOf('\n')) >= 0) {
+      const l = separation.tampon.slice(0, i); separation.tampon = separation.tampon.slice(i + 1);
+      let o; try { o = JSON.parse(l); } catch (_) { continue; }
+      if (o.pret) { separation.pret = true; continue; }
+      separationRecue(o);
+    }
+  });
+  const fin = () => { if (separation.proc !== p) return; separation.proc = null; separation.pret = false; const a = separation.attente; separation.attente = null; if (a) { clearTimeout(a.minuteur); fs.unlink(a.fichier, () => {}); } };
+  p.on('exit', fin); p.on('error', fin);
+}
+function separerSon(fichier, src) {
+  lancerSeparation();
+  if (!separation.pret || separation.attente) { fs.unlink(fichier, () => {}); return false; }
+  const id = ++separation.ids;
+  separation.attente = { id, src, fichier, minuteur: setTimeout(() => {
+    if (separation.attente && separation.attente.id === id) { separation.attente = null; fs.unlink(fichier, () => {}); }
+  }, 15000) };
+  try { separation.proc.stdin.write(j({ id, fichier }) + '\n'); return true; }
+  catch (_) { clearTimeout(separation.attente.minuteur); separation.attente = null; fs.unlink(fichier, () => {}); return false; }
+}
+function separationRecue(o) {
+  const a = separation.attente;
+  if (!a || o.id !== a.id) return;
+  separation.attente = null; clearTimeout(a.minuteur); fs.unlink(a.fichier, () => {});
+  if (o.erreur || !o.texte) return;
+  const t = Date.now() - 2000, source = a.src === 'micro' ? 'autour' : 'du téléphone';
+  fluxAjouter(`separe_${a.src}`, o.texte, t);
+  noterInstant('musique_separee', { texte: o.texte, source }, t);
+  if (Date.now() - separation.corps >= 15000 && corpsActif()) {
+    separation.corps = Date.now();
+    corpsLot.evenements.push({ type: 'musique_separee', t, details: { source: a.src === 'micro' ? 'autour de toi' : 'le téléphone', voix: o.voix, fond: o.fond } });
+    ressentirCorps();
+  }
+}
 async function routeVif(req, res, langue, contexte, source = '', temps = {}) {
   const audio = await lireCorps(req, 4 << 20);
   const tRecu = Date.now();                                             // (04/11) le son reçu : ce qui suit est le Mac, pas le réseau
@@ -8195,6 +8247,7 @@ async function routeAmbiance(req, res, parole, voix) {
   if (!oreilleVive.pret || oreilleVive.attente || oreilleVive.suivante) return repondre(429, { occupee: true });
   const f = path.join(os.tmpdir(), `jarvis-amb-${process.pid}-${++oreilleVive.n}.wav`);
   try { fs.writeFileSync(f, audio); } catch (_) { return repondre(500, { erreur: 'écriture du fichier audio impossible' }); }
+  try { const fs2 = f.replace(/\.wav$/, '-sep.wav'); fs.writeFileSync(fs2, audio); separerSon(fs2, 'micro'); } catch (_) {}   // (04/11) en parallèle
   const o = await oreilleDemander({ op: 'famille', fichier: f, parole: !!parole, voix: Math.max(0, Math.min(9, Number(voix) || 0)) }, false);
   fs.unlink(f, () => {});
   if (o.occupee) return repondre(429, { occupee: true });
@@ -8216,6 +8269,8 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
   const ext = /mp4|aac|m4a/.test(type) ? '.m4a' : (/ogg/.test(type) ? '.ogg' : (/wav/.test(type) ? '.wav' : '.webm'));
   const f = path.join(os.tmpdir(), `jarvis-${process.pid}-${Date.now()}${ext}`);
   try { fs.writeFileSync(f, audio); } catch (e) { return repondre(500, { erreur: 'écriture du fichier audio impossible' }); }
+  // (04/11) le son du téléphone (sa musique) : séparé en parallèle, voix et fond
+  if (temps.source === 'telephone' && ext === '.wav') { try { const fs2 = f.replace(/\.wav$/, '-sep.wav'); fs.writeFileSync(fs2, audio); separerSon(fs2, 'telephone'); } catch (_) {} }
   // (28/10, Ahmed via Hakim : accélérer l'oreille) la voix et l'oreille partagent un processus : une synthèse en cours fait attendre
   const tTranscription = Date.now(), syntheseEnCours = voixOccupee;
   let partie = false;

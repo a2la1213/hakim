@@ -52,6 +52,31 @@ test('ses deux oreilles au fil (reliées aux mots et à ce qu’il ressent) et �
   assert.match(SRC, /fluxAjouter\(`musique_\$\{src\}`, a\.texte, t0 - 2500\);/);
   assert.match(SRC, /type: 'musique_entendue'/);
   assert.match(SRC, /musique_telephone: 'la musique du téléphone', musique_micro: 'la musique autour'/);
-  assert.match(SRC, /const ma = evenement\('musique_analysee', 12000\); if \(ma && ma\.texte\) l\.push\(`la musique \$\{ma\.source\} : /,
-    'dans son instant, reliée aux paroles, à ce que papa disait et à ce qu’il ressentait');
+  assert.match(SRC, /else if \(ma && ma\.texte\) l\.push\(`la musique \$\{ma\.source\} : /,
+    'dans son instant, reliée aux paroles, à ce que papa disait et à ce qu’il ressentait (quand la séparée manque)');
+});
+
+// (04/11, Ahmed : « sépare bien la voix et la musique de fond » ; « oui, installe Demucs »)
+test('(04/11) ses deux oreilles séparées (Demucs) : au fil, dans son instant, et à son subconscient toutes les 15 s', () => {
+  const flux = [], instants = [], evenements = [], effaces = [];
+  let T = 100000;
+  const ctx = { Date: { now: () => T }, setTimeout: () => 1, clearTimeout: () => {}, j: JSON.stringify,
+    fs: { unlink: (f) => effaces.push(f), existsSync: () => false }, fluxAjouter: (s, x) => flux.push([s, x]),
+    noterInstant: (type, d) => instants.push([type, d]), corpsActif: () => true, corpsLot: { evenements }, ressentirCorps: () => {} };
+  vm.createContext(ctx);
+  const i = SRC.indexOf('const separation = {'), k = SRC.indexOf('async function routeVif(');
+  vm.runInContext(SRC.slice(i, k) + '\nthis.sep = separation; this.recue = separationRecue;', ctx);
+  const o = { id: 1, texte: 'la voix (séparée) chante, La mineur · le fond (séparé) ~96 BPM, graves forts, médiums doux, aigus doux',
+    voix: { presente: true, chante: true }, fond: { bpm: 96 } };
+  ctx.sep.attente = { id: 1, src: 'micro', fichier: '/tmp/x-sep.wav', minuteur: 1 };
+  ctx.recue(o);
+  assert.deepStrictEqual(flux, [['separe_micro', o.texte]]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(instants)), [['musique_separee', { texte: o.texte, source: 'autour' }]]);
+  assert.strictEqual(evenements[0].type, 'musique_separee', 'à son subconscient');
+  assert.deepStrictEqual(effaces, ['/tmp/x-sep.wav'], 'rien de l’audio n’est gardé');
+  T += 5000; ctx.sep.attente = { id: 2, src: 'micro', fichier: '/tmp/y.wav', minuteur: 1 };
+  ctx.recue({ ...o, id: 2 });
+  assert.strictEqual(evenements.length, 1, 'au plus toutes les 15 s à son subconscient');
+  assert.match(SRC, /separerSon\(fs2, 'micro'\); \} catch \(_\) \{\}   \/\/ \(04\/11\) en parallèle/);
+  assert.match(SRC, /if \(ms && ms\.texte\) l\.push\(`ce qu'il entend \$\{ms\.source\}, séparé : /, 'dans son instant, relié');
 });
