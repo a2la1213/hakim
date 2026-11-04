@@ -3448,9 +3448,9 @@ const RIBOSOME_ACCELERATION = 2;
 // « éclair » (0,3 s, ribosome-reglage.json) ; ses lecteurs ne répondent jamais si vite (0,8 s au mieux, mesuré) : en dessous de
 // RIBOSOME_LECTURE_MIN, ils ne sont même plus appelés (le forfait épargné) et ses pensées passent telles quelles, tout de suite
 const RIBOSOME_LECTURE_MIN = 600;
-// (04/11, 22:10, Ahmed : « essaie de réduire le choix à 1 s » ; 22:15 : « il faut remonter à 1,5 s ») en « éclair », son épissure alternative
-// a 1,5 s pour choisir
-const RIBOSOME_CHOIX_MS = 1500;
+// (04/11, 22:10, Ahmed : « essaie de réduire le choix à 1 s » ; 22:15 : « il faut remonter à 1,5 s » ; 22:30 : « remonte à 1,7 ») en « éclair »,
+// son épissure alternative a 1,7 s pour choisir
+const RIBOSOME_CHOIX_MS = 1700;
 // (04/11, 20:55, Ahmed : « tu peux encore augmenter, ou on est au max ? ») mesuré sur les 34 premiers paquets de ses deux Super Hakim : lus en
 // 1,2 s : 82 % ; 1,6 s : 94 % ; 2 s : 100 % (avant : 87 % en 2 s) ; sa vitesse max se mesure sur ses lecteurs d'AUJOURD'HUI (30 paquets
 // suffisent ; sinon, tout le journal), et le coude doit garder au moins 85 % de ce qu'ils peuvent lire
