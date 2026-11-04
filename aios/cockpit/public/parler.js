@@ -3533,10 +3533,9 @@ function direRibosome() {
   // (04/11, 14:45, mesuré : 5 tours épissés en attente 20 s et plus, papa et ses amis parlaient sans jamais 1 s de blanc) sa voix part à ta
   // respiration (0,3 s), sans attendre que ton tour se ferme (1 s)
   // (04/11, 14:48, mesuré : 3 tours épissés en 50 s, aucun dit, la pièce ne laissait jamais 0,3 s de blanc) au plus 5 s d'attente
-  if (c.capteur && c.capteur.enParole && !(Number(c.capteur.pauseEnCours) >= (typeof patienceConversation === 'function' ? patienceConversation() : 300))) {
-    noterAttente('parole');
-    if (attente <= 5000) return;
-  }
+  // (04/11, 21:10, Ahmed : « dès que le chunk est prêt et que le ribosome l'a installé, il doit commencer la traduction direct, sans rien
+  // attendre, ni silence ni rien ; c'est à Hakim de choisir de mettre sa voix en pause ou de la laisser en play ») plus d'attente de ta
+  // respiration : sa voix part dès qu'il a lu ; s'il t'entend pendant qu'il parle, c'est lui qui choisit à la fin de son morceau (coupeAuChunk)
   etat.riboFile = f.filter(x => x.tour !== tour);
   // (04/11, 13:30, capture d'Ahmed : un pavé resté « 🧠 sa pensée », rien d'allumé) sa voix est libre : ce qui reste à allumer d'avant a
   // été dit (un mot qu'elle ne prononce pas, une balise, bloquait tout le reste) ; allumé d'un coup, et ce tour-ci écrit dans son pavé

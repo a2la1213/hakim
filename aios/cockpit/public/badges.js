@@ -23,11 +23,11 @@
     + 'background:#ef4444;color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center;vertical-align:1px}'
     + '.annonces{position:fixed;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top));z-index:30;max-width:640px;margin:0 auto;'
     + 'display:flex;flex-direction:column;gap:8px;pointer-events:none;max-height:45vh;overflow-y:auto;overscroll-behavior:contain}.annonces>*{pointer-events:auto;flex:none}'
-    + '.nouveautes{position:relative;padding:10px 36px 10px 12px;border-radius:10px;border:1px solid rgba(239,68,68,.5);background:#1a0f12;color:#fde2e2;font-size:13px;'
+    + '.nouveautes{position:relative;padding:10px 36px 10px 12px;border-radius:10px;border:1px solid rgba(239,68,68,.5);background:var(--nouv-fond,#1a0f12);color:var(--nouv-txt,#fde2e2);font-size:13px;'
     + 'box-shadow:0 6px 24px rgba(0,0,0,.35)}.nouveautes button{position:absolute;right:6px;top:6px;border:0;background:transparent;'
     + 'color:inherit;font-size:16px;cursor:pointer}.nouveau{box-shadow:inset 3px 0 0 #ef4444;padding-left:8px !important}'
     + '.burger{position:relative;width:40px;height:40px;flex:none;border-radius:10px;border:1px solid rgba(255,255,255,.16);background:transparent;'
-    + 'color:#e6edf3;font-size:20px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}'
+    + 'color:var(--txt,#e6edf3);font-size:20px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}'
     + '.burger:focus-visible,.menu-panneau a:focus-visible,.parler-bouton:focus-visible{outline:2px solid #2dd4bf;outline-offset:2px}'
     + '.burger .point{position:absolute;top:6px;right:6px;width:9px;height:9px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 2px #0b1216}'
     + '.parler-bouton{margin-left:auto;display:inline-flex;align-items:center;min-height:36px;padding:0 14px;border-radius:999px;'
@@ -35,15 +35,15 @@
     + '.parler-bouton + .status{margin-left:10px}'
     + '.menu-voile{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.45)}'
     + '.menu-panneau{position:fixed;z-index:41;top:0;bottom:0;left:0;width:min(300px,86vw);overflow-y:auto;padding:calc(14px + env(safe-area-inset-top)) 10px 20px;'
-    + 'background:#0f171c;border-right:1px solid rgba(255,255,255,.12);box-shadow:8px 0 30px rgba(0,0,0,.4);display:flex;flex-direction:column;gap:2px}'
-    + '.menu-panneau .titre{color:#93a4b0;font-size:11px;letter-spacing:2px;padding:4px 10px 10px}'
-    + '.menu-panneau a{display:flex;align-items:center;min-height:44px;padding:0 12px;border-radius:10px;color:#c9d4dc;font-size:15px;text-decoration:none}'
-    + '.menu-panneau a:hover{background:rgba(255,255,255,.05)}.menu-panneau a[aria-current="page"]{color:#2dd4bf;background:rgba(45,212,191,.10)}'
+    + 'background:var(--menu-fond,#0f171c);border-right:1px solid var(--trait,rgba(255,255,255,.12));box-shadow:8px 0 30px var(--ombre,rgba(0,0,0,.4));display:flex;flex-direction:column;gap:2px}'
+    + '.menu-panneau .titre{color:var(--txt-4,#93a4b0);font-size:11px;letter-spacing:2px;padding:4px 10px 10px}'
+    + '.menu-panneau a{display:flex;align-items:center;min-height:44px;padding:0 12px;border-radius:10px;color:var(--txt-2,#c9d4dc);font-size:15px;text-decoration:none}'
+    + '.menu-panneau a:hover{background:rgba(255,255,255,.05)}.menu-panneau a[aria-current="page"]{color:var(--teal,#2dd4bf);background:rgba(45,212,191,.10)}'
     + '.menu-panneau a .pastille{margin-left:auto}.menu-panneau .resume{color:#f3b6b6;font-size:12px;padding:0 12px 6px;margin-top:-4px}'
     + '.annonce-ligne{cursor:pointer;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.annonce-ligne:hover{text-decoration:underline}'
     + '.nouveautes{overflow-wrap:anywhere}.nouveautes.touchable{cursor:pointer}'
     + '.menu-languette{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:35;width:18px;height:56px;padding:0;border:1px solid rgba(255,255,255,.16);'
-    + 'border-left:0;border-radius:0 12px 12px 0;background:rgba(15,23,28,.72);color:#c9d4dc;font-size:16px;line-height:1;cursor:pointer;'
+    + 'border-left:0;border-radius:0 12px 12px 0;background:var(--panneau,rgba(15,23,28,.72));color:var(--txt-2,#c9d4dc);font-size:16px;line-height:1;cursor:pointer;'
     + 'display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}'
     + '.menu-languette:focus-visible{outline:2px solid #2dd4bf;outline-offset:2px}.menu-languette .point{top:4px;right:3px;width:7px;height:7px}'
     + '[hidden]{display:none !important}';
@@ -94,6 +94,18 @@
       const r = document.createElement('div'); r.className = 'resume'; r.hidden = true;
       panneau.appendChild(a); panneau.appendChild(r);
       liens[k] = { a, r };
+    }
+    // (04/11, 21:05, Ahmed : « un mode sombre, un mode clair et un mode automatique avec le smartphone ») en bas du menu, sur toutes les pages
+    if (window.Apparence) {
+      const ap = document.createElement('div'); ap.className = 'apparence-choix'; ap.setAttribute('role', 'group'); ap.setAttribute('aria-label', 'Apparence');
+      ap.style.margin = '14px 10px 0'; ap.style.alignSelf = 'flex-start';
+      const boutons = [['clair', '☀️ Clair'], ['sombre', '🌙 Sombre'], ['auto', 'Auto']].map(([m, t]) => {
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = t; b.dataset.mode = m;
+        b.addEventListener('click', () => window.Apparence.choisir(m)); ap.appendChild(b); return b;
+      });
+      const maj = () => { const c = window.Apparence.choix(); for (const b of boutons) b.setAttribute('aria-pressed', String(b.dataset.mode === c)); };
+      document.addEventListener('apparence', maj); maj();
+      panneau.appendChild(ap);
     }
     document.body.appendChild(voile); document.body.appendChild(panneau);
     // (30/10, Ahmed : « le retour en arrière par le bouton retour natif du smartphone aussi ») le menu ouvert est une étape de

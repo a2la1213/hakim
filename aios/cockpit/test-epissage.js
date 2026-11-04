@@ -134,18 +134,16 @@ test('page : une seule réponse par tour ; le ribosome y allume ses mots au fil 
   const paves = ctx.etat.aCote.filter(x => String(x.cle).startsWith('pave-'));
   assert.strictEqual(paves.length, 1, 'tous ses chunks dans la même réponse');
   assert.match(paves[0].html, /🗣 « Oui papa tu veux parler du calcul \? »/, '(15:30) sa parole épissée, morceau après morceau, dans le même pavé');
-  assert.deepStrictEqual(dits, [], 'pas pendant que papa parle');
-  ctx.etat.conversation.capteur.enParole = false;                    // papa se tait
-  ctx.dire();
-  assert.deepStrictEqual(dits.map(d => [d[0], d[2], d[3], d[4]]), [['Oui papa tu veux parler du calcul ?', 7, true, true]]);
+  // (21:10) dès qu'il a lu, il parle, même pendant que papa parle
+  assert.deepStrictEqual(dits.map(d => [d[0], d[2], d[3], d[4]]), [['Oui papa', 7, true, true], ['tu veux parler du calcul ?', 7, true, true]]);
   ctx.lecteur.actif = true;                                          // il parle : la suite attend sa fin
   ctx.lu({ tour: 7, k: 3, texte: 'il a fini cette nuit', pave: 'x', mots: [] });
-  assert.strictEqual(dits.length, 1);
+  assert.strictEqual(dits.length, 2, 'sa voix sonne : la suite attend sa fin (une à la fois)');
   ctx.lecteur.actif = false;
   ctx.dire();
-  assert.deepStrictEqual(dits.map(d => d[0]), ['Oui papa tu veux parler du calcul ?', 'il a fini cette nuit']);
+  assert.deepStrictEqual(dits.map(d => d[0]), ['Oui papa', 'tu veux parler du calcul ?', 'il a fini cette nuit']);
   ctx.dire();
-  assert.strictEqual(dits.length, 2, 'rien deux fois');
+  assert.strictEqual(dits.length, 3, 'rien deux fois');
 });
 
 test('page : sa voix dit ce que le ribosome a choisi à ta pause et à la fin de chaque phrase ; ses pensées épissées ne sont plus dites seules', () => {
@@ -301,7 +299,7 @@ test('sa voix et son écriture reliées : chaque segment qui commence (télépho
 
 // (04/11, 12:45, Ahmed : « s'il a fini d'écrire et de préparer sa parole avant que j'aie fini de parler, il attend que je me taise et lance
 // sa parole direct quand je finis : il peut mettre sa voix en pause jusqu'à ce que je finisse (0,3 s de blanc) »)
-test('prête avant ta fin : sa voix se calcule d’avance pendant qu’il attend ton silence, puis part d’un coup', () => {
+test('(21:10) plus d’attente de ta fin : chaque morceau lu part aussitôt, rien ne reste à calculer d’avance', () => {
   const prepares = [], dits = [];
   const ctx = { Date, Math, String, Number, Object, esc: (s) => String(s), rendre() {}, etat: { aCote: [], conversation: { capteur: { enParole: true } } },
     lecteur: { actif: false }, recevoirBout: (s) => dits.push(s.texte), bouts: { tour: 0, prochain: 1 }, setTimeout() {},
@@ -313,15 +311,8 @@ test('prête avant ta fin : sa voix se calcule d’avance pendant qu’il attend
     .map(prendre).join('\n') + ligne('const htmlEpissure = ') + '\nthis.lu = surRibosome; this.dire = direRibosome;', ctx);
   ctx.lu({ tour: 7, k: 1, texte: 'Oui papa', pave: 'Oui papa.', mots: [0, 1], ajoutes: [] });
   ctx.lu({ tour: 7, k: 2, texte: 'je t’écoute', pave: 'Oui papa. Je t’écoute.', mots: [0, 1, 2, 3], ajoutes: [] });
-  assert.deepStrictEqual(dits, [], 'tu parles encore : il attend');
-  assert.deepStrictEqual(prepares, ['Oui papa', 'Oui papa je t’écoute'], 'sa voix calculée d’avance, exactement ce qu’il dira');
-  ctx.etat.conversation.capteur.enParole = false;
-  ctx.dire();
-  assert.deepStrictEqual(dits, ['Oui papa je t’écoute'], 'ta fin : elle part d’un coup');
-  ctx.voixDuTelephone = () => false;
-  ctx.etat.conversation.capteur.enParole = true;
-  ctx.lu({ tour: 8, k: 1, texte: 'Hum', pave: 'Hum.', mots: [0], ajoutes: [] });
-  assert.strictEqual(prepares.length, 2, 'avec Chatterbox, rien à calculer sur le téléphone');
+  assert.deepStrictEqual(dits, ['Oui papa', 'je t’écoute'], 'tu parles encore : il parle quand même, morceau après morceau');
+  assert.deepStrictEqual(prepares, [], 'rien n’attend : rien à calculer d’avance');
 });
 
 // ---- (04/11, 12:50, Ahmed : « il ne doit rien prononcer d'autre que ses pensées épissées ! Rien d'autre, pas même ses pensées ou autre !
@@ -549,34 +540,19 @@ test('page : son épissure reste à sa place dans le fil, avant sa réponse cons
 
 // (04/11, 14:45, mesuré : 5 tours épissés en attente 20 s et plus — papa et ses amis parlaient sans jamais 1 s de blanc, et sa voix attendait
 // la fin du tour) sa voix part à ta respiration (0,3 s), pas à la fin de ton tour (1 s)
-test('page : sa voix épissée part à ta respiration (0,3 s), sans attendre que ton tour se ferme', () => {
+// (04/11, 21:10, Ahmed : « dès que le chunk est prêt et que le ribosome l'a installé, il doit commencer la traduction direct, sans rien attendre,
+// ni silence ni rien ; c'est à Hakim de choisir de mettre sa voix en pause ou de la laisser en play »)
+test('page : sa voix épissée part dès que son ribosome a lu, même pendant que tu parles', () => {
   const { ctx, dits } = pageRibosome();
-  ctx.etat.conversation.capteur = { enParole: true };                   // tu parles
+  ctx.etat.conversation.capteur = { enParole: true, pauseEnCours: 0 };   // tu parles, sans respiration
   ctx.ajouter(7, 'Oui papa, je suis là.');
   ctx.lu({ tour: 7, k: 1, texte: 'Oui papa', pave: 'Oui papa, je suis là.', mots: [0, 1], ajoutes: [] });
-  assert.deepStrictEqual(dits, [], 'ta voix sonne : il attend');
-  ctx.etat.conversation.capteur.pauseEnCours = 200; ctx.dire();
-  assert.deepStrictEqual(dits, [], '0,2 s : pas encore');
-  ctx.etat.conversation.capteur.pauseEnCours = 320; ctx.dire();
-  assert.deepStrictEqual(dits.map(d => d[0]), ['Oui papa'], 'ta respiration : il part, ton tour encore ouvert');
-  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'conversation.js'), 'utf8'), /get pauseEnCours\(\) \{ return pauseEnCours; \}/);
+  assert.deepStrictEqual(dits.map(d => d[0]), ['Oui papa'], 'tout de suite, sans attendre ta respiration');
+  assert.doesNotMatch(PAGE.slice(PAGE.indexOf('function direRibosome('), PAGE.indexOf('\n}\n', PAGE.indexOf('function direRibosome('))), /pauseEnCours/);
 });
 
 // (04/11, 14:48, mesuré : 3 tours épissés reçus en 50 s, aucun dit ; la pièce ne laissait jamais 0,3 s de blanc) au plus 5 s d'attente
 // pour ta respiration : au-delà, ce qui est épissé part (une attente notée, avec sa cause)
-test('page : un morceau épissé n’attend jamais plus de 5 s une respiration qui ne vient pas ; l’attente est notée', () => {
-  const { ctx, dits } = pageRibosome();
-  const notes = [];
-  ctx.journalVoix = (e, d) => notes.push([e, d]);
-  ctx.etat.conversation.capteur = { enParole: true, pauseEnCours: 0 };
-  ctx.ajouter(7, 'Oui papa, je suis là.');
-  ctx.lu({ tour: 7, k: 1, texte: 'Oui papa', pave: 'Oui papa, je suis là.', mots: [0, 1], ajoutes: [] });
-  assert.deepStrictEqual(dits, [], 'la pièce parle : il attend');
-  ctx.etat.riboFile[0].recu = Date.now() - 6000;
-  ctx.dire();
-  assert.deepStrictEqual(dits.map(d => d[0]), ['Oui papa'], 'après 5 s : il part');
-  assert.ok(notes.some(([e, d]) => e === 'ribosome_attente' && d.cause === 'parole'), 'l’attente notée, avec sa cause');
-});
 
 // ---- (04/11, 15:10, Ahmed : « une seule épissure démarre avec ma voix ; tous mes morceaux s'y ajoutent, même avec des pauses ; il les dit au
 // fur et à mesure ; le stop, c'est 10 s de silence, ou une demande explicite d'utiliser un outil : c'est sa parole qui s'arrête à ce stop » ;

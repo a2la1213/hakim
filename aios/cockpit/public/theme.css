@@ -7,6 +7,19 @@
   --glass-bg: rgba(255,255,255,.035); --glass-bd: rgba(45,212,191,.14);
   --radius: 16px;
 }
+/* (04/11, 21:05, Ahmed : « pour toute l'appli, un mode sombre, un mode clair et un mode automatique avec le smartphone ») ses surfaces en
+   variables (apparence.js pose data-theme sur <html>) ; le mode clair : une eau pâle et froide, le turquoise foncé pour se lire sur le blanc */
+:root { --fond: #04141a; --fond-haut: #0b2a2e; --fond-bas: #030a0c; --panneau: rgba(8,26,28,.92); --champ: rgba(0,0,0,.25); --voile: rgba(2,10,12,.72);
+  --trait: rgba(255,255,255,.06); --ombre: rgba(0,0,0,.35); --menu-fond: #0f171c; --nouv-fond: #1a0f12; --nouv-txt: #fde2e2; }
+html[data-theme="clair"] {
+  color-scheme: light;
+  --teal: #0f766e; --teal-hi: #115e59; --teal-deep: #0d9488;
+  --rose: #be185d; --ok: #15803d; --warn: #b45309; --err: #b91c1c;
+  --txt: #0c2624; --txt-2: #16403c; --txt-3: #3f6460; --txt-4: #52706b;
+  --glass-bg: rgba(255,255,255,.78); --glass-bd: rgba(15,118,110,.22);
+  --fond: #eef4f2; --fond-haut: #ffffff; --fond-bas: #e3eeeb; --panneau: rgba(255,255,255,.97); --champ: #ffffff; --voile: rgba(226,238,235,.75);
+  --trait: rgba(12,38,36,.10); --ombre: rgba(12,38,36,.12); --menu-fond: #f7fbfa; --nouv-fond: #fdecec; --nouv-txt: #7f1d1d;
+}
 * { box-sizing: border-box; margin: 0; }
 /* (04/11, 17:35, Ahmed, capture : « sur smartphone, tout doit tenir sur l'écran ») rien ne déborde en largeur */
 html { color-scheme: dark; overflow-x: hidden; }
@@ -103,3 +116,27 @@ body.shell::after { bottom: -100px; right: 0; width: min(400px, 100vw); height: 
 @media (max-width: 900px) { .bento { grid-template-columns: 1fr !important; } .bento > * { grid-column: auto !important; } }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: rgba(45,212,191,.18); border-radius: 99px; }
+
+/* ---- (04/11, 21:05) le mode clair, partout ---- */
+html[data-theme="clair"] body.shell { background: radial-gradient(ellipse 80% 50% at 70% -10%, var(--fond-haut) 0%, var(--fond) 45%, var(--fond-bas) 100%); }
+html[data-theme="clair"] body.shell::before { background: radial-gradient(ellipse, rgba(15,118,110,.10), transparent 70%); }
+html[data-theme="clair"] body.shell::after { background: radial-gradient(ellipse, rgba(190,24,93,.06), transparent 70%); }
+html[data-theme="clair"] .pill.active { color: var(--teal-hi); background: rgba(15,118,110,.10); border-color: rgba(15,118,110,.35); }
+html[data-theme="clair"] .glass { box-shadow: 0 1px 3px var(--ombre); }
+html[data-theme="clair"] .overlay { background: var(--voile); }
+html[data-theme="clair"] .overlay-panel { background: var(--panneau); border-color: rgba(15,118,110,.25); box-shadow: 0 10px 40px var(--ombre); }
+html[data-theme="clair"] .bar { background: var(--trait); }
+html[data-theme="clair"] .feed-line { color: #155e57; }
+html[data-theme="clair"] .feed-line.user { border-left-color: var(--trait); }
+html[data-theme="clair"] .badge.muted { color: var(--txt-4); }
+html[data-theme="clair"] ::-webkit-scrollbar-thumb { background: rgba(15,118,110,.25); }
+html[data-theme="clair"] input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), html[data-theme="clair"] textarea,
+html[data-theme="clair"] select { background-color: var(--champ) !important; color: var(--txt) !important; border-color: rgba(15,118,110,.28) !important; }
+html[data-theme="clair"] ::placeholder { color: var(--txt-4) !important; }
+/* le sélecteur d'apparence (☀️ / 🌙 / Auto), là où il est posé */
+.apparence-choix { display: inline-flex; gap: 4px; padding: 3px; border-radius: 99px; border: 1px solid var(--glass-bd); background: var(--glass-bg); }
+.apparence-choix button { border: 0; background: transparent; color: var(--txt-3); font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 99px;
+  min-height: 36px; cursor: pointer; }
+.apparence-choix button[aria-pressed="true"] { background: rgba(45,212,191,.18); color: var(--txt); }
+html[data-theme="clair"] .apparence-choix button[aria-pressed="true"] { background: rgba(15,118,110,.14); }
+html[data-theme="clair"] .parler-bouton { color: var(--teal-hi) !important; border-color: rgba(15,118,110,.45) !important; background: rgba(15,118,110,.08) !important; }
