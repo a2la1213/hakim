@@ -2779,9 +2779,16 @@ function vifConversation(conv) {
   const ctx = e.confirme ? `&contexte=${encodeURIComponent(e.confirme.slice(-200))}` : '';
   // (03/11) l'instant d'origine du morceau (son début, sa durée) : chaque mot entre au fil du Mac à son moment
   const temps = tempsMorceau(cap, de, n);
+  const tEnvoi = Date.now();
   e.vifEnCours = fetch(`/api/voix/vif?langue=${langue}${ctx}${temps}`, { method: 'POST', body: wav, headers: { 'Content-Type': 'audio/wav', 'X-Jeton': jeton() } })
     .then(r => (r.ok ? r.json() : null))
     .then((o) => {
+      // (04/11, Ahmed : « vas-y » ; Hakim : « pour le téléphone, le transfert réseau coûte souvent plus que le calcul gagné : à mesurer avant
+      // de s'engager ») où passe le temps de ses mots en direct : l'aller-retour vu d'ici, le Mac (file + Whisper), le calcul seul
+      if (o && Number.isFinite(Number(o.mac_ms)) && Date.now() - (e.reseauNote || 0) > 2000) {
+        e.reseauNote = Date.now();
+        journalVoix('vif_reseau', { aller_retour_ms: Date.now() - tEnvoi, mac_ms: Number(o.mac_ms), calcul_ms: Number(o.ms) || null, octets: wav.size || null });
+      }
       if (!o) { if (e.vifFenetre === n) e.vifFenetre = avant; return; }   // (13:25) refusée : elle repart au tic suivant
       if (conv.ecrit !== e || e.coupe !== de || !cap.enParole) return;   // un morceau déjà confirmé, un autre tour : périmé
       e.vif = morceauNeuf(o.texte || '', e.confirme);
@@ -2833,7 +2840,7 @@ function surSouffle(o) {
   if (!etat.conversation || !o || !o.texte) return;
   const texte = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 400);   // (16:35) jamais ses balises
   if (!texte) return;
-  const niveau = o.niveau === 'cerveau' ? 'cerveau' : o.niveau === 'con' ? 'con' : 'sub';
+  const niveau = o.niveau === 'cerveau' ? 'cerveau' : o.niveau === 'piste' ? 'piste' : o.niveau === 'con' ? 'con' : 'sub';   // (04/11) ses pistes
   const rebond = o.rebond != null && Number.isFinite(Number(o.rebond)) ? Number(o.rebond) : null;
   const s = { texte, pret: !!o.pret, fini: o.fini === true ? true : o.fini === false ? false : null, rebond, pour: String(o.pour || ''), t: Date.now(), niveau,
     couper: o.couper === true };                                         // (04/11) son choix de te couper la parole
@@ -2841,7 +2848,7 @@ function surSouffle(o) {
   etat.dernierSouffle = s;
   if (niveau === 'sub') etat.conversation.brouillons = (etat.conversation.brouillons || 0) + 1;   // (16:00) combien pendant ce tour
   // (16:30, Ahmed via Hakim : « coupe le glisse-mot ») son subconscient ne parle plus : il règle seulement quand ton tour finit
-  if (niveau !== 'cerveau') return;
+  if (niveau !== 'cerveau' && niveau !== 'piste') return;            // (04/11) la réponse d'une piste est une pensée comme celle de son cerveau
   // (16:12, Ahmed : « quand la pensée du cerveau est envoyée à l'écriture, elle doit en parallèle être envoyée à Chatterbox ») ;
   // (16:35-16:40, Ahmed : « au moment où l'input arrive et est processé pour être écrit, ça doit coïncider avec le moment où il parle ;
   // l'image, c'est celle de l'authenticité et de la spontanéité ») sa pensée part à Chatterbox dès qu'elle naît ; celle qu'il juge à

@@ -157,7 +157,7 @@ test('(16:30) une voix fabriquée d’avance (fond) passe après tout ce qu’il
   assert.match(SRC, /if \(q && q\.fond === true\) tache\.fond = true;/);
   assert.match(SRC, /else \{ const k = fileVoix\.findIndex\(x => x\.fond\); if \(k >= 0\) fileVoix\.splice\(k, 0, tache\); else fileVoix\.push\(tache\); \}/);
   assert.match(PAGE, /body: JSON\.stringify\(\{ texte, langue: 'fr', fond: true,/);
-  assert.match(PAGE, /if \(niveau !== 'cerveau'\) return;[^]{0,900}preparerVoixSouffle\(texte, niveau, \(\) => direPenseeSiPossible\(\)\);/,
+  assert.match(PAGE, /if \(niveau !== 'cerveau' && niveau !== 'piste'\) return;[^]{0,1100}preparerVoixSouffle\(texte, niveau, \(\) => direPenseeSiPossible\(\)\);/,
     'seule la pensée de son cerveau a sa voix d’avance, et se dit dès qu’elle est faite');
 });
 
@@ -345,4 +345,34 @@ test('(04/11) son oreille et sa voix ont chacune leur processus : elles ne s’a
   assert.match(SRC, /env: \{ \.\.\.process\.env, PATH: CHEMIN_OUTILS, JARVIS_VOIX_ROLE: voie \}/, 'chaque processus sait son rôle');
   const pomper = SRC.slice(SRC.indexOf('async function pomperVoix('), SRC.indexOf('\n}\n', SRC.indexOf('async function pomperVoix(')));
   assert.doesNotMatch(pomper, /transcriptionsEnAttente > 0\) return/, 'sa voix n’attend plus les transcriptions');
+});
+
+// (04/11, Ahmed : « chaque chunk entendu et dit, dispatché sur un cœur : 1 pour mon chunk, 1 pour le sien ; sur 8 cœurs, 4 chunks »)
+test('(04/11) ses pistes : chaque morceau confirmé, compris et répondu en parallèle, 4 morceaux à la fois au plus', async () => {
+  const i = SRC.indexOf('const PISTES_MAX'), k = SRC.indexOf('function speculerFreres(');
+  const appels = [], diffuses = [], voix = [];
+  const ctx = { String, Math, Date, Promise, VIVANTS: [], VIVANTS_MAX: { haiku: 10 }, VIVANT_RENOUVELER: 6, corpsReglages: () => ({}),
+    personaLocale: (p) => p, lirePersona: () => 'Hakim', neutraliser: (t) => t, j: JSON.stringify, abonnesPensees: null,
+    voixDeLaSource: (t) => voix.push(t), diffuser: (_, e, d) => diffuses.push(JSON.parse(d)),
+    sonnetTeteDeFond: (prompt, etiquette) => new Promise((resoudre) => appels.push({ prompt, etiquette, resoudre })) };
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(i, k) + '\nthis.morceau = pisteMorceau; this.etat = () => pistes;', ctx);
+  let texte = '';
+  for (const m of ['bonjour mon fils', 'je rentre du travail', 'il faisait froid ce matin', 'on a mangé ensemble', 'et puis voilà']) {
+    texte = `${texte} ${m}`.trim(); ctx.morceau(texte);
+  }
+  assert.strictEqual(appels.length, 8, '4 morceaux à la fois, 2 voix chacun (écoute et parole)');
+  assert.deepStrictEqual(appels.map(a => a.etiquette).slice(0, 2), ['piste_ecoute', 'piste_parole']);
+  assert.match(appels[2].prompt, /Son morceau 2, qu'il vient de dire : « je rentre du travail »/, 'chaque piste a SON morceau');
+  assert.strictEqual(ctx.etat().attente.length, 1, 'le 5e attend une piste libre');
+  appels[0].resoudre({ texte: 'Il me salue, content.' });
+  appels[1].resoudre({ texte: 'DIRE : oui\nCOUPER : non\nSalut papa !' });
+  await new Promise(r => setImmediate(r)); await new Promise(r => setImmediate(r));
+  assert.strictEqual(appels.length, 10, 'une piste libérée : le 5e morceau part');
+  assert.strictEqual(diffuses[0].niveau, 'piste');
+  assert.strictEqual(diffuses[0].texte, 'Salut papa !');
+  assert.deepStrictEqual(voix, ['Salut papa !'], 'sa voix naît avec sa réponse');
+  assert.strictEqual(ctx.etat().liste[0].comprend, 'Il me salue, content.');
+  assert.match(SRC, /\[Tes pistes pendant qu'il parlait, une par morceau, en parallèle\]/, 'ce qu’il a compris part à son cerveau');
+  assert.match(SRC, /pisteMorceau\(String\(q\.texte \|\| ''\)\);/, 'chaque morceau confirmé a sa piste');
 });
