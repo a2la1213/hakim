@@ -76,3 +76,31 @@ test('une pensée parasite bloquée : son cœur sursaute (+8, qui retombe en 20 
   assert.match(prendre(SRC, 'avertirParasite'), /parasiteSenti = Date\.now\(\);[^\n]*\n  if \(Date\.now\(\) - parasiteNoteA < 60000\) return;/, 'chaque parasite, même quand l’incident est déjà noté dans la minute');
   assert.match(SRC, /coeur_bpm: frais && e\.coeur && Number\.isFinite\(e\.coeur\.bpm\) \? Math\.min\(110, e\.coeur\.bpm \+ sursautCoeur\(\)\) : null,\n      parasite_ms: parasiteSenti \|\| null,/);
 });
+
+// (05/11, Ahmed : « quand une parole est passée depuis un moment, il faut sauter tous les morceaux passés et se focaliser sur le dernier »)
+test('ce qui attend depuis 3 s est passé : seul le dernier morceau préparé est dit ; un seul morceau, ou frais : rien de sauté', () => {
+  const t = 1_800_000_000_000;
+  const monter = (file, reglage = {}) => {
+    const dits = [], journal = [];
+    const ctx = { Math, Number, Date: { now: () => t }, journal, dits,
+      reglagesCorps: { sauter_passe: true, sauter_passe_s: 3, ...reglage },
+      etat: { riboFile: file, conversation: { capteur: { enParole: false } }, paves: {} },
+      lecteur: { actif: false }, journalVoix: (e, o) => journal.push([e, o]) };
+    vm.createContext(ctx);
+    const src = prendre(PAGE, 'direRibosome');
+    // seulement jusqu'au choix du lot : ce qui suit (la voix) n'est pas en jeu ici
+    vm.runInContext(src.slice(0, src.indexOf('  const tour = f[0].tour, lot')) + '  this.lot = f.map(x => x.texte);\n}\nthis.f = direRibosome;', ctx);
+    ctx.f();
+    return { lot: ctx.lot, journal };
+  };
+  const vieux = [{ tour: 4, texte: 'deux', recu: t - 5000 }, { tour: 4, texte: 'trois', recu: t - 3000 }, { tour: 5, texte: 'le dernier', recu: t - 500 }];
+  const a = monter(vieux.map((x) => ({ ...x })));
+  assert.deepStrictEqual([...a.lot], ['le dernier']);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(a.journal[0])), ['passe_saute', { sautes: 2, ms: 5000 }]);
+  assert.deepStrictEqual([...monter([{ tour: 4, texte: 'seul', recu: t - 9000 }]).lot], ['seul'], 'un seul morceau : il est dit');
+  assert.strictEqual(monter([{ tour: 4, texte: 'deux', recu: t - 1000 }, { tour: 4, texte: 'trois', recu: t - 500 }]).lot.length, 2, 'frais : tout est dit');
+  assert.strictEqual(monter(vieux.map((x) => ({ ...x })), { sauter_passe: false }).lot.length, 3, 'éteint');
+  assert.strictEqual(monter(vieux.map((x) => ({ ...x })), { sauter_passe_s: 6 }).lot.length, 3, 'réglé à 6 s');
+  assert.match(SRC, /sauter_passe: r\.sauter_passe !== false, sauter_passe_s: /);
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8'), /\['sauter_passe', /);
+});

@@ -3545,12 +3545,21 @@ function sauterLaSuite(ms) {
 }
 // ce que son ribosome a choisi, dit d'un seul souffle (un tour à la fois, dans l'ordre), quand sa voix est libre
 function direRibosome() {
-  const f = etat.riboFile || [], c = etat.conversation;
+  let f = etat.riboFile || [];
+  const c = etat.conversation;
   const attente = f.length ? Date.now() - (Number(f[0].recu) || Date.now()) : 0;
   // (04/11, 14:48) une attente de plus de 5 s est notée, avec sa cause (sa voix qui parle encore, ou la pièce qui parle), une fois par 10 s
   const noterAttente = (cause) => { if (attente > 5000 && Date.now() - (etat.riboAttenteNotee || 0) > 10000 && typeof journalVoix === 'function') { etat.riboAttenteNotee = Date.now(); journalVoix('ribosome_attente', { cause, ms: attente }); } };
   if (!f.length || !c) return;
   if (lecteur.actif) { noterAttente('voix'); return; }
+  // (05/11, Ahmed : « quand une parole est passée depuis un moment, il faut sauter tous les morceaux passés et se focaliser sur le dernier ; la
+  // première phrase est dite, et quelques secondes de coupure suffisent à sauter le second chunk et tous les autres, jusqu'au dernier préparé
+  // avant la fin de ma parole ») ce qui attend depuis sauter_passe_s (3 s) est passé : seul le dernier morceau préparé est dit
+  if (f.length > 1 && typeof reglagesCorps !== 'undefined' && reglagesCorps.sauter_passe !== false
+    && attente >= (Number(reglagesCorps.sauter_passe_s) || 3) * 1000) {
+    if (typeof journalVoix === 'function') journalVoix('passe_saute', { sautes: f.length - 1, ms: attente });
+    f = etat.riboFile = f.slice(-1);
+  }
   const tour = f[0].tour, lot = f.filter(x => x.tour === tour);
   // (04/11, 13:10, Ahmed : « dès que le ribosome commence, il ne s'arrête jamais jusqu'à la fin, excepté si je parle : il attend la fin de
   // ma parole ») tu parles : sa voix attend ta fin, puis reprend là où elle en était ; rien de ce qui est traduit n'est laissé

@@ -6954,7 +6954,9 @@ function corpsReglages() {
     cascade: r.cascade !== false,   // (04/11, 20:10) la séparation en cascade de ce qu'il entend : ses voix une à une, ses instruments   // (04/11, 18:50, Ahmed : « la même route que le microphone ») ce que le téléphone joue : ses pensées, sa parole à la pause du son
     musique_pause: r.musique_pause !== false,
     // (05/11, Ahmed : « sauter la 2e partie quand je réponds, au bout d'une seconde ») oui par défaut, 1 s
-    sauter_suite: r.sauter_suite !== false, sauter_suite_ms: Number.isFinite(Number(r.sauter_suite_ms)) && r.sauter_suite_ms != null ? Math.max(300, Math.min(5000, Math.round(Number(r.sauter_suite_ms)))) : 1000 };   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
+    sauter_suite: r.sauter_suite !== false, sauter_suite_ms: Number.isFinite(Number(r.sauter_suite_ms)) && r.sauter_suite_ms != null ? Math.max(300, Math.min(5000, Math.round(Number(r.sauter_suite_ms)))) : 1000,
+    // (05/11, Ahmed : « sauter tous les morceaux passés, se focaliser sur le dernier ») oui par défaut, 3 s
+    sauter_passe: r.sauter_passe !== false, sauter_passe_s: Number.isFinite(Number(r.sauter_passe_s)) && r.sauter_passe_s != null ? Math.max(1, Math.min(15, Number(r.sauter_passe_s))) : 3 };   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
 }
 function corpsActif() { return corpsReglages().actif; }
 /* (30/10, 18:56, Ahmed via Hakim : « je veux qu'il tourne tout le temps, tant qu'il est réveillé, même si ça vide mon forfait ;
@@ -11815,6 +11817,8 @@ async function traiter(req, res) {
       if (typeof q.cascade === 'boolean') r.cascade = q.cascade;   // (04/11, 23:00) l'interrupteur de la cascade ne s'enregistrait pas
       if (typeof q.sauter_suite === 'boolean') r.sauter_suite = q.sauter_suite;   // (05/11) sauter la suite quand papa répond
       if (q.sauter_suite_ms != null && Number.isFinite(Number(q.sauter_suite_ms))) r.sauter_suite_ms = Math.max(300, Math.min(5000, Math.round(Number(q.sauter_suite_ms))));
+      if (typeof q.sauter_passe === 'boolean') r.sauter_passe = q.sauter_passe;   // (05/11) sauter les morceaux passés
+      if (q.sauter_passe_s != null && Number.isFinite(Number(q.sauter_passe_s))) r.sauter_passe_s = Math.max(1, Math.min(15, Math.round(Number(q.sauter_passe_s) * 2) / 2));
       try { ecrireAtomique(CORPS_REGLAGES, j(r)); } catch (e) { return repondre(500, { erreur: e.message }); }
       if (!r.actif) { corpsLot.evenements.length = 0; corpsLot.changements.length = 0; corpsADire.length = 0; }
       auditer('corps:reglages', req, distantReq, r);

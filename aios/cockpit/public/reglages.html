@@ -101,6 +101,8 @@
       ['meubles_auto', 'Petits « euh » automatiques', 'Dans ses blancs. Ceux qu’il choisit lui-même restent.', 'oui'],
       ['sauter_suite', 'Sauter la suite quand tu réponds', 'S’il parle et que tu lui réponds, son morceau en cours finit, et la suite n’est pas dite.', 'oui'],
       ['sauter_suite_ms', 'Sauter au bout de', 'Le temps de ta voix sur la sienne avant de sauter la suite.', 'curseur', [300, 5000, 100, sec]],
+      ['sauter_passe', 'Sauter les morceaux passés', 'Ce qui attend depuis trop longtemps n’est pas dit : il passe directement au dernier morceau préparé.', 'oui'],
+      ['sauter_passe_s', 'Passé au bout de', 'L’attente au-delà de laquelle un morceau est passé.', 'curseur', [1, 15, 0.5, (v) => `${v.toLocaleString('fr-FR')} s`]],
       ['musique_pause', 'Il met ta musique en pause', 'Quand il parle. Éteint : il parle par-dessus.', 'oui'],
       ['son_pendant', 'Ses sons sous sa voix', 'Plus bas, jamais par-dessus la tienne.', 'oui'],
       ['voix_vibre', 'Sa voix vibre', 'Dans ta main : fort quand il est excité, léger quand il est calme.', 'oui']] },
