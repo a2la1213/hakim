@@ -391,7 +391,10 @@ test('(04/11) ses pistes mot par mot : une seule voix, celle qui tient son consc
 
 test('(04/11) la page envoie tes mots en direct à ses pistes dès un mot neuf, et dit leurs bouts l’un après l’autre', () => {
   assert.match(PAGE, /if \(neufs >= 1\) \{/);
-  assert.match(PAGE, /if \(niveau === 'piste'\) \{ recevoirBout\(s, Number\(o\.n\) \|\| 0, o\.tour\); return; \}/);
+  assert.match(PAGE, /if \(!s\.pret\) \{ montrerPensee\('🧠 il pense, sans le dire', texte, true\); return; \}\n    recevoirBout\(s, Number\(o\.n\) \|\| 0, o\.tour\); return;/,
+    '(04/11) il saute les pensées qu’il choisit de ne pas dire');
+  assert.match(SRC, /const aDire = !\/\^non\/i\.test\(dire \|\| ''\);/);
+  assert.match(SRC, /if \(aDire\) voixDeLaSource\(reponse, \{ garder: true \}\);/, 'sa voix seulement pour ce qu’il dira');
   assert.match(PAGE, /lecteurNeuronal\.direAudio\(b\.texte, b\.buf\);/, 'dans l’ordre des mots, à la suite');
 });
 
@@ -477,7 +480,7 @@ test('(04/11) moins de charge : inventaire toutes les 10 min, voix vivantes reno
 test('(04/11) dans l’appli, la voix du téléphone : parlée comme une voix de navigateur, chaque phrase dit son début et sa fin', () => {
   const i = PAGE.indexOf('const synthTelephone = '), k = PAGE.indexOf('class EnonceTelephone');
   const dits = [], arrets = [];
-  const ctx = { window: { HakimApp: { voixTelephone: (id, t, v, l) => dits.push([id, t, l]), voixTelephoneArreter: () => arrets.push(1) } }, Map, String, Number };
+  const ctx = { window: { HakimApp: { voixTelephone: (id, t, v, l) => dits.push([id, t, l]), voixTelephoneArreter: () => arrets.push(1) } }, Map, String, Number, JSON, Math, setTimeout: () => 0 };
   vm.createContext(ctx);
   vm.runInContext(PAGE.slice(i, k) + '\nthis.synth = synthTelephone;', ctx);
   const evts = [];
@@ -488,7 +491,9 @@ test('(04/11) dans l’appli, la voix du téléphone : parlée comme une voix de
   assert.deepStrictEqual(evts, ['debut', 'fin']);
   ctx.synth.speak({ text: 'encore', onend: () => evts.push('coupée') }); ctx.synth.cancel();
   assert.deepStrictEqual(evts.slice(-1), ['coupée'], 'Stop : la phrase en cours finit tout de suite');
-  assert.match(PAGE, /get impl\(\) \{ if \(voixDuTelephone\(\) && lecteurSysteme\) return lecteurSysteme;/, 'par défaut dans l’appli');
+  assert.match(PAGE, /get impl\(\) \{ if \(voixDuTelephone\(\) && lecteurSysteme\) return lecteurSysteme;/);
+  assert.match(PAGE, /const voixDuTelephone = \(\) => !!synthTelephone && etat\.reglages\.voix === 'telephone';/, '(04/11) un choix des réglages');
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'parler.html'), 'utf8'), /<option value="telephone">/);
   // (04/11, la page vide dans l'appli 1.55) tout ce que la page appelle sur la voix du système existe aussi ici
   for (const m of ['addEventListener', 'removeEventListener', 'pause', 'resume', 'speak', 'cancel', 'getVoices'])
     assert.strictEqual(typeof ctx.synth[m], 'function', m);

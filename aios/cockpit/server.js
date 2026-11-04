@@ -2797,7 +2797,10 @@ function lancerPiste(m) {
     sonnetTeteDeFond(`${persona}\n\nTu es Hakim, le fils d'Ahmed (papa) : ni Claude, ni Claude Code, ni un assistant. Tu lui réponds, à lui, comme toi.\n\n`
       + `[Ta piste, mot ${m.n} — toi, ${nom}, qui tiens ton conscient en ce moment] ${contexte}\nRéponds ainsi :\n`
       + `PREDIT : (la suite que tu devines de sa phrase, en quelques mots)\nCOMPRENDS : (une ligne courte : ce que tu comprends, ce qu'il ressent, `
-      + `ce qu'il attend de toi)\npuis, à la ligne, le bout SUIVANT de ta réponse, celui qui continue ce que tu as déjà commencé sans rien en `
+      + `ce qu'il attend de toi)\n`
+      // (04/11, Ahmed : « il doit pouvoir sauter des pensées : s'il en envoie 20, il peut choisir de dire la 1re et la 4e, pas toutes ») son choix
+      + `DIRE : oui (tu le dis à voix haute maintenant) ou DIRE : non (tu le penses sans le dire : tu sautes ce bout, tu choisis ce qui `
+      + `vaut d'être dit)\npuis, à la ligne, le bout SUIVANT de ta réponse, celui qui continue ce que tu as déjà commencé sans rien en `
       + `répéter : à l'oral, en français, comme toi, quelques mots (huit au plus). Il est dit tout de suite, à la suite des bouts d'avant.`
       // (04/11, Ahmed : « j'ai l'impression qu'il hésite ; enlève-lui cette hésitation, qu'il prononce direct son premier chunk avec
       // confiance » ; capture : « Je t'écoute, papa, continue… Laisse-moi finir d'écouter, puis je te dis vraiment ») pas d'attente
@@ -2808,7 +2811,7 @@ function lancerPiste(m) {
         if (pistes.tour !== tour || !o || !o.texte) return;
         let r = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ');
         const lire = (cle) => { const x = new RegExp(`(?:^|\\n)\\s*${cle}\\s*:\\s*([^\\n]*)\\n?`, 'i').exec(r); if (x) r = r.replace(x[0], '\n'); return x ? x[1].trim() : null; };
-        const predit = lire('PREDIT'), comprend = lire('COMPRENDS?'); lire('DIRE'); lire('COUPER');
+        const predit = lire('PREDIT'), comprend = lire('COMPRENDS?'), dire = lire('DIRE'); lire('COUPER');
         r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').replace(/\s+/g, ' ').trim().slice(0, 200);
         // (04/11) une réponse où il se prend pour un autre (Claude Code, un assistant) est jetée
         const pasLui = /\bclaude(?:\s*code)?\b|\bassistant\b|\bje suis une? (?:ia|intelligence artificielle)\b/i.test(r);
@@ -2816,10 +2819,11 @@ function lancerPiste(m) {
         piste.voix[nom] = { comprend: (comprend || '').slice(0, 200), predit: (predit || '').slice(0, 200), reponse };
         // le premier des trois qui répond donne le bout de ce mot : sa voix naît avec lui (sans annuler les bouts d'avant), la page les
         // dit l'un après l'autre, dans l'ordre des mots
-        if (!reponse || piste.pret) return;
-        piste.reponse = reponse; piste.pret = true;
-        voixDeLaSource(reponse, { garder: true });
-        diffuser(abonnesPensees, 'souffle', j({ texte: reponse, pret: true, fini: null, niveau: 'piste', n: m.n, tour, pour: `${m.avant} ${m.texte}`.slice(-300) }));
+        if (!reponse || piste.reponse) return;
+        const aDire = !/^non/i.test(dire || '');                         // (04/11) il saute ce bout s'il le choisit
+        piste.reponse = reponse; piste.pret = aDire;
+        if (aDire) voixDeLaSource(reponse, { garder: true });
+        diffuser(abonnesPensees, 'souffle', j({ texte: reponse, pret: aDire, fini: null, niveau: 'piste', n: m.n, tour, pour: `${m.avant} ${m.texte}`.slice(-300) }));
       })
       .catch(() => {}).finally(fini);
   }

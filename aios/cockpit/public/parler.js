@@ -50,6 +50,11 @@ function charger() {
     }
     // (26/10, Ahmed : « Sonnet ↔ Opus selon la difficulté ») en conversation, l'automatique devient le défaut : l'ancien
     // « Sonnet » passe une fois en automatique, son choix reste libre ensuite
+    // (04/11) dans l'appli, la voix du téléphone devient le défaut, une fois ; son choix reste libre ensuite (réglages)
+    if (window.HakimApp && window.HakimApp.voixTelephone && !localStorage.getItem(CLE + '.voixTelephone')) {
+      etat.reglages.voix = 'telephone';
+      localStorage.setItem(CLE + '.voixTelephone', '1');
+    }
     if (!localStorage.getItem(CLE + '.modeleAuto')) {
       if (etat.reglages.modeleConversation === 'sonnet') etat.reglages.modeleConversation = 'auto';
       localStorage.setItem(CLE + '.modeleAuto', '1');
@@ -137,19 +142,42 @@ async function synchroniser() {
    smartphone ») dans l'appli (1.55), la voix du TÉLÉPHONE (son moteur Android) prend la place de la voix du système : instantanée, sans
    réseau, sans charger le Mac ; la page la parle comme une voix de navigateur (speak, cancel) ; chaque phrase dit son début et sa fin. */
 const synthTelephone = window.HakimApp && window.HakimApp.voixTelephone ? (() => {
-  const enAttente = new Map(); let n = 0;
+  const enAttente = new Map(), ecouteurs = []; let n = 0;
+  // (1.56, 04/11, Ahmed : « une voix de femme, pas naturelle ») les voix du moteur du téléphone ; sans choix dans les réglages, une voix
+  // d'homme (Samsung « SMTm », Google « x-frb » / « x-frd ») ; sa hauteur et son débit suivent son émotion du moment
+  const voix = () => { try { return JSON.parse(window.HakimApp.voixTelephoneListe ? window.HakimApp.voixTelephoneListe() : '[]')
+    .map(v => ({ name: v.name, voiceURI: v.name, lang: v.lang, localService: !!v.local, default: false })); } catch (_) { return []; } };
+  const homme = () => voix().filter(v => /^fr/i.test(v.lang)).find(v => /SMTm\d|x-fr[bd]|\bmale\b|homme/i.test(v.name) && !/female|SMTf/i.test(v.name));
+  const hauteur = () => {
+    const e = typeof etat !== 'undefined' && etat.interieur && !etat.reglages.voixNeutre ? Number(etat.interieur.expressivite) : NaN;
+    return Number.isFinite(e) ? Math.max(0.85, Math.min(1.1, 0.95 + (e - 0.5) * 0.4)) : 0.95;
+  };
+  setTimeout(() => ecouteurs.forEach(f => { try { f(); } catch (_) {} }), 1500);   // le moteur s'est préparé : la liste des voix change
+  setTimeout(() => ecouteurs.forEach(f => { try { f(); } catch (_) {} }), 5000);
   window.HakimVoixTel = (quoi, id) => {
     const u = enAttente.get(id); if (!u) return;
     if (quoi === 'debut') { if (u.onstart) u.onstart(); return; }
     enAttente.delete(id); if (u.onend) u.onend();
   };
   return {
-    speak(u) { const id = `t${++n}`; enAttente.set(id, u); try { window.HakimApp.voixTelephone(id, String(u.text || ''), Number(u.rate) || 1, String(u.lang || 'fr-FR')); } catch (_) { window.HakimVoixTel('fin', id); } },
+    speak(u) {
+      const id = `t${++n}`; enAttente.set(id, u);
+      const debit = (Number(u.rate) || 1) * (typeof tempoVoix === 'function' ? tempoVoix() : 1);
+      try {
+        if (window.HakimApp.voixTelephoneVoix) {
+          // la voix choisie dans les réglages ; sinon (le lecteur prend la première voix française, souvent une femme) une voix d'homme
+          const choisie = typeof etat !== 'undefined' && (/^ar/i.test(String(u.lang || '')) ? etat.reglages.voixAr : etat.reglages.voixFr) ? u.voice : null;
+          const v = choisie && choisie.name ? choisie : (/^ar/i.test(String(u.lang || '')) ? null : homme());
+          window.HakimApp.voixTelephoneVoix(id, String(u.text || ''), debit, String(u.lang || 'fr-FR'), v ? String(v.name) : '', hauteur());
+        } else window.HakimApp.voixTelephone(id, String(u.text || ''), debit, String(u.lang || 'fr-FR'));
+      } catch (_) { window.HakimVoixTel('fin', id); }
+    },
     cancel() { const fins = [...enAttente.values()]; enAttente.clear(); try { window.HakimApp.voixTelephoneArreter(); } catch (_) {} fins.forEach(u => u.onend && u.onend()); },
-    getVoices() { return []; },
+    getVoices() { return voix(); },
     // (04/11, capture d'Ahmed : la page vide dans l'appli 1.55) la page écoute « voiceschanged » sur la voix du système : sans ces
     // méthodes, elle s'arrêtait net au chargement
-    addEventListener() {}, removeEventListener() {}, pause() {}, resume() {}, speaking: false, pending: false,
+    addEventListener(type, f) { if (type === 'voiceschanged' && typeof f === 'function') ecouteurs.push(f); }, removeEventListener() {},
+    pause() {}, resume() {}, speaking: false, pending: false,
   };
 })() : null;
 class EnonceTelephone { constructor(t) { this.text = t; } }
@@ -337,8 +365,9 @@ function analyserMeuble(d, sr) {
 // (13:30) un meuble qu'il choisit lui-même : [[meuble: nom]] dans sa réponse
 function meubleNomme(nom) { return meublesPrets.get(String(nom || '').trim()) || [...meublesPrets.values()].find(m => sansAccent(m.nom) === sansAccent(nom)) || null; }
 const lecteurSysteme = synth ? Voix.creerLecteur(synth, synthTelephone ? EnonceTelephone : window.SpeechSynthesisUtterance, voixPour, vitesseVoix) : null;
-// (04/11) la voix du téléphone, par défaut dans l'appli (réglage : etat.reglages.voixTelephone, à false pour revenir à Chatterbox)
-const voixDuTelephone = () => !!synthTelephone && etat.reglages.voixTelephone !== false;
+// (04/11, Ahmed : « je dois toujours pouvoir sélectionner dans les réglages entre la voix du Mac et la voix locale du smartphone avec
+// émotions ») réglage « Voix de Hakim » : téléphone (par défaut dans l'appli) ou neuronale · Chatterbox (au Mac)
+const voixDuTelephone = () => !!synthTelephone && etat.reglages.voix === 'telephone';
 
 // Voix neuronale (Chatterbox, sur le Mac, étape 5 bis) : chaque morceau d'une seule langue est
 // calculé par le cockpit (/api/voix/dire) puis joué ; on précharge les deux suivants. Le calcul
@@ -2908,7 +2937,11 @@ function surSouffle(o) {
   etat.dernierSouffle = s;
   if (niveau === 'sub') etat.conversation.brouillons = (etat.conversation.brouillons || 0) + 1;   // (16:00) combien pendant ce tour
   // (16:30, Ahmed via Hakim : « coupe le glisse-mot ») son subconscient ne parle plus : il règle seulement quand ton tour finit
-  if (niveau === 'piste') { recevoirBout(s, Number(o.n) || 0, o.tour); return; }   // (04/11) un bout de sa réponse, mot par mot
+  // (04/11) un bout de sa réponse, mot par mot ; (04/11 : « il peut sauter des pensées ») un bout qu'il choisit de ne pas dire s'écrit seul
+  if (niveau === 'piste') {
+    if (!s.pret) { montrerPensee('🧠 il pense, sans le dire', texte, true); return; }
+    recevoirBout(s, Number(o.n) || 0, o.tour); return;
+  }
   if (niveau !== 'cerveau') return;
   // (16:12, Ahmed : « quand la pensée du cerveau est envoyée à l'écriture, elle doit en parallèle être envoyée à Chatterbox ») ;
   // (16:35-16:40, Ahmed : « au moment où l'input arrive et est processé pour être écrit, ça doit coïncider avec le moment où il parle ;
