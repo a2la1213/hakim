@@ -3441,24 +3441,30 @@ const RIBOSOME_VITESSES = { rapide: 2000, normale: 3000, posee: 6000 };
 // n'ajoutent plus que 2 points : sa saturation (en deçà, ses lecteurs n'ont pas le temps et le paquet passe tel quel, sans tri). Sa vitesse
 // max est ce coude, remesuré toutes les 10 min sur ses 500 derniers paquets ; aucune de ses vitesses ne va plus vite
 const RIBOSOME_VITESSE_MAX_DEFAUT = 2000;
-function vitesseMaxMesuree(lignes) {
-  const paquets = [];
+// (04/11, 20:55, Ahmed : « tu peux encore augmenter, ou on est au max ? ») mesuré sur les 34 premiers paquets de ses deux Super Hakim : lus en
+// 1,2 s : 82 % ; 1,6 s : 94 % ; 2 s : 100 % (avant : 87 % en 2 s) ; sa vitesse max se mesure sur ses lecteurs d'AUJOURD'HUI (30 paquets
+// suffisent ; sinon, tout le journal), et le coude doit garder au moins 85 % de ce qu'ils peuvent lire
+function vitesseMaxMesuree(lignes, modeles = null) {
+  const paquets = [], memes = [];
   for (const l of lignes) {
     let p = null; try { p = JSON.parse(l); } catch (_) { continue; }
     if (!p || p.ribosome == null || !Array.isArray(p.lecteurs)) continue;
     const lus = p.lecteurs.filter(x => x && x.garde != null).map(x => Number(x.ms)).filter(Number.isFinite);
-    paquets.push({ lu: lus.length ? Math.min(...lus) : Infinity, attente: Number(p.vitesse_ms) || 3000 });   // (sans vitesse notée : 3 s, avant 16:50)
+    const x = { lu: lus.length ? Math.min(...lus) : Infinity, attente: Number(p.vitesse_ms) || 3000 };   // (sans vitesse notée : 3 s, avant 16:50)
+    paquets.push(x);
+    if (Array.isArray(modeles) && p.lecteurs.map(l => l && l.modele).join(',') === modeles.join(',')) memes.push(x);
   }
-  const derniers = paquets.slice(-500);
-  if (derniers.length < 100) return RIBOSOME_VITESSE_MAX_DEFAUT;
-  // la part des paquets lus en x ms, parmi ceux qui ont attendu au moins x ms (50 au moins)
-  const part = (x) => { const b = derniers.filter(p => p.attente >= x); return b.length >= 50 ? b.filter(p => p.lu <= x).length / b.length : null; };
+  const derniers = (memes.length >= 30 ? memes : paquets).slice(-500);
+  if (derniers.length < (memes.length >= 30 ? 30 : 100)) return RIBOSOME_VITESSE_MAX_DEFAUT;
+  // la part des paquets lus en x ms, parmi ceux qui ont attendu au moins x ms (la moitié au moins, 25 au plus exigés)
+  const assez = Math.min(50, Math.max(15, Math.floor(derniers.length / 2)));
+  const part = (x) => { const b = derniers.filter(p => p.attente >= x); return b.length >= assez ? b.filter(p => p.lu <= x).length / b.length : null; };
   let plafond = 0;
   for (let x = 1000; x <= 3000; x += 100) plafond = Math.max(plafond, part(x) || 0);
   if (plafond === 0) return 3000;                                     // rien n'est lu : il attend le plus longtemps permis
   for (let x = 1000; x <= 2800; x += 100) {
     const a = part(x), b = part(x + 200);
-    if (a != null && b != null && a >= plafond / 2 && b - a < 0.03) return x;
+    if (a != null && b != null && a >= plafond * 0.85 && b - a < 0.03) return x;
   }
   return RIBOSOME_VITESSE_MAX_DEFAUT;
 }
@@ -3466,7 +3472,7 @@ const vitesseMaxLue = { t: 0, ms: RIBOSOME_VITESSE_MAX_DEFAUT };
 function vitesseMax() {
   if (Date.now() - vitesseMaxLue.t > 10 * 60e3) {
     vitesseMaxLue.t = Date.now();
-    try { vitesseMaxLue.ms = vitesseMaxMesuree(fs.readFileSync(JOURNAL_PISTES, 'utf8').split('\n')); } catch (_) {}
+    try { vitesseMaxLue.ms = vitesseMaxMesuree(fs.readFileSync(JOURNAL_PISTES, 'utf8').split('\n'), RIBOSOME_LECTEURS.map(([m]) => m)); } catch (_) {}
   }
   return vitesseMaxLue.ms;
 }

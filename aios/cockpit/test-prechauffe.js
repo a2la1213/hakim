@@ -168,7 +168,7 @@ test('sa vitesse max : mesurée sur ses paquets, là où attendre 200 ms de plus
   assert.strictEqual(mesurer(['pas du json', '{"n":3,"modele":"haiku"}', ...lignes(0)]), 2000, 'ses pistes et une ligne abîmée : ignorées');
   assert.strictEqual(mesurer(Array.from({ length: 200 }, () => paquet(100))), 1000, 'jamais plus vite que 1 s');
   assert.strictEqual(mesurer(Array.from({ length: 200 }, () => paquet(null))), 3000, 'jamais plus lent que 3 s');
-  assert.match(SRC, /vitesseMaxLue\.ms = vitesseMaxMesuree\(fs\.readFileSync\(JOURNAL_PISTES, 'utf8'\)\.split\('\\n'\)\)/, 'remesurée sur son journal');
+  assert.match(SRC, /vitesseMaxLue\.ms = vitesseMaxMesuree\(fs\.readFileSync\(JOURNAL_PISTES, 'utf8'\)\.split\('\\n'\), RIBOSOME_LECTEURS\.map\(\(\[m\]\) => m\)\)/, 'remesurée sur son journal, avec ses lecteurs d’aujourd’hui');
   assert.match(SRC, /if \(Date\.now\(\) - vitesseMaxLue\.t > 10 \* 60e3\)/, 'toutes les 10 min');
 });
 test('sa vitesse max, pour le paquet suivant : au signal d’une pensée parasite et quand papa reprend la parole ; c’est son plafond', () => {
