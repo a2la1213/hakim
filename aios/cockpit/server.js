@@ -3448,6 +3448,8 @@ const RIBOSOME_ACCELERATION = 2;
 // « éclair » (0,3 s, ribosome-reglage.json) ; ses lecteurs ne répondent jamais si vite (0,8 s au mieux, mesuré) : en dessous de
 // RIBOSOME_LECTURE_MIN, ils ne sont même plus appelés (le forfait épargné) et ses pensées passent telles quelles, tout de suite
 const RIBOSOME_LECTURE_MIN = 600;
+// (04/11, 22:10, Ahmed : « essaie de réduire le choix à 1 s ») en « éclair », son épissure alternative a 1 s pour choisir
+const RIBOSOME_CHOIX_MS = 1000;
 // (04/11, 20:55, Ahmed : « tu peux encore augmenter, ou on est au max ? ») mesuré sur les 34 premiers paquets de ses deux Super Hakim : lus en
 // 1,2 s : 82 % ; 1,6 s : 94 % ; 2 s : 100 % (avant : 87 % en 2 s) ; sa vitesse max se mesure sur ses lecteurs d'AUJOURD'HUI (30 paquets
 // suffisent ; sinon, tout le journal), et le coude doit garder au moins 85 % de ce qu'ils peuvent lire
@@ -3621,7 +3623,7 @@ async function lirePaquet(tour, r, i, paquet) {
     });
   };
   // (21:52) éclair : fixe ; (21:57, papa : « je crois qu'il faut monter à 1,6 seconde, parce que là il n'arrive même plus à parler ») vive : 1,6 s fixe
-  const delai = eclair ? RIBOSOME_VITESSES.vive : reglage.vitesse === 'vive' ? RIBOSOME_VITESSES.vive : vitesseSubconsciente(reglage.delai, r);
+  const delai = eclair ? RIBOSOME_CHOIX_MS : reglage.vitesse === 'vive' ? RIBOSOME_VITESSES.vive : vitesseSubconsciente(reglage.delai, r);
   const froides = lecteursSansVoixChaude(RIBOSOME_LECTEURS.map(([mod]) => mod));
   const direct = delai < (typeof RIBOSOME_LECTURE_MIN !== 'undefined' ? RIBOSOME_LECTURE_MIN : 0);   // (21:52) plus vite que ses lecteurs : sans eux
   const promesses = direct ? [] : RIBOSOME_LECTEURS.map(([mod, nom]) => lire([mod, nom, delai]));   // (15:55) l'attente : sa vitesse ; (16:50) réglée par son subconscient
