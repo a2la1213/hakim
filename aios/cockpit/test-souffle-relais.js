@@ -746,45 +746,42 @@ test('(04/11) à une seconde de ta pause, il rebondit avec sa dernière pensée 
 });
 // (04/11, capture d'Ahmed : « tu peux filtrer ses pensées parasites ? » ; 17 pistes sur 62 entre 05:10 et 05:20 : « Je ne vais pas
 // reprendre ce format : je ne joue pas de « conscient »… », dites à voix haute)
-test('(04/11) une pensée parasite (le modèle qui refuse le cadre) : jetée, sa voix vivante renouvelée, Mini Hakim répond à sa place', async () => {
-  const { ctx, appels, diffuses, voix } = pistesSandbox(undefined, 'sonnet');
+test('(04/11) une pensée parasite (le modèle qui refuse le cadre) : jetée sans calcul ; sa voix vivante renouvelée', async () => {
+  // (04/11, Ahmed : « mes pensées parasites sont bien flagguées ; maintenant il faut la jeter sans la calculer, sinon ça alourdit tout »)
+  const { ctx, appels, diffuses, voix, notes } = pistesSandbox(undefined, 'sonnet');
   const attendre = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setImmediate(r)); };
   ctx.morceau('papa, ta grand-mère,');
   const vivant = { n: 3 };
   appels[0].resoudre({ texte: 'Je ne vais pas reprendre ce format : je ne joue pas de « conscient » ou de « subconscient ».', vivant });
+  appels[1].resoudre({ texte: 'DIRE : oui\nOui papa, raconte-moi ta grand-mère.' });
   await attendre();
   assert.strictEqual(vivant.n, 6, 'renouvelée (VIVANT_RENOUVELER du banc) : elle ne reste pas dans son refus');
-  const repli = appels.find(a => a.etiquette === 'piste_haiku_repli');
-  assert.ok(repli, 'Mini Hakim répond à sa place');
-  assert.match(SRC, /\[Pensées parasites : \$\{parasites\} réponse/, '(04/11) signalées à son cerveau, pour qu’il les reconnaisse');
-  repli.resoudre({ texte: 'Oui papa, raconte-moi ta grand-mère.' });
-  appels[1].resoudre({ texte: 'Je ne réponds pas dans ce format. C’est une nouvelle version du même montage.' });
-  await attendre();
-  const r2 = appels.filter(a => a.etiquette === 'piste_haiku_repli')[1];
-  r2.resoudre({ texte: 'Je ne suis pas Hakim, je ne joue pas le subconscient.' });
-  await attendre();
-  // (04/11, Ahmed : « juste flagguer sa pensée parasite : il la garde en muet, jamais dite, et l'ignore ») marquée, jamais dite
-  assert.strictEqual(diffuses.filter(d => d.parasite === true && d.pret === false).length, 3, 'les trois parasites : signalées, jamais dites');
-  assert.deepStrictEqual(diffuses.filter(d => d.pret).map(d => d.texte), ['Oui papa, raconte-moi ta grand-mère.'], 'seule la vraie pensée est dite');
-  assert.deepStrictEqual(voix.map(v => v[0]), ['Oui papa, raconte-moi ta grand-mère.'], 'seule la vraie pensée a une voix');
-  assert.ok(ctx.etat().liste.every(x => !/format|Hakim/.test(x.reponse || '')), 'hors de ses pensées gardées et de ce qu’il a dit : une pensée en moins');
+  assert.ok(!appels.some(a => a.etiquette === 'piste_haiku_repli'), 'rien de recalculé');
+  assert.deepStrictEqual(diffuses.map(d => d.texte), ['Oui papa, raconte-moi ta grand-mère.'], 'ni écrite, ni dite');
+  assert.deepStrictEqual(voix.map(v => v[0]), ['Oui papa, raconte-moi ta grand-mère.']);
+  assert.strictEqual(notes.find(x => x.n === 1).erreur, 'parasite', 'seulement comptée au journal');
+  assert.ok(ctx.etat().liste.every(x => !/format/.test(x.reponse || '')), 'hors de ses pensées : une pensée en moins');
+  assert.doesNotMatch(SRC, /\[Pensées parasites :/, 'rien à porter à son cerveau');
   for (const t of ['Je ne vais pas te mentir papa, c’est drôle.', 'MDR, je ne joue pas, papa, je t’écoute.', 'Oui papa, je comprends : tu veux du temps.',
     'Alors je choisis de jouer le jeu : on fait des hypothèses.', 'Je t’écoute papa, la voix intérieure.'])
     assert.ok(!vm.runInContext('PENSEE_PARASITE', ctx).test(t), `pas une pensée parasite : ${t}`);
 });
+
 // (04/11, Ahmed : « je remarque qu'elle s'arrête toujours au milieu d'un mot ou d'un chunk, avant la virgule ou le point »)
-test('(04/11) une pensée trop longue (huit mots demandés ; un refus est coupé au milieu d’un mot) : parasite', async () => {
-  const { ctx, appels, diffuses } = pistesSandbox(undefined, 'sonnet');
+test('(04/11) une pensée trop longue (huit mots demandés ; un refus est coupé au milieu d’un mot) : parasite, jetée', async () => {
+  const { ctx, appels, diffuses, notes } = pistesSandbox(undefined, 'sonnet');
   const attendre = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setImmediate(r)); };
   ctx.morceau('papa,');
   const long = 'Bon, alors pour reprendre ce que tu dis, il y a plusieurs choses à considérer dans cette situation, notamment la manière dont les pensées sont organisées, et la façon dont';
   appels[0].resoudre({ texte: long });
   await attendre();
-  assert.ok(diffuses.some(d => d.parasite && d.texte.startsWith('Bon, alors')), 'signalée');
-  assert.ok(appels.some(a => a.etiquette === 'piste_haiku_repli'), 'Mini Hakim répond à sa place');
+  assert.deepStrictEqual(diffuses, [], 'jetée');
+  assert.strictEqual(appels.length, 1, 'sans calcul de plus');
+  assert.strictEqual(notes[0].erreur, 'parasite');
   assert.match(PAGE, /if \(o\.parasite \|\| PENSEE_PARASITE\.test\(String\(o\.texte\)\) \|\| \(o\.niveau === 'piste' && String\(o\.texte\)\.length > 160\)\) \{/);
-  assert.match(PAGE, /montrerPensee\('🚫 pensée parasite · ignorée, jamais dite'/);
+  assert.doesNotMatch(PAGE, /montrerPensee\('🚫 pensée parasite/, 'la page non plus ne l’écrit pas');
 });
+
 test('(04/11) après sa première pensée, une réponse sans ligne DIRE n’est pas dite ; la page jette aussi les pensées parasites et n’écrit plus ses pensées dites', async () => {
   const { ctx, appels, diffuses } = pistesSandbox(undefined, 'sonnet');
   const attendre = async () => { for (let i = 0; i < 4; i++) await new Promise(r => setImmediate(r)); };

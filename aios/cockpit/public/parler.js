@@ -2980,11 +2980,10 @@ const PENSEE_PARASITE = /je ne (?:vais|peux) pas (?:non plus )?(?:reprendre|suiv
 function surSouffle(o) {
   if (!etat.conversation || !o || !o.texte) return;
   if (o.niveau === 'papa') { montrerMorceauPapa(o); return; }        // (04/11) tes mots, morceau par morceau
-  // (04/11, Ahmed : « juste flagguer sa pensée parasite : il la garde toujours en muet, sans la dire, et l'ignore ») marquée, jamais dite,
-  // ni sa dernière pensée, ni une voix calculée d'avance ; trop longue (coupée au milieu d'un mot) compte aussi
+  // (04/11, Ahmed : « mes pensées parasites sont bien flagguées ; maintenant il faut la jeter sans la calculer, sinon ça alourdit tout »)
+  // jetée : ni écrite, ni dite, ni sa dernière pensée, ni une voix calculée d'avance ; trop longue (coupée au milieu d'un mot) aussi
   if (o.parasite || PENSEE_PARASITE.test(String(o.texte)) || (o.niveau === 'piste' && String(o.texte).length > 160)) {
     journalVoix('pensee_parasite', { niveau: o.niveau || 'sub' });
-    montrerPensee('🚫 pensée parasite · ignorée, jamais dite', String(o.texte).slice(0, 200), true);
     return;
   }
   const texte = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 400);   // (16:35) jamais ses balises
