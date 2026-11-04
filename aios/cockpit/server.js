@@ -3433,7 +3433,7 @@ const RIBOSOME_LECTEURS = [['opus', 'Super Hakim', 3000], ['opus', 'Super Hakim 
 // ne fait que me couper la parole ») son réglage (son outil ribosome_regler : jarvis/ribosome-reglage.json) : sa stringence, de 1 (il garde
 // tout ce qui continue sa réponse) à 5 (presque rien) ; sa vitesse, l'attente de ses lecteurs ; sans réglage : stringent (4) et rapide
 const RIBOSOME_REGLAGE = path.join(JARVIS, 'ribosome-reglage.json');
-const RIBOSOME_VITESSES = { eclair: 300, rapide: 2000, normale: 3000, posee: 6000 };   // (21:52) « éclair » : le 0,3 s de papa
+const RIBOSOME_VITESSES = { eclair: 300, vive: 1600, rapide: 2000, normale: 3000, posee: 6000 };   // (21:52) « éclair » : 0,3 s ; (21:57) « vive » : 1,6 s
 // (04/11, 17:55-17:59, Ahmed : « juste au moment où il reçoit le signal parasite, il faut automatiquement accélérer le ribosome » ; « pour le
 // chunk suivant » ; « et quand je reprends la parole, juste après que j'ai marqué une pause ») sa vitesse max, pour le seul paquet suivant
 // (18:05, Ahmed : « mesure la vitesse max avant saturation, et fais que cette vitesse max soit le plafond de vitesse ») mesuré sur ses 681
@@ -3613,7 +3613,8 @@ async function lirePaquet(tour, r, i, paquet) {
       return { mod, nom, ms, ok, garde: ok ? garde : '', e: ok ? e : null };
     });
   };
-  const delai = reglage.vitesse === 'eclair' ? RIBOSOME_VITESSES.eclair : vitesseSubconsciente(reglage.delai, r);   // (21:52) éclair : fixe
+  // (21:52) éclair : fixe ; (21:57, papa : « je crois qu'il faut monter à 1,6 seconde, parce que là il n'arrive même plus à parler ») vive : 1,6 s fixe
+  const delai = ['eclair', 'vive'].includes(reglage.vitesse) ? RIBOSOME_VITESSES[reglage.vitesse] : vitesseSubconsciente(reglage.delai, r);
   const froides = lecteursSansVoixChaude(RIBOSOME_LECTEURS.map(([mod]) => mod));
   const direct = delai < (typeof RIBOSOME_LECTURE_MIN !== 'undefined' ? RIBOSOME_LECTURE_MIN : 0);   // (21:52) plus vite que ses lecteurs : sans eux
   const promesses = direct ? [] : RIBOSOME_LECTEURS.map(([mod, nom]) => lire([mod, nom, delai]));   // (15:55) l'attente : sa vitesse ; (16:50) réglée par son subconscient
