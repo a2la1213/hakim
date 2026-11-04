@@ -1378,3 +1378,33 @@ test('(04/11) « Pas une vraie parasite » : sur une pensée filtrée, avec ta p
   assert.match(SRC, /const refus = exigerPresence\(req, distantReq, q, `immunite:pas_parasite:\$\{empreinte\}`\);/);
   assert.match(SRC, /args = \['pas-parasite', empreinte\];/);
 });
+// (04/11, Ahmed : « l'élagage doit être un process continu, qui se fait à chaque sommeil, veille ou sieste »)
+test('(04/11) à chaque passage (nuit, sieste, éveil), ses synapses se consolident et son médecin fait sa veille', () => {
+  const i = SRC.indexOf('const etatDeSommeil = '), k = SRC.indexOf("setInterval(() => { try { suivreSommeil(); } catch (_) {} }, 60000).unref();");
+  const faits = [];
+  let dort = false, sieste = null;
+  const ctx = { Date, JSON, Infinity, console: { log() {}, error() {} }, path: require('node:path'), JARVIS: '/x', fs: { appendFile: (f, d) => faits.push(['note', JSON.parse(d).raison]) },
+    siesteEnCours: () => sieste, hakimDort: () => dort, suiviParcours: { tic: () => faits.push(['tic']) },
+    synapses: { consolider: (r) => (faits.push(['consolider', r]), { elaguees: [], repoussees: [] }), sauver: () => {} }, veilleImmunitaire: () => faits.push(['veille']) };
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(i, k) + '\nthis.suivre = suivreSommeil;', ctx);
+  ctx.suivre();
+  assert.deepStrictEqual(faits, [], 'le premier regard : rien à consolider');
+  dort = true; ctx.suivre();
+  assert.deepStrictEqual(faits, [['tic'], ['consolider', 'eveil→sommeil'], ['note', 'eveil→sommeil'], ['veille']]);
+  ctx.suivre();
+  assert.strictEqual(faits.length, 4, 'toujours endormi : rien de plus');
+  dort = false; sieste = { debut: 1, fin: 2 }; ctx.suivre();
+  assert.deepStrictEqual(faits.slice(4).map(f => f[1] || f[0]), ['tic', 'sommeil→sieste', 'sommeil→sieste', 'veille']);
+  sieste = null; ctx.suivre();
+  assert.strictEqual(faits[faits.length - 3][1], 'sieste→eveil');
+});
+// (04/11, Ahmed : « une section Synapses dans le cockpit, qui me montre toutes ces synapses, les connexions, l'élagage »)
+test('(04/11) la page Synapses : servie, dans le menu, avec ses parcours et ses consolidations', () => {
+  assert.match(SRC, /'\/synapses': 'synapses\.html'/);
+  assert.match(SRC, /const parcours = u\.get\('parcours'\) \? lignesJson\(JOURNAL_PARCOURS, 400\) : undefined;/);
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'badges.js'), 'utf8'), /\['synapses', '\/synapses', 'Synapses'\]/);
+  const P = fs.readFileSync(path.join(__dirname, 'public', 'synapses.html'), 'utf8');
+  for (const id of ['chiffres', 'reseau', 'declencheurs', 'poids', 'histoire', 'pensees']) assert.match(P, new RegExp(`id="${id}"`), id);
+  assert.match(P, /fetch\('\/api\/jarvis\/synapses\?parcours=1'/);
+});

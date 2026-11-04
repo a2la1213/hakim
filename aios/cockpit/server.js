@@ -3874,7 +3874,7 @@ const IMMUNITE_RONDE_MS = 2 * 60 * 1000;
 // (04/11) son médecin (Fable 5.1) apprend les prémisses de ses pensées parasites, à partir de celles marquées au journal : essayé
 // toutes les 30 min ; c'est lui qui décide s'il y a de quoi (trois nouvelles, 6 h d'écart) ; ses prémisses sont relues ensuite
 let apprentissageParasites = null;
-setInterval(() => {
+function veilleImmunitaire() {
   if (apprentissageParasites) return;
   apprentissageParasites = execFile(path.join(ANAMNESE, '.venv', 'bin', 'python'), [path.join(ANAMNESE, 'jarvis', 'medecin.py'), 'parasites'],
     { cwd: ANAMNESE, timeout: 10 * 60e3, maxBuffer: 1 << 20 }, (e, so) => {
@@ -3882,7 +3882,8 @@ setInterval(() => {
       const r = String(so || '').trim().split('\n').pop();
       if (r && r !== 'null') console.log('Système immunitaire, pensées parasites : apprentissage', r.slice(0, 300));
     });
-}, 30 * 60e3)?.unref?.();
+}
+setInterval(veilleImmunitaire, 30 * 60e3)?.unref?.();
 let rondeImmuniteEnCours = false;
 let echecsRonde = 0, alerteRondeMs = 0;                    // (29/10, la garde croisée) une ronde qui ne passe plus se dit
 function rondeImmunite() {
@@ -6258,6 +6259,27 @@ const suiviParcours = Parcours.creerSuivi({
   } });
 setInterval(() => { try { suiviParcours.tic(Date.now(), pistes.tour); synapses.sauver(); } catch (_) {} }, 2000).unref();
 setInterval(() => { try { synapses.oublier(); } catch (_) {} }, 3600000).unref();
+// (04/11, Ahmed : « l'élagage doit être un process continu, qui se fait à chaque sommeil, veille ou sieste ») en plus de l'élagage
+// continu (à chaque réaction de papa), à chaque passage de son état (la nuit, une sieste, l'éveil) : ses synapses se consolident (ses
+// pensées encore ouvertes jugées, l'oubli lent, le bilan noté dans jarvis/consolidations.jsonl) et son médecin fait sa veille
+const etatDeSommeil = (t = Date.now()) => (siesteEnCours() ? 'sieste' : hakimDort(t) ? 'sommeil' : 'eveil');
+let etatSynapses = null;
+function consoliderSynapses(raison) {
+  try {
+    suiviParcours.tic(Infinity);
+    const bilan = synapses.consolider(raison);
+    synapses.sauver(true);
+    fs.appendFile(path.join(JARVIS, 'consolidations.jsonl'), JSON.stringify({ t: Date.now(), raison, ...bilan }) + '\n', { mode: 0o600 }, () => {});
+    console.log(`Ses synapses, consolidées (${raison}) : ${bilan.elaguees.length} élaguée(s), ${bilan.repoussees.length} repoussée(s)`);
+  } catch (e) { console.error('consolidation de ses synapses impossible :', e.message); }
+  veilleImmunitaire();
+}
+function suivreSommeil(t = Date.now()) {
+  const e = etatDeSommeil(t);
+  if (etatSynapses && e !== etatSynapses) consoliderSynapses(`${etatSynapses}→${e}`);
+  etatSynapses = e;
+}
+setInterval(() => { try { suivreSommeil(); } catch (_) {} }, 60000).unref();
 // les délais et le calage, pour lui (outil fil_delais) : écrits toutes les 30 s
 setInterval(() => {
   try { ecrireAtomique(path.join(JARVIS, 'delais-fil.json'), j({ ts: Date.now(), delais: fluxDelais(), calage: CALAGE })); } catch (_) {}
@@ -8642,7 +8664,7 @@ const VERROU = new Verrou(process.env.JARVIS_VERROU || path.join(JARVIS, 'verrou
 const COOKIE_VERROU = 'verrou';
 const PAGES = { '/': 'index.html', '/brain': 'brain.html', '/dreams': 'dreams.html', '/memory': 'memory.html', '/chat': 'chat.html',
   '/parler': 'parler.html', '/verrou': 'verrou.html', '/duel': 'duel.html', '/interieur': 'interieur.html',
-  '/code': 'code.html', '/immunite': 'immunite.html', '/cafe': 'cafe.html', '/sens': 'sens.html' };   // (29/10) la salle de café des agents      // (29/10) son système immunitaire, pour Ahmed                                     // (28/10) le code de Hakim : une page fermée
+  '/code': 'code.html', '/immunite': 'immunite.html', '/cafe': 'cafe.html', '/sens': 'sens.html', '/synapses': 'synapses.html' };   // (04/11) ses synapses   // (29/10) la salle de café des agents      // (29/10) son système immunitaire, pour Ahmed                                     // (28/10) le code de Hakim : une page fermée
 const LIBRES_VERROUILLE = new Set(['/verrou.js', '/theme.css',        // ce que la page du verrou charge
   '/sw.js', '/manifest.webmanifest', '/icone-192.png', '/icone-512.png']);   // l'appli et ses notifications (sans secret)
 const cookieSession = (s) => `${COOKIE_VERROU}=${s}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(DUREE_SESSION / 1000)}`;
@@ -10749,9 +10771,13 @@ async function traiter(req, res) {
   }
   if (p === '/api/jarvis/synapses' && req.method === 'GET') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
-    const f = new URL(req.url, 'http://x').searchParams.get('famille'), tout = synapses.tout();
+    const u = new URL(req.url, 'http://x').searchParams, f = u.get('famille'), tout = synapses.tout();
+    // (04/11, Ahmed : « une section Synapses qui me montre toutes ces synapses, les connexions, l'élagage ») ses parcours (les connexions
+    // entre ses chemins) et ses consolidations, pour la page Synapses
+    const parcours = u.get('parcours') ? lignesJson(JOURNAL_PARCOURS, 400) : undefined;
+    const consolidations = u.get('parcours') ? lignesJson(path.join(JARVIS, 'consolidations.jsonl'), 20) : undefined;
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    return res.end(j({ familles: f ? { [f]: tout[f] || {} } : tout, historique: f ? [] : synapses.historique().slice(-50) }));
+    return res.end(j({ familles: f ? { [f]: tout[f] || {} } : tout, historique: f ? [] : synapses.historique().slice(-100), parcours, consolidations }));
   }
   if (p === '/api/heure' && req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j({ t: Date.now() })); }
   if (p === '/api/voix/journal' && req.method === 'POST') {

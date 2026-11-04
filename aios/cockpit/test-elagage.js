@@ -143,3 +143,18 @@ test('(relecture) une entrée abîmée du fichier est remise d’aplomb au charg
   s.mesurer('voie', 'x', 0);
   assert.ok(Number.isFinite(s.poids('voie', 'x')));
 });
+
+// (04/11, Ahmed : « l'élagage doit être un process continu, qui se fait à chaque sommeil, veille ou sieste »)
+test('sa consolidation : l’oubli, le bilan depuis la précédente, notée dans son historique', () => {
+  const { s, avancer } = synapses();
+  s.mesurer('meuble', 'bon', 1);
+  for (let i = 0; i < 20; i++) s.mesurer('meuble', 'hum', 0);
+  avancer(3 * 86400000);
+  const avant = s.poids('meuble', 'bon');
+  const b = s.consolider('eveil→sommeil');
+  assert.deepStrictEqual(b.elaguees, ['meuble|hum']);
+  assert.deepStrictEqual(b.repoussees, []);
+  assert.ok(s.poids('meuble', 'bon') < avant, 'l’oubli lent est passé');
+  assert.strictEqual(s.historique().pop().evenement, 'consolidation');
+  assert.deepStrictEqual(s.consolider('sommeil→eveil').elaguees, [], 'la suivante ne recompte que le nouveau');
+});

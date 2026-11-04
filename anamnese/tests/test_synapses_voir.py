@@ -22,7 +22,10 @@ def test_il_voit_ses_synapses_et_ses_parcours(tmp_path, monkeypatch):
         "historique": [{"t": 1_800_000_000_000, "famille": "meuble", "id": "hum", "evenement": "elaguee", "poids": 0.18}]}))
     (j / "parcours.jsonl").write_text(json.dumps({"extrait": "Ta mère va bien ?", "voix": "dite", "chemins": {"piste": "sonnet|courte", "meuble": "hum"},
                                                    "reaction": {"coupee": True}, "score": 0.1}) + "\n")
+    (j / "consolidations.jsonl").write_text(json.dumps({"t": 1_800_000_000_000, "raison": "eveil→sommeil", "elaguees": ["meuble|hum"],
+                                                        "repoussees": [], "vivantes": 2, "endormies": 1}) + "\n")
     r = mcp_server.synapses_voir()
+    assert "Ta dernière consolidation (l'éveil → le sommeil, le " in r and ": 1 élaguée(s), 0 repoussée(s), 2 vivante(s), 1 endormie(s)." in r
     assert "tes meubles : forts « voyons_voir » 0,80 ; élagués « hum » (22 mesures, élaguée le " in r
     assert ": trop de coupures, de « non » ou de parasites)" in r
     assert "tes façons de parler : forts « non|suite » 0,60" in r

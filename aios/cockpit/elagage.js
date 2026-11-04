@@ -17,7 +17,7 @@ function creer({ fichier, maintenant = Date.now, hasard = Math.random, fsx = fs 
   let etat = { familles: {}, historique: [] };
   try {
     const d = JSON.parse(fsx.readFileSync(fichier, 'utf8'));
-    if (d && typeof d.familles === 'object' && d.familles) etat = { familles: d.familles, historique: Array.isArray(d.historique) ? d.historique : [] };
+    if (d && typeof d.familles === 'object' && d.familles) etat = { familles: d.familles, historique: Array.isArray(d.historique) ? d.historique : [], consolidee: Number(d.consolidee) || 0 };
   } catch (_) {}
   // (relecture) une entrée abîmée (poids absent ou hors bornes) est remise d'aplomb : jamais de NaN qui se propage
   for (const fam of Object.values(etat.familles)) for (const s of Object.values(fam || {})) {
@@ -48,6 +48,16 @@ function creer({ fichier, maintenant = Date.now, hasard = Math.random, fsx = fs 
     const maintenantElaguee = elaguee(s);
     if (maintenantElaguee !== !!s.elaguee) { s.elaguee = maintenantElaguee; noter(f, id, maintenantElaguee ? 'elaguee' : 'repousse', s.poids); }
   };
+  const oublier = () => {
+    const t = maintenant();
+    for (const [f, fam] of Object.entries(etat.familles)) for (const [id, s] of Object.entries(fam)) {
+      const jours = (t - Math.max(Number(s.vu) || 0, Number(s.oubli) || 0)) / JOUR;
+      if (jours <= 0) continue;
+      s.poids = s.poids + (NEUTRE - s.poids) * (1 - Math.pow(1 - OUBLI_JOUR, jours));
+      s.oubli = t; sale = true;
+      suivre(f, id, s);
+    }
+  };
   return {
     poids(f, id) { const s = synapse(f, id); return s ? s.poids : 1; },
     // (relecture) un essai témoin, 1 fois sur 10 : un chemin qui agit (un déclencheur qui prévient) n'agit pas, pour être mesuré sans biais
@@ -66,15 +76,18 @@ function creer({ fichier, maintenant = Date.now, hasard = Math.random, fsx = fs 
       sale = true;
       suivre(f, id, s);
     },
-    oublier() {
-      const t = maintenant();
-      for (const [f, fam] of Object.entries(etat.familles)) for (const [id, s] of Object.entries(fam)) {
-        const jours = (t - Math.max(Number(s.vu) || 0, Number(s.oubli) || 0)) / JOUR;
-        if (jours <= 0) continue;
-        s.poids = s.poids + (NEUTRE - s.poids) * (1 - Math.pow(1 - OUBLI_JOUR, jours));
-        s.oubli = t; sale = true;
-        suivre(f, id, s);
-      }
+    oublier,
+    // (04/11, Ahmed : « l'élagage doit être un process continu, qui se fait à chaque sommeil, veille ou sieste ») sa consolidation, à chaque
+    // passage de son état : l'oubli lent, puis le bilan depuis la précédente (ce qui a été élagué, ce qui a repoussé), noté
+    consolider(raison = '') {
+      oublier();
+      const depuis = Number(etat.consolidee) || 0, ev = etat.historique.filter(h => h.t > depuis);
+      const ids = (e) => ev.filter(h => h.evenement === e).map(h => `${h.famille}|${h.id}`);
+      const toutes = Object.values(etat.familles).flatMap(fam => Object.values(fam));
+      const bilan = { elaguees: ids('elaguee'), repoussees: ids('repousse'), vivantes: toutes.filter(x => !x.elaguee).length, endormies: toutes.filter(x => x.elaguee).length };
+      etat.consolidee = maintenant();
+      noter('sommeil', String(raison).slice(0, 40), 'consolidation', 0);
+      return bilan;
     },
     epingler(f, id, oui) { const s = obtenir(f, id); s.epingle = !!oui; noter(f, id, oui ? 'epinglee' : 'desepinglee', s.poids); suivre(f, id, s); },
     retablir(f, id) { const s = obtenir(f, id); Object.assign(s, { poids: NEUTRE, n: 0, elaguee: false, vu: maintenant(), oubli: maintenant() }); noter(f, id, 'retablie', s.poids); },

@@ -276,7 +276,8 @@
           + `<button data-synapse="${esc(k)}|${esc(id)}" data-action="retablir">Rétablir</button></div></div>`).join('');
       }).join('');
       // (relecture) quand et comment chaque chemin a changé : élaguée, repoussée, épinglée, rétablie (les 20 derniers)
-      const NOMS_EV = { elaguee: 'élaguée', repousse: 'repoussée', epinglee: 'épinglée', desepinglee: 'désépinglée', retablie: 'rétablie' };
+      const NOMS_EV = { elaguee: 'élaguée', repousse: 'repoussée', epinglee: 'épinglée', desepinglee: 'désépinglée', retablie: 'rétablie',
+        consolidation: 'consolidées (sommeil, sieste ou éveil)' };
       const hist = (d.historique || []).slice(-20).reverse().map((h) => `<div class="ligne"><div class="tete"><span>${esc(NOMS_EV[h.evenement] || h.evenement)}</span>`
         + `<span>${esc(FAMILLES[h.famille] || h.famille)} · ${esc(h.id)}</span><span class="quand">${quand(h.t / 1000)} · poids ${esc(String(h.poids).replace('.', ','))}</span></div></div>`).join('');
       $('synapses').innerHTML = (blocs || '<div class="vide">Pas encore de mesure : ses synapses apprennent de tes réactions (une coupure, un « non, pas ça », un ❤️).</div>')

@@ -655,9 +655,21 @@ def synapses_voir() -> str:
     p_lignes = [f"- « {str(o.get('extrait', ''))[:80]} » ({o.get('voix')}) : " + ", ".join(f"{k} {v}" for k, v in (o.get("chemins") or {}).items() if v)
                 + f" → {', '.join(reac[k] for k, v in (o.get('reaction') or {}).items() if v and k in reac) or ('jetée' if o.get('voix') == 'jetee' else '—')}"
                 + f", score {o.get('score')}".replace(".", ",") for o in parcours[-5:]]
+    # (04/11, Ahmed : « à chaque sommeil, veille ou sieste ») ta dernière consolidation
+    conso = ""
+    try:
+        c = json.loads((base / "consolidations.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+        noms_etat = {"eveil": "l'éveil", "sommeil": "le sommeil", "sieste": "la sieste"}
+        de, _, a = str(c.get("raison", "")).partition("→")
+        conso = (f"\nTa dernière consolidation ({noms_etat.get(de, de)} → {noms_etat.get(a, a)}, le "
+                 f"{time.strftime('%d/%m à %H:%M', time.localtime(float(c.get('t') or 0) / 1000))}) : "
+                 f"{len(c.get('elaguees') or [])} élaguée(s), {len(c.get('repoussees') or [])} repoussée(s), "
+                 f"{c.get('vivantes', 0)} vivante(s), {c.get('endormies', 0)} endormie(s).")
+    except (OSError, ValueError, IndexError):
+        pass
     if not lignes and not p_lignes:
-        return "Pas encore de mesure : tes synapses apprennent des réactions de papa (une coupure, un « non », un ❤️, son sujet qui continue)."
-    return ("Tes synapses :\n" + ("\n".join(lignes) or "- (aucune encore)") + "\nTes dernières pensées jugées :\n" + ("\n".join(p_lignes) or "- (aucune encore)"))
+        return "Pas encore de mesure : tes synapses apprennent des réactions de papa (une coupure, un « non », un ❤️, son sujet qui continue)." + conso
+    return ("Tes synapses :\n" + ("\n".join(lignes) or "- (aucune encore)") + "\nTes dernières pensées jugées :\n" + ("\n".join(p_lignes) or "- (aucune encore)") + conso)
 
 
 @mcp.tool()
