@@ -1141,9 +1141,8 @@ const aDesPieces = (m) => !!m && m.qui === 'j' && (m.pieces || []).some(x => x &
 // caché à l'écran : « dans ta tête » (tes mots, ou les siens sans « Ses paroles »), ou sa réponse pendant la conversation
 // (04/11, 15:45, Ahmed : « je ne vois pas ses signalements ; il faut que ça fasse la même chose que quand il m'envoie un fichier : ça doit
 // s'afficher dans la conv, quel que soit le mode ») ce qui attend ton geste s'affiche toujours, en Conversation comme en Télépathie
-const A_TRANCHER = new Set(['signalement', 'anticorps', 'mission', 'ecriture', 'regle', 'carnet', 'retractation', 'identite', 'sortie', 'membre', 'promotion']);
 function messageMasque(m) {
-  if (m.qui === 'j' && A_TRANCHER.has(m.spontane)) return false;
+  if (m.qui === 'j' && ['signalement', 'anticorps', 'mission', 'ecriture', 'regle', 'carnet', 'retractation', 'identite', 'sortie', 'membre', 'promotion'].includes(m.spontane)) return false;
   if (m.cache && !(m.qui === 'j' && parolesVisibles())) return true;
   return reponseCachee() && m.qui === 'j' && (Number(m.ts) || Number(m.id) || Date.now()) >= (etat.conversation.debut || 0);
 }
@@ -3451,6 +3450,8 @@ function preparerRibosome() {
 }
 // (04/11, 13:15, Ahmed : « l'épissure a été notée, mais je n'ai rien entendu ») mesuré : traduit pendant qu'il parlait, rien ne relançait sa voix
 // après sa fin ; en Conversation, ce qui est traduit et attend part au plus 0,3 s après que sa voix est libre et que tu t'es tu
+// (04/11, 15:50, Ahmed : « pour le signal stop du ribosome, au lieu de 10 s, j'aimerais 5 minutes »)
+const EPISSURE_STOP_MS = 5 * 60e3;
 setInterval(() => {
   const c = etat.conversation;
   if (!c || typeof direRibosome !== 'function') return;
@@ -3459,7 +3460,7 @@ setInterval(() => {
   // (04/11, 15:33, mesuré : une épissure née d'une phrase gardée pendant sa réflexion, arrêtée 4 s après sa naissance, ta voix datant de 20 s)
   // les 10 s comptent depuis ta voix OU le dernier morceau de son épissure, le plus récent des deux
   const calme = Date.now() - Math.max(etat.papaVoixA || 0, etat.epissureActiveA || 0);
-  if (voixEpissee() && etat.papaVoixA && calme >= 10000) { etat.papaVoixA = 0; arreterEpissure('silence'); }
+  if (voixEpissee() && etat.papaVoixA && calme >= EPISSURE_STOP_MS) { etat.papaVoixA = 0; arreterEpissure('silence'); }
   direRibosome();
 }, 300);
 // le stop de son épissure (10 s de ton silence, ou ta demande d'outil, dite par le cockpit) : ce qu'elle avait encore à dire est laissé, sa voix

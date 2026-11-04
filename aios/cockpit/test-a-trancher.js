@@ -15,7 +15,7 @@ test('ce qui attend ton geste s’affiche dans tous les modes ; sa réponse, ell
     etat: { conversation: { debut: 0 }, reglages: { sesParoles: true } },
     reglagesCorps: { epissage: true, afficher_papa: true, afficher_hakim: true } });
   vm.runInContext([ligne('const enTelepathie = '), ligne('const parolesVisibles = '), ligne('const reponseCachee = '), ligne('const voixEpissee = '),
-    ligne('const A_TRANCHER = '), prendre('messageMasque')].join('\n') + '\nthis.masque = messageMasque;', ctx);
+    prendre('messageMasque')].join('\n') + '\nthis.masque = messageMasque;', ctx);
   const t = Date.now();
   assert.strictEqual(ctx.masque({ qui: 'j', texte: 'Oui papa', ts: t }), true, 'sa réponse complète : cachée (épissage)');
   for (const spontane of ['signalement', 'anticorps', 'mission', 'ecriture', 'regle', 'carnet', 'retractation', 'identite', 'sortie', 'membre', 'promotion']) {

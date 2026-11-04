@@ -390,7 +390,9 @@ test('le ribosome lit dès sa première pensée ; ce qui arrive pendant sa lectu
 
 // ---- (04/11, 13:30, Ahmed : « la lecture doit se faire par Mini Hakim, Hakim et Super Hakim, les 3 au même moment en parallèle, et doit
 // attendre la réponse de chacun pour continuer la lecture » ; mesuré : 52 lectures sur 60 en « délai dépassé », la pensée entière passait)
-test('ses lecteurs (Mini Hakim et Super Hakim, depuis 15:15) lisent chaque pensée en même temps ; elle sort quand les deux ont répondu', async () => {
+// (04/11, 15:50, Ahmed : « il doit être plus rapide pour le ribosome : qu'il lise instantanément son input, et qu'il perde le moins de temps
+// possible entre la lecture et la prononciation de l'output ») le premier lecteur qui garde des mots donne sa lecture, tout de suite
+test('ses lecteurs (Mini Hakim et Super Hakim) lisent chaque pensée en même temps ; elle sort dès que le premier garde des mots', async () => {
   const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
   b.ctx.morceau('papa,');
   b.appels[0].resoudre({ texte: 'Oui papa, je suis là.' });
@@ -400,13 +402,13 @@ test('ses lecteurs (Mini Hakim et Super Hakim, depuis 15:15) lisent chaque pens�
   assert.ok(l.every(a => a.prompt === l[0].prompt), 'la même pensée, la même consigne');
   l[1].resoudre({ texte: 'GARDE : « Oui papa »' });
   await attendre(); await attendre();
-  assert.strictEqual(b.diffuses.filter(x => x.niveau === 'ribosome').length, 0, 'Mini Hakim n’a pas encore répondu : la lecture attend');
-  l[0].resoudre({ texte: 'GARDE : « Oui papa »' });
+  assert.deepStrictEqual(b.diffuses.filter(x => x.niveau === 'ribosome').map(x => x.texte), ['Oui papa'], 'Super Hakim a gardé des mots : sa lecture, sans attendre Mini Hakim');
+  l[0].resoudre({ texte: 'GARDE : « Oui »' });
   await attendre(); await attendre();
-  assert.deepStrictEqual(b.diffuses.filter(x => x.niveau === 'ribosome').map(x => x.texte), ['Oui papa']);
+  assert.strictEqual(b.diffuses.filter(x => x.niveau === 'ribosome').length, 1, 'la lecture d’après ne change rien');
 });
 
-test('la lecture retenue : la plus proche de l’autre ; à égalité, celle qui parle, puis Super Hakim ; aucun : la pensée entière', async () => {
+test('la lecture retenue : la première qui garde des mots ; un « rien » attend l’autre ; aucun : la pensée entière', async () => {
   const sortie = async (h, o) => {
     const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
     b.ctx.morceau('papa,');
@@ -417,10 +419,11 @@ test('la lecture retenue : la plus proche de l’autre ; à égalité, celle qui
     await attendre(); await attendre();
     return b.diffuses.find(x => x.niveau === 'ribosome').texte;
   };
-  assert.strictEqual(await sortie('GARDE : « Oui papa »', 'GARDE : « Oui papa, je suis là »'), 'Oui papa, je suis là', 'deux avis : Super Hakim');
+  assert.strictEqual(await sortie('GARDE : « Oui papa »', 'GARDE : « Oui papa, je suis là »'), 'Oui papa', 'la première arrivée');
   assert.strictEqual(await sortie({ texte: '', erreur: 'délai' }, 'GARDE : « je suis là »'), 'je suis là', 'un seul a répondu : sa lecture');
-  // (04/11, 14:17, mesuré : 4 paquets de suite sans un mot, Super Hakim « rien » contre un autre qui gardait) à égalité, il parle
-  assert.strictEqual(await sortie('GARDE : « Oui papa »', 'GARDE : rien'), 'Oui papa', 'un garde, l’autre non : il parle');
+  // (04/11, 14:17, mesuré : 4 paquets de suite sans un mot) un « rien » ne l'emporte pas sur une lecture qui garde : il parle
+  assert.strictEqual(await sortie('GARDE : rien', 'GARDE : « Oui papa »'), 'Oui papa', 'un « rien » d’abord : il attend l’autre, qui parle');
+  assert.strictEqual(await sortie('GARDE : « Oui papa »', 'GARDE : rien'), 'Oui papa');
   assert.strictEqual(await sortie('GARDE : rien', 'GARDE : rien'), '', 'les deux n’en gardent rien : rien');
   assert.strictEqual(await sortie({ texte: '', erreur: 'délai' }, { texte: '', erreur: 'délai' }), 'Oui papa, je suis là.', 'aucun : la pensée entière');
 });
@@ -580,8 +583,9 @@ test('une seule épissure de ta voix jusqu’au stop : elle continue d’un tour
   const r = b.ctx.nouveau(42);
   assert.strictEqual(r.tour, 42, 'chaque épissure a son numéro');
   b.ctx.papaParle(1000);
-  assert.strictEqual(b.ctx.continue(r, 'et puis le sable', 5000), r, '4 s après ta voix : la même épissure');
-  assert.strictEqual(b.ctx.continue(r, 'et puis le sable', 11000), null, '10 s de silence : fermée');
+  // (04/11, 15:50, Ahmed : « pour le signal stop du ribosome, au lieu de 10 s, j'aimerais 5 minutes »)
+  assert.strictEqual(b.ctx.continue(r, 'et puis le sable', 4 * 60e3), r, '4 min après ta voix : la même épissure');
+  assert.strictEqual(b.ctx.continue(r, 'et puis le sable', 1000 + 5 * 60e3), null, '5 min de silence : fermée');
   assert.strictEqual(r.ferme, 'silence');
   const r2 = b.ctx.nouveau(43);
   b.ctx.papaParle(20000);
@@ -632,7 +636,9 @@ test('page : à 10 s de ton silence, ou à sa demande d’outil, sa parole de ce
   // (04/11, 15:33, mesuré : une épissure née d'une phrase gardée pendant sa réflexion, arrêtée 4 s après sa naissance, ta voix datant de 20 s)
   // les 10 s comptent depuis ta voix OU le dernier morceau de son épissure, le plus récent des deux
   assert.match(PAGE, /const calme = Date\.now\(\) - Math\.max\(etat\.papaVoixA \|\| 0, etat\.epissureActiveA \|\| 0\);/);
-  assert.match(PAGE, /if \(voixEpissee\(\) && etat\.papaVoixA && calme >= 10000\) \{ etat\.papaVoixA = 0; arreterEpissure\('silence'\); \}/);
+  assert.match(PAGE, /if \(voixEpissee\(\) && etat\.papaVoixA && calme >= EPISSURE_STOP_MS\) \{ etat\.papaVoixA = 0; arreterEpissure\('silence'\); \}/);
+  assert.match(PAGE, /const EPISSURE_STOP_MS = 5 \* 60e3;/, '(15:50) 5 min');
+  assert.match(SRC, /const EPISSURE_STOP_MS = 5 \* 60e3;/);
   assert.match(PAGE, /if \(o\.texte \|\| \(Array\.isArray\(o\.mots\) && o\.mots\.length\)\) etat\.epissureActiveA = Date\.now\(\);/);
   const avant = arrets.filter(x => Array.isArray(x)).length;
   ctx.arreter('silence', 7);

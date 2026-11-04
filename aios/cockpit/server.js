@@ -3344,7 +3344,8 @@ const nouveauRibosome = (tour = null) => ({ tour, phrase: '', pave: '', mots: []
 // à mesure ; le stop, c'est 10 s de silence, ou une demande explicite d'utiliser un outil : c'est sa parole qui s'arrête à ce stop ») son
 // épissure continue d'un tour à l'autre tant que papa a parlé il y a moins de 10 s et ne lui demande pas d'outil ; chaque épissure a son
 // numéro (toujours neuf, même après une relance : l'instant de sa naissance), porté par ses pensées et par ce que son ribosome en sort
-const EPISSURE_STOP_MS = 10000;
+// (04/11, 15:50, Ahmed : « pour le signal stop du ribosome, au lieu de 10 s, j'aimerais 5 minutes »)
+const EPISSURE_STOP_MS = 5 * 60e3;
 const DEMANDE_OUTIL = /(?:^|[.!?…]\s+|\b(?:hakim|fiston)\s*,?\s*)(?:cherche|recherche|envoie|note|ouvre|mets|joue|appelle|calcule|vérifie|mémorise|retiens|rappelle-moi|prends une photo|utilise ton outil|lance)\b/i;
 let derniereParolePapa = 0, dernierTourEpissure = 0;
 const tourEpissure = () => (dernierTourEpissure = Math.max(Date.now(), dernierTourEpissure + 1));
@@ -3401,15 +3402,18 @@ function ribosomeDeReponse(tour, r, avant) {
 // (04/11, 15:15, mesuré : un paquet à 3,0 s presque toujours, à attendre Hakim (Sonnet) jusqu'à sa limite ; Ahmed : « oui ») ses deux plus
 // rapides : Mini Hakim et Super Hakim, 3 s au plus chacun
 const RIBOSOME_LECTEURS = [['haiku', 'Mini Hakim', 3000], ['opus', 'Super Hakim', 3000]];
-function consensusRibosome(lectures) {
-  const votes = lectures.filter(x => x && !x.muet).reverse();
-  const ens = (x) => new Set(x.ok ? x.e.mots : []);
-  const accord = (a, b) => { const A = ens(a), B = ens(b), u = new Set([...A, ...B]).size; return u ? [...A].filter(k => B.has(k)).length / u : 1; };
-  let mieux = null, score = -1;
-  // (04/11, 14:17, mesuré : 4 paquets de suite sans un mot, Super Hakim « rien » contre un autre qui gardait ; Ahmed : « il n'hésite
-  // pas ») à égalité, la lecture qui parle passe avant celle qui se tait
-  for (const x of votes) { const s = votes.reduce((t, y) => t + (y === x ? 0 : accord(x, y)), 0); if (s > score || (s === score && x.ok && !mieux.ok)) { mieux = x; score = s; } }
-  return mieux;
+// (04/11, 15:50, Ahmed : « il doit être plus rapide pour le ribosome : qu'il lise instantanément son input, et qu'il perde le moins de temps
+// possible entre la lecture et la prononciation de l'output ») le premier lecteur qui garde des mots donne sa lecture, tout de suite (l'autre
+// finit pour rien) ; un « rien » attend l'autre (il n'hésite pas : une lecture qui parle passe avant une qui se tait) ; aucun : null (panne)
+function premiereLecture(promesses) {
+  return new Promise((resoudre) => {
+    let restantes = promesses.length, rien = null;
+    for (const p of promesses) p.then((x) => {
+      if (x && !x.muet && x.ok) return resoudre(x);
+      if (x && !x.muet) rien = rien || x;
+      if (--restantes === 0) resoudre(rien);
+    });
+  });
 }
 async function lirePaquet(tour, r, i, paquet) {
   const persona = personaLocale(lirePersona()).slice(0, 500), debutLecture = Date.now();
@@ -3437,15 +3441,17 @@ async function lirePaquet(tour, r, i, paquet) {
       return { mod, nom, ms, ok, garde: ok ? garde : '', e: ok ? e : null };
     });
   };
-  const lectures = await Promise.all(RIBOSOME_LECTEURS.map(lire));
-  const choisie = consensusRibosome(lectures);
+  const promesses = RIBOSOME_LECTEURS.map(lire);
+  const choisie = await premiereLecture(promesses), decide = Date.now() - debutLecture;
   const garde = choisie ? choisie.garde : texte, e = choisie ? choisie.e : epissageDe(texte, texte);
   const ok = choisie ? choisie.ok : e.mots.length >= 1;
-  // (04/11, 13:05, Hakim pour papa : « mesure le délai étape par étape ») chaque paquet noté, avec ses trois lecteurs (pistes.jsonl)
-  try {
-    fs.appendFile(JOURNAL_PISTES, JSON.stringify({ t: Date.now(), tour, ribosome: i + 1, pensees: paquet.length, ms: Date.now() - debutLecture, garde: ok ? garde.slice(0, 160) : '',
-      choisi: choisie ? choisie.mod : 'panne', lecteurs: lectures.map(x => ({ modele: x.mod, ms: x.ms, garde: x.muet ? null : x.garde.slice(0, 160) })) }) + '\n', () => {});
-  } catch (_) {}
+  // (04/11, 13:05, Hakim pour papa : « mesure le délai étape par étape ») chaque paquet noté, avec ses lecteurs (pistes.jsonl), quand tous ont fini
+  Promise.all(promesses).then((lectures) => {
+    try {
+      fs.appendFile(JOURNAL_PISTES, JSON.stringify({ t: Date.now(), tour, ribosome: i + 1, pensees: paquet.length, ms: decide, garde: ok ? garde.slice(0, 160) : '',
+        choisi: choisie ? choisie.mod : 'panne', lecteurs: lectures.map(x => ({ modele: x.mod, ms: x.ms, garde: x.muet ? null : x.garde.slice(0, 160) })) }) + '\n', () => {});
+    } catch (_) {}
+  });
   r.prets.set(i, ok ? { garde, e, debut: paquet[0].debut } : null);
 }
 // ce qu'il a gardé du paquet : ses mots allumés dans le pavé, la suite de sa réponse, envoyés à la page (sa voix les dit)
