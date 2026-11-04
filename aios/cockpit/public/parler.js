@@ -1022,6 +1022,9 @@ lecteurNeuronal.surSegment = (t, duree) => {
   // (04/11) un bout de sa réponse commence : il s'écrit à cet instant, à la suite des bouts déjà dits
   if (typeof bouts !== 'undefined' && bouts.enFile[0] === t) {
     bouts.enFile.shift();
+    // (04/11, Ahmed : « check le temps entre ma parole et sa première pensée répondue ») chaque bout qui sonne : depuis ton premier mot
+    const cap = etat.conversation && etat.conversation.capteur;
+    if (cap && Number(cap.debutTour) > 0) journalVoix('bout_dit', { depuis_ton_debut_ms: Date.now() - Number(cap.debutTour), premier: bouts.dits.length - bouts.enFile.length === 1 });
     if (etat.conversation) etat.conversation.penseeDite = bouts.dits.slice(0, bouts.dits.length - bouts.enFile.length).join(' ');   // (04/11) vraiment dit
     if (!enTelepathie()) { const dits = bouts.dits.slice(0, bouts.dits.length - bouts.enFile.length).join(' '); montrerPensee('🧠 sa pensée · il te la dit', dits); envoyerParoles('hakim', `🗣️ ${t}`); }
   }

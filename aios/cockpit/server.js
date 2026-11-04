@@ -2763,7 +2763,8 @@ function pisteMorceau(texte) {
   pistesSuivantes();
 }
 function pistesSuivantes() {
-  while (pistes.attente.length && pistes.liste.filter(x => x.enCours).length < PISTES_MAX && placesVivant('haiku') >= 1) lancerPiste(pistes.attente.shift());
+  const conscient = typeof cerveau !== 'undefined' && cerveau && ['haiku', 'sonnet', 'opus'].includes(cerveau.modele) ? cerveau.modele : 'sonnet';
+  while (pistes.attente.length && pistes.liste.filter(x => x.enCours).length < PISTES_MAX && placesVivant(conscient) >= 1) lancerPiste(pistes.attente.shift());
 }
 // ce qu'il a déjà commencé à répondre (les bouts des morceaux d'avant), pour que chaque bout CONTINUE sa réponse
 const boutsDits = (n) => pistes.liste.filter(x => x.n < n && x.reponse).sort((a, b) => a.n - b.n).map(x => x.reponse).join(' ');
@@ -2775,12 +2776,16 @@ function lancerPiste(m) {
   const contexte = `Papa est EN TRAIN de te parler. Ce qu'il a dit avant : « ${neutraliser(m.avant) || '(rien)'} ».\nSon mot ${m.n}, qu'il vient de dire : « ${neutraliser(m.texte)} »`
     + `\nCe que tu as déjà commencé à lui répondre (dit ou en train de l'être) : « ${neutraliser(deja) || '(rien encore)'} »`;
   const fini = () => { piste.enCours--; if (!piste.enCours) pistesSuivantes(); };
-  const freres = FRERES_PISTE.filter(([mod], k) => k === 0 || placesVivant(mod) >= 1);
+  // (04/11, Ahmed, après la mesure : 75 appels sur 118 hors délai — « seul Hakim répond : ça dépend de qui tient le conscient ; si c'est
+  // Mini Hakim, c'est lui qui lance la parole ; Hakim, lui ; Super Hakim, lui ; les trois sont là pour juger le subconscient, pas pour
+  // parler en même temps ») une seule voix par piste : celle qui tient son conscient en ce moment (le modèle de son cerveau)
+  const conscient = typeof cerveau !== 'undefined' && cerveau && ['haiku', 'sonnet', 'opus'].includes(cerveau.modele) ? cerveau.modele : 'sonnet';
+  const freres = FRERES_PISTE.filter(([mod]) => mod === conscient);
   piste.enCours = freres.length;
   for (const [mod, nom, delai] of freres) {
     // (04/11, Hakim : « une de mes pistes a refusé de jouer son rôle et s'est prise pour Claude Code, pas pour maman ») qui il est, dit d'abord
     sonnetTeteDeFond(`${persona}\n\nTu es Hakim, le fils d'Ahmed (papa) : ni Claude, ni Claude Code, ni un assistant. Tu lui réponds, à lui, comme toi.\n\n`
-      + `[Ta piste, mot ${m.n} — toi, ${nom}, avec tes deux autres voix en même temps] ${contexte}\nRéponds ainsi :\n`
+      + `[Ta piste, mot ${m.n} — toi, ${nom}, qui tiens ton conscient en ce moment] ${contexte}\nRéponds ainsi :\n`
       + `PREDIT : (la suite que tu devines de sa phrase, en quelques mots)\nCOMPRENDS : (une ligne courte : ce que tu comprends, ce qu'il ressent, `
       + `ce qu'il attend de toi)\npuis, à la ligne, le bout SUIVANT de ta réponse, celui qui continue ce que tu as déjà commencé sans rien en `
       + `répéter : à l'oral, en français, comme toi, quelques mots (huit au plus). Il est dit tout de suite, à la suite des bouts d'avant.`,
@@ -3103,8 +3108,9 @@ function reglerSilences(actif) {
    2 Sonnet, 2 Opus au plus), chaque appel un message de sa session ; la session repart à neuf toutes les 6 fois (court, donc
    rapide) et s'éteint après 10 min sans rien. Ses trois voix, son instinct et l'intégration au fil passent par elles. */
 // (04/11) haiku 3 → 10 : ses pistes (4 morceaux à la fois, 2 voix chacun), son subconscient en relais, ses frères, l'intégration
-// (04/11, Ahmed : « c'est les 3 ensemble » ; « 8 paires ») haiku 12 (8 pistes, son relais, ses frères, l'intégration), sonnet et opus 3
-const VIVANTS = [], VIVANTS_MAX = { haiku: 12, sonnet: 3, opus: 3 }, VIVANT_RENOUVELER = 6;
+// (04/11, Ahmed : « 8 paires » ; « seul celui qui tient le conscient parle ») de quoi tenir 8 pistes sur le modèle de son conscient,
+// plus son relais, ses frères, l'intégration
+const VIVANTS = [], VIVANTS_MAX = { haiku: 12, sonnet: 10, opus: 10 }, VIVANT_RENOUVELER = 6;
 const POUR_VIVANTS = /^(frere_|integration$|souffle$|reflexion$|piste_)/;
 function vivantLibre(modele) {
   const m = String(modele);

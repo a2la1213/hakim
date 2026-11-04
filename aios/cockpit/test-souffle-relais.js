@@ -353,7 +353,7 @@ test('(04/11) son oreille et sa voix ont chacune leur processus : elles ne s’a
 function pistesSandbox(places = { haiku: 12, sonnet: 3, opus: 3 }) {
   const i = SRC.indexOf('const PISTES_MAX'), k = SRC.indexOf('function speculerFreres(');
   const appels = [], diffuses = [], voix = [];
-  const ctx = { String, Math, Date, Promise, RegExp, Object, VIVANTS: [], VIVANTS_MAX: places, VIVANT_RENOUVELER: 6,
+  const ctx = { String, Math, Date, Promise, RegExp, Object, VIVANTS: [], VIVANTS_MAX: places, VIVANT_RENOUVELER: 6, cerveau: { modele: 'haiku' },
     corpsReglages: () => ({}), personaLocale: (p) => p, lirePersona: () => 'Hakim', neutraliser: (t) => t, j: JSON.stringify, abonnesPensees: null,
     voixDeLaSource: (t, o) => voix.push([t, o]), diffuser: (_, e, d) => diffuses.push(JSON.parse(d)),
     sonnetTeteDeFond: (prompt, etiquette, modele) => new Promise((resoudre) => {
@@ -370,19 +370,17 @@ test('(04/11) un morceau par mot, avec ses petits mots d’avant ; un petit mot 
   assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.decouper('papa me dit bonjour ce matin à la'.split(' ')))),
     { morceaux: ['papa', 'me dit', 'bonjour', 'ce matin'], reste: 2 });
 });
-test('(04/11) ses pistes mot par mot : ses trois voix ensemble, 8 à la fois ; chaque bout continue les précédents et part à sa voix', async () => {
+test('(04/11) ses pistes mot par mot : une seule voix, celle qui tient son conscient, 8 à la fois ; chaque bout continue les précédents', async () => {
   const { ctx, appels, diffuses, voix } = pistesSandbox();
   ctx.morceau('papa me dit bonjour ce matin et puis il raconte sa journée au travail encore');
-  assert.deepStrictEqual(appels.slice(0, 3).map(a => a.modele), ['haiku', 'sonnet', 'opus'], 'ses trois voix sur le premier mot');
-  assert.strictEqual(appels.filter(a => a.modele === 'haiku').length, 8, '8 mots à la fois');
+  assert.ok(appels.every(a => a.modele === 'haiku'), '(04/11) seul celui qui tient son conscient (ici Mini Hakim) parle');
+  assert.strictEqual(appels.length, 8, '8 mots à la fois');
   assert.match(appels[0].prompt, /Son mot 1, qu'il vient de dire : « papa »/);
   assert.match(appels[0].prompt, /PREDIT :/, 'il devine la suite de ta phrase');
   ctx.morceau('papa me dit bonjour ce matin et puis il raconte sa journée au travail encore demain');
   assert.strictEqual(ctx.etat().attente.map(x => x.texte).join('|'), 'encore|demain', '(04/11) chaque mot garde sa piste : le 9e, le 10e attendent, chacun la sienne');
   appels[0].resoudre({ texte: 'PREDIT : me dit bonjour\nCOMPRENDS : il m’appelle\nOui papa,' });
   await new Promise(r => setImmediate(r)); await new Promise(r => setImmediate(r));
-  appels[1].resoudre({ texte: 'PREDIT : x\nCOMPRENDS : y\nJe suis là' });               // Hakim, après Mini Hakim : pas un 2e bout
-  await new Promise(r => setImmediate(r));
   assert.deepStrictEqual(diffuses.map(d => [d.n, d.texte]), [[1, 'Oui papa,']]);
   assert.strictEqual(JSON.stringify(voix), JSON.stringify([['Oui papa,', { garder: true }]]), 'sa voix naît avec le bout, sans annuler les bouts d’avant');
   const deuxieme = appels.find(a => /Son mot 2/.test(a.prompt));
