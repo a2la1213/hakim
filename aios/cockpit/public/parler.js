@@ -1139,7 +1139,11 @@ const voixEpissee = () => !!etat.conversation && typeof reglagesCorps !== 'undef
 const PIECE_ID = /^\d{8}-\d{6}-[0-9a-f]{6}$/;
 const aDesPieces = (m) => !!m && m.qui === 'j' && (m.pieces || []).some(x => x && PIECE_ID.test(String(x.id)));
 // caché à l'écran : « dans ta tête » (tes mots, ou les siens sans « Ses paroles »), ou sa réponse pendant la conversation
+// (04/11, 15:45, Ahmed : « je ne vois pas ses signalements ; il faut que ça fasse la même chose que quand il m'envoie un fichier : ça doit
+// s'afficher dans la conv, quel que soit le mode ») ce qui attend ton geste s'affiche toujours, en Conversation comme en Télépathie
+const A_TRANCHER = new Set(['signalement', 'anticorps', 'mission', 'ecriture', 'regle', 'carnet', 'retractation', 'identite', 'sortie', 'membre', 'promotion']);
 function messageMasque(m) {
+  if (m.qui === 'j' && A_TRANCHER.has(m.spontane)) return false;
   if (m.cache && !(m.qui === 'j' && parolesVisibles())) return true;
   return reponseCachee() && m.qui === 'j' && (Number(m.ts) || Number(m.id) || Date.now()) >= (etat.conversation.debut || 0);
 }
