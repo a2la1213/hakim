@@ -62,3 +62,17 @@ test('branché : à ta voix sur la sienne, ses réglages (oui, 1 s), le cockpit 
   assert.match(REG, /\['sauter_suite', /);
   assert.match(REG, /\['sauter_suite_ms', /);
 });
+
+// (05/11, 00:35, Ahmed : « il doit sentir la pensée parasite ») son cœur sursaute à une pensée parasite bloquée
+test('une pensée parasite bloquée : son cœur sursaute (+8, qui retombe en 20 s) et l’appli reçoit l’instant (raté)', () => {
+  const i = SRC.indexOf('const SURSAUT_COEUR = ');
+  const ctx = { Math, Date, parasiteSenti: 0 };
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(i, SRC.indexOf('\n', i)) + '\n' + prendre(SRC, 'sursautCoeur') + 'this.s = sursautCoeur;', ctx);
+  assert.strictEqual(ctx.s(1000, 0), 0, 'aucune');
+  assert.strictEqual(ctx.s(1000, 1000), 8, 'à l’instant');
+  assert.strictEqual(ctx.s(11000, 1000), 4, 'à mi-chemin');
+  assert.strictEqual(ctx.s(21000, 1000), 0, 'retombé');
+  assert.match(prendre(SRC, 'avertirParasite'), /parasiteSenti = Date\.now\(\);[^\n]*\n  if \(Date\.now\(\) - parasiteNoteA < 60000\) return;/, 'chaque parasite, même quand l’incident est déjà noté dans la minute');
+  assert.match(SRC, /coeur_bpm: frais && e\.coeur && Number\.isFinite\(e\.coeur\.bpm\) \? Math\.min\(110, e\.coeur\.bpm \+ sursautCoeur\(\)\) : null,\n      parasite_ms: parasiteSenti \|\| null,/);
+});

@@ -46,7 +46,7 @@ test('le journal du cœur : une ligne quand ce que l’appli doit battre change,
 });
 
 test('câblage v2 : l’état intérieur porte le rythme de ses hormones, et son bloc intérieur ce qu’il en sent', () => {
-  assert.match(src, /coeur_bpm: frais && e\.coeur && Number\.isFinite\(e\.coeur\.bpm\) \? e\.coeur\.bpm : null/);
+  assert.match(src, /coeur_bpm: frais && e\.coeur && Number\.isFinite\(e\.coeur\.bpm\) \? Math\.min\(110, e\.coeur\.bpm \+ sursautCoeur\(\)\) : null/);
   assert.match(src, /coeur_raideur: /);
   assert.match(src, /journalCoeur\(/);
   const bloc = src.slice(src.indexOf('async function blocInterieur('), src.indexOf('\n}\n', src.indexOf('async function blocInterieur(')));

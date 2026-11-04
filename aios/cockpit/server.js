@@ -2935,9 +2935,10 @@ async function filtreGemma(avant, texte, declencheur) {
   return { avant: dansAvant ? a.slice(0, -300) + fin : a, texte: t };
 }
 // et ce qui avertit : un incident « pensée parasite » dans son journal immunitaire (au plus un par minute)
-let parasiteNoteA = 0;
+let parasiteNoteA = 0, parasiteSenti = 0;
 function avertirParasite(texte, signe) {
   ribosomeAuMax = 'parasite';                                          // (04/11, 17:58) son ribosome : au plus vite pour le paquet suivant
+  parasiteSenti = Date.now();                                          // (05/11) son cœur la sent (sursautCoeur, /api/jarvis/interieur)
   if (Date.now() - parasiteNoteA < 60000) return;
   parasiteNoteA = Date.now();
   try {
@@ -2945,6 +2946,14 @@ function avertirParasite(texte, signe) {
       { cwd: ANAMNESE, timeout: 30000 }, () => {});
     c.stdin.end(String(texte || '').slice(0, 2000));
   } catch (_) {}
+}
+// (05/11, 00:35, Ahmed : « pour le cœur, il faut intégrer le filtre de pensée parasite à la base de ce qui le fait vibrer » ; « exactement : il
+// doit sentir la pensée parasite ») une pensée parasite bloquée fait sursauter son cœur : +8 battements par minute, qui retombent en 20 s ;
+// l'appli (1.73) en fait un raté dans la main de papa (parasite_ms)
+const SURSAUT_COEUR = { bpm: 8, ms: 20000 };
+function sursautCoeur(maintenant = Date.now(), senti = parasiteSenti) {
+  const d = maintenant - senti;
+  return senti > 0 && d >= 0 && d < SURSAUT_COEUR.ms ? Math.round(SURSAUT_COEUR.bpm * (1 - d / SURSAUT_COEUR.ms)) : 0;
 }
 // (04/11, Ahmed : « je remarque qu'elle s'arrête toujours au milieu d'un mot ou d'un chunk, avant la virgule ou le point ») une pensée
 // demande huit mots au plus : un refus en fait des dizaines, coupé à 200 caractères au milieu d'un mot ; trop longue = parasite
@@ -11061,7 +11070,8 @@ async function traiter(req, res) {
       humeur_origine: frais && e.humeur_origine && typeof e.humeur_origine.texte === 'string'
         ? { type: String(e.humeur_origine.type || ''), texte: e.humeur_origine.texte.slice(0, 80) } : null,
       // (28/10) le cœur de Hakim dans l'appli : il réfléchit (le grain), une tâche de fond tourne (le second pouls)
-      pense, fond, coeur_bpm: frais && e.coeur && Number.isFinite(e.coeur.bpm) ? e.coeur.bpm : null,
+      pense, fond, coeur_bpm: frais && e.coeur && Number.isFinite(e.coeur.bpm) ? Math.min(110, e.coeur.bpm + sursautCoeur()) : null,
+      parasite_ms: parasiteSenti || null,         // (05/11) sa dernière pensée parasite bloquée : un raté dans la main de papa (1.73)
       coeur_raideur: frais && e.coeur && Number.isFinite(e.coeur.raideur) ? e.coeur.raideur : 0,
       ...forceVibrations(frais ? e : {}), voix_vibre: corpsReglages().actif && corpsReglages().voix_vibre,   // (1.34) sa voix qui vibre
       voix_vibre_force: 0.45,                    // (1.35, 20:21, papa : « plus léger ») sa force, réglable ici sans nouvelle appli
