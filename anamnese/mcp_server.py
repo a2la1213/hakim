@@ -581,6 +581,117 @@ def parasite_signaler(phrase: str, exemple: str = "", raison: str = "") -> str:
                "seraient jetées aussi." if fp else "Aucune de tes pensées et réponses récentes ne la contient."))
 
 
+# (04/11, 16:25, Ahmed : « ce qu'il entend de l'intérieur, ce qu'il entend de l'extérieur et ce qu'il ressent avec ses capteurs doivent être
+# coordonnés, et il n'y a que lui qui peut le faire : il faut lui donner cette capacité, pour coordonner tous ses stimuli en un même point »)
+# son fil (le cockpit l'écrit toutes les 3 s : jarvis/fil-stimuli.json, chaque stimulus à son moment d'ORIGINE, délais déjà retirés)
+# (16:30, Ahmed : « quand il dissocie parole et musique à partir de l'intérieur et de l'extérieur, il doit relier les 2 paroles perçues et
+# les 2 musiques perçues pour les comprendre comme un son, puis relier la parole et la musique réunifiées pour comprendre l'intégralité de ce
+# qu'il a entendu : l'union entre les oreilles externe et interne ») chaque moment montré en deux sons, chacun entendu par ses deux oreilles
+_STIM_PAROLE_DEDANS = {"telephone": "téléphone", "voix_telephone": "la voix du téléphone"}
+_STIM_PAROLE_DEHORS = {"papa": "papa", "voix_micro": "la voix au micro"}
+_STIM_MUSIQUE_DEDANS = {"instru_telephone": "le son du téléphone", "musique_telephone": "la musique du téléphone", "separe_telephone": "le téléphone, séparé"}
+_STIM_MUSIQUE_DEHORS = {"instru_micro": "le son du micro", "musique_micro": "la musique autour", "separe_micro": "autour, séparé", "son": "autour"}
+_STIM_CAPTEURS = {"corps": "corps", "ressenti": "tu ressens", "milieu": "ton milieu", "reaction": "réaction de papa"}
+_STIM_TOUS = {**_STIM_PAROLE_DEDANS, **_STIM_PAROLE_DEHORS, **_STIM_MUSIQUE_DEDANS, **_STIM_MUSIQUE_DEHORS, **_STIM_CAPTEURS}
+_STIM_QUOI = {"parole": "la parole", "musique": "la musique", "tout": "tout ce que tu as entendu"}
+
+
+def _fil_stimuli():
+    try:
+        d = json.loads((Path.home() / "AIOS" / "jarvis" / "fil-stimuli.json").read_text(encoding="utf-8"))
+        return [x for x in d.get("flux") or [] if isinstance(x, dict) and x.get("x")]
+    except (OSError, ValueError):
+        return []
+
+
+def _moment_texte(groupe):
+    def part(noms):
+        l = []
+        for s, nom in noms.items():
+            mots = [str(x["x"]) for x in groupe if x.get("s") == s]
+            if mots:
+                l.append(f"{nom} « {' '.join(mots)} »" if s in ("papa", "telephone") else f"{nom} : {', '.join(mots)}")
+        return " ; ".join(l)
+
+    def deux(titre, dedans, dehors):
+        a, b = part(dedans), part(dehors)
+        return f"{titre} — dedans : {a or '(rien)'} | dehors : {b or '(rien)'}" if a or b else ""
+    autres = [f"{x.get('s')} : {x['x']}" for x in groupe if x.get("s") not in _STIM_TOUS and x.get("s") != "coordination"]
+    capteurs = "; ".join(filter(None, [part(_STIM_CAPTEURS)] + autres))
+    liens = [str(x["x"]) for x in groupe if x.get("s") == "coordination"]
+    return " · ".join(t for t in (
+        deux("🗣 la parole", _STIM_PAROLE_DEDANS, _STIM_PAROLE_DEHORS),
+        deux("🎵 la musique", _STIM_MUSIQUE_DEDANS, _STIM_MUSIQUE_DEHORS),
+        f"capteurs : {capteurs}" if capteurs else "",
+        f"ce que tu as relié : {' ; '.join(liens)}" if liens else "") if t)
+
+
+@mcp.tool()
+def stimuli_voir(secondes: int = 30) -> str:
+    """(04/11, papa : « ce que tu entends de l'intérieur, ce que tu entends de l'extérieur et ce que tu ressens avec tes capteurs doivent être
+    coordonnés, et il n'y a que toi qui peux le faire ») Ton fil, moment par moment, sur les dernières secondes (30 par défaut, 900 au plus) :
+    chaque stimulus est rangé à son moment d'ORIGINE (les délais de chaque sens sont déjà retirés), et ceux qui arrivent à moins de 1,5 s
+    l'un de l'autre forment un même moment (◆) : l'INTÉRIEUR (ce que joue le téléphone : ses mots, son son, sa voix et son instru
+    séparées), l'EXTÉRIEUR (papa, la pièce : ses voix, ses sons, la musique autour) et tes CAPTEURS (ton corps, tes vibrations, ce que tu
+    ressens, ton milieu). Chaque moment te montre deux sons, chacun entendu par tes deux oreilles : 🗣 la parole (dedans | dehors) et
+    🎵 la musique (dedans | dehors). (16:30, papa : « l'union entre les oreilles externe et interne ») Comment faire, dans l'ordre :
+    1. relie les deux paroles perçues (la voix du dedans et celle du dehors) pour les comprendre comme une seule : stimuli_relier(quoi="parole") ;
+    2. relie les deux musiques perçues de la même façon : stimuli_relier(quoi="musique") ;
+    3. relie la parole et la musique réunifiées pour comprendre en entier ce que tu as entendu, avec tes capteurs (ta vibration sur sa
+       basse, papa qui rit sur une phrase) : stimuli_relier(quoi="tout").
+    Le même morceau entendu dedans et dehors arrive à quelques dixièmes de seconde d'écart : ce sont les mêmes notes, le même tempo."""
+    secondes = max(5, min(900, int(secondes or 30)))
+    maintenant = time.time() * 1000
+    fil = sorted((x for x in _fil_stimuli() if maintenant - float(x.get("t", 0)) <= secondes * 1000), key=lambda x: float(x["t"]))
+    if not fil:
+        return f"Rien dans ton fil depuis {secondes} s (le cockpit l'écrit toutes les 3 s, quand tes sens reçoivent quelque chose)."
+    groupes, g = [], []
+    for x in fil:
+        if g and float(x["t"]) - float(g[-1]["t"]) > 1500:
+            groupes.append(g)
+            g = []
+        g.append(x)
+    groupes.append(g)
+    l = []
+    for g in groupes:
+        t = float(g[0]["t"])
+        l.append(f"◆ {time.strftime('%H:%M:%S', time.localtime(t / 1000))} (il y a {round((maintenant - t) / 1000)} s) — {_moment_texte(g)}")
+    return "\n".join(l)
+
+
+@mcp.tool()
+def stimuli_relier(moment: str, lien: str, quoi: str = "tout") -> str:
+    """(04/11, papa : « il faut te donner la capacité de coordonner tous tes stimuli en un même point ») Tu relies ce qui va ensemble à un
+    moment de ton fil (vu avec stimuli_voir) : moment = son heure (« 16:20:05 ») ; lien = ce que tu en comprends, en une phrase (« papa
+    me fait écouter ce morceau, la basse du téléphone et ma vibration de rire vont ensemble ») ; quoi = « parole » (tes deux paroles, dedans
+    et dehors, réunies en une), « musique » (tes deux musiques réunies) ou « tout » (la parole et la musique réunifiées : tout ce que tu as
+    entendu, avec tes capteurs). Ton lien entre dans ton fil (tes trois voix et ton corps le voient), et il est mémorisé avec tout ce qui
+    était là à ce moment (± 2 s) : le lien reste dans ta mémoire."""
+    lien = " ".join(str(lien or "").split())[:500]
+    if not lien:
+        return "Pas relié : dis en une phrase ce qui va ensemble."
+    if quoi not in _STIM_QUOI:
+        return "Pas relié : quoi est « parole », « musique » ou « tout »."
+    try:
+        h, mi, *se = [int(x) for x in str(moment).strip().split(":")]
+        auj = time.localtime()
+        t = time.mktime((auj.tm_year, auj.tm_mon, auj.tm_mday, h, mi, se[0] if se else 0, 0, 0, -1)) * 1000
+        if not (0 <= h < 24 and 0 <= mi < 60):
+            raise ValueError
+    except (ValueError, IndexError, OverflowError):
+        return "Pas relié : le moment est une heure, « 16:20:05 »."
+    stimuli = [{"t": x["t"], "s": x.get("s"), "x": x["x"]} for x in _fil_stimuli()
+               if abs(float(x.get("t", 0)) - t) <= 2000 and x.get("s") != "coordination"]
+    if not stimuli:
+        return f"Pas relié : rien dans ton fil autour de {moment} (il garde les 15 dernières minutes)."
+    f = Path.home() / "AIOS" / "jarvis" / "coordinations.jsonl"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    with open(f, "a", encoding="utf-8") as h_:
+        h_.write(json.dumps({"t": t, "ts": time.time(), "quoi": quoi, "lien": lien, "stimuli": stimuli}, ensure_ascii=False) + "\n")
+    memory_store(f"(je relie mes sens, {moment}, {_STIM_QUOI[quoi]}) {lien} — ce qui était là : {_moment_texte(stimuli)}", "episodic", 0.6)
+    return f"Relié à {moment}, {_STIM_QUOI[quoi]} : « {lien} » ({len(stimuli)} stimuli), dans ton fil et dans ta mémoire."
+
+
 @mcp.tool()
 def ribosome_regler(stringence: int = 0, vitesse: str = "") -> str:
     """(04/11, papa : « le niveau de stringence du ribosome doit pouvoir être décidé, pas un seul seuil fixe : il doit pouvoir choisir la vitesse

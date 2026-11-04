@@ -384,7 +384,7 @@ const EFFORT_HAKIM = process.env.JARVIS_EFFORT || 'low';
 const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'afida_juger', 'afida_vecu', 'afida_lire', 'afida_retirer', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'sieste_prendre', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'pistes_regler', 'ribosome_regler', 'synapses_voir', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'pistes_regler', 'ribosome_regler', 'stimuli_voir', 'stimuli_relier', 'synapses_voir', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -6331,7 +6331,30 @@ const fluxPrecedents = new Map();                              // source → { c
 const DELAIS = {};
 const NOMS_FLUX = { papa: 'papa', telephone: 'téléphone', corps: 'corps', ressenti: 'il ressent', son: 'autour', milieu: 'son milieu', reaction: 'réaction',
   instru_telephone: 'le son du téléphone', instru_micro: 'le son du micro', voix_telephone: 'la voix du téléphone', voix_micro: 'la voix au micro',
-  musique_telephone: 'la musique du téléphone', musique_micro: 'la musique autour', separe_telephone: 'le téléphone, séparé', separe_micro: 'autour, séparé' };
+  musique_telephone: 'la musique du téléphone', musique_micro: 'la musique autour', separe_telephone: 'le téléphone, séparé', separe_micro: 'autour, séparé',
+  coordination: 'il relie' };
+// (04/11, 16:25, Ahmed : « ce qu'il entend de l'intérieur, de l'extérieur et ce qu'il ressent avec ses capteurs doivent être coordonnés, et il
+// n'y a que lui qui peut le faire : il faut lui donner cette capacité ») son fil, écrit pour ses outils (stimuli_voir) toutes les 3 s quand il
+// change ; ce qu'il relie (stimuli_relier : coordinations.jsonl) revient dans son fil, à son moment
+let filEcrit = '';
+function filPourSesOutils() {
+  const l = FLUX.slice(-500), marque = `${l.length}:${l.length ? l[l.length - 1].t : 0}:${l.length ? l[l.length - 1].x : ''}`;
+  if (marque === filEcrit) return;
+  filEcrit = marque;
+  try { ecrireAtomique(path.join(JARVIS, 'fil-stimuli.json'), j({ maj: Date.now(), flux: l.map(o => ({ t: o.t, s: o.s, x: o.x })) })); } catch (_) {}
+}
+let liensLus = 0;
+function liensRelus() {
+  const f = path.join(JARVIS, 'coordinations.jsonl');
+  let taille = 0; try { taille = fs.statSync(f).size; } catch (_) { return; }
+  if (taille < liensLus) liensLus = 0;
+  if (taille === liensLus) return;
+  let neuf = ''; try { neuf = String(fs.readFileSync(f, 'utf8')).slice(liensLus); } catch (_) { return; }
+  liensLus = taille;
+  // (16:30, l'union de ses deux oreilles) la parole réunifiée, la musique réunifiée, puis tout ce qu'il a entendu
+  const quoi = { parole: 'la parole', musique: 'la musique', tout: 'tout ce qu’il a entendu' };
+  for (const l of neuf.split('\n')) { try { const o = JSON.parse(l); if (o && o.lien) fluxAjouter('coordination', quoi[o.quoi] ? `${quoi[o.quoi]} — ${o.lien}` : o.lien, Number(o.t) || Date.now()); } catch (_) {} }
+}
 function fluxAjouter(s, x, t, cle = null, i = null, mesurer = true) {
   const texte = String(x == null ? '' : x).replace(/\s+/g, ' ').trim().slice(0, 200);
   if (!texte) return;
@@ -6363,6 +6386,10 @@ function fluxMots(source, cle, texte, t0, ms, temps = null) {
   fluxPrecedents.set(source, { cle, mots });
 }
 // le fil autour d'un instant : les mots d'une même source regroupés, chacun daté par rapport à cet instant
+if (typeof setInterval === 'function' && require.main === module) {
+  try { liensLus = fs.statSync(path.join(JARVIS, 'coordinations.jsonl')).size; } catch (_) {}   // au démarrage : ses liens déjà dans sa mémoire
+  setInterval(() => { filPourSesOutils(); liensRelus(); }, 3000).unref();
+}
 function fluxTexte(a = Date.now(), avant = 20000, apres = 3000) {
   const l = FLUX.filter(o => o.t >= a - avant && o.t <= a + apres);
   const parts = [];
