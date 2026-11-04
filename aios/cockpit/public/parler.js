@@ -479,6 +479,17 @@ function creerLecteurNeuronal() {
     get joue() { return sources.size > 0 || !!element; },
     // (16:00) sa vraie voix (une réponse dite, à dire, ou en cours) : ses meubles n'en sont pas
     get parle() { return lots.length > 0 || vraiesSources() || !!element || unites.some(u => !u.meuble); },
+    // (04/11) retirer des paroles déjà fabriquées qui n'ont pas encore commencé (ses bouts devenus inutiles : sa vraie réponse arrive)
+    retirerAudio(textes) {
+      const garde = (t) => !textes.includes(t);
+      for (let i = unites.length - 1; i >= 0; i--) if (unites[i].audio && !garde(unites[i].audio.texte)) unites.splice(i, 1);
+      for (let i = lots.length - 1; i >= 0; i--) if (lots[i].texte && !garde(lots[i].texte) && lots[i].pret && lots[i].pret.getChannelData) lots.splice(i, 1);
+      if (fluide()) {
+        for (const src of [...sources]) if (src._texte && !garde(src._texte) && src._debut > actx.currentTime + 0.02) { try { src.stop(); } catch (_) {} sources.delete(src); }
+        prochainDebut = Math.max(actx.currentTime, ...[...sources].map(x => x._fin || 0));
+      }
+      pomper();
+    },
   };
 
   // Coupe un texte trop long pour le temps disponible : à une ponctuation, ou juste avant une conjonction
@@ -1011,6 +1022,7 @@ lecteurNeuronal.surSegment = (t, duree) => {
   // (04/11) un bout de sa réponse commence : il s'écrit à cet instant, à la suite des bouts déjà dits
   if (typeof bouts !== 'undefined' && bouts.enFile[0] === t) {
     bouts.enFile.shift();
+    if (etat.conversation) etat.conversation.penseeDite = bouts.dits.slice(0, bouts.dits.length - bouts.enFile.length).join(' ');   // (04/11) vraiment dit
     if (!enTelepathie()) { const dits = bouts.dits.slice(0, bouts.dits.length - bouts.enFile.length).join(' '); montrerPensee('🧠 sa pensée · il te la dit', dits); envoyerParoles('hakim', `🗣️ ${t}`); }
   }
   // (16:45) le bout que sa voix commence : sa réponse s'écrit jusque-là, au même instant
@@ -1911,6 +1923,10 @@ async function envoyer(texte, oral, dejaRelance) {
   const dites = etat.dites.splice(0);
   if (!dejaRelance) { etat.joints.forEach(x => x.url && URL.revokeObjectURL(x.url)); etat.joints = []; rendreJoints(); }
   // (14:55) sa réponse soufflée a déjà commencé pour ce tour : elle continue, et son conscient la reçoit comme le début de sa réponse
+  // (04/11) ses bouts pas encore dits ne servent plus : sa vraie réponse suit le bout en cours (son cerveau sait ce qui a été dit)
+  if (oral && etat.conversation && typeof bouts !== 'undefined' && bouts.enFile.length) {
+    lecteurNeuronal.retirerAudio(bouts.enFile.slice()); bouts.dits.splice(bouts.dits.length - bouts.enFile.length); bouts.enFile = [];
+  }
   const souffleDit = oral && etat.conversation && (etat.conversation.souffleDit || etat.conversation.penseeDite) ? (etat.conversation.souffleDit || etat.conversation.penseeDite) : '';
   if (etat.conversation) { etat.conversation.souffleDit = ''; etat.conversation.penseeDite = ''; }
   if (typeof retirerSouffle === 'function') retirerSouffle();               // (15:02) sa vraie réponse prend la place du brouillon
@@ -2910,7 +2926,7 @@ function direBouts() {
     if (!b.buf || b.n < bouts.prochain) continue;
     bouts.prochain = b.n + 1;
     conv.penseeEnPause = true; conv.souffleParle = true;              // ton tour ouvert ne le bloque pas
-    bouts.dits.push(b.texte); conv.penseeDite = bouts.dits.join(' ');
+    bouts.dits.push(b.texte);
     bouts.enFile.push(b.texte);
     lecteurNeuronal.direAudio(b.texte, b.buf);                        // à la suite de ce qu'il dit déjà : le lecteur les enchaîne
   }
@@ -3618,7 +3634,12 @@ function transcriptionEnPause() {
   // par le Mac (empreinte_vocale.py), est mise de côté ; le reste lui arrive
   if (typeof reglagesCorps !== 'undefined' && reglagesCorps.micro_ouvert) return false;
   if (c.attentionJusqua && Date.now() < c.attentionJusqua && !sonTourEnCours()) return true;   // son oreille a choisi
-  return sonTourEnCours() || !!(c.muetParHakim && !c.muetParHakim.attente);
+  // (04/11, Ahmed : « quand je clique sur Stop juste après avoir parlé, il répond direct ; sinon il galère, comme si je devais lui donner
+  // l'autorisation ; arrange ça ») en Conversation, tu restes entendu : ses bouts, qui répondent à ce que tu dis, et sa réponse qui
+  // s'écrit encore ne mettent plus ta voix en attente ; seule sa voix qui joue vraiment (en Télépathie : son tour entier, comme avant)
+  if (c.penseeEnPause && !enTelepathie()) return false;
+  const voixJoue = !!(lecteur && lecteur.actif && !lecteur.enPause);
+  return (enTelepathie() ? sonTourEnCours() : voixJoue) || !!(c.muetParHakim && !c.muetParHakim.attente);
 }
 async function reprendreTranscription() {
   const c = etat.conversation;
@@ -3846,7 +3867,16 @@ async function tourDeParole(conv, wav, infos, extra) {
   if (conv.tourGarde && !sonTourEnCours()) { texte = `${conv.tourGarde} … ${texte}`; conv.tourGarde = ''; }
   if ((conv.ecritGarde || []).length && !sonTourEnCours()) texte = `${prendreEcritsGardes(conv)}\n${texte}`;   // (08:30)
   // (15:10, mesuré : sa soufflée dite à 15:05:46, ton tour retenu 18 s derrière elle) sa réponse soufflée ne retient pas ton tour
-  if (chacunSonTour() && sonTourEnCours() && !conv.souffleParle) { garderPourSonTour(conv, texte); return; }
+  // (04/11, Ahmed : « quand je clique sur Stop juste après avoir parlé, la réponse est directe ; si je ne clique pas, il galère » ; mesuré
+  // 02:05-02:55 : 44 tours gardés, ta phrase attendait la fin de ses bouts) ses bouts sont SA réponse à CE que tu dis : ta phrase part
+  // tout de suite, pas après eux
+  if (chacunSonTour() && sonTourEnCours() && !conv.souffleParle && !conv.penseeDite) {
+    // (04/11) en Conversation, ta phrase finie fait ce que faisait ton Stop : il s'arrête (ce qu'il n'a pas dit est gardé pour plus
+    // tard) et ta phrase part tout de suite ; en Télépathie, chacun son tour, comme avant
+    if (enTelepathie()) { garderPourSonTour(conv, texte); return; }
+    journalVoix('stop_par_ta_phrase', { flux: !!etat.flux, voix: !!(lecteur && lecteur.actif) });
+    arreterTout(true, { garder: true, raison: 'parole' }); majBoutonsPause();
+  }
   // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
   if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(true, { garder: true, raison: 'parole' }); }
   sousTitre(texte);

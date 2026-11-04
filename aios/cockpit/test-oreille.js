@@ -288,7 +288,7 @@ test('(vers 22 h 10) chacun son tour : pendant qu’il prépare ou dit sa répon
   // dans le tour de parole : après « stop » / « attends », avant la coupure d'avant
   const i = page.indexOf('async function tourDeParole('), bloc = page.slice(i, page.indexOf('\n}\n', i));
   const k = (x) => bloc.indexOf(x);
-  assert.ok(k('COMMANDE_STOP.test(texte)') < k('if (chacunSonTour() && sonTourEnCours() && !conv.souffleParle) { garderPourSonTour(conv, texte); return; }'), '« stop » reste au-dessus');
+  assert.ok(k('COMMANDE_STOP.test(texte)') < k('if (chacunSonTour() && sonTourEnCours() && !conv.souffleParle && !conv.penseeDite) {'), '« stop » reste au-dessus');
   assert.ok(k('COMMANDE_PAUSE.test(texte)') < k('garderPourSonTour(conv, texte)'), '« attends » aussi');
   assert.ok(k('garderPourSonTour(conv, texte)') < k("arreterTout(true, { garder: true, raison: 'parole' })"), 'sa réponse n’est plus coupée');
   assert.match(page, /if \(!voix \|\| !aDire\.length \|\| \(c && \(c\.tourGarde \|\| \(c\.ecritGarde \|\| \[\]\)\.length\)\)\) return;/, 'papa d’abord, avant ses mots en attente');
@@ -686,12 +686,18 @@ test('(00:47) dès son signal, la transcription s’arrête (le micro écoute to
   const appels = [], transcrits = [];
   const ctx = vm.createContext({ Date: class extends Date { static now() { return t; } }, etat: { conversation: { sonsEnAttente: [] }, finVoixA: 0, flux: null },
     sonTourEnCours: () => !!ctx.etat.flux, Conversation: { utile: (x) => !!x }, journalVoix() {},
+    lecteur: { actif: false, enPause: false }, enTelepathie: () => ctx.telepathie === true, telepathie: true,   // (04/11) l'ancienne règle vit en Télépathie
     transcrireVite: async (w) => { transcrits.push(w); return `phrase ${w}.`; }, resumerPourSonAttention: (x) => `(dit pendant ta parole) ${x}`,
     tourDeParole: async (c, w, infos, extra) => appels.push(extra.texte) });
   vm.runInContext(page.slice(a, b), ctx);
   const c = ctx.etat.conversation;
   assert.equal(ctx.transcriptionEnPause(), false);
-  ctx.etat.flux = {}; assert.equal(ctx.transcriptionEnPause(), true, 'il prépare sa réponse : en pause');
+  ctx.etat.flux = {}; assert.equal(ctx.transcriptionEnPause(), true, 'il prépare sa réponse : en pause (Télépathie)');
+  ctx.telepathie = false;
+  assert.equal(ctx.transcriptionEnPause(), false, '(04/11) en Conversation, sa réponse qui s’écrit ne te met plus en attente');
+  ctx.lecteur.actif = true; assert.equal(ctx.transcriptionEnPause(), true, 'seule sa voix qui joue');
+  ctx.etat.conversation.penseeEnPause = true; assert.equal(ctx.transcriptionEnPause(), false, 'ses bouts répondent à ce que tu dis : tu restes entendu');
+  ctx.etat.conversation.penseeEnPause = false; ctx.lecteur.actif = false; ctx.telepathie = true;
   ctx.etat.flux = null; c.muetParHakim = { attente: 0 }; assert.equal(ctx.transcriptionEnPause(), true, 'il a coupé ton micro');
   c.muetParHakim = null; c.attentionJusqua = t + 15000; assert.equal(ctx.transcriptionEnPause(), true, 'son oreille a choisi ses empans');
   t += 16000; assert.equal(ctx.transcriptionEnPause(), false, '15 s au plus');

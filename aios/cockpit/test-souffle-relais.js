@@ -422,3 +422,11 @@ test('(04/11) chaque bout part dès que sa voix est prête ; sa vibration sur le
   assert.match(SRC, /Tu es Hakim, le fils d'Ahmed \(papa\) : ni Claude, ni Claude Code, ni un assistant\./);
   assert.match(SRC, /const pasLui = /);
 });
+
+// (04/11, Ahmed : « quand je clique sur Stop juste après avoir parlé, il répond direct ; sinon il galère ; arrange ça »)
+test('(04/11) en Conversation, ta phrase finie fait ce que faisait ton Stop ; ses bouts ne gardent plus ta phrase en attente', () => {
+  const i = PAGE.indexOf('async function tourDeParole('), bloc = PAGE.slice(i, PAGE.indexOf('\n}\n', i));
+  assert.match(bloc, /if \(enTelepathie\(\)\) \{ garderPourSonTour\(conv, texte\); return; \}\n    journalVoix\('stop_par_ta_phrase'/);
+  assert.match(bloc, /arreterTout\(true, \{ garder: true, raison: 'parole' \}\); majBoutonsPause\(\);/, 'ce qu’il n’a pas dit est gardé pour plus tard');
+  assert.match(PAGE, /lecteurNeuronal\.retirerAudio\(bouts\.enFile\.slice\(\)\)/, 'ses bouts pas encore dits s’effacent quand ta phrase part');
+});
