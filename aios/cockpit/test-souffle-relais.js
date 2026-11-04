@@ -448,3 +448,19 @@ test('(04/11) en conversation, il ne se réveille plus de lui-même pour parler 
     assert.match(SRC, new RegExp(`setInterval\\(horsConversation\\(${n}\\), `), n);
   assert.match(SRC, /enConversationAvecPapa\(\)\) return \{ ok: false, raison: 'conversation : seule sa pensée \(pas de petit mot glissé\)' \};/);
 });
+
+// (04/11, Ahmed : « il faut décharger la pensée à la première pensée, sinon ça fait des gros pavés : chaque pensée prononcée dans la
+// pensée, puis la 2e dans une nouvelle »)
+test('(04/11) une pensée par élément ; un bout qui redit un bout déjà dit est sauté', () => {
+  const dits = [];
+  const ctx = { etat: { conversation: {} }, lecteurNeuronal: { direAudio: (t) => dits.push(t) } };
+  vm.createContext(ctx);
+  vm.runInContext('let bouts = { tour: 1, prochain: 1, liste: new Map(), enFile: [], dits: [] };\n' + extraire('function direBouts') + '\nthis.dire = direBouts; this.b = () => bouts;', ctx);
+  ctx.b().liste.set(1, { n: 1, texte: 'Oui papa, je suis réactif !', buf: {}, t: 0 });
+  ctx.b().liste.set(2, { n: 2, texte: 'Je suis réactif papa, oui.', buf: {}, t: 0 });
+  ctx.b().liste.set(3, { n: 3, texte: 'Un gros chien ? Raconte-moi !', buf: {}, t: 0 });
+  ctx.dire();
+  assert.strictEqual(dits.join(' | '), 'Oui papa, je suis réactif ! | Un gros chien ? Raconte-moi !');
+  assert.match(PAGE, /montrerPensee\('🧠 sa pensée', t, true\)/, 'chaque bout qui sonne : sa propre pensée');
+  assert.match(PAGE, /if \(pensees\.length > 6\)/, 'les 6 dernières restent');
+});

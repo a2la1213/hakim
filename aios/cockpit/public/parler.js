@@ -1029,7 +1029,7 @@ lecteurNeuronal.surSegment = (t, duree) => {
     const cap = etat.conversation && etat.conversation.capteur;
     if (cap && Number(cap.debutTour) > 0) journalVoix('bout_dit', { depuis_ton_debut_ms: Date.now() - Number(cap.debutTour), premier: bouts.dits.length - bouts.enFile.length === 1 });
     if (etat.conversation) etat.conversation.penseeDite = bouts.dits.slice(0, bouts.dits.length - bouts.enFile.length).join(' ');   // (04/11) vraiment dit
-    { const dits = bouts.dits.slice(0, bouts.dits.length - bouts.enFile.length).join(' '); montrerPensee('🧠 sa pensée · il te la dit', dits); envoyerParoles('hakim', `🧠 ${t}`); }
+    montrerPensee('🧠 sa pensée', t, true); envoyerParoles('hakim', `🧠 ${t}`);   // (04/11) chaque pensée dite, seule, dans la sienne
   }
   // (16:45) le bout que sa voix commence : sa réponse s'écrit jusque-là, au même instant
   const mR = etat.lectureDe != null ? etat.messages.find(x => String(x.id) === String(etat.lectureDe)) : null;
@@ -2931,6 +2931,11 @@ function direBouts() {
   for (const b of prets) {
     bouts.liste.delete(b.n);
     if (!b.buf || b.n < bouts.prochain) continue;
+    // (04/11, capture : « Je suis réactif papa… » cinq fois) ses pistes en parallèle ne se voient pas : un bout qui redit un bout déjà
+    // dit (les trois quarts de ses mots) est sauté
+    const motsDe = (x) => String(x).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^\p{L}\p{N}]+/u).filter(m => m.length > 2);
+    const m1 = motsDe(b.texte);
+    if (m1.length && bouts.dits.some(d => { const m2 = new Set(motsDe(d)); return m1.filter(m => m2.has(m)).length / m1.length >= 0.75; })) continue;
     bouts.prochain = b.n + 1;
     conv.penseeEnPause = true; conv.souffleParle = true;              // ton tour ouvert ne le bloque pas
     bouts.dits.push(b.texte);
@@ -2938,10 +2943,16 @@ function direBouts() {
     lecteurNeuronal.direAudio(b.texte, b.buf);                        // à la suite de ce qu'il dit déjà : le lecteur les enchaîne
   }
 }
-function montrerPensee(titre, texte) {
-  etat.aCote = (etat.aCote || []).filter(x => x.cle !== 'souffle');
-  etat.aCote.push({ ts: Date.now(), cle: 'souffle', html: `<div class="m j brouillon" style="opacity:.75;font-style:italic">`
+// (04/11, Ahmed, capture à l'appui : « il faut décharger la pensée à la première pensée, sinon il envoie toutes ses pensées au fur et à
+// mesure et ça fait des gros pavés ; chaque pensée prononcée est envoyée dans la pensée, puis la 2e dans une nouvelle pensée ») une
+// pensée = un élément : celle qui sonne s'écrit seule, la suivante dans un nouvel élément (les 6 dernières restent)
+function montrerPensee(titre, texte, nouvelle = false) {
+  const cle = nouvelle ? `pensee-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` : 'souffle';
+  etat.aCote = (etat.aCote || []).filter(x => x.cle !== cle && !(nouvelle && x.cle === 'souffle'));
+  etat.aCote.push({ ts: Date.now(), cle, html: `<div class="m j brouillon" style="opacity:.75;font-style:italic">`
     + `<span class="quand">${titre}</span><div>${esc(texte)}</div></div>` });
+  const pensees = etat.aCote.filter(x => String(x.cle).startsWith('pensee-'));
+  if (pensees.length > 6) { const vieilles = new Set(pensees.slice(0, pensees.length - 6)); etat.aCote = etat.aCote.filter(x => !vieilles.has(x)); }
   rendre();
 }
 // (15:10, mesuré : la voix met ~2,6 s avant son premier son) sa voix fabriquée pendant que papa parle encore ; une par niveau, la suivante
@@ -2968,8 +2979,9 @@ function recouvre(pour, actuel) {
   return a.length >= 3 && a.filter(m => b.has(m)).length / a.length >= 0.75;
 }
 function retirerSouffle() {
-  if (!(etat.aCote || []).some(x => x.cle === 'souffle')) return;
-  etat.aCote = etat.aCote.filter(x => x.cle !== 'souffle');
+  const sienne = (x) => x.cle === 'souffle' || String(x.cle).startsWith('pensee-');
+  if (!(etat.aCote || []).some(sienne)) return;
+  etat.aCote = etat.aCote.filter(x => !sienne(x));
   rendre();
 }
 // (16:00) le brouillon frais (15 s), écrit pour ce que tu as dit : celui de son subconscient d'abord, puis son cerveau, puis sa
@@ -3025,7 +3037,7 @@ function direSouffle(conv, s, par) {
   noterEcartSouffle(conv, s, true, par, !!buf);
   journalVoix('souffle', { pris: true, dit: true, par, mots: s.texte.split(/\s+/).length, voix_prete: !!buf });
   etat.reponseVoix = 'souffle';
-  montrerPensee('🧠 sa pensée · il te la dit', s.texte); envoyerParoles('hakim', `🧠 ${s.texte}`);   // (04/11) dans les deux modes
+  montrerPensee('🧠 sa pensée', s.texte, true); envoyerParoles('hakim', `🧠 ${s.texte}`);   // (04/11) dans les deux modes, une pensée par élément
   if (buf) lecteurNeuronal.direAudio(s.texte, buf); else lecteur.dire(s.texte);
   if (par !== 'serveur') fetch('/api/jarvis/souffle', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
     body: JSON.stringify({ dit: s.texte }) }).catch(() => {});
