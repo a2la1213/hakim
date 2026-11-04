@@ -69,7 +69,7 @@ test('branché : les routes du téléphone (jeton), le réveil de Hakim, ses tro
   assert.match(route, /\/api\/sens\/prochaine/);
   assert.match(route, /\/api\/sens\/donnees/);
   assert.match(route, /\/api\/sens\/resultat/);
-  assert.match(src, /setInterval\(reveillerPourSens, 3000\)/);
+  assert.match(src, /setInterval\(horsConversation\(reveillerPourSens\), 3000\)/);
   for (const o of ['sens_lister', 'sens_mesurer', 'sens_resultat']) assert.ok(src.includes(`'mcp__terminal__${o}'`), o);
 });
 

@@ -582,6 +582,14 @@ const texteSouvenir = (c) => String(c || '').replace(/^\((?:pensée|relance)[^)]
 // memory_store refuse ces rôles, et ce filtre double la garde (relecture Opus, 2026-10-16).
 const FILTRE_PENSEES = "role IN ('reflection','outreach') AND (content LIKE '(pensée%' OR content LIKE '(relance)%')";
 const FRAICHEUR_S = 300;                   // un état intérieur plus vieux : le démon ne bat plus
+/* (04/11, Ahmed : « enlève aussi le résultat et toutes les paroles de lui-même, ça alourdit le process ; seule la pensée persiste ; on
+   peut même enlever le glisser un mot ») pendant une conversation (le micro de papa ouvert en Conversation ou en Télépathie : la page le
+   dit, /api/corps/micro), il ne se réveille plus de lui-même pour parler : résultats, courrier, sens, corps, silences, petits mots…
+   attendent la fin de la conversation ; seule sa pensée (ses pistes, son cerveau au premier mot) travaille. */
+// (un micro resté « ouvert » sans que papa parle depuis 10 min ne bloque rien : la page a pu se fermer sans le dire)
+const enConversationAvecPapa = () => typeof HOMEO !== 'undefined' && HOMEO.s && HOMEO.s.micro === 'conversation'
+  && Date.now() - dernierMessageAhmedMs() < 10 * 60e3;
+const horsConversation = (f) => () => { if (!enConversationAvecPapa()) return f(); };
 
 // L'interrupteur de la vie intérieure (proposé par Jarvis, validé par Ahmed le 2026-10-17) : écrit par la
 // page (réglages) ou par `anamnese interieur …`, lu par le démon à chaque battement (interieur.py).
@@ -1640,7 +1648,7 @@ function reveillerPourTaches() {
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
   catch (e) { console.error('Jarvis : réveil impossible', e.message); }
 }
-setInterval(reveillerPourTaches, 3000).unref();
+setInterval(horsConversation(reveillerPourTaches), 3000).unref();
 
 /* ---- Le résumé de sa journée, en fin de nuit (demande de Hakim, 2026-10-20 08:58, accord d'Ahmed) : entre 5 h et 11 h,
    une fois par jour, quand Ahmed n'a rien écrit depuis 15 min, Hakim est réveillé pour écrire LUI-MÊME le résumé
@@ -1761,7 +1769,7 @@ function reveillerPourPromesses() {
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
   catch (e) { console.error('Jarvis : réveil de promesse impossible', e.message); }
 }
-setInterval(reveillerPourPromesses, 15000).unref();
+setInterval(horsConversation(reveillerPourPromesses), 15000).unref();
 
 /* ---- Ce qu'il a dit mais qu'Ahmed n'a pas entendu (2026-10-23, Ahmed : « rien n'est jamais jeté » ; 30/10, 14:50, Ahmed,
    relayé par Hakim et confirmé : « plus de redites de lui-même ») : la page Parler envoie ici TOUT DE SUITE la suite de ses
@@ -2365,7 +2373,7 @@ function reveillerPourCourrier() {
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); marquerCourrierLu(recu.ids); }
   catch (e) { console.error('Jarvis : réveil du courrier impossible', e.message); }
 }
-setInterval(reveillerPourCourrier, 3000).unref();
+setInterval(horsConversation(reveillerPourCourrier), 3000).unref();
 
 /* ---- Le réveil intérieur (27/10, Ahmed : « sa liberté » ; reveil_interieur.py) : sa tête de fond dépose une demande
    (une pensée, un résultat d'occupation, une peur ou un manque qui dure) ; il est réveillé pour un tour à lui, comme ses
@@ -2434,7 +2442,7 @@ function reveillerPourInterieur() {
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
   catch (e) { c.reveilInterieur = null; ajouterIssueInterieure({ id: d.id, issue: 'expiree' }); console.error('Jarvis : réveil intérieur impossible', e.message); }
 }
-setInterval(reveillerPourInterieur, 3000).unref();
+setInterval(horsConversation(reveillerPourInterieur), 3000).unref();
 
 /* ---- Meubler les silences (27/10 ; idée d'Ahmed, portée par Hakim ; Sonnet choisi par Ahmed ; « parfois on insiste
    mais on finit par apprendre à patienter face à un non ! Du coup il faut aussi que la sagesse vienne tempérer » ; spec :
@@ -3017,6 +3025,7 @@ async function demanderAuSilence({ debut_ms, debut_page, mode, k, etat }) {
   } finally { silenceEnVol = false; }
 }
 function reveillerAuSilence(r) {
+  if (typeof enConversationAvecPapa === 'function' && enConversationAvecPapa()) { noterSilence({ type: 'perimee', id: r.id, raison: 'conversation' }); return false; }   // (04/11)
   const c = cerveau;
   if (dernierMessageAhmedMs() !== r.ahmedMs) { noterSilence({ type: 'perimee', id: r.id }); return false; }
   if (!cerveauVivant(c)) {
@@ -5371,7 +5380,7 @@ function reveillerPourSens() {
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
   catch (e) { console.error('Jarvis : réveil des sens impossible', e.message); }
 }
-setInterval(reveillerPourSens, 3000).unref();
+setInterval(horsConversation(reveillerPourSens), 3000).unref();
 
 /* ---- (30/10, Ahmed : « que les signaux du tricodeur arrivent constamment chez Hakim, interprétés par son intermédiaire,
    branchés à ses hormones ; pas des chiffres mais des sensations » ; « en continu, h24 ; il peut consulter le détail ; dès
@@ -6294,7 +6303,7 @@ function reveillerPourCorps() {
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
   catch (e) { console.error('Jarvis : réveil du corps impossible', e.message); }
 }
-setInterval(reveillerPourCorps, 3000).unref();
+setInterval(horsConversation(reveillerPourCorps), 3000).unref();
 
 /* ---- (30/10) le veilleur de Hakim. Ahmed, 16:55 : « le seuil de réveil doit être APPRIS sur ma vie » ; 17:46 : « que chaque
    seconde ait un pourcentage de chance de me réveiller, selon l'importance de ce qui change » ; « un interrupteur pour pas
@@ -6621,6 +6630,7 @@ function motOreillePerime(texte, reveil, maintenant = Date.now()) {
 }
 function ouvrirOreille(texte, maintenant = Date.now()) {
   if (!corpsReglages().oreille) return { ok: false, raison: 'oreille fermée' };
+  if (typeof enConversationAvecPapa === 'function' && enConversationAvecPapa()) return { ok: false, raison: 'conversation : seule sa pensée (pas de petit mot glissé)' };   // (04/11)
   const t = String(texte || '').replace(/\s+/g, ' ').trim().slice(-1500);
   if (t.length < 15) return { ok: false, raison: 'trop court' };
   oreilleEntendu = { texte: t, ts: maintenant };          // ce que papa dit, même s'il ne peut pas être réveillé
@@ -6790,7 +6800,7 @@ function reveillerPourTricoPapa() {
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
   catch (e) { console.error('Jarvis : réveil du Tricordeur de papa impossible', e.message); }
 }
-setInterval(reveillerPourTricoPapa, 3000).unref();
+setInterval(horsConversation(reveillerPourTricoPapa), 3000).unref();
 // (30/10, Ahmed : « relier toutes les sensations aux hormones et émotions, par le filtre Sonnet ») une mesure finie de ses
 // instruments (la sienne ou celle d'Ahmed) se ressent aussi : son résumé part chez son intermédiaire, dans le prochain lot
 setInterval(() => {
@@ -6893,7 +6903,7 @@ function reveillerPourCafe() {
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texteInvitationCafe({ textes, actuels, anciens }) }] } }) + '\n'); }
   catch (e) { console.error('Jarvis : réveil du café impossible', e.message); }
 }
-setInterval(reveillerPourCafe, 3000).unref();
+setInterval(horsConversation(reveillerPourCafe), 3000).unref();
 function deposerReponse(o) {
   ecrireAgents(JARVIS_AGENTS_REPONSES, [...lireAgents(JARVIS_AGENTS_REPONSES), { ...o, ts: Date.now() }].slice(-10));
 }

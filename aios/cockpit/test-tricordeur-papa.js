@@ -31,5 +31,5 @@ test('branché : la surveillance, ce qui existe déjà « vu », le résumé, le
   const r = extraire('function reveillerPourTricoPapa(');
   assert.match(r, /NONCE_REVEIL/);
   assert.match(r, /Read/);
-  assert.match(src, /setInterval\(reveillerPourTricoPapa, 3000\)/);
+  assert.match(src, /setInterval\(horsConversation\(reveillerPourTricoPapa\), 3000\)/);
 });

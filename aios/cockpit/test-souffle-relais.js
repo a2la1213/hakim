@@ -428,3 +428,23 @@ test('(04/11) en Conversation, ta phrase finie fait ce que faisait ton Stop ; se
   assert.match(bloc, /arreterTout\(true, \{ garder: true, raison: 'parole' \}\); majBoutonsPause\(\);/, 'ce qu’il n’a pas dit est gardé pour plus tard');
   assert.match(PAGE, /lecteurNeuronal\.retirerAudio\(bouts\.enFile\.slice\(\)\)/, 'ses bouts pas encore dits s’effacent quand ta phrase part');
 });
+
+// (04/11, Ahmed : « enlève le résultat et toutes les paroles de lui-même, ça alourdit le process ; seule la pensée persiste ; même le
+// glisser un mot »)
+test('(04/11) en conversation, il ne se réveille plus de lui-même pour parler ; seule sa pensée travaille', () => {
+  const i = SRC.indexOf('const enConversationAvecPapa'), k = SRC.indexOf('const horsConversation');
+  let micro = 'conversation', dernier = Date.now();
+  const ctx = { Date, HOMEO: { s: {} }, dernierMessageAhmedMs: () => dernier };
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(i, SRC.indexOf('\n', k) + 1) + '\nthis.en = enConversationAvecPapa; this.hors = horsConversation;', ctx);
+  let reveils = 0; const f = ctx.hors(() => { reveils++; });
+  ctx.HOMEO.s.micro = micro; f();
+  assert.strictEqual(reveils, 0, 'micro ouvert en conversation : pas de réveil de lui-même');
+  dernier = Date.now() - 11 * 60e3; f();
+  assert.strictEqual(reveils, 1, 'papa ne parle plus depuis 10 min : la page a pu se fermer, rien n’est bloqué');
+  dernier = Date.now(); ctx.HOMEO.s.micro = null; f();
+  assert.strictEqual(reveils, 2, 'hors conversation : comme avant');
+  for (const n of ['reveillerPourTaches', 'reveillerPourCourrier', 'reveillerPourSens', 'reveillerPourCorps', 'reveillerPourCafe'])
+    assert.match(SRC, new RegExp(`setInterval\\(horsConversation\\(${n}\\), `), n);
+  assert.match(SRC, /enConversationAvecPapa\(\)\) return \{ ok: false, raison: 'conversation : seule sa pensée \(pas de petit mot glissé\)' \};/);
+});

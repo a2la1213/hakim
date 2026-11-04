@@ -61,7 +61,7 @@ test('la route : le jeton, le cockpit signe par cafe.py ahmed, audité, Hakim r�
   assert.match(route, /execFile\(PYTHON_VOIX, \[path\.join\(ANAMNESE, 'jarvis', 'cafe\.py'\), 'ahmed'\]/);
   assert.match(route, /auditer\('cafe:ecrire'/);
   assert.match(route, /cafeEnAttente\.push\(/);
-  assert.match(src, /setInterval\(reveillerPourCafe, 3000\)/);
+  assert.match(src, /setInterval\(horsConversation\(reveillerPourCafe\), 3000\)/);
   assert.match(src, /prenom: \(\/\^a\[0-9a-f\]\{16\}\$\/\.test\(String\(m\.auteur \|\| ''\)\) && prenomAgent\(m\.auteur\)\) \|\| m\.prenom/, 'le prénom d’aujourd’hui');
   const page = fs.readFileSync(path.join(__dirname, 'public', 'cafe.html'), 'utf8');
   assert.match(page, /<textarea id="ecrire"/);

@@ -145,7 +145,7 @@ test('le compteur du jour additionne les issues du jour seulement', () => {
 test('le crochet d’issue est branché dans finir de tourAutonome, et l’état intérieur porte le compteur', () => {
   const t = prendre('tourAutonome');
   assert.match(t, /const finir = \(issue\) => \{[\s\S]*?noterIssueInterieur\(c, texte, outils, issue\);[\s\S]*?livrerAutonome\(/);
-  assert.match(src, /setInterval\(reveillerPourInterieur, 3000\)\.unref\(\)/);
+  assert.match(src, /setInterval\(horsConversation\(reveillerPourInterieur\), 3000\)\.unref\(\)/);
   assert.match(src, /reveils_interieurs: reveilsInterieursDuJour\(\)/);
 });
 

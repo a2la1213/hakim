@@ -53,7 +53,7 @@ test('branché : les routes (jeton), le lot vers corps.py, le réveil, l’inter
   assert.match(r, /'\/api\/corps\/etat'[\s\S]*HOMEO\.recevoir/);
   assert.match(r, /'\/api\/corps\/flux'/);
   assert.match(r, /'\/api\/corps\/reglages'[\s\S]*auditer\('corps:reglages'/);
-  assert.match(src, /setInterval\(reveillerPourCorps, 3000\)/);
+  assert.match(src, /setInterval\(horsConversation\(reveillerPourCorps\), 3000\)/);
   const w = extraire('function ressentirCorps(');
   assert.match(w, /execFile\(PYTHON, \['-B', path\.join\(ANAMNESE, 'corps\.py'\), 'ressentir'\]/);
   assert.match(w, /etat: HOMEO\.mots\(\)/);
