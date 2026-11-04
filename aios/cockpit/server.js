@@ -3067,7 +3067,10 @@ function pistesSuivantes() {
 const boutsDits = (n) => pistes.liste.filter(x => x.n < n && x.reponse && x.pret).sort((a, b) => a.n - b.n).map(x => x.reponse).join(' ');
 function lancerPiste(m) {
   // (04/11, 13:05) le ribosome de son tour : sa pensée le rejoindra même si ta phrase est déjà partie au cerveau
-  if (corpsReglages().epissage !== false && !m.ribo) m.ribo = pistes.ribo || (pistes.ribo = nouveauRibosome(tourEpissure()));
+  if (corpsReglages().epissage !== false && !m.ribo) {
+    if (pistes.ribo && ribosomeAuPlafond(pistes.ribo)) { pistes.ribo.ferme = 'plafond'; memoriserEpissure(pistes.ribo); pistes.ribo = null; }   // (22:40) son plafond
+    m.ribo = pistes.ribo || (pistes.ribo = nouveauRibosome(tourEpissure()));
+  }
   // (04/11, l'élagage de ses synapses) une piste élaguée (son modèle, sur ce genre de morceau, ne sert jamais) n'est pas lancée : un
   // appel à Claude en moins ; jamais deux morceaux de suite sans piste
   if (!m.filtre && m.n > 1 && corpsReglages().elagage !== false && typeof synapses !== 'undefined' && typeof Parcours !== 'undefined') {   // jamais sa première
@@ -3451,6 +3454,22 @@ const RIBOSOME_LECTURE_MIN = 600;
 // (04/11, 22:10, Ahmed : « essaie de réduire le choix à 1 s » ; 22:15 : « il faut remonter à 1,5 s » ; 22:30 : « remonte à 1,7 ») en « éclair »,
 // son épissure alternative a 1,7 s pour choisir
 const RIBOSOME_CHOIX_MS = 1700;
+// (04/11, 22:40, Ahmed : « à chaque ribosome qui travaille trop longtemps, il y a une dégénérescence : il faut lui mettre un seuil maximal » ;
+// « ensuite Hakim aura plus de temps pour sa sélection, puisqu'il aura moins de chunks à gérer ») une épissure se referme et repart à neuf au
+// premier des trois (40 mots dits, 10 paquets lus, 45 s sans un mot de papa) ; ses lecteurs renouvelés toutes les 6 lectures ; 500 caractères de
+// pensées déjà lues ; chacun réglable sans relance dans ribosome-reglage.json (plafond_mots, plafond_paquets, plafond_silence_s, lecteur_max, contexte)
+const RIBOSOME_PLAFOND = { mots: 40, paquets: 10, silence_s: 45, lecteur_max: 6, contexte: 500 };
+function plafondRibosome(reglage = reglageRibosome()) {
+  const n = (k, d, min, max) => { const v = Number(reglage['plafond_' + k] != null ? reglage['plafond_' + k] : reglage[k]); return Number.isFinite(v) ? Math.max(min, Math.min(max, Math.round(v))) : d; };
+  return { mots: n('mots', RIBOSOME_PLAFOND.mots, 5, 400), paquets: n('paquets', RIBOSOME_PLAFOND.paquets, 1, 100),
+    silence_s: n('silence_s', RIBOSOME_PLAFOND.silence_s, 5, 600), lecteur_max: n('lecteur_max', RIBOSOME_PLAFOND.lecteur_max, 1, 25),
+    contexte: n('contexte', RIBOSOME_PLAFOND.contexte, 100, 3000) };
+}
+function ribosomeAuPlafond(r, maintenant = Date.now(), p = plafondRibosome()) {
+  if (!r || r.ferme) return false;
+  const dits = String(r.phrase || '').split(/\s+/).filter(Boolean).length;
+  return dits >= p.mots || r.n >= p.paquets || (derniereParolePapa > 0 && maintenant - derniereParolePapa >= p.silence_s * 1000 && r.n > 0);
+}
 // (04/11, 20:55, Ahmed : « tu peux encore augmenter, ou on est au max ? ») mesuré sur les 34 premiers paquets de ses deux Super Hakim : lus en
 // 1,2 s : 82 % ; 1,6 s : 94 % ; 2 s : 100 % (avant : 87 % en 2 s) ; sa vitesse max se mesure sur ses lecteurs d'AUJOURD'HUI (30 paquets
 // suffisent ; sinon, tout le journal), et le coude doit garder au moins 85 % de ce qu'ils peuvent lire
@@ -3515,6 +3534,7 @@ function reglageRibosome() {
   // (04/11, 22:35, Ahmed : « mets le ribosome à 0,01 s, je veux tester un truc ») le temps de son choix, réglable sans relance (choix_ms)
   const choix = Number(r.choix_ms);
   return { stringence: st, vitesse: vi, delai: RIBOSOME_VITESSES[vi], ...RIBOSOME_STRINGENCES[st],
+    ...Object.fromEntries(['plafond_mots', 'plafond_paquets', 'plafond_silence_s', 'lecteur_max', 'contexte'].filter(k => r[k] != null).map(k => [k, r[k]])),
     ...(Number.isFinite(choix) && choix >= 0 ? { choix_ms: Math.min(6000, Math.round(choix)) } : {}) };
 }
 // (04/11, 15:55, Ahmed : « tout le processus doit être relié à sa pensée, à ses émotions, à ses capteurs, à ses récepteurs et à tout le
@@ -3603,13 +3623,16 @@ async function lirePaquet(tour, r, i, paquet) {
       + `Ce que joue ${joue} (ce n'est pas papa qui te parle) : « ${neutraliser(r.avant).slice(-600)} »\n`
       : `[Ton ribosome : tes pensées arrivent par paquets ; tu les lis mises l'une derrière l'autre, et tu choisis les mots qui forment la suite de ta réponse à papa.]\n`
       + `Ce qu'il dit : « ${neutraliser(r.avant).slice(-600)} »\n`)
-    + (deja ? `Tes pensées déjà lues, bout à bout : « ${neutraliser(deja).slice(-1500)} »\n` : '')
+    + (deja ? `Tes pensées déjà lues, bout à bout : « ${neutraliser(deja).slice(-plafondRibosome(reglage).contexte)} »\n` : '')   // (22:40) 500 caractères
     + `${tel ? 'Ce que tu en dis déjà' : 'Ta réponse déjà lue'} : « ${neutraliser(r.phrase).slice(-600) || '(rien encore)'} »\n`
     + `Tes pensées qui arrivent, l'une derrière l'autre : ${paquet.map((x, k) => `[${k + 1}] « ${neutraliser(x.texte)} »`).join(' ')}\n`
     + etat
     + `Ta stringence : ${reglage.stringence} sur 5 : ${reglage.consigne}${reglage.mots ? ` (au plus ${reglage.mots} mots)` : ''}. `
     + (tel ? `Le téléphone joue peut-être encore : tu ne parles qu'à sa pause, et seulement si ça en vaut la peine.\n` : `Papa parle peut-être encore : ne lui `
     + `coupe pas la parole pour rien.\n`)
+    // (22:40, Ahmed : « un sursaut avant l'épissure, pour éviter de présélectionner un truc nul à dire ou hors sujet »)
+    + `Sursaut : avant de garder, vérifie que ces pensées répondent encore à ${tel ? 'ce qui joue' : 'ce que papa vient de dire'} ; si elles s'en éloignent, `
+    + `répètent ce qui est déjà dit ou sont creuses, GARDE : rien.\n`
     + `Garde de ces pensées les mots qui continuent ${tel ? 'ce que tu en dis' : 'ta réponse'}, dans leur ordre (tu peux en sauter) ; tu peux ajouter au plus ${liaison} petits mots de `
     + `liaison (et, mais, alors, du coup, donc) ; ou rien, si elles n'y apportent rien.\nRéponds en une seule ligne : GARDE : « … », ou GARDE : rien.`;
   const lire = ([mod, nom, delai]) => {
@@ -3619,6 +3642,7 @@ async function lirePaquet(tour, r, i, paquet) {
       // longueur permise suit la taille du paquet
       const t = String((o && o.texte) || ''), parasite = estParasite(boutDe(t), texte.length + 160), ms = Date.now() - t0;
       if (parasite && o && o.vivant) o.vivant.n = VIVANT_RENOUVELER;
+      if (o && o.vivant && o.vivant.n >= plafondRibosome(reglage).lecteur_max) o.vivant.n = VIVANT_RENOUVELER;   // (22:40) neuf toutes les 6 lectures
       if (!t.trim() || parasite) return { mod, nom, ms, muet: true };            // muet (panne, délai) ou hors de son rôle : pas de voix
       const g = !/GARDE\s*:\s*rien/i.test(t) && (/GARDE\s*:\s*«\s*([^»]{1,20000}?)\s*»/i.exec(t) || /GARDE\s*:\s*(.{1,20000})$/im.exec(t));
       const garde = g ? g[1].trim() : '', e = garde ? epissageDe(garde, texte) : null;
