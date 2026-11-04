@@ -7136,11 +7136,18 @@ function cerveauPrechauffer(modele, session, force = false, choix = 'auto') {
    s'arrête seul après 15 min d'inactivité pour rendre la mémoire du Mac. */
 const VOIX_SERVEUR = path.join(ANAMNESE, 'jarvis', 'voix_serveur.py');
 const voixAttente = new Map();
-let voixProc = null, voixSuivant = 1;
+let voixSuivant = 1;
+// (04/11, Ahmed : « parallélise encore plus tous ses processus, étalés sur tous les CPU et le GPU, bien équilibrés, sans trop surcharger »)
+// son oreille et sa voix partageaient UN processus : mesuré 16:51-17:07, 144 transcriptions (612 s : 60 % du temps) et 84 synthèses
+// s'attendaient l'une l'autre (« synthese_en_cours », jusqu'à 44 s de file). Deux processus désormais, en parallèle sur le GPU :
+// l'oreille (Whisper : transcrire) et la voix (Chatterbox : dire) ; chacun ne charge que son modèle (la mémoire ne double pas)
+const voixProcs = { ecoute: null, parole: null };
+const voieVoix = (req) => (req && req.op === 'dire' ? 'parole' : 'ecoute');
 
-function voixDemarrer() {
-  if (voixProc && voixProc.exitCode === null && voixProc.signalCode === null) return voixProc;
-  const p = spawn(PYTHON_VOIX, [VOIX_SERVEUR], { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, PATH: CHEMIN_OUTILS } });
+function voixDemarrer(voie = 'ecoute') {
+  const q = voixProcs[voie];
+  if (q && q.exitCode === null && q.signalCode === null) return q;
+  const p = spawn(PYTHON_VOIX, [VOIX_SERVEUR], { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, PATH: CHEMIN_OUTILS, JARVIS_VOIX_ROLE: voie } });
   let tampon = '';
   p.stdout.setEncoding('utf8');
   p.stdout.on('data', (d) => {
@@ -7157,21 +7164,21 @@ function voixDemarrer() {
   p.stdin.on('error', () => {});
   p.on('error', () => {});
   p.on('close', () => {
-    if (voixProc === p) voixProc = null;
+    if (voixProcs[voie] === p) voixProcs[voie] = null;
     for (const [id, a] of voixAttente) if (a.proc === p) { voixAttente.delete(id); clearTimeout(a.minuterie); a.resolve({ erreur: 'processus voix arrêté' }); }
   });
-  voixProc = p;
+  voixProcs[voie] = p;
   return p;
 }
 
 function voixDemander(req, delaiMs) {
   return new Promise((resolve) => {
-    const p = voixDemarrer();
+    const voie = voieVoix(req), p = voixDemarrer(voie);
     const id = voixSuivant++;
     const minuterie = setTimeout(() => {           // bloqué : on le tue, la demande suivante en relance un neuf
       voixAttente.delete(id);
       resolve({ erreur: 'délai dépassé' });
-      if (voixProc === p) { voixProc = null; try { p.kill('SIGKILL'); } catch (_) {} }
+      if (voixProcs[voie] === p) { voixProcs[voie] = null; try { p.kill('SIGKILL'); } catch (_) {} }
     }, delaiMs);
     voixAttente.set(id, { resolve, minuterie, proc: p });
     p.stdin.write(j({ ...req, id }) + '\n');
@@ -7212,7 +7219,8 @@ async function routeFichier(req, res) {
 const fileVoix = [];
 let voixOccupee = false, transcriptionsEnAttente = 0;
 async function pomperVoix() {
-  if (voixOccupee || transcriptionsEnAttente > 0) return;     // la transcription d'Ahmed passe avant la voix
+  // (28/10) la transcription d'Ahmed passait avant la voix (un seul processus) ; (04/11) deux processus : sa voix ne l'attend plus
+  if (voixOccupee) return;
   let tache = fileVoix.shift();
   // (28/10) au calme seulement (rien d'autre à dire, aucun tour en cours) : un de ses débuts de réponse, fabriqué d'avance
   if (!tache && fileDebuts.length && !toursActifs.size) tache = fileDebuts.shift();
@@ -9976,7 +9984,7 @@ setInterval(surveillerTaches, 4000);
 setInterval(surveillerPromotions, 5000);
 setInterval(consciencePulse, 5000);
 let arretCockpit = false;
-const toutCouper = () => { arretCockpit = true; couperJarvis(); if (cerveau) tuer(cerveau.enfant); for (const m of messagers.values()) tuer(m.enfant, 'arrêt du cockpit'); try { MISSIONS.couper(); } catch (_) {} if (voixProc) { try { voixProc.kill('SIGTERM'); } catch (_) {} }
+const toutCouper = () => { arretCockpit = true; couperJarvis(); if (cerveau) tuer(cerveau.enfant); for (const m of messagers.values()) tuer(m.enfant, 'arrêt du cockpit'); try { MISSIONS.couper(); } catch (_) {} for (const vp of Object.values(voixProcs)) if (vp) { try { vp.kill('SIGTERM'); } catch (_) {} }
   if (mlxProc) { try { mlxProc.kill('SIGTERM'); } catch (_) {} }
 };
 process.on('exit', toutCouper);

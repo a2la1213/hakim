@@ -333,3 +333,16 @@ test('(04/11) le silence autour de chaque bout de sa voix est rogné ; ses meubl
   assert.match(PAGE, /lecteurNeuronal\.peutHesiter = \(\) => typeof reglagesCorps !== 'undefined' && reglagesCorps\.meubles_auto === true/,
     'ses meubles automatiques seulement si SENS les allume');
 });
+
+// (04/11, Ahmed : « parallélise encore plus ses processus, sur tous les CPU et le GPU, sans trop surcharger »)
+test('(04/11) son oreille et sa voix ont chacune leur processus : elles ne s’attendent plus', () => {
+  const i = SRC.indexOf('const voieVoix');
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(i, SRC.indexOf('\n', i) + 1) + '\nthis.voie = voieVoix;', ctx);
+  assert.strictEqual(ctx.voie({ op: 'dire' }), 'parole');
+  assert.strictEqual(ctx.voie({ op: 'transcrire' }), 'ecoute');
+  assert.match(SRC, /env: \{ \.\.\.process\.env, PATH: CHEMIN_OUTILS, JARVIS_VOIX_ROLE: voie \}/, 'chaque processus sait son rôle');
+  const pomper = SRC.slice(SRC.indexOf('async function pomperVoix('), SRC.indexOf('\n}\n', SRC.indexOf('async function pomperVoix(')));
+  assert.doesNotMatch(pomper, /transcriptionsEnAttente > 0\) return/, 'sa voix n’attend plus les transcriptions');
+});

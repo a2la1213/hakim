@@ -26,6 +26,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stt  # noqa: E402
 
 INACTIVITE_S = float(os.environ.get("JARVIS_VOIX_INACTIVITE_S", "900"))
+# (04/11, Ahmed : « parallélise ses processus ») le cockpit lance deux processus : « ecoute » (Whisper) et « parole » (Chatterbox) ;
+# chacun ne charge que son modèle (ils se chargent à la première demande) ; vide : les deux, comme avant
+ROLE = os.environ.get("JARVIS_VOIX_ROLE", "")
 # (24/10, 17:43, Hakim : sa voix tenait 10 Go sans rien faire, le Mac swappait à 14,6 Go) : 9,4 Go étaient des tampons
 # Metal que MLX GARDE en cache après chaque synthèse ou transcription (« IOAccelerator » de footprint). Le cache est borné,
 # vidé après chaque demande ; les modèles chargés restent (pas de rechargement).
@@ -141,11 +144,12 @@ def repondre(obj):
 
 def main():
     borner_cache()
-    try:                                    # (27/10) le ton de la voix : le modèle se charge à côté, pas à la première phrase
-        import ton_eveil
-        ton_eveil.prechauffer()
-    except Exception:
-        pass
+    if ROLE != "parole":                    # (04/11) le ton se lit dans ce qu'il ENTEND : seulement pour l'oreille
+        try:                                # (27/10) le ton de la voix : le modèle se charge à côté, pas à la première phrase
+            import ton_eveil
+            ton_eveil.prechauffer()
+        except Exception:
+            pass
     dernier = time.time()
     while True:
         prets, _, _ = select.select([sys.stdin], [], [], 5.0)
