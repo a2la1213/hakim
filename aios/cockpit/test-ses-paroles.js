@@ -76,3 +76,21 @@ test('le bouton « Ses paroles », dans la barre et sur l’orbe, gardé dans se
 test('(04/11, 10:39, papa par Hakim : « en Conversation aussi, ses réponses affichées comme des messages normaux ») allumé par défaut', () => {
   assert.match(page, /voixNeutre: false, sesParoles: true[,}]/);
 });
+
+// (04/11, 17:05, Ahmed : « le bouton pour muter ses paroles ne fonctionne plus ») depuis 15:30, avec l'épissage, sa parole complète était
+// toujours cachée : le bouton ne changeait plus rien. Avec l'épissage, il a son propre état (caché par défaut) ; le bouton le bascule.
+test('« Ses paroles » marche aussi avec l’épissage : cachées par défaut, le bouton les montre et les recache', () => {
+  const ctx = vm.createContext({ etat: { reglages: { sesParoles: true }, conversation: { debut: 0 } }, enTelepathie: () => false, voixEpissee: () => true,
+    sauver() {}, rendre() {}, majFait: 0 });
+  const ligneP = (debut) => { const i = page.indexOf(debut); return page.slice(i, page.indexOf('\n', i)).replace(/^const /, 'var '); };
+  const fn = (nom) => { const i = page.indexOf(`function ${nom}(`); return page.slice(i, page.indexOf('\n}\n', i) + 2); };
+  vm.runInContext([ligneP('const parolesVisibles = '), fn('basculerSesParoles'), 'function majSesParoles() { majFait++; }'].join('\n'), ctx);
+  assert.strictEqual(ctx.parolesVisibles(), false, 'avec l’épissage : cachées par défaut');
+  ctx.basculerSesParoles();
+  assert.strictEqual(ctx.parolesVisibles(), true, 'le bouton les montre');
+  ctx.basculerSesParoles();
+  assert.strictEqual(ctx.parolesVisibles(), false, 'et les recache');
+  assert.strictEqual(ctx.etat.reglages.sesParoles, true, 'le réglage hors épissage n’a pas bougé');
+  ctx.voixEpissee = () => false;
+  assert.strictEqual(ctx.parolesVisibles(), true, 'hors épissage : son réglage à lui');
+});

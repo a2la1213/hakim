@@ -196,7 +196,8 @@ test('page : ses deux fils, sa pensée interne (ce qu’il ne dit pas) et sa par
 });
 
 test('page : avec l’épissage, sa parole complète ne s’écrit pas (ses fichiers, toujours)', () => {
-  assert.match(PAGE, /const parolesVisibles = \(\) => !!etat\.reglages\.sesParoles && !enTelepathie\(\) && !\(typeof voixEpissee === 'function' && voixEpissee\(\)\);/);
+  // (17:05) avec l'épissage, son propre état (caché par défaut), que le bouton « Ses paroles » bascule (test-ses-paroles.js)
+  assert.match(PAGE, /const parolesVisibles = \(\) => !enTelepathie\(\) && \(\(typeof voixEpissee === 'function' && voixEpissee\(\)\) \? !!etat\.reglages\.sesParolesEpissage : !!etat\.reglages\.sesParoles\);/);
 });
 
 // ---- (04/11, 12:05, Ahmed, capture à l'appui : « je ne vois toujours pas l'épissage ; je veux qu'il soit visible comme sur cette photo,

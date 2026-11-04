@@ -1132,7 +1132,8 @@ const motsPapaCaches = () => !!etat.conversation && !motsEnConversation();
 // Télépathie reste sans texte. Ses fichiers se montrent toujours, même quand sa réponse est cachée (sans son texte).
 // (04/11, 15:30, Ahmed : « sa parole complète, je ne dois pas la voir ») avec l'épissage, seulement ses deux fils (sa pensée interne, sa
 // parole épissée) ; ses fichiers se montrent toujours
-const parolesVisibles = () => !!etat.reglages.sesParoles && !enTelepathie() && !(typeof voixEpissee === 'function' && voixEpissee());
+// (17:05, Ahmed : « le bouton pour muter ses paroles ne fonctionne plus ») avec l'épissage, son propre état (caché par défaut), basculé par le bouton
+const parolesVisibles = () => !enTelepathie() && ((typeof voixEpissee === 'function' && voixEpissee()) ? !!etat.reglages.sesParolesEpissage : !!etat.reglages.sesParoles);
 const reponseCachee = () => !!etat.conversation && !parolesVisibles();
 // (04/11, 12:05) en Conversation avec l'épissage (Sens, oui par défaut), sa voix suit son ribosome, pas sa réponse en entier
 const voixEpissee = () => !!etat.conversation && typeof reglagesCorps !== 'undefined' && !!reglagesCorps && reglagesCorps.epissage !== false;
@@ -6474,11 +6475,13 @@ $('muet').addEventListener('click', basculerMuet);
 $('sonHakim').addEventListener('click', () => { couperSon(); });
 // (04/11, 10:20, Ahmed : « qu'il soit aussi possible de réafficher ses paroles dans le mode normal et le mode Conversation »)
 function basculerSesParoles() {
-  etat.reglages.sesParoles = !etat.reglages.sesParoles;
+  const cle = typeof voixEpissee === 'function' && voixEpissee() ? 'sesParolesEpissage' : 'sesParoles';   // (17:05) avec l'épissage, le sien
+  etat.reglages[cle] = !etat.reglages[cle];
   sauver(); majSesParoles(); rendre();
 }
 function majSesParoles() {
-  for (const id of ['sesParoles', 'sesParolesScene']) { const b = $(id); if (b) b.setAttribute('aria-pressed', String(!!etat.reglages.sesParoles)); }
+  const cle = typeof voixEpissee === 'function' && voixEpissee() ? 'sesParolesEpissage' : 'sesParoles';
+  for (const id of ['sesParoles', 'sesParolesScene']) { const b = $(id); if (b) b.setAttribute('aria-pressed', String(!!etat.reglages[cle])); }
 }
 $('sesParoles').addEventListener('click', basculerSesParoles);
 $('sesParolesScene').addEventListener('click', (e) => { e.stopPropagation(); basculerSesParoles(); });
