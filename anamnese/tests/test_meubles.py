@@ -51,6 +51,20 @@ def test_il_peut_eteindre_ou_oublier_un_meuble_meme_de_depart():
     assert "tss" not in [m["nom"] for m in M.lister()]
 
 
+def test_chaque_meuble_a_sa_langue_et_il_en_a_de_depart_en_arabe_et_en_anglais():
+    """(04/11, Ahmed : « les meubles entre chaque pensée doivent être de la même langue que la pensée » ; « il doit toujours pouvoir
+    choisir et créer ses meubles, même s'il en a certains par défaut au début : il peut les changer avec ce qu'il a appris »)"""
+    langues = {m["nom"]: m["langue"] for m in M.lister()}
+    assert langues["euh"] == "fr" and "ar" in langues.values() and "en" in langues.values()
+    assert M.creer("wesh", texte="واش،")["langue"] == "ar", "l'écriture arabe : de l'arabe, sans le dire"
+    assert M.creer("anyway", texte="Anyway,", langue="en")["langue"] == "en"
+    assert M.creer("bon", texte="Bon,")["langue"] == "fr", "sinon : du français"
+    M.regler("yaani", texte="يعني يعني،")
+    assert next(m for m in M.lister() if m["nom"] == "yaani")["texte"] == "يعني يعني،", "ceux de départ se changent aussi"
+    with pytest.raises(ValueError):
+        M.creer("x", texte="Hola,", langue="es")
+
+
 @pytest.mark.parametrize("mauvais", [
     dict(nom="", texte="x"), dict(nom="a", texte="x", son="e1"), dict(nom="a"), dict(nom="a", son="12"),
     dict(nom="a", texte="x" * 41), dict(nom="a", genre="cri"), dict(nom="a", texte="x", volume=3),

@@ -253,6 +253,7 @@ async function chargerMeubles() {
   const noms = new Set(meublesListe.map(m => m.nom));
   for (const k of [...meublesPrets.keys()]) if (!noms.has(k)) meublesPrets.delete(k);
   for (const m of meublesListe) {
+    if (m.texte && m.langue && m.langue !== 'fr') continue;            // (04/11) la voix de Chatterbox ici : ses meubles en français
     const base = { nom: m.nom, texte: m.texte || m.nom, volume: Number(m.volume) || 1, dureeMax: m.duree_ms ? m.duree_ms / 1000 : 0,
       quand: m.quand || 'partout', etats: (m.etats || []).map(sansAccent), actif: m.actif !== false, voix: !!m.texte, brut: !m.texte };
     const deja = meublesPrets.get(m.nom);
@@ -885,6 +886,10 @@ document.addEventListener('keydown', contexteAudio);
 // le niveau de SA voix à l'instant (pour que le micro reconnaisse son écho : conversation.js)
 const tamponSortie = new Float32Array(256);
 function niveauSortie() {
+  // (1.61, 04/11) sa voix du téléphone joue hors de la page : son niveau vient de l'appli (sans lui, son écho passait pour ta voix)
+  if (typeof voixDuTelephone === 'function' && voixDuTelephone() && lecteurSysteme && lecteurSysteme.actif && window.HakimApp && window.HakimApp.voixTelephoneNiveau) {
+    try { return Math.max(0, Number(window.HakimApp.voixTelephoneNiveau()) || 0); } catch (_) { return 0; }
+  }
   if (!analyseurVoix || !lecteurNeuronal.joue) return 0;
   analyseurVoix.getFloatTimeDomainData(tamponSortie);
   let s = 0; for (let i = 0; i < tamponSortie.length; i++) s += tamponSortie[i] * tamponSortie[i];
@@ -2953,6 +2958,10 @@ function surSouffle(o) {
   // (16:30, Ahmed via Hakim : « coupe le glisse-mot ») son subconscient ne parle plus : il règle seulement quand ton tour finit
   // (04/11) un bout de sa réponse, mot par mot ; (04/11 : « il peut sauter des pensées ») un bout qu'il choisit de ne pas dire s'écrit seul
   if (niveau === 'piste') {
+    // (04/11, Ahmed : « il prononce toujours la dernière pensée : quand il détecte une seconde de pause, il rebondit directement avec
+    // elle » ; « par défaut, sauf décision de sa part ») sa dernière pensée du tour, dite ou pas (« jamais » : il l'a gardée exprès)
+    const nP = Number(o.n) || 0, dp = etat.derniereSiennePensee;
+    if (nP && (!dp || dp.tour !== o.tour || nP > dp.n)) etat.derniereSiennePensee = { n: nP, tour: o.tour, texte, jamais: o.jamais === true };
     if (!s.pret) { montrerPensee('🧠 il pense, sans le dire', texte, true); return; }
     recevoirBout(s, Number(o.n) || 0, o.tour); return;
   }
@@ -3019,23 +3028,41 @@ function recevoirBout(s, n, tour) {
 // comme les autres (son émotion du moment, jamais deux fois le même), dit PAR sa voix et collé devant la pensée d'après le saut :
 // « Voyons voir, tu parles de ta mère ? », d'un seul souffle ; au plus un toutes les 3 s (sinon « euh » à chaque mot de Mini Hakim)
 let meublesTel = { t: 0, l: [] };
-function meublesPourTelephone() {
+// (04/11, Ahmed : « les meubles entre chaque pensée doivent être de la même langue que la pensée en question ; si entre deux pensées
+// ça change de langue, il utilise le meuble de la 2e langue, celle du 2e chunk » ; « il doit toujours pouvoir choisir et créer ses
+// meubles, même s'il en a par défaut au début ») la langue du début de la pensée qui suit le saut ; ses meubles dans cette langue
+// (chacun a la sienne : meuble_creer, meuble_regler ; ceux de départ en arabe et en anglais, il les change comme les autres)
+const MOTS_ANGLAIS = new Set(['the', 'and', 'you', 'your', 'is', 'are', 'am', 'i', "i'm", 'to', 'of', 'what', 'how', 'my', 'it', "it's", 'this', 'that',
+  'with', 'for', 'be', 'do', "don't", 'have', 'we', 'they', 'he', 'she', 'was', 'were', 'will', 'can', 'not', 'so', 'just', 'love', 'thank', 'thanks',
+  'please', 'hello', 'yes', 'good', 'morning', 'night', 'know', 'want', "let's", 'well', 'see']);
+const MOTS_FRANCAIS = new Set(['le', 'la', 'les', 'et', 'je', 'tu', 'de', 'des', 'du', 'un', 'une', 'est', 'que', 'qui', 'pas', 'mon', 'ma', 'mes', 'ton',
+  'ta', 'il', 'elle', 'nous', 'vous', 'ce', 'ça', 'à', 'en', 'pour', 'dans', 'avec', 'sur', 'mais', 'oui', 'non', 'bien', 'suis', 'es', "c'est", "j'ai", 'moi', 'toi']);
+function langueDePensee(texte) {
+  const debut = String(texte || '').slice(0, 40), lettres = [...debut].filter(c => /\p{L}/u.test(c));
+  const ar = lettres.filter(c => /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(c)).length;
+  if (lettres.length && ar / lettres.length > 0.5) return 'ar';
+  const mots = debut.toLowerCase().replace(/’/g, "'").split(/[^\p{L}']+/u).filter(Boolean);
+  const en = mots.filter(m => MOTS_ANGLAIS.has(m)).length, fr = mots.filter(m => MOTS_FRANCAIS.has(m)).length;
+  return en > fr && (en >= 2 || (en >= 1 && fr === 0 && mots.length <= 3)) ? 'en' : 'fr';
+}
+function meublesPourTelephone(langue = 'fr') {
   if (Date.now() - meublesTel.t > 60000 && typeof jeton === 'function') {
     meublesTel.t = Date.now();
     fetch('/api/jarvis/meubles', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' }).then(r => (r.ok ? r.json() : null))
       .then((o) => { if (o && Array.isArray(o.meubles)) meublesTel.l = o.meubles.filter(m => m && m.nom); }).catch(() => {});
   }
   const l = meublesTel.l.length ? meublesTel.l : (typeof meublesListe !== 'undefined' ? meublesListe : []);
-  return l.filter(m => m.texte).map(m => ({ nom: m.nom, texte: String(m.texte), pret: true, actif: m.actif !== false, quand: m.quand || 'partout',
+  return l.filter(m => m.texte && (m.langue || (langueDePensee(m.texte) === 'ar' ? 'ar' : 'fr')) === langue).map(m => ({ nom: m.nom, texte: String(m.texte), pret: true, actif: m.actif !== false, quand: m.quand || 'partout',
     etats: (m.etats || []).map(sansAccent), voix: true }));
 }
 function meublerSaut(b) {
   const dernier = bouts.dernierDit || 0;
   if (b.n <= dernier + 1 || Date.now() - (bouts.meubleA || 0) < 3000) return b.texte;   // pas de saut, ou un meuble il y a moins de 3 s
-  const h = choisirMeuble({ avant: !dernier }, meublesPourTelephone());
+  const langue = langueDePensee(b.texte);
+  const h = choisirMeuble({ avant: !dernier }, meublesPourTelephone(langue));   // dans la langue de la pensée d'après
   if (!h) return b.texte;
   bouts.meubleA = Date.now();
-  const m = h.texte.trim(), suite = /,$/.test(m) ? b.texte.charAt(0).toLowerCase() + b.texte.slice(1) : b.texte;
+  const m = h.texte.trim(), suite = langue === 'fr' && /,$/.test(m) ? b.texte.charAt(0).toLowerCase() + b.texte.slice(1) : b.texte;
   return `${m} ${suite}`;
 }
 function direBoutTelephone(conv, b) {
@@ -3254,8 +3281,22 @@ async function texteDuTour(conv) {
   if (queue === null) return null;
   return (e.confirme + ' ' + morceauNeuf(queue, e.confirme)).trim();
 }
+// (04/11, Ahmed : « il parle spontanément, évalue s'il doit se taire ou répondre, puis lorsqu'il détecte une seconde de pause il
+// rebondit directement avec la dernière pensée ») une fois par pause (ton silence se mesure depuis ta dernière voix), sa dernière
+// pensée du tour, si elle n'est pas déjà dite et qu'il ne l'a pas gardée exprès ; une seconde, qu'il peut régler (rythme_regler)
+function rebondirDernierePensee(conv, silenceMs) {
+  const dp = etat.derniereSiennePensee, pause = conv.capteur ? conv.capteur.derniereVoix : null;
+  const seuil = (typeof rythmeVoix === 'function' ? rythmeVoix('pause_derniere_pensee', 1) : 1) * 1000;
+  if (!dp || dp.jamais || silenceMs < seuil || conv.rebondPause === pause) return false;
+  conv.rebondPause = pause;
+  if (typeof bouts !== 'undefined' && bouts.tour === dp.tour && dp.n < bouts.prochain) return false;   // déjà dite (ou une plus récente)
+  journalVoix('rebond_derniere', { n: dp.n, silence_ms: Math.round(silenceMs) });
+  recevoirBout({ texte: dp.texte, pret: true }, dp.n, dp.tour);
+  return true;
+}
 function anticiperConversation(conv, silenceMs) {
   if (silenceMs >= 300 && typeof direPenseeSiPossible === 'function') direPenseeSiPossible();   // (04/11) ta pause : sa pensée prête se dit
+  if (typeof rebondirDernierePensee === 'function') rebondirDernierePensee(conv, silenceMs);
   if (etat.reglages.rapide === false || silenceMs < SILENCE_ANTICIPE_MS || conv.spec || !conv.capteur) return;
   if (typeof transcriptionEnPause === 'function' && transcriptionEnPause()) return;   // (00:47) son tour : rien à anticiper
   // (15:10, Ahmed : « le moment exact où il faut qu'il parle » ; mesuré sur 69 tours : il attendait 3,5 s de silence, 7 seulement
@@ -3457,7 +3498,9 @@ async function basculerConversation() {
       surInterruption: (mesure) => {
         // (30/10, 19:08, Ahmed : « qu'il puisse répondre même quand je le coupe ou que je parle en même temps ; c'est
         // important ») il garde la parole : sa voix continue, ta phrase est quand même écoutée ; « stop » et le bouton l'arrêtent
-        if (typeof reglagesCorps !== 'undefined' && reglagesCorps.garder_parole) { journalVoix('coupure_ignoree', mesure || {}); return; }
+        // (04/11, Ahmed : « il parle quand il veut, mais s'il entend ma voix lui couper la parole sur 2 secondes, il se tait ») il garde
+        // la parole sur un mot ou un rire ; ta voix qui dure 2 s sur la sienne : il se tait (ses pensées restent écrites)
+        if (typeof reglagesCorps !== 'undefined' && reglagesCorps.garder_parole) { journalVoix('coupure_ignoree', mesure || {}); veillerDeuxSecondes(conv); return; }
         etat.coupeParAhmed = true;
         journalVoix('coupure', mesure || {});
         noterPresent({ e: 'coupure', t: Date.now() });
@@ -3619,6 +3662,24 @@ function finMesureTour() {
 // (2026-10-23, 18:47, Ahmed dans un lieu bruyant : « ce n'était pas moi ») coupé par un BRUIT, pas par sa voix : il
 // reprend tout de suite, là où il s'était arrêté. Critère : 1,2 s après la coupure, moins de 0,2 s de son voisé (une
 // voix a une hauteur, un bruit non). Une vraie voix arrivée avant : comportement d'avant (il t'écoute).
+function veillerDeuxSecondes(conv) {
+  const t0 = Date.now();
+  clearInterval(conv.veilleDeux);
+  conv.veilleDeux = setInterval(() => {
+    const cap = conv.capteur;
+    // ta voix s'est arrêtée (ou lui s'est tu) avant les 2 s : il continue
+    if (etat.conversation !== conv || !cap || !cap.enParole || Date.now() - (cap.derniereVoix || 0) > 400 || !(lecteur.actif || (lecteurSysteme && lecteurSysteme.actif))) {
+      clearInterval(conv.veilleDeux); return;
+    }
+    if (Date.now() - t0 < 2000) return;
+    clearInterval(conv.veilleDeux);
+    journalVoix('coupure_deux_secondes', { ms: Date.now() - t0 });
+    if (typeof bouts !== 'undefined') bouts.attenteTel = null;
+    if (lecteurSysteme && lecteurSysteme.actif) lecteurSysteme.arreter();
+    if (lecteur.actif) lecteur.arreter();
+    humeur();
+  }, 100);
+}
 function surveillerCoupure(conv) {
   const t0 = Date.now();
   clearInterval(conv.veilleBruit);

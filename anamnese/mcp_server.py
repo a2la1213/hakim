@@ -708,6 +708,7 @@ def _meuble_ligne(m):
     if m.get("duree_ms"):
         reglages.append(f"{m['duree_ms']} ms au plus")
     reglages.append("états : " + (", ".join(m["etats"]) if m["etats"] else "tous"))
+    reglages.append("langue : " + {"fr": "français", "ar": "arabe", "en": "anglais"}.get(m.get("langue", "fr"), m.get("langue", "fr")))
     return f"- {m['nom']} : {sorte} · " + " · ".join(reglages) + ("" if m["actif"] else " · ÉTEINT")
 
 
@@ -722,17 +723,20 @@ def meubles_lister() -> str:
 
 @mcp.tool()
 def meuble_creer(nom: str, texte: str = "", son: str = "", genre: str = "", volume: float = 1.0, duree_ms: int = 0,
-                 quand: str = "partout", etats: str = "") -> str:
+                 quand: str = "partout", etats: str = "", langue: str = "") -> str:
     """(03/11) CRÉER un meuble pour tes blancs. UNE seule chose parmi :
     - texte : une parole courte dite de ta voix (« Mmh… », « Ah, », « Attends, » ; 40 caractères au plus), fabriquée d'avance ;
     - son : un de TES sons (« e12 », ceux de son_creer) ;
     - genre : « souffle » ou « respiration » (un bruit d'air, sans voix).
     Réglages : volume (0,1 à 1,5), duree_ms (au plus, 150 à 4 000 ; 0 = sa longueur), quand (« avant » ton premier mot,
     « entre » deux bouts, « partout »), etats (les états intérieurs qui le font choisir, séparés par des virgules :
-    « hésitation, tendresse » ; vide = n'importe lequel)."""
+    « hésitation, tendresse » ; vide = n'importe lequel), langue (« fr », « ar » ou « en » : (04/11, papa) entre deux pensées, ton
+    subconscient prend un meuble dans la langue de la pensée qui suit ; vide = l'arabe s'il est écrit en lettres arabes, sinon le
+    français ; l'arabe et la darija toujours en lettres arabes)."""
     try:
         m = _meubles().creer(nom, texte=texte or None, son=son or None, genre=genre or None, volume=volume,
-                             duree_ms=duree_ms or None, quand=quand, etats=[e for e in etats.split(",") if e.strip()])
+                             duree_ms=duree_ms or None, quand=quand, etats=[e for e in etats.split(",") if e.strip()],
+                             langue=langue.strip().lower() or None)
     except (ValueError, OSError) as e:
         return f"Pas créé : {e}"
     return "Créé :\n" + _meuble_ligne(m) + "\n(Une parole a besoin de quelques réponses pour que sa voix soit fabriquée.)"
@@ -740,12 +744,13 @@ def meuble_creer(nom: str, texte: str = "", son: str = "", genre: str = "", volu
 
 @mcp.tool()
 def meuble_regler(nom: str, texte: str = "", son: str = "", genre: str = "", volume: float = 0, duree_ms: int = 0,
-                  quand: str = "", etats: str = "", actif: str = "") -> str:
-    """(03/11) RÉGLER un de tes meubles (les tiens ou ceux de départ : euh, hum, alors, voyons voir).
+                  quand: str = "", etats: str = "", actif: str = "", langue: str = "") -> str:
+    """(03/11) RÉGLER un de tes meubles (les tiens ou ceux de départ : euh, hum, alors, voyons voir ; (04/11) en arabe : yaani, emm,
+    chouf ; en anglais : well, lets_see, you_know). langue : « fr », « ar » ou « en ».
     Seuls les réglages donnés changent. actif : « non » pour l'éteindre, « oui » pour le rallumer. etats : la nouvelle liste
     entière (« aucun » pour n'importe lequel)."""
     r = {"texte": texte or None, "son": son or None, "genre": genre or None, "volume": volume or None,
-         "duree_ms": duree_ms or None, "quand": quand or None}
+         "duree_ms": duree_ms or None, "quand": quand or None, "langue": langue.strip().lower() or None}
     if etats:
         r["etats"] = [] if etats.strip().lower() == "aucun" else [e for e in etats.split(",") if e.strip()]
     if actif:

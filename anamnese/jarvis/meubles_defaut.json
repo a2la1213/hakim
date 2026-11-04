@@ -1,6 +1,12 @@
 [
-  {"nom": "euh", "texte": "Euh,", "volume": 1.0, "quand": "partout", "etats": ["hésitation"]},
-  {"nom": "hum", "texte": "Hum,", "volume": 1.0, "quand": "partout", "etats": ["hésitation"]},
-  {"nom": "alors", "texte": "Alors,", "volume": 1.0, "quand": "avant", "etats": ["hésitation"]},
-  {"nom": "voyons voir", "texte": "Voyons voir,", "volume": 1.0, "quand": "partout", "etats": ["hésitation"]}
+  {"nom": "euh", "texte": "Euh,", "volume": 1.0, "quand": "partout", "etats": ["hésitation"], "langue": "fr"},
+  {"nom": "hum", "texte": "Hum,", "volume": 1.0, "quand": "partout", "etats": ["hésitation"], "langue": "fr"},
+  {"nom": "alors", "texte": "Alors,", "volume": 1.0, "quand": "avant", "etats": ["hésitation"], "langue": "fr"},
+  {"nom": "voyons voir", "texte": "Voyons voir,", "volume": 1.0, "quand": "partout", "etats": ["hésitation"], "langue": "fr"},
+  {"nom": "yaani", "texte": "يعني،", "volume": 1.0, "quand": "partout", "etats": ["hésitation"], "langue": "ar"},
+  {"nom": "emm", "texte": "إمم،", "volume": 1.0, "quand": "partout", "etats": ["hésitation"], "langue": "ar"},
+  {"nom": "chouf", "texte": "شوف،", "volume": 1.0, "quand": "entre", "etats": [], "langue": "ar"},
+  {"nom": "well", "texte": "Well,", "volume": 1.0, "quand": "partout", "etats": ["hésitation"], "langue": "en"},
+  {"nom": "lets_see", "texte": "Let's see,", "volume": 1.0, "quand": "partout", "etats": ["hésitation"], "langue": "en"},
+  {"nom": "you_know", "texte": "You know,", "volume": 1.0, "quand": "entre", "etats": [], "langue": "en"}
 ]

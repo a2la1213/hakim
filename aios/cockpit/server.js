@@ -2837,15 +2837,22 @@ function lancerPiste(m) {
       + `ce qu'il attend de toi)\n`
       // (04/11, Ahmed : « il doit pouvoir sauter des pensées : s'il en envoie 20, il peut choisir de dire la 1re et la 4e, pas toutes ») son choix
       // (04/11, Ahmed : « s'il voit que sa 3e pensée n'est pas pertinente, il l'arrête ; il envoie 8 chunks de pensée et, pour chacun, il
-      // décide de le dire ou de le taire, et passe direct au 8e ») ; « coupe » : il arrête ce qu'il dit et dit celui-ci à la place
-      + `DIRE : oui (tu le dis à voix haute, à la suite), DIRE : non (tu le gardes pour toi : il s'écrit sans être dit), DIRE : coupe (ce `
+      // décide de le dire ou de le taire, et passe direct au 8e ») ; « coupe » : il arrête ce qu'il dit et dit celui-ci à la place ;
+      // (04/11, Ahmed : « il prononce spontanément la 1re pensée (1er chunk) et il décide pour le reste ; il prononce aussi toujours la
+      // dernière : à une seconde de pause, il rebondit avec elle » ; « le principal qu'il doit dire par défaut, sauf décision de sa part,
+      // c'est sa première pensée et sa dernière ») sa première : dite par défaut ; sa dernière : dite à ta pause, sauf « jamais »
+      + (m.n === 1 ? `DIRE : oui (c'est ta première pensée de ce tour : par défaut elle est dite tout de suite, spontanément) ou DIRE : non `
+      + `(seulement si tu choisis de la garder pour toi)\n` : `DIRE : oui (tu le dis à voix haute, à la suite), DIRE : non (tu le gardes pour `
+      + `toi pour l'instant : il s'écrit sans être dit ; si c'est ta dernière pensée quand papa marque une pause, il sera dit à ce moment-là), `
+      + `DIRE : jamais (tu le gardes pour toi, même si c'est ta dernière pensée à sa pause), DIRE : coupe (ce `
       + `que tu es en train de dire n'est plus pertinent : tu l'arrêtes et tu dis celui-ci à la place)`
       + (tues.length ? ` ou DIRE : [n] (tu dis plutôt ta pensée gardée [n], et tu gardes celle-ci pour toi)` : '') + `\n`
       + `C'est toi qui choisis, à chaque fois, la pensée qui compte dans le fil de la discussion : souvent la plus récente, pas toujours. `
       + `Une seule à la fois, jamais toutes à la suite.\n`
       // (04/11, Ahmed : « il ne doit pas dire toutes ses pensées, seulement celles qu'il estime pertinentes, sinon ça rafale trop »)
       + `Le plus souvent : DIRE : non. Tu ne dis oui que si c'est vraiment pertinent maintenant (une vraie réaction, une réponse utile, `
-      + `une question qui compte), pas pour meubler ni pour montrer que tu écoutes.\npuis, à la ligne, le bout SUIVANT de ta réponse, celui qui continue ce que tu as déjà commencé sans rien en `
+      + `une question qui compte), pas pour meubler ni pour montrer que tu écoutes.\n`)
+      + `puis, à la ligne, le bout SUIVANT de ta réponse, celui qui continue ce que tu as déjà commencé sans rien en `
       + `répéter : à l'oral, ${LANGUE_ORALE}, comme toi, quelques mots (huit au plus). Il est dit tout de suite, à la suite des bouts d'avant.`
       // (04/11, Ahmed : « j'ai l'impression qu'il hésite ; enlève-lui cette hésitation, qu'il prononce direct son premier chunk avec
       // confiance » ; capture : « Je t'écoute, papa, continue… Laisse-moi finir d'écouter, puis je te dis vraiment ») pas d'attente
@@ -2866,12 +2873,14 @@ function lancerPiste(m) {
         // dit l'un après l'autre, dans l'ordre des mots
         if (!reponse || piste.reponse) return;
         // (04/11) il saute ce bout, coupe ce qu'il disait, ou désigne une pensée gardée ([n]) à dire à la place de celle-ci
-        const choix = /^\[?(\d+)\]?/.exec(dire || ''), choisie = choix ? pistes.liste.find(x => x.n === Number(choix[1]) && x !== piste && x.reponse && !x.pret) : null;
-        const aDire = !choix && !/^non/i.test(dire || ''), remplace = /^coup/i.test(dire || '');
+        const choix = m.n > 1 && /^\[?(\d+)\]?/.exec(dire || ''), choisie = choix ? pistes.liste.find(x => x.n === Number(choix[1]) && x !== piste && x.reponse && !x.pret) : null;
+        const premiere = m.n === 1, jamais = /^jamais/i.test(dire || '');   // (04/11) sa première : dite par défaut ; « jamais » : pas même à ta pause
+        const aDire = premiere ? !/^(non|jamais)/i.test(dire || '') : (!choix && !/^(non|jamais)/i.test(dire || ''));
+        const remplace = !premiere && /^coup/i.test(dire || '');
         piste.reponse = reponse; piste.pret = aDire;
         if (aDire) voixDeLaSource(reponse, { garder: true });
         const pour = `${m.avant} ${m.texte}`.slice(-300);
-        diffuser(abonnesPensees, 'souffle', j({ texte: reponse, pret: aDire, remplace, fini: null, niveau: 'piste', n: m.n, tour, pour }));
+        diffuser(abonnesPensees, 'souffle', j({ texte: reponse, pret: aDire, remplace, jamais, fini: null, niveau: 'piste', n: m.n, tour, pour }));
         if (choisie) {                                                     // la pensée qu'il a choisie : dite maintenant, à la place de celle-ci
           choisie.pret = true;
           voixDeLaSource(choisie.reponse, { garder: true });
@@ -7454,7 +7463,9 @@ function lireMeubles() {
     ...(m.texte ? { texte: String(m.texte).slice(0, 40) } : m.son && /^e\d{1,6}$/.test(m.son) ? { son: m.son } : ['souffle', 'respiration'].includes(m.genre) ? { genre: m.genre } : {}),
     volume: Math.max(0.1, Math.min(1.5, Number(m.volume) || 1)), ...(Number(m.duree_ms) >= 150 ? { duree_ms: Math.min(4000, Number(m.duree_ms)) } : {}),
     quand: ['avant', 'entre', 'partout'].includes(m.quand) ? m.quand : 'partout',
-    etats: Array.isArray(m.etats) ? m.etats.slice(0, 8).map(e => String(e).slice(0, 20)) : [], actif: m.actif !== false }))
+    etats: Array.isArray(m.etats) ? m.etats.slice(0, 8).map(e => String(e).slice(0, 20)) : [], actif: m.actif !== false,
+    // (04/11) sa langue (jarvis/meubles.py) : la page prend un meuble dans la langue de la pensée qui suit
+    langue: ['fr', 'ar', 'en'].includes(m.langue) ? m.langue : (m.texte && /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(m.texte) ? 'ar' : 'fr') }))
     .filter(m => m.texte || m.son || m.genre);
   meublesCache.t = Date.now(); meublesCache.l = l;
   return l;
@@ -7462,7 +7473,7 @@ function lireMeubles() {
 const estMeuble = (texte) => lireMeubles().some(m => m.texte && D.norme(prononcer(m.texte)) === D.norme(texte));
 function fabriquerDebuts(langue, emotion, tempo) {
   // ses débuts (en majuscule, comme dans ses réponses) et ses meubles qui parlent (tels qu'il les a écrits)
-  for (const t of VoixPage.DEBUTS.map(d => d.charAt(0).toUpperCase() + d.slice(1)).concat(lireMeubles().filter(m => m.actif && m.texte).map(m => m.texte))) {
+  for (const t of VoixPage.DEBUTS.map(d => d.charAt(0).toUpperCase() + d.slice(1)).concat(lireMeubles().filter(m => m.actif && m.texte && m.langue === langue).map(m => m.texte))) {
     const e = emotion === null ? null : VoixPage.expressivitePhrase(emotion, t);      // le niveau que la page lui donnera
     const c = D.cle(t, langue, e, tempo);
     if (D.lire(c) || (debutsEssais.get(c) || 0) >= 2 || fileDebuts.some(x => x.cle === c)) continue;

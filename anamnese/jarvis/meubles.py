@@ -21,7 +21,18 @@ FICHIER = Path(os.environ.get("JARVIS_DIR", Path.home() / "AIOS" / "jarvis")) / 
 DEFAUT = Path(__file__).resolve().parent / "meubles_defaut.json"
 GENRES = ("souffle", "respiration")
 QUAND = ("avant", "entre", "partout")
+# (04/11, Ahmed : « les meubles entre chaque pensée doivent être de la même langue que la pensée » ; « il doit toujours pouvoir choisir
+# et créer ses meubles, même s'il en a par défaut au début ») chaque meuble a sa langue : donnée, sinon l'écriture arabe dit l'arabe,
+# le reste est du français ; la page prend un meuble dans la langue de la pensée qui suit
+LANGUES = ("fr", "ar", "en")
+ARABE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]")
 MAX = 40
+
+
+def _langue(m):
+    if m.get("langue"):
+        return m["langue"]
+    return "ar" if m.get("texte") and ARABE.search(m["texte"]) else "fr"
 
 
 def _defaut():
@@ -49,7 +60,8 @@ def _ecrire(meubles, oublies):
 def _complet(m):
     return {"nom": m["nom"], **{k: m[k] for k in ("texte", "son", "genre") if m.get(k)},
             "volume": float(m.get("volume", 1.0)), **({"duree_ms": int(m["duree_ms"])} if m.get("duree_ms") else {}),
-            "quand": m.get("quand", "partout"), "etats": list(m.get("etats") or []), "actif": m.get("actif", True) is not False}
+            "quand": m.get("quand", "partout"), "etats": list(m.get("etats") or []), "langue": _langue(m),
+            "actif": m.get("actif", True) is not False}
 
 
 def lister():
@@ -80,6 +92,8 @@ def _verifier(m):
         raise ValueError("durée entre 150 et 4 000 ms")
     if m.get("quand", "partout") not in QUAND:
         raise ValueError(f"quand : {', '.join(QUAND)}")
+    if m.get("langue") and m["langue"] not in LANGUES:
+        raise ValueError(f"langue : {', '.join(LANGUES)}")
     etats = m.get("etats") or []
     if not isinstance(etats, list) or len(etats) > 8 or any(not isinstance(e, str) or not 0 < len(e.strip()) <= 20 for e in etats):
         raise ValueError("au plus 8 états, de 20 caractères chacun")
@@ -99,9 +113,9 @@ def _sauver(nouveau=None, nom=None, oublier=False):
     _ecrire(siens, oublies)
 
 
-def creer(nom, texte=None, son=None, genre=None, volume=1.0, duree_ms=None, quand="partout", etats=None):
+def creer(nom, texte=None, son=None, genre=None, volume=1.0, duree_ms=None, quand="partout", etats=None, langue=None):
     m = _verifier({"nom": nom, "texte": texte, "son": son, "genre": genre, "volume": volume, "duree_ms": duree_ms,
-                   "quand": quand, "etats": etats or []})
+                   "quand": quand, "etats": etats or [], "langue": langue})
     _sauver(m)
     return m
 
@@ -115,6 +129,8 @@ def regler(nom, **reglages):
         for k in ("texte", "son", "genre"):
             if not reglages.get(k):
                 neuf.pop(k, None)
+        if not reglages.get("langue"):                                  # sa langue suit le nouveau texte, sauf s'il la donne
+            neuf.pop("langue", None)
     m = {**_verifier({**neuf, "actif": True}), "actif": neuf.get("actif", True) is not False}
     _sauver(m)
     return m
