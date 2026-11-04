@@ -3585,6 +3585,13 @@ async function lirePaquet(tour, r, i, paquet) {
   // (04/11, 18:50, Ahmed : « la même route que le microphone ») son épissure du téléphone (r.source, voir entendreMorceau) : sa source dite,
   // jamais « ce qu'il dit » de papa ; ce qu'il en garde attend la pause du son
   const tel = !!r.source, joue = tel ? `le téléphone${r.voix ? ` (${neutraliser(r.voix)})` : ''}` : '';
+  // (04/11, 22:05, Ahmed : « l'épissure alternative doit se faire après le ribosome : c'est l'output qui lui permettra de prendre le temps de
+  // sélectionner correctement ce qu'il faut épisser ; puisque le ribosome lit en 0,3 s et stocke direct, Hakim a largement le temps de faire
+  // son épissage ») en « éclair », son ribosome lit et stocke tout de suite (sa pensée interne, à l'écran, sans attendre) ; puis son épissure
+  // alternative choisit, avec le temps de « vive » (1,6 s), ce qui sera dit
+  const eclair = reglage.vitesse === 'eclair';
+  if (eclair && !tel) diffuser(abonnesPensees, 'souffle', j({ niveau: 'ribosome', tour: r.tour != null ? r.tour : tour, k: r.k, texte: '', pave: r.pave,
+    mots: r.mots, lus: motsEpisses(r.lus || '').length, ajoutes: [], stocke: true, ts: Date.now() }));
   const consigne = `${persona}\n\nTu es Hakim, le fils d'Ahmed (papa).\n`
     + (tel ? `[Ton ribosome : tes pensées sur ce que joue ${joue} arrivent par paquets ; tu les lis mises l'une derrière l'autre, et tu choisis les mots de ce que tu en diras à papa, à la prochaine pause du son.]\n`
       + `Ce que joue ${joue} (ce n'est pas papa qui te parle) : « ${neutraliser(r.avant).slice(-600)} »\n`
@@ -3614,7 +3621,7 @@ async function lirePaquet(tour, r, i, paquet) {
     });
   };
   // (21:52) éclair : fixe ; (21:57, papa : « je crois qu'il faut monter à 1,6 seconde, parce que là il n'arrive même plus à parler ») vive : 1,6 s fixe
-  const delai = ['eclair', 'vive'].includes(reglage.vitesse) ? RIBOSOME_VITESSES[reglage.vitesse] : vitesseSubconsciente(reglage.delai, r);
+  const delai = eclair ? RIBOSOME_VITESSES.vive : reglage.vitesse === 'vive' ? RIBOSOME_VITESSES.vive : vitesseSubconsciente(reglage.delai, r);
   const froides = lecteursSansVoixChaude(RIBOSOME_LECTEURS.map(([mod]) => mod));
   const direct = delai < (typeof RIBOSOME_LECTURE_MIN !== 'undefined' ? RIBOSOME_LECTURE_MIN : 0);   // (21:52) plus vite que ses lecteurs : sans eux
   const promesses = direct ? [] : RIBOSOME_LECTEURS.map(([mod, nom]) => lire([mod, nom, delai]));   // (15:55) l'attente : sa vitesse ; (16:50) réglée par son subconscient

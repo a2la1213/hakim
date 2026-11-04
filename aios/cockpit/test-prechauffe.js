@@ -52,7 +52,7 @@ test('le subconscient règle la vitesse du ribosome, paquet par paquet ; le cons
   ctx.derniereParolePapa = Date.now();
   assert.ok(ctx.v(3000, { attente: [] }) < excite, 'papa parle encore : plus vite');
   assert.ok(ctx.v(100, { attente: [] }) === 1500 && ctx.v(99999, { attente: [] }) <= 6000, 'bornée : jamais plus vite que sa vitesse max mesurée, 6 s au plus');
-  assert.match(SRC, /const delai = \['eclair', 'vive'\]\.includes\(reglage\.vitesse\) \? RIBOSOME_VITESSES\[reglage\.vitesse\] : vitesseSubconsciente\(reglage\.delai, r\);/);   // (21:57) éclair et vive : fixes
+  assert.match(SRC, /const delai = eclair \? RIBOSOME_VITESSES\.vive : reglage\.vitesse === 'vive' \? RIBOSOME_VITESSES\.vive : vitesseSubconsciente\(reglage\.delai, r\);/);   // (22:05) éclair : stocké tout de suite, épissé ensuite en 1,6 s
   assert.match(SRC, /vitesse_ms: delai/, 'notée au journal, paquet par paquet');
 });
 
