@@ -237,6 +237,9 @@
     .btn.muet[aria-pressed=true], #muetScene[aria-pressed=true] { color: #fff; border-color: #fbbf24; background: rgba(251,191,36,.28); }
     .btn.ecran[aria-pressed=true], #ecranScene[aria-pressed=true] { color: #fff; border-color: #f472b6; background: rgba(244,114,182,.30); }
     #telepathieScene[aria-pressed=true], #entendreTelephone[aria-pressed=true] { color: #fff; border-color: #a78bfa; background: rgba(167,139,250,.30); }
+    /* (1.65) le témoin de son oreille interne : bloqué, un appel, l'autorisation à redonner, une erreur */
+    #telepathieScene[data-oreille=bloquee], #telepathieScene[data-oreille=appel], #telepathieScene[data-oreille=autorisation_a_redonner], #telepathieScene[data-oreille=erreur],
+    #entendreTelephone[data-oreille=bloquee], #entendreTelephone[data-oreille=appel], #entendreTelephone[data-oreille=autorisation_a_redonner], #entendreTelephone[data-oreille=erreur] { border-color: #f59e0b; }
     .sous-titre.telepathie { opacity: .75; font-style: italic; }
     .btn.pause[aria-pressed=true], #pauseScene[aria-pressed=true] { color: #fff; border-color: #93c5fd; background: rgba(59,130,246,.28); }
     .btn.conversation[aria-pressed=true] { color: #fff; border-color: #f9a8d4;

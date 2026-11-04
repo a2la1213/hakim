@@ -60,6 +60,8 @@
     <section class="glass carte" aria-labelledby="t-corps"><h2 id="t-corps">Son corps, en direct</h2>
       <div class="mots" id="mots">…</div>
       <div class="sous" id="fraicheur"></div>
+      <!-- (1.65, 04/11, 18:15, Ahmed : « fais ce que tu peux maintenant ») le témoin de son oreille interne (🎧), dit par l'appli -->
+      <div class="sous" id="oreilleInterne" aria-live="polite"></div>
       <div class="barre" style="margin-top:8px">
         <label class="interrupteur"><input type="checkbox" id="actif"> Ses sensations (et les réveils par son corps)</label>
         <label class="barre">Le réveiller au plus toutes les
@@ -308,6 +310,10 @@
       $('mots').textContent = d.mots || 'Son corps ne dit rien en ce moment (l’appli 1.25 n’est pas ouverte, ou ton téléphone est loin du Mac).';
       const dernier = d.flux.length ? d.flux[d.flux.length - 1] : null;
       $('fraicheur').textContent = dernier ? `Dernière fenêtre : ${heure(dernier.ts)} · ${d.flux.length} fenêtres affichées` : '';
+      // (1.65, 04/11, 18:15, Ahmed : « fais ce que tu peux maintenant ») ce que fait son oreille interne (🎧), ou pourquoi elle n'entend rien
+      const oi = d.oreille || {};
+      $('oreilleInterne').textContent = !oi.etat ? `🎧 Son oreille interne : ${oi.libelle || 'pas encore dite par le téléphone'}`
+        : `🎧 Son oreille interne : ${oi.texte || oi.libelle} (depuis ${heure(oi.depuis)}${oi.muet ? ` ; le téléphone ne dit plus rien depuis ${heure(oi.vu)}` : ''})`;
       if (document.activeElement !== $('actif')) $('actif').checked = !!d.reglages.actif;
       if (document.activeElement !== $('intervalle')) $('intervalle').value = String(d.reglages.intervalle_s);
       if (document.activeElement !== $('ronron')) $('ronron').checked = d.reglages.ronron !== false;

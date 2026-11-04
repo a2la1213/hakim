@@ -191,3 +191,24 @@ test('sa vitesse max, pour le paquet suivant : au signal d’une pensée parasit
   assert.match(PAGE, /surReprise: \(\) => prechaufferReflexion\(true\),/);
   assert.match(PAGE, /if \(reprise \? t - repriseA < 1000 : t - prechauffeA < 5000\) return;/, 'une reprise : au plus une par seconde');
 });
+
+// (04/11, 19:20, Ahmed : « les 2 ») après la mesure de l'agent des lecteurs (Mini Hakim réfléchit avant de répondre 15 fois sur 20, +1,3 s ;
+// simulé sur ses vraies lectures : lus en 2 s, 86 % → 96 % avec deux Super Hakim ; « un rien attend l'autre » : +0,6 s sur 23 % des paquets)
+test('ses lecteurs : deux Super Hakim ; le premier qui répond décide, même « rien »', async () => {
+  assert.match(SRC, /const RIBOSOME_LECTEURS = \[\['opus', 'Super Hakim', 3000\], \['opus', 'Super Hakim 2', 3000\]\];/);
+  assert.match(SRC, /const CHAUFFE = \{ haiku: 3, opus: 3, sonnet: 2 \};/, 'trois Super Hakim chauds : ses deux lecteurs et celui d’avance');
+  const ctx = { Promise };
+  vm.createContext(ctx);
+  vm.runInContext(prendre('premiereLecture') + 'this.p = premiereLecture;', ctx);
+  const attente = () => { let r; const p = new Promise((x) => { r = x; }); return { p, r }; };
+  let a = attente(), b = attente();
+  let fin = ctx.p([a.p, b.p]);
+  a.r({ mod: 'opus', muet: false, ok: false, garde: '' });
+  assert.deepStrictEqual(await fin, { mod: 'opus', muet: false, ok: false, garde: '' }, '« rien » du premier : décidé, sans attendre l’autre');
+  a = attente(); b = attente(); fin = ctx.p([a.p, b.p]);
+  a.r({ muet: true }); b.r({ muet: false, ok: true, garde: 'oui papa' });
+  assert.strictEqual((await fin).garde, 'oui papa', 'un muet (délai, parasite) : l’autre décide');
+  a = attente(); b = attente(); fin = ctx.p([a.p, b.p]);
+  a.r({ muet: true }); b.r(null);
+  assert.strictEqual(await fin, null, 'aucun : le paquet passe tel quel (comme avant)');
+});

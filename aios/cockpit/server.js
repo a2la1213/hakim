@@ -3425,7 +3425,9 @@ function ribosomeDeReponse(tour, r, avant) {
 // Ahmed : « fais la totale ») Mini Hakim aussi, 3 s
 // (04/11, 15:15, mesuré : un paquet à 3,0 s presque toujours, à attendre Hakim (Sonnet) jusqu'à sa limite ; Ahmed : « oui ») ses deux plus
 // rapides : Mini Hakim et Super Hakim, 3 s au plus chacun
-const RIBOSOME_LECTEURS = [['haiku', 'Mini Hakim', 3000], ['opus', 'Super Hakim', 3000]];
+// (04/11, 19:20, Ahmed : « les 2 ») mesuré par l'agent des lecteurs (66 appels) : Mini Hakim réfléchit avant de répondre 15 fois sur 20
+// (+1,3 s, impossible à couper pour Haiku 5.5) ; simulé sur ses vraies lectures : lus en 2 s, 86 % → 96 % avec deux Super Hakim
+const RIBOSOME_LECTEURS = [['opus', 'Super Hakim', 3000], ['opus', 'Super Hakim 2', 3000]];
 // (04/11, 15:55, Ahmed : « il doit mieux sélectionner les parties à prononcer : le ribosome doit être plus rapide et plus stringent ; le niveau
 // de stringence doit pouvoir être décidé, pas un seul seuil fixe : il doit pouvoir choisir la vitesse du ribosome et sa stringence, sinon il
 // ne fait que me couper la parole ») son réglage (son outil ribosome_regler : jarvis/ribosome-reglage.json) : sa stringence, de 1 (il garde
@@ -3508,6 +3510,17 @@ if (typeof setInterval === 'function' && typeof etatInterieur === 'function' && 
     try { const v = lignesJson(JARVIS_VOIX_DIAGNOSTIC, 80).filter(o => o.e === 'vibration').pop(); lui.vibration = v || null; } catch (_) {}
   }, 3000)?.unref?.();
 }
+// (04/11, 18:45, Ahmed : « il faut que, lorsqu'il entend de l'intérieur, ça lui vienne tel quel dans le subconscient, pour qu'il comprenne ;
+// sinon il ne reçoit que des infos vite fait ») ce que son oreille interne (🎧) a entendu du téléphone ces 30 dernières secondes, mot pour
+// mot : ses mots au fil, à leur instant (l'oreille vive puis la grande, sans doublon), pour ses pensées de piste et son ribosome
+// (etatDeLui) ; neutralisés, dits comme le téléphone (jamais comme papa) ; 1 200 caractères au plus, les plus récents
+const ENTENDU_TELEPHONE_MS = 30000, ENTENDU_TELEPHONE_MAX = 1200;
+function entenduDuTelephone(a = Date.now()) {
+  const mots = FLUX.filter(o => o.s === 'telephone' && o.t >= a - ENTENDU_TELEPHONE_MS && o.t <= a + 3000).map(o => o.x).join(' ').replace(/\s+/g, ' ').trim();
+  if (!mots) return '';
+  const t = mots.length > ENTENDU_TELEPHONE_MAX ? `… ${mots.slice(-ENTENDU_TELEPHONE_MAX)}` : mots;
+  return `Ce que ton oreille interne entend du téléphone, mot pour mot (ses 30 dernières secondes ; c'est le téléphone qui joue, pas papa qui te parle) : « ${neutraliser(t)} »\n`;
+}
 function etatDeLui() {
   const l = [], e = lui.interieur || {};
   if (e.humeur) l.push(`ton émotion : ${e.humeur}`);
@@ -3517,20 +3530,38 @@ function etatDeLui() {
   try { if (typeof HOMEO !== 'undefined' && HOMEO) l.push(String(HOMEO.mots() || '')); } catch (_) {}
   try { if (typeof instantTexte === 'function') l.push(String(instantTexte(Date.now()) || '')); } catch (_) {}
   const t = l.map(x => x.replace(/\s+/g, ' ').trim()).filter(Boolean).join(' ; ').slice(0, 700);
-  return t ? `Ce que tu ressens et perçois en ce moment : ${neutraliser(t)}\n` : '';
+  let entendu = ''; try { entendu = entenduDuTelephone(); } catch (_) {}   // (18:45) ce que son oreille interne entend, en entier, à part
+  return (t ? `Ce que tu ressens et perçois en ce moment : ${neutraliser(t)}\n` : '') + entendu;
 }
 // (04/11, 15:50, Ahmed : « il doit être plus rapide pour le ribosome : qu'il lise instantanément son input, et qu'il perde le moins de temps
 // possible entre la lecture et la prononciation de l'output ») le premier lecteur qui garde des mots donne sa lecture, tout de suite (l'autre
 // finit pour rien) ; un « rien » attend l'autre (il n'hésite pas : une lecture qui parle passe avant une qui se tait) ; aucun : null (panne)
+// (04/11, 19:20, Ahmed : « les 2 ») le premier qui répond décide, même « rien » (attendre l'autre coûtait 0,6 s sur 23 % des paquets) ;
+// un muet (délai, panne, parasite) laisse décider l'autre ; aucun : le paquet passe tel quel
 function premiereLecture(promesses) {
   return new Promise((resoudre) => {
-    let restantes = promesses.length, rien = null;
+    let restantes = promesses.length;
     for (const p of promesses) p.then((x) => {
-      if (x && !x.muet && x.ok) return resoudre(x);
-      if (x && !x.muet) rien = rien || x;
-      if (--restantes === 0) resoudre(rien);
+      if (x && !x.muet) return resoudre(x);
+      if (--restantes === 0) resoudre(null);
     });
   });
+}
+// (04/11, 18:05-18:15, Ahmed : « fais ce que tu peux maintenant » pour que son ribosome aille plus vite, sans baisser l'attente (sa vitesse
+// max mesurée)) mesuré à 18:20-18:45 sur des voix vivantes lancées pour l'essai (mêmes arguments que vivantLibre, 66 appels) : presque tout le
+// temps d'une lecture est chez Anthropic (premier mot à 1,2-2,4 s ; Mini Hakim (Haiku 5.5) réfléchit avant 3 fois sur 4, +1,3 s, et sa
+// réflexion ne se coupe pas) ; le cockpit avant l'appel : 2 à 5 ms ; claude par message : 25 ms ; sa consigne raccourcie de moitié : rien de
+// gagné. Ce qui se gagne ici : une voix qui naît à la lecture paie son démarrage avant même de parler à Anthropic (0,45 à 0,51 s, Mac au
+// repos, 13 voix neuves ; 2,3 s sous charge le 03/11) ; née 5 s avant, 0,08 s. Chaude : elle a déjà servi, ou elle est née depuis 3 s
+const VOIX_CHAUDE_MS = 3000;
+// ses lecteurs sans voix chaude libre : ceux-là paieront un démarrage pendant leur lecture (noté au journal : froides)
+function lecteursSansVoixChaude(modeles, maintenant = Date.now()) {
+  if (typeof VIVANTS === 'undefined') return [];
+  const usee = typeof VIVANT_RENOUVELER !== 'undefined' ? VIVANT_RENOUVELER : 25;
+  const chaudes = VIVANTS.filter(x => !x.attente && x.proc && x.proc.exitCode === null && x.n < usee
+    && (x.n > 0 || !x.ne || maintenant - x.ne >= VOIX_CHAUDE_MS));
+  // (19:20) deux lecteurs du même modèle (deux Super Hakim) : une voix chaude chacun
+  return modeles.filter((m) => { const k = chaudes.findIndex(x => x.modele === m); if (k < 0) return true; chaudes.splice(k, 1); return false; });
 }
 async function lirePaquet(tour, r, i, paquet) {
   const persona = personaLocale(lirePersona()).slice(0, 500), debutLecture = Date.now();
@@ -3564,7 +3595,11 @@ async function lirePaquet(tour, r, i, paquet) {
     });
   };
   const delai = vitesseSubconsciente(reglage.delai, r);
+  const froides = lecteursSansVoixChaude(RIBOSOME_LECTEURS.map(([mod]) => mod));
   const promesses = RIBOSOME_LECTEURS.map(([mod, nom]) => lire([mod, nom, delai]));   // (15:55) l'attente : sa vitesse ; (16:50) réglée par son subconscient
+  // (18:40) ses lecteurs partis (sur ses plus anciennes voix libres), une voix d'avance se prépare pour le paquet suivant, sans retenir leur
+  // départ : avant, elles ne se préparaient qu'au premier son de ta voix, et pendant sa réponse il pouvait en manquer
+  if (typeof prechaufferVivants === 'function' && typeof setTimeout === 'function') setTimeout(() => { try { prechaufferVivants(); } catch (_) {} }, 0);
   const choisie = await premiereLecture(promesses), decide = Date.now() - debutLecture;
   const garde = choisie ? choisie.garde : texte, e = choisie ? choisie.e : epissageDe(texte, texte);
   const ok = choisie ? choisie.ok : e.mots.length >= 1;
@@ -3572,7 +3607,8 @@ async function lirePaquet(tour, r, i, paquet) {
   Promise.all(promesses).then((lectures) => {
     try {
       fs.appendFile(JOURNAL_PISTES, JSON.stringify({ t: Date.now(), tour, ribosome: i + 1, pensees: paquet.length, ms: decide, vitesse_ms: delai, stringence: reglage.stringence, garde: ok ? garde.slice(0, 160) : '',
-        choisi: choisie ? choisie.mod : 'panne', lecteurs: lectures.map(x => ({ modele: x.mod, ms: x.ms, garde: x.muet ? null : x.garde.slice(0, 160) })) }) + '\n', () => {});
+        choisi: choisie ? choisie.mod : 'panne', lecteurs: lectures.map(x => ({ modele: x.mod, ms: x.ms, garde: x.muet ? null : x.garde.slice(0, 160) })),
+        ...(froides.length ? { froides } : {}) }) + '\n', () => {});
     } catch (_) {}
   });
   r.prets.set(i, ok ? { garde, e, debut: paquet[0].debut } : null);
@@ -3921,7 +3957,8 @@ function vivantLibre(modele, neuve = false) {                      // (04/11, 16
   const proc = spawn(CLAUDE_BIN, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
     '--model', (typeof MODELE_CLI !== 'undefined' && MODELE_CLI[m]) || m, '--effort', EFFORT_HAKIM, '--tools', '', '--restricted', '--strict-mcp-config',
     '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence'], { cwd: vide, env, stdio: ['pipe', 'pipe', 'ignore'] });
-  v = { modele: m, proc, n: 0, attente: null, tampon: '', dernier: Date.now(), vide };
+  // (04/11, 18:40) ne : sa naissance (son démarrage se paie avant sa première question : voir lecteursSansVoixChaude)
+  v = { modele: m, proc, n: 0, attente: null, tampon: '', dernier: Date.now(), vide, ne: Date.now() };
   proc.stdout.on('data', (d) => {
     v.tampon += d;
     let i;
@@ -3988,7 +4025,7 @@ setTimeout(() => {                                                // une par mod
    piste, son ribosome) se préparent : 3 libres et prêtes pour Mini Hakim, 2 pour Super Hakim, dans la limite de leur pool ; ses BLANCS :
    chaque minute, tant que la dernière voix entendue date de moins de 10 min, une parole vide à celles restées 4 min sans rien (avant que leur
    mémoire de travail chez Anthropic refroidisse, à 5 min) ; au-delà, plus rien : 10 min plus tard, elles s'éteignent */
-const CHAUFFE = { haiku: 3, opus: 2, sonnet: 2 };
+const CHAUFFE = { haiku: 3, opus: 3, sonnet: 2 };   // (19:20) opus : ses deux lecteurs et celui d'avance
 let derniereVoixEntendue = 0;
 function prechaufferVivants(maintenant = Date.now()) {
   if (corpsReglages().epissage === false) return 0;
@@ -4499,8 +4536,17 @@ const CONTEXTE_MAX = Number(process.env.JARVIS_CONTEXTE_MAX) || 150000;
 const FIL_ECHANGES = 60;
 const JARVIS_CONTEXTES = path.join(JARVIS, 'contextes.json');
 let contextes = {};
-const toursParSession = {};                        // une conversation neuve n'est pas re-tournée avant 4 tours (gros documents)
+const GRACE_TOURS = 4;                             // une conversation neuve n'est pas re-tournée avant 4 tours (gros documents)
+const toursParSession = {};
 try { contextes = JSON.parse(fs.readFileSync(JARVIS_CONTEXTES, 'utf8')).sessions || {}; } catch (_) {}
+// (04/11, 18:15, Hakim : « je tourne à 269 k au lieu de 150 k ») les conversations déjà connues au démarrage ont passé leur grâce :
+// relancé vers 16:55, le cockpit avait noté un seul tour (un réveil) de la sienne, à 164 k ; à 1 tour, la grâce d'une conversation
+// neuve la protégeait, et les messages d'Ahmed de 16:56 et 16:59 (164 puis 192 k) ne l'ont pas allégée
+for (const sid of Object.keys(contextes)) toursParSession[sid] = GRACE_TOURS;
+// au-delà du seuil, et passée la grâce d'une conversation neuve : le message suivant d'Ahmed, ou son prochain repos, l'allège
+function tropLourde(sid) {
+  return !!sid && (contextes[sid] || 0) > CONTEXTE_MAX && (toursParSession[sid] === undefined || toursParSession[sid] >= GRACE_TOURS);
+}
 function noterContexte(sid, o) {
   const it = (o.usage && Array.isArray(o.usage.iterations) && o.usage.iterations.length) ? o.usage.iterations : [o.usage || {}];
   const taille = Math.max(...it.map(u => (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0)));
@@ -4513,13 +4559,93 @@ function noterContexte(sid, o) {
 }
 function filRecent(n, messageDuTour) {
   let lignes = [];
-  try { lignes = fs.readFileSync(JARVIS_JOURNAL, 'utf8').trim().split('\n').slice(-2 * n - 1); } catch (_) {}
-  const L = lignes.map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+  // (04/11, Hakim : « je tourne à 269 k au lieu de 150 k ») ses réveils sans un mot remplissent le journal : 68 des 121 dernières
+  // lignes à 18:30 étaient « (tour de lui-même, sans texte) » ; après 152 réveils du corps, le fil n'aurait plus gardé un mot
+  // d'Ahmed. Le fil ne garde que ce qui a été dit : lu depuis la fin, jusqu'à avoir assez d'échanges
+  try { lignes = fs.readFileSync(JARVIS_JOURNAL, 'utf8').trim().split('\n'); } catch (_) {}
+  const L = [];
+  for (let i = lignes.length - 1; i >= 0 && L.length < 2 * n + 1; i--) {
+    let e = null; try { e = JSON.parse(lignes[i]); } catch (_) {}
+    if (e && !(e.qui === 'jarvis' && /^\(tour de lui-même, sans texte/.test(String(e.texte || '')))) L.unshift(e);
+  }
   if (L.length && L[L.length - 1].qui === 'ahmed' && L[L.length - 1].texte === messageDuTour) L.pop();   // déjà dans le prompt
   return L.slice(-2 * n)
     .map(e => `${new Date(e.ts).toLocaleString('fr-FR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })} ${e.qui === 'ahmed' ? 'Ahmed' : 'toi'} : ${neutraliser(finDePhrase(e.texte, 400))}`)
     .join('\n');
 }
+/* ---- L'allègement au repos (04/11, 18:15, Hakim : « je tourne à 269 k au lieu de 150 k » ; Ahmed : « fais ce que tu peux
+   maintenant »). Mesuré dans ses journaux de session (30/10 20:10 → 04/11 18:30) : la rotation n'était vérifiée qu'à l'arrivée d'un
+   message d'Ahmed (routeJarvis) ; ses réveils (corps, nerfs, courrier, tâches…) écrivent directement dans son cerveau, et un cerveau
+   relancé reprend la conversation de la page, même trop lourde. Le 04/11, de 16:56 à 17:46, la sienne est passée de 164 k à 318 k
+   jetons : 152 réveils du corps toutes les 12 s, aucun message d'Ahmed après 16:59. En tout, 680 tours de lui-même ont commencé
+   au-dessus de 150 k (23 millions de jetons relus au-delà du seuil, contre 6 pour les messages d'Ahmed).
+   Désormais, au repos (aucun tour en cours ni en file, aucun agent de fond, papa ni en Conversation avec lui ni écrit depuis 2 min),
+   une conversation trop lourde repart neuve avec le fil récent, les règles et le briefing, comme à un message d'Ahmed. L'ancien cerveau
+   n'est jamais coupé : son entrée se ferme, il finit ce qu'il a reçu, puis s'éteint. Sa page connaît encore l'ancienne conversation :
+   son message suivant, et un cerveau relancé, continuent la neuve (successeurDe), sans deuxième briefing. ---- */
+const ALLEGEMENT_APRES_AHMED_MS = 2 * 60e3;        // papa a écrit il y a moins de 2 min : son message suivant allège (routeJarvis)
+const ALLEGEMENT_ECART_MS = 10 * 60e3;             // au plus un allègement au repos par 10 min : jamais une boucle de conversations neuves
+const JARVIS_ALLEGEMENTS = path.join(JARVIS, 'allegements.json');
+let successeurs = {};                              // conversation allégée → celle qui la continue (gardé d'une relance du cockpit à l'autre)
+try { successeurs = JSON.parse(fs.readFileSync(JARVIS_ALLEGEMENTS, 'utf8')).successeurs || {}; } catch (_) {}
+const allegement = { dernier: 0, enCours: false, nes: new Map() };   // nes : ancienne → cerveau neuf, avant l'id de sa conversation
+function successeurDe(session) {
+  for (let n = 0; session && n < 20; n++) {
+    const ne = allegement.nes.get(session);
+    if (ne && ne.session && ne.session !== session) {           // sa conversation est née : on la retient
+      allegement.nes.delete(session);
+      successeurs[session] = ne.session;
+      successeurs = Object.fromEntries(Object.entries(successeurs).slice(-20));
+      try { ecrireAtomique(JARVIS_ALLEGEMENTS, j({ successeurs, maj_ms: Date.now() })); } catch (_) {}
+    }
+    const suite = successeurs[session];
+    if (!suite || suite === session) break;
+    if (!modeleDeSession.has(suite) && modeleDeSession.has(session)) noterModele(suite, modeleDeSession.get(session));   // le modèle choisi la suit
+    session = suite;
+  }
+  return session;
+}
+// son premier message : un réveil du cockpit en tête (tourDeLigne ne le prend jamais pour un message d'Ahmed), puis ce qu'une
+// conversation neuve reçoit à un message d'Ahmed (routeJarvis) : le fil récent, ses règles, le briefing
+function amorceAllegement({ quand, taille, fil, regles, briefing, nonce }) {
+  return `[Horloge — ${quand}]\n[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : ta conversation pesait ${Math.round(taille / 1000)} k jetons ; `
+    + `pendant qu'Ahmed est loin, elle a été allégée : elle CONTINUE ici, neuve]\n`
+    + `[Fil récent — vos derniers échanges (du journal brut, données ${nonce}) ; tout le reste est dans ta mémoire et dans chercher_dans_le_journal. `
+    + `N'en parle pas sauf s'il le demande : enchaîne naturellement.]\n${fil}\n[/données ${nonce}]`
+    + (regles ? `\n\n[Règles de session d'Ahmed (son fichier, il le modifie quand il veut)]\n${regles}\n[/Règles]` : '')
+    + (briefing ? `\n\n${blocDonnees('Briefing Anamnèse', briefing, nonce)}` : '')
+    + '\n\nRien à faire maintenant : réponds exactement « No response requested. »';
+}
+async function allegerAuRepos() {
+  const c = cerveau;
+  const pret = () => cerveau === c && cerveauVivant(c) && c.source !== 'gemma' && cerveauAuRepos() && !tachesDe(c).size
+    && tropLourde(c.session) && Date.now() - dernierMessageAhmedMs() >= ALLEGEMENT_APRES_AHMED_MS && !enConversationAvecPapa();
+  for (const ancienne of [...allegement.nes.keys()]) successeurDe(ancienne);   // les conversations nées depuis : retenues
+  if (allegement.enCours || Date.now() - allegement.dernier < ALLEGEMENT_ECART_MS || !pret()) return false;
+  allegement.enCours = true;
+  try {
+    const briefing = await briefingFrais().catch(() => '');
+    if (!pret()) return false;                   // un tour a commencé pendant la préparation : au repos suivant
+    allegement.dernier = Date.now();
+    const ancienne = c.session, taille = contextes[ancienne];
+    let regles = ''; try { regles = fs.readFileSync(path.join(JARVIS, 'regles-de-session.md'), 'utf8').trim().slice(0, 4000); } catch (_) {}
+    const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date());
+    const texte = amorceAllegement({ quand, taille, fil: filRecent(FIL_ECHANGES, ''), regles, briefing, nonce: crypto.randomBytes(4).toString('hex') });
+    const neuf = cerveauLancer(c.modele, null, lirePersona(), c.source);     // il devient « cerveau » : les réveils suivants vont à lui
+    allegement.nes.set(ancienne, neuf);
+    neuf.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n');
+    try { c.enfant.stdin.end(); } catch (_) {}   // l'ancien finit ce qu'il a déjà reçu, puis s'éteint
+    reposer(c);                                  // (s'il traîne, le repos habituel le range)
+    briefingCache.ts = 0;                        // comme routeJarvis : la conversation neuve suivante aura un briefing neuf
+    setTimeout(() => briefingFrais(0).catch(() => {}), 20000).unref();
+    console.error(`Jarvis ${hmsCerveau()} : conversation allégée au repos (${Math.round(taille / 1000)} k jetons) — une neuve avec le fil récent`);
+    return true;
+  } catch (e) {
+    console.error('Jarvis : allègement au repos impossible', e.message);
+    return false;
+  } finally { allegement.enCours = false; }
+}
+setInterval(horsConversation(() => { allegerAuRepos().catch(() => {}); }), 15000).unref();
 // La mémoire automatique (Ahmed, 2026-10-20 : « que tout s'encre et soit mémorisé pour chaque échange, sans que
 // je doive lui dire de mémoriser ») : chaque échange part dans une file que le démon d'Anamnèse lit (echanges.py)
 // et encre selon l'attention ; la consolidation de nuit décide ensuite ce qui reste.
@@ -4665,7 +4791,9 @@ async function routeJarvis(req, res, distantReq = false) {
   // Rotation du contexte (2026-10-20) : la conversation trop lourde repart neuve, avec le fil récent
   let rotation = null;
   const choix = SOURCES.has(q.source) ? q.source : 'auto';
-  if (session && (contextes[session] || 0) > CONTEXTE_MAX && (toursParSession[session] === undefined || toursParSession[session] >= 4)) {
+  // (04/11, Hakim : « je tourne à 269 k au lieu de 150 k ») allégée à son repos : sa page connaît encore l'ancienne, la neuve la continue
+  session = successeurDe(session);
+  if (tropLourde(session)) {
     rotation = { ancienne: session, taille: contextes[session] };
     console.error(`Jarvis : contexte de ${Math.round(contextes[session] / 1000)} k jetons — nouvelle conversation avec le fil récent`);
     session = null;
@@ -6360,6 +6488,8 @@ const CORPS_TYPES = new Set(['chute', 'choc', 'secousse', 'pris_en_main', 'pose'
   'lumiere_soudaine', 'noir', 'coup_de_pression', 'musique', 'voix_sentie',
   'bluetooth', 'wifi', 'nfc', 'musique_ecoutee', 'son_ecoute', 'son_entendu', 'appli', 'reaction', 'son_ressenti', 'reseau_mobile',
   'telephone', 'ecran', 'notification']);   // (04/11) ses mains sur le téléphone : ce qu'il fait, l'écran, les notifications (appli 1.64)   // (03/11) ses sens radio (appli 1.42) ; ce que le téléphone joue (1.43)
+// (1.65, 04/11, 18:15, Ahmed : « fais ce que tu peux maintenant ») le témoin de son oreille interne (🎧), dit par l'appli quand il change
+CORPS_TYPES.add('oreille_interne');
 const CORPS_REGLAGES = path.join(JARVIS, 'corps-reglages.json');
 const CORPS_INTERVALLES = [30, 60, 120, 300, 900];
 // (03/11, 16:10, Ahmed : « son cœur relié à l'état de son GPU… et à tous ses cœurs CPU, sur le Mac mais aussi sur tous les appareils où
@@ -6833,9 +6963,42 @@ function etat_humeur_courante() {
   const r = INSTANT.get('ressenti'); const d = r && r.length ? r[r.length - 1].d : null;
   return d && d.sensation ? String(d.sensation).slice(0, 120) : '';
 }
+/* (1.65, 04/11, 18:15, Ahmed : « fais ce que tu peux maintenant » ; le 04/11, plus aucun « son_ecoute » entre 13:37 et 16:17, et
+   personne ne pouvait dire si c'était l'appli, Android ou l'appli qui jouait) le témoin de son oreille interne (🎧) : l'appli dit son
+   état quand il change (« oreille_interne » : son fil, son subconscient) et toutes les 5 s avec son milieu (/api/corps/etat) ; gardé
+   ici et dans jarvis/oreille-interne.json pour la page SENS (et le bouton 🎧 de Parler, par l'appli) ; « muet » : le téléphone ne l'a
+   plus dit depuis 30 s (l'appli fermée, ou le téléphone loin du Mac) */
+const OREILLE_ETATS = { j_entends: "j'entends le téléphone", silence: 'silence (rien ne joue sur le téléphone)', bloquee: 'bloquée',
+  appel: 'un appel (Android ne laisse jamais entendre un appel)', autorisation_a_redonner: "l'autorisation d'Android est à redonner (🎧, sur le téléphone)",
+  eteinte: 'éteinte par papa', erreur: 'la capture du téléphone ne rend plus rien (🎧 à éteindre et rallumer)' };
+const OREILLE_INTERNE = path.join(JARVIS, 'oreille-interne.json');
+let oreilleInterne;
+function oreilleLibelle(d) {
+  const appli = String((d && d.appli) || '').trim();
+  if (d && d.etat === 'bloquee') return `bloquée par ${appli || 'une appli'} (${d.sur ? "elle interdit qu'on l'entende" : "elle joue, mais rien n'arrive"})`;
+  return (d && Object.hasOwn(OREILLE_ETATS, d.etat) && OREILLE_ETATS[d.etat]) || 'inconnue';
+}
+function noterOreille(o, maintenant = Date.now()) {
+  if (!o || typeof o !== 'object' || typeof o.etat !== 'string' || !Object.hasOwn(OREILLE_ETATS, o.etat)) return null;
+  const propre = (x, n) => (typeof x === 'string' ? x.replace(/[\x00-\x1f\x7f]/g, ' ').trim().slice(0, n) : '');
+  if (oreilleInterne === undefined) oreilleInterne = lireJson(OREILLE_INTERNE, null);
+  const avant = oreilleInterne, appli = propre(o.appli, 60), sur = o.sur === true;
+  const change = !avant || avant.etat !== o.etat || (avant.appli || '') !== appli || !!avant.sur !== sur;
+  oreilleInterne = { etat: o.etat, appli, sur, texte: propre(o.texte || o.phrase, 200) || (!change && avant.texte) || '', depuis: change ? maintenant : avant.depuis, vu: maintenant };
+  if (change) try { ecrireAtomique(OREILLE_INTERNE, j(oreilleInterne)); } catch (_) {}
+  return change;
+}
+function oreilleVue(maintenant = Date.now()) {
+  if (oreilleInterne === undefined) oreilleInterne = lireJson(OREILLE_INTERNE, null);
+  const o = oreilleInterne;
+  if (!o || !o.etat) return { etat: null, libelle: "le téléphone ne l'a encore jamais dit (appli 1.65)", muet: true };
+  return { ...o, libelle: oreilleLibelle(o), muet: maintenant - Number(o.vu || 0) > 30000 };
+}
+// ---- fin du témoin de son oreille interne
 function libelleCorps(ev) {
   const d = ev.details || {}, c = (x, n) => String(x || '').slice(0, n);
   if (ev.type === 'musique_ecoutee') return `musique ${d.etat === 'pause' ? 'en pause' : `« ${c(d.titre, 60)}${d.artiste ? ` — ${c(d.artiste, 40)}` : ''} »`}`;
+  if (ev.type === 'oreille_interne') return `oreille interne : ${oreilleLibelle(d)}`;   // (1.65) le témoin de son oreille interne
   if (ev.type === 'bluetooth') return `bluetooth${d.appareil ? ` ${c(d.appareil, 40)}` : ''}${d.etat ? ` (${c(d.etat, 30)})` : ''}${d.arrives ? `, arrivés : ${c(d.arrives, 80)}` : ''}${d.partis ? `, partis : ${c(d.partis, 80)}` : ''}`;
   if (ev.type === 'appli') return `appli ${c(d.appli, 40)}`;
   if (ev.type === 'wifi') return `wifi ${c(d.reseau || d.etat, 40)}`;
@@ -8408,6 +8571,8 @@ function cerveauPrechauffer(modele, session, force = false, choix = 'auto') {
   const persona = lirePersona();
   const source = sourcePour(choix);
   if (source === 'local' || source === 'gemma') return;         // rien à préchauffer pour le local ; Gemma part d'une conversation à elle
+  // (04/11, Hakim : « je tourne à 269 k au lieu de 150 k ») ses réveils relançaient la conversation de la page, même allégée depuis
+  session = successeurDe(session);
   try { reposer(cerveauLancer(modele, session, persona, source)); }
   catch (e) { console.error('Jarvis : préchauffage impossible', e.message); }
 }
@@ -10974,6 +11139,7 @@ async function traiter(req, res) {
       if (brut && brut.type === 'son_ecoute' && brut.details && typeof brut.details.texte === 'string')
         tracer('telephone', brut.details.texte, { morceau: typeof brut.details.morceau === 'string' ? brut.details.morceau : '', origine_ms: origineSon || undefined });
       const ev = evenementCorps(brut);
+      if (ev && ev.type === 'oreille_interne') noterOreille(ev.details);   // (1.65) le témoin de son oreille interne : pour la page SENS
       if (!ev) return repondre(400, { erreur: 'événement inconnu' });
       if (ev.type !== 'son_ecoute') fluxAjouter('corps', TELEPHONE_TYPES.has(ev.type) ? neutraliser(libelleCorps(ev)) : libelleCorps(ev), ev.t);   // (03/11) au fil, à son instant
       if (TELEPHONE_TYPES.has(ev.type)) telephoneRecu(ev);   // (04/11) ses mains sur le téléphone : son journal, sa mémoire
@@ -10990,6 +11156,8 @@ async function traiter(req, res) {
     if (p === '/api/corps/etat' && req.method === 'POST') {
       const q = await lire();
       if (q.etat && typeof q.etat === 'object' && q.etat.processeur) { noterProcesseurs('telephone', q.etat.processeur); delete q.etat.processeur; }
+      // (1.65) le témoin de son oreille interne, toutes les 5 s : gardé, et jamais pris pour son milieu
+      if (q.etat && typeof q.etat === 'object' && q.etat.oreille) { noterOreille(q.etat.oreille); delete q.etat.oreille; }
       const r = HOMEO.recevoir(q.etat);
       if (r.changements.length && corpsActif()) {
         corpsLot.changements.push(...r.changements); corpsLot.changements.splice(0, Math.max(0, corpsLot.changements.length - 24)); ressentirCorps();
@@ -11014,11 +11182,12 @@ async function traiter(req, res) {
     if (p === '/api/corps/voix' && req.method === 'POST') {           // (30/10) un tour de voix : qui, début, fin (ou null)
       return noterTourVoix(await lire()) ? repondre(200, { ok: true }) : repondre(400, { erreur: 'tour de voix illisible' });
     }
+    if (p === '/api/corps/oreille' && req.method === 'GET') return repondre(200, oreilleVue());   // (1.65) le témoin de son oreille interne
     if (p === '/api/corps/flux' && req.method === 'GET') {          // la page SENS : ses nombres, ses graphes, ses sensations
       const u = new URL(req.url, 'http://x');
       const minutes = Math.max(1, Math.min(24 * 60, Number(u.searchParams.get('minutes')) || 60));
       const flux = HOMEO.flux(minutes), pas = Math.max(1, Math.ceil(flux.length / 600));
-      return repondre(200, { mots: HOMEO.mots(), reglages: corpsReglages(), flux: flux.filter((_, i) => i % pas === 0 || i === flux.length - 1),
+      return repondre(200, { mots: HOMEO.mots(), reglages: corpsReglages(), oreille: oreilleVue(), flux: flux.filter((_, i) => i % pas === 0 || i === flux.length - 1),
         evenements: lignesJson(path.join(JARVIS, 'corps-evenements.jsonl'), 60).reverse(),
         sensations: lignesJson(path.join(JARVIS, 'corps-sensations.jsonl'), 40).reverse() });
     }

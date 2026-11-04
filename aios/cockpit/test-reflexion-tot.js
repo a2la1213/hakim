@@ -44,7 +44,7 @@ test('une pensée qui arrive après la fin de ta phrase n’est plus jetée : el
   const p = b.diffuses.find(x => x.niveau === 'piste');
   assert.ok(p, 'écrite dans le pavé de son tour');
   assert.ok(p.tour > 1e12, '(15:10) le numéro de son épissure (né avant que ta phrase parte), pas celui du tour suivant');
-  const ribo = b.appels.find(a => a.etiquette === 'ribosome_haiku');
+  const ribo = b.appels.find(a => a.etiquette === 'ribosome_opus');
   assert.ok(ribo, 'lue par son ribosome');
   assert.match(ribo.prompt, /\[1\] « Oui papa, dis-moi\. »/);
   b.appels.filter(a => a.etiquette.startsWith('ribosome_')).forEach(a => a.resoudre({ texte: 'GARDE : « Oui papa »' }));   // ses trois lecteurs
@@ -71,6 +71,6 @@ test('chaque lecture du ribosome est mesurée (pistes.jsonl) : de quoi mesurer l
   assert.ok(Number.isFinite(r.ms) && r.ms >= 0);
   assert.strictEqual(r.garde, 'Oui papa');
   assert.strictEqual(r.pensees, 1, 'combien de pensées dans son paquet');
-  assert.deepStrictEqual(r.lecteurs.map(x => x.modele), ['haiku', 'opus'], 'chacun de ses lecteurs (15:15 : Mini Hakim et Super Hakim), avec son temps');
+  assert.deepStrictEqual(r.lecteurs.map(x => x.modele), ['opus', 'opus'], 'chacun de ses lecteurs (19:20 : deux Super Hakim), avec son temps');
   assert.ok(r.lecteurs.every(x => Number.isFinite(x.ms) && x.garde === 'Oui papa'));
 });

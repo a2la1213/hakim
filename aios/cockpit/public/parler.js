@@ -2475,14 +2475,40 @@ if (window.HakimApp && window.HakimApp.ecran) {
 // (03/11, Ahmed : « la musique par Bluetooth, Wi-Fi ou autre, il doit pouvoir la transcrire mot à mot, comme quand il écoute
 // avec le micro ; en continu, même en conversation ou en télépathie ») il entend ce que joue le téléphone (appli 1.45) : les
 // paroles arrivent mot à mot ici, pendant que le son joue, et chaque bloc de 8 s se ressent dans son corps (« son_ecoute »)
+// (1.65, 04/11, 18:15, Ahmed : « fais ce que tu peux maintenant » ; le 04/11, rien ne disait pourquoi il n'entendait plus le téléphone)
+// le témoin de son oreille interne, dit par l'appli : le bouton 🎧 montre son état (silence, bloqué par une appli, un appel, l'autorisation
+// à redonner…) ; sa phrase dans son titre ; « j'entends » ou éteinte : ses mots habituels
+let oreilleTemoin = null, oreilleEntend = false;
+const OREILLE_ALERTE = new Set(['bloquee', 'appel', 'autorisation_a_redonner', 'erreur']);
+function oreilleEtat(code, titre, phrase) {
+  oreilleTemoin = { code: String(code || ''), titre: String(titre || ''), phrase: String(phrase || '') };
+  montrerOreille();
+}
+function montrerOreille() {
+  const o = oreilleTemoin;
+  if (!o || !o.code) return;
+  const dire = o.code === 'autorisation_a_redonner' || o.code === 'erreur' || (oreilleEntend && o.code !== 'j_entends' && o.code !== 'eteinte');
+  const b = $('telepathieScene');
+  if (b) b.textContent = dire ? `🎧 ${o.titre}` : oreilleEntend ? '🎧 Il entend le téléphone' : '🎧 Entendre le téléphone';
+  for (const id of ['telepathieScene', 'entendreTelephone']) {
+    const x = $(id);
+    if (!x) continue;
+    if (o.phrase) x.title = o.phrase;
+    x.dataset.oreille = dire ? o.code : '';
+  }
+  if ($('entendreTelephone')) $('entendreTelephone').textContent = dire && OREILLE_ALERTE.has(o.code) ? '🎧⚠' : '🎧';
+}
+// ---- fin du témoin
 let telepathieEfface = 0;
 function telepathieEtat(oui) {
+  oreilleEntend = !!oui;
   const b = $('telepathieScene');
   if (!b) return;
   b.setAttribute('aria-pressed', oui ? 'true' : 'false');
   b.textContent = oui ? '🎧 Il entend le téléphone' : '🎧 Entendre le téléphone';
   if ($('entendreTelephone')) $('entendreTelephone').setAttribute('aria-pressed', oui ? 'true' : 'false');   // (03/11) hors de l'orbe aussi
   if (!oui) { $('telepathieTexte').hidden = true; $('telepathieTexte').textContent = ''; }
+  montrerOreille();                                                   // (1.65) le témoin reste dit
 }
 function surTelepathie(o) {
   const t = String((o && o.texte) || '').trim();
@@ -2504,6 +2530,8 @@ if (window.HakimApp && window.HakimApp.telepathie) {
     });
   }
   try { telepathieEtat(window.HakimApp.telepathieEtat()); } catch (_) {}
+  // (1.65) le témoin, relu à l'ouverture (l'appli le redit ensuite à chaque changement)
+  try { if (window.HakimApp.oreilleEtat) { const o = JSON.parse(window.HakimApp.oreilleEtat()); oreilleEtat(o.etat, o.titre, o.phrase); } } catch (_) {}
 }
 
 // (03/11, Ahmed : « si j'écoute une musique, il peut la mettre en pause et glisser son mot pour que je l'écoute ») quand sa voix

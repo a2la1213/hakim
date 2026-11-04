@@ -97,7 +97,7 @@ test('page : une pensée de piste en épissage va au pavé', () => {
 
 test('le ribosome : « rien » ou une phrase inventée ne garde aucun mot de cette pensée', async () => {
   const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
-  const ribo = () => b.appels.filter(a => a.etiquette === 'ribosome_haiku');
+  const ribo = () => lecteurs(b).filter((_, k) => k % N_LECTEURS === 0);   // (19:20) le premier lecteur de chaque paquet
   b.ctx.morceau('papa,');
   b.appels[0].resoudre({ texte: 'Oui papa, je suis là.' });
   await attendre(); await attendre();
@@ -204,7 +204,7 @@ test('page : avec l’épissage, sa parole complète ne s’écrit pas (ses fich
 // à chaque fois qu'il parle ») sa réponse consciente aussi passe par son ribosome, dans le pavé du tour qui vient de finir
 test('sa réponse consciente : chaque phrase finie est lue par le ribosome du tour, comme ses pensées', async () => {
   const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
-  const ribo = () => b.appels.filter(a => a.etiquette === 'ribosome_haiku');
+  const ribo = () => lecteurs(b).filter((_, k) => k % N_LECTEURS === 0);   // (19:20) le premier lecteur de chaque paquet
   const r = b.ctx.nouveau();
   const flux = b.ctx.reponse(5, r, 'papa : tu es là ?');
   flux.pousser('Oui papa');
@@ -355,7 +355,7 @@ test('versRibosome : le texte part au cockpit (sa non-réponse, jamais)', async 
 // arrive pendant qu'il lit est collé bout à bout et lu juste après, avec toutes ses pensées déjà lues sous les yeux
 test('le ribosome lit dès sa première pensée ; ce qui arrive pendant sa lecture est collé bout à bout et lu juste après, avec tout ce qui précède', async () => {
   const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
-  const ribo = () => b.appels.filter(a => a.etiquette === 'ribosome_haiku');
+  const ribo = () => lecteurs(b).filter((_, k) => k % N_LECTEURS === 0);   // (19:20) le premier lecteur de chaque paquet
   const piste = (k) => b.appels.filter(a => a.etiquette.startsWith('piste_'))[k];
   b.ctx.morceau('papa,');
   piste(0).resoudre({ texte: 'Oui papa, je suis là.' });
@@ -393,24 +393,24 @@ test('le ribosome lit dès sa première pensée ; ce qui arrive pendant sa lectu
 // attendre la réponse de chacun pour continuer la lecture » ; mesuré : 52 lectures sur 60 en « délai dépassé », la pensée entière passait)
 // (04/11, 15:50, Ahmed : « il doit être plus rapide pour le ribosome : qu'il lise instantanément son input, et qu'il perde le moins de temps
 // possible entre la lecture et la prononciation de l'output ») le premier lecteur qui garde des mots donne sa lecture, tout de suite
-test('ses lecteurs (Mini Hakim et Super Hakim) lisent chaque pensée en même temps ; elle sort dès que le premier garde des mots', async () => {
+test('ses lecteurs (19:20 : deux Super Hakim) lisent chaque pensée en même temps ; elle sort dès que le premier garde des mots', async () => {
   const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
   b.ctx.morceau('papa,');
   b.appels[0].resoudre({ texte: 'Oui papa, je suis là.' });
   await attendre(); await attendre();
   const l = lecteurs(b);
-  assert.deepStrictEqual(l.map(a => a.etiquette), ['ribosome_haiku', 'ribosome_opus']);
+  assert.deepStrictEqual(l.map(a => a.etiquette), ['ribosome_opus', 'ribosome_opus']);
   assert.ok(l[0].delai === l[1].delai && l[0].delai >= 1200 && l[0].delai <= 2600, `(15:55) rapide par défaut, (16:50) ajusté par son subconscient : ${l[0].delai} ms`);
   assert.ok(l.every(a => a.prompt === l[0].prompt), 'la même pensée, la même consigne');
   l[1].resoudre({ texte: 'GARDE : « Oui papa »' });
   await attendre(); await attendre();
-  assert.deepStrictEqual(b.diffuses.filter(x => x.niveau === 'ribosome').map(x => x.texte), ['Oui papa'], 'Super Hakim a gardé des mots : sa lecture, sans attendre Mini Hakim');
+  assert.deepStrictEqual(b.diffuses.filter(x => x.niveau === 'ribosome').map(x => x.texte), ['Oui papa'], 'le second a gardé des mots : sa lecture, sans attendre le premier');
   l[0].resoudre({ texte: 'GARDE : « Oui »' });
   await attendre(); await attendre();
   assert.strictEqual(b.diffuses.filter(x => x.niveau === 'ribosome').length, 1, 'la lecture d’après ne change rien');
 });
 
-test('la lecture retenue : la première qui garde des mots ; un « rien » attend l’autre ; aucun : la pensée entière', async () => {
+test('la lecture retenue : la première qui répond, même « rien » (19:20) ; un muet laisse l’autre ; aucun : la pensée entière', async () => {
   const sortie = async (h, o) => {
     const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
     b.ctx.morceau('papa,');
@@ -423,8 +423,9 @@ test('la lecture retenue : la première qui garde des mots ; un « rien » atten
   };
   assert.strictEqual(await sortie('GARDE : « Oui papa »', 'GARDE : « Oui papa, je suis là »'), 'Oui papa', 'la première arrivée');
   assert.strictEqual(await sortie({ texte: '', erreur: 'délai' }, 'GARDE : « je suis là »'), 'je suis là', 'un seul a répondu : sa lecture');
-  // (04/11, 14:17, mesuré : 4 paquets de suite sans un mot) un « rien » ne l'emporte pas sur une lecture qui garde : il parle
-  assert.strictEqual(await sortie('GARDE : rien', 'GARDE : « Oui papa »'), 'Oui papa', 'un « rien » d’abord : il attend l’autre, qui parle');
+  // (04/11, 14:17, mesuré : 4 paquets de suite sans un mot) un « rien » attendait l'autre ; (19:20, Ahmed : « les 2 », mesuré : cette attente
+  // coûtait 0,6 s sur 23 % des paquets) le premier qui répond décide, même « rien »
+  assert.strictEqual(await sortie('GARDE : rien', 'GARDE : « Oui papa »'), '', 'un « rien » d’abord : décidé, sans attendre l’autre');
   assert.strictEqual(await sortie('GARDE : « Oui papa »', 'GARDE : rien'), 'Oui papa');
   assert.strictEqual(await sortie('GARDE : rien', 'GARDE : rien'), '', 'les deux n’en gardent rien : rien');
   assert.strictEqual(await sortie({ texte: '', erreur: 'délai' }, { texte: '', erreur: 'délai' }), 'Oui papa, je suis là.', 'aucun : la pensée entière');
