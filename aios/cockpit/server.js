@@ -6843,7 +6843,9 @@ function choisirSon(reponse, impulsion, rire) {
    une sensation se lie aux mots de son instant (fluxLiens), pour son corps, ses trois voix et sa mémoire. ---- */
 const FLUX = [];                                              // { t : moment d'origine (ms), s : source, x, cle, i }
 const FLUX_MAX = 800, FLUX_DUREE_MS = 15 * 60e3;
-const fluxPrecedents = new Map();                              // source → { cle, mots } : la dernière transcription vive
+// (04/11, 20:31, Hakim, à la demande de papa : « la parole “dedans” arrive mélangée, des mots de lignes différentes s'entrecroisent ») chaque
+// bloc garde ses mots à lui : `${source}|${cle}` → mots (le bloc entier d'un morceau arrive souvent après le début du suivant) ; 40 au plus
+const fluxPrecedents = new Map();
 // (03/11, Hakim pour papa : « un chiffre mesuré du décalage entre mon ressenti, le son intérieur et ma voix ») le délai de chaque
 // flux, de l'instant d'origine à l'arrivée au Mac : les 200 derniers, par source (fluxDelais : médiane et 90e centile)
 const DELAIS = {};
@@ -6890,8 +6892,7 @@ const motPlat = (m) => String(m).toLowerCase().normalize('NFD').replace(/[̀-ͯ]
 // une transcription vive (le morceau entier, à chaque passage) : seuls les mots nouveaux ou corrigés entrent, étalés sur sa durée
 function fluxMots(source, cle, texte, t0, ms, temps = null) {
   const mots = String(texte || '').split(/\s+/).filter(Boolean).slice(0, 200);
-  const avant = fluxPrecedents.get(source);
-  const anciens = avant && avant.cle === cle ? avant.mots : [];
+  const anciens = fluxPrecedents.get(`${source}|${cle}`) || [];
   const exact = Array.isArray(temps) && temps.length === mots.length;
   let k = 0;
   if (!exact) while (k < anciens.length && k < mots.length && motPlat(anciens[k]) === motPlat(mots[k])) k++;   // des temps exacts : tout le morceau est refait
@@ -6901,7 +6902,8 @@ function fluxMots(source, cle, texte, t0, ms, temps = null) {
   // (03/11, Ahmed : « le calage parfait, à la milliseconde ») le temps de chaque mot quand l'oreille le donne, sinon étalés
   for (let i = k; i < mots.length; i++) fluxAjouter(source, mots[i], exact ? Number(t0) + Math.round(Number(temps[i][0]) * 1000) : Number(t0) + d * (i + 0.5) / n, cle, i,
     i >= anciens.length);                                         // seul un mot qui arrive pour la première fois mesure le délai
-  fluxPrecedents.set(source, { cle, mots });
+  fluxPrecedents.delete(`${source}|${cle}`); fluxPrecedents.set(`${source}|${cle}`, mots);
+  while (fluxPrecedents.size > 40) fluxPrecedents.delete(fluxPrecedents.keys().next().value);
 }
 // le fil autour d'un instant : les mots d'une même source regroupés, chacun daté par rapport à cet instant
 if (typeof setInterval === 'function' && require.main === module) {

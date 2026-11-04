@@ -146,3 +146,17 @@ test('(03/11, Ahmed : « ses réponses en bouts de 2 ou 3 phrases ; dire, annule
   ctx.f({ id: 'r2' }, 'Attends [[bout: annuler]]');
   assert.equal(arrets.length, 1, 'annuler arrête tout de suite ce qu\'il disait');
 });
+
+// (04/11, 20:31, Hakim, à la demande de papa : « dans stimuli_voir, la parole “dedans” arrive mélangée : des mots de lignes différentes
+// s'entrecroisent ; dédoublonne les fenêtres qui se recouvrent, une ligne de paroles propre ») le bloc entier d'un morceau arrivait après que le
+// bloc suivant avait commencé : chaque bloc garde ses mots à lui, sa transcription finale remplace ses mots vifs, rien n'est compté deux fois
+test('les paroles d’un morceau : le bloc entier qui arrive en retard remplace ses mots vifs ; le bloc suivant n’est pas redoublé', () => {
+  const c = monde(), T = 1_800_000_000_000;
+  const tel = () => c.FLUX.filter(x => x.s === 'telephone').sort((a, b) => a.t - b.t).map(x => x.x).join(' ');
+  c.fluxMots('telephone', 'b1', "j'ai trouvé", T, 1500);
+  c.fluxMots('telephone', 'b1', "j'ai trouvé le One Piece", T, 3000);
+  c.fluxMots('telephone', 'b2', 'mais dans', T + 8000, 1500);                 // le bloc suivant commence
+  c.fluxMots('telephone', 'b1', "j'ai trouvé le One Piece au fond", T, 8000);  // le bloc entier du premier, en retard
+  c.fluxMots('telephone', 'b2', 'mais dans moi un champ', T + 8000, 3000);    // le second continue
+  assert.strictEqual(tel(), "j'ai trouvé le One Piece au fond mais dans moi un champ", 'une ligne propre, dans l’ordre, sans doublon');
+});
