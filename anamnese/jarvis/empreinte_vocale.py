@@ -155,7 +155,14 @@ SEGMENT_MIN_S = 1.0
 SALLE_DUREE_S = 3 * 3600
 SALLE = Path.home() / "AIOS" / "jarvis" / "voix-salle.json"          # les voix sans nom de la conversation (3 h)
 CONNUES = Path.home() / "AIOS" / "jarvis" / "voix-connues.json"      # les voix nommées (pour toujours)
-_salle = {"voix": [], "ts": 0.0, "dernier": None}
+# (04/11, Ahmed : « que son attention s'étale sur plusieurs minutes ») mesuré de 13 h à 14 h 45 : 16 messages sur 216
+# étiquetés « [voix N] », 15 numéros différents, dont au moins un de papa lui-même. Une voix inconnue n'est plus une personne
+# au premier bout : c'est une CANDIDATE (son vecteur moyen, ses instants de parole [[t, secondes]…]). Elle devient « voix N »
+# quand elle a parlé CONFIRMER_S dans les CANDIDATE_DUREE_S dernières secondes ; avant, ses mots vont à la voix d'avant (ou
+# à papa). Une candidate qui n'a rien dit depuis CANDIDATE_DUREE_S est oubliée.
+CONFIRMER_S = 4.0
+CANDIDATE_DUREE_S = 300
+_salle = {"voix": [], "ts": 0.0, "dernier": None, "candidates": []}
 
 
 def _ecrire(f, d):
@@ -170,19 +177,31 @@ def _ecrire(f, d):
 def _charger_salle(t, salle=None):
     if _salle["voix"] or _salle["ts"]:
         return
+    _salle["candidates"] = []                            # (04/11) la salle se relit en entier du fichier, candidates comprises
     try:
         d = json.loads(Path(salle or SALLE).read_text(encoding="utf-8"))
         if t - d.get("ts", 0) <= SALLE_DUREE_S:
             _salle.update(ts=d["ts"], dernier=d.get("dernier"),
-                          voix=[{"nom": x["nom"], "c": np.array(x["c"]), "n": x["n"], "m": x.get("m", 0)} for x in d.get("voix", [])])
-    except (OSError, ValueError, KeyError):
+                          voix=[{"nom": x["nom"], "c": np.array(x["c"]), "n": x["n"], "m": x.get("m", 0)} for x in d.get("voix", [])],
+                          # un fichier d'avant le 04/11 n'a pas de clé « candidates » : aucune candidate
+                          candidates=[{"c": np.array(x["c"]), "n": x.get("n", 1), "m": x.get("m", 0),
+                                       "parole": [[float(u), float(s)] for u, s in x.get("parole", [])]}
+                                      for x in d.get("candidates", [])])
+    except (OSError, ValueError, KeyError, TypeError):
         pass
 
 
 def _sauver_salle(salle=None):
     _ecrire(salle or SALLE, {"ts": _salle["ts"], "dernier": _salle["dernier"],
                              "voix": [{"nom": x["nom"], "c": np.round(x["c"], 5).tolist(), "n": x["n"], "m": x.get("m", 0)}
-                                      for x in _salle["voix"]]})
+                                      for x in _salle["voix"]],
+                             "candidates": [{"c": np.round(x["c"], 5).tolist(), "n": x["n"], "m": x.get("m", 0), "parole": x["parole"]}
+                                            for x in _salle.get("candidates", [])]})
+
+
+def _parole(x, t):
+    """(04/11) les secondes de parole d'une candidate dans les CANDIDATE_DUREE_S dernières secondes."""
+    return round(sum(s for u, s in x["parole"] if t - u <= CANDIDATE_DUREE_S), 3)
 
 
 def connues(fichier=None):
@@ -303,6 +322,10 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
     _salle["ts"] = t
     if nouveau_tour:
         _salle["dernier"] = None
+    # (04/11) une candidate qui n'a rien dit depuis 5 min est oubliée ; sa parole plus ancienne ne compte plus
+    for k in _salle["candidates"]:
+        k["parole"] = [p for p in k["parole"] if t - p[0] <= CANDIDATE_DUREE_S]
+    _salle["candidates"] = [k for k in _salle["candidates"] if k["parole"]]
     d = _lire(fichier)
     moyenne = np.array(d["moyenne"]) if d and d.get("moyenne") and len(d.get("vecteurs", [])) >= 2 else None
     ahmed = (lambda v: score_ahmed(v, d)) if moyenne is not None else None
@@ -341,7 +364,7 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
             return x["nom"], x
         return None, None
 
-    def ajouter(v, x=None):
+    def ajouter(v, x=None, n=1, sous_musique=None):
         # (03/11) « m » : combien de fois cette voix a été entendue pendant que le téléphone jouait de la musique
         if x is not None:
             x["c"] = (x["c"] * x["n"] + v) / (x["n"] + 1)
@@ -352,15 +375,41 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
         # le numéro qui suit le plus grand de la salle (une voix rattachée à papa ne laisse pas son numéro à une autre)
         nums = [int(m.group(1)) for x in _salle["voix"] for m in [re.fullmatch(r"voix (\d+)", x["nom"])] if m]
         nom = f"voix {max(nums) + 1 if nums else (2 if moyenne is not None else 1)}"
-        _salle["voix"].append({"nom": nom, "c": v / (np.linalg.norm(v) or 1.0), "n": 1, "m": 1 if musique else 0})
+        _salle["voix"].append({"nom": nom, "c": v / (np.linalg.norm(v) or 1.0), "n": n,
+                               "m": (1 if musique else 0) if sous_musique is None else sous_musique})
         return nom
 
+    def provisoire(vs, secondes):
+        """(04/11) une voix inconnue (ses vecteurs vs, sa durée) nourrit la candidate qui lui ressemble, ou une nouvelle ;
+        rend « voix N » quand la candidate a assez parlé (elle entre dans la salle), sinon None : pas encore une personne."""
+        somme = np.sum(vs, axis=0)
+        v = somme / (np.linalg.norm(somme) or 1.0)
+        proches = [(float(np.dot(v, k["c"])), k) for k in _salle["candidates"]]
+        s, k = max(proches, key=lambda p: p[0]) if proches else (-1.0, None)
+        if k is None or s < SEUIL_MEME_VOIX:
+            k = {"c": v, "n": 0, "m": 0, "parole": []}
+            _salle["candidates"].append(k)
+        c = k["c"] * k["n"] + somme
+        k["c"] = c / (np.linalg.norm(c) or 1.0)
+        k["n"] += len(vs)
+        k["m"] += len(vs) if musique else 0
+        k["parole"].append([t, round(float(secondes), 3)])
+        if _parole(k, t) < CONFIRMER_S:
+            return None
+        _salle["candidates"].remove(k)
+        return ajouter(k["c"], n=k["n"], sous_musique=k["m"])
+
     def qui_segment(brut):
+        repli = _salle["dernier"] or ("Ahmed" if moyenne is not None else "voix 1")
         v = embedding(brut, SEGMENT_MIN_S) if len(brut) >= SEGMENT_MIN_S * TAUX else None
         if v is None:
-            return _salle["dernier"] or ("Ahmed" if moyenne is not None else "voix 1")
+            return repli
         q, x = connu(v)
-        return q if q in ("moi", "Ahmed") or (q and x is None) else ajouter(v, x)
+        if q in ("moi", "Ahmed") or (q and x is None):
+            return q
+        if x is not None:
+            return ajouter(v, x)
+        return provisoire([v], len(brut) / TAUX) or repli      # (04/11) une candidate : ses mots à la voix d'avant
 
     def unites_mot_a_mot(sg, mots):
         """[(qui, texte)] : chaque mot à la voix de la fenêtre la plus proche de son instant."""
@@ -377,10 +426,12 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
                 continue
             voisine = [fen[i] for i in (k - 1, k + 1) if 0 <= i < len(fen) and fen[i][0] is not None]
             if any(w[1] is None and float(np.dot(v, w[0])) >= SEUIL_MEME_VOIX for w in voisine) or len(fen) == 1:
-                nom = ajouter(v)
-                for w in fen[k:]:                    # ses voisines qui lui ressemblent : la même voix
-                    if w[1] is None and w[0] is not None and float(np.dot(v, w[0])) >= SEUIL_MEME_VOIX:
-                        w[1] = nom
+                # ses voisines qui lui ressemblent : la même voix ; (04/11) une candidate, chaque fenêtre pour 0,75 s de parole,
+                # « » (pas encore une personne) tant qu'elle n'est pas confirmée
+                groupe = [w for w in fen[k:] if w[1] is None and w[0] is not None and float(np.dot(v, w[0])) >= SEUIL_MEME_VOIX]
+                nom = provisoire([w[0] for w in groupe], len(groupe) * PAS_S) or ""
+                for w in groupe:
+                    w[1] = nom
             elif voisine:
                 fen[k][1] = next((w[1] for w in voisine if w[1]), None)
         for v, q, x in fen:                           # les voix de la salle apprennent de chaque fenêtre
@@ -389,7 +440,10 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
         sortie = []
         for w, ma, mb in mots:
             k = min(range(len(centres)), key=lambda i: abs(centres[i] - (ma + mb) / 2))
-            q = fen[k][1] or _salle["dernier"] or ("Ahmed" if moyenne is not None else "voix 1")
+            q = fen[k][1]
+            if q == "":                               # (04/11) une candidate : la voix qui parlait juste avant dans la phrase
+                q = next((s for s, _ in reversed(sortie) if s != "moi"), None)
+            q = q or _salle["dernier"] or ("Ahmed" if moyenne is not None else "voix 1")
             if sortie and sortie[-1][0] == q:
                 sortie[-1][1].append(w)
             else:

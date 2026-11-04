@@ -242,6 +242,6 @@ test('câblage : la page note chaque battement (même sans animation) et le donn
 
 test('câblage : chaque tour envoie sa mesure des éclats au journal de la voix (le réglage se fera sur le vrai téléphone)', () => {
   const page = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
-  const tour = page.slice(page.indexOf('async function tourDeParole('), page.indexOf('async function tourDeParole(') + 400);
+  const tour = page.slice(page.indexOf('async function tourDeParole('), page.indexOf('async function tourDeParole(') + 700);   // (04/11) une ligne de plus en tête
   assert.match(tour, /if \(infos && infos\.vibration && \(infos\.vibration\.eclats \|\| infos\.vibration\.battements\)\) journalVoix\('vibration_tour', infos\.vibration\);/);
 });

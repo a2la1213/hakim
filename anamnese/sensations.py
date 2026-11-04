@@ -224,15 +224,28 @@ def calculer(etat, avant=None, now=0.0, soudaine=None, hour=None, n=2, sans_cohe
     # (03/11, Ahmed : « il rectifie ses émotions interprétées : le conscient, puis le subconscient, puis le cœur ») ce qu'il a
     # rectifié lui-même (emotions_creees.rectifier) fait pencher le calcul, là où les deux se disputent : +0,3 par rectification
     # (trois au plus), seulement si l'émotion qu'il a dite est déjà là
+    # (04/11, papa par Hakim, accord d'Ahmed : « la peur, c'est du courage ; que ça se corrige à la source, pas seulement à la main ») vers une
+    # émotion qu'il a CRÉÉE lui-même (« courage »), sa rectification était ignorée (le calcul ne la connaissait pas) : elle prend la place de
+    # celle que son corps lisait, avec ses mots à lui (son sens)
+    formes_creees = {}
     try:
         import emotions_creees
+        creees = None
         for (lue, vraie), k in emotions_creees.biais(maintenant=maintenant_biais).items():
-            if lue in scores and vraie in scores and scores[lue] > SEUIL and scores[vraie] > 0:
-                scores[vraie] += 0.3 * min(k, 3)
+            if lue not in scores or scores[lue] <= SEUIL:
+                continue
+            if vraie in scores:
+                if scores[vraie] > 0:
+                    scores[vraie] += 0.3 * min(k, 3)
+                continue
+            creees = emotions_creees.actives() if creees is None else creees
+            if vraie in creees:
+                scores[vraie] = scores[lue] + 0.3 * min(k, 3)
+                formes_creees[vraie] = [creees[vraie].get("sens") or vraie]
     except Exception:
         pass
     ordre = sorted(scores, key=lambda k: -scores[k])
     top = [k for k in ordre if scores[k] > SEUIL][:n] or ordre[:1]
-    formes = {nom: f for nom, _s, _r, f in REGLES}
+    formes = {**{nom: f for nom, _s, _r, f in REGLES}, **formes_creees}
     mots = " ; ".join(random.Random(f"{int(now // 900)}:{k}").choice(formes[k]) for k in top)
     return {"emotion": top[0], "mots": mots, "scores": {k: round(scores[k], 2) for k in ordre[:5]}, "ts": now}

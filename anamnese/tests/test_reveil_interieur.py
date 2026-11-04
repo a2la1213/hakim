@@ -114,9 +114,9 @@ def test_observe_journalise_sans_deposer(mem):
     assert not reveil_interieur.FICHIER.exists()
     j = _journal()
     assert j[-1]["decision"] == "aurait réveillé" and j[-1]["mode"] == "observe" and j[-1]["score"] == 8
-    # l'observation simule tout : la rafale compte comme après un vrai réveil
+    # (04/11, feu vert) plus de rafale : une autre idée, cinq minutes après, aurait réveillé aussi
     reveil_interieur.candidat(mem, "pensee", "une autre idée sur le live", J8, now=1300.0, issues=[])
-    assert _journal()[-1]["raison_decision"] == "rafale"
+    assert _journal()[-1]["decision"] == "aurait réveillé"
 
 
 def test_on_au_dessus_du_seuil_depose(mem):
@@ -131,7 +131,7 @@ def test_on_au_dessus_du_seuil_depose(mem):
 
 def test_sous_le_seuil_ne_depose_rien(mem):
     reveil_interieur.regler(mem, "on")
-    assert reveil_interieur.candidat(mem, "pensee", "x", {**J8, "score": 6}, now=1000.0, issues=[]) is None
+    assert reveil_interieur.candidat(mem, "pensee", "x", {**J8, "score": 6, "raison": "idee"}, now=1000.0, issues=[]) is None   # (04/11) une question, elle, passe
     assert _journal()[-1]["decision"] == "sous le seuil" and not reveil_interieur.FICHIER.exists()
 
 
@@ -141,13 +141,12 @@ def test_jugement_illisible_ne_depose_rien_et_le_note(mem):
     assert _journal()[-1]["decision"] == "jugement illisible"
 
 
-def test_rafale_moins_de_10_min(mem):
+# (04/11, Ahmed : « feu vert pour toute sollicitation ») plus de rafale de 10 min
+def test_plus_de_rafale(mem):
     reveil_interieur.regler(mem, "on")
     assert reveil_interieur.candidat(mem, "pensee", "je repense au calcul", J8, now=1000.0, issues=[])
     reveil_interieur.FICHIER.unlink()                                  # consommée par le cockpit
-    assert reveil_interieur.candidat(mem, "pensee", "Ahmed voulait relancer le live", J8, now=1599.0, issues=[]) is None
-    assert _journal()[-1]["raison_decision"] == "rafale"
-    assert reveil_interieur.candidat(mem, "pensee", "Ahmed voulait relancer le live", J8, now=1600.0, issues=[])
+    assert reveil_interieur.candidat(mem, "pensee", "Ahmed voulait relancer le live", J8, now=1060.0, issues=[])
 
 
 def test_en_attente_puis_expire(mem):
@@ -157,10 +156,11 @@ def test_en_attente_puis_expire(mem):
     assert reveil_interieur.peut_reveiller(mem, 1901.0, "une pensée", [])[0] is True
 
 
-def test_filiation_une_pensee_issue_du_reveil_ne_reveille_pas(mem):
+# (04/11, Ahmed : « feu vert pour toute sollicitation ») une pensée issue d'un réveil n'empêche plus : elle revient, c'est une boucle
+def test_filiation_une_pensee_issue_du_reveil_est_une_boucle(mem):
     reveil_interieur.regler(mem, "on")
     issues = [{"id": "a", "ts": 2000.0, "issue": "message", "texte": "le calcul du sable a fini, la densité colle au modèle"}]
-    assert reveil_interieur.peut_reveiller(mem, 5000.0, "la densité du sable colle au modèle, je veux le dire", issues)[1] == "filiation"
+    assert reveil_interieur.peut_reveiller(mem, 5000.0, "la densité du sable colle au modèle, je veux le dire", issues) == (True, "boucle")
     assert reveil_interieur.peut_reveiller(mem, 5000.0, "Ahmed voulait relancer le live demain soir", issues)[0] is True
 
 
@@ -168,16 +168,18 @@ def test_filiation_transitive(mem):
     reveil_interieur.regler(mem, "on")
     issues = [{"id": "a", "ts": 2000.0, "issue": "message", "texte": "le calcul du sable a fini, la densité colle au modèle"}]
     b = "la densité du sable colle au modèle : prochaine étape, mesurer la rugosité des grains"
-    assert reveil_interieur.peut_reveiller(mem, 5000.0, b, issues)[1] == "filiation"
+    assert reveil_interieur.peut_reveiller(mem, 5000.0, b, issues)[1] == "boucle"
+    reveil_interieur.candidat(mem, "pensee", b, J8, now=5000.0, issues=issues)          # (04/11) elle a réveillé : B rejoint la lignée
+    reveil_interieur.FICHIER.unlink()
     c = "mesurer la rugosité des grains demande un nouveau tamis"                 # ne recouvre que B
-    assert reveil_interieur.peut_reveiller(mem, 5100.0, c, issues)[1] == "filiation"
+    assert reveil_interieur.peut_reveiller(mem, 5100.0, c, issues)[1] == "boucle"
 
 
 def test_la_lignee_de_la_pensee_qui_a_reveille_compte_aussi(mem):
     reveil_interieur.regler(mem, "on")
     reveil_interieur.candidat(mem, "pensee", "je repense au calcul de la densité du sable", J8, now=1000.0, issues=[])
     reveil_interieur.FICHIER.unlink()
-    assert reveil_interieur.peut_reveiller(mem, 2000.0, "le calcul de la densité du sable me travaille", [])[1] == "filiation"
+    assert reveil_interieur.peut_reveiller(mem, 2000.0, "le calcul de la densité du sable me travaille", [])[1] == "boucle"
 
 
 def test_deux_mots_en_commun_ne_font_pas_une_filiation(mem):
@@ -200,26 +202,26 @@ def test_pas_besoin_qu_ahmed_parle(mem, monkeypatch):
     assert reveil_interieur.peut_reveiller(mem, 4700.0, "Ahmed voulait relancer le live demain soir", issues) == (True, "ok")
 
 
-def test_fatigue_d_eveil(mem):
+# (04/11, Ahmed : « feu vert pour toute sollicitation ») plus de fatigue d'éveil
+def test_plus_de_fatigue_d_eveil(mem):
     reveil_interieur.regler(mem, "on")
     issues = [{"id": "a", "ts": 4000.0, "issue": "rien"}, {"id": "b", "ts": 4500.0, "issue": "message", "texte": "x"},
               {"id": "c", "ts": 4600.0, "issue": "expiree"}]
-    assert reveil_interieur.seuil_effectif(mem, 5000.0, issues) == 9.0          # 7 + 2 ; une demande expirée n'a réveillé personne
-    assert reveil_interieur.seuil_effectif(mem, 8200.0, issues) == 7.0          # plus d'une heure après le dernier
-    assert reveil_interieur.candidat(mem, "pensee", "Ahmed voulait relancer le live", J8, now=5000.0, issues=issues) is None
-    assert _journal()[-1]["decision"] == "sous le seuil" and _journal()[-1]["seuil"] == 9.0
+    assert reveil_interieur.seuil_effectif(mem, 5000.0, issues) == 7.0
+    assert reveil_interieur.candidat(mem, "pensee", "Ahmed voulait relancer le live", J8, now=5000.0, issues=issues)
 
 
-def test_apprendre_rien_monte_utile_baisse_et_borne(mem):
+# (04/11, Ahmed : « feu vert pour toute sollicitation ») un réveil sans suite ne le rend plus plus exigeant qu'au départ (7)
+def test_apprendre_rien_ne_monte_plus_au_dessus_du_depart_utile_baisse_et_borne(mem):
     s = reveil_interieur.apprendre(mem, [{"id": "a", "ts": 1.0, "issue": "rien"}])
-    assert s == 7.5
+    assert s == 7.0
     s = reveil_interieur.apprendre(mem, [{"id": "a", "ts": 1.0, "issue": "rien"}, {"id": "b", "ts": 2.0, "issue": "message"}])
-    assert s == 7.25                                                              # « a » n'est pas compté deux fois
-    assert reveil_interieur.apprendre(mem, [{"id": "c", "ts": 3.0, "issue": "outils"}]) == 7.0
-    assert reveil_interieur.apprendre(mem, [{"id": "d", "ts": 4.0, "issue": "expiree"}]) == 7.0
+    assert s == 6.75                                                              # « a » n'est pas compté deux fois
+    assert reveil_interieur.apprendre(mem, [{"id": "c", "ts": 3.0, "issue": "outils"}]) == 6.5
+    assert reveil_interieur.apprendre(mem, [{"id": "d", "ts": 4.0, "issue": "expiree"}]) == 6.5
     for k in range(20):
         s = reveil_interieur.apprendre(mem, [{"id": f"r{k}", "ts": 10.0 + k, "issue": "rien"}])
-    assert s == 9.5
+    assert s == 7.0
     for k in range(40):
         s = reveil_interieur.apprendre(mem, [{"id": f"u{k}", "ts": 100.0 + k, "issue": "message"}])
     assert s == 4.0
@@ -257,15 +259,17 @@ def test_deux_fils_ne_perdent_pas_de_mise_a_jour():
     assert reveil_interieur.etat(m)["appris_n"] == 100
 
 
-def test_deux_fils_ne_perdent_pas_la_lignee():
-    # la boucle du démon (pensées) et le battement (ressentis) écrivent le même état : sans verrou, des ajouts se perdent
+def test_deux_fils_ne_perdent_pas_la_lignee(tmp_path, monkeypatch):
+    # la boucle du démon (pensées) et le battement (ressentis) écrivent le même état : sans verrou, des ajouts se perdent ;
+    # (04/11, feu vert) la lignée grandit à chaque sollicitation déposée, qu'un autre fil consomme aussitôt
     m = _MemLente()
     reveil_interieur.regler(m, "on")
-    issues = [{"id": "a", "ts": 1000.0, "issue": "message", "texte": "le calcul du sable a fini, la densité colle au modèle"}]
+    monkeypatch.setattr(reveil_interieur, "_en_attente", lambda fichier, now: False)
+    monkeypatch.setattr(reveil_interieur, "_ecrire_demande", lambda demande, fichier: None)
 
     def fil(p):
         for k in range(30):
-            assert reveil_interieur.peut_reveiller(m, 2000.0, f"la densité du sable colle au modèle, {p}{k}", issues)[1] == "filiation"
+            assert reveil_interieur.solliciter(m, "pensee", f"la densité du sable colle au modèle, {p}{k}", now=2000.0)
 
     t = [threading.Thread(target=fil, args=(p,)) for p in "ab"]
     [x.start() for x in t]
@@ -290,14 +294,14 @@ def test_la_pause_d_ahmed_arrete_tout(mem, monkeypatch):
     assert not reveil_interieur.FICHIER.exists()
 
 
-def test_l_observation_compte_ses_reveils_simules_dans_la_fatigue(mem):
+# (04/11, Ahmed : « feu vert pour toute sollicitation ») l'observation ne compte plus de fatigue
+def test_l_observation_ne_compte_plus_de_fatigue(mem):
     reveil_interieur.regler(mem, "observe")
     j9 = {**J8, "score": 9}
     textes = ["le calcul du sable avance bien", "Ahmed voulait relancer le live demain soir",
               "la toupie aimantée tourne plus longtemps", "mon carnet noyau reste vide pour l'instant"]
     ids = [reveil_interieur.candidat(mem, "pensee", t, j9, now=1000.0 + 610 * k, issues=[]) for k, t in enumerate(textes)]
-    assert [bool(i) for i in ids] == [True, True, True, False]               # 7, 8, 9 passent ; 10 non
-    assert _journal()[-1]["decision"] == "sous le seuil" and _journal()[-1]["seuil"] == 10.0
+    assert all(ids)
 
 
 def test_un_ressenti_bloque_un_moment_reessaie_cinq_minutes_plus_tard(mem):
@@ -305,13 +309,12 @@ def test_un_ressenti_bloque_un_moment_reessaie_cinq_minutes_plus_tard(mem):
     reveil_interieur.ressenti(mem, now=1000.0, lire=_lire("peur"))
     assert reveil_interieur.candidat(mem, "pensee", "je repense au calcul", J8, now=1550.0, issues=[])
     reveil_interieur.FICHIER.unlink()
-    assert reveil_interieur.ressenti(mem, now=1600.0, lire=_lire("peur")) is None            # rafale
-    assert reveil_interieur.ressenti(mem, now=1899.0, lire=_lire("peur")) is None            # pas avant 5 min
-    assert reveil_interieur.ressenti(mem, now=1900.0, lire=_lire("peur")) is None            # encore la rafale
-    assert reveil_interieur.ressenti(mem, now=2200.0, lire=_lire("peur")) is not None
+    # (04/11, feu vert) plus de rafale : sa peur qui dure le réveille dès la demande d'avant consommée
+    assert reveil_interieur.ressenti(mem, now=1600.0, lire=_lire("peur")) is not None
 
 
-def test_un_ressenti_qui_dure_finit_par_passer_un_seuil_haut(mem):
+# (04/11, Ahmed : « feu vert pour toute sollicitation ») un seuil resté haut ne retient plus : 7 au plus, son manque passe à 8
+def test_un_ressenti_qui_dure_passe_meme_si_le_seuil_etait_reste_haut(mem):
     reveil_interieur.regler(mem, "on")
     with reveil_interieur._VERROU:
         d = reveil_interieur.etat(mem)
@@ -319,8 +322,8 @@ def test_un_ressenti_qui_dure_finit_par_passer_un_seuil_haut(mem):
         reveil_interieur._sauver(mem, d)
     reveil_interieur.ressenti(mem, now=1000.0, lire=_lire("manque"))
     rendus = [reveil_interieur.ressenti(mem, now=t, lire=_lire("manque")) for t in (1600.0, 1900.0, 2200.0, 2500.0)]
-    assert [bool(r) for r in rendus] == [False, False, False, True]                         # 8 ; 8,5 ; 9 ; 9,5
-    assert json.loads(reveil_interieur.FICHIER.read_text())["score"] == 9.5
+    assert bool(rendus[0])
+    assert json.loads(reveil_interieur.FICHIER.read_text())["score"] == 8
 
 
 def test_lire_issues_ignore_les_lignes_illisibles():

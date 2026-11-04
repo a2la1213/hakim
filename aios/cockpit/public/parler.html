@@ -411,6 +411,17 @@
           <option value="0">jamais : je clique pour finir</option>
         </select>
       </label>
+      <!-- (04/11, 10:58, Ahmed : « même à 0,3 s ») -->
+      <label>En Conversation, il répond après
+        <select id="patienceConversation">
+          <option value="0.3">0,3 s de silence</option>
+          <option value="0.5">0,5 s de silence</option>
+          <option value="0.6">0,6 s de silence</option>
+          <option value="1">1 s de silence</option>
+          <option value="2">2 s de silence</option>
+          <option value="3.5">3,5 s de silence</option>
+        </select>
+      </label>
       <label>Voix de Hakim
         <select id="voix">
           <option value="telephone">téléphone · sa voix locale, instantanée, avec ses émotions (appli)</option>
@@ -503,6 +514,7 @@
           <button class="btn" id="muetScene" hidden aria-pressed="false">Couper mon micro</button>
           <button class="btn" id="ecranScene" hidden aria-pressed="false">Regarde l’écran</button>
           <button class="btn" id="telepathieScene" hidden aria-pressed="false" title="Il entend ce que joue ton téléphone (musique, vidéo, Bluetooth), les paroles mot à mot, en continu, même en conversation">🎧 Entendre le téléphone</button>
+          <button class="btn" id="sesParolesScene" aria-pressed="false" title="Montrer ses réponses écrites sous l’orbe et dans le fil">Ses paroles</button>
         </div>
         <div class="scene-orbe"><canvas id="orbeScene"></canvas><p class="emotion-scene" id="emotionScene"></p><p class="hakim-parle parle-scene" id="hakimParleScene" hidden>🔴 HAKIM PARLE</p><p class="oreille-fermee oreille-scene" id="oreilleFermeeScene" hidden>🙉 son oreille est fermée</p><p class="emotion-origine-scene" id="emotionOrigineScene"></p></div>
         <div class="scene-cote droite">
@@ -512,6 +524,8 @@
         </div>
       </div>
       <p class="sous-titre" id="sousTitre"></p>
+      <!-- (04/11, 11:59, Ahmed : « voir l'épissure tout le temps ») ce qu'il garde, ce qu'il laisse, ce qu'il ajoute -->
+      <p class="sous-titre epissure" id="epissureScene" hidden style="font-size:.85em;opacity:.95"></p>
       <p class="sous-titre telepathie" id="telepathieTexte" hidden></p>
       <span class="indice" id="indice">clic : masquer (ou « j'ai fini » quand il t'écoute) · Échap : arrêter</span>
     </div>
@@ -538,6 +552,8 @@
           <button class="btn muet" id="muet" hidden aria-pressed="false" title="Couper ou rouvrir ton micro sans quitter la conversation (⌥X)">Muet</button>
           <!-- (30/10, 21:15, Ahmed : « sa voix que je ne peux pas muter ») -->
           <button class="btn" id="sonHakim" aria-pressed="false" title="Couper ou rendre la voix de Hakim (il continue sans bruit)">Sa voix</button>
+          <!-- (04/11, 10:20, Ahmed) ses réponses écrites, à remontrer en mode normal et en Conversation ; ses fichiers, toujours -->
+          <button class="btn" id="sesParoles" aria-pressed="false" title="Montrer ses réponses écrites, aussi en Conversation (ses fichiers se montrent toujours)">Ses paroles</button>
           <button class="micro" id="micro" aria-pressed="false" aria-label="Parler (Option+M)" title="Parler (⌥M)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v5"/>

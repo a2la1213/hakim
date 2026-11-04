@@ -27,7 +27,7 @@ const PAGES = ['cafe', 'immunite', 'parler', 'sens', 'code'];
 const dire = (n, [un, plusieurs]) => `${n} ${n > 1 ? plusieurs : un}`;
 
 function compter({ vus = {}, apparus = {}, maintenant = Date.now(), cafe = [], incidents = [], rapports = [], anticorps = [], attentes = [],
-  sens = {} }) {
+  sens = {}, blocages = [] }) {
   const v = { ...vus };
   for (const p of PAGES) if (!Number.isFinite(Number(v[p])) || !v[p]) v[p] = maintenant;
   const neuf = {};
@@ -39,6 +39,7 @@ function compter({ vus = {}, apparus = {}, maintenant = Date.now(), cafe = [], i
   const qui = [...new Set(c.map(m => String(m.prenom || '?')))];
   const inc = incidents.filter(i => i && Number(i.ts) > v.immunite);
   const vraies = inc.filter(i => !VOIX.test(String(i.motif || ''))), voix = inc.length - vraies.length;
+  const bloques = blocages.filter(b => b && Number(b.ts) > v.immunite).length;   // (04/11) les garde-fous d'Anthropic : montrés, pas comptés
   const med = rapports.filter(r => r && ['moyenne', 'haute'].includes(r.gravite) && Number(r.ts) > v.immunite);
   const antiI = anti.filter(a => a.ts > v.immunite), antiP = anti.filter(a => a.ts > v.parler);
   const attP = att.filter(a => a.quoi !== 'promotion' && a.ts > v.parler);
@@ -57,7 +58,8 @@ function compter({ vus = {}, apparus = {}, maintenant = Date.now(), cafe = [], i
         ...(vraies.length ? [`${dire(vraies.length, ['incident', 'incidents'])} (${[...new Set(vraies.map(i => i.categorie || String(i.motif || '').split('|')[1] || '?'))].slice(0, 3).join(', ')})`] : []),
         ...(med.length ? [`${dire(med.length, ['passage du médecin', 'passages du médecin'])} (gravité ${[...new Set(med.map(r => r.gravite))].join(', ')})`] : []),
         ...(antiI.length ? [dire(antiI.length, ATTENTES.anticorps)] : []),
-        ...(voix ? [`${dire(voix, ['voix inconnue', 'voix inconnues'])}, non comptée${voix > 1 ? 's' : ''}`] : [])] },
+        ...(voix ? [`${dire(voix, ['voix inconnue', 'voix inconnues'])}, non comptée${voix > 1 ? 's' : ''}`] : []),
+        ...(bloques ? [`${dire(bloques, ['blocage', 'blocages'])} par les garde-fous d’Anthropic, non compté${bloques > 1 ? 's' : ''}`] : [])] },
       parler: { n: attP.length + antiP.length, resume: Object.entries(parQuoi).map(([q, n]) => dire(n, ATTENTES[q])) },
       sens: { n: mes.length + liv.length + docs.length + fortes.length, resume: [
         ...(mes.length ? [`${dire(mes.length, ['mesure finie', 'mesures finies'])}${echecs ? ` (${echecs} en échec)` : ''}`] : []),

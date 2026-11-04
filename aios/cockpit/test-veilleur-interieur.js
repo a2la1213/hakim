@@ -69,9 +69,10 @@ test('éteint par papa : plus rien, même pas le calcul', () => {
   assert.match(src, /function lireScoreVeilleur\(\) \{\n  if \(!veilleurReglages\(\)\.actif\) return;/);
 });
 
-test('(18:56) forfait libre : son veilleur peut sonner toutes les 5 min, sans le plafond du forfait', () => {
+// (04/11, 13:20, Ahmed : « dans forfait libre, chaque 10 min pour la veille ») 10 min, plus 5
+test('(18:56) forfait libre : son veilleur peut sonner toutes les 10 min, sans le plafond du forfait', () => {
   const w = veilleur({ score: 99, plafond: 0.2, libre: true });
   w.v.tic(); assert.equal(w.ecrits.length, 1);
-  w.avancer(4 * 60 * 1000); w.v.tic(); assert.equal(w.ecrits.length, 1, '4 min : pas encore');
-  w.avancer(2 * 60 * 1000); w.v.tic(); assert.equal(w.ecrits.length, 2, '6 min : oui, malgré un plafond de 0,2 par heure');
+  w.avancer(9 * 60 * 1000); w.v.tic(); assert.equal(w.ecrits.length, 1, '9 min : pas encore');
+  w.avancer(2 * 60 * 1000); w.v.tic(); assert.equal(w.ecrits.length, 2, '11 min : oui, malgré un plafond de 0,2 par heure');
 });

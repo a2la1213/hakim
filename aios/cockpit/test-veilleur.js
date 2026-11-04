@@ -81,5 +81,5 @@ test('câblage : un tour bloqué réessaie une fois, puis s’arrête avec la ra
 });
 
 test('la page dit le statut à voix haute quand la voix est active', () => {
-  assert.match(page, /if \(o\.dire && \(etat\.conversation \|\| etat\.reglages\.volant \|\| etat\.reglages\.lectureAuto\) && !lecteur\.actif\) lecteur\.dire\(o\.x\.slice\(0, 160\)\);/);
+  assert.match(page, /if \(o\.dire && (?:!\(typeof voixEpissee === 'function' && voixEpissee\(\)\) && )?\(etat\.conversation \|\| etat\.reglages\.volant \|\| etat\.reglages\.lectureAuto\) && !lecteur\.actif\) lecteur\.dire\(o\.x\.slice\(0, 160\)\);/);
 });

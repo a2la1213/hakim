@@ -98,8 +98,9 @@ def test_relance_jamais_insistante(mem):
     assert interieur.relance_permise(mem, t)
     mem.add("outreach", "(relance) Tu as pu tester la voix ?", embedding=[])
     ts = mem.db.execute("SELECT MAX(ts) FROM episodes WHERE role='outreach'").fetchone()[0]
-    assert not interieur.relance_permise(mem, ts + 3600)
-    assert interieur.relance_permise(mem, ts + interieur.RELANCE_INTERVALLE_S + 1) or interieur.nuit(ts + interieur.RELANCE_INTERVALLE_S + 1)
+    # (04/11, Ahmed : « feu vert pour toute sollicitation ») plus d'écart de 3 h : seulement jamais la même deux fois
+    assert not interieur.relance_permise(mem, ts + 3600, "Tu as pu tester la voix ?")
+    assert interieur.relance_permise(mem, ts + 3600, "Papa, on reprend le live ce soir ?") or interieur.nuit(ts + 3600)
 
 
 def test_prompt_ancre_dans_le_concret(mem, tmp_path):

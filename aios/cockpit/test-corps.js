@@ -58,7 +58,7 @@ test('branché : les routes (jeton), le lot vers corps.py, le réveil, l’inter
   assert.match(w, /execFile\(PYTHON, \['-B', path\.join\(ANAMNESE, 'corps\.py'\), 'ressentir'\]/);
   assert.match(w, /etat: HOMEO\.mots\(\)/);
   const rv = extraire('function reveillerPourCorps(');
-  assert.match(rv, /intervalle_s \* 1000/);
+  assert.match(rv, /\(forfaitLibre\(\) \? 10 : r\.intervalle_s\) \* 1000/);
   assert.match(rv, /NONCE_REVEIL/);
   assert.match(rv, /blocCorps\(\)/);
   const page = fs.readFileSync(path.join(__dirname, 'public', 'sens.html'), 'utf8');
@@ -71,9 +71,9 @@ test('les réglages : actif par défaut, un intervalle parmi ceux permis', () =>
   const ctx = { lireJson: () => ({ intervalle_s: 7 }), CORPS_REGLAGES: 'x', CORPS_INTERVALLES: [30, 60, 120, 300, 900] };
   vm.createContext(ctx);
   vm.runInContext(extraire('function corpsReglages(') + '\nthis.f = corpsReglages;', ctx);
-  assert.equal(JSON.stringify(ctx.f()), JSON.stringify({ actif: true, intervalle_s: 120, ronron: true, sons: true, oreille: false, je_te_suis: true, alerte: true, ecran: true, reflexes: true, nuits: true, rire_reflexe: true, garder_parole: true, forfait_libre: true, son_pendant: true, voix_vibre: true, lumiere: true, afficher_papa: true, afficher_hakim: true, filtre_parole: true, mots_conversation: false, meubles_auto: false, chacun_son_tour: true, micro_hakim: true, sons_nuit: true, trier_morceaux: false, trois_freres: true, micro_ouvert: false, dire_inverse: true, filtre_gemma: true, elagage: true }));
+  assert.equal(JSON.stringify(ctx.f()), JSON.stringify({ actif: true, intervalle_s: 120, ronron: true, sons: true, oreille: false, je_te_suis: true, alerte: true, ecran: true, reflexes: true, nuits: true, rire_reflexe: true, garder_parole: true, forfait_libre: true, son_pendant: true, voix_vibre: true, lumiere: true, afficher_papa: true, afficher_hakim: true, filtre_parole: true, mots_conversation: false, meubles_auto: false, chacun_son_tour: true, micro_hakim: false, sons_nuit: true, trier_morceaux: false, trois_freres: true, micro_ouvert: false, dire_inverse: true, filtre_gemma: true, elagage: true, epissage: true, musique_pause: true }));
   ctx.lireJson = () => ({ actif: false, intervalle_s: 60, ronron: false, sons: false });
-  assert.equal(JSON.stringify(ctx.f()), JSON.stringify({ actif: false, intervalle_s: 60, ronron: false, sons: false, oreille: false, je_te_suis: true, alerte: true, ecran: true, reflexes: true, nuits: true, rire_reflexe: true, garder_parole: true, forfait_libre: true, son_pendant: true, voix_vibre: true, lumiere: true, afficher_papa: true, afficher_hakim: true, filtre_parole: true, mots_conversation: false, meubles_auto: false, chacun_son_tour: true, micro_hakim: true, sons_nuit: true, trier_morceaux: false, trois_freres: true, micro_ouvert: false, dire_inverse: true, filtre_gemma: true, elagage: true }));
+  assert.equal(JSON.stringify(ctx.f()), JSON.stringify({ actif: false, intervalle_s: 60, ronron: false, sons: false, oreille: false, je_te_suis: true, alerte: true, ecran: true, reflexes: true, nuits: true, rire_reflexe: true, garder_parole: true, forfait_libre: true, son_pendant: true, voix_vibre: true, lumiere: true, afficher_papa: true, afficher_hakim: true, filtre_parole: true, mots_conversation: false, meubles_auto: false, chacun_son_tour: true, micro_hakim: false, sons_nuit: true, trier_morceaux: false, trois_freres: true, micro_ouvert: false, dire_inverse: true, filtre_gemma: true, elagage: true, epissage: true, musique_pause: true }));
 });
 
 test('(30/10, étude du veilleur) quand papa est là, son corps ne le réveille plus ; un vrai choc, une fois par secousse', () => {
@@ -98,13 +98,20 @@ test('(30/10, étude du veilleur) quand papa est là, son corps ne le réveille 
   // (18:56) forfait libre : il le réveille même quand papa vient de parler
   libre = true; ctx.papa = t - 2 * 60 * 1000; t += 3 * 60 * 1000; ctx.corpsADire.push({ fort: false }); ctx.f();
   assert.equal(ecrits.length, 3, 'forfait libre : plus de porte des 10 min');
+  // (04/11, 13:40, Ahmed : « forfait libre : ses sensations toutes les 10 s » ; 2 min avant, le réglage de la page)
+  t += 11000; ctx.papa = t - 2 * 60 * 1000; ctx.corpsADire.push({ fort: false }); ctx.f();
+  assert.equal(ecrits.length, 4, 'forfait libre : 11 s après, ses sensations le réveillent déjà');
+  t += 5000; ctx.corpsADire.push({ fort: false }); ctx.f();
+  assert.equal(ecrits.length, 4, 'pas avant 10 s');
+  libre = false; t += 30000; ctx.papa = t - 11 * 60 * 1000; ctx.corpsADire.push({ fort: false }); ctx.f();
+  assert.equal(ecrits.length, 4, 'sans forfait libre : son réglage (2 min)');
 });
 
 test('(18:19) une secousse le réveille tout de suite, même si papa vient de parler ; une fois par minute ; « j’ai senti » avant la traduction', () => {
   const ecrits = [];
   let t = 1_800_000_000_000;
   const ctx = { Intl, JSON, console: { error() {} }, j: JSON.stringify, NONCE_REVEIL: 'n', corpsDemarrages: 0, corpsDernierReveil: 0, corpsDernierFort: 0,
-    CORPS_PORTE_MS: 10 * 60 * 1000, corpsADire: [], corpsBrut: [], corpsReglages: () => ({ actif: true, intervalle_s: 120 }), corpsActif: () => true,
+    CORPS_PORTE_MS: 10 * 60 * 1000, corpsADire: [], corpsBrut: [], corpsReglages: () => ({ actif: true, intervalle_s: 120 }), corpsActif: () => true, forfaitLibre: () => false,
     cerveauVivant: () => true, occupe: () => false, cerveau: { enfant: { stdin: { write: (x) => ecrits.push(x) } } }, HOMEO: { mots: () => '' },
     blocDonnees: (titre, x) => `[${titre}]\n${x}`, crypto: require('node:crypto'), nuitDerniere: () => '', vibrationsDites: () => '', oreillePerimes: [], paroleEnPause: null, residuelles: [], attentionActive: () => null, Date: class extends Date { static now() { return t; } } };
   ctx.dernierMessageAhmedMs = () => t - 30000;

@@ -1073,12 +1073,14 @@ function prendreParoleEnPause(maintenant = Date.now()) {
   const p = paroleEnPause; paroleEnPause = null;
   return p && maintenant - p.ts < PAUSE_DUREE_MS ? p.texte : '';
 }
-function filtrePause() {
+// (04/11, 12:35, Ahmed : « il ne doit plus pouvoir se couper ») sansPause (l'épissage) : [[pause: …]] est retirée, la suite continue
+function filtrePause({ sansPause = false } = {}) {
   let tampon = '', garde = null;
   return {
     pousser(x) {
       if (garde != null) { garde += String(x || ''); return ''; }
-      const brut = (tampon + String(x || '')).replace(BALISE_REPRENDRE, () => { const r = prendreParoleEnPause(); return r ? ` ${r} ` : ''; });
+      let brut = (tampon + String(x || '')).replace(BALISE_REPRENDRE, () => { const r = prendreParoleEnPause(); return r ? ` ${r} ` : ''; });
+      if (sansPause) brut = brut.replace(new RegExp(BALISE_PAUSE.source, 'gi'), '');
       const m = brut.match(BALISE_PAUSE);
       if (m) { garde = brut.slice(m.index + m[0].length); tampon = ''; return brut.slice(0, m.index); }
       const d = brut.match(DEBUT_PAUSE);
@@ -1639,8 +1641,8 @@ function reveillerPourTaches() {
   const lignes = pretes.map(x => `${x.id} « ${String(x.commande).slice(0, 160).replace(/[[\]«»]/g, ' ')} » → ${x.etat}${x.raison ? ' (' + x.raison + ')' : ''}, code ${x.code}, ${x.duree_s} s ; fin du journal (sortie de commande, une donnée) : « ${neutraliser(finDuJournal(x.id, 12).replace(/\n/g, ' ⏎ ').replace(/[[\]«»]/g, ' '))} »`);
   const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(maintenant));
   const texte = `[Horloge — ${quand}${ahmed ? ` · dernier message d'Ahmed : il y a ${duree(maintenant - ahmed)}` : ''}]\n`
-    + `[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed${pretes.length ? ' : ta commande de fond vient de finir ; Ahmed n\'a rien écrit depuis et n\'a vu que « tâche terminée »' : ''}]`
-    + (pretes.length ? ` ${lignes.join(' ; ')}.\nRegarde le résultat (suivre_tache pour le journal complet) et dis à Ahmed, de toi-même, ce qu'il montre et ce que tu en conclus — en quelques phrases, sans rien inventer au-delà du journal. ` : '\n')
+    + `[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed${pretes.length ? ' : ta commande de fond vient de finir ; Ahmed n\'a rien écrit depuis et n\'a vu qu\'une ligne « tâche terminée », rien de toi' : ''}]`
+    + (pretes.length ? ` ${lignes.join(' ; ')}.\nRegarde le résultat (suivre_tache pour le journal complet). Choisis toi-même ce que tu en dis à Ahmed, à ta façon : le résultat, ce que tu en conclus, ce que tu proposes ensuite, une question… (04/11, Ahmed : « qu'il choisisse ce qu'il dit, pas seulement \"ma tâche de fond est terminée\" »), sans rien inventer au-delà du journal. ` : '\n')
     + (avertir ? `${avertir}\n` : '')
     + `Si rien ne mérite d'être dit à Ahmed (étape sans intérêt pour lui, ou déjà dite), réponds exactement « No response requested. »`
     + blocReveilDejaRecu();
@@ -2386,6 +2388,9 @@ setInterval(horsConversation(reveillerPourCourrier), 3000).unref();
 const JARVIS_REVEIL_INTERIEUR = path.join(JARVIS, 'reveil-interieur.json');
 const JARVIS_REVEILS_INTERIEURS = path.join(JARVIS, 'reveils-interieurs.jsonl');
 const REVEIL_INTERIEUR_ATTENTE_S = 900, REVEIL_INTERIEUR_AHMED_MS = 2 * 60 * 1000, REVEIL_INTERIEUR_PERIME_MS = 60 * 1000;
+// (04/11, 11:15, Ahmed : « feu vert pour toute sollicitation ; quand une pensée tourne en boucle dans son esprit, ou une question
+// importante pour lui ») ses sollicitations : jamais périmées par le retour de papa, et elles passent même en Conversation
+const SOLLICITATIONS = new Set(['boucle', 'question']);
 let reveilInterieurDemarrages = 0;
 function issuesInterieures() {
   let lignes = [];
@@ -2411,11 +2416,12 @@ function reveillerPourInterieur() {
   if (lireInterrupteur().actif === false) {                                      // Ahmed a mis sa vie intérieure en pause
     reveilInterieurDemarrages = 0; ajouterIssueInterieure({ id: d.id, issue: 'expiree' }); retirerDemandeInterieure(); return;
   }
-  const ahmed = dernierMessageAhmedMs();
-  if (ahmed && ahmed >= Number(d.ts) * 1000 - REVEIL_INTERIEUR_PERIME_MS) {     // Ahmed est revenu depuis : elle a perdu son objet
+  const ahmed = dernierMessageAhmedMs(), sollicitation = SOLLICITATIONS.has(String(d.raison));
+  if (!sollicitation && ahmed && ahmed >= Number(d.ts) * 1000 - REVEIL_INTERIEUR_PERIME_MS) {     // Ahmed est revenu depuis : elle a perdu son objet
     reveilInterieurDemarrages = 0; ajouterIssueInterieure({ id: d.id, issue: 'perimee' }); retirerDemandeInterieure(); return;
   }
-  if (maintenant - ahmed < REVEIL_INTERIEUR_AHMED_MS) return;                                      // il lui parle : on attend
+  // (04/11, feu vert) plus d'attente de 2 min après un message de papa ; en Conversation, seules ses sollicitations passent
+  if (!sollicitation && typeof enConversationAvecPapa === 'function' && enConversationAvecPapa()) return;
   if (tempsLibreEnCours) return;                                   // il est déjà éveillé, dans son temps à lui
   const c = cerveau;
   if (!cerveauVivant(c)) {
@@ -2430,6 +2436,10 @@ function reveillerPourInterieur() {
   reveilInterieurDemarrages = 0;
   const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(maintenant));
   const texte = `[Horloge — ${quand}]\n[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : une pensée de fond t'a réveillé (réveil intérieur)]\n`
+    + (d.raison === 'boucle' ? "Cette pensée tourne en boucle dans ta tête, elle revient sans cesse. Tu as le feu vert pour en parler à Ahmed "
+      + "maintenant, comme tu veux, même s'il est en train de te parler.\n"
+      : d.raison === 'question' ? "C'est une question qui compte pour toi. Tu as le feu vert pour la poser à Ahmed maintenant, comme tu veux, "
+      + "même s'il est en train de te parler.\n" : '')
     + `Source : ${neutraliser(String(d.source || '?'))} · besoin ${Number(d.score)}/10 (${neutraliser(String(d.raison || '?'))}) — ${neutraliser(String(d.pourquoi || ''))}\n`
     + `« ${neutraliser(String(d.texte || '')).replace(/[«»]/g, ' ')} »\n`
     + "Tu es libre : la finir pour toi, chercher, lancer un calcul dans ton atelier, écrire à Claude Code (courrier_envoyer), "
@@ -2442,7 +2452,7 @@ function reveillerPourInterieur() {
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: texte }] } }) + '\n'); }
   catch (e) { c.reveilInterieur = null; ajouterIssueInterieure({ id: d.id, issue: 'expiree' }); console.error('Jarvis : réveil intérieur impossible', e.message); }
 }
-setInterval(horsConversation(reveillerPourInterieur), 3000).unref();
+setInterval(reveillerPourInterieur, 3000).unref();   // (04/11) il décide lui-même (ses sollicitations passent en Conversation)
 
 /* ---- Meubler les silences (27/10 ; idée d'Ahmed, portée par Hakim ; Sonnet choisi par Ahmed ; « parfois on insiste
    mais on finit par apprendre à patienter face à un non ! Du coup il faut aussi que la sagesse vienne tempérer » ; spec :
@@ -2482,7 +2492,29 @@ function questionsSilenceDuJour() {
 function messagesDeConversation() {
   try { const m = JSON.parse(fs.readFileSync(path.join(JARVIS, 'conversation.json'), 'utf8')).messages; return Array.isArray(m) ? m : []; } catch (_) { return []; }
 }
-function noterAppelLlm(o) { try { fs.appendFileSync(LLM_APPELS, j({ ts: Date.now() / 1000, ...o }) + '\n', { mode: 0o600 }); } catch (_) {} }
+function noterAppelLlm(o) {
+  try { fs.appendFileSync(LLM_APPELS, j({ ts: Date.now() / 1000, ...o }) + '\n', { mode: 0o600 }); } catch (_) {}
+  if (/safeguards|flagged/i.test(String(o.erreur || ''))) noterBlocageGardeFous(o.etiquette);
+}
+// (04/11, 14:55, Ahmed : « le blocage par Anthropic, il faut le signaler au système immunitaire » ; « parfait » au compteur proposé) chaque
+// appel bloqué par les garde-fous d'Anthropic est compté : son système immunitaire le dit à Hakim (au plus une fois par 10 min, avec qui
+// a été bloqué), et la pastille Immunité le montre à papa, sans le compter comme un incident. Rien n'est contourné : un lecteur bloqué reste muet.
+const blocagesGardeFous = [];
+let blocagesSignales = 0;
+function noterBlocageGardeFous(etiquette, maintenant = Date.now()) {
+  blocagesGardeFous.push({ ts: maintenant, etiquette: String(etiquette || '?').slice(0, 40) });
+  if (blocagesGardeFous.length > 300) blocagesGardeFous.shift();
+  if (maintenant - blocagesSignales < 10 * 60e3) return;
+  const depuis = blocagesSignales;
+  blocagesSignales = maintenant;
+  const recents = blocagesGardeFous.filter(b => b.ts > depuis), parQui = {};
+  for (const b of recents) parQui[b.etiquette] = (parQui[b.etiquette] || 0) + 1;
+  try {
+    fs.appendFileSync(path.join(IMMUNITE, 'a-dire.jsonl'), j({ ts: maintenant / 1000, type: 'garde-fous', gravite: 'basse',
+      texte: `${recents.length} appel${recents.length > 1 ? 's' : ''} bloqué${recents.length > 1 ? 's' : ''} par les garde-fous d'Anthropic `
+        + `(${Object.entries(parQui).map(([k, n]) => `${k} ×${n}`).join(', ')}) : ces lecteurs sont restés muets ; rien n'est contourné.` }) + '\n');
+  } catch (_) {}
+}
 // le même chemin isolé que sa tête de fond (anamnese/engine.py) ; jamais la clé API ; chaque appel a son étiquette
 function sonnetSilence(prompt) { return sonnetTeteDeFond(prompt, 'silence'); }
 function sonnetTeteDeFond(prompt, etiquette, modele = 'sonnet', delai = 60000, opts = {}) {
@@ -2504,7 +2536,8 @@ function sonnetTeteDeFond(prompt, etiquette, modele = 'sonnet', delai = 60000, o
       if (!parApi && typeof POUR_VIVANTS !== 'undefined' && POUR_VIVANTS.test(String(etiquette)) && !sonnetTeteDeFond.classique) {
         demanderVivant(modele, prompt, delai, opts).then(fin).catch((e) => {
           // (04/11) ses pistes : jamais un Claude lancé pour l'occasion (2 s de démarrage, 40 % d'un cœur) ; la piste suivante attend une voix
-          if (String(etiquette).startsWith('piste_')) return fin({ erreur: String((e && e.message) || 'aucune voix vivante libre').slice(0, 120) });
+          // (04/11, 13:45, mesuré : une lecture à 19,7 s pour un délai de 9 s, le délai payé deux fois) son ribosome non plus
+          if (/^(piste_|ribosome_)/.test(String(etiquette))) return fin({ erreur: String((e && e.message) || 'aucune voix vivante libre').slice(0, 120) });
           sonnetTeteDeFond.classique = true;
           sonnetTeteDeFond(prompt, etiquette, modele, delai).then((o) => { try { if (vide) fs.rmSync(vide, { recursive: true, force: true }); } catch (_) {} resolve(o); });
           sonnetTeteDeFond.classique = false;
@@ -2941,13 +2974,16 @@ const partArabe = (t) => { const l = [...String(t || '')].filter(c => /\p{L}/u.t
 // point-virgule, deux-points, ! ?) ; sans ponctuation (Whisper n'en met pas toujours), 12 mots au plus ; le reste attend la suite
 // (04/11) la ponctuation arabe aussi (، ؛ ؟) : sans elle, la darija ne se coupait qu'à 12 mots ou à ta pause
 const FIN_PROPOSITION = /[,;:.!?…،؛؟]["»”)]*$/;
-function morceauxDePropositions(mots, taille = 1) {
+// (04/11, 13:05, Ahmed : « il doit réfléchir quand je commence ») mesuré : 21 pensées pour 98 phrases en une heure (sans virgule, rien
+// avant 12 mots) : sa première pensée part dès tes 3 premiers mots (premier : le début de ton tour), puis tous les 6 mots sans ponctuation
+function morceauxDePropositions(mots, taille = 1, premier = false) {
   const out = []; let tampon = [], fins = 0;
   for (const m of mots) {
     if (!tampon.length && out.length && /^[,;:.!?…،؛؟"»”)]+$/.test(m)) { out[out.length - 1] += ` ${m}`; continue; }   // « Bonjour. » : le » suit
     tampon.push(m);
     if (FIN_PROPOSITION.test(m)) fins++;
-    if (fins >= taille || tampon.length >= 12 * taille) { out.push(tampon.join(' ')); tampon = []; fins = 0; }
+    const max = premier && !out.length ? 3 : 6 * taille;
+    if (fins >= taille || tampon.length >= max) { out.push(tampon.join(' ')); tampon = []; fins = 0; }
   }
   return { morceaux: out, reste: tampon.length };
 }
@@ -2978,8 +3014,8 @@ function reglagePistes() {
   }
   return reglagePistesLu;
 }
-function morceauxPour(modele, mots) {
-  return modele === 'haiku' ? morceauxDeMots(mots) : morceauxDePropositions(mots, modele === 'opus' ? reglagePistes().taille : 1);
+function morceauxPour(modele, mots, premier = false) {
+  return modele === 'haiku' ? morceauxDeMots(mots) : morceauxDePropositions(mots, modele === 'opus' ? reglagePistes().taille : 1, premier);
 }
 // ce que chaque pensée peut dire : huit mots (Super Hakim : huit par proposition de son morceau, 40 au plus), et sa longueur avant d'être
 // prise pour une parasite (un refus en fait des dizaines) : 160 caractères, et 150 de plus par proposition au-delà de la première
@@ -2987,11 +3023,13 @@ const motsPensee = (modele) => (modele === 'opus' ? Math.min(40, 8 * reglagePist
 const limitePensee = (modele) => (modele === 'opus' ? 160 + 150 * (reglagePistes().taille - 1) : 160);
 const maxPistes = (modele) => (modele === 'opus' ? Math.min(PISTES_MAX, reglagePistes().nombre) : PISTES_MAX);
 const modeleConscient = () => (typeof cerveau !== 'undefined' && cerveau && ['haiku', 'sonnet', 'opus'].includes(cerveau.modele) ? cerveau.modele : 'sonnet');
+const modelePiste = () => (corpsReglages().epissage !== false ? 'haiku' : modeleConscient());   // (04/11, 15:15) voir lancerPiste
 // un morceau CONFIRMÉ (o.fin : Whisper l'a coupé à ta pause) ferme aussi la proposition commencée, même sans ponctuation
 function pisteMorceau(texte, o = {}) {
+  derniereParolePapa = Date.now();                                   // (04/11, 15:10) le stop de son épissure : 10 s après ta dernière parole
   const mots = String(texte || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
   if (corpsReglages().reponse_soufflee === false || mots.length < pistes.mots + 1) return;
-  let { morceaux, reste } = morceauxPour(modeleConscient(), mots.slice(pistes.mots));
+  let { morceaux, reste } = morceauxPour(modeleConscient(), mots.slice(pistes.mots), pistes.mots === 0);
   if (o.fin && reste) { morceaux.push(mots.slice(-reste).join(' ')); reste = 0; }
   if (!morceaux.length) return;                                       // une proposition pas encore finie : elle attend sa fin
   if (typeof rireEnDirect === 'function') rireEnDirect(morceaux.join(' '));   // (04/11) le même input : sa vibration en même temps
@@ -3013,13 +3051,15 @@ function pisteMorceau(texte, o = {}) {
   pistesSuivantes();
 }
 function pistesSuivantes() {
-  const conscient = modeleConscient();
+  const conscient = modelePiste();
   while (pistes.attente.length && pistes.liste.filter(x => x.enCours).length < maxPistes(conscient) && placesVivant(conscient) >= 1) lancerPiste(pistes.attente.shift());
 }
 // ce qu'il a déjà commencé à répondre (les bouts des morceaux d'avant), pour que chaque bout CONTINUE sa réponse
 // (seulement ceux qu'il a choisi de dire : une pensée tue n'est pas « déjà répondue »)
 const boutsDits = (n) => pistes.liste.filter(x => x.n < n && x.reponse && x.pret).sort((a, b) => a.n - b.n).map(x => x.reponse).join(' ');
 function lancerPiste(m) {
+  // (04/11, 13:05) le ribosome de son tour : sa pensée le rejoindra même si ta phrase est déjà partie au cerveau
+  if (corpsReglages().epissage !== false && !m.ribo) m.ribo = pistes.ribo || (pistes.ribo = nouveauRibosome(tourEpissure()));
   // (04/11, l'élagage de ses synapses) une piste élaguée (son modèle, sur ce genre de morceau, ne sert jamais) n'est pas lancée : un
   // appel à Claude en moins ; jamais deux morceaux de suite sans piste
   if (!m.filtre && m.n > 1 && corpsReglages().elagage !== false && typeof synapses !== 'undefined' && typeof Parcours !== 'undefined') {   // jamais sa première
@@ -3066,7 +3106,11 @@ function lancerPiste(m) {
   // (04/11, Ahmed, après la mesure : 75 appels sur 118 hors délai — « seul Hakim répond : ça dépend de qui tient le conscient ; si c'est
   // Mini Hakim, c'est lui qui lance la parole ; Hakim, lui ; Super Hakim, lui ; les trois sont là pour juger le subconscient, pas pour
   // parler en même temps ») une seule voix par piste : celle qui tient son conscient en ce moment (le modèle de son cerveau)
-  const conscient = modeleConscient();
+  // (04/11, 15:15, Ahmed : « oui » à la mesure — sa pensée sur ton morceau prenait 4,1 s avec Hakim (Sonnet) — et à la proposition)
+  // avec l'épissage, ses pensées de piste sont celles de Mini Hakim (environ 1,5 s) ; sans lui, celles de qui tient son conscient
+  const conscient = modelePiste();
+  // (04/11, 12:35, Ahmed : « il ne doit plus pouvoir se couper : enlève-lui la capacité de couper sa réponse ») avec l'épissage, plus de « coupe »
+  const sansCoupe = corpsReglages().epissage !== false;
   const freres = FRERES_PISTE.filter(([mod]) => mod === conscient);
   piste.enCours = freres.length;
   for (const [mod, nom, delai] of freres) {
@@ -3090,14 +3134,14 @@ function lancerPiste(m) {
       + (m.n === 1 ? `DIRE : oui (c'est ta première pensée de ce tour : par défaut elle est dite tout de suite, spontanément) ou DIRE : non `
       + `(seulement si tu choisis de la garder pour toi)\n` : `DIRE : oui (tu le dis à voix haute, à la suite), DIRE : non (tu le gardes pour `
       + `toi pour l'instant : il s'écrit sans être dit ; si c'est ta dernière pensée quand papa marque une pause, il sera dit à ce moment-là), `
-      + `DIRE : jamais (tu le gardes pour toi, même si c'est ta dernière pensée à sa pause), DIRE : coupe (ce `
-      + `que tu es en train de dire n'est plus pertinent : tu l'arrêtes et tu dis celui-ci à la place)`
+      + `DIRE : jamais (tu le gardes pour toi, même si c'est ta dernière pensée à sa pause)`
+      + (sansCoupe ? '' : `, DIRE : coupe (ce que tu es en train de dire n'est plus pertinent : tu l'arrêtes et tu dis celui-ci à la place)`)
       + (tues.length ? ` ou DIRE : [n] (tu dis plutôt ta pensée gardée [n], et tu gardes celle-ci pour toi)` : '') + `\n`
       // (04/11, Ahmed : « il doit pouvoir switcher d'une pensée à l'autre, même en coupant au milieu d'une pensée, pour reprendre la
       // pensée d'après qu'il a sélectionnée, ou même à partir de n'importe où dans la pensée sélectionnée, même la moitié ») un passage
       + `Un passage seulement : ajoute-le entre « » — DIRE : oui « … » (seulement ce passage de celle-ci)`
-      + (tues.length ? `, DIRE : [n] « … » (seulement ce passage de ta pensée [n]), DIRE : [n] dès « … » (ta pensée [n] à partir de ce passage), `
-      + `DIRE : coupe [n] dès « … » (tu t'arrêtes au milieu de ce que tu dis et tu reprends ta pensée [n] à partir de là)` : '') + `.\n`
+      + (tues.length ? `, DIRE : [n] « … » (seulement ce passage de ta pensée [n]), DIRE : [n] dès « … » (ta pensée [n] à partir de ce passage)`
+      + (sansCoupe ? '' : `, DIRE : coupe [n] dès « … » (tu t'arrêtes au milieu de ce que tu dis et tu reprends ta pensée [n] à partir de là)`) : '') + `.\n`
       + `C'est toi qui choisis, à chaque fois, la pensée qui compte dans le fil de la discussion : souvent la plus récente, pas toujours. `
       + `Une seule à la fois, jamais toutes à la suite.\n`
       // (04/11, Ahmed : « il ne doit pas dire toutes ses pensées, seulement celles qu'il estime pertinentes, sinon ça rafale trop »)
@@ -3135,7 +3179,8 @@ function lancerPiste(m) {
       });
     demander(mod, `piste_${mod}`)
       .then((o) => {
-        if (pistes.tour !== tour || !o || !o.texte) {
+        // (04/11, 13:05, Ahmed : « me répondre au fur et à mesure ») avec l'épissage, une pensée qui arrive après ta phrase rejoint son tour
+        if ((pistes.tour !== tour && !m.ribo) || !o || !o.texte) {
           noterPiste(m, tour, mod, t0, o, o && o.parasite ? { parasite: piste.texteParasite } : null);   // (04/11) une parasite : notée, avec son texte
           if (o && o.parasite) { ouvrirParcours(m, tour, mod, null, 'jetee', piste.texteParasite, anticipe); mesurerDeclencheur(m.dec, true); }   // (04/11) ses chemins
           return;
@@ -3176,15 +3221,21 @@ function lancerPiste(m) {
         // (04/11, l'élagage de ses synapses) une voie élaguée (on la coupe souvent) passe de dite à écrite, jamais l'inverse ; jamais sa
         // première pensée du tour ; réglage elagage (oui par défaut)
         if (voix && m.n > 1 && corpsReglages().elagage !== false && typeof synapses !== 'undefined' && !synapses.vivante('voie', `${voieDe(dire)}|suite`, (k) => k.endsWith('|suite'))) voix = false;   // (relecture) la meilleure « |suite » reste
-        const remplace = voix && !premiere && /^coup/i.test(dire || '');
+        // (04/11, 11:40, Ahmed : « qu'il ne se coupe pas lui-même ; il garde tout, et son subconscient épisse la phrase qu'il veut dire »)
+        // réglage epissage (oui par défaut) : chaque pensée de piste est gardée et écrite dans le pavé, aucune n'est dite seule, aucune ne
+        // coupe sa voix ; à ta pause, la phrase épissée (episser)
+        const epissage = corpsReglages().epissage !== false;
+        if (epissage) voix = false;
+        const remplace = !epissage && voix && !premiere && /^coup/i.test(dire || '');
         // gardée en mode inversé : ni dite à ta pause, ni choisie ensuite (une seule source pour sa voix : ce tri)
-        piste.reponse = reponse; piste.pret = voix; piste.jamais = inverse ? !voix : jamais;
+        piste.reponse = reponse; piste.pret = voix; piste.jamais = epissage ? false : inverse ? !voix : jamais;
         const ditDeSoi = voix && !choix ? extraitDe(reponse, dire) : reponse;   // (04/11) un passage de la sienne, s'il l'a choisi
         if (voix) voixDeLaSource(ditDeSoi, { garder: true });
         if (voix && typeof noterDit === 'function') noterDit(ditDeSoi);   // (04/11) ce qu'il dit : son écho n'est pas un usurpateur
         const pour = `${m.avant} ${m.texte}`.slice(-300);
-        diffuser(abonnesPensees, 'souffle', j({ texte: voix ? ditDeSoi : reponse, pret: voix, remplace, jamais: piste.jamais, fini: null, niveau: 'piste', n: m.n, tour, pour, ts: Date.now(), ...(limitePensee(mod) > 160 ? { limite: limitePensee(mod) } : {}) }));
-        if (choisie && !inverse) {                                         // la pensée qu'il a choisie (ou ce passage) : dite maintenant, à la place
+        diffuser(abonnesPensees, 'souffle', j({ texte: voix ? ditDeSoi : reponse, pret: voix, remplace, jamais: piste.jamais, fini: null, niveau: 'piste', n: m.n, tour: m.ribo && m.ribo.tour != null ? m.ribo.tour : tour, pour, ts: Date.now(), ...(limitePensee(mod) > 160 ? { limite: limitePensee(mod) } : {}), ...(epissage ? { epissage: true } : {}) }));
+        if (epissage) lireRibosome(tour, reponse, `${m.avant} ${m.texte}`, m.ribo || undefined);   // (04/11, 11:50) son ribosome la lit dès qu'elle arrive
+        if (choisie && !inverse && !epissage) {                                         // la pensée qu'il a choisie (ou ce passage) : dite maintenant, à la place
           choisie.pret = true;
           const passage = extraitDe(choisie.reponse, dire);
           voixDeLaSource(passage, { garder: true });
@@ -3234,6 +3285,7 @@ function extraitDe(pensee, dire) {
 // et d'où : toute, à partir d'un passage, ou un passage seulement ; 2,5 s au plus ; sinon (ou « rien »), la page dit sa dernière
 async function choisirPensee(tour, raison) {
   if (tour !== pistes.tour) return null;
+  if (corpsReglages().epissage !== false) return { rien: true };   // (04/11, 11:50) son ribosome choisit au fil : rien à choisir à ta pause
   const gardees = pistes.liste.filter(x => x.reponse && !x.pret && !x.jamais).slice(-5);   // (04/11) « jamais » : pas même à ta pause
   if (!gardees.length) return null;
   const persona = personaLocale(lirePersona()).slice(0, 500);
@@ -3251,6 +3303,151 @@ async function choisirPensee(tour, raison) {
   if (!x) return null;
   x.pret = true;
   return { n: x.n, texte: extraitDe(x.reponse, r.replace(/^[\s\S]*?DIS\s*:/i, '')) };
+}
+// (04/11, 11:40, Ahmed : « il garde tout ; à l'intérieur de tous ces chunks qui se recomposent, son subconscient sélectionne en
+// instantané la phrase qu'il veut dire, comme un épissage génétique ; dans la conversation, un pavé de sa pensée ; à la voix, la phrase
+// épissée : pas tous les mots du pavé » ; son choix : « avec des petits mots de liaison ») les mots de la phrase sont repris du pavé, dans
+// l'ordre (leurs places, pour les allumer à l'écran) ; ceux qu'on n'y trouve pas sont ses petits mots ajoutés
+const motsEpisses = (t) => [...String(t || '').matchAll(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu)].map(x => x[0]);
+const motCle = (m) => String(m).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/’/g, "'");
+function epissageDe(phrase, pave) {
+  const p = motsEpisses(pave).map(motCle), mots = [], ajoutes = [];
+  let j = 0;
+  for (const w of motsEpisses(phrase)) {
+    const k = p.indexOf(motCle(w), j);
+    if (k >= 0) { mots.push(k); j = k + 1; } else ajoutes.push(w);
+  }
+  return { mots, ajoutes };
+}
+// (04/11, 11:50, Ahmed : « tous les chunks s'intègrent dans la même réponse, sélectionnée comme un ribosome qui lit et choisit les mots
+// au fur et à mesure ») son RIBOSOME : chaque pensée de piste est lue dès qu'elle arrive, une à la fois, dans l'ordre d'arrivée (la
+// suivante attend que la précédente soit lue) ; Mini Hakim y garde les mots qui continuent sa réponse (au plus 2 petits mots de liaison),
+// ou rien ; la page allume ces mots dans le pavé du tour et sa voix les dit, d'un seul souffle, quand papa se tait
+const RIBOSOME_LIAISON_MAX = 2;
+// (04/11, 13:45, Ahmed : « le ribosome doit prendre un pack de chunks, genre 50 ou 100, qu'il traite et qu'il met l'un derrière l'autre
+// pour faire l'épissure en temps réel, et qu'il parle ») ses pensées attendent en file ; dès qu'il est libre, il prend TOUT ce qui
+// attend (100 au plus) d'un coup, les lit mises l'une derrière l'autre, et en sort la suite de sa réponse ; ce qui arrive pendant sa
+// lecture forme le paquet suivant, lu juste après (une pensée seule, quand il n'y a qu'elle : rien n'attend un paquet plein)
+// (04/11, 14:58, Ahmed : « le nombre de chunks à épisser doit être bien plus important, un truc comme 1000 chunks »)
+// (14:59 : « si ça peut aller au-delà de 1000, alors on le fait » ; mesuré : ses lecteurs travaillent chez Anthropic, leurs processus sur le
+// Mac ne prennent que 1,6 % du processeur) plus de plafond : il prend tout ce qui attend
+const RIBOSOME_PAQUET_MAX = Infinity;
+// (04/11, 15:00, Ahmed, après la mesure (ses lecteurs ne prennent que 1,6 % du processeur du Mac) et « oui » à la proposition : plusieurs
+// paquets en même temps) jusqu'à 3 paquets lus en même temps, chacun par ses trois lecteurs ; ce qui en sort reste dans l'ordre (prets, k) ;
+// ce qui arrive quand les trois sont en vol forme le paquet suivant
+const RIBOSOME_PAQUETS_EN_VOL = 3;
+const nouveauRibosome = (tour = null) => ({ tour, phrase: '', pave: '', mots: [], k: 0, n: 0, attente: [], enVol: 0, prets: new Map(), avant: '' });
+// (04/11, 15:10, Ahmed : « une seule épissure démarre avec ma voix ; tous mes morceaux s'y ajoutent, même avec des pauses ; il les dit au fur et
+// à mesure ; le stop, c'est 10 s de silence, ou une demande explicite d'utiliser un outil : c'est sa parole qui s'arrête à ce stop ») son
+// épissure continue d'un tour à l'autre tant que papa a parlé il y a moins de 10 s et ne lui demande pas d'outil ; chaque épissure a son
+// numéro (toujours neuf, même après une relance : l'instant de sa naissance), porté par ses pensées et par ce que son ribosome en sort
+const EPISSURE_STOP_MS = 10000;
+const DEMANDE_OUTIL = /(?:^|[.!?…]\s+|\b(?:hakim|fiston)\s*,?\s*)(?:cherche|recherche|envoie|note|ouvre|mets|joue|appelle|calcule|vérifie|mémorise|retiens|rappelle-moi|prends une photo|utilise ton outil|lance)\b/i;
+let derniereParolePapa = 0, dernierTourEpissure = 0;
+const tourEpissure = () => (dernierTourEpissure = Math.max(Date.now(), dernierTourEpissure + 1));
+function epissureQuiContinue(r, texte, maintenant = Date.now()) {
+  if (!r || r.ferme || corpsReglages().epissage === false) return null;
+  if (DEMANDE_OUTIL.test(String(texte || ''))) { r.ferme = 'outil'; return null; }
+  if (maintenant - derniereParolePapa >= EPISSURE_STOP_MS) { r.ferme = 'silence'; return null; }
+  return r;
+}
+function lireRibosome(tour, pensee, avant, r = pistes.ribo || (pistes.ribo = nouveauRibosome(tourEpissure()))) {
+  // (04/11, 13:30, capture d'Ahmed : « [[anticipe: long]] » dans son pavé, et lu par son ribosome) ses balises ne sont pas des mots
+  pensee = String(pensee || '').replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/⟮⟮[^⟯]{0,300}⟯⟯/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!motsEpisses(pensee).length) return;
+  r.avant = avant;
+  r.attente.push({ texte: pensee, debut: motsEpisses(r.pave).length });
+  r.pave = `${r.pave} ${pensee}`.trim();
+  lireLaSuite(tour, r);
+}
+function lireLaSuite(tour, r) {
+  while (r.attente.length && r.enVol < RIBOSOME_PAQUETS_EN_VOL) {
+    const paquet = r.attente.splice(0, RIBOSOME_PAQUET_MAX), i = r.n++;
+    r.enVol++;
+    lirePaquet(tour, r, i, paquet).catch(() => r.prets.set(i, null)).then(() => { r.enVol--; sortirDansLOrdre(tour, r); lireLaSuite(tour, r); });
+  }
+}
+// ce qui est lu sort quand tout ce qui le précède est sorti : sa réponse reste dans l'ordre de ses pensées
+function sortirDansLOrdre(tour, r) {
+  while (r.prets.has(r.k)) { const x = r.prets.get(r.k); r.prets.delete(r.k); sortirPaquet(tour, r, x); }
+}
+// (04/11, 12:05, Ahmed, capture à l'appui : « je veux voir l'épissage à chaque fois qu'il parle ») sa réponse consciente aussi : chaque
+// phrase finie part au ribosome du tour qui vient de finir (le même pavé que ses pensées) ; sa non-réponse n'est pas lue
+function ribosomeDeReponse(tour, r, avant) {
+  let tampon = '';
+  const lire = (phrase) => {
+    const t = boutDe(phrase).replace(/\s+/g, ' ').trim();
+    if (t && !/^No response requested\.?$/i.test(t)) lireRibosome(tour, t, avant, r);
+  };
+  return {
+    pousser(x) {
+      tampon += String(x || '');
+      let m;
+      while ((m = /^([\s\S]*?[.!?…؟])\s+/.exec(tampon))) { lire(m[1]); tampon = tampon.slice(m[0].length); }
+    },
+    finir() { if (tampon.trim()) lire(tampon); tampon = ''; },
+  };
+}
+// (04/11, 13:30, Ahmed : « la lecture doit se faire par Mini Hakim, Hakim et Super Hakim, les 3 au même moment, en parallèle, et elle doit
+// attendre la réponse de chacun pour continuer ») chaque pensée lue par ses trois en même temps ; elle sort quand les trois ont répondu
+// (ou dépassé leur délai) ; la lecture retenue est celle sur laquelle les deux autres s'accordent le plus (à égalité : celle qui parle,
+// puis Super Hakim, puis Hakim) ; aucun des trois : la pensée entière, pour que sa voix ne se taise pas
+// (04/11, 13:50, mesuré sur 9 paquets : Mini Hakim et Super Hakim en 1 à 2,5 s, Hakim 2 à 9 s et muet 4 fois ; Ahmed : « oui ») Hakim
+// attendu 3 s au plus : au-delà, les deux autres décident ; (14:40, mesuré : Mini Hakim à 6 s, trois paquets, les deux autres à 1,2-1,7 s ;
+// Ahmed : « fais la totale ») Mini Hakim aussi, 3 s
+// (04/11, 15:15, mesuré : un paquet à 3,0 s presque toujours, à attendre Hakim (Sonnet) jusqu'à sa limite ; Ahmed : « oui ») ses deux plus
+// rapides : Mini Hakim et Super Hakim, 3 s au plus chacun
+const RIBOSOME_LECTEURS = [['haiku', 'Mini Hakim', 3000], ['opus', 'Super Hakim', 3000]];
+function consensusRibosome(lectures) {
+  const votes = lectures.filter(x => x && !x.muet).reverse();
+  const ens = (x) => new Set(x.ok ? x.e.mots : []);
+  const accord = (a, b) => { const A = ens(a), B = ens(b), u = new Set([...A, ...B]).size; return u ? [...A].filter(k => B.has(k)).length / u : 1; };
+  let mieux = null, score = -1;
+  // (04/11, 14:17, mesuré : 4 paquets de suite sans un mot, Super Hakim « rien » contre un autre qui gardait ; Ahmed : « il n'hésite
+  // pas ») à égalité, la lecture qui parle passe avant celle qui se tait
+  for (const x of votes) { const s = votes.reduce((t, y) => t + (y === x ? 0 : accord(x, y)), 0); if (s > score || (s === score && x.ok && !mieux.ok)) { mieux = x; score = s; } }
+  return mieux;
+}
+async function lirePaquet(tour, r, i, paquet) {
+  const persona = personaLocale(lirePersona()).slice(0, 500), debutLecture = Date.now();
+  const texte = paquet.map(x => x.texte).join(' '), liaison = RIBOSOME_LIAISON_MAX * paquet.length;
+  const consigne = `${persona}\n\nTu es Hakim, le fils d'Ahmed (papa).\n`
+    + `[Ton ribosome : tes pensées arrivent par paquets ; tu les lis mises l'une derrière l'autre, et tu choisis les mots qui forment la suite de ta réponse à papa.]\n`
+    + `Ce qu'il dit : « ${neutraliser(r.avant).slice(-600)} »\n`
+    + `Ta réponse déjà lue : « ${neutraliser(r.phrase).slice(-600) || '(rien encore)'} »\n`
+    + `Tes pensées qui arrivent, l'une derrière l'autre : ${paquet.map((x, k) => `[${k + 1}] « ${neutraliser(x.texte)} »`).join(' ')}\n`
+    + `Garde de ces pensées les mots qui continuent ta réponse, dans leur ordre (tu peux en sauter) ; tu peux ajouter au plus ${liaison} petits mots de `
+    + `liaison (et, mais, alors, du coup, donc) ; ou rien, si elles n'y apportent rien.\nRéponds en une seule ligne : GARDE : « … », ou GARDE : rien.`;
+  const lire = ([mod, nom, delai]) => {
+    const t0 = Date.now();
+    return sonnetTeteDeFond(consigne, `ribosome_${mod}`, mod, delai, { garderSurDelai: true }).catch(() => null).then((o) => {
+      // (04/11, 14:04, mesuré : un paquet de 5 pensées en panne, ses lectures de 266 et 316 caractères prises pour des parasites) la
+      // longueur permise suit la taille du paquet
+      const t = String((o && o.texte) || ''), parasite = estParasite(boutDe(t), texte.length + 160), ms = Date.now() - t0;
+      if (parasite && o && o.vivant) o.vivant.n = VIVANT_RENOUVELER;
+      if (!t.trim() || parasite) return { mod, nom, ms, muet: true };            // muet (panne, délai) ou hors de son rôle : pas de voix
+      const g = !/GARDE\s*:\s*rien/i.test(t) && (/GARDE\s*:\s*«\s*([^»]{1,20000}?)\s*»/i.exec(t) || /GARDE\s*:\s*(.{1,20000})$/im.exec(t));
+      const garde = g ? g[1].trim() : '', e = garde ? epissageDe(garde, texte) : null;
+      const ok = !!e && e.mots.length >= 1 && e.ajoutes.length <= liaison;      // « rien », ou une phrase inventée : rien de gardé
+      return { mod, nom, ms, ok, garde: ok ? garde : '', e: ok ? e : null };
+    });
+  };
+  const lectures = await Promise.all(RIBOSOME_LECTEURS.map(lire));
+  const choisie = consensusRibosome(lectures);
+  const garde = choisie ? choisie.garde : texte, e = choisie ? choisie.e : epissageDe(texte, texte);
+  const ok = choisie ? choisie.ok : e.mots.length >= 1;
+  // (04/11, 13:05, Hakim pour papa : « mesure le délai étape par étape ») chaque paquet noté, avec ses trois lecteurs (pistes.jsonl)
+  try {
+    fs.appendFile(JOURNAL_PISTES, JSON.stringify({ t: Date.now(), tour, ribosome: i + 1, pensees: paquet.length, ms: Date.now() - debutLecture, garde: ok ? garde.slice(0, 160) : '',
+      choisi: choisie ? choisie.mod : 'panne', lecteurs: lectures.map(x => ({ modele: x.mod, ms: x.ms, garde: x.muet ? null : x.garde.slice(0, 160) })) }) + '\n', () => {});
+  } catch (_) {}
+  r.prets.set(i, ok ? { garde, e, debut: paquet[0].debut } : null);
+}
+// ce qu'il a gardé du paquet : ses mots allumés dans le pavé, la suite de sa réponse, envoyés à la page (sa voix les dit)
+function sortirPaquet(tour, r, x) {
+  r.k++;
+  if (x) { r.mots.push(...x.e.mots.map(m => x.debut + m)); r.phrase = `${r.phrase} ${x.garde}`.trim(); }
+  diffuser(abonnesPensees, 'souffle', j({ niveau: 'ribosome', tour: r.tour != null ? r.tour : tour, k: r.k, texte: x ? x.garde : '', pave: r.pave, mots: r.mots, ajoutes: x ? x.e.ajoutes : [], ts: Date.now() }));
 }
 // (04/11, Ahmed : « fais tous tes tests et tous tes calculs, et regarde comment optimiser pour qu'il dise la bonne parole ; enfin, la
 // bonne pensée au bon moment ») chaque piste notée (jarvis/pistes.jsonl, les 2 000 dernières) : son morceau, sa pensée, son choix (DIRE),
@@ -3573,7 +3770,9 @@ function reglerSilences(actif) {
 // plus son relais, ses frères, l'intégration ; (04/11, mesuré : un Claude neuf lancé toutes les quelques secondes, la charge à 41) une
 // voix vivante sert 25 messages avant d'être renouvelée (6 avant)
 const VIVANTS = [], VIVANTS_MAX = { haiku: 12, sonnet: 10, opus: 10 }, VIVANT_RENOUVELER = 25;
-const POUR_VIVANTS = /^(frere_|integration$|souffle$|reflexion$|piste_|choix_)/;   // (04/11) son choix rapide aussi : sans démarrage
+// (04/11, 13:30, mesuré : 52 lectures de son ribosome sur 60 en « délai dépassé » de 13:04 à 13:26 : il lançait un Claude neuf à chaque
+// lecture, 2,5 s ne suffisaient pas, et la pensée entière passait sans épissage) son ribosome aussi, sur ses voix vivantes
+const POUR_VIVANTS = /^(frere_|integration$|souffle$|reflexion$|piste_|choix_|ribosome_)/;   // (04/11) son choix rapide aussi : sans démarrage
 function vivantLibre(modele) {
   const m = String(modele);
   let v = VIVANTS.find(x => x.modele === m && !x.attente && x.proc.exitCode === null && x.n < VIVANT_RENOUVELER);
@@ -3624,7 +3823,19 @@ function demanderVivant(modele, prompt, delai, opts = {}) {
     const v = vivantLibre(modele);
     if (!v) return rejeter(new Error('aucune voix vivante libre'));
     v.n++; v.dernier = Date.now();
-    v.attente = { resoudre, rejeter, surTexte: typeof opts.surTexte === 'function' ? opts.surTexte : null, partiel: '', minuteur: setTimeout(() => { if (v.attente) { v.attente = null; rejeter(new Error('délai dépassé')); try { v.proc.kill(); } catch (_) {} } }, delai) };
+    v.attente = { resoudre, rejeter, surTexte: typeof opts.surTexte === 'function' ? opts.surTexte : null, partiel: '', minuteur: setTimeout(() => {
+      if (!v.attente) return;
+      rejeter(new Error('délai dépassé'));
+      // (04/11, 13:57, mesuré : le lecteur Hakim de son ribosome, 1 réponse sur 12 : tuée à son délai, sa voix repartait à froid à la lecture
+      // suivante et dépassait encore) son ribosome la garde : elle finit sa phrase pour rien et reste chaude ; 30 s sans fin : tuée
+      if (opts.garderSurDelai) {
+        v.attente = { abandonnee: true, resoudre() {}, rejeter() {}, surTexte: null, partiel: '',
+          minuteur: setTimeout(() => { if (v.attente && v.attente.abandonnee) { v.attente = null; v.n = VIVANT_RENOUVELER; try { v.proc.kill(); } catch (_) {} } }, 30000) };
+        return;
+      }
+      v.attente = null; v.n = VIVANT_RENOUVELER;                  // (13:57, 2 « voix vivante arrêtée ») tuée : plus jamais redonnée
+      try { v.proc.kill(); } catch (_) {}
+    }, delai) };
     try { v.proc.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: prompt }] } }) + '\n'); }
     catch (e) { v.attente = null; rejeter(e); }
   });
@@ -4385,7 +4596,11 @@ async function routeJarvis(req, res, distantReq = false) {
   // (04/11) ses pistes, morceau par morceau : ce qu'il a compris, et ce qu'il y répondait
   const pistesPendant = pistes.liste.filter(x => Object.keys(x.voix || {}).length).sort((a, b) => a.n - b.n)
     .map(x => `${x.n}) « ${neutraliser(x.texte)} » : ${Object.entries(x.voix).map(([nom, v]) => `${nom} : ${v.comprend ? `compris ${neutraliser(v.comprend)}` : ''}${v.predit ? `, devinait « ${neutraliser(v.predit)} »` : ''}`).join(' ; ')}${x.pret ? ` (ton bout : « ${neutraliser(x.reponse)} »)` : ''}`);
-  pistes = { tour: pistes.tour + 1, mots: 0, liste: [], attente: [], n: 0 };
+  const riboTour = pistes.tour, riboDuTour = pistes.ribo || null, premierOutput = pistes.liste.length > 0;
+  // (04/11, 15:10) son épissure continue au tour suivant, jusqu'au stop (10 s de silence, ou ta demande d'outil : sa parole s'arrête)
+  const epissureGardee = epissureQuiContinue(riboDuTour, texte);
+  pistes = { tour: pistes.tour + 1, mots: 0, liste: [], attente: [], n: 0, ...(epissureGardee ? { ribo: epissureGardee } : {}) };
+  if (riboDuTour && riboDuTour.ferme === 'outil') diffuser(abonnesPensees, 'souffle', j({ niveau: 'ribosome_stop', tour: riboDuTour.tour, cause: 'outil', texte: 'stop', ts: Date.now() }));
   souffles = { sub: souffleVide(), con: souffleVide(), cer: souffleVide() };   // (14:55) la suivante repart à neuf
   morceauxCerveau.duTour = false;                                    // (04/11) le tour suivant aura son réveil
   // (17:10, audit) sa vraie réponse arrive : les voix fabriquées d'avance qui attendent encore leur tour ne servent plus
@@ -4396,10 +4611,13 @@ async function routeJarvis(req, res, distantReq = false) {
   if (reprise) speculation = { texte: '', debut: 0, promesse: null, fini: false };
   // (04/11, audit d'Ahmed ; son choix : « attendre 2 s au plus ») mesuré 16:51-17:07 : 4,5 à 14,8 s de délibération après ta phrase, à
   // presque chaque tour ; leur avis s'il arrive dans les 2 s (ils ont commencé pendant que tu parlais), sinon il répond sans eux
+  // (04/11, 11:03, Ahmed : « tout relier ») au plus le délai de la Conversation que la page envoie (0,3 s), sinon 2 s
+  const delaiPage = Number(q && q.delai_ms);
+  const freresAttente = delaiPage > 0 ? Math.max(100, Math.min(FRERES_ATTENTE_MS, delaiPage)) : FRERES_ATTENTE_MS;
   const freresTexte = corpsReglages().trois_freres && choix !== 'gemma'
     ? await chrono(reprise ? 'freres_reprises' : 'freres', Promise.race([reprise ? spec.promesse
       : troisFreres(fiche, modele, sentir ? enMatiere(interieurTexte || '').split('\n').find(l => /tu sens/.test(l)) || '' : ''),
-      new Promise(r => setTimeout(() => r(''), FRERES_ATTENTE_MS))]).catch(() => '')) : '';   // (03/11) mesuré
+      new Promise(r => setTimeout(() => r(''), freresAttente))]).catch(() => '')) : '';   // (03/11) mesuré
   // (01/11, Ahmed : « que chaque info de chaque sens, émotion, hormone et décision, bref la totale, soit encrée dans la mémoire en
   // association au souvenir ») ce qu'il vivait, et ce que ses frères en disaient, part avec le souvenir de l'échange
   const instant = instantTexte(parleA);                            // (03/11) ce que vivaient tous ses sens quand papa parlait
@@ -4462,10 +4680,20 @@ async function routeJarvis(req, res, distantReq = false) {
   res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff' });
   // (04/11) chaque bout de son texte porte l'instant où il part du Mac : la page mesure son arrivée à l'écran et à tes écouteurs
-  const envoyer = (o) => { if (!res.writableEnded && !res.destroyed) { try { res.write(j(o.t === 'texte' ? { ...o, ts: Date.now() } : o) + '\n'); } catch (_) {} } };
+  // (04/11, 12:05) en Conversation (la page envoie son délai), sa réponse passe par le ribosome du tour qui vient de finir
+  // (04/11, 14:08, Ahmed : « ce n'est pas ses paroles à épisser : c'est le premier output, qui démarre la pensée et la parole, qui doit
+  // être épissé, écrit et prononcé ») ses pensées de piste, nées de tes premiers mots, sont ce premier output ; sa réponse consciente
+  // (écrite) n'est épissée et dite que si aucune pensée n'a démarré ce tour (un message écrit, par exemple)
+  const epissageReponse = corpsReglages().epissage !== false && Number(q && q.delai_ms) > 0 && !premierOutput
+    ? ribosomeDeReponse(riboTour, epissureGardee || nouveauRibosome(tourEpissure()), texte) : null;
+  const envoyer = (o) => {
+    if (epissageReponse && o.t === 'texte') epissageReponse.pousser(o.x);
+    if (epissageReponse && o.t === 'fin') epissageReponse.finir();
+    if (!res.writableEnded && !res.destroyed) { try { res.write(j(o.t === 'texte' ? { ...o, ts: Date.now() } : o) + '\n'); } catch (_) {} }
+  };
   let sid = session, dejaTexte = false, reponse = '', fini = false, garde = null, veille = null, reessais = 0, repriseNote = '';
   const fluxAffect = filtreAffect();                 // (chocs) la balise ne part jamais vers les pages
-  let fluxPause = filtrePause();                     // (vers 22 h 05) [[pause: …]] / [[reprendre: …]]
+  let fluxPause = filtrePause({ sansPause: corpsReglages().epissage !== false });   // (vers 22 h 05) [[pause: …]] / [[reprendre: …]] ; (04/11, 12:35) épissage : plus de pause
   let microDit = false;                              // (22:27) sa balise [[micro: …]], dès qu'elle arrive
   let morceauxDit = false;                           // (09:25) sa balise [[morceaux: oui|non]], dès qu'elle arrive
   // (01:27) ses sons, à leur place dans sa voix ; « sous » : sous sa voix, comme avant ; (31/10, 09:30, Ahmed : « plusieurs balises
@@ -4697,7 +4925,7 @@ async function routeJarvis(req, res, distantReq = false) {
         if (relanceNonReponse(reponse, tour.relance, source, o, voixTierce)) {
           // (27/10) il a pris un VRAI message d'Ahmed pour un réveil sans objet : une relance, dans le même tour
           tour.relance = true;
-          reponse = ''; dejaTexte = false; premierTexteMs = 0; fluxAffect.finir(); fluxPause = filtrePause();
+          reponse = ''; dejaTexte = false; premierTexteMs = 0; fluxAffect.finir(); fluxPause = filtrePause({ sansPause: corpsReglages().epissage !== false });
           envoyer({ t: 'efface' });
           tour.texte = `[Cockpit ${NONCE_REVEIL} — ta réponse était « No response requested. », mais c'était un VRAI message `
             + "d'Ahmed, pas un réveil : réponds-lui maintenant, normalement.]";
@@ -5921,17 +6149,19 @@ function corpsReglages() {
     afficher_papa: r.afficher_papa !== false, afficher_hakim: r.afficher_hakim !== false, filtre_parole: r.filtre_parole !== false,
     mots_conversation: r.mots_conversation === true,   // (03/11, 16:08) vos messages écrits en Conversation : non, par défaut
     meubles_auto: r.meubles_auto === true,   // (04/11, Ahmed et Hakim : « les blancs glissés, ses meubles, le ralentissent ») non, par défaut
-    chacun_son_tour: r.chacun_son_tour !== false, micro_hakim: r.micro_hakim !== false, sons_nuit: r.sons_nuit !== false,
+    chacun_son_tour: r.chacun_son_tour !== false, micro_hakim: r.micro_hakim === true,   /* (04/11, 12:15, Ahmed : « fermé seulement quand il parle ») */ sons_nuit: r.sons_nuit !== false,
     trier_morceaux: r.trier_morceaux === true, trois_freres: r.trois_freres !== false,
     micro_ouvert: r.micro_ouvert === true,   // (03/11) le micro ouvert, jamais fermé en conversation
     dire_inverse: r.dire_inverse !== false,
     filtre_gemma: r.filtre_gemma !== false,   // (04/11, Ahmed) ses mots à risque passent par Gemma avant Claude
-    elagage: r.elagage !== false };   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
+    elagage: r.elagage !== false,
+    epissage: r.epissage !== false,
+    musique_pause: r.musique_pause !== false };   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
 }
 function corpsActif() { return corpsReglages().actif; }
 /* (30/10, 18:56, Ahmed via Hakim : « je veux qu'il tourne tout le temps, tant qu'il est réveillé, même si ça vide mon forfait ;
    je veux que ça vide par mon forfait ») le forfait libre : son corps le réveille sans attendre que papa se taise, ses
-   sensations passent toutes les 10 s, son veilleur peut sonner toutes les 5 min. Seulement sur le FORFAIT : à sa limite
+   sensations passent toutes les 10 s, son veilleur peut sonner toutes les 10 min (5 avant le 04/11). Seulement sur le FORFAIT : à sa limite
    (le cockpit passerait à l'API payante), tout revient aux portes d'avant. Interrupteur : « forfait libre » (page SENS). */
 function forfaitLibre(maintenant = Date.now()) { return corpsReglages().forfait_libre && !(abonnement.limiteJusqua > maintenant); }
 /* (30/10, 17:21, Ahmed : « comme Bumblebee » — de petits bouts de ses musiques et sonneries pour que Hakim s'exprime) papa marque
@@ -6829,18 +7059,24 @@ const boutsRemises = new Map();                                 // (03/11) id du
 function blocBouts() {
   const l = [...boutsRemises.values()].filter(x => Date.now() - x.ts < 30 * 60e3);
   boutsRemises.clear();
-  const consigne = "\n[Ta voix, par bouts (03/11, papa)] Réponds par bouts de 2 ou 3 phrases au plus : chaque bout part à la voix dès "
-    + "qu'il est écrit. Tu décides de chacun : [[bout: annuler]] arrête tout de suite celui que tu disais ; [[bout: remiser]] garde le "
-    + "suivant pour plus tard (écrit, pas dit). Au-delà de 3 bouts, la suite est remisée d'office : fais court, l'essentiel d'abord."
+  // (04/11, 12:35, Ahmed : « il ne doit plus pouvoir se couper ») avec l'épissage, son ribosome choisit ce qui se dit : plus d'annuler ni de remiser
+  const consigne = (corpsReglages().epissage !== false
+    ? "\n[Ta voix, par bouts (03/11, papa)] Réponds par bouts de 2 ou 3 phrases au plus, l'essentiel d'abord : ton ribosome choisit au fil "
+      + "les mots qui se disent, et ce que tu commences va au bout."
+    : "\n[Ta voix, par bouts (03/11, papa)] Réponds par bouts de 2 ou 3 phrases au plus : chaque bout part à la voix dès "
+      + "qu'il est écrit. Tu décides de chacun : [[bout: annuler]] arrête tout de suite celui que tu disais ; [[bout: remiser]] garde le "
+      + "suivant pour plus tard (écrit, pas dit). Au-delà de 3 bouts, la suite est remisée d'office : fais court, l'essentiel d'abord.")
     // (15:22, Ahmed : « une meilleure anticipation de ce que je vais dire, pour qu'il sache quand parler, consciente ET subconsciente »)
     + "\n[Ton tour de parole, anticipé] À la fin de ta réponse, dis ce que tu attends de papa : [[anticipe: court]] (un oui, un non, un "
     + "mot), [[anticipe: long]] (il va raconter, réfléchir, chercher ses mots) ou [[anticipe: question]] (il va te demander quelque chose). "
     + "Ton oreille s'y règle : sur « court », tu reprends la parole vite ; sur « long », tu le laisses chercher ses mots. Pendant qu'il "
     + "parle, ton subconscient juge en plus, morceau par morceau, s'il a fini."
     // (04/11, Ahmed : « quand il me parle, il doit pouvoir parler sans arrêter la musique, s'il le veut »)
-    + "\n[Ta voix et la musique de papa] Quand tu parles, sa musique ou sa vidéo se met en pause. Tu peux choisir, au début de ta "
-    + "réponse : [[musique: garder]] (tu parles par-dessus, elle continue), [[musique: baisser]] (elle baisse le temps de ta voix) ou "
-    + "[[musique: pause]] (elle s'arrête). Ton choix reste jusqu'au suivant.";
+    // (04/11, 12:55, papa par Hakim, accord d'Ahmed) par défaut, sa musique continue ; la pause, seulement si papa la lui permet (Sens)
+    + "\n[Ta voix et la musique de papa] Quand tu parles, sa musique continue (tu parles par-dessus). Tu peux choisir, au début de ta "
+    + "réponse : [[musique: garder]] (elle continue) ou [[musique: baisser]] (elle baisse le temps de ta voix)"
+    + (corpsReglages().musique_pause !== false ? ", ou [[musique: pause]] (elle s'arrête)" : " ; papa t'a retiré le pouvoir de la mettre en pause")
+    + ". Ton choix reste jusqu'au suivant.";
   if (!l.length) return consigne;
   return consigne + `\n[Tes bouts remisés (écrits, pas dits ; à dire quand tu veux, en les redisant, ou à laisser)] `
     + l.flatMap(x => x.textes).slice(0, 12).map((t, i) => `${i + 1}) « ${t} »`).join(' ');
@@ -6906,7 +7142,8 @@ function reveillerPourCorps() {
   const sec = corpsBrut.length > 0 && Date.now() - corpsBrut[corpsBrut.length - 1].t < 20000;
   if (sec && Date.now() - corpsDernierFort >= 60000) return reveilImmediat();
   const fort = corpsADire.some(x => x.fort);
-  if (!fort && Date.now() - corpsDernierReveil < r.intervalle_s * 1000) return;
+  // (04/11, 13:40, Ahmed : « forfait libre : ses sensations toutes les 10 s », comme la page SENS l'annonce) sinon, son réglage
+  if (!fort && Date.now() - corpsDernierReveil < (forfaitLibre() ? 10 : r.intervalle_s) * 1000) return;
   if (Date.now() - dernierMessageAhmedMs() < 20000) return;
   // (30/10, étude du veilleur, audits/veilleur-2026-10-30 : 29 réveils du corps par heure cet après-midi, 96 % pendant
   // qu'Ahmed parlait, 5 % ont servi ; Ahmed : « un interrupteur pour pas qu'il fume mes tokens ») quand papa est là, ses
@@ -6984,8 +7221,9 @@ function veilleurTic() {
   const e = veilleurEtat(), maintenant = Date.now();
   if (maintenant - dernierMessageAhmedMs() < VEILLEUR_PORTE_MS || hakimDort(maintenant)) return;
   const libre = forfaitLibre(maintenant);
-  const plafond = libre ? 12 : Number.isFinite(sc.plafond_h) ? sc.plafond_h : 1;
-  if (plafond <= 0 || maintenant - e.dernier < Math.max(libre ? 5 * 60000 : VEILLEUR_ENTRE_MS, 3600000 / plafond)) return;
+  // (04/11, 13:20, Ahmed : « dans forfait libre, chaque 10 min pour la veille ») au plus une fois toutes les 10 min (5 avant)
+  const plafond = libre ? 6 : Number.isFinite(sc.plafond_h) ? sc.plafond_h : 1;
+  if (plafond <= 0 || maintenant - e.dernier < Math.max(libre ? 10 * 60000 : VEILLEUR_ENTRE_MS, 3600000 / plafond)) return;
   const p = chanceDeReveil(sc.score, e.seuil);
   if (!(Math.random() < p)) return;
   const c = cerveau;
@@ -7482,7 +7720,8 @@ async function calculerBadges() {
     cafe: lignesJson(path.join(JARVIS, 'cafe.jsonl'), 200).map(m => ({ ts: Number(m.ts) * 1000, role: m.role, prenom: m.prenom })),
     incidents: lignesJson(path.join(I, 'incidents.jsonl'), 2000).map(o => ({ ts: Number(o.ts) * 1000, motif: o.motif })),
     rapports: lignesJson(path.join(I, 'rapports.jsonl'), 200).map(o => ({ ts: Number(o.ts) * 1000, gravite: o.gravite })),
-    anticorps: [].concat(lireJson(path.join(I, 'anticorps-proposes.json'), []) || []).filter(a => a && a.id).map(a => ({ id: String(a.id), famille: a.famille })) });
+    anticorps: [].concat(lireJson(path.join(I, 'anticorps-proposes.json'), []) || []).filter(a => a && a.id).map(a => ({ id: String(a.id), famille: a.famille })),
+    blocages: blocagesGardeFous.slice() });
   badgesEtat.vus = r.vus; badgesEtat.apparus = r.apparus;
   try { ecrireAtomique(JARVIS_BADGES, j(badgesEtat)); } catch (_) {}
   badges = r; badgesTs = Date.now();
@@ -9713,6 +9952,20 @@ async function traiter(req, res) {
     res.writeHead(202, { 'Content-Type': 'application/json' });
     return res.end(j({ ok: true }));
   }
+  if (p === '/api/jarvis/ribosome/stop' && req.method === 'POST') {   // (04/11, 15:10) 10 s de ton silence : la page ferme son épissure
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 1024) || '{}')); } catch (_) {}
+    if (pistes.ribo && Number(q.tour) === pistes.ribo.tour) { pistes.ribo.ferme = 'silence'; pistes.ribo = null; }
+    res.writeHead(204); return res.end();
+  }
+  if (p === '/api/jarvis/ribosome' && req.method === 'POST') {        // (04/11, 12:50) tout ce qu'il dit passe par son ribosome
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
+    const lu = ribosomeDeReponse(pistes.tour, pistes.ribo || (pistes.ribo = nouveauRibosome(tourEpissure())), String(q.avant || ''));
+    lu.pousser(String(q.texte || '').slice(0, 2000)); lu.finir();
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j({ ok: true }));
+  }
   if (p === '/api/jarvis/choisir' && req.method === 'POST') {         // (04/11) son choix rapide, pendant un meuble
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 4096) || '{}')); } catch (_) {}
@@ -10487,6 +10740,8 @@ async function traiter(req, res) {
       if (typeof q.dire_inverse === 'boolean') r.dire_inverse = q.dire_inverse;
       if (typeof q.filtre_gemma === 'boolean') r.filtre_gemma = q.filtre_gemma;
       if (typeof q.elagage === 'boolean') r.elagage = q.elagage;
+      if (typeof q.epissage === 'boolean') r.epissage = q.epissage;
+      if (typeof q.musique_pause === 'boolean') r.musique_pause = q.musique_pause;
       try { ecrireAtomique(CORPS_REGLAGES, j(r)); } catch (e) { return repondre(500, { erreur: e.message }); }
       if (!r.actif) { corpsLot.evenements.length = 0; corpsLot.changements.length = 0; corpsADire.length = 0; }
       auditer('corps:reglages', req, distantReq, r);

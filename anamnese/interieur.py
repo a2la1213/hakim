@@ -893,16 +893,12 @@ def lire_pensee(sortie):
 
 
 def relance_permise(mem, now, relance=None):
-    """Jamais la nuit ; au plus une par absence et une toutes les RELANCE_INTERVALLE_S ; jamais la
-    même deux fois (relecture Opus : la même relance sortait à 35 min puis à 4 h 36)."""
+    """Jamais la nuit ; jamais la même deux fois (relecture Opus : la même relance sortait à 35 min puis à 4 h 36) ;
+    (04/11, feu vert) plus de limite par absence ni d'écart de 3 h."""
     if nuit(now):
         return False
-    e = lire(mem)
-    if e.get("presence_ts") and e.get("relance_absence") == e.get("presence_ts"):
-        return False
     rows = mem.db.execute("SELECT ts, content FROM episodes WHERE role='outreach' ORDER BY id DESC LIMIT 20").fetchall()
-    if rows and rows[0][0] and now - rows[0][0] < RELANCE_INTERVALLE_S:
-        return False
+    # (04/11, Ahmed : « feu vert pour toute sollicitation ») plus d'écart de 3 h entre deux relances
     if relance:
         import salience
         if any(salience.lexical_overlap(relance, c) >= 0.5 for _ts, c in rows):

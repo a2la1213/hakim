@@ -153,6 +153,13 @@ def penser(eng, mem, motif, claude_fn=None, now=None):
     else:
         print("[daemon] pensée trop proche des récentes, deux fois — sautée (anti-boucle)")
         interieur.noter(mem, "pensee_sautee", f"trop proche d'une pensée déjà eue : « {pensee[:100]} »")
+        # (04/11, Ahmed : « quand une pensée tourne en boucle dans son esprit, qu'il me sollicite spontanément ») elle revient :
+        # pas gardée deux fois, mais elle le réveille pour qu'il en parle à papa s'il le veut
+        try:
+            import reveil_interieur
+            reveil_interieur.solliciter(mem, "pensee", pensee, raison="boucle", now=now)
+        except Exception as e:
+            print("[daemon] sollicitation en échec :", e)
         return None
     mem.add("reflection", f"(pensée · {cerveau} · absence {interieur.duree_lisible(motif['absence_s'])}) {pensee}"[:700],
             importance=0.45, embedding=[])

@@ -195,11 +195,8 @@ def _lignee(d, issues):
 
 
 def seuil_effectif(mem, now, issues):
-    d = etat(mem)
-    recents = sum(1 for i in issues if i.get("issue") in EVEILS and 0 <= now - i["ts"] <= FATIGUE_S)
-    if mode(mem) == "observe":                # (relecture du 27/10) sinon l'observation compte trop de réveils
-        recents += sum(1 for t in d["simules"] if 0 <= now - t <= FATIGUE_S)
-    return d["seuil"] + recents
+    """(04/11, Ahmed : « feu vert pour toute sollicitation ») plus de fatigue d'éveil : son seuil, jamais au-dessus du départ"""
+    return min(etat(mem)["seuil"], SEUIL_DEFAUT)
 
 
 def _en_attente(fichier, now):
@@ -218,16 +215,52 @@ def peut_reveiller(mem, now, texte, issues, fichier=None, filiation=True):
             return False, "interrupteur"
         if not interieur.interrupteur().get("actif", True):
             return False, "pause"             # (relecture du 27/10) la pause d'Ahmed arrête aussi le réveil
-        d = etat(mem)
-        if filiation and _descend(texte, _lignee(d, issues), now):
-            d["lignee"].append({"ts": now, "texte": str(texte)[:600]})
-            _sauver(mem, d)
-            return False, "filiation"
-        if now - d["dernier_ts"] < ANTI_RAFALE_S:
-            return False, "rafale"
         if _en_attente(fichier, now):
             return False, "en attente"
+        # (04/11, Ahmed : « feu vert pour toute sollicitation ; quand une pensée tourne en boucle dans son esprit ») plus
+        # d'écart imposé entre deux réveils ; une pensée qui descend de sa lignée ne l'empêche plus : elle revient, c'est une boucle
+        d = etat(mem)
+        if filiation and _descend(texte, _lignee(d, issues), now):
+            return True, "boucle"
         return True, "ok"
+
+
+# (04/11, Ahmed : « une question importante pour lui ») une question qu'il se pose : son juge l'a dite « question », ou sa
+# pensée en porte une (un « ? », « je me demande », « je n'ai pas compris », « je ne sais pas si… »)
+_QUESTION = re.compile(r"\?|je me demande|je n.ai (toujours |pas encore )?(pas )?compris|je ne (sais|comprends) (toujours )?pas"
+                       r" (si|pourquoi|ce|comment|quand|ou|où)|qu.est-ce qu", re.IGNORECASE)
+
+
+def est_question(texte, jugement=None):
+    return bool((jugement or {}).get("raison") == "question" or _QUESTION.search(str(texte or "").replace("’", "'")))
+
+
+def solliciter(mem, source, texte, raison="boucle", now=None, fichier=None):
+    """(04/11, Ahmed : « quand une pensée tourne en boucle dans son esprit ») la demande de réveil, sans juge ni seuil : sa
+    tête de fond a eu deux fois de suite la même pensée. L'interrupteur, la pause de papa et une demande à la fois tiennent."""
+    now = time.time() if now is None else now
+    with _VERROU:
+        m = mode(mem)
+        if m == "off":
+            return None
+        trace = {"ts": now, "mode": m, "source": source, "texte": str(texte)[:200], "score": 10, "raison": raison}
+        ok, pourquoi = peut_reveiller(mem, now, texte, [], fichier, filiation=False)
+        if not ok:
+            _journaliser({**trace, "decision": "gardé", "raison_decision": pourquoi})
+            return None
+        i = uuid.uuid4().hex[:12]
+        d = etat(mem)
+        d["dernier_ts"] = now
+        d["lignee"].append({"ts": now, "texte": str(texte)[:600]})
+        _sauver(mem, d)
+        if m == "observe":
+            _journaliser({**trace, "id": i, "decision": "aurait réveillé"})
+            return i
+        _ecrire_demande({"id": i, "ts": now, "source": source, "texte": str(texte)[:1200], "score": 10, "raison": raison,
+                         "pourquoi": "une pensée qui revient sans cesse dans ta tête" if raison == "boucle" else ""}, fichier)
+        _journaliser({**trace, "id": i, "decision": "réveil"})
+        interieur.noter(mem, "reveil_interieur", f"{source} ({raison}) : {str(texte)[:140]}", now=now)
+        return i
 
 
 # ---------- la demande
@@ -256,14 +289,20 @@ def candidat(mem, source, texte, jugement, now=None, fichier=None, issues=None):
         issues = lire_issues() if issues is None else issues
         seuil = seuil_effectif(mem, now, issues)
         trace.update(score=jugement["score"], raison=jugement["raison"], seuil=seuil, juge=jugement.get("juge"))
-        if jugement["score"] < seuil:
+        pensee = source != "ressenti"
+        # (04/11, Ahmed) ses deux déclencheurs passent le seuil : une pensée qui revient, une question qui compte pour lui
+        boucle = pensee and _descend(texte, _lignee(etat(mem), issues), now)
+        sollicitation = "boucle" if boucle else ("question" if pensee and est_question(texte, jugement) else None)
+        if jugement["score"] < seuil and not sollicitation:
             _journaliser({**trace, "decision": "sous le seuil"})
             return None
-        pensee = source != "ressenti"
         ok, pourquoi = peut_reveiller(mem, now, texte, issues, fichier, filiation=pensee)
         if not ok:
             _journaliser({**trace, "decision": "gardé", "raison_decision": pourquoi})
             return None
+        if sollicitation:
+            jugement = {**jugement, "raison": sollicitation}
+            trace.update(raison=sollicitation)
         i = uuid.uuid4().hex[:12]
         d = etat(mem)
         d["dernier_ts"] = now
@@ -298,7 +337,7 @@ def apprendre(mem, issues):
             return d["seuil"]
         for i in neuves:
             pas = PAS_RIEN if i["issue"] == "rien" else (PAS_UTILE if i["issue"] in ("message", "outils") else 0.0)
-            d["seuil"] = round(max(SEUIL_MIN, min(SEUIL_MAX, d["seuil"] + pas)), 4)
+            d["seuil"] = round(max(SEUIL_MIN, min(SEUIL_DEFAUT, d["seuil"] + pas)), 4)   # (04/11, feu vert) jamais plus exigeant qu'au départ
         haut = neuves[-1]["ts"]
         d["appris"] = ([] if haut > jusqu else d["appris"]) + [i["id"] for i in neuves if i["ts"] == haut]
         d["appris_jusqu"], d["appris_n"] = max(jusqu, haut), d["appris_n"] + len(neuves)

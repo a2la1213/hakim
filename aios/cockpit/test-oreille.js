@@ -118,7 +118,9 @@ test('(20:38) quand il garde la parole, « arrête », « tais-toi », « coupe-
 
 test('(21:00) deux modes : tes paroles « dans sa tête » (pas affichées, son silence permis) ; sa voix d’abord, son texte après', () => {
   assert.match(page, /const enTete = !!oral && \(\(typeof reglagesCorps !== 'undefined' && \(reglagesCorps\.afficher_papa === false \|\| motsPapaCaches\(\)\)\)/);
-  assert.match(page, /\.slice\(-etat\.fenetre\)\n    \.filter\(m => !m\.cache && /);
+  // (04/11, 10:20) le caché passe par messageMasque : « dans ta tête » d'abord, puis sa réponse en conversation (test-ses-paroles.js)
+  assert.match(page, /\.slice\(-etat\.fenetre\)\n    \.filter\(m => !messageMasque\(m\) \|\| aDesPieces\(m\)\);/);
+  assert.match(page, /function messageMasque\(m\) \{\n  if \(m\.cache && !\(m\.qui === 'j' && parolesVisibles\(\)\)\) return true;/);
   assert.match(page, /reglagesCorps\.afficher_hakim !== false \|\| !auto\) \{ majMessage\(m\);/);
   assert.match(src, /if \(!corpsReglages\(\)\.afficher_papa\) return false;/);
   assert.match(src, /afficher_papa: r\.afficher_papa !== false, afficher_hakim: r\.afficher_hakim !== false/);
@@ -126,10 +128,10 @@ test('(21:00) deux modes : tes paroles « dans sa tête » (pas affichées, son 
 
 test('(21:13-21:15) « dans ta tête » pour lui aussi : ses réponses et ses petits mots dits, pas écrits ; un bouton pour couper sa voix ; une respiration masque l’attente', () => {
   assert.match(page, /\.\.\.\(oral && reponseCachee\(\) \? \{ cache: true \} : \{\}\),/, 'sa réponse orale cachée (04/11 : dans les deux modes)');
-  assert.match(page, /const reponseCachee = \(\) => !!etat\.conversation;/);
+  assert.match(page, /const reponseCachee = \(\) => !!etat\.conversation && !parolesVisibles\(\);/, '(04/11, 10:20) sauf « Ses paroles »');
   const i = page.indexOf("if (m.spontane === 'oreille') {"), bloc = page.slice(i, page.indexOf('\n    return;\n  }', i));
   assert.match(bloc, /\.\.\.\(cache \? \{ cache: true \} : \{\}\)/, 'son petit mot caché');
-  assert.match(page, /function majMessage\(m\) \{\n  if \(m\.cache\) return;/, 'jamais remis à l’écran par le flux');
+  assert.match(page, /function majMessage\(m\) \{\n  const masque = messageMasque\(m\);\n  if \(masque && !aDesPieces\(m\)\) return;/, 'jamais remis à l’écran par le flux (sauf ses fichiers)');
   const html = fs.readFileSync(path.join(__dirname, 'public', 'parler.html'), 'utf8');
   assert.match(html, /id="sonHakim" aria-pressed="false"/);
   assert.match(page, /\$\('sonHakim'\)\.addEventListener\('click', \(\) => \{ couperSon\(\); \}\);/);
@@ -138,12 +140,13 @@ test('(21:13-21:15) « dans ta tête » pour lui aussi : ses réponses et ses pe
 });
 
 test('(21:34) « dans ta tête » tient pour lui : ni ses tours de lui-même ni une copie revenue du cockpit ne s’affichent pendant la conversation', () => {
-  const i = page.indexOf('function rendre() {'), bloc = page.slice(i, page.indexOf('\n}\n', i));
-  const filtre = bloc.match(/const tete = (.+?);[^\n]*\n  const vus = etat\.messages\.slice\(-etat\.fenetre\)\n    \.filter\((.+)\);/);
-  assert.ok(filtre, 'le filtre du rendu');
-  // (04/11, Ahmed : « en Conversation ou en Télépathie, seulement la pensée écrite, pas sa réponse ») plus de case : caché dans les deux modes
-  const vus = (messages, conversation) => vm.runInContext(`(() => { const reponseCachee = () => !!etat.conversation; const tete = ${filtre[1]}; return etat.messages.filter(${filtre[2]}); })()`,
-    vm.createContext({ Number, Date, etat: { messages, conversation } }));
+  // (04/11, Ahmed : « en Conversation ou en Télépathie, seulement la pensée écrite, pas sa réponse ») plus de case : caché dans les deux
+  // modes ; (04/11, 10:20) « Ses paroles » éteint, comme ici (test-ses-paroles.js pour le reste)
+  const ligne = (debut) => { const k = page.indexOf(debut); return page.slice(k, page.indexOf('\n', k)).replace(/^const /, 'var '); };
+  const fonction = page.slice(page.indexOf('function messageMasque('), page.indexOf('\n}\n', page.indexOf('function messageMasque(')) + 2);
+  const vus = (messages, conversation) => vm.runInContext(`(() => { ${ligne('const parolesVisibles = ')}; ${ligne('const reponseCachee = ')};
+    ${fonction}; return etat.messages.filter(m => !messageMasque(m)); })()`,
+    vm.createContext({ Number, Date, enTelepathie: () => false, etat: { messages, conversation, reglages: {} } }));
   const avant = { id: 'a', qui: 'j', texte: 'avant', ts: 1000 }, papa = { id: 'p', qui: 'u', texte: 'papa', ts: 6000 };
   const lui = { id: 'l', qui: 'j', spontane: 'resultat', texte: 'de lui-même', ts: 6000 }, enCours = { id: 99999999999999, qui: 'j', texte: '' };
   const tous = [avant, papa, lui, enCours];
@@ -289,7 +292,7 @@ test('(vers 22 h 10) chacun son tour : pendant qu’il prépare ou dit sa répon
   // dans le tour de parole : après « stop » / « attends », avant la coupure d'avant
   const i = page.indexOf('async function tourDeParole('), bloc = page.slice(i, page.indexOf('\n}\n', i));
   const k = (x) => bloc.indexOf(x);
-  assert.ok(k('COMMANDE_STOP.test(texte)') < k('if (chacunSonTour() && sonTourEnCours() && !conv.souffleParle && !conv.penseeDite) {'), '« stop » reste au-dessus');
+  assert.ok(k('COMMANDE_STOP.test(texte)') < k('if (chacunSonTour() && sonTourEnCours() && !conv.souffleParle && !conv.penseeDite && !voixEpissee())'), '« stop » reste au-dessus');
   assert.ok(k('COMMANDE_PAUSE.test(texte)') < k('garderPourSonTour(conv, texte)'), '« attends » aussi');
   assert.ok(k('garderPourSonTour(conv, texte)') < k("arreterTout(true, { garder: true, raison: 'parole' })"), 'sa réponse n’est plus coupée');
   assert.match(page, /if \(!voix \|\| !aDire\.length \|\| \(c && \(c\.tourGarde \|\| \(c\.ecritGarde \|\| \[\]\)\.length\)\)\) return;/, 'papa d’abord, avant ses mots en attente');
@@ -700,8 +703,8 @@ test('(00:47) dès son signal, la transcription s’arrête (le micro écoute to
   ctx.etat.conversation.penseeEnPause = true; assert.equal(ctx.transcriptionEnPause(), false, 'ses bouts répondent à ce que tu dis : tu restes entendu');
   ctx.etat.conversation.penseeEnPause = false; ctx.lecteur.actif = false; ctx.telepathie = true;
   ctx.etat.flux = null; c.muetParHakim = { attente: 0 }; assert.equal(ctx.transcriptionEnPause(), true, 'il a coupé ton micro');
-  c.muetParHakim = null; c.attentionJusqua = t + 15000; assert.equal(ctx.transcriptionEnPause(), true, 'son oreille a choisi ses empans');
-  t += 16000; assert.equal(ctx.transcriptionEnPause(), false, '15 s au plus');
+  // (04/11, 12:15, Ahmed : « constamment ouverte, excepté quand il parle ») ses empans choisis ne ferment plus ton oreille
+  c.muetParHakim = null; c.attentionJusqua = t + 15000; assert.equal(ctx.transcriptionEnPause(), false, 'ses empans ne la ferment plus');
   c.sonsEnAttente = [{ wav: 'A', infos: {} }, { wav: 'B', infos: {} }];
   ctx.etat.flux = {}; assert.equal(await ctx.reprendreTranscription(), false, 'il parle encore : rien');
   ctx.etat.flux = null; assert.equal(await ctx.reprendreTranscription(), true);

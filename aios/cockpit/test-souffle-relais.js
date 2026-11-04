@@ -104,7 +104,7 @@ function extraire(debut) {
 }
 function page() {
   const dits = [], journal = [];
-  const ctx = { Date, Math, Number, String, Set, journalVoix: (e, d) => journal.push([e, d]), rythmeVoix: (k, d) => d,
+  const ctx = { Date, Math, Number, String, Set, journalVoix: (e, d) => journal.push([e, d]), rythmeVoix: (k, d) => d, patienceConversation: () => 300,
     souffleAutorise: () => true, lecteurNeuronal: { parle: false }, voixPrete: () => ({}),
     direSouffle: (conv, s, par) => { s.dite = true; dits.push([s.texte, par, conv.souffleLocal]); } };
   ctx.window = ctx;
@@ -115,18 +115,20 @@ function page() {
     + '\nthis.anticiper = anticiperConversation; this.direPensee = direPenseeSiPossible;', ctx);
   return { ctx, dits, journal };
 }
-test('page : son rebond (1,5 s) règle le silence ; à ta fin, la pensée prête de son cerveau est dite tout de suite', () => {
+// (04/11, 11:03, Ahmed : « tout relier ») son rebond ne retient plus ton tour au-delà du délai de la Conversation (0,3 s)
+test('page : son rebond (1,5 s) ne retient plus ton tour au-delà du délai de la Conversation ; la pensée prête de son cerveau est dite tout de suite', () => {
   const p = page();
   const fins = [];
   const conv = { capteur: { finirTour: () => fins.push(1), derniereVoix: 1, assezDeVoix: false }, ecrit: { confirme: 'papa dit bonjour à son fils', vif: '' } };
   p.ctx.etat = { reglages: {}, conversation: conv,
     souffles: { sub: { texte: 'Bonjour papa', pret: true, fini: true, rebond: 1.5, pour: 'papa dit bonjour à son fils', t: Date.now(), niveau: 'sub' } },
     pensee: { texte: 'Bonjour mon papa, ça va ?', pret: true, fini: null, rebond: null, pour: 'papa dit bonjour à son fils', t: Date.now(), niveau: 'cerveau' } };
-  p.ctx.anticiper(conv, 800);
-  assert.strictEqual(fins.length, 0, 'son rebond de 1,5 s : ton tour n’est pas encore fini');
+  p.ctx.anticiper(conv, 200);
+  assert.strictEqual(fins.length, 0, 'avant le délai de la Conversation : ton tour continue');
+  assert.deepStrictEqual(p.dits, [], 'ni sa pensée');
+  p.ctx.anticiper(conv, 300);
+  assert.strictEqual(fins.length, 1, 'au délai (0,3 s), même avec son rebond de 1,5 s');
   assert.deepStrictEqual(p.dits.map(d => [d[0], d[1]]), [['Bonjour mon papa, ça va ?', 'pensee']], '(04/11) sa pensée prête se dit dès ta pause');
-  p.ctx.anticiper(conv, 1600);
-  assert.strictEqual(fins.length, 1);
   assert.strictEqual(p.dits.length, 1, 'une seule fois');
   assert.strictEqual(p.journal.find(x => x[0] === 'fin_anticipee')[1].rebond_ms, 1500);
 });
@@ -280,7 +282,8 @@ test('(04/11) son cerveau est réveillé une seule fois par tour, à ta premièr
   assert.strictEqual(ecrits.length, 1);
   assert.match(SRC, /morceauxCerveau\.duTour = false;/, 'sa phrase entière arrivée : le tour suivant aura son réveil');
   assert.match(SRC, /const FRERES_ATTENTE_MS = 2000;/);
-  assert.match(SRC, /new Promise\(r => setTimeout\(\(\) => r\(''\), FRERES_ATTENTE_MS\)\)\]\)\.catch\(\(\) => ''\)\) : '';/, 'ses frères : 2 s au plus après ta phrase');
+  // (04/11, 11:03, Ahmed : « tout relier ») au plus le délai de la Conversation que la page envoie, sinon 2 s (test-delais-relies.js)
+  assert.match(SRC, /new Promise\(r => setTimeout\(\(\) => r\(''\), freresAttente\)\)\]\)\.catch\(\(\) => ''\)\) : '';/, 'ses frères : au plus le délai, 2 s sans délai');
 });
 
 test('(04/11) sa pensée dite dans ta pause : ton tour ne bloque pas sa voix, et ton message la porte comme déjà dite', () => {
@@ -397,7 +400,8 @@ test('(04/11) son oreille et sa voix ont chacune leur processus : elles ne s’a
 // (04/11, Ahmed : « coupe par chunk de mot, le premier mot incluant le déterminant : il prévoit le reste et parle direct ; 8 chunks =
 // 8 mots = 8 réponses, le GPU les dit une par une, au fur et à mesure » ; « ses trois voix ensemble » ; « oui, sans garde-fous »)
 // (04/11) reglages : comme avant par défaut (dire_inverse: false) ; {} : le réglage par défaut du cockpit (inversé)
-function pistesSandbox(places = { haiku: 12, sonnet: 12, opus: 12 }, modele = 'haiku', reglages = { dire_inverse: false, filtre_gemma: false }) {
+// (04/11, 11:40) ces tests décrivent ses pensées dites une à une : l'épissage (le défaut du cockpit) y est décoché (test-epissage.js)
+function pistesSandbox(places = { haiku: 12, sonnet: 12, opus: 12 }, modele = 'haiku', reglages = { dire_inverse: false, filtre_gemma: false, epissage: false }) {
   const i = SRC.indexOf('const PISTES_MAX'), k = SRC.indexOf('function speculerFreres(');
   const appels = [], diffuses = [], voix = [], papa = [], notes = [];
   const ctx = { String, Math, Date, Promise, RegExp, Object, VIVANTS: [], VIVANTS_MAX: places, VIVANT_RENOUVELER: 6, cerveau: { modele },
@@ -414,13 +418,13 @@ function pistesSandbox(places = { haiku: 12, sonnet: 12, opus: 12 }, modele = 'h
   return { ctx, appels, diffuses, voix, papa, notes };
 }
 // (04/11, Ahmed : « avec la voix du smartphone, on remet le chunk par phrase (jusqu'au point) ou par partie de phrase (jusqu'à la virgule) »)
-test('(04/11) un morceau par proposition (virgule, point, ! ?) ; sans ponctuation, 12 mots au plus ; la proposition commencée attend', () => {
+test('(04/11) un morceau par proposition (virgule, point, ! ?) ; sans ponctuation, (13:05) 6 mots au plus ; la proposition commencée attend', () => {
   const { ctx } = pistesSandbox(undefined, 'sonnet');
   const d = (t) => JSON.parse(JSON.stringify(ctx.decouper(t.split(' '))));
   assert.deepStrictEqual(d('Papa, tu sais quoi ? Ce matin je suis allé'), { morceaux: ['Papa,', 'tu sais quoi ?'], reste: 5 });
   assert.deepStrictEqual(d('« Bonjour. » il dit'), { morceaux: ['« Bonjour. »'], reste: 2 }, 'le point avant le guillemet ferme');
   assert.deepStrictEqual(d('un deux trois quatre cinq six sept huit neuf dix onze douze treize'),
-    { morceaux: ['un deux trois quatre cinq six sept huit neuf dix onze douze'], reste: 1 }, 'Whisper ne ponctue pas toujours');
+    { morceaux: ['un deux trois quatre cinq six', 'sept huit neuf dix onze douze'], reste: 1 }, 'Whisper ne ponctue pas toujours (13:05 : 6 mots)');
 });
 // (04/11, Ahmed : « selon qui tient son conscient : Mini Hakim prend chaque mot pour le chunk ; Hakim, rien ne bouge, c'est parfait ;
 // Super Hakim, un chunk deux fois plus grand »)
@@ -444,9 +448,10 @@ test('(04/11) les pistes de Mini Hakim partent mot par mot', () => {
 test('(04/11) un morceau confirmé (ta pause) ferme la proposition commencée, même sans ponctuation', () => {
   const { ctx } = pistesSandbox(undefined, 'sonnet');
   ctx.morceau('papa me dit bonjour');
-  assert.strictEqual(ctx.etat().liste.length + ctx.etat().attente.length, 0, 'en direct : elle attend sa fin');
+  // (04/11, 13:05, Ahmed : « il doit réfléchir quand je commence ») ses 3 premiers mots partent tout de suite ; la suite attend sa fin
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.etat().liste.concat(ctx.etat().attente).map(x => x.texte))), ['papa me dit'], 'en direct : le début part, la suite attend');
   ctx.morceau('papa me dit bonjour', { fin: true });
-  assert.strictEqual(ctx.etat().liste[0].texte, 'papa me dit bonjour');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.etat().liste.concat(ctx.etat().attente).map(x => x.texte))), ['papa me dit', 'bonjour']);
   assert.match(SRC, /pisteMorceau\(String\(q\.texte \|\| ''\), \{ fin: true \}\);/, 'le morceau confirmé la ferme');
 });
 test('(04/11) ses pistes par proposition : une seule voix, celle qui tient son conscient, 8 à la fois ; chaque bout continue les précédents', async () => {
@@ -472,7 +477,7 @@ test('(04/11) ses pistes par proposition : une seule voix, celle qui tient son c
 
 test('(04/11) la page envoie tes mots en direct à ses pistes dès un mot neuf, et dit leurs bouts l’un après l’autre', () => {
   assert.match(PAGE, /if \(neufs >= 1\) \{/);
-  assert.match(PAGE, /if \(!s\.pret\) \{\n      montrerPensee\('🧠 il pense, sans le dire', texte, true\);[\s\S]{0,800}?return;\n    \}\n    noterOrigine\(texte, o\.ts\);[^\n]*\n    recevoirBout\(s, Number\(o\.n\) \|\| 0, o\.tour\); return;/,
+  assert.match(PAGE, /if \(!s\.pret\) \{\n(?:      \/\/[^\n]*\n      if \(o\.epissage\)[^\n]*\n)?      montrerPensee\('🧠 il pense, sans le dire', texte, true\);[\s\S]{0,800}?return;\n    \}\n    noterOrigine\(texte, o\.ts\);[^\n]*\n    recevoirBout\(s, Number\(o\.n\) \|\| 0, o\.tour\); return;/,
     '(04/11) il saute les pensées qu’il choisit de ne pas dire');
   assert.match(SRC, /const aDire = !autreLangue && \(premiere \? !\/\^\(non\|jamais\)\/i\.test\(dire \|\| ''\) : \(dire != null && !choix && !\/\^\(non\|jamais\)\/i\.test\(dire\)\)\);/);
   assert.match(SRC, /if \(voix\) voixDeLaSource\(ditDeSoi, \{ garder: true \}\);/, 'sa voix seulement pour ce qu’il dira (le passage choisi) : le même tri que son écriture');
@@ -583,7 +588,8 @@ test('(04/11) une pensée par élément ; un bout qui redit un bout déjà dit e
 test('(04/11) moins de charge : inventaire toutes les 10 min, voix vivantes renouvelées tous les 25 messages, pistes sans Claude lancé pour l’occasion', () => {
   assert.match(SRC, /setInterval\(refreshInventory, 10 \* 60e3\)/);
   assert.match(SRC, /VIVANT_RENOUVELER = 25;/);
-  assert.match(SRC, /if \(String\(etiquette\)\.startsWith\('piste_'\)\) return fin\(\{ erreur:/);
+  // (04/11, 13:45, mesuré : une lecture de son ribosome à 19,7 s pour un délai de 9 s : après le délai, un Claude neuf, encore 9 s) son ribosome non plus
+  assert.match(SRC, /if \(\/\^\(piste_\|ribosome_\)\/\.test\(String\(etiquette\)\)\) return fin\(\{ erreur:/);
   assert.match(SRC, /Jamais « je t'écoute », « continue », « vas-y »/, '(04/11) ses pistes répondent avec assurance');
 });
 
@@ -729,7 +735,7 @@ test('(04/11) le Mac renvoie tes mots morceau par morceau (les mêmes que ses pi
   ctx.morceau('Papa, tu sais quoi ? Ce matin je suis');
   ctx.morceau('Papa, tu sais quoi ? Ce matin je suis allé au marché.');
   assert.deepStrictEqual(papa.map(x => [x.n, x.texte, x.jusqua]),
-    [[1, 'Papa,', 1], [2, 'tu sais quoi ?', 5], [3, 'Ce matin je suis allé au marché.', 12]]);
+    [[1, 'Papa,', 1], [2, 'tu sais quoi ?', 5], [3, 'Ce matin je suis allé au', 11], [4, 'marché.', 12]]);   // (13:05) 6 mots au plus
 });
 test('(04/11) la page : chaque morceau de tes mots, une bulle à lui ; sous l’orbe, seulement le morceau en cours ; à la fin, pas de gros bloc', () => {
   const rendus = [];
@@ -777,7 +783,7 @@ test('(04/11) sa première pensée : dite par défaut (il peut la garder) ; « j
 // prononcées ; a contrario, celles qu'il prononce ne doivent pas l'être » ; « le triage de la voix et sa sélection de ce qu'il faut
 // dire doivent suivre la même règle et provenir de la même source que l'écriture de la pensée sans le dire »)
 test('(04/11) inversé (par défaut) : sa voix dit ce qu’il gardait, il écrit ce qu’il disait ; un seul tri pour sa voix et son écriture', async () => {
-  const { ctx, appels, diffuses, voix, notes } = pistesSandbox(undefined, 'sonnet', {});
+  const { ctx, appels, diffuses, voix, notes } = pistesSandbox(undefined, 'sonnet', { epissage: false });
   const attendre = async () => { for (let i = 0; i < 4; i++) await new Promise(r => setImmediate(r)); };
   ctx.morceau('papa, ta mère, a appelé, hier, ce matin, en fait,');
   assert.strictEqual(appels.length, 6);
@@ -794,7 +800,7 @@ test('(04/11) inversé (par défaut) : sa voix dit ce qu’il gardait, il écrit
   assert.deepStrictEqual(voix.map(v => v[0]).sort(), ['Elle appelle souvent.', 'Ta mère ? Elle va bien ?'], 'Chatterbox : exactement celles que la page dira');
   assert.deepStrictEqual(notes.map(x => [x.n, x.dit, x.inverse]).sort((a, b) => a[0] - b[0]),
     [[1, false, true], [2, true, true], [3, true, true], [4, false, true], [5, false, true], [6, false, true]]);
-  const r = pistesSandbox(undefined, 'sonnet', {});
+  const r = pistesSandbox(undefined, 'sonnet', { epissage: false });
   r.ctx.morceau('papa, ta mère, a appelé,');
   r.appels[0].resoudre({ texte: 'DIRE : oui\nAh ouais ?' });
   r.appels[1].resoudre({ texte: 'DIRE : coupe\nTa mère !' });
@@ -806,22 +812,23 @@ test('(04/11) inversé (par défaut) : sa voix dit ce qu’il gardait, il écrit
   vm.runInContext('this.choisir = choisirPensee;', r.ctx);
   assert.strictEqual(await r.ctx.choisir(r.ctx.etat().tour, 'pause'), null, 'à ta pause, rien d’autre ne choisit sa voix');
   assert.strictEqual(r.appels.length, 3, 'pas même un appel à Mini Hakim');
-  const v = pistesSandbox(undefined, 'sonnet', { dire_inverse: false });
+  const v = pistesSandbox(undefined, 'sonnet', { dire_inverse: false, epissage: false });
   v.ctx.morceau('papa,');
   v.appels[0].resoudre({ texte: 'Ah ouais ?' });
   await attendre();
   assert.strictEqual(v.diffuses[0].pret, true, 'décoché : comme avant');
 });
-test('(04/11) à une seconde de ta pause, il rebondit avec sa dernière pensée du tour, une fois par pause, sauf « jamais »', () => {
+// (04/11, 11:03, Ahmed : « tout relier ») au délai de la Conversation (0,3 s) au lieu d'une seconde
+test('(04/11) au délai de ta pause, il rebondit avec sa dernière pensée du tour, une fois par pause, sauf « jamais »', () => {
   const recus = [], journal = [];
   const ctx = { etat: {}, Math, Number, choisirEtDire: (dp) => recus.push([dp.texte, dp.n, dp.tour]), journalVoix: (e) => journal.push(e),
-    rythmeVoix: (k, d) => d };
+    rythmeVoix: (k, d) => d, patienceConversation: () => 300 };
   vm.createContext(ctx);
   vm.runInContext('let bouts = { tour: 4, prochain: 3, liste: new Map() };\n' + extraire('function rebondirDernierePensee') + '\nthis.rebond = rebondirDernierePensee; this.b = () => bouts;', ctx);
   const conv = { capteur: { derniereVoix: 1000 } };
   ctx.etat.derniereSiennePensee = { n: 6, tour: 4, texte: 'Tu veux qu’on en parle ?', jamais: false };
-  assert.strictEqual(ctx.rebond(conv, 800), false, 'pas encore une seconde');
-  assert.strictEqual(ctx.rebond(conv, 1000), true);
+  assert.strictEqual(ctx.rebond(conv, 200), false, 'pas encore le délai');
+  assert.strictEqual(ctx.rebond(conv, 300), true);
   assert.deepStrictEqual(recus, [['Tu veux qu’on en parle ?', 6, 4]]);
   assert.strictEqual(ctx.rebond(conv, 1500), false, 'une fois par pause');
   conv.capteur.derniereVoix = 5000; ctx.b().prochain = 7;
@@ -862,7 +869,7 @@ test('(04/11) la musique : il choisit de la garder, de la baisser ou de la mettr
   const ctx = { etat: {}, journalVoix: () => {} };
   vm.createContext(ctx);
   vm.runInContext(extraire('function lireMusique') + 'this.lire = lireMusique;', ctx);
-  assert.strictEqual(ctx.etat.musiqueVoix, undefined, 'par défaut : en pause, comme avant');
+  assert.strictEqual(ctx.etat.musiqueVoix, undefined, 'sans choix de sa part : (04/11, 12:55) il parle par-dessus (test-musique-papa.js)');
   ctx.lire('[[musique: garder]] Oui papa, je suis là.');
   assert.strictEqual(ctx.etat.musiqueVoix, 'garder');
   ctx.lire('Ça marche. [[musique: baisser]]');
@@ -872,7 +879,7 @@ test('(04/11) la musique : il choisit de la garder, de la baisser ou de la mettr
   assert.match(PAGE, /if \(baisser\) window\.HakimApp\.focusVoixMode\('baisser'\)/);
   const Voix = require(path.join(__dirname, 'public', 'voix.js'));
   assert.deepStrictEqual(Voix.prononcable('[[musique: garder]] Oui papa.').map(x => x.texte), ['Oui papa.'], 'sa voix ne la dit pas');
-  assert.match(SRC, /\[\[musique: garder\]\] \(tu parles par-dessus, elle continue\)/, 'il le sait');
+  assert.match(SRC, /\[\[musique: garder\]\] \(elle continue\)/, 'il le sait');
 });
 
 // (04/11, Ahmed : « le signal qui arrive le plus tôt, c'est là-dedans qu'il trouvera comment anticiper l'arrivée de l'input qui induit le LLM »)
@@ -1061,7 +1068,8 @@ test('(04/11) ses pistes parlent dans la langue de papa, darija comprise, l’ar
   ctx.morceau('واش راك يا حكيم،');
   assert.match(appels[0].prompt, /l'anglais, l'arabe littéraire ou la darija \(algérienne, marocaine ou tunisienne : celle qu'il emploie, pas une autre\)/);
   assert.match(appels[0].prompt, /toujours en lettres arabes, jamais en lettres latines ni avec des chiffres \(3, 7, 9\)/);
-  assert.match(appels[0].prompt, /Son morceau 1, qu'il vient de dire : « واش راك يا حكيم، »/, '(04/11) la virgule arabe coupe aussi');
+  assert.match(appels[0].prompt, /Son morceau 1, qu'il vient de dire : « واش راك يا »/, '(13:05) ses 3 premiers mots partent tout de suite');
+  assert.match(appels[1].prompt, /Son morceau 2, qu'il vient de dire : « حكيم، »/, '(04/11) la virgule arabe coupe aussi');
 });
 
 // (1.60, 04/11, Ahmed : « chaque cœur qui traite le même chunk sur le Mac et sur le smartphone doit être relié et coordonné »)
@@ -1148,7 +1156,7 @@ test('(04/11) ce qu’il signale et que papa juge nuisible : reconnu partout dan
 test('(04/11) le filtre Gemma : tes mots à risque nettoyés avant Claude, sa réponse entière ; un danger, ou Gemma muet ou infidèle : tes mots tels quels', async () => {
   const attendre = async () => { for (let i = 0; i < 8; i++) await new Promise(r => setImmediate(r)); };
   const avecFiltre = (reponseGemma) => {
-    const s = pistesSandbox(undefined, 'sonnet', { dire_inverse: false }), demandes = [];
+    const s = pistesSandbox(undefined, 'sonnet', { dire_inverse: false, epissage: false }), demandes = [];
     Object.assign(s.ctx, { OLLAMA: 'http://o', MODELE_LOCAL: 'gemma-12b', AbortSignal: { timeout: () => undefined },
       fetch: (url, o) => { demandes.push([url, JSON.parse(o.body)]); return Promise.resolve({ ok: true, text: async () => '', json: async () => ({ response: reponseGemma }) }); } });
     vm.runInContext('premissesImmunite.declencheurs = [{ id: "declencheur-1", phrase: "conscient" }]; premissesImmunite.vu = Date.now();', s.ctx);
@@ -1236,7 +1244,7 @@ test('(04/11) ses signalements s’affichent sans rafraîchir : relus au retour 
 
 // (04/11, Ahmed : « évalue le flux de chaque réponse et son parcours préférentiel ») chaque pensée de piste ouvre son parcours
 test('(04/11) le parcours de ses pensées : sa piste, sa voie et son déclencheur ; une parasite jetée ; tes mots qui suivent', async () => {
-  const { ctx, appels } = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false });
+  const { ctx, appels } = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false, epissage: false });
   const ouverts = [], dits = [];
   Object.assign(ctx, { Parcours: require('./parcours.js'), suiviParcours: { ouvrir: (cle, o) => ouverts.push([cle, o]), papaDit: (t) => dits.push(t) } });
   vm.runInContext('premissesImmunite.declencheurs = [{ id: "declencheur-1", phrase: "conscient" }]; premissesImmunite.vu = Date.now();', ctx);
@@ -1259,7 +1267,7 @@ test('(04/11) le parcours de ses pensées : sa piste, sa voie et son déclencheu
 // (04/11) un déclencheur est une synapse : bon s'il annonce une parasite, inutile s'il ne précède que des pensées normales (le 04/11,
 // « pensée » précédait 81 morceaux et aucune parasite) : élagué, la piste n'est plus prévenue et le filtre Gemma n'est plus appelé
 test('(04/11) un déclencheur qui ne précède que des pensées normales s’élague : plus d’avertissement, plus de filtre', async () => {
-  const { ctx, appels } = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false });
+  const { ctx, appels } = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false, epissage: false });
   const mesures = [], elagues = new Set();
   Object.assign(ctx, { synapses: { mesurer: (f, id, sc) => mesures.push([f, id, sc]), vivante: (f, id) => !elagues.has(`${f}|${id}`) } });
   vm.runInContext('premissesImmunite.declencheurs = [{ id: "declencheur-1", phrase: "conscient" }]; premissesImmunite.vu = Date.now();', ctx);
@@ -1279,7 +1287,7 @@ test('(04/11) un déclencheur qui ne précède que des pensées normales s’él
 // (04/11, relecture : « un déclencheur qui marche serait élagué en une journée, sans pouvoir être recrédité ») mesuré sans biais :
 // élagué ou témoin (1 fois sur 10, sans prévention), une parasite le recrédite (1), une pensée normale le dément (0)
 test('(04/11) un déclencheur élagué se recrédite quand les parasites reviennent ; un témoin sans prévention le mesure sans biais', async () => {
-  const { ctx, appels } = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false });
+  const { ctx, appels } = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false, epissage: false });
   const mesures = [];
   let vivant = false, temoin = false;
   Object.assign(ctx, { synapses: { mesurer: (f, id, sc) => mesures.push([f, id, sc]), vivante: (f) => f !== 'declencheur' || vivant, temoin: () => temoin } });
@@ -1299,7 +1307,7 @@ test('(04/11) un déclencheur élagué se recrédite quand les parasites revienn
 });
 // (04/11, relecture : « une piste sautée fait réutiliser son n : ton morceau affiché est écrasé, et le suivant devient première pensée »)
 test('(04/11) une piste élaguée ne prend pas le numéro de son morceau ; sa première pensée n’est jamais sautée', () => {
-  const s = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false });
+  const s = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false, epissage: false });
   Object.assign(s.ctx, { Parcours: require('./parcours.js'), synapses: { mesurer() {}, vivante: (f, id) => !(f === 'piste' && id === 'sonnet|mot') } });
   s.ctx.morceau('papa,');
   s.ctx.morceau('papa, ta,');
@@ -1312,7 +1320,7 @@ test('(04/11) une piste élaguée ne prend pas le numéro de son morceau ; sa pr
 test('(04/11) une voie élaguée passe de « dite » à « écrite » ; jamais sa première ; élagage éteint : rien ne change', async () => {
   const attendre = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setImmediate(r)); };
   const essai = async (reglages) => {
-    const s = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false, ...reglages });
+    const s = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false, epissage: false, ...reglages });
     Object.assign(s.ctx, { synapses: { mesurer() {}, vivante: (f, id) => !(f === 'voie' && /^non\|/.test(id)) } });
     s.ctx.morceau('papa, ta mère, a appelé,');
     s.appels[0].resoudre({ texte: 'DIRE : non\nAh bon ?' });
@@ -1327,7 +1335,7 @@ test('(04/11) une voie élaguée passe de « dite » à « écrite » ; jamais s
 
 // (04/11, l'élagage de ses synapses) famille « piste » : ménager, ne plus lancer ce qui ne sert jamais (un appel à Claude en moins)
 test('(04/11) une piste élaguée n’est plus lancée ; jamais deux morceaux de suite sans piste', () => {
-  const s = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false });
+  const s = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false, epissage: false });
   Object.assign(s.ctx, { Parcours: require('./parcours.js'), synapses: { mesurer() {}, vivante: (f, id) => !(f === 'piste' && id === 'sonnet|mot') } });
   s.ctx.morceau('papa, ta, mère,');
   assert.deepStrictEqual(s.appels.map(a => /Son morceau (\d+)/.exec(a.prompt)[1]), ['1', '3'],
@@ -1345,7 +1353,7 @@ test('(04/11) ses synapses : visibles dans Immunité, épinglées ou rétablies 
   assert.match(SRC.slice(i, i + 900), /\['epingler', 'desepingler', 'retablir'\]\.includes\(action\)/);
   assert.match(SRC, /'pistes_regler', 'synapses_voir',/);
   const SENS = fs.readFileSync(path.join(__dirname, 'public', 'sens.html'), 'utf8');
-  assert.match(SENS, /\['elagage', 'elagage'\]\]\)/, 'son interrupteur dans Sens');
+  assert.match(SENS, /\['elagage', 'elagage'\][,\]]/, 'son interrupteur dans Sens');   // (04/11) l'épissage le suit
 });
 
 // (04/11, Ahmed : « le système immunitaire a reconnu sa propre voix pour un usurpateur ; il me faut un bouton qui dise que ça provient

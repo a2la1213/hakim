@@ -72,7 +72,7 @@ function page() {
   const appels = [];
   let reponse = { ok: true, json: () => Promise.resolve({ texte: 'Bonjour' }) };
   const ctx = { etat: { reglages: { langue: 'fr' } }, jeton: () => 'x', encodeURIComponent, sousTitre() {}, entendreEnCours() {},
-    tempsMorceau: () => '', morceauNeuf: (t) => t, journalVoix() {}, Date,
+    tempsMorceau: () => '', morceauNeuf: (t) => t, journalVoix() {}, Date, patienceConversation: () => 300,
     fetch: (url) => { appels.push(url); return Promise.resolve(reponse); } };
   vm.createContext(ctx);
   vm.runInContext(PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2), ctx);
@@ -83,13 +83,14 @@ function page() {
 }
 const tour = () => new Promise(r => setImmediate(r));
 
-test('page : la première demande part dès 0,3 s de voix (15 fenêtres), les suivantes toutes les 0,5 s', async () => {
+// (04/11, 11:03, Ahmed : « tout relier ») le premier mot et chaque suite après le délai de la Conversation (0,3 s : 15 fenêtres)
+test('page : la première demande part dès 0,3 s de voix (15 fenêtres), les suivantes aussi toutes les 0,3 s', async () => {
   const p = page();
   p.cap.fenetres = 14; p.ctx.vifConversation(p.conv); assert.strictEqual(p.appels.length, 0);
   p.cap.fenetres = 15; p.ctx.vifConversation(p.conv); assert.strictEqual(p.appels.length, 1, 'premier mot : 0,3 s suffisent');
   await tour(); await tour();
-  p.cap.fenetres = 30; p.ctx.vifConversation(p.conv); assert.strictEqual(p.appels.length, 1, 'ensuite : 0,5 s de neuf');
-  p.cap.fenetres = 40; p.ctx.vifConversation(p.conv); assert.strictEqual(p.appels.length, 2);
+  p.cap.fenetres = 29; p.ctx.vifConversation(p.conv); assert.strictEqual(p.appels.length, 1, 'ensuite : 0,3 s de neuf');
+  p.cap.fenetres = 30; p.ctx.vifConversation(p.conv); assert.strictEqual(p.appels.length, 2);
 });
 
 test('page : un refus de l\'oreille ne coûte plus 0,5 s : la demande repart au tic suivant', async () => {

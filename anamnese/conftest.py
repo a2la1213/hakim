@@ -63,6 +63,11 @@ def _vie_interieure_isolee(monkeypatch, tmp_path):
     except Exception:
         pass
     try:
+        import emotions_creees                # ses émotions créées et ses rectifications (« la peur, c'est du courage », 2026-11-04)
+        monkeypatch.setattr(emotions_creees, "JARVIS", d)
+    except Exception:
+        pass
+    try:
         import carnet                         # prédictions figées et carnet d'erreurs (2026-10-20)
         monkeypatch.setattr(carnet, "PREDICTIONS", d / "predictions.jsonl")
         monkeypatch.setattr(carnet, "ERREURS", d / "erreurs.jsonl")

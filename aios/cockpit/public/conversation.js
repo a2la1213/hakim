@@ -265,7 +265,9 @@
       } else {
         pauseEnCours += FENETRE_MS;
         // une respiration de 0,4 s : un bon endroit pour couper et transcrire PENDANT que tu parles
-        if (pauseEnCours === 400 && o.surPause) o.surPause(tour.length - 20);
+        // (04/11, 11:03, Ahmed : « tout relier ») au délai donné par la page (pauseMs), sinon 0,4 s ; une seule fois par pause
+        const pauseMs = o.pauseMs ? o.pauseMs() : 400;
+        if (pauseEnCours >= pauseMs && pauseEnCours - FENETRE_MS < pauseMs && o.surPause) o.surPause(tour.length - 20);
       }
       if (o.surSilence) o.surSilence(maintenant - derniereVoix);
       // (un son en cours, peut-être le début d'un mot, n'est pas coupé par la patience : il a 160 ms pour tenir)
@@ -311,6 +313,7 @@
         URL.revokeObjectURL(url);
       },
       get enParole() { return etatV === 'parole'; },
+      get pauseEnCours() { return pauseEnCours; },        // (04/11, 14:45) le blanc en cours dans ta parole (ms)
       get derniereTrame() { return derniereTrame; },
       get tonTour() { return hauteurs.length; },          // (2026-10-23) les trames voisées du tour : une voix, pas un bruit
       get pisteMuette() { return pisteMuette; },

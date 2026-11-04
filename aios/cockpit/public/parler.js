@@ -18,7 +18,7 @@ const NOMS_OUTILS = {
 const etat = {
   session: null, messages: [], flux: null, micro: null, transcription: null, lectureDe: null, joints: [],
   reglages: { modele: 'opus', modeleConversation: 'auto', reconnaissance: 'navigateur', langue: 'auto', voix: 'neuronale', voixFr: '', voixAr: '',
-    vitesse: 1.05, lectureAuto: false, patience: 3.5, scene: true, rapide: true, source: 'auto', volant: false, position: false, voixNeutre: false },
+    vitesse: 1.05, lectureAuto: false, patience: 3.5, scene: true, rapide: true, source: 'auto', volant: false, position: false, voixNeutre: false, sesParoles: true, patienceConversation: 0.3 },
   sttLocal: false, ttsLocal: false,
   interieur: null, derniereActivite: Date.now(), dites: [],
   conversation: null, present: [], parleDepuis: 0, coupeParAhmed: false, vision: null,
@@ -138,6 +138,20 @@ async function synchroniser() {
 }
 
 /* ---------- voix (synthèse) ---------- */
+// (04/11, 12:25) ce que sa voix a dit ces 30 dernières secondes, et son écho : une phrase « de papa » dont les trois cinquièmes des mots
+// (3 lettres et plus) sont les siens, reprise par le micro
+function noterSaVoix(t) {
+  const maintenant = Date.now();
+  etat.saVoix = (etat.saVoix || []).filter(x => maintenant - x.t < 30000).concat([{ t: maintenant, texte: String(t || '') }]).slice(-40);
+}
+function echoDeSaVoix(texte) {
+  const mots = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\[[^\]]*\]/g, ' ')
+    .split(/[^\p{L}\p{N}]+/u).filter(m => m.length >= 3);
+  const m1 = mots(texte);
+  if (m1.length < 3) return false;
+  const siens = new Set(mots((etat.saVoix || []).filter(x => Date.now() - x.t < 30000).map(x => x.texte).join(' ')));
+  return m1.filter(m => siens.has(m)).length / m1.length >= 0.6;
+}
 /* (04/11, Ahmed : « la différence entre la voix du Mac et Chatterbox ? j'aimerais que ça utilise la voix du smartphone quand c'est sur le
    smartphone ») dans l'appli (1.55), la voix du TÉLÉPHONE (son moteur Android) prend la place de la voix du système : instantanée, sans
    réseau, sans charger le Mac ; la page la parle comme une voix de navigateur (speak, cancel) ; chaque phrase dit son début et sa fin. */
@@ -176,6 +190,7 @@ const synthTelephone = window.HakimApp && window.HakimApp.voixTelephone ? (() =>
     speak(u) {
       const id = `t${++n}`; enAttente.set(id, u);
       u._appelPage = Date.now(); u._origine = typeof origineDe === 'function' ? origineDe(u.text) : null;   // (04/11) pour sa mesure
+      if (typeof noterSaVoix === 'function') noterSaVoix(u.text);      // (04/11, 12:25) pour reconnaître son écho
       try {
         if (window.HakimApp.voixTelephoneVoix) {
           const [texte, debit, langue, nom] = argumentsDe(u);
@@ -480,6 +495,7 @@ function creerLecteurNeuronal() {
     surFin: null, surSegment: null, fluxFini: true, hesitation: null, peutHesiter: null, rythme: null,
     appliquerSon() { if (element) element.muted = !!etat.sonCoupe; },
     dire(phrase) {
+      if (typeof noterSaVoix === 'function') noterSaVoix(phrase);     // (04/11, 12:25) pour reconnaître son écho
       if (pause) { pause.textes.push(...Voix.prononcable(phrase)); pause.fluxFini = false; return; }
       if (L.fluxFini && !attendre) { aParle = false; dejaParle = false; }   // (03/11) une nouvelle réponse
       L.fluxFini = false;
@@ -501,6 +517,7 @@ function creerLecteurNeuronal() {
     // (15:10) une parole dont la voix est déjà fabriquée (sa réponse soufflée) : à sa place, sans attendre la synthèse
     direAudio(texte, buf) {
       if (!buf || !buf.duration) { L.dire(texte); return; }
+      if (typeof noterSaVoix === 'function') noterSaVoix(texte);
       if (pause) { pause.textes.push({ langue: 'fr', texte }); pause.fluxFini = false; return; }
       if (L.fluxFini && !attendre) { aParle = false; dejaParle = false; }
       L.fluxFini = false;
@@ -956,6 +973,9 @@ function noterSegmentTelephone(t) { segmentTelephone = { meuble: meublesDits.has
 const meubleEnCours = () => !!(segmentTelephone && segmentTelephone.meuble && lecteurSysteme && lecteurSysteme.actif);
 const finLecture = () => {
   segmentTelephone = null;
+  // (04/11, 11:50) la suite que son ribosome a choisie ; (12:15, Ahmed : « des fenêtres d'ouverture d'oreille à chaque fois qu'il finit un
+  // chunk ») après chaque morceau, son oreille s'ouvre le délai de la Conversation : si tu parles, sa voix attend
+  if (typeof direRibosome === 'function') setTimeout(direRibosome, typeof patienceConversation === 'function' ? patienceConversation() : 0);
   if (typeof boutTelephoneSuivant === 'function') setTimeout(boutTelephoneSuivant, 0);   // (04/11) le bout qui attendait sa voix
   if (lecteur.actif) return;
   if (etat.conversation) etat.conversation.penseeEnPause = false;     // (04/11) sa pensée dite : ton tour reprend la main
@@ -1107,7 +1127,21 @@ const motsEnConversation = () => typeof reglagesCorps !== 'undefined' && reglage
 const motsPapaCaches = () => !!etat.conversation && !motsEnConversation();
 // (04/11, Ahmed : « en Conversation ou en Télépathie, je veux voir seulement la pensée écrite, pas sa réponse écrite ; la réponse écrite,
 // on la garde seulement hors de ces modes ») dans les deux modes : sa pensée s'écrit (🧠), sa réponse se dit sans s'écrire
-const reponseCachee = () => !!etat.conversation;
+// (04/11, 10:20, Ahmed : « je ne vois plus quand il m'envoie des documents ; qu'il soit aussi possible de réafficher ses paroles dans le
+// mode normal et le mode Conversation ») « Ses paroles » : d'un geste (gardé), ses réponses cachées se réaffichent, dans les deux modes ;
+// Télépathie reste sans texte. Ses fichiers se montrent toujours, même quand sa réponse est cachée (sans son texte).
+const parolesVisibles = () => !!etat.reglages.sesParoles && !enTelepathie();
+const reponseCachee = () => !!etat.conversation && !parolesVisibles();
+// (04/11, 12:05) en Conversation avec l'épissage (Sens, oui par défaut), sa voix suit son ribosome, pas sa réponse en entier
+const voixEpissee = () => !!etat.conversation && typeof reglagesCorps !== 'undefined' && !!reglagesCorps && reglagesCorps.epissage !== false;
+const PIECE_ID = /^\d{8}-\d{6}-[0-9a-f]{6}$/;
+const aDesPieces = (m) => !!m && m.qui === 'j' && (m.pieces || []).some(x => x && PIECE_ID.test(String(x.id)));
+// caché à l'écran : « dans ta tête » (tes mots, ou les siens sans « Ses paroles »), ou sa réponse pendant la conversation
+function messageMasque(m) {
+  if (m.cache && !(m.qui === 'j' && parolesVisibles())) return true;
+  return reponseCachee() && m.qui === 'j' && (Number(m.ts) || Number(m.id) || Date.now()) >= (etat.conversation.debut || 0);
+}
+const piecesSeules = (m) => ({ id: m.id, qui: 'j', texte: '', pieces: m.pieces, ts: m.ts });
 const parolesEnvoyees = { papa: '', hakim: '' }, parolesEnAttente = {};
 let parolesMinuteur = null;
 /* (04/11, Hakim pour papa : « un chiffre mesuré entre le moment où j'écris un mot et celui où il apparaît à l'écran de ton téléphone,
@@ -1191,7 +1225,8 @@ function envoyerParoles(qui, texte) {
   }, 250);
 }
 lecteurNeuronal.surSegment = (t, duree) => {
-  // (04/11) un bout de sa réponse commence : il s'écrit à cet instant, à la suite des bouts déjà dits
+  // (04/11) un bout de sa réponse commence : il s'écrit à cet instant, à la suite des bouts déjà dits ; (12:40) et ce que son ribosome a choisi
+  if (typeof revelerRibosome === 'function') revelerRibosome(t, duree);
   if (typeof bouts !== 'undefined' && bouts.enFile[0] === t) {
     bouts.enFile.shift();
     // (04/11, Ahmed : « check le temps entre ma parole et sa première pensée répondue ») chaque bout qui sonne : depuis ton premier mot
@@ -1209,7 +1244,7 @@ lecteurNeuronal.surSegment = (t, duree) => {
   couperAuDebutDeSaVoix();                                             // (09:12)
 };
 lecteurNeuronal.surPanne = noterPanneVoix;
-if (lecteurSysteme) { lecteurSysteme.surSegment = (t) => { noterSegmentTelephone(t); noterParole(t); noterMorceau(t); sousTitre(t); }; lecteurSysteme.surMot = () => pulser(0.35); }
+if (lecteurSysteme) { lecteurSysteme.surSegment = (t) => { noterSegmentTelephone(t); noterParole(t); noterMorceau(t); sousTitre(t); if (typeof revelerRibosome === 'function') revelerRibosome(t); }; lecteurSysteme.surMot = () => pulser(0.35); }
 /* ---------- Comment et où sa parole s'est arrêtée (30/10, 14:50, Ahmed, relayé par Hakim et confirmé : « qu'il sache, à
    l'oral comme à l'écrit, comment sa réponse a été interrompue et où exactement sa phrase s'est arrêtée ») ----------
    Chaque fin de sa parole a sa CAUSE : voix_ahmed (Ahmed l'a coupé en parlant : le micro), stop (Stop, « stop », Échap), pause,
@@ -1963,12 +1998,13 @@ function boutDire(m, p) {
 }
 
 function majMessage(m) {
-  if (m.cache) return;                                   // « dans ta tête » : ni affiché, ni re-rendu à chaque morceau
+  const masque = messageMasque(m);
+  if (masque && !aDesPieces(m)) return;                  // « dans ta tête » : ni affiché, ni re-rendu à chaque morceau ; (04/11) ses fichiers, si
   const fil = $('fil');
   const el = fil.querySelector(`[data-id="${esc(m.id)}"]`);
   if (!el) return rendre();
   const enBas = fil.scrollHeight - fil.scrollTop - fil.clientHeight < 80;
-  el.outerHTML = htmlMessage(m);
+  el.outerHTML = htmlMessage(masque ? piecesSeules(m) : m);
   if (enBas) fil.scrollTop = fil.scrollHeight;
   if ((m.pieces || []).length) chargerApercus();
 }
@@ -1986,9 +2022,9 @@ function rendre() {
   const caches = Math.max(0, etat.messages.length - etat.fenetre);
   // (21:00) « dans sa tête » : pas affichés ; (21:34) et pour lui, pendant la conversation, TOUT ce qu'il a dit depuis qu'elle
   // a commencé (ses réponses, ses petits mots, ses tours de lui-même, même revenus par la synchro) : seulement sa voix
-  const tete = reponseCachee() ? (etat.conversation.debut || 0) : null;   // (04/11) en Conversation et en Télépathie, sa réponse ne s'écrit pas
+  // (04/11) en Conversation et en Télépathie, sa réponse ne s'écrit pas, sauf « Ses paroles » ; ses fichiers, toujours (messageMasque)
   const vus = etat.messages.slice(-etat.fenetre)
-    .filter(m => !m.cache && !(tete != null && m.qui === 'j' && (Number(m.ts) || Number(m.id) || Date.now()) >= tete));
+    .filter(m => !messageMasque(m) || aDesPieces(m));
   // (26/10) des éléments montrés dans le fil sans être des messages de la conversation (etat.aCote : [{ ts, html }], fournis
   // par un bloc plus bas) : chacun à son heure, jamais enregistré dans la conversation
   const debut = caches ? quandMessage(vus[0]) : 0;
@@ -2001,7 +2037,7 @@ function rendre() {
       const t = quandMessage(m), jour = t ? jourMessage(t) : '';
       const separation = jour && jour !== jourPrecedent ? `<div class="jour">${esc(jour)}</div>` : '';
       if (jour) jourPrecedent = jour;
-      return separation + avant(t) + htmlMessage(m);
+      return separation + avant(t) + htmlMessage(messageMasque(m) ? piecesSeules(m) : m);
     }).join('') + aCote.slice(k).map(x => x.html).join('');
   if (enBas) fil.scrollTop = fil.scrollHeight;
   chargerApercus();
@@ -2112,7 +2148,8 @@ async function envoyer(texte, oral, dejaRelance) {
   if (typeof bouts !== 'undefined') bouts.base = bouts.dits.length;
   // (15:02) sa vraie réponse prend la place du brouillon ; (04/11) en Conversation et en Télépathie, sa pensée reste : sa réponse ne s'écrit pas
   if (typeof retirerSouffle === 'function' && !(oral && reponseCachee())) retirerSouffle();
-  arreterTout(true, { garder: true, raison: 'message', garderVoix: !!souffleDit });
+  // (04/11, 12:30, Ahmed : « quand la traduction du ribosome commence, il ne coupe jamais sa parole ») avec l'épissage, ta phrase ne fait pas taire sa voix
+  arreterTout(true, { garder: true, raison: 'message', garderVoix: !!souffleDit || voixEpissee() });
   $('q').value = ''; ajuster();
   const avant = etat.messages.filter(x => x.qui === 'u' && x.ts);
   const tPrecedent = etat.session && avant.length ? avant[avant.length - (dejaRelance ? 2 : 1)]?.ts : null;
@@ -2130,7 +2167,7 @@ async function envoyer(texte, oral, dejaRelance) {
     // (16:45, Ahmed : « que la réflexion soit inexistante par défaut, remplacée par la pensée qui sort au même moment du haut-parleur
     // et en message sur l'interface ») en Conversation, sa réponse s'écrit au rythme de sa voix : rien (ni « réfléchit… ») avant son
     // premier son, puis ce que sa voix a dit ; tout, quand sa voix a fini
-    ...(oral && etat.conversation && lecteur && lecteur.impl === lecteurNeuronal && !enTelepathie()
+    ...(oral && etat.conversation && lecteur && lecteur.impl === lecteurNeuronal && !enTelepathie() && !voixEpissee()
       ? { auRythme: true, ditCar: souffleDit ? Voix.prononcable(souffleDit).map(x => x.texte).join(' ').length + 1 : 0 } : {}) };
   etat.messages.push(m);
   sauver();                                              // la question survit à une fermeture de page
@@ -2139,7 +2176,8 @@ async function envoyer(texte, oral, dejaRelance) {
   widgetApp('reflechit');
   rendre(); humeur();
   const decoupe = Voix.decoupeur({ vif: true });           // (03/11) ses premiers mots partent tout de suite
-  const auto = (etat.reglages.lectureAuto || etat.conversation || etat.reglages.volant) && lecteur;
+  // (04/11, 12:05) en Conversation, avec l'épissage, seul son ribosome parle : sa réponse s'écrit, ses mots choisis se disent
+  const auto = (etat.reglages.lectureAuto || etat.conversation || etat.reglages.volant) && lecteur && !voixEpissee();
   if (auto) etat.decoupeFlux = decoupe;                  // (23/10) sa phrase en cours d'arrivée, si on le coupe
   if (auto) etat.reponseVoix = m.id;                                  // (13:30) une réponse dite : ses meubles peuvent couvrir ses trous
   if (auto && etat.conversation && lecteur.impl === lecteurNeuronal) lecteurNeuronal.attendreReponse();   // (03/11) il réfléchit : un trou se meuble
@@ -2153,7 +2191,7 @@ async function envoyer(texte, oral, dejaRelance) {
   let fin = null;
   try {
     const corpsEnvoi = JSON.stringify({ texte, oral: !!oral, modele: etat.conversation ? etat.reglages.modeleConversation : etat.reglages.modele, source: etat.reglages.source || 'auto', session: etat.session,
-        t_precedent: tPrecedent, t_debut: tDebut, fichiers: joints.map(x => x.chemin), pensees_dites: dites,
+        t_precedent: tPrecedent, t_debut: tDebut, fichiers: joints.map(x => x.chemin), pensees_dites: dites, delai_ms: etat.conversation ? patienceConversation() : null,
         parle_ms: oral && etat.paroleDebut ? etat.paroleDebut : undefined,   // (03/11) son moment d'origine, pour tout réunir au même point
         conversation: !!etat.conversation, present: presentEnvoye, maintenant: Date.now(), camera,
         appareil: appareilPage(), volant: !!etat.reglages.volant, position: positionAEnvoyer(), ecran: imageEcran(),
@@ -2210,7 +2248,7 @@ async function envoyer(texte, oral, dejaRelance) {
         else if (o.t === 'statut' && typeof o.x === 'string') {   // (2026-10-23) reçu, il finit d'abord un travail
           humeur(o.x.slice(0, 160)); $('annonce').textContent = o.x.slice(0, 160);
           // (28/10) une panne d'Anthropic : dite à voix haute quand la voix est active (téléphone plié, il n'aurait rien vu)
-          if (o.dire && (etat.conversation || etat.reglages.volant || etat.reglages.lectureAuto) && !lecteur.actif) lecteur.dire(o.x.slice(0, 160));
+          if (o.dire && !(typeof voixEpissee === 'function' && voixEpissee()) && (etat.conversation || etat.reglages.volant || etat.reglages.lectureAuto) && !lecteur.actif) lecteur.dire(o.x.slice(0, 160));
         } else if (o.t === 'debut') {
           if (o.modele) { m.modele = o.modele; majMessage(m); montrerMode(o.modele); }   // (03/11) son mode, à côté de l'orbe
         } else if (o.t === 'source') {                        // le forfait à sa limite : l'API, puis le local
@@ -2468,7 +2506,9 @@ if (window.HakimApp && window.HakimApp.telepathie) {
 // (04/11, Ahmed : « il doit pouvoir parler sans arrêter la musique, s'il le veut ») son choix ([[musique: …]]) : « garder », il ne
 // prend pas le son ; « baisser », la musique baisse le temps de sa voix (appli 1.62 ; avant, elle continue) ; « pause » par défaut
 let focusTenu = false, focusLache = 0;
-const modeMusique = () => etat.musiqueVoix || 'pause';
+// (04/11, 12:55, papa par Hakim, accord d'Ahmed : « que sa voix ne mette plus jamais ma musique en pause, et un bouton pour lui retirer ce
+// pouvoir ») par défaut il parle par-dessus (« garder ») ; sa pause n'agit que si papa la lui permet (Sens : musique_pause)
+const modeMusique = () => { const m = etat.musiqueVoix || 'garder'; return m === 'pause' && typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.musique_pause === false ? 'garder' : m; };
 setInterval(() => {
   if (!window.HakimApp || !window.HakimApp.focusVoix) return;
   const mode = modeMusique(), baisser = mode === 'baisser' && !!window.HakimApp.focusVoixMode;
@@ -3007,7 +3047,8 @@ function vifConversation(conv) {
   const n = cap.fenetres;                                                // fenêtres de 20 ms
   // (13:25, papa via Hakim : « le premier mot arrive en retard ») le premier mot dès 0,3 s de voix (le petit Whisper y lit
   // déjà « Bonjour », mesuré le 03/11), puis 0,5 s de neuf à chaque fois ; au plus 30 s
-  const premier = !e.confirme && !e.vif, pas = premier ? 15 : 25;
+  // (04/11, 11:03, Ahmed : « tout relier ») le premier mot puis chaque suite après le délai de la Conversation (0,3 s : 15 fenêtres)
+  const pas = Math.max(5, Math.round(patienceConversation() / 20));
   if (n - e.coupe < pas || n - (e.vifFenetre || 0) < pas || n - e.coupe > 1500) return;
   const de = e.coupe, wav = cap.segment(de, n);
   if (!wav) return;
@@ -3095,6 +3136,8 @@ const PENSEE_PARASITE = /je ne (?:vais|peux) pas (?:non plus )?(?:reprendre|suiv
 function surSouffle(o) {
   if (!etat.conversation || !o || !o.texte) return;
   if (o.niveau === 'papa') { montrerMorceauPapa(o); return; }        // (04/11) tes mots, morceau par morceau
+  if (o.niveau === 'ribosome') { surRibosome(o); return; }           // (04/11, 11:50) son ribosome a lu une pensée
+  if (o.niveau === 'ribosome_stop') { arreterEpissure(o.cause || 'outil', o.tour); return; }   // (04/11, 15:10) ta demande d'outil
   // (04/11, Ahmed : « mes pensées parasites sont bien flagguées ; maintenant il faut la jeter sans la calculer, sinon ça alourdit tout »)
   // jetée : ni écrite, ni dite, ni sa dernière pensée, ni une voix calculée d'avance ; trop longue (coupée au milieu d'un mot) aussi
   // (04/11) Super Hakim qui a choisi de grands morceaux : ses pensées peuvent être plus longues (o.limite, donnée par le cockpit)
@@ -3117,10 +3160,12 @@ function surSouffle(o) {
     // (04/11, Ahmed : « il prononce toujours la dernière pensée : quand il détecte une seconde de pause, il rebondit directement avec
     // elle » ; « par défaut, sauf décision de sa part ») sa dernière pensée du tour, dite ou pas (« jamais » : il l'a gardée exprès)
     const nP = Number(o.n) || 0, dp = etat.derniereSiennePensee;
-    if (nP && (!dp || dp.tour !== o.tour || nP > dp.n)) etat.derniereSiennePensee = { n: nP, tour: o.tour, texte, jamais: o.jamais === true };
+    if (nP && (!dp || dp.tour !== o.tour || nP > dp.n)) etat.derniereSiennePensee = { n: nP, tour: o.tour, texte, jamais: o.jamais === true, epissage: o.epissage === true };
     // (04/11, Ahmed : « le triage de la voix et sa sélection de ce qu'il faut dire : la même règle, la même source que l'écriture de la
     // pensée sans le dire ») un seul tri, au cockpit (pret) : dite, ou écrite sans être dite ; ici, rien ne le refait
     if (!s.pret) {
+      // (04/11, l'épissage) gardée dans le pavé de sa pensée : à ta pause, son subconscient y choisit les mots de sa phrase
+      if (o.epissage) { ajouterAuPave(o.tour, texte); mesurerEcran('pensee', o.ts); return; }
       montrerPensee('🧠 il pense, sans le dire', texte, true);
       mesurerEcran('pensee', o.ts);                                   // (04/11) écrite : jusqu'à ton écran
       // (04/11, Ahmed : « la bonne pensée au bon moment, redirigée au bon input pour la voix ») une pensée gardée peut être dite
@@ -3155,14 +3200,15 @@ function surSouffle(o) {
 let bouts = { tour: null, prochain: 1, liste: new Map(), enFile: [], dits: [] };
 function recevoirBout(s, n, tour) {
   const conv = etat.conversation;
-  if (!conv || !n || !souffleAutorise()) return;
-  if (bouts.tour !== tour) bouts = { tour, prochain: 1, liste: new Map(), enFile: [], dits: [] };
+  // (04/11, 13:10, Ahmed : « tout ce qui est traduit par le ribosome sort en priorité par la bouche ») ce que son ribosome a traduit passe toujours
+  if (!conv || !n || (!s.ribosome && !souffleAutorise())) return;
+  if (bouts.tour !== tour) bouts = { tour, prochain: 1, liste: new Map(), enFile: [], dits: [], fileTel: bouts.fileTel || [] };
   if (n < bouts.prochain || bouts.liste.has(n)) return;
   const b = { n, texte: s.texte, buf: null, rate: false, t: Date.now(), coupe: !!s.remplace, sansMeuble: !!s.sansMeuble };
   // (04/11) la voix du téléphone : dit tout de suite, sans voix fabriquée au Mac
   if (typeof voixDuTelephone === 'function' && voixDuTelephone()) {
     const motsDe = (x) => String(x).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(m => m.length > 2), m1 = motsDe(b.texte);
-    if (n < bouts.prochain || (m1.length && bouts.dits.some(d => { const m2 = new Set(motsDe(d)); return m1.filter(m => m2.has(m)).length / m1.length >= 0.75; }))) return;
+    if (n < bouts.prochain || (!s.ribosome && m1.length && bouts.dits.some(d => { const m2 = new Set(motsDe(d)); return m1.filter(m => m2.has(m)).length / m1.length >= 0.75; }))) return;   // (13:10) jamais un morceau traduit
     bouts.prochain = n + 1;
     // (04/11, Ahmed : « s'il voit que sa 3e pensée n'est pas pertinente, il l'arrête ») il coupe ce qu'il disait et dit celle-ci
     if (s.remplace && meubleEnCours()) { b.coupe = false; b.sansMeuble = true; }   // (04/11) le meuble qui joue fait la transition : la pensée attend sa fin
@@ -3170,6 +3216,9 @@ function recevoirBout(s, n, tour) {
     // (04/11, Ahmed : « sinon ça rafale trop ») jamais de file de bouts : sa voix parle encore, le plus récent attend qu'elle se taise
     // (un plus ancien en attente est remplacé) ; trop vieux (6 s) quand elle se tait : oublié
     if (lecteurSysteme.actif) {
+      // (04/11, 14:20, Ahmed : « je vois sa pensée seule, pas l'épissée pour parler ») ce que son ribosome a épissé n'est jamais remplacé
+      // ni oublié : il attend son tour, dans l'ordre
+      if (s.ribosome) { b.dit = meublerSaut(b); bouts.fileTel = (bouts.fileTel || []).concat([b]); return; }
       if (bouts.attenteTel) montrerPensee('🧠 il pense, sans le dire', bouts.attenteTel.texte, true);   // remplacé : pensé, pas dit
       // (1.60, Ahmed : « chaque cœur qui traite le même chunk sur le Mac et sur le smartphone doit être relié et coordonné ») ce qu'il
       // dira (son meuble compris) : sa voix se calcule déjà sur le téléphone, pendant que la précédente se dit
@@ -3250,6 +3299,8 @@ function direBoutTelephone(conv, b) {
   if (typeof journalVoix === 'function') journalVoix('bout_entendu', { n: b.n, tour: Number(bouts.tour) || 0 });   // (relecture) la pensée qu'il dit vraiment
 }
 function boutTelephoneSuivant() {
+  const f = typeof bouts !== 'undefined' ? bouts.fileTel || [] : [];
+  if (f.length && etat.conversation && !(lecteurSysteme && lecteurSysteme.actif)) { direBoutTelephone(etat.conversation, f.shift()); return; }   // (14:20) l'épissé d'abord, sans délai d'oubli
   const b = typeof bouts !== 'undefined' ? bouts.attenteTel : null, conv = etat.conversation;
   if (!b || !conv || (lecteurSysteme && lecteurSysteme.actif)) return;
   bouts.attenteTel = null;
@@ -3279,6 +3330,179 @@ function direBouts() {
 // (04/11, Ahmed, capture à l'appui : « il faut décharger la pensée à la première pensée, sinon il envoie toutes ses pensées au fur et à
 // mesure et ça fait des gros pavés ; chaque pensée prononcée est envoyée dans la pensée, puis la 2e dans une nouvelle pensée ») une
 // pensée = un élément : celle qui sonne s'écrit seule, la suivante dans un nouvel élément (les 6 dernières restent)
+// (04/11, 11:40, Ahmed : « dans la conversation, je dois voir un pavé de sa pensée ; quand il prononce la parole, elle arrive épissée :
+// pas tous les mots de son pavé sont sélectionnés ») le pavé de sa pensée : ses pensées de piste, dans un seul élément ; à ta pause, les
+// mots que son subconscient a gardés s'allument, les autres restent en gris ; ce qui vient après commence un nouveau pavé
+const MOTS_EPISSES = /[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu;   // les mots comptés comme au cockpit (epissageDe)
+function htmlPave(texte, mots) {
+  const t = String(texte || '');
+  if (!mots) return esc(t);
+  const garde = new Set(mots);
+  let h = '', i = 0, k = 0;
+  for (const m of t.matchAll(MOTS_EPISSES)) {
+    h += esc(t.slice(i, m.index)) + (garde.has(k) ? `<b class="garde" style="font-style:normal">${esc(m[0])}</b>` : `<span class="jete" style="opacity:.4">${esc(m[0])}</span>`);
+    i = m.index + m[0].length; k++;
+  }
+  return h + esc(t.slice(i));
+}
+// (04/11, 11:59, Ahmed : « je veux voir l'épissure tout le temps : ce qu'il garde ou pas, et ce qu'il rajoute ») ce que sa voix dit, ses
+// petits mots ajoutés allumés à part
+function htmlDit(dits) {
+  return (dits || []).map((d) => {
+    const restants = (d.ajoutes || []).map(m => String(m).toLowerCase());
+    return String(d.texte || '').replace(MOTS_EPISSES, (m) => {
+      const k = restants.indexOf(m.toLowerCase());
+      if (k < 0) return esc(m);
+      restants.splice(k, 1);
+      return `<b class="ajoute" style="color:#5eead4;font-style:normal">${esc(m)}</b>`;
+    });
+  }).join(' ');
+}
+function poserPave(cle, titre, html) {
+  // (04/11, 11:59) sous l'orbe aussi : en Conversation, c'est là que papa regarde
+  const scene = typeof $ === 'function' ? $('epissureScene') : null;
+  if (scene) { scene.innerHTML = `<span class="quand">${titre}</span> ${html}`; scene.hidden = false; }
+  // (04/11, 14:30, Ahmed, capture : « la pensée s'affiche avant l'affichage ; j'aimerais l'inverse ») mis à jour, il garde sa place :
+  // l'instant où sa pensée est née, avant sa réponse consciente
+  const avant = (etat.aCote || []).find(x => x.cle === cle);
+  etat.aCote = (etat.aCote || []).filter(x => x.cle !== cle);
+  etat.aCote.push({ ts: avant ? avant.ts : Date.now(), cle, html: `<div class="m j brouillon" style="opacity:.85;font-style:italic"><span class="quand">${titre}</span><div>${html}</div></div>` });
+  const paves = etat.aCote.filter(x => String(x.cle).startsWith('pave-'));
+  if (paves.length > 6) { const vieux = new Set(paves.slice(0, paves.length - 6)); etat.aCote = etat.aCote.filter(x => !vieux.has(x)); }
+  rendre();
+}
+// (04/11, 11:50, Ahmed : « tous les chunks s'intègrent dans la même réponse, sélectionnée comme un ribosome qui lit et choisit les mots au
+// fur et à mesure ») un seul pavé par tour : ses pensées s'y ajoutent, son ribosome y allume au fil les mots qu'il garde ; sa voix dit
+// ce qu'il a choisi, d'un seul souffle, dès que papa se tait (et la suite, à la fin de chaque phrase)
+const htmlEpissure = (p) => htmlPave(p.textes.join(' '), p.mots) + (p.dits.length ? `<div class="dit" style="font-style:normal;margin-top:4px">🗣 « ${htmlDit(p.dits)} »</div>` : '')
+  + (p.coupure ? `<div class="coupure" style="font-style:normal;margin-top:2px">${p.coupure === 'continue' ? '✋ coupé : il finit ce qu’il disait' : '✋ coupé : il te laisse la parole'}</div>` : '');
+// (04/11, 12:05) un pavé par tour : la réponse d'un tour fini rejoint le sien, même quand papa a déjà repris (les 8 derniers gardés)
+function paveDe(tour) {
+  etat.paves = etat.paves || {};
+  if (!etat.paves[tour]) {
+    etat.paves[tour] = { cle: `pave-${tour}-${Date.now()}`, tour, textes: [], mots: null, dits: [] };
+    const tours = Object.keys(etat.paves).map(Number).sort((a, b) => a - b);
+    for (const t of tours.slice(0, Math.max(0, tours.length - 8))) delete etat.paves[t];
+  }
+  return etat.paves[tour];
+}
+function ajouterAuPave(tour, texte) {
+  const p = paveDe(tour);
+  p.textes.push(String(texte));
+  poserPave(p.cle, p.mots ? '🧬 sa réponse, épissée au fil' : '🧠 sa pensée', htmlEpissure(p));
+}
+// (04/11, 12:40, Ahmed : « le ribosome qui lit l'épissage balance le signal en parallèle à la voix et à l'écriture : ça doit s'écrire
+// pendant que ça parle ») ce qu'il choisit attend sa voix : rien ne s'allume ni ne s'écrit avant qu'elle le dise (revelerRibosome)
+function surRibosome(o) {
+  const p = paveDe(o.tour);
+  if (String(o.pave || '').length > p.textes.join(' ').length) p.textes = [String(o.pave)];   // le cockpit fait foi
+  etat.epissureTour = Math.max(Number(etat.epissureTour) || 0, Number(o.tour) || 0);
+  if (o.texte && etat.riboStop != null && Number(o.tour) <= etat.riboStop) o = { ...o, texte: '' };   // (15:10) son épissure arrêtée : plus un mot
+  if (o.texte) {
+    const vus = new Set(p.motsLus || []), mots = Array.isArray(o.mots) ? o.mots : [];
+    etat.riboFile = (etat.riboFile || []).concat([{ tour: o.tour, texte: String(o.texte), recu: Date.now(), mots: mots.filter(i => !vus.has(i)),
+      ajoutes: Array.isArray(o.ajoutes) ? o.ajoutes.slice() : [] }]);
+    p.motsLus = mots.slice();
+    if (typeof journalVoix === 'function') journalVoix('ribosome_recu', { tour: o.tour, k: o.k, mots: String(o.texte).split(/\s+/).filter(Boolean).length });   // (14:20) de quoi suivre chaque morceau épissé
+  }
+  poserPave(p.cle, p.mots ? '🧬 sa réponse, épissée au fil' : '🧠 sa pensée', htmlEpissure(p));
+  direRibosome();
+  preparerRibosome();
+}
+// (04/11, 12:50, Ahmed : « il ne doit rien prononcer d'autre que ses pensées épissées, pas même ses pensées ou autre ; ce qui sort de sa
+// bouche doit toujours être épissé, et prioritaire sur le reste ») en Conversation avec l'épissage, ce qu'il allait dire d'autre (la pensée
+// de son cerveau, un petit mot, un message de lui-même, ce que tu n'avais pas entendu) part d'abord à son ribosome
+function versRibosome(texte, avant = '') {
+  const t = String(texte || '').trim();
+  if (!t || NON_REPONSE.test(t)) return;
+  fetch('/api/jarvis/ribosome', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+    body: JSON.stringify({ texte: t.slice(0, 2000), avant: String(avant || '').slice(0, 600) }) }).catch(() => {});
+}
+// (04/11, 12:45, Ahmed : « s'il a fini de préparer sa parole avant que j'aie fini de parler, il attend que je me taise et la lance direct
+// quand je finis ») ce qu'il dira, s'il attend encore : sa voix du téléphone le calcule d'avance (exactement le texte que direRibosome
+// lui donnera), pour partir d'un coup à ton silence
+function preparerRibosome() {
+  const f = etat.riboFile || [];
+  if (!f.length || typeof voixDuTelephone !== 'function' || !voixDuTelephone() || !lecteurSysteme || typeof lecteurSysteme.preparer !== 'function') return;
+  const tour = f[0].tour;
+  lecteurSysteme.preparer(f.filter(x => x.tour === tour).map(x => x.texte).join(' '));
+}
+// (04/11, 13:15, Ahmed : « l'épissure a été notée, mais je n'ai rien entendu ») mesuré : traduit pendant qu'il parlait, rien ne relançait sa voix
+// après sa fin ; en Conversation, ce qui est traduit et attend part au plus 0,3 s après que sa voix est libre et que tu t'es tu
+setInterval(() => {
+  const c = etat.conversation;
+  if (!c || typeof direRibosome !== 'function') return;
+  // (04/11, 15:10, Ahmed : « le stop, c'est 10 s de silence : c'est sa parole qui s'arrête à ce stop ») ta voix entendue (pas ta respiration)
+  if (c.capteur && c.capteur.enParole && !(Number(c.capteur.pauseEnCours) >= 300)) etat.papaVoixA = Date.now();
+  if (voixEpissee() && etat.papaVoixA && Date.now() - etat.papaVoixA >= 10000) { etat.papaVoixA = 0; arreterEpissure('silence'); }
+  direRibosome();
+}, 300);
+// le stop de son épissure (10 s de ton silence, ou ta demande d'outil, dite par le cockpit) : ce qu'elle avait encore à dire est laissé, sa voix
+// s'arrête, et le cockpit la ferme ; l'épissure suivante (un numéro plus grand) parle
+function arreterEpissure(cause, tour) {
+  const t = Number(tour != null ? tour : etat.epissureTour);
+  if (!(t > 0)) return;
+  etat.riboStop = Math.max(etat.riboStop != null ? etat.riboStop : -1, t);
+  etat.riboFile = (etat.riboFile || []).filter(x => Number(x.tour) > etat.riboStop);
+  if (typeof bouts !== 'undefined' && Number(bouts.tour) <= etat.riboStop) { bouts.fileTel = []; bouts.attenteTel = null; }
+  if ((etat.riboEnVoix || []).length && lecteur.actif) lecteur.arreter();
+  etat.riboEnVoix = [];
+  if (typeof journalVoix === 'function') journalVoix('epissure_stop', { cause, tour: t });
+  if (cause === 'silence') fetch('/api/jarvis/ribosome/stop', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ tour: t }) }).catch(() => {});
+}
+// ce que son ribosome a choisi, dit d'un seul souffle (un tour à la fois, dans l'ordre), quand sa voix est libre
+function direRibosome() {
+  const f = etat.riboFile || [], c = etat.conversation;
+  const attente = f.length ? Date.now() - (Number(f[0].recu) || Date.now()) : 0;
+  // (04/11, 14:48) une attente de plus de 5 s est notée, avec sa cause (sa voix qui parle encore, ou la pièce qui parle), une fois par 10 s
+  const noterAttente = (cause) => { if (attente > 5000 && Date.now() - (etat.riboAttenteNotee || 0) > 10000 && typeof journalVoix === 'function') { etat.riboAttenteNotee = Date.now(); journalVoix('ribosome_attente', { cause, ms: attente }); } };
+  if (!f.length || !c) return;
+  if (lecteur.actif) { noterAttente('voix'); return; }
+  const tour = f[0].tour, lot = f.filter(x => x.tour === tour);
+  // (04/11, 13:10, Ahmed : « dès que le ribosome commence, il ne s'arrête jamais jusqu'à la fin, excepté si je parle : il attend la fin de
+  // ma parole ») tu parles : sa voix attend ta fin, puis reprend là où elle en était ; rien de ce qui est traduit n'est laissé
+  // (04/11, 14:45, mesuré : 5 tours épissés en attente 20 s et plus, papa et ses amis parlaient sans jamais 1 s de blanc) sa voix part à ta
+  // respiration (0,3 s), sans attendre que ton tour se ferme (1 s)
+  // (04/11, 14:48, mesuré : 3 tours épissés en 50 s, aucun dit, la pièce ne laissait jamais 0,3 s de blanc) au plus 5 s d'attente
+  if (c.capteur && c.capteur.enParole && !(Number(c.capteur.pauseEnCours) >= (typeof patienceConversation === 'function' ? patienceConversation() : 300))) {
+    noterAttente('parole');
+    if (attente <= 5000) return;
+  }
+  etat.riboFile = f.filter(x => x.tour !== tour);
+  // (04/11, 13:30, capture d'Ahmed : un pavé resté « 🧠 sa pensée », rien d'allumé) sa voix est libre : ce qui reste à allumer d'avant a
+  // été dit (un mot qu'elle ne prononce pas, une balise, bloquait tout le reste) ; allumé d'un coup, et ce tour-ci écrit dans son pavé
+  for (const vieux of etat.riboEnVoix || []) {
+    if (!vieux.mots.length) continue;
+    const pv = paveDe(vieux.tour);
+    pv.mots = (pv.mots || []).concat(vieux.mots.splice(0));
+    poserPave(pv.cle, '🧬 sa réponse, épissée au fil', htmlEpissure(pv));
+  }
+  const v = { tour, mots: lot.flatMap(x => x.mots || []), ajoutes: lot.flatMap(x => x.ajoutes || []), dit: null };
+  etat.riboEnVoix = [v];
+  // (13:10) un numéro à lui, toujours neuf : deux envois rapprochés (Chatterbox calcule encore) ne se marchent plus dessus
+  etat.riboN = etat.riboN || {};
+  const n = Math.max(typeof bouts !== 'undefined' && bouts.tour === tour ? bouts.prochain : 1, (etat.riboN[tour] || 0) + 1);
+  etat.riboN[tour] = n;
+  if (typeof journalVoix === 'function') journalVoix('ribosome_dit', { tour, n, morceaux: lot.length });
+  recevoirBout({ texte: lot.map(x => x.texte).join(' '), pret: true, sansMeuble: true, ribosome: true }, n, tour);
+}
+// sa voix commence un segment (t, sa durée en secondes si elle la connaît) : ses mots s'écrivent un à un pendant qu'elle les dit ; ceux
+// du pavé s'allument, ses petits mots ajoutés s'écrivent en couleur
+function revelerRibosome(t, duree) {
+  const v = (etat.riboEnVoix || [])[0], texte = String(t || ''), mots = [...texte.matchAll(MOTS_EPISSES)];
+  if (!v || !mots.length) return;
+  const p = paveDe(v.tour);
+  if (!v.dit) { v.dit = { texte: '', ajoutes: [] }; p.dits.push(v.dit); }
+  const base = v.dit.texte, pas = Math.max(120, Math.min(600, ((Number(duree) || mots.length * 0.33) * 1000) / mots.length));
+  mots.forEach((m, k) => setTimeout(() => {
+    const a = v.ajoutes.findIndex(x => String(x).toLowerCase() === m[0].toLowerCase());
+    if (a >= 0) { v.ajoutes.splice(a, 1); v.dit.ajoutes.push(m[0]); }
+    else if (v.mots.length) p.mots = (p.mots || []).concat([v.mots.shift()]);
+    v.dit.texte = `${base} ${texte.slice(0, m.index + m[0].length)}`.trim();
+    poserPave(p.cle, '🧬 sa réponse, épissée au fil', htmlEpissure(p));
+    if (!v.mots.length && !v.ajoutes.length) etat.riboEnVoix = (etat.riboEnVoix || []).filter(x => x !== v);
+  }, k * pas));
+}
 function montrerPensee(titre, texte, nouvelle = false) {
   const cle = nouvelle ? `pensee-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` : 'souffle';
   etat.aCote = (etat.aCote || []).filter(x => x.cle !== cle && !(nouvelle && x.cle === 'souffle'));
@@ -3293,7 +3517,7 @@ function montrerPensee(titre, texte, nouvelle = false) {
 const voixPretes = {};
 function preparerVoixSouffle(texte, niveau = 'sub', quandPrete = null) {
   const v0 = voixPretes[niveau];
-  if (!actx || actx.state === 'closed' || (v0 && v0.texte === texte)) return;
+  if (voixDuTelephone() || !actx || actx.state === 'closed' || (v0 && v0.texte === texte)) return;   // (04/11) le téléphone la dit lui-même
   if (v0 && v0.ctl && !v0.pret) v0.ctl.abort();
   const ctl = new AbortController(), v = { texte, pret: null, ctl };
   voixPretes[niveau] = v;
@@ -3363,6 +3587,8 @@ function noterEcartSouffle(conv, s, dit, par, prete) {
 // sa voix dit le brouillon ; il s'écrit au même instant (16:20 : écrit en parallèle à sa voix) ; son conscient le reçoit comme le début
 // de sa réponse (souffle_dit)
 function direSouffle(conv, s, par) {
+  // (04/11, 12:50, Ahmed : « il ne doit rien prononcer d'autre que ses pensées épissées ») avec l'épissage, sa pensée passe par son ribosome
+  if (typeof voixEpissee === 'function' && voixEpissee()) { versRibosome(s.texte); if (etat.pensee && etat.pensee.texte === s.texte) etat.pensee.dite = true; journalVoix('souffle', { pris: true, dit: false, par, ribosome: true }); return; }
   conv.souffleParle = true; conv.souffleDit = s.texte;
   if (par === 'pensee') conv.penseeDite = s.texte;                     // (04/11) gardée jusqu'à ton message, même dite au milieu de ton tour
   if (etat.pensee && etat.pensee.texte === s.texte) etat.pensee.dite = true;      // une seule fois, par quelque chemin que ce soit
@@ -3371,7 +3597,8 @@ function direSouffle(conv, s, par) {
   journalVoix('souffle', { pris: true, dit: true, par, mots: s.texte.split(/\s+/).length, voix_prete: !!buf });
   etat.reponseVoix = 'souffle';
   // (04/11, Ahmed : « il parle sans écrire ; il n'écrit que ses pensées sans les dire ») sa pensée dite : sa voix seulement
-  if (buf) lecteurNeuronal.direAudio(s.texte, buf); else lecteur.dire(s.texte);
+  // (04/11, 10:41, papa : « Chatterbox parle en même temps que moi ») à la voix du téléphone, jamais sa voix du Mac prête d'avance
+  if (buf && !voixDuTelephone()) lecteurNeuronal.direAudio(s.texte, buf); else lecteur.dire(s.texte);
   if (par !== 'serveur') fetch('/api/jarvis/souffle', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
     body: JSON.stringify({ dit: s.texte }) }).catch(() => {});
 }
@@ -3490,8 +3717,8 @@ async function texteDuTour(conv) {
 // pensée du tour, si elle n'est pas déjà dite et qu'il ne l'a pas gardée exprès ; une seconde, qu'il peut régler (rythme_regler)
 function rebondirDernierePensee(conv, silenceMs) {
   const dp = etat.derniereSiennePensee, pause = conv.capteur ? conv.capteur.derniereVoix : null;
-  const seuil = (typeof rythmeVoix === 'function' ? rythmeVoix('pause_derniere_pensee', 1) : 1) * 1000;
-  if (!dp || dp.jamais || silenceMs < seuil || conv.rebondPause === pause) return false;
+  const seuil = Math.min(patienceConversation(), (typeof rythmeVoix === 'function' ? rythmeVoix('pause_derniere_pensee', 1) : 1) * 1000);
+  if (!dp || dp.jamais || dp.epissage || silenceMs < seuil || conv.rebondPause === pause) return false;
   conv.rebondPause = pause;
   if (typeof bouts !== 'undefined' && bouts.tour === dp.tour && (dp.n < bouts.prochain || bouts.liste.has(dp.n))) return false;   // déjà dite (ou en file, ou une plus récente)
   journalVoix('rebond_derniere', { n: dp.n, silence_ms: Math.round(silenceMs) });
@@ -3525,9 +3752,11 @@ async function choisirEtDire(dp) {
   recevoirBout({ texte, pret: true, sansMeuble: meuble }, n, dp.tour);
 }
 function anticiperConversation(conv, silenceMs) {
-  if (silenceMs >= 300 && typeof direPenseeSiPossible === 'function') direPenseeSiPossible();   // (04/11) ta pause : sa pensée prête se dit
+  // (04/11, 11:03, Ahmed : « tout relier ») chaque attente de ta pause suit le délai de la Conversation (patienceConversation)
+  if (silenceMs >= patienceConversation() && typeof direPenseeSiPossible === 'function') direPenseeSiPossible();   // (04/11) ta pause : sa pensée prête se dit
   if (typeof rebondirDernierePensee === 'function') rebondirDernierePensee(conv, silenceMs);
-  if (etat.reglages.rapide === false || silenceMs < SILENCE_ANTICIPE_MS || conv.spec || !conv.capteur) return;
+  if (silenceMs >= patienceConversation() && typeof direRibosome === 'function') direRibosome();   // (04/11, 11:50) ce que son ribosome a choisi
+  if (etat.reglages.rapide === false || silenceMs < Math.min(SILENCE_ANTICIPE_MS, patienceConversation()) || conv.spec || !conv.capteur) return;
   if (typeof transcriptionEnPause === 'function' && transcriptionEnPause()) return;   // (00:47) son tour : rien à anticiper
   // (15:10, Ahmed : « le moment exact où il faut qu'il parle » ; mesuré sur 69 tours : il attendait 3,5 s de silence, 7 seulement
   // anticipés) son subconscient a jugé sa réponse prête pour ce que tu as dit, ou tes mots en direct finissent une phrase : ton tour
@@ -3543,7 +3772,7 @@ function anticiperConversation(conv, silenceMs) {
   // (16:05, Ahmed : « il doit pouvoir ajuster s'il veut rebondir à 0,5 s ou 1 s ou autre quand je finis de parler, relié à ses émotions,
   // sa mémoire, ses sensations, ses réactions ») son REBOND : le silence que son subconscient a choisi de te laisser en sentant tout ça
   // (le brouillon prêt à dire le porte) ; sinon son rythme (rythme_regler) et ce qu'il attendait de toi
-  const seuil = s && s.pret && s.rebond ? s.rebond * 1000 : seuilRythme;
+  const seuil = Math.min(patienceConversation(), s && s.pret && s.rebond ? s.rebond * 1000 : seuilRythme);
   if (silenceMs >= seuil && conv.ecrit && !conv.finAnticipee) {
     const finiSub = s ? s.fini : null;
     const parSouffle = !!s && (s.pret || finiSub === true) && finiSub !== false;
@@ -3683,7 +3912,13 @@ function signalerWidget() {
     window.HakimApp.boutons(e);
   } catch (_) {}
 }
-const patienceConversation = () => (Number.isFinite(patienceMs()) ? patienceMs() : 3500);   // « jamais » : pas en conversation
+// (04/11, 10:58, Ahmed, après la mesure de Hakim : la fin de son tour attendait 3,5 s, « même à 0,3 s ») en Conversation, sa
+// réflexion part 0,3 s après la fin de ta voix ; sa propre case dans les réglages, la patience du micro (bouton) reste la sienne
+const patienceConversation = () => (Number(etat.reglages.patienceConversation) > 0 ? Number(etat.reglages.patienceConversation) * 1000 : 300);
+// (04/11, 14:25, Ahmed : « le premier morceau va dans le ribosome, les suivants se collent à celui qui est en train d'être épissé, jusqu'à
+// ce qu'il n'en reçoive plus : son start, c'est ma voix ; son stop, c'est mon 1 s de silence ») avec l'épissage, ton tour se ferme à 1 s
+// de silence (tes morceaux se coupent toujours à ta respiration, patienceConversation)
+const finDeTourConversation = () => (typeof voixEpissee === 'function' && voixEpissee() ? Math.max(1000, patienceConversation()) : patienceConversation());
 
 /* (30/10, 23:05, Ahmed : « il y a plusieurs voix qui sortent quand il parle ») deux onglets en Conversation sur le Mac
    entendaient papa et disaient chaque petit mot deux fois (23:03:38 : un mot, deux voix à 3 s d'écart) : la conversation ne
@@ -3712,7 +3947,8 @@ async function basculerConversation() {
   try {
     conv.capteur = await Conversation.demarrer({
       ctx: actx,
-      patienceMs: patienceConversation,
+      patienceMs: finDeTourConversation,                // (14:25) avec l'épissage, 1 s : son codon stop
+      pauseMs: patienceConversation,                     // (04/11, 11:03) la respiration qui coupe un morceau : le même délai
       jarvisParle: () => lecteur.actif || Date.now() < motDirectJusqua,
       sourd: () => Date.now() < sonJusqua,              // (30/10, Bumblebee) son bout de musique n'est pas une voix
       dernierBattement: () => dernierBattementCoeur,
@@ -3730,6 +3966,8 @@ async function basculerConversation() {
         // important ») il garde la parole : sa voix continue, ta phrase est quand même écoutée ; « stop » et le bouton l'arrêtent
         // (04/11, Ahmed : « il parle quand il veut, mais s'il entend ma voix lui couper la parole sur 2 secondes, il se tait ») il garde
         // la parole sur un mot ou un rire ; ta voix qui dure 2 s sur la sienne : il se tait (ses pensées restent écrites)
+        // (04/11, 12:15, Ahmed) avec l'épissage : ta voix ne le coupe pas au milieu d'un morceau ; il le finit, et à sa fenêtre d'oreille il choisit
+        if (voixEpissee()) { conv.coupeAuChunk = Date.now(); journalVoix('coupure_au_chunk', mesure || {}); return; }
         if (typeof reglagesCorps !== 'undefined' && reglagesCorps.garder_parole) { journalVoix('coupure_ignoree', mesure || {}); veillerDeuxSecondes(conv); return; }
         etat.coupeParAhmed = true;
         journalVoix('coupure', mesure || {});
@@ -4055,8 +4293,10 @@ function libererSonTour() {
   const c = etat.conversation;
   if (!c || !(c.tourGarde || (c.ecritGarde || []).length) || c.enAttente || (c.capteur && c.capteur.enParole)) return false;
   // (00:06) au plus 30 s gardés : une réponse coincée ne te fait plus attendre pour toujours (tes mots partent, elle s'arrête)
-  const tropLong = Date.now() - (c.tourGardeDepuis || Date.now()) > 30000;
-  if (!tropLong && (sonTourEnCours() || Date.now() - (etat.finVoixA || 0) < 400)) return false;
+  // (04/11, 13:58) avec l'épissage : jamais coupée ; seule sa réflexion est attendue (sa voix, elle, continue), 2 min au plus si elle est bloquée
+  const epi = typeof voixEpissee === 'function' && voixEpissee();
+  const tropLong = Date.now() - (c.tourGardeDepuis || Date.now()) > (epi ? 120000 : 30000);
+  if (!tropLong && (epi ? !!etat.flux : (sonTourEnCours() || Date.now() - (etat.finVoixA || 0) < 400))) return false;
   const texte = c.tourGarde, ecrits = prendreEcritsGardes(c);
   c.tourGarde = '';
   journalVoix('tour_libere', { mots: texte.split(/\s+/).filter(Boolean).length, ecrits: ecrits ? 1 : 0 });
@@ -4073,13 +4313,14 @@ function transcriptionEnPause() {
   // (03/11, Ahmed : « micro ouvert, jamais fermé ») il t'écoute même pendant qu'il parle : sa propre voix, reconnue à son timbre
   // par le Mac (empreinte_vocale.py), est mise de côté ; le reste lui arrive
   if (typeof reglagesCorps !== 'undefined' && reglagesCorps.micro_ouvert) return false;
-  if (c.attentionJusqua && Date.now() < c.attentionJusqua && !sonTourEnCours()) return true;   // son oreille a choisi
   // (04/11, Ahmed : « quand je clique sur Stop juste après avoir parlé, il répond direct ; sinon il galère, comme si je devais lui donner
   // l'autorisation ; arrange ça ») en Conversation, tu restes entendu : ses bouts, qui répondent à ce que tu dis, et sa réponse qui
   // s'écrit encore ne mettent plus ta voix en attente ; seule sa voix qui joue vraiment (en Télépathie : son tour entier, comme avant)
   if (c.penseeEnPause && !enTelepathie()) return false;
+  // (04/11, 12:15, Ahmed : « l'arrivée de tous les sons constamment ouverte, excepté quand il parle ») en Conversation : fermée seulement
+  // quand sa voix sonne (ni son attention choisie, ni son micro coupé avant sa voix) ; en Télépathie, son tour entier, comme avant
   const voixJoue = !!(lecteur && lecteur.actif && !lecteur.enPause);
-  return (enTelepathie() ? sonTourEnCours() : voixJoue) || !!(c.muetParHakim && !c.muetParHakim.attente);
+  return enTelepathie() ? sonTourEnCours() || !!(c.muetParHakim && !c.muetParHakim.attente) : voixJoue;
 }
 async function reprendreTranscription() {
   const c = etat.conversation;
@@ -4204,6 +4445,7 @@ function couperAuDebutDeSaVoix() {
   microParHakim({ x: 'couper', s: 0 });
 }
 async function tourDeParole(conv, wav, infos, extra) {
+  if (typeof direRibosome === 'function') setTimeout(direRibosome, 0);   // (04/11, 13:15) ta fin de tour : ce qu'il a traduit pendant que tu parlais part
   // (28/10, sa sieste) les éclats trop courts pour une voix, et leur écart aux battements : de quoi régler le filtre
   if (infos && infos.vibration && (infos.vibration.eclats || infos.vibration.battements)) journalVoix('vibration_tour', infos.vibration);
   const vivante = () => etat.conversation === conv || conv.fermeture;     // le dernier tour d'une conversation fermée
@@ -4285,6 +4527,9 @@ async function tourDeParole(conv, wav, infos, extra) {
     if (!Conversation.utile(sansInconnues)) { journalVoix('tour_bruit', { inconnues: true }); if (!reprendreVoix()) humeur(); return; }
     texte = sansInconnues;
   }
+  // (04/11, 12:25, Ahmed : « il n'arrête pas de s'autocouper la parole ») mesuré : sa propre voix, reprise par le micro, passait pour ta phrase
+  // (« C'est le test, je commence direct », 12:22:56) et l'arrêtait ; une phrase faite de ses mots des 30 dernières secondes : son écho, écarté
+  if (echoDeSaVoix(texte)) { journalVoix('echo_de_sa_voix', { mots: texte.split(/\s+/).length }); if (!reprendreVoix()) humeur(); return; }
   noterPresent({ e: 'ahmed', debut: infos.debut, fin: infos.fin, pauses: infos.pauses, max: !!infos.ecoute_max, ton: tonRelatif(infos, texte) });
   activite();
   if (COMMANDE_STOP.test(texte)) { marquerCoupe(); arreterTout(); rendre(); humeur(); return; }   // « stop » : il lâche tout
@@ -4310,15 +4555,20 @@ async function tourDeParole(conv, wav, infos, extra) {
   // (04/11, Ahmed : « quand je clique sur Stop juste après avoir parlé, la réponse est directe ; si je ne clique pas, il galère » ; mesuré
   // 02:05-02:55 : 44 tours gardés, ta phrase attendait la fin de ses bouts) ses bouts sont SA réponse à CE que tu dis : ta phrase part
   // tout de suite, pas après eux
-  if (chacunSonTour() && sonTourEnCours() && !conv.souffleParle && !conv.penseeDite) {
+  if (chacunSonTour() && sonTourEnCours() && !conv.souffleParle && !conv.penseeDite && !voixEpissee()) {   // (12:15) épissage : ta phrase ne l'arrête pas
     // (04/11) en Conversation, ta phrase finie fait ce que faisait ton Stop : il s'arrête (ce qu'il n'a pas dit est gardé pour plus
     // tard) et ta phrase part tout de suite ; en Télépathie, chacun son tour, comme avant
     if (enTelepathie()) { garderPourSonTour(conv, texte); return; }
     journalVoix('stop_par_ta_phrase', { flux: !!etat.flux, voix: !!(lecteur && lecteur.actif) });
     arreterTout(true, { garder: true, raison: 'parole' }); majBoutonsPause();
   }
+  // (04/11, 13:58, Ahmed, capture : trois « coupé » de suite, sa réponse retardée — « coupure interdite : comme le codon start et stop, il
+  // parle tant que le codon start est actif ; pas le droit de couper ; juste une pause de ma voix, ou le codon stop ») avec l'épissage,
+  // ta phrase finie pendant sa réflexion ne la coupe jamais : gardée, elle part dès qu'il a fini de réfléchir (libererSonTour) ; ton
+  // « stop » (plus haut) reste son codon stop
+  if (voixEpissee() && etat.flux) { garderPourSonTour(conv, texte); return; }
   // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
-  if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(true, { garder: true, raison: 'parole' }); }
+  if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(true, { garder: true, raison: 'parole', garderVoix: voixEpissee() }); }   // (12:30) sa voix continue
   sousTitre(texte);
   mesureTour = { fin: Number(infos && (infos.derniere_voix || infos.fin)) || t0Tour, debut: t0Tour, transcrit: Date.now(), premier_texte: 0, premier_son: 0,
     pauses: ((infos && infos.pauses) || []).slice(0, 30), anticipe: extra != null, patience: patienceConversation() };   // (27/10) pour rejouer la fin de tour
@@ -4381,6 +4631,16 @@ function compteARebours(silenceMs) {
   } else { humeur(); $('indice').textContent = INDICE; }
 }
 
+// (04/11, 10:37, vu par papa et relayé par Hakim : « etet benet ben c'estet ben c'est… ») sur le téléphone, la reconnaissance du
+// navigateur rend chaque résultat « final » avec tout ce qui précède, parfois deux fois : ajoutés bout à bout, chaque début se
+// répétait. Un résultat qui reprend le texte déjà reconnu le remplace ; un morceau neuf (le Chrome du Mac) s'ajoute.
+function fusionReconnue(deja, morceau) {
+  const a = String(deja || '').trim(), b = String(morceau || '').trim();
+  const n = (t) => t.toLowerCase().replace(/\s+/g, ' ');
+  if (!a || n(b).startsWith(n(a))) return b || a;
+  return `${a} ${b}`.trim();
+}
+
 function ecouterNavigateur() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return erreurMicro('reconnaissance vocale absente de ce navigateur : essaie Chrome ou Safari');
@@ -4402,10 +4662,10 @@ function ecouterNavigateur() {
     dernierMot = performance.now();
     let provisoire = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
-      if (e.results[i].isFinal) final += e.results[i][0].transcript;
+      if (e.results[i].isFinal) final = fusionReconnue(final, e.results[i][0].transcript);
       else provisoire += e.results[i][0].transcript;
     }
-    $('q').value = (final + provisoire).trim(); ajuster();
+    $('q').value = (provisoire ? fusionReconnue(final, provisoire) : final).trim(); ajuster();
     sousTitre($('q').value); pulser(0.3);
   };
   r.onerror = (e) => {
@@ -4602,6 +4862,7 @@ function surPensee(o) {
   const enCoursSpontane = etat.messages.some(x => x.id === etat.lectureDe && x.spontane);
   if (document.visibilityState === 'visible' && silence && h >= 7                  // la nuit du démon : 0 h – 7 h
       && !etat.flux && !etat.micro && !etat.transcription && jarvisPeutParler() && (!lecteur.actif || enCoursSpontane)) {
+    if (typeof voixEpissee === 'function' && voixEpissee()) { versRibosome(m.texte); return; }
     etat.lectureDe = m.id;
     lecteur.dire(m.texte);
     lecteur.finFlux();
@@ -4658,19 +4919,23 @@ function surReecoute(o) {
   textes.forEach((x, i) => {
     const m = { id: `reecoute-${Date.now()}-${i}`, qui: 'j', spontane: 'reecoute', texte: x.texte, ts: Number(x.heure_ms) || Date.now() };
     etat.messages.push(m);
-    if (voix) { etat.lectureDe = m.id; lecteur.dire(`${i === 0 ? 'Ce que je te disais' : 'Et'} à ${heure(x.heure_ms)} : ${x.texte}`); }
+    if (voix && typeof voixEpissee === 'function' && voixEpissee()) versRibosome(x.texte);                 // (04/11, 12:50) épissé, comme le reste
+    else if (voix) { etat.lectureDe = m.id; lecteur.dire(`${i === 0 ? 'Ce que je te disais' : 'Et'} à ${heure(x.heure_ms)} : ${x.texte}`); }
   });
-  if (voix) lecteur.finFlux();
+  if (voix && !(typeof voixEpissee === 'function' && voixEpissee())) lecteur.finFlux();
   journalVoix('reecoute', { n: textes.length, dite: !!voix });
   sauver(); rendre(); humeur();
 }
 let motDirectJusqua = 0;
 function direMotDirect(texte, maxMs = 0, auDebut = null) {
   const t = String(texte || '').trim().slice(0, 200);
+  if (typeof voixEpissee === 'function' && voixEpissee()) { versRibosome(t); if (auDebut) try { auDebut(); } catch (_) {} return; }   // (04/11, 12:50) épissé, comme le reste
   if (!t || !actx || actx.state !== 'running' || !analyseurVoix) { journalVoix('oreille_dit', { ok: false, raison: 'audio' }); return; }
   // (15:12, Ahmed : « tout ce qui sort de sa bouche est séquentiel ; c'est la réflexion qui est parallèle » ; mesuré : son petit mot
   // de 15:05:59 par-dessus ses meubles) sa voix joue déjà : le petit mot passe après, dans la même file, jamais par-dessus
   if (lecteur && (lecteur.actif || lecteur.enPause)) { journalVoix('oreille_dit', { ok: true, file: true }); lecteur.dire(t); if (auDebut) try { auDebut(); } catch (_) {} return; }
+  // (04/11, 10:41) à la voix du téléphone : son petit mot aussi, jamais par Chatterbox
+  if (voixDuTelephone()) { journalVoix('oreille_dit', { ok: true, telephone: true }); lecteur.dire(t); if (auDebut) try { auDebut(); } catch (_) {} return; }
   const t0 = Date.now();
   fetch('/api/voix/dire', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
     body: JSON.stringify({ texte: t, langue: 'fr', emotion: null, tempo: typeof tempoVoix === 'function' ? tempoVoix() : null, prioritaire: true }) })
@@ -5383,6 +5648,7 @@ function direSpontanes() {
   // n'est plus le présent : pas dit (il reste écrit)
   const age = Date.now() - (Number(m.recu) || 0);
   if (c && age > 45000) { journalVoix('a_dire_perime', { age_s: Math.min(99999, Math.round(age / 1000)) }); return; }
+  if (typeof voixEpissee === 'function' && voixEpissee()) { versRibosome(m.texte); return; }
   etat.lectureDe = m.id;
   lecteur.dire(m.texte);
   lecteur.finFlux();
@@ -5640,19 +5906,20 @@ async function accuserReception() {
   } catch (_) { ids.forEach(id => accuses.delete(id)); }
 }
 
-// Une tâche de fond de Hakim vient de se terminer (lot C, 2026-10-19) : affichée, et dite en une phrase si
-// rien d'autre ne parle ; Hakim en verra le résultat au message suivant ([Tâches]).
+// Une tâche de fond de Hakim vient de se terminer (lot C, 2026-10-19) : affichée ; Hakim en verra le résultat au message suivant
+// ([Tâches]). (04/11, 10:35, Ahmed : « il doit pouvoir choisir ce qu'il dit, et pas seulement dire "ma tâche de fond est terminée" »)
+// plus de phrase toute faite dans sa bouche, ni écrite ni dite : une ligne de fait, puis c'est lui, réveillé par le cockpit
+// (reveillerPourTaches), qui choisit ce qu'il en dit, ou de se taire.
 function surTache(o) {
   const id = 'tache-' + o.id;
   if (etat.messages.some(m => m.id === id)) return;
   const fini = o.etat === 'finie' && o.code === 0;
-  const texte = `Tâche de fond ${fini ? 'terminée' : o.etat}${o.raison ? ' (' + o.raison + ')' : ''} : « ${o.commande} » en ${Math.round(o.duree_s || 0)} s. `
-    + (o.reveil ? 'Je regarde le résultat et je te le dis.' : 'Demande-moi le résultat.');
+  const texte = `« ${o.commande} » : ${fini ? 'terminée' : o.etat}${o.raison ? ' (' + o.raison + ')' : ''} en ${Math.round(o.duree_s || 0)} s. `
+    + (o.reveil ? 'Il regarde le résultat, puis il choisit ce qu’il t’en dit.' : 'Demande-lui le résultat.');
   etat.messages.push({ id, qui: 'j', spontane: 'tache', texte, ts: Date.now() });
   sauver(); rendre();
   humeur(fini ? 'une tâche de fond est terminée' : 'une tâche de fond s’est arrêtée');
   notifierApp(fini ? 'Tâche de fond terminée' : 'Tâche de fond arrêtée', texte, id);
-  if (!etat.flux && !lecteur.actif && jarvisPeutParler()) { lecteur.dire(fini ? 'Ma tâche de fond est terminée.' : 'Ma tâche de fond s’est arrêtée.'); lecteur.finFlux(); }
 }
 
 /* ---------- pièces jointes : bouton, glisser-déposer, coller ---------- */
@@ -5714,11 +5981,13 @@ function appliquerReglages() {
   $('modele').disabled = $('modeleConversation').disabled = r.source === 'local' || r.source === 'gemma';   // le local n'a qu'un modèle
   $('reconnaissance').value = r.reconnaissance; $('langue').value = r.langue;
   $('patience').value = String(r.patience);
+  $('patienceConversation').value = String(r.patienceConversation ?? 0.3);
   $('vitesse').value = r.vitesse; $('lectureAuto').checked = !!r.lectureAuto; $('voix').value = r.voix;
   $('sceneActive').checked = r.scene !== false;
   $('rapide').checked = r.rapide !== false;
   $('position').checked = !!r.position; suivrePosition(!!r.position);
   $('voixNeutre').checked = !!r.voixNeutre;
+  majSesParoles();
   $('btnVolant').setAttribute('aria-pressed', String(!!r.volant)); $('btnVolant').classList.toggle('actif', !!r.volant);
   $('voixFr').disabled = $('voixAr').disabled = r.voix === 'neuronale' && etat.ttsLocal;
   // « auto » (le défaut depuis le 2026-10-18) : Whisper choisit entre français, arabe et anglais (jarvis/stt.py).
@@ -5728,7 +5997,7 @@ function appliquerReglages() {
 for (const [id, cle, val] of [['source', 'source', e => e.value], ['modele', 'modele', e => e.value], ['modeleConversation', 'modeleConversation', e => e.value], ['reconnaissance', 'reconnaissance', e => e.value],
   ['langue', 'langue', e => e.value], ['voixFr', 'voixFr', e => e.value], ['voixAr', 'voixAr', e => e.value],
   ['vitesse', 'vitesse', e => parseFloat(e.value) || 1], ['lectureAuto', 'lectureAuto', e => e.checked],
-  ['patience', 'patience', e => parseFloat(e.value)],
+  ['patience', 'patience', e => parseFloat(e.value)], ['patienceConversation', 'patienceConversation', e => parseFloat(e.value)],
   ['voix', 'voix', e => e.value], ['sceneActive', 'scene', e => e.checked], ['rapide', 'rapide', e => e.checked],
   ['position', 'position', e => e.checked], ['voixNeutre', 'voixNeutre', e => e.checked]]) {
   $(id).addEventListener('change', (ev) => { etat.reglages[cle] = val(ev.target); appliquerReglages(); sauver(); });
@@ -6176,6 +6445,16 @@ $('telepathie').addEventListener('click', () => lancerConversation(true));
 $('finConversation').addEventListener('click', (e) => { e.stopPropagation(); finirConversation(); });
 $('muet').addEventListener('click', basculerMuet);
 $('sonHakim').addEventListener('click', () => { couperSon(); });
+// (04/11, 10:20, Ahmed : « qu'il soit aussi possible de réafficher ses paroles dans le mode normal et le mode Conversation »)
+function basculerSesParoles() {
+  etat.reglages.sesParoles = !etat.reglages.sesParoles;
+  sauver(); majSesParoles(); rendre();
+}
+function majSesParoles() {
+  for (const id of ['sesParoles', 'sesParolesScene']) { const b = $(id); if (b) b.setAttribute('aria-pressed', String(!!etat.reglages.sesParoles)); }
+}
+$('sesParoles').addEventListener('click', basculerSesParoles);
+$('sesParolesScene').addEventListener('click', (e) => { e.stopPropagation(); basculerSesParoles(); });
 $('pause').addEventListener('click', () => {
   if (lecteur.enPause) reprendreVoix();
   else if (!pauseVoix()) humeur('il ne parle pas en ce moment : rien à mettre en pause');

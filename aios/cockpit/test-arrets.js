@@ -99,9 +99,9 @@ test('la page envoie la raison de son Stop au cockpit', () => {
 
 test('chaque geste de la page donne la bonne raison, et le cockpit la transmet', () => {
   const envoyer = prendre(page, 'envoyer'), micro = prendre(page, 'basculerMicro');
-  assert.match(envoyer, /arreterTout\(true, \{ garder: true, raison: 'message', garderVoix: !!souffleDit \}\)/);
+  assert.match(envoyer, /arreterTout\(true, \{ garder: true, raison: 'message', garderVoix: !!souffleDit(?: \|\| voixEpissee\(\))? \}\)/);
   assert.match(micro, /arreterTout\(true, \{ garder: true, raison: 'parole' \}\)/);
-  assert.match(page, /if \(lecteur\.enPause \|\| etat\.flux\) \{ marquerCoupe\(\); arreterTout\(true, \{ garder: true, raison: 'parole' \}\); \}/);
+  assert.match(page, /if \(lecteur\.enPause \|\| etat\.flux\) \{ marquerCoupe\(\); arreterTout\(true, \{ garder: true, raison: 'parole'(?:, garderVoix: voixEpissee\(\))? \}\); \}/);
   assert.match(srv, /if \(t\) t\.arreter\(q && Object\.hasOwn\(RAISONS_ARRET, q\.raison\) \? q\.raison : 'stop'\);/);
   // (relecture du 27/10) un Stop pendant la préparation, ou un lancement impossible, est noté aussi
   assert.ok(srv.includes("if (arretDemande) noterArret(arretDuTour({ coupe: true }, raisonArret, ''), texte);"));

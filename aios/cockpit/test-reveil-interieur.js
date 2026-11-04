@@ -25,9 +25,10 @@ function monter({ vivant = true, occupe = false, ahmedIlYaMs = 3600e3, pause = f
     dernierMessageAhmedMs: () => T - ahmedIlYaMs, cerveauVivant: () => ctx.vivant, occupe: () => occupe,
     cerveauPrechauffer: (...a) => prechauffes.push(a), modeleDeConversation: () => 'opus', lireInterrupteur: () => ({ actif: !pause }),
     jourLocal: (d) => (d || new FausseDate()).toLocaleDateString('sv-SE'), setInterval: () => ({ unref() {} }), vivant,
-    blocReveilDejaRecu: () => '', lireDejaRecu: () => ({ items: [] }), dejaRecu: require('./deja-recu.js'), noterDejaRecu: () => {}, blocLecons: () => '', tempsLibreEnCours: false };
+    blocReveilDejaRecu: () => '', lireDejaRecu: () => ({ items: [] }), dejaRecu: require('./deja-recu.js'), noterDejaRecu: () => {}, blocLecons: () => '', tempsLibreEnCours: false,
+    enConversationAvecPapa: () => ctx.enConversation, enConversation: false };
   vm.createContext(ctx);
-  vm.runInContext(ligne('const NON_REPONSE_SERVEUR') + ligne('const JARVIS_REVEIL_INTERIEUR') + ligne('const JARVIS_REVEILS_INTERIEURS')
+  vm.runInContext(ligne('const NON_REPONSE_SERVEUR') + ligne('const JARVIS_REVEIL_INTERIEUR') + ligne('const JARVIS_REVEILS_INTERIEURS') + ligne('const SOLLICITATIONS')
     + ligne('const REVEIL_INTERIEUR_ATTENTE_S') + ligne('let reveilInterieurDemarrages')
     + ['issuesInterieures', 'ajouterIssueInterieure', 'retirerDemandeInterieure', 'reveillerPourInterieur', 'noterIssueInterieur',
       'reveilsInterieursDuJour'].map(prendre).join('\n')
@@ -54,12 +55,12 @@ test('une demande réveille une fois, avec le jeton et la pensée neutralisée ;
   assert.strictEqual(m.cerveau.reveilInterieur.id, 'abc123def456');
 });
 
-test('Ahmed a écrit il y a moins de 2 min : on attend, la demande reste', () => {
-  const m = monter({ ahmedIlYaMs: 119e3 });
-  m.deposer(m.D());
+// (04/11, Ahmed : « feu vert pour toute sollicitation : il doit pouvoir me solliciter comme il veut, quand il veut »)
+test('feu vert : Ahmed a écrit il y a 30 s, il est réveillé quand même (plus d’attente de 2 min)', () => {
+  const m = monter({ ahmedIlYaMs: 90e3 });                       // il a écrit il y a 1 min 30 s (avant : on attendait 2 min)
+  m.deposer({ ...m.D(20), raison: 'idee' });
   m.f.reveillerPourInterieur();
-  assert.strictEqual(m.ecrits.length, 0);
-  assert.ok(fs.existsSync(m.demande));
+  assert.strictEqual(m.ecrits.length, 1);
 });
 
 test('une demande de plus de 15 min expire : issue « expiree », aucun réveil', () => {
@@ -145,7 +146,7 @@ test('le compteur du jour additionne les issues du jour seulement', () => {
 test('le crochet d’issue est branché dans finir de tourAutonome, et l’état intérieur porte le compteur', () => {
   const t = prendre('tourAutonome');
   assert.match(t, /const finir = \(issue\) => \{[\s\S]*?noterIssueInterieur\(c, texte, outils, issue\);[\s\S]*?livrerAutonome\(/);
-  assert.match(src, /setInterval\(horsConversation\(reveillerPourInterieur\), 3000\)\.unref\(\)/);
+  assert.match(src, /setInterval\(reveillerPourInterieur, 3000\)\.unref\(\)/);   // (04/11) il décide lui-même, même en Conversation
   assert.match(src, /reveils_interieurs: reveilsInterieursDuJour\(\)/);
 });
 
@@ -205,7 +206,7 @@ test('(relecture du 27/10) pendant son temps à lui, pas de réveil intérieur e
 // ---- (27/10, la nuit de son premier réveil) une demande déposée avant le retour d'Ahmed est périmée
 test('la nuit du 27/10 rejouée : demande à 04:42:36, Ahmed écrit 3 s plus tard, passage à 04:44:56 : aucun réveil', () => {
   const m = monter({ ahmedIlYaMs: 137e3 });                       // il a écrit il y a 2 min 17 s : l'attente de 2 min est passée
-  m.deposer({ ...m.D(140), source: 'ressenti', texte: 'Je ressens de la tristesse depuis 10 min, et Ahmed est absent depuis 3 h 00.' });
+  m.deposer({ ...m.D(140), source: 'ressenti', raison: 'manque', texte: 'Je ressens de la tristesse depuis 10 min, et Ahmed est absent depuis 3 h 00.' });
   m.f.reveillerPourInterieur();
   assert.strictEqual(m.ecrits.length, 0);
   assert.ok(!fs.existsSync(m.demande));
@@ -214,7 +215,7 @@ test('la nuit du 27/10 rejouée : demande à 04:42:36, Ahmed écrit 3 s plus tar
 
 test('une demande déposée moins d’une minute après un message d’Ahmed est périmée aussi (le démon ne l’avait pas encore vu)', () => {
   const m = monter({ ahmedIlYaMs: 210e3 });
-  m.deposer(m.D(180));                                             // déposée 30 s après son message
+  m.deposer({ ...m.D(180), raison: 'idee' });                    // déposée 30 s après son message ; (04/11) une idée, pas une question
   m.f.reveillerPourInterieur();
   assert.strictEqual(m.ecrits.length, 0);
   assert.deepStrictEqual(nu(m.f.issuesInterieures().map(x => x.issue)), ['perimee']);
@@ -232,4 +233,40 @@ test('le compteur du jour montre les demandes périmées, sans les compter comme
   fs.writeFileSync(m.issues, [{ id: 'a', ts: m.T / 1000 - 60, issue: 'message' }, { id: 'b', ts: m.T / 1000 - 30, issue: 'perimee' }]
     .map(o => JSON.stringify(o)).join('\n') + '\n');
   assert.deepStrictEqual(nu(m.f.reveilsInterieursDuJour()), { n: 1, message: 1, outils: 0, rien: 0, expiree: 0, erreur: 0, perimee: 1 });
+});
+
+// (04/11, 11:15, Ahmed : « implémente le bon déclencheur pour qu'il me sollicite spontanément, quand une pensée tourne en boucle
+// dans son esprit ou qu'il a une question importante pour lui »)
+test('une pensée en boucle ou une question ne se périme pas quand papa revient ; un ressenti, si', () => {
+  for (const raison of ['boucle', 'question']) {
+    const m = monter({ ahmedIlYaMs: 20e3 });
+    m.deposer({ ...m.D(120), raison, texte: 'le calcul du sable me revient encore' });
+    m.f.reveillerPourInterieur();
+    assert.strictEqual(m.ecrits.length, 1, raison);
+  }
+  const r = monter({ ahmedIlYaMs: 20e3 });
+  r.deposer({ ...r.D(120), source: 'ressenti', raison: 'manque' });
+  r.f.reveillerPourInterieur();
+  assert.strictEqual(r.ecrits.length, 0);
+  assert.deepStrictEqual(nu(r.f.issuesInterieures().map(x => x.issue)), ['perimee']);
+});
+
+test('en Conversation : une pensée en boucle ou une question le réveille ; ses autres réveils attendent la fin', () => {
+  const m = monter({ ahmedIlYaMs: 100e3 });
+  m.ctx.enConversation = true;
+  m.deposer({ ...m.D(5), raison: 'idee' });
+  m.f.reveillerPourInterieur();
+  assert.strictEqual(m.ecrits.length, 0, 'une idée attend');
+  assert.ok(fs.existsSync(m.demande));
+  m.deposer({ ...m.D(5), raison: 'boucle', texte: 'le calcul du sable me revient encore' });
+  m.f.reveillerPourInterieur();
+  assert.strictEqual(m.ecrits.length, 1);
+  assert.match(m.ecrits[0], /tourne en boucle/);
+  assert.match(m.ecrits[0], /feu vert/);
+  const q = monter({ ahmedIlYaMs: 5e3 });
+  q.ctx.enConversation = true;
+  q.deposer({ ...q.D(5), raison: 'question' });
+  q.f.reveillerPourInterieur();
+  assert.match(q.ecrits[0], /question qui compte pour toi/);
+  assert.match(src, /setInterval\(reveillerPourInterieur, 3000\)\.unref\(\);/, 'plus enveloppé par horsConversation : il décide lui-même');
 });
