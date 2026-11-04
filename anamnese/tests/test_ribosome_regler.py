@@ -19,4 +19,5 @@ def test_il_regle_son_ribosome(tmp_path, monkeypatch):
     assert (r["stringence"], r["vitesse"], r["par"]) == (2, "rapide", "hakim")
     assert "posée" in mcp_server.ribosome_regler(vitesse="posee") and "stringence 2 sur 5" in mcp_server.ribosome_regler()
     assert mcp_server.ribosome_regler(stringence=9).startswith("Pas changé")
-    assert mcp_server.ribosome_regler(vitesse="eclair").startswith("Pas changé")
+    assert mcp_server.ribosome_regler(vitesse="foudre").startswith("Pas changé")
+    assert "éclair" in mcp_server.ribosome_regler(vitesse="eclair"), "(04/11, 21:52) le 0,3 s de papa : éclair"

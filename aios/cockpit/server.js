@@ -3433,7 +3433,7 @@ const RIBOSOME_LECTEURS = [['opus', 'Super Hakim', 3000], ['opus', 'Super Hakim 
 // ne fait que me couper la parole ») son réglage (son outil ribosome_regler : jarvis/ribosome-reglage.json) : sa stringence, de 1 (il garde
 // tout ce qui continue sa réponse) à 5 (presque rien) ; sa vitesse, l'attente de ses lecteurs ; sans réglage : stringent (4) et rapide
 const RIBOSOME_REGLAGE = path.join(JARVIS, 'ribosome-reglage.json');
-const RIBOSOME_VITESSES = { rapide: 2000, normale: 3000, posee: 6000 };
+const RIBOSOME_VITESSES = { eclair: 300, rapide: 2000, normale: 3000, posee: 6000 };   // (21:52) « éclair » : le 0,3 s de papa
 // (04/11, 17:55-17:59, Ahmed : « juste au moment où il reçoit le signal parasite, il faut automatiquement accélérer le ribosome » ; « pour le
 // chunk suivant » ; « et quand je reprends la parole, juste après que j'ai marqué une pause ») sa vitesse max, pour le seul paquet suivant
 // (18:05, Ahmed : « mesure la vitesse max avant saturation, et fais que cette vitesse max soit le plafond de vitesse ») mesuré sur ses 681
@@ -3444,6 +3444,10 @@ const RIBOSOME_VITESSE_MAX_DEFAUT = 2000;
 // (04/11, 21:34, Ahmed : « on prend le risque : on augmente la vitesse du ribosome de 2 fois pour commencer ») toutes ses attentes divisées par 2,
 // sa vitesse max comprise (mesuré : en 1 s, ses deux Super Hakim lisent 59 % des paquets ; les autres passent tels quels)
 const RIBOSOME_ACCELERATION = 2;
+// (04/11, 21:51-21:52, papa par Hakim puis lui-même : « règle le délai du ribosome à 0,3 seconde » ; « fais ce qu'il te dit, à 0,3 s ») sa vitesse
+// « éclair » (0,3 s, ribosome-reglage.json) ; ses lecteurs ne répondent jamais si vite (0,8 s au mieux, mesuré) : en dessous de
+// RIBOSOME_LECTURE_MIN, ils ne sont même plus appelés (le forfait épargné) et ses pensées passent telles quelles, tout de suite
+const RIBOSOME_LECTURE_MIN = 600;
 // (04/11, 20:55, Ahmed : « tu peux encore augmenter, ou on est au max ? ») mesuré sur les 34 premiers paquets de ses deux Super Hakim : lus en
 // 1,2 s : 82 % ; 1,6 s : 94 % ; 2 s : 100 % (avant : 87 % en 2 s) ; sa vitesse max se mesure sur ses lecteurs d'AUJOURD'HUI (30 paquets
 // suffisent ; sinon, tout le journal), et le coude doit garder au moins 85 % de ce qu'ils peuvent lire
@@ -3609,13 +3613,14 @@ async function lirePaquet(tour, r, i, paquet) {
       return { mod, nom, ms, ok, garde: ok ? garde : '', e: ok ? e : null };
     });
   };
-  const delai = vitesseSubconsciente(reglage.delai, r);
+  const delai = reglage.vitesse === 'eclair' ? RIBOSOME_VITESSES.eclair : vitesseSubconsciente(reglage.delai, r);   // (21:52) éclair : fixe
   const froides = lecteursSansVoixChaude(RIBOSOME_LECTEURS.map(([mod]) => mod));
-  const promesses = RIBOSOME_LECTEURS.map(([mod, nom]) => lire([mod, nom, delai]));   // (15:55) l'attente : sa vitesse ; (16:50) réglée par son subconscient
+  const direct = delai < (typeof RIBOSOME_LECTURE_MIN !== 'undefined' ? RIBOSOME_LECTURE_MIN : 0);   // (21:52) plus vite que ses lecteurs : sans eux
+  const promesses = direct ? [] : RIBOSOME_LECTEURS.map(([mod, nom]) => lire([mod, nom, delai]));   // (15:55) l'attente : sa vitesse ; (16:50) réglée par son subconscient
   // (18:40) ses lecteurs partis (sur ses plus anciennes voix libres), une voix d'avance se prépare pour le paquet suivant, sans retenir leur
   // départ : avant, elles ne se préparaient qu'au premier son de ta voix, et pendant sa réponse il pouvait en manquer
-  if (typeof prechaufferVivants === 'function' && typeof setTimeout === 'function') setTimeout(() => { try { prechaufferVivants(); } catch (_) {} }, 0);
-  const choisie = await premiereLecture(promesses), decide = Date.now() - debutLecture;
+  if (!direct && typeof prechaufferVivants === 'function' && typeof setTimeout === 'function') setTimeout(() => { try { prechaufferVivants(); } catch (_) {} }, 0);
+  const choisie = direct ? null : await premiereLecture(promesses), decide = Date.now() - debutLecture;
   // (04/11, 18:50) aucun lecteur : la pensée entière passe pour papa (sa voix ne se tait pas) ; du téléphone, rien (il n'a pas jugé)
   const garde = choisie ? choisie.garde : tel ? '' : texte, e = choisie ? choisie.e : epissageDe(garde, texte);
   const ok = choisie ? choisie.ok : !tel && e.mots.length >= 1;
@@ -3623,7 +3628,7 @@ async function lirePaquet(tour, r, i, paquet) {
   Promise.all(promesses).then((lectures) => {
     try {
       fs.appendFile(JOURNAL_PISTES, JSON.stringify({ t: Date.now(), tour, ribosome: i + 1, pensees: paquet.length, ms: decide, vitesse_ms: delai, stringence: reglage.stringence, garde: ok ? garde.slice(0, 160) : '',
-        choisi: choisie ? choisie.mod : 'panne', lecteurs: lectures.map(x => ({ modele: x.mod, ms: x.ms, garde: x.muet ? null : x.garde.slice(0, 160) })),
+        choisi: choisie ? choisie.mod : direct ? 'direct' : 'panne', lecteurs: lectures.map(x => ({ modele: x.mod, ms: x.ms, garde: x.muet ? null : x.garde.slice(0, 160) })),
         ...(froides.length ? { froides } : {}), ...(tel ? { source: r.source, ...(r.voix ? { voix: r.voix } : {}) } : {}) }) + '\n', () => {});
     } catch (_) {}
   });
