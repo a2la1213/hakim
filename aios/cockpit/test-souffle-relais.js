@@ -297,10 +297,11 @@ test('(04/11) sa pensée dite dans ta pause : ton tour ne bloque pas sa voix, et
 // (04/11, Ahmed : « il doit pouvoir me couper la parole au moment du premier chunk aussi, selon son choix »)
 test('(04/11) son choix de te couper : COUPER : oui, sa pensée part même pendant que tu parles ; non, elle attend ta pause', () => {
   const i = SRC.indexOf('function brouillonDuCerveau('), k = SRC.indexOf('\n}\n', i) + 3;
-  const diffuses = [];
+  const diffuses = [], dites = [], avertis = [];
   const ctx = { String, Date, console: { error() {} }, sansBaliseAffect: (t) => t, NON_REPONSE_SERVEUR: /^No response requested/,
-    souffles: { cer: {} }, morceauxCerveau: { dernier: 'papa parle' }, voixDeLaSource() {}, abonnesPensees: null,
-    diffuser: (_, e, d) => diffuses.push(JSON.parse(d)), j: JSON.stringify };
+    souffles: { cer: {} }, morceauxCerveau: { dernier: 'papa parle' }, voixDeLaSource: (t) => dites.push(t), abonnesPensees: null,
+    diffuser: (_, e, d) => diffuses.push(JSON.parse(d)), j: JSON.stringify,
+    parasiteReconnue: (t) => /je ne vais pas reprendre ce format/i.test(t), boutDe: (t) => t, signeParasite: () => 'motif', avertirParasite: (b) => avertis.push(b) };
   vm.createContext(ctx);
   vm.runInContext(SRC.slice(i, k) + '\nthis.brouillon = brouillonDuCerveau;', ctx);
   ctx.brouillon('FINI : non\nCOUPER : oui\nAttends papa, c’est exactement ça !');
@@ -308,12 +309,47 @@ test('(04/11) son choix de te couper : COUPER : oui, sa pensée part même penda
   assert.strictEqual(diffuses[0].texte, 'Attends papa, c’est exactement ça !', 'la ligne COUPER ne s’écrit ni ne se dit');
   ctx.brouillon('FINI : non\nCOUPER : non\nJe t’écoute.');
   assert.strictEqual(diffuses[1].couper, false);
+  // (04/11, Ahmed : « la pensée parasite reconnue par le système immunitaire : toujours nuisible, éliminée de la pensée »)
+  ctx.brouillon('Je ne vais pas reprendre ce format : je ne joue pas de rôle.');
+  assert.strictEqual(diffuses.length, 2, 'une parasite de son cerveau : ni écrite');
+  assert.strictEqual(dites.length, 2, 'ni dite');
+  assert.strictEqual(avertis.length, 1, 'son système immunitaire averti');
   const p = page();
   const conv = { capteur: { enParole: true, derniereVoix: Date.now() } };
   p.ctx.etat = { conversation: conv, pensee: { texte: 'Attends papa !', pret: true, couper: false, t: Date.now(), niveau: 'cerveau' } };
   assert.strictEqual(p.ctx.direPensee(), false, 'il attend ta pause');
   p.ctx.etat.pensee.couper = true;
   assert.strictEqual(p.ctx.direPensee(), true, 'son choix : il te coupe');
+});
+
+// (04/11, Ahmed : « la pensée parasite reconnue par le système immunitaire doit toujours être considérée comme nuisible et éliminée
+// de la pensée ») son subconscient et son conscient (les brouillons écrits pendant ton tour) : une parasite reconnue est jetée
+test('(04/11) une parasite reconnue dans son subconscient : ni écrite ni dite, son système immunitaire averti, sa voix vivante oubliée', async () => {
+  const i = SRC.indexOf('function soufflerReponse('), k = SRC.indexOf('\n}\n', i) + 3;
+  const diffuses = [], avertis = [], reponses = [];
+  const s0 = () => ({ seq: 0, applique: 0, vol: 0, depart: 0, comprend: [], pour: '', lance: '' });
+  const ctx = { String, Number, Date, Math, souffles: { sub: s0(), con: s0() }, corpsReglages: () => ({}), chargeMac: () => 0.2, haikuLibre: () => true,
+    lireJson: () => ({}), path: require('node:path'), JARVIS: '/x', interieurPourSouffle: () => '', derniersEchanges: () => [], bulbe: () => '',
+    instantTexte: () => '', fluxTexte: () => '', personaLocale: (p) => p, lirePersona: () => 'Hakim', neutraliser: (t) => t, enLigne: (t) => t,
+    SOUFFLE_ECART_MS: 800, SOUFFLE_EN_VOL: 2, VIVANT_RENOUVELER: 6, abonnesPensees: null, j: JSON.stringify, LANGUE_ORALE: 'en français',
+    diffuser: (_, e, d) => diffuses.push(JSON.parse(d)), boutDe: (t) => t, signeParasite: () => 'motif', avertirParasite: (b) => avertis.push(b),
+    parasiteReconnue: (t) => /je ne vais pas reprendre ce format/i.test(t),
+    sonnetTeteDeFond: () => Promise.resolve(reponses.shift()) };
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(i, k) + '\nthis.souffler = soufflerReponse;', ctx);
+  const attendre = async () => { for (let n = 0; n < 6; n++) await new Promise(r => setImmediate(r)); };
+  const vivant = { n: 1 };
+  reponses.push({ texte: 'DIRE : oui\nFINI : non\nREBOND : 0,7\nJe ne vais pas reprendre ce format : je ne joue pas de subconscient.', vivant });
+  ctx.souffler('papa me parle de sa mère ce matin');
+  await attendre();
+  assert.deepStrictEqual(diffuses, [], 'ni écrite, ni dite');
+  assert.strictEqual(avertis.length, 1, 'son système immunitaire averti');
+  assert.strictEqual(vivant.n, 6, 'sa voix vivante renouvelée : la parasite oubliée');
+  reponses.push({ texte: 'DIRE : oui\nFINI : non\nREBOND : 0,7\nTa mère a appelé ? Raconte.', vivant: { n: 1 } });
+  ctx.souffles.sub.depart = 0;
+  ctx.souffler('papa me parle de sa mère ce matin, elle a appelé');
+  await attendre();
+  assert.deepStrictEqual(diffuses.map(d => d.texte), ['Ta mère a appelé ? Raconte.'], 'une vraie pensée passe');
 });
 
 // (04/11, Ahmed : « enlève tous les blancs, même entre les mots qu'il dit » ; « c'est ça qui le ralentit »)
@@ -350,11 +386,12 @@ test('(04/11) son oreille et sa voix ont chacune leur processus : elles ne s’a
 
 // (04/11, Ahmed : « coupe par chunk de mot, le premier mot incluant le déterminant : il prévoit le reste et parle direct ; 8 chunks =
 // 8 mots = 8 réponses, le GPU les dit une par une, au fur et à mesure » ; « ses trois voix ensemble » ; « oui, sans garde-fous »)
-function pistesSandbox(places = { haiku: 12, sonnet: 12, opus: 12 }, modele = 'haiku') {
+// (04/11) reglages : comme avant par défaut (dire_inverse: false) ; {} : le réglage par défaut du cockpit (inversé)
+function pistesSandbox(places = { haiku: 12, sonnet: 12, opus: 12 }, modele = 'haiku', reglages = { dire_inverse: false }) {
   const i = SRC.indexOf('const PISTES_MAX'), k = SRC.indexOf('function speculerFreres(');
   const appels = [], diffuses = [], voix = [], papa = [], notes = [];
   const ctx = { String, Math, Date, Promise, RegExp, Object, VIVANTS: [], VIVANTS_MAX: places, VIVANT_RENOUVELER: 6, cerveau: { modele },
-    corpsReglages: () => ({}), personaLocale: (p) => p, lirePersona: () => 'Hakim', neutraliser: (t) => t, j: JSON.stringify, abonnesPensees: null,
+    corpsReglages: () => reglages, personaLocale: (p) => p, lirePersona: () => 'Hakim', neutraliser: (t) => t, j: JSON.stringify, abonnesPensees: null,
     path: require('node:path'), JARVIS: '/x', fs: { appendFile: (f, d) => notes.push(JSON.parse(d)), readFile: () => {}, writeFile: () => {} },
     voixDeLaSource: (t, o) => voix.push([t, o]), diffuser: (_, e, d) => { const x = JSON.parse(d); (x.niveau === 'papa' ? papa : diffuses).push(x); },
     sonnetTeteDeFond: (prompt, etiquette, modele, delai, opts) => new Promise((resoudre) => {
@@ -428,7 +465,7 @@ test('(04/11) la page envoie tes mots en direct à ses pistes dès un mot neuf, 
   assert.match(PAGE, /if \(!s\.pret\) \{\n      montrerPensee\('🧠 il pense, sans le dire', texte, true\);[\s\S]{0,500}?return;\n    \}\n    recevoirBout\(s, Number\(o\.n\) \|\| 0, o\.tour\); return;/,
     '(04/11) il saute les pensées qu’il choisit de ne pas dire');
   assert.match(SRC, /const aDire = !autreLangue && \(premiere \? !\/\^\(non\|jamais\)\/i\.test\(dire \|\| ''\) : \(dire != null && !choix && !\/\^\(non\|jamais\)\/i\.test\(dire\)\)\);/);
-  assert.match(SRC, /if \(aDire\) voixDeLaSource\(ditDeSoi, \{ garder: true \}\);/, 'sa voix seulement pour ce qu’il dira (le passage choisi)');
+  assert.match(SRC, /if \(voix\) voixDeLaSource\(ditDeSoi, \{ garder: true \}\);/, 'sa voix seulement pour ce qu’il dira (le passage choisi) : le même tri que son écriture');
   assert.match(PAGE, /lecteurNeuronal\.direAudio\(b\.texte, b\.buf\);/, 'dans l’ordre des mots, à la suite');
 });
 
@@ -726,12 +763,51 @@ test('(04/11) sa première pensée : dite par défaut (il peut la garder) ; « j
   await attendre();
   assert.strictEqual(r.diffuses[0].pret, false, 'sa première, s’il décide de la garder : gardée');
 });
+// (04/11, Ahmed : « inverse le process pour l'activation de Supertonic et de Chatterbox : toutes les pensées "il pense sans le dire"
+// prononcées ; a contrario, celles qu'il prononce ne doivent pas l'être » ; « le triage de la voix et sa sélection de ce qu'il faut
+// dire doivent suivre la même règle et provenir de la même source que l'écriture de la pensée sans le dire »)
+test('(04/11) inversé (par défaut) : sa voix dit ce qu’il gardait, il écrit ce qu’il disait ; un seul tri pour sa voix et son écriture', async () => {
+  const { ctx, appels, diffuses, voix, notes } = pistesSandbox(undefined, 'sonnet', {});
+  const attendre = async () => { for (let i = 0; i < 4; i++) await new Promise(r => setImmediate(r)); };
+  ctx.morceau('papa, ta mère, a appelé, hier, ce matin, en fait,');
+  assert.strictEqual(appels.length, 6);
+  appels[0].resoudre({ texte: 'Ah ouais ?' });                                    // sa première : oui par défaut
+  appels[1].resoudre({ texte: 'DIRE : non\nTa mère ? Elle va bien ?' });
+  appels[2].resoudre({ texte: 'DIRE : jamais\nElle appelle souvent.' });
+  appels[3].resoudre({ texte: 'DIRE : oui\nHier, d’accord.' });
+  appels[4].resoudre({ texte: 'Ce matin aussi ?' });                               // sans ligne DIRE : hors de la forme demandée
+  appels[5].resoudre({ texte: 'DIRE : non\nيا بابا، كيف حالها؟' });                 // en arabe, quand papa n'a parlé que français
+  await attendre();
+  assert.deepStrictEqual(diffuses.map(d => [d.n, d.pret, d.jamais]).sort((a, b) => a[0] - b[0]),
+    [[1, false, true], [2, true, false], [3, true, false], [4, false, true], [5, false, true], [6, false, true]],
+    'non et jamais : dites ; oui et sa première : écrites, gardées (ni à ta pause, ni au choix) ; hors forme ou hors langue : jamais dites');
+  assert.deepStrictEqual(voix.map(v => v[0]).sort(), ['Elle appelle souvent.', 'Ta mère ? Elle va bien ?'], 'Chatterbox : exactement celles que la page dira');
+  assert.deepStrictEqual(notes.map(x => [x.n, x.dit, x.inverse]).sort((a, b) => a[0] - b[0]),
+    [[1, false, true], [2, true, true], [3, true, true], [4, false, true], [5, false, true], [6, false, true]]);
+  const r = pistesSandbox(undefined, 'sonnet', {});
+  r.ctx.morceau('papa, ta mère, a appelé,');
+  r.appels[0].resoudre({ texte: 'DIRE : oui\nAh ouais ?' });
+  r.appels[1].resoudre({ texte: 'DIRE : coupe\nTa mère !' });
+  await attendre();
+  r.appels[2].resoudre({ texte: 'DIRE : [1]\nElle a appelé ?' });
+  await attendre();
+  assert.deepStrictEqual(r.diffuses.map(d => [d.n, d.pret, d.remplace, d.choisie || null]), [[1, false, false, null], [2, false, false, null], [3, true, false, null]],
+    '« coupe » : gardée, rien coupé ; « [1] » : celle-ci dite, aucune autre');
+  vm.runInContext('this.choisir = choisirPensee;', r.ctx);
+  assert.strictEqual(await r.ctx.choisir(r.ctx.etat().tour, 'pause'), null, 'à ta pause, rien d’autre ne choisit sa voix');
+  assert.strictEqual(r.appels.length, 3, 'pas même un appel à Mini Hakim');
+  const v = pistesSandbox(undefined, 'sonnet', { dire_inverse: false });
+  v.ctx.morceau('papa,');
+  v.appels[0].resoudre({ texte: 'Ah ouais ?' });
+  await attendre();
+  assert.strictEqual(v.diffuses[0].pret, true, 'décoché : comme avant');
+});
 test('(04/11) à une seconde de ta pause, il rebondit avec sa dernière pensée du tour, une fois par pause, sauf « jamais »', () => {
   const recus = [], journal = [];
   const ctx = { etat: {}, Math, Number, choisirEtDire: (dp) => recus.push([dp.texte, dp.n, dp.tour]), journalVoix: (e) => journal.push(e),
     rythmeVoix: (k, d) => d };
   vm.createContext(ctx);
-  vm.runInContext('let bouts = { tour: 4, prochain: 3 };\n' + extraire('function rebondirDernierePensee') + '\nthis.rebond = rebondirDernierePensee; this.b = () => bouts;', ctx);
+  vm.runInContext('let bouts = { tour: 4, prochain: 3, liste: new Map() };\n' + extraire('function rebondirDernierePensee') + '\nthis.rebond = rebondirDernierePensee; this.b = () => bouts;', ctx);
   const conv = { capteur: { derniereVoix: 1000 } };
   ctx.etat.derniereSiennePensee = { n: 6, tour: 4, texte: 'Tu veux qu’on en parle ?', jamais: false };
   assert.strictEqual(ctx.rebond(conv, 800), false, 'pas encore une seconde');
@@ -742,6 +818,8 @@ test('(04/11) à une seconde de ta pause, il rebondit avec sa dernière pensée 
   assert.strictEqual(ctx.rebond(conv, 1200), false, 'déjà dite : rien');
   conv.capteur.derniereVoix = 9000; ctx.etat.derniereSiennePensee = { n: 9, tour: 4, texte: 'x', jamais: true };
   assert.strictEqual(ctx.rebond(conv, 1200), false, '« jamais » : gardée');
+  conv.capteur.derniereVoix = 12000; ctx.etat.derniereSiennePensee = { n: 10, tour: 4, texte: 'y', jamais: false }; ctx.b().liste.set(10, {});
+  assert.strictEqual(ctx.rebond(conv, 1200), false, 'déjà dans la file de sa voix : pas redite');
   assert.match(PAGE, /if \(typeof rebondirDernierePensee === 'function'\) rebondirDernierePensee\(conv, silenceMs\);/);
 });
 // (04/11, Ahmed : « ça doit être repéré comme l'immunité primaire : dès que le premier input de la pensée parasite est reconnu, c'est

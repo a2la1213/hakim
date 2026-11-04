@@ -3023,6 +3023,8 @@ function surSouffle(o) {
     // elle » ; « par défaut, sauf décision de sa part ») sa dernière pensée du tour, dite ou pas (« jamais » : il l'a gardée exprès)
     const nP = Number(o.n) || 0, dp = etat.derniereSiennePensee;
     if (nP && (!dp || dp.tour !== o.tour || nP > dp.n)) etat.derniereSiennePensee = { n: nP, tour: o.tour, texte, jamais: o.jamais === true };
+    // (04/11, Ahmed : « le triage de la voix et sa sélection de ce qu'il faut dire : la même règle, la même source que l'écriture de la
+    // pensée sans le dire ») un seul tri, au cockpit (pret) : dite, ou écrite sans être dite ; ici, rien ne le refait
     if (!s.pret) {
       montrerPensee('🧠 il pense, sans le dire', texte, true);
       // (04/11, Ahmed : « la bonne pensée au bon moment, redirigée au bon input pour la voix ») une pensée gardée peut être dite
@@ -3391,7 +3393,7 @@ function rebondirDernierePensee(conv, silenceMs) {
   const seuil = (typeof rythmeVoix === 'function' ? rythmeVoix('pause_derniere_pensee', 1) : 1) * 1000;
   if (!dp || dp.jamais || silenceMs < seuil || conv.rebondPause === pause) return false;
   conv.rebondPause = pause;
-  if (typeof bouts !== 'undefined' && bouts.tour === dp.tour && dp.n < bouts.prochain) return false;   // déjà dite (ou une plus récente)
+  if (typeof bouts !== 'undefined' && bouts.tour === dp.tour && (dp.n < bouts.prochain || bouts.liste.has(dp.n))) return false;   // déjà dite (ou en file, ou une plus récente)
   journalVoix('rebond_derniere', { n: dp.n, silence_ms: Math.round(silenceMs) });
   choisirEtDire(dp);
   return true;

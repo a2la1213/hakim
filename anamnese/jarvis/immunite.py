@@ -803,6 +803,8 @@ def cles_signes(rapport, source):
 
 
 def _cle_tolerable(cle):
+    if str(cle).startswith("pensee_parasite|"):                    # (04/11, Ahmed) toujours nuisible : jamais tolérée
+        return False
     return str(cle).rsplit("|", 1)[-1] in SIGNES_TOLERABLES
 
 
@@ -1576,6 +1578,7 @@ def tableau(maintenant=None):
                        "familles": [NOMS_FAMILLES.get(f, "?") for f in o.get("familles", [])], "signes": o.get("signes", [])[:12],
                        "avertie": bool(o.get("avertie")), "mesure": o.get("mesure"), "extrait": _propre(o.get("extrait", ""), EXTRAIT_MAX),
                        "empreinte": o.get("empreinte"), "motif": o.get("motif"), "tolere": bool(o.get("tolere")),
+                       "nuisible": bool(o.get("nuisible")) or "pensee_parasite" in (o.get("familles") or []),
                        # (relecture, 2) ce que « Inoffensif » ferait tolérer, montré à Ahmed : seulement ses signes bénins
                        "portee": [_lisible(c) for c in _cles_incident(o) if _cle_tolerable(c)],
                        "tolerable": any(_cle_tolerable(c) for c in _cles_incident(o))}
@@ -1750,13 +1753,15 @@ def ecrire_premisses():
 
 
 def noter_parasite(texte, signe, maintenant=None):
-    """Ce qui avertit : un incident « pensée parasite » (score 1 : rien d'une attaque, le médecin n'est pas appelé pour elle)."""
+    """Ce qui avertit : un incident « pensée parasite » (score 1 : le médecin n'est pas appelé pour elle, il n'y a rien à
+    diagnostiquer : Fable en apprend les prémisses). (04/11, Ahmed : « la pensée parasite reconnue par le système immunitaire doit
+    toujours être considérée comme nuisible et éliminée de la pensée ») nuisible d'emblée, jamais tolérée ; le cockpit l'a jetée."""
     maintenant = time.time() if maintenant is None else maintenant
     empreinte = hashlib.sha256(str(texte).encode("utf-8", errors="replace")).hexdigest()[:16]
     return _ajouter(INCIDENTS, {
         "ts": maintenant, "source": "pensee", "score": 1, "signes": [_propre(signe, 60)], "familles": ["pensee_parasite"],
         "famille": "pensee_parasite", "empreinte": empreinte, "extrait": _propre(texte, 160), "taille": len(str(texte)),
-        "avertie": False, "motif": f"pensee_parasite|pensee|{_propre(signe, 60)}", "motifs": [], "tolere": False})
+        "avertie": False, "motif": f"pensee_parasite|pensee|{_propre(signe, 60)}", "motifs": [], "tolere": False, "nuisible": True})
 
 
 def garder_premisses(phrases, parasites, normales, maintenant=None, source="fable"):

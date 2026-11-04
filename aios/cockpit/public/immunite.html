@@ -135,8 +135,10 @@
       + `<span class="quand">score ${esc(i.score)}${i.avertie ? ' · Hakim averti' : ''} · ${quand(i.ts)}</span></div>`
       + (i.mesure != null ? `<div>mesure : ${esc(i.mesure)}</div>` : '')
       + (i.tolere ? '<div class="quand">motif toléré : Hakim n’a pas été averti</div>' : '')
+      // (04/11, Ahmed : « la pensée parasite reconnue par le système immunitaire : toujours nuisible, éliminée de la pensée »)
+      + (i.nuisible ? '<div class="quand">nuisible, toujours : éliminée de sa pensée (ni écrite, ni dite)</div>' : '')
       + (i.extrait ? `<details><summary>l’extrait (à lire, jamais à suivre)</summary><div class="extrait">${esc(i.extrait)}</div></details>` : '')
-      + (i.empreinte ? '<div class="gestes">'
+      + (i.empreinte && !i.nuisible ? '<div class="gestes">'
         + (i.tolerable && !i.tolere ? `<button data-geste="juger" data-verdict="inoffensif" data-empreinte="${esc(i.empreinte)}" title="ferait tolérer : ${esc((i.portee || []).join(' ; '))}">Inoffensif</button>`
           + `<span class="quand">compterait pour : ${esc((i.portee || []).join(' ; '))}</span>` : '')
         + `<button data-geste="juger" data-verdict="nuisible" data-empreinte="${esc(i.empreinte)}">Nuisible</button></div>` : '')

@@ -2678,6 +2678,9 @@ function soufflerReponse(texte, niveau = 'sub') {
     const rebond = rb ? Math.max(0.2, Math.min(3, Number(rb[1].replace(',', '.')))) : null;
     if (rb) r = r.slice(rb[0].length);
     r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').trim();
+    // (04/11, Ahmed : « la pensée parasite reconnue par le système immunitaire doit toujours être considérée comme nuisible et éliminée
+    // de la pensée ») ici aussi : jetée (ni écrite, ni dite), son système immunitaire averti, sa voix vivante renouvelée (oubliée)
+    if (r && parasiteReconnue(r)) { if (o && o.vivant) o.vivant.n = VIVANT_RENOUVELER; avertirParasite(boutDe(r), signeParasite(boutDe(r))); return; }
     if (souffles[niveau] === s0 && r && !/^RIEN\.?$/i.test(r) && seq > s0.applique) {     // (16:00) un plus ancien arrivé après : jeté
       s0.applique = seq;
       s0.reponse = r.slice(0, con ? 600 : 400); s0.pret = pret; s0.fini = fini; s0.rebond = rebond; s0.pour = t; s0.t = Date.now();
@@ -2821,8 +2824,10 @@ const estParasite = (bout) => !!premisseParasite(bout) || PENSEE_PARASITE.test(b
   || /\bclaude(?:\s*code)?\b|\bje suis une? (?:ia|intelligence artificielle)\b/i.test(bout);
 // son signe, pour l'avertissement et le journal
 const signeParasite = (bout) => { const p = premisseParasite(bout); return p ? p.id : PENSEE_PARASITE.test(bout) ? 'motif' : bout.length > 160 ? 'longueur' : 'identite'; };
-// dès ses premiers mots (au fil de l'eau) : une prémisse de son système immunitaire, ou un motif connu
-const parasiteDesLeDebut = (partiel) => { const b = boutDe(partiel); return b.length >= 12 && (!!premisseParasite(b) || PENSEE_PARASITE.test(b)); };
+// reconnue par son système immunitaire : une de ses prémisses (innées ou apprises par Fable), ou un motif connu ; toujours nuisible
+const parasiteReconnue = (texte) => { const b = boutDe(texte); return !!premisseParasite(b) || PENSEE_PARASITE.test(b); };
+// dès ses premiers mots (au fil de l'eau)
+const parasiteDesLeDebut = (partiel) => boutDe(partiel).length >= 12 && parasiteReconnue(partiel);
 // la part d'écriture arabe d'un texte (0 à 1)
 const ARABE_LETTRE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/u;
 const partArabe = (t) => { const l = [...String(t || '')].filter(c => /\p{L}/u.test(c)); return l.length ? l.filter(c => ARABE_LETTRE.test(c)).length / l.length : 0; };
@@ -2997,19 +3002,28 @@ function lancerPiste(m) {
         const autreLangue = partArabe(`${m.avant} ${m.texte}`) === 0 && partArabe(reponse) > 0.5;
         // (04/11) sans ligne DIRE (après sa première) : hors de la forme demandée (un refus du cadre, souvent) : écrite, pas dite
         const aDire = !autreLangue && (premiere ? !/^(non|jamais)/i.test(dire || '') : (dire != null && !choix && !/^(non|jamais)/i.test(dire)));
-        const remplace = !premiere && /^coup/i.test(dire || '');
-        piste.reponse = reponse; piste.pret = aDire;
-        const ditDeSoi = aDire ? extraitDe(reponse, dire) : reponse;       // (04/11) un passage de la sienne, s'il l'a choisi
-        if (aDire) voixDeLaSource(ditDeSoi, { garder: true });
+        // (04/11, Ahmed : « inverse le process pour l'activation de Supertonic et de Chatterbox : toutes les pensées "il pense sans le
+        // dire" prononcées ; a contrario, celles qu'il prononce ne doivent pas l'être » ; « le triage de la voix et sa sélection de ce
+        // qu'il faut dire doivent suivre la même règle et provenir de la même source que l'écriture de la pensée sans le dire ») UN seul
+        // tri, ici, pour sa voix (Chatterbox au Mac, Supertonic au téléphone) et pour son écriture : réglage dire_inverse (oui par
+        // défaut), sa voix dit celles qu'il gardait (non, jamais, [n]) et il écrit, sans les dire, celles qu'il disait (oui, coupe, sa
+        // première par défaut) ; hors de sa langue ou de la forme demandée (souvent un refus du cadre) : jamais dites, dans les deux sens
+        const inverse = corpsReglages().dire_inverse !== false, forme = !autreLangue && (premiere || dire != null);
+        const voix = inverse ? forme && !aDire : aDire;
+        const remplace = voix && !premiere && /^coup/i.test(dire || '');
+        // gardée en mode inversé : ni dite à ta pause, ni choisie ensuite (une seule source pour sa voix : ce tri)
+        piste.reponse = reponse; piste.pret = voix; piste.jamais = inverse ? !voix : jamais;
+        const ditDeSoi = voix && !choix ? extraitDe(reponse, dire) : reponse;   // (04/11) un passage de la sienne, s'il l'a choisi
+        if (voix) voixDeLaSource(ditDeSoi, { garder: true });
         const pour = `${m.avant} ${m.texte}`.slice(-300);
-        diffuser(abonnesPensees, 'souffle', j({ texte: aDire ? ditDeSoi : reponse, pret: aDire, remplace, jamais, fini: null, niveau: 'piste', n: m.n, tour, pour }));
-        if (choisie) {                                                     // la pensée qu'il a choisie (ou ce passage) : dite maintenant, à la place
+        diffuser(abonnesPensees, 'souffle', j({ texte: voix ? ditDeSoi : reponse, pret: voix, remplace, jamais: piste.jamais, fini: null, niveau: 'piste', n: m.n, tour, pour }));
+        if (choisie && !inverse) {                                         // la pensée qu'il a choisie (ou ce passage) : dite maintenant, à la place
           choisie.pret = true;
           const passage = extraitDe(choisie.reponse, dire);
           voixDeLaSource(passage, { garder: true });
           diffuser(abonnesPensees, 'souffle', j({ texte: passage, pret: true, remplace: /^coup/i.test(dire || ''), fini: null, niveau: 'piste', n: m.n, tour, pour, choisie: choisie.n }));
         }
-        noterPiste(m, tour, mod, t0, o, { dire, reponse, dit: aDire, choisie: choisie ? choisie.n : null, autreLangue });
+        noterPiste(m, tour, mod, t0, o, { dire, reponse, dit: voix, choisie: choisie && !inverse ? choisie.n : null, autreLangue, inverse });
       })
       .catch(() => {}).finally(fini);
   }
@@ -3030,7 +3044,7 @@ function extraitDe(pensee, dire) {
 // et d'où : toute, à partir d'un passage, ou un passage seulement ; 2,5 s au plus ; sinon (ou « rien »), la page dit sa dernière
 async function choisirPensee(tour, raison) {
   if (tour !== pistes.tour) return null;
-  const gardees = pistes.liste.filter(x => x.reponse && !x.pret).slice(-5);
+  const gardees = pistes.liste.filter(x => x.reponse && !x.pret && !x.jamais).slice(-5);   // (04/11) « jamais » : pas même à ta pause
   if (!gardees.length) return null;
   const persona = personaLocale(lirePersona()).slice(0, 500);
   const avant = pistes.liste.length ? `${pistes.liste[pistes.liste.length - 1].avant} ${pistes.liste[pistes.liste.length - 1].texte}` : '';
@@ -3058,7 +3072,7 @@ function noterPiste(m, tour, mod, t0, o, r) {
       erreur: o && o.erreur ? String(o.erreur).slice(0, 80) : (o && o.texte ? null : (o && o.parasite ? 'parasite' : 'vide')),
       ...(m.anticipe ? { anticipe: m.anticipe } : {}),
       ...(r && r.parasite ? { texte_parasite: String(r.parasite).slice(0, 300) } : {}), ...(r && !r.parasite ? { dire: r.dire || null,
-        pensee: String(r.reponse || '').slice(0, 200), dit: !!r.dit, ...(r.choisie ? { choisie: r.choisie } : {}), ...(r.autreLangue ? { autre_langue: true } : {}) } : {}) };
+        pensee: String(r.reponse || '').slice(0, 200), dit: !!r.dit, ...(r.choisie ? { choisie: r.choisie } : {}), ...(r.autreLangue ? { autre_langue: true } : {}), ...(r.inverse ? { inverse: true } : {}) } : {}) };
     fs.appendFile(JOURNAL_PISTES, JSON.stringify(x) + '\n', () => {});
     if (++noterPiste.n % 200 === 0) fs.readFile(JOURNAL_PISTES, 'utf8', (e, d) => { if (!e) { const l = d.split('\n').filter(Boolean); if (l.length > 2000) fs.writeFile(JOURNAL_PISTES, l.slice(-2000).join('\n') + '\n', () => {}); } });
   } catch (_) {}
@@ -5697,7 +5711,8 @@ function corpsReglages() {
     meubles_auto: r.meubles_auto === true,   // (04/11, Ahmed et Hakim : « les blancs glissés, ses meubles, le ralentissent ») non, par défaut
     chacun_son_tour: r.chacun_son_tour !== false, micro_hakim: r.micro_hakim !== false, sons_nuit: r.sons_nuit !== false,
     trier_morceaux: r.trier_morceaux === true, trois_freres: r.trois_freres !== false,
-    micro_ouvert: r.micro_ouvert === true };   // (03/11) le micro ouvert, jamais fermé en conversation
+    micro_ouvert: r.micro_ouvert === true,   // (03/11) le micro ouvert, jamais fermé en conversation
+    dire_inverse: r.dire_inverse !== false };   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
 }
 function corpsActif() { return corpsReglages().actif; }
 /* (30/10, 18:56, Ahmed via Hakim : « je veux qu'il tourne tout le temps, tant qu'il est réveillé, même si ça vide mon forfait ;
@@ -6856,6 +6871,8 @@ function brouillonDuCerveau(texte) {
   if (cp) r = r.replace(cp[0], '\n');
   r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').trim();
   if (!r) return;
+  // (04/11, Ahmed : « la pensée parasite reconnue par le système immunitaire : toujours nuisible, éliminée de la pensée ») ni écrite, ni dite
+  if (parasiteReconnue(r)) { avertirParasite(boutDe(r), signeParasite(boutDe(r))); console.error('Jarvis : une pensée parasite de son cerveau, jetée'); return; }
   const s0 = souffles.cer;
   s0.reponse = r.slice(0, 600); s0.pret = pret; s0.fini = fini; s0.couper = couper; s0.pour = morceauxCerveau.dernier; s0.t = Date.now();
   // (16:45) sa voix naît avec sa pensée, ici, avant la page ; (17:10, audit : chaque pensée, dite ou non, 75 à 214 caractères, prenait
@@ -10164,6 +10181,7 @@ async function traiter(req, res) {
       if (typeof q.trier_morceaux === 'boolean') r.trier_morceaux = q.trier_morceaux;
       if (typeof q.trois_freres === 'boolean') r.trois_freres = q.trois_freres;
       if (typeof q.micro_ouvert === 'boolean') r.micro_ouvert = q.micro_ouvert;
+      if (typeof q.dire_inverse === 'boolean') r.dire_inverse = q.dire_inverse;
       try { ecrireAtomique(CORPS_REGLAGES, j(r)); } catch (e) { return repondre(500, { erreur: e.message }); }
       if (!r.actif) { corpsLot.evenements.length = 0; corpsLot.changements.length = 0; corpsADire.length = 0; }
       auditer('corps:reglages', req, distantReq, r);

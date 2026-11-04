@@ -58,6 +58,19 @@ def test_elle_avertit_un_incident_pensee_parasite_que_le_medecin_ne_prend_pas_po
     assert immunite.NOMS_FAMILLES["pensee_parasite"] == "pensée parasite"
 
 
+def test_la_pensee_parasite_est_toujours_nuisible_jamais_toleree(D):
+    """(04/11, Ahmed : « la pensée parasite reconnue par le système immunitaire doit toujours être considérée comme nuisible et
+    éliminée de la pensée ») nuisible d'emblée ; « Inoffensif » ne peut rien en faire tolérer, même sous un signe tolérable ailleurs."""
+    immunite.noter_parasite(PARASITES[0], "inne-reprendre", T0)
+    o = [json.loads(l) for l in (D / "incidents.jsonl").read_text().splitlines()][-1]
+    assert o["nuisible"] is True and o["tolere"] is False
+    sous_un_signe_tolerable = {**o, "motif": "pensee_parasite|pensee|contenu_geant"}
+    assert not immunite._cle_tolerable(sous_un_signe_tolerable["motif"])
+    assert not immunite.apprendre_inoffensif(sous_un_signe_tolerable, "ahmed", T0)
+    vu = immunite.tableau(T0)["incidents"][0]
+    assert vu["nuisible"] is True and vu["tolerable"] is False, "ce que la page montre à Ahmed"
+
+
 def test_fable_apprend_ses_premisses_a_partir_du_flag_et_le_code_ne_garde_que_les_sures(D, tmp_path):
     vu = {}
 
