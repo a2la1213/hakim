@@ -3381,7 +3381,10 @@ function poserPave(cle, titre, html) {
 // qu'il veut prononcer » ; « les 2 process doivent être parallélisés et émerger en même temps ») ses deux fils, mis à jour ensemble à
 // chaque lecture de son ribosome, sans attendre sa voix : 💭 les mots lus qu'il n'a pas gardés, 🗣 ce qu'il a gardé, morceau après morceau
 const TITRE_EPISSURE = '💭 sa pensée interne · 🗣 sa parole épissée';
-const htmlEpissure = (p) => `<div class="interne" style="opacity:.6">💭 ${esc(p.interne || '…')}</div>` + `<div class="dit" style="font-style:normal;margin-top:4px">🗣 « ${esc(p.episse || '…')} »</div>` + (p.coupure ? `<div class="coupure" style="font-style:normal;margin-top:2px">${p.coupure === 'continue' ? '✋ coupé : il finit ce qu’il disait' : '✋ coupé : il te laisse la parole'}</div>` : '');
+// (04/11, 15:35, Ahmed : « je ne vois pas l'épissure se faire au fur et à mesure ; ça me balance juste le bloc ») chaque pensée qui arrive se
+// colle tout de suite au bout de sa parole, en attente (pâle) ; son ribosome la trie ensuite : gardée dans 🗣, laissée dans 💭
+const attenteDe = (p) => [...p.textes.join(' ').matchAll(MOTS_EPISSES)].map(m => m[0]).slice(Number(p.lus) || 0).join(' ');
+const htmlEpissure = (p) => `<div class="interne" style="opacity:.6">💭 ${esc(p.interne || '…')}</div>` + `<div class="dit" style="font-style:normal;margin-top:4px">🗣 « ${[p.episse ? esc(p.episse) : '', attenteDe(p) ? `<span class="attente" style="opacity:.45;font-style:italic">${esc(attenteDe(p))}</span>` : ''].filter(Boolean).join(' ') || '…'} »</div>` + (p.coupure ? `<div class="coupure" style="font-style:normal;margin-top:2px">${p.coupure === 'continue' ? '✋ coupé : il finit ce qu’il disait' : '✋ coupé : il te laisse la parole'}</div>` : '');
 // (04/11, 12:05) un pavé par tour : la réponse d'un tour fini rejoint le sien, même quand papa a déjà repris (les 8 derniers gardés)
 function paveDe(tour) {
   etat.paves = etat.paves || {};
@@ -3403,11 +3406,14 @@ function surRibosome(o) {
   const p = paveDe(o.tour);
   if (String(o.pave || '').length > p.textes.join(' ').length) p.textes = [String(o.pave)];   // le cockpit fait foi
   etat.epissureTour = Math.max(Number(etat.epissureTour) || 0, Number(o.tour) || 0);
+  if (o.texte || (Array.isArray(o.mots) && o.mots.length)) etat.epissureActiveA = Date.now();
   if (o.texte && etat.riboStop != null && Number(o.tour) <= etat.riboStop) o = { ...o, texte: '' };   // (15:10) son épissure arrêtée : plus un mot
   // (15:30) ses deux fils : ce qu'il a lu sans le garder (sa pensée interne), et ce qu'il garde, collé à la fin (sa parole épissée)
-  if (o.pave != null && Number(o.lus) >= 0) {
+  if (o.pave != null) {
+    const motsP = [...String(o.pave).matchAll(MOTS_EPISSES)].map(m => m[0]), lus = o.lus != null ? Number(o.lus) || 0 : motsP.length;
+    p.lus = Math.max(Number(p.lus) || 0, lus);                         // (sans « lus » : un cockpit d'avant, tout est lu)
     const g = new Set(Array.isArray(o.mots) ? o.mots : []);
-    p.interne = [...String(o.pave).matchAll(MOTS_EPISSES)].map(m => m[0]).slice(0, Number(o.lus) || 0).filter((_, k) => !g.has(k)).join(' ');
+    if (o.lus != null) p.interne = motsP.slice(0, lus).filter((_, k) => !g.has(k)).join(' ');
   }
   if (o.texte && Number(o.k) > (p.kEpisse || 0)) { p.episse = `${p.episse || ''} ${o.texte}`.trim(); p.kEpisse = Number(o.k); }
   if (o.texte) {
@@ -3446,14 +3452,17 @@ setInterval(() => {
   if (!c || typeof direRibosome !== 'function') return;
   // (04/11, 15:10, Ahmed : « le stop, c'est 10 s de silence : c'est sa parole qui s'arrête à ce stop ») ta voix entendue (pas ta respiration)
   if (c.capteur && c.capteur.enParole && !(Number(c.capteur.pauseEnCours) >= 300)) etat.papaVoixA = Date.now();
-  if (voixEpissee() && etat.papaVoixA && Date.now() - etat.papaVoixA >= 10000) { etat.papaVoixA = 0; arreterEpissure('silence'); }
+  // (04/11, 15:33, mesuré : une épissure née d'une phrase gardée pendant sa réflexion, arrêtée 4 s après sa naissance, ta voix datant de 20 s)
+  // les 10 s comptent depuis ta voix OU le dernier morceau de son épissure, le plus récent des deux
+  const calme = Date.now() - Math.max(etat.papaVoixA || 0, etat.epissureActiveA || 0);
+  if (voixEpissee() && etat.papaVoixA && calme >= 10000) { etat.papaVoixA = 0; arreterEpissure('silence'); }
   direRibosome();
 }, 300);
 // le stop de son épissure (10 s de ton silence, ou ta demande d'outil, dite par le cockpit) : ce qu'elle avait encore à dire est laissé, sa voix
 // s'arrête, et le cockpit la ferme ; l'épissure suivante (un numéro plus grand) parle
 function arreterEpissure(cause, tour) {
   const t = Number(tour != null ? tour : etat.epissureTour);
-  if (!(t > 0)) return;
+  if (!(t > 0) || (etat.riboStop != null && t <= etat.riboStop)) return;   // (15:33) une épissure arrêtée ne s'arrête pas deux fois
   etat.riboStop = Math.max(etat.riboStop != null ? etat.riboStop : -1, t);
   etat.riboFile = (etat.riboFile || []).filter(x => Number(x.tour) > etat.riboStop);
   if (typeof bouts !== 'undefined' && Number(bouts.tour) <= etat.riboStop) { bouts.fileTel = []; bouts.attenteTel = null; }

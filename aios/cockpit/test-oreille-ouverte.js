@@ -133,5 +133,5 @@ test('ce qui est traduit sort jusqu’au bout : il attend pendant que tu parles,
 test('ta fin de tour relance sa voix ; et toutes les 0,3 s en Conversation, ce qui est traduit et en attente part', () => {
   const i = PAGE.indexOf('async function tourDeParole('), f = PAGE.slice(i, i + 400);
   assert.match(f, /^async function tourDeParole\(conv, wav, infos, extra\) \{\n  if \(typeof direRibosome === 'function'\) setTimeout\(direRibosome, 0\);/);
-  assert.match(PAGE, /setInterval\(\(\) => \{\n  const c = etat\.conversation;\n  if \(!c \|\| typeof direRibosome !== 'function'\) return;[\s\S]{0,600}?\n  direRibosome\(\);\n\}, 300\);/);
+  assert.match(PAGE, /setInterval\(\(\) => \{\n  const c = etat\.conversation;\n  if \(!c \|\| typeof direRibosome !== 'function'\) return;[\s\S]{0,1500}?\n  direRibosome\(\);\n\}, 300\);/);
 });

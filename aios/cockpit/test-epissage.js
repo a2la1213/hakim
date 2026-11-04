@@ -119,7 +119,7 @@ function pageRibosome() {
   vm.createContext(ctx);
   const prendre = (nom) => { const i = PAGE.indexOf(`function ${nom}(`); return PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2); };
   const ligne = (debut) => { const i = PAGE.indexOf(debut); return PAGE.slice(i, PAGE.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
-  vm.runInContext(ligne('const MOTS_EPISSES = ') + ligne('const TITRE_EPISSURE = ') + ['htmlPave', 'htmlDit', 'poserPave', 'paveDe', 'ajouterAuPave', 'surRibosome', 'direRibosome', 'preparerRibosome'].map(prendre).join('\n') + ligne('const htmlEpissure = ')
+  vm.runInContext(ligne('const MOTS_EPISSES = ') + ligne('const TITRE_EPISSURE = ') + ligne('const attenteDe = ') + ['htmlPave', 'htmlDit', 'poserPave', 'paveDe', 'ajouterAuPave', 'surRibosome', 'direRibosome', 'preparerRibosome'].map(prendre).join('\n') + ligne('const htmlEpissure = ')
     + '\nthis.ajouter = ajouterAuPave; this.lu = surRibosome; this.dire = direRibosome;', ctx);
   return { ctx, dits };
 }
@@ -178,11 +178,14 @@ test('page : ses deux fils, sa pensée interne (ce qu’il ne dit pas) et sa par
   ctx.$ = (id) => (id === 'epissureScene' ? scene : null);
   const pave = () => ctx.etat.aCote.find(x => String(x.cle).startsWith('pave-7-')).html;
   ctx.ajouter(7, 'Oui papa, je suis là.');
-  assert.doesNotMatch(pave(), /je suis là/, 'une pensée pas encore lue : ni dite, ni écartée');
+  // (04/11, 15:35, Ahmed : « je ne vois pas l'épissure se faire au fur et à mesure ; ça me balance juste le bloc ») chaque pensée qui arrive
+  // se colle tout de suite au bout de sa parole, en attente (pâle), puis son ribosome la trie : gardée dans 🗣, laissée dans 💭
+  assert.match(pave(), /🗣 « <span class="attente"[^>]*>Oui papa je suis là<\/span> »/, 'une pensée pas encore lue : collée au bout, en attente');
   ctx.lu({ tour: 7, k: 1, texte: 'alors oui papa', pave: 'Oui papa, je suis là.', mots: [0, 1], ajoutes: ['alors'], lus: 5 });
   assert.match(pave(), /💭 je suis là/, 'sa pensée interne : ce qu’il ne dit pas');
   assert.match(pave(), /🗣 « alors oui papa »/, 'sa parole épissée : tout de suite, sans attendre sa voix');
   ctx.ajouter(7, 'Tu veux le calcul ?');
+  assert.match(pave(), /🗣 « alors oui papa <span class="attente"[^>]*>Tu veux le calcul<\/span> »/, 'la suivante, collée au bout pendant qu’il lit');
   ctx.lu({ tour: 7, k: 2, texte: 'tu veux le calcul', pave: 'Oui papa, je suis là. Tu veux le calcul ?', mots: [0, 1, 5, 6, 7, 8], ajoutes: [], lus: 9 });
   assert.match(pave(), /🗣 « alors oui papa tu veux le calcul »/, 'le morceau suivant se colle à la fin');
   assert.match(pave(), /💭 je suis là</);
@@ -272,7 +275,7 @@ function pageSync() {
   vm.createContext(ctx);
   const prendre = (nom) => { const i = PAGE.indexOf(`function ${nom}(`); return PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2); };
   const ligne = (debut) => { const i = PAGE.indexOf(debut); return PAGE.slice(i, PAGE.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
-  vm.runInContext(ligne('const MOTS_EPISSES = ') + ligne('const TITRE_EPISSURE = ') + ['htmlPave', 'htmlDit', 'poserPave', 'paveDe', 'ajouterAuPave', 'surRibosome', 'direRibosome', 'revelerRibosome', 'preparerRibosome']
+  vm.runInContext(ligne('const MOTS_EPISSES = ') + ligne('const TITRE_EPISSURE = ') + ligne('const attenteDe = ') + ['htmlPave', 'htmlDit', 'poserPave', 'paveDe', 'ajouterAuPave', 'surRibosome', 'direRibosome', 'revelerRibosome', 'preparerRibosome']
     .map(prendre).join('\n') + ligne('const htmlEpissure = ') + '\nthis.ajouter = ajouterAuPave; this.lu = surRibosome; this.voix = revelerRibosome;', ctx);
   const tic = () => { minuteurs.sort((a, b) => a[0] - b[0]).splice(0).forEach(([, f]) => f()); };
   return { ctx, dits, minuteurs, tic };
@@ -305,7 +308,7 @@ test('prête avant ta fin : sa voix se calcule d’avance pendant qu’il attend
   vm.createContext(ctx);
   const prendre = (nom) => { const i = PAGE.indexOf(`function ${nom}(`); return PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2); };
   const ligne = (debut) => { const i = PAGE.indexOf(debut); return PAGE.slice(i, PAGE.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
-  vm.runInContext(ligne('const MOTS_EPISSES = ') + ligne('const TITRE_EPISSURE = ') + ['htmlPave', 'htmlDit', 'poserPave', 'paveDe', 'surRibosome', 'direRibosome', 'preparerRibosome']
+  vm.runInContext(ligne('const MOTS_EPISSES = ') + ligne('const TITRE_EPISSURE = ') + ligne('const attenteDe = ') + ['htmlPave', 'htmlDit', 'poserPave', 'paveDe', 'surRibosome', 'direRibosome', 'preparerRibosome']
     .map(prendre).join('\n') + ligne('const htmlEpissure = ') + '\nthis.lu = surRibosome; this.dire = direRibosome;', ctx);
   ctx.lu({ tour: 7, k: 1, texte: 'Oui papa', pave: 'Oui papa.', mots: [0, 1], ajoutes: [] });
   ctx.lu({ tour: 7, k: 2, texte: 'je t’écoute', pave: 'Oui papa. Je t’écoute.', mots: [0, 1, 2, 3], ajoutes: [] });
@@ -626,7 +629,14 @@ test('page : à 10 s de ton silence, ou à sa demande d’outil, sa parole de ce
   ctx.dire();
   assert.deepStrictEqual(dits.map(d => d[0]), ['Salut'], 'l’épissure suivante parle');
   assert.match(PAGE, /if \(o\.niveau === 'ribosome_stop'\) \{ arreterEpissure\(o\.cause \|\| 'outil', o\.tour\); return; \}/);
-  assert.match(PAGE, /Date\.now\(\) - etat\.papaVoixA >= 10000\) \{ etat\.papaVoixA = 0; arreterEpissure\('silence'\); \}/);
+  // (04/11, 15:33, mesuré : une épissure née d'une phrase gardée pendant sa réflexion, arrêtée 4 s après sa naissance, ta voix datant de 20 s)
+  // les 10 s comptent depuis ta voix OU le dernier morceau de son épissure, le plus récent des deux
+  assert.match(PAGE, /const calme = Date\.now\(\) - Math\.max\(etat\.papaVoixA \|\| 0, etat\.epissureActiveA \|\| 0\);/);
+  assert.match(PAGE, /if \(voixEpissee\(\) && etat\.papaVoixA && calme >= 10000\) \{ etat\.papaVoixA = 0; arreterEpissure\('silence'\); \}/);
+  assert.match(PAGE, /if \(o\.texte \|\| \(Array\.isArray\(o\.mots\) && o\.mots\.length\)\) etat\.epissureActiveA = Date\.now\(\);/);
+  const avant = arrets.filter(x => Array.isArray(x)).length;
+  ctx.arreter('silence', 7);
+  assert.strictEqual(arrets.filter(x => Array.isArray(x)).length, avant, 'une épissure arrêtée ne s’arrête pas deux fois');
 });
 
 // (04/11, 15:15, mesuré : sa pensée sur ton morceau à 4,1 s avec Hakim (Sonnet) ; Ahmed : « oui ») avec l'épissage, ses pensées de piste
