@@ -93,7 +93,8 @@ function seulementAgents(e) {
 // (29/10) la salle de café : l'auteur d'un message est signé ici, par ce que claude dit de l'appel (agent_id), jamais
 // par ce que l'appelant prétend ; la réponse remplace « auteur » (updatedInput)
 function signerCafe(e) {
-  if (!e || typeof e !== 'object' || e.tool_name !== 'mcp__terminal__cafe_dire') return null;
+  // (04/11, 19:55) partager une image, un son ou une vidéo : signé de même
+  if (!e || typeof e !== 'object' || !['mcp__terminal__cafe_dire', 'mcp__terminal__cafe_partager'].includes(e.tool_name)) return null;
   const auteur = typeof e.agent_id === 'string' && /^a[0-9a-f]{16}$/.test(e.agent_id) ? e.agent_id : (e.agent_id ? null : 'hakim');
   return auteur ? { ...objet(e.tool_input), auteur } : null;
 }

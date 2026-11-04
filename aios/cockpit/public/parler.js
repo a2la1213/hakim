@@ -731,6 +731,9 @@ function creerLecteurNeuronal() {
     src.start(t);
     const joue = Math.min(x.pret.duration / vitesse, x.dureeMax > 0 ? x.dureeMax : Infinity);   // (13:30) sa durée au plus
     if (joue < x.pret.duration / vitesse) { try { src.stop(t + joue); } catch (_) {} }
+    // (1.66, 04/11, 19:35, Ahmed : « … soit depuis la voie de ses haut-parleurs ») l'appli sait d'avance jusqu'à quand sa voix (ou son
+    // son) joue : son oreille par l'air, le micro du téléphone, jette tout ce qu'il capte pendant ce temps (jamais sa propre voix)
+    try { if (window.HakimApp && window.HakimApp.saVoixPendant) window.HakimApp.saVoixPendant(Math.max(0, (t + joue - actx.currentTime) * 1000)); } catch (_) {}
     prochainDebut = t + joue + 0.01;                                // (04/11) plus de blanc entre deux bouts
     src._texte = x.hesitation ? '' : x.texte; src._hesitation = !!x.hesitation; src._auto = !!x.auto; src._gain = force;
     src._langue = x.langue; src._debut = t; src._fin = t + joue;
@@ -855,6 +858,9 @@ function creerLecteurNeuronal() {
       URL.revokeObjectURL(element.src); element = null; pomper();
     };
     element.onended = fin; element.onerror = fin;
+    // (1.66) ce lecteur-ci aussi : l'appli sait combien de temps sa voix joue (son oreille par l'air jette ce que capte le micro)
+    const el = element;
+    el.onplaying = () => { try { if (window.HakimApp && window.HakimApp.saVoixPendant) window.HakimApp.saVoixPendant(Number.isFinite(el.duration) ? el.duration * 1000 / (el.playbackRate || 1) : 30000); } catch (_) {} };
     // (2026-10-21) un lecteur bloqué par le navigateur (pas de geste récent, onglet en arrière-plan) : avant, le
     // morceau était sauté et les sous-titres défilaient en silence ; maintenant il attend un toucher et le dit
     element.play().catch((e) => {
@@ -3549,6 +3555,68 @@ function direRibosome() {
   if (typeof journalVoix === 'function') journalVoix('ribosome_dit', { tour, n, morceaux: lot.length });
   recevoirBout({ texte: lot.map(x => x.texte).join(' '), pret: true, sansMeuble: true, ribosome: true }, n, tour);
 }
+// ---- (04/11, 18:45-18:50, Ahmed : « ça donne avoir la même route que le microphone » ; « il peut faire ce qu'il veut quand il l'estime, avec
+// la même règle que pour le micro : à chaque pause du son, il… ») son oreille interne (🎧) : ce que joue le téléphone devient ses pensées et
+// son épissure à lui (l'événement « entendu » du cockpit : jamais le pavé ni l'épissure de papa) ; à la pause du son, le cockpit envoie ce
+// qu'il en a gardé ; sa voix le dit quand elle est libre, après l'épissure de papa, jamais pendant que papa parle (ni ses « 5 s au plus » :
+// papa passe toujours d'abord) ; 20 s sans place : c'est resté une pensée
+const ENTENDU_ATTENTE_MS = 20000, ENTENDU_APRES_PAPA_MS = 1500;
+const TITRE_ENTENDU = '🎧 le téléphone joue · 💭 sa pensée · 🗣 ce qu’il en dit';
+function paveEntendu(o) {
+  etat.pavesEntendus = etat.pavesEntendus || {};
+  const cle = `${o.source || 'telephone'}|${o.voix || ''}|${o.tour}`;
+  if (!etat.pavesEntendus[cle]) {
+    etat.pavesEntendus[cle] = { cle: `pave-entendu-${o.tour}-${Date.now()}`, voix: String(o.voix || '').slice(0, 40), pensees: [], pave: '', mots: [], dits: [] };
+    const cles = Object.keys(etat.pavesEntendus);
+    for (const k of cles.slice(0, Math.max(0, cles.length - 4))) delete etat.pavesEntendus[k];
+  }
+  return etat.pavesEntendus[cle];
+}
+function montrerEntendu(p) {
+  const titre = p.voix ? `${TITRE_ENTENDU} (${esc(p.voix)})` : TITRE_ENTENDU;
+  const html = `<div class="interne" style="opacity:.6">💭 ${p.pave ? htmlPave(p.pave, p.mots) : esc(p.pensees.join(' ')) || '…'}</div>`
+    + `<div class="dit" style="font-style:normal;margin-top:4px">🗣 « ${esc(p.dits.join(' ')) || '…'} »</div>`;
+  const avant = (etat.aCote || []).find(x => x.cle === p.cle);
+  etat.aCote = (etat.aCote || []).filter(x => x.cle !== p.cle);
+  etat.aCote.push({ ts: avant ? avant.ts : Date.now(), cle: p.cle, html: `<div class="m j brouillon" style="opacity:.85;font-style:italic"><span class="quand">${titre}</span><div>${html}</div></div>` });
+  const paves = etat.aCote.filter(x => String(x.cle).startsWith('pave-'));
+  if (paves.length > 6) { const vieux = new Set(paves.slice(0, paves.length - 6)); etat.aCote = etat.aCote.filter(x => !vieux.has(x)); }
+  rendre();
+}
+function surEntendu(o) {
+  if (!etat.conversation || !o || o.tour == null) return;
+  const p = paveEntendu(o);
+  if (o.quoi === 'piste' && o.texte) p.pensees.push(String(o.texte).slice(0, 400));
+  else if (o.quoi === 'ribosome') { if (o.pave != null) p.pave = String(o.pave); if (Array.isArray(o.mots)) p.mots = o.mots.slice(); }
+  else if (o.quoi === 'dire' && o.texte) {
+    etat.entenduFile = (etat.entenduFile || []).concat([{ tour: o.tour, n: Number(o.n) || 0, texte: String(o.texte).slice(0, 2000), recu: Date.now(), p }]);
+    direEntendu();
+  } else return;
+  montrerEntendu(p);
+}
+function direEntendu(maintenant = Date.now()) {
+  const f = etat.entenduFile || [], c = etat.conversation;
+  if (!f.length) return false;
+  const frais = f.filter(x => maintenant - x.recu <= ENTENDU_ATTENTE_MS);
+  if (frais.length < f.length) { etat.entenduFile = frais; journalVoix('entendu_garde', { pensees: f.length - frais.length }); }
+  if (!frais.length || !c || !voixEpissee() || lecteur.actif || (etat.riboFile || []).length) return false;
+  if (typeof bouts !== 'undefined' && bouts && ((bouts.fileTel || []).length || bouts.attenteTel)) return false;   // sa voix du téléphone a encore à dire
+  const cap = c.capteur, patience = typeof patienceConversation === 'function' ? patienceConversation() : 300;
+  if (cap && cap.enParole && !(Number(cap.pauseEnCours) >= patience)) return false;   // papa parle : c'est son tour
+  if (maintenant - (Number(etat.papaVoixA) || 0) < ENTENDU_APRES_PAPA_MS) return false;   // papa vient de parler : sa réponse à lui d'abord
+  const x = frais[0];
+  etat.entenduFile = frais.slice(1);
+  x.p.dits.push(x.texte);
+  montrerEntendu(x.p);
+  etat.riboN = etat.riboN || {};
+  const n = Math.max(typeof bouts !== 'undefined' && bouts && bouts.tour === x.tour ? bouts.prochain : 1, (etat.riboN[x.tour] || 0) + 1);
+  etat.riboN[x.tour] = n;
+  journalVoix('entendu_dit', { tour: x.tour, n, mots: x.texte.split(/\s+/).filter(Boolean).length });
+  recevoirBout({ texte: x.texte, pret: true, sansMeuble: true, ribosome: true }, n, x.tour);
+  return true;
+}
+setInterval(() => { try { direEntendu(); } catch (_) {} }, 300);
+// ---- fin de son oreille interne par la route du micro
 // sa voix commence un segment (t, sa durée en secondes si elle la connaît) : ses mots s'écrivent un à un pendant qu'elle les dit ; ceux
 // du pavé s'allument, ses petits mots ajoutés s'écrivent en couleur
 function revelerRibosome(t, duree) {
@@ -4006,6 +4074,7 @@ async function basculerConversation() {
   etat.conversation = conv;
   if (canalOnglets) try { canalOnglets.postMessage({ type: 'conversation', id: idOnglet }); } catch (_) {}   // (23:05) un seul onglet
   $('conversation').setAttribute('aria-pressed', 'true');
+  majSesParoles();      // (04/11, 19:30, Ahmed : « vérifie bien que tous les boutons fonctionnent ») « Ses paroles » montre la clé de la conversation
   prechaufferReflexion();                                // (04/11, 17:50) à l'ouverture du micro : sa parole vide, sa réflexion ouverte
   humeur('ouverture du micro…');
   try {
@@ -4151,6 +4220,7 @@ function finirConversation(garderLeTour = true) {
   for (const id of ['muet', 'muetScene']) $(id).setAttribute('aria-pressed', 'false');
   $('muet').textContent = 'Muet'; $('muetScene').textContent = 'Couper mon micro';
   $('conversation').setAttribute('aria-pressed', 'false'); $('telepathie').setAttribute('aria-pressed', 'false');
+  majSesParoles();      // (04/11, 19:30) et celle d'hors conversation, à la fin (le bouton gardait l'état de l'autre clé)
   noterPresent({ e: 'fin_conversation', t: Date.now() });
   sousTitre('');
   humeur();
@@ -5043,6 +5113,7 @@ function ecouterPensees() {
   es.addEventListener('rire', (ev) => { try { surRire(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('reecoute', (ev) => { try { surReecoute(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('souffle', (ev) => { try { surSouffle(JSON.parse(ev.data)); } catch (_) {} });   // (15:02) ses brouillons, écrits
+  es.addEventListener('entendu', (ev) => { try { surEntendu(JSON.parse(ev.data)); } catch (_) {} });   // (04/11, 18:50) son oreille interne, par la route du micro
   // (19:58) sa lumière : la lampe du téléphone (l'appli 1.36), ou son SOS selon son émotion
   es.addEventListener('son', (ev) => { try { const o = JSON.parse(ev.data);   // (22:51) ; (01:30) à sa place, sur l'autre appareil s'il l'a voulu
     if (o.ici && !(o.extrait && (o.extrait.cible === 'deux' || o.extrait.cible === appareilIci()))) return;

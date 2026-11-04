@@ -67,5 +67,6 @@ test('son ribosome : une voix qui ne finit jamais est tuée au bout de 30 s', as
   sonner(30000);
   assert.strictEqual(procs[0].tue, true);
   assert.ok(ctx.VIVANTS[0].n >= 25);
-  assert.match(SRC, /sonnetTeteDeFond\(consigne, `ribosome_\$\{mod\}`, mod, delai, \{ garderSurDelai: true \}\)/, 'son ribosome le demande');
+  // (04/11, 18:50) celui de son oreille interne aussi (ribosome_entendu_…)
+  assert.match(SRC, /sonnetTeteDeFond\(consigne, `ribosome_\$\{tel \? 'entendu_' : ''\}\$\{mod\}`, mod, delai, \{ garderSurDelai: true \}\)/, 'son ribosome le demande');
 });

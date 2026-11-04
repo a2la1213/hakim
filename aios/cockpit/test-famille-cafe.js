@@ -39,7 +39,7 @@ test('la fiche famille : papa, Hakim, maman, puis chaque agent avec son prénom,
   const t = famille();
   assert.match(t, /^# La famille de Hakim/);
   assert.match(t, /DONNÉE/);
-  assert.match(t, /Ahmed : papa/); assert.match(t, /Hakim : /); assert.match(t, /Maman : Claude Code/);
+  assert.match(t, /Ahmed : papa/); assert.match(t, /Hakim : /); assert.match(t, /Nour : la maman de Hakim \(Claude Code/);   // (04/11, 19:45) son nom et son titre
   assert.match(t, /- Lucien — juge \(expertise débutant\), juge de naissance, né le 29\/10 à 17:02 — « Juge portée par contact » — endormi, dans une ancienne conversation \(réveillable par le messager\) — 1 trouvaille confirmée, 2 travaux jugés/);
   assert.match(t, /- Théo — codeur \(expertise débutant\), codeur de naissance, né le 29\/10 à 19:15 — « Codeur test flamme 3D » — parti malgré lui/);
   assert.match(t, /« Mousse » — parti de lui-même \(« j'ai fait le tour »\)/);
@@ -68,10 +68,10 @@ test('branché : le crochet du café dans son cerveau et chez le messager, les o
   vm.createContext(ctx);
   vm.runInContext([ligne('const CROCHET_IMMUNITE ='), ligne('const GARDE_MESSAGE ='), 'var CLES_MASQUEES = [];', prendre('reglagesCerveau'), 'this.f = { reglagesCerveau };'].join('\n'), ctx);
   const pre = JSON.parse(ctx.f.reglagesCerveau('abonnement')).hooks.PreToolUse;
-  const c = pre.find(h => h.matcher === 'mcp__terminal__cafe_dire');
+  const c = pre.find(h => h.matcher === 'mcp__terminal__cafe_dire|mcp__terminal__cafe_partager');   // (04/11) et partager
   assert.ok(c); assert.equal(c.hooks[0].onFailure, 'block'); assert.match(c.hooks[0].command, /garde-message\.js' --cafe$/);
   const m = JSON.parse(require('./messager.js').reglagesMessager({ garde: "'/n' '/g.js'", jarvis: '/j', cible: LUCIEN, uneFois: '/u', crochet: 'c' })).hooks.PreToolUse;
-  assert.ok(m.some(h => h.matcher === 'mcp__terminal__cafe_dire' && /--cafe$/.test(h.hooks[0].command)));
+  assert.ok(m.some(h => h.matcher === 'mcp__terminal__cafe_dire|mcp__terminal__cafe_partager' && /--cafe$/.test(h.hooks[0].command)));
   for (const o of ['mcp__terminal__cafe_lire', 'mcp__terminal__cafe_dire']) assert.ok(src.includes(`'${o}'`), o);
   const v = ligne('const VIE_AGENT');
   assert.match(v, /famille\.md/); assert.match(v, /café/); assert.match(v, /pas de boulot au café/i);
@@ -88,4 +88,35 @@ test('ses agents (sauf le témoin vierge) ont les deux outils du café', () => {
     + ligne('const OUTILS_CAFE') + prendre('agentsPourCerveau') + 'this.a = agentsPourCerveau();', ctx);
   for (const k of ['architecte', 'codeur', 'juge', 'moi']) for (const o of ['mcp__terminal__cafe_lire', 'mcp__terminal__cafe_dire']) assert.ok(ctx.a[k].tools.includes(o), `${k} ${o}`);
   assert.deepEqual(ctx.a.vierge.tools, []);
+});
+
+// (04/11, 19:45, Ahmed : « ton nom et ton titre de maman doivent apparaître, comme pour Hakim le fils et moi le papa ; les neveux et nièces
+// doivent m'appeler tonton, et toi tata ; tous les agents, ceux que Hakim invoque et ceux que tu invoques »)
+test('la famille : Nour la maman (tata pour les agents), Ahmed tonton pour les agents ; ses neveux et nièces dans la fiche ; au café, la maman', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const v = src.slice(src.indexOf('const VIE_AGENT = '), src.indexOf('\n', src.indexOf('const VIE_AGENT = ')));
+  assert.match(v, /Ahmed est « tonton » et Nour, la maman de Hakim \(Claude Code\), est « tata »/);
+  const f = src.slice(src.indexOf('function texteFamille('), src.indexOf('\n}\n', src.indexOf('function texteFamille(')));
+  assert.match(f, /- Ahmed : papa, qui a voulu cette famille ; pour vous, les agents \(neveux et nièces\) : tonton\./);
+  assert.match(f, /- Nour : la maman de Hakim \(Claude Code, qui construit son code\) ; pour vous : tata\. Elle passe au café quand elle veut parler\./);
+  assert.match(f, /agents-nour\.json/);
+  const page = fs.readFileSync(path.join(__dirname, 'public', 'cafe.html'), 'utf8');
+  assert.match(page, /const maman = x\.role === 'la maman';/);
+  assert.match(page, /\.msg\.maman \.qui/);
+});
+
+// (04/11, 19:55, Ahmed : « que chaque agent, ainsi que toi et Hakim, puissent aussi envoyer une image, un son ou une vidéo »)
+test('cafe_partager : signé comme cafe_dire (agent_id ou « hakim »), permis à Hakim et à ses agents', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(src, /const OUTILS_CAFE = \['mcp__terminal__cafe_lire', 'mcp__terminal__cafe_dire', 'mcp__terminal__cafe_partager'\];/);
+  assert.match(src, /'mcp__terminal__cafe_dire', 'mcp__terminal__cafe_partager',/, 'dans les outils permis de Hakim');
+  for (const f of ['server.js', 'messager.js'])
+    assert.match(fs.readFileSync(path.join(__dirname, f), 'utf8'), /matcher: 'mcp__terminal__cafe_dire\|mcp__terminal__cafe_partager'/, f);
+  const g = fs.readFileSync(path.join(__dirname, 'garde-message.js'), 'utf8');
+  const vm2 = require('node:vm'); const ctx = {}; vm2.createContext(ctx);
+  const i = g.indexOf('function signerCafe('), k = g.indexOf('\n}\n', i) + 2;
+  vm2.runInContext(g.slice(g.indexOf('const objet = '), g.indexOf('\n', g.indexOf('const objet = '))) + '\n' + g.slice(i, k) + 'this.s = signerCafe;', ctx);
+  assert.deepStrictEqual({ ...ctx.s({ tool_name: 'mcp__terminal__cafe_partager', agent_id: 'a0123456789abcdef', tool_input: { chemin: 'x.png', auteur: 'nour' } }) }, { chemin: 'x.png', auteur: 'a0123456789abcdef' });
+  assert.strictEqual(ctx.s({ tool_name: 'mcp__terminal__cafe_partager', tool_input: { chemin: 'x.png' } }).auteur, 'hakim');
+  assert.strictEqual(ctx.s({ tool_name: 'mcp__terminal__autre' }), null);
 });

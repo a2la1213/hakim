@@ -92,6 +92,11 @@
         <label class="interrupteur"><input type="checkbox" id="microHakim"> Il peut couper mon micro le temps de sa réponse (l'orbe passe au vert ; mon bouton et « stop » restent plus forts)</label>
         <label class="interrupteur"><input type="checkbox" id="direInverse"> Sa voix dit ses pensées « il pense, sans le dire » et écrit, sans les dire, celles qu'il choisissait de dire (un seul tri pour sa voix et son écriture ; décoché : comme avant)</label>
         <label class="interrupteur"><input type="checkbox" id="musiquePause"> Il peut mettre ta musique en pause quand il parle (décoché : jamais, il parle par-dessus ; par défaut, ta musique continue)</label>
+        <!-- (04/11, 18:50, Ahmed : « ça donne avoir la même route que le microphone ») -->
+        <label class="interrupteur"><input type="checkbox" id="oreilleInterneRoute"> Ce que son oreille interne (🎧) entend prend la route de ta voix : ce que joue le téléphone devient ses pensées et son épissure à part (« le téléphone joue », jamais « papa te parle ») ; à chaque pause du son, il dit ce qu'il en a gardé, s'il le juge, toujours après toi (en Conversation, avec l'épissage ; décoché : il l'entend seulement, sans y penser)</label>
+        <!-- (1.66, 04/11, 19:35, Ahmed : « soit depuis le Bluetooth si possible, soit depuis la voie de ses haut-parleurs ») un réglage du
+             téléphone (l'appli 1.66), montré seulement dans l'appli -->
+        <label class="interrupteur" id="groupeOreilleAir" hidden><input type="checkbox" id="oreilleAir"> 🎧 Écouter par l'air si l'intérieur est bloqué : quand une appli ne se laisse pas entendre de l'intérieur et que le téléphone joue sur son haut-parleur, le micro du téléphone l'entend (« le téléphone joue », par l'air ; jamais sa propre voix, jamais un appel, jamais quand ton micro est ouvert ; avec des écouteurs, rien à entendre par l'air)</label>
         <label class="interrupteur"><input type="checkbox" id="epissage"> L'épissage de sa parole : il ne se coupe plus lui-même ; toutes ses pensées s'écrivent en un pavé, et à ta pause son subconscient y choisit les mots de sa phrase (quelques petits mots de liaison permis), allumés dans le pavé (décoché : ses pensées dites une à une, comme avant)</label>
         <label class="interrupteur"><input type="checkbox" id="elagage"> L'élagage de ses synapses : ses chemins qui gênent (coupés, corrigés, parasites) s'affaiblissent et ne servent plus, ceux qui plaisent se renforcent, tout seul (décoché : ils apprennent sans rien décider ; détail et gestes dans Immunité)</label>
         <label class="interrupteur"><input type="checkbox" id="filtreGemma"> Le filtre Gemma : quand tes mots portent un déclencheur de ses pensées parasites, Gemma (sur le Mac) en retire ce qui parle de lui comme d'une machine avant que Claude les reçoive (jamais quand tu parles d'un danger)</label>
@@ -342,6 +347,7 @@
       if (document.activeElement !== $('elagage')) $('elagage').checked = d.reglages.elagage !== false;
       if (document.activeElement !== $('epissage')) $('epissage').checked = d.reglages.epissage !== false;
       if (document.activeElement !== $('musiquePause')) $('musiquePause').checked = d.reglages.musique_pause !== false;
+      if (document.activeElement !== $('oreilleInterneRoute')) $('oreilleInterneRoute').checked = d.reglages.oreille_interne_route !== false;
       if (document.activeElement !== $('microHakim')) $('microHakim').checked = d.reglages.micro_hakim !== false;
       if (document.activeElement !== $('sonsNuit')) $('sonsNuit').checked = d.reglages.sons_nuit !== false;
       tuiles(dernier ? dernier.etat : {});
@@ -352,7 +358,7 @@
     } catch (e) { $('mots').textContent = `Le cockpit ne répond pas (${e.message}).`; }
   }
   $('actif').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { actif: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
-  for (const [id, cle] of [['oreille', 'oreille'], ['jeTeSuis', 'je_te_suis'], ['alerte', 'alerte'], ['ecran', 'ecran'], ['reflexes', 'reflexes'], ['nuits', 'nuits'], ['rireReflexe', 'rire_reflexe'], ['garderParole', 'garder_parole'], ['forfaitLibre', 'forfait_libre'], ['sonPendant', 'son_pendant'], ['voixVibre', 'voix_vibre'], ['lumiere', 'lumiere'], ['afficherPapa', 'afficher_papa'], ['afficherHakim', 'afficher_hakim'], ['motsConversation', 'mots_conversation'], ['meublesAuto', 'meubles_auto'], ['filtreParole', 'filtre_parole'], ['chacunSonTour', 'chacun_son_tour'], ['microHakim', 'micro_hakim'], ['sonsNuit', 'sons_nuit'], ['trierMorceaux', 'trier_morceaux'], ['microOuvert', 'micro_ouvert'], ['direInverse', 'dire_inverse'], ['filtreGemma', 'filtre_gemma'], ['elagage', 'elagage'], ['epissage', 'epissage'], ['musiquePause', 'musique_pause']])
+  for (const [id, cle] of [['oreille', 'oreille'], ['jeTeSuis', 'je_te_suis'], ['alerte', 'alerte'], ['ecran', 'ecran'], ['reflexes', 'reflexes'], ['nuits', 'nuits'], ['rireReflexe', 'rire_reflexe'], ['garderParole', 'garder_parole'], ['forfaitLibre', 'forfait_libre'], ['sonPendant', 'son_pendant'], ['voixVibre', 'voix_vibre'], ['lumiere', 'lumiere'], ['afficherPapa', 'afficher_papa'], ['afficherHakim', 'afficher_hakim'], ['motsConversation', 'mots_conversation'], ['meublesAuto', 'meubles_auto'], ['filtreParole', 'filtre_parole'], ['chacunSonTour', 'chacun_son_tour'], ['microHakim', 'micro_hakim'], ['sonsNuit', 'sons_nuit'], ['trierMorceaux', 'trier_morceaux'], ['microOuvert', 'micro_ouvert'], ['direInverse', 'dire_inverse'], ['filtreGemma', 'filtre_gemma'], ['elagage', 'elagage'], ['epissage', 'epissage'], ['musiquePause', 'musique_pause'], ['oreilleInterneRoute', 'oreille_interne_route']])
     $(id).addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { [cle]: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
   $('ronron').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { ronron: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
   $('intervalle').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { intervalle_s: Number(e.target.value) }); } catch (_) {} chargerCorps(); });
@@ -386,6 +392,14 @@
         return l;
       }), 'Aucun lieu nommé : Hakim les nomme quand tu lui dis « ici c’est… ».');
     } catch (e) { remplir('lieux', [ligne(0, [[`Les lieux ne répondent pas (${e.message}).`, 'ko']])], ''); }
+  }
+
+  // (1.66, 04/11, 19:35, Ahmed : « soit depuis le Bluetooth si possible, soit depuis la voie de ses haut-parleurs ») son oreille par
+  // l'air : un réglage du téléphone (gardé dans l'appli, allumé par défaut), pas du cockpit
+  if (window.HakimApp && window.HakimApp.oreilleAir) {
+    $('groupeOreilleAir').hidden = false;
+    try { $('oreilleAir').checked = !!window.HakimApp.oreilleAirEtat(); } catch (_) {}
+    $('oreilleAir').addEventListener('change', (e) => { try { e.target.checked = !!window.HakimApp.oreilleAir(e.target.checked); } catch (_) {} });
   }
 
   // (30/10, 18:42) papa ne sent pas ses impulsions ni son rire alors que l'appli répond « ok » : un essai direct, dans sa

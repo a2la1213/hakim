@@ -22,6 +22,9 @@
     .alerte-hakim { flex: none; width: 28px; height: 28px; border-radius: 50%; border: 0; background: #e5484d; color: #fff; font-weight: 800;
       font-size: 16px; line-height: 28px; padding: 0; margin-left: -10px; box-shadow: 0 0 0 3px rgba(229,72,77,.25); cursor: pointer; }
     .alerte-hakim[hidden] { display: none; }
+    /* (04/11, 19:30) le petit « ! » rouge garde ses 28 px, mais le doigt l'attrape sur 44 px */
+    .alerte-hakim { position: relative; }
+    .alerte-hakim::after { content: ''; position: absolute; inset: -8px; border-radius: 50%; }
     /* La scène : la grande orbe quand Hakim parle ou écoute, avec le sous-titre de ce qu'il dit. */
     .scene { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; align-content: center; gap: 8px;
       background: radial-gradient(ellipse at 50% 45%, rgba(3,14,16,.55), rgba(2,8,10,.88) 70%);
@@ -34,18 +37,22 @@
        l'écran (relecture Opus) ; l'orbe rétrécit un peu et les libellés passent à la ligne */
     .scene-haut { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 18px;
       width: min(1000px, 96vw); }
-    .scene-cote { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+    .scene-cote { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
     .scene-cote .btn { max-width: 100%; white-space: normal; }
     .scene-cote.gauche { align-items: flex-end; }
     .scene-cote.droite { align-items: flex-start; }
+    /* (04/11, 19:30) autour de l'orbe, des icônes rondes de 52 px, en verre sombre */
+    .scene-cote .ico { width: 52px; height: 52px; border-radius: 50%; background: rgba(4,18,20,.55); }
+    .scene-cote .ico svg { width: 24px; height: 24px; }
     @media (max-width: 640px) {
       .scene-haut { grid-template-columns: 1fr; justify-items: center; }
-      .scene-cote { flex-direction: row; }
+      .scene-cote { flex-direction: row; flex-wrap: wrap; justify-content: center; }
       .scene-cote.gauche { order: 2; } .scene-cote.droite { order: 3; }
     }
     .scene .sous-titre { max-width: min(760px, 88vw); min-height: 3.2em; margin: 0; text-align: center; color: var(--txt);
       font-size: clamp(16px, 2.3vw, 22px); line-height: 1.45; text-shadow: 0 2px 18px rgba(0,0,0,.6); unicode-bidi: plaintext; }
-    .scene .indice { font-size: 11px; color: var(--txt-4); letter-spacing: 1px; }
+    .scene .indice { font-size: 11px; color: var(--txt-4); letter-spacing: 1px; text-align: center; }
+    .scene { padding-inline: 16px; }                    /* (04/11, 19:30) l'indice ne touche plus les bords du téléphone */
     /* (2026-10-23) le Mac injoignable : dit en clair, au-dessus de tout (même de la grande orbe) */
     .hors-ligne { position: fixed; z-index: 1000; top: calc(env(safe-area-inset-top, 0px) + 10px); left: 0; right: 0; margin-inline: auto;
       width: max-content; max-width: min(560px, calc(100vw - 32px)); box-sizing: border-box; padding: 9px 16px; border-radius: 14px; background: rgba(251,191,36,.94); color: #1c1400;
@@ -78,7 +85,7 @@
     .emotion-origine-scene { font-size: 12px; color: var(--txt-4); margin: 0; min-height: 1.1em; text-align: center; }
     .origine-empathie { color: #93c5fd; }
     .origine-pente { font-style: italic; }
-    .tete .actions { margin-left: auto; display: flex; gap: 8px; }
+    .tete .actions { margin-left: auto; display: flex; gap: 6px; }
     .orb.ecoute { background: radial-gradient(circle at 35% 30%, #fbcfe8, #db2777 55%, #500724 90%);
       box-shadow: 0 0 30px rgba(249,168,212,.55), 0 0 70px rgba(249,168,212,.2); }
     .orb.pense { --orb-period: 1.3s; }
@@ -92,7 +99,10 @@
 
     .btn { font: inherit; font-size: 12px; color: var(--txt-2); background: var(--glass-bg);
       border: 1px solid var(--glass-bd); border-radius: 10px; padding: 7px 12px; cursor: pointer; }
-    .btn:hover:not(:disabled) { border-color: rgba(45,212,191,.45); color: var(--teal-hi); }
+    /* (04/11, 19:30) le survol seulement à la souris : sur le téléphone, un bouton touché ne reste plus « survolé » */
+    @media (hover: hover) and (pointer: fine) { .btn:hover:not(:disabled) { border-color: rgba(45,212,191,.45); color: var(--teal-hi); } }
+    html { -webkit-tap-highlight-color: transparent; }
+    @media (pointer: coarse) { .btn { min-height: 44px; } }                 /* les boutons rares aussi, assez grands pour le doigt */
     .btn:disabled { opacity: .45; cursor: default; }
     .btn:focus-visible, .micro:focus-visible, textarea:focus-visible, select:focus-visible {
       outline: 2px solid var(--teal); outline-offset: 2px; }
@@ -169,26 +179,76 @@
     @media (prefers-reduced-motion: reduce) { .calcul .barre.inconnue span { animation: none; } }
     .calcul .details { font-size: 11px; color: var(--txt-4); margin-top: 3px; font-variant-numeric: tabular-nums; }
 
-    .saisie { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+    /* (04/11, 19:30, Ahmed : « des icônes au lieu de "Ma voix", "Conversation", "Télépathie", etc. ; un truc plus cool et parlant,
+       et mieux agencé et organisé ») les boutons en icônes : un seul trait partout (24 px, 2 px, bouts ronds, comme le micro et le
+       trombone d'avant) ; éteint, le verre et l'icône pâle ; allumé, la couleur du bouton (--c), son halo, l'icône blanche ;
+       44 px au moins pour le doigt ; le nom reste dans .lib (lecteur d'écran), l'aria-label et l'infobulle */
+    .ico { position: relative; display: inline-grid; place-items: center; flex: none; min-width: 44px; min-height: 44px; padding: 0;
+      border-radius: 14px; color: var(--txt-3); --c: 45, 212, 191; touch-action: manipulation; -webkit-user-select: none; user-select: none;
+      transition: background-color .18s ease, border-color .18s ease, color .18s ease, box-shadow .25s ease, transform .1s ease-out; }
+    .ico svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+    .ico svg .plein { fill: currentColor; }
+    .ico > * { pointer-events: none; }        /* le toucher tombe sur le bouton, pas sur l'icône (la grande orbe lit e.target.id) */
+    .ico .lib { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .ico:active:not(:disabled) { transform: scale(.93); }
+    .ico[aria-pressed="true"] { color: #fff; border-color: rgb(var(--c)); background: rgba(var(--c), .28);
+      box-shadow: 0 0 0 1px rgba(var(--c), .3), 0 0 16px rgba(var(--c), .45); }
+    .ico[aria-pressed="true"] .i-repos, .ico:not([aria-pressed="true"]) .i-actif { display: none; }
+    .ico[aria-expanded="true"] { color: var(--teal-hi); border-color: rgba(45,212,191,.55); background: rgba(45,212,191,.12); }
+    @media (hover: hover) and (pointer: fine) {
+      .ico:hover:not(:disabled):not([aria-pressed="true"]) { color: var(--teal-hi); border-color: rgba(45,212,191,.45); } }
+    /* la couleur de chacun, allumé : coupé (ton micro, sa voix) en ambre, comme une alerte ; ses paroles et le volant en turquoise ;
+       la pause en bleu ; la Télépathie et son oreille en violet ; la caméra en rouge, l'écran en rose */
+    #muet, #muetScene, #sonHakim { --c: 251, 191, 36; }
+    #sesParoles, #sesParolesScene, #btnVolant { --c: 45, 212, 191; }
+    #pause, #pauseScene { --c: 96, 165, 250; }
+    #telepathie, #entendreTelephone, #telepathieScene { --c: 167, 139, 250; }
+    #conversation { --c: 236, 72, 153; }
+    #conversation[aria-pressed="true"] { background: linear-gradient(135deg, rgba(219,39,119,.6), rgba(168,85,247,.6)); }
+    /* en Télépathie, parler.js presse les deux boutons de mode : seul Télépathie s'allume, d'un coup d'œil le bon mode */
+    .groupe.modes:has(#telepathie[aria-pressed="true"]) #conversation[aria-pressed="true"] { color: var(--txt-3); background: var(--glass-bg);
+      border-color: rgba(167,139,250,.35); box-shadow: none; }
+    #camera { --c: 248, 113, 113; }
+    #ecran, #ecranScene { --c: 244, 114, 182; }
+    #micro { --c: 249, 168, 212; }
+    .btn.ico.stop { color: var(--err); border-color: rgba(248,113,113,.5); }
+    .btn.ico.principal { color: var(--teal-hi); border-color: rgba(45,212,191,.6); background: rgba(45,212,191,.14); border-radius: 50%; }
+    .btn.ico.fin { color: #fff; border-color: rgba(239,68,68,.75); background: rgba(220,38,38,.55); }
+
+    .saisie { display: flex; flex-direction: column; gap: 10px; padding: 10px; }
     .saisie .rang { display: flex; align-items: center; gap: 8px; }
     .saisie .rang.ecrire { align-items: flex-end; }
+    .saisie .rang.ecrire .ico { margin-bottom: 1px; }
     .saisie .zone { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
-    .saisie .rang.voix { flex-wrap: wrap; }
-    .saisie .groupe { display: flex; align-items: center; gap: 8px; }
-    .saisie .groupe.sa-parole { flex: 1 1 auto; justify-content: center; }
-    .saisie .groupe.sa-parole:not(:has(> :not([hidden]))) { display: none; }   /* rien à contrôler : le groupe s'efface */
-    .saisie .btn.conversation { margin-left: auto; }
-    .saisie .btn.telepathie { margin-left: 0; }
-    .saisie .rang.capture { justify-content: center; }
-    .saisie .rang.capture .btn { font-size: 12px; opacity: .85; }
-    .saisie .btn, .saisie .trombone { min-height: 44px; }                    /* assez grand pour le doigt (Fold plié) */
-    .micro { flex: none; width: 52px; height: 52px; border-radius: 50%; cursor: pointer;
+    /* les commandes : lui à gauche, les modes au centre (le micro au milieu), ses sens à droite ; un groupe ne passe jamais sur l'autre */
+    .saisie .rang.commandes { display: grid; grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr); align-items: center; gap: 12px; }
+    .saisie .groupe { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .saisie .groupe.lui { justify-self: start; }
+    /* les modes sur cinq places fixes : Muet et Orbe (seulement en conversation) n'y font pas sauter le micro, toujours au centre */
+    .saisie .groupe.modes { justify-self: center; display: grid; grid-template-columns: 44px 44px 56px 44px 44px; align-items: center; gap: 8px; }
+    #muet { grid-column: 1; } #conversation { grid-column: 2; } #micro { grid-column: 3; } #telepathie { grid-column: 4; } #orbeRetour { grid-column: 5; }
+    .saisie .groupe.sens { justify-self: end; }
+    .micro { flex: none; width: 56px; height: 56px; border-radius: 50%; cursor: pointer;
       border: 1px solid rgba(45,212,191,.45); background: radial-gradient(circle at 35% 30%, rgba(94,234,212,.25), rgba(13,148,136,.12));
       color: var(--teal-hi); display: grid; place-items: center; transition: transform .08s linear, background .2s; }
-    .micro svg { width: 22px; height: 22px; }
-    .micro[aria-pressed=true] { background: radial-gradient(circle at 35% 30%, #fbcfe8, #db2777 60%); color: #fff;
+    .micro.ico { border-radius: 50%; }
+    .micro svg { width: 24px; height: 24px; }
+    .micro.ico[aria-pressed="true"] { background: radial-gradient(circle at 35% 30%, #fbcfe8, #db2777 60%); color: #fff;
       border-color: #f9a8d4; box-shadow: 0 0 24px rgba(249,168,212,.5); }
     .micro.occupe { opacity: .6; cursor: progress; }
+    /* ce qui doit se lire en mots, à côté de l'icône, autour de la grande orbe : la raison de son oreille bloquée, ton micro coupé
+       par Hakim (parler.js l'écrit dans le texte du bouton ; boutons.js le recopie dans l'aria-label) */
+    #telepathieScene[data-oreille]:not([data-oreille=""]), #muetScene[aria-label*="Hakim"] {
+      width: auto; max-width: 100%; padding: 0 14px 0 10px; grid-auto-flow: column; gap: 8px; border-radius: 26px; }
+    #telepathieScene[data-oreille]:not([data-oreille=""]) .lib, #muetScene[aria-label*="Hakim"] .lib {
+      position: static; width: auto; height: auto; overflow: visible; clip: auto; white-space: normal; font-size: 12px; text-align: left; line-height: 1.3; }
+    /* dans la barre, la place manque : ton micro coupé par Hakim porte sa petite orbe (les mots restent dans l'infobulle et l'aria-label) */
+    #muet[aria-label*="Hakim"]::after { content: ''; position: absolute; top: 4px; right: 4px; width: 10px; height: 10px; border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, #5eead4, #0d9488 60%); box-shadow: 0 0 6px rgba(45,212,191,.8), 0 0 0 2px #04141a; }
+    /* son oreille à surveiller (bloquée, un appel, l'autorisation à redonner, une erreur) : une pastille ambre sur l'icône */
+    .ico[data-oreille="bloquee"]::after, .ico[data-oreille="appel"]::after, .ico[data-oreille="autorisation_a_redonner"]::after,
+    .ico[data-oreille="erreur"]::after { content: ''; position: absolute; top: 5px; right: 5px; width: 9px; height: 9px; border-radius: 50%;
+      background: #f59e0b; box-shadow: 0 0 0 2px #04141a; }
     .saisie textarea { flex: 1; font: inherit; font-size: 14px; color: var(--txt); resize: none; max-height: 180px;
       background: rgba(0,0,0,.22); border: 1px solid var(--glass-bd); border-radius: 12px; padding: 13px 14px; line-height: 1.45; }
     .btn.principal { border-color: rgba(45,212,191,.55); color: var(--teal-hi); }
@@ -230,26 +290,20 @@
     .vision.absent .expression { color: #fbbf24; }
     .vision .boutons-vision { display: none; gap: 4px; }
     .vision.flottante .boutons-vision { display: flex; }
-    .vision .boutons-vision button { font: inherit; font-size: 14px; min-width: 32px; min-height: 32px; border-radius: 8px; cursor: pointer;
-      border: 1px solid var(--glass-bd); background: rgba(0,0,0,.35); color: var(--txt-2); }
+    /* (04/11, 19:30) ⟲ et ✕ de l'aperçu flottant : des icônes de 44 px (32 avant), pour le doigt */
+    .vision .boutons-vision button { font: inherit; font-size: 14px; min-width: 44px; min-height: 44px; border-radius: 10px; cursor: pointer;
+      border: 1px solid var(--glass-bd); background: rgba(0,0,0,.45); color: var(--txt-2); }
     .vision.sur-scene video { width: 176px; height: 132px; }
-    .btn.camera[aria-pressed=true] { color: #fff; border-color: #f87171; background: rgba(239,68,68,.3); }
-    .btn.muet[aria-pressed=true], #muetScene[aria-pressed=true] { color: #fff; border-color: #fbbf24; background: rgba(251,191,36,.28); }
-    .btn.ecran[aria-pressed=true], #ecranScene[aria-pressed=true] { color: #fff; border-color: #f472b6; background: rgba(244,114,182,.30); }
-    #telepathieScene[aria-pressed=true], #entendreTelephone[aria-pressed=true] { color: #fff; border-color: #a78bfa; background: rgba(167,139,250,.30); }
+    /* (04/11, 19:30) l'état allumé de la caméra, du micro coupé, de l'écran, de son oreille, de la pause et des modes : la règle
+       .ico[aria-pressed="true"] et la couleur --c de chacun (plus haut) */
     /* (1.65) le témoin de son oreille interne : bloqué, un appel, l'autorisation à redonner, une erreur */
     #telepathieScene[data-oreille=bloquee], #telepathieScene[data-oreille=appel], #telepathieScene[data-oreille=autorisation_a_redonner], #telepathieScene[data-oreille=erreur],
     #entendreTelephone[data-oreille=bloquee], #entendreTelephone[data-oreille=appel], #entendreTelephone[data-oreille=autorisation_a_redonner], #entendreTelephone[data-oreille=erreur] { border-color: #f59e0b; }
     .sous-titre.telepathie { opacity: .75; font-style: italic; }
-    .btn.pause[aria-pressed=true], #pauseScene[aria-pressed=true] { color: #fff; border-color: #93c5fd; background: rgba(59,130,246,.28); }
-    .btn.conversation[aria-pressed=true] { color: #fff; border-color: #f9a8d4;
-      background: linear-gradient(135deg, rgba(219,39,119,.55), rgba(168,85,247,.55)); box-shadow: 0 0 18px rgba(236,72,153,.35); }
     .zone { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
     .zone textarea { width: 100%; }
-    .trombone { flex: none; width: 40px; height: 40px; align-self: center; border-radius: 10px; cursor: pointer;
+    .trombone { flex: none; width: 44px; height: 44px; border-radius: 14px; cursor: pointer;
       background: none; border: 1px solid var(--glass-bd); color: var(--txt-3); display: grid; place-items: center; }
-    .trombone:hover { color: var(--teal-hi); border-color: rgba(45,212,191,.45); }
-    .trombone svg { width: 18px; height: 18px; }
     .joints { display: flex; flex-wrap: wrap; gap: 6px; }
     .joint { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--txt-2); max-width: 260px;
       background: rgba(45,212,191,.07); border: 1px solid rgba(45,212,191,.25); border-radius: 8px; padding: 3px 6px; }
@@ -281,9 +335,15 @@
       background: rgba(251,191,36,.06); border-radius: 10px; padding: 8px 12px; }
     @media (max-width: 640px) {
       .m { max-width: 100%; }
-      /* sur le téléphone : Pause, Stop et Orbe passent sur leur propre ligne, sous le micro et Conversation */
-      .saisie .groupe.sa-parole { order: 3; flex-basis: 100%; }
+      /* (04/11, 19:30) sur le téléphone : parler en haut (le micro au centre) ; dessous, lui | ses sens, séparés d'un trait */
+      .saisie .rang.commandes { display: flex; flex-wrap: wrap; justify-content: center; column-gap: 0; row-gap: 10px; }
+      .saisie .groupe { gap: 4px; }
+      .saisie .groupe.modes { order: -1; flex: 1 0 100%; gap: 8px; justify-content: center; }
+      .saisie .groupe.lui { padding-right: 9px; border-right: 1px solid var(--glass-bd); }
+      .saisie .groupe.sens { padding-left: 9px; }
     }
+    /* le Fold plié (≈ 360 à 390 px) : un peu moins de marge sur les côtés, pour que tout tienne sans déborder */
+    @media (max-width: 400px) { body.shell { padding-left: 12px; padding-right: 12px; } }
     /* sur le téléphone (écran tactile) : pas de raccourcis clavier à afficher */
     @media (pointer: coarse) { .aide { display: none; } }
     /* (2026-10-22, Ahmed) en haut, l'orbe et son nom restent visibles ; en bas, la zone de saisie aussi, et elle remonte avec
@@ -333,8 +393,12 @@
         <video id="apercu" playsinline muted aria-label="Ce que la caméra de Hakim voit"></video>
         <span class="expression" id="expression">…</span>
         <span class="boutons-vision">
-          <button type="button" id="cameraFace" title="Caméra avant / arrière" aria-label="Passer à l'autre caméra">⟲</button>
-          <button type="button" id="cameraCouper" title="Éteindre la caméra" aria-label="Éteindre la caméra">✕</button>
+          <button type="button" class="ico" id="cameraFace" title="Caméra avant / arrière" aria-label="Passer à l'autre caméra">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 10.5A7.6 7.6 0 0 0 6 7.2L4.5 8.8"/><path d="M4.5 4.2v4.6h4.6"/><path d="M4.5 13.5A7.6 7.6 0 0 0 18 16.8l1.5-1.6"/><path d="M19.5 19.8v-4.6h-4.6"/></svg>
+            <span class="lib">Passer à l'autre caméra</span></button>
+          <button type="button" class="ico" id="cameraCouper" title="Éteindre la caméra" aria-label="Éteindre la caméra">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+            <span class="lib">Éteindre la caméra</span></button>
         </span>
         <!-- (03/11, Ahmed : « quand je clique sur Caméra, mon image en grand sur tout l'écran, avec son orbe en haut à droite et
              les boutons dessous : sortir de la caméra, partager l'écran ») dans l'appli -->
@@ -344,12 +408,25 @@
           <button type="button" class="btn" id="visionEcran">partager l'écran</button>
         </span>
       </div>
-      <div class="actions">
-        <button class="btn" id="nouvelle" title="Oublie le fil de cette conversation (la mémoire reste)">nouvelle conversation</button>
-        <button class="btn" id="btnVolant" aria-pressed="false" title="Au volant : il te répond à voix haute, en une ou deux phrases">au volant</button>
-        <button class="btn" id="btnEnOff" aria-expanded="false" aria-controls="enOff" title="Ce que Hakim et maman se disent sans toi">en off</button>
-        <a class="btn" href="/code" title="Les modifications de son code proposées par Hakim, l'avis de maman, et la liste ouverte">code</a>
-        <button class="btn" id="btnReglages" aria-expanded="false" aria-controls="reglages">réglages</button>
+      <!-- (04/11, 19:30, Ahmed : « des icônes au lieu de "Ma voix", "Conversation", "Télépathie", etc. ; un truc plus cool et parlant,
+           et mieux agencé et organisé ») l'en-tête en icônes : nouvelle conversation, au volant, en off, code, réglages ; leur nom
+           reste dans l'aria-label, l'infobulle et <span class="lib"> (boutons.js) -->
+      <div class="actions" role="group" aria-label="La conversation">
+        <button class="btn ico" id="nouvelle" aria-label="Nouvelle conversation" title="Nouvelle conversation : oublie le fil de cette conversation (la mémoire reste)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M17.6 3.4a2 2 0 0 1 2.9 2.9L12 14.8l-3.8 1 1-3.8z"/></svg>
+          <span class="lib">Nouvelle conversation</span></button>
+        <button class="btn ico" id="btnVolant" aria-pressed="false" aria-label="Au volant" title="Au volant : il te répond à voix haute, en une ou deux phrases">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.4"/><path d="M3.4 10.6h6.2M14.4 10.6h6.2M12 14.4V21"/></svg>
+          <span class="lib">Au volant</span></button>
+        <button class="btn ico" id="btnEnOff" aria-expanded="false" aria-controls="enOff" aria-label="En off" title="En off : ce que Hakim et maman se disent sans toi">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.6 6.6 8.4 6.4 8.4-6.4"/></svg>
+          <span class="lib">En off</span></button>
+        <a class="btn ico" id="lienCode" href="/code" aria-label="Code" title="Code : les modifications de son code proposées par Hakim, l'avis de maman, et la liste ouverte">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M13.6 4.5l-3.2 15"/></svg>
+          <span class="lib">Code</span></a>
+        <button class="btn ico" id="btnReglages" aria-expanded="false" aria-controls="reglages" aria-label="Réglages" title="Réglages">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>
+          <span class="lib">Réglages</span></button>
       </div>
     </header>
 
@@ -518,17 +595,34 @@
     <div id="horsLigne" class="hors-ligne" role="status" aria-live="polite" hidden></div>
     <div class="scene" id="scene" aria-hidden="true">
       <div class="scene-haut">
+        <!-- (04/11, 19:30, Ahmed : « des icônes au lieu de… ») autour de la grande orbe, les mêmes icônes que la barre : à gauche
+             ton micro, ses sens et ses paroles ; à droite le flux de sa voix (pause, stop) et la fin de la conversation -->
         <div class="scene-cote gauche">
-          <button class="btn" id="muetScene" hidden aria-pressed="false">Couper mon micro</button>
-          <button class="btn" id="ecranScene" hidden aria-pressed="false">Regarde l’écran</button>
-          <button class="btn" id="telepathieScene" hidden aria-pressed="false" title="Il entend ce que joue ton téléphone (musique, vidéo, Bluetooth), les paroles mot à mot, en continu, même en conversation">🎧 Entendre le téléphone</button>
-          <button class="btn" id="sesParolesScene" aria-pressed="false" title="Montrer ses réponses écrites sous l’orbe et dans le fil">Ses paroles</button>
+          <button class="btn ico" id="muetScene" hidden aria-pressed="false" aria-label="Couper mon micro" title="Couper ou rouvrir ton micro sans quitter la conversation (⌥X)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 9.6V5.5a3 3 0 0 0-5.6-1.5M9 9v2a3 3 0 0 0 4.9 2.3"/><path d="M18.5 10.5a6.5 6.5 0 0 1-.9 3.3M5.5 10.5a6.5 6.5 0 0 0 10.6 5M12 17v4.5M3 3l18 18"/></svg>
+            <span class="lib">Couper mon micro</span></button>
+          <button class="btn ico" id="ecranScene" hidden aria-pressed="false" aria-label="Regarde l’écran" title="Regarde l’écran : Hakim voit l’écran de ton téléphone (touche encore pour arrêter)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M8.6 11.5s1.3-2.3 3.4-2.3 3.4 2.3 3.4 2.3-1.3 2.3-3.4 2.3-3.4-2.3-3.4-2.3z"/><path d="M11 18.5h2"/></svg>
+            <span class="lib">Regarde l’écran</span></button>
+          <button class="btn ico" id="telepathieScene" hidden aria-pressed="false" aria-label="Entendre le téléphone" title="Il entend ce que joue ton téléphone (musique, vidéo, Bluetooth), les paroles mot à mot, en continu, même en conversation">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15.5V12a8 8 0 0 1 16 0v3.5"/><rect x="3" y="14" width="4.5" height="7" rx="1.6"/><rect x="16.5" y="14" width="4.5" height="7" rx="1.6"/></svg>
+            <span class="lib">Entendre le téléphone</span></button>
+          <button class="btn ico" id="sesParolesScene" aria-pressed="false" aria-label="Ses paroles" title="Ses paroles : montrer ses réponses écrites sous l’orbe et dans le fil">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 0 1-12.3 7.6L3.5 21l1.4-4.6A8.5 8.5 0 1 1 20.5 12z"/><path d="M8.5 10.3h7M8.5 13.8h4.5"/></svg>
+            <span class="lib">Ses paroles</span></button>
         </div>
         <div class="scene-orbe"><canvas id="orbeScene"></canvas><p class="emotion-scene" id="emotionScene"></p><p class="hakim-parle parle-scene" id="hakimParleScene" hidden>🔴 HAKIM PARLE</p><p class="oreille-fermee oreille-scene" id="oreilleFermeeScene" hidden>🙉 son oreille est fermée</p><p class="emotion-origine-scene" id="emotionOrigineScene"></p></div>
         <div class="scene-cote droite">
-          <button class="btn" id="pauseScene" aria-pressed="false" title="Mettre sa voix en pause ; il reprend à la phrase non dite (⌥P, ou dis « attends » / « continue »)">Pause</button>
-          <button class="btn stop" id="stopScene">Stop</button>
-          <button class="btn" id="finConversation" hidden>Terminer la conversation</button>
+          <button class="btn ico" id="pauseScene" aria-pressed="false" aria-label="Pause" title="Mettre sa voix en pause ; il reprend à la phrase non dite (⌥P, ou dis « attends » / « continue »)">
+            <svg class="i-repos" viewBox="0 0 24 24" aria-hidden="true"><rect class="plein" x="6" y="5" width="4" height="14" rx="1.2"/><rect class="plein" x="14" y="5" width="4" height="14" rx="1.2"/></svg>
+            <svg class="i-actif" viewBox="0 0 24 24" aria-hidden="true"><path class="plein" d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l10.6-6.8a.8.8 0 0 0 0-1.4L9.2 4.5a.8.8 0 0 0-1.2.7z"/></svg>
+            <span class="lib">Pause</span></button>
+          <button class="btn ico stop" id="stopScene" aria-label="Stop" title="Stop : il s’arrête de parler (Échap)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect class="plein" x="6" y="6" width="12" height="12" rx="2.2"/></svg>
+            <span class="lib">Stop</span></button>
+          <button class="btn ico fin" id="finConversation" hidden aria-label="Terminer la conversation" title="Terminer la conversation">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path class="plein" d="M2.6 14.2a13.4 13.4 0 0 1 18.8 0l-1.6 2.6a1 1 0 0 1-1.2.4l-3-1.1a1 1 0 0 1-.6-.9V13a11 11 0 0 0-6 0v2.2a1 1 0 0 1-.6.9l-3 1.1a1 1 0 0 1-1.2-.4z"/></svg>
+            <span class="lib">Terminer la conversation</span></button>
         </div>
       </div>
       <p class="sous-titre" id="sousTitre"></p>
@@ -541,48 +635,76 @@
     <!-- (2026-10-23, Ahmed : « un agencement cohérent, logique et élégant », maquette validée) les boutons rangés par usage :
          écrire (trombone, zone, Envoyer à droite) ; ta voix (Muet à gauche du micro, Conversation de l'autre côté) et sa
          parole (Pause, Stop, Orbe, visibles seulement quand ils servent) ; ce qu'il voit (Caméra, Écran), en bas -->
+    <!-- (04/11, 19:30, Ahmed : « des icônes au lieu de "Ma voix", "Conversation", "Télépathie", etc. ; un truc plus cool et parlant,
+         et mieux agencé et organisé ») deux rangs : écrire (trombone, zone, Stop à côté d'Envoyer comme dans une messagerie) ;
+         puis les commandes rangées par sens : lui (sa voix, ses paroles, la pause de sa voix), parler (ton micro coupé, Conversation,
+         le micro au centre, Télépathie, le retour à l'orbe), ses sens (caméra, écran, oreille). Allumé : la couleur du bouton et
+         son halo ; éteint : le verre. Sur le téléphone, parler passe au-dessus, lui et ses sens dessous. -->
     <footer class="glass saisie">
       <div class="rang ecrire">
-        <button class="trombone" id="joindre" aria-label="Joindre des fichiers" title="Joindre des fichiers (ou glisse-les sur la page)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9"/>
-          </svg>
-          </button>
+        <button class="trombone ico" id="joindre" aria-label="Joindre des fichiers" title="Joindre des fichiers (ou glisse-les sur la page)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9"/></svg>
+          <span class="lib">Joindre des fichiers</span></button>
         <input type="file" id="choix" multiple hidden>
         <div class="zone">
           <div class="joints" id="joints" hidden></div>
-          <textarea id="q" rows="1" placeholder="Écris à Hakim, ou appuie sur le micro…" aria-label="Message à Hakim"></textarea>
+          <!-- (04/11, Ahmed, sur la capture : « juste à écrire un truc plus court ») une ligne, même sur le Fold plié -->
+          <textarea id="q" rows="1" placeholder="Écris à Hakim…" aria-label="Message à Hakim" enterkeyhint="send"></textarea>
           </div>
-        <button class="btn principal" id="envoyer">Envoyer</button>
+        <button class="btn ico stop" id="stop" hidden aria-label="Stop" title="Stop : il s’arrête (sa réponse et sa voix) (Échap)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect class="plein" x="6" y="6" width="12" height="12" rx="2.2"/></svg>
+          <span class="lib">Stop</span></button>
+        <button class="btn ico principal" id="envoyer" aria-label="Envoyer" title="Envoyer (Entrée)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3 10.2 13.8"/><path d="M21 3 14.4 21l-4.2-7.2L3 9.6z"/></svg>
+          <span class="lib">Envoyer</span></button>
       </div>
-      <div class="rang voix">
-        <div class="groupe ta-voix">
-          <button class="btn muet" id="muet" hidden aria-pressed="false" title="Couper ou rouvrir ton micro sans quitter la conversation (⌥X)">Muet</button>
+      <div class="rang commandes">
+        <div class="groupe lui" role="group" aria-label="Lui : sa voix et ses paroles">
           <!-- (30/10, 21:15, Ahmed : « sa voix que je ne peux pas muter ») -->
-          <button class="btn" id="sonHakim" aria-pressed="false" title="Couper ou rendre la voix de Hakim (il continue sans bruit)">Sa voix</button>
+          <button class="btn ico" id="sonHakim" aria-pressed="false" aria-label="Sa voix" title="Sa voix : la couper ou la rendre (il continue sans bruit)">
+            <svg class="i-repos" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6.5 9H3.5v6h3L11 19z"/><path d="M15.2 9a4.2 4.2 0 0 1 0 6M18 6.2a8.2 8.2 0 0 1 0 11.6"/></svg>
+            <svg class="i-actif" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6.5 9H3.5v6h3L11 19z"/><path d="m15.5 9.5 5 5M20.5 9.5l-5 5"/></svg>
+            <span class="lib">Sa voix</span></button>
           <!-- (04/11, 10:20, Ahmed) ses réponses écrites, à remontrer en mode normal et en Conversation ; ses fichiers, toujours -->
-          <button class="btn" id="sesParoles" aria-pressed="false" title="Montrer ses réponses écrites, aussi en Conversation (ses fichiers se montrent toujours)">Ses paroles</button>
-          <button class="micro" id="micro" aria-pressed="false" aria-label="Parler (Option+M)" title="Parler (⌥M)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v5"/>
-            </svg>
-            </button>
+          <button class="btn ico" id="sesParoles" aria-pressed="false" aria-label="Ses paroles" title="Ses paroles : montrer ses réponses écrites, aussi en Conversation (ses fichiers se montrent toujours)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 0 1-12.3 7.6L3.5 21l1.4-4.6A8.5 8.5 0 1 1 20.5 12z"/><path d="M8.5 10.3h7M8.5 13.8h4.5"/></svg>
+            <span class="lib">Ses paroles</span></button>
+          <button class="btn ico pause" id="pause" hidden aria-pressed="false" aria-label="Pause" title="Mettre sa voix en pause ; il reprend à la phrase non dite (⌥P, ou dis « attends » / « continue »)">
+            <svg class="i-repos" viewBox="0 0 24 24" aria-hidden="true"><rect class="plein" x="6" y="5" width="4" height="14" rx="1.2"/><rect class="plein" x="14" y="5" width="4" height="14" rx="1.2"/></svg>
+            <svg class="i-actif" viewBox="0 0 24 24" aria-hidden="true"><path class="plein" d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l10.6-6.8a.8.8 0 0 0 0-1.4L9.2 4.5a.8.8 0 0 0-1.2.7z"/></svg>
+            <span class="lib">Pause</span></button>
         </div>
-        <div class="groupe sa-parole">
-          <button class="btn pause" id="pause" hidden aria-pressed="false" title="Mettre sa voix en pause ; il reprend à la phrase non dite (⌥P, ou dis « attends » / « continue »)">Pause</button>
-          <button class="btn stop" id="stop" hidden>Stop</button>
-          <button class="btn" id="orbeRetour" hidden title="Revenir à la grande orbe pendant la conversation (⌥O)">Orbe</button>
+        <div class="groupe modes" role="group" aria-label="Parler à Hakim">
+          <button class="btn ico muet" id="muet" hidden aria-pressed="false" aria-label="Muet" title="Muet : couper ou rouvrir ton micro sans quitter la conversation (⌥X)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 9.6V5.5a3 3 0 0 0-5.6-1.5M9 9v2a3 3 0 0 0 4.9 2.3"/><path d="M18.5 10.5a6.5 6.5 0 0 1-.9 3.3M5.5 10.5a6.5 6.5 0 0 0 10.6 5M12 17v4.5M3 3l18 18"/></svg>
+            <span class="lib">Muet</span></button>
+          <button class="btn ico conversation" id="conversation" aria-pressed="false" aria-label="Conversation"
+            title="Conversation : il t'écoute en continu, répond à voix haute, et s'arrête dès que tu reprends la parole ; vos paroles s'écrivent (⌥C)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 5.5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H9l-3.5 3v-3a2 2 0 0 1-2-2z"/><path d="M18.5 8.5a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2v3l-3.5-3h-3.5a2 2 0 0 1-2-2"/></svg>
+            <span class="lib">Conversation</span></button>
+          <button class="micro ico" id="micro" aria-pressed="false" aria-label="Parler (Option+M)" title="Parler (⌥M)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v5"/></svg>
+            <span class="lib">Parler</span></button>
+          <!-- (31/10, 00:30, Ahmed) la Conversation sans aucun texte écrit : seulement vos voix, avec le réglage de ce soir -->
+          <button class="btn ico conversation telepathie" id="telepathie" aria-pressed="false" aria-label="Télépathie"
+            title="Télépathie : la Conversation sans aucun texte écrit (ni le tien, ni le sien), seulement vos voix ; son oreille, son micro, chacun son tour et son subconscient allumés">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 21v-6.4A6.5 6.5 0 1 1 15.1 7.8L17 13h-1.5v2.5a1.5 1.5 0 0 1-1.5 1.5h-3.5v4"/><path d="M19 8.2a3.5 3.5 0 0 1 0 4.6M21.2 5.6a7.5 7.5 0 0 1 0 9.8"/></svg>
+            <span class="lib">Télépathie</span></button>
+          <button class="btn ico" id="orbeRetour" hidden aria-label="Orbe" title="Orbe : revenir à la grande orbe pendant la conversation (⌥O)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="plein" cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="9" stroke-dasharray="1.5 3.2"/></svg>
+            <span class="lib">Orbe</span></button>
         </div>
-        <button class="btn conversation" id="conversation" aria-pressed="false"
-          title="Mode Conversation : il t'écoute en continu, répond à voix haute, et s'arrête dès que tu reprends la parole (⌥C)">Conversation</button>
-        <!-- (31/10, 00:30, Ahmed) la Conversation sans aucun texte écrit : seulement vos voix, avec le réglage de ce soir -->
-        <button class="btn conversation telepathie" id="telepathie" aria-pressed="false"
-          title="Télépathie : la Conversation sans aucun texte écrit (ni le tien, ni le sien), seulement vos voix ; son oreille, son micro, chacun son tour et son subconscient allumés">Télépathie</button>
-      </div>
-      <div class="rang capture">
-        <button class="btn camera" id="camera" aria-pressed="false" title="Hakim te voit : analyse de ton visage sur le Mac, photo jointe à chaque message (⌥V)">Caméra</button>
-        <button class="btn ecran" id="ecran" hidden aria-pressed="false" title="Regarde l'écran : Hakim voit l'écran de ton téléphone, une image jointe à chacun de tes messages (Android demande ton accord ; touche encore pour arrêter)">Écran</button>
-        <button class="btn ecran" id="entendreTelephone" hidden aria-pressed="false" title="Entendre le téléphone : ce qu'il joue (musique, vidéo, Bluetooth) lui arrive mot à mot, en continu ; gardé allumé, l'appli le redemande d'elle-même">🎧</button>
+        <div class="groupe sens" role="group" aria-label="Ses sens : ce qu'il voit et entend">
+          <button class="btn ico camera" id="camera" aria-pressed="false" aria-label="Caméra" title="Caméra : Hakim te voit ; analyse de ton visage sur le Mac, photo jointe à chaque message (⌥V)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="13" height="12" rx="2.2"/><path d="m15.5 10.5 6-3.5v10l-6-3.5"/></svg>
+            <span class="lib">Caméra</span></button>
+          <button class="btn ico ecran" id="ecran" hidden aria-pressed="false" aria-label="Écran" title="Regarde l'écran : Hakim voit l'écran de ton téléphone, une image jointe à chacun de tes messages (Android demande ton accord ; touche encore pour arrêter)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M8.6 11.5s1.3-2.3 3.4-2.3 3.4 2.3 3.4 2.3-1.3 2.3-3.4 2.3-3.4-2.3-3.4-2.3z"/><path d="M11 18.5h2"/></svg>
+            <span class="lib">Écran</span></button>
+          <button class="btn ico oreille" id="entendreTelephone" hidden aria-pressed="false" aria-label="Entendre le téléphone" title="Entendre le téléphone : ce qu'il joue (musique, vidéo, Bluetooth) lui arrive mot à mot, en continu ; gardé allumé, l'appli le redemande d'elle-même">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15.5V12a8 8 0 0 1 16 0v3.5"/><rect x="3" y="14" width="4.5" height="7" rx="1.6"/><rect x="16.5" y="14" width="4.5" height="7" rx="1.6"/></svg>
+            <span class="lib">Entendre le téléphone</span></button>
+        </div>
       </div>
     </footer>
     <p class="aide"><kbd>⌥M</kbd> micro · <kbd>⌥C</kbd> conversation · <kbd>⌥X</kbd> muet · <kbd>⌥V</kbd> caméra · <kbd>⌥P</kbd> pause de sa voix · <kbd>Entrée</kbd> envoyer · <kbd>Maj+Entrée</kbd> à la ligne · <kbd>Échap</kbd> stop · glisse ou colle des fichiers</p>
@@ -594,6 +716,8 @@
   <script src="/orbe.js"></script>
   <script src="/conversation.js"></script>
   <script src="/vision.js"></script>
+  <!-- (04/11, 19:30) l'habit des boutons : il garde leurs icônes quand parler.js réécrit leur texte ; avant parler.js -->
+  <script src="/boutons.js"></script>
   <script src="/parler.js"></script>
 </body>
 </html>

@@ -61,6 +61,31 @@ test('bloquée par une appli : son nom, sûr ou probable ; sans nom : « une app
   assert.match(c.libelle({ etat: 'j_entends' }), /j'entends le téléphone/);
 });
 
+// (1.66, 04/11, 19:35, Ahmed : « soit depuis le Bluetooth si possible, soit depuis la voie de ses haut-parleurs ») deux états de plus
+test('par l’air et les écouteurs : gardés, dits dans son fil (l’appli 1.66)', () => {
+  const c = contexte();
+  assert.equal(c.noter({ etat: 'par_air', appli: 'YouTube', texte: 'YouTube ne se laisse pas entendre de l’intérieur : il l’entend par l’air.' }, 1000), true);
+  assert.equal(c.vue(1000).etat, 'par_air');
+  assert.equal(c.vue(1000).appli, 'YouTube');
+  assert.match(c.libelle({ etat: 'par_air' }), /par l'air/);
+  assert.match(c.libelle({ etat: 'par_air' }), /micro du téléphone/);
+  assert.equal(c.noter({ etat: 'ecouteurs', appli: 'Spotify' }, 2000), true);
+  assert.match(c.libelle({ etat: 'ecouteurs' }), /écouteurs : rien à entendre par l'air/);
+  assert.notEqual(c.libelle({ etat: 'ecouteurs' }), 'inconnue');
+});
+
+test('par l’air : la page dit d’avance combien de temps sa voix joue (jamais sa propre voix au micro) ; le réglage sur SENS, dans l’appli', () => {
+  const lecteur = PARLER.slice(PARLER.indexOf('function creerLecteurNeuronal('), PARLER.indexOf('const lecteurNeuronal = creerLecteurNeuronal();'));
+  assert.ok(lecteur.length > 1000, 'le lecteur de sa voix');
+  const debut = lecteur.indexOf('src.start(t);'), dit = lecteur.indexOf('window.HakimApp.saVoixPendant(Math.max(0, (t + joue - actx.currentTime) * 1000))');
+  assert.ok(debut > 0 && dit > debut, 'chaque morceau de sa voix, dès qu’il est programmé');
+  assert.match(lecteur, /el\.onplaying = \(\) => \{ try \{ if \(window\.HakimApp && window\.HakimApp\.saVoixPendant\)/, 'le lecteur de secours aussi');
+  assert.match(SENS, /<label class="interrupteur" id="groupeOreilleAir" hidden><input type="checkbox" id="oreilleAir">/);
+  assert.match(SENS, /if \(window\.HakimApp && window\.HakimApp\.oreilleAir\) \{\n\s+\$\('groupeOreilleAir'\)\.hidden = false;/);
+  // un réglage du téléphone : jamais envoyé au cockpit comme ses réglages à lui
+  assert.doesNotMatch(SENS, /\['oreilleAir', /);
+});
+
 test('le téléphone ne dit plus rien depuis 30 s : « muet » ; jamais dit : la page le sait aussi', () => {
   const c = contexte();
   assert.equal(c.vue(0).etat, null);

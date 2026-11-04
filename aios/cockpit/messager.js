@@ -60,7 +60,7 @@ function reglagesMessager({ garde, jarvis, cible, uneFois, crochet, masquees = [
     PreToolUse: [{ matcher: 'SendMessage', hooks: [{ type: 'command', timeout: 10, onFailure: 'block',
       command: `JARVIS_DIR=${q(jarvis)} JARVIS_MESSAGER_CIBLE=${q(cible)} JARVIS_MESSAGER_UNE_FOIS=${q(uneFois)} ${garde}` }] },
     { matcher: '*', hooks: [{ type: 'command', timeout: 10, onFailure: 'block', command: `JARVIS_DIR=${q(jarvis)} ${garde} --seulement-agents` }] },
-    { matcher: 'mcp__terminal__cafe_dire', hooks: [{ type: 'command', timeout: 10, onFailure: 'block', command: `${garde} --cafe` }] },
+    { matcher: 'mcp__terminal__cafe_dire|mcp__terminal__cafe_partager', hooks: [{ type: 'command', timeout: 10, onFailure: 'block', command: `${garde} --cafe` }] },
     { matcher: 'mcp__terminal__cafe_lire', hooks: [{ type: 'command', timeout: 10, onFailure: 'block', command: `${garde} --cafe-lire` }] }],
     PostToolUse: [{ matcher: 'WebSearch|Read|Task|Agent', hooks: [{ type: 'command', command: crochet, timeout: 20 }] }] },
     permissions: { deny: masquees } });                   // (30/10) ce qu'Ahmed a masqué (sa clé GitHub privée)

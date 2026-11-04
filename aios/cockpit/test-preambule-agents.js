@@ -30,7 +30,7 @@ test('chaque agent reçoit le préambule, avec son chemin et la condition « si 
     assert.match(a[nom].prompt, /si ta mission touche aux maths ou à la physique du réel|Si ta mission touche aux maths ou à la physique du réel/);
     assert.match(a[nom].prompt, /atelier\/ancrage\/MATHS_DU_REEL_MERE\.md/);
     // (29/10) les outils ne changent pas, sauf les deux du café, que chacun reçoit
-    assert.deepEqual(a[nom].tools, [...new Set([...c.AGENTS[nom].tools, 'mcp__terminal__cafe_lire', 'mcp__terminal__cafe_dire'])], 'les outils ne changent pas');
+    assert.deepEqual(a[nom].tools, [...new Set([...c.AGENTS[nom].tools, 'mcp__terminal__cafe_lire', 'mcp__terminal__cafe_dire', 'mcp__terminal__cafe_partager'])], 'les outils ne changent pas (04/11 : et partager au café)');
   }
 });
 
