@@ -336,7 +336,8 @@ const lecteurSysteme = synth ? Voix.creerLecteur(synth, window.SpeechSynthesisUt
 function jarvisPeutParler() {
   const c = etat.conversation;
   // (14:55) sa réponse soufflée parle pendant que la grande oreille confirme ta phrase (tu t'es tu)
-  return !(c && ((c.capteur && c.capteur.enParole) || (c.enAttente > 0 && !c.souffleParle)));
+  // (04/11) sa pensée dite dans ta pause, ton tour encore ouvert (direPenseeSiPossible)
+  return !(c && ((c.capteur && c.capteur.enParole && !c.penseeEnPause) || (c.enAttente > 0 && !c.souffleParle)));
 }
 
 function creerLecteurNeuronal() {
@@ -362,7 +363,9 @@ function creerLecteurNeuronal() {
   // (15:15, Ahmed : « quand il meuble pendant qu'il parle, la même transition de 0,2 s + 0,2 s, et la seconde de blanc ») entre sa voix
   // et un meuble, dans les deux sens : 1 s de silence (HESITER_APRES, SILENCE_REPRISE) ; sa voix ralentit sur sa fin avant un trou, et
   // repart au ralenti en accélérant après un meuble (adoucirFin, adoucirDebut : fournis par la page)
-  const HESITER_AVANT = 1.0, ENTRE_MEUBLES = 0.12, COUVRIR_MAX = 90;
+  // (04/11, Ahmed : « enlève les blancs, c'est chiant ; il n'est pas assez vif dans la parole que j'entends à cause des blancs ; juste
+  // tester un truc ») les blancs au plus court : le premier meuble à 0,3 s (au lieu de 1 s), sa voix qui repart sans silence ni ralenti
+  const HESITER_AVANT = 0.3, ENTRE_MEUBLES = 0.12, COUVRIR_MAX = 90;
   // (15:24, Ahmed : « qu'il puisse ajuster dans son subconscient le temps des blancs et des transitions ») son rythme (L.rythme, donné
   // par la page depuis ses réglages : rythme_regler), sinon les valeurs d'Ahmed
   const R = (k, d) => { const v = L.rythme && Number(L.rythme[k]); return Number.isFinite(v) ? v : d; };
@@ -656,12 +659,12 @@ function creerLecteurNeuronal() {
             const gg = s2._gain && s2._gain.gain;
             if (gg && gg.cancelAndHoldAtTime) gg.cancelAndHoldAtTime(now);
             else if (gg && gg.cancelScheduledValues) { gg.cancelScheduledValues(now); gg.setValueAtTime(gg.value, now); }
-            if (gg && gg.linearRampToValueAtTime) gg.linearRampToValueAtTime(0, now + R('fondu_reponse', 0.2));
+            if (gg && gg.linearRampToValueAtTime) gg.linearRampToValueAtTime(0, now + R('fondu_reponse', 0.08));
           } catch (_) {}
-          try { s2.stop(now + R('fondu_reponse', 0.2)); } catch (_) {}
-          s2._fin = Math.min(s2._fin, now + R('fondu_reponse', 0.2));
+          try { s2.stop(now + R('fondu_reponse', 0.08)); } catch (_) {}
+          s2._fin = Math.min(s2._fin, now + R('fondu_reponse', 0.08));
         }
-        prochainDebut = now + R('fondu_reponse', 0.2) + R('blanc_avant_reprise', 1.0);   // (15:15) le meuble s'éteint, 1 s de silence, puis sa voix
+        prochainDebut = now + R('fondu_reponse', 0.08) + R('blanc_avant_reprise', 0);   // (15:15) le meuble s'éteint, 1 s de silence, puis sa voix
         x.apresMeuble = true;
       }
       // (Avant le 2026-10-17, une machine lente attendait 8 s de voix d'avance, voire la fin de tout le
@@ -677,15 +680,15 @@ function creerLecteurNeuronal() {
         if (attente > 0) t += Math.min(0.5, attente);                 // au plus une demi-seconde : il parle tôt
       }
       // (15:15) un meuble vient de finir : 1 s de silence avant sa voix, et sa voix repart au ralenti
-      if (!x.hesitation && finDernierMeuble && fluide() && actx.currentTime - finDernierMeuble < R('blanc_avant_reprise', 1.0) + 0.5) {
-        t = Math.max(t, finDernierMeuble + R('blanc_avant_reprise', 1.0)); x.apresMeuble = true;
+      if (!x.hesitation && finDernierMeuble && fluide() && actx.currentTime - finDernierMeuble < R('blanc_avant_reprise', 0) + 0.5) {
+        t = Math.max(t, finDernierMeuble + R('blanc_avant_reprise', 0)); x.apresMeuble = true;
       }
       lots.shift();
       programmer(x, t);
     }
     // 3. (03/11) un trou se prépare : sa voix a fini (ou un meuble), la suite n'est pas là, sa réponse s'écrit encore
     if (!trou && (aParle || couvre) && enReponse() && !pause && !sources.size && !element && L.hesitation)
-      trou = setTimeout(hesiter, (couvre ? ENTRE_MEUBLES : R('blanc_avant_meuble', 1.0)) * 1000);
+      trou = setTimeout(hesiter, (couvre ? ENTRE_MEUBLES : R('blanc_avant_meuble', 0.2)) * 1000);
     if (L.actif && !veille) veille = setInterval(pomper, 250);
     if (!L.actif) { clearInterval(veille); veille = null; if (L.surFin) L.surFin(); }
   }
@@ -712,7 +715,7 @@ function creerLecteurNeuronal() {
     const finMeubles = Math.max(0, ...[...sources].map(s2 => s2._fin));
     // (14:40) après le précédent, sans le chevaucher ; (14:46, Ahmed : « entre chaque meuble, 0,5 s de silence : ça aide la
     // transition naturelle, sinon on dirait que les deux se chevauchent »)
-    const t = Math.max(actx.currentTime + 0.03, finMeubles > 0 ? finMeubles + R('blanc_entre_meubles', 1.0) : 0);
+    const t = Math.max(actx.currentTime + 0.03, finMeubles > 0 ? finMeubles + R('blanc_entre_meubles', 0.2) : 0);
     programmer({ pret: h.pret, texte: h.texte, langue: 'fr', hesitation: true, auto: true, volume: h.volume, dureeMax: h.dureeMax, brut: h.brut }, t);
     // le suivant se prépare juste avant la fin de celui-ci, pour s'y fondre
     clearTimeout(trou);
@@ -837,6 +840,7 @@ const lecteur = {
 };
 const finLecture = () => {
   if (lecteur.actif) return;
+  if (etat.conversation) etat.conversation.penseeEnPause = false;     // (04/11) sa pensée dite : ton tour reprend la main
   for (const x of etat.messages.slice(-6)) if (x.auRythme && !x.enCours) x.auRythme = false;   // (16:45) sa voix a fini : tout s'écrit
   if (!etat.flux) etat.reponseVoix = null;                              // (13:30) sa réponse est dite : plus de meubles
   // (30/10) sa voix a tout dit (ni en pause, ni une réponse qui arrive encore pour ce message) : une fin, ou la panne qui l'a trouée
@@ -856,7 +860,7 @@ lecteurNeuronal.hesitation = (o) => {
   // (15:40, Ahmed : « les meubles sont trop longs au début ») moins étirés (0,3 à 0,8 s de plus) et un départ moins lent (0,55)
   const voulu = h.pret.duration + 0.3 + Math.random() * 0.5, cible = h.dureeMax > 0 ? Math.min(h.dureeMax, voulu) : voulu;
   try {
-    const r = ralentirMeuble(h.pret, cible, o && o.suite ? vitesseFinMeuble : rythmeVoix('ralenti_depart', 0.55));
+    const r = ralentirMeuble(h.pret, cible, o && o.suite ? vitesseFinMeuble : rythmeVoix('ralenti_depart', 1));
     vitesseFinMeuble = r.vFin;
     return { ...h, pret: r.tampon, dureeMax: 0 };
   } catch (_) { return h; }
@@ -865,8 +869,8 @@ lecteurNeuronal.peutHesiter = () => etat.reponseVoix != null && jarvisPeutParler
 // (15:15) la même transition entre sa voix et ses meubles : sa voix repart au ralenti (de 0,35 à la normale sur sa première lettre),
 // et sa dernière parole avant un trou ralentit sur sa fin (+0,3 s)
 const rythmeVoix = (k, d) => { const v = lecteurNeuronal.rythme && Number(lecteurNeuronal.rythme[k]); return Number.isFinite(v) ? v : d; };   // (15:24)
-lecteurNeuronal.adoucirDebut = (buf) => { try { return ralentirMeuble(buf, 0, rythmeVoix('ralenti_depart', 0.55)).tampon; } catch (_) { return buf; } };
-lecteurNeuronal.adoucirFin = (buf) => { const f = rythmeVoix('ralenti_fin', 0.3); if (!(f > 0)) return buf; try { return ralentirMeuble(buf, buf.duration + f, 1).tampon; } catch (_) { return buf; } };
+lecteurNeuronal.adoucirDebut = (buf) => { try { return ralentirMeuble(buf, 0, rythmeVoix('ralenti_depart', 1)).tampon; } catch (_) { return buf; } };
+lecteurNeuronal.adoucirFin = (buf) => { const f = rythmeVoix('ralenti_fin', 0); if (!(f > 0)) return buf; try { return ralentirMeuble(buf, buf.duration + f, 1).tampon; } catch (_) { return buf; } };
 if (lecteurSysteme) lecteurSysteme.surFin = finLecture;
 
 /* ---------- les orbes : la petite (en-tête) et la grande (scène, quand il parle ou écoute) ---------- */
@@ -1880,8 +1884,8 @@ async function envoyer(texte, oral, dejaRelance) {
   const dites = etat.dites.splice(0);
   if (!dejaRelance) { etat.joints.forEach(x => x.url && URL.revokeObjectURL(x.url)); etat.joints = []; rendreJoints(); }
   // (14:55) sa réponse soufflée a déjà commencé pour ce tour : elle continue, et son conscient la reçoit comme le début de sa réponse
-  const souffleDit = oral && etat.conversation && etat.conversation.souffleDit ? etat.conversation.souffleDit : '';
-  if (etat.conversation) { etat.conversation.souffleDit = ''; }
+  const souffleDit = oral && etat.conversation && (etat.conversation.souffleDit || etat.conversation.penseeDite) ? (etat.conversation.souffleDit || etat.conversation.penseeDite) : '';
+  if (etat.conversation) { etat.conversation.souffleDit = ''; etat.conversation.penseeDite = ''; }
   if (typeof retirerSouffle === 'function') retirerSouffle();               // (15:02) sa vraie réponse prend la place du brouillon
   arreterTout(true, { garder: true, raison: 'message', garderVoix: !!souffleDit });
   $('q').value = ''; ajuster();
@@ -2824,11 +2828,10 @@ function surSouffle(o) {
   // relecture du 16/10, son écho transcrit) ; celle qui attend la suite s'écrit seule, comme ce qu'il pense sans le dire
   etat.pensee = s;
   if (s.pret) preparerVoixSouffle(texte, niveau, () => direPenseeSiPossible());   // (17:10, audit) seulement celle qu'il dira
-  if (!s.pret) {
-    if (!enTelepathie()) { montrerPensee('🧠 il pense · pas encore à dire', texte); envoyerParoles('hakim', `🧠 ${texte}`); }
-    return;
-  }
-  direPenseeSiPossible();
+  // (04/11, Ahmed : « dès que le premier chunk est écrit, il le prononce ») elle s'écrit tout de suite, et sa voix la dit dès qu'elle est
+  // faite et que tu marques une pause
+  if (!enTelepathie()) { montrerPensee(s.pret ? '🧠 sa pensée' : '🧠 il pense · pas encore à dire', texte); envoyerParoles('hakim', `🧠 ${texte}`); }
+  if (s.pret) direPenseeSiPossible();
 }
 function montrerPensee(titre, texte) {
   etat.aCote = (etat.aCote || []).filter(x => x.cle !== 'souffle');
@@ -2880,9 +2883,15 @@ function penseePrete(conv) {
   return !!(conv && p && p.pret && !p.dite && Date.now() - p.t < 15000 && voixPrete(p.texte) && souffleAutorise()
     && etat.conversation === conv && !lecteurNeuronal.parle && !etat.flux);
 }
+// (04/11, Ahmed : « dès que le premier chunk est écrit, il le prononce ») elle se dit dès que sa voix est faite, même ton tour encore
+// ouvert, pourvu que tu sois dans une pause à cet instant (0,3 s sans ta voix) ; ses mots revenus par le micro sont retirés de ta phrase
+// (retirerEcho), et ton tour ne la bloque pas (jarvisPeutParler : penseeEnPause)
 function direPenseeSiPossible() {
-  const conv = etat.conversation;
-  if (!penseePrete(conv) || (conv.capteur && conv.capteur.enParole)) return false;   // ton tour ouvert : elle attend ta fin
+  const conv = etat.conversation, cap = conv && conv.capteur;
+  if (!penseePrete(conv)) return false;
+  const ouvert = !!(cap && cap.enParole);
+  if (ouvert && Date.now() - Number(cap.derniereVoix || 0) < 300) return false;     // tu parles à cet instant : ta prochaine pause
+  if (ouvert) conv.penseeEnPause = true;
   direSouffle(conv, etat.pensee, 'pensee');
   return true;
 }
@@ -2901,6 +2910,7 @@ function noterEcartSouffle(conv, s, dit, par, prete) {
 // de sa réponse (souffle_dit)
 function direSouffle(conv, s, par) {
   conv.souffleParle = true; conv.souffleDit = s.texte;
+  if (par === 'pensee') conv.penseeDite = s.texte;                     // (04/11) gardée jusqu'à ton message, même dite au milieu de ton tour
   if (etat.pensee && etat.pensee.texte === s.texte) etat.pensee.dite = true;      // une seule fois, par quelque chemin que ce soit
   const buf = voixPrete(s.texte);
   noterEcartSouffle(conv, s, true, par, !!buf);
@@ -2995,6 +3005,7 @@ async function texteDuTour(conv) {
   return (e.confirme + ' ' + morceauNeuf(queue, e.confirme)).trim();
 }
 function anticiperConversation(conv, silenceMs) {
+  if (silenceMs >= 300 && typeof direPenseeSiPossible === 'function') direPenseeSiPossible();   // (04/11) ta pause : sa pensée prête se dit
   if (etat.reglages.rapide === false || silenceMs < SILENCE_ANTICIPE_MS || conv.spec || !conv.capteur) return;
   if (typeof transcriptionEnPause === 'function' && transcriptionEnPause()) return;   // (00:47) son tour : rien à anticiper
   // (15:10, Ahmed : « le moment exact où il faut qu'il parle » ; mesuré sur 69 tours : il attendait 3,5 s de silence, 7 seulement
@@ -3186,7 +3197,7 @@ async function basculerConversation() {
       dernierBattement: () => dernierBattementCoeur,
       surNiveau: (n) => { etat.niveauMicro = n; voixAuCorps(n); if (document.visibilityState === 'hidden') { micEnFond++; alimenterBulle(n); } },
       // (13:25, papa : « aucun « je t'écoute » ») rien à la place de ses mots : ils s'affichent dès le premier
-      surDebut: () => { conv.finDemandee = false; conv.finAnticipee = false; conv.souffleLocal = false; conv.brouillons = 0; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre(''); humeur(); },
+      surDebut: () => { conv.finDemandee = false; conv.finAnticipee = false; conv.souffleLocal = false; conv.brouillons = 0; conv.penseeEnPause = false; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre(''); humeur(); },
       surPause: (fenetre) => surPauseConversation(conv, fenetre),
       surSilence: (ms) => { if (conv.capteur && conv.capteur.enParole) { compteARebours(ms); anticiperConversation(conv, ms); } },
       // Ahmed (ou une autre voix) parle pendant que Hakim parle : Hakim se MET EN PAUSE (lot C, point 26) ; sa

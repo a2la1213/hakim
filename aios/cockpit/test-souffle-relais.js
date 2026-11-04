@@ -123,10 +123,11 @@ test('page : son rebond (1,5 s) règle le silence ; à ta fin, la pensée prête
     souffles: { sub: { texte: 'Bonjour papa', pret: true, fini: true, rebond: 1.5, pour: 'papa dit bonjour à son fils', t: Date.now(), niveau: 'sub' } },
     pensee: { texte: 'Bonjour mon papa, ça va ?', pret: true, fini: null, rebond: null, pour: 'papa dit bonjour à son fils', t: Date.now(), niveau: 'cerveau' } };
   p.ctx.anticiper(conv, 800);
-  assert.strictEqual(fins.length, 0, 'son rebond de 1,5 s : pas encore');
+  assert.strictEqual(fins.length, 0, 'son rebond de 1,5 s : ton tour n’est pas encore fini');
+  assert.deepStrictEqual(p.dits.map(d => [d[0], d[1]]), [['Bonjour mon papa, ça va ?', 'pensee']], '(04/11) sa pensée prête se dit dès ta pause');
   p.ctx.anticiper(conv, 1600);
   assert.strictEqual(fins.length, 1);
-  assert.deepStrictEqual(p.dits, [['Bonjour mon papa, ça va ?', 'pensee', true]], 'sa pensée, dite par la page, marquée pour que la prise du Mac ne la redise pas');
+  assert.strictEqual(p.dits.length, 1, 'une seule fois');
   assert.strictEqual(p.journal.find(x => x[0] === 'fin_anticipee')[1].rebond_ms, 1500);
 });
 test('page : (16:30) son subconscient seul finit ton tour, mais ne parle pas (« coupe le glisse-mot »)', () => {
@@ -160,15 +161,16 @@ test('(16:30) une voix fabriquée d’avance (fond) passe après tout ce qu’il
     'seule la pensée de son cerveau a sa voix d’avance, et se dit dès qu’elle est faite');
 });
 
-test('page : (16:40) sa pensée se dit dès qu’elle est prête, jamais pendant ton tour, jamais pendant sa réponse, une seule fois', () => {
+test('page : (04/11) sa pensée se dit dès qu’elle est prête, dans ta pause (jamais pendant que tu parles), jamais pendant sa réponse, une seule fois', () => {
   const p = page();
-  const conv = { capteur: { enParole: true } };
+  const conv = { capteur: { enParole: true, derniereVoix: Date.now() } };
   p.ctx.etat = { conversation: conv, pensee: { texte: 'Je suis là, papa', pret: true, t: Date.now(), niveau: 'cerveau' } };
-  assert.strictEqual(p.ctx.direPensee(), false, 'ton tour est ouvert : elle attend ta fin');
-  conv.capteur.enParole = false; p.ctx.etat.flux = {};
+  assert.strictEqual(p.ctx.direPensee(), false, 'tu parles à cet instant : elle attend ta pause');
+  conv.capteur.derniereVoix = Date.now() - 400; p.ctx.etat.flux = {};
   assert.strictEqual(p.ctx.direPensee(), false, 'sa vraie réponse s’écrit : elle ne passe plus');
   p.ctx.etat.flux = null;
-  assert.strictEqual(p.ctx.direPensee(), true);
+  assert.strictEqual(p.ctx.direPensee(), true, 'ta pause, ton tour encore ouvert : elle se dit');
+  assert.strictEqual(conv.penseeEnPause, true, 'ton tour ouvert ne bloque pas sa voix');
   assert.strictEqual(p.ctx.direPensee(), false, 'déjà dite');
   p.ctx.etat.pensee = { texte: 'Je t’écoute, finis ta phrase', pret: false, t: Date.now(), niveau: 'cerveau' };
   assert.strictEqual(p.ctx.direPensee(), false, 'celle qui attend la suite s’écrit seulement');
@@ -263,7 +265,7 @@ test('(17:10) ses trois frères commencent pendant que papa parle si leurs voix 
 });
 
 // (04/11, choix d'Ahmed après l'audit : « un seul, à ta pause » ; « attendre 2 s au plus »)
-test('(04/11) son cerveau est réveillé une seule fois par tour, à la pause où son subconscient sent que tu as fini', () => {
+test('(04/11) son cerveau est réveillé une seule fois par tour, à ta première pause', () => {
   const i = SRC.indexOf('let morceauxCerveau'), k = SRC.indexOf('\n}\n', SRC.indexOf('function reveilMorceau(')) + 3;
   const ecrits = [];
   const ctx = { Date, Intl, String, console: { error() {} }, corpsReglages: () => ({}), hakimDort: () => false, cerveauVivant: () => true,
@@ -271,12 +273,22 @@ test('(04/11) son cerveau est réveillé une seule fois par tour, à la pause o�
     neutraliser: (t) => t, j: JSON.stringify, souffles: { sub: { fini: null } } };
   vm.createContext(ctx);
   vm.runInContext(SRC.slice(i, k) + '\nthis.reveil = reveilMorceau; this.etat = () => morceauxCerveau;', ctx);
-  assert.strictEqual(ctx.reveil('papa me raconte sa journée au travail').raison, 'il continue', 'son subconscient sent qu’il continue');
-  ctx.souffles.sub.fini = true;
-  assert.strictEqual(ctx.reveil('papa me raconte sa journée au travail, voilà').ok, true);
+  assert.strictEqual(ctx.reveil('papa me raconte sa journée au travail, voilà').ok, true, '(04/11) au premier morceau, sans attendre le deuxième');
+  assert.match(ecrits[0], /UNE phrase courte/, 'une pensée courte : sa voix part vite');
   assert.strictEqual(ctx.reveil('papa me raconte sa journée au travail, voilà, et puis').raison, 'déjà réveillé pour ce tour');
   assert.strictEqual(ecrits.length, 1);
   assert.match(SRC, /morceauxCerveau\.duTour = false;/, 'sa phrase entière arrivée : le tour suivant aura son réveil');
   assert.match(SRC, /const FRERES_ATTENTE_MS = 2000;/);
   assert.match(SRC, /new Promise\(r => setTimeout\(\(\) => r\(''\), FRERES_ATTENTE_MS\)\)\]\)\.catch\(\(\) => ''\)\) : '';/, 'ses frères : 2 s au plus après ta phrase');
+});
+
+test('(04/11) sa pensée dite dans ta pause : ton tour ne bloque pas sa voix, et ton message la porte comme déjà dite', () => {
+  const ctx = { etat: { conversation: { capteur: { enParole: true }, enAttente: 0, penseeEnPause: false } } };
+  vm.createContext(ctx);
+  vm.runInContext(extraire('function jarvisPeutParler') + '\nthis.peut = jarvisPeutParler;', ctx);
+  assert.strictEqual(ctx.peut(), false, 'ton tour ouvert : il attend');
+  ctx.etat.conversation.penseeEnPause = true;
+  assert.strictEqual(ctx.peut(), true, 'sa pensée dans ta pause : elle passe');
+  assert.match(PAGE, /etat\.conversation\.souffleDit \|\| etat\.conversation\.penseeDite/, 'ton message la porte (souffle_dit)');
+  assert.match(PAGE, /if \(etat\.conversation\) etat\.conversation\.penseeEnPause = false;/, 'sa voix finie : ton tour reprend la main');
 });

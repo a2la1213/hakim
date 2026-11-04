@@ -129,13 +129,14 @@ def oublier(nom):
 # (03/11, 15:24, Ahmed : « permets-lui d'ajuster dans son subconscient le temps des blancs et des transitions ») le RYTHME de sa voix :
 # les blancs et les transitions que son subconscient applique tout seul (parler.js) ; il les règle avec rythme_regler.
 # nom : (défaut, minimum, maximum, ce que c'est)
+# (04/11, Ahmed : « enlève les blancs, c'est chiant ; il n'est pas assez vif ») les valeurs de départ au plus court
 RYTHME = {
-    "blanc_avant_meuble": (1.0, 0.2, 3.0, "le silence entre ta voix et ton premier meuble (s)"),
-    "blanc_entre_meubles": (1.0, 0.2, 3.0, "le silence entre deux meubles (s)"),
-    "blanc_avant_reprise": (1.0, 0.0, 3.0, "le silence entre un meuble et ta voix qui reprend (s)"),
-    "ralenti_depart": (0.55, 0.15, 1.0, "la vitesse où repart ta voix ou un meuble après un blanc (1 = normale, plus petit = plus lent)"),
-    "ralenti_fin": (0.3, 0.0, 1.0, "combien ta dernière parole avant un blanc s'étire en ralentissant (s)"),
-    "fondu_reponse": (0.2, 0.03, 0.5, "le temps où un meuble s'éteint quand ta réponse arrive (s)"),
+    "blanc_avant_meuble": (0.2, 0.2, 3.0, "le silence entre ta voix et ton premier meuble (s)"),
+    "blanc_entre_meubles": (0.2, 0.2, 3.0, "le silence entre deux meubles (s)"),
+    "blanc_avant_reprise": (0.0, 0.0, 3.0, "le silence entre un meuble et ta voix qui reprend (s)"),
+    "ralenti_depart": (1.0, 0.15, 1.0, "la vitesse où repart ta voix ou un meuble après un blanc (1 = normale, plus petit = plus lent)"),
+    "ralenti_fin": (0.0, 0.0, 1.0, "combien ta dernière parole avant un blanc s'étire en ralentissant (s)"),
+    "fondu_reponse": (0.08, 0.03, 0.5, "le temps où un meuble s'éteint quand ta réponse arrive (s)"),
     "silence_court": (0.5, 0.3, 2.0, "le silence de papa après lequel tu reprends, quand tu attendais une réponse courte (s)"),
     "silence_normal": (0.7, 0.3, 2.5, "le silence de papa après lequel tu reprends, d'habitude (s)"),
     "silence_long": (1.2, 0.5, 4.0, "le silence de papa après lequel tu reprends, quand tu attendais qu'il raconte (s)"),

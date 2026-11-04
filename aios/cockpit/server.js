@@ -6338,17 +6338,17 @@ function reveilMorceau(texte, maintenant = Date.now()) {
   if (!cerveauVivant(c) || occupe(c) || c.enCours) return { ok: false, raison: 'occupé' };
   // (04/11, audit d'Ahmed ; son choix : « un seul, à ta pause ») mesuré 16:51-17:07 : un réveil à chaque morceau, ~150 000 jetons relus
   // chaque fois, une seule pensée dite sur 20 tours, et son cerveau encombré quand ta phrase entière arrive ; désormais UN réveil par
-  // tour, à la pause où son subconscient sent que tu as dit ce que tu voulais dire (FINI : oui)
+  // tour ; (04/11, Ahmed : « quand j'ai vu sa pensée écrite apparaître, c'était quasi instantané, au premier chunk sans attendre le
+  // 2e : dès que le premier chunk est écrit, il le prononce ») à ta première pause
   if (morceauxCerveau.duTour) return { ok: false, raison: 'déjà réveillé pour ce tour' };
-  if (souffles.sub.fini !== true) return { ok: false, raison: 'il continue' };
   morceauxCerveau = { n: (maintenant - morceauxCerveau.ts < 60000 ? morceauxCerveau.n : 0) + 1, dernier: t, ts: maintenant, duTour: true };
   const quand = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(maintenant));
   const message = `[Horloge — ${quand}]\n[Réveil du cockpit ${NONCE_REVEIL} — PAS un message d'Ahmed : ${MORCEAU_MARQUE}]\n`
     + `Ce qu'il a dit jusqu'ici (sa phrase continue ; confirmé, morceau ${morceauxCerveau.n}) : « ${neutraliser(t).slice(-1200)} »\n`
-    + "Réfléchis-y dès maintenant, comme toi : tes souvenirs s'ils servent (memory_recall), rien de long. Puis écris ta réponse provisoire, "
-    + "ainsi :\nDIRE : oui (elle est juste, même s'il ajoute un peu) ou DIRE : non\nFINI : oui (son idée est complète) ou FINI : non\n"
-    + "puis, à la ligne, ta réponse (deux ou trois phrases, à l'oral). Elle s'affiche écrite tout de suite ; ta voix ne la dit que si tu "
-    + "dis oui, quand il se tait. Son message entier arrivera ensuite : tu continueras alors sans répéter ce qui aura été dit.";
+    + "Ta pensée, tout de suite, sans outil : ce que tu lui dis là, pendant sa pause, spontané et vrai (une réaction, une question, "
+    + "un début de réponse), en UNE phrase courte à l'oral (quinze mots au plus). Réponds ainsi :\nFINI : oui (son idée est complète) "
+    + "ou FINI : non\npuis, à la ligne, ta pensée. Elle s'écrit et ta voix la dit aussitôt. Son message entier arrivera ensuite : tu "
+    + "continueras alors sans répéter ce que tu auras dit.";
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: message }] } }) + '\n'); }
   catch (x) { return { ok: false, raison: x.message }; }
   console.error(`Jarvis : son cerveau réfléchit au morceau ${morceauxCerveau.n}`);
@@ -6359,7 +6359,8 @@ function brouillonDuCerveau(texte) {
   // (16:35, capture d'Ahmed : « [[anticipe: long]] » écrit dans sa pensée) ses balises ne s'écrivent ni ne se disent
   let r = sansBaliseAffect(String(texte || '')).replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/[ \t]{2,}/g, ' ').trim();
   if (!r || NON_REPONSE_SERVEUR.test(r)) return;
-  const d = /(?:^|\n)\s*DIRE\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r), pret = !!(d && /oui/i.test(d[1]));
+  // (04/11) sa pensée se dit toujours (« dès que le premier chunk est écrit, il le prononce ») ; un « DIRE : non » ancien la retient encore
+  const d = /(?:^|\n)\s*DIRE\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r), pret = d ? /oui/i.test(d[1]) : true;
   if (d) r = r.replace(d[0], '\n');
   const f = /(?:^|\n)\s*FINI\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r), fini = f ? /oui/i.test(f[1]) : null;
   if (f) r = r.replace(f[0], '\n');
@@ -6368,7 +6369,7 @@ function brouillonDuCerveau(texte) {
   const s0 = souffles.cer;
   s0.reponse = r.slice(0, 600); s0.pret = pret; s0.fini = fini; s0.pour = morceauxCerveau.dernier; s0.t = Date.now();
   // (16:45) sa voix naît avec sa pensée, ici, avant la page ; (17:10, audit : chaque pensée, dite ou non, 75 à 214 caractères, prenait
-  // Chatterbox 3 à 14 s, et sa vraie réponse attendait derrière jusqu'à 20 s) seulement celle qu'il juge à dire
+  // Chatterbox 3 à 14 s, et sa vraie réponse attendait derrière jusqu'à 20 s) seulement celle qu'il dira (courte depuis le 04/11)
   if (pret) voixDeLaSource(s0.reponse.slice(0, 400));
   diffuser(abonnesPensees, 'souffle', j({ texte: s0.reponse, pret, fini, niveau: 'cerveau', pour: s0.pour.slice(-300) }));
   console.error(`Jarvis : réponse provisoire de son cerveau (${pret ? 'à dire' : 'pas encore'}, ${r.length} car.)`);

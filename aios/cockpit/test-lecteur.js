@@ -288,16 +288,17 @@ test('un trou pendant qu\'il écrit encore : ses meubles le couvrent de bout en 
   // 0,4 s de transition ») le premier meuble part 0,2 s après sa voix
   // (15:15, Ahmed : « la seconde de blanc » entre sa voix et ses meubles aussi)
   const souffle = meubles[0].debut - premiere.fin;
-  assert.ok(souffle >= 0.95 && souffle <= 1.15, `1 s de blanc avant le premier meuble : ${souffle.toFixed(2)} s`);
+  // (04/11, Ahmed : « enlève les blancs, c'est chiant ») 0,2 s désormais
+  assert.ok(souffle >= 0.15 && souffle <= 0.35, `0,2 s de blanc avant le premier meuble : ${souffle.toFixed(2)} s`);
   // (14:40, Ahmed : « sans rien mélanger ») l'un après l'autre ; (14:58) 1 s de silence entre deux
   for (let i = 1; i < meubles.length; i++) {
     const ecart = meubles[i].debut - meubles[i - 1].fin;
-    assert.ok(Math.abs(ecart - 1.0) <= 0.03, `1 s de silence entre deux meubles (${i}) : ${ecart.toFixed(2)} s`);
+    assert.ok(Math.abs(ecart - 0.2) <= 0.03, `0,2 s de silence entre deux meubles (${i}) : ${ecart.toFixed(2)} s`);
   }
   const dernier = meubles.filter(m => m.debut < suite.debut).pop();
   const fondu = dernier.fin - suite.debut;
   // (15:15) le meuble s'éteint en 0,2 s, puis 1 s de silence avant sa voix : jamais par-dessus
-  assert.ok(fondu <= -0.95 && fondu >= -1.3, `1 s de silence entre le meuble et sa voix : ${fondu.toFixed(2)} s`);
+  assert.ok(fondu <= 0.001 && fondu >= -0.3, `(04/11) sa voix repart aussitôt le meuble éteint, jamais par-dessus : ${fondu.toFixed(2)} s`);
   assert.ok(!meubles.some(m => m.debut > suite.debut), 'plus aucun meuble une fois la suite partie');
   const sans = (await trou8s(false)).sim.sons[1];
   // (15:15) le meuble s'éteint (0,2 s) puis 1 s de silence : sa voix part au plus ~1,2 s après qu'elle est prête, jamais après la fin du meuble
@@ -377,11 +378,11 @@ test('avant son premier mot : une seconde de silence, puis ses meubles jusqu\'à
   sim.lecteur.dire('Oui papa, je suis là.'); sim.lecteur.finFlux();
   await sim.avancer(30);
   const meubles = sim.sons.filter(s => s.texte === 'Euh,'), reponse = sim.sons.find(s => s.texte !== 'Euh,');
-  assert.ok(meubles[0].debut >= 0.9 && meubles[0].debut <= 1.3, `après une seconde de silence : ${meubles[0].debut.toFixed(2)} s`);
+  assert.ok(meubles[0].debut >= 0.25 && meubles[0].debut <= 0.5, `(04/11) après 0,3 s de silence : ${meubles[0].debut.toFixed(2)} s`);
   assert.ok(meubles.length >= 3, 'enchaînés jusqu\'à sa réponse');
   const dernier = meubles.filter(m => m.debut < reponse.debut).pop();
   const fondu = dernier.fin - reponse.debut;
-  assert.ok(fondu >= -1.3 && fondu <= -0.95, `1 s de silence entre le meuble et sa réponse : ${fondu.toFixed(2)} s`);
+  assert.ok(fondu >= -0.3 && fondu <= 0.001, `(04/11) sa réponse aussitôt le meuble éteint, jamais par-dessus : ${fondu.toFixed(2)} s`);
   assert.ok(!meubles.some(m => m.debut > reponse.debut), 'plus aucun meuble une fois sa réponse partie');
   assert.ok(demandes.every(Boolean), 'ceux d\'« avant » son premier mot');
 });
@@ -390,7 +391,9 @@ test('avant son premier mot, sa réponse déjà là : pas d\'hésitation ; papa 
   const vite = hesitant();
   await vite.sim.avancer(0); vite.sim.lecteur.attendreReponse(); vite.sim.lecteur.dire('Oui.'); vite.sim.lecteur.finFlux();
   await vite.sim.avancer(20);
-  assert.ok(!vite.sim.sons.some(s => s.texte === 'Euh,'), vite.sim.sons.map(s => s.texte).join(' | '));
+  // (04/11, « enlève les blancs ») le premier meuble part à 0,3 s : sa voix, fabriquée en ~1 s, le coupe ; jamais deux, jamais par-dessus
+  const euh = vite.sim.sons.filter(s => s.texte === 'Euh,'), oui = vite.sim.sons.find(s => s.texte !== 'Euh,');
+  assert.ok(euh.length <= 1 && euh.every(m => m.fin <= oui.debut + 0.001), vite.sim.sons.map(s => s.texte).join(' | '));
   const papa = hesitant(() => false);
   await papa.sim.avancer(0); papa.sim.lecteur.attendreReponse();
   await papa.sim.avancer(3); papa.sim.lecteur.dire('Oui papa.'); papa.sim.lecteur.finFlux();
