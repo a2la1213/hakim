@@ -63,7 +63,7 @@ test('(04/11) la page : chaque pensée et chaque bout de message portent leur d�
 test('(04/11) le cockpit : l’instant de départ sur ses pensées et son texte ; ses sorties rangées avec ses entrées (fil_delais)', () => {
   assert.match(SRC, /if \(p === '\/api\/heure' && req\.method === 'GET'\)/);
   assert.match(SRC, /res\.write\(j\(o\.t === 'texte' \? \{ \.\.\.o, ts: Date\.now\(\) \} : o\) \+ '\\n'\)/);
-  assert.strictEqual((SRC.match(/niveau: 'piste', n: m\.n, tour, pour[^\n]*ts: Date\.now\(\) \}\)\);/g) || []).length, 2, 'ses deux pistes');
+  assert.strictEqual((SRC.match(/niveau: 'piste', n: m\.n, tour, pour[^\n]*ts: Date\.now\(\)[^\n]*\}\)\);/g) || []).length, 2, 'ses deux pistes');
   assert.match(SRC, /niveau: 'cerveau', pour: s0\.pour\.slice\(-300\), ts: Date\.now\(\) \}/);
   const ctx = { Number, Math, DELAIS: {} };
   vm.createContext(ctx);

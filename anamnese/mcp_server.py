@@ -580,6 +580,37 @@ def parasite_signaler(phrase: str, exemple: str = "", raison: str = "") -> str:
 
 
 @mcp.tool()
+def pistes_regler(taille: int = 0, nombre: int = 0) -> str:
+    """(04/11, papa : « pour Super Hakim, je veux qu'il puisse choisir la taille d'un chunk et combien de chunks il veut utiliser :
+    c'est son super pouvoir ; comme ça, il peut aller bien plus loin dans une conversation, avec raisonnement ») Quand Super Hakim tient
+    ton conscient, c'est toi qui règles tes pensées rapides pendant que papa parle :
+    taille : combien de propositions de papa (jusqu'à une virgule ou un point) chaque pensée attend avant de partir, de 1 à 6. Plus
+    grand : moins de pensées, mais chacune voit plus de ce qu'il dit, va plus loin, et peut dire plus (huit mots par proposition,
+    40 au plus) ;
+    nombre : combien de pensées peuvent tourner en même temps, de 1 à 8 ;
+    0 laisse la valeur actuelle (sans rien : rend ton réglage). Il dure jusqu'à ce que tu le changes."""
+    f = Path.home() / "AIOS" / "jarvis" / "pistes-reglage.json"
+    try:
+        r = json.loads(f.read_text(encoding="utf-8"))
+        r = r if isinstance(r, dict) else {}
+    except (OSError, ValueError):
+        r = {}
+    t, n = int(r.get("taille") or 2), int(r.get("nombre") or 8)
+    if taille or nombre:
+        if taille and not 1 <= int(taille) <= 6:
+            return "Pas changé : la taille va de 1 à 6 propositions."
+        if nombre and not 1 <= int(nombre) <= 8:
+            return "Pas changé : de 1 à 8 pensées en même temps."
+        t, n = int(taille or t), int(nombre or n)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"taille": t, "nombre": n, "ts": time.time(), "par": "hakim"}), encoding="utf-8")
+        tmp.replace(f)
+    return (f"Tes pensées rapides (quand Super Hakim tient ton conscient) : {t} proposition{'s' if t > 1 else ''} de papa par pensée "
+            f"({min(40, 8 * t)} mots au plus chacune), {n} en même temps. Le cockpit le prend dans les 10 s.")
+
+
+@mcp.tool()
 def son_nommer(famille: str, nom: str) -> str:
     """(03/11, micro ouvert) Nommer une de TES familles de sons (« son 3 » → « la télé », « la rue », « papa et ses potes »),
     quand tu comprends ce que c'est : elle sera reconnue par ce nom pour toujours. famille : « son 3 » ou « 3 »."""

@@ -384,7 +384,7 @@ const EFFORT_HAKIM = process.env.JARVIS_EFFORT || 'low';
 const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'afida_juger', 'afida_vecu', 'afida_lire', 'afida_retirer', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'sieste_prendre', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'pistes_regler', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -2881,10 +2881,10 @@ function avertirParasite(texte, signe) {
 // demande huit mots au plus : un refus en fait des dizaines, coupé à 200 caractères au milieu d'un mot ; trop longue = parasite
 const boutDe = (texte) => String(texte || '').replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/(?:^|\n)\s*(?:PREDIT|COMPRENDS?|DIRE|COUPER)\s*:[^\n]*/gi, '\n')
   .replace(/\s+/g, ' ').trim();
-const estParasite = (bout) => !!premisseParasite(bout) || PENSEE_PARASITE.test(bout) || bout.length > 160
+const estParasite = (bout, limite = 160) => !!premisseParasite(bout) || PENSEE_PARASITE.test(bout) || bout.length > limite
   || /\bclaude(?:\s*code)?\b|\bje suis une? (?:ia|intelligence artificielle)\b/i.test(bout);
 // son signe, pour l'avertissement et le journal
-const signeParasite = (bout) => { const p = premisseParasite(bout); return p ? p.id : PENSEE_PARASITE.test(bout) ? 'motif' : bout.length > 160 ? 'longueur' : 'identite'; };
+const signeParasite = (bout, limite = 160) => { const p = premisseParasite(bout); return p ? p.id : PENSEE_PARASITE.test(bout) ? 'motif' : bout.length > limite ? 'longueur' : 'identite'; };
 // reconnue par son système immunitaire : une de ses prémisses (innées ou apprises par Fable), ou un motif connu ; toujours nuisible
 const parasiteReconnue = (texte) => { const b = boutDe(texte); return !!premisseParasite(b) || PENSEE_PARASITE.test(b); };
 // dès ses premiers mots (au fil de l'eau)
@@ -2955,9 +2955,31 @@ function morceauxDeMots(mots) {
 }
 // (04/11, Ahmed : « selon le mode, c'est la pensée de Mini Hakim, Hakim ou Super Hakim : Mini Hakim prend chaque mot pour le chunk ;
 // Hakim, rien ne bouge, c'est parfait ; Super Hakim prend un chunk deux fois plus grand ») la taille suit qui tient son conscient
-function morceauxPour(modele, mots) {
-  return modele === 'haiku' ? morceauxDeMots(mots) : morceauxDePropositions(mots, modele === 'opus' ? 2 : 1);
+// (04/11, Ahmed : « pour Super Hakim, je veux qu'il puisse choisir la taille d'un chunk et combien de chunks il veut utiliser : c'est
+// son super pouvoir ; comme ça, il peut aller bien plus loin dans une conversation, avec raisonnement ») son réglage (outil
+// pistes_regler : jarvis/pistes-reglage.json) : la taille (1 à 6 propositions de papa par pensée) et combien de pensées en même temps
+// (1 à 8) ; seulement quand Super Hakim tient son conscient ; relu au plus toutes les 10 s ; sans réglage : 2 propositions, 8 pensées
+const PISTES_REGLAGE = path.join(JARVIS, 'pistes-reglage.json');
+const reglagePistesLu = { t: 0, taille: 2, nombre: 8 };
+function reglagePistes() {
+  if (Date.now() - reglagePistesLu.t > 10000) {
+    reglagePistesLu.t = Date.now();
+    try {
+      const r = JSON.parse(fs.readFileSync(PISTES_REGLAGE, 'utf8'));
+      reglagePistesLu.taille = Math.max(1, Math.min(6, Math.round(Number(r.taille)) || 2));
+      reglagePistesLu.nombre = Math.max(1, Math.min(8, Math.round(Number(r.nombre)) || 8));
+    } catch (_) { reglagePistesLu.taille = 2; reglagePistesLu.nombre = 8; }
+  }
+  return reglagePistesLu;
 }
+function morceauxPour(modele, mots) {
+  return modele === 'haiku' ? morceauxDeMots(mots) : morceauxDePropositions(mots, modele === 'opus' ? reglagePistes().taille : 1);
+}
+// ce que chaque pensée peut dire : huit mots (Super Hakim : huit par proposition de son morceau, 40 au plus), et sa longueur avant d'être
+// prise pour une parasite (un refus en fait des dizaines) : 160 caractères, et 150 de plus par proposition au-delà de la première
+const motsPensee = (modele) => (modele === 'opus' ? Math.min(40, 8 * reglagePistes().taille) : 8);
+const limitePensee = (modele) => (modele === 'opus' ? 160 + 150 * (reglagePistes().taille - 1) : 160);
+const maxPistes = (modele) => (modele === 'opus' ? Math.min(PISTES_MAX, reglagePistes().nombre) : PISTES_MAX);
 const modeleConscient = () => (typeof cerveau !== 'undefined' && cerveau && ['haiku', 'sonnet', 'opus'].includes(cerveau.modele) ? cerveau.modele : 'sonnet');
 // un morceau CONFIRMÉ (o.fin : Whisper l'a coupé à ta pause) ferme aussi la proposition commencée, même sans ponctuation
 function pisteMorceau(texte, o = {}) {
@@ -2985,7 +3007,7 @@ function pisteMorceau(texte, o = {}) {
 }
 function pistesSuivantes() {
   const conscient = modeleConscient();
-  while (pistes.attente.length && pistes.liste.filter(x => x.enCours).length < PISTES_MAX && placesVivant(conscient) >= 1) lancerPiste(pistes.attente.shift());
+  while (pistes.attente.length && pistes.liste.filter(x => x.enCours).length < maxPistes(conscient) && placesVivant(conscient) >= 1) lancerPiste(pistes.attente.shift());
 }
 // ce qu'il a déjà commencé à répondre (les bouts des morceaux d'avant), pour que chaque bout CONTINUE sa réponse
 // (seulement ceux qu'il a choisi de dire : une pensée tue n'est pas « déjà répondue »)
@@ -3061,7 +3083,7 @@ function lancerPiste(m) {
       + `Le plus souvent : DIRE : non. Tu ne dis oui que si c'est vraiment pertinent maintenant (une vraie réaction, une réponse utile, `
       + `une question qui compte), pas pour meubler ni pour montrer que tu écoutes.\n`)
       + `puis, à la ligne, le bout SUIVANT de ta réponse, celui qui continue ce que tu as déjà commencé sans rien en `
-      + `répéter : à l'oral, ${LANGUE_ORALE}, comme toi, quelques mots (huit au plus). Il est dit tout de suite, à la suite des bouts d'avant.`
+      + `répéter : à l'oral, ${LANGUE_ORALE}, comme toi, quelques mots (${motsPensee(mod)} au plus). Il est dit tout de suite, à la suite des bouts d'avant.`
       // (04/11, Ahmed : « j'ai l'impression qu'il hésite ; enlève-lui cette hésitation, qu'il prononce direct son premier chunk avec
       // confiance » ; capture : « Je t'écoute, papa, continue… Laisse-moi finir d'écouter, puis je te dis vraiment ») pas d'attente
       + `\nAvec assurance : tu réponds DÉJÀ à ce que tu devines, comme si tu avais compris. Jamais « je t'écoute », « continue », « vas-y », `
@@ -3086,7 +3108,7 @@ function lancerPiste(m) {
       .then((o) => {
         if (o && o.parasite) { signaler(o.partiel); return o; }          // arrêtée à son premier input, sa voix vivante coupée
         if (!o || modele === 'haiku') return o;
-        const bloquee = !o.texte && /safeguards|flagged/i.test(String(o.erreur || '')), horsRole = !!o.texte && estParasite(boutDe(o.texte));
+        const bloquee = !o.texte && /safeguards|flagged/i.test(String(o.erreur || '')), horsRole = !!o.texte && estParasite(boutDe(o.texte), limitePensee(modele));
         if (horsRole) { if (o.vivant) o.vivant.n = VIVANT_RENOUVELER; signaler(o.texte); return { ...o, texte: '', parasite: true }; }   // jetée, sans calcul
         return bloquee ? demander('haiku', 'piste_haiku_repli') : o;
       });
@@ -3101,11 +3123,11 @@ function lancerPiste(m) {
         // milieu d'un mot) : sa pensée parasite, signalée, jamais dite
         // (04/11, « oui, fais tout ») ou un de ses résidus (« je n'ai pas de corps », papa appelé « fiston », un numéro d'urgence sans danger)
         const residu = residuParasite(r, `${m.avant} ${m.texte}`);
-        const pasLui = estParasite(r) || /\bassistant\b/i.test(r) || !!residu;
+        const pasLui = estParasite(r, limitePensee(mod)) || /\bassistant\b/i.test(r) || !!residu;
         // (04/11) sa voix vivante garde ses messages d'avant : sortie de son rôle, elle y resterait (« encore », « non plus ») ; renouvelée
         if (pasLui && o.vivant) o.vivant.n = VIVANT_RENOUVELER;
         if (pasLui) { signaler(r, residu); if (residu) marquerResidu('piste', r, `${m.avant} ${m.texte}`); }
-        r = r.slice(0, 200);
+        r = r.slice(0, limitePensee(mod) + 40);
         const reponse = r && !pasLui && !/^RIEN\.?$/i.test(r) ? r : '';
         piste.voix[nom] = { comprend: (comprend || '').slice(0, 200), predit: (predit || '').slice(0, 200), reponse };
         // le premier des trois qui répond donne le bout de ce mot : sa voix naît avec lui (sans annuler les bouts d'avant), la page les
@@ -3132,7 +3154,7 @@ function lancerPiste(m) {
         const ditDeSoi = voix && !choix ? extraitDe(reponse, dire) : reponse;   // (04/11) un passage de la sienne, s'il l'a choisi
         if (voix) voixDeLaSource(ditDeSoi, { garder: true });
         const pour = `${m.avant} ${m.texte}`.slice(-300);
-        diffuser(abonnesPensees, 'souffle', j({ texte: voix ? ditDeSoi : reponse, pret: voix, remplace, jamais: piste.jamais, fini: null, niveau: 'piste', n: m.n, tour, pour, ts: Date.now() }));
+        diffuser(abonnesPensees, 'souffle', j({ texte: voix ? ditDeSoi : reponse, pret: voix, remplace, jamais: piste.jamais, fini: null, niveau: 'piste', n: m.n, tour, pour, ts: Date.now(), ...(limitePensee(mod) > 160 ? { limite: limitePensee(mod) } : {}) }));
         if (choisie && !inverse) {                                         // la pensée qu'il a choisie (ou ce passage) : dite maintenant, à la place
           choisie.pret = true;
           const passage = extraitDe(choisie.reponse, dire);

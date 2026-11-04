@@ -3073,7 +3073,8 @@ function surSouffle(o) {
   if (o.niveau === 'papa') { montrerMorceauPapa(o); return; }        // (04/11) tes mots, morceau par morceau
   // (04/11, Ahmed : « mes pensées parasites sont bien flagguées ; maintenant il faut la jeter sans la calculer, sinon ça alourdit tout »)
   // jetée : ni écrite, ni dite, ni sa dernière pensée, ni une voix calculée d'avance ; trop longue (coupée au milieu d'un mot) aussi
-  if (o.parasite || PENSEE_PARASITE.test(String(o.texte)) || (o.niveau === 'piste' && String(o.texte).length > 160)) {
+  // (04/11) Super Hakim qui a choisi de grands morceaux : ses pensées peuvent être plus longues (o.limite, donnée par le cockpit)
+  if (o.parasite || PENSEE_PARASITE.test(String(o.texte)) || (o.niveau === 'piste' && String(o.texte).length > (Number(o.limite) || 160))) {
     journalVoix('pensee_parasite', { niveau: o.niveau || 'sub' });
     return;
   }

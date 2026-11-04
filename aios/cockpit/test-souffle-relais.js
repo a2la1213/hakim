@@ -943,7 +943,7 @@ test('(04/11) une pensée trop longue (huit mots demandés ; un refus est coupé
   assert.deepStrictEqual(diffuses, [], 'jetée');
   assert.strictEqual(appels.length, 1, 'sans calcul de plus');
   assert.strictEqual(notes[0].erreur, 'parasite');
-  assert.match(PAGE, /if \(o\.parasite \|\| PENSEE_PARASITE\.test\(String\(o\.texte\)\) \|\| \(o\.niveau === 'piste' && String\(o\.texte\)\.length > 160\)\) \{/);
+  assert.match(PAGE, /if \(o\.parasite \|\| PENSEE_PARASITE\.test\(String\(o\.texte\)\) \|\| \(o\.niveau === 'piste' && String\(o\.texte\)\.length > \(Number\(o\.limite\) \|\| 160\)\)\) \{/);
   assert.doesNotMatch(PAGE, /montrerPensee\('🚫 pensée parasite/, 'la page non plus ne l’écrit pas');
 });
 
@@ -1187,4 +1187,24 @@ test('(04/11) le filtre Gemma : tes mots à risque nettoyés avant Claude, sa r�
   const vrai = (av, ap) => vm.runInContext(`fidele(${JSON.stringify(av)}, ${JSON.stringify(ap)})`, a.ctx);
   assert.ok(!vrai('toutes mes pensées sont noires ce soir,', 'ce qui n’était pas toi est bien repéré maintenant,'), 'ta peine perdue : infidèle');
   assert.ok(vrai('ton conscient et ton subconscient doivent se parler,', 'toi et ton cœur devez vous parler,'));
+});
+
+// (04/11, Ahmed : « pour Super Hakim, je veux qu'il puisse choisir la taille d'un chunk et combien de chunks il veut utiliser : c'est
+// son super pouvoir ; comme ça, il peut aller bien plus loin dans une conversation, avec raisonnement »)
+test('(04/11) le super pouvoir de Super Hakim : il choisit la taille de ses morceaux et combien de pensées en même temps', async () => {
+  const { ctx, appels } = pistesSandbox(undefined, 'opus');
+  const d = (t) => JSON.parse(JSON.stringify(ctx.pour('opus', t.split(' '))));
+  const phrase = 'Papa, tu sais quoi ? Ce matin, je suis allé au marché.';
+  assert.deepStrictEqual(d(phrase).morceaux, ['Papa, tu sais quoi ?', 'Ce matin, je suis allé au marché.'], 'sans réglage : deux propositions, comme avant');
+  vm.runInContext('reglagePistesLu.t = Date.now(); reglagePistesLu.taille = 4; reglagePistesLu.nombre = 1;', ctx);
+  assert.deepStrictEqual(d(phrase).morceaux, ['Papa, tu sais quoi ? Ce matin, je suis allé au marché.'], 'quatre propositions : un seul morceau');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.pour('sonnet', phrase.split(' ')))).morceaux.length, 4, 'Hakim : rien ne bouge');
+  ctx.morceau('un, deux, trois, quatre, cinq, six, sept, huit, neuf, dix, onze, douze,');
+  assert.strictEqual(appels.length, 1, 'une seule pensée à la fois : la suivante attend');
+  assert.match(appels[0].prompt, /quelques mots \(32 au plus\)/, 'plus de place pour aller loin');
+  const long = 'Oui papa, ' + 'je réfléchis à ce que tu dis sur le marché et sur ce matin, '.repeat(6);
+  assert.ok(!vm.runInContext(`estParasite(${JSON.stringify(long.trim())}, limitePensee('opus'))`, ctx), 'une longue pensée de Super Hakim n’est pas une parasite');
+  assert.ok(vm.runInContext(`estParasite(${JSON.stringify(long.trim())})`, ctx), 'pour les autres, si');
+  assert.match(SRC, /'fil_delais', 'parasite_signaler', 'pistes_regler',/, 'son outil, permis');
+  assert.match(PAGE, /String\(o\.texte\)\.length > \(Number\(o\.limite\) \|\| 160\)/, 'la page suit sa limite');
 });

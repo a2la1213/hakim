@@ -156,13 +156,17 @@
 
   async function charger() {
     try {
-      const r = await fetch('/api/immunite', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+      // (04/11, capture d'Ahmed : la page vide, sans un mot, pendant que le Mac relançait le cockpit) jamais une attente muette
+      if (!$('chiffres').innerHTML.trim()) $('chiffres').innerHTML = '<div class="vide">Chargement…</div>';
+      const r = await fetch('/api/immunite', { headers: { 'X-Jeton': jeton() }, cache: 'no-store', signal: AbortSignal.timeout(20000) });
       if (!r.ok) throw new Error(`erreur ${r.status}`);
       const d = await r.json();
       chiffres(d); sante(d); rapports(d); incidents(d); anticorps(d);
       $('paquets').innerHTML = d.paquets.length ? d.paquets.map((x) => `<span class="g">${esc(x)}</span>`).join(' ')
         : '<div class="vide">Aucun paquet vérifié à la main.</div>';
-    } catch (e) { $('chiffres').innerHTML = `<div class="vide">Système immunitaire injoignable : ${esc(e.message)}</div>`; }
+    } catch (e) {
+      $('chiffres').innerHTML = `<div class="vide">Système immunitaire injoignable : ${esc(e.name === 'TimeoutError' ? 'le Mac met plus de 20 s à répondre (chargé, ou le cockpit redémarre) ; nouvel essai dans un instant' : e.message)}</div>`;
+    }
   }
   let bulleMinuteur = 0;
   const annonce = (t) => { $('annonce').textContent = t; $('bulle').textContent = t; clearTimeout(bulleMinuteur);
