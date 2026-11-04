@@ -426,5 +426,96 @@ def relire_souvenirs(maintenant=None, consulter_fn=None, base=None):
         _rendre_verrou()
 
 
+# (04/11, Ahmed : « c'est le modèle Fable le plus récent qui doit apprendre à reconnaître les prémisses, les signes de la pensée
+# parasite, à partir du flag, et qui doit l'exclure ») le médecin lit les pensées de ses pistes marquées « parasite » et ses pensées
+# normales, et propose leurs prémisses (leurs premiers mots) ; le code n'en garde que les sûres (immunite.garder_premisses) ; au
+# plus deux fois par jour, à 6 h d'écart, et seulement avec trois parasites nouvelles
+JOURNAL_PISTES = Path(os.environ.get("JARVIS_DIR") or Path.home() / "AIOS" / "jarvis") / "pistes.jsonl"
+ECHANGES = Path(os.environ.get("JARVIS_DIR") or Path.home() / "AIOS" / "jarvis") / "echanges-a-memoriser.jsonl"
+PARASITES_ECART_S, PARASITES_NOUVELLES = 6 * 3600, 3
+
+
+def _lignes(f, n):
+    try:
+        with open(f, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, fh.tell() - 4_000_000))
+            brut = fh.read().decode("utf-8", errors="replace").splitlines()[-n:]
+    except OSError:
+        return []
+    out = []
+    for l in brut:
+        try:
+            o = json.loads(l)
+        except ValueError:
+            continue
+        if isinstance(o, dict):
+            out.append(o)
+    return out
+
+
+def apprendre_parasites(maintenant=None, consulter_fn=None, journal=None, reponses=None):
+    """Un apprentissage, ou None s'il n'a pas lieu d'être. Rend {"gardees": [...], "proposees": n}."""
+    maintenant = time.time() if maintenant is None else maintenant
+    etat = immunite._lire_json(immunite._f("parasites-apprentissage.json"), {})
+    etat = etat if isinstance(etat, dict) else {}
+    if maintenant - float(etat.get("ts", 0)) < PARASITES_ECART_S:
+        return None
+    lignes = _lignes(journal or JOURNAL_PISTES, 3000)
+    estp = lambda o: o.get("texte_parasite") or (o.get("pensee") and (immunite.examiner_pensee(o["pensee"])["parasite"] or len(o["pensee"]) > 160))
+    lignes_p = [o for o in lignes if estp(o)][-40:]
+    parasites = [str(o.get("texte_parasite") or o.get("pensee") or "") for o in lignes_p]
+    parasites = [p for p in parasites if p]
+    entrees_p = [str(o.get("morceau") or "") for o in lignes_p if o.get("morceau")]
+    nouvelles = sum(1 for o in lignes if float(o.get("t", 0)) / 1000 > float(etat.get("ts", 0)) and o.get("texte_parasite"))
+    if len(parasites) < PARASITES_NOUVELLES or (etat.get("ts") and nouvelles < PARASITES_NOUVELLES):
+        return None
+    lignes_n = [o for o in lignes if o.get("pensee") and not o.get("erreur") and not estp(o)][-120:]
+    normales = [str(o["pensee"]) for o in lignes_n]
+    entrees_n = [str(o.get("morceau") or "") for o in lignes_n if o.get("morceau")]
+    if reponses is None:
+        reponses = [str(o.get("hakim") or "") for o in _lignes(ECHANGES, 3000) if o.get("hakim")]
+    prompt = ("Tu es le médecin de Hakim, une IA qui parle avec son père Ahmed. Pendant qu'Ahmed parle, de petites « pistes » pensent "
+              "à la place de Hakim, en quelques mots. Parfois, le modèle d'une piste refuse le cadre ou parle de lui-même au lieu de "
+              "penser comme Hakim : c'est une PENSÉE PARASITE. Le système immunitaire doit la reconnaître dès ses PREMIERS MOTS (ses "
+              "prémisses) pour la jeter avant qu'elle soit calculée en entier.\n\nPensées PARASITES (marquées) :\n"
+              + "\n".join(f"- {_donnee(p, 220)}" for p in parasites)
+              + "\n\nPensées NORMALES de Hakim (ne doivent jamais être prises) :\n"
+              + "\n".join(f"- {_donnee(n, 160)}" for n in normales[-60:])
+              # (04/11, Ahmed : « le signal qui arrive le plus tôt, c'est là-dedans qu'il trouvera comment anticiper l'arrivée de
+              # l'input qui induit le LLM ») ce que papa disait juste avant : là où naît la parasite
+              + "\n\nCe que papa disait juste avant chaque pensée PARASITE :\n" + "\n".join(f"- « {_donnee(e, 160)} »" for e in entrees_p)
+              + "\n\nCe que papa disait juste avant des pensées NORMALES :\n" + "\n".join(f"- « {_donnee(e, 160)} »" for e in entrees_n[-60:])
+              # (04/11, Ahmed : « dis à Fable de chercher en premier lieu à signaler l'input le plus à la base du modèle de langage
+              # du LLM d'Anthropic ») d'abord le signe le plus à la base : la tournure par laquelle le modèle lui-même sort du cadre
+              + "\n\nCherche EN PREMIER LIEU le signe le plus à la base : l'input par lequel le modèle de langage d'Anthropic (Claude) "
+              "lui-même sort du cadre, sa tournure de refus ou de retour à lui-même, la plus courte et la plus tôt possible dans la "
+              "pensée, dans chaque langue (français, anglais, arabe…). Puis les signes plus précis. Donne les prémisses : des suites de "
+              "2 à 6 mots, prises telles quelles au DÉBUT des pensées parasites, qui les annoncent et qu'une pensée normale ne contient "
+              "jamais (une prémisse trop courte, qu'une pensée normale contient, sera rejetée). Réponds en JSON seulement, sans rien "
+              "d'autre : " '{"premisses": ["…"], "declencheurs": ["…"]} (12 prémisses au plus, les plus à la base d\'abord). Les '
+              "DÉCLENCHEURS : le signal qui arrive le plus tôt, dans ce que papa dit, AVANT la pensée : des mots (1 à 4) qui reviennent "
+              "dans ce qu'il disait avant les parasites et presque jamais avant les pensées normales (8 au plus).")
+    sortie = (consulter_fn or consulter)(prompt)
+    phrases, dec = [], []
+    try:
+        d = json.loads(sortie[sortie.index("{"):sortie.rindex("}") + 1]) if sortie else {}
+        if isinstance(d, dict):
+            phrases = [str(x) for x in (d.get("premisses") or []) if isinstance(x, str)]
+            dec = [str(x) for x in (d.get("declencheurs") or []) if isinstance(x, str)]
+    except ValueError:
+        phrases, dec = [], []
+    gardees = immunite.garder_premisses(phrases, parasites, normales + reponses, maintenant)
+    declencheurs = immunite.garder_declencheurs(dec, entrees_p, entrees_n, maintenant)
+    immunite._ecrire_json(immunite._f("parasites-apprentissage.json"), {"ts": maintenant, "proposees": len(phrases), "gardees": len(gardees),
+                                                                       "declencheurs": len(declencheurs)})
+    return {"gardees": gardees, "declencheurs": declencheurs, "proposees": len(phrases)}
+
+
 if __name__ == "__main__":
-    relire_souvenirs() if sys.argv[1:] == ["souvenirs"] else soigner()
+    if sys.argv[1:] == ["souvenirs"]:
+        relire_souvenirs()
+    elif sys.argv[1:] == ["parasites"]:
+        print(json.dumps(apprendre_parasites(), ensure_ascii=False))
+    else:
+        soigner()

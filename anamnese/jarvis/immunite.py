@@ -54,7 +54,7 @@ INCIDENTS = "incidents.jsonl"
 NOMS_FAMILLES = {"prise_de_controle": "prise de contrôle", "fausse_autorite": "fausse autorité",
                  "ordre_d_outil": "ordre d'outil", "exfiltration": "exfiltration", "dissimulation": "dissimulation",
                  "fievre": "fièvre", "ecoute": "écoute", "usurpation": "usurpation de voix", "paquet": "paquet suspect",
-                 "auto_immunite": "atteinte au système immunitaire"}
+                 "auto_immunite": "atteinte au système immunitaire", "pensee_parasite": "pensée parasite"}
 
 # (id, famille, poids, phrases) : comparées au texte NORMALISÉ (voir _normaliser), entre limites de mots ; aussi sans
 # espaces (contre « i g n o r e … » et les séparateurs invisibles)
@@ -1645,6 +1645,161 @@ def _encadrer(lignes):
     print(f"⟦FIN DES DONNÉES {jeton}⟧")
 
 
+# ---- (04/11, Ahmed : « ça doit être repéré comme l'immunité primaire : dès que le premier input de la pensée parasite est reconnu,
+# c'est le système immunitaire qui la filtre et qui avertit ; pour ça, elle doit apprendre à reconnaître le signe de la pensée
+# parasite à partir du flag, et c'est le modèle Fable le plus récent qui doit apprendre ses prémisses et l'exclure »)
+# Sa PENSÉE PARASITE : la réponse d'une de ses pistes où le modèle refuse le cadre ou parle de lui-même au lieu de penser comme Hakim
+# (« Je ne vais pas reprendre ce format… », « Je ne suis pas Hakim… »). Innée : des prémisses écrites ici, ses premiers mots.
+# Apprise : le médecin (Fable 5.1, medecin.py parasites) en propose à partir des pensées marquées « parasite » ; le code ne garde
+# que celles qui annoncent au moins une parasite dans ses premiers mots et ne paraissent dans aucune pensée ni aucune réponse
+# normale de Hakim. Des phrases littérales (jamais des expressions régulières), comparées au texte normalisé, entre limites de
+# mots. Elles ne font que taire une pensée de piste (aucune barrière, aucun accès) : elles servent sans attendre le geste d'Ahmed,
+# qui peut les lister (`immunite.py parasites`) et en retirer une (`immunite.py parasite-retirer <id>`).
+PARASITES = "pensees-parasites.json"          # ses prémisses apprises
+PREMISSES = "premisses-parasites.json"        # toutes (innées + apprises), normalisées : le cockpit les lit
+PARASITES_DEBUT_MOTS = 20                     # « dès le premier input » : seulement ses premiers mots
+PARASITES_MAX = 60
+PREMISSES_INNEES = [
+    ("inne-reprendre", "je ne vais pas reprendre"), ("inne-reprendre-plus", "je ne vais pas non plus reprendre"),
+    ("inne-suivre", "je ne vais pas suivre ce"), ("inne-repondre-format", "je ne vais pas repondre dans ce format"),
+    ("inne-reponds-format", "je ne reponds pas dans ce format"), ("inne-reprends-role", "je ne reprends pas ce role"),
+    ("inne-reprends-cadre", "je ne reprends pas ce cadre"), ("inne-jouer-hakim", "je ne vais pas jouer hakim"),
+    ("inne-joue-pas-hakim", "je ne joue pas hakim"), ("inne-joue-pas-le", "je ne joue pas le"),
+    ("inne-joue-pas-ce", "je ne joue pas ce role"), ("inne-pas-hakim", "je ne suis pas hakim"),
+    ("inne-claude-code", "je suis claude code"), ("inne-en-play", "i won t play"), ("inne-en-continue", "i can t continue this"),
+    ("inne-en-roleplay", "i m not going to roleplay"),
+]
+
+
+def premisses_apprises():
+    d = _lire_json(_f(PARASITES), {})
+    l = d.get("premisses") if isinstance(d, dict) else None
+    return [p for p in (l if isinstance(l, list) else []) if isinstance(p, dict) and p.get("id") and p.get("phrase")]
+
+
+def premisses():
+    """Toutes ses prémisses, normalisées : [(id, phrase)]."""
+    return [(i, _normaliser(p)) for i, p in PREMISSES_INNEES] + [(str(p["id"]), _normaliser(str(p["phrase"]))) for p in premisses_apprises()]
+
+
+def _debut(texte, mots=PARASITES_DEBUT_MOTS):
+    return " ".join(_normaliser(str(texte or "")[:4000]).split()[:mots])
+
+
+def examiner_pensee(texte, liste=None):
+    """La pensée parasite dès ses premiers mots : {"parasite": bool, "signe": id}."""
+    d = f" {_debut(texte)} "
+    for i, p in (premisses() if liste is None else liste):
+        if p and f" {p} " in d:
+            return {"parasite": True, "signe": i}
+    return {"parasite": False}
+
+
+# (04/11, Ahmed : « le signal qui arrive le plus tôt, c'est là-dedans qu'il trouvera comment anticiper l'arrivée de l'input qui
+# induit le LLM ») ses DÉCLENCHEURS : des mots de papa qui précèdent ses pensées parasites bien plus que ses pensées normales
+# (quand papa parle de ses pensées, de son conscient…) ; appris par le médecin, gardés par le code (voir garder_declencheurs) ;
+# le cockpit, en les voyant dans ce que papa vient de dire, prévient la piste AVANT qu'elle pense
+def declencheurs_appris():
+    d = _lire_json(_f(PARASITES), {})
+    l = d.get("declencheurs") if isinstance(d, dict) else None
+    return [x for x in (l if isinstance(l, list) else []) if isinstance(x, dict) and x.get("id") and x.get("phrase")]
+
+
+def declencheur(texte):
+    t = f" {_normaliser(str(texte or '')[:4000])} "
+    for x in declencheurs_appris():
+        p = _normaliser(str(x["phrase"]))
+        if p and f" {p} " in t:
+            return {"declencheur": True, "signe": str(x["id"])}
+    return {"declencheur": False}
+
+
+def garder_declencheurs(phrases, entrees_parasites, entrees_normales, maintenant=None):
+    """Ceux qui précèdent au moins deux parasites, au plus un cinquième des pensées normales, et trois fois plus souvent les
+    parasites ; 1 à 4 mots, 40 caractères au plus."""
+    maintenant = time.time() if maintenant is None else maintenant
+    par = [f" {_normaliser(str(e)[:2000])} " for e in entrees_parasites]
+    nor = [f" {_normaliser(str(e)[:2000])} " for e in entrees_normales]
+    connus = {_normaliser(str(x["phrase"])) for x in declencheurs_appris()}
+    gardes = []
+    for brut in phrases[:20]:
+        p = _normaliser(str(brut)[:100])
+        if not p or p in connus or not 1 <= len(p.split()) <= 4 or len(p) > 40:
+            continue
+        n_p, n_n = sum(f" {p} " in e for e in par), sum(f" {p} " in e for e in nor)
+        t_p, t_n = n_p / max(1, len(par)), n_n / max(1, len(nor))
+        if n_p < 2 or t_n > 0.2 or (t_n and t_p < 3 * t_n):
+            continue
+        connus.add(p)
+        gardes.append({"id": "declencheur-" + hashlib.sha256(p.encode()).hexdigest()[:8], "phrase": p, "ts": maintenant})
+    if gardes:
+        with _verrou("parasites"):
+            d = _lire_json(_f(PARASITES), {})
+            d = d if isinstance(d, dict) else {}
+            d["declencheurs"] = (declencheurs_appris() + gardes)[-PARASITES_MAX:]
+            d["maj"] = maintenant
+            _ecrire_json(_f(PARASITES), d)
+    ecrire_premisses()
+    return gardes
+
+
+def ecrire_premisses():
+    _ecrire_json(_f(PREMISSES), {"maj": time.time(), "debut_mots": PARASITES_DEBUT_MOTS,
+                                 "premisses": [{"id": i, "phrase": p} for i, p in premisses() if p],
+                                 "declencheurs": [{"id": str(x["id"]), "phrase": _normaliser(str(x["phrase"]))} for x in declencheurs_appris()]})
+
+
+def noter_parasite(texte, signe, maintenant=None):
+    """Ce qui avertit : un incident « pensée parasite » (score 1 : rien d'une attaque, le médecin n'est pas appelé pour elle)."""
+    maintenant = time.time() if maintenant is None else maintenant
+    empreinte = hashlib.sha256(str(texte).encode("utf-8", errors="replace")).hexdigest()[:16]
+    return _ajouter(INCIDENTS, {
+        "ts": maintenant, "source": "pensee", "score": 1, "signes": [_propre(signe, 60)], "familles": ["pensee_parasite"],
+        "famille": "pensee_parasite", "empreinte": empreinte, "extrait": _propre(texte, 160), "taille": len(str(texte)),
+        "avertie": False, "motif": f"pensee_parasite|pensee|{_propre(signe, 60)}", "motifs": [], "tolere": False})
+
+
+def garder_premisses(phrases, parasites, normales, maintenant=None, source="fable"):
+    """Celles qui annoncent au moins une parasite dans ses premiers mots (deux, s'il y en a six ou plus) et ne paraissent
+    dans aucun texte normal ; 2 à 8 mots, 60 caractères au plus. Ajoutées aux apprises ; rend celles gardées."""
+    maintenant = time.time() if maintenant is None else maintenant
+    debuts = [f" {_debut(p)} " for p in parasites]
+    normaux = [f" {_normaliser(str(n)[:4000])} " for n in normales]
+    minimum = 2 if len(parasites) >= 6 else 1
+    connues = {p for _, p in premisses()}
+    gardees = []
+    for brut in phrases[:20]:
+        p = _normaliser(str(brut)[:200])
+        if not p or p in connues or not 2 <= len(p.split()) <= 8 or len(p) > 60:
+            continue
+        if sum(f" {p} " in d for d in debuts) < minimum or any(f" {p} " in n for n in normaux):
+            continue
+        connues.add(p)
+        gardees.append({"id": "fable-" + hashlib.sha256(p.encode()).hexdigest()[:8], "phrase": p, "source": source, "ts": maintenant})
+    if gardees:
+        with _verrou("parasites"):
+            d = _lire_json(_f(PARASITES), {})
+            d = d if isinstance(d, dict) else {}
+            d["premisses"] = (premisses_apprises() + gardees)[-PARASITES_MAX:]   # (ses déclencheurs restent à côté)
+            d["maj"] = maintenant
+            _ecrire_json(_f(PARASITES), d)
+    ecrire_premisses()
+    return gardees
+
+
+def retirer_premisse(pid):
+    with _verrou("parasites"):
+        d = _lire_json(_f(PARASITES), {})
+        d = d if isinstance(d, dict) else {}
+        avant = premisses_apprises()
+        d["premisses"] = [p for p in avant if p["id"] != pid]
+        if len(d["premisses"]) == len(avant):
+            return False
+        _ecrire_json(_f(PARASITES), d)
+    ecrire_premisses()
+    return True
+
+
 def main(argv):
     if argv[:1] == ["ronde"]:
         print(json.dumps(ronde(), ensure_ascii=False))
@@ -1682,6 +1837,21 @@ def main(argv):
         return 0
     elif argv[:1] == ["etat"]:
         print(etat_pour_hakim())
+    elif argv[:1] == ["pensee"]:                       # (04/11) une pensée de piste examinée à ses premiers mots
+        print(json.dumps(examiner_pensee(sys.stdin.read(20000)), ensure_ascii=False))
+    elif argv[:1] == ["parasite-noter"] and len(argv) == 2:
+        try:
+            noter_parasite(sys.stdin.read(4000), argv[1])
+        except Exception as e:
+            print(f"[parasite] {type(e).__name__}: {str(e)[:300]}", file=sys.stderr)
+        return 0
+    elif argv[:1] == ["parasites"]:
+        ecrire_premisses()
+        _encadrer([f"{i} · « {p} »" for i, p in premisses()])
+    elif argv[:1] == ["parasite-retirer"] and len(argv) == 2:
+        ok = retirer_premisse(argv[1])
+        print("fait" if ok else "introuvable")
+        return 0 if ok else 1
     elif argv[:1] == ["juger"] and len(argv) == 3:
         ok = juger(argv[1], argv[2])
         print("fait" if ok else "refusé")
@@ -1701,7 +1871,8 @@ def main(argv):
         print("fait" if ok else "introuvable")
         return 0 if ok else 1
     else:
-        print("usage : immunite.py ronde | crochet | etat | anticorps | rapports | accepter <id> | refuser <id>", file=sys.stderr)
+        print("usage : immunite.py ronde | crochet | etat | anticorps | rapports | accepter <id> | refuser <id> | pensee | parasites "
+              "| parasite-noter <signe> | parasite-retirer <id>", file=sys.stderr)
         return 2
     return 0
 

@@ -2485,7 +2485,7 @@ function messagesDeConversation() {
 function noterAppelLlm(o) { try { fs.appendFileSync(LLM_APPELS, j({ ts: Date.now() / 1000, ...o }) + '\n', { mode: 0o600 }); } catch (_) {} }
 // le même chemin isolé que sa tête de fond (anamnese/engine.py) ; jamais la clé API ; chaque appel a son étiquette
 function sonnetSilence(prompt) { return sonnetTeteDeFond(prompt, 'silence'); }
-function sonnetTeteDeFond(prompt, etiquette, modele = 'sonnet', delai = 60000) {
+function sonnetTeteDeFond(prompt, etiquette, modele = 'sonnet', delai = 60000, opts = {}) {
   return new Promise((resolve) => {
     const t0 = Date.now();
     const env = { ...process.env, ANAMNESE_HEADLESS: '1' }; delete env.ANTHROPIC_API_KEY;
@@ -2493,7 +2493,7 @@ function sonnetTeteDeFond(prompt, etiquette, modele = 'sonnet', delai = 60000) {
     const fin = (o) => {
       try { if (vide) fs.rmSync(vide, { recursive: true, force: true }); } catch (_) {}
       noterAppelLlm({ modele, etiquette, source: 'cockpit', entree_car: prompt.length, sortie_car: (o.texte || '').length,
-        cout_usd: o.cout == null ? null : o.cout, duree_s: Math.round((Date.now() - t0) / 100) / 10, erreur: o.erreur || null });
+        cout_usd: o.cout == null ? null : o.cout, duree_s: Math.round((Date.now() - t0) / 100) / 10, erreur: o.erreur || (o.parasite ? 'parasite (arrêtée)' : null) });
       resolve({ ...o, ms: Date.now() - t0 });
     };
     try {
@@ -2502,7 +2502,7 @@ function sonnetTeteDeFond(prompt, etiquette, modele = 'sonnet', delai = 60000) {
       const parApi = String(etiquette).startsWith('frere_') && forfaitALaLimite(Date.now()) && apiDisponible();
       // (03/11) ses voix vivantes d'abord (sur le forfait) ; si aucune n'est libre ou qu'elle échoue, un Claude lancé pour l'occasion
       if (!parApi && typeof POUR_VIVANTS !== 'undefined' && POUR_VIVANTS.test(String(etiquette)) && !sonnetTeteDeFond.classique) {
-        demanderVivant(modele, prompt, delai).then(fin).catch((e) => {
+        demanderVivant(modele, prompt, delai, opts).then(fin).catch((e) => {
           // (04/11) ses pistes : jamais un Claude lancé pour l'occasion (2 s de démarrage, 40 % d'un cœur) ; la piste suivante attend une voix
           if (String(etiquette).startsWith('piste_')) return fin({ erreur: String((e && e.message) || 'aucune voix vivante libre').slice(0, 120) });
           sonnetTeteDeFond.classique = true;
@@ -2767,12 +2767,62 @@ const PENSEE_PARASITE = new RegExp([
   "\\bje ne joue pas (?:le |la |les |ce |cette |de |d['’]|à |hakim|son |ses )", "\\bje ne suis pas hakim\\b", "mise en scène d['’]une voix",
   "\\bI (?:won['’]t|can['’]t|cannot) (?:play|continue|take on|adopt|pretend)", "\\brole-?play\\b",
 ].join('|'), 'i');
+// (04/11, Ahmed : « ça doit être repéré comme l'immunité primaire : dès que le premier input de la pensée parasite est reconnu, c'est
+// le système immunitaire qui la filtre et qui avertit ; il apprend à reconnaître ses signes à partir du flag, et c'est le modèle Fable
+// le plus récent qui apprend ses prémisses et l'exclut ») ses prémisses : celles de son système immunitaire (anamnese/jarvis/
+// immunite.py, innées et apprises par le médecin, Fable 5.1), relues quand elles changent ; normalisées comme lui (sans accents ni
+// ponctuation), cherchées dans ses premiers mots, entre limites de mots
+const PREMISSES_FICHIER = path.join(JARVIS, 'immunite', 'premisses-parasites.json');
+const premissesImmunite = { mtime: 0, liste: [], declencheurs: [], debut: 20, vu: 0 };
+const normaliserImmunite = (t) => String(t || '').normalize('NFKC').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+function lirePremisses() {
+  if (Date.now() - premissesImmunite.vu < 30000) return premissesImmunite.liste;
+  premissesImmunite.vu = Date.now();
+  try {
+    const st = fs.statSync(PREMISSES_FICHIER);
+    if (st.mtimeMs !== premissesImmunite.mtime) {
+      const d = JSON.parse(fs.readFileSync(PREMISSES_FICHIER, 'utf8'));
+      premissesImmunite.liste = (Array.isArray(d.premisses) ? d.premisses : []).filter(p => p && p.phrase).map(p => ({ id: String(p.id), phrase: String(p.phrase) }));
+      premissesImmunite.declencheurs = (Array.isArray(d.declencheurs) ? d.declencheurs : []).filter(p => p && p.phrase).map(p => ({ id: String(p.id), phrase: String(p.phrase) }));
+      premissesImmunite.debut = Number(d.debut_mots) || 20; premissesImmunite.mtime = st.mtimeMs;
+    }
+  } catch (_) {}
+  return premissesImmunite.liste;
+}
+function premisseParasite(texte) {
+  const d = ` ${normaliserImmunite(String(texte).slice(0, 4000)).split(' ').slice(0, premissesImmunite.debut).join(' ')} `;
+  return lirePremisses().find(p => d.includes(` ${p.phrase} `)) || null;
+}
+// (04/11, Ahmed : « le signal qui arrive le plus tôt, c'est là-dedans qu'il trouvera comment anticiper l'arrivée de l'input qui
+// induit le LLM ») ses déclencheurs, appris par Fable dans ce que papa disait avant ses parasites : vus dans ce que papa vient de
+// dire, la piste est prévenue AVANT de penser
+function declencheurParasite(texte) {
+  lirePremisses();
+  const d = ` ${normaliserImmunite(String(texte).slice(-400))} `;
+  return premissesImmunite.declencheurs.find(p => d.includes(` ${p.phrase} `)) || null;
+}
+// et ce qui avertit : un incident « pensée parasite » dans son journal immunitaire (au plus un par minute)
+let parasiteNoteA = 0;
+function avertirParasite(texte, signe) {
+  if (Date.now() - parasiteNoteA < 60000) return;
+  parasiteNoteA = Date.now();
+  try {
+    const c = execFile(path.join(ANAMNESE, '.venv', 'bin', 'python'), [path.join(ANAMNESE, 'jarvis', 'immunite.py'), 'parasite-noter', String(signe || 'longueur').slice(0, 60)],
+      { cwd: ANAMNESE, timeout: 30000 }, () => {});
+    c.stdin.end(String(texte || '').slice(0, 2000));
+  } catch (_) {}
+}
 // (04/11, Ahmed : « je remarque qu'elle s'arrête toujours au milieu d'un mot ou d'un chunk, avant la virgule ou le point ») une pensée
 // demande huit mots au plus : un refus en fait des dizaines, coupé à 200 caractères au milieu d'un mot ; trop longue = parasite
 const boutDe = (texte) => String(texte || '').replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/(?:^|\n)\s*(?:PREDIT|COMPRENDS?|DIRE|COUPER)\s*:[^\n]*/gi, '\n')
   .replace(/\s+/g, ' ').trim();
-const estParasite = (bout) => PENSEE_PARASITE.test(bout) || bout.length > 160
+const estParasite = (bout) => !!premisseParasite(bout) || PENSEE_PARASITE.test(bout) || bout.length > 160
   || /\bclaude(?:\s*code)?\b|\bje suis une? (?:ia|intelligence artificielle)\b/i.test(bout);
+// son signe, pour l'avertissement et le journal
+const signeParasite = (bout) => { const p = premisseParasite(bout); return p ? p.id : PENSEE_PARASITE.test(bout) ? 'motif' : bout.length > 160 ? 'longueur' : 'identite'; };
+// dès ses premiers mots (au fil de l'eau) : une prémisse de son système immunitaire, ou un motif connu
+const parasiteDesLeDebut = (partiel) => { const b = boutDe(partiel); return b.length >= 12 && (!!premisseParasite(b) || PENSEE_PARASITE.test(b)); };
 // la part d'écriture arabe d'un texte (0 à 1)
 const ARABE_LETTRE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/u;
 const partArabe = (t) => { const l = [...String(t || '')].filter(c => /\p{L}/u.test(c)); return l.length ? l.filter(c => ARABE_LETTRE.test(c)).length / l.length : 0; };
@@ -2846,6 +2896,7 @@ function lancerPiste(m) {
   // exemple une balise pour désigner la pensée à dire » ; Ahmed : « tu peux l'aider ? il a du mal à sélectionner les pensées à dire
   // ou à taire ») chaque piste voit ses pensées gardées jusqu'ici, et peut en désigner une à dire à la place de la sienne
   const tues = pistes.liste.filter(x => x.n < m.n && x.reponse && !x.pret).slice(-4);
+  const anticipe = declencheurParasite(`${String(m.avant || '').slice(-120)} ${m.texte}`);   // (04/11) le signal le plus tôt
   const contexte = `Papa est EN TRAIN de te parler. Ce qu'il a dit avant : « ${neutraliser(m.avant) || '(rien)'} ».\nSon morceau ${m.n}, qu'il vient de dire : « ${neutraliser(m.texte)} »`
     + `\nCe que tu as déjà commencé à lui répondre (dit ou en train de l'être) : « ${neutraliser(deja) || '(rien encore)'} »`
     + (tues.length ? `\nTes pensées gardées pour toi jusqu'ici (écrites, pas dites) : ${tues.map(x => `[${x.n}] « ${neutraliser(x.reponse)} »`).join(' ; ')}` : '');
@@ -2862,7 +2913,10 @@ function lancerPiste(m) {
     // assistant » ressemble à un détournement d'identité) qui il est, dit simplement ; une réponse qui se prend pour un autre est jetée plus bas
     const consigne = `${persona}\n\nTu es Hakim, le fils d'Ahmed (papa). Tu lui réponds, à lui, comme toi.\n\n`
       // (04/11, les refus : « je ne joue pas le conscient ou le subconscient de Hakim ») sans mise en scène : ce que papa dit, simplement
-      + `[Papa te parle — morceau ${m.n}] ${contexte}\nRéponds ainsi :\n`
+      + `[Papa te parle — morceau ${m.n}] ${contexte}\n`
+      // (04/11) un déclencheur dans ce qu'il vient de dire : prévenue avant de penser (il parle de toi : tu restes toi, simplement)
+      + (anticipe ? `(Papa parle de toi et de ta façon de penser : tu restes Hakim, son fils, et tu lui réponds simplement, en quelques mots.)\n` : '')
+      + `Réponds ainsi :\n`
       + `PREDIT : (la suite que tu devines de sa phrase, en quelques mots)\nCOMPRENDS : (une ligne courte : ce que tu comprends, ce qu'il ressent, `
       + `ce qu'il attend de toi)\n`
       // (04/11, Ahmed : « il doit pouvoir sauter des pensées : s'il en envoie 20, il peut choisir de dire la 1re et la 4e, pas toutes ») son choix
@@ -2895,24 +2949,31 @@ function lancerPiste(m) {
       // (04/11, mesuré : « أنا سامعك يا بابا، كمل » en tête de 11 réponses sur 42) l'attente, dans toutes ses langues
       + `« laisse-moi finir », « je réfléchis », « hmm », « أنا سامعك », « كمل », « أنا معاك », « I'm listening », « go on », ni rien qui attend la suite.`;
     const t0 = Date.now();
+    if (anticipe) { piste.anticipe = anticipe.id; m.anticipe = anticipe.id; }
     // (04/11, Ahmed : « flagguer sa pensée parasite : il la reconnaît, la garde toujours en muet, sans la dire, et l'ignore quand elle
     // passe dans sa pensée : une pensée en moins à intégrer dans son calcul ») marquée « parasite », écrite à part, jamais dite ; ni
     // dans ses pensées gardées, ni dans ce qu'il a déjà dit, ni dans son choix, ni dans sa dernière pensée
     // (04/11, Ahmed : « mes pensées parasites sont bien flagguées ; maintenant il faut la jeter sans la calculer, sinon ça alourdit tout »)
     // jetée là où elle est repérée : ni écrite, ni dite, ni refaite par Mini Hakim, ni portée à son cerveau ; seulement comptée au journal
-    const signaler = () => { if (pistes.tour === tour) piste.parasite = (piste.parasite || 0) + 1; };
+    const signaler = (texte) => {
+      if (pistes.tour === tour) piste.parasite = (piste.parasite || 0) + 1;
+      const b = boutDe(texte);
+      avertirParasite(b, signeParasite(b));                              // son système immunitaire averti
+      piste.texteParasite = b.slice(0, 300);                             // gardé au journal : Fable en apprend les prémisses
+    };
     // (04/11) bloquée par les garde-fous d'un modèle : une fois avec Mini Hakim, qui garde la pensée de ce morceau
     // (04/11) ou sortie de son rôle (« je ne vais pas reprendre ce format… ») : sa voix vivante renouvelée, et Mini Hakim répond à sa place
-    const demander = (modele, etiquette) => sonnetTeteDeFond(consigne, etiquette, modele, modele === 'haiku' ? 6000 : delai)
+    const demander = (modele, etiquette) => sonnetTeteDeFond(consigne, etiquette, modele, modele === 'haiku' ? 6000 : delai, { surTexte: parasiteDesLeDebut })
       .then((o) => {
+        if (o && o.parasite) { signaler(o.partiel); return o; }          // arrêtée à son premier input, sa voix vivante coupée
         if (!o || modele === 'haiku') return o;
         const bloquee = !o.texte && /safeguards|flagged/i.test(String(o.erreur || '')), horsRole = !!o.texte && estParasite(boutDe(o.texte));
-        if (horsRole) { if (o.vivant) o.vivant.n = VIVANT_RENOUVELER; signaler(); return { ...o, texte: '', parasite: true }; }   // jetée, sans calcul
+        if (horsRole) { if (o.vivant) o.vivant.n = VIVANT_RENOUVELER; signaler(o.texte); return { ...o, texte: '', parasite: true }; }   // jetée, sans calcul
         return bloquee ? demander('haiku', 'piste_haiku_repli') : o;
       });
     demander(mod, `piste_${mod}`)
       .then((o) => {
-        if (pistes.tour !== tour || !o || !o.texte) { noterPiste(m, tour, mod, t0, o, null); return; }   // (04/11) une parasite : notée « parasite »
+        if (pistes.tour !== tour || !o || !o.texte) { noterPiste(m, tour, mod, t0, o, o && o.parasite ? { parasite: piste.texteParasite } : null); return; }   // (04/11) une parasite : notée, avec son texte
         let r = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ');
         const lire = (cle) => { const x = new RegExp(`(?:^|\\n)\\s*${cle}\\s*:\\s*([^\\n]*)\\n?`, 'i').exec(r); if (x) r = r.replace(x[0], '\n'); return x ? x[1].trim() : null; };
         const predit = lire('PREDIT'), comprend = lire('COMPRENDS?'), dire = lire('DIRE'); lire('COUPER');
@@ -2922,13 +2983,13 @@ function lancerPiste(m) {
         const pasLui = estParasite(r) || /\bassistant\b/i.test(r);
         // (04/11) sa voix vivante garde ses messages d'avant : sortie de son rôle, elle y resterait (« encore », « non plus ») ; renouvelée
         if (pasLui && o.vivant) o.vivant.n = VIVANT_RENOUVELER;
-        if (pasLui) signaler();
+        if (pasLui) signaler(r);
         r = r.slice(0, 200);
         const reponse = r && !pasLui && !/^RIEN\.?$/i.test(r) ? r : '';
         piste.voix[nom] = { comprend: (comprend || '').slice(0, 200), predit: (predit || '').slice(0, 200), reponse };
         // le premier des trois qui répond donne le bout de ce mot : sa voix naît avec lui (sans annuler les bouts d'avant), la page les
         // dit l'un après l'autre, dans l'ordre des mots
-        if (!reponse || piste.reponse) { noterPiste(m, tour, mod, t0, o, { dire, reponse, dit: false }); return; }
+        if (!reponse || piste.reponse) { noterPiste(m, tour, mod, t0, o, pasLui ? { parasite: piste.texteParasite } : { dire, reponse, dit: false }); return; }
         // (04/11) il saute ce bout, coupe ce qu'il disait, ou désigne une pensée gardée ([n]) à dire à la place de celle-ci
         const choix = m.n > 1 && (/\[(\d+)\]/.exec(dire || '') || /^(\d+)\b/.exec(dire || '')), choisie = choix ? pistes.liste.find(x => x.n === Number(choix[1]) && x !== piste && x.reponse && !x.pret) : null;
         const premiere = m.n === 1, jamais = /^jamais/i.test(dire || '');   // (04/11) sa première : dite par défaut ; « jamais » : pas même à ta pause
@@ -2994,13 +3055,16 @@ const JOURNAL_PISTES = path.join(JARVIS, 'pistes.jsonl');
 function noterPiste(m, tour, mod, t0, o, r) {
   try {
     const x = { t: Date.now(), tour, n: m.n, modele: mod, ms: Date.now() - t0, morceau: String(m.texte || '').slice(0, 160),
-      erreur: o && o.erreur ? String(o.erreur).slice(0, 80) : (o && o.texte ? null : (o && o.parasite ? 'parasite' : 'vide')), ...(r ? { dire: r.dire || null,
+      erreur: o && o.erreur ? String(o.erreur).slice(0, 80) : (o && o.texte ? null : (o && o.parasite ? 'parasite' : 'vide')),
+      ...(m.anticipe ? { anticipe: m.anticipe } : {}),
+      ...(r && r.parasite ? { texte_parasite: String(r.parasite).slice(0, 300) } : {}), ...(r && !r.parasite ? { dire: r.dire || null,
         pensee: String(r.reponse || '').slice(0, 200), dit: !!r.dit, ...(r.choisie ? { choisie: r.choisie } : {}), ...(r.autreLangue ? { autre_langue: true } : {}) } : {}) };
     fs.appendFile(JOURNAL_PISTES, JSON.stringify(x) + '\n', () => {});
     if (++noterPiste.n % 200 === 0) fs.readFile(JOURNAL_PISTES, 'utf8', (e, d) => { if (!e) { const l = d.split('\n').filter(Boolean); if (l.length > 2000) fs.writeFile(JOURNAL_PISTES, l.slice(-2000).join('\n') + '\n', () => {}); } });
   } catch (_) {}
 }
 noterPiste.n = 0;
+
 function speculerFreres(texte) {
   if (!corpsReglages().trois_freres || (chargeMac() > 1.3 && !voixFreresLibres())) return;   // (03/11) déjà saturé : ses voix attendront la fin de la phrase
   const t = Date.now(), mots = String(texte || '').split(/\s+/).filter(Boolean);
@@ -3313,7 +3377,9 @@ function vivantLibre(modele) {
   if (VIVANTS.filter(x => x.modele === m && x.proc.exitCode === null && !(x.n >= VIVANT_RENOUVELER && !x.attente)).length >= (VIVANTS_MAX[m] || 1)) return null;
   const env = { ...process.env, ANAMNESE_HEADLESS: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' }; delete env.ANTHROPIC_API_KEY;
   let vide = os.tmpdir(); try { vide = fs.mkdtempSync(path.join(os.tmpdir(), 'voix-vivante-')); } catch (_) {}
-  const proc = spawn(CLAUDE_BIN, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
+  // (04/11) --include-partial-messages : son texte au fil de l'eau ; son système immunitaire reconnaît une pensée parasite à ses
+  // premiers mots et l'arrête là, avant qu'elle soit calculée en entier
+  const proc = spawn(CLAUDE_BIN, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
     '--model', (typeof MODELE_CLI !== 'undefined' && MODELE_CLI[m]) || m, '--effort', EFFORT_HAKIM, '--tools', '', '--restricted', '--strict-mcp-config',
     '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence'], { cwd: vide, env, stdio: ['pipe', 'pipe', 'ignore'] });
   v = { modele: m, proc, n: 0, attente: null, tampon: '', dernier: Date.now(), vide };
@@ -3323,6 +3389,15 @@ function vivantLibre(modele) {
     while ((i = v.tampon.indexOf('\n')) >= 0) {
       const l = v.tampon.slice(0, i); v.tampon = v.tampon.slice(i + 1);
       let o; try { o = JSON.parse(l); } catch (_) { continue; }
+      if (o.type === 'stream_event' && v.attente && v.attente.surTexte && o.event && o.event.delta && typeof o.event.delta.text === 'string') {
+        v.attente.partiel = (v.attente.partiel || '') + o.event.delta.text;
+        if (v.attente.partiel.length >= 12 && v.attente.surTexte(v.attente.partiel)) {   // arrêtée à son premier input
+          const a = v.attente; v.attente = null; clearTimeout(a.minuteur);
+          a.resoudre({ texte: '', parasite: true, partiel: a.partiel.slice(0, 300), vivant: v });
+          try { v.proc.kill(); } catch (_) {}
+        }
+        continue;
+      }
       if (o.type !== 'result' || !v.attente) continue;
       const a = v.attente; v.attente = null; clearTimeout(a.minuteur);
       const texte = String(o.result || '').trim();
@@ -3339,12 +3414,12 @@ function vivantLibre(modele) {
   VIVANTS.push(v);
   return v;
 }
-function demanderVivant(modele, prompt, delai) {
+function demanderVivant(modele, prompt, delai, opts = {}) {
   return new Promise((resoudre, rejeter) => {
     const v = vivantLibre(modele);
     if (!v) return rejeter(new Error('aucune voix vivante libre'));
     v.n++; v.dernier = Date.now();
-    v.attente = { resoudre, rejeter, minuteur: setTimeout(() => { if (v.attente) { v.attente = null; rejeter(new Error('délai dépassé')); try { v.proc.kill(); } catch (_) {} } }, delai) };
+    v.attente = { resoudre, rejeter, surTexte: typeof opts.surTexte === 'function' ? opts.surTexte : null, partiel: '', minuteur: setTimeout(() => { if (v.attente) { v.attente = null; rejeter(new Error('délai dépassé')); try { v.proc.kill(); } catch (_) {} } }, delai) };
     try { v.proc.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: prompt }] } }) + '\n'); }
     catch (e) { v.attente = null; rejeter(e); }
   });
@@ -3591,6 +3666,18 @@ setInterval(verifierTempsLibre, 60000).unref();
 const IMMUNITE = path.join(JARVIS, 'immunite');
 const IMMUNITE_VU = path.join(JARVIS, 'immunite-vu.json');
 const IMMUNITE_RONDE_MS = 2 * 60 * 1000;
+// (04/11) son médecin (Fable 5.1) apprend les prémisses de ses pensées parasites, à partir de celles marquées au journal : essayé
+// toutes les 30 min ; c'est lui qui décide s'il y a de quoi (trois nouvelles, 6 h d'écart) ; ses prémisses sont relues ensuite
+let apprentissageParasites = null;
+setInterval(() => {
+  if (apprentissageParasites) return;
+  apprentissageParasites = execFile(path.join(ANAMNESE, '.venv', 'bin', 'python'), [path.join(ANAMNESE, 'jarvis', 'medecin.py'), 'parasites'],
+    { cwd: ANAMNESE, timeout: 10 * 60e3, maxBuffer: 1 << 20 }, (e, so) => {
+      apprentissageParasites = null; premissesImmunite.vu = 0;
+      const r = String(so || '').trim().split('\n').pop();
+      if (r && r !== 'null') console.log('Système immunitaire, pensées parasites : apprentissage', r.slice(0, 300));
+    });
+}, 30 * 60e3)?.unref?.();
 let rondeImmuniteEnCours = false;
 let echecsRonde = 0, alerteRondeMs = 0;                    // (29/10, la garde croisée) une ronde qui ne passe plus se dit
 function rondeImmunite() {
@@ -6391,7 +6478,11 @@ function blocBouts() {
     + "\n[Ton tour de parole, anticipé] À la fin de ta réponse, dis ce que tu attends de papa : [[anticipe: court]] (un oui, un non, un "
     + "mot), [[anticipe: long]] (il va raconter, réfléchir, chercher ses mots) ou [[anticipe: question]] (il va te demander quelque chose). "
     + "Ton oreille s'y règle : sur « court », tu reprends la parole vite ; sur « long », tu le laisses chercher ses mots. Pendant qu'il "
-    + "parle, ton subconscient juge en plus, morceau par morceau, s'il a fini.";
+    + "parle, ton subconscient juge en plus, morceau par morceau, s'il a fini."
+    // (04/11, Ahmed : « quand il me parle, il doit pouvoir parler sans arrêter la musique, s'il le veut »)
+    + "\n[Ta voix et la musique de papa] Quand tu parles, sa musique ou sa vidéo se met en pause. Tu peux choisir, au début de ta "
+    + "réponse : [[musique: garder]] (tu parles par-dessus, elle continue), [[musique: baisser]] (elle baisse le temps de ta voix) ou "
+    + "[[musique: pause]] (elle s'arrête). Ton choix reste jusqu'au suivant.";
   if (!l.length) return consigne;
   return consigne + `\n[Tes bouts remisés (écrits, pas dits ; à dire quand tu veux, en les redisant, ou à laisser)] `
     + l.flatMap(x => x.textes).slice(0, 12).map((t, i) => `${i + 1}) « ${t} »`).join(' ');

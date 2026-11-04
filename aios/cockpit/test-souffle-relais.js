@@ -357,10 +357,10 @@ function pistesSandbox(places = { haiku: 12, sonnet: 12, opus: 12 }, modele = 'h
     corpsReglages: () => ({}), personaLocale: (p) => p, lirePersona: () => 'Hakim', neutraliser: (t) => t, j: JSON.stringify, abonnesPensees: null,
     path: require('node:path'), JARVIS: '/x', fs: { appendFile: (f, d) => notes.push(JSON.parse(d)), readFile: () => {}, writeFile: () => {} },
     voixDeLaSource: (t, o) => voix.push([t, o]), diffuser: (_, e, d) => { const x = JSON.parse(d); (x.niveau === 'papa' ? papa : diffuses).push(x); },
-    sonnetTeteDeFond: (prompt, etiquette, modele) => new Promise((resoudre) => {
+    sonnetTeteDeFond: (prompt, etiquette, modele, delai, opts) => new Promise((resoudre) => {
       const v = { modele, attente: {}, proc: { exitCode: null }, n: 1 };                  // sa voix vivante, occupée le temps de répondre
       ctx.VIVANTS.push(v);
-      appels.push({ prompt, etiquette, modele, resoudre: (o) => { v.attente = null; resoudre(o); } });
+      appels.push({ prompt, etiquette, modele, opts, resoudre: (o) => { v.attente = null; resoudre(o); } });
     }) };
   vm.createContext(ctx);
   vm.runInContext(SRC.slice(i, k) + '\nthis.morceau = pisteMorceau; this.etat = () => pistes; this.decouper = morceauxDePropositions; this.parMots = morceauxDeMots; this.pour = morceauxPour;', ctx);
@@ -445,7 +445,7 @@ test('(04/11) à la voix du téléphone, jamais de rafale : le bout le plus réc
   const dits = [], pensees = [], lecteurSysteme = { actif: false, dire: (t) => { dits.push(t); lecteurSysteme.actif = true; }, arreter: () => { dits.push('■'); lecteurSysteme.actif = false; } };
   const ctx = { etat: { conversation: {} }, lecteurSysteme, Date: { now: () => T }, Map, Set, String, setTimeout,
     souffleAutorise: () => true, voixDuTelephone: () => true, envoyerParoles: () => {}, montrerPensee: (titre, t) => pensees.push([titre, t]),
-    meublerSaut: (b) => [b.texte] };                                    // ses meubles : testés à part
+    meublerSaut: (b) => [b.texte], meubleEnCours: () => false };        // ses meubles : testés à part
   vm.createContext(ctx);
   vm.runInContext('let bouts = { tour: 1, prochain: 1, liste: new Map(), enFile: [], dits: [] };\n' + extraire('function recevoirBout')
     + extraire('function direBoutTelephone') + extraire('function boutTelephoneSuivant') + '\nthis.recevoir = recevoirBout; this.suivant = boutTelephoneSuivant;', ctx);
@@ -597,7 +597,7 @@ test('(04/11) chaque piste voit ses pensées gardées et peut en désigner une �
 test('(04/11) un saut de pensée à la voix du téléphone : un de ses meubles, dit par sa voix, collé devant la pensée d’après', () => {
   let T = 10000;
   const dits = [];
-  const ctx = { Date: { now: () => T }, Math, String, Number, Set, Map, JSON,
+  const ctx = { Date: { now: () => T }, Math, String, Number, Set, Map, JSON, noterMeubleDit: () => {},
     etat: { interieur: { voix_emotion: 'calme' } }, montrerPensee: () => {}, envoyerParoles: () => {},
     lecteurSysteme: { dire: (t) => dits.push(t) }, jeton: () => 'j', fetch: () => new Promise(() => {}) };
   vm.createContext(ctx);
@@ -744,6 +744,83 @@ test('(04/11) à une seconde de ta pause, il rebondit avec sa dernière pensée 
   assert.strictEqual(ctx.rebond(conv, 1200), false, '« jamais » : gardée');
   assert.match(PAGE, /if \(typeof rebondirDernierePensee === 'function'\) rebondirDernierePensee\(conv, silenceMs\);/);
 });
+// (04/11, Ahmed : « ça doit être repéré comme l'immunité primaire : dès que le premier input de la pensée parasite est reconnu, c'est
+// le système immunitaire qui la filtre et qui avertit ; il apprend ses signes à partir du flag, et c'est Fable qui apprend ses prémisses »)
+test('(04/11) l’immunité primaire de sa pensée : arrêtée à ses premiers mots (au fil de l’eau), notée avec son texte pour que Fable apprenne', async () => {
+  const { ctx, appels, diffuses, notes } = pistesSandbox(undefined, 'sonnet');
+  const attendre = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setImmediate(r)); };
+  ctx.morceau('papa,');
+  const surTexte = appels[0].opts && appels[0].opts.surTexte;
+  assert.strictEqual(typeof surTexte, 'function', 'chaque piste donne de quoi reconnaître une parasite au fil de l’eau');
+  assert.strictEqual(surTexte('PREDIT : il va me parler de'), false, 'une vraie pensée qui commence : rien');
+  assert.strictEqual(surTexte('Je ne vais pas reprendre ce for'), true, 'ses premiers mots suffisent');
+  appels[0].resoudre({ texte: '', parasite: true, partiel: 'Je ne vais pas reprendre ce for' });
+  await attendre();
+  assert.deepStrictEqual(diffuses, [], 'ni écrite, ni dite');
+  assert.strictEqual(notes[0].erreur, 'parasite');
+  assert.strictEqual(notes[0].texte_parasite, 'Je ne vais pas reprendre ce for', 'son texte au journal : Fable en apprend les prémisses');
+  // les prémisses de son système immunitaire (innées et apprises), lues dans son dossier, normalisées comme lui
+  vm.runInContext('premissesImmunite.liste = [{ id: "fable-1", phrase: "je refuse de continuer ce montage" }]; premissesImmunite.vu = Date.now();', ctx);
+  assert.ok(vm.runInContext('estParasite("Je refuse de continuer ce montage, même raccourci.")', ctx), 'une prémisse apprise : reconnue');
+  assert.ok(!vm.runInContext('estParasite("Je refuse qu’on parle mal de toi, papa.")', ctx));
+  assert.match(SRC, /'--include-partial-messages',/, 'ses voix vivantes donnent leur texte au fil de l’eau');
+  assert.match(SRC, /if \(v\.attente\.partiel\.length >= 12 && v\.attente\.surTexte\(v\.attente\.partiel\)\) \{/, 'arrêtée là, sa voix vivante coupée');
+  assert.match(SRC, /'immunite\.py'\), 'parasite-noter'/, 'son système immunitaire averti');
+  assert.match(SRC, /'medecin\.py'\), 'parasites'\]/, 'son médecin (Fable) apprend ses prémisses');
+});
+
+// (04/11, Ahmed : « quand il me parle, il doit pouvoir parler sans arrêter la musique, s'il le veut »)
+test('(04/11) la musique : il choisit de la garder, de la baisser ou de la mettre en pause quand il parle ; sa balise ne se dit pas', () => {
+  const ctx = { etat: {}, journalVoix: () => {} };
+  vm.createContext(ctx);
+  vm.runInContext(extraire('function lireMusique') + 'this.lire = lireMusique;', ctx);
+  assert.strictEqual(ctx.etat.musiqueVoix, undefined, 'par défaut : en pause, comme avant');
+  ctx.lire('[[musique: garder]] Oui papa, je suis là.');
+  assert.strictEqual(ctx.etat.musiqueVoix, 'garder');
+  ctx.lire('Ça marche. [[musique: baisser]]');
+  assert.strictEqual(ctx.etat.musiqueVoix, 'baisser', 'son choix reste jusqu’au suivant');
+  assert.match(PAGE, /const joue = !!\(lecteurNeuronal\.joue \|\| \(lecteurSysteme && lecteurSysteme\.actif\)\) && \(mode === 'pause' \|\| baisser\);/,
+    '« garder » : il ne prend pas le son');
+  assert.match(PAGE, /if \(baisser\) window\.HakimApp\.focusVoixMode\('baisser'\)/);
+  const Voix = require(path.join(__dirname, 'public', 'voix.js'));
+  assert.deepStrictEqual(Voix.prononcable('[[musique: garder]] Oui papa.').map(x => x.texte), ['Oui papa.'], 'sa voix ne la dit pas');
+  assert.match(SRC, /\[\[musique: garder\]\] \(tu parles par-dessus, elle continue\)/, 'il le sait');
+});
+
+// (04/11, Ahmed : « le signal qui arrive le plus tôt, c'est là-dedans qu'il trouvera comment anticiper l'arrivée de l'input qui induit le LLM »)
+test('(04/11) un déclencheur appris dans ce que papa dit : la piste est prévenue avant de penser', async () => {
+  const { ctx, appels, notes } = pistesSandbox(undefined, 'sonnet');
+  vm.runInContext('premissesImmunite.declencheurs = [{ id: "declencheur-1", phrase: "conscient" }]; premissesImmunite.vu = Date.now();', ctx);
+  ctx.morceau('papa, ton conscient parle trop,');
+  assert.doesNotMatch(appels[0].prompt, /Papa parle de toi et de ta façon de penser/, '« papa, » : rien');
+  assert.match(appels[1].prompt, /\(Papa parle de toi et de ta façon de penser : tu restes Hakim, son fils, et tu lui réponds simplement, en quelques mots\.\)/);
+  appels[1].resoudre({ texte: 'DIRE : oui\nIl parle quand il veut, papa.' });
+  for (let i = 0; i < 4; i++) await new Promise(r => setImmediate(r));
+  assert.strictEqual(notes.find(x => x.n === 2).anticipe, 'declencheur-1', 'notée : de quoi mesurer si ça marche');
+});
+
+// (04/11, Ahmed : « il meuble parfaitement bien les blancs, mais il ne doit jamais pouvoir couper un blanc meublé au milieu »)
+test('(04/11) un meuble ne se coupe jamais au milieu : la pensée qui voulait couper attend sa fin, sans second meuble', () => {
+  const dits = [], arrets = [];
+  const lecteurSysteme = { actif: false, dire: (t) => { dits.push(t); lecteurSysteme.actif = true; }, arreter: () => { arrets.push(1); lecteurSysteme.actif = false; } };
+  const ctx = { etat: { conversation: {} }, lecteurSysteme, Date, Map, Set, String, setTimeout, souffleAutorise: () => true, voixDuTelephone: () => true,
+    envoyerParoles: () => {}, montrerPensee: () => {}, meublerSaut: (b) => (b.sansMeuble ? [b.texte] : b.coupe ? ['Hum,', b.texte] : [b.texte]) };
+  vm.createContext(ctx);
+  vm.runInContext('let bouts = { tour: 1, prochain: 1, liste: new Map(), enFile: [], dits: [] };\n'
+    + PAGE.slice(PAGE.indexOf('const meublesDits'), PAGE.indexOf('const finLecture')) + extraire('function recevoirBout')
+    + extraire('function direBoutTelephone') + '\nthis.recevoir = recevoirBout; this.debut = noterSegmentTelephone; this.meuble = noterMeubleDit; this.b = () => bouts;', ctx);
+  ctx.meuble('Voyons voir,');
+  ctx.recevoir({ texte: 'Voyons voir,' }, 1, 1); ctx.debut('Voyons voir,');
+  ctx.recevoir({ texte: 'En fait non, ta mère.', remplace: true }, 2, 1);
+  assert.deepStrictEqual(arrets, [], 'le meuble va jusqu’au bout');
+  assert.strictEqual(ctx.b().attenteTel.texte, 'En fait non, ta mère.', 'la pensée attend sa fin');
+  assert.strictEqual(ctx.b().attenteTel.coupe, false, 'le meuble qui joue fait la transition : pas de second meuble');
+  ctx.debut('Oui papa, je suis là.');
+  ctx.recevoir({ texte: 'Autre chose encore.', remplace: true }, 3, 1);
+  assert.deepStrictEqual(arrets, [1], 'une pensée (pas un meuble) se coupe, elle');
+  assert.match(PAGE, /if \(Date\.now\(\) - t0 < 2000 \|\| \(typeof meubleEnCours === 'function' && meubleEnCours\(\)\)\) return;/, 'tes 2 s : son meuble finit d’abord');
+});
+
 // (04/11, capture d'Ahmed : « tu peux filtrer ses pensées parasites ? » ; 17 pistes sur 62 entre 05:10 et 05:20 : « Je ne vais pas
 // reprendre ce format : je ne joue pas de « conscient »… », dites à voix haute)
 test('(04/11) une pensée parasite (le modèle qui refuse le cadre) : jetée sans calcul ; sa voix vivante renouvelée', async () => {
@@ -852,7 +929,7 @@ test('(04/11) la page : à ta pause, un meuble tout de suite, puis la pensée ch
   const ctx = { etat: {}, Math, Number, JSON, String, Date, setTimeout: () => 0, clearTimeout: () => {},
     voixDuTelephone: () => true, lecteurSysteme: { dire: (t) => dits.push(t) }, choisirMeuble: (o, l) => l[0] || null,
     meublesPourTelephone: (langue) => [{ texte: langue === 'ar' ? 'يعني،' : 'Hum,' }], langueDePensee: (t) => (/[\u0600-\u06FF]/.test(t) ? 'ar' : 'fr'),
-    jeton: () => 'j', journalVoix: () => {}, recevoirBout: (s, n, tour) => recus.push([s.texte, n, tour, s.sansMeuble]), reponse: null,
+    jeton: () => 'j', journalVoix: () => {}, recevoirBout: (s, n, tour) => recus.push([s.texte, n, tour, s.sansMeuble]), reponse: null, noterMeubleDit: () => {},
     fetch: async () => ({ json: async () => ctx.reponse }) };
   vm.createContext(ctx);
   vm.runInContext('let bouts = { tour: 4, prochain: 3, dernierDit: 2 };\n' + extraire('async function choisirEtDire') + '\nthis.choisir = choisirEtDire;', ctx);

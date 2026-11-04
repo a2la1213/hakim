@@ -919,7 +919,16 @@ const lecteur = {
   reprendre() { return lecteurNeuronal.reprendre(); },
   get enPause() { return lecteurNeuronal.enPause; },
 };
+// (04/11, Ahmed : « il meuble parfaitement bien les blancs, mais il ne doit jamais pouvoir couper un blanc meublé au milieu ») ce que
+// sa voix du téléphone dit à l'instant : un meuble (« Hum, », « Voyons voir, ») va jusqu'au bout ; ce qui voulait le couper attend sa fin
+const meublesDits = new Set();
+const cleMeuble = (t) => String(t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+function noterMeubleDit(t) { meublesDits.add(cleMeuble(t)); if (meublesDits.size > 40) meublesDits.delete(meublesDits.values().next().value); }
+let segmentTelephone = null;
+function noterSegmentTelephone(t) { segmentTelephone = { meuble: meublesDits.has(cleMeuble(t)) }; }
+const meubleEnCours = () => !!(segmentTelephone && segmentTelephone.meuble && lecteurSysteme && lecteurSysteme.actif);
 const finLecture = () => {
+  segmentTelephone = null;
   if (typeof boutTelephoneSuivant === 'function') setTimeout(boutTelephoneSuivant, 0);   // (04/11) le bout qui attendait sa voix
   if (lecteur.actif) return;
   if (etat.conversation) etat.conversation.penseeEnPause = false;     // (04/11) sa pensée dite : ton tour reprend la main
@@ -1107,7 +1116,7 @@ lecteurNeuronal.surSegment = (t, duree) => {
   couperAuDebutDeSaVoix();                                             // (09:12)
 };
 lecteurNeuronal.surPanne = noterPanneVoix;
-if (lecteurSysteme) { lecteurSysteme.surSegment = (t) => { noterParole(t); noterMorceau(t); sousTitre(t); }; lecteurSysteme.surMot = () => pulser(0.35); }
+if (lecteurSysteme) { lecteurSysteme.surSegment = (t) => { noterSegmentTelephone(t); noterParole(t); noterMorceau(t); sousTitre(t); }; lecteurSysteme.surMot = () => pulser(0.35); }
 /* ---------- Comment et où sa parole s'est arrêtée (30/10, 14:50, Ahmed, relayé par Hakim et confirmé : « qu'il sache, à
    l'oral comme à l'écrit, comment sa réponse a été interrompue et où exactement sa phrase s'est arrêtée ») ----------
    Chaque fin de sa parole a sa CAUSE : voix_ahmed (Ahmed l'a coupé en parlant : le micro), stop (Stop, « stop », Échap), pause,
@@ -2083,6 +2092,7 @@ async function envoyer(texte, oral, dejaRelance) {
           if (mesureTour && !mesureTour.premier_texte && o.x.trim()) mesureTour.premier_texte = Date.now();
           m.texte += o.x;
           if (/anticipe/i.test(o.x) || /\[\[\s*anticipe/i.test(m.texte.slice(-80))) lireAnticipe(m.texte.slice(-120));   // (15:22)
+          if (/musique/i.test(o.x) || /\[\[\s*musique/i.test(m.texte.slice(-80))) lireMusique(m.texte.slice(-120));      // (04/11)
           if (/reaction/i.test(m.texte.slice(-90))) reactionDeHakim(m);                                                    // (15:38)
           orbeTete.pulser(0.05);
           if (auto) decoupe.ajouter(o.x).forEach(p => { if (NON_REPONSE.test(p)) return; if (!boutDire(m, p)) return; etat.lectureDe = m.id; lecteur.dire(p); });
@@ -2361,13 +2371,17 @@ if (window.HakimApp && window.HakimApp.telepathie) {
 // (03/11, Ahmed : « si j'écoute une musique, il peut la mettre en pause et glisser son mot pour que je l'écoute ») quand sa voix
 // joue, il prend le son un instant (appli 1.46) : la musique ou la vidéo se met en pause, dans les écouteurs Bluetooth aussi, et
 // reprend d'elle-même 1,2 s après sa dernière phrase (pas entre deux phrases)
+// (04/11, Ahmed : « il doit pouvoir parler sans arrêter la musique, s'il le veut ») son choix ([[musique: …]]) : « garder », il ne
+// prend pas le son ; « baisser », la musique baisse le temps de sa voix (appli 1.62 ; avant, elle continue) ; « pause » par défaut
 let focusTenu = false, focusLache = 0;
+const modeMusique = () => etat.musiqueVoix || 'pause';
 setInterval(() => {
   if (!window.HakimApp || !window.HakimApp.focusVoix) return;
-  const joue = !!(lecteurNeuronal.joue || (lecteurSysteme && lecteurSysteme.actif));
+  const mode = modeMusique(), baisser = mode === 'baisser' && !!window.HakimApp.focusVoixMode;
+  const joue = !!(lecteurNeuronal.joue || (lecteurSysteme && lecteurSysteme.actif)) && (mode === 'pause' || baisser);
   if (joue) {
     focusLache = 0;
-    if (!focusTenu) { focusTenu = true; try { window.HakimApp.focusVoix(true); } catch (_) {} }
+    if (!focusTenu) { focusTenu = true; try { if (baisser) window.HakimApp.focusVoixMode('baisser'); else window.HakimApp.focusVoix(true); } catch (_) {} }
   } else if (focusTenu) {
     if (!focusLache) focusLache = Date.now();
     else if (Date.now() - focusLache > 1200) { focusTenu = false; focusLache = 0; try { window.HakimApp.focusVoix(false); } catch (_) {} }
@@ -2965,6 +2979,13 @@ function reactionDeHakim(m) {
   journalVoix('reaction_hakim', {});
   sauver(); rendre();
 }
+// (04/11, Ahmed : « quand il me parle, il doit pouvoir parler sans arrêter la musique, s'il le veut ») son choix, au début de sa
+// réponse : [[musique: garder]] (il parle par-dessus), [[musique: baisser]] (elle baisse le temps de sa voix), [[musique: pause]]
+// (elle s'arrête, comme avant) ; il reste jusqu'au suivant
+function lireMusique(texte) {
+  const m = /\[\[\s*musique\s*:\s*(garder|baisser|pause)\s*\]\]/i.exec(String(texte || ''));
+  if (m && etat.musiqueVoix !== m[1].toLowerCase()) { etat.musiqueVoix = m[1].toLowerCase(); journalVoix('musique_voix', { mode: etat.musiqueVoix }); }
+}
 // (15:22) ce qu'il attend de toi, dit à la fin de sa réponse : [[anticipe: court | long | question]] (sa voix ne le dit pas)
 function lireAnticipe(texte) {
   const m = /\[\[\s*anticipe\s*:\s*(court|long|question)\s*\]\]/i.exec(String(texte || ''));
@@ -3044,7 +3065,8 @@ function recevoirBout(s, n, tour) {
     if (n < bouts.prochain || (m1.length && bouts.dits.some(d => { const m2 = new Set(motsDe(d)); return m1.filter(m => m2.has(m)).length / m1.length >= 0.75; }))) return;
     bouts.prochain = n + 1;
     // (04/11, Ahmed : « s'il voit que sa 3e pensée n'est pas pertinente, il l'arrête ») il coupe ce qu'il disait et dit celle-ci
-    if (s.remplace && lecteurSysteme.actif) { if (bouts.attenteTel) montrerPensee('🧠 il pense, sans le dire', bouts.attenteTel.texte, true); bouts.attenteTel = null; lecteurSysteme.arreter(); }
+    if (s.remplace && meubleEnCours()) { b.coupe = false; b.sansMeuble = true; }   // (04/11) le meuble qui joue fait la transition : la pensée attend sa fin
+    if (s.remplace && lecteurSysteme.actif && !meubleEnCours()) { if (bouts.attenteTel) montrerPensee('🧠 il pense, sans le dire', bouts.attenteTel.texte, true); bouts.attenteTel = null; lecteurSysteme.arreter(); }
     // (04/11, Ahmed : « sinon ça rafale trop ») jamais de file de bouts : sa voix parle encore, le plus récent attend qu'elle se taise
     // (un plus ancien en attente est remplacé) ; trop vieux (6 s) quand elle se tait : oublié
     if (lecteurSysteme.actif) {
@@ -3115,7 +3137,7 @@ function meublerSaut(b) {
   const langue = langueDePensee(b.texte);
   const h = choisirMeuble({ avant: !dernier }, meublesPourTelephone(langue));   // dans la langue de la pensée d'après
   if (!h) return [b.texte];
-  bouts.meubleA = Date.now();
+  bouts.meubleA = Date.now(); noterMeubleDit(h.texte.trim());
   return [h.texte.trim(), b.texte];
 }
 function direBoutTelephone(conv, b) {
@@ -3383,7 +3405,7 @@ async function choisirEtDire(dp) {
     if (!telephone) return false;
     const h = choisirMeuble({ avant: !(bouts.dernierDit || 0) }, meublesPourTelephone(langueDePensee(dp.texte)));
     if (!h) return false;
-    bouts.meubleA = Date.now(); lecteurSysteme.dire(h.texte.trim());
+    bouts.meubleA = Date.now(); noterMeubleDit(h.texte.trim()); lecteurSysteme.dire(h.texte.trim());
     return true;
   };
   const meuble = meubler();
@@ -3777,7 +3799,7 @@ function veillerDeuxSecondes(conv) {
     if (etat.conversation !== conv || !cap || !cap.enParole || Date.now() - (cap.derniereVoix || 0) > 400 || !(lecteur.actif || (lecteurSysteme && lecteurSysteme.actif))) {
       clearInterval(conv.veilleDeux); return;
     }
-    if (Date.now() - t0 < 2000) return;
+    if (Date.now() - t0 < 2000 || (typeof meubleEnCours === 'function' && meubleEnCours())) return;   // (04/11) un meuble finit d'abord
     clearInterval(conv.veilleDeux);
     journalVoix('coupure_deux_secondes', { ms: Date.now() - t0 });
     if (typeof bouts !== 'undefined') bouts.attenteTel = null;
