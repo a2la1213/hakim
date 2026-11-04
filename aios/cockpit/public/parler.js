@@ -3980,6 +3980,7 @@ async function basculerConversation() {
       dernierBattement: () => dernierBattementCoeur,
       surNiveau: (n) => { etat.niveauMicro = n; voixAuCorps(n); if (document.visibilityState === 'hidden') { micEnFond++; alimenterBulle(n); } },
       // (13:25, papa : « aucun « je t'écoute » ») rien à la place de ses mots : ils s'affichent dès le premier
+      surSon: () => prechaufferReflexion(),
       surDebut: () => { conv.morceauPapa = null; conv.finDemandee = false; conv.finAnticipee = false; conv.souffleLocal = false; conv.brouillons = 0; conv.penseeEnPause = false; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre(''); humeur(); },
       surPause: (fenetre) => surPauseConversation(conv, fenetre),
       surSilence: (ms) => { if (conv.capteur && conv.capteur.enParole) { compteARebours(ms); anticiperConversation(conv, ms); } },
@@ -6711,4 +6712,13 @@ if ($('relancerPublier')) {
   fetch('/api/cockpit/relance-etat', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).then((e) => {
     if (e && e.etape) { montrerRelance(e); if (e.etape !== 'fini') suivreRelance(); }
   }).catch(() => {});
+}
+
+// (04/11, 16:50, Ahmed : « il commence sa réflexion dès qu'une voix se fait entendre, avant même qu'elle parle : une parole vide au tout début
+// de la voix déclenche la réflexion ») au premier son, ses voix de réflexion se chauffent au cockpit (au plus une fois toutes les 5 s)
+let prechauffeA = 0;
+function prechaufferReflexion() {
+  if (Date.now() - prechauffeA < 5000 || typeof voixEpissee !== 'function' || !voixEpissee()) return;
+  prechauffeA = Date.now();
+  fetch('/api/jarvis/prechauffer', { method: 'POST', headers: { 'X-Jeton': jeton() } }).catch(() => {});
 }

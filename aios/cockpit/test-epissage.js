@@ -398,7 +398,8 @@ test('ses lecteurs (Mini Hakim et Super Hakim) lisent chaque pensée en même te
   b.appels[0].resoudre({ texte: 'Oui papa, je suis là.' });
   await attendre(); await attendre();
   const l = lecteurs(b);
-  assert.deepStrictEqual(l.map(a => [a.etiquette, a.delai]), [['ribosome_haiku', 2000], ['ribosome_opus', 2000]], '(15:55) vitesse « rapide » par défaut : 2 s au plus');
+  assert.deepStrictEqual(l.map(a => a.etiquette), ['ribosome_haiku', 'ribosome_opus']);
+  assert.ok(l[0].delai === l[1].delai && l[0].delai >= 1200 && l[0].delai <= 2600, `(15:55) rapide par défaut, (16:50) ajusté par son subconscient : ${l[0].delai} ms`);
   assert.ok(l.every(a => a.prompt === l[0].prompt), 'la même pensée, la même consigne');
   l[1].resoudre({ texte: 'GARDE : « Oui papa »' });
   await attendre(); await attendre();
@@ -672,15 +673,15 @@ test('son ribosome : sa stringence et sa vitesse, choisies par lui (ribosome-reg
   const d = await lecture(null);
   assert.match(d[0].prompt, /Ta stringence : 4 sur 5/);
   assert.match(d[0].prompt, /au plus 10 mots/);
-  assert.deepStrictEqual(d.map(a => a.delai), [2000, 2000], 'rapide');
+  assert.ok(d[0].delai === d[1].delai, 'la même attente pour ses deux lecteurs');
   const l = await lecture({ stringence: 1, vitesse: 'posee' });
   assert.match(l[0].prompt, /Ta stringence : 1 sur 5/);
   assert.doesNotMatch(l[0].prompt, /au plus \d+ mots/, 'stringence 1 : pas de plafond');
-  assert.deepStrictEqual(l.map(a => a.delai), [6000, 6000], 'posée');
+  assert.ok(l[0].delai > d[0].delai, `posée : plus lente que rapide (${l[0].delai} > ${d[0].delai})`);
   const s5 = await lecture({ stringence: 5, vitesse: 'normale' });
   assert.match(s5[0].prompt, /Ta stringence : 5 sur 5/);
   assert.match(s5[0].prompt, /au plus 6 mots/);
-  assert.deepStrictEqual(s5.map(a => a.delai), [3000, 3000], 'normale');
+  assert.ok(s5[0].delai > d[0].delai && s5[0].delai < l[0].delai, 'normale : entre les deux');
   const x = await lecture({ stringence: 42, vitesse: 'éclair' });
   assert.match(x[0].prompt, /Ta stringence : 4 sur 5/, 'un réglage hors limites : le défaut');
   assert.match(SRC, /'pistes_regler', 'ribosome_regler',/, 'son outil, permis');

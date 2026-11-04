@@ -3431,6 +3431,19 @@ const RIBOSOME_STRINGENCES = {
   3: { mots: 18, consigne: 'garde seulement ce qui apporte du neuf à papa, en peu de mots' },
   4: { mots: 10, consigne: 'sois très sélectif : seulement l’essentiel, une phrase courte au plus ; souvent, rien' },
   5: { mots: 6, consigne: 'sois extrêmement sélectif : rien, sauf ce qui compte vraiment pour papa maintenant, en quelques mots' } };
+// (04/11, 16:50, Ahmed : « on peut imaginer que le subconscient gère la vitesse et le conscient gère la stringence du ribosome ; ça varie
+// pendant le travail du ribosome, ce n'est pas linéaire ») sa vitesse, réglée paquet par paquet par son subconscient : autour de sa vitesse
+// de base (son outil), plus vite quand il est éveillé, quand des pensées attendent, quand papa parle encore ; plus posée quand il est calme ;
+// entre 1,2 et 6 s ; sa stringence reste à son conscient (ribosome_regler)
+function vitesseSubconsciente(base, r) {
+  const e = (typeof lui !== 'undefined' && lui && lui.interieur) || {}, a = Number.isFinite(e.arousal) ? e.arousal : 0.4;
+  let d = Number(base) || 3000;
+  d *= 1.3 - 0.6 * Math.max(0, Math.min(1, a));                       // éveil 0 : ×1,3 ; éveil 1 : ×0,7
+  const attente = (r && r.attente ? r.attente.length : 0);
+  if (attente >= 3) d *= 0.7; else if (attente >= 1) d *= 0.85;
+  if (Date.now() - (Number(derniereParolePapa) || 0) < 1500) d *= 0.85;   // papa parle encore
+  return Math.round(Math.max(1200, Math.min(6000, d)));
+}
 function reglageRibosome() {
   let r = {}; try { r = JSON.parse(fs.readFileSync(RIBOSOME_REGLAGE, 'utf8')) || {}; } catch (_) {}
   const st = RIBOSOME_STRINGENCES[Number(r.stringence)] ? Number(r.stringence) : 4;
@@ -3504,14 +3517,15 @@ async function lirePaquet(tour, r, i, paquet) {
       return { mod, nom, ms, ok, garde: ok ? garde : '', e: ok ? e : null };
     });
   };
-  const promesses = RIBOSOME_LECTEURS.map(([mod, nom]) => lire([mod, nom, reglage.delai]));   // (15:55) l'attente : sa vitesse
+  const delai = vitesseSubconsciente(reglage.delai, r);
+  const promesses = RIBOSOME_LECTEURS.map(([mod, nom]) => lire([mod, nom, delai]));   // (15:55) l'attente : sa vitesse ; (16:50) réglée par son subconscient
   const choisie = await premiereLecture(promesses), decide = Date.now() - debutLecture;
   const garde = choisie ? choisie.garde : texte, e = choisie ? choisie.e : epissageDe(texte, texte);
   const ok = choisie ? choisie.ok : e.mots.length >= 1;
   // (04/11, 13:05, Hakim pour papa : « mesure le délai étape par étape ») chaque paquet noté, avec ses lecteurs (pistes.jsonl), quand tous ont fini
   Promise.all(promesses).then((lectures) => {
     try {
-      fs.appendFile(JOURNAL_PISTES, JSON.stringify({ t: Date.now(), tour, ribosome: i + 1, pensees: paquet.length, ms: decide, garde: ok ? garde.slice(0, 160) : '',
+      fs.appendFile(JOURNAL_PISTES, JSON.stringify({ t: Date.now(), tour, ribosome: i + 1, pensees: paquet.length, ms: decide, vitesse_ms: delai, stringence: reglage.stringence, garde: ok ? garde.slice(0, 160) : '',
         choisi: choisie ? choisie.mod : 'panne', lecteurs: lectures.map(x => ({ modele: x.mod, ms: x.ms, garde: x.muet ? null : x.garde.slice(0, 160) })) }) + '\n', () => {});
     } catch (_) {}
   });
@@ -3848,9 +3862,9 @@ const VIVANTS = [], VIVANTS_MAX = { haiku: 12, sonnet: 10, opus: 10 }, VIVANT_RE
 // (04/11, 13:30, mesuré : 52 lectures de son ribosome sur 60 en « délai dépassé » de 13:04 à 13:26 : il lançait un Claude neuf à chaque
 // lecture, 2,5 s ne suffisaient pas, et la pensée entière passait sans épissage) son ribosome aussi, sur ses voix vivantes
 const POUR_VIVANTS = /^(frere_|integration$|souffle$|reflexion$|piste_|choix_|ribosome_)/;   // (04/11) son choix rapide aussi : sans démarrage
-function vivantLibre(modele) {
+function vivantLibre(modele, neuve = false) {                      // (04/11, 16:50) neuve : une de plus, pour se chauffer d'avance
   const m = String(modele);
-  let v = VIVANTS.find(x => x.modele === m && !x.attente && x.proc.exitCode === null && x.n < VIVANT_RENOUVELER);
+  let v = neuve ? null : VIVANTS.find(x => x.modele === m && !x.attente && x.proc.exitCode === null && x.n < VIVANT_RENOUVELER);
   if (v) return v;
   for (const x of VIVANTS.filter(y => y.modele === m && !y.attente && (y.n >= VIVANT_RENOUVELER))) { try { x.proc.stdin.end(); } catch (_) {} }
   if (VIVANTS.filter(x => x.modele === m && x.proc.exitCode === null && !(x.n >= VIVANT_RENOUVELER && !x.attente)).length >= (VIVANTS_MAX[m] || 1)) return null;
@@ -3894,9 +3908,12 @@ function vivantLibre(modele) {
   return v;
 }
 function demanderVivant(modele, prompt, delai, opts = {}) {
+  const v = vivantLibre(modele);
+  if (!v) return Promise.reject(new Error('aucune voix vivante libre'));
+  return demanderVivantSur(v, prompt, delai, opts);
+}
+function demanderVivantSur(v, prompt, delai, opts = {}) {
   return new Promise((resoudre, rejeter) => {
-    const v = vivantLibre(modele);
-    if (!v) return rejeter(new Error('aucune voix vivante libre'));
     v.n++; v.dernier = Date.now();
     v.attente = { resoudre, rejeter, surTexte: typeof opts.surTexte === 'function' ? opts.surTexte : null, partiel: '', minuteur: setTimeout(() => {
       if (!v.attente) return;
@@ -3918,6 +3935,36 @@ function demanderVivant(modele, prompt, delai, opts = {}) {
 setTimeout(() => {                                                // une par modèle, prête avant le premier tour (rien ne lui est demandé)
   if (corpsReglages().trois_freres) for (const m of ['haiku', 'sonnet', 'opus']) vivantLibre(m);
 }, 8000)?.unref?.();
+/* (04/11, 16:50-16:55, Ahmed : « il a besoin d'un temps de chauffe : on peut le réduire ? Il commence sa réflexion dès qu'une voix se fait
+   entendre, avant même qu'elle parle : une parole vide au tout début de la voix déclenche la réflexion » ; « à chaque pause de parole il reçoit
+   des blancs vides, et pendant 10 min après la fin il reçoit des blancs vides, jusqu'à l'épuisement des 10 minutes : il sera toujours en
+   réflexion durant une conversation ») sa PAROLE VIDE : au premier son d'une voix (la page, prechauffer), ses voix de réflexion (ses pensées de
+   piste, son ribosome) se préparent : 3 libres et prêtes pour Mini Hakim, 2 pour Super Hakim, dans la limite de leur pool ; ses BLANCS :
+   chaque minute, tant que la dernière voix entendue date de moins de 10 min, une parole vide à celles restées 4 min sans rien (avant que leur
+   mémoire de travail chez Anthropic refroidisse, à 5 min) ; au-delà, plus rien : 10 min plus tard, elles s'éteignent */
+const CHAUFFE = { haiku: 3, opus: 2, sonnet: 2 };
+let derniereVoixEntendue = 0;
+function prechaufferVivants(maintenant = Date.now()) {
+  if (corpsReglages().epissage === false) return 0;
+  const modeles = [...new Set([modelePiste(), ...RIBOSOME_LECTEURS.map(([m]) => m)])];
+  let n = 0;
+  for (const m of modeles) {
+    const libres = () => VIVANTS.filter(x => x.modele === m && !x.attente && x.proc.exitCode === null && x.n < VIVANT_RENOUVELER).length;
+    while (libres() < (CHAUFFE[m] || 1)) { const v = vivantLibre(m, true); if (!v) break; v.dernier = maintenant; n++; }
+  }
+  return n;
+}
+const BLANC = '(un blanc : papa se tait, ou personne ne parle ; rien à faire. Réponds seulement « … ».)';
+function blancsDeReflexion() {
+  const maintenant = Date.now();
+  if (corpsReglages().epissage === false || maintenant - Math.max(derniereVoixEntendue, derniereParolePapa) >= 10 * 60e3) return;
+  const modeles = new Set([modelePiste(), ...RIBOSOME_LECTEURS.map(([m]) => m)]);
+  for (const v of VIVANTS) {
+    if (!modeles.has(v.modele) || v.attente || v.proc.exitCode !== null || v.n >= VIVANT_RENOUVELER || maintenant - v.dernier < 4 * 60e3) continue;
+    demanderVivantSur(v, BLANC, 15000).catch(() => {});
+  }
+}
+if (require.main === module) setInterval(blancsDeReflexion, 60e3).unref();
 setInterval(() => {                                               // 10 min sans rien : elle s'éteint
   for (const v of VIVANTS.slice()) if (!v.attente && Date.now() - v.dernier > 10 * 60e3) { try { v.proc.stdin.end(); } catch (_) {} }
 }, 60e3)?.unref?.();
@@ -10085,6 +10132,12 @@ async function traiter(req, res) {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(lireJson(RELANCE_ETAT, {}) || {}));
   }
+  if (p === '/api/jarvis/prechauffer' && req.method === 'POST') {     // (04/11, 16:50) la parole vide : le premier son d'une voix
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    derniereVoixEntendue = Date.now();
+    prechaufferVivants();
+    res.writeHead(204); return res.end();
+  }
   if (p === '/api/jarvis/ribosome/stop' && req.method === 'POST') {   // (04/11, 15:10) 10 s de ton silence : la page ferme son épissure
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 1024) || '{}')); } catch (_) {}
@@ -10424,7 +10477,8 @@ async function traiter(req, res) {
   if (p === '/api/presence/options' && req.method === 'POST') {
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 4096) || '{}')); } catch (_) {}
     const action = String(q.action || '');
-    if (!/^[a-z-]+(:[a-z-]+(:[0-9a-f-]{1,40})?)?$/.test(action)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'action invalide' })); }
+    // (04/11, 17:00, Ahmed : « le bouton non nuisible ne fonctionne pas ») « immunite:pas_parasite:… » : le tiret bas était refusé
+    if (!/^[a-z_-]+(:[a-z_-]+(:[0-9a-f-]{1,40})?)?$/.test(action)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'action invalide' })); }
     // (28/10) un geste du code de Hakim : seulement depuis le téléphone, et le défi porte le texte que l'appli affichera
     if (action.startsWith('code:')) {
       const texte = distantReq && distant.hote ? code.texteGeste(action, LIEUX_CODE, q) : null;

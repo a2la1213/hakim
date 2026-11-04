@@ -228,6 +228,7 @@
         fortes.push(fort); if (fortes.length > 15) fortes.shift();
         const nFortes = fortes.reduce((n, x) => n + (x ? 1 : 0), 0);
         if (fort && !tenue) tenueDebut = maintenant;
+        if (fort && !tenue && o.surSon) o.surSon();               // (04/11, 16:50) le premier son, avant même qu'une voix parle
         if (!fort && tenue) noterEclat(tenueDebut, tenue);       // trop court pour commencer un tour : un éclat
         tenue = fort ? tenue + FENETRE_MS : 0;
         preecoute.push(f.slice(0)); if (preecoute.length > PREECOUTE_MS / FENETRE_MS) preecoute.shift();

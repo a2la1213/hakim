@@ -25,7 +25,7 @@ function pool() {
       return p;
     } };
   vm.createContext(ctx);
-  vm.runInContext(prendre('vivantLibre') + prendre('demanderVivant') + '\nthis.demander = demanderVivant;', ctx);
+  vm.runInContext(prendre('vivantLibre') + prendre('demanderVivant') + prendre('demanderVivantSur') + '\nthis.demander = demanderVivant;', ctx);
   const sonner = (ms) => { for (const [k, m] of [...minuteurs]) if (m.ms === ms) { minuteurs.delete(k); m.f(); } };
   return { ctx, procs, sonner };
 }
