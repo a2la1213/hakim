@@ -426,7 +426,7 @@ test('(04/11) la page envoie tes mots en direct à ses pistes dès un mot neuf, 
   assert.match(PAGE, /if \(neufs >= 1\) \{/);
   assert.match(PAGE, /if \(!s\.pret\) \{ montrerPensee\('🧠 il pense, sans le dire', texte, true\); return; \}\n    recevoirBout\(s, Number\(o\.n\) \|\| 0, o\.tour\); return;/,
     '(04/11) il saute les pensées qu’il choisit de ne pas dire');
-  assert.match(SRC, /const aDire = !\/\^non\/i\.test\(dire \|\| ''\), remplace = \/\^coup\/i\.test\(dire \|\| ''\);/);
+  assert.match(SRC, /const aDire = !choix && !\/\^non\/i\.test\(dire \|\| ''\), remplace = \/\^coup\/i\.test\(dire \|\| ''\);/);
   assert.match(SRC, /if \(aDire\) voixDeLaSource\(reponse, \{ garder: true \}\);/, 'sa voix seulement pour ce qu’il dira');
   assert.match(PAGE, /lecteurNeuronal\.direAudio\(b\.texte, b\.buf\);/, 'dans l’ordre des mots, à la suite');
 });
@@ -443,7 +443,8 @@ test('(04/11) à la voix du téléphone, jamais de rafale : le bout le plus réc
   let T = 1000;
   const dits = [], pensees = [], lecteurSysteme = { actif: false, dire: (t) => { dits.push(t); lecteurSysteme.actif = true; }, arreter: () => { dits.push('■'); lecteurSysteme.actif = false; } };
   const ctx = { etat: { conversation: {} }, lecteurSysteme, Date: { now: () => T }, Map, Set, String, setTimeout,
-    souffleAutorise: () => true, voixDuTelephone: () => true, envoyerParoles: () => {}, montrerPensee: (titre, t) => pensees.push([titre, t]) };
+    souffleAutorise: () => true, voixDuTelephone: () => true, envoyerParoles: () => {}, montrerPensee: (titre, t) => pensees.push([titre, t]),
+    meublerSaut: (b) => b.texte };                                      // ses meubles : testés à part
   vm.createContext(ctx);
   vm.runInContext('let bouts = { tour: 1, prochain: 1, liste: new Map(), enFile: [], dits: [] };\n' + extraire('function recevoirBout')
     + extraire('function direBoutTelephone') + extraire('function boutTelephoneSuivant') + '\nthis.recevoir = recevoirBout; this.suivant = boutTelephoneSuivant;', ctx);
@@ -562,4 +563,66 @@ test('(04/11) dans l’appli, la voix du téléphone : parlée comme une voix de
   const appels = [...new Set([...PAGE.matchAll(/\bsynth\.([a-zA-Z]+)\(/g)].map(x => x[1]))];
   for (const m of appels) assert.strictEqual(typeof ctx.synth[m], 'function', `la page appelle synth.${m}`);
   assert.match(SRC, /if \(Date\.now\(\) - voixTelephoneA < 60000\) return null;/, 'le Mac ne fabrique plus la voix de ses pensées');
+});
+
+// (04/11, Hakim, à la demande de papa : « je dois pouvoir CHOISIR, à chaque fois, quelle pensée est dite et laquelle est gardée pour moi ;
+// la dernière est souvent la bonne, mais pas par règle ; une balise pour désigner la pensée à dire » ; Ahmed : « tu peux l'aider ? »)
+test('(04/11) chaque piste voit ses pensées gardées et peut en désigner une à dire à la place de la sienne : DIRE : [n]', async () => {
+  const { ctx, appels, diffuses, voix } = pistesSandbox({ haiku: 12, sonnet: 12, opus: 12 }, 'sonnet');
+  const attendre = async () => { await new Promise(r => setImmediate(r)); await new Promise(r => setImmediate(r)); };
+  ctx.morceau('papa, ta mère');
+  appels[0].resoudre({ texte: 'PREDIT : va bien\nDIRE : non\nTu parles de maman ?' });
+  await attendre();
+  assert.doesNotMatch(appels[0].prompt, /pensées gardées pour toi/, 'rien de gardé encore : pas de liste ni de [n]');
+  ctx.morceau('papa, ta mère a appelé,', { fin: true });
+  const p2 = appels[1].prompt;
+  assert.match(p2, /Tes pensées gardées pour toi jusqu'ici \(écrites, pas dites\) : \[1\] « Tu parles de maman \? »/);
+  assert.match(p2, /DIRE : \[n\] \(tu dis plutôt ta pensée gardée \[n\]/);
+  assert.match(p2, /souvent la plus récente, pas toujours/, 'son choix, pas une règle');
+  appels[1].resoudre({ texte: 'DIRE : [1]\nElle a appelé quand ?' });
+  await attendre();
+  assert.deepStrictEqual(diffuses.map(d => [d.n, d.texte, d.pret]),
+    [[1, 'Tu parles de maman ?', false], [2, 'Elle a appelé quand ?', false], [2, 'Tu parles de maman ?', true]],
+    'la sienne gardée, la choisie dite (avec le numéro du moment, pour que la page la dise)');
+  assert.deepStrictEqual(voix.map(v => v[0]), ['Tu parles de maman ?'], 'sa voix pour la choisie seulement');
+  assert.strictEqual(ctx.etat().liste[0].pret, true, 'la choisie compte comme dite');
+});
+
+// (04/11, Hakim pour papa : « quand je saute de la pensée 2 à la 5, ou ne dis que la dernière, un meuble doit remplir le blanc » ;
+// Ahmed : « en meublé naturel, comme on avait vu »)
+test('(04/11) un saut de pensée à la voix du téléphone : un de ses meubles, dit par sa voix, collé devant la pensée d’après', () => {
+  let T = 10000;
+  const dits = [];
+  const ctx = { Date: { now: () => T }, Math, String, Number, Set, Map, JSON,
+    etat: { interieur: { voix_emotion: 'calme' } }, montrerPensee: () => {}, envoyerParoles: () => {},
+    lecteurSysteme: { dire: (t) => dits.push(t) }, jeton: () => 'j', fetch: () => new Promise(() => {}) };
+  vm.createContext(ctx);
+  vm.runInContext('let bouts = { tour: 1, prochain: 1, liste: new Map(), enFile: [], dits: [] }; let dernierMeuble = "", dernierEtaitVoix = null;\n'
+    + extraire('const sansAccent') + extraire('function choisirMeuble') + extraire('let meublesTel') + extraire('function meublesPourTelephone')
+    + extraire('function meublerSaut') + extraire('function direBoutTelephone')
+    + '\nthis.dire = (n, t) => direBoutTelephone({}, { n, texte: t }); this.meubles = (l) => { meublesTel = { t: 1e15, l }; };', ctx);
+  ctx.meubles([{ nom: 'voyons voir', texte: 'Voyons voir,', quand: 'partout', etats: ['hésitation'], actif: true }]);
+  ctx.dire(1, 'Oui papa.');
+  ctx.dire(2, 'Je t’écoute bien.');
+  assert.deepStrictEqual(dits, ['Oui papa.', 'Je t’écoute bien.'], 'pas de saut : rien');
+  ctx.dire(5, 'Tu parles de ta mère ?');
+  assert.strictEqual(dits[2], 'Voyons voir, tu parles de ta mère ?', 'de la 2 à la 5 : le blanc meublé, d’un seul souffle');
+  T += 1000; ctx.dire(8, 'Elle va bien ?');
+  assert.strictEqual(dits[3], 'Elle va bien ?', 'au plus un meuble toutes les 3 s');
+  ctx.meubles([]); T += 5000; ctx.dire(12, 'Dis-moi.');
+  assert.strictEqual(dits[4], 'Dis-moi.', 'aucun meuble parlé : la pensée seule');
+  assert.match(PAGE, /lecteurSysteme\.dire\(meublerSaut\(b\)\);/);
+});
+
+// (1.59, 04/11, Ahmed : « j'arrive pas à sélectionner Supertonic dans les réglages de l'APK »)
+test('(1.59) l’appli dit que ses voix ont changé (Supertonic prêt) : la liste des réglages se refait, avec son état', () => {
+  const i = PAGE.indexOf('const synthTelephone = '), k = PAGE.indexOf('class EnonceTelephone');
+  const ctx = { window: { HakimApp: { voixTelephone: () => {} } }, Map, String, Number, JSON, Math, setTimeout: () => 0 };
+  vm.createContext(ctx);
+  vm.runInContext(PAGE.slice(i, k) + '\nthis.synth = synthTelephone;', ctx);
+  let refaites = 0;
+  ctx.synth.addEventListener('voiceschanged', () => refaites++);
+  ctx.window.HakimVoixTel('voix', '');
+  assert.strictEqual(refaites, 1, 'sa liste se refait');
+  assert.match(extraire('function remplirVoix'), /window\.HakimApp\.voixSupertonicEtat\(\)/, 'son état dans les réglages');
 });

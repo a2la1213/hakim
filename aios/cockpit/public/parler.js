@@ -155,6 +155,9 @@ const synthTelephone = window.HakimApp && window.HakimApp.voixTelephone ? (() =>
   setTimeout(() => ecouteurs.forEach(f => { try { f(); } catch (_) {} }), 1500);   // le moteur s'est préparé : la liste des voix change
   setTimeout(() => ecouteurs.forEach(f => { try { f(); } catch (_) {} }), 5000);
   window.HakimVoixTel = (quoi, id) => {
+    // (1.59, 04/11, Ahmed : « j'arrive pas à sélectionner Supertonic dans les réglages ») l'appli dit que ses voix ont changé
+    // (Supertonic téléchargé, prêt) : la liste des réglages se refait
+    if (quoi === 'voix') { ecouteurs.forEach(f => { try { f(); } catch (_) {} }); return; }
     const u = enAttente.get(id); if (!u) return;
     if (quoi === 'debut') { if (u.onstart) u.onstart(); return; }
     enAttente.delete(id); if (u.onend) u.onend();
@@ -1489,9 +1492,12 @@ function remplirVoix() {
     sel.value = liste.some(v => v.name === etat.reglages[cle]) ? etat.reglages[cle] : '';
   }
   const sansArabe = !toutesVoix.some(v => (v.lang || '').toLowerCase().startsWith('ar'));
-  $('noteVoix').textContent = sansArabe
+  // (1.59) dans l'appli : où en est sa voix Supertonic (le téléchargement, prête, une erreur)
+  let supertonic = '';
+  try { if (window.HakimApp && window.HakimApp.voixSupertonicEtat) supertonic = `Voix Supertonic : ${window.HakimApp.voixSupertonicEtat()}. `; } catch (_) {}
+  $('noteVoix').textContent = supertonic + (sansArabe
     ? 'Aucune voix arabe installée : Réglages Système › Accessibilité › Contenu énoncé › Voix du système › Gérer les voix › Arabe (par ex. Majed). Les expressions arabes seront lues avec la voix française en attendant.'
-    : 'Les passages en écriture arabe sont lus avec la voix arabe, le reste avec la voix française (étape 5 bis : une seule voix multilingue plus tard).';
+    : 'Les passages en écriture arabe sont lus avec la voix arabe, le reste avec la voix française (étape 5 bis : une seule voix multilingue plus tard).');
 }
 if (synth) { remplirVoix(); synth.addEventListener('voiceschanged', remplirVoix); }
 
@@ -2996,11 +3002,37 @@ function recevoirBout(s, n, tour) {
     .then((buf) => { b.buf = buf; direBouts(); })
     .catch(() => { b.rate = true; direBouts(); });
 }
+// (04/11, Hakim pour papa : « quand je ne dis que la dernière pensée, ou que je saute de la pensée 2 à la 5, un meuble (« voyons
+// voir », « hum ») doit remplir le blanc, pour que le saut ne sonne pas sec ; meublé automatiquement par le subconscient, comme les
+// autres blancs » ; Ahmed : « en meublé naturel, comme on avait vu ») à la voix du téléphone, un de SES meubles parlés, choisi
+// comme les autres (son émotion du moment, jamais deux fois le même), dit PAR sa voix et collé devant la pensée d'après le saut :
+// « Voyons voir, tu parles de ta mère ? », d'un seul souffle ; au plus un toutes les 3 s (sinon « euh » à chaque mot de Mini Hakim)
+let meublesTel = { t: 0, l: [] };
+function meublesPourTelephone() {
+  if (Date.now() - meublesTel.t > 60000 && typeof jeton === 'function') {
+    meublesTel.t = Date.now();
+    fetch('/api/jarvis/meubles', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' }).then(r => (r.ok ? r.json() : null))
+      .then((o) => { if (o && Array.isArray(o.meubles)) meublesTel.l = o.meubles.filter(m => m && m.nom); }).catch(() => {});
+  }
+  const l = meublesTel.l.length ? meublesTel.l : (typeof meublesListe !== 'undefined' ? meublesListe : []);
+  return l.filter(m => m.texte).map(m => ({ nom: m.nom, texte: String(m.texte), pret: true, actif: m.actif !== false, quand: m.quand || 'partout',
+    etats: (m.etats || []).map(sansAccent), voix: true }));
+}
+function meublerSaut(b) {
+  const dernier = bouts.dernierDit || 0;
+  if (b.n <= dernier + 1 || Date.now() - (bouts.meubleA || 0) < 3000) return b.texte;   // pas de saut, ou un meuble il y a moins de 3 s
+  const h = choisirMeuble({ avant: !dernier }, meublesPourTelephone());
+  if (!h) return b.texte;
+  bouts.meubleA = Date.now();
+  const m = h.texte.trim(), suite = /,$/.test(m) ? b.texte.charAt(0).toLowerCase() + b.texte.slice(1) : b.texte;
+  return `${m} ${suite}`;
+}
 function direBoutTelephone(conv, b) {
   bouts.dits.push(b.texte);
   conv.souffleParle = true; conv.penseeDite = bouts.dits.join(' ');
   montrerPensee('🧠 sa pensée', b.texte, true); envoyerParoles('hakim', `🧠 ${b.texte}`);
-  lecteurSysteme.dire(b.texte);
+  lecteurSysteme.dire(meublerSaut(b));                                  // (04/11) un saut de pensée : meublé
+  bouts.dernierDit = b.n;
 }
 function boutTelephoneSuivant() {
   const b = typeof bouts !== 'undefined' ? bouts.attenteTel : null, conv = etat.conversation;
