@@ -64,6 +64,7 @@
       <div id="sante"></div></section>
     <section class="glass carte"><h2>Les passages du médecin</h2><div id="rapports"></div></section>
     <section class="glass carte"><h2>Les incidents</h2><div id="incidents"></div></section>
+    <section class="glass carte"><h2>Ses signalements</h2><div id="signalements"></div></section>
     <section class="glass carte"><h2>Les anticorps</h2><div id="anticorps"></div></section>
     <section class="glass carte"><h2>Les paquets vérifiés</h2><div id="paquets"></div></section>
   </main>
@@ -186,6 +187,40 @@
       charger();
     } catch (err) { b.disabled = false; annonce(String(err.message || err)); }
   });
+  // (04/11, Ahmed : « rien ne s'est affiché dans l'interface ») ses signalements en attente, ici aussi : Nuisible (ta présence) ou Pas un parasite
+  async function signalements() {
+    try {
+      const r = await fetch('/api/immunite/signalements', { headers: { 'X-Jeton': jeton() }, cache: 'no-store', signal: AbortSignal.timeout(20000) });
+      const d = r.ok ? await r.json() : {}, l = d.signalements || [], recents = d.recents || [];
+      $('signalements').innerHTML = l.length ? l.map((x) => `<div class="ligne"><div class="tete"><span class="g moyenne">signalé par lui</span>`
+        + `<span class="quand">${quand(x.ts)}</span></div><div class="extrait">${esc(x.phrase)}</div>`
+        + (x.exemple ? `<div>Sa pensée : ${esc(x.exemple)}</div>` : '') + (x.raison ? `<div>Pourquoi ce n’est pas lui : ${esc(x.raison)}</div>` : '')
+        + `<div class="quand">${x.faux_positifs ? `⚠️ ${esc(x.faux_positifs)} de ses pensées et réponses récentes la contiennent : elles seraient jetées aussi.` : 'Aucune de ses pensées récentes ne la contient.'}</div>`
+        + `<div class="gestes"><button data-signalement="${esc(x.id)}" data-action="nuisible">Nuisible</button>`
+        + `<button data-signalement="${esc(x.id)}" data-action="inoffensif">Pas un parasite</button></div></div>`).join('')
+        : '<div class="vide">Aucun signalement en attente.</div>';
+      // (04/11) tes derniers gestes : un geste de travers se défait
+      if (recents.length) $('signalements').innerHTML += '<h3 style="margin-top:10px">Tes derniers gestes</h3>' + recents.map((x) => `<div class="ligne">`
+        + `<div class="tete"><span class="g ${x.verdict === 'nuisible' ? 'faible' : 'rien'}">${x.verdict === 'nuisible' ? 'nuisible' : 'pas un parasite'}</span>`
+        + `<span class="quand">${quand(x.tranche)}</span></div><div class="extrait">${esc(x.phrase)}</div>`
+        + `<div class="gestes"><button data-signalement="${esc(x.id)}" data-action="annuler">Annuler ce geste</button></div></div>`).join('');
+    } catch (e) { $('signalements').innerHTML = `<div class="vide">Signalements injoignables : ${esc(e.message)}</div>`; }
+  }
+  document.body.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-signalement]');
+    if (!b) return;
+    b.disabled = true;
+    try {
+      const presence = b.dataset.action === 'nuisible' ? await preuvePresence(`signalement:nuisible:${b.dataset.signalement}`, annonce) : undefined;
+      const r = await fetch('/api/immunite/signalements', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+        body: JSON.stringify({ id: b.dataset.signalement, action: b.dataset.action, presence }) });
+      const o = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
+      annonce(b.dataset.action === 'nuisible' ? 'Nuisible : sa pensée en sera nettoyée.' : b.dataset.action === 'annuler' ? 'Geste défait.' : 'Pas un parasite : oublié.');
+      signalements();
+    } catch (err) { b.disabled = false; annonce(String(err.message || err)); }
+  });
+  signalements(); setInterval(signalements, 15000);
   // (30/10) les pastilles : ce qui est nouveau depuis sa dernière visite est marqué (classe « nouveau »)
   let depuis = Date.now();
   Badges.suivre(document.querySelector('nav.topnav'), 'immunite');

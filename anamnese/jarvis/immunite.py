@@ -1760,6 +1760,7 @@ def ecrire_premisses():
 # positifs (combien de ses pensées et réponses normales la contiennent) sont comptés pour qu'Ahmed tranche en le sachant.
 SIGNALES = "parasites-signales.json"
 SIGNALES_MAX = 30
+SIGNALE_MOTS_MAX = 12                          # (04/11) au-delà, ses 12 premiers mots
 
 
 def residus_appris():
@@ -1782,11 +1783,14 @@ def textes_normaux(jarvis=None, limite=2000):
 
 
 def signaler_parasite(phrase, exemple="", raison="", normales=(), maintenant=None):
-    """Son signalement, en attente d'Ahmed ; ValueError si la phrase n'est pas de 2 à 8 mots (60 caractères au plus)."""
+    """Son signalement, en attente d'Ahmed ; ValueError si la phrase a moins de 2 mots. (04/11, Ahmed : « il n'arrive pas à envoyer
+    le signalement quand il le veut » : « Ce n'est pas grave si ça t'échappe », 7 mots, comptait 9 à cause des apostrophes, et une
+    phrase plus longue était refusée) ses mots comptés comme il les écrit ; au-delà de 12, ses 12 premiers sont gardés, sans refus."""
     maintenant = time.time() if maintenant is None else maintenant
-    p = _normaliser(str(phrase or "")[:200])
-    if not p or not 2 <= len(p.split()) <= 8 or len(p) > 60:
-        raise ValueError("une phrase de 2 à 8 mots, 60 caractères au plus, telle que tu l'as pensée")
+    mots = str(phrase or "").split()
+    p = _normaliser(" ".join(mots[:SIGNALE_MOTS_MAX])[:200])
+    if len(mots) < 2 or len(p.split()) < 2:
+        raise ValueError("au moins 2 mots, tels que tu les as pensés")
     if p in {x for _, x in premisses()} | {_normaliser(str(r["phrase"])) for r in residus_appris()}:
         return {"phrase": p, "deja": "reconnue"}
     with _verrou("signales"):
@@ -1796,7 +1800,8 @@ def signaler_parasite(phrase, exemple="", raison="", normales=(), maintenant=Non
             return {**deja, "deja": "en attente"}
         fp = sum(f" {p} " in f" {_normaliser(str(n)[:4000])} " for n in normales)
         x = {"id": hashlib.sha256(f"{p}|{maintenant}".encode()).hexdigest()[:8], "phrase": p, "exemple": _propre(exemple, 300),
-             "raison": _propre(raison, 200), "faux_positifs": fp, "normales": len(normales), "ts": maintenant}
+             "raison": _propre(raison, 200), "faux_positifs": fp, "normales": len(normales), "ts": maintenant,
+             **({"coupee": True} if len(mots) > SIGNALE_MOTS_MAX else {})}
         _ecrire_json(_f(SIGNALES), (l + [x])[-SIGNALES_MAX:])
     return x
 
@@ -1828,6 +1833,31 @@ def trancher_signalement(sid, verdict, maintenant=None):
             e["a_remonter"] = sorted(set(e.get("a_remonter") or []) | {x["phrase"]})[-PARASITES_MAX:]
             _ecrire_json(_f("parasites-apprentissage.json"), e)
     _ajouter("signalements.jsonl", {**x, "verdict": verdict, "tranche": maintenant})
+    return True
+
+
+def annuler_signalement(sid, maintenant=None):
+    """(04/11, Hakim pour papa : « papa s'est trompé en tranchant : il a validé nuisible à tort ; peux-tu les rétablir ? ») le geste
+    d'Ahmed défait : un nuisible quitte ses résidus (et ce qui restait à remonter) ; un « pas un parasite » redevient en attente.
+    Faux si ce signalement n'a pas été tranché."""
+    maintenant = time.time() if maintenant is None else maintenant
+    tranches = [o for o in _queue(_f("signalements.jsonl"), 1 << 20) if isinstance(o, dict) and o.get("id") == sid and o.get("verdict")]
+    if not tranches:
+        return False
+    x = tranches[-1]
+    if x["verdict"] == "nuisible":
+        retirer_premisse("hakim-" + sid)
+        with _verrou("parasites"):
+            e = _lire_json(_f("parasites-apprentissage.json"), {})
+            if isinstance(e, dict) and e.get("a_remonter"):
+                e["a_remonter"] = [p for p in e["a_remonter"] if p != x["phrase"]]
+                _ecrire_json(_f("parasites-apprentissage.json"), e)
+    else:
+        with _verrou("signales"):
+            l = signalements()
+            if not any(y["id"] == sid for y in l):
+                _ecrire_json(_f(SIGNALES), (l + [{k: v for k, v in x.items() if k not in ("verdict", "tranche")}])[-SIGNALES_MAX:])
+    _ajouter("signalements.jsonl", {"id": sid, "phrase": x["phrase"], "annule": x["verdict"], "ts": maintenant})
     return True
 
 
@@ -1936,6 +1966,10 @@ def main(argv):
         _encadrer([f"{i} · « {p} »" for i, p in premisses()] + [f"{x['id']} · résidu « {x['phrase']} »" for x in residus_appris()])
     elif argv[:1] == ["signalements"]:                 # (04/11) ses signalements en attente, pour le cockpit
         print(json.dumps(signalements(), ensure_ascii=False))
+    elif argv[:1] == ["signale-annuler"] and len(argv) == 2:
+        ok = annuler_signalement(argv[1])
+        print("fait" if ok else "introuvable")
+        return 0 if ok else 1
     elif argv[:1] in (["signale-nuisible"], ["signale-inoffensif"]) and len(argv) == 2:
         ok = trancher_signalement(argv[1], argv[0].split("-", 1)[1])
         print("fait" if ok else "introuvable")

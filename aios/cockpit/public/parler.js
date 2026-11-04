@@ -4718,6 +4718,9 @@ function ecouterPensees() {
   es.addEventListener('telepathie', (ev) => { try { surTelepathie(JSON.parse(ev.data)); } catch (_) {} });   // (03/11) le téléphone, mot à mot
   es.addEventListener('anticorps', (ev) => { try { surAnticorps(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('signalement', (ev) => { try { surSignalement(JSON.parse(ev.data)); } catch (_) {} });   // (04/11)
+  // (04/11, Ahmed : « rien ne s'est affiché dans l'interface ») un signalement né pendant que le cockpit redémarrait n'arrivait jamais :
+  // à chaque (re)connexion, ses signalements et ses anticorps en attente sont relus (chacun n'apparaît qu'une fois)
+  es.addEventListener('open', () => { signalementsAuChargement(); anticorpsAuChargement(); });
   es.addEventListener('spontane', (ev) => { try { surSpontane(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('courrier', (ev) => {
     try { const o = JSON.parse(ev.data); humeur(`Hakim a écrit à Claude Code : « ${o.sujet} »`); $('annonce').textContent = `Hakim a écrit à Claude Code : ${o.sujet}`; } catch (_) {}

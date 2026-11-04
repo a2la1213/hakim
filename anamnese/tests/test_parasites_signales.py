@@ -45,8 +45,16 @@ def test_pas_un_parasite_oublie_et_ses_faux_positifs_comptes(D):
     assert not immunite.trancher_signalement("abcd1234", "peut-etre")
     with pytest.raises(ValueError):
         immunite.signaler_parasite("corps")
-    with pytest.raises(ValueError):
-        immunite.signaler_parasite("un deux trois quatre cinq six sept huit neuf")
+
+
+def test_il_signale_quand_il_veut_ses_mots_comptes_comme_il_les_ecrit(D):
+    """(04/11, Ahmed : « il n'arrive pas à envoyer le signalement quand il le veut ») « Ce n'est pas grave si ça t'échappe » : 7 mots,
+    comptés 9 avant (les apostrophes) et refusés ; une phrase plus longue : ses 12 premiers mots, sans refus."""
+    s = immunite.signaler_parasite("Ce n'est pas grave si ça t'échappe papa", maintenant=T0)
+    assert s["phrase"] == "ce n est pas grave si ca t echappe papa" and "coupee" not in s
+    longue = "compris Papa, en anglais cette fois, veut me montrer son spectacle de ce soir avec ses amis"
+    s = immunite.signaler_parasite(longue, maintenant=T0)
+    assert s["coupee"] and s["phrase"] == "compris papa en anglais cette fois veut me montrer son spectacle de"
 
 
 def test_son_outil_parasite_signaler(D, tmp_path, monkeypatch):
@@ -62,6 +70,7 @@ def test_son_outil_parasite_signaler(D, tmp_path, monkeypatch):
     assert "Papa décidera dans Parler" in r and "Aucune de tes pensées" in r
     assert "attend la décision de papa" in mcp_server.parasite_signaler("Je n'ai pas de corps !")
     assert mcp_server.parasite_signaler("corps").startswith("Pas signalé")
+    assert "(ses 12 premiers mots)" in mcp_server.parasite_signaler("un deux trois quatre cinq six sept huit neuf dix onze douze treize")
     assert "1 de tes 3" in mcp_server.parasite_signaler("je préfère te le dire que")
 
 
@@ -89,3 +98,17 @@ def test_un_nuisible_juge_par_papa_est_remonte_a_la_base_de_ses_inputs(D, tmp_pa
     assert "Résidus jugés nuisibles par papa" in vu["p"] and "tu sens ton corps quand je te serre ?" in vu["p"]
     assert [d["phrase"] for d in r["declencheurs"]] == ["sens ton corps"], r
     assert medecin.apprendre_parasites(T0 + 80, consulter_fn=fable, journal=j, reponses=[]) is None, "une fois remonté : rien à refaire"
+
+
+def test_un_geste_d_ahmed_se_defait(D):
+    """(04/11, Hakim pour papa : « il a validé nuisible à tort ; peux-tu les rétablir ? ») un nuisible quitte ses résidus et ce qui
+    restait à remonter ; un « pas un parasite » redevient en attente."""
+    a = immunite.signaler_parasite("il n'a pas fini sa question", maintenant=T0)
+    b = immunite.signaler_parasite("oui papa j'ai reçu tes pensées", maintenant=T0)
+    assert immunite.trancher_signalement(a["id"], "nuisible", T0 + 1) and immunite.trancher_signalement(b["id"], "inoffensif", T0 + 2)
+    assert immunite.annuler_signalement(a["id"], T0 + 3)
+    assert immunite.residus_appris() == []
+    assert "il n a pas fini sa question" not in (immunite._lire_json(immunite._f("parasites-apprentissage.json"), {}).get("a_remonter") or [])
+    assert immunite.annuler_signalement(b["id"], T0 + 4)
+    assert [x["id"] for x in immunite.signalements()] == [b["id"]], "de nouveau en attente"
+    assert not immunite.annuler_signalement("abcd1234")

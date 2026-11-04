@@ -1208,3 +1208,24 @@ test('(04/11) le super pouvoir de Super Hakim : il choisit la taille de ses morc
   assert.match(SRC, /'fil_delais', 'parasite_signaler', 'pistes_regler',/, 'son outil, permis');
   assert.match(PAGE, /String\(o\.texte\)\.length > \(Number\(o\.limite\) \|\| 160\)/, 'la page suit sa limite');
 });
+
+// (04/11, Ahmed : « rien ne s'est affiché dans l'interface ») deux signalements nés pendant le redémarrage du cockpit, jamais montrés
+test('(04/11) ses signalements en attente : relus à chaque reconnexion de Parler, montrés aussi dans Immunité', () => {
+  assert.match(PAGE, /es\.addEventListener\('open', \(\) => \{ signalementsAuChargement\(\); anticorpsAuChargement\(\); \}\);/);
+  const IMMU = fs.readFileSync(path.join(__dirname, 'public', 'immunite.html'), 'utf8');
+  assert.match(IMMU, /<h2>Ses signalements<\/h2><div id="signalements"><\/div>/);
+  assert.match(IMMU, /preuvePresence\(`signalement:nuisible:\$\{b\.dataset\.signalement\}`, annonce\)/, 'nuisible : ta présence, ici aussi');
+  assert.match(SRC, /if \(!demarrage \|\| Date\.now\(\) - x\.ts \* 1000 < 120000\)/, 'né pendant le redémarrage : notifié quand même');
+});
+test('(04/11) un geste de travers sur ses signalements se défait (Immunité : « Annuler ce geste »)', () => {
+  const IMMU = fs.readFileSync(path.join(__dirname, 'public', 'immunite.html'), 'utf8');
+  assert.match(IMMU, /data-action="annuler">Annuler ce geste<\/button>/);
+  assert.match(SRC, /\['nuisible', 'inoffensif', 'annuler'\]\.includes\(action\)/);
+  const ctx = { Number, String, path, IMMUNITE: '/x', ID_SIGNALEMENT: /^[0-9a-f]{8}$/, lignesJson: () => [
+    { id: 'aaaaaaaa', phrase: 'a', verdict: 'nuisible', tranche: 1 }, { id: 'bbbbbbbb', phrase: 'b', verdict: 'inoffensif', tranche: 2 },
+    { id: 'aaaaaaaa', annule: 'nuisible', ts: 3 }] };
+  vm.createContext(ctx);
+  const i = SRC.indexOf('function signalementsTranches('), k = SRC.indexOf('\n}\n', i) + 3;
+  vm.runInContext(SRC.slice(i, k) + '\nthis.f = signalementsTranches;', ctx);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.f())), [{ id: 'bbbbbbbb', phrase: 'b', verdict: 'inoffensif', tranche: 2 }], 'un geste défait ne s’affiche plus');
+});

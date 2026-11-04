@@ -9070,15 +9070,29 @@ function signalementsParasites() {
     exemple: String(x.exemple || '').slice(0, 300), raison: String(x.raison || '').slice(0, 200), faux_positifs: Number(x.faux_positifs) || 0,
     normales: Number(x.normales) || 0, ts: Number(x.ts) || 0, etat: 'signale' }));
 }
+// (04/11, Hakim pour papa : « il a validé nuisible à tort ») tes derniers gestes sur ses signalements, pour pouvoir les défaire
+function signalementsTranches() {
+  const l = lignesJson(path.join(IMMUNITE, 'signalements.jsonl'), 60), annules = new Set(), r = [];
+  for (let k = l.length - 1; k >= 0 && r.length < 10; k--) {
+    const x = l[k];
+    if (!x || !ID_SIGNALEMENT.test(String(x.id))) continue;
+    if (x.annule) { annules.add(x.id); continue; }
+    if (!x.verdict || annules.has(x.id) || r.some(y => y.id === x.id)) continue;
+    r.push({ id: String(x.id), phrase: String(x.phrase || '').slice(0, 80), verdict: x.verdict === 'nuisible' ? 'nuisible' : 'inoffensif', tranche: Number(x.tranche) || 0 });
+  }
+  return r;
+}
 let signalementsVus = null;
 function surveillerSignalements() {
-  const l = signalementsParasites();
-  if (signalementsVus === null) { signalementsVus = new Set(l.map(x => x.id)); return; }
+  const l = signalementsParasites(), demarrage = signalementsVus === null;
+  if (demarrage) signalementsVus = new Set();
   for (const x of l) {
     if (signalementsVus.has(x.id)) continue;
     signalementsVus.add(x.id);
     diffuser(abonnesPensees, 'signalement', j(x));
-    notifier(`Hakim signale une pensée parasite : « ${x.phrase} » — nuisible ou pas, à toi de trancher dans Parler`, `signalement-${x.id}`, true);
+    // (04/11) au démarrage, ceux d'avant ne sont pas notifiés une seconde fois, sauf s'ils sont nés pendant le redémarrage (2 min)
+    if (!demarrage || Date.now() - x.ts * 1000 < 120000)
+      notifier(`Hakim signale une pensée parasite : « ${x.phrase} » — nuisible ou pas, à toi de trancher dans Parler`, `signalement-${x.id}`, true);
   }
 }
 setInterval(surveillerSignalements, 10000).unref(); setTimeout(surveillerSignalements, 3000).unref();
@@ -10481,7 +10495,7 @@ async function traiter(req, res) {
     if (req.method === 'POST') {
       let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
       const id = String(q.id || ''), action = String(q.action || '');
-      if (!ID_SIGNALEMENT.test(id) || !['nuisible', 'inoffensif'].includes(action)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'signalement ou action invalide' })); }
+      if (!ID_SIGNALEMENT.test(id) || !['nuisible', 'inoffensif', 'annuler'].includes(action)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'signalement ou action invalide' })); }
       if (action === 'nuisible') {                             // sa pensée en sera nettoyée : ta présence
         const refus = exigerPresence(req, distantReq, q, `signalement:nuisible:${id}`);
         if (refus) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: refus, presence: true })); }
@@ -10496,7 +10510,7 @@ async function traiter(req, res) {
       res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(x));
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(j({ signalements: signalementsParasites() }));
+    return res.end(j({ signalements: signalementsParasites(), recents: signalementsTranches() }));
   }
   if (p === '/api/immunite/anticorps') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
