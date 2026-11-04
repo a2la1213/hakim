@@ -131,8 +131,8 @@ def oublier(nom):
 # nom : (défaut, minimum, maximum, ce que c'est)
 # (04/11, Ahmed : « enlève les blancs, c'est chiant ; il n'est pas assez vif ») les valeurs de départ au plus court
 RYTHME = {
-    "blanc_avant_meuble": (0.2, 0.2, 3.0, "le silence entre ta voix et ton premier meuble (s)"),
-    "blanc_entre_meubles": (0.2, 0.2, 3.0, "le silence entre deux meubles (s)"),
+    "blanc_avant_meuble": (0.1, 0.0, 3.0, "le silence entre ta voix et ton premier meuble (s)"),
+    "blanc_entre_meubles": (0.05, 0.0, 3.0, "le silence entre deux meubles (s)"),
     "blanc_avant_reprise": (0.0, 0.0, 3.0, "le silence entre un meuble et ta voix qui reprend (s)"),
     "ralenti_depart": (1.0, 0.15, 1.0, "la vitesse où repart ta voix ou un meuble après un blanc (1 = normale, plus petit = plus lent)"),
     "ralenti_fin": (0.0, 0.0, 1.0, "combien ta dernière parole avant un blanc s'étire en ralentissant (s)"),

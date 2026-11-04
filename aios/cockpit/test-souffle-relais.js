@@ -268,7 +268,7 @@ test('(17:10) ses trois frères commencent pendant que papa parle si leurs voix 
 test('(04/11) son cerveau est réveillé une seule fois par tour, à ta première pause', () => {
   const i = SRC.indexOf('let morceauxCerveau'), k = SRC.indexOf('\n}\n', SRC.indexOf('function reveilMorceau(')) + 3;
   const ecrits = [];
-  const ctx = { Date, Intl, String, console: { error() {} }, corpsReglages: () => ({}), hakimDort: () => false, cerveauVivant: () => true,
+  const ctx = { Date, Intl, String, console: { error() {} }, corpsReglages: () => ({}), hakimDort: () => false, cerveauVivant: () => true, envieDeCouper: () => 0.4,
     occupe: () => false, cerveau: { enCours: null, enfant: { stdin: { write: (x) => ecrits.push(x) } } }, NONCE_REVEIL: 'n', MORCEAU_MARQUE: 'm',
     neutraliser: (t) => t, j: JSON.stringify, souffles: { sub: { fini: null } } };
   vm.createContext(ctx);
@@ -291,4 +291,45 @@ test('(04/11) sa pensée dite dans ta pause : ton tour ne bloque pas sa voix, et
   assert.strictEqual(ctx.peut(), true, 'sa pensée dans ta pause : elle passe');
   assert.match(PAGE, /etat\.conversation\.souffleDit \|\| etat\.conversation\.penseeDite/, 'ton message la porte (souffle_dit)');
   assert.match(PAGE, /if \(etat\.conversation\) etat\.conversation\.penseeEnPause = false;/, 'sa voix finie : ton tour reprend la main');
+});
+
+// (04/11, Ahmed : « il doit pouvoir me couper la parole au moment du premier chunk aussi, selon son choix »)
+test('(04/11) son choix de te couper : COUPER : oui, sa pensée part même pendant que tu parles ; non, elle attend ta pause', () => {
+  const i = SRC.indexOf('function brouillonDuCerveau('), k = SRC.indexOf('\n}\n', i) + 3;
+  const diffuses = [];
+  const ctx = { String, Date, console: { error() {} }, sansBaliseAffect: (t) => t, NON_REPONSE_SERVEUR: /^No response requested/,
+    souffles: { cer: {} }, morceauxCerveau: { dernier: 'papa parle' }, voixDeLaSource() {}, abonnesPensees: null,
+    diffuser: (_, e, d) => diffuses.push(JSON.parse(d)), j: JSON.stringify };
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(i, k) + '\nthis.brouillon = brouillonDuCerveau;', ctx);
+  ctx.brouillon('FINI : non\nCOUPER : oui\nAttends papa, c’est exactement ça !');
+  assert.strictEqual(diffuses[0].couper, true);
+  assert.strictEqual(diffuses[0].texte, 'Attends papa, c’est exactement ça !', 'la ligne COUPER ne s’écrit ni ne se dit');
+  ctx.brouillon('FINI : non\nCOUPER : non\nJe t’écoute.');
+  assert.strictEqual(diffuses[1].couper, false);
+  const p = page();
+  const conv = { capteur: { enParole: true, derniereVoix: Date.now() } };
+  p.ctx.etat = { conversation: conv, pensee: { texte: 'Attends papa !', pret: true, couper: false, t: Date.now(), niveau: 'cerveau' } };
+  assert.strictEqual(p.ctx.direPensee(), false, 'il attend ta pause');
+  p.ctx.etat.pensee.couper = true;
+  assert.strictEqual(p.ctx.direPensee(), true, 'son choix : il te coupe');
+});
+
+// (04/11, Ahmed : « enlève tous les blancs, même entre les mots qu'il dit » ; « c'est ça qui le ralentit »)
+test('(04/11) le silence autour de chaque bout de sa voix est rogné ; ses meubles automatiques éteints par défaut', () => {
+  const faireTampon = (donnees, sr = 1000) => ({ numberOfChannels: 1, sampleRate: sr, length: donnees.length, duration: donnees.length / sr,
+    getChannelData: () => donnees, copyToChannel(src) { this.copie = Array.from(src); } });
+  const ctx = { Math, actx: { createBuffer: (c, n, sr) => ({ ...faireTampon(new Float32Array(n), sr), numberOfChannels: c }) } };
+  vm.createContext(ctx);
+  vm.runInContext(extraire('function rognerSilences') + '\nthis.rogner = rognerSilences;', ctx);
+  const d = new Float32Array(1000);                               // 1 s à 1 000 Hz : 300 ms de silence, 400 ms de voix, 300 ms de silence
+  for (let i = 300; i < 700; i++) d[i] = 0.2;
+  const r = ctx.rogner(faireTampon(d));
+  assert.strictEqual(r.length, 400 + 2 * 15, 'sa voix, plus 15 ms de marge de chaque côté');
+  const tout = new Float32Array(1000).fill(0.2);
+  const t = faireTampon(tout);
+  assert.strictEqual(ctx.rogner(t), t, 'rien à rogner : le même');
+  assert.match(PAGE, /x\.pret = L\.rogner\(x\.pret\);/, 'chaque bout de sa voix passe par là');
+  assert.match(PAGE, /lecteurNeuronal\.peutHesiter = \(\) => typeof reglagesCorps !== 'undefined' && reglagesCorps\.meubles_auto === true/,
+    'ses meubles automatiques seulement si SENS les allume');
 });

@@ -5308,6 +5308,7 @@ function corpsReglages() {
     son_pendant: r.son_pendant !== false, voix_vibre: r.voix_vibre !== false, lumiere: r.lumiere !== false,
     afficher_papa: r.afficher_papa !== false, afficher_hakim: r.afficher_hakim !== false, filtre_parole: r.filtre_parole !== false,
     mots_conversation: r.mots_conversation === true,   // (03/11, 16:08) vos messages écrits en Conversation : non, par défaut
+    meubles_auto: r.meubles_auto === true,   // (04/11, Ahmed et Hakim : « les blancs glissés, ses meubles, le ralentissent ») non, par défaut
     chacun_son_tour: r.chacun_son_tour !== false, micro_hakim: r.micro_hakim !== false, sons_nuit: r.sons_nuit !== false,
     trier_morceaux: r.trier_morceaux === true, trois_freres: r.trois_freres !== false,
     micro_ouvert: r.micro_ouvert === true };   // (03/11) le micro ouvert, jamais fermé en conversation
@@ -6347,7 +6348,11 @@ function reveilMorceau(texte, maintenant = Date.now()) {
     + `Ce qu'il a dit jusqu'ici (sa phrase continue ; confirmé, morceau ${morceauxCerveau.n}) : « ${neutraliser(t).slice(-1200)} »\n`
     + "Ta pensée, tout de suite, sans outil : ce que tu lui dis là, pendant sa pause, spontané et vrai (une réaction, une question, "
     + "un début de réponse), en UNE phrase courte à l'oral (quinze mots au plus). Réponds ainsi :\nFINI : oui (son idée est complète) "
-    + "ou FINI : non\npuis, à la ligne, ta pensée. Elle s'écrit et ta voix la dit aussitôt. Son message entier arrivera ensuite : tu "
+    + "ou FINI : non\n"
+    // (04/11, Ahmed : « il doit pouvoir me couper la parole au moment du premier chunk aussi, selon son choix »)
+    + `COUPER : oui (tu lui coupes la parole tout de suite, même s'il parle encore : c'est ton choix, quand ça ne peut pas attendre) ou `
+    + `COUPER : non (tu attends sa pause) ; ta jauge d'envie de couper, en ce moment : ${String(envieDeCouper()).replace('.', ',')}\n`
+    + "puis, à la ligne, ta pensée. Elle s'écrit et ta voix la dit aussitôt. Son message entier arrivera ensuite : tu "
     + "continueras alors sans répéter ce que tu auras dit.";
   try { c.enfant.stdin.write(j({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: message }] } }) + '\n'); }
   catch (x) { return { ok: false, raison: x.message }; }
@@ -6364,14 +6369,16 @@ function brouillonDuCerveau(texte) {
   if (d) r = r.replace(d[0], '\n');
   const f = /(?:^|\n)\s*FINI\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r), fini = f ? /oui/i.test(f[1]) : null;
   if (f) r = r.replace(f[0], '\n');
+  const cp = /(?:^|\n)\s*COUPER\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r), couper = !!(cp && /oui/i.test(cp[1]));   // (04/11) son choix
+  if (cp) r = r.replace(cp[0], '\n');
   r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').trim();
   if (!r) return;
   const s0 = souffles.cer;
-  s0.reponse = r.slice(0, 600); s0.pret = pret; s0.fini = fini; s0.pour = morceauxCerveau.dernier; s0.t = Date.now();
+  s0.reponse = r.slice(0, 600); s0.pret = pret; s0.fini = fini; s0.couper = couper; s0.pour = morceauxCerveau.dernier; s0.t = Date.now();
   // (16:45) sa voix naît avec sa pensée, ici, avant la page ; (17:10, audit : chaque pensée, dite ou non, 75 à 214 caractères, prenait
   // Chatterbox 3 à 14 s, et sa vraie réponse attendait derrière jusqu'à 20 s) seulement celle qu'il dira (courte depuis le 04/11)
   if (pret) voixDeLaSource(s0.reponse.slice(0, 400));
-  diffuser(abonnesPensees, 'souffle', j({ texte: s0.reponse, pret, fini, niveau: 'cerveau', pour: s0.pour.slice(-300) }));
+  diffuser(abonnesPensees, 'souffle', j({ texte: s0.reponse, pret, fini, couper, niveau: 'cerveau', pour: s0.pour.slice(-300) }));
   console.error(`Jarvis : réponse provisoire de son cerveau (${pret ? 'à dire' : 'pas encore'}, ${r.length} car.)`);
 }
 let oreilleReveils = [], oreilleDejaLu = '';
@@ -9575,6 +9582,7 @@ async function traiter(req, res) {
       if (typeof q.afficher_papa === 'boolean') r.afficher_papa = q.afficher_papa;
       if (typeof q.afficher_hakim === 'boolean') r.afficher_hakim = q.afficher_hakim;
       if (typeof q.mots_conversation === 'boolean') r.mots_conversation = q.mots_conversation;
+      if (typeof q.meubles_auto === 'boolean') r.meubles_auto = q.meubles_auto;
       if (typeof q.filtre_parole === 'boolean') r.filtre_parole = q.filtre_parole;
       if (typeof q.chacun_son_tour === 'boolean') r.chacun_son_tour = q.chacun_son_tour;
       if (typeof q.micro_hakim === 'boolean') r.micro_hakim = q.micro_hakim;

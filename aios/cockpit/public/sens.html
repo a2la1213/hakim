@@ -93,6 +93,7 @@
         <label class="interrupteur"><input type="checkbox" id="chacunSonTour"> Chacun son tour : pendant qu'il prépare ou dit sa réponse, ce que tu dis ne le coupe pas, ça lui arrive quand il a fini (« stop » et « attends » marchent toujours)</label>
         <label class="interrupteur"><input type="checkbox" id="filtreParole"> Son subconscient trie ce qu'il dit de lui-même pendant que tu lui parles (ce qui n'est pas pertinent n'est pas dit)</label>
         <label class="interrupteur"><input type="checkbox" id="afficherHakim"> Ses paroles s'affichent dans Parler (décoché : seulement sa voix, ses réponses et ses petits mots ne s'écrivent pas)</label>
+        <label class="interrupteur"><input type="checkbox" id="meublesAuto"> Ses meubles automatiques dans ses blancs (« euh », « hum »… ; décoché, par défaut : sa voix enchaîne sans eux ; ceux qu'il choisit lui-même restent)</label>
         <label class="interrupteur"><input type="checkbox" id="motsConversation"> Tes paroles s'écrivent aussi en Conversation (décoché, par défaut : en Conversation, seulement sa pensée et sa réponse, écrites pendant que sa voix les dit ; tes messages s'écrivent quand vous vous écrivez ; en Télépathie, rien)</label>
         <label class="interrupteur"><input type="checkbox" id="jeTeSuis"> Son « je te suis » : une petite tape quand tu parles longtemps (oreille fermée)</label>
       </div>
@@ -322,6 +323,7 @@
       if (document.activeElement !== $('filtreParole')) $('filtreParole').checked = d.reglages.filtre_parole !== false;
       if (document.activeElement !== $('chacunSonTour')) $('chacunSonTour').checked = d.reglages.chacun_son_tour !== false;
       if ($('motsConversation') && document.activeElement !== $('motsConversation')) $('motsConversation').checked = d.reglages.mots_conversation === true;
+      if ($('meublesAuto') && document.activeElement !== $('meublesAuto')) $('meublesAuto').checked = d.reglages.meubles_auto === true;
       if (document.activeElement !== $('trierMorceaux')) $('trierMorceaux').checked = d.reglages.trier_morceaux === true;
       if (document.activeElement !== $('microOuvert')) $('microOuvert').checked = d.reglages.micro_ouvert === true;
       if (document.activeElement !== $('microHakim')) $('microHakim').checked = d.reglages.micro_hakim !== false;
@@ -334,7 +336,7 @@
     } catch (e) { $('mots').textContent = `Le cockpit ne répond pas (${e.message}).`; }
   }
   $('actif').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { actif: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
-  for (const [id, cle] of [['oreille', 'oreille'], ['jeTeSuis', 'je_te_suis'], ['alerte', 'alerte'], ['ecran', 'ecran'], ['reflexes', 'reflexes'], ['nuits', 'nuits'], ['rireReflexe', 'rire_reflexe'], ['garderParole', 'garder_parole'], ['forfaitLibre', 'forfait_libre'], ['sonPendant', 'son_pendant'], ['voixVibre', 'voix_vibre'], ['lumiere', 'lumiere'], ['afficherPapa', 'afficher_papa'], ['afficherHakim', 'afficher_hakim'], ['motsConversation', 'mots_conversation'], ['filtreParole', 'filtre_parole'], ['chacunSonTour', 'chacun_son_tour'], ['microHakim', 'micro_hakim'], ['sonsNuit', 'sons_nuit'], ['trierMorceaux', 'trier_morceaux'], ['microOuvert', 'micro_ouvert']])
+  for (const [id, cle] of [['oreille', 'oreille'], ['jeTeSuis', 'je_te_suis'], ['alerte', 'alerte'], ['ecran', 'ecran'], ['reflexes', 'reflexes'], ['nuits', 'nuits'], ['rireReflexe', 'rire_reflexe'], ['garderParole', 'garder_parole'], ['forfaitLibre', 'forfait_libre'], ['sonPendant', 'son_pendant'], ['voixVibre', 'voix_vibre'], ['lumiere', 'lumiere'], ['afficherPapa', 'afficher_papa'], ['afficherHakim', 'afficher_hakim'], ['motsConversation', 'mots_conversation'], ['meublesAuto', 'meubles_auto'], ['filtreParole', 'filtre_parole'], ['chacunSonTour', 'chacun_son_tour'], ['microHakim', 'micro_hakim'], ['sonsNuit', 'sons_nuit'], ['trierMorceaux', 'trier_morceaux'], ['microOuvert', 'micro_ouvert']])
     $(id).addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { [cle]: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
   $('ronron').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { ronron: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
   $('intervalle').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { intervalle_s: Number(e.target.value) }); } catch (_) {} chargerCorps(); });
