@@ -170,9 +170,12 @@ const synthTelephone = window.HakimApp && window.HakimApp.voixTelephone ? (() =>
     if (quoi === 'debut') { if (u.onstart) u.onstart(); return; }
     enAttente.delete(id); if (u.onend) u.onend();
   };
+  // (1.63, 04/11) ce que sa voix a mis à sortir : jusqu'à tes écouteurs
+  window.HakimVoixMesure = (id, m) => { const u = enAttente.get(id); if (u && typeof mesurerVoix === 'function') mesurerVoix(u, m); };
   return {
     speak(u) {
       const id = `t${++n}`; enAttente.set(id, u);
+      u._appelPage = Date.now(); u._origine = typeof origineDe === 'function' ? origineDe(u.text) : null;   // (04/11) pour sa mesure
       try {
         if (window.HakimApp.voixTelephoneVoix) {
           const [texte, debit, langue, nom] = argumentsDe(u);
@@ -1083,16 +1086,82 @@ const motsPapaCaches = () => !!etat.conversation && !motsEnConversation();
 const reponseCachee = () => !!etat.conversation;
 const parolesEnvoyees = { papa: '', hakim: '' }, parolesEnAttente = {};
 let parolesMinuteur = null;
+/* (04/11, Hakim pour papa : « un chiffre mesuré entre le moment où j'écris un mot et celui où il apparaît à l'écran de ton téléphone,
+   et entre le moment où je le dis et celui où tu l'entends dans tes écouteurs Bluetooth » ; Ahmed : « ajoute tout ») ses SORTIES
+   mesurées, de l'instant où le Mac les envoie (ts, à son horloge) jusqu'à l'écran de la page, la bulle, le widget et tes écouteurs.
+   L'horloge du Mac est calée ici : le plus court de trois allers-retours, refait toutes les 5 min quand une mesure en a besoin. */
+const horlogeMac = { decalage: 0, rtt: Infinity, t: 0, enCours: false };
+async function calerHorlogeMac() {
+  if (horlogeMac.enCours || (Date.now() - horlogeMac.t < 300000 && horlogeMac.rtt < 400) || typeof fetch !== 'function') return;
+  horlogeMac.enCours = true;
+  try {
+    let meilleur = null;
+    for (let k = 0; k < 3; k++) {
+      const t0 = Date.now(), r = await (await fetch('/api/heure', { cache: 'no-store', headers: { 'X-Jeton': jeton() } })).json(), t1 = Date.now();
+      if (r && Number(r.t) > 0 && (!meilleur || t1 - t0 < meilleur.rtt)) meilleur = { rtt: t1 - t0, decalage: Number(r.t) - (t0 + t1) / 2 };
+    }
+    if (meilleur) Object.assign(horlogeMac, meilleur, { t: Date.now() });
+  } catch (_) {} finally { horlogeMac.enCours = false; }
+}
+// le délai depuis l'envoi du Mac (ts) jusqu'à t (horloge de la page) ; null tant que l'horloge n'est pas calée (ou mal : aller-retour > 1,5 s)
+function depuisMac(ts, t = Date.now()) {
+  calerHorlogeMac();
+  if (!(Number(ts) > 0) || !horlogeMac.t || horlogeMac.rtt > 1500) return null;
+  const d = Math.round(Number(t) + horlogeMac.decalage - Number(ts));
+  return d >= -250 && d < 120000 ? Math.max(0, d) : null;
+}
+// ce qu'il va dire, et quand c'est parti du Mac : sa voix le retrouve au moment de parler
+const originesDites = [];
+function noterOrigine(texte, ts, recu = Date.now()) {
+  const t = String(texte || '').trim();
+  if (!t || !(Number(ts) > 0)) return;
+  originesDites.push({ texte: t, ts: Number(ts), recu });
+  if (originesDites.length > 40) originesDites.shift();
+}
+function origineDe(texte) {
+  const t = String(texte || '').trim();
+  if (!t) return null;
+  for (let k = originesDites.length - 1; k >= 0; k--) { const o = originesDites[k]; if (o.texte === t || o.texte.includes(t) || t.includes(o.texte)) return o; }
+  return null;
+}
+// ses mots à l'écran de la page : à la deuxième image après leur arrivée (posés, puis dessinés) ; au plus une mesure par 1,5 s
+const mesuresEcran = {};
+function mesurerEcran(quoi, ts, recu = Date.now()) {
+  if (!(Number(ts) > 0) || document.hidden || Date.now() - (mesuresEcran[quoi] || 0) < 1500 || typeof requestAnimationFrame !== 'function') return;
+  mesuresEcran[quoi] = Date.now();
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const total = depuisMac(ts);
+    if (total == null) return;
+    journalVoix('sortie_texte', { quoi, ou: 'page', total_ms: total, reseau_ms: depuisMac(ts, recu), rendu_ms: Date.now() - recu, rtt_ms: horlogeMac.rtt });
+  }));
+}
+// ses mots dans la bulle et le widget : l'appli dit combien de temps après que la page les a donnés (attente de 0,25 s comprise)
+window.HakimParolesMesure = (ou, ms) => { if (ou === 'bulle' || ou === 'widget') journalVoix('sortie_texte', { quoi: 'paroles', ou, page_ms: Number(ms) || 0 }); };
+// sa voix jusqu'à tes écouteurs : l'appli donne ses instants (appel, calculée, écrite, présentée à la sortie, Bluetooth compris)
+function mesurerVoix(u, m) {
+  if (!m || !(Number(m.entendu) > 0) || !(Number(m.ecrit) > 0)) return;
+  const sortie = Number(m.entendu) - Number(m.ecrit);
+  if (sortie < 0 || sortie > 5000) return;                         // une sortie qui ne se tient pas : pas de chiffre faux
+  const o = u && u._origine, appel = Number(u && u._appelPage) || Number(m.appel);
+  const d = { sortie: /^(bluetooth|haut_parleur|filaire)$/.test(m.sortie) ? m.sortie : 'autre', prechargee: !!m.prechargee,
+    calcul_ms: Math.max(0, Number(m.calcule) - Number(m.appel)), ecouteurs_ms: sortie, latence_annoncee_ms: Number(m.latence_ms), page_ms: Math.max(0, Number(m.appel) - appel) };
+  if (o) { d.reseau_ms = depuisMac(o.ts, o.recu); d.attente_ms = Math.max(0, appel - o.recu); d.total_ms = depuisMac(o.ts, Number(m.entendu)); }
+  journalVoix('sortie_voix', d);
+}
+let parolesDepuis = 0;
 function envoyerParoles(qui, texte) {
   if (!window.HakimApp || !window.HakimApp.paroles) return;
   const t = String(texte || '').trim().slice(-160);
   if (t === parolesEnvoyees[qui]) return;
   parolesEnAttente[qui] = t;
+  if (qui === 'hakim' && !parolesDepuis) parolesDepuis = Date.now();   // (04/11) ses mots donnés ici : la bulle dira quand elle les montre
   if (parolesMinuteur) return;
   parolesMinuteur = setTimeout(() => {
     parolesMinuteur = null;
     const r = typeof reglagesCorps !== 'undefined' ? reglagesCorps : {};
-    const o = { ...parolesEnAttente, montrer_papa: r.afficher_papa !== false && !motsPapaCaches() && !enTelepathie(), montrer_hakim: r.afficher_hakim !== false || !!etat.conversation };
+    const o = { ...parolesEnAttente, montrer_papa: r.afficher_papa !== false && !motsPapaCaches() && !enTelepathie(), montrer_hakim: r.afficher_hakim !== false || !!etat.conversation,
+      ...(parolesDepuis ? { t_page: parolesDepuis } : {}) };
+    parolesDepuis = 0;
     for (const k of Object.keys(parolesEnAttente)) { parolesEnvoyees[k] = parolesEnAttente[k]; delete parolesEnAttente[k]; }
     try { window.HakimApp.paroles(JSON.stringify(o)); } catch (_) {}
   }, 250);
@@ -2088,6 +2157,7 @@ async function envoyer(texte, oral, dejaRelance) {
         const ligne = tampon.slice(0, i); tampon = tampon.slice(i + 1);
         let o; try { o = JSON.parse(ligne); } catch (_) { continue; }
         if (o.t === 'texte') {
+          const recu = Date.now();                                   // (04/11) parti du Mac à o.ts : sa mesure jusqu'à l'écran et à la voix
           // (13:51, papa via Hakim) plus d'inspiration avant sa voix : ses meubles couvrent ce trou-là, avec sa voix
           if (mesureTour && !mesureTour.premier_texte && o.x.trim()) mesureTour.premier_texte = Date.now();
           m.texte += o.x;
@@ -2095,10 +2165,10 @@ async function envoyer(texte, oral, dejaRelance) {
           if (/musique/i.test(o.x) || /\[\[\s*musique/i.test(m.texte.slice(-80))) lireMusique(m.texte.slice(-120));      // (04/11)
           if (/reaction/i.test(m.texte.slice(-90))) reactionDeHakim(m);                                                    // (15:38)
           orbeTete.pulser(0.05);
-          if (auto) decoupe.ajouter(o.x).forEach(p => { if (NON_REPONSE.test(p)) return; if (!boutDire(m, p)) return; etat.lectureDe = m.id; lecteur.dire(p); });
+          if (auto) decoupe.ajouter(o.x).forEach(p => { if (NON_REPONSE.test(p)) return; if (!boutDire(m, p)) return; noterOrigine(p, o.ts, recu); etat.lectureDe = m.id; lecteur.dire(p); });
           // (21:02, Ahmed : « sa voix part tout de suite, et l'écriture se fait après, en arrière-plan ») son texte ne s'écrit
           // pas pendant qu'il parle quand papa l'a choisi : il apparaît d'un coup à la fin
-          if (typeof reglagesCorps === 'undefined' || reglagesCorps.afficher_hakim !== false || !auto) majMessage(m);
+          if (typeof reglagesCorps === 'undefined' || reglagesCorps.afficher_hakim !== false || !auto) { majMessage(m); if (!m.cache && o.x.trim()) mesurerEcran('message', o.ts, recu); }
           humeur(m.texte.length < 2 ? undefined : 'répond…');
         } else if (o.t === 'outil') {
           // (2026-10-22, Ahmed : « une réponse parlée AVANT l'outil ») la phrase qu'il a écrite avant d'appeler un outil part
@@ -3027,12 +3097,14 @@ function surSouffle(o) {
     // pensée sans le dire ») un seul tri, au cockpit (pret) : dite, ou écrite sans être dite ; ici, rien ne le refait
     if (!s.pret) {
       montrerPensee('🧠 il pense, sans le dire', texte, true);
+      mesurerEcran('pensee', o.ts);                                   // (04/11) écrite : jusqu'à ton écran
       // (04/11, Ahmed : « la bonne pensée au bon moment, redirigée au bon input pour la voix ») une pensée gardée peut être dite
       // ensuite (à ta pause d'une seconde, ou s'il la choisit [n]) : sa voix se calcule déjà sur le téléphone, prête à cet instant
       if (!s.jamais && typeof voixDuTelephone === 'function' && voixDuTelephone() && lecteurSysteme && typeof lecteurSysteme.preparer === 'function')
         lecteurSysteme.preparer(texte);
       return;
     }
+    noterOrigine(texte, o.ts);                                        // (04/11) dite : jusqu'à tes écouteurs
     recevoirBout(s, Number(o.n) || 0, o.tour); return;
   }
   if (niveau !== 'cerveau') return;
@@ -3042,11 +3114,12 @@ function surSouffle(o) {
   // dire s'écrit au MÊME instant que sa voix la dit, dès que sa voix est faite et que ton tour est fini (jamais pendant ton tour :
   // relecture du 16/10, son écho transcrit) ; celle qui attend la suite s'écrit seule, comme ce qu'il pense sans le dire
   etat.pensee = s;
+  if (s.pret) noterOrigine(texte, o.ts);                              // (04/11) pour mesurer sa voix jusqu'à tes écouteurs
   if (s.pret) preparerVoixSouffle(texte, niveau, () => direPenseeSiPossible());   // (17:10, audit) seulement celle qu'il dira
   // (04/11, Ahmed : « dès que le premier chunk est écrit, il le prononce ») sa voix la dit dès qu'elle est faite et que tu marques une pause ;
   // (04/11 : « la pensée doit être aussi rapide que la parole : le même chunk pour la pensée et pour la parole ») celle qu'il dira
   // s'écrit AU MOMENT où sa voix la dit (direSouffle), pas avant ; celle qui attend la suite s'écrit seule
-  if (!s.pret) { montrerPensee('🧠 il pense · pas encore à dire', texte); envoyerParoles('hakim', `🧠 ${texte}`); return; }
+  if (!s.pret) { montrerPensee('🧠 il pense · pas encore à dire', texte); mesurerEcran('pensee', o.ts); envoyerParoles('hakim', `🧠 ${texte}`); return; }
   direPenseeSiPossible();
 }
 /* (04/11, Ahmed : « coupe par chunk de mot : au premier mot il prévoit le reste et parle direct ; le GPU dit la réponse du premier

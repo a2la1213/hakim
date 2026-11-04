@@ -127,6 +127,13 @@ def en_mots(voix, fond):
     return f"{v} · {f}"
 
 
+def separer(modele, x, appareil, apply_model):
+    """(04/11, vu : le téléphone envoie 8 s de sa musique et htdemucs n'en prend que 7,8 d'un seul tenant : « Given length 380607 is
+    longer than training length 343980 », à chaque morceau, et rien de séparé du téléphone) découpé par Demucs en segments qui se
+    chevauchent : un son court tient dans un seul, un plus long n'est plus refusé."""
+    return apply_model(modele, x, device=appareil, split=True, overlap=0.25, progress=False)[0]
+
+
 def main():
     import soundfile as sf
     import torch
@@ -149,7 +156,7 @@ def main():
                 x = np.interp(np.linspace(0, len(x) - 1, n), np.arange(len(x)), x).astype(np.float32)
                 sr = modele.samplerate
             with torch.no_grad():
-                s = apply_model(modele, torch.tensor(np.stack([x, x]))[None], device=appareil, split=False, progress=False)[0]
+                s = separer(modele, torch.tensor(np.stack([x, x]))[None], appareil, apply_model)
             noms = modele.sources
             voix = s[noms.index("vocals")].mean(0).cpu().numpy()
             fond = sum(s[i] for i, n in enumerate(noms) if n != "vocals").mean(0).cpu().numpy()

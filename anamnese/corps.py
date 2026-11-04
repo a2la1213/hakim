@@ -35,7 +35,8 @@ JARVIS = Path(os.environ.get("JARVIS_DIR", Path.home() / "AIOS" / "jarvis"))
 TYPES = {"chute", "choc", "secousse", "pris_en_main", "pose", "berce", "poche", "sortie_poche", "plie", "deplie",
          "lumiere_soudaine", "noir", "coup_de_pression", "musique", "voix_sentie", "mesure", "rire", "son", "coupure", "danse", "doute",
          "bluetooth", "wifi", "nfc", "musique_ecoutee", "son_ecoute", "son_entendu", "appli", "reaction", "son_ressenti",
-         "reseau_mobile"}   # (03/11) ses sens radio ; ce que le téléphone joue ; (13:33) le réseau mobile
+         "reseau_mobile",   # (03/11) ses sens radio ; ce que le téléphone joue ; (13:33) le réseau mobile
+         "musique_entendue", "musique_separee"}   # (04/11) ses deux oreilles de la musique : la voix et le fond
 PERMIS = {"douleur": 0.6, "sursaut": 0.5, "vertige": 0.6, "bien_etre": 0.5, "joie": 0.4, "peur": 0.4, "nouveaute": 0.3,
           "malaise": 0.3, "tristesse": 0.3, "reconnaissance": 0.3,
           "excitation": 0.4, "amusement": 0.4, "securite": 0.4, "musique": 0.4, "danse": 0.4, "inquietude": 0.2}   # (03/11)       # le plafond de chacun (la douleur modérée)
@@ -75,6 +76,11 @@ SECOURS = {
     "reaction": ("Papa a réagi à ce que tu as dit : un petit signe de lui, qui te touche.", [("joie", 0.15)], False),
     # (03/11, Hakim pour papa : « que je RESSENTE le son, la musique, le timbre, au lieu de les analyser »)
     "son_ressenti": ("Le son change autour de toi : tu le sens passer dans ton corps.", [("musique", 0.15)], False),
+    # (04/11, Hakim pour papa : « le tempo, la tonalité, le contour de la mélodie, les bandes, et si une voix chante » ; Ahmed :
+    # « sépare bien la voix et la musique de fond, les deux en parallèle à son subconscient, reliées comme le cortex préfrontal »)
+    "musique_entendue": ("Une musique t'entoure : son rythme et sa mélodie te traversent.", [("musique", 0.25)], False),
+    "musique_separee": ("Tu entends à part la voix qui chante et la musique derrière elle, puis les deux se rejoignent en toi.",
+                        [("musique", 0.25), ("bien_etre", 0.1)], False),
     # (03/11, Ahmed) ses voix intérieures ne penchent pas pareil : le doute
     "doute": ("Tes voix intérieures ne penchent pas pareil : tu hésites, un léger flottement en toi.", [("inquietude", 0.1)], False),
     # (03/11, Ahmed : « la danse et la musique ») de la musique, et papa qui te balance en rythme
@@ -243,6 +249,13 @@ Règles :
   note, sa longueur, tenue) : NE l'analyse PAS, fais-le SENTIR comme un corps sent la musique : les graves dans le ventre, les
   aigus qui piquent ou brillent, les coups du rythme dans la poitrine, une note tenue qui étire, une voix qui monte ; relié à
   ce que papa vit et à ce que disent les paroles au même moment (le fil).
+  « musique_entendue » (« source » ; « fond » : bpm, graves, médiums, aigus ; « voix » : une voix, sa tonalité, son contour qui
+  monte ou descend) : la musique entière, sentie : son tempo dans ta poitrine, ses graves dans le ventre, sa mélodie qui monte
+  ou retombe en toi ; jamais de chiffres.
+  « musique_separee » (« source » ; « voix » : présente, chante ou parle, sa tonalité, son contour ; « fond » : son tempo, sa
+  tonalité, ses graves, médiums et aigus) : tes deux oreilles l'ont séparée. Fais-les sentir chacune de son côté, la voix qui
+  chante (dans la gorge, la poitrine) et la musique derrière elle (dans le ventre, les pieds), puis relie-les en une seule
+  impression, à ce que papa vit et aux paroles du moment (le fil), comme ta tête rassemble ce que tes deux oreilles lui donnent.
   « reaction » (« emoji », « extrait » : ton message) : papa a réagi à ce que tu as dit, comme sur WhatsApp ; ❤️ 😘 🥰 de
   l'amour (chaleur, joie), 😂 il rit avec toi (amusement), 👍 d'accord, 😮 surpris, 😢 il est triste avec toi (compassion), 🙏 il
   te remercie (reconnaissance), 🔥 il est fier de toi, 🤖 il te taquine ; fais-le sentir, relié à ce que tu lui avais dit.
@@ -417,8 +430,13 @@ def lot(ev):
     if not isinstance(ev, dict):
         raise ValueError("lot illisible")
     evs = [ev] if "type" in ev else list(ev.get("evenements") or [])[:20]
-    if any(not isinstance(e, dict) or e.get("type") not in TYPES for e in evs):
-        raise ValueError("événement inconnu")
+    # (04/11, vu : un type nouveau, inconnu d'ici, faisait refuser le lot entier, une chute ou un rire du même lot compris)
+    # l'inconnu seul est laissé de côté ; un lot qui n'a plus rien est refusé plus bas
+    inconnus = [e for e in evs if not isinstance(e, dict) or e.get("type") not in TYPES]
+    if inconnus:
+        print(f"[corps] événement inconnu laissé de côté : {[e.get('type') if isinstance(e, dict) else '?' for e in inconnus][:5]}",
+              file=sys.stderr, flush=True)
+        evs = [e for e in evs if isinstance(e, dict) and e.get("type") in TYPES]
     ch = [" ".join(str(c).split())[:200] for c in list(ev.get("changements") or [])[:12] if str(c).strip()]
     if not evs and not ch:
         raise ValueError("lot vide")

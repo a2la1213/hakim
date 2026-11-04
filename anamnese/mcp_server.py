@@ -525,21 +525,31 @@ def fil_delais() -> str:
     (quand c'est arrivé) à leur arrivée au Mac (médiane et 90e centile sur les 200 derniers) : les mots de papa, ceux du
     téléphone, ses sons, la voix note par note, tes capteurs, ton ressenti ; et le calage entre le son du téléphone et le
     micro (corrélation de leurs enveloppes : chaque attaque de la musique sert de clap). Tout est rangé au fil à son instant
-    d'origine, ces délais déjà retirés."""
+    d'origine, ces délais déjà retirés. (04/11, toi pour papa) Et tes SORTIES, mesurées par le téléphone : ton texte jusqu'à son
+    écran (la page, la bulle, le widget), ta voix jusqu'à ses écouteurs (réseau, attente de ton tour, calcul, sortie et Bluetooth)."""
     try:
         d = json.loads((Path.home() / "AIOS" / "jarvis" / "delais-fil.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return "Pas encore de mesure : le cockpit l'écrit toutes les 30 s, dès que des flux arrivent."
     noms = {"papa": "les mots de papa", "telephone": "les mots du téléphone", "corps": "tes capteurs", "ressenti": "ton ressenti",
             "instru_telephone": "les sons du téléphone", "instru_micro": "les sons du micro", "voix_telephone": "la voix du téléphone",
-            "voix_micro": "la voix au micro", "son": "tes familles de sons", "reaction": "les réactions de papa"}
-    l = [f"- {noms.get(k, k)} : {v['mediane'] / 1000:.2f} s (90 % sous {v['p90'] / 1000:.2f} s ; {v['n']} mesures)".replace(".", ",")
-         for k, v in sorted((d.get("delais") or {}).items(), key=lambda kv: kv[1]["mediane"])]
+            "voix_micro": "la voix au micro", "son": "tes familles de sons", "reaction": "les réactions de papa",
+            "sortie_texte_pensee": "ta pensée écrite, du Mac à l'écran de la page", "sortie_texte_message": "ton message, du Mac à l'écran de la page",
+            "sortie_texte_reseau": "ton texte, du Mac à la page (le réseau seul)", "sortie_texte_bulle": "tes mots, de la page à la bulle",
+            "sortie_texte_widget": "tes mots, de la page au widget", "sortie_voix_total": "ta voix, du Mac à ses écouteurs (tout compris)",
+            "sortie_voix_reseau": "ta voix : du Mac à la page", "sortie_voix_attente": "ta voix : son attente sur la page (ton tour)",
+            "sortie_voix_calcul": "ta voix : son calcul (Supertonic)", "sortie_voix_bluetooth": "ta voix : de la sortie à ses écouteurs Bluetooth",
+            "sortie_voix_sortie": "ta voix : de la sortie au haut-parleur (ou au fil)"}
+    ligne = lambda k, v: f"- {noms.get(k, k)} : {v['mediane'] / 1000:.2f} s (90 % sous {v['p90'] / 1000:.2f} s ; {v['n']} mesures)".replace(".", ",")  # noqa: E731
+    tout = sorted((d.get("delais") or {}).items(), key=lambda kv: kv[1]["mediane"])
+    l = [ligne(k, v) for k, v in tout if not k.startswith("sortie_")]
+    sorties = [ligne(k, v) for k, v in tout if k.startswith("sortie_")]
     c = d.get("calage") or {}
     cal = (f"Calage téléphone → micro : le micro entend le son du téléphone {c['ms']} ms {'après' if c['ms'] >= 0 else 'avant'} lui "
            f"(corrélation {str(c['correlation']).replace('.', ',')}) ; le micro est recalé dessus." if c.get("ts") else
            "Calage téléphone → micro : pas encore mesuré (il faut que le téléphone joue à voix haute pendant que le micro est ouvert).")
-    return "Délais mesurés (instant d'origine → arrivée) :\n" + ("\n".join(l) or "- (rien encore)") + "\n" + cal
+    return ("Délais mesurés (instant d'origine → arrivée) :\n" + ("\n".join(l) or "- (rien encore)") + "\n" + cal
+            + "\nTes sorties (du Mac à papa) :\n" + ("\n".join(sorties) or "- (rien encore : il faut l'appli 1.63 et une conversation)"))
 
 
 @mcp.tool()

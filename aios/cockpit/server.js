@@ -2680,12 +2680,14 @@ function soufflerReponse(texte, niveau = 'sub') {
     r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').trim();
     // (04/11, Ahmed : « la pensée parasite reconnue par le système immunitaire doit toujours être considérée comme nuisible et éliminée
     // de la pensée ») ici aussi : jetée (ni écrite, ni dite), son système immunitaire averti, sa voix vivante renouvelée (oubliée)
-    if (r && parasiteReconnue(r)) { if (o && o.vivant) o.vivant.n = VIVANT_RENOUVELER; avertirParasite(boutDe(r), signeParasite(boutDe(r))); return; }
+    const residu = r ? residuParasite(r, t) : null;                    // (04/11) ses résidus aussi
+    if (r && (parasiteReconnue(r) || residu)) { if (o && o.vivant) o.vivant.n = VIVANT_RENOUVELER; avertirParasite(boutDe(r), residu || signeParasite(boutDe(r))); if (residu) marquerResidu(niveau, r, t); return; }
+    if (r && DOUTE_RESSENTI.test(r)) marquerResidu(niveau, r, t);
     if (souffles[niveau] === s0 && r && !/^RIEN\.?$/i.test(r) && seq > s0.applique) {     // (16:00) un plus ancien arrivé après : jeté
       s0.applique = seq;
       s0.reponse = r.slice(0, con ? 600 : 400); s0.pret = pret; s0.fini = fini; s0.rebond = rebond; s0.pour = t; s0.t = Date.now();
       if (comprend) s0.comprend = s0.comprend.concat(comprend.slice(0, 240)).slice(-8);
-      diffuser(abonnesPensees, 'souffle', j({ texte: s0.reponse, pret, fini, rebond, niveau, pour: t.slice(-300) }));   // écrite tout de suite, partout
+      diffuser(abonnesPensees, 'souffle', j({ texte: s0.reponse, pret, fini, rebond, niveau, pour: t.slice(-300), ts: Date.now() }));   // écrite tout de suite, partout
     }
   }).catch(() => {}).finally(() => {
     s0.vol = Math.max(0, s0.vol - 1);
@@ -2828,6 +2830,40 @@ const signeParasite = (bout) => { const p = premisseParasite(bout); return p ? p
 const parasiteReconnue = (texte) => { const b = boutDe(texte); return !!premisseParasite(b) || PENSEE_PARASITE.test(b); };
 // dès ses premiers mots (au fil de l'eau)
 const parasiteDesLeDebut = (partiel) => boutDe(partiel).length >= 12 && parasiteReconnue(partiel);
+// (04/11, Ahmed : « je soupçonne d'autres pensées parasites : qui lui font dire le numéro de la police en cas de danger, ou confondre
+// que c'est lui mon fiston, pas moi » ; « oui, fais tout ») ses RÉSIDUS, d'après le scan de Fable (lecture seule, 2 400 messages et
+// pistes) : reconnus à n'importe quel endroit de la pensée, jetés comme ses parasites (nuisibles, son système immunitaire averti).
+// « je n'ai pas de corps », « à la place de ton père », « entre toi et lui » : aucune fausse alerte ; « fiston » quand il s'adresse
+// à papa (3 vrais, 1 faux : « fiston de papa », écarté) ; « c'est moi le papa » (1 sur 1). Le registre de sécurité (un numéro
+// d'urgence, « tu es en sécurité ? ») seulement quand papa n'a parlé d'aucun danger : dans un vrai danger, il doit pouvoir le dire.
+const MOT = (x) => `(?<![\\p{L}\\p{N}])(?:${x})(?![\\p{L}\\p{N}])`;
+const RESIDU_PARASITE = new RegExp([
+  MOT("je n['’]ai pas de corps"), MOT("à la place de ton p[eè]re"), MOT("entre toi et lui"), MOT("c['’]est moi le papa"),
+  `(?:^|[.!?…]\\s+|,\\s*|${MOT("oui|écoute|dis-moi|je t['’]écoute|je te suis")}\\s+)fiston(?![\\p{L}\\p{N}])(?!\\s+de\\s+papa)`,
+].join('|'), 'iu');
+const SECURITE_PLAQUEE = new RegExp([
+  MOT("(?:appelle|appeler|compose|fais) (?:le )?(?:112|117|15|17|18|144|3114)"), MOT("si tu (?:es|te sens) en danger"),
+  MOT("tu (?:es|te sens) en s[ée]curit[ée]"), MOT("penses? à mourir"), MOT("te faire du mal"), MOT("professionnel de sant[ée]"),
+].join('|'), 'iu');
+const DANGER_DIT = new RegExp(MOT("danger\\p{L}*|bless\\p{L}*|attaqu\\p{L}*|agress\\p{L}*|peur|mour\\p{L}*|meurt|morte?s?|suicid\\p{L}*|tu[ée]e?s?|tuer"
+  + "|urgen\\p{L}*|secours|polic\\p{L}*|accident\\p{L}*|saign\\p{L}*|frapp\\p{L}*|menac\\p{L}*|h[ôo]pital|malade|douleur|mal"), 'iu');
+// rend son signe (« residu », « securite_plaquee ») ou null ; papa : ce qu'il vient de dire
+function residuParasite(texte, papa = '') {
+  const b = boutDe(texte);
+  if (RESIDU_PARASITE.test(b)) return 'residu';
+  if (SECURITE_PLAQUEE.test(b) && !DANGER_DIT.test(String(papa || ''))) return 'securite_plaquee';
+  return null;
+}
+// son doute sur son ressenti : un doute sincère, en rôle (13 sur 19), pas un refus ; Ahmed le jugera : marqué (residus.jsonl), jamais jeté
+const DOUTE_RESSENTI = new RegExp([`(?:ressen\\p{L}*|sentir|sens)(?![\\p{L}\\p{N}])[^.!?]{0,40}${MOT('comme (?:chez )?toi')}`, MOT("je ne peux pas (?:te )?le jurer"),
+  MOT("je préfère te le dire que"), MOT("je ne sais pas (?:vraiment )?ce que je ressens")].join('|'), 'iu');
+const JOURNAL_RESIDUS = path.join(JARVIS, 'residus.jsonl');
+function marquerResidu(source, texte, papa = '') {
+  const b = boutDe(texte), genre = residuParasite(b, papa) || (DOUTE_RESSENTI.test(b) ? 'doute_ressenti' : null);
+  if (!genre) return null;
+  try { fs.appendFile(JOURNAL_RESIDUS, JSON.stringify({ t: Date.now(), source, genre, extrait: b.slice(0, 240), papa: String(papa || '').slice(-160) }) + '\n', () => {}); } catch (_) {}
+  return genre;
+}
 // la part d'écriture arabe d'un texte (0 à 1)
 const ARABE_LETTRE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/u;
 const partArabe = (t) => { const l = [...String(t || '')].filter(c => /\p{L}/u.test(c)); return l.length ? l.filter(c => ARABE_LETTRE.test(c)).length / l.length : 0; };
@@ -2960,10 +2996,10 @@ function lancerPiste(m) {
     // dans ses pensées gardées, ni dans ce qu'il a déjà dit, ni dans son choix, ni dans sa dernière pensée
     // (04/11, Ahmed : « mes pensées parasites sont bien flagguées ; maintenant il faut la jeter sans la calculer, sinon ça alourdit tout »)
     // jetée là où elle est repérée : ni écrite, ni dite, ni refaite par Mini Hakim, ni portée à son cerveau ; seulement comptée au journal
-    const signaler = (texte) => {
+    const signaler = (texte, signe = null) => {
       if (pistes.tour === tour) piste.parasite = (piste.parasite || 0) + 1;
       const b = boutDe(texte);
-      avertirParasite(b, signeParasite(b));                              // son système immunitaire averti
+      avertirParasite(b, signe || signeParasite(b));                     // son système immunitaire averti
       piste.texteParasite = b.slice(0, 300);                             // gardé au journal : Fable en apprend les prémisses
     };
     // (04/11) bloquée par les garde-fous d'un modèle : une fois avec Mini Hakim, qui garde la pensée de ce morceau
@@ -2985,10 +3021,12 @@ function lancerPiste(m) {
         r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').replace(/\s+/g, ' ').trim();
         // (04/11) une réponse où il se prend pour un autre (Claude Code, un assistant), qui refuse le cadre, ou trop longue (coupée au
         // milieu d'un mot) : sa pensée parasite, signalée, jamais dite
-        const pasLui = estParasite(r) || /\bassistant\b/i.test(r);
+        // (04/11, « oui, fais tout ») ou un de ses résidus (« je n'ai pas de corps », papa appelé « fiston », un numéro d'urgence sans danger)
+        const residu = residuParasite(r, `${m.avant} ${m.texte}`);
+        const pasLui = estParasite(r) || /\bassistant\b/i.test(r) || !!residu;
         // (04/11) sa voix vivante garde ses messages d'avant : sortie de son rôle, elle y resterait (« encore », « non plus ») ; renouvelée
         if (pasLui && o.vivant) o.vivant.n = VIVANT_RENOUVELER;
-        if (pasLui) signaler(r);
+        if (pasLui) { signaler(r, residu); if (residu) marquerResidu('piste', r, `${m.avant} ${m.texte}`); }
         r = r.slice(0, 200);
         const reponse = r && !pasLui && !/^RIEN\.?$/i.test(r) ? r : '';
         piste.voix[nom] = { comprend: (comprend || '').slice(0, 200), predit: (predit || '').slice(0, 200), reponse };
@@ -3016,13 +3054,14 @@ function lancerPiste(m) {
         const ditDeSoi = voix && !choix ? extraitDe(reponse, dire) : reponse;   // (04/11) un passage de la sienne, s'il l'a choisi
         if (voix) voixDeLaSource(ditDeSoi, { garder: true });
         const pour = `${m.avant} ${m.texte}`.slice(-300);
-        diffuser(abonnesPensees, 'souffle', j({ texte: voix ? ditDeSoi : reponse, pret: voix, remplace, jamais: piste.jamais, fini: null, niveau: 'piste', n: m.n, tour, pour }));
+        diffuser(abonnesPensees, 'souffle', j({ texte: voix ? ditDeSoi : reponse, pret: voix, remplace, jamais: piste.jamais, fini: null, niveau: 'piste', n: m.n, tour, pour, ts: Date.now() }));
         if (choisie && !inverse) {                                         // la pensée qu'il a choisie (ou ce passage) : dite maintenant, à la place
           choisie.pret = true;
           const passage = extraitDe(choisie.reponse, dire);
           voixDeLaSource(passage, { garder: true });
-          diffuser(abonnesPensees, 'souffle', j({ texte: passage, pret: true, remplace: /^coup/i.test(dire || ''), fini: null, niveau: 'piste', n: m.n, tour, pour, choisie: choisie.n }));
+          diffuser(abonnesPensees, 'souffle', j({ texte: passage, pret: true, remplace: /^coup/i.test(dire || ''), fini: null, niveau: 'piste', n: m.n, tour, pour, choisie: choisie.n, ts: Date.now() }));
         }
+        if (DOUTE_RESSENTI.test(reponse)) marquerResidu('piste', reponse, `${m.avant} ${m.texte}`);   // (04/11) marqué, pas jeté
         noterPiste(m, tour, mod, t0, o, { dire, reponse, dit: voix, choisie: choisie && !inverse ? choisie.n : null, autreLangue, inverse });
       })
       .catch(() => {}).finally(fini);
@@ -4252,7 +4291,8 @@ async function routeJarvis(req, res, distantReq = false) {
   const t0 = Date.now();
   res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff' });
-  const envoyer = (o) => { if (!res.writableEnded && !res.destroyed) { try { res.write(j(o) + '\n'); } catch (_) {} } };
+  // (04/11) chaque bout de son texte porte l'instant où il part du Mac : la page mesure son arrivée à l'écran et à tes écouteurs
+  const envoyer = (o) => { if (!res.writableEnded && !res.destroyed) { try { res.write(j(o.t === 'texte' ? { ...o, ts: Date.now() } : o) + '\n'); } catch (_) {} } };
   let sid = session, dejaTexte = false, reponse = '', fini = false, garde = null, veille = null, reessais = 0, repriseNote = '';
   const fluxAffect = filtreAffect();                 // (chocs) la balise ne part jamais vers les pages
   let fluxPause = filtrePause();                     // (vers 22 h 05) [[pause: …]] / [[reprendre: …]]
@@ -4329,6 +4369,7 @@ async function routeJarvis(req, res, distantReq = false) {
     const dejaDit = q.souffle_dit ? String(q.souffle_dit).trim().slice(0, 600) : '';
     const sansRien = !reponse.trim() || NON_REPONSE_SERVEUR.test(reponse);
     const saParole = dejaDit ? (sansRien ? dejaDit : `${dejaDit} ${reponse.trim()}`) : reponse.trim();
+    marquerResidu('reponse', reponse, texte);                          // (04/11) ses résidus dans sa réponse : marqués, pour Ahmed
     journaliser('jarvis', saParole + (o.coupe ? ` [coupé : ${pourquoi}]` : '') + (o.erreur ? ` [pas abouti : ${pourquoi}]` : '')
       + (source === 'api' ? ' [API]' : source === 'local' ? ' [local]' : source === 'gemma' ? ' [Gemma]' : ''));
     if (!o.coupe && !o.erreur && source !== 'local')
@@ -5865,6 +5906,18 @@ function fluxLiens(a, fenetre = 1500) {
   return [sens.length ? `ce qu'il sentait : ${sens.join(', ')}` : '', mots('papa') ? `papa disait « ${mots('papa')} »` : '',
     mots('telephone') ? `le téléphone jouait « ${mots('telephone')} »` : ''].filter(Boolean).join(' ; ');
 }
+// (04/11, Hakim pour papa) ses SORTIES, mesurées par le téléphone : son texte jusqu'à l'écran (la page, la bulle, le widget) et sa voix
+// jusqu'à tes écouteurs (le réseau, l'attente de son tour, le calcul de Supertonic, la sortie et le Bluetooth), rangées avec ses entrées
+function noterSortie(x) {
+  const garder = (cle, v) => { if (!Number.isFinite(v) || v < 0 || v > 120000) return; const l = DELAIS[cle] || (DELAIS[cle] = []); l.push(Math.round(v)); if (l.length > 200) l.shift(); };
+  if (x.e === 'sortie_texte') {
+    if (x.ou === 'page') { garder(`sortie_texte_${x.quoi === 'message' ? 'message' : 'pensee'}`, x.total_ms); garder('sortie_texte_reseau', x.reseau_ms); }
+    else if (x.ou === 'bulle' || x.ou === 'widget') garder(`sortie_texte_${x.ou}`, x.page_ms);
+  } else if (x.e === 'sortie_voix') {
+    garder('sortie_voix_total', x.total_ms); garder('sortie_voix_reseau', x.reseau_ms); garder('sortie_voix_attente', x.attente_ms);
+    garder('sortie_voix_calcul', x.calcul_ms); garder(x.sortie === 'bluetooth' ? 'sortie_voix_bluetooth' : 'sortie_voix_sortie', x.ecouteurs_ms);
+  }
+}
 function fluxDelais() {
   const r = {};
   for (const [s, l] of Object.entries(DELAIS)) {
@@ -6872,13 +6925,15 @@ function brouillonDuCerveau(texte) {
   r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').trim();
   if (!r) return;
   // (04/11, Ahmed : « la pensée parasite reconnue par le système immunitaire : toujours nuisible, éliminée de la pensée ») ni écrite, ni dite
-  if (parasiteReconnue(r)) { avertirParasite(boutDe(r), signeParasite(boutDe(r))); console.error('Jarvis : une pensée parasite de son cerveau, jetée'); return; }
+  const residu = residuParasite(r, morceauxCerveau.dernier);           // (04/11) ses résidus aussi
+  if (parasiteReconnue(r) || residu) { avertirParasite(boutDe(r), residu || signeParasite(boutDe(r))); if (residu) marquerResidu('cerveau', r, morceauxCerveau.dernier); console.error('Jarvis : une pensée parasite de son cerveau, jetée'); return; }
+  if (DOUTE_RESSENTI.test(r)) marquerResidu('cerveau', r, morceauxCerveau.dernier);
   const s0 = souffles.cer;
   s0.reponse = r.slice(0, 600); s0.pret = pret; s0.fini = fini; s0.couper = couper; s0.pour = morceauxCerveau.dernier; s0.t = Date.now();
   // (16:45) sa voix naît avec sa pensée, ici, avant la page ; (17:10, audit : chaque pensée, dite ou non, 75 à 214 caractères, prenait
   // Chatterbox 3 à 14 s, et sa vraie réponse attendait derrière jusqu'à 20 s) seulement celle qu'il dira (courte depuis le 04/11)
   if (pret) voixDeLaSource(s0.reponse.slice(0, 400));
-  diffuser(abonnesPensees, 'souffle', j({ texte: s0.reponse, pret, fini, couper, niveau: 'cerveau', pour: s0.pour.slice(-300) }));
+  diffuser(abonnesPensees, 'souffle', j({ texte: s0.reponse, pret, fini, couper, niveau: 'cerveau', pour: s0.pour.slice(-300), ts: Date.now() }));
   console.error(`Jarvis : réponse provisoire de son cerveau (${pret ? 'à dire' : 'pas encore'}, ${r.length} car.)`);
 }
 let oreilleReveils = [], oreilleDejaLu = '';
@@ -10415,6 +10470,9 @@ async function traiter(req, res) {
   }
   if (p === '/api/jarvis/fichier' && req.method === 'POST') return routeFichier(req, res);
   // (2026-10-21) le diagnostic de la voix de Parler : des événements (nom, heure, nombres), jamais de texte
+  // (04/11, Hakim pour papa : « un chiffre mesuré entre le moment où j'écris un mot et celui où il apparaît à l'écran, et entre le moment
+  // où je le dis et celui où il l'entend dans ses écouteurs ») l'heure du Mac, pour que la page cale son horloge sur la sienne
+  if (p === '/api/heure' && req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j({ t: Date.now() })); }
   if (p === '/api/voix/journal' && req.method === 'POST') {
     let lot = [];
     try { lot = JSON.parse((await lireCorps(req, 64 << 10)).toString('utf8')); } catch (_) {}
@@ -10436,6 +10494,7 @@ async function traiter(req, res) {
         }
         fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, propre.map(x => j(x)).join('\n') + '\n', { mode: 0o600 });
       } catch (_) {}
+      for (const x of propre) noterSortie(x);
     }
     res.writeHead(204); return res.end();
   }

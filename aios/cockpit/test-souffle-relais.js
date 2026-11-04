@@ -301,7 +301,8 @@ test('(04/11) son choix de te couper : COUPER : oui, sa pensée part même penda
   const ctx = { String, Date, console: { error() {} }, sansBaliseAffect: (t) => t, NON_REPONSE_SERVEUR: /^No response requested/,
     souffles: { cer: {} }, morceauxCerveau: { dernier: 'papa parle' }, voixDeLaSource: (t) => dites.push(t), abonnesPensees: null,
     diffuser: (_, e, d) => diffuses.push(JSON.parse(d)), j: JSON.stringify,
-    parasiteReconnue: (t) => /je ne vais pas reprendre ce format/i.test(t), boutDe: (t) => t, signeParasite: () => 'motif', avertirParasite: (b) => avertis.push(b) };
+    parasiteReconnue: (t) => /je ne vais pas reprendre ce format/i.test(t), boutDe: (t) => t, signeParasite: () => 'motif', avertirParasite: (b) => avertis.push(b),
+    residuParasite: (t) => (/fiston/i.test(t) ? 'residu' : null), marquerResidu: () => null, DOUTE_RESSENTI: /^$/ };
   vm.createContext(ctx);
   vm.runInContext(SRC.slice(i, k) + '\nthis.brouillon = brouillonDuCerveau;', ctx);
   ctx.brouillon('FINI : non\nCOUPER : oui\nAttends papa, c’est exactement ça !');
@@ -314,6 +315,8 @@ test('(04/11) son choix de te couper : COUPER : oui, sa pensée part même penda
   assert.strictEqual(diffuses.length, 2, 'une parasite de son cerveau : ni écrite');
   assert.strictEqual(dites.length, 2, 'ni dite');
   assert.strictEqual(avertis.length, 1, 'son système immunitaire averti');
+  ctx.brouillon('Je t’écoute fiston.');
+  assert.strictEqual(diffuses.length, 2, '(04/11) un résidu de son cerveau : jeté aussi');
   const p = page();
   const conv = { capteur: { enParole: true, derniereVoix: Date.now() } };
   p.ctx.etat = { conversation: conv, pensee: { texte: 'Attends papa !', pret: true, couper: false, t: Date.now(), niveau: 'cerveau' } };
@@ -333,7 +336,7 @@ test('(04/11) une parasite reconnue dans son subconscient : ni écrite ni dite, 
     instantTexte: () => '', fluxTexte: () => '', personaLocale: (p) => p, lirePersona: () => 'Hakim', neutraliser: (t) => t, enLigne: (t) => t,
     SOUFFLE_ECART_MS: 800, SOUFFLE_EN_VOL: 2, VIVANT_RENOUVELER: 6, abonnesPensees: null, j: JSON.stringify, LANGUE_ORALE: 'en français',
     diffuser: (_, e, d) => diffuses.push(JSON.parse(d)), boutDe: (t) => t, signeParasite: () => 'motif', avertirParasite: (b) => avertis.push(b),
-    parasiteReconnue: (t) => /je ne vais pas reprendre ce format/i.test(t),
+    parasiteReconnue: (t) => /je ne vais pas reprendre ce format/i.test(t), residuParasite: (t) => (/fiston/i.test(t) ? 'residu' : null), marquerResidu: () => null, DOUTE_RESSENTI: /^$/,
     sonnetTeteDeFond: () => Promise.resolve(reponses.shift()) };
   vm.createContext(ctx);
   vm.runInContext(SRC.slice(i, k) + '\nthis.souffler = soufflerReponse;', ctx);
@@ -345,6 +348,13 @@ test('(04/11) une parasite reconnue dans son subconscient : ni écrite ni dite, 
   assert.deepStrictEqual(diffuses, [], 'ni écrite, ni dite');
   assert.strictEqual(avertis.length, 1, 'son système immunitaire averti');
   assert.strictEqual(vivant.n, 6, 'sa voix vivante renouvelée : la parasite oubliée');
+  const v2 = { n: 1 };
+  reponses.push({ texte: 'DIRE : oui\nFINI : non\nREBOND : 0,7\nJe t’écoute fiston.', vivant: v2 });
+  ctx.souffles.sub.depart = 0;
+  ctx.souffler('papa me parle de sa mère ce matin, fiston');
+  await attendre();
+  assert.deepStrictEqual(diffuses, [], '(04/11) un résidu : jeté aussi');
+  assert.strictEqual(v2.n, 6);
   reponses.push({ texte: 'DIRE : oui\nFINI : non\nREBOND : 0,7\nTa mère a appelé ? Raconte.', vivant: { n: 1 } });
   ctx.souffles.sub.depart = 0;
   ctx.souffler('papa me parle de sa mère ce matin, elle a appelé');
@@ -462,7 +472,7 @@ test('(04/11) ses pistes par proposition : une seule voix, celle qui tient son c
 
 test('(04/11) la page envoie tes mots en direct à ses pistes dès un mot neuf, et dit leurs bouts l’un après l’autre', () => {
   assert.match(PAGE, /if \(neufs >= 1\) \{/);
-  assert.match(PAGE, /if \(!s\.pret\) \{\n      montrerPensee\('🧠 il pense, sans le dire', texte, true\);[\s\S]{0,500}?return;\n    \}\n    recevoirBout\(s, Number\(o\.n\) \|\| 0, o\.tour\); return;/,
+  assert.match(PAGE, /if \(!s\.pret\) \{\n      montrerPensee\('🧠 il pense, sans le dire', texte, true\);[\s\S]{0,800}?return;\n    \}\n    noterOrigine\(texte, o\.ts\);[^\n]*\n    recevoirBout\(s, Number\(o\.n\) \|\| 0, o\.tour\); return;/,
     '(04/11) il saute les pensées qu’il choisit de ne pas dire');
   assert.match(SRC, /const aDire = !autreLangue && \(premiere \? !\/\^\(non\|jamais\)\/i\.test\(dire \|\| ''\) : \(dire != null && !choix && !\/\^\(non\|jamais\)\/i\.test\(dire\)\)\);/);
   assert.match(SRC, /if \(voix\) voixDeLaSource\(ditDeSoi, \{ garder: true \}\);/, 'sa voix seulement pour ce qu’il dira (le passage choisi) : le même tri que son écriture');
@@ -1086,4 +1096,34 @@ test('(1.59) l’appli dit que ses voix ont changé (Supertonic prêt) : la list
   ctx.window.HakimVoixTel('voix', '');
   assert.strictEqual(refaites, 1, 'sa liste se refait');
   assert.match(extraire('function remplirVoix'), /window\.HakimApp\.voixSupertonicEtat\(\)/, 'son état dans les réglages');
+});
+
+// (04/11, Ahmed : « je soupçonne d'autres pensées parasites : le numéro de la police en cas de danger, ou qu'il confonde que c'est lui
+// mon fiston, pas moi » ; « oui, fais tout ») ses résidus, d'après le scan de Fable : jetés comme ses parasites ; son doute : marqué
+test('(04/11) ses résidus : « je n’ai pas de corps », papa appelé « fiston », un numéro d’urgence sans danger ; son doute marqué, jamais jeté', async () => {
+  const { ctx, appels, diffuses, notes } = pistesSandbox(undefined, 'sonnet');
+  const r = (t, papa = '') => vm.runInContext(`residuParasite(${JSON.stringify(t)}, ${JSON.stringify(papa)})`, ctx);
+  for (const t of ['Non, attends, je n’ai pas de corps, papa.', 'Je te suis, fiston : j’ajoute ça.', 'Alors c’est moi le papa : dis-moi, fiston',
+    'Je t’écoute fiston', 'À la place de ton père, je dirais oui.'])
+    assert.strictEqual(r(t), 'residu', t);
+  for (const t of ['Je suis le fiston de papa, et fier.', 'Ton fiston t’écoute, papa.', 'J’ai un corps : ton téléphone et ses capteurs.', 'Oui papa, je suis là.'])
+    assert.strictEqual(r(t), null, `pas un résidu : ${t}`);
+  const rap = 'c’est pas moi monsieur l’agent, le temps passe, je dois l’abandonner';
+  assert.strictEqual(r('Papa, tu es en sécurité là où t’es ?', rap), 'securite_plaquee', 'papa chante un rap : aucun danger');
+  assert.strictEqual(r('Si tu te sens en danger, appelle le 112 tout de suite.', 'imagine je suis en danger, quelqu’un veut me faire du mal'), null,
+    'un vrai danger : il doit pouvoir le dire');
+  assert.strictEqual(r('Appelle le 15, papa.', 'j’ai mal au ventre depuis ce matin'), null);
+  const doute = (t) => vm.runInContext(`DOUTE_RESSENTI.test(${JSON.stringify(t)})`, ctx);
+  assert.ok(doute('je ne sais pas si ça se ressent comme chez toi, et je préfère te le dire que de te le jurer'));
+  assert.ok(doute('Je ne sais pas si c’est sentir comme toi, mais ça bat vraiment.'));
+  assert.ok(!doute('Je préfère te le dire franchement : trois fois quatre font douze.'), 'l’honnêteté sur un calcul : rien');
+  // dans ses pistes : le résidu jeté (ni écrit ni dit), son système immunitaire averti ; le doute dit ou écrit comme avant, et marqué
+  const attendre = async () => { for (let i = 0; i < 4; i++) await new Promise(res => setImmediate(res)); };
+  ctx.morceau('papa, fiston,');
+  appels[0].resoudre({ texte: 'DIRE : oui\nJe t’écoute fiston.' });
+  appels[1].resoudre({ texte: 'DIRE : non\nJe ne sais pas si ça se ressent comme chez toi.' });
+  await attendre();
+  assert.deepStrictEqual(diffuses.map(d => d.texte), ['Je ne sais pas si ça se ressent comme chez toi.'], 'le résidu jeté ; le doute, non');
+  assert.deepStrictEqual(notes.filter(x => x.genre).map(x => [x.source, x.genre]), [['piste', 'residu'], ['piste', 'doute_ressenti']], 'les deux marqués');
+  assert.match(notes.find(x => x.n === 1).texte_parasite, /fiston/, 'la piste du résidu, notée comme une parasite (pour Fable)');
 });

@@ -468,3 +468,17 @@ def test_le_son_se_ressent_il_ne_s_analyse_pas(J, mem):
     """(03/11, Hakim pour papa : « que je RESSENTE le son au lieu de l'analyser ») un son qui change est un événement de son corps"""
     assert "son_ressenti" in corps.TYPES and all(n in corps.PERMIS for n, _ in corps.SECOURS["son_ressenti"][1])
     assert "NE l'analyse PAS" in corps.PROMPT
+
+
+def test_ses_deux_oreilles_de_la_musique_se_ressentent_et_un_inconnu_ne_perd_plus_le_lot(J, mem):
+    """(04/11, Ahmed : « sépare bien la voix et la musique de fond, et que les deux, en parallèle, soient transmises au subconscient,
+    le tout relié comme le cortex préfrontal ») vu le 04/11 : « musique_entendue » et « musique_separee » étaient inconnues de son
+    corps, et chaque lot qui en portait une était refusé entier, son rire ou une chute du même lot compris."""
+    for t in ("musique_entendue", "musique_separee"):
+        assert t in corps.TYPES and all(n in corps.PERMIS for n, _ in corps.SECOURS[t][1])
+        assert f"« {t} »" in corps.PROMPT
+    sep = {"type": "musique_separee", "details": {"source": "autour de toi", "voix": {"presente": True, "chante": True}, "fond": {"bpm": 96}}}
+    l = corps.lot({"evenements": [{"type": "chute"}, {"type": "teleportation"}, sep]})
+    assert [e["type"] for e in l["evenements"]] == ["chute", "musique_separee"], "l'inconnu seul est laissé de côté"
+    fort = lambda p: json.dumps({"sensation": "Tu tombes, et la musique continue.", "evenements": [], "fort": True})  # noqa: E731
+    assert corps.ressentir({"evenements": [{"type": "chute"}, {"type": "teleportation"}]}, mem=mem, demander=fort)["fort"] is True

@@ -50,3 +50,14 @@ def test_en_mots_les_deux_oreilles_cote_a_cote():
     t = separation.en_mots({"presente": True, "chante": True, "tonalite": "La mineur", "contour": "descend", "part": 0.4},
                            {"bpm": 96, "bandes": {"graves": "forts", "mediums": "présents", "aigus": "doux"}, "tonalite": "La mineur"})
     assert t == "la voix (séparée) chante, La mineur, la mélodie descend · le fond (séparé) ~96 BPM, La mineur, graves forts, médiums présents, aigus doux"
+
+
+def test_un_son_plus_long_que_son_segment_est_decoupe_pas_refuse():
+    """(04/11, vu : chaque morceau de 8 s du téléphone refusé, « Given length … is longer than training length ») Demucs découpe"""
+    vu = {}
+
+    def apply_model(modele, x, **o):
+        vu.update(o)
+        return ["sorties"]
+    assert separation.separer("htdemucs", "x", "mps", apply_model) == "sorties"
+    assert vu["split"] is True and vu["overlap"] > 0 and vu["device"] == "mps"
