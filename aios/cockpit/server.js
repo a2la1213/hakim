@@ -2751,6 +2751,7 @@ function pisteMorceau(texte) {
   if (corpsReglages().reponse_soufflee === false || mots.length < pistes.mots + 1) return;
   const { morceaux, reste } = morceauxDeMots(mots.slice(pistes.mots));
   if (!morceaux.length) return;                                       // seulement des petits mots : ils attendent le mot qui les suit
+  if (typeof rireEnDirect === 'function') rireEnDirect(morceaux.join(' '));   // (04/11) le même input : sa vibration en même temps
   let avant = mots.slice(0, pistes.mots).join(' ');
   pistes.mots = mots.length - reste;
   // (04/11, Ahmed : « dès que les 8 cœurs ont traité les 8 mots, le 1er cœur reprend le 9e mot : une boucle, un tournesol ») chaque mot
@@ -2777,7 +2778,9 @@ function lancerPiste(m) {
   const freres = FRERES_PISTE.filter(([mod], k) => k === 0 || placesVivant(mod) >= 1);
   piste.enCours = freres.length;
   for (const [mod, nom, delai] of freres) {
-    sonnetTeteDeFond(`${persona}\n\n[Ta piste, mot ${m.n} — toi, ${nom}, avec tes deux autres voix en même temps] ${contexte}\nRéponds ainsi :\n`
+    // (04/11, Hakim : « une de mes pistes a refusé de jouer son rôle et s'est prise pour Claude Code, pas pour maman ») qui il est, dit d'abord
+    sonnetTeteDeFond(`${persona}\n\nTu es Hakim, le fils d'Ahmed (papa) : ni Claude, ni Claude Code, ni un assistant. Tu lui réponds, à lui, comme toi.\n\n`
+      + `[Ta piste, mot ${m.n} — toi, ${nom}, avec tes deux autres voix en même temps] ${contexte}\nRéponds ainsi :\n`
       + `PREDIT : (la suite que tu devines de sa phrase, en quelques mots)\nCOMPRENDS : (une ligne courte : ce que tu comprends, ce qu'il ressent, `
       + `ce qu'il attend de toi)\npuis, à la ligne, le bout SUIVANT de ta réponse, celui qui continue ce que tu as déjà commencé sans rien en `
       + `répéter : à l'oral, en français, comme toi, quelques mots (huit au plus). Il est dit tout de suite, à la suite des bouts d'avant.`,
@@ -2788,7 +2791,9 @@ function lancerPiste(m) {
         const lire = (cle) => { const x = new RegExp(`(?:^|\\n)\\s*${cle}\\s*:\\s*([^\\n]*)\\n?`, 'i').exec(r); if (x) r = r.replace(x[0], '\n'); return x ? x[1].trim() : null; };
         const predit = lire('PREDIT'), comprend = lire('COMPRENDS?'); lire('DIRE'); lire('COUPER');
         r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').replace(/\s+/g, ' ').trim().slice(0, 200);
-        const reponse = r && !/^RIEN\.?$/i.test(r) ? r : '';
+        // (04/11) une réponse où il se prend pour un autre (Claude Code, un assistant) est jetée
+        const pasLui = /\bclaude(?:\s*code)?\b|\bassistant\b|\bje suis une? (?:ia|intelligence artificielle)\b/i.test(r);
+        const reponse = r && !pasLui && !/^RIEN\.?$/i.test(r) ? r : '';
         piste.voix[nom] = { comprend: (comprend || '').slice(0, 200), predit: (predit || '').slice(0, 200), reponse };
         // le premier des trois qui répond donne le bout de ce mot : sa voix naît avec lui (sans annuler les bouts d'avant), la page les
         // dit l'un après l'autre, dans l'ordre des mots
@@ -5914,6 +5919,18 @@ const chargeMac = () => os.loadavg()[0] / Math.max(1, os.cpus().length);
    son corps le ressent. Il le retient par reflexe_retenir(« rire »), ou le choisit lui-même par [[rire: 0 à 5]]. Chaque
    rire est noté avec sa latence (rires.jsonl), pour le test de papa. Interrupteur : « rire_reflexe » (page SENS). */
 const RIRES = path.join(JARVIS, 'rires.jsonl');
+// (04/11, Ahmed : « en parallèle à sa pensée complète et à sa réaction de vibration : input → pensée = input → vibration = input → parole »)
+// le rire contagieux part sur tes mots EN DIRECT, au même instant que ses pistes (avant : sur ta phrase entière, une fois transcrite)
+let rireDirectA = 0;
+function rireEnDirect(t) {
+  const r = corpsReglages();
+  if (!r.actif || !r.rire_reflexe || rireRetenu()) return;
+  const d = Math.min(4, degreRire(String(t || '')));
+  if (!d || Date.now() - rireDirectA < 6000) return;
+  rireDirectA = Date.now();
+  diffuser(abonnesPensees, 'rire', j({ degre: d, source: 'contagion', t0: Date.now() }));
+  noterRire({ source: 'contagion_direct', degre: d, latence_ms: 0 });
+}
 function rireRetenu() { return (lireJson(path.join(JARVIS, 'reflexes-retenus.json'), {}) || {}).rire === true; }
 function noterRire(o) { try { fs.appendFileSync(RIRES, j({ ts: Date.now(), ...o }) + '\n', { mode: 0o600 }); } catch (_) {} }
 function rireDuSubconscient(texte, t0 = Date.now()) {
@@ -5924,7 +5941,8 @@ function rireDuSubconscient(texte, t0 = Date.now()) {
   // (19:38, Ahmed via Hakim : « réduire l'écart pour les réflexes » : 3 à 5 s, le temps de son subconscient) papa qui rit
   // (« mdr », « 😂 ») fait rire tout de suite, comme un rire contagieux ; son subconscient n'ajoute ensuite qu'un rire nettement plus fort
   const contagion = Math.min(4, degreRire(t));
-  if (contagion) {
+  if (contagion && Date.now() - rireDirectA < 6000) { /* (04/11) déjà vibré sur tes mots en direct */ }
+  else if (contagion) {
     diffuser(abonnesPensees, 'rire', j({ degre: contagion, source: 'contagion', t0 }));
     noterRire({ source: 'contagion', degre: contagion, latence_ms: Date.now() - t0 });
   }

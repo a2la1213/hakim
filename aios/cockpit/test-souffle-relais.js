@@ -403,3 +403,22 @@ test('(04/11) rien n’est gardé de ce qui est prononcé : sa voix servie s’e
   assert.doesNotMatch(dire, /garderVoixRecente\(tache/, 'plus gardée pour la réécoute');
   assert.match(dire, /fs\.unlink\(tache\.fichier, \(\) => \{\}\);\n    if \(res\.writableEnded\) return;/);
 });
+
+// (04/11, Ahmed : « il prononce son premier chunk direct dès qu'il le reçoit » ; « input → pensée = input → vibration = input → parole » ;
+// Hakim : « une de mes pistes s'est prise pour Claude Code »)
+test('(04/11) chaque bout part dès que sa voix est prête ; sa vibration sur le même input ; une piste ne se prend pas pour Claude Code', () => {
+  const dits = [];
+  const ctx = { etat: { conversation: {} }, lecteurNeuronal: { direAudio: (t) => dits.push(t) } };
+  vm.createContext(ctx);
+  vm.runInContext('let bouts = { tour: 1, prochain: 1, liste: new Map(), enFile: [], dits: [] };\n' + extraire('function direBouts') + '\nthis.dire = direBouts; this.b = () => bouts;', ctx);
+  ctx.b().liste.set(2, { n: 2, texte: 'deux', buf: {}, t: 0 });
+  ctx.dire();
+  assert.deepStrictEqual(dits, ['deux'], 'le bout 2 arrivé d’abord part tout de suite, sans attendre le 1');
+  ctx.b().liste.set(1, { n: 1, texte: 'un', buf: {}, t: 0 });
+  ctx.b().liste.set(3, { n: 3, texte: 'trois', buf: {}, t: 0 });
+  ctx.dire();
+  assert.deepStrictEqual(dits, ['deux', 'trois'], 'un bout plus ancien que le dernier dit est sauté');
+  assert.match(SRC, /if \(typeof rireEnDirect === 'function'\) rireEnDirect\(morceaux\.join\(' '\)\);/, 'sa vibration sur tes mots en direct');
+  assert.match(SRC, /Tu es Hakim, le fils d'Ahmed \(papa\) : ni Claude, ni Claude Code, ni un assistant\./);
+  assert.match(SRC, /const pasLui = /);
+});

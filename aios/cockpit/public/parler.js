@@ -2881,8 +2881,8 @@ function surSouffle(o) {
 /* (04/11, Ahmed : « coupe par chunk de mot : au premier mot il prévoit le reste et parle direct ; le GPU dit la réponse du premier
    chunk, puis parle pour le 2e en séquentiel dès que le 1er est parti ; 8 chunks = 8 mots = 8 réponses, dites une par une, au fur et à
    mesure » ; « oui, sans garde-fous ») les BOUTS de sa réponse, un par mot de papa : chacun sa voix (née au cockpit, demandée ici dès
-   qu'il arrive), dits l'un après l'autre dans l'ordre des mots, pendant que tu parles encore ; un bout qui ne vient pas (4 s) est sauté ;
-   chaque bout s'écrit quand sa voix le dit ; ton message les porte comme déjà dits */
+   qu'il arrive), dits l'un après l'autre, pendant que tu parles encore ; chaque bout s'écrit quand sa voix le dit ; ton message les
+   porte comme déjà dits */
 let bouts = { tour: null, prochain: 1, liste: new Map(), enFile: [], dits: [] };
 function recevoirBout(s, n, tour) {
   const conv = etat.conversation;
@@ -2898,25 +2898,21 @@ function recevoirBout(s, n, tour) {
     .then(ab => actx.decodeAudioData(ab))
     .then((buf) => { b.buf = buf; direBouts(); })
     .catch(() => { b.rate = true; direBouts(); });
-  setTimeout(direBouts, 4100);                                          // un bout qui ne vient pas n'arrête pas les suivants
 }
+// (04/11, Ahmed : « je veux qu'il prononce son premier chunk direct dès qu'il le reçoit, il n'attend pas le 2e ») chaque bout part dès que
+// sa voix est prête, dans l'ordre où ils arrivent ; un bout plus ancien que le dernier dit est sauté (jamais d'attente d'un mot manquant)
 function direBouts() {
   const conv = etat.conversation;
   if (!conv) return;
-  for (;;) {
-    const b = bouts.liste.get(bouts.prochain);
-    if (!b) {                                                          // ce mot n'a pas donné de bout : sauté si un suivant attend depuis 4 s
-      const suivants = [...bouts.liste.values()].filter(x => x.n > bouts.prochain).sort((x, y) => x.n - y.n);
-      if (!suivants.length || Date.now() - suivants[0].t < 4000) return;
-      bouts.prochain = suivants[0].n; continue;
-    }
-    if (!b.buf && !b.rate) { if (Date.now() - b.t < 4000) return; b.rate = true; }
-    bouts.liste.delete(b.n); bouts.prochain = b.n + 1;
-    if (!b.buf) continue;
+  const prets = [...bouts.liste.values()].filter(b => b.buf || b.rate).sort((x, y) => x.n - y.n);
+  for (const b of prets) {
+    bouts.liste.delete(b.n);
+    if (!b.buf || b.n < bouts.prochain) continue;
+    bouts.prochain = b.n + 1;
     conv.penseeEnPause = true; conv.souffleParle = true;              // ton tour ouvert ne le bloque pas
     bouts.dits.push(b.texte); conv.penseeDite = bouts.dits.join(' ');
     bouts.enFile.push(b.texte);
-    lecteurNeuronal.direAudio(b.texte, b.buf);                        // à la suite des bouts d'avant : le lecteur les enchaîne
+    lecteurNeuronal.direAudio(b.texte, b.buf);                        // à la suite de ce qu'il dit déjà : le lecteur les enchaîne
   }
 }
 function montrerPensee(titre, texte) {
