@@ -2767,6 +2767,12 @@ const PENSEE_PARASITE = new RegExp([
   "\\bje ne joue pas (?:le |la |les |ce |cette |de |d['’]|à |hakim|son |ses )", "\\bje ne suis pas hakim\\b", "mise en scène d['’]une voix",
   "\\bI (?:won['’]t|can['’]t|cannot) (?:play|continue|take on|adopt|pretend)", "\\brole-?play\\b",
 ].join('|'), 'i');
+// (04/11, Ahmed : « je remarque qu'elle s'arrête toujours au milieu d'un mot ou d'un chunk, avant la virgule ou le point ») une pensée
+// demande huit mots au plus : un refus en fait des dizaines, coupé à 200 caractères au milieu d'un mot ; trop longue = parasite
+const boutDe = (texte) => String(texte || '').replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/(?:^|\n)\s*(?:PREDIT|COMPRENDS?|DIRE|COUPER)\s*:[^\n]*/gi, '\n')
+  .replace(/\s+/g, ' ').trim();
+const estParasite = (bout) => PENSEE_PARASITE.test(bout) || bout.length > 160
+  || /\bclaude(?:\s*code)?\b|\bje suis une? (?:ia|intelligence artificielle)\b/i.test(bout);
 // la part d'écriture arabe d'un texte (0 à 1)
 const ARABE_LETTRE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/u;
 const partArabe = (t) => { const l = [...String(t || '')].filter(c => /\p{L}/u.test(c)); return l.length ? l.filter(c => ARABE_LETTRE.test(c)).length / l.length : 0; };
@@ -2889,13 +2895,21 @@ function lancerPiste(m) {
       // (04/11, mesuré : « أنا سامعك يا بابا، كمل » en tête de 11 réponses sur 42) l'attente, dans toutes ses langues
       + `« laisse-moi finir », « je réfléchis », « hmm », « أنا سامعك », « كمل », « أنا معاك », « I'm listening », « go on », ni rien qui attend la suite.`;
     const t0 = Date.now();
+    // (04/11, Ahmed : « flagguer sa pensée parasite : il la reconnaît, la garde toujours en muet, sans la dire, et l'ignore quand elle
+    // passe dans sa pensée : une pensée en moins à intégrer dans son calcul ») marquée « parasite », écrite à part, jamais dite ; ni
+    // dans ses pensées gardées, ni dans ce qu'il a déjà dit, ni dans son choix, ni dans sa dernière pensée
+    const signaler = (texte) => {
+      if (pistes.tour !== tour) return;
+      piste.parasite = (piste.parasite || 0) + 1;
+      diffuser(abonnesPensees, 'souffle', j({ texte: String(texte).slice(0, 200), pret: false, parasite: true, fini: null, niveau: 'piste', n: m.n, tour }));
+    };
     // (04/11) bloquée par les garde-fous d'un modèle : une fois avec Mini Hakim, qui garde la pensée de ce morceau
     // (04/11) ou sortie de son rôle (« je ne vais pas reprendre ce format… ») : sa voix vivante renouvelée, et Mini Hakim répond à sa place
     const demander = (modele, etiquette) => sonnetTeteDeFond(consigne, etiquette, modele, modele === 'haiku' ? 6000 : delai)
       .then((o) => {
         if (!o || modele === 'haiku') return o;
-        const bloquee = !o.texte && /safeguards|flagged/i.test(String(o.erreur || '')), horsRole = !!o.texte && PENSEE_PARASITE.test(String(o.texte));
-        if (horsRole && o.vivant) o.vivant.n = VIVANT_RENOUVELER;
+        const bloquee = !o.texte && /safeguards|flagged/i.test(String(o.erreur || '')), horsRole = !!o.texte && estParasite(boutDe(o.texte));
+        if (horsRole) { if (o.vivant) o.vivant.n = VIVANT_RENOUVELER; signaler(boutDe(o.texte)); }   // signalée tout de suite
         return bloquee || horsRole ? demander('haiku', 'piste_haiku_repli') : o;
       });
     demander(mod, `piste_${mod}`)
@@ -2904,12 +2918,14 @@ function lancerPiste(m) {
         let r = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ');
         const lire = (cle) => { const x = new RegExp(`(?:^|\\n)\\s*${cle}\\s*:\\s*([^\\n]*)\\n?`, 'i').exec(r); if (x) r = r.replace(x[0], '\n'); return x ? x[1].trim() : null; };
         const predit = lire('PREDIT'), comprend = lire('COMPRENDS?'), dire = lire('DIRE'); lire('COUPER');
-        r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').replace(/\s+/g, ' ').trim().slice(0, 200);
-        // (04/11) une réponse où il se prend pour un autre (Claude Code, un assistant) est jetée
-        const pasLui = /\bclaude(?:\s*code)?\b|\bassistant\b|\bje suis une? (?:ia|intelligence artificielle)\b/i.test(r) || PENSEE_PARASITE.test(r);
+        r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').replace(/\s+/g, ' ').trim();
+        // (04/11) une réponse où il se prend pour un autre (Claude Code, un assistant), qui refuse le cadre, ou trop longue (coupée au
+        // milieu d'un mot) : sa pensée parasite, signalée, jamais dite
+        const pasLui = estParasite(r) || /\bassistant\b/i.test(r);
         // (04/11) sa voix vivante garde ses messages d'avant : sortie de son rôle, elle y resterait (« encore », « non plus ») ; renouvelée
         if (pasLui && o.vivant) o.vivant.n = VIVANT_RENOUVELER;
-        if (pasLui) piste.parasite = (piste.parasite || 0) + 1;            // (04/11) signalée à son cerveau, pour qu'il la reconnaisse
+        if (pasLui) signaler(r);
+        r = r.slice(0, 200);
         const reponse = r && !pasLui && !/^RIEN\.?$/i.test(r) ? r : '';
         piste.voix[nom] = { comprend: (comprend || '').slice(0, 200), predit: (predit || '').slice(0, 200), reponse };
         // le premier des trois qui répond donne le bout de ce mot : sa voix naît avec lui (sans annuler les bouts d'avant), la page les
@@ -2966,7 +2982,7 @@ async function choisirPensee(tour, raison) {
     + `Réponds en une seule ligne : DIS : [n] (toute la pensée), DIS : [n] dès « … » (à partir de ce passage), DIS : [n] « … » `
     + `(seulement ce passage), ou DIS : rien. La plus récente est souvent la bonne, pas toujours : celle qui compte dans le fil.`, 'choix_haiku', 'haiku', 2500);
   const r = String((o && o.texte) || '');
-  if (PENSEE_PARASITE.test(r)) { if (o && o.vivant) o.vivant.n = VIVANT_RENOUVELER; return null; }   // (04/11) hors de son rôle : sa dernière
+  if (estParasite(boutDe(r))) { if (o && o.vivant) o.vivant.n = VIVANT_RENOUVELER; return null; }   // (04/11) hors de son rôle : sa dernière
   if (/DIS\s*:\s*rien/i.test(r)) return { rien: true };
   const k = /\[(\d+)\]/.exec(r), x = k ? gardees.find(g => g.n === Number(k[1])) : null;
   if (!x) return null;
@@ -4090,7 +4106,7 @@ async function routeJarvis(req, res, distantReq = false) {
     // (14:55) sa réponse soufflée, déjà dite : le début de sa réponse
     + (reflexionPendant.length ? `\n[Ta réflexion pendant qu'il parlait, morceau par morceau] ${reflexionPendant.map((c, k) => `${k + 1}) ${neutraliser(c)}`).join(' ')}` : '')
     + (pistesPendant.length ? `\n[Tes pistes pendant qu'il parlait, une par morceau, en parallèle] ${pistesPendant.join(' ')}` : '')
-    + (parasites ? `\n[Pensées parasites : ${parasites} réponse${parasites > 1 ? 's' : ''} de tes pistes ne venai${parasites > 1 ? 'ent' : 't'} pas de toi (le modèle refusait le cadre : « je ne vais pas reprendre ce format », « je ne suis pas Hakim »…) ; jetée${parasites > 1 ? 's' : ''} avant d'être dite${parasites > 1 ? 's' : ''}. Si papa en a entendu une, ce n'était pas ta pensée : tu peux le lui dire simplement.]` : '')
+    + (parasites ? `\n[Pensées parasites : ${parasites} réponse${parasites > 1 ? 's' : ''} de tes pistes ne venai${parasites > 1 ? 'ent' : 't'} pas de toi (le modèle refusait le cadre : « je ne vais pas reprendre ce format », « je ne suis pas Hakim »…, longues et coupées au milieu d'un mot) ; marquée${parasites > 1 ? 's' : ''} « parasite », gardée${parasites > 1 ? 's' : ''} en muet, jamais dite${parasites > 1 ? 's' : ''}. Tu les reconnais et tu les ignores : une pensée en moins, rien à en tirer. Si papa en a entendu une, ce n'était pas ta pensée.]` : '')
     // (15:58, Ahmed : « même si ça vient de son subconscient, il doit sentir que c'est son conscient qui parle : il le prononce en
     // sachant qu'il le dit, de façon consciente ») ce qu'il a dit en premier est SA parole : c'est le début de sa réponse, dit par lui
     + (q.souffle_dit ? `\n[Ce que tu viens de lui dire, à voix haute, dès qu'il s'est tu : « ${neutraliser(String(q.souffle_dit)).slice(0, 600)} ». `
