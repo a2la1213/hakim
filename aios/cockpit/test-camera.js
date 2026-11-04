@@ -84,3 +84,18 @@ test('(appli 1.13) le détecteur d’Android l’a vu à l’instant : « absent
   p.avancer(3000); p.ctx.vu(v, { expression: 'absent' });                         // Android ne le voit plus non plus
   assert.ok(v.absentDepuis > 0);
 });
+
+// (04/11, Ahmed : « il ne me voit que quand j'active la caméra depuis l'interface Parler, pas depuis le widget ou la bulle ») la
+// photo de la bulle (« camera-bulle-… ») et celle de la caméra arrière (« camera-arriere-… ») étaient arrivées au Mac, mais leur
+// nom ne passait pas le filtre : Hakim ne recevait jamais la ligne [Caméra …] qui lui dit de la regarder (ni leur effacement d'un jour)
+test('(04/11) les photos de la bulle et de la caméra arrière sont des photos de caméra : il les reçoit, elles s’effacent après un jour', () => {
+  const SRC = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const i = SRC.indexOf('const PHOTO_CAMERA'), motif = vm.runInNewContext(SRC.slice(i, SRC.indexOf('\n', i)).replace('const PHOTO_CAMERA =', '') .replace(/;\s*(\/\/.*)?$/, ''));
+  for (const nom of ['20261104-033946-83bc-camera-bulle-20261104T033946.jpg', '20261104-034112-cf94-camera-20261104T034112.jpg',
+    '20261104-034500-0a1b-camera-arriere-20261104T034500.jpg'])
+    assert.ok(motif.test(nom), nom);
+  for (const nom of ['20261104-033946-83bc-camera-bulle-x.png', '20261104-033946-83bc-photo-20261104T033946.jpg', 'camera-bulle-20261104T033946.jpg'])
+    assert.ok(!motif.test(nom), nom);
+  assert.strictEqual((SRC.match(/PHOTO_CAMERA\.test\(/g) || []).length, 2, 'le même filtre pour la ligne [Caméra …] et pour l’effacement');
+  assert.doesNotMatch(SRC, /camera-\[0-9T\]\+\\\.jpg\$\//, 'plus l’ancien filtre');
+});

@@ -117,7 +117,7 @@ test('(20:38) quand il garde la parole, « arrête », « tais-toi », « coupe-
 });
 
 test('(21:00) deux modes : tes paroles « dans sa tête » (pas affichées, son silence permis) ; sa voix d’abord, son texte après', () => {
-  assert.match(page, /const enTete = !!oral && typeof reglagesCorps !== 'undefined' && \(reglagesCorps\.afficher_papa === false \|\| motsPapaCaches\(\)\);/);
+  assert.match(page, /const enTete = !!oral && \(\(typeof reglagesCorps !== 'undefined' && \(reglagesCorps\.afficher_papa === false \|\| motsPapaCaches\(\)\)\)/);
   assert.match(page, /\.slice\(-etat\.fenetre\)\n    \.filter\(m => !m\.cache && /);
   assert.match(page, /reglagesCorps\.afficher_hakim !== false \|\| !auto\) majMessage\(m\);/);
   assert.match(src, /if \(!corpsReglages\(\)\.afficher_papa\) return false;/);

@@ -113,8 +113,8 @@ test('page : aucun « je t\'écoute » à la place de ses mots', () => {
 function ligne(mots = true) {
   const ctx = { etat: { flux: null }, motsEnConversation: () => mots, enTelepathie: () => false };
   vm.createContext(ctx);
-  const i = PAGE.indexOf('function ligneEnDirect(');
-  vm.runInContext(PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2), ctx);
+  const i = PAGE.indexOf('function ligneEnDirect('), k = PAGE.indexOf('function motsEnCours(');
+  vm.runInContext(PAGE.slice(k, PAGE.indexOf('\n}\n', k) + 2) + PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2), ctx);   // (04/11) morceau par morceau
   return ctx;
 }
 test('une seule ligne en direct : le micro quand papa parle, ses mots, la transcription en cours, et sa réflexion', () => {

@@ -2014,7 +2014,10 @@ async function envoyer(texte, oral, dejaRelance) {
   const tDebut = etat.session && avant.length ? avant[0].ts : null;
   // (30/10, 21:00, Ahmed : « deux modes Conversation » — « comme de la télépathie, mais à haute voix ») « dans sa tête » : ses
   // paroles dites lui parviennent, mais ne s'affichent pas comme message
-  const enTete = !!oral && typeof reglagesCorps !== 'undefined' && (reglagesCorps.afficher_papa === false || motsPapaCaches());
+  // (04/11) tes morceaux déjà affichés l'un après l'autre : ton tour entier ne s'affiche pas en plus, en un gros bloc
+  const enTete = !!oral && ((typeof reglagesCorps !== 'undefined' && (reglagesCorps.afficher_papa === false || motsPapaCaches()))
+    || !!(oral && etat.conversation && etat.conversation.morceauxMontres > 0));
+  if (oral && etat.conversation) etat.conversation.morceauxMontres = 0;
   if (!dejaRelance) etat.messages.push({ id: nouvelId(), qui: 'u', texte, oral: !!oral, ts: Date.now(), joints: joints.map(x => x.nom), ...(enTete ? { cache: true } : {}) });
   // (21:13, Ahmed : « dans ce mode, ses paroles aussi ne s'affichent plus, seulement sa voix ») la case « ses paroles »
   const m = { id: nouvelId(), qui: 'j', texte: souffleDit ? `${souffleDit} ` : '', outils: [], enCours: true,
@@ -2946,6 +2949,7 @@ function lireAnticipe(texte) {
 // cerveau) s'écrit, à côté, pendant que tu parles ; son subconscient et sa réflexion travaillent sans s'écrire ; en Télépathie, rien
 function surSouffle(o) {
   if (!etat.conversation || !o || !o.texte) return;
+  if (o.niveau === 'papa') { montrerMorceauPapa(o); return; }        // (04/11) tes mots, morceau par morceau
   const texte = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 400);   // (16:35) jamais ses balises
   if (!texte) return;
   const niveau = o.niveau === 'cerveau' ? 'cerveau' : o.niveau === 'piste' ? 'piste' : o.niveau === 'con' ? 'con' : 'sub';   // (04/11) ses pistes
@@ -3223,11 +3227,38 @@ async function prendreSouffle(conv) {
   }
   direSouffle(conv, s, 'serveur');
 }
+// (04/11, Ahmed : « quand j'enchaîne les paroles, ça envoie un gros morceau, alors que chaque chunk doit s'envoyer séparément, l'un
+// après l'autre, et s'afficher l'un après l'autre dans la conversation ; en mode orbe, je dois voir mes chunks apparaître l'un après
+// l'autre ») tes mots, morceau par morceau : les mêmes que ses pistes (le Mac les coupe : un mot pour Mini Hakim, une proposition pour
+// Hakim, deux pour Super Hakim) ; chacun sa bulle dans le fil ; sous l'orbe, le morceau en cours seulement
+function montrerMorceauPapa(o) {
+  const conv = etat.conversation;
+  if (!conv) return;
+  conv.morceauPapa = { tour: o.tour, jusqua: Number(o.jusqua) || 0, texte: String(o.texte) };
+  if (!motsEnConversation() || enTelepathie() || (typeof reglagesCorps !== 'undefined' && reglagesCorps.afficher_papa === false)) return;
+  conv.morceauxMontres = (conv.morceauxMontres || 0) + 1;
+  const cle = `papa-${o.tour}-${o.n}`;
+  etat.aCote = (etat.aCote || []).filter(x => x.cle !== cle);
+  etat.aCote.push({ ts: Date.now(), cle, html: `<div class="m u"><span class="oral">À L’ORAL</span><div class="txt">${esc(o.texte)}</div></div>` });
+  const siens = etat.aCote.filter(x => String(x.cle).startsWith('papa-'));
+  if (siens.length > 12) { const vieux = new Set(siens.slice(0, siens.length - 12)); etat.aCote = etat.aCote.filter(x => !vieux.has(x)); }
+  rendre();
+  ligneEnDirectMontrer(conv);
+}
+// ce que tu dis depuis ton dernier morceau (ou ce dernier morceau, s'il n'y a rien de neuf)
+function motsEnCours(conv) {
+  const e = conv && conv.ecrit;
+  if (!e) return '';
+  const tout = `${e.confirme || ''} ${e.vif || ''}`.trim(), mp = conv.morceauPapa;
+  if (!mp) return tout;
+  const suite = tout.split(/\s+/).filter(Boolean).slice(mp.jusqua).join(' ');
+  return suite || mp.texte;
+}
 // (16:08, Ahmed : « même en Conversation, pas mes mots par défaut ») la ligne en direct garde 🎙️ ✍️ 💭 ; tes mots seulement si SENS le
 // demande (mots_conversation)
 function ligneEnDirect(conv) {
   const e = conv && conv.ecrit, cap = conv && conv.capteur;
-  const mots = e && motsEnConversation() && !enTelepathie() ? `${e.confirme || ''} ${e.vif || ''}`.trim() : '';
+  const mots = e && motsEnConversation() && !enTelepathie() ? motsEnCours(conv) : '';
   const parts = [];
   if (cap && cap.enParole) parts.push('🎙️');
   if (mots) parts.push(mots.length > 90 ? `…${mots.slice(-90)}` : mots);
@@ -3236,7 +3267,7 @@ function ligneEnDirect(conv) {
   return parts.join(' ');
 }
 function ligneEnDirectMontrer(conv) {
-  if (conv && conv.ecrit && motsEnConversation() && !enTelepathie()) envoyerParoles('papa', `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}`);   // (14:47) ce qu'il entend
+  if (conv && conv.ecrit && motsEnConversation() && !enTelepathie()) envoyerParoles('papa', motsEnCours(conv));   // (14:47) ce qu'il entend ; (04/11) morceau par morceau
   if (!conv) return;
   const l = ligneEnDirect(conv);
   if (!l) return;
@@ -3488,7 +3519,7 @@ async function basculerConversation() {
       dernierBattement: () => dernierBattementCoeur,
       surNiveau: (n) => { etat.niveauMicro = n; voixAuCorps(n); if (document.visibilityState === 'hidden') { micEnFond++; alimenterBulle(n); } },
       // (13:25, papa : « aucun « je t'écoute » ») rien à la place de ses mots : ils s'affichent dès le premier
-      surDebut: () => { conv.finDemandee = false; conv.finAnticipee = false; conv.souffleLocal = false; conv.brouillons = 0; conv.penseeEnPause = false; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre(''); humeur(); },
+      surDebut: () => { conv.morceauPapa = null; conv.finDemandee = false; conv.finAnticipee = false; conv.souffleLocal = false; conv.brouillons = 0; conv.penseeEnPause = false; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre(''); humeur(); },
       surPause: (fenetre) => surPauseConversation(conv, fenetre),
       surSilence: (ms) => { if (conv.capteur && conv.capteur.enParole) { compteARebours(ms); anticiperConversation(conv, ms); } },
       // Ahmed (ou une autre voix) parle pendant que Hakim parle : Hakim se MET EN PAUSE (lot C, point 26) ; sa

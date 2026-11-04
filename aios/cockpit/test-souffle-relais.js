@@ -352,10 +352,10 @@ test('(04/11) son oreille et sa voix ont chacune leur processus : elles ne s’a
 // 8 mots = 8 réponses, le GPU les dit une par une, au fur et à mesure » ; « ses trois voix ensemble » ; « oui, sans garde-fous »)
 function pistesSandbox(places = { haiku: 12, sonnet: 12, opus: 12 }, modele = 'haiku') {
   const i = SRC.indexOf('const PISTES_MAX'), k = SRC.indexOf('function speculerFreres(');
-  const appels = [], diffuses = [], voix = [];
+  const appels = [], diffuses = [], voix = [], papa = [];
   const ctx = { String, Math, Date, Promise, RegExp, Object, VIVANTS: [], VIVANTS_MAX: places, VIVANT_RENOUVELER: 6, cerveau: { modele },
     corpsReglages: () => ({}), personaLocale: (p) => p, lirePersona: () => 'Hakim', neutraliser: (t) => t, j: JSON.stringify, abonnesPensees: null,
-    voixDeLaSource: (t, o) => voix.push([t, o]), diffuser: (_, e, d) => diffuses.push(JSON.parse(d)),
+    voixDeLaSource: (t, o) => voix.push([t, o]), diffuser: (_, e, d) => { const x = JSON.parse(d); (x.niveau === 'papa' ? papa : diffuses).push(x); },
     sonnetTeteDeFond: (prompt, etiquette, modele) => new Promise((resoudre) => {
       const v = { modele, attente: {}, proc: { exitCode: null }, n: 1 };                  // sa voix vivante, occupée le temps de répondre
       ctx.VIVANTS.push(v);
@@ -363,7 +363,7 @@ function pistesSandbox(places = { haiku: 12, sonnet: 12, opus: 12 }, modele = 'h
     }) };
   vm.createContext(ctx);
   vm.runInContext(SRC.slice(i, k) + '\nthis.morceau = pisteMorceau; this.etat = () => pistes; this.decouper = morceauxDePropositions; this.parMots = morceauxDeMots; this.pour = morceauxPour;', ctx);
-  return { ctx, appels, diffuses, voix };
+  return { ctx, appels, diffuses, voix, papa };
 }
 // (04/11, Ahmed : « avec la voix du smartphone, on remet le chunk par phrase (jusqu'au point) ou par partie de phrase (jusqu'à la virgule) »)
 test('(04/11) un morceau par proposition (virgule, point, ! ?) ; sans ponctuation, 12 mots au plus ; la proposition commencée attend', () => {
@@ -629,6 +629,36 @@ test('(04/11) un saut de pensée à la voix du téléphone : un de ses meubles, 
   ctx.meubles([{ nom: 'son', son: 'e12' }]); T += 5000; ctx.dire(28, 'Dis-moi.');
   assert.strictEqual(dits[8], 'Dis-moi.', 'aucun meuble parlé en français : la pensée seule');
   assert.match(PAGE, /lecteurSysteme\.dire\(b\.dit != null \? b\.dit : meublerSaut\(b\)\);/);
+});
+
+// (04/11, Ahmed : « quand j'enchaîne les paroles, ça envoie un gros morceau, alors que ça doit envoyer chaque chunk séparément, l'un
+// après l'autre, et s'afficher l'un après l'autre ; en mode orbe, je dois voir mes chunks apparaître l'un après l'autre »)
+test('(04/11) le Mac renvoie tes mots morceau par morceau (les mêmes que ses pistes), avec où chacun finit', () => {
+  const { ctx, papa } = pistesSandbox(undefined, 'sonnet');
+  ctx.morceau('Papa, tu sais quoi ? Ce matin je suis');
+  ctx.morceau('Papa, tu sais quoi ? Ce matin je suis allé au marché.');
+  assert.deepStrictEqual(papa.map(x => [x.n, x.texte, x.jusqua]),
+    [[1, 'Papa,', 1], [2, 'tu sais quoi ?', 5], [3, 'Ce matin je suis allé au marché.', 12]]);
+});
+test('(04/11) la page : chaque morceau de tes mots, une bulle à lui ; sous l’orbe, seulement le morceau en cours ; à la fin, pas de gros bloc', () => {
+  const rendus = [];
+  const ctx = { etat: { conversation: { ecrit: { confirme: '', vif: '' } } }, esc: (t) => t, rendre: () => rendus.push(1),
+    motsEnConversation: () => true, enTelepathie: () => false, reglagesCorps: { afficher_papa: true }, Date, Number, String,
+    ligneEnDirectMontrer: () => {}, lecteur: { actif: false }, $: () => null, envoyerParoles: () => {}, sousTitre: () => {} };
+  vm.createContext(ctx);
+  vm.runInContext(extraire('function montrerMorceauPapa') + extraire('function motsEnCours') + '\nthis.morceau = montrerMorceauPapa; this.enCours = motsEnCours;', ctx);
+  const conv = ctx.etat.conversation;
+  ctx.morceau({ n: 1, tour: 3, texte: 'Papa,', jusqua: 1 });
+  ctx.morceau({ n: 2, tour: 3, texte: 'tu sais quoi ?', jusqua: 5 });
+  const bulles = ctx.etat.aCote.filter(x => x.cle.startsWith('papa-'));
+  assert.deepStrictEqual([...bulles].map(x => /<div class="txt">([^<]*)<\/div>/.exec(x.html)[1]), ['Papa,', 'tu sais quoi ?'], 'une bulle par morceau');
+  assert.strictEqual(conv.morceauxMontres, 2);
+  conv.ecrit = { confirme: 'Papa, tu sais quoi ?', vif: 'Ce matin je' };
+  assert.strictEqual(ctx.enCours(conv), 'Ce matin je', 'sous l’orbe : le morceau en cours seulement');
+  conv.ecrit = { confirme: 'Papa, tu sais quoi ?', vif: '' };
+  assert.strictEqual(ctx.enCours(conv), 'tu sais quoi ?', 'rien de neuf : le dernier morceau');
+  assert.match(PAGE, /oral && etat\.conversation && etat\.conversation\.morceauxMontres > 0/, 'à la fin : ton tour entier ne s’affiche pas en un bloc');
+  assert.match(PAGE, /if \(o\.niveau === 'papa'\) \{ montrerMorceauPapa\(o\); return; \}/);
 });
 
 // (04/11, Ahmed : « il prononce spontanément la 1re pensée et il décide pour le reste ; il prononce aussi toujours la dernière : à une
