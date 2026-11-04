@@ -3510,16 +3510,38 @@ setInterval(() => {
 }, 300);
 // le stop de son épissure (10 s de ton silence, ou ta demande d'outil, dite par le cockpit) : ce qu'elle avait encore à dire est laissé, sa voix
 // s'arrête, et le cockpit la ferme ; l'épissure suivante (un numéro plus grand) parle
-function arreterEpissure(cause, tour) {
+function arreterEpissure(cause, tour, o = {}) {
   const t = Number(tour != null ? tour : etat.epissureTour);
   if (!(t > 0) || (etat.riboStop != null && t <= etat.riboStop)) return;   // (15:33) une épissure arrêtée ne s'arrête pas deux fois
   etat.riboStop = Math.max(etat.riboStop != null ? etat.riboStop : -1, t);
   etat.riboFile = (etat.riboFile || []).filter(x => Number(x.tour) > etat.riboStop);
   if (typeof bouts !== 'undefined' && Number(bouts.tour) <= etat.riboStop) { bouts.fileTel = []; bouts.attenteTel = null; }
-  if ((etat.riboEnVoix || []).length && lecteur.actif) lecteur.arreter();
-  etat.riboEnVoix = [];
+  // (05/11) la suite sautée : le morceau qu'il dit va jusqu'au bout
+  if (!o.laisserFinir) { if ((etat.riboEnVoix || []).length && lecteur.actif) lecteur.arreter(); etat.riboEnVoix = []; }
   if (typeof journalVoix === 'function') journalVoix('epissure_stop', { cause, tour: t });
   if (cause === 'silence') fetch('/api/jarvis/ribosome/stop', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ tour: t }) }).catch(() => {});
+}
+// (05/11, Ahmed : « dans les réglages, la possibilité de lui faire sauter la parole d'après : s'il commence à parler et que je réponds, au bout
+// d'une seconde, la 2e partie n'est pas dite, elle est directement sautée ») ta voix qui dure sauter_suite_ms (1 s) sur la sienne : le morceau
+// qu'il dit va jusqu'au bout, la suite de son épissure est sautée ; ce qu'il pensera de ta réponse part dans une épissure neuve
+function prevoirSaut(conv) {
+  if (typeof reglagesCorps === 'undefined' || reglagesCorps.sauter_suite === false || conv.sautPrevu) return;
+  const ms = Number(reglagesCorps.sauter_suite_ms) || 1000, t0 = Date.now();
+  conv.sautPrevu = setTimeout(() => {
+    conv.sautPrevu = null;
+    const parle = (conv.capteur && conv.capteur.enParole) || Date.now() - (etat.papaVoixA || 0) < 400;
+    if (parle && etat.conversation === conv) sauterLaSuite(Date.now() - t0);
+  }, ms);
+}
+function sauterLaSuite(ms) {
+  const t = Number(etat.epissureTour) || 0;
+  if (typeof journalVoix === 'function') journalVoix('suite_sautee', { tour: t, ms });
+  arreterEpissure('sautee', t, { laisserFinir: true });
+  fetch('/api/jarvis/ribosome/stop', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ tour: t, sauter: true }) })
+    .then((r) => (r.ok ? r.json() : null)).then((o) => {
+      const n = o && Number(o.tour);
+      if (n > (etat.riboStop != null ? etat.riboStop : -1)) { etat.riboStop = n; etat.riboFile = (etat.riboFile || []).filter(x => Number(x.tour) > n); }
+    }).catch(() => {});
 }
 // ce que son ribosome a choisi, dit d'un seul souffle (un tour à la fois, dans l'ordre), quand sa voix est libre
 function direRibosome() {
@@ -4103,7 +4125,7 @@ async function basculerConversation() {
         // (04/11, Ahmed : « il parle quand il veut, mais s'il entend ma voix lui couper la parole sur 2 secondes, il se tait ») il garde
         // la parole sur un mot ou un rire ; ta voix qui dure 2 s sur la sienne : il se tait (ses pensées restent écrites)
         // (04/11, 12:15, Ahmed) avec l'épissage : ta voix ne le coupe pas au milieu d'un morceau ; il le finit, et à sa fenêtre d'oreille il choisit
-        if (voixEpissee()) { conv.coupeAuChunk = Date.now(); journalVoix('coupure_au_chunk', mesure || {}); return; }
+        if (voixEpissee()) { conv.coupeAuChunk = Date.now(); journalVoix('coupure_au_chunk', mesure || {}); prevoirSaut(conv); return; }   // (05/11) et la suite sautée
         if (typeof reglagesCorps !== 'undefined' && reglagesCorps.garder_parole) { journalVoix('coupure_ignoree', mesure || {}); veillerDeuxSecondes(conv); return; }
         etat.coupeParAhmed = true;
         journalVoix('coupure', mesure || {});

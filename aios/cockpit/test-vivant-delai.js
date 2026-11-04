@@ -12,7 +12,7 @@ const prendre = (nom) => { const i = SRC.indexOf(`function ${nom}(`); return SRC
 function pool() {
   const minuteurs = new Map(), procs = [];
   let id = 0;
-  const ctx = { String, Date, Error, Promise, JSON, process: { env: {} }, os: { tmpdir: () => '/tmp' }, path,
+  const ctx = { String, Date, Error, Promise, JSON, process: { env: {} }, os: { tmpdir: () => '/tmp' }, path, SYSTEME_VIVANT: 'Tu es Hakim.',
     fs: { mkdtempSync: () => '/tmp/x', rmSync() {} }, CLAUDE_BIN: 'claude', EFFORT_HAKIM: 'low', j: JSON.stringify,
     VIVANTS: [], VIVANTS_MAX: { sonnet: 2 }, VIVANT_RENOUVELER: 25,
     setTimeout: (f, ms) => { minuteurs.set(++id, { f, ms }); return id; }, clearTimeout: (k) => minuteurs.delete(k),

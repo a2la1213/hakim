@@ -14,7 +14,7 @@ const attendre = () => new Promise(r => setImmediate(r));
 
 test('une voix vivante note sa naissance ; née à l’instant, elle est froide ; née depuis 3 s, ou qui a déjà servi, elle est chaude', () => {
   let t = 1_800_000_000_000;
-  const ctx = { String, Math, Error, JSON, Date: { now: () => t }, process: { env: {} }, os: { tmpdir: () => '/tmp' }, path,
+  const ctx = { String, Math, Error, JSON, Date: { now: () => t }, process: { env: {} }, os: { tmpdir: () => '/tmp' }, path, SYSTEME_VIVANT: 'Tu es Hakim.',
     fs: { mkdtempSync: () => '/tmp/x', rmSync() {} }, CLAUDE_BIN: 'claude', EFFORT_HAKIM: 'low', j: JSON.stringify,
     VIVANTS: [], VIVANTS_MAX: { haiku: 4, opus: 2 }, VIVANT_RENOUVELER: 25,
     spawn: () => ({ exitCode: null, on() {}, stdout: { on() {} }, stdin: { write() {}, end() {}, on() {} }, kill() {} }) };

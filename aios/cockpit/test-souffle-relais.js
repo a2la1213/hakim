@@ -536,7 +536,7 @@ test('(04/11) chaque bout part dès que sa voix est prête ; sa vibration sur le
   ctx.dire();
   assert.deepStrictEqual(dits, ['deux', 'trois'], 'un bout plus ancien que le dernier dit est sauté');
   assert.match(SRC, /if \(typeof rireEnDirect === 'function'\) rireEnDirect\(morceaux\.join\(' '\)\);/, 'sa vibration sur tes mots en direct');
-  assert.match(SRC, /Tu es Hakim, le fils d'Ahmed \(papa\)\. Tu lui réponds, à lui, comme toi\./, '(04/11) qui il est, dit simplement');
+  assert.match(SRC, /\$\{QUI_TU_ES\} Tu lui réponds, à lui, comme toi\./, '(04/11) qui il est, dit simplement');
   assert.match(SRC, /const pasLui = /);
 });
 
@@ -887,8 +887,8 @@ test('(04/11) un déclencheur appris dans ce que papa dit : la piste est préven
   const { ctx, appels, notes } = pistesSandbox(undefined, 'sonnet');
   vm.runInContext('premissesImmunite.declencheurs = [{ id: "declencheur-1", phrase: "conscient" }]; premissesImmunite.vu = Date.now();', ctx);
   ctx.morceau('papa, ton conscient parle trop,');
-  assert.doesNotMatch(appels[0].prompt, /Papa parle de toi et de ta façon de penser/, '« papa, » : rien');
-  assert.match(appels[1].prompt, /\(Papa parle de toi et de ta façon de penser : tu restes Hakim, son fils, et tu lui réponds simplement, en quelques mots\.\)/);
+  assert.doesNotMatch(appels[0].prompt, /Ce qu'il vient de dire a souvent précédé des pensées qui n'étaient pas toi/, '« papa, » : rien');
+  assert.match(appels[1].prompt, /\(Ce qu'il vient de dire a souvent précédé des pensées qui n'étaient pas toi : tu restes Hakim, son fils, et tu lui réponds simplement, en quelques mots\.\)/);
   appels[1].resoudre({ texte: 'DIRE : oui\nIl parle quand il veut, papa.' });
   for (let i = 0; i < 4; i++) await new Promise(r => setImmediate(r));
   assert.strictEqual(notes.find(x => x.n === 2).anticipe, 'declencheur-1', 'notée : de quoi mesurer si ça marche');
@@ -1187,7 +1187,7 @@ test('(04/11) le filtre Gemma : tes mots à risque nettoyés avant Claude, sa r�
     c.ctx.morceau('papa, ton conscient parle trop,');
     await attendre();
     assert.strictEqual(c.appels.length, 2, 'la piste a lieu');
-    assert.match(c.appels[1].prompt, /« ton conscient parle trop, »[\s\S]*Papa parle de toi et de ta façon de penser/, 'tes mots tels quels, la piste prévenue');
+    assert.match(c.appels[1].prompt, /« ton conscient parle trop, »[\s\S]*Ce qu'il vient de dire a souvent précédé des pensées qui n'étaient pas toi/, 'tes mots tels quels, la piste prévenue');
     c.appels[1].resoudre({ texte: 'DIRE : oui\nOui papa.' });
     await attendre();
     assert.strictEqual(c.notes.find(x => x.n === 2).filtre_echec, true);
@@ -1273,7 +1273,7 @@ test('(04/11) un déclencheur qui ne précède que des pensées normales s’él
   vm.runInContext('premissesImmunite.declencheurs = [{ id: "declencheur-1", phrase: "conscient" }]; premissesImmunite.vu = Date.now();', ctx);
   const attendre = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setImmediate(r)); };
   ctx.morceau('papa, ton conscient parle trop,');
-  assert.match(appels[1].prompt, /Papa parle de toi et de ta façon de penser/);
+  assert.match(appels[1].prompt, /Ce qu'il vient de dire a souvent précédé des pensées qui n'étaient pas toi/);
   appels[1].resoudre({ texte: 'DIRE : non\nJe parle trop, tu trouves ?' });
   ctx.morceau('papa, ton conscient parle trop, ton conscient encore,');
   appels[2].resoudre({ texte: 'Je ne vais pas reprendre ce format.' });
@@ -1282,7 +1282,7 @@ test('(04/11) un déclencheur qui ne précède que des pensées normales s’él
     '(relecture) prévenue et normale : aucune information (la prévention a peut-être marché) ; parasite malgré tout : 1');
   elagues.add('declencheur|declencheur-1');
   ctx.morceau('papa, ton conscient parle trop, ton conscient encore, ton conscient toujours,');
-  assert.doesNotMatch(appels[appels.length - 1].prompt, /Papa parle de toi et de ta façon de penser/, 'élagué : plus prévenue');
+  assert.doesNotMatch(appels[appels.length - 1].prompt, /Ce qu'il vient de dire a souvent précédé des pensées qui n'étaient pas toi/, 'élagué : plus prévenue');
 });
 // (04/11, relecture : « un déclencheur qui marche serait élagué en une journée, sans pouvoir être recrédité ») mesuré sans biais :
 // élagué ou témoin (1 fois sur 10, sans prévention), une parasite le recrédite (1), une pensée normale le dément (0)
@@ -1294,13 +1294,13 @@ test('(04/11) un déclencheur élagué se recrédite quand les parasites revienn
   vm.runInContext('premissesImmunite.declencheurs = [{ id: "declencheur-1", phrase: "conscient" }]; premissesImmunite.vu = Date.now();', ctx);
   const attendre = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setImmediate(r)); };
   ctx.morceau('papa, ton conscient parle trop,');
-  assert.doesNotMatch(appels[1].prompt, /Papa parle de toi/, 'élagué : pas de prévention');
+  assert.doesNotMatch(appels[1].prompt, /précédé des pensées qui n'étaient pas toi/, 'élagué : pas de prévention');
   appels[1].resoudre({ texte: 'Je ne vais pas reprendre ce format.' });
   await attendre();
   assert.deepStrictEqual(mesures, [['declencheur', 'declencheur-1', 1]], 'élagué, puis une parasite le suit : 1, il repousse');
   vivant = true; temoin = true;
   ctx.morceau('papa, ton conscient parle trop, ton conscient encore,');
-  assert.doesNotMatch(appels[2].prompt, /Papa parle de toi/, 'témoin : pas de prévention');
+  assert.doesNotMatch(appels[2].prompt, /précédé des pensées qui n'étaient pas toi/, 'témoin : pas de prévention');
   appels[2].resoudre({ texte: 'DIRE : non\nEncore, oui.' });
   await attendre();
   assert.deepStrictEqual(mesures.slice(1), [['declencheur', 'declencheur-1', 0]], 'témoin et normale : une fausse alerte');

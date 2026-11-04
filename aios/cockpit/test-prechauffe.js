@@ -20,7 +20,7 @@ test('la parole vide : au premier son d’une voix, ses voix de réflexion se ch
 
 test('se chauffer : assez de voix vivantes libres, prêtes, pour ses pensées et son ribosome ; jamais plus que le pool', () => {
   const procs = [];
-  const ctx = { String, Date, Math, Error, JSON, process: { env: {} }, os: { tmpdir: () => '/tmp' }, path, fs: { mkdtempSync: () => '/tmp/x', rmSync() {} },
+  const ctx = { String, Date, Math, Error, JSON, process: { env: {} }, os: { tmpdir: () => '/tmp' }, path, SYSTEME_VIVANT: 'Tu es Hakim.', fs: { mkdtempSync: () => '/tmp/x', rmSync() {} },
     CLAUDE_BIN: 'claude', EFFORT_HAKIM: 'low', j: JSON.stringify, VIVANTS: [], VIVANTS_MAX: { haiku: 4, opus: 2 }, VIVANT_RENOUVELER: 25,
     setTimeout, clearTimeout, corpsReglages: () => ({ epissage: true }), modelePiste: () => 'haiku', CHAUFFE: { haiku: 3, opus: 2, sonnet: 2 },
     RIBOSOME_LECTEURS: [['haiku', 'Mini Hakim', 3000], ['opus', 'Super Hakim', 3000]],
@@ -93,14 +93,14 @@ function ouverture(reglages = { epissage: true }, reponse = 'Papa arrive, je me 
   const ctx = { Date: { now: () => t }, String, JSON, Math, Promise, j: JSON.stringify, abonnesPensees: [], corpsReglages: () => reglages,
     pistes: { tour: 3, mots: 0, liste: [], attente: [], n: 0 }, derniereParolePapa: 0, EPISSURE_STOP_MS: 5 * 60e3,
     tourEpissure: () => t, diffuser: (_a, ev, data) => diffuses.push([ev, JSON.parse(data)]), memoriserEpissure: (r) => memos.push(r),
-    personaLocale: (x) => x, lirePersona: () => 'Hakim, son fils', etatDeLui: () => '(il est calme)\n', modelePiste: () => 'haiku',
+    personaLocale: (x) => x, lirePersona: () => 'Hakim, son fils', etatDeLui: () => '(il est calme)\n', modelePiste: () => 'haiku', QUI_TU_ES: 'Tu es Hakim, le fils d\'Ahmed.',
     boutDe: (x) => String(x || '').trim(), estParasite: () => parasite,
     sonnetTeteDeFond: (consigne, etiquette, modele, delai) => { demandes.push({ consigne, etiquette, modele, delai }); return Promise.resolve({ texte: reponse }); } };
   vm.createContext(ctx);
   vm.runInContext(SRC.slice(SRC.indexOf('const nouveauRibosome = '), SRC.indexOf('\n', SRC.indexOf('const nouveauRibosome = ')))
     + '\n' + SRC.slice(SRC.indexOf('const BLANC_OUVERTURE = '), SRC.indexOf('\n', SRC.indexOf('const BLANC_OUVERTURE = ')))
     + '\nfunction ribosomeSuivant() { return nouveauRibosome(tourEpissure()); }\n'   // (23:10) ses ribosomes en relais : ici, un seul
-    + prendre('ouvrirReflexion') + 'this.ouvrir = ouvrirReflexion;', ctx);
+    + prendre('ouvrirReflexion') + prendre('blancDeReflexion') + 'this.ouvrir = ouvrirReflexion;', ctx);
   return { ctx, diffuses, demandes, memos, avancer: (ms) => { t += ms; } };
 }
 

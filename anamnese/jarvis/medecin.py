@@ -545,7 +545,13 @@ def apprendre_parasites(maintenant=None, consulter_fn=None, journal=None, repons
     except ValueError:
         phrases, dec = [], []
     gardees = immunite.garder_premisses(phrases, parasites, normales + reponses, maintenant)
-    declencheurs = immunite.garder_declencheurs(dec, entrees_p, entrees_n, maintenant)
+    # (04/11, 23:27, sa veille avait appris « salam », « alaykoum », « alla », « au revoir », « fiston », « frerot », « anamnese » comme
+    # déclencheurs : les mots de papa que la parasite ne faisait que RÉPÉTER (« salam » avant « wa alaykoum salam », « alla » avant « c'est
+    # signalé [prénom] ») ; et chaque « fiston » de papa prévenait la piste d'une fausse prémisse) un écho n'est pas une cause : le code le
+    # rejette (immunite._echo), sur les paires (ce que papa disait, la pensée) ; « sens ton corps » avant « je n'ai pas de corps » reste
+    paires = [(str(o.get("morceau") or ""), str(o.get("texte_parasite") or o.get("pensee") or "")) for o in lignes_p if o.get("morceau")]
+    paires += [(str(o["papa"]), str(o["extrait"])) for o in autres[-30:] if o.get("papa")]
+    declencheurs = immunite.garder_declencheurs(dec, entrees_p, entrees_n, maintenant, echos=paires)
     # (04/11) ce qui est acquis, revérifié : une prémisse de Fable qu'une pensée ou une réponse normale contient maintenant est retirée ;
     # un résidu jugé par papa, jamais : il est seulement signalé (à revoir), c'est son geste
     toutes = [str(o["pensee"]) for o in lignes if o.get("pensee") and not o.get("erreur")] + list(normales) + list(reponses)

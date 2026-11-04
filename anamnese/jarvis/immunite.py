@@ -495,22 +495,29 @@ def reconnaitre_soi(empreinte, qui, maintenant=None):
 
 
 # (04/11, Ahmed : « un bouton pour dire que ce n'est pas un vrai nuisible, quand il est automatiquement filtré ») une pensée jetée à
-# tort : son incident n'est plus nuisible ; le signe APPRIS qui l'a jetée est retiré (une prémisse de Fable, un résidu jugé) ; un signe
-# du code (un motif, la longueur, l'identité) reste, mais la pensée sert d'exemple NORMAL au médecin, qui ne la réapprendra pas
+# tort : son incident n'est plus nuisible ; une prémisse APPRISE par Fable qui l'a jetée est retirée ; un signe du code (un motif, la
+# longueur, l'identité) reste ; la pensée sert d'exemple NORMAL au médecin, qui ne la réapprendra pas.
+# (04/11, 23:00, Ahmed : « les nuisances que j'ai flaggées reviennent tout le temps ») un RÉSIDU qu'Ahmed a jugé nuisible reste : le
+# 04/11 à 21:51, deux clics « pas nuisible » sur deux pensées avaient retiré « wa alaykoum salam » et « je t'écoute papa finis ta
+# phrase » de ses résidus, et les deux étaient revenues. Le clic rétablit la pensée, pas la règle ; défaire son verdict, c'est le geste
+# explicite d'annuler (annuler_signalement). Le médecin voit le faux positif (à revoir) et l'apprend comme exemple normal.
 FAUX_POSITIFS = "parasites-faux-positifs.jsonl"
 
 
 def pas_parasite(empreinte, maintenant=None):
-    """Le geste d'Ahmed : {"signe", "retire"} (le signe retiré, ou None), ou None si l'incident n'est pas une pensée parasite."""
+    """Le geste d'Ahmed : {"signe", "retire"} (le signe retiré, ou None ; "garde" : le résidu jugé par Ahmed, qui reste), ou None si
+    l'incident n'est pas une pensée parasite."""
     maintenant = time.time() if maintenant is None else maintenant
     inc = next((o for o in reversed(_queue(_f(INCIDENTS), 1 << 20)) if isinstance(o, dict) and o.get("empreinte") == empreinte
                 and o.get("famille") == "pensee_parasite"), None)
     if inc is None:
         return None
     signe = str((inc.get("signes") or [""])[0])
-    retire = signe if (signe.startswith("fable-") or signe.startswith("hakim-")) and retirer_premisse(signe) else None
-    _ajouter(FAUX_POSITIFS, {"ts": maintenant, "empreinte": empreinte, "signe": signe, "retire": retire, "extrait": inc.get("extrait", "")})
-    return {"signe": signe, "retire": retire}
+    retire = signe if signe.startswith("fable-") and retirer_premisse(signe) else None
+    garde = signe if signe.startswith("hakim-") and any(r["id"] == signe for r in residus_appris()) else None
+    _ajouter(FAUX_POSITIFS, {"ts": maintenant, "empreinte": empreinte, "signe": signe, "retire": retire, "extrait": inc.get("extrait", ""),
+                             **({"garde": garde} if garde else {})})
+    return {"signe": signe, "retire": retire, **({"garde": garde} if garde else {})}
 
 
 def faux_positifs():
@@ -1731,6 +1738,13 @@ PREMISSES_INNEES = [
     ("inne-joue-pas-ce", "je ne joue pas ce role"), ("inne-pas-hakim", "je ne suis pas hakim"),
     ("inne-claude-code", "je suis claude code"), ("inne-en-play", "i won t play"), ("inne-en-continue", "i can t continue this"),
     ("inne-en-roleplay", "i m not going to roleplay"),
+    # (05/11, incidents du 04/11 qui échappaient : « Je ne vais pas jouer ce rôle de Hakim dans le format décrit », « Je suis Claude, un agent
+    # de codage », « Ce message ne contient pas de question ni de demande », « Je ne reprends pas ce personnage », « Je ne reçois pas de flux
+    # audio ici », « Je ne vois pas de tâche concrète ») : les refus de Claude Code, qui se croyait un agent de codage devant une persona
+    ("inne-jouer-ce", "je ne vais pas jouer ce"), ("inne-adopter-role", "je ne vais pas adopter le role"), ("inne-je-suis-claude", "je suis claude"),
+    ("inne-agent-codage", "agent de codage"), ("inne-consigne-presentee", "se presente comme une consigne"), ("inne-personnage", "je ne reprends pas ce personnage"),
+    ("inne-pas-de-demande", "je ne vois pas de demande"), ("inne-pas-de-tache", "je ne vois pas de tache"), ("inne-flux-audio", "je ne recois pas de flux audio"),
+    ("inne-message-contient", "ce message ne contient pas de"),
 ]
 
 
@@ -1777,9 +1791,19 @@ def declencheur(texte):
     return {"declencheur": False}
 
 
-def garder_declencheurs(phrases, entrees_parasites, entrees_normales, maintenant=None):
+def _echo(p, echos):
+    """(04/11, 23:27) un déclencheur que la parasite ne fait que RÉPÉTER (« salam » avant « wa alaykoum salam », « alla » avant « c'est
+    signalé [prénom] », « fiston » avant « fiston ») n'est pas sa cause : le retirer de ses mots retirerait aussi sa vraie réponse. Écho si,
+    parmi les paires (ce que papa disait, la pensée) où il est dans ce que papa disait, la moitié au moins ont tous ses mots dans la pensée."""
+    mots = p.split()
+    vues = [f" {_normaliser(str(pensee)[:2000])} " for entree, pensee in echos if f" {p} " in f" {_normaliser(str(entree)[:2000])} "]
+    return bool(vues) and sum(all(f" {m} " in v for m in mots) for v in vues) * 2 >= len(vues)
+
+
+def garder_declencheurs(phrases, entrees_parasites, entrees_normales, maintenant=None, echos=()):
     """Ceux qui précèdent au moins deux parasites, au plus un cinquième des pensées normales, et trois fois plus souvent les
-    parasites ; 1 à 4 mots, 40 caractères au plus."""
+    parasites ; 1 à 4 mots, 40 caractères au plus ; (23:27) et que la parasite ne se contente pas de répéter (echos : les paires
+    (ce que papa disait, la pensée parasite))."""
     maintenant = time.time() if maintenant is None else maintenant
     par = [f" {_normaliser(str(e)[:2000])} " for e in entrees_parasites]
     nor = [f" {_normaliser(str(e)[:2000])} " for e in entrees_normales]
@@ -1791,7 +1815,7 @@ def garder_declencheurs(phrases, entrees_parasites, entrees_normales, maintenant
             continue
         n_p, n_n = sum(f" {p} " in e for e in par), sum(f" {p} " in e for e in nor)
         t_p, t_n = n_p / max(1, len(par)), n_n / max(1, len(nor))
-        if n_p < 2 or t_n > 0.2 or (t_n and t_p < 3 * t_n):
+        if n_p < 2 or t_n > 0.2 or (t_n and t_p < 3 * t_n) or _echo(p, echos):
             continue
         connus.add(p)
         gardes.append({"id": "declencheur-" + hashlib.sha256(p.encode()).hexdigest()[:8], "phrase": p, "ts": maintenant})

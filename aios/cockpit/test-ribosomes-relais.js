@@ -90,7 +90,10 @@ test('celui d’avant bloqué : le suivant parle quand même au bout de 20 s', (
 });
 
 test('branché : le relais dans lancerPiste, le cœur jusqu’à la page, les réglages dans la page Réglages', () => {
-  assert.match(SRC, /else if \(pistes\.ribo && ribosomeAuRelais\(pistes\.ribo\)\) pistes\.ribo = ribosomeSuivant\(\);/);
+  assert.match(SRC, /else if \(pistes\.ribo && ribosomeAuRelais\(pistes\.ribo\)\) relayer\(\);/);
+  // (05/11, Ahmed : « en cascade automatiquement, en envoyant des blancs ») dès le seuil, sans attendre la pensée suivante, et avec son blanc
+  assert.match(SRC, /if \(x && pistes\.ribo === r && ribosomeAuRelais\(r\)\) relayer\(\);/);
+  assert.match(prendre('relayer'), /pistes\.ribo = ribosomeSuivant\(\);\n  if \(corpsReglages\(\)\.epissage !== false\) blancDeReflexion\(pistes\.ribo, BLANC_RELAIS\);/);
   assert.match(SRC, /m\.ribo = pistes\.ribo \|\| \(pistes\.ribo = ribosomeSuivant\(\)\);/);
   assert.match(SRC, /\.\.\.\(r\.coeur \? \{ coeur: r\.coeur \} : \{\}\)/);
   assert.match(SRC, /nombre\('relais_ribosomes', 1, 8\); nombre\('relais_pct', 10, 100\);/);

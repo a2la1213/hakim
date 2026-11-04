@@ -67,11 +67,11 @@ def test_son_outil_parasite_signaler(D, tmp_path, monkeypatch):
     monkeypatch.setattr(mcp_server, "_mem", mem)
     monkeypatch.setattr(immunite, "textes_normaux", lambda *a, **k: NORMALES)
     r = mcp_server.parasite_signaler("je n'ai pas de corps", "Non, je n'ai pas de corps.", "c'est faux")
-    assert "Papa décidera dans Parler" in r and "Aucune de tes pensées" in r
-    assert "attend la décision de papa" in mcp_server.parasite_signaler("Je n'ai pas de corps !")
+    assert "Verdict : papa, dans Parler" in r and "Faux positifs : 0 sur 3" in r and "ne la récite pas" in r   # (04/11, 23:00) une donnée, pas une formule
+    assert mcp_server.parasite_signaler("Je n'ai pas de corps !").startswith("Déjà signalée")
     assert mcp_server.parasite_signaler("corps").startswith("Pas signalé")
     assert "(ses 12 premiers mots)" in mcp_server.parasite_signaler("un deux trois quatre cinq six sept huit neuf dix onze douze treize")
-    assert "1 de tes 3" in mcp_server.parasite_signaler("je préfère te le dire que")
+    assert "Faux positifs : 1 sur 3" in mcp_server.parasite_signaler("je préfère te le dire que")
 
 
 def test_un_nuisible_juge_par_papa_est_remonte_a_la_base_de_ses_inputs(D, tmp_path):
