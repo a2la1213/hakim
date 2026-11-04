@@ -8738,6 +8738,9 @@ async function routeVif(req, res, langue, contexte, source = '', temps = {}) {
   const tRecu = Date.now();                                             // (04/11) le son reçu : ce qui suit est le Mac, pas le réseau
   const repondre = (code, o) => { if (!res.writableEnded) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(j(o)); } };
   if (!audio || !audio.length) return repondre(400, { erreur: 'audio absent ou trop lourd (4 Mo max)' });
+  // (04/11, 15:40, Ahmed : « il faut que ce soit aussi valable pour ce qu'il entend de l'intérieur quand j'active le bouton ») le son du
+  // téléphone qu'il entend en direct (🎧) : séparé lui aussi, voix et fond, en parallèle (une séparation à la fois ; de trop, laissée)
+  if (source === 'telephone') { try { const fs2 = path.join(os.tmpdir(), `jarvis-vif-sep-${process.pid}-${Date.now()}.wav`); fs.writeFileSync(fs2, audio); separerSon(fs2, 'telephone'); } catch (_) {} }
   lancerOreilleVive();
   const papa = source !== 'telephone';                                  // (13:25) la voix de papa passe avant
   if (!oreilleVive.pret || (!papa && (oreilleVive.attente || oreilleVive.suivante))) return repondre(429, { occupee: true, prete: oreilleVive.pret });
