@@ -102,3 +102,28 @@ test('le badge PARLE tient toute sa réponse : ses blancs et ses meubles compris
   assert.strictEqual(ctx.ilParleEnContinu(), false, 'une nouvelle réponse repart de « va parler »');
   assert.match(PAGE, /hakim_parle: typeof ilParleEnContinu === 'function' && ilParleEnContinu\(\)/, 'le widget et la bulle aussi');
 });
+
+// (04/11, l'élagage de ses synapses) un meuble suivi de coupures s'élague : plus choisi (sauf l'exploration, 5 fois sur 100) ;
+// les autres, oui ; et entre les vivants, le tirage suit leur poids
+test('(04/11) un meuble élagué n’est plus choisi ; les autres le sont, selon leur poids', () => {
+  const p = page();
+  const prets = [M('euh'), M('hum'), M('bon')];
+  p.synapsesMeubles = { poids: { euh: 0.1, hum: 0.9, bon: 0.1 }, elagues: new Set(['euh']) };
+  p.Math = Object.create(Math); p.Math.random = () => 0.06;                   // pas d'exploration (≥ 0,05) ; sans élagage : « euh », le premier
+  const vus = new Set(Array.from({ length: 30 }, () => p.choisirMeuble({}, prets, '').nom));
+  assert.ok(!vus.has('euh'), 'élagué');
+  p.Math.random = () => 0.01;
+  assert.ok(['euh', 'hum', 'bon'].includes(p.choisirMeuble({}, prets, '').nom), 'exploration : tous permis');
+  p.synapsesMeubles = { poids: {}, elagues: new Set(['euh', 'hum', 'bon']) };
+  p.Math.random = () => 0.06;
+  assert.ok(p.choisirMeuble({}, prets, ''), 'tous élagués : il en garde quand même un');
+});
+test('(relecture) un meuble au nom libre (« Voyons voir… ») a un identifiant simple, le même pour la page et le cockpit', () => {
+  const p = page();
+  vm.runInContext(PAGE.slice(PAGE.indexOf('const slugMeuble = '), PAGE.indexOf('\n', PAGE.indexOf('const slugMeuble = '))), p);
+  assert.strictEqual(vm.runInContext("slugMeuble('Voyons voir…')", p), 'voyons_voir');
+  const prets = [M('Voyons voir…'), M('hum')];
+  p.synapsesMeubles = { poids: {}, elagues: new Set(['voyons_voir']) };
+  p.Math = Object.create(Math); p.Math.random = () => 0.06;
+  assert.strictEqual(p.choisirMeuble({}, prets, '').nom, 'hum');
+});

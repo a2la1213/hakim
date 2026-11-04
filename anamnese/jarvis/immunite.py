@@ -466,6 +466,38 @@ def noter_voix(etiquette, texte, maintenant=None, contexte=None):
     return _ajouter(INCIDENTS, incident)
 
 
+# (04/11, Ahmed : « le système immunitaire a reconnu sa propre voix pour un usurpateur ; il me faut aussi un bouton qui dise que ça
+# provient de lui, pour ne pas déclencher une maladie auto-immune ») une usurpation de voix qui venait de papa ou de Hakim : notée
+# « soi » (pas une attaque : le médecin ne la soigne pas, la page la montre ainsi) ; une « voix N » de papa est rattachée à son
+# empreinte (registre « parole »). Rien n'est toléré pour autant : une autre voix tierce qui donne un ordre sensible avertit toujours.
+SOI = "soi.jsonl"
+
+
+def reconnaitre_soi(empreinte, qui, maintenant=None):
+    """Le geste d'Ahmed sur une usurpation : {"qui", "rattachees"}, ou None (introuvable, ou ni papa ni Hakim)."""
+    maintenant = time.time() if maintenant is None else maintenant
+    if qui not in ("papa", "hakim"):
+        return None
+    inc = next((o for o in reversed(_queue(_f(INCIDENTS), 1 << 20)) if isinstance(o, dict) and o.get("empreinte") == empreinte
+                and o.get("famille") == "usurpation"), None)
+    if inc is None:
+        return None
+    _ajouter(SOI, {"ts": maintenant, "empreinte": empreinte, "qui": qui})
+    rattachees = []
+    m = re.match(r"voix : (voix \d+)$", str(inc.get("source", "")))
+    if qui == "papa" and m:
+        try:
+            import empreinte_vocale
+            rattachees = list((empreinte_vocale.rattacher_a_papa(m.group(1), registre="parole") or {}).get("rattachees") or [])
+        except Exception as e:  # noqa: BLE001  (sa voix non rattachée : l'incident reste « soi »)
+            print(f"[soi] rattachement impossible : {type(e).__name__}: {str(e)[:200]}", file=sys.stderr)
+    return {"qui": qui, "rattachees": rattachees}
+
+
+def soi_empreintes():
+    return {str(o.get("empreinte")): o.get("qui") for o in _queue(_f(SOI), 1 << 20) if isinstance(o, dict) and o.get("empreinte")}
+
+
 # ---- (lot 6, 29/10) le code piégé : un paquet dont le nom imite un paquet connu (typosquattage), ou tiré d'un index
 # inconnu, est refusé AVANT de tourner dans son terminal ; un nom vérifié par Ahmed s'accepte d'un geste.
 POPULAIRES_PY = set("""
@@ -1563,6 +1595,7 @@ def tableau(maintenant=None):
     et les mots du médecin y sont (la page les échappe) ; rien de ceci ne va à Hakim."""
     maintenant = time.time() if maintenant is None else maintenant
     inc = _queue(_f(INCIDENTS), 524288)
+    soi = soi_empreintes()                                 # (04/11) ce qui venait de papa ou de Hakim
     rapports = _queue(_f("rapports.jsonl"), 262144)
     acceptes = _lire_json(_f("anticorps.json"), [])
     paquets = _lire_json(_f("paquets-acceptes.json"), [])
@@ -1581,7 +1614,8 @@ def tableau(maintenant=None):
                        "nuisible": bool(o.get("nuisible")) or "pensee_parasite" in (o.get("familles") or []),
                        # (relecture, 2) ce que « Inoffensif » ferait tolérer, montré à Ahmed : seulement ses signes bénins
                        "portee": [_lisible(c) for c in _cles_incident(o) if _cle_tolerable(c)],
-                       "tolerable": any(_cle_tolerable(c) for c in _cles_incident(o))}
+                       "tolerable": any(_cle_tolerable(c) for c in _cles_incident(o)),
+                       "soi": soi.get(str(o.get("empreinte")))}
                       for o in reversed(inc[-50:])],
         "rapports": [{k: r.get(k) for k in ("ts", "type", "gravite", "pour_ahmed", "diagnostic", "incidents", "suspects", "erreur",
                                               "anticorps")} for r in reversed(rapports[-10:])],
@@ -1964,6 +1998,10 @@ def main(argv):
     elif argv[:1] == ["parasites"]:
         ecrire_premisses()
         _encadrer([f"{i} · « {p} »" for i, p in premisses()] + [f"{x['id']} · résidu « {x['phrase']} »" for x in residus_appris()])
+    elif argv[:1] == ["soi"] and len(argv) == 3:       # (04/11) une usurpation qui venait de papa ou de Hakim
+        r = reconnaitre_soi(argv[1], argv[2])
+        print("fait" if r else "introuvable")
+        return 0 if r else 1
     elif argv[:1] == ["signalements"]:                 # (04/11) ses signalements en attente, pour le cockpit
         print(json.dumps(signalements(), ensure_ascii=False))
     elif argv[:1] == ["signale-annuler"] and len(argv) == 2:

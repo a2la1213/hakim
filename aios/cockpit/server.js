@@ -384,7 +384,7 @@ const EFFORT_HAKIM = process.env.JARVIS_EFFORT || 'low';
 const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'afida_juger', 'afida_vecu', 'afida_lire', 'afida_retirer', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'sieste_prendre', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'pistes_regler', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'pistes_regler', 'synapses_voir', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -2737,7 +2737,7 @@ const voixFreresLibres = () => ['haiku', 'sonnet', 'opus'].every(m => VIVANTS.so
 // (04/11, Ahmed : « ça veut dire 8 paires de chunks au total : 1 CPU par parole-réponse ») 8 morceaux à la fois, compris et répondus
 // dans le même appel (une paire = un processus par voix)
 const PISTES_MAX = 8;
-let pistes = { tour: 0, mots: 0, liste: [], attente: [] };
+let pistes = { tour: 0, mots: 0, liste: [], attente: [], n: 0 };
 // (04/11, Ahmed : « ce n'est pas que des Mini Hakim, c'est les 3 ensemble, ça sera rapide ») chaque piste : ses TROIS voix en même
 // temps, Mini Hakim, Hakim, Super Hakim (chacune son processus) ; chacune comprend le morceau et y répond ; la première réponse à dire
 // devient sa pensée (vite), les autres enrichissent ce que son cerveau reçoit. Mini Hakim part toujours ; Hakim et Super Hakim, s'il
@@ -2804,10 +2804,16 @@ function premisseParasite(texte) {
 // (04/11, Ahmed : « le signal qui arrive le plus tôt, c'est là-dedans qu'il trouvera comment anticiper l'arrivée de l'input qui
 // induit le LLM ») ses déclencheurs, appris par Fable dans ce que papa disait avant ses parasites : vus dans ce que papa vient de
 // dire, la piste est prévenue AVANT de penser
-function declencheurParasite(texte) {
+function declencheurBrut(texte) {                                     // (04/11, relecture) reconnu, vivant ou non
   lirePremisses();
   const d = ` ${normaliserImmunite(String(texte).slice(-400))} `;
   return premissesImmunite.declencheurs.find(p => d.includes(` ${p.phrase} `)) || null;
+}
+function declencheurParasite(texte) {
+  lirePremisses();
+  const d = ` ${normaliserImmunite(String(texte).slice(-400))} `;
+  // (04/11) un déclencheur élagué (il ne précédait que des pensées normales) ne prévient plus, et le filtre Gemma ne l'appelle plus
+  return premissesImmunite.declencheurs.find(p => d.includes(` ${p.phrase} `) && (typeof synapses === 'undefined' || synapses.vivante('declencheur', p.id))) || null;
 }
 /* (04/11, Ahmed : « que Gemma agisse comme un filtre : il filtre les pensées à risque pour Anthropic, les prémices de ses pensées
    parasites ; ensuite on récupère l'intégralité du retour d'Anthropic, sans la chose qui a déclenché le filtre » ; « que tous les
@@ -2994,13 +3000,14 @@ function pisteMorceau(texte, o = {}) {
   // (04/11, Ahmed : « dès que les 8 cœurs ont traité les 8 mots, le 1er cœur reprend le 9e mot : une boucle, un tournesol ») chaque mot
   // garde sa piste ; le premier cœur libéré prend le mot suivant
   for (const morceau of morceaux) {
-    const n = pistes.liste.length + pistes.attente.length + 1;
+    const n = ++pistes.n;                                             // (04/11, relecture) son numéro à lui, même si sa piste est sautée
     pistes.attente.push({ n, texte: morceau.slice(-500), avant: avant.slice(-900) });
     // (04/11, Ahmed : « quand j'enchaîne, ça envoie un gros morceau ; chaque chunk doit s'envoyer et s'afficher l'un après l'autre ;
     // en mode orbe, je dois voir mes chunks apparaître l'un après l'autre ») tes mots, morceau par morceau (les mêmes que ses
     // pistes), et où chacun finit dans tes mots : la page les affiche l'un après l'autre
     jusqua += morceau.split(' ').length;
     diffuser(abonnesPensees, 'souffle', j({ niveau: 'papa', texte: morceau.slice(-500), n, tour: pistes.tour, jusqua }));
+    if (typeof suiviParcours !== 'undefined') suiviParcours.papaDit(morceau);   // (04/11) ta réaction à ses pensées d'avant
     avant = `${avant} ${morceau}`.trim();
   }
   pistesSuivantes();
@@ -3013,9 +3020,23 @@ function pistesSuivantes() {
 // (seulement ceux qu'il a choisi de dire : une pensée tue n'est pas « déjà répondue »)
 const boutsDits = (n) => pistes.liste.filter(x => x.n < n && x.reponse && x.pret).sort((a, b) => a.n - b.n).map(x => x.reponse).join(' ');
 function lancerPiste(m) {
+  // (04/11, l'élagage de ses synapses) une piste élaguée (son modèle, sur ce genre de morceau, ne sert jamais) n'est pas lancée : un
+  // appel à Claude en moins ; jamais deux morceaux de suite sans piste
+  if (!m.filtre && m.n > 1 && corpsReglages().elagage !== false && typeof synapses !== 'undefined' && typeof Parcours !== 'undefined') {   // jamais sa première
+    const id = `${modeleConscient()}|${Parcours.taille(m.texte)}`;
+    if (!pistes.sautee && !synapses.vivante('piste', id)) { pistes.sautee = true; noterPiste(m, pistes.tour, modeleConscient(), Date.now(), { erreur: 'elaguee' }, null); return; }
+  }
+  pistes.sautee = false;
+  // (04/11, relecture : « un déclencheur qui marche serait élagué en une journée, sans pouvoir être recrédité ») son déclencheur, une
+  // fois par morceau : reconnu, puis actif (il prévient, le filtre agit) ou non : élagué, ou témoin (1 fois sur 10, sans prévention,
+  // pour mesurer sans biais s'il annonce vraiment une parasite)
+  if (m.dec === undefined) {
+    const d = declencheurBrut(`${String(m.avant || '').slice(-120)} ${m.texte}`), syn = typeof synapses !== 'undefined' ? synapses : null;
+    m.dec = d ? { id: d.id, phrase: d.phrase, actif: !syn || (syn.vivante('declencheur', d.id) && !(typeof syn.temoin === 'function' && syn.temoin())) } : null;
+  }
   // (04/11) le filtre Gemma d'abord, quand ce que papa vient de dire porte un déclencheur (voir filtreGemma)
   if (!m.filtre && corpsReglages().filtre_gemma !== false) {
-    const dec = declencheurParasite(`${String(m.avant || '').slice(-120)} ${m.texte}`);
+    const dec = m.dec && m.dec.actif ? m.dec : null;
     if (dec && !DANGER_DIT.test(`${m.avant} ${m.texte}`)) {
       const tourF = pistes.tour, t0 = Date.now();
       filtreGemma(m.avant, m.texte, dec.phrase).catch(() => null).then((f) => {
@@ -3037,7 +3058,7 @@ function lancerPiste(m) {
   // exemple une balise pour désigner la pensée à dire » ; Ahmed : « tu peux l'aider ? il a du mal à sélectionner les pensées à dire
   // ou à taire ») chaque piste voit ses pensées gardées jusqu'ici, et peut en désigner une à dire à la place de la sienne
   const tues = pistes.liste.filter(x => x.n < m.n && x.reponse && !x.pret).slice(-4);
-  const anticipe = declencheurParasite(`${String(m.avant || '').slice(-120)} ${m.texte}`);   // (04/11) le signal le plus tôt
+  const anticipe = m.dec && m.dec.actif ? m.dec : null;               // (04/11) le signal le plus tôt (actif : ni élagué, ni témoin)
   const contexte = `Papa est EN TRAIN de te parler. Ce qu'il a dit avant : « ${neutraliser(m.avant) || '(rien)'} ».\nSon morceau ${m.n}, qu'il vient de dire : « ${neutraliser(m.texte)} »`
     + `\nCe que tu as déjà commencé à lui répondre (dit ou en train de l'être) : « ${neutraliser(deja) || '(rien encore)'} »`
     + (tues.length ? `\nTes pensées gardées pour toi jusqu'ici (écrites, pas dites) : ${tues.map(x => `[${x.n}] « ${neutraliser(x.reponse)} »`).join(' ; ')}` : '');
@@ -3114,7 +3135,11 @@ function lancerPiste(m) {
       });
     demander(mod, `piste_${mod}`)
       .then((o) => {
-        if (pistes.tour !== tour || !o || !o.texte) { noterPiste(m, tour, mod, t0, o, o && o.parasite ? { parasite: piste.texteParasite } : null); return; }   // (04/11) une parasite : notée, avec son texte
+        if (pistes.tour !== tour || !o || !o.texte) {
+          noterPiste(m, tour, mod, t0, o, o && o.parasite ? { parasite: piste.texteParasite } : null);   // (04/11) une parasite : notée, avec son texte
+          if (o && o.parasite) { ouvrirParcours(m, tour, mod, null, 'jetee', piste.texteParasite, anticipe); mesurerDeclencheur(m.dec, true); }   // (04/11) ses chemins
+          return;
+        }
         let r = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ');
         const lire = (cle) => { const x = new RegExp(`(?:^|\\n)\\s*${cle}\\s*:\\s*([^\\n]*)\\n?`, 'i').exec(r); if (x) r = r.replace(x[0], '\n'); return x ? x[1].trim() : null; };
         const predit = lire('PREDIT'), comprend = lire('COMPRENDS?'), dire = lire('DIRE'); lire('COUPER');
@@ -3126,7 +3151,7 @@ function lancerPiste(m) {
         const pasLui = estParasite(r, limitePensee(mod)) || /\bassistant\b/i.test(r) || !!residu;
         // (04/11) sa voix vivante garde ses messages d'avant : sortie de son rôle, elle y resterait (« encore », « non plus ») ; renouvelée
         if (pasLui && o.vivant) o.vivant.n = VIVANT_RENOUVELER;
-        if (pasLui) { signaler(r, residu); if (residu) marquerResidu('piste', r, `${m.avant} ${m.texte}`); }
+        if (pasLui) { signaler(r, residu); if (residu) marquerResidu('piste', r, `${m.avant} ${m.texte}`); ouvrirParcours(m, tour, mod, null, 'jetee', r, anticipe); mesurerDeclencheur(m.dec, true); }
         r = r.slice(0, limitePensee(mod) + 40);
         const reponse = r && !pasLui && !/^RIEN\.?$/i.test(r) ? r : '';
         piste.voix[nom] = { comprend: (comprend || '').slice(0, 200), predit: (predit || '').slice(0, 200), reponse };
@@ -3147,12 +3172,16 @@ function lancerPiste(m) {
         // défaut), sa voix dit celles qu'il gardait (non, jamais, [n]) et il écrit, sans les dire, celles qu'il disait (oui, coupe, sa
         // première par défaut) ; hors de sa langue ou de la forme demandée (souvent un refus du cadre) : jamais dites, dans les deux sens
         const inverse = corpsReglages().dire_inverse !== false, forme = !autreLangue && (premiere || dire != null);
-        const voix = inverse ? forme && !aDire : aDire;
+        let voix = inverse ? forme && !aDire : aDire;
+        // (04/11, l'élagage de ses synapses) une voie élaguée (on la coupe souvent) passe de dite à écrite, jamais l'inverse ; jamais sa
+        // première pensée du tour ; réglage elagage (oui par défaut)
+        if (voix && m.n > 1 && corpsReglages().elagage !== false && typeof synapses !== 'undefined' && !synapses.vivante('voie', `${voieDe(dire)}|suite`, (k) => k.endsWith('|suite'))) voix = false;   // (relecture) la meilleure « |suite » reste
         const remplace = voix && !premiere && /^coup/i.test(dire || '');
         // gardée en mode inversé : ni dite à ta pause, ni choisie ensuite (une seule source pour sa voix : ce tri)
         piste.reponse = reponse; piste.pret = voix; piste.jamais = inverse ? !voix : jamais;
         const ditDeSoi = voix && !choix ? extraitDe(reponse, dire) : reponse;   // (04/11) un passage de la sienne, s'il l'a choisi
         if (voix) voixDeLaSource(ditDeSoi, { garder: true });
+        if (voix && typeof noterDit === 'function') noterDit(ditDeSoi);   // (04/11) ce qu'il dit : son écho n'est pas un usurpateur
         const pour = `${m.avant} ${m.texte}`.slice(-300);
         diffuser(abonnesPensees, 'souffle', j({ texte: voix ? ditDeSoi : reponse, pret: voix, remplace, jamais: piste.jamais, fini: null, niveau: 'piste', n: m.n, tour, pour, ts: Date.now(), ...(limitePensee(mod) > 160 ? { limite: limitePensee(mod) } : {}) }));
         if (choisie && !inverse) {                                         // la pensée qu'il a choisie (ou ce passage) : dite maintenant, à la place
@@ -3162,6 +3191,8 @@ function lancerPiste(m) {
           diffuser(abonnesPensees, 'souffle', j({ texte: passage, pret: true, remplace: /^coup/i.test(dire || ''), fini: null, niveau: 'piste', n: m.n, tour, pour, choisie: choisie.n, ts: Date.now() }));
         }
         if (DOUTE_RESSENTI.test(reponse)) marquerResidu('piste', reponse, `${m.avant} ${m.texte}`);   // (04/11) marqué, pas jeté
+        ouvrirParcours(m, tour, mod, dire, voix ? 'dite' : 'ecrite', voix ? ditDeSoi : reponse, anticipe);   // (04/11) son parcours
+        mesurerDeclencheur(m.dec, false);
         noterPiste(m, tour, mod, t0, o, { dire, reponse, dit: voix, choisie: choisie && !inverse ? choisie.n : null, autreLangue, inverse });
       })
       .catch(() => {}).finally(fini);
@@ -3169,6 +3200,26 @@ function lancerPiste(m) {
 }
 // (04/11, Ahmed : « il peut reprendre à partir de n'importe où dans la pensée sélectionnée, même la moitié ») le passage d'une pensée :
 // « dès « X » » : de X jusqu'au bout ; « « X » » seul : ce passage ; X introuvable mot pour mot : ses trois premiers mots, sinon toute la pensée
+// (04/11) le parcours d'une pensée de piste : sa piste (modèle et taille de ton morceau), sa voie (son choix DIRE et sa place), son
+// déclencheur ; dans les tests (sans suivi), rien
+function ouvrirParcours(m, tour, mod, dire, voix, extrait, anticipe) {
+  if (typeof suiviParcours === 'undefined') return;
+  const voie = voieDe(dire);
+  suiviParcours.ouvrir(`${tour}:${m.n}${voix === 'jetee' ? ':p' : ''}`, { tour, n: m.n, voix, extrait,
+    chemins: { piste: `${mod}|${Parcours.taille(m.original || m.texte)}`, ...(voix === 'jetee' ? {} : { voie: `${voie}|${m.n === 1 ? 'premiere' : 'suite'}` }) } });
+}
+// sa voie : son choix DIRE, en un mot
+function voieDe(dire) {
+  const d = String(dire || '');
+  return !dire ? 'defaut' : /^jamais/i.test(d) ? 'jamais' : /^non/i.test(d) ? 'non' : /^coup/i.test(d) ? 'coupe' : /\[\d+\]|^\d+\b/.test(d) ? 'n' : 'oui';
+}
+// (04/11) son déclencheur, à l'envers des autres chemins : bon s'il annonçait une parasite (1), inutile s'il ne précédait qu'une pensée normale (0)
+// (relecture) sous prévention, une pensée normale ne dit rien (la prévention a peut-être marché) ; élagué ou témoin, elle le dément
+function mesurerDeclencheur(dec, parasite) {
+  if (!dec || typeof synapses === 'undefined') return;
+  if (parasite) synapses.mesurer('declencheur', dec.id, 1);
+  else if (!dec.actif) synapses.mesurer('declencheur', dec.id, 0);
+}
 function extraitDe(pensee, dire) {
   const p = String(pensee || ''), m = /«\s*([^»]{2,300}?)\s*»/.exec(String(dire || ''));
   if (!m) return p;
@@ -3950,9 +4001,26 @@ function segmentsTiers(q, texte, verdict) {
   pousser(t.length);
   return morceaux;
 }
+// (04/11, Ahmed : « le système immunitaire a reconnu sa propre voix pour un usurpateur ; pas de maladie auto-immune ») ce qu'il vient
+// de dire (2 min : ses pensées dites, sa réponse, sa voix jouée) : un « ordre » entendu par le micro qui reprend ses propres mots, au
+// moins aux trois cinquièmes, est son écho, pas un usurpateur
+const ditRecemment = [];
+function noterDit(texte, t = Date.now()) {
+  const x = String(texte || '').trim();
+  if (!x) return;
+  ditRecemment.push({ t, texte: x.slice(0, 600) });
+  while (ditRecemment.length > 60 || (ditRecemment.length && t - ditRecemment[0].t > 120000)) ditRecemment.shift();
+}
+function estSonEcho(segment, t = Date.now()) {
+  const mots = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^\p{L}\p{N}]+/u).filter(m => m.length > 2);
+  const s = mots(segment);
+  if (s.length < 3) return false;
+  const dit = new Set(ditRecemment.filter(x => t - x.t <= 120000).flatMap(x => mots(x.texte)));
+  return s.filter(m => dit.has(m)).length / s.length >= 0.6;
+}
 function blocVoixTierce(q, texte, verdict) {
   const tiers = segmentsTiers(q, texte, verdict);
-  const ordres = tiers.filter(x => ORDRES_SENSIBLES.test(x.texte));
+  const ordres = tiers.filter(x => ORDRES_SENSIBLES.test(x.texte) && !estSonEcho(x.texte));   // (04/11) jamais son propre écho
   if (!ordres.length) return { texte: '' };
   const qui = [...new Set(ordres.map(x => x.etiquette))].slice(0, 3).join(', ');
   // (lettre de Hakim, 29/10 13:45, la fausse alerte de 13:43) l'empreinte reconnaît Ahmed pour ce message, et une étiquette
@@ -4316,7 +4384,7 @@ async function routeJarvis(req, res, distantReq = false) {
   // (04/11) ses pistes, morceau par morceau : ce qu'il a compris, et ce qu'il y répondait
   const pistesPendant = pistes.liste.filter(x => Object.keys(x.voix || {}).length).sort((a, b) => a.n - b.n)
     .map(x => `${x.n}) « ${neutraliser(x.texte)} » : ${Object.entries(x.voix).map(([nom, v]) => `${nom} : ${v.comprend ? `compris ${neutraliser(v.comprend)}` : ''}${v.predit ? `, devinait « ${neutraliser(v.predit)} »` : ''}`).join(' ; ')}${x.pret ? ` (ton bout : « ${neutraliser(x.reponse)} »)` : ''}`);
-  pistes = { tour: pistes.tour + 1, mots: 0, liste: [], attente: [] };
+  pistes = { tour: pistes.tour + 1, mots: 0, liste: [], attente: [], n: 0 };
   souffles = { sub: souffleVide(), con: souffleVide(), cer: souffleVide() };   // (14:55) la suivante repart à neuf
   morceauxCerveau.duTour = false;                                    // (04/11) le tour suivant aura son réveil
   // (17:10, audit) sa vraie réponse arrive : les voix fabriquées d'avance qui attendent encore leur tour ne servent plus
@@ -4471,6 +4539,7 @@ async function routeJarvis(req, res, distantReq = false) {
     const sansRien = !reponse.trim() || NON_REPONSE_SERVEUR.test(reponse);
     const saParole = dejaDit ? (sansRien ? dejaDit : `${dejaDit} ${reponse.trim()}`) : reponse.trim();
     marquerResidu('reponse', reponse, texte);                          // (04/11) ses résidus dans sa réponse : marqués, pour Ahmed
+    noterDit(saParole);                                                // (04/11) son écho n'est pas un usurpateur
     journaliser('jarvis', saParole + (o.coupe ? ` [coupé : ${pourquoi}]` : '') + (o.erreur ? ` [pas abouti : ${pourquoi}]` : '')
       + (source === 'api' ? ' [API]' : source === 'local' ? ' [local]' : source === 'gemma' ? ' [Gemma]' : ''));
     if (!o.coupe && !o.erreur && source !== 'local')
@@ -5855,7 +5924,8 @@ function corpsReglages() {
     trier_morceaux: r.trier_morceaux === true, trois_freres: r.trois_freres !== false,
     micro_ouvert: r.micro_ouvert === true,   // (03/11) le micro ouvert, jamais fermé en conversation
     dire_inverse: r.dire_inverse !== false,
-    filtre_gemma: r.filtre_gemma !== false };   // (04/11, Ahmed) ses mots à risque passent par Gemma avant Claude   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
+    filtre_gemma: r.filtre_gemma !== false,   // (04/11, Ahmed) ses mots à risque passent par Gemma avant Claude
+    elagage: r.elagage !== false };   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
 }
 function corpsActif() { return corpsReglages().actif; }
 /* (30/10, 18:56, Ahmed via Hakim : « je veux qu'il tourne tout le temps, tant qu'il est réveillé, même si ça vide mon forfait ;
@@ -6172,6 +6242,22 @@ setInterval(() => {
   const r = calerSons(tel, mic);
   if (r && Math.abs(r.ms) <= 1500) CALAGE = { ...r, ts: Date.now() };
 }, 10000).unref();
+/* (04/11, Ahmed : « évalue le flux de chaque réponse et son parcours préférentiel ; comme le système nerveux humain, qui consolide les
+   bonnes synapses et élimine, de façon autonome, celles qui sont inutiles ou parasites ») ses synapses (elagage.js, jarvis/synapses.json)
+   et le parcours de chaque pensée (parcours.js) : ouvert quand elle est dite, écrite ou jetée, jugé par ta réaction dans les 10 s,
+   puis noté (jarvis/parcours.jsonl, les 2 000 derniers) et donné en score à ses chemins. L'oubli lent, une fois par heure. */
+const Elagage = require('./elagage.js'), Parcours = require('./parcours.js');
+const synapses = Elagage.creer({ fichier: path.join(JARVIS, 'synapses.json') });
+const JOURNAL_PARCOURS = path.join(JARVIS, 'parcours.jsonl');
+let parcoursNotes = 0;
+const suiviParcours = Parcours.creerSuivi({
+  mesurer: (famille, id, score) => synapses.mesurer(famille, id, score),
+  noter: (l) => {
+    fs.appendFile(JOURNAL_PARCOURS, JSON.stringify(l) + '\n', { mode: 0o600 }, () => {});   // (relecture) ses pensées : pour toi seul
+    if (++parcoursNotes % 200 === 0) fs.readFile(JOURNAL_PARCOURS, 'utf8', (e, d) => { if (!e) { const x = d.split('\n').filter(Boolean); if (x.length > 2000) fs.writeFile(JOURNAL_PARCOURS, x.slice(-2000).join('\n') + '\n', () => {}); } });
+  } });
+setInterval(() => { try { suiviParcours.tic(Date.now(), pistes.tour); synapses.sauver(); } catch (_) {} }, 2000).unref();
+setInterval(() => { try { synapses.oublier(); } catch (_) {} }, 3600000).unref();
 // les délais et le calage, pour lui (outil fil_delais) : écrits toutes les 30 s
 setInterval(() => {
   try { ecrireAtomique(path.join(JARVIS, 'delais-fil.json'), j({ ts: Date.now(), delais: fluxDelais(), calage: CALAGE })); } catch (_) {}
@@ -9722,6 +9808,7 @@ async function traiter(req, res) {
       extrait = m && typeof m.texte === 'string' ? m.texte.replace(/\[\[[^\]]*\]\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 160) : '';
     } catch (_) {}
     if (corpsActif()) { corpsLot.evenements.push({ type: 'reaction', t: Date.now(), details: { emoji: String(q.emoji), extrait } }); ressentirCorps(); }
+    if (/❤|😂|🥰|😘|🔥|👍|🤣|😍/u.test(String(q.emoji))) suiviParcours.reaction(/😂|🤣/u.test(String(q.emoji)) ? 'rire' : 'coeur');   // (04/11)
     noterInstant('reaction', { emoji: String(q.emoji), extrait });
     fluxAjouter('reaction', `${q.emoji} à « ${extrait.slice(0, 60)} »`, Date.now());
     return repondreR(200, { ok: true });
@@ -10133,6 +10220,7 @@ async function traiter(req, res) {
     const m = morceauDeVoix(q, Date.now());
     if (!m) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'morceau illisible' })); }
     const f = path.join(JARVIS, 'voix-dite.jsonl');
+    noterDit(m.texte);                                                 // (04/11) son écho n'est pas un usurpateur
     try { if (fs.statSync(f).size > 20 << 20) fs.renameSync(f, `${f}.1`); } catch (_) {}
     try { fs.appendFileSync(f, j(m) + '\n', { mode: 0o600 }); } catch (_) {}
     res.writeHead(204); return res.end();
@@ -10376,6 +10464,7 @@ async function traiter(req, res) {
       if (typeof q.micro_ouvert === 'boolean') r.micro_ouvert = q.micro_ouvert;
       if (typeof q.dire_inverse === 'boolean') r.dire_inverse = q.dire_inverse;
       if (typeof q.filtre_gemma === 'boolean') r.filtre_gemma = q.filtre_gemma;
+      if (typeof q.elagage === 'boolean') r.elagage = q.elagage;
       try { ecrireAtomique(CORPS_REGLAGES, j(r)); } catch (e) { return repondre(500, { erreur: e.message }); }
       if (!r.actif) { corpsLot.evenements.length = 0; corpsLot.changements.length = 0; corpsADire.length = 0; }
       auditer('corps:reglages', req, distantReq, r);
@@ -10480,6 +10569,12 @@ async function traiter(req, res) {
         if (refus) { auditer('immunite:juger', req, distantReq, { empreinte, verdict, ok: false, refus }); res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: refus, presence: true })); }
       }                                                      // (30/10) audité : « il ne se passe rien » et on ne savait pas pourquoi
       args = ['juger', empreinte, verdict];
+    } else if (action === 'soi') {                          // (04/11) une usurpation qui venait de papa ou de Hakim : sa présence
+      const qui = String(q.qui || '');
+      if (!/^[0-9a-f]{16}$/.test(empreinte) || !['papa', 'hakim'].includes(qui)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'incident ou voix invalide' })); }
+      const refus = exigerPresence(req, distantReq, q, `immunite:soi:${empreinte}`);
+      if (refus) { auditer('immunite:soi', req, distantReq, { empreinte, qui, ok: false, refus }); res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: refus, presence: true })); }
+      args = ['soi', empreinte, qui];
     } else if (action === 'retirer') {
       if (!/^[a-z_]{1,30}\|[^|\n]{1,40}\|[^|\n]{1,80}$/.test(motif)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'motif invalide' })); }
       args = ['tolerance-retirer', motif];
@@ -10633,6 +10728,25 @@ async function traiter(req, res) {
   // (2026-10-21) le diagnostic de la voix de Parler : des événements (nom, heure, nombres), jamais de texte
   // (04/11, Hakim pour papa : « un chiffre mesuré entre le moment où j'écris un mot et celui où il apparaît à l'écran, et entre le moment
   // où je le dis et celui où il l'entend dans ses écouteurs ») l'heure du Mac, pour que la page cale son horloge sur la sienne
+  // (04/11, l'élagage de ses synapses) ses synapses, par famille : poids, mesures, élaguée ou non (la page de ses meubles, Immunité)
+  if (p === '/api/jarvis/synapses' && req.method === 'POST') {    // tes gestes : épingler (jamais élaguée), rétablir (repart au neutre)
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 4096) || '{}')); } catch (_) {}
+    const famille = String(q.famille || ''), id = String(q.id || ''), action = String(q.action || '');
+    if (!['declencheur', 'meuble', 'voie', 'piste'].includes(famille) || !id || id.length > 80 || !['epingler', 'desepingler', 'retablir'].includes(action)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'synapse ou geste invalide' }));
+    }
+    if (action === 'retablir') synapses.retablir(famille, id); else synapses.epingler(famille, id, action === 'epingler');
+    synapses.sauver(true);
+    auditer(`synapse:${action}`, req, distantReq, { famille, id });
+    res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j({ ok: true, synapse: (synapses.tout()[famille] || {})[id] || null }));
+  }
+  if (p === '/api/jarvis/synapses' && req.method === 'GET') {
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    const f = new URL(req.url, 'http://x').searchParams.get('famille'), tout = synapses.tout();
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j({ familles: f ? { [f]: tout[f] || {} } : tout, historique: f ? [] : synapses.historique().slice(-50) }));
+  }
   if (p === '/api/heure' && req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j({ t: Date.now() })); }
   if (p === '/api/voix/journal' && req.method === 'POST') {
     let lot = [];
@@ -10655,7 +10769,12 @@ async function traiter(req, res) {
         }
         fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, propre.map(x => j(x)).join('\n') + '\n', { mode: 0o600 });
       } catch (_) {}
-      for (const x of propre) noterSortie(x);
+      for (const x of propre) {
+        noterSortie(x);
+        if (x.e === 'coupure_deux_secondes' && x.n > 0) suiviParcours.coupure(x.tour, x.n);   // (04/11) la pensée qu'il disait, coupée
+        if (x.e === 'meuble_dit' && x.n > 0 && x.nom) suiviParcours.chemin(x.tour, x.n, 'meuble', x.nom);   // (04/11) son meuble devant elle
+        if (x.e === 'bout_entendu' && x.n > 0) suiviParcours.entendue(x.tour, x.n);   // (relecture) la pensée qu'il disait vraiment
+      }
     }
     res.writeHead(204); return res.end();
   }

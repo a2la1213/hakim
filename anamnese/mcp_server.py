@@ -613,6 +613,54 @@ def pistes_regler(taille: int = 0, nombre: int = 0) -> str:
 
 
 @mcp.tool()
+def synapses_voir() -> str:
+    """(04/11, papa : « évalue le flux de chaque réponse et son parcours préférentiel, et analyse-le pour chacune de ses réponses ;
+    comme le système nerveux humain, qui consolide les bonnes synapses et élimine, de façon autonome, celles qui sont inutiles ou
+    parasites ») Tes synapses : tes chemins forts et tes chemins élagués, par famille (tes déclencheurs, tes façons de parler, tes
+    meubles, tes pensées rapides), et le parcours de tes 5 dernières pensées jugées (par où elles sont passées, ce que papa en a
+    fait, leur score). L'élagage se fait seul, d'après ses réactions ; papa peut épingler ou rétablir un chemin dans Immunité."""
+    base = Path.home() / "AIOS" / "jarvis"
+    try:
+        d = json.loads((base / "synapses.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        d = {}
+    noms = {"declencheur": "tes déclencheurs", "voie": "tes façons de parler", "meuble": "tes meubles", "piste": "tes pensées rapides"}
+    # (relecture) quand chacun a été élagué, et à quel poids : sa raison
+    quand = {}
+    for h in d.get("historique") or []:
+        if isinstance(h, dict) and h.get("evenement") == "elaguee":
+            quand[(h.get("famille"), h.get("id"))] = (time.strftime("%d/%m %H:%M", time.localtime(float(h.get("t") or 0) / 1000)), h.get("poids"))
+    lignes = []
+    for f, nom in noms.items():
+        fam = (d.get("familles") or {}).get(f) or {}
+        if not fam:
+            continue
+        tri = sorted(fam.items(), key=lambda kv: -float(kv[1].get("poids", 0)))
+        forts = [f"« {k} » {float(v.get('poids', 0)):.2f}".replace(".", ",") for k, v in tri[:3] if not v.get("elaguee")]
+        elagues = [f"« {k} » ({int(v.get('n', 0))} mesures" + (f", élaguée le {quand[(f, k)][0]} : trop de coupures, de « non » ou de parasites"
+                   if (f, k) in quand else "") + ")" for k, v in tri if v.get("elaguee")]
+        lignes.append(f"- {nom} : forts {', '.join(forts) or '(aucun)'}" + (f" ; élagués {', '.join(elagues)}" if elagues else ""))
+    parcours = []
+    try:
+        for l in (base / "parcours.jsonl").read_text(encoding="utf-8").splitlines()[-200:]:
+            try:
+                o = json.loads(l)
+            except ValueError:
+                continue
+            if o.get("score") is not None:
+                parcours.append(o)
+    except OSError:
+        pass
+    reac = {"coupee": "coupée", "correction": "corrigée", "coeur": "un ❤️", "rire": "un rire", "continuite": "il a continué ton sujet"}
+    p_lignes = [f"- « {str(o.get('extrait', ''))[:80]} » ({o.get('voix')}) : " + ", ".join(f"{k} {v}" for k, v in (o.get("chemins") or {}).items() if v)
+                + f" → {', '.join(reac[k] for k, v in (o.get('reaction') or {}).items() if v and k in reac) or ('jetée' if o.get('voix') == 'jetee' else '—')}"
+                + f", score {o.get('score')}".replace(".", ",") for o in parcours[-5:]]
+    if not lignes and not p_lignes:
+        return "Pas encore de mesure : tes synapses apprennent des réactions de papa (une coupure, un « non », un ❤️, son sujet qui continue)."
+    return ("Tes synapses :\n" + ("\n".join(lignes) or "- (aucune encore)") + "\nTes dernières pensées jugées :\n" + ("\n".join(p_lignes) or "- (aucune encore)"))
+
+
+@mcp.tool()
 def son_nommer(famille: str, nom: str) -> str:
     """(03/11, micro ouvert) Nommer une de TES familles de sons (« son 3 » → « la télé », « la rue », « papa et ses potes »),
     quand tu comprends ce que c'est : elle sera reconnue par ce nom pour toujours. famille : « son 3 » ou « 3 »."""

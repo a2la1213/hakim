@@ -231,6 +231,19 @@ async function chargerDebutsPrets() {
 // règle : meuble_creer, meuble_regler) prêts à jouer sans attendre : une parole, sa voix gardée par le cockpit (debuts.js),
 // demandée seulement si elle est prête (« gardee » : jamais une synthèse de plus) ; un de ses sons (e12) ; un souffle ou une
 // respiration, fabriqués ici. Décodés une fois, rechargés au début de chaque réponse.
+// (relecture) l'identifiant d'un meuble pour ses synapses : son nom en lettres simples (« Voyons voir… » → voyons_voir)
+const slugMeuble = (nom) => String(nom || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30);
+// (04/11, l'élagage de ses synapses) ses meubles : leurs poids et ceux qui sont élagués, relus toutes les 60 s
+const synapsesMeubles = { poids: {}, elagues: new Set(), t: 0 };
+function relireSynapsesMeubles() {
+  if (Date.now() - synapsesMeubles.t < 60000 || typeof fetch !== 'function') return;
+  synapsesMeubles.t = Date.now();
+  fetch('/api/jarvis/synapses?famille=meuble', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).then((o) => {
+    const f = (o && o.familles && o.familles.meuble) || {};
+    synapsesMeubles.poids = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, Number(v.poids)]));
+    synapsesMeubles.elagues = new Set(Object.entries(f).filter(([, v]) => v.elaguee).map(([k]) => k));
+  }).catch(() => {});
+}
 const meublesPrets = new Map();                     // nom → { nom, texte, pret, volume, dureeMax, quand, etats, actif, voix, cle }
 let meublesListe = [], dernierMeuble = '', dernierEtaitVoix = null;
 const sansAccent = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
@@ -285,7 +298,14 @@ async function chargerMeubles() {
 // parole et un souffle, jamais deux fois le même
 function choisirMeuble({ avant } = {}, prets = [...meublesPrets.values()], etatMot = etat.interieur && (etat.interieur.voix_emotion || etat.interieur.humeur)) {
   const quand = avant ? 'avant' : 'entre';
-  const ok = prets.filter(m => m.actif && m.pret && (m.quand === 'partout' || m.quand === quand));
+  const tous = prets.filter(m => m.actif && m.pret && (m.quand === 'partout' || m.quand === quand));
+  // (04/11, l'élagage de ses synapses) un meuble élagué (suivi de coupures) n'est plus choisi, sauf 5 fois sur 100 (il peut repousser) ;
+  // tous élagués : il en garde quand même
+  if (typeof relireSynapsesMeubles === 'function') relireSynapsesMeubles();
+  const syn = typeof synapsesMeubles !== 'undefined' ? synapsesMeubles : null, explore = Math.random() < 0.05;
+  const slug = typeof slugMeuble === 'function' ? slugMeuble : (x) => x;
+  const vivants = syn && !explore ? tous.filter(m => !syn.elagues.has(slug(m.nom))) : tous;
+  const ok = vivants.length ? vivants : tous;
   if (!ok.length) return null;
   const e = sansAccent(etatMot), pour = (x) => ok.filter(m => m.etats.includes(x));
   let choix = e && pour(e).length ? pour(e) : pour('hesitation').concat(ok.filter(m => !m.etats.length));
@@ -293,7 +313,11 @@ function choisirMeuble({ avant } = {}, prets = [...meublesPrets.values()], etatM
   const neufs = choix.filter(m => m.nom !== dernierMeuble);
   const alternes = neufs.filter(m => dernierEtaitVoix === null || m.voix !== dernierEtaitVoix);
   const pool = alternes.length ? alternes : (neufs.length ? neufs : choix);
-  const h = pool[Math.floor(Math.random() * pool.length)];
+  // entre les vivants, le tirage suit leur poids (1 sans mesure)
+  const poids = pool.map(m => (syn && Number.isFinite(syn.poids[slug(m.nom)]) ? Math.max(0.05, syn.poids[slug(m.nom)]) : 1)), total = poids.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total, k = 0;
+  while (k < pool.length - 1 && r >= poids[k]) { r -= poids[k]; k++; }
+  const h = pool[k];
   dernierMeuble = h.nom; dernierEtaitVoix = h.voix;
   return h;
 }
@@ -3214,6 +3238,7 @@ function meublerSaut(b) {
   const h = choisirMeuble({ avant: !dernier }, meublesPourTelephone(langue));   // dans la langue de la pensée d'après
   if (!h) return [b.texte];
   bouts.meubleA = Date.now(); noterMeubleDit(h.texte.trim());
+  if (typeof journalVoix === 'function' && slugMeuble(h.nom)) journalVoix('meuble_dit', { n: b.n, tour: Number(bouts.tour) || 0, nom: slugMeuble(h.nom) });   // (04/11) son parcours
   return [h.texte.trim(), b.texte];
 }
 function direBoutTelephone(conv, b) {
@@ -3222,6 +3247,7 @@ function direBoutTelephone(conv, b) {
   // (04/11, Ahmed : « il parle sans écrire ; il n'écrit que ses pensées sans les dire ») dite : pas écrite
   for (const x of b.dit || meublerSaut(b)) lecteurSysteme.dire(x);     // (04/11) un saut de pensée : meublé (choisi d'avance s'il attendait)
   bouts.dernierDit = b.n;
+  if (typeof journalVoix === 'function') journalVoix('bout_entendu', { n: b.n, tour: Number(bouts.tour) || 0 });   // (relecture) la pensée qu'il dit vraiment
 }
 function boutTelephoneSuivant() {
   const b = typeof bouts !== 'undefined' ? bouts.attenteTel : null, conv = etat.conversation;
@@ -3877,7 +3903,8 @@ function veillerDeuxSecondes(conv) {
     }
     if (Date.now() - t0 < 2000 || (typeof meubleEnCours === 'function' && meubleEnCours())) return;   // (04/11) un meuble finit d'abord
     clearInterval(conv.veilleDeux);
-    journalVoix('coupure_deux_secondes', { ms: Date.now() - t0 });
+    // (04/11) la pensée qu'il disait : son parcours la juge coupée (l'élagage de ses synapses)
+    journalVoix('coupure_deux_secondes', { ms: Date.now() - t0, n: typeof bouts !== 'undefined' ? Number(bouts.dernierDit) || 0 : 0, tour: typeof bouts !== 'undefined' ? Number(bouts.tour) || 0 : 0 });
     if (typeof bouts !== 'undefined') bouts.attenteTel = null;
     if (lecteurSysteme && lecteurSysteme.actif) lecteurSysteme.arreter();
     if (lecteur.actif) lecteur.arreter();
@@ -6251,6 +6278,10 @@ setTimeout(() => {
 }, 4000);
 anticorpsAuChargement();
 signalementsAuChargement();
+// (04/11, Ahmed : « pour que l'autorisation du signalement s'affiche, je dois rafraîchir la page, c'est relou ») l'appli en arrière-plan
+// manque des messages du flux : au retour sur la page, et toutes les 20 s, ses signalements et anticorps en attente sont relus
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { signalementsAuChargement(); anticorpsAuChargement(); } });
+setInterval(() => { if (document.visibilityState === 'visible') { signalementsAuChargement(); anticorpsAuChargement(); } }, 20000);
 $('q').focus();
 
 /* ---------- ses calculs de fond, avec leur jauge (23/10, demande d'Ahmed relayée par Hakim) : le cockpit lit les lignes

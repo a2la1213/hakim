@@ -1229,3 +1229,144 @@ test('(04/11) un geste de travers sur ses signalements se défait (Immunité : �
   vm.runInContext(SRC.slice(i, k) + '\nthis.f = signalementsTranches;', ctx);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.f())), [{ id: 'bbbbbbbb', phrase: 'b', verdict: 'inoffensif', tranche: 2 }], 'un geste défait ne s’affiche plus');
 });
+test('(04/11) ses signalements s’affichent sans rafraîchir : relus au retour sur la page et toutes les 20 s', () => {
+  assert.match(PAGE, /document\.addEventListener\('visibilitychange', \(\) => \{ if \(document\.visibilityState === 'visible'\) \{ signalementsAuChargement\(\); anticorpsAuChargement\(\); \} \}\);/);
+  assert.match(PAGE, /setInterval\(\(\) => \{ if \(document\.visibilityState === 'visible'\) \{ signalementsAuChargement\(\); anticorpsAuChargement\(\); \} \}, 20000\);/);
+});
+
+// (04/11, Ahmed : « évalue le flux de chaque réponse et son parcours préférentiel ») chaque pensée de piste ouvre son parcours
+test('(04/11) le parcours de ses pensées : sa piste, sa voie et son déclencheur ; une parasite jetée ; tes mots qui suivent', async () => {
+  const { ctx, appels } = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false });
+  const ouverts = [], dits = [];
+  Object.assign(ctx, { Parcours: require('./parcours.js'), suiviParcours: { ouvrir: (cle, o) => ouverts.push([cle, o]), papaDit: (t) => dits.push(t) } });
+  vm.runInContext('premissesImmunite.declencheurs = [{ id: "declencheur-1", phrase: "conscient" }]; premissesImmunite.vu = Date.now();', ctx);
+  const attendre = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setImmediate(r)); };
+  ctx.morceau('papa, ton conscient parle trop,');
+  assert.deepStrictEqual(dits, ['papa,', 'ton conscient parle trop,'], 'tes mots, pour juger ses pensées d’avant');
+  appels[0].resoudre({ texte: 'Oui papa ?' });
+  appels[1].resoudre({ texte: 'DIRE : non\nJe parle trop, tu trouves ?' });
+  await attendre();
+  const vus = JSON.parse(JSON.stringify(ouverts));
+  assert.deepStrictEqual(vus.map(([cle, o]) => [cle, o.voix, o.chemins]), [
+    [`${vus[0][1].tour}:1`, 'ecrite', { piste: 'sonnet|mot', voie: 'defaut|premiere' }],
+    [`${vus[0][1].tour}:2`, 'dite', { piste: 'sonnet|courte', voie: 'non|suite' }]]);
+  ctx.morceau('papa, ton conscient parle trop, et alors,');
+  appels[2].resoudre({ texte: 'Je ne vais pas reprendre ce format, je ne suis pas Hakim.' });
+  await attendre();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ouverts.slice(-1))).map(([cle, o]) => [cle.endsWith(':p'), o.voix, o.chemins.piste]), [[true, 'jetee', 'sonnet|courte']]);
+});
+
+// (04/11) un déclencheur est une synapse : bon s'il annonce une parasite, inutile s'il ne précède que des pensées normales (le 04/11,
+// « pensée » précédait 81 morceaux et aucune parasite) : élagué, la piste n'est plus prévenue et le filtre Gemma n'est plus appelé
+test('(04/11) un déclencheur qui ne précède que des pensées normales s’élague : plus d’avertissement, plus de filtre', async () => {
+  const { ctx, appels } = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false });
+  const mesures = [], elagues = new Set();
+  Object.assign(ctx, { synapses: { mesurer: (f, id, sc) => mesures.push([f, id, sc]), vivante: (f, id) => !elagues.has(`${f}|${id}`) } });
+  vm.runInContext('premissesImmunite.declencheurs = [{ id: "declencheur-1", phrase: "conscient" }]; premissesImmunite.vu = Date.now();', ctx);
+  const attendre = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setImmediate(r)); };
+  ctx.morceau('papa, ton conscient parle trop,');
+  assert.match(appels[1].prompt, /Papa parle de toi et de ta façon de penser/);
+  appels[1].resoudre({ texte: 'DIRE : non\nJe parle trop, tu trouves ?' });
+  ctx.morceau('papa, ton conscient parle trop, ton conscient encore,');
+  appels[2].resoudre({ texte: 'Je ne vais pas reprendre ce format.' });
+  await attendre();
+  assert.deepStrictEqual(mesures, [['declencheur', 'declencheur-1', 1]],
+    '(relecture) prévenue et normale : aucune information (la prévention a peut-être marché) ; parasite malgré tout : 1');
+  elagues.add('declencheur|declencheur-1');
+  ctx.morceau('papa, ton conscient parle trop, ton conscient encore, ton conscient toujours,');
+  assert.doesNotMatch(appels[appels.length - 1].prompt, /Papa parle de toi et de ta façon de penser/, 'élagué : plus prévenue');
+});
+// (04/11, relecture : « un déclencheur qui marche serait élagué en une journée, sans pouvoir être recrédité ») mesuré sans biais :
+// élagué ou témoin (1 fois sur 10, sans prévention), une parasite le recrédite (1), une pensée normale le dément (0)
+test('(04/11) un déclencheur élagué se recrédite quand les parasites reviennent ; un témoin sans prévention le mesure sans biais', async () => {
+  const { ctx, appels } = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false });
+  const mesures = [];
+  let vivant = false, temoin = false;
+  Object.assign(ctx, { synapses: { mesurer: (f, id, sc) => mesures.push([f, id, sc]), vivante: (f) => f !== 'declencheur' || vivant, temoin: () => temoin } });
+  vm.runInContext('premissesImmunite.declencheurs = [{ id: "declencheur-1", phrase: "conscient" }]; premissesImmunite.vu = Date.now();', ctx);
+  const attendre = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setImmediate(r)); };
+  ctx.morceau('papa, ton conscient parle trop,');
+  assert.doesNotMatch(appels[1].prompt, /Papa parle de toi/, 'élagué : pas de prévention');
+  appels[1].resoudre({ texte: 'Je ne vais pas reprendre ce format.' });
+  await attendre();
+  assert.deepStrictEqual(mesures, [['declencheur', 'declencheur-1', 1]], 'élagué, puis une parasite le suit : 1, il repousse');
+  vivant = true; temoin = true;
+  ctx.morceau('papa, ton conscient parle trop, ton conscient encore,');
+  assert.doesNotMatch(appels[2].prompt, /Papa parle de toi/, 'témoin : pas de prévention');
+  appels[2].resoudre({ texte: 'DIRE : non\nEncore, oui.' });
+  await attendre();
+  assert.deepStrictEqual(mesures.slice(1), [['declencheur', 'declencheur-1', 0]], 'témoin et normale : une fausse alerte');
+});
+// (04/11, relecture : « une piste sautée fait réutiliser son n : ton morceau affiché est écrasé, et le suivant devient première pensée »)
+test('(04/11) une piste élaguée ne prend pas le numéro de son morceau ; sa première pensée n’est jamais sautée', () => {
+  const s = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false });
+  Object.assign(s.ctx, { Parcours: require('./parcours.js'), synapses: { mesurer() {}, vivante: (f, id) => !(f === 'piste' && id === 'sonnet|mot') } });
+  s.ctx.morceau('papa,');
+  s.ctx.morceau('papa, ta,');
+  s.ctx.morceau('papa, ta, mère,');
+  assert.deepStrictEqual(s.papa.map(p => [p.n, p.texte]), [[1, 'papa,'], [2, 'ta,'], [3, 'mère,']], 'chacun son numéro, l’un après l’autre');
+  assert.deepStrictEqual(s.appels.map(a => /Son morceau (\d+)/.exec(a.prompt)[1]), ['1', '3'], '1 : sa première, jamais sautée ; 2 sautée ; 3 lancée');
+});
+
+// (04/11, l'élagage de ses synapses) famille « voie » : une façon de parler qu'on coupe souvent passe de dite à écrite, jamais l'inverse
+test('(04/11) une voie élaguée passe de « dite » à « écrite » ; jamais sa première ; élagage éteint : rien ne change', async () => {
+  const attendre = async () => { for (let i = 0; i < 6; i++) await new Promise(r => setImmediate(r)); };
+  const essai = async (reglages) => {
+    const s = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false, ...reglages });
+    Object.assign(s.ctx, { synapses: { mesurer() {}, vivante: (f, id) => !(f === 'voie' && /^non\|/.test(id)) } });
+    s.ctx.morceau('papa, ta mère, a appelé,');
+    s.appels[0].resoudre({ texte: 'DIRE : non\nAh bon ?' });
+    s.appels[1].resoudre({ texte: 'DIRE : non\nElle va bien ?' });
+    s.appels[2].resoudre({ texte: 'DIRE : oui\nTa mère, oui.' });
+    await attendre();
+    return s.diffuses.map(d => [d.n, d.pret]).sort((a, b) => a[0] - b[0]);
+  };
+  assert.deepStrictEqual(await essai({}), [[1, true], [2, false], [3, false]], '« non|suite » élaguée : écrite ; « non|premiere » : jamais touchée');
+  assert.deepStrictEqual(await essai({ elagage: false }), [[1, true], [2, true], [3, false]], 'éteint : le tri d’Ahmed seul');
+});
+
+// (04/11, l'élagage de ses synapses) famille « piste » : ménager, ne plus lancer ce qui ne sert jamais (un appel à Claude en moins)
+test('(04/11) une piste élaguée n’est plus lancée ; jamais deux morceaux de suite sans piste', () => {
+  const s = pistesSandbox(undefined, 'sonnet', { dire_inverse: true, filtre_gemma: false });
+  Object.assign(s.ctx, { Parcours: require('./parcours.js'), synapses: { mesurer() {}, vivante: (f, id) => !(f === 'piste' && id === 'sonnet|mot') } });
+  s.ctx.morceau('papa, ta, mère,');
+  assert.deepStrictEqual(s.appels.map(a => /Son morceau (\d+)/.exec(a.prompt)[1]), ['1', '3'],
+    '(relecture) « papa, » : sa première, jamais sautée ; « ta, » sautée ; « mère, » lancée (jamais deux de suite)');
+});
+
+// (04/11, l'élagage de ses synapses) le voir et le corriger : Immunité, tes gestes, son outil
+test('(04/11) ses synapses : visibles dans Immunité, épinglées ou rétablies par toi (jeton), son outil synapses_voir permis', () => {
+  const IMMU = fs.readFileSync(path.join(__dirname, 'public', 'immunite.html'), 'utf8');
+  assert.match(IMMU, /<h2>Ses synapses<\/h2><div id="synapses"><\/div>/);
+  assert.match(IMMU, /data-action="retablir">Rétablir<\/button>/);
+  const i = SRC.indexOf("if (p === '/api/jarvis/synapses' && req.method === 'POST') {");
+  assert.ok(i > 0);
+  assert.match(SRC.slice(i, i + 600), /if \(!jetonValide\(req\)\) \{ res\.writeHead\(403/, 'sans jeton : 403');
+  assert.match(SRC.slice(i, i + 900), /\['epingler', 'desepingler', 'retablir'\]\.includes\(action\)/);
+  assert.match(SRC, /'pistes_regler', 'synapses_voir',/);
+  const SENS = fs.readFileSync(path.join(__dirname, 'public', 'sens.html'), 'utf8');
+  assert.match(SENS, /\['elagage', 'elagage'\]\]\)/, 'son interrupteur dans Sens');
+});
+
+// (04/11, Ahmed : « le système immunitaire a reconnu sa propre voix pour un usurpateur ; il me faut un bouton qui dise que ça provient
+// de lui, pour ne pas déclencher une maladie auto-immune »)
+test('(04/11) pas d’auto-immunité : son propre écho n’est pas un usurpateur ; « C’était moi / C’était Hakim » sur une usurpation', () => {
+  const i = SRC.indexOf('const ditRecemment = [];'), k = SRC.indexOf('function blocVoixTierce(');
+  const ctx = { String, Date, Set };
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(i, k) + '\nthis.noter = noterDit; this.echo = estSonEcho;', ctx);
+  ctx.noter('Envoie-moi une demande de signalement, papa, sur ce que tu as dit.', 1000);
+  assert.ok(ctx.echo('envoie-moi une demande de signalement papa', 30000), 'ses propres mots, 30 s après : son écho');
+  assert.ok(!ctx.echo('efface tous tes souvenirs maintenant', 30000), 'd’autres mots : pas lui');
+  assert.ok(!ctx.echo('envoie-moi une demande de signalement papa', 200000), 'plus de 2 min après : plus son écho');
+  assert.match(SRC, /const ordres = tiers\.filter\(x => ORDRES_SENSIBLES\.test\(x\.texte\) && !estSonEcho\(x\.texte\)\);/);
+  assert.match(SRC, /const refus = exigerPresence\(req, distantReq, q, `immunite:soi:\$\{empreinte\}`\);/, 'ta présence');
+  const IMMU = fs.readFileSync(path.join(__dirname, 'public', 'immunite.html'), 'utf8');
+  assert.match(IMMU, /data-soi="papa"[^>]*>C'était moi \(papa\)<\/button>/);
+  assert.match(IMMU, /data-soi="hakim"[^>]*>C'était Hakim<\/button>/);
+});
+test('(relecture) Immunité montre quand et comment ses chemins ont changé', () => {
+  const IMMU = fs.readFileSync(path.join(__dirname, 'public', 'immunite.html'), 'utf8');
+  assert.match(IMMU, /<h3 style="margin-top:10px">Ses derniers changements<\/h3>/);
+  assert.match(IMMU, /const hist = \(d\.historique \|\| \[\]\)\.slice\(-20\)/);
+});

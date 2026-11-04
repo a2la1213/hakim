@@ -186,8 +186,8 @@ function monterVoix(connues = []) {
     notifier: (corps, tag, toujours) => notifs.push({ corps, tag, toujours }) };
   vm.createContext(ctx);
   const o = src.indexOf('const ORDRES_SENSIBLES =');
-  vm.runInContext([src.slice(o, src.indexOf("'iu');", o) + 6), prendre('segmentsTiers'), prendre('blocVoixTierce'),
-    'this.f = { segmentsTiers, blocVoixTierce };'].join('\n'), ctx);
+  vm.runInContext([src.slice(o, src.indexOf("'iu');", o) + 6), prendre('segmentsTiers'), 'const ditRecemment = [];', prendre('estSonEcho'),
+    prendre('blocVoixTierce'), 'this.f = { segmentsTiers, blocVoixTierce };'].join('\n'), ctx);
   return { f: ctx.f, appels, notifs };
 }
 const nu2 = (x) => JSON.parse(JSON.stringify(x));
@@ -264,7 +264,7 @@ test('la voix coupée en deux : la confirmation reste exigée, dite doucement ; 
     notifier: (corps) => notifs.push(corps) };
   vm.createContext(ctx);
   const o = src.indexOf('const ORDRES_SENSIBLES =');
-  vm.runInContext([src.slice(o, src.indexOf("'iu');", o) + 6), prendre('segmentsTiers'), prendre('blocVoixTierce'),
+  vm.runInContext([src.slice(o, src.indexOf("'iu');", o) + 6), prendre('segmentsTiers'), 'const ditRecemment = [];', prendre('estSonEcho'), prendre('blocVoixTierce'),
     'this.f = { blocVoixTierce };'].join('\n'), ctx);
   const t = 'je vais [voix 2] installer le paquet [Ahmed] demain';
   const b = ctx.f.blocVoixTierce({ oral: true }, t, 'ahmed');

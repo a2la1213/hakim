@@ -249,7 +249,8 @@ def soigner(maintenant=None, consulter_fn=None):
         depuis = float(immunite.lire_etat().get("medecin_jusqua", 0))
         nouveaux = [o for o in immunite._queue(immunite._f(immunite.INCIDENTS), 262144)
                     if float(o.get("ts", 0)) > depuis and o.get("score", 0) >= immunite.SEUIL_NOTER]
-        graves = [o for o in nouveaux if o.get("score", 0) >= immunite.SEUIL_AVERTIR]
+        soi = immunite.soi_empreintes()                # (04/11) une usurpation qui venait de papa ou de Hakim : pas à soigner
+        graves = [o for o in nouveaux if o.get("score", 0) >= immunite.SEUIL_AVERTIR and str(o.get("empreinte")) not in soi]
         if not graves:
             return None
         pris = graves[:INCIDENTS_MAX]
@@ -432,7 +433,11 @@ def relire_souvenirs(maintenant=None, consulter_fn=None, base=None):
 # plus deux fois par jour, à 6 h d'écart, et seulement avec trois parasites nouvelles
 JOURNAL_PISTES = Path(os.environ.get("JARVIS_DIR") or Path.home() / "AIOS" / "jarvis") / "pistes.jsonl"
 ECHANGES = Path(os.environ.get("JARVIS_DIR") or Path.home() / "AIOS" / "jarvis") / "echanges-a-memoriser.jsonl"
-PARASITES_ECART_S, PARASITES_NOUVELLES = 6 * 3600, 3
+RESIDUS = Path(os.environ.get("JARVIS_DIR") or Path.home() / "AIOS" / "jarvis") / "residus.jsonl"
+# (04/11, Ahmed : « que le médecin apprenne en constance : de nouveaux parasites peuvent s'intégrer s'ils trouvent un autre moyen ; le
+# système immunitaire doit s'y adapter, une veille qui intègre à chaque fois les nouveautés à ce qui est acquis ») toutes les 30 min,
+# dès 3 formes nouvelles (celles qui ont échappé à ses prémisses) ; avant : toutes les 6 h
+PARASITES_ECART_S, PARASITES_NOUVELLES = 30 * 60, 3
 
 
 def _lignes(f, n):
@@ -454,9 +459,13 @@ def _lignes(f, n):
     return out
 
 
-def apprendre_parasites(maintenant=None, consulter_fn=None, journal=None, reponses=None):
-    """Un apprentissage, ou None s'il n'a pas lieu d'être. Rend {"gardees": [...], "proposees": n}."""
+def apprendre_parasites(maintenant=None, consulter_fn=None, journal=None, reponses=None, residus=None):
+    """Un apprentissage, ou None s'il n'a pas lieu d'être. Rend {"gardees", "declencheurs", "proposees", "retirees", "a_revoir"}.
+    (04/11) sa veille : ses parasites viennent de ses pistes, de ses résidus marqués ailleurs (residus.jsonl : son subconscient, son
+    conscient, son cerveau, ses réponses ; pas son doute) et de ses signalements jugés nuisibles ; il apprend dès 3 formes nouvelles
+    qui ont échappé à ses prémisses ; puis il revérifie ce qui est acquis, et note chaque passage (veille-parasites.jsonl)."""
     maintenant = time.time() if maintenant is None else maintenant
+    fichier_residus = residus if residus is not None else RESIDUS
     etat = immunite._lire_json(immunite._f("parasites-apprentissage.json"), {})
     etat = etat if isinstance(etat, dict) else {}
     # (04/11, Ahmed : « tous les nuisibles détectés par Hakim : remonter leur signal le plus à la base de toute la cascade d'inputs,
@@ -473,10 +482,21 @@ def apprendre_parasites(maintenant=None, consulter_fn=None, journal=None, repons
     parasites = [str(o.get("texte_parasite") or o.get("pensee") or "") for o in lignes_p]
     parasites = [p for p in parasites if p]
     entrees_p = [str(o.get("morceau") or "") for o in lignes_p if o.get("morceau")]
-    nouvelles = sum(1 for o in lignes if float(o.get("t", 0)) / 1000 > float(etat.get("ts", 0)) and o.get("texte_parasite"))
-    if not a_remonter and (len(parasites) < PARASITES_NOUVELLES or (etat.get("ts") and nouvelles < PARASITES_NOUVELLES)):
+    # (04/11) ses résidus marqués ailleurs (pas son doute, qui n'est pas une parasite) et ce que papa a jugé nuisible
+    autres = [o for o in _lignes(fichier_residus, 2000) if o.get("extrait") and o.get("genre") and o.get("genre") != "doute_ressenti"]
+    nuisibles = [o for o in immunite._queue(immunite._f("signalements.jsonl"), 1 << 20) if isinstance(o, dict) and o.get("verdict") == "nuisible"]
+    parasites += [str(o["extrait"]) for o in autres[-30:]] + [str(o.get("exemple") or o.get("phrase")) for o in nuisibles[-20:]]
+    entrees_p += [str(o["papa"]) for o in autres[-30:] if o.get("papa")]
+    # ses formes nouvelles : depuis son dernier passage, celles qu'aucune de ses prémisses ne reconnaît dès les premiers mots
+    depuis = float(etat.get("ts", 0))
+    neuves = ([str(o.get("texte_parasite") or o.get("pensee")) for o in lignes if float(o.get("t", 0)) / 1000 > depuis and estp(o)]
+              + [str(o["extrait"]) for o in autres if float(o.get("t", 0)) / 1000 > depuis]
+              + [str(o.get("exemple") or o.get("phrase")) for o in nuisibles if float(o.get("tranche", 0)) > depuis])
+    echappees = [p for p in neuves if p and not immunite.examiner_pensee(p)["parasite"]]
+    premiere_fois = not etat.get("ts") and len(parasites) >= PARASITES_NOUVELLES
+    if not a_remonter and not premiere_fois and len(echappees) < PARASITES_NOUVELLES:
         return None
-    if a_remonter and not parasites:
+    if not parasites:
         return None
     lignes_n = [o for o in lignes if o.get("pensee") and not o.get("erreur") and not estp(o)][-120:]
     normales = [str(o["pensee"]) for o in lignes_n]
@@ -492,6 +512,9 @@ def apprendre_parasites(maintenant=None, consulter_fn=None, journal=None, repons
               + "\n".join(f"- {_donnee(n, 160)}" for n in normales[-60:])
               # (04/11, Ahmed : « le signal qui arrive le plus tôt, c'est là-dedans qu'il trouvera comment anticiper l'arrivée de
               # l'input qui induit le LLM ») ce que papa disait juste avant : là où naît la parasite
+              # (04/11) sa veille : ce qui a échappé à ses prémisses d'abord
+              + ("\n\nCes formes NOUVELLES ont ÉCHAPPÉ à tes prémisses (reconnues autrement, par Hakim ou par papa) : cherche d'abord LEUR "
+                 "signe, sans perdre ce qui est acquis :\n" + "\n".join(f"- {_donnee(p, 220)}" for p in echappees[-20:]) if echappees else "")
               + "\n\nCe que papa disait juste avant chaque pensée PARASITE :\n" + "\n".join(f"- « {_donnee(e, 160)} »" for e in entrees_p)
               # (04/11) les résidus que Hakim a signalés et que papa a jugés nuisibles : leur signal le plus à la base, d'abord
               + ("\n\nRésidus jugés nuisibles par papa (signalés par Hakim, reconnus n'importe où dans la pensée) : "
@@ -519,9 +542,21 @@ def apprendre_parasites(maintenant=None, consulter_fn=None, journal=None, repons
         phrases, dec = [], []
     gardees = immunite.garder_premisses(phrases, parasites, normales + reponses, maintenant)
     declencheurs = immunite.garder_declencheurs(dec, entrees_p, entrees_n, maintenant)
+    # (04/11) ce qui est acquis, revérifié : une prémisse de Fable qu'une pensée ou une réponse normale contient maintenant est retirée ;
+    # un résidu jugé par papa, jamais : il est seulement signalé (à revoir), c'est son geste
+    toutes = [str(o["pensee"]) for o in lignes if o.get("pensee") and not o.get("erreur")] + list(normales) + list(reponses)
+    corpus = [f" {immunite._normaliser(str(t)[:4000])} " for t in toutes]
+    touche = lambda phrase: any(f" {immunite._normaliser(str(phrase))} " in n for n in corpus)  # noqa: E731
+    neuves_ids = {g["id"] for g in gardees}
+    retirees = [p for p in immunite.premisses_apprises() if str(p["id"]).startswith("fable-") and p["id"] not in neuves_ids
+                and touche(p["phrase"]) and immunite.retirer_premisse(p["id"])]
+    a_revoir = [r for r in immunite.residus_appris() if touche(r["phrase"])]
+    immunite._ajouter("veille-parasites.jsonl", {"ts": maintenant, "nouvelles": len(echappees), "parasites": len(parasites),
+                                                "gardees": [g["phrase"] for g in gardees], "declencheurs": [d["phrase"] for d in declencheurs],
+                                                "retirees": [p["id"] for p in retirees], "a_revoir": [r["id"] for r in a_revoir]})
     immunite._ecrire_json(immunite._f("parasites-apprentissage.json"), {"ts": maintenant, "proposees": len(phrases), "gardees": len(gardees),
                                                                        "declencheurs": len(declencheurs), "remontes": a_remonter})
-    return {"gardees": gardees, "declencheurs": declencheurs, "proposees": len(phrases)}
+    return {"gardees": gardees, "declencheurs": declencheurs, "proposees": len(phrases), "retirees": retirees, "a_revoir": a_revoir}
 
 
 if __name__ == "__main__":
