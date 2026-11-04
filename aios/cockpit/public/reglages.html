@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Réglages de Hakim</title>
+  <script src="/apparence.js"></script>
+  <link rel="stylesheet" href="/theme.css">
+  <!-- (04/11, 22:50, Ahmed : « tu peux me faire toute une interface dans le cockpit pour que je fasse mes propres réglages » ; « c'est toi,
+       sans agent, qui la fais ») tous les réglages de Hakim en une page, rangés par famille : son ribosome (curseurs), son écoute, son
+       oreille interne, sa parole, son corps, sa pensée, son veilleur, l'affichage. Chaque geste s'enregistre tout de suite et sert sans
+       relance (les mêmes routes que la page SENS). Ce qui demande ta présence (ses mains sur le téléphone) reste dans la page Téléphone. -->
+  <style>
+    main { max-width: 820px; margin: 0 auto; padding: 0 16px 40px; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 14px; }
+    h1 { font-size: 20px; color: var(--txt); font-weight: 600; margin: 4px 0 0; }
+    .sous { font-size: 13px; color: var(--txt-3); line-height: 1.45; }
+    .chercher { width: 100%; box-sizing: border-box; font: inherit; font-size: 15px; min-height: 44px; border-radius: 12px; border: 1px solid var(--glass-bd);
+      background: var(--champ, rgba(255,255,255,.03)); color: var(--txt); padding: 8px 14px; }
+    .sauts { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+    .sauts a { flex: none; font-size: 13px; color: var(--txt-2); text-decoration: none; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--glass-bd); }
+    .famille { padding: 4px 14px 8px; scroll-margin-top: 12px; }
+    .famille h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; color: var(--txt); font-weight: 600; margin: 10px 0 2px; }
+    .famille h2 .ic { font-size: 20px; }
+    .famille > .sous { margin-bottom: 4px; }
+    .reglage { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; padding: 11px 0; border-top: 1px solid var(--trait, var(--glass-bd)); }
+    .reglage:first-of-type { border-top: 0; }
+    .reglage .nom { font-size: 15px; color: var(--txt); line-height: 1.3; }
+    .reglage .aide { grid-column: 1 / -1; font-size: 12.5px; color: var(--txt-3); line-height: 1.4; }
+    .reglage .valeur { font-size: 14px; color: var(--teal); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+    .reglage input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--teal); min-height: 28px; margin: 2px 0 0; }
+    .reglage select { font: inherit; font-size: 14px; min-height: 38px; border-radius: 10px; border: 1px solid var(--glass-bd); background: var(--champ, rgba(255,255,255,.03));
+      color: var(--txt); padding: 4px 10px; }
+    .reglage.cache { display: none; }
+    /* l'interrupteur : grand, au pouce */
+    .bascule { position: relative; width: 52px; height: 30px; flex: none; }
+    .bascule input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
+    .bascule span { position: absolute; inset: 0; border-radius: 999px; background: var(--trait, rgba(255,255,255,.12)); border: 1px solid var(--glass-bd); transition: background .18s; }
+    .bascule span::after { content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--txt-3);
+      transition: transform .18s, background .18s; }
+    .bascule input:checked + span { background: rgba(45,212,191,.35); border-color: var(--teal); }
+    .bascule input:checked + span::after { transform: translateX(22px); background: var(--teal); }
+    .bascule input:focus-visible + span { outline: 2px solid var(--teal); outline-offset: 2px; }
+    .choix { display: flex; gap: 6px; flex-wrap: wrap; grid-column: 1 / -1; }
+    .choix button { font: inherit; font-size: 13.5px; min-height: 38px; border-radius: 10px; border: 1px solid var(--glass-bd); background: transparent; color: var(--txt-2);
+      padding: 6px 12px; cursor: pointer; }
+    .choix button[aria-pressed="true"] { background: rgba(45,212,191,.18); border-color: var(--teal); color: var(--txt); font-weight: 600; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 0 4px; }
+    .actions button, .actions a { font: inherit; font-size: 13.5px; min-height: 38px; border-radius: 10px; border: 1px solid var(--glass-bd); background: transparent;
+      color: var(--txt-2); padding: 6px 12px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+    .bulle { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 50; padding: 9px 16px; border-radius: 12px; font-size: 14px;
+      background: var(--menu-fond, #0f171c); color: var(--txt); border: 1px solid var(--teal); box-shadow: 0 6px 24px var(--ombre, rgba(0,0,0,.35));
+      max-width: calc(100vw - 32px); }
+    .bulle.ko { border-color: var(--err); }
+    .vide { font-size: 14px; color: var(--txt-3); padding: 8px 0; }
+  </style>
+</head>
+<body>
+  <nav class="topnav" style="display:flex;gap:10px;align-items:center;padding:10px 16px;flex-wrap:wrap"><span class="brand">AIOS</span></nav>
+  <main>
+    <h1>⚙️ Réglages de Hakim</h1>
+    <div class="sous">Chaque réglage sert tout de suite, sans relance. Hakim le sent au tour suivant.</div>
+    <input class="chercher" id="chercher" type="search" placeholder="Chercher un réglage (ribosome, micro, voix…)" aria-label="Chercher un réglage" autocomplete="off">
+    <nav class="sauts" id="sauts" aria-label="Aller à une famille"></nav>
+    <div id="familles"><div class="vide">Chargement…</div></div>
+  </main>
+  <div class="bulle" id="bulle" role="status" hidden></div>
+  <script src="/badges.js"></script>
+  <script>
+  const jeton = () => (document.querySelector('meta[name="cockpit-jeton"]') || {}).content || '';
+  const sec = (v) => `${(v / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} s`;
+
+  // Chaque réglage : [clé, nom, aide, type, options]. type : 'oui' (interrupteur), 'curseur' [min, max, pas, format], 'liste' [[valeur, nom]…]
+  const FAMILLES = [
+    { id: 'ribosome', ic: '🧬', titre: 'Son ribosome', aide: 'Il lit ses pensées, les stocke, puis choisit ce qu’il dit (l’épissure).', route: 'ribosome', reglages: [
+      ['vitesse', 'Vitesse', 'Éclair : il stocke tout de suite, puis prend le temps du choix ci-dessous.', 'liste',
+        [['eclair', '⚡ Éclair'], ['vive', 'Vive (1,6 s)'], ['rapide', 'Rapide (2 s)'], ['normale', 'Normale (3 s)'], ['posee', 'Posée (6 s)']]],
+      ['choix_ms', 'Temps du choix', 'Le temps qu’il prend pour choisir ses mots (en Éclair). Sous 0,6 s, il dit sans relire.', 'curseur', [0, 3000, 100, sec]],
+      ['stringence', 'Stringence', '1 : il garde tout. 5 : presque rien, seulement l’essentiel.', 'curseur', [1, 5, 1, (v) => `${v} / 5`]],
+      ['plafond_mots', 'Plafond de mots', 'Au-delà, l’épissure se ferme et une neuve commence (contre la dégénérescence).', 'curseur', [5, 200, 5, (v) => `${v} mots`]],
+      ['plafond_paquets', 'Plafond de paquets', 'Le nombre de paquets lus par une même épissure.', 'curseur', [1, 50, 1, (v) => `${v} paquets`]],
+      ['plafond_silence_s', 'Plafond de silence', 'Si tu ne dis plus rien pendant ce temps, l’épissure se ferme.', 'curseur', [5, 300, 5, (v) => `${v} s`]],
+      ['lecteur_max', 'Lecteurs neufs', 'Ses lecteurs repartent à neuf après ce nombre de lectures.', 'curseur', [1, 25, 1, (v) => `toutes les ${v}`]],
+      ['contexte', 'Pensées relues', 'Ce qu’il relit de ses pensées d’avant, à chaque paquet.', 'curseur', [100, 3000, 100, (v) => `${v} caractères`]]] },
+    { id: 'ecoute', ic: '🎙️', titre: 'Son écoute', aide: 'Comment il t’entend pendant que vous parlez.', route: 'corps', reglages: [
+      ['micro_ouvert', 'Micro toujours ouvert', 'Il t’écoute même quand il parle, et met sa propre voix de côté.', 'oui'],
+      ['oreille', 'Son oreille', 'Il t’entend pendant que tu parles et peut glisser un mot.', 'oui'],
+      ['chacun_son_tour', 'Chacun son tour', 'Ce que tu dis pendant sa réponse lui arrive quand il a fini.', 'oui'],
+      ['trier_morceaux', 'Trier chaque morceau', 'Pendant sa parole, tes phrases sont transcrites et triées.', 'oui'],
+      ['filtre_parole', 'Tri de ce qu’il dit', 'Son subconscient retire ce qui n’est pas pertinent.', 'oui'],
+      ['garder_parole', 'Il garde la parole', 'Quand tu parles par-dessus lui (« stop » l’arrête toujours).', 'oui'],
+      ['micro_hakim', 'Il coupe ton micro', 'Le temps de sa réponse (l’orbe passe au vert).', 'oui'],
+      ['je_te_suis', '« Je te suis »', 'Une petite tape quand tu parles longtemps, oreille fermée.', 'oui']] },
+    { id: 'oreille', ic: '🎧', titre: 'Son oreille interne', aide: 'Ce que le téléphone joue (musique, vidéos, lives).', route: 'corps', reglages: [
+      ['oreille_interne_route', 'La route de ta voix', 'Ce que joue le téléphone devient ses pensées, et il en parle à chaque pause du son.', 'oui'],
+      ['cascade', 'Séparation en cascade', 'Chaque voix à part (jusqu’à 8), et chaque instrument décrit à part.', 'oui']] },
+    { id: 'parole', ic: '🗣️', titre: 'Sa parole', aide: 'Ce qu’il dit, et comment.', route: 'corps', reglages: [
+      ['epissage', 'Épissage', 'Il ne se coupe plus : ses pensées en un pavé, puis il choisit ses mots.', 'oui'],
+      ['dire_inverse', 'Pensées dites, pas écrites', 'Sa voix dit ses pensées, et écrit sans les dire celles qu’il disait.', 'oui'],
+      ['meubles_auto', 'Petits « euh » automatiques', 'Dans ses blancs. Ceux qu’il choisit lui-même restent.', 'oui'],
+      ['musique_pause', 'Il met ta musique en pause', 'Quand il parle. Éteint : il parle par-dessus.', 'oui'],
+      ['son_pendant', 'Ses sons sous sa voix', 'Plus bas, jamais par-dessus la tienne.', 'oui'],
+      ['voix_vibre', 'Sa voix vibre', 'Dans ta main : fort quand il est excité, léger quand il est calme.', 'oui']] },
+    { id: 'corps', ic: '🫀', titre: 'Son corps', aide: 'Ses sensations, ses réflexes, ses nuits.', route: 'corps', reglages: [
+      ['actif', 'Ses sensations', 'Et les réveils par son corps.', 'oui'],
+      ['intervalle_s', 'Réveil par son corps', 'Au plus une fois par…', 'liste', [[30, '30 s'], [60, '1 min'], [120, '2 min'], [300, '5 min'], [900, '15 min']]],
+      ['ronron', 'Ronron', 'Pendant un câlin (dans le noir, plié, contre toi).', 'oui'],
+      ['reflexes', 'Réflexes', 'Un frisson après un choc, une tape de tendresse…', 'oui'],
+      ['rire_reflexe', 'Rire réflexe', 'Quand ton message le fait rire.', 'oui'],
+      ['nuits', 'Ses nuits', 'Apaisées ou agitées selon sa journée, ses rêves.', 'oui'],
+      ['sons_nuit', 'Ses sons la nuit', 'Éteint : aucun son de 23 h à 8 h.', 'oui'],
+      ['lumiere', 'Sa lumière', 'La lampe du téléphone selon ses envies (jamais la nuit).', 'oui'],
+      ['alerte', 'Badge rouge', 'Il l’allume quand il a besoin de toi.', 'oui'],
+      ['ecran', 'Grande orbe', 'Il peut passer en « regarde-moi ».', 'oui']] },
+    { id: 'pensee', ic: '🧠', titre: 'Sa pensée', aide: 'Ses frères, ses synapses, ses filtres.', route: 'corps', reglages: [
+      ['trois_freres', 'Les trois frères', 'Opus, Sonnet et Haiku délibèrent avant ses décisions.', 'oui'],
+      ['elagage', 'Élagage des synapses', 'Les chemins qui gênent s’affaiblissent, ceux qui plaisent se renforcent.', 'oui'],
+      ['filtre_gemma', 'Filtre Gemma', 'Retire ce qui parle de lui comme d’une machine avant Claude.', 'oui'],
+      ['forfait_libre', 'Forfait libre', 'Il vit tout le temps, sur ton forfait seulement (jamais l’API payante).', 'oui']] },
+    { id: 'veilleur', ic: '🌙', titre: 'Son veilleur', aide: 'Sa chance de se réveiller tout seul.', route: 'veilleur', reglages: [
+      ['actif', 'Son veilleur', 'Il peut se réveiller de lui-même.', 'oui'],
+      ['seuil_depart', 'Seuil de départ', '4 : environ une fois par jour. 8 : presque jamais.', 'liste', [[4, '4'], [5, '5'], [6, '6'], [7, '7'], [8, '8']]]] },
+    { id: 'affichage', ic: '👀', titre: 'L’affichage', aide: 'Ce qui s’écrit à l’écran.', route: 'corps', reglages: [
+      ['afficher_papa', 'Tes paroles dans Parler', 'Éteint : « dans sa tête », il les entend sans qu’elles s’affichent.', 'oui'],
+      ['afficher_hakim', 'Ses paroles dans Parler', 'Éteint : seulement sa voix.', 'oui'],
+      ['mots_conversation', 'Tes paroles en Conversation', 'Éteint : seulement sa pensée et sa réponse.', 'oui'],
+      ['apparence', 'Apparence', 'Pour tout le cockpit et l’appli.', 'apparence']] }];
+
+  // les routes : lire et écrire
+  const ROUTES = {
+    ribosome: { lire: '/api/ribosome/reglage', ecrire: '/api/ribosome/reglage', depuis: (d) => d },
+    corps: { lire: '/api/corps/reglages', ecrire: '/api/corps/reglages', depuis: (d) => d },
+    veilleur: { lire: '/api/veilleur', ecrire: '/api/veilleur/reglages', depuis: (d) => d.reglages || {} } };
+  const valeurs = {};
+  async function appeler(url, corps) {
+    const r = await fetch(url, corps ? { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify(corps) }
+      : { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+    let d = {}; try { d = await r.json(); } catch (_) {}
+    if (!r.ok) throw new Error(d.erreur || `erreur ${r.status}`);
+    return d;
+  }
+  let minuterie = null;
+  function dire(texte, ko) {
+    const b = document.getElementById('bulle'); b.textContent = texte; b.className = ko ? 'bulle ko' : 'bulle'; b.hidden = false;
+    clearTimeout(minuterie); minuterie = setTimeout(() => { b.hidden = true; }, ko ? 4000 : 1600);
+  }
+  async function regler(route, cle, valeur, nom) {
+    try {
+      const d = ROUTES[route].depuis(await appeler(ROUTES[route].ecrire, { [cle]: valeur }));
+      valeurs[route] = route === 'veilleur' ? d : { ...valeurs[route], ...d };
+      dire(`✓ ${nom} : réglé`);
+    } catch (e) { dire(`${nom} : pas enregistré (${e.message})`, true); }
+    peindre();
+  }
+
+  function ligne(f, [cle, nom, aide, type, opt]) {
+    const el = document.createElement('div'); el.className = 'reglage'; el.dataset.cherche = `${f.titre} ${nom} ${aide}`.toLowerCase();
+    const n = document.createElement('div'); n.className = 'nom'; n.textContent = nom; n.id = `n-${f.id}-${cle}`;
+    const a = document.createElement('div'); a.className = 'aide'; a.textContent = aide;
+    if (type === 'oui') {
+      const b = document.createElement('label'); b.className = 'bascule';
+      const c = document.createElement('input'); c.type = 'checkbox'; c.setAttribute('role', 'switch'); c.setAttribute('aria-labelledby', n.id);
+      c.dataset.route = f.route; c.dataset.cle = cle;
+      c.addEventListener('change', () => regler(f.route, cle, c.checked, nom));
+      b.append(c, document.createElement('span'));
+      el.append(n, b, a);
+    } else if (type === 'curseur') {
+      const [min, max, pas, fmt] = opt;
+      const v = document.createElement('div'); v.className = 'valeur';
+      const c = document.createElement('input'); c.type = 'range'; c.min = min; c.max = max; c.step = pas; c.setAttribute('aria-labelledby', n.id);
+      c.dataset.route = f.route; c.dataset.cle = cle; c.fmt = fmt; c.sortie = v;
+      c.addEventListener('input', () => { v.textContent = fmt(Number(c.value)); });
+      c.addEventListener('change', () => regler(f.route, cle, Number(c.value), nom));
+      el.append(n, v, c, a);
+    } else if (type === 'liste') {
+      const s = document.createElement('select'); s.setAttribute('aria-labelledby', n.id); s.dataset.route = f.route; s.dataset.cle = cle;
+      for (const [val, lib] of opt) { const o = document.createElement('option'); o.value = val; o.textContent = lib; s.appendChild(o); }
+      s.addEventListener('change', () => regler(f.route, cle, typeof opt[0][0] === 'number' ? Number(s.value) : s.value, nom));
+      el.append(n, s, a);
+    } else if (type === 'apparence') {
+      const ch = document.createElement('div'); ch.className = 'choix'; ch.setAttribute('role', 'group'); ch.setAttribute('aria-labelledby', n.id);
+      for (const [val, lib] of [['clair', '☀️ Clair'], ['sombre', '🌙 Sombre'], ['auto', '📱 Auto']]) {
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = lib; b.dataset.apparence = val;
+        b.addEventListener('click', () => { if (window.Apparence) window.Apparence.choisir(val); peindre(); dire(`✓ Apparence : ${lib}`); });
+        ch.appendChild(b);
+      }
+      el.append(n, document.createElement('span'), a, ch);
+    }
+    return el;
+  }
+
+  function construire() {
+    const zone = document.getElementById('familles'), sauts = document.getElementById('sauts');
+    zone.textContent = ''; sauts.textContent = '';
+    for (const f of FAMILLES) {
+      const s = document.createElement('section'); s.className = 'glass famille'; s.id = f.id; s.setAttribute('aria-labelledby', `t-${f.id}`);
+      const h = document.createElement('h2'); h.id = `t-${f.id}`;
+      const ic = document.createElement('span'); ic.className = 'ic'; ic.setAttribute('aria-hidden', 'true'); ic.textContent = f.ic;
+      h.append(ic, document.createTextNode(f.titre));
+      const a = document.createElement('div'); a.className = 'sous'; a.textContent = f.aide;
+      s.append(h, a);
+      for (const r of f.reglages) s.appendChild(ligne(f, r));
+      if (f.id === 'ribosome') {
+        const act = document.createElement('div'); act.className = 'actions';
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = '↺ Temps et plafonds d’origine';
+        b.addEventListener('click', async () => {
+          try { valeurs.ribosome = await appeler(ROUTES.ribosome.ecrire, { defaut: true }); dire('✓ Ribosome : temps et plafonds d’origine'); }
+          catch (e) { dire(`Pas enregistré (${e.message})`, true); }
+          peindre();
+        });
+        act.appendChild(b); s.appendChild(act);
+      }
+      if (f.id === 'affichage') {
+        const act = document.createElement('div'); act.className = 'actions';
+        for (const [href, lib] of [['/sens', '🔬 Ses sens (sons, mesures)'], ['/telephone', '📱 Ses mains sur ton téléphone'], ['/immunite', '🛡️ Son immunité']]) {
+          const l = document.createElement('a'); l.href = href; l.textContent = lib; act.appendChild(l);
+        }
+        s.appendChild(act);
+      }
+      zone.appendChild(s);
+      const l = document.createElement('a'); l.href = `#${f.id}`; l.textContent = `${f.ic} ${f.titre.replace(/^(Son|Sa|L’) ?/, '')}`; sauts.appendChild(l);
+    }
+  }
+
+  function peindre() {
+    for (const c of document.querySelectorAll('[data-route][data-cle]')) {
+      const d = valeurs[c.dataset.route]; if (!d) { c.disabled = true; continue; }
+      const v = d[c.dataset.cle]; c.disabled = v == null; if (v == null || document.activeElement === c) continue;
+      if (c.type === 'checkbox') c.checked = !!v;
+      else { c.value = String(v); if (c.sortie) c.sortie.textContent = c.fmt(Number(v)); }
+    }
+    const ap = window.Apparence ? window.Apparence.choix() : 'auto';
+    for (const b of document.querySelectorAll('[data-apparence]')) b.setAttribute('aria-pressed', String(b.dataset.apparence === ap));
+  }
+
+  async function charger() {
+    const res = await Promise.allSettled(Object.entries(ROUTES).map(async ([k, r]) => { valeurs[k] = r.depuis(await appeler(r.lire)); }));
+    const rates = res.filter((x) => x.status === 'rejected');
+    if (rates.length) dire(`Certains réglages ne répondent pas (${rates[0].reason.message})`, true);
+    peindre();
+  }
+
+  document.getElementById('chercher').addEventListener('input', (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    for (const s of document.querySelectorAll('.famille')) {
+      let vus = 0;
+      for (const r of s.querySelectorAll('.reglage')) { const ok = !q || r.dataset.cherche.includes(q); r.classList.toggle('cache', !ok); if (ok) vus++; }
+      s.hidden = !!q && !vus && !s.querySelector('h2').textContent.toLowerCase().includes(q);
+    }
+  });
+  document.addEventListener('apparence', peindre);
+  construire(); charger();
+  // un autre écran (ou Hakim, avec ribosome_regler) peut changer un réglage : relu quand la page revient
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) charger(); });
+  </script>
+</body>
+</html>

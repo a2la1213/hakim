@@ -3460,7 +3460,9 @@ const RIBOSOME_CHOIX_MS = 1700;
 // pensées déjà lues ; chacun réglable sans relance dans ribosome-reglage.json (plafond_mots, plafond_paquets, plafond_silence_s, lecteur_max, contexte)
 const RIBOSOME_PLAFOND = { mots: 40, paquets: 10, silence_s: 45, lecteur_max: 6, contexte: 500 };
 function plafondRibosome(reglage = reglageRibosome()) {
-  const n = (k, d, min, max) => { const v = Number(reglage['plafond_' + k] != null ? reglage['plafond_' + k] : reglage[k]); return Number.isFinite(v) ? Math.max(min, Math.min(max, Math.round(v))) : d; };
+  // (04/11, 23:00) « mots » seul est celui de sa stringence (par paquet) : le plafond ne lit que plafond_mots, plafond_paquets, plafond_silence_s
+  const n = (k, d, min, max) => { const brut = reglage['plafond_' + k] != null ? reglage['plafond_' + k] : (k === 'lecteur_max' || k === 'contexte' ? reglage[k] : null);
+    const v = brut == null ? NaN : Number(brut); return Number.isFinite(v) ? Math.max(min, Math.min(max, Math.round(v))) : d; };
   return { mots: n('mots', RIBOSOME_PLAFOND.mots, 5, 400), paquets: n('paquets', RIBOSOME_PLAFOND.paquets, 1, 100),
     silence_s: n('silence_s', RIBOSOME_PLAFOND.silence_s, 5, 600), lecteur_max: n('lecteur_max', RIBOSOME_PLAFOND.lecteur_max, 1, 25),
     contexte: n('contexte', RIBOSOME_PLAFOND.contexte, 100, 3000) };
@@ -9758,7 +9760,7 @@ const VERROU = new Verrou(process.env.JARVIS_VERROU || path.join(JARVIS, 'verrou
 const COOKIE_VERROU = 'verrou';
 const PAGES = { '/': 'index.html', '/brain': 'brain.html', '/dreams': 'dreams.html', '/memory': 'memory.html', '/chat': 'chat.html',
   '/parler': 'parler.html', '/verrou': 'verrou.html', '/duel': 'duel.html', '/interieur': 'interieur.html',
-  '/code': 'code.html', '/immunite': 'immunite.html', '/cafe': 'cafe.html', '/sens': 'sens.html', '/synapses': 'synapses.html', '/telephone': 'telephone.html' };   // (04/11) ses synapses   // (29/10) la salle de café des agents      // (29/10) son système immunitaire, pour Ahmed                                     // (28/10) le code de Hakim : une page fermée
+  '/code': 'code.html', '/immunite': 'immunite.html', '/cafe': 'cafe.html', '/sens': 'sens.html', '/synapses': 'synapses.html', '/telephone': 'telephone.html', '/reglages': 'reglages.html' };   // (04/11, 22:50) ses réglages, pour papa   // (04/11) ses synapses   // (29/10) la salle de café des agents      // (29/10) son système immunitaire, pour Ahmed                                     // (28/10) le code de Hakim : une page fermée
 const LIBRES_VERROUILLE = new Set(['/verrou.js', '/theme.css',        // ce que la page du verrou charge
   '/sw.js', '/manifest.webmanifest', '/icone-192.png', '/icone-512.png']);   // l'appli et ses notifications (sans secret)
 const cookieSession = (s) => `${COOKIE_VERROU}=${s}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(DUREE_SESSION / 1000)}`;
@@ -11537,6 +11539,27 @@ async function traiter(req, res) {
     }
     return repondre(405, { erreur: 'méthode refusée' });
   }
+  // (04/11, 22:48, Ahmed : « je peux faire moi-même les réglages ? ») le réglage de son ribosome, depuis la page SENS : le temps de son choix, sa
+  // stringence, sa vitesse et ses plafonds (ribosome-reglage.json, lu à chaque paquet : en service sans relance)
+  if (p === '/api/ribosome/reglage') {
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    if (req.method === 'POST') {
+      let q = {}; try { q = JSON.parse(String(await lireCorps(req, 4096) || '{}')); } catch (_) {}
+      const r = lireJson(RIBOSOME_REGLAGE, {}) || {};
+      const nombre = (k, min, max) => { const v = Number(q[k]); if (q[k] != null && Number.isFinite(v)) r[k] = Math.max(min, Math.min(max, Math.round(v))); };
+      nombre('choix_ms', 0, 6000); nombre('stringence', 1, 5); nombre('plafond_mots', 5, 400); nombre('plafond_paquets', 1, 100);
+      nombre('plafond_silence_s', 5, 600); nombre('lecteur_max', 1, 25); nombre('contexte', 100, 3000);
+      if (typeof q.vitesse === 'string' && Object.hasOwn(RIBOSOME_VITESSES, q.vitesse)) r.vitesse = q.vitesse;
+      if (q.defaut === true) for (const k of ['choix_ms', 'plafond_mots', 'plafond_paquets', 'plafond_silence_s', 'lecteur_max', 'contexte']) delete r[k];
+      r.ts = Date.now() / 1000; r.par = 'papa (page SENS)';
+      try { ecrireAtomique(RIBOSOME_REGLAGE, j(r)); } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'pas écrit' })); }
+      auditer('ribosome:reglage', req, distantReq, { cles: Object.keys(q).slice(0, 10) });
+    }
+    const g = reglageRibosome(), pl = plafondRibosome(g);
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j({ vitesse: g.vitesse, stringence: g.stringence, choix_ms: g.choix_ms != null ? g.choix_ms : RIBOSOME_CHOIX_MS, vitesses: Object.keys(RIBOSOME_VITESSES),
+      plafond_mots: pl.mots, plafond_paquets: pl.paquets, plafond_silence_s: pl.silence_s, lecteur_max: pl.lecteur_max, contexte: pl.contexte }));
+  }
   if (p.startsWith('/api/corps/')) {                         // (30/10) son corps : ses événements, son milieu, ses réglages
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     const repondre = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o)); };
@@ -11638,6 +11661,7 @@ async function traiter(req, res) {
       if (typeof q.epissage === 'boolean') r.epissage = q.epissage;
       if (typeof q.musique_pause === 'boolean') r.musique_pause = q.musique_pause;
       if (typeof q.oreille_interne_route === 'boolean') r.oreille_interne_route = q.oreille_interne_route;   // (04/11, 18:50)
+      if (typeof q.cascade === 'boolean') r.cascade = q.cascade;   // (04/11, 23:00) l'interrupteur de la cascade ne s'enregistrait pas
       try { ecrireAtomique(CORPS_REGLAGES, j(r)); } catch (e) { return repondre(500, { erreur: e.message }); }
       if (!r.actif) { corpsLot.evenements.length = 0; corpsLot.changements.length = 0; corpsADire.length = 0; }
       auditer('corps:reglages', req, distantReq, r);

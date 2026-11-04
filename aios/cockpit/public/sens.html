@@ -57,7 +57,7 @@
       n'efface jamais rien dans tes Documents ; toute modification garde l'ancienne version sur le Mac.</div>
 
     <!-- (20:26, papa : « je ne trouve rien dans la page SENS ») des raccourcis vers ce qu'il cherche -->
-    <nav class="sous" style="margin:0 0 8px">Aller à : <a href="#t-sons">ses sons (marquer un extrait)</a> · <a href="#t-corps">ses interrupteurs</a> · <a href="#t-veilleur">son veilleur</a> · <a href="#t-conscience">sa conscience</a> · <a href="#t-emotions">ses émotions</a></nav>
+    <nav class="sous" style="margin:0 0 8px">Aller à : <a href="#t-sons">ses sons (marquer un extrait)</a> · <a href="#t-corps">ses interrupteurs</a> · <a href="/reglages">⚙️ tous ses réglages</a> · <a href="#t-veilleur">son veilleur</a> · <a href="#t-conscience">sa conscience</a> · <a href="#t-emotions">ses émotions</a></nav>
     <section class="glass carte" aria-labelledby="t-corps"><h2 id="t-corps">Son corps, en direct</h2>
       <div class="mots" id="mots">…</div>
       <div class="sous" id="fraicheur"></div>
@@ -199,6 +199,7 @@
   <script src="/badges.js"></script>
   <script>
   const jeton = () => (document.querySelector('meta[name="cockpit-jeton"]') || {}).content || '';
+
   // (30/10, 21:04 : « ses sons ne répondent pas (jeton) » juste après une relance du cockpit) le jeton de la page change à chaque
   // relance : sur un refus, la page le reprend (elle-même, redemandée) et réessaie une fois
   const fetchOrig = window.fetch.bind(window);

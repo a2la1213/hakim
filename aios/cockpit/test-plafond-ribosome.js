@@ -21,6 +21,8 @@ test('le plafond d’une épissure : 40 mots dits, 10 paquets ou 45 s sans papa 
   assert.strictEqual(ctx.p({ phrase: Array(50).fill('mot').join(' '), n: 1, ferme: 'silence' }, t), false, 'déjà fermée');
   assert.strictEqual(ctx.p({ phrase: Array(20).fill('mot').join(' '), n: 1 }, t, ctx.pl({ plafond_mots: 15 })), true, 'réglé à 15 mots');
   assert.strictEqual(ctx.pl({ lecteur_max: 99 }).lecteur_max, 25, 'borné');
+  // (04/11, 23:00) le « mots » de sa stringence (6 mots par paquet, à 5/5) n’est pas le plafond : il fermait ses épissures à 6 mots dits
+  assert.strictEqual(ctx.pl({ stringence: 5, mots: 6 }).mots, 40, 'la stringence ne baisse pas le plafond');
   assert.match(SRC, /if \(pistes\.ribo && ribosomeAuPlafond\(pistes\.ribo\)\) \{ pistes\.ribo\.ferme = 'plafond'; memoriserEpissure\(pistes\.ribo\); pistes\.ribo = null; \}/);
   assert.match(SRC, /Sursaut : avant de garder, vérifie que ces pensées répondent encore/);
   assert.match(SRC, /o\.vivant\.n >= plafondRibosome\(reglage\)\.lecteur_max\) o\.vivant\.n = VIVANT_RENOUVELER;/);

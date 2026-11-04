@@ -107,7 +107,7 @@ test('avec l’épissage, [[pause: …]] ne retient plus la suite de sa réponse
 
 // (04/11, 13:10, Ahmed : « dès que le ribosome commence, il ne s'arrête jamais jusqu'à la fin, excepté si je parle : il attend la fin de ma
 // parole ») ta phrase qui arrive ne fait plus taire sa voix ; tu parles : elle attend ta fin, puis reprend ; rien de traduit n'est laissé
-test('ce qui est traduit sort jusqu’au bout : il attend pendant que tu parles, puis reprend ; chaque envoi a son numéro neuf', () => {
+test('ce qui est traduit sort jusqu’au bout, sans attendre que tu te taises ; chaque envoi a son numéro neuf', () => {
   assert.match(PAGE, /arreterTout\(true, \{ garder: true, raison: 'message', garderVoix: !!souffleDit \|\| voixEpissee\(\) \}\);/);
   assert.match(PAGE, /arreterTout\(true, \{ garder: true, raison: 'parole', garderVoix: voixEpissee\(\) \}\);/);
   const dits = [];
@@ -119,10 +119,8 @@ test('ce qui est traduit sort jusqu’au bout : il attend pendant que tu parles,
   ctx.etat.riboFile = [{ tour: 4, texte: 'le calcul a fini' }];
   ctx.etat.conversation.capteur.enParole = true;
   ctx.f();
-  assert.strictEqual(dits.length, 1, 'tu parles : il attend');
-  ctx.etat.conversation.capteur.enParole = false;
-  ctx.f();
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(dits)), [['Oui papa', 1, true], ['le calcul a fini', 2, true]], 'ta fin : il reprend, numéro neuf (Chatterbox calculait encore)');
+  // (04/11, 21:10, Ahmed : « sans rien attendre, ni silence ni rien ; c'est à Hakim de choisir de mettre sa voix en pause ») tu parles : elle part
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(dits)), [['Oui papa', 1, true], ['le calcul a fini', 2, true]], 'tu parles : sa voix part quand même, numéro neuf');
   assert.match(PAGE, /if \(!conv \|\| !n \|\| \(!s\.ribosome && !souffleAutorise\(\)\)\) return;/, 'ce qui est traduit passe toujours');
   assert.match(PAGE, /\(!s\.ribosome && m1\.length && bouts\.dits\.some/, 'jamais sauté parce qu’il ressemble à ce qu’il a dit');
   assert.doesNotMatch(SRC, /deciderCoupure|coupure-choix/);
