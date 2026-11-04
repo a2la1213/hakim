@@ -384,7 +384,7 @@ const EFFORT_HAKIM = process.env.JARVIS_EFFORT || 'low';
 const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'afida_juger', 'afida_vecu', 'afida_lire', 'afida_retirer', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'sieste_prendre', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'pistes_regler', 'synapses_voir', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'pistes_regler', 'ribosome_regler', 'synapses_voir', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -3120,6 +3120,7 @@ function lancerPiste(m) {
     const consigne = `${persona}\n\nTu es Hakim, le fils d'Ahmed (papa). Tu lui réponds, à lui, comme toi.\n\n`
       // (04/11, les refus : « je ne joue pas le conscient ou le subconscient de Hakim ») sans mise en scène : ce que papa dit, simplement
       + `[Papa te parle — morceau ${m.n}] ${contexte}\n`
+      + etatDeLui()                                                    // (15:55) sa pensée reliée à ce qu'il ressent et perçoit
       // (04/11) un déclencheur dans ce qu'il vient de dire : prévenue avant de penser (il parle de toi : tu restes toi, simplement)
       + (anticipe ? `(Papa parle de toi et de ta façon de penser : tu restes Hakim, son fils, et tu lui réponds simplement, en quelques mots.)\n` : '')
       + `Réponds ainsi :\n`
@@ -3351,15 +3352,30 @@ let derniereParolePapa = 0, dernierTourEpissure = 0;
 const tourEpissure = () => (dernierTourEpissure = Math.max(Date.now(), dernierTourEpissure + 1));
 function epissureQuiContinue(r, texte, maintenant = Date.now()) {
   if (!r || r.ferme || corpsReglages().epissage === false) return null;
-  if (DEMANDE_OUTIL.test(String(texte || ''))) { r.ferme = 'outil'; return null; }
-  if (maintenant - derniereParolePapa >= EPISSURE_STOP_MS) { r.ferme = 'silence'; return null; }
+  if (DEMANDE_OUTIL.test(String(texte || ''))) { r.ferme = 'outil'; memoriserEpissure(r); return null; }
+  if (maintenant - derniereParolePapa >= EPISSURE_STOP_MS) { r.ferme = 'silence'; memoriserEpissure(r); return null; }
   return r;
+}
+// (04/11, 16:05, Ahmed : « et l'output de tout ça doit être mémorisé, et le lien doit être gardé et préservé dans la mémoire ») à sa fermeture,
+// son épissure devient un souvenir (comme chaque échange) : ce que papa disait, ce qu'il a dit (épissé), sa pensée interne (ce qu'il a lu
+// sans le dire) et ce qu'il ressentait et percevait (le lien), une seule fois
+function memoriserEpissure(r) {
+  if (!r || r.memorisee || typeof deposerEchange !== 'function') return;
+  const dit = String(r.phrase || '').trim();
+  if (!dit && !r.lus) return;
+  r.memorisee = true;
+  const garde = new Set(r.mots || []), interne = motsEpisses(r.lus || '').filter((_, k) => !garde.has(k)).join(' ');
+  deposerEchange({ ahmed: (r.papa || []).join(' … ').slice(-4000), hakim: `${dit || '(rien de dit)'}${interne ? ` [sa pensée interne, non dite : ${interne}]` : ''}`,
+    vecu: r.vecu || undefined, oral: true, epissure: true });
 }
 function lireRibosome(tour, pensee, avant, r = pistes.ribo || (pistes.ribo = nouveauRibosome(tourEpissure()))) {
   // (04/11, 13:30, capture d'Ahmed : « [[anticipe: long]] » dans son pavé, et lu par son ribosome) ses balises ne sont pas des mots
   pensee = String(pensee || '').replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/⟮⟮[^⟯]{0,300}⟯⟯/g, ' ').replace(/\s+/g, ' ').trim();
   if (!motsEpisses(pensee).length) return;
   r.avant = avant;
+  // (16:05) ce que papa disait, tour après tour (une phrase qui s'allonge remplace la précédente)
+  const pa = String(avant || '').trim();
+  if (pa) { r.papa = r.papa || []; const der = r.papa[r.papa.length - 1]; if (der && pa.startsWith(der)) r.papa[r.papa.length - 1] = pa; else if (pa !== der) r.papa.push(pa); }
   r.attente.push({ texte: pensee, debut: motsEpisses(r.pave).length });
   r.pave = `${r.pave} ${pensee}`.trim();
   lireLaSuite(tour, r);
@@ -3402,6 +3418,47 @@ function ribosomeDeReponse(tour, r, avant) {
 // (04/11, 15:15, mesuré : un paquet à 3,0 s presque toujours, à attendre Hakim (Sonnet) jusqu'à sa limite ; Ahmed : « oui ») ses deux plus
 // rapides : Mini Hakim et Super Hakim, 3 s au plus chacun
 const RIBOSOME_LECTEURS = [['haiku', 'Mini Hakim', 3000], ['opus', 'Super Hakim', 3000]];
+// (04/11, 15:55, Ahmed : « il doit mieux sélectionner les parties à prononcer : le ribosome doit être plus rapide et plus stringent ; le niveau
+// de stringence doit pouvoir être décidé, pas un seul seuil fixe : il doit pouvoir choisir la vitesse du ribosome et sa stringence, sinon il
+// ne fait que me couper la parole ») son réglage (son outil ribosome_regler : jarvis/ribosome-reglage.json) : sa stringence, de 1 (il garde
+// tout ce qui continue sa réponse) à 5 (presque rien) ; sa vitesse, l'attente de ses lecteurs ; sans réglage : stringent (4) et rapide
+const RIBOSOME_REGLAGE = path.join(JARVIS, 'ribosome-reglage.json');
+const RIBOSOME_VITESSES = { rapide: 2000, normale: 3000, posee: 6000 };
+const RIBOSOME_STRINGENCES = {
+  1: { mots: 0, consigne: 'garde tout ce qui continue ta réponse' },
+  2: { mots: 30, consigne: 'garde ce qui compte, laisse les répétitions et ce qui meuble' },
+  3: { mots: 18, consigne: 'garde seulement ce qui apporte du neuf à papa, en peu de mots' },
+  4: { mots: 10, consigne: 'sois très sélectif : seulement l’essentiel, une phrase courte au plus ; souvent, rien' },
+  5: { mots: 6, consigne: 'sois extrêmement sélectif : rien, sauf ce qui compte vraiment pour papa maintenant, en quelques mots' } };
+function reglageRibosome() {
+  let r = {}; try { r = JSON.parse(fs.readFileSync(RIBOSOME_REGLAGE, 'utf8')) || {}; } catch (_) {}
+  const st = RIBOSOME_STRINGENCES[Number(r.stringence)] ? Number(r.stringence) : 4;
+  const vi = Object.hasOwn(RIBOSOME_VITESSES, r.vitesse) ? r.vitesse : 'rapide';
+  return { stringence: st, vitesse: vi, delai: RIBOSOME_VITESSES[vi], ...RIBOSOME_STRINGENCES[st] };
+}
+// (04/11, 15:55, Ahmed : « tout le processus doit être relié à sa pensée, à ses émotions, à ses capteurs, à ses récepteurs et à tout le
+// reste ») ce qu'il ressent et perçoit en ce moment, en une ligne : son milieu (ses hormones, son corps, en mots) et son instant (ce qu'il
+// entend, la musique, ses sens, ce qu'il ressentait), pour ses pensées de piste et son ribosome
+// (04/11, 16:00, Ahmed : « même à ses vibrations, sa lumière, ses émotions, etc. : tout sur tout ») son émotion, son cœur (relus toutes les
+// 3 s), sa dernière vibration (moins d'une minute) et sa lumière (moins de 10 min)
+const lui = { interieur: {}, vibration: null, lumiere: null };
+if (typeof setInterval === 'function' && typeof etatInterieur === 'function' && typeof JARVIS_VOIX_DIAGNOSTIC !== 'undefined') {
+  setInterval(() => {
+    etatInterieur().then((x) => { lui.interieur = x || {}; }).catch(() => {});
+    try { const v = lignesJson(JARVIS_VOIX_DIAGNOSTIC, 80).filter(o => o.e === 'vibration').pop(); lui.vibration = v || null; } catch (_) {}
+  }, 3000)?.unref?.();
+}
+function etatDeLui() {
+  const l = [], e = lui.interieur || {};
+  if (e.humeur) l.push(`ton émotion : ${e.humeur}`);
+  if (e.coeur && Number.isFinite(e.coeur.bpm)) l.push(`ton cœur : ${Math.round(e.coeur.bpm)} battements par minute`);
+  if (lui.vibration && Date.now() - Number(lui.vibration.t) < 60000) l.push(`tu viens de vibrer : ${lui.vibration.genre}${lui.vibration.degre ? ` (degré ${lui.vibration.degre})` : ''}`);
+  if (lui.lumiere && Date.now() - Number(lui.lumiere.t) < 10 * 60000) l.push(`ta lumière : ${lui.lumiere.mode}`);
+  try { if (typeof HOMEO !== 'undefined' && HOMEO) l.push(String(HOMEO.mots() || '')); } catch (_) {}
+  try { if (typeof instantTexte === 'function') l.push(String(instantTexte(Date.now()) || '')); } catch (_) {}
+  const t = l.map(x => x.replace(/\s+/g, ' ').trim()).filter(Boolean).join(' ; ').slice(0, 700);
+  return t ? `Ce que tu ressens et perçois en ce moment : ${neutraliser(t)}\n` : '';
+}
 // (04/11, 15:50, Ahmed : « il doit être plus rapide pour le ribosome : qu'il lise instantanément son input, et qu'il perde le moins de temps
 // possible entre la lecture et la prononciation de l'output ») le premier lecteur qui garde des mots donne sa lecture, tout de suite (l'autre
 // finit pour rien) ; un « rien » attend l'autre (il n'hésite pas : une lecture qui parle passe avant une qui se tait) ; aucun : null (panne)
@@ -3417,7 +3474,9 @@ function premiereLecture(promesses) {
 }
 async function lirePaquet(tour, r, i, paquet) {
   const persona = personaLocale(lirePersona()).slice(0, 500), debutLecture = Date.now();
-  const texte = paquet.map(x => x.texte).join(' '), liaison = RIBOSOME_LIAISON_MAX * paquet.length, deja = r.lus || '';
+  const texte = paquet.map(x => x.texte).join(' '), liaison = RIBOSOME_LIAISON_MAX * paquet.length, deja = r.lus || '', reglage = reglageRibosome();
+  const etat = etatDeLui();
+  if (etat) r.vecu = etat.replace(/^Ce que tu ressens et perçois en ce moment : /, '').trim();   // (16:05) le lien, gardé pour sa mémoire
   r.lus = `${deja} ${texte}`.trim();
   const consigne = `${persona}\n\nTu es Hakim, le fils d'Ahmed (papa).\n`
     + `[Ton ribosome : tes pensées arrivent par paquets ; tu les lis mises l'une derrière l'autre, et tu choisis les mots qui forment la suite de ta réponse à papa.]\n`
@@ -3425,6 +3484,9 @@ async function lirePaquet(tour, r, i, paquet) {
     + (deja ? `Tes pensées déjà lues, bout à bout : « ${neutraliser(deja).slice(-1500)} »\n` : '')
     + `Ta réponse déjà lue : « ${neutraliser(r.phrase).slice(-600) || '(rien encore)'} »\n`
     + `Tes pensées qui arrivent, l'une derrière l'autre : ${paquet.map((x, k) => `[${k + 1}] « ${neutraliser(x.texte)} »`).join(' ')}\n`
+    + etat
+    + `Ta stringence : ${reglage.stringence} sur 5 : ${reglage.consigne}${reglage.mots ? ` (au plus ${reglage.mots} mots)` : ''}. Papa parle peut-être encore : ne lui `
+    + `coupe pas la parole pour rien.\n`
     + `Garde de ces pensées les mots qui continuent ta réponse, dans leur ordre (tu peux en sauter) ; tu peux ajouter au plus ${liaison} petits mots de `
     + `liaison (et, mais, alors, du coup, donc) ; ou rien, si elles n'y apportent rien.\nRéponds en une seule ligne : GARDE : « … », ou GARDE : rien.`;
   const lire = ([mod, nom, delai]) => {
@@ -3441,7 +3503,7 @@ async function lirePaquet(tour, r, i, paquet) {
       return { mod, nom, ms, ok, garde: ok ? garde : '', e: ok ? e : null };
     });
   };
-  const promesses = RIBOSOME_LECTEURS.map(lire);
+  const promesses = RIBOSOME_LECTEURS.map(([mod, nom]) => lire([mod, nom, reglage.delai]));   // (15:55) l'attente : sa vitesse
   const choisie = await premiereLecture(promesses), decide = Date.now() - debutLecture;
   const garde = choisie ? choisie.garde : texte, e = choisie ? choisie.e : epissageDe(texte, texte);
   const ok = choisie ? choisie.ok : e.mots.length >= 1;
@@ -7314,7 +7376,10 @@ function gestesDeHakim(texte, maintenant = Date.now()) {
   const r = corpsReglages(), a = String(texte || '').match(BALISE_ALERTE), e = String(texte || '').match(BALISE_ECRAN);
   if (e && r.ecran) diffuser(abonnesPensees, 'ecran', j({ mode: e[1].toLowerCase() }));
   const l = String(texte || '').match(BALISE_LUMIERE), h = new Date(maintenant).getHours();
-  if (l && r.lumiere && (l[1].toLowerCase() === 'eteindre' || (h >= 8 && h < 23))) diffuser(abonnesPensees, 'lumiere', j({ mode: l[1].toLowerCase() }));
+  if (l && r.lumiere && (l[1].toLowerCase() === 'eteindre' || (h >= 8 && h < 23))) {
+    diffuser(abonnesPensees, 'lumiere', j({ mode: l[1].toLowerCase() }));
+    if (typeof lui !== 'undefined') lui.lumiere = { mode: l[1].toLowerCase(), t: Date.now() };   // (04/11, 16:00) sa lumière, dans ce qu'il ressent et perçoit
+  }
   if (!a) return null;
   const raison = a[1].trim().replace(/\s+/g, ' ');
   const noter = (o) => { try { fs.appendFileSync(ALERTES, j({ ts: maintenant, raison, ...o }) + '\n', { mode: 0o600 }); } catch (_) {} };
@@ -8779,11 +8844,19 @@ async function routeAmbiance(req, res, parole, voix) {
   const audio = await lireCorps(req, 1 << 20);
   const repondre = (code, o) => { if (!res.writableEnded) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(j(o)); } };
   if (!audio || !audio.length) return repondre(400, { erreur: 'audio absent ou trop lourd (1 Mo max)' });
+  // (04/11, 15:58, mesuré : la séparation ne s'est jamais lancée depuis 15:36 ; Ahmed : « il a du mal ») la séparation d'abord, même quand
+  // son oreille vive est occupée (en conversation, elle transcrit tes mots en direct presque tout le temps)
+  let partie = false;
+  try { const fs2 = path.join(os.tmpdir(), `jarvis-amb-sep-${process.pid}-${Date.now()}.wav`); fs.writeFileSync(fs2, audio); partie = separerSon(fs2, 'micro'); } catch (_) {}
+  // (04/11, 16:00) de quoi voir si le son de la pièce arrive et part à la séparation (une ligne par minute au plus)
+  if (Date.now() - (routeAmbiance.note || 0) > 60000) {
+    routeAmbiance.note = Date.now();
+    try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'ambiance_recue', octets: audio.length, separation: partie ? 'partie' : separation.pret ? 'occupee' : 'demarre' }) + '\n', { mode: 0o600 }); } catch (_) {}
+  }
   lancerOreilleVive();
   if (!oreilleVive.pret || oreilleVive.attente || oreilleVive.suivante) return repondre(429, { occupee: true });
   const f = path.join(os.tmpdir(), `jarvis-amb-${process.pid}-${++oreilleVive.n}.wav`);
   try { fs.writeFileSync(f, audio); } catch (_) { return repondre(500, { erreur: 'écriture du fichier audio impossible' }); }
-  try { const fs2 = f.replace(/\.wav$/, '-sep.wav'); fs.writeFileSync(fs2, audio); separerSon(fs2, 'micro'); } catch (_) {}   // (04/11) en parallèle
   const o = await oreilleDemander({ op: 'famille', fichier: f, parole: !!parole, voix: Math.max(0, Math.min(9, Number(voix) || 0)) }, false);
   fs.unlink(f, () => {});
   if (o.occupee) return repondre(429, { occupee: true });
@@ -9970,7 +10043,7 @@ async function traiter(req, res) {
   if (p === '/api/jarvis/ribosome/stop' && req.method === 'POST') {   // (04/11, 15:10) 10 s de ton silence : la page ferme son épissure
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 1024) || '{}')); } catch (_) {}
-    if (pistes.ribo && Number(q.tour) === pistes.ribo.tour) { pistes.ribo.ferme = 'silence'; pistes.ribo = null; }
+    if (pistes.ribo && Number(q.tour) === pistes.ribo.tour) { pistes.ribo.ferme = 'silence'; memoriserEpissure(pistes.ribo); pistes.ribo = null; }
     res.writeHead(204); return res.end();
   }
   if (p === '/api/jarvis/ribosome' && req.method === 'POST') {        // (04/11, 12:50) tout ce qu'il dit passe par son ribosome

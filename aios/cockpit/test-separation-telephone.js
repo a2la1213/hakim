@@ -12,3 +12,17 @@ test('le son du téléphone en direct (🎧) passe aussi par la séparation, ava
   assert.ok(sep > 0, 'séparé');
   assert.ok(sep < corps.indexOf('if (!oreilleVive.pret'), 'même quand son oreille vive est occupée');
 });
+
+// (04/11, 15:58, Ahmed : « j'ai aussi fait l'essai micro ouvert et entendre fermé » ; « il a du mal ») mesuré : la séparation ne s'est jamais
+// lancée depuis 15:36 ; le son de la pièce ne partait à la séparation qu'une fois son oreille vive libre, et en conversation elle ne l'est
+// presque jamais (elle transcrit tes mots en direct) : la séparation part d'abord
+test('le son de la pièce (micro ouvert) part à la séparation avant que son oreille vive soit libre ou non', () => {
+  const i = SRC.indexOf('async function routeAmbiance('), corps = SRC.slice(i, SRC.indexOf('\n}\n', i));
+  const sep = corps.indexOf("separerSon(fs2, 'micro')");
+  assert.ok(sep > 0, 'séparé');
+  assert.ok(sep < corps.indexOf('if (!oreilleVive.pret || oreilleVive.attente || oreilleVive.suivante) return repondre(429'), 'même quand son oreille vive est occupée');
+});
+
+test('chaque minute, une ligne dit si le son de la pièce arrive et part à la séparation', () => {
+  assert.match(SRC, /e: 'ambiance_recue', octets: audio\.length, separation: partie \? 'partie' : separation\.pret \? 'occupee' : 'demarre'/);
+});

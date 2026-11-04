@@ -1351,7 +1351,7 @@ test('(04/11) ses synapses : visibles dans Immunité, épinglées ou rétablies 
   assert.ok(i > 0);
   assert.match(SRC.slice(i, i + 600), /if \(!jetonValide\(req\)\) \{ res\.writeHead\(403/, 'sans jeton : 403');
   assert.match(SRC.slice(i, i + 900), /\['epingler', 'desepingler', 'retablir'\]\.includes\(action\)/);
-  assert.match(SRC, /'pistes_regler', 'synapses_voir',/);
+  assert.match(SRC, /'pistes_regler', (?:'ribosome_regler', )?'synapses_voir',/);
   const SENS = fs.readFileSync(path.join(__dirname, 'public', 'sens.html'), 'utf8');
   assert.match(SENS, /\['elagage', 'elagage'\][,\]]/, 'son interrupteur dans Sens');   // (04/11) l'épissage le suit
 });

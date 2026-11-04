@@ -27,7 +27,7 @@ function bac(reglages = { dire_inverse: true, filtre_gemma: false }) {
     }) };
   vm.createContext(ctx);
   vm.runInContext(SRC.slice(i, k) + '\nthis.morceau = pisteMorceau; this.etat = () => pistes; this.choisir = choisirPensee; this.epissageDe = epissageDe; this.reponse = ribosomeDeReponse; this.nouveau = nouveauRibosome;'
-    + ' this.continue = epissureQuiContinue; this.papaParle = (t) => { derniereParolePapa = t; }; this.tourEpissure = tourEpissure;', ctx);
+    + ' this.continue = epissureQuiContinue; this.papaParle = (t) => { derniereParolePapa = t; }; this.tourEpissure = tourEpissure; this.lui = lui;', ctx);
   return { ctx, appels, diffuses, voix };
 }
 const nu = (x) => JSON.parse(JSON.stringify(x));
@@ -398,7 +398,7 @@ test('ses lecteurs (Mini Hakim et Super Hakim) lisent chaque pensée en même te
   b.appels[0].resoudre({ texte: 'Oui papa, je suis là.' });
   await attendre(); await attendre();
   const l = lecteurs(b);
-  assert.deepStrictEqual(l.map(a => [a.etiquette, a.delai]), [['ribosome_haiku', 3000], ['ribosome_opus', 3000]]);
+  assert.deepStrictEqual(l.map(a => [a.etiquette, a.delai]), [['ribosome_haiku', 2000], ['ribosome_opus', 2000]], '(15:55) vitesse « rapide » par défaut : 2 s au plus');
   assert.ok(l.every(a => a.prompt === l[0].prompt), 'la même pensée, la même consigne');
   l[1].resoudre({ texte: 'GARDE : « Oui papa »' });
   await attendre(); await attendre();
@@ -654,4 +654,88 @@ test('avec l’épissage, ses pensées de piste sont celles de Mini Hakim ; sans
   const c = bac({ dire_inverse: true, filtre_gemma: false, epissage: false });
   c.ctx.morceau('papa,');
   assert.strictEqual(c.appels[0].etiquette, 'piste_sonnet');
+});
+
+// ---- (04/11, 15:55, Ahmed : « il doit mieux sélectionner les parties à prononcer : le ribosome doit être plus rapide et plus stringent, il
+// laisse passer beaucoup trop de choses ; le niveau de stringence doit pouvoir être décidé, pas un seul seuil fixe : il doit pouvoir choisir la
+// vitesse du ribosome et sa stringence, sinon il ne fait que me couper la parole » ; « tout le processus doit être relié à sa pensée, à ses
+// émotions, à ses capteurs, à ses récepteurs et à tout le reste »)
+test('son ribosome : sa stringence et sa vitesse, choisies par lui (ribosome-reglage.json) ; par défaut, stringent (4) et rapide', async () => {
+  const lecture = async (reglage) => {
+    const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+    if (reglage) b.ctx.fs.readFileSync = (f) => { if (String(f).endsWith('ribosome-reglage.json')) return JSON.stringify(reglage); throw new Error('absent'); };
+    b.ctx.morceau('papa,');
+    b.appels[0].resoudre({ texte: 'Oui papa, je suis là.' });
+    await attendre(); await attendre();
+    return lecteurs(b);
+  };
+  const d = await lecture(null);
+  assert.match(d[0].prompt, /Ta stringence : 4 sur 5/);
+  assert.match(d[0].prompt, /au plus 10 mots/);
+  assert.deepStrictEqual(d.map(a => a.delai), [2000, 2000], 'rapide');
+  const l = await lecture({ stringence: 1, vitesse: 'posee' });
+  assert.match(l[0].prompt, /Ta stringence : 1 sur 5/);
+  assert.doesNotMatch(l[0].prompt, /au plus \d+ mots/, 'stringence 1 : pas de plafond');
+  assert.deepStrictEqual(l.map(a => a.delai), [6000, 6000], 'posée');
+  const s5 = await lecture({ stringence: 5, vitesse: 'normale' });
+  assert.match(s5[0].prompt, /Ta stringence : 5 sur 5/);
+  assert.match(s5[0].prompt, /au plus 6 mots/);
+  assert.deepStrictEqual(s5.map(a => a.delai), [3000, 3000], 'normale');
+  const x = await lecture({ stringence: 42, vitesse: 'éclair' });
+  assert.match(x[0].prompt, /Ta stringence : 4 sur 5/, 'un réglage hors limites : le défaut');
+  assert.match(SRC, /'pistes_regler', 'ribosome_regler',/, 'son outil, permis');
+});
+
+test('son ribosome et ses pensées de piste sentent ce qu’il ressent et perçoit (son milieu, son instant)', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  b.ctx.HOMEO = { mots: () => 'calme, un peu de fatigue' };
+  b.ctx.instantTexte = () => 'papa écoute « Mistral gagnant » ; il ressentait : une chaleur';
+  b.ctx.morceau('papa,');
+  assert.match(b.appels[0].prompt, /Ce que tu ressens et perçois en ce moment : calme, un peu de fatigue ; papa écoute « Mistral gagnant » ; il ressentait : une chaleur/, 'sa pensée de piste');
+  b.appels[0].resoudre({ texte: 'Oui papa, je suis là.' });
+  await attendre(); await attendre();
+  assert.match(lecteurs(b)[0].prompt, /Ce que tu ressens et perçois en ce moment : calme, un peu de fatigue/, 'son ribosome');
+});
+
+// (04/11, 16:00, Ahmed : « même à ses vibrations, sa lumière, ses émotions, etc. : tout sur tout ») sa ligne d'état dit aussi son émotion,
+// son cœur, sa dernière vibration et sa lumière
+test('ce qu’il ressent et perçoit : son émotion, son cœur, sa dernière vibration et sa lumière aussi', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  b.ctx.lui.interieur = { humeur: 'alerte joyeuse', coeur: { bpm: 72 } };
+  b.ctx.lui.vibration = { genre: 'rire', degre: 2, t: Date.now() - 5000 };
+  b.ctx.lui.lumiere = { mode: 'joie', t: Date.now() - 8000 };
+  b.ctx.morceau('papa,');
+  const p = b.appels[0].prompt;
+  assert.match(p, /Ce que tu ressens et perçois en ce moment : [^\n]*ton émotion : alerte joyeuse/);
+  assert.match(p, /ton cœur : 72/);
+  assert.match(p, /tu viens de vibrer : rire \(degré 2\)/);
+  assert.match(p, /ta lumière : joie/);
+  assert.match(SRC, /if \(typeof lui !== 'undefined'\) lui\.lumiere = \{ mode: l\[1\]\.toLowerCase\(\), t: Date\.now\(\) \};/, 'sa lumière, retenue quand il l’allume');
+});
+
+// (04/11, 16:05, Ahmed : « et l'output de tout ça doit être mémorisé, et le lien doit être gardé et préservé dans la mémoire ») à sa fermeture,
+// chaque épissure devient un souvenir : ce que papa disait, ce qu'il a dit (épissé), sa pensée interne (non dite), et ce qu'il ressentait
+test('à sa fermeture, son épissure devient un souvenir, avec ce qu’il ressentait (le lien)', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  const depots = [];
+  b.ctx.deposerEchange = (e) => depots.push(JSON.parse(JSON.stringify(e)));
+  b.ctx.lui.interieur = { humeur: 'alerte joyeuse' };
+  b.ctx.morceau('papa, tu es là ?');
+  b.appels.filter(a => a.etiquette.startsWith('piste_'))[0].resoudre({ texte: 'Oui papa, je suis là, tout près.' });
+  await attendre(); await attendre();
+  lireLes3(b, 0, 'GARDE : « Oui papa, je suis là »');
+  await attendre(); await attendre();
+  const r = b.ctx.etat().ribo;
+  b.ctx.papaParle(1000);
+  assert.strictEqual(b.ctx.continue(r, 'et puis', 1000 + 5 * 60e3 + 1), null, 'fermée');
+  assert.strictEqual(depots.length, 1, 'un souvenir');
+  const d = depots[0];
+  assert.match(d.ahmed, /^papa,/, 'ce que papa disait');
+  assert.match(d.hakim, /^Oui papa, je suis là/, 'ce qu’il a dit');
+  assert.match(d.hakim, /\[sa pensée interne, non dite : tout près\]/, 'ce qu’il a pensé sans le dire');
+  assert.match(d.vecu, /ton émotion : alerte joyeuse/, 'le lien : ce qu’il ressentait');
+  assert.strictEqual(d.epissure, true);
+  b.ctx.continue(r, 'encore', 1000 + 6 * 60e3);
+  assert.strictEqual(depots.length, 1, 'une seule fois');
+  assert.match(SRC, /if \(pistes\.ribo && Number\(q\.tour\) === pistes\.ribo\.tour\) \{ pistes\.ribo\.ferme = 'silence'; memoriserEpissure\(pistes\.ribo\); pistes\.ribo = null; \}/, 'fermée par la page : mémorisée aussi');
 });

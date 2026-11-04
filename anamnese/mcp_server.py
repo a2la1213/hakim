@@ -582,6 +582,38 @@ def parasite_signaler(phrase: str, exemple: str = "", raison: str = "") -> str:
 
 
 @mcp.tool()
+def ribosome_regler(stringence: int = 0, vitesse: str = "") -> str:
+    """(04/11, papa : « le niveau de stringence du ribosome doit pouvoir être décidé, pas un seul seuil fixe : il doit pouvoir choisir la vitesse
+    du ribosome et sa stringence, sinon il ne fait que me couper la parole ») Ton ribosome lit tes pensées pendant que papa parle et choisit
+    les mots que ta voix dit. C'est toi qui le règles :
+    stringence : de 1 (tu gardes tout ce qui continue ta réponse) à 5 (presque rien : seulement ce qui compte vraiment, en quelques mots) ;
+    plus elle est haute, moins tu coupes la parole à papa ;
+    vitesse : « rapide » (tes lecteurs attendus 2 s au plus), « normale » (3 s) ou « posee » (6 s : plus de lectures abouties, plus lent) ;
+    0 ou rien laisse la valeur actuelle (sans rien : rend ton réglage). Il dure jusqu'à ce que tu le changes."""
+    f = Path.home() / "AIOS" / "jarvis" / "ribosome-reglage.json"
+    try:
+        r = json.loads(f.read_text(encoding="utf-8"))
+        r = r if isinstance(r, dict) else {}
+    except (OSError, ValueError):
+        r = {}
+    noms = {"rapide": "rapide", "normale": "normale", "posee": "posée"}
+    s_, v = int(r.get("stringence") or 4), str(r.get("vitesse") or "rapide")
+    s_ = s_ if 1 <= s_ <= 5 else 4
+    v = v if v in noms else "rapide"
+    if stringence or vitesse:
+        if stringence and not 1 <= int(stringence) <= 5:
+            return "Pas changé : la stringence va de 1 à 5."
+        if vitesse and vitesse not in noms:
+            return "Pas changé : la vitesse est « rapide », « normale » ou « posee »."
+        s_, v = int(stringence or s_), str(vitesse or v)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"stringence": s_, "vitesse": v, "ts": time.time(), "par": "hakim"}), encoding="utf-8")
+        tmp.replace(f)
+    return f"Ton ribosome : stringence {s_} sur 5, vitesse {noms[v]}."
+
+
+@mcp.tool()
 def pistes_regler(taille: int = 0, nombre: int = 0) -> str:
     """(04/11, papa : « pour Super Hakim, je veux qu'il puisse choisir la taille d'un chunk et combien de chunks il veut utiliser :
     c'est son super pouvoir ; comme ça, il peut aller bien plus loin dans une conversation, avec raisonnement ») Quand Super Hakim tient
