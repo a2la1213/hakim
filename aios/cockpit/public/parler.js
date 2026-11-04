@@ -3028,7 +3028,7 @@ function recevoirBout(s, n, tour) {
   if (!conv || !n || !souffleAutorise()) return;
   if (bouts.tour !== tour) bouts = { tour, prochain: 1, liste: new Map(), enFile: [], dits: [] };
   if (n < bouts.prochain || bouts.liste.has(n)) return;
-  const b = { n, texte: s.texte, buf: null, rate: false, t: Date.now() };
+  const b = { n, texte: s.texte, buf: null, rate: false, t: Date.now(), coupe: !!s.remplace, sansMeuble: !!s.sansMeuble };
   // (04/11) la voix du téléphone : dit tout de suite, sans voix fabriquée au Mac
   if (typeof voixDuTelephone === 'function' && voixDuTelephone()) {
     const motsDe = (x) => String(x).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(m => m.length > 2), m1 = motsDe(b.texte);
@@ -3099,7 +3099,10 @@ function meublesPourTelephone(langue = 'fr') {
 // rend la liste de ce qu'il dit : [meuble, pensée] ou [pensée]
 function meublerSaut(b) {
   const dernier = bouts.dernierDit || 0;
-  if (b.n <= dernier + 1 || Date.now() - (bouts.meubleA || 0) < 3000) return [b.texte];   // pas de saut, ou un meuble il y a moins de 3 s
+  if (b.sansMeuble) return [b.texte];                                    // (04/11) déjà meublé : le choix s'est fait pendant le meuble
+  // (04/11, Ahmed : « c'est à ce moment-là, quand il coupe au milieu d'une pensée pour en reprendre une autre, que les meubles avec
+  // transition apparaissent ») coupé au milieu : la transition, toujours ; sinon un saut, et pas de meuble depuis 3 s
+  if (!b.coupe && (b.n <= dernier + 1 || Date.now() - (bouts.meubleA || 0) < 3000)) return [b.texte];
   const langue = langueDePensee(b.texte);
   const h = choisirMeuble({ avant: !dernier }, meublesPourTelephone(langue));   // dans la langue de la pensée d'après
   if (!h) return [b.texte];
@@ -3359,8 +3362,34 @@ function rebondirDernierePensee(conv, silenceMs) {
   conv.rebondPause = pause;
   if (typeof bouts !== 'undefined' && bouts.tour === dp.tour && dp.n < bouts.prochain) return false;   // déjà dite (ou une plus récente)
   journalVoix('rebond_derniere', { n: dp.n, silence_ms: Math.round(silenceMs) });
-  recevoirBout({ texte: dp.texte, pret: true }, dp.n, dp.tour);
+  choisirEtDire(dp);
   return true;
+}
+// (04/11, Ahmed : « les meubles doivent lui laisser l'occasion, courte et rapide, de choisir la pensée à dire, comme chez l'humain »)
+// à ta pause : un de ses meubles tout de suite (dans la langue de sa dernière pensée), et pendant ce temps Mini Hakim choisit laquelle
+// de ses pensées gardées dire, toute ou à partir d'un passage (2,5 s au plus) ; s'il tarde, un second meuble ; sans choix : sa dernière
+async function choisirEtDire(dp) {
+  const telephone = typeof voixDuTelephone === 'function' && voixDuTelephone() && lecteurSysteme;
+  const meubler = () => {
+    if (!telephone) return false;
+    const h = choisirMeuble({ avant: !(bouts.dernierDit || 0) }, meublesPourTelephone(langueDePensee(dp.texte)));
+    if (!h) return false;
+    bouts.meubleA = Date.now(); lecteurSysteme.dire(h.texte.trim());
+    return true;
+  };
+  const meuble = meubler();
+  const second = meuble ? setTimeout(meubler, 1500) : null;
+  let r = null;
+  try {
+    r = await (await fetch('/api/jarvis/choisir', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ tour: dp.tour, raison: 'pause' }) })).json();
+  } catch (_) {}
+  clearTimeout(second);
+  journalVoix('choix_pause', { n: r && r.n ? r.n : null, rien: !!(r && r.rien), par_defaut: !(r && (r.n || r.rien)) });
+  if (r && r.rien) return;
+  const texte = r && r.texte ? r.texte : dp.texte;
+  const n = typeof bouts !== 'undefined' && bouts.tour === dp.tour ? Math.max(Number(r && r.n) || dp.n, bouts.prochain) : (Number(r && r.n) || dp.n);
+  recevoirBout({ texte, pret: true, sansMeuble: meuble }, n, dp.tour);
 }
 function anticiperConversation(conv, silenceMs) {
   if (silenceMs >= 300 && typeof direPenseeSiPossible === 'function') direPenseeSiPossible();   // (04/11) ta pause : sa pensée prête se dit

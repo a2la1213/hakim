@@ -2861,6 +2861,11 @@ function lancerPiste(m) {
       + `DIRE : jamais (tu le gardes pour toi, même si c'est ta dernière pensée à sa pause), DIRE : coupe (ce `
       + `que tu es en train de dire n'est plus pertinent : tu l'arrêtes et tu dis celui-ci à la place)`
       + (tues.length ? ` ou DIRE : [n] (tu dis plutôt ta pensée gardée [n], et tu gardes celle-ci pour toi)` : '') + `\n`
+      // (04/11, Ahmed : « il doit pouvoir switcher d'une pensée à l'autre, même en coupant au milieu d'une pensée, pour reprendre la
+      // pensée d'après qu'il a sélectionnée, ou même à partir de n'importe où dans la pensée sélectionnée, même la moitié ») un passage
+      + `Un passage seulement : ajoute-le entre « » — DIRE : oui « … » (seulement ce passage de celle-ci)`
+      + (tues.length ? `, DIRE : [n] « … » (seulement ce passage de ta pensée [n]), DIRE : [n] dès « … » (ta pensée [n] à partir de ce passage), `
+      + `DIRE : coupe [n] dès « … » (tu t'arrêtes au milieu de ce que tu dis et tu reprends ta pensée [n] à partir de là)` : '') + `.\n`
       + `C'est toi qui choisis, à chaque fois, la pensée qui compte dans le fil de la discussion : souvent la plus récente, pas toujours. `
       + `Une seule à la fois, jamais toutes à la suite.\n`
       // (04/11, Ahmed : « il ne doit pas dire toutes ses pensées, seulement celles qu'il estime pertinentes, sinon ça rafale trop »)
@@ -2892,25 +2897,60 @@ function lancerPiste(m) {
         // dit l'un après l'autre, dans l'ordre des mots
         if (!reponse || piste.reponse) { noterPiste(m, tour, mod, t0, o, { dire, reponse, dit: false }); return; }
         // (04/11) il saute ce bout, coupe ce qu'il disait, ou désigne une pensée gardée ([n]) à dire à la place de celle-ci
-        const choix = m.n > 1 && /^\[?(\d+)\]?/.exec(dire || ''), choisie = choix ? pistes.liste.find(x => x.n === Number(choix[1]) && x !== piste && x.reponse && !x.pret) : null;
+        const choix = m.n > 1 && (/\[(\d+)\]/.exec(dire || '') || /^(\d+)\b/.exec(dire || '')), choisie = choix ? pistes.liste.find(x => x.n === Number(choix[1]) && x !== piste && x.reponse && !x.pret) : null;
         const premiere = m.n === 1, jamais = /^jamais/i.test(dire || '');   // (04/11) sa première : dite par défaut ; « jamais » : pas même à ta pause
         // (04/11) papa n'a parlé qu'en français (ou en anglais) depuis le début du tour : une pensée surtout en arabe n'est pas dite (écrite)
         const autreLangue = partArabe(`${m.avant} ${m.texte}`) === 0 && partArabe(reponse) > 0.5;
         const aDire = !autreLangue && (premiere ? !/^(non|jamais)/i.test(dire || '') : (!choix && !/^(non|jamais)/i.test(dire || '')));
         const remplace = !premiere && /^coup/i.test(dire || '');
         piste.reponse = reponse; piste.pret = aDire;
-        if (aDire) voixDeLaSource(reponse, { garder: true });
+        const ditDeSoi = aDire ? extraitDe(reponse, dire) : reponse;       // (04/11) un passage de la sienne, s'il l'a choisi
+        if (aDire) voixDeLaSource(ditDeSoi, { garder: true });
         const pour = `${m.avant} ${m.texte}`.slice(-300);
-        diffuser(abonnesPensees, 'souffle', j({ texte: reponse, pret: aDire, remplace, jamais, fini: null, niveau: 'piste', n: m.n, tour, pour }));
-        if (choisie) {                                                     // la pensée qu'il a choisie : dite maintenant, à la place de celle-ci
+        diffuser(abonnesPensees, 'souffle', j({ texte: aDire ? ditDeSoi : reponse, pret: aDire, remplace, jamais, fini: null, niveau: 'piste', n: m.n, tour, pour }));
+        if (choisie) {                                                     // la pensée qu'il a choisie (ou ce passage) : dite maintenant, à la place
           choisie.pret = true;
-          voixDeLaSource(choisie.reponse, { garder: true });
-          diffuser(abonnesPensees, 'souffle', j({ texte: choisie.reponse, pret: true, remplace: false, fini: null, niveau: 'piste', n: m.n, tour, pour, choisie: choisie.n }));
+          const passage = extraitDe(choisie.reponse, dire);
+          voixDeLaSource(passage, { garder: true });
+          diffuser(abonnesPensees, 'souffle', j({ texte: passage, pret: true, remplace: /^coup/i.test(dire || ''), fini: null, niveau: 'piste', n: m.n, tour, pour, choisie: choisie.n }));
         }
         noterPiste(m, tour, mod, t0, o, { dire, reponse, dit: aDire, choisie: choisie ? choisie.n : null, autreLangue });
       })
       .catch(() => {}).finally(fini);
   }
+}
+// (04/11, Ahmed : « il peut reprendre à partir de n'importe où dans la pensée sélectionnée, même la moitié ») le passage d'une pensée :
+// « dès « X » » : de X jusqu'au bout ; « « X » » seul : ce passage ; X introuvable mot pour mot : ses trois premiers mots, sinon toute la pensée
+function extraitDe(pensee, dire) {
+  const p = String(pensee || ''), m = /«\s*([^»]{2,300}?)\s*»/.exec(String(dire || ''));
+  if (!m) return p;
+  const x = m[1].trim(), des = /(dès|des|à partir de|a partir de|depuis)\s*«/i.test(dire), bas = p.toLowerCase();
+  let i = bas.indexOf(x.toLowerCase()), long = x.length;
+  if (i < 0) { const debut = x.split(/\s+/).slice(0, 3).join(' '); i = debut ? bas.indexOf(debut.toLowerCase()) : -1; long = debut.length; }
+  if (i < 0) return p;
+  return (des ? p.slice(i) : p.slice(i, i + Math.max(long, x.length))).trim() || p;
+}
+// (04/11, Ahmed : « les meubles doivent lui laisser l'occasion, courte et rapide, de choisir la pensée à dire, comme chez l'humain »)
+// pendant le meuble que la page dit à ta pause (ou quand il s'est coupé), Mini Hakim choisit, parmi ses pensées gardées, laquelle dire,
+// et d'où : toute, à partir d'un passage, ou un passage seulement ; 2,5 s au plus ; sinon (ou « rien »), la page dit sa dernière
+async function choisirPensee(tour, raison) {
+  if (tour !== pistes.tour) return null;
+  const gardees = pistes.liste.filter(x => x.reponse && !x.pret).slice(-5);
+  if (!gardees.length) return null;
+  const persona = personaLocale(lirePersona()).slice(0, 500);
+  const avant = pistes.liste.length ? `${pistes.liste[pistes.liste.length - 1].avant} ${pistes.liste[pistes.liste.length - 1].texte}` : '';
+  const o = await sonnetTeteDeFond(`${persona}\n\nTu es Hakim, le fils d'Ahmed (papa).\n`
+    + `[${raison === 'coupe' ? 'Tu viens de t\'interrompre au milieu de ta phrase' : 'Papa marque une pause'} : pendant ton « hum », tu choisis ce que tu dis.]\n`
+    + `Ce qu'il a dit : « ${neutraliser(avant).slice(-600)} »\nCe que tu as déjà dit : « ${neutraliser(boutsDits(1e9)) || '(rien)'} »\n`
+    + `Tes pensées gardées : ${gardees.map(x => `[${x.n}] « ${neutraliser(x.reponse)} »`).join(' ; ')}\n`
+    + `Réponds en une seule ligne : DIS : [n] (toute la pensée), DIS : [n] dès « … » (à partir de ce passage), DIS : [n] « … » `
+    + `(seulement ce passage), ou DIS : rien. La plus récente est souvent la bonne, pas toujours : celle qui compte dans le fil.`, 'choix_haiku', 'haiku', 2500);
+  const r = String((o && o.texte) || '');
+  if (/DIS\s*:\s*rien/i.test(r)) return { rien: true };
+  const k = /\[(\d+)\]/.exec(r), x = k ? gardees.find(g => g.n === Number(k[1])) : null;
+  if (!x) return null;
+  x.pret = true;
+  return { n: x.n, texte: extraitDe(x.reponse, r.replace(/^[\s\S]*?DIS\s*:/i, '')) };
 }
 // (04/11, Ahmed : « fais tous tes tests et tous tes calculs, et regarde comment optimiser pour qu'il dise la bonne parole ; enfin, la
 // bonne pensée au bon moment ») chaque piste notée (jarvis/pistes.jsonl, les 2 000 dernières) : son morceau, sa pensée, son choix (DIRE),
@@ -9094,6 +9134,13 @@ async function traiter(req, res) {
     reveilMorceau(String(q.texte || ''));                                // (15:45) et son vrai cerveau
     res.writeHead(202, { 'Content-Type': 'application/json' });
     return res.end(j({ ok: true }));
+  }
+  if (p === '/api/jarvis/choisir' && req.method === 'POST') {         // (04/11) son choix rapide, pendant un meuble
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 4096) || '{}')); } catch (_) {}
+    const r = await choisirPensee(Number(q.tour), q.raison === 'coupe' ? 'coupe' : 'pause').catch(() => null);
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j(r || {}));
   }
   if (p === '/api/jarvis/souffle' && req.method === 'POST') {           // (14:55) sa réponse soufflée, quand papa se tait
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }

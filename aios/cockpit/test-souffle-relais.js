@@ -428,7 +428,7 @@ test('(04/11) la page envoie tes mots en direct à ses pistes dès un mot neuf, 
   assert.match(PAGE, /if \(!s\.pret\) \{\n      montrerPensee\('🧠 il pense, sans le dire', texte, true\);[\s\S]{0,500}?return;\n    \}\n    recevoirBout\(s, Number\(o\.n\) \|\| 0, o\.tour\); return;/,
     '(04/11) il saute les pensées qu’il choisit de ne pas dire');
   assert.match(SRC, /const aDire = !autreLangue && \(premiere \? !\/\^\(non\|jamais\)\/i\.test\(dire \|\| ''\) : \(!choix && !\/\^\(non\|jamais\)\/i\.test\(dire \|\| ''\)\)\);/);
-  assert.match(SRC, /if \(aDire\) voixDeLaSource\(reponse, \{ garder: true \}\);/, 'sa voix seulement pour ce qu’il dira');
+  assert.match(SRC, /if \(aDire\) voixDeLaSource\(ditDeSoi, \{ garder: true \}\);/, 'sa voix seulement pour ce qu’il dira (le passage choisi)');
   assert.match(PAGE, /lecteurNeuronal\.direAudio\(b\.texte, b\.buf\);/, 'dans l’ordre des mots, à la suite');
 });
 
@@ -728,7 +728,7 @@ test('(04/11) sa première pensée : dite par défaut (il peut la garder) ; « j
 });
 test('(04/11) à une seconde de ta pause, il rebondit avec sa dernière pensée du tour, une fois par pause, sauf « jamais »', () => {
   const recus = [], journal = [];
-  const ctx = { etat: {}, Math, Number, recevoirBout: (s, n, tour) => recus.push([s.texte, n, tour]), journalVoix: (e) => journal.push(e),
+  const ctx = { etat: {}, Math, Number, choisirEtDire: (dp) => recus.push([dp.texte, dp.n, dp.tour]), journalVoix: (e) => journal.push(e),
     rythmeVoix: (k, d) => d };
   vm.createContext(ctx);
   vm.runInContext('let bouts = { tour: 4, prochain: 3 };\n' + extraire('function rebondirDernierePensee') + '\nthis.rebond = rebondirDernierePensee; this.b = () => bouts;', ctx);
@@ -744,6 +744,80 @@ test('(04/11) à une seconde de ta pause, il rebondit avec sa dernière pensée 
   assert.strictEqual(ctx.rebond(conv, 1200), false, '« jamais » : gardée');
   assert.match(PAGE, /if \(typeof rebondirDernierePensee === 'function'\) rebondirDernierePensee\(conv, silenceMs\);/);
 });
+// (04/11, Ahmed : « il doit pouvoir switcher d'une pensée à l'autre, même en coupant au milieu, pour reprendre la pensée d'après qu'il a
+// sélectionnée, ou à partir de n'importe où dans la pensée sélectionnée, même la moitié ; c'est à ce moment-là que les blancs ou les
+// meubles avec transition apparaissent » ; « les meubles doivent lui laisser l'occasion, courte et rapide, de choisir la pensée à dire,
+// comme chez l'humain »)
+test('(04/11) un passage d’une pensée : à partir d’un mot, ou seulement ce passage ; introuvable : toute la pensée', () => {
+  const { ctx } = pistesSandbox();
+  vm.runInContext('this.extrait = extraitDe;', ctx);
+  const p = 'Ta grand-mère t’a appris dix mots, et tu les as tous retenus, c’est fou.';
+  assert.strictEqual(ctx.extrait(p, '[2] dès « tu les as tous »'), 'tu les as tous retenus, c’est fou.');
+  assert.strictEqual(ctx.extrait(p, '[2] « dix mots »'), 'dix mots');
+  assert.strictEqual(ctx.extrait(p, 'coupe [2] dès « tu les as tous appris »'), 'tu les as tous retenus, c’est fou.', 'à peu près : ses trois premiers mots');
+  assert.strictEqual(ctx.extrait(p, '[2] dès « rien de tout ça »'), p);
+  assert.strictEqual(ctx.extrait(p, 'oui'), p);
+});
+test('(04/11) « coupe [n] dès « … » » : il s’arrête au milieu et reprend sa pensée [n] à partir de là', async () => {
+  const { ctx, appels, diffuses, voix } = pistesSandbox(undefined, 'sonnet');
+  const attendre = async () => { for (let i = 0; i < 4; i++) await new Promise(r => setImmediate(r)); };
+  ctx.morceau('papa, ta grand-mère,');
+  appels[0].resoudre({ texte: 'Oui papa.' });
+  appels[1].resoudre({ texte: 'DIRE : non\nElle t’a appris dix mots, et tu les as tous retenus.' });
+  await attendre();
+  ctx.morceau('papa, ta grand-mère, en kabyle,');
+  assert.match(appels[2].prompt, /DIRE : coupe \[n\] dès « … » \(tu t'arrêtes au milieu de ce que tu dis et tu reprends ta pensée \[n\] à partir de là\)/);
+  appels[2].resoudre({ texte: 'DIRE : coupe [2] dès « tu les as tous »\nEn kabyle, c’est encore plus drôle.' });
+  await attendre();
+  const dite = diffuses.find(d => d.choisie === 2);
+  assert.strictEqual(dite.texte, 'tu les as tous retenus.', 'à partir du passage choisi');
+  assert.strictEqual(dite.remplace, true, 'il coupe ce qu’il disait : la page met la transition');
+  assert.strictEqual(voix[voix.length - 1][0], 'tu les as tous retenus.');
+});
+test('(04/11) pendant son meuble, Mini Hakim choisit vite la pensée à dire : toute, à partir d’un passage, ou rien', async () => {
+  const { ctx, appels } = pistesSandbox(undefined, 'sonnet');
+  const attendre = async () => { for (let i = 0; i < 4; i++) await new Promise(r => setImmediate(r)); };
+  ctx.morceau('papa, ta grand-mère, en kabyle,');
+  appels[0].resoudre({ texte: 'Oui papa.' });
+  appels[1].resoudre({ texte: 'DIRE : non\nElle t’a appris dix mots, et tu les as tous retenus.' });
+  appels[2].resoudre({ texte: 'DIRE : non\nEn kabyle, c’est encore plus drôle.' });
+  await attendre();
+  vm.runInContext('this.choisir = choisirPensee;', ctx);
+  const p = ctx.choisir(ctx.etat().tour, 'pause');
+  await attendre();
+  const appel = appels[appels.length - 1];
+  assert.strictEqual(appel.modele, 'haiku'); assert.strictEqual(appel.etiquette, 'choix_haiku');
+  assert.match(appel.prompt, /Tes pensées gardées : \[2\] « Elle t’a appris dix mots, et tu les as tous retenus\. » ; \[3\] « En kabyle, c’est encore plus drôle\. »/);
+  appel.resoudre({ texte: 'DIS : [2] dès « tu les as tous »' });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(await p)), { n: 2, texte: 'tu les as tous retenus.' });
+  assert.strictEqual(ctx.etat().liste[1].pret, true, 'la choisie compte comme dite');
+  const q = ctx.choisir(ctx.etat().tour, 'pause'); await attendre();
+  appels[appels.length - 1].resoudre({ texte: 'DIS : rien' });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(await q)), { rien: true });
+  assert.strictEqual(await ctx.choisir(ctx.etat().tour + 1, 'pause'), null, 'un autre tour : la page dit sa dernière');
+});
+test('(04/11) la page : à ta pause, un meuble tout de suite, puis la pensée choisie (sans second meuble) ; sans choix, sa dernière', async () => {
+  const dits = [], recus = [];
+  const ctx = { etat: {}, Math, Number, JSON, String, Date, setTimeout: () => 0, clearTimeout: () => {},
+    voixDuTelephone: () => true, lecteurSysteme: { dire: (t) => dits.push(t) }, choisirMeuble: (o, l) => l[0] || null,
+    meublesPourTelephone: (langue) => [{ texte: langue === 'ar' ? 'يعني،' : 'Hum,' }], langueDePensee: (t) => (/[\u0600-\u06FF]/.test(t) ? 'ar' : 'fr'),
+    jeton: () => 'j', journalVoix: () => {}, recevoirBout: (s, n, tour) => recus.push([s.texte, n, tour, s.sansMeuble]), reponse: null,
+    fetch: async () => ({ json: async () => ctx.reponse }) };
+  vm.createContext(ctx);
+  vm.runInContext('let bouts = { tour: 4, prochain: 3, dernierDit: 2 };\n' + extraire('async function choisirEtDire') + '\nthis.choisir = choisirEtDire;', ctx);
+  ctx.reponse = { n: 2, texte: 'tu les as tous retenus.' };
+  await ctx.choisir({ n: 6, tour: 4, texte: 'Et en kabyle ?' });
+  assert.deepStrictEqual(dits, ['Hum,'], 'le meuble d’abord : il laisse le temps de choisir');
+  assert.deepStrictEqual(recus[0], ['tu les as tous retenus.', 3, 4, true], 'puis le passage choisi, sans second meuble');
+  ctx.reponse = {};
+  await ctx.choisir({ n: 7, tour: 4, texte: 'واش راك؟' });
+  assert.strictEqual(dits[1], 'يعني،', 'le meuble dans la langue de sa pensée');
+  assert.deepStrictEqual(recus[1].slice(0, 1), ['واش راك؟'], 'sans choix : sa dernière');
+  ctx.reponse = { rien: true };
+  await ctx.choisir({ n: 8, tour: 4, texte: 'x' });
+  assert.strictEqual(recus.length, 2, '« rien » : il ne dit rien de plus');
+});
+
 // (04/11, Ahmed : « il parle quand il veut, mais s'il entend ma voix lui couper la parole sur 2 secondes, il se tait »)
 test('(04/11) ta voix 2 s sur la sienne : il se tait ; un mot ou un rire : il continue', () => {
   let T = 0; const timers = [], arrets = [];
