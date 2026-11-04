@@ -133,7 +133,24 @@ async function synchroniser() {
 }
 
 /* ---------- voix (synthèse) ---------- */
-const synth = window.speechSynthesis || null;
+/* (04/11, Ahmed : « la différence entre la voix du Mac et Chatterbox ? j'aimerais que ça utilise la voix du smartphone quand c'est sur le
+   smartphone ») dans l'appli (1.55), la voix du TÉLÉPHONE (son moteur Android) prend la place de la voix du système : instantanée, sans
+   réseau, sans charger le Mac ; la page la parle comme une voix de navigateur (speak, cancel) ; chaque phrase dit son début et sa fin. */
+const synthTelephone = window.HakimApp && window.HakimApp.voixTelephone ? (() => {
+  const enAttente = new Map(); let n = 0;
+  window.HakimVoixTel = (quoi, id) => {
+    const u = enAttente.get(id); if (!u) return;
+    if (quoi === 'debut') { if (u.onstart) u.onstart(); return; }
+    enAttente.delete(id); if (u.onend) u.onend();
+  };
+  return {
+    speak(u) { const id = `t${++n}`; enAttente.set(id, u); try { window.HakimApp.voixTelephone(id, String(u.text || ''), Number(u.rate) || 1, String(u.lang || 'fr-FR')); } catch (_) { window.HakimVoixTel('fin', id); } },
+    cancel() { const fins = [...enAttente.values()]; enAttente.clear(); try { window.HakimApp.voixTelephoneArreter(); } catch (_) {} fins.forEach(u => u.onend && u.onend()); },
+    getVoices() { return []; },
+  };
+})() : null;
+class EnonceTelephone { constructor(t) { this.text = t; } }
+const synth = synthTelephone || window.speechSynthesis || null;
 let toutesVoix = [];
 const voixPour = (langue) => {
   if (!toutesVoix.length && synth) toutesVoix = synth.getVoices();      // liste parfois chargée tard
@@ -316,7 +333,9 @@ function analyserMeuble(d, sr) {
 }
 // (13:30) un meuble qu'il choisit lui-même : [[meuble: nom]] dans sa réponse
 function meubleNomme(nom) { return meublesPrets.get(String(nom || '').trim()) || [...meublesPrets.values()].find(m => sansAccent(m.nom) === sansAccent(nom)) || null; }
-const lecteurSysteme = synth ? Voix.creerLecteur(synth, window.SpeechSynthesisUtterance, voixPour, vitesseVoix) : null;
+const lecteurSysteme = synth ? Voix.creerLecteur(synth, synthTelephone ? EnonceTelephone : window.SpeechSynthesisUtterance, voixPour, vitesseVoix) : null;
+// (04/11) la voix du téléphone, par défaut dans l'appli (réglage : etat.reglages.voixTelephone, à false pour revenir à Chatterbox)
+const voixDuTelephone = () => !!synthTelephone && etat.reglages.voixTelephone !== false;
 
 // Voix neuronale (Chatterbox, sur le Mac, étape 5 bis) : chaque morceau d'une seule langue est
 // calculé par le cockpit (/api/voix/dire) puis joué ; on précharge les deux suivants. Le calcul
@@ -843,7 +862,7 @@ function niveauVoix() {
 const lecteurNeuronal = creerLecteurNeuronal();
 // Un seul lecteur pour le reste de la page : la voix neuronale si elle est là, sinon celle du Mac.
 const lecteur = {
-  get impl() { return (etat.reglages.voix === 'neuronale' && etat.ttsLocal) || !lecteurSysteme ? lecteurNeuronal : lecteurSysteme; },
+  get impl() { if (voixDuTelephone() && lecteurSysteme) return lecteurSysteme; return (etat.reglages.voix === 'neuronale' && etat.ttsLocal) || !lecteurSysteme ? lecteurNeuronal : lecteurSysteme; },
   dire(p) { this.impl.dire(p); },
   finFlux() { if (this.impl.finFlux) this.impl.finFlux(); },     // le texte est complet : vider la file
   arreter() { lecteurNeuronal.arreter(); if (lecteurSysteme) lecteurSysteme.arreter(); },
@@ -2838,7 +2857,7 @@ function vifConversation(conv) {
       if (neufs >= 1) {
         e.pisteMots = nMots;
         fetch('/api/jarvis/morceau', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
-          body: JSON.stringify({ texte: tout.slice(-3000), direct: true }) }).catch(() => {});
+          body: JSON.stringify({ texte: tout.slice(-3000), direct: true, voix_telephone: voixDuTelephone() }) }).catch(() => {});
       }
     })
     .catch(() => {})
@@ -2913,6 +2932,16 @@ function recevoirBout(s, n, tour) {
   if (bouts.tour !== tour) bouts = { tour, prochain: 1, liste: new Map(), enFile: [], dits: [] };
   if (n < bouts.prochain || bouts.liste.has(n)) return;
   const b = { n, texte: s.texte, buf: null, rate: false, t: Date.now() };
+  // (04/11) la voix du téléphone : dit tout de suite, sans voix fabriquée au Mac
+  if (typeof voixDuTelephone === 'function' && voixDuTelephone()) {
+    const motsDe = (x) => String(x).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(m => m.length > 2), m1 = motsDe(b.texte);
+    if (n < bouts.prochain || (m1.length && bouts.dits.some(d => { const m2 = new Set(motsDe(d)); return m1.filter(m => m2.has(m)).length / m1.length >= 0.75; }))) return;
+    bouts.prochain = n + 1; bouts.dits.push(b.texte);
+    conv.souffleParle = true; conv.penseeDite = bouts.dits.join(' ');
+    montrerPensee('🧠 sa pensée', b.texte, true); envoyerParoles('hakim', `🧠 ${b.texte}`);
+    lecteurSysteme.dire(b.texte);
+    return;
+  }
   bouts.liste.set(n, b);
   if (!actx || actx.state === 'closed') { b.rate = true; return direBouts(); }
   fetch('/api/voix/dire', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
@@ -2997,7 +3026,7 @@ function choisirSouffle(actuel) {
 // encore dite, sa voix déjà faite ; ni pendant sa vraie réponse ni par-dessus sa voix
 function penseePrete(conv) {
   const p = etat.pensee;
-  return !!(conv && p && p.pret && !p.dite && Date.now() - p.t < 15000 && voixPrete(p.texte) && souffleAutorise()
+  return !!(conv && p && p.pret && !p.dite && Date.now() - p.t < 15000 && ((typeof voixDuTelephone === 'function' && voixDuTelephone()) || voixPrete(p.texte)) && souffleAutorise()
     && etat.conversation === conv && !lecteurNeuronal.parle && !etat.flux);
 }
 // (04/11, Ahmed : « dès que le premier chunk est écrit, il le prononce ») elle se dit dès que sa voix est faite, même ton tour encore
@@ -3016,7 +3045,7 @@ function direPenseeSiPossible() {
   direSouffle(conv, etat.pensee, 'pensee');
   return true;
 }
-const souffleAutorise = () => lecteur.impl === lecteurNeuronal && !(typeof reglagesCorps !== 'undefined' && reglagesCorps.reponse_soufflee === false);
+const souffleAutorise = () => (lecteur.impl === lecteurNeuronal || voixDuTelephone()) && !(typeof reglagesCorps !== 'undefined' && reglagesCorps.reponse_soufflee === false);
 // (16:00, Ahmed : « fais le test de décalage entre la dernière parole de son subconscient avant que je finisse et le moment où il parle »)
 // à chaque fin de tour : son dernier brouillon, combien avant ta fin il est arrivé, et quand sa voix part après ta fin (voix-diagnostic)
 function noterEcartSouffle(conv, s, dit, par, prete) {

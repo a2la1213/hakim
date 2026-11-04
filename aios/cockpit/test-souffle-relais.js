@@ -464,3 +464,30 @@ test('(04/11) une pensée par élément ; un bout qui redit un bout déjà dit e
   assert.match(PAGE, /montrerPensee\('🧠 sa pensée', t, true\)/, 'chaque bout qui sonne : sa propre pensée');
   assert.match(PAGE, /if \(pensees\.length > 6\)/, 'les 6 dernières restent');
 });
+
+// (04/11, mesuré : charge 41 pour 10 cœurs, 10 Go d'échange, un Claude neuf toutes les quelques secondes)
+test('(04/11) moins de charge : inventaire toutes les 10 min, voix vivantes renouvelées tous les 25 messages, pistes sans Claude lancé pour l’occasion', () => {
+  assert.match(SRC, /setInterval\(refreshInventory, 10 \* 60e3\)/);
+  assert.match(SRC, /VIVANT_RENOUVELER = 25;/);
+  assert.match(SRC, /if \(String\(etiquette\)\.startsWith\('piste_'\)\) return fin\(\{ erreur:/);
+  assert.match(SRC, /Jamais « je t'écoute », « continue », « vas-y »/, '(04/11) ses pistes répondent avec assurance');
+});
+
+// (04/11, Ahmed : « j'aimerais que ça utilise la voix du smartphone quand c'est sur le smartphone »)
+test('(04/11) dans l’appli, la voix du téléphone : parlée comme une voix de navigateur, chaque phrase dit son début et sa fin', () => {
+  const i = PAGE.indexOf('const synthTelephone = '), k = PAGE.indexOf('class EnonceTelephone');
+  const dits = [], arrets = [];
+  const ctx = { window: { HakimApp: { voixTelephone: (id, t, v, l) => dits.push([id, t, l]), voixTelephoneArreter: () => arrets.push(1) } }, Map, String, Number };
+  vm.createContext(ctx);
+  vm.runInContext(PAGE.slice(i, k) + '\nthis.synth = synthTelephone;', ctx);
+  const evts = [];
+  const u = { text: 'Salut papa', lang: 'fr-FR', rate: 1, onstart: () => evts.push('debut'), onend: () => evts.push('fin') };
+  ctx.synth.speak(u);
+  assert.strictEqual(dits[0][1], 'Salut papa');
+  ctx.window.HakimVoixTel('debut', dits[0][0]); ctx.window.HakimVoixTel('fin', dits[0][0]);
+  assert.deepStrictEqual(evts, ['debut', 'fin']);
+  ctx.synth.speak({ text: 'encore', onend: () => evts.push('coupée') }); ctx.synth.cancel();
+  assert.deepStrictEqual(evts.slice(-1), ['coupée'], 'Stop : la phrase en cours finit tout de suite');
+  assert.match(PAGE, /get impl\(\) \{ if \(voixDuTelephone\(\) && lecteurSysteme\) return lecteurSysteme;/, 'par défaut dans l’appli');
+  assert.match(SRC, /if \(Date\.now\(\) - voixTelephoneA < 60000\) return null;/, 'le Mac ne fabrique plus la voix de ses pensées');
+});

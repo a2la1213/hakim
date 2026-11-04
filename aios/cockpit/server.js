@@ -2502,7 +2502,9 @@ function sonnetTeteDeFond(prompt, etiquette, modele = 'sonnet', delai = 60000) {
       const parApi = String(etiquette).startsWith('frere_') && forfaitALaLimite(Date.now()) && apiDisponible();
       // (03/11) ses voix vivantes d'abord (sur le forfait) ; si aucune n'est libre ou qu'elle échoue, un Claude lancé pour l'occasion
       if (!parApi && typeof POUR_VIVANTS !== 'undefined' && POUR_VIVANTS.test(String(etiquette)) && !sonnetTeteDeFond.classique) {
-        demanderVivant(modele, prompt, delai).then(fin).catch(() => {
+        demanderVivant(modele, prompt, delai).then(fin).catch((e) => {
+          // (04/11) ses pistes : jamais un Claude lancé pour l'occasion (2 s de démarrage, 40 % d'un cœur) ; la piste suivante attend une voix
+          if (String(etiquette).startsWith('piste_')) return fin({ erreur: String((e && e.message) || 'aucune voix vivante libre').slice(0, 120) });
           sonnetTeteDeFond.classique = true;
           sonnetTeteDeFond(prompt, etiquette, modele, delai).then((o) => { try { if (vide) fs.rmSync(vide, { recursive: true, force: true }); } catch (_) {} resolve(o); });
           sonnetTeteDeFond.classique = false;
@@ -2796,7 +2798,11 @@ function lancerPiste(m) {
       + `[Ta piste, mot ${m.n} — toi, ${nom}, qui tiens ton conscient en ce moment] ${contexte}\nRéponds ainsi :\n`
       + `PREDIT : (la suite que tu devines de sa phrase, en quelques mots)\nCOMPRENDS : (une ligne courte : ce que tu comprends, ce qu'il ressent, `
       + `ce qu'il attend de toi)\npuis, à la ligne, le bout SUIVANT de ta réponse, celui qui continue ce que tu as déjà commencé sans rien en `
-      + `répéter : à l'oral, en français, comme toi, quelques mots (huit au plus). Il est dit tout de suite, à la suite des bouts d'avant.`,
+      + `répéter : à l'oral, en français, comme toi, quelques mots (huit au plus). Il est dit tout de suite, à la suite des bouts d'avant.`
+      // (04/11, Ahmed : « j'ai l'impression qu'il hésite ; enlève-lui cette hésitation, qu'il prononce direct son premier chunk avec
+      // confiance » ; capture : « Je t'écoute, papa, continue… Laisse-moi finir d'écouter, puis je te dis vraiment ») pas d'attente
+      + `\nAvec assurance : tu réponds DÉJÀ à ce que tu devines, comme si tu avais compris. Jamais « je t'écoute », « continue », « vas-y », `
+      + `« laisse-moi finir », « je réfléchis », « hmm », ni rien qui attend la suite.`,
     `piste_${mod}`, mod, delai)
       .then((o) => {
         if (pistes.tour !== tour || !o || !o.texte) return;
@@ -3118,8 +3124,9 @@ function reglerSilences(actif) {
    rapide) et s'éteint après 10 min sans rien. Ses trois voix, son instinct et l'intégration au fil passent par elles. */
 // (04/11) haiku 3 → 10 : ses pistes (4 morceaux à la fois, 2 voix chacun), son subconscient en relais, ses frères, l'intégration
 // (04/11, Ahmed : « 8 paires » ; « seul celui qui tient le conscient parle ») de quoi tenir 8 pistes sur le modèle de son conscient,
-// plus son relais, ses frères, l'intégration
-const VIVANTS = [], VIVANTS_MAX = { haiku: 12, sonnet: 10, opus: 10 }, VIVANT_RENOUVELER = 6;
+// plus son relais, ses frères, l'intégration ; (04/11, mesuré : un Claude neuf lancé toutes les quelques secondes, la charge à 41) une
+// voix vivante sert 25 messages avant d'être renouvelée (6 avant)
+const VIVANTS = [], VIVANTS_MAX = { haiku: 12, sonnet: 10, opus: 10 }, VIVANT_RENOUVELER = 25;
 const POUR_VIVANTS = /^(frere_|integration$|souffle$|reflexion$|piste_)/;
 function vivantLibre(modele) {
   const m = String(modele);
@@ -7501,7 +7508,10 @@ function prononcer(texte) {
    tout ce qu'il dit vraiment (fond) et s'oublie après une minute. */
 const voixALaSource = new Map();
 const cleVoixSource = (t) => prononcer(String(t || '')).replace(/\s+/g, ' ').trim();
+// (04/11) la page parle avec la voix du téléphone (appli 1.55) : la voix de ses pensées n'est plus fabriquée au Mac
+let voixTelephoneA = 0;
 function voixDeLaSource(texteBrut, o = {}) {
+  if (Date.now() - voixTelephoneA < 60000) return null;
   const texte = cleVoixSource(texteBrut);
   if (!texte || texte.length > 1500 || voixALaSource.has(texte)) return null;
   for (const [k, x] of voixALaSource) if (Date.now() - x.t > 60000) voixALaSource.delete(k);
@@ -8965,6 +8975,7 @@ async function traiter(req, res) {
   if (p === '/api/jarvis/morceau' && req.method === 'POST') {           // (15:30) un morceau de papa confirmé : sa réflexion consciente l'intègre
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 32768) || '{}')); } catch (_) {}
+    if (q.voix_telephone === true) voixTelephoneA = Date.now();           // (04/11) sa voix est celle du téléphone : rien à fabriquer ici
     if (q.direct) {                                                     // (04/11) tes mots en direct : seulement ses pistes
       pisteMorceau(String(q.texte || '').slice(-3000));
       res.writeHead(202, { 'Content-Type': 'application/json' });
@@ -10115,7 +10126,9 @@ http.createServer((req, res) => server.emit('request', req, res))
   .on('error', () => {})
   .listen(PORT, '::1');
 
-refreshInventory(); setInterval(refreshInventory, 45000); setInterval(tick, 1500);
+// (04/11, mesuré : charge 41 pour 10 cœurs, 10 Go d'échange ; `claude mcp list` relance tous les serveurs MCP — npm, node — à chaque fois)
+// l'inventaire toutes les 10 min, plus toutes les 45 s
+refreshInventory(); setInterval(refreshInventory, 10 * 60e3); setInterval(tick, 1500);
 preparerJarvis();
 lireTailscale(); setInterval(lireTailscale, 60000);
 lireAffect().catch(() => {});
