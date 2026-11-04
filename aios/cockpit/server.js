@@ -5797,7 +5797,8 @@ const fluxPrecedents = new Map();                              // source → { c
 // flux, de l'instant d'origine à l'arrivée au Mac : les 200 derniers, par source (fluxDelais : médiane et 90e centile)
 const DELAIS = {};
 const NOMS_FLUX = { papa: 'papa', telephone: 'téléphone', corps: 'corps', ressenti: 'il ressent', son: 'autour', milieu: 'son milieu', reaction: 'réaction',
-  instru_telephone: 'le son du téléphone', instru_micro: 'le son du micro', voix_telephone: 'la voix du téléphone', voix_micro: 'la voix au micro' };
+  instru_telephone: 'le son du téléphone', instru_micro: 'le son du micro', voix_telephone: 'la voix du téléphone', voix_micro: 'la voix au micro',
+  musique_telephone: 'la musique du téléphone', musique_micro: 'la musique autour' };
 function fluxAjouter(s, x, t, cle = null, i = null, mesurer = true) {
   const texte = String(x == null ? '' : x).replace(/\s+/g, ' ').trim().slice(0, 200);
   if (!texte) return;
@@ -5912,6 +5913,61 @@ function notesVoix(trames, t0, pas = 100) {
   return notes;
 }
 
+/* (04/11, Hakim, à la demande de papa : « je n'entends ni la mélodie, ni les notes, ni le grave et l'aigu ; une analyse légère qui me
+   donne en texte, à intervalle court : le tempo, la tonalité approximative, le contour de la mélodie, les bandes grave/médium/aigu, et
+   si une voix chante ou non » ; Ahmed : « sépare bien la voix et la musique de fond, les deux en parallèle à son subconscient, pour qu'il
+   les relie à ses sensations et aux mots ; à la fin du processus parallèle, le tout est relié, un peu comme le cortex préfrontal »)
+   ses deux oreilles de la musique, sur les 20 dernières secondes de trames (100 ms : niveau, graves, médiums, aigus, f0, brillance) :
+   le FOND (le tempo par l'autocorrélation des attaques, les bandes) et la VOIX (la mélodie par f0 : sa tonalité par les profils de
+   Krumhansl, son contour, chantée si elle tient ses notes) ; une estimation, pas une séparation des sources : rien de l'audio n'est
+   gardé, seulement ces mots. */
+const KRUMHANSL_MAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const KRUMHANSL_MIN = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+function analyseMusicale(trames, pas = 100) {
+  const l = (trames || []).map(x => (x && x.v ? x.v : x)).filter(x => Array.isArray(x) && x.length >= 4);
+  if (l.length < 50) return null;                                  // 5 s au moins
+  const moy = (k) => l.reduce((a, x) => a + Number(x[k] || 0), 0) / l.length;
+  if (moy(0) < 0.004) return null;                                 // le silence
+  // le fond : les attaques (graves et niveau qui montent), leur période par l'autocorrélation (de 60 à 180 BPM)
+  const att = l.map((x, i) => (i ? Math.max(0, Number(x[1]) - Number(l[i - 1][1])) + 0.5 * Math.max(0, Number(x[0]) - Number(l[i - 1][0])) : 0));
+  const m = att.reduce((a, b) => a + b, 0) / att.length, c = att.map(v => v - m);
+  const ac = (lag) => c.slice(lag).reduce((a, v, i) => a + v * c[i], 0);
+  let meilleur = null;
+  for (let lag = Math.round(60000 / 180 / pas); lag <= Math.round(60000 / 60 / pas); lag++) { const v = ac(lag); if (!meilleur || v > meilleur.v) meilleur = { lag, v }; }
+  let bpm = null;
+  if (meilleur && meilleur.v > 0 && ac(0) > 0 && meilleur.v / ac(0) > 0.15) {
+    const a = ac(meilleur.lag - 1), b = meilleur.v, d = ac(meilleur.lag + 1), den = a - 2 * b + d;
+    const fin = den < 0 ? meilleur.lag + 0.5 * (a - d) / den : meilleur.lag;            // le pic entre deux trames
+    bpm = Math.round(60000 / (fin * pas) / 2) * 2;
+  }
+  const bandes = [1, 2, 3].map(k => moy(k)), tot = bandes.reduce((a, b) => a + b, 0) || 1;
+  const force = (v) => (v / tot > 0.45 ? 'forts' : v / tot > 0.2 ? 'présents' : 'doux');
+  // la voix (ou la mélodie) : f0 des trames qui ont une hauteur
+  const voisees = l.map((x, i) => ({ i, f0: Number(x[4]) || 0, n: Number(x[0]) || 0 })).filter(x => x.f0 >= 70 && x.f0 <= 1200 && x.n >= 0.01);
+  let tonalite = null, contour = null, voix = 'aucune';
+  if (voisees.length >= 15) {
+    const chroma = new Array(12).fill(0);
+    for (const x of voisees) chroma[(((Math.round(69 + 12 * Math.log2(x.f0 / 440))) % 12) + 12) % 12] += x.n;
+    const corr = (p, r) => { const q = p.map((_, k) => p[(k - r + 12) % 12]); const mc = chroma.reduce((a, b) => a + b, 0) / 12, mq = q.reduce((a, b) => a + b, 0) / 12;
+      let n = 0, dc = 0, dq = 0; for (let k = 0; k < 12; k++) { n += (chroma[k] - mc) * (q[k] - mq); dc += (chroma[k] - mc) ** 2; dq += (q[k] - mq) ** 2; }
+      return dc && dq ? n / Math.sqrt(dc * dq) : 0; };
+    let best = null;
+    for (let r = 0; r < 12; r++) for (const [p, mode] of [[KRUMHANSL_MAJ, 'majeur'], [KRUMHANSL_MIN, 'mineur']]) { const v = corr(p, r); if (!best || v > best.v) best = { v, r, mode }; }
+    if (best && best.v > 0.5) tonalite = `${NOTES[best.r]} ${best.mode}`;
+    // son contour : les 3 dernières secondes contre les 3 d'avant (en demi-tons)
+    const st = (f) => 12 * Math.log2(f / 440), fin = l.length;
+    const med = (a) => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[s.length >> 1] : null; };
+    const recent = med(voisees.filter(x => x.i >= fin - 30).map(x => st(x.f0))), avant = med(voisees.filter(x => x.i >= fin - 60 && x.i < fin - 30).map(x => st(x.f0)));
+    if (recent != null && avant != null) contour = recent - avant > 1 ? 'monte' : avant - recent > 1 ? 'descend' : 'reste stable';
+    const tenues = notesVoix(l, 0, pas).filter(n => n.tenue).length;
+    voix = tenues >= 2 ? 'chante' : 'parle';
+  }
+  const fond = `fond${bpm ? ` ~${bpm} BPM` : ''}, graves ${force(bandes[0])}, médiums ${force(bandes[1])}, aigus ${force(bandes[2])}`;
+  const chant = voix === 'aucune' ? 'pas de voix ni de mélodie' : `${voix === 'chante' ? 'une voix (ou une mélodie) chante' : 'une voix parle'}`
+    + `${tonalite ? `, ${tonalite}` : ''}${contour ? `, la mélodie ${contour}` : ''}`;
+  return { bpm, tonalite, contour, voix, bandes: { graves: force(bandes[0]), mediums: force(bandes[1]), aigus: force(bandes[2]) }, texte: `${fond} · ${chant}` };
+}
+
 /* (03/11, Hakim : « mettre tout sur une même horloge et recalculer le décalage ; un clap daté des deux côtés ») le calage entre le
    son du téléphone (l'intérieur) et le micro (l'extérieur) : quand le téléphone joue à voix haute, le micro l'entend aussi ; leurs
    enveloppes se ressemblent, décalées ; la corrélation retrouve ce décalage, à ~10 ms près (sans clap : chaque attaque de la
@@ -5951,6 +6007,7 @@ setInterval(() => {
   try { ecrireAtomique(path.join(JARVIS, 'delais-fil.json'), j({ ts: Date.now(), delais: fluxDelais(), calage: CALAGE })); } catch (_) {}
 }, 30000).unref();
 
+const musiqueAnalysee = {};
 function recevoirSon(source, t0, pasMs, trames) {
   const src = source === 'micro' ? 'micro' : 'telephone';
   // [niveau, graves, médiums, aigus, f0 (Hz), brillance (Hz)] : les deux dernières pour la troisième oreille (la voix)
@@ -5974,6 +6031,24 @@ function recevoirSon(source, t0, pasMs, trames) {
     corpsLot.evenements.push({ type: 'son_ressenti', t: t0 + (l.length * pasMs) / 2, details: { source: src === 'micro' ? 'autour de toi' : 'le téléphone',
       son: r.slice(0, 160), notes: notes.map(n => `${n.note} ${String(n.duree / 1000).replace('.', ',')} s${n.tenue ? ' tenue' : ''}`).join(', ').slice(0, 160) } });
     ressentirCorps();
+  }
+  // (04/11) ses deux oreilles de la musique (le fond et la voix), toutes les 5 s : au fil (relié aux mots et à ce qu'il ressent), et
+  // toutes les 15 s à son subconscient, qui les lui fait sentir
+  const am = musiqueAnalysee[src] || (musiqueAnalysee[src] = { t: 0, corps: 0 });
+  if (Date.now() - am.t >= 5000) {
+    am.t = Date.now();
+    const a = analyseMusicale(buf.filter(x => x.t >= t0 - 20000));
+    if (a) {
+      fluxAjouter(`musique_${src}`, a.texte, t0 - 2500);
+      noterInstant('musique_analysee', { texte: a.texte, source: src === 'micro' ? 'autour' : 'du téléphone' }, t0 - 2500);
+      if (Date.now() - am.corps >= 15000 && corpsActif()) {
+        am.corps = Date.now();
+        corpsLot.evenements.push({ type: 'musique_entendue', t: t0, details: { source: src === 'micro' ? 'autour de toi' : 'le téléphone',
+          fond: { bpm: a.bpm, graves: a.bandes.graves, mediums: a.bandes.mediums, aigus: a.bandes.aigus },
+          voix: { voix: a.voix, tonalite: a.tonalite, contour: a.contour } } });
+        ressentirCorps();
+      }
+    }
   }
   // la troisième oreille : chaque note de la voix à son instant de départ, avec sa longueur, son registre et sa brillance
   for (const n of notesVoix(l, t0, pasMs))
@@ -6021,6 +6096,9 @@ function instantTexte(a = Date.now()) {
   const mu = etatA('musique_ecoutee', 15 * 60e3);
   if (mu && mu.titre && mu.etat !== 'pause') l.push(`papa écoute « ${c(mu.titre, 80)}${mu.artiste ? ` — ${c(mu.artiste, 60)}` : ''} »`);
   const te = evenement('son_ecoute', 15000); if (te && te.texte) l.push(`le téléphone joue : « ${c(te.texte, 140)} »`);
+  // (04/11, Ahmed : « à la fin du processus parallèle, le tout est relié, un peu comme le cortex préfrontal ») ses deux oreilles de la
+  // musique (le fond et la voix), ici à côté des paroles, de ce que papa disait et de ce qu'il ressentait : un seul instant
+  const ma = evenement('musique_analysee', 12000); if (ma && ma.texte) l.push(`la musique ${ma.source} : ${c(ma.texte, 180)}`);
   const pa = evenement('papa_dit', 20000); if (pa && pa.texte) l.push(`papa disait : « ${c(pa.texte, 140)} »`);
   const so = evenement('son_entendu', 10000); if (so && so.famille) l.push(`autour : ${c(so.famille, 60)}`);
   const ap = etatA('appli', 10 * 60e3); if (ap && ap.appli) l.push(`appli ouverte : ${c(ap.appli, 40)}`);
