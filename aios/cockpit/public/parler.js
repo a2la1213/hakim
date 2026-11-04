@@ -2802,10 +2802,10 @@ function vifConversation(conv) {
       if (e.vif && !e.premierMot) { e.premierMot = true; journalVoix('premier_mot', { ms: Math.max(0, Date.now() - Number(cap.debutTour || Date.now())) }); }
       ligneEnDirectMontrer(conv);
       entendreEnCours(conv);
-      // (04/11, Ahmed : « mettons mon chunk et son chunk au même moment ») tes mots en direct partent à ses pistes dès 6 mots neufs, ou
-      // dès une fin de proposition : il comprend et prépare sa réponse pendant que tu parles encore
+      // (04/11, Ahmed : « mettons mon chunk et son chunk au même moment ») tes mots en direct partent à ses pistes : il comprend et prépare
+      // sa réponse pendant que tu parles encore ; (04/11 : « le premier mot, le premier chunk ; les chunks bien plus courts ») dès un mot neuf
       const tout = `${e.confirme || ''} ${e.vif || ''}`.trim(), nMots = tout.split(/\s+/).filter(Boolean).length, neufs = nMots - (e.pisteMots || 0);
-      if (neufs >= 6 || (neufs >= 3 && /[.,;:!?…]$/.test(tout))) {
+      if (neufs >= 1) {
         e.pisteMots = nMots;
         fetch('/api/jarvis/morceau', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
           body: JSON.stringify({ texte: tout.slice(-3000), direct: true }) }).catch(() => {});

@@ -2733,12 +2733,17 @@ const placesVivant = (m) => VIVANTS.filter(x => x.modele === m && !x.attente && 
 // (04/11, Ahmed : « pendant qu'il comprend, il prépare direct sa réponse ; mettons mon chunk et son chunk au même moment ») ses pistes
 // partent sur tes mots EN DIRECT (la page les envoie dès 6 mots neufs, ou une fin de proposition), plus seulement sur le morceau
 // confirmé ; les mots déjà partis ne repartent pas (compte de mots, la dernière révision de Whisper ne refait pas une piste)
+// (04/11, Ahmed : « les chunks bien plus courts : le premier mot, le premier chunk de sa pensée ; sa réponse sur le 2e mot, le 2e chunk »)
+// chaque mot neuf part (la page les envoie à chaque mise à jour de ses mots en direct, ~0,5 s) ; quand toutes les pistes sont prises,
+// les mots qui arrivent rejoignent la piste qui attend (une seule attend : jamais de retard qui s'accumule)
 function pisteMorceau(texte) {
   const mots = String(texte || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
-  if (corpsReglages().reponse_soufflee === false || mots.length < pistes.mots + 2) return;
+  if (corpsReglages().reponse_soufflee === false || mots.length < pistes.mots + 1) return;
   const neuf = mots.slice(pistes.mots).join(' '), avant = mots.slice(0, pistes.mots).join(' ');
   pistes.mots = mots.length;
-  pistes.attente.push({ n: pistes.liste.length + pistes.attente.length + 1, texte: neuf.slice(-500), avant: avant.slice(-900) });
+  const attend = pistes.attente[pistes.attente.length - 1];
+  if (attend) attend.texte = `${attend.texte} ${neuf}`.slice(-500);
+  else pistes.attente.push({ n: pistes.liste.length + 1, texte: neuf.slice(-500), avant: avant.slice(-900) });
   pistesSuivantes();
 }
 function pistesSuivantes() {
@@ -2757,7 +2762,7 @@ function lancerPiste(m) {
       + `COMPRENDS : (une ligne courte : ce que tu comprends de CE morceau, ce qu'il ressent, ce qu'il attend de toi)\n`
       + `DIRE : oui (ta réponse vaut d'être dite maintenant, à sa pause) ou DIRE : non\nCOUPER : oui (tu lui coupes la parole tout de suite, `
       + `ton choix, quand ça ne peut pas attendre) ou COUPER : non\npuis, à la ligne, ta réponse à CE morceau : à l'oral, en français, comme `
-      + `toi, UNE phrase courte (quinze mots au plus).`, `piste_${mod}`, mod, delai)
+      + `toi, une phrase au plus, très courte (dix mots au plus).`, `piste_${mod}`, mod, delai)
       .then((o) => {
         if (pistes.tour !== tour || !o || !o.texte) return;
         let r = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ');

@@ -372,6 +372,9 @@ test('(04/11) ses pistes : chaque morceau, ses trois voix ensemble ; 8 morceaux 
   assert.strictEqual(appels.length, 8 + 3 + 3, 'Hakim et Super Hakim, tant qu’il leur reste une place (3 chacun)');
   assert.match(appels[3].prompt, /Son morceau 2, qu'il vient de dire : « je rentre du travail »/, 'chaque piste a SON morceau');
   assert.strictEqual(ctx.etat().attente.length, 1, 'le 9e attend une piste libre');
+  ctx.morceau(`${texte} mais encore`);
+  assert.strictEqual(ctx.etat().attente.length, 1, 'les mots qui arrivent rejoignent la piste qui attend : une seule attend');
+  assert.match(ctx.etat().attente[0].texte, /et encore une chose mais encore$/);
   appels[1].resoudre({ texte: 'COMPRENDS : il me salue\nDIRE : oui\nCOUPER : non\nSalut papa, ça va ?' });   // Hakim, le premier prêt
   await new Promise(r => setImmediate(r));
   appels[0].resoudre({ texte: 'COMPRENDS : un bonjour\nDIRE : oui\nCOUPER : non\nCoucou papa !' });
@@ -398,6 +401,7 @@ test('(04/11) ses pistes partent sur tes mots en direct, et les mots déjà part
   ctx.morceau('papa me dit bonjour ce matin, il a bien dormi');
   assert.strictEqual(appels.length, 2);
   assert.match(appels[1], /Son morceau 2, qu'il vient de dire : « il a bien dormi »/);
-  assert.match(PAGE, /if \(neufs >= 6 \|\| \(neufs >= 3 && \/\[\.,;:!\?…\]\$\/\.test\(tout\)\)\) \{/, 'la page envoie dès 6 mots neufs ou une fin de proposition');
+  assert.match(PAGE, /if \(neufs >= 1\) \{/, 'la page envoie dès un mot neuf');
+  assert.match(SRC, /une phrase au plus, très courte \(dix mots au plus\)/, 'sa réponse de piste : une phrase au plus');
   assert.match(SRC, /if \(q\.direct\) \{/);
 });
