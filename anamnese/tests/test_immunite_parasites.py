@@ -108,3 +108,13 @@ def test_le_signal_le_plus_tot_est_dans_ce_que_papa_dit_fable_apprend_ce_qui_ind
     assert not immunite.declencheur("Ta grand-mère m'a appris dix mots.")["declencheur"]
     lu = json.loads((D / "premisses-parasites.json").read_text())
     assert [d["phrase"] for d in lu["declencheurs"]] == ["conscient", "pensees"], "le cockpit les lit"
+
+
+def test_un_declencheur_se_retire_comme_une_premisse(D, tmp_path):
+    """(04/11) « ta mère » appris comme déclencheur (une coïncidence) : il se retire, et le cockpit ne le voit plus."""
+    medecin.apprendre_parasites(T0, consulter_fn=lambda p: json.dumps({"premisses": [], "declencheurs": ["conscient"]}),
+                                journal=_journal(tmp_path), reponses=[])
+    did = immunite.declencheurs_appris()[0]["id"]
+    assert immunite.retirer_premisse(did)
+    assert immunite.declencheurs_appris() == []
+    assert json.loads((D / "premisses-parasites.json").read_text())["declencheurs"] == []

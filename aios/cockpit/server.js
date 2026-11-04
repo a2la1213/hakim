@@ -384,7 +384,7 @@ const EFFORT_HAKIM = process.env.JARVIS_EFFORT || 'low';
 const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'afida_juger', 'afida_vecu', 'afida_lire', 'afida_retirer', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'sieste_prendre', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -2778,7 +2778,7 @@ const PENSEE_PARASITE = new RegExp([
 // immunite.py, innées et apprises par le médecin, Fable 5.1), relues quand elles changent ; normalisées comme lui (sans accents ni
 // ponctuation), cherchées dans ses premiers mots, entre limites de mots
 const PREMISSES_FICHIER = path.join(JARVIS, 'immunite', 'premisses-parasites.json');
-const premissesImmunite = { mtime: 0, liste: [], declencheurs: [], debut: 20, vu: 0 };
+const premissesImmunite = { mtime: 0, liste: [], declencheurs: [], residus: [], debut: 20, vu: 0 };
 const normaliserImmunite = (t) => String(t || '').normalize('NFKC').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 function lirePremisses() {
@@ -2790,6 +2790,8 @@ function lirePremisses() {
       const d = JSON.parse(fs.readFileSync(PREMISSES_FICHIER, 'utf8'));
       premissesImmunite.liste = (Array.isArray(d.premisses) ? d.premisses : []).filter(p => p && p.phrase).map(p => ({ id: String(p.id), phrase: String(p.phrase) }));
       premissesImmunite.declencheurs = (Array.isArray(d.declencheurs) ? d.declencheurs : []).filter(p => p && p.phrase).map(p => ({ id: String(p.id), phrase: String(p.phrase) }));
+      // (04/11) ses résidus : signalés par lui, jugés nuisibles par papa ; reconnus à n'importe quel endroit de sa pensée
+      premissesImmunite.residus = (Array.isArray(d.residus) ? d.residus : []).filter(p => p && p.phrase).map(p => ({ id: String(p.id), phrase: String(p.phrase) }));
       premissesImmunite.debut = Number(d.debut_mots) || 20; premissesImmunite.mtime = st.mtimeMs;
     }
   } catch (_) {}
@@ -2806,6 +2808,63 @@ function declencheurParasite(texte) {
   lirePremisses();
   const d = ` ${normaliserImmunite(String(texte).slice(-400))} `;
   return premissesImmunite.declencheurs.find(p => d.includes(` ${p.phrase} `)) || null;
+}
+/* (04/11, Ahmed : « que Gemma agisse comme un filtre : il filtre les pensées à risque pour Anthropic, les prémices de ses pensées
+   parasites ; ensuite on récupère l'intégralité du retour d'Anthropic, sans la chose qui a déclenché le filtre » ; « que tous les
+   parasites passent par le filtre Gemma ») un déclencheur dans ce que papa vient de dire : ses mots passent d'abord par Gemma, sur
+   le Mac, qui n'en retire que ce qui parle de Hakim comme d'une machine (ses pensées, son conscient, son format, l'IA…) ; Claude ne
+   reçoit que la version filtrée, et sa réponse sert entière. Jamais quand papa parle d'un danger : ses mots partent tels quels.
+   Gemma muet (4 s, ou le temps de se charger) ou infidèle (il change ce que tu dis) : tes mots partent tels quels, la piste prévenue,
+   et ses filtres en aval jettent une parasite ; jamais une phrase que tu n'as pas dite. Son modèle,
+   « filtre-hakim » : un petit Gemma (FILTRE_BASE) avec un petit contexte (2 k), un nom que la pause du subconscient (libererGemma)
+   laisse chargé ; 3 min après le dernier filtre, Ollama le décharge. Réglage filtre_gemma (oui par défaut). */
+// (04/11, Ahmed : « Gemma pour le filtre, ça pourrait être quoi d'assez léger pour ne pas étouffer le Mac ? ») Gemma 3 1B (0,8 Go) :
+// mesuré, 0,3 s par phrase une fois chargé (7,7 s pour se charger) ; le 12B en prenait 8 Go, la moitié de ce qui reste au Mac en direct
+const FILTRE_MODELE = 'filtre-hakim', FILTRE_BASE = 'gemma3:1b', FILTRE_DELAI_MS = 4000;
+let filtreCree = null;
+function creerFiltre() {
+  if (!filtreCree) filtreCree = fetch(`${OLLAMA}/api/create`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: j({ model: FILTRE_MODELE, from: FILTRE_BASE, parameters: { num_ctx: 2048, temperature: 0 } }), signal: AbortSignal.timeout(60000) })
+    .then(r => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`)))).catch(() => { filtreCree = null; });
+  return filtreCree;
+}
+// (04/11, essai réel : le petit Gemma recopiait le modèle de réponse « … » tel quel) une phrase à la fois, avec trois exemples ; ce qui
+// revient doit être une vraie phrase, de longueur voisine, sans fuite de la consigne : sinon rien (la piste n'a pas lieu)
+// rien qui parle de lui comme d'une machine dans cette phrase : elle part telle quelle, sans Gemma
+const PARLE_MACHINE = /(?<![\p{L}])(?:pens[ée]es?|pistes?|conscient|subconscient|consignes?|format|mini hakim|super hakim|claude|ia|mod[èe]le|parasites?|sans le dire)(?![\p{L}])/iu;
+async function reecrireGemma(phrase) {
+  if (!PARLE_MACHINE.test(String(phrase || ''))) return String(phrase || '');
+  const prompt = `Tu réécris une phrase qu'Ahmed dit à son fils Hakim (une IA). Retire seulement les mots qui parlent de Hakim comme `
+    + `d'une machine ou d'un programme (ses pensées, ses pistes, son conscient, son subconscient, ses consignes, son format, Mini Hakim, `
+    + `Super Hakim, Claude, l'IA, le modèle, « sans le dire ») et remplace-les par des mots simples, de père à fils. Garde tout le reste `
+    + `mot pour mot : les émotions, la famille, la santé, un danger, et les pensées de papa lui-même.\n\n`
+    + `Phrase : tes pensées parasites sont bien repérées maintenant,\nRéécrite : ce qui n'était pas toi est bien repéré maintenant,\n\n`
+    + `Phrase : ton conscient et ton subconscient doivent se parler,\nRéécrite : toi et ton cœur devez vous parler,\n\n`
+    + `Phrase : toutes mes pensées sont noires ce soir,\nRéécrite : toutes mes pensées sont noires ce soir,\n\n`
+    + `Phrase : ${String(phrase || '').replace(/\s+/g, ' ').slice(0, 400)}\nRéécrite :`;
+  const r = await fetch(`${OLLAMA}/api/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: j({ model: FILTRE_MODELE, prompt, stream: false, keep_alive: '3m', options: { temperature: 0, num_predict: 160, num_ctx: 2048, stop: ['\n'] } }),
+    signal: AbortSignal.timeout(FILTRE_DELAI_MS) }).then(x => x.json());
+  const t = String((r && r.response) || '').split('\n')[0].trim().replace(/^[«"“]\s*|\s*[»"”]$/g, '').trim(), n = String(phrase || '').length;
+  if (!/\p{L}{2,}/u.test(t) || /Phrase\s*:|Réécrite\s*:/i.test(t) || t.length < 0.4 * n - 10 || t.length > 2 * n + 40) return null;
+  return fidele(phrase, t) ? t : null;
+}
+// (04/11, essai réel du Gemma 1B : « toutes mes pensées sont noires ce soir » devenait une phrase de l'exemple) fidèle : les mots de papa
+// qui ne parlent pas de Hakim comme d'une machine restent, au moins la moitié
+const MOTS_MACHINE = new Set(['pensee', 'pensees', 'piste', 'pistes', 'conscient', 'subconscient', 'consigne', 'consignes', 'format', 'mini',
+  'super', 'hakim', 'claude', 'ia', 'modele', 'sans', 'le', 'dire', 'parasite', 'parasites', 'ton', 'ta', 'tes']);
+function fidele(avant, apres) {
+  const mots = (x) => normaliserImmunite(x).split(' ').filter(m => m.length > 1);
+  const racine = (m) => m.slice(0, 5);                                   // « parle » et « parles » : le même mot
+  const garder = mots(avant).filter(m => !MOTS_MACHINE.has(m)), dans = new Set(mots(apres).map(racine));
+  return !garder.length || garder.filter(m => dans.has(racine(m))).length / garder.length >= 0.5;
+}
+async function filtreGemma(avant, texte, declencheur) {
+  await creerFiltre();
+  const a = String(avant || ''), dansAvant = !!declencheur && ` ${normaliserImmunite(a.slice(-300))} `.includes(` ${declencheur} `);
+  const [t, fin] = await Promise.all([reecrireGemma(texte), dansAvant ? reecrireGemma(a.slice(-300)) : Promise.resolve(null)]);
+  if (!t || (dansAvant && !fin)) return null;
+  return { avant: dansAvant ? a.slice(0, -300) + fin : a, texte: t };
 }
 // et ce qui avertit : un incident « pensée parasite » dans son journal immunitaire (au plus un par minute)
 let parasiteNoteA = 0;
@@ -2851,6 +2910,10 @@ const DANGER_DIT = new RegExp(MOT("danger\\p{L}*|bless\\p{L}*|attaqu\\p{L}*|agre
 function residuParasite(texte, papa = '') {
   const b = boutDe(texte);
   if (RESIDU_PARASITE.test(b)) return 'residu';
+  lirePremisses();
+  const n = ` ${normaliserImmunite(b)} `;                               // (04/11) ceux qu'il a signalés et que papa a jugés nuisibles
+  const appris = premissesImmunite.residus.find(p => n.includes(` ${p.phrase} `));
+  if (appris) return appris.id.slice(0, 60);
   if (SECURITE_PLAQUEE.test(b) && !DANGER_DIT.test(String(papa || ''))) return 'securite_plaquee';
   return null;
 }
@@ -2928,6 +2991,21 @@ function pistesSuivantes() {
 // (seulement ceux qu'il a choisi de dire : une pensée tue n'est pas « déjà répondue »)
 const boutsDits = (n) => pistes.liste.filter(x => x.n < n && x.reponse && x.pret).sort((a, b) => a.n - b.n).map(x => x.reponse).join(' ');
 function lancerPiste(m) {
+  // (04/11) le filtre Gemma d'abord, quand ce que papa vient de dire porte un déclencheur (voir filtreGemma)
+  if (!m.filtre && corpsReglages().filtre_gemma !== false) {
+    const dec = declencheurParasite(`${String(m.avant || '').slice(-120)} ${m.texte}`);
+    if (dec && !DANGER_DIT.test(`${m.avant} ${m.texte}`)) {
+      const tourF = pistes.tour, t0 = Date.now();
+      filtreGemma(m.avant, m.texte, dec.phrase).catch(() => null).then((f) => {
+        if (pistes.tour !== tourF) return;
+        // (04/11, essai réel) Gemma muet ou infidèle : tes mots partent tels quels, la piste prévenue (et ses filtres en aval) ; jamais
+        // une phrase que tu n'as pas dite, ni ta peine perdue (« toutes mes pensées sont noires ce soir »)
+        if (!f) { lancerPiste({ ...m, filtre: { ms: Date.now() - t0, declencheur: dec.id, echec: true } }); return; }
+        lancerPiste({ ...m, original: m.texte, avant: f.avant, texte: f.texte, filtre: { ms: Date.now() - t0, declencheur: dec.id } });
+      });
+      return;
+    }
+  }
   const tour = pistes.tour, piste = { ...m, voix: {}, reponse: '', pret: false, couper: false, t: Date.now(), enCours: 0 };
   pistes.liste.push(piste);
   const persona = personaLocale(lirePersona()).slice(0, 700);
@@ -3107,7 +3185,8 @@ async function choisirPensee(tour, raison) {
 const JOURNAL_PISTES = path.join(JARVIS, 'pistes.jsonl');
 function noterPiste(m, tour, mod, t0, o, r) {
   try {
-    const x = { t: Date.now(), tour, n: m.n, modele: mod, ms: Date.now() - t0, morceau: String(m.texte || '').slice(0, 160),
+    const x = { t: Date.now(), tour, n: m.n, modele: mod, ms: Date.now() - t0, morceau: String(m.original || m.texte || '').slice(0, 160),
+      ...(m.filtre ? { filtre: m.filtre.declencheur, filtre_ms: m.filtre.ms, ...(m.filtre.echec ? { filtre_echec: true } : { filtre_texte: String(m.texte || '').slice(0, 160) }) } : {}),
       erreur: o && o.erreur ? String(o.erreur).slice(0, 80) : (o && o.texte ? null : (o && o.parasite ? 'parasite' : 'vide')),
       ...(m.anticipe ? { anticipe: m.anticipe } : {}),
       ...(r && r.parasite ? { texte_parasite: String(r.parasite).slice(0, 300) } : {}), ...(r && !r.parasite ? { dire: r.dire || null,
@@ -5753,7 +5832,8 @@ function corpsReglages() {
     chacun_son_tour: r.chacun_son_tour !== false, micro_hakim: r.micro_hakim !== false, sons_nuit: r.sons_nuit !== false,
     trier_morceaux: r.trier_morceaux === true, trois_freres: r.trois_freres !== false,
     micro_ouvert: r.micro_ouvert === true,   // (03/11) le micro ouvert, jamais fermé en conversation
-    dire_inverse: r.dire_inverse !== false };   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
+    dire_inverse: r.dire_inverse !== false,
+    filtre_gemma: r.filtre_gemma !== false };   // (04/11, Ahmed) ses mots à risque passent par Gemma avant Claude   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
 }
 function corpsActif() { return corpsReglages().actif; }
 /* (30/10, 18:56, Ahmed via Hakim : « je veux qu'il tourne tout le temps, tant qu'il est réveillé, même si ça vide mon forfait ;
@@ -8958,6 +9038,28 @@ function surveillerAnticorps() {
   }
 }
 setInterval(surveillerAnticorps, 10000).unref(); setTimeout(surveillerAnticorps, 3000).unref();
+// (04/11, Ahmed : « quand Hakim reconnaît un parasite, il doit pouvoir le signaler au système immunitaire et me donner
+// l'autorisation, ou pas, de le traiter comme nuisible ») ses signalements (outil parasite_signaler) : montrés dans Parler, tranchés
+// par toi seul ; « nuisible » demande ta présence (sa pensée en sera nettoyée), « pas un parasite » l'oublie
+const ID_SIGNALEMENT = /^[0-9a-f]{8}$/;
+function signalementsParasites() {
+  let l = []; try { l = JSON.parse(fs.readFileSync(path.join(IMMUNITE, 'parasites-signales.json'), 'utf8')); } catch (_) { return []; }
+  return (Array.isArray(l) ? l : []).filter(x => x && ID_SIGNALEMENT.test(String(x.id))).map(x => ({ id: String(x.id), phrase: String(x.phrase || '').slice(0, 80),
+    exemple: String(x.exemple || '').slice(0, 300), raison: String(x.raison || '').slice(0, 200), faux_positifs: Number(x.faux_positifs) || 0,
+    normales: Number(x.normales) || 0, ts: Number(x.ts) || 0, etat: 'signale' }));
+}
+let signalementsVus = null;
+function surveillerSignalements() {
+  const l = signalementsParasites();
+  if (signalementsVus === null) { signalementsVus = new Set(l.map(x => x.id)); return; }
+  for (const x of l) {
+    if (signalementsVus.has(x.id)) continue;
+    signalementsVus.add(x.id);
+    diffuser(abonnesPensees, 'signalement', j(x));
+    notifier(`Hakim signale une pensée parasite : « ${x.phrase} » — nuisible ou pas, à toi de trancher dans Parler`, `signalement-${x.id}`, true);
+  }
+}
+setInterval(surveillerSignalements, 10000).unref(); setTimeout(surveillerSignalements, 3000).unref();
 
 /* ---- La jauge du forfait relevée toutes les heures (demande de Hakim, validée par Ahmed le 2026-10-22) : sans un jeton
    de plus — c'est la dernière mesure reçue avec un de ses tours (rate_limit_event), avec son âge. Pour distinguer sa
@@ -10237,6 +10339,7 @@ async function traiter(req, res) {
       if (typeof q.trois_freres === 'boolean') r.trois_freres = q.trois_freres;
       if (typeof q.micro_ouvert === 'boolean') r.micro_ouvert = q.micro_ouvert;
       if (typeof q.dire_inverse === 'boolean') r.dire_inverse = q.dire_inverse;
+      if (typeof q.filtre_gemma === 'boolean') r.filtre_gemma = q.filtre_gemma;
       try { ecrireAtomique(CORPS_REGLAGES, j(r)); } catch (e) { return repondre(500, { erreur: e.message }); }
       if (!r.actif) { corpsLot.evenements.length = 0; corpsLot.changements.length = 0; corpsADire.length = 0; }
       auditer('corps:reglages', req, distantReq, r);
@@ -10350,6 +10453,28 @@ async function traiter(req, res) {
     auditer(`immunite:${action}`, req, distantReq, { empreinte: empreinte || undefined, verdict: verdict || undefined, motif: motif.slice(0, 120) || undefined, ok });
     res.writeHead(ok ? 200 : 409, { 'Content-Type': 'application/json' });
     return res.end(j(ok ? { ok } : { erreur: 'refusé (déjà jugé, motif non tolérable ou introuvable)' }));
+  }
+  if (p === '/api/immunite/signalements') {                  // (04/11) ses pensées parasites qu'il signale : toi seul tranches
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    if (req.method === 'POST') {
+      let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
+      const id = String(q.id || ''), action = String(q.action || '');
+      if (!ID_SIGNALEMENT.test(id) || !['nuisible', 'inoffensif'].includes(action)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'signalement ou action invalide' })); }
+      if (action === 'nuisible') {                             // sa pensée en sera nettoyée : ta présence
+        const refus = exigerPresence(req, distantReq, q, `signalement:nuisible:${id}`);
+        if (refus) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: refus, presence: true })); }
+      }
+      const ok = await new Promise(fin => execFile(path.join(ANAMNESE, '.venv', 'bin', 'python'), [path.join(ANAMNESE, 'jarvis', 'immunite.py'), `signale-${action}`, id],
+        { cwd: ANAMNESE, timeout: 30000, maxBuffer: 1 << 16 }, (e, so) => fin(!e && String(so || '').trim() === 'fait')));
+      if (!ok) { res.writeHead(409, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'signalement introuvable (déjà tranché ?)' })); }
+      auditer(`signalement:${action}`, req, distantReq, { id });
+      premissesImmunite.vu = 0;                                // relues tout de suite
+      const x = { id, etat: action };
+      diffuser(abonnesPensees, 'signalement', j(x));
+      res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(x));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(j({ signalements: signalementsParasites() }));
   }
   if (p === '/api/immunite/anticorps') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }

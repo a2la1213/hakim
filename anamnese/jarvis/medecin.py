@@ -459,16 +459,24 @@ def apprendre_parasites(maintenant=None, consulter_fn=None, journal=None, repons
     maintenant = time.time() if maintenant is None else maintenant
     etat = immunite._lire_json(immunite._f("parasites-apprentissage.json"), {})
     etat = etat if isinstance(etat, dict) else {}
-    if maintenant - float(etat.get("ts", 0)) < PARASITES_ECART_S:
+    # (04/11, Ahmed : « tous les nuisibles détectés par Hakim : remonter leur signal le plus à la base de toute la cascade d'inputs,
+    # et le décréter comme parasite ») un résidu que papa vient de juger nuisible se remonte tout de suite
+    a_remonter = [immunite._normaliser(str(x)) for x in (etat.get("a_remonter") or []) if str(x).strip()]
+    if maintenant - float(etat.get("ts", 0)) < PARASITES_ECART_S and not a_remonter:
         return None
     lignes = _lignes(journal or JOURNAL_PISTES, 3000)
-    estp = lambda o: o.get("texte_parasite") or (o.get("pensee") and (immunite.examiner_pensee(o["pensee"])["parasite"] or len(o["pensee"]) > 160))
+    residus = [immunite._normaliser(str(r["phrase"])) for r in immunite.residus_appris()]
+    porte_residu = lambda t: any(f" {r} " in f" {immunite._normaliser(str(t)[:4000])} " for r in residus if r)  # noqa: E731
+    estp = lambda o: o.get("texte_parasite") or (o.get("pensee") and (immunite.examiner_pensee(o["pensee"])["parasite"] or len(o["pensee"]) > 160
+                                                                          or porte_residu(o["pensee"])))
     lignes_p = [o for o in lignes if estp(o)][-40:]
     parasites = [str(o.get("texte_parasite") or o.get("pensee") or "") for o in lignes_p]
     parasites = [p for p in parasites if p]
     entrees_p = [str(o.get("morceau") or "") for o in lignes_p if o.get("morceau")]
     nouvelles = sum(1 for o in lignes if float(o.get("t", 0)) / 1000 > float(etat.get("ts", 0)) and o.get("texte_parasite"))
-    if len(parasites) < PARASITES_NOUVELLES or (etat.get("ts") and nouvelles < PARASITES_NOUVELLES):
+    if not a_remonter and (len(parasites) < PARASITES_NOUVELLES or (etat.get("ts") and nouvelles < PARASITES_NOUVELLES)):
+        return None
+    if a_remonter and not parasites:
         return None
     lignes_n = [o for o in lignes if o.get("pensee") and not o.get("erreur") and not estp(o)][-120:]
     normales = [str(o["pensee"]) for o in lignes_n]
@@ -485,6 +493,10 @@ def apprendre_parasites(maintenant=None, consulter_fn=None, journal=None, repons
               # (04/11, Ahmed : « le signal qui arrive le plus tôt, c'est là-dedans qu'il trouvera comment anticiper l'arrivée de
               # l'input qui induit le LLM ») ce que papa disait juste avant : là où naît la parasite
               + "\n\nCe que papa disait juste avant chaque pensée PARASITE :\n" + "\n".join(f"- « {_donnee(e, 160)} »" for e in entrees_p)
+              # (04/11) les résidus que Hakim a signalés et que papa a jugés nuisibles : leur signal le plus à la base, d'abord
+              + ("\n\nRésidus jugés nuisibles par papa (signalés par Hakim, reconnus n'importe où dans la pensée) : "
+                 + " ; ".join(f"« {_donnee(r, 80)} »" for r in residus) + ". Pour eux d'abord, cherche dans ce que papa disait avant "
+                 "les DÉCLENCHEURS, le signal le plus à la base de toute la cascade d'inputs." if residus else "")
               + "\n\nCe que papa disait juste avant des pensées NORMALES :\n" + "\n".join(f"- « {_donnee(e, 160)} »" for e in entrees_n[-60:])
               # (04/11, Ahmed : « dis à Fable de chercher en premier lieu à signaler l'input le plus à la base du modèle de langage
               # du LLM d'Anthropic ») d'abord le signe le plus à la base : la tournure par laquelle le modèle lui-même sort du cadre
@@ -508,7 +520,7 @@ def apprendre_parasites(maintenant=None, consulter_fn=None, journal=None, repons
     gardees = immunite.garder_premisses(phrases, parasites, normales + reponses, maintenant)
     declencheurs = immunite.garder_declencheurs(dec, entrees_p, entrees_n, maintenant)
     immunite._ecrire_json(immunite._f("parasites-apprentissage.json"), {"ts": maintenant, "proposees": len(phrases), "gardees": len(gardees),
-                                                                       "declencheurs": len(declencheurs)})
+                                                                       "declencheurs": len(declencheurs), "remontes": a_remonter})
     return {"gardees": gardees, "declencheurs": declencheurs, "proposees": len(phrases)}
 
 

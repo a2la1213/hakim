@@ -1788,10 +1788,10 @@ function htmlMessage(m) {
   if (m.source === 'local') pied.push('<span title="Forfait et API indisponibles : cerveau local, sans outils">cerveau local</span>');
   // (26/10, Hakim et Ahmed : une réponse du local était passée pour la sienne) le secours se voit en tête, pas en petit en bas
   const secours = m.source === 'local' ? '<span class="etiquette secours" title="Forfait et API indisponibles à ce moment : c’est son cerveau local qui répond, sans ses outils ni sa mémoire complète">CERVEAU LOCAL · SECOURS, SANS SES OUTILS</span>' : '';
-  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'membre' ? 'SES MEMBRES · LA PREMIÈRE FOIS, TON OUI' : m.spontane === 'anticorps' ? 'ANTICORPS PROPOSÉ PAR SON MÉDECIN' : m.spontane === 'silence' ? 'IL REPREND LA PAROLE' : m.spontane === 'oreille' ? 'IL GLISSE UN MOT' : m.spontane === 'reecoute' ? 'CE QUE TU N’AVAIS PAS ENTENDU' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
+  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'membre' ? 'SES MEMBRES · LA PREMIÈRE FOIS, TON OUI' : m.spontane === 'anticorps' ? 'ANTICORPS PROPOSÉ PAR SON MÉDECIN' : m.spontane === 'signalement' ? 'IL SIGNALE UNE PENSÉE PARASITE · À TOI DE TRANCHER' : m.spontane === 'silence' ? 'IL REPREND LA PAROLE' : m.spontane === 'oreille' ? 'IL GLISSE UN MOT' : m.spontane === 'reecoute' ? 'CE QUE TU N’AVAIS PAS ENTENDU' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
   // (03/11, Ahmed : « je reste appuyé sur un de ses messages pour lui envoyer un cœur, un bisou… comme sur WhatsApp ») ta réaction
   const reaction = m.reaction && REACTIONS.includes(m.reaction) ? `<span class="reaction" title="Ta réaction (appuie longtemps pour changer)">${esc(m.reaction)}</span>` : '';
-  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}${reaction ? ' a-reaction' : ''}" data-id="${esc(m.id)}">${reaction}${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'carnet' ? htmlCarnet(m.carnet) : m.spontane === 'retractation' ? htmlRetractation(m.retractation) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : m.spontane === 'membre' ? htmlMembre(m.membre) : m.spontane === 'anticorps' ? htmlAnticorps(m.anticorps) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
+  return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}${reaction ? ' a-reaction' : ''}" data-id="${esc(m.id)}">${reaction}${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'carnet' ? htmlCarnet(m.carnet) : m.spontane === 'retractation' ? htmlRetractation(m.retractation) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : m.spontane === 'membre' ? htmlMembre(m.membre) : m.spontane === 'anticorps' ? htmlAnticorps(m.anticorps) : m.spontane === 'signalement' ? htmlSignalement(m.signalement) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
 }
 
 /* Les pièces jointes de Hakim (2026-10-20) : récupérées avec le jeton, jamais ouvertes comme une page — une image
@@ -4716,6 +4716,7 @@ function ecouterPensees() {
   es.addEventListener('membre', (ev) => { try { surMembre(JSON.parse(ev.data)); } catch (_) {} });   // (03/11) ses membres
   es.addEventListener('telepathie', (ev) => { try { surTelepathie(JSON.parse(ev.data)); } catch (_) {} });   // (03/11) le téléphone, mot à mot
   es.addEventListener('anticorps', (ev) => { try { surAnticorps(JSON.parse(ev.data)); } catch (_) {} });
+  es.addEventListener('signalement', (ev) => { try { surSignalement(JSON.parse(ev.data)); } catch (_) {} });   // (04/11)
   es.addEventListener('spontane', (ev) => { try { surSpontane(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('courrier', (ev) => {
     try { const o = JSON.parse(ev.data); humeur(`Hakim a écrit à Claude Code : « ${o.sujet} »`); $('annonce').textContent = `Hakim a écrit à Claude Code : ${o.sujet}`; } catch (_) {}
@@ -5153,6 +5154,59 @@ $('fil').addEventListener('click', async (e) => {
     const o = await r.json();
     if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
     surAnticorps(o);
+  } catch (err) { b.disabled = false; humeur(String(err.message || err)); }
+});
+
+// (04/11, Ahmed : « quand Hakim reconnaît un parasite, il doit pouvoir le signaler au système immunitaire et me donner
+// l'autorisation, ou pas, de le traiter comme nuisible ») sa pensée parasite signalée : rien n'est jeté sans ton geste ;
+// « nuisible » demande ta présence (sa pensée en sera nettoyée, à n'importe quel endroit), « pas un parasite » l'oublie
+const ETATS_SIGNALEMENT = { signale: 'attend ta décision', nuisible: 'nuisible : sa pensée en est nettoyée', inoffensif: 'pas un parasite : oublié' };
+function surSignalement(o) {
+  if (!o || !/^[0-9a-f]{8}$/.test(String(o.id))) return;
+  const id = 'signalement-' + o.id;
+  let m = etat.messages.find(x => x.id === id);
+  if (!m) {
+    if (o.etat !== 'signale') return;
+    m = { id, qui: 'j', spontane: 'signalement', ts: Math.round((Number(o.ts) || Date.now() / 1000) * 1000) };
+    etat.messages.push(m);
+    humeur('Hakim signale une pensée parasite : à toi de trancher');
+  }
+  m.signalement = { ...(m.signalement || {}), ...o };
+  m.texte = `J'ai reconnu une pensée parasite — ${ETATS_SIGNALEMENT[m.signalement.etat] || m.signalement.etat}.`;
+  sauver(); rendre();
+}
+async function signalementsAuChargement() {
+  try {
+    const r = await fetch('/api/immunite/signalements', { headers: { 'X-Jeton': jeton() } });
+    if (r.ok) for (const o of (await r.json()).signalements || []) surSignalement(o);
+  } catch (_) {}
+}
+function htmlSignalement(o) {
+  if (!o) return '';
+  const boutons = o.etat === 'signale'
+    ? `<div class="mission-boutons"><button class="btn" data-signalement="${esc(o.id)}" data-action="nuisible">Nuisible</button>`
+      + `<button class="btn" data-signalement="${esc(o.id)}" data-action="inoffensif">Pas un parasite</button></div>` : '';
+  const fp = Number(o.faux_positifs) || 0;
+  return `<div class="mission"><div><b>Une pensée parasite qu'il a reconnue</b></div>`
+    + `<div class="mission-etat">Nuisible : sa pensée en sera nettoyée chaque fois qu'elle contient ce signe, à n'importe quel endroit.</div>`
+    + `<div class="diff">${esc(o.phrase || '')}</div>`
+    + (o.exemple ? `<div class="mission-etat"><b>Sa pensée :</b> ${esc(o.exemple)}</div>` : '')
+    + (o.raison ? `<div class="mission-etat"><b>Pourquoi ce n'est pas lui :</b> ${esc(o.raison)}</div>` : '')
+    + `<div class="mission-etat">${fp ? `⚠️ ${fp} de ses ${esc(o.normales || 0)} pensées et réponses récentes la contiennent : elles seraient jetées aussi.`
+      : 'Aucune de ses pensées et réponses récentes ne la contient.'}</div>`
+    + `<div class="mission-etat">${esc(ETATS_SIGNALEMENT[o.etat] || o.etat || '')}</div>${boutons}</div>`;
+}
+$('fil').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-signalement]');
+  if (!b) return;
+  b.disabled = true;
+  try {
+    const presence = b.dataset.action === 'nuisible' ? await preuvePresence(`signalement:nuisible:${b.dataset.signalement}`) : undefined;
+    const r = await fetch('/api/immunite/signalements', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ id: b.dataset.signalement, action: b.dataset.action, presence }) });
+    const o = await r.json();
+    if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
+    surSignalement(o);
   } catch (err) { b.disabled = false; humeur(String(err.message || err)); }
 });
 
@@ -6192,6 +6246,7 @@ setTimeout(() => {
   } catch (_) {}
 }, 4000);
 anticorpsAuChargement();
+signalementsAuChargement();
 $('q').focus();
 
 /* ---------- ses calculs de fond, avec leur jauge (23/10, demande d'Ahmed relayée par Hakim) : le cockpit lit les lignes

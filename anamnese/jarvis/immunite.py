@@ -1749,7 +1749,86 @@ def garder_declencheurs(phrases, entrees_parasites, entrees_normales, maintenant
 def ecrire_premisses():
     _ecrire_json(_f(PREMISSES), {"maj": time.time(), "debut_mots": PARASITES_DEBUT_MOTS,
                                  "premisses": [{"id": i, "phrase": p} for i, p in premisses() if p],
-                                 "declencheurs": [{"id": str(x["id"]), "phrase": _normaliser(str(x["phrase"]))} for x in declencheurs_appris()]})
+                                 "declencheurs": [{"id": str(x["id"]), "phrase": _normaliser(str(x["phrase"]))} for x in declencheurs_appris()],
+                                 "residus": [{"id": str(x["id"]), "phrase": _normaliser(str(x["phrase"]))} for x in residus_appris()]})
+
+
+# (04/11, Ahmed : « quand Hakim reconnaît un parasite, il doit pouvoir le signaler au système immunitaire et me donner
+# l'autorisation, ou pas, de le traiter comme nuisible ») ses SIGNALEMENTS : une phrase qu'il reconnaît comme le signe d'une de ses
+# pensées parasites (avec la pensée entière et sa raison), en attente ; rien n'est jeté avant le geste d'Ahmed. Nuisible : elle
+# rejoint ses RÉSIDUS, reconnus à n'importe quel endroit de sa pensée (le cockpit les lit) ; pas un parasite : oubliée. Ses faux
+# positifs (combien de ses pensées et réponses normales la contiennent) sont comptés pour qu'Ahmed tranche en le sachant.
+SIGNALES = "parasites-signales.json"
+SIGNALES_MAX = 30
+
+
+def residus_appris():
+    d = _lire_json(_f(PARASITES), {})
+    l = d.get("residus") if isinstance(d, dict) else None
+    return [x for x in (l if isinstance(l, list) else []) if isinstance(x, dict) and x.get("id") and x.get("phrase")]
+
+
+def signalements():
+    l = _lire_json(_f(SIGNALES), [])
+    return [x for x in (l if isinstance(l, list) else []) if isinstance(x, dict) and x.get("id") and x.get("phrase")]
+
+
+def textes_normaux(jarvis=None, limite=2000):
+    """Ses pensées (pistes sans erreur) et ses réponses récentes : de quoi compter les faux positifs d'une phrase."""
+    base = Path(jarvis) if jarvis else Path.home() / "AIOS" / "jarvis"
+    out = [str(o.get("pensee")) for o in _queue(base / "pistes.jsonl", 1 << 20) if isinstance(o, dict) and o.get("pensee") and not o.get("erreur")]
+    out += [str(o.get("texte")) for o in _queue(base / "journal.jsonl", 2 << 20) if isinstance(o, dict) and o.get("qui") == "jarvis" and o.get("texte")]
+    return out[-limite:]
+
+
+def signaler_parasite(phrase, exemple="", raison="", normales=(), maintenant=None):
+    """Son signalement, en attente d'Ahmed ; ValueError si la phrase n'est pas de 2 à 8 mots (60 caractères au plus)."""
+    maintenant = time.time() if maintenant is None else maintenant
+    p = _normaliser(str(phrase or "")[:200])
+    if not p or not 2 <= len(p.split()) <= 8 or len(p) > 60:
+        raise ValueError("une phrase de 2 à 8 mots, 60 caractères au plus, telle que tu l'as pensée")
+    if p in {x for _, x in premisses()} | {_normaliser(str(r["phrase"])) for r in residus_appris()}:
+        return {"phrase": p, "deja": "reconnue"}
+    with _verrou("signales"):
+        l = signalements()
+        deja = next((x for x in l if x["phrase"] == p), None)
+        if deja:
+            return {**deja, "deja": "en attente"}
+        fp = sum(f" {p} " in f" {_normaliser(str(n)[:4000])} " for n in normales)
+        x = {"id": hashlib.sha256(f"{p}|{maintenant}".encode()).hexdigest()[:8], "phrase": p, "exemple": _propre(exemple, 300),
+             "raison": _propre(raison, 200), "faux_positifs": fp, "normales": len(normales), "ts": maintenant}
+        _ecrire_json(_f(SIGNALES), (l + [x])[-SIGNALES_MAX:])
+    return x
+
+
+def trancher_signalement(sid, verdict, maintenant=None):
+    """Le geste d'Ahmed : « nuisible » (un résidu de plus) ou « inoffensif » (oublié). Faux si introuvable ou verdict inconnu."""
+    maintenant = time.time() if maintenant is None else maintenant
+    if verdict not in ("nuisible", "inoffensif"):
+        return False
+    with _verrou("signales"):
+        l = signalements()
+        x = next((y for y in l if y["id"] == sid), None)
+        if x is None:
+            return False
+        _ecrire_json(_f(SIGNALES), [y for y in l if y["id"] != sid])
+    if verdict == "nuisible":
+        with _verrou("parasites"):
+            d = _lire_json(_f(PARASITES), {})
+            d = d if isinstance(d, dict) else {}
+            d["residus"] = (residus_appris() + [{"id": "hakim-" + sid, "phrase": x["phrase"], "source": "hakim+ahmed", "ts": maintenant}])[-PARASITES_MAX:]
+            d["maj"] = maintenant
+            _ecrire_json(_f(PARASITES), d)
+        ecrire_premisses()
+        # (04/11, Ahmed : « tous les nuisibles détectés par Hakim : remonter leur signal le plus à la base de toute la cascade
+        # d'inputs, et le décréter comme parasite ») à remonter par le médecin dès son prochain passage, sans attendre six heures
+        with _verrou("parasites"):
+            e = _lire_json(_f("parasites-apprentissage.json"), {})
+            e = e if isinstance(e, dict) else {}
+            e["a_remonter"] = sorted(set(e.get("a_remonter") or []) | {x["phrase"]})[-PARASITES_MAX:]
+            _ecrire_json(_f("parasites-apprentissage.json"), e)
+    _ajouter("signalements.jsonl", {**x, "verdict": verdict, "tranche": maintenant})
+    return True
 
 
 def noter_parasite(texte, signe, maintenant=None):
@@ -1796,9 +1875,11 @@ def retirer_premisse(pid):
     with _verrou("parasites"):
         d = _lire_json(_f(PARASITES), {})
         d = d if isinstance(d, dict) else {}
-        avant = premisses_apprises()
+        avant, residus, dec = premisses_apprises(), residus_appris(), declencheurs_appris()
         d["premisses"] = [p for p in avant if p["id"] != pid]
-        if len(d["premisses"]) == len(avant):
+        d["residus"] = [p for p in residus if p["id"] != pid]          # (04/11) un résidu, ou un déclencheur, se retire pareil
+        d["declencheurs"] = [p for p in dec if p["id"] != pid]
+        if len(d["premisses"]) == len(avant) and len(d["residus"]) == len(residus) and len(d["declencheurs"]) == len(dec):
             return False
         _ecrire_json(_f(PARASITES), d)
     ecrire_premisses()
@@ -1852,7 +1933,13 @@ def main(argv):
         return 0
     elif argv[:1] == ["parasites"]:
         ecrire_premisses()
-        _encadrer([f"{i} · « {p} »" for i, p in premisses()])
+        _encadrer([f"{i} · « {p} »" for i, p in premisses()] + [f"{x['id']} · résidu « {x['phrase']} »" for x in residus_appris()])
+    elif argv[:1] == ["signalements"]:                 # (04/11) ses signalements en attente, pour le cockpit
+        print(json.dumps(signalements(), ensure_ascii=False))
+    elif argv[:1] in (["signale-nuisible"], ["signale-inoffensif"]) and len(argv) == 2:
+        ok = trancher_signalement(argv[1], argv[0].split("-", 1)[1])
+        print("fait" if ok else "introuvable")
+        return 0 if ok else 1
     elif argv[:1] == ["parasite-retirer"] and len(argv) == 2:
         ok = retirer_premisse(argv[1])
         print("fait" if ok else "introuvable")
