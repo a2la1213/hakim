@@ -6678,3 +6678,37 @@ document.addEventListener('click', lienGardeConversation, true);
     } catch (e) { liste.textContent = `Les notes ne répondent pas (${e.message}).`; }
   });
 })();
+
+// (04/11, 16:40, Ahmed : « tu peux juste me rajouter un bouton quelque part pour que je redémarre le cockpit automatiquement, et push GitHub
+// aussi ? ») dans les réglages : une confirmation, puis le cockpit publie (contrôles compris) et se relance ; son état est suivi ici, même
+// pendant qu'il redémarre (la page attend son retour), jusqu'à « fini »
+const ETAPES_RELANCE = { demande: 'demandée', travail: 'je regarde si quelqu’un travaille', publication: 'publication en cours',
+  essai: 'essai du cockpit', relance: 'le cockpit redémarre…', fini: '' };
+function montrerRelance(e) {
+  const p = $('relanceEtat');
+  if (!p || !e || !e.etape) return;
+  const quand = e.ts ? new Date(Number(e.ts) * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+  p.textContent = e.etape === 'fini' ? `${e.ok ? '✅' : '⚠️'} ${quand} : ${e.detail || ''} — publication : ${e.publication || '?'}`
+    : `⏳ ${ETAPES_RELANCE[e.etape] || e.etape}${e.publication && e.publication !== 'non faite' ? ` — publication : ${e.publication}` : ''}`;
+}
+async function suivreRelance(fois = 0) {
+  let e = null;
+  try { const r = await fetch('/api/cockpit/relance-etat', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' }); if (r.status === 403 && typeof rafraichirJeton === 'function') await rafraichirJeton(); else if (r.ok) e = await r.json(); } catch (_) {}
+  if (e) montrerRelance(e);
+  if ((!e || e.etape !== 'fini') && fois < 120) setTimeout(() => suivreRelance(fois + 1), 3000);
+}
+if ($('relancerPublier')) {
+  $('relancerPublier').addEventListener('click', async () => {
+    if (!confirm('Relancer le cockpit (Hakim sera coupé quelques secondes) et publier sur GitHub ?')) return;
+    try {
+      const r = await fetch('/api/cockpit/relancer-publier', { method: 'POST', headers: { 'X-Jeton': jeton() } });
+      const o = await r.json().catch(() => ({}));
+      if (!r.ok) { $('relanceEtat').textContent = `⚠️ ${o.erreur || 'refusé'}`; return; }
+      montrerRelance({ etape: 'demande' });
+      suivreRelance();
+    } catch (_) { $('relanceEtat').textContent = '⚠️ le cockpit ne répond pas'; }
+  });
+  fetch('/api/cockpit/relance-etat', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).then((e) => {
+    if (e && e.etape) { montrerRelance(e); if (e.etape !== 'fini') suivreRelance(); }
+  }).catch(() => {});
+}

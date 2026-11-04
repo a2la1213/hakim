@@ -427,6 +427,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const JARVIS_DUREE_MAX = 2 * 3600 * 1000;
 const ANTHROPIC_MUET_MS = Number(process.env.JARVIS_ANTHROPIC_MUET_MS) || 60 * 1000;   // (28/10) une demande sans aucune ligne depuis 1 min, sans outil : une panne (veilleur.js)
 const CHEMIN_OUTILS = `/usr/local/bin:/opt/homebrew/bin:${process.env.PATH || '/usr/bin:/bin'}`;   // ffmpeg
+const RELANCE_PUBLIER = path.join(__dirname, 'relancer-et-publier.sh'), RELANCE_ETAT = path.join(JARVIS, 'relance-publication.json');   // (04/11, 16:40) son bouton
 const jarvisVivants = new Set();             // chaque claude lancé, jusqu'à sa fin (aucun orphelin)
 const cerveauxVivants = new Set();           // (29/10) chaque cerveau lancé, jusqu'à sa fin : leurs conversations ne s'ouvrent pas deux fois
 let etatSttCache = { ts: 0, val: null, enCours: null };
@@ -10066,6 +10067,23 @@ async function traiter(req, res) {
     reveilMorceau(String(q.texte || ''));                                // (15:45) et son vrai cerveau
     res.writeHead(202, { 'Content-Type': 'application/json' });
     return res.end(j({ ok: true }));
+  }
+  // (04/11, 16:40, Ahmed : « un bouton pour que je redémarre le cockpit automatiquement, et push GitHub aussi ») son bouton (réglages de
+  // Parler) : relancer-et-publier.sh, détaché (il survit à la relance) ; une seule à la fois ; son état dans jarvis/relance-publication.json
+  if (p === '/api/cockpit/relancer-publier' && req.method === 'POST') {
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    const e = lireJson(RELANCE_ETAT, {}) || {}, etapeEnCours = e.etape && e.etape !== 'fini' && Date.now() / 1000 - Number(e.ts || 0) < 300;
+    if (etapeEnCours) { res.writeHead(409, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'une relance est déjà en cours', etat: e })); }
+    try {
+      ecrireAtomique(RELANCE_ETAT, j({ ts: Math.floor(Date.now() / 1000), etape: 'demande', ok: true, publication: 'non faite', detail: 'lancée' }));
+      const proc = spawn('/bin/bash', [RELANCE_PUBLIER], { detached: true, stdio: 'ignore', env: { ...process.env, PATH: CHEMIN_OUTILS } });
+      proc.unref();
+    } catch (err) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: String(err.message || err).slice(0, 120) })); }
+    res.writeHead(202, { 'Content-Type': 'application/json' }); return res.end(j({ ok: true }));
+  }
+  if (p === '/api/cockpit/relance-etat') {
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(lireJson(RELANCE_ETAT, {}) || {}));
   }
   if (p === '/api/jarvis/ribosome/stop' && req.method === 'POST') {   // (04/11, 15:10) 10 s de ton silence : la page ferme son épissure
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
