@@ -325,7 +325,7 @@ test('en Conversation avec l’épissage, tout ce qu’il allait dire d’autre 
   assert.match(PAGE, /if \(typeof voixEpissee === 'function' && voixEpissee\(\)\) \{ versRibosome\(m\.texte\); return; \}\n  etat\.lectureDe = m\.id;\n  lecteur\.dire\(m\.texte\);\n  lecteur\.finFlux\(\);/, 'ses messages de lui-même');
   assert.match(PAGE, /if \(voix && typeof voixEpissee === 'function' && voixEpissee\(\)\) versRibosome\(/, 'ce que tu n’avais pas entendu');
   assert.match(SRC, /if \(p === '\/api\/jarvis\/ribosome' && req\.method === 'POST'\)/);
-  assert.match(SRC, /const lu = ribosomeDeReponse\(pistes\.tour, pistes\.ribo \|\| \(pistes\.ribo = nouveauRibosome\(tourEpissure\(\)\)\), String\(q\.avant \|\| ''\)\);/);
+  assert.match(SRC, /const lu = ribosomeDeReponse\(pistes\.tour, pistes\.ribo \|\| \(pistes\.ribo = ribosomeSuivant\(\)\), String\(q\.avant \|\| ''\)\);/);
 });
 
 test('versRibosome : le texte part au cockpit (sa non-réponse, jamais)', async () => {

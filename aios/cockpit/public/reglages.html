@@ -79,6 +79,8 @@
       ['plafond_mots', 'Plafond de mots', 'Au-delà, l’épissure se ferme et une neuve commence (contre la dégénérescence).', 'curseur', [5, 200, 5, (v) => `${v} mots`]],
       ['plafond_paquets', 'Plafond de paquets', 'Le nombre de paquets lus par une même épissure.', 'curseur', [1, 50, 1, (v) => `${v} paquets`]],
       ['plafond_silence_s', 'Plafond de silence', 'Si tu ne dis plus rien pendant ce temps, l’épissure se ferme.', 'curseur', [5, 300, 5, (v) => `${v} s`]],
+      ['relais_ribosomes', 'Ribosomes en relais', 'Combien de ribosomes travaillent en même temps quand il parle, en boucle (1 : un seul, comme avant).', 'curseur', [1, 8, 1, (v) => `${v} ${v > 1 ? 'ribosomes' : 'ribosome'}`]],
+      ['relais_pct', 'Relais à', 'Le suivant s’ouvre quand celui qui parle a dit ce pourcentage de son plafond de mots (100 % : à son plafond seulement).', 'curseur', [10, 100, 5, (v) => `${v} %`]],
       ['lecteur_max', 'Lecteurs neufs', 'Ses lecteurs repartent à neuf après ce nombre de lectures.', 'curseur', [1, 25, 1, (v) => `toutes les ${v}`]],
       ['contexte', 'Pensées relues', 'Ce qu’il relit de ses pensées d’avant, à chaque paquet.', 'curseur', [100, 3000, 100, (v) => `${v} caractères`]]] },
     { id: 'ecoute', ic: '🎙️', titre: 'Son écoute', aide: 'Comment il t’entend pendant que vous parlez.', route: 'corps', reglages: [
@@ -201,7 +203,7 @@
       for (const r of f.reglages) s.appendChild(ligne(f, r));
       if (f.id === 'ribosome') {
         const act = document.createElement('div'); act.className = 'actions';
-        const b = document.createElement('button'); b.type = 'button'; b.textContent = '↺ Temps et plafonds d’origine';
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = '↺ Temps, plafonds et relais d’origine';
         b.addEventListener('click', async () => {
           try { valeurs.ribosome = await appeler(ROUTES.ribosome.ecrire, { defaut: true }); dire('✓ Ribosome : temps et plafonds d’origine'); }
           catch (e) { dire(`Pas enregistré (${e.message})`, true); }

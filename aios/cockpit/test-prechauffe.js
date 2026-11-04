@@ -99,7 +99,8 @@ function ouverture(reglages = { epissage: true }, reponse = 'Papa arrive, je me 
   vm.createContext(ctx);
   vm.runInContext(SRC.slice(SRC.indexOf('const nouveauRibosome = '), SRC.indexOf('\n', SRC.indexOf('const nouveauRibosome = ')))
     + '\n' + SRC.slice(SRC.indexOf('const BLANC_OUVERTURE = '), SRC.indexOf('\n', SRC.indexOf('const BLANC_OUVERTURE = ')))
-    + '\n' + prendre('ouvrirReflexion') + 'this.ouvrir = ouvrirReflexion;', ctx);
+    + '\nfunction ribosomeSuivant() { return nouveauRibosome(tourEpissure()); }\n'   // (23:10) ses ribosomes en relais : ici, un seul
+    + prendre('ouvrirReflexion') + 'this.ouvrir = ouvrirReflexion;', ctx);
   return { ctx, diffuses, demandes, memos, avancer: (ms) => { t += ms; } };
 }
 
@@ -139,7 +140,7 @@ test('la parole vide : à l’ouverture du micro et au premier son ; la page l�
   assert.match(PAGE, /if \(o\.niveau === 'blanc'\) \{ surBlanc\(o\); return; \}/);
   assert.match(PAGE, /💭 \$\{esc\(p\.interne \|\| p\.blanc \|\| '…'\)\}/);
   const poses = [];
-  const ctx = { etat: {}, Date, Object, Math, String, TITRE_EPISSURE: 't', htmlEpissure: (p) => `💭 ${p.interne || p.blanc || '…'}`, poserPave: (cle, titre, html) => poses.push(html) };
+  const ctx = { etat: {}, Date, Object, Math, String, TITRE_EPISSURE: 't', titreEpissure: () => 't', htmlEpissure: (p) => `💭 ${p.interne || p.blanc || '…'}`, poserPave: (cle, titre, html) => poses.push(html) };
   vm.createContext(ctx);
   vm.runInContext(PAGE_PRENDRE('paveDe') + PAGE_PRENDRE('surBlanc') + 'this.blanc = surBlanc;', ctx);
   ctx.blanc({ niveau: 'blanc', texte: '…', tour: 7 });

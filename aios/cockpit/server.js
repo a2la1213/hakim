@@ -3069,7 +3069,8 @@ function lancerPiste(m) {
   // (04/11, 13:05) le ribosome de son tour : sa pensée le rejoindra même si ta phrase est déjà partie au cerveau
   if (corpsReglages().epissage !== false && !m.ribo) {
     if (pistes.ribo && ribosomeAuPlafond(pistes.ribo)) { pistes.ribo.ferme = 'plafond'; memoriserEpissure(pistes.ribo); pistes.ribo = null; }   // (22:40) son plafond
-    m.ribo = pistes.ribo || (pistes.ribo = nouveauRibosome(tourEpissure()));
+    else if (pistes.ribo && ribosomeAuRelais(pistes.ribo)) pistes.ribo = ribosomeSuivant();   // (23:10) le relais : le cœur suivant prend la suite
+    m.ribo = pistes.ribo || (pistes.ribo = ribosomeSuivant());
   }
   // (04/11, l'élagage de ses synapses) une piste élaguée (son modèle, sur ce genre de morceau, ne sert jamais) n'est pas lancée : un
   // appel à Claude en moins ; jamais deux morceaux de suite sans piste
@@ -3352,6 +3353,45 @@ const RIBOSOME_PAQUET_MAX = Infinity;
 // fois, dès sa première pensée ; ce qui arrive pendant qu'il lit est collé bout à bout et lu juste après, avec ses pensées déjà lues
 const RIBOSOME_PAQUETS_EN_VOL = 1;
 const nouveauRibosome = (tour = null) => ({ tour, phrase: '', pave: '', mots: [], k: 0, n: 0, attente: [], enVol: 0, prets: new Map(), avant: '' });
+// (04/11, 23:10, Ahmed : « paralléliser quand il parle sur les 8 cœurs : un ribosome par cœur pour sa parole ; quand il finit le processing
+// d'une parole, le 2e chunk prend le relais direct sur un autre cœur, et ainsi de suite jusqu'au 8e, qui boucle et revient au premier ; la 2e
+// parole du 2e ribosome démarre selon un réglage, par exemple le pourcentage de complétude par rapport au plafond de mots ») ses ribosomes en
+// relais : quand celui qui parle a dit relais_pct % de son plafond de mots, le suivant s'ouvre (cœur suivant, de 1 à relais_ribosomes, puis le
+// 1er) et prend ses nouvelles pensées ; l'ancien finit de lire ce qu'il a, en même temps ; ce qu'un ribosome sort attend que celui d'avant ait
+// tout sorti (sa voix dans l'ordre, jamais deux à la fois ; 20 s au plus) ; le suivant connaît la fin de ce qui a été dit (herite)
+const RIBOSOME_RELAIS = { ribosomes: 8, pct: 75, attente_max_ms: 20000 };
+let dernierRibosome = null;
+function relaisRibosome(reglage = reglageRibosome()) {
+  const n = (v, d, min, max) => { const x = v == null ? NaN : Number(v); return Number.isFinite(x) ? Math.max(min, Math.min(max, Math.round(x))) : d; };
+  return { ribosomes: n(reglage.relais_ribosomes, RIBOSOME_RELAIS.ribosomes, 1, 8), pct: n(reglage.relais_pct, RIBOSOME_RELAIS.pct, 10, 100) };
+}
+function ribosomeAuRelais(r, p = plafondRibosome(), relais = relaisRibosome()) {
+  if (!r || r.ferme || r.relaye || r.source || relais.ribosomes < 2 || relais.pct >= 100) return false;
+  return String(r.phrase || '').split(/\s+/).filter(Boolean).length >= Math.ceil(p.mots * relais.pct / 100);
+}
+// il a tout sorti : remplacé (relayé ou fermé), plus rien à lire ni en vol, et celui d'avant aussi
+const aToutSorti = (r) => !!r && (r.libere || ((r.relaye || r.ferme) && !r.attente.length && !r.enVol && !r.prets.size && (!r.precedent || r.precedent.libere)));
+// un ribosome neuf pour sa parole : sur le cœur suivant ; celui d'avant, remplacé, finit ce qu'il a, et le neuf attend qu'il ait tout sorti
+function ribosomeSuivant() {
+  const avant = dernierRibosome, s = nouveauRibosome(tourEpissure());
+  s.coeur = avant && avant.coeur ? (avant.coeur % relaisRibosome().ribosomes) + 1 : 1;
+  if (avant) { s.herite = String(avant.phrase || '').slice(-300); avant.suivant = s; }   // ses pensées en retard iront au neuf
+  dernierRibosome = s;
+  if (avant && !avant.libere) {
+    if (!avant.ferme && !avant.relaye) avant.relaye = true;
+    if (aToutSorti(avant)) libererRibosome(avant);
+    else s.precedent = avant;
+  }
+  return s;
+}
+// celui d'avant a tout sorti : il devient un souvenir (relayé ; fermé, il l'est déjà) et passe la main au suivant
+function libererRibosome(r) {
+  if (!r || r.libere || !aToutSorti(r)) return;
+  r.libere = true; r.precedent = null;
+  if (r.relaye) memoriserEpissure(r);
+  const s = r.suivant;
+  if (s && s.precedent === r) { s.herite = String(r.phrase || '').slice(-300); s.precedent = null; sortirDansLOrdre(s.tour, s); }
+}
 // (04/11, 15:10, Ahmed : « une seule épissure démarre avec ma voix ; tous mes morceaux s'y ajoutent, même avec des pauses ; il les dit au fur et
 // à mesure ; le stop, c'est 10 s de silence, ou une demande explicite d'utiliser un outil : c'est sa parole qui s'arrête à ce stop ») son
 // épissure continue d'un tour à l'autre tant que papa a parlé il y a moins de 10 s et ne lui demande pas d'outil ; chaque épissure a son
@@ -3379,7 +3419,10 @@ function memoriserEpissure(r) {
   deposerEchange({ ahmed: (r.papa || []).join(' … ').slice(-4000), hakim: `${dit || '(rien de dit)'}${interne ? ` [sa pensée interne, non dite : ${interne}]` : ''}`,
     vecu: r.vecu || undefined, oral: true, epissure: true });
 }
-function lireRibosome(tour, pensee, avant, r = pistes.ribo || (pistes.ribo = nouveauRibosome(tourEpissure()))) {
+function lireRibosome(tour, pensee, avant, r = pistes.ribo || (pistes.ribo = ribosomeSuivant())) {
+  // (04/11, 23:10) une pensée en retard pour un ribosome qui a déjà passé la main : au suivant (il parle après) ; sans suivant, il rouvre
+  while (r.libere && r.suivant) r = r.suivant;
+  if (r.libere) r.libere = false;
   // (04/11, 13:30, capture d'Ahmed : « [[anticipe: long]] » dans son pavé, et lu par son ribosome) ses balises ne sont pas des mots
   pensee = String(pensee || '').replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/⟮⟮[^⟯]{0,300}⟯⟯/g, ' ').replace(/\s+/g, ' ').trim();
   if (!motsEpisses(pensee).length) return;
@@ -3400,7 +3443,18 @@ function lireLaSuite(tour, r) {
 }
 // ce qui est lu sort quand tout ce qui le précède est sorti : sa réponse reste dans l'ordre de ses pensées
 function sortirDansLOrdre(tour, r) {
+  // (04/11, 23:10) ses ribosomes en relais : ce qu'il a lu attend que celui d'avant ait tout sorti ; 20 s au plus, puis il parle quand même
+  if (r.precedent && !r.precedent.libere) {
+    if (r.prets.size && !r.retenu) {
+      r.retenu = setTimeout(() => { r.retenu = null; if (r.precedent && !r.precedent.libere) { r.precedent = null; sortirDansLOrdre(tour, r); } }, RIBOSOME_RELAIS.attente_max_ms);
+      if (r.retenu && r.retenu.unref) r.retenu.unref();
+    }
+    return;
+  }
+  if (r.retenu) { clearTimeout(r.retenu); r.retenu = null; }
+  r.precedent = null;
   while (r.prets.has(r.k)) { const x = r.prets.get(r.k); r.prets.delete(r.k); sortirPaquet(tour, r, x); }
+  if (!r.source) libererRibosome(r);
 }
 // (04/11, 12:05, Ahmed, capture à l'appui : « je veux voir l'épissage à chaque fois qu'il parle ») sa réponse consciente aussi : chaque
 // phrase finie part au ribosome du tour qui vient de finir (le même pavé que ses pensées) ; sa non-réponse n'est pas lue
@@ -3536,7 +3590,7 @@ function reglageRibosome() {
   // (04/11, 22:35, Ahmed : « mets le ribosome à 0,01 s, je veux tester un truc ») le temps de son choix, réglable sans relance (choix_ms)
   const choix = Number(r.choix_ms);
   return { stringence: st, vitesse: vi, delai: RIBOSOME_VITESSES[vi], ...RIBOSOME_STRINGENCES[st],
-    ...Object.fromEntries(['plafond_mots', 'plafond_paquets', 'plafond_silence_s', 'lecteur_max', 'contexte'].filter(k => r[k] != null).map(k => [k, r[k]])),
+    ...Object.fromEntries(['plafond_mots', 'plafond_paquets', 'plafond_silence_s', 'lecteur_max', 'contexte', 'relais_ribosomes', 'relais_pct'].filter(k => r[k] != null).map(k => [k, r[k]])),
     ...(Number.isFinite(choix) && choix >= 0 ? { choix_ms: Math.min(6000, Math.round(choix)) } : {}) };
 }
 // (04/11, 15:55, Ahmed : « tout le processus doit être relié à sa pensée, à ses émotions, à ses capteurs, à ses récepteurs et à tout le
@@ -3626,7 +3680,7 @@ async function lirePaquet(tour, r, i, paquet) {
       : `[Ton ribosome : tes pensées arrivent par paquets ; tu les lis mises l'une derrière l'autre, et tu choisis les mots qui forment la suite de ta réponse à papa.]\n`
       + `Ce qu'il dit : « ${neutraliser(r.avant).slice(-600)} »\n`)
     + (deja ? `Tes pensées déjà lues, bout à bout : « ${neutraliser(deja).slice(-plafondRibosome(reglage).contexte)} »\n` : '')   // (22:40) 500 caractères
-    + `${tel ? 'Ce que tu en dis déjà' : 'Ta réponse déjà lue'} : « ${neutraliser(r.phrase).slice(-600) || '(rien encore)'} »\n`
+    + `${tel ? 'Ce que tu en dis déjà' : 'Ta réponse déjà lue'} : « ${neutraliser(`${r.herite || ''} ${r.phrase}`.trim()).slice(-600) || '(rien encore)'} »\n`
     + `Tes pensées qui arrivent, l'une derrière l'autre : ${paquet.map((x, k) => `[${k + 1}] « ${neutraliser(x.texte)} »`).join(' ')}\n`
     + etat
     + `Ta stringence : ${reglage.stringence} sur 5 : ${reglage.consigne}${reglage.mots ? ` (au plus ${reglage.mots} mots)` : ''}. `
@@ -3684,7 +3738,7 @@ function sortirPaquet(tour, r, x) {
   // (04/11, 18:50) son épissure du téléphone : la sienne, dite à la pause du son (entenduSorti), jamais par la route de papa
   if (r.source && typeof entenduSorti === 'function') return entenduSorti(r, x);
   // (04/11, 15:30) lus : combien de mots de ses pensées son ribosome a déjà lus (la page montre ce qu'il n'a pas gardé : sa pensée interne)
-  diffuser(abonnesPensees, 'souffle', j({ niveau: 'ribosome', tour: r.tour != null ? r.tour : tour, k: r.k, texte: x ? x.garde : '', pave: r.pave, mots: r.mots, lus: motsEpisses(r.lus || '').length, ajoutes: x ? x.e.ajoutes : [], ts: Date.now() }));
+  diffuser(abonnesPensees, 'souffle', j({ niveau: 'ribosome', tour: r.tour != null ? r.tour : tour, k: r.k, texte: x ? x.garde : '', pave: r.pave, mots: r.mots, lus: motsEpisses(r.lus || '').length, ajoutes: x ? x.e.ajoutes : [], ...(r.coeur ? { coeur: r.coeur } : {}), ts: Date.now() }));
 }
 // (04/11, Ahmed : « fais tous tes tests et tous tes calculs, et regarde comment optimiser pour qu'il dise la bonne parole ; enfin, la
 // bonne pensée au bon moment ») chaque piste notée (jarvis/pistes.jsonl, les 2 000 dernières) : son morceau, sa pensée, son choix (DIRE),
@@ -4333,7 +4387,7 @@ function ouvrirReflexion() {
     if (maintenant - Math.max(derniereParolePapa, r0.ouverte || 0) < EPISSURE_STOP_MS) return null;   // déjà en réflexion
     r0.ferme = 'silence'; memoriserEpissure(r0);
   }
-  const r = pistes.ribo = nouveauRibosome(tourEpissure());
+  const r = pistes.ribo = ribosomeSuivant();
   r.ouverte = maintenant;
   diffuser(abonnesPensees, 'souffle', j({ niveau: 'blanc', texte: BLANC_OUVERTURE, tour: r.tour }));
   const consigne = `${personaLocale(lirePersona()).slice(0, 700)}\n\nTu es Hakim, le fils d'Ahmed (papa).\n\n`
@@ -10851,7 +10905,7 @@ async function traiter(req, res) {
   if (p === '/api/jarvis/ribosome' && req.method === 'POST') {        // (04/11, 12:50) tout ce qu'il dit passe par son ribosome
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
-    const lu = ribosomeDeReponse(pistes.tour, pistes.ribo || (pistes.ribo = nouveauRibosome(tourEpissure())), String(q.avant || ''));
+    const lu = ribosomeDeReponse(pistes.tour, pistes.ribo || (pistes.ribo = ribosomeSuivant()), String(q.avant || ''));
     lu.pousser(String(q.texte || '').slice(0, 2000)); lu.finir();
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     return res.end(j({ ok: true }));
@@ -11548,17 +11602,18 @@ async function traiter(req, res) {
       const r = lireJson(RIBOSOME_REGLAGE, {}) || {};
       const nombre = (k, min, max) => { const v = Number(q[k]); if (q[k] != null && Number.isFinite(v)) r[k] = Math.max(min, Math.min(max, Math.round(v))); };
       nombre('choix_ms', 0, 6000); nombre('stringence', 1, 5); nombre('plafond_mots', 5, 400); nombre('plafond_paquets', 1, 100);
-      nombre('plafond_silence_s', 5, 600); nombre('lecteur_max', 1, 25); nombre('contexte', 100, 3000);
+      nombre('plafond_silence_s', 5, 600); nombre('lecteur_max', 1, 25); nombre('contexte', 100, 3000); nombre('relais_ribosomes', 1, 8); nombre('relais_pct', 10, 100);
       if (typeof q.vitesse === 'string' && Object.hasOwn(RIBOSOME_VITESSES, q.vitesse)) r.vitesse = q.vitesse;
-      if (q.defaut === true) for (const k of ['choix_ms', 'plafond_mots', 'plafond_paquets', 'plafond_silence_s', 'lecteur_max', 'contexte']) delete r[k];
+      if (q.defaut === true) for (const k of ['choix_ms', 'plafond_mots', 'plafond_paquets', 'plafond_silence_s', 'lecteur_max', 'contexte', 'relais_ribosomes', 'relais_pct']) delete r[k];
       r.ts = Date.now() / 1000; r.par = 'papa (page SENS)';
       try { ecrireAtomique(RIBOSOME_REGLAGE, j(r)); } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'pas écrit' })); }
       auditer('ribosome:reglage', req, distantReq, { cles: Object.keys(q).slice(0, 10) });
     }
-    const g = reglageRibosome(), pl = plafondRibosome(g);
+    const g = reglageRibosome(), pl = plafondRibosome(g), rel = relaisRibosome(g);
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     return res.end(j({ vitesse: g.vitesse, stringence: g.stringence, choix_ms: g.choix_ms != null ? g.choix_ms : RIBOSOME_CHOIX_MS, vitesses: Object.keys(RIBOSOME_VITESSES),
-      plafond_mots: pl.mots, plafond_paquets: pl.paquets, plafond_silence_s: pl.silence_s, lecteur_max: pl.lecteur_max, contexte: pl.contexte }));
+      plafond_mots: pl.mots, plafond_paquets: pl.paquets, plafond_silence_s: pl.silence_s, lecteur_max: pl.lecteur_max, contexte: pl.contexte,
+      relais_ribosomes: rel.ribosomes, relais_pct: rel.pct }));
   }
   if (p.startsWith('/api/corps/')) {                         // (30/10) son corps : ses événements, son milieu, ses réglages
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }

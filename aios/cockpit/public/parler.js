@@ -3419,7 +3419,8 @@ function poserPave(cle, titre, html) {
 // train d'être lu par le ribosome, et ses pensées internes : pensée interne pour ce qu'il décide de ne pas dire, parole épissée pour ce
 // qu'il veut prononcer » ; « les 2 process doivent être parallélisés et émerger en même temps ») ses deux fils, mis à jour ensemble à
 // chaque lecture de son ribosome, sans attendre sa voix : 💭 les mots lus qu'il n'a pas gardés, 🗣 ce qu'il a gardé, morceau après morceau
-const TITRE_EPISSURE = '💭 sa pensée interne · 🗣 sa parole épissée';
+// (04/11, 23:10) ses ribosomes en relais : le cœur de cette épissure (1 à 8), dans son titre
+const TITRE_EPISSURE = '💭 sa pensée interne · 🗣 sa parole épissée', titreEpissure = (p) => (p && p.coeur ? `${TITRE_EPISSURE} · 🧬 ribosome ${p.coeur}` : TITRE_EPISSURE);
 // (04/11, 15:35, Ahmed : « je ne vois pas l'épissure se faire au fur et à mesure ; ça me balance juste le bloc ») chaque pensée qui arrive se
 // colle tout de suite au bout de sa parole, en attente (pâle) ; son ribosome la trie ensuite : gardée dans 🗣, laissée dans 💭
 const attenteDe = (p) => [...p.textes.join(' ').matchAll(MOTS_EPISSES)].map(m => m[0]).slice(Number(p.lus) || 0).join(' ');
@@ -3439,12 +3440,12 @@ function paveDe(tour) {
 function surBlanc(o) {
   const p = paveDe(o.tour);
   if (o.texte !== '…') p.blanc = String(o.texte).slice(0, 120);
-  poserPave(p.cle, TITRE_EPISSURE, htmlEpissure(p));
+  poserPave(p.cle, titreEpissure(p), htmlEpissure(p));
 }
 function ajouterAuPave(tour, texte) {
   const p = paveDe(tour);
   p.textes.push(String(texte));
-  poserPave(p.cle, TITRE_EPISSURE, htmlEpissure(p));
+  poserPave(p.cle, titreEpissure(p), htmlEpissure(p));
 }
 // (04/11, 12:40, Ahmed : « le ribosome qui lit l'épissage balance le signal en parallèle à la voix et à l'écriture : ça doit s'écrire
 // pendant que ça parle ») ce qu'il choisit attend sa voix : rien ne s'allume ni ne s'écrit avant qu'elle le dise (revelerRibosome)
@@ -3452,6 +3453,7 @@ function surRibosome(o) {
   const p = paveDe(o.tour);
   if (String(o.pave || '').length > p.textes.join(' ').length) p.textes = [String(o.pave)];   // le cockpit fait foi
   etat.epissureTour = Math.max(Number(etat.epissureTour) || 0, Number(o.tour) || 0);
+  if (o.coeur) p.coeur = Number(o.coeur) || p.coeur;
   if (o.texte || (Array.isArray(o.mots) && o.mots.length)) etat.epissureActiveA = Date.now();
   if (o.texte && etat.riboStop != null && Number(o.tour) <= etat.riboStop) o = { ...o, texte: '' };   // (15:10) son épissure arrêtée : plus un mot
   // (15:30) ses deux fils : ce qu'il a lu sans le garder (sa pensée interne), et ce qu'il garde, collé à la fin (sa parole épissée)
@@ -3469,7 +3471,7 @@ function surRibosome(o) {
     p.motsLus = mots.slice();
     if (typeof journalVoix === 'function') journalVoix('ribosome_recu', { tour: o.tour, k: o.k, mots: String(o.texte).split(/\s+/).filter(Boolean).length });   // (14:20) de quoi suivre chaque morceau épissé
   }
-  poserPave(p.cle, TITRE_EPISSURE, htmlEpissure(p));
+  poserPave(p.cle, titreEpissure(p), htmlEpissure(p));
   direRibosome();
   preparerRibosome();
 }
@@ -3543,7 +3545,7 @@ function direRibosome() {
     if (!vieux.mots.length) continue;
     const pv = paveDe(vieux.tour);
     pv.mots = (pv.mots || []).concat(vieux.mots.splice(0));
-    poserPave(pv.cle, TITRE_EPISSURE, htmlEpissure(pv));
+    poserPave(pv.cle, titreEpissure(pv), htmlEpissure(pv));
   }
   const v = { tour, mots: lot.flatMap(x => x.mots || []), ajoutes: lot.flatMap(x => x.ajoutes || []), dit: null };
   etat.riboEnVoix = [v];
@@ -3629,7 +3631,7 @@ function revelerRibosome(t, duree) {
     if (a >= 0) { v.ajoutes.splice(a, 1); v.dit.ajoutes.push(m[0]); }
     else if (v.mots.length) p.mots = (p.mots || []).concat([v.mots.shift()]);
     v.dit.texte = `${base} ${texte.slice(0, m.index + m[0].length)}`.trim();
-    poserPave(p.cle, TITRE_EPISSURE, htmlEpissure(p));
+    poserPave(p.cle, titreEpissure(p), htmlEpissure(p));
     if (!v.mots.length && !v.ajoutes.length) etat.riboEnVoix = (etat.riboEnVoix || []).filter(x => x !== v);
   }, k * pas));
 }
