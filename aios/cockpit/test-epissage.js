@@ -391,7 +391,7 @@ test('ses lecteurs (19:20 : deux Super Hakim) lisent chaque pensée en même tem
   await attendre(); await attendre();
   const l = lecteurs(b);
   assert.deepStrictEqual(l.map(a => a.etiquette), ['ribosome_opus', 'ribosome_opus']);
-  assert.ok(l[0].delai === l[1].delai && l[0].delai >= 1200 && l[0].delai <= 2600, `(15:55) rapide par défaut, (16:50) ajusté par son subconscient : ${l[0].delai} ms`);
+  assert.ok(l[0].delai === l[1].delai && l[0].delai >= 600 && l[0].delai <= 1300, `(15:55) rapide par défaut, (16:50) ajusté par son subconscient, (21:34) deux fois plus vite : ${l[0].delai} ms`);
   assert.ok(l.every(a => a.prompt === l[0].prompt), 'la même pensée, la même consigne');
   l[1].resoudre({ texte: 'GARDE : « Oui papa »' });
   await attendre(); await attendre();

@@ -3441,6 +3441,9 @@ const RIBOSOME_VITESSES = { rapide: 2000, normale: 3000, posee: 6000 };
 // n'ajoutent plus que 2 points : sa saturation (en deçà, ses lecteurs n'ont pas le temps et le paquet passe tel quel, sans tri). Sa vitesse
 // max est ce coude, remesuré toutes les 10 min sur ses 500 derniers paquets ; aucune de ses vitesses ne va plus vite
 const RIBOSOME_VITESSE_MAX_DEFAUT = 2000;
+// (04/11, 21:34, Ahmed : « on prend le risque : on augmente la vitesse du ribosome de 2 fois pour commencer ») toutes ses attentes divisées par 2,
+// sa vitesse max comprise (mesuré : en 1 s, ses deux Super Hakim lisent 59 % des paquets ; les autres passent tels quels)
+const RIBOSOME_ACCELERATION = 2;
 // (04/11, 20:55, Ahmed : « tu peux encore augmenter, ou on est au max ? ») mesuré sur les 34 premiers paquets de ses deux Super Hakim : lus en
 // 1,2 s : 82 % ; 1,6 s : 94 % ; 2 s : 100 % (avant : 87 % en 2 s) ; sa vitesse max se mesure sur ses lecteurs d'AUJOURD'HUI (30 paquets
 // suffisent ; sinon, tout le journal), et le coude doit garder au moins 85 % de ce qu'ils peuvent lire
@@ -3464,7 +3467,7 @@ function vitesseMaxMesuree(lignes, modeles = null) {
   if (plafond === 0) return 3000;                                     // rien n'est lu : il attend le plus longtemps permis
   for (let x = 1000; x <= 2800; x += 100) {
     const a = part(x), b = part(x + 200);
-    if (a != null && b != null && a >= plafond * 0.85 && b - a < 0.03) return x;
+    if (a != null && b != null && a >= plafond * 0.8 && b - a < 0.03) return x;   // (21:32, Ahmed : « faut augmenter la vitesse du ribosome ») 80 %
   }
   return RIBOSOME_VITESSE_MAX_DEFAUT;
 }
@@ -3474,7 +3477,7 @@ function vitesseMax() {
     vitesseMaxLue.t = Date.now();
     try { vitesseMaxLue.ms = vitesseMaxMesuree(fs.readFileSync(JOURNAL_PISTES, 'utf8').split('\n'), RIBOSOME_LECTEURS.map(([m]) => m)); } catch (_) {}
   }
-  return vitesseMaxLue.ms;
+  return Math.round(vitesseMaxLue.ms / RIBOSOME_ACCELERATION);
 }
 let ribosomeAuMax = null;
 const RIBOSOME_STRINGENCES = {
@@ -3491,7 +3494,7 @@ function vitesseSubconsciente(base, r) {
   const vmax = vitesseMax();                                           // (18:05) son plafond, mesuré : voir RIBOSOME_VITESSE_MAX_DEFAUT
   if (typeof ribosomeAuMax !== 'undefined' && ribosomeAuMax) { ribosomeAuMax = null; return vmax; }   // (17:58) le paquet suivant, au plus vite
   const e = (typeof lui !== 'undefined' && lui && lui.interieur) || {}, a = Number.isFinite(e.arousal) ? e.arousal : 0.4;
-  let d = Number(base) || 3000;
+  let d = (Number(base) || 3000) / (typeof RIBOSOME_ACCELERATION !== 'undefined' ? RIBOSOME_ACCELERATION : 1);   // (21:34) × 2
   d *= 1.3 - 0.6 * Math.max(0, Math.min(1, a));                       // éveil 0 : ×1,3 ; éveil 1 : ×0,7
   const attente = (r && r.attente ? r.attente.length : 0);
   if (attente >= 3) d *= 0.7; else if (attente >= 1) d *= 0.85;
