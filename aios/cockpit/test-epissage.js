@@ -119,7 +119,7 @@ function pageRibosome() {
   vm.createContext(ctx);
   const prendre = (nom) => { const i = PAGE.indexOf(`function ${nom}(`); return PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2); };
   const ligne = (debut) => { const i = PAGE.indexOf(debut); return PAGE.slice(i, PAGE.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
-  vm.runInContext(ligne('const MOTS_EPISSES = ') + ['htmlPave', 'htmlDit', 'poserPave', 'paveDe', 'ajouterAuPave', 'surRibosome', 'direRibosome', 'preparerRibosome'].map(prendre).join('\n') + ligne('const htmlEpissure = ')
+  vm.runInContext(ligne('const MOTS_EPISSES = ') + ligne('const TITRE_EPISSURE = ') + ['htmlPave', 'htmlDit', 'poserPave', 'paveDe', 'ajouterAuPave', 'surRibosome', 'direRibosome', 'preparerRibosome'].map(prendre).join('\n') + ligne('const htmlEpissure = ')
     + '\nthis.ajouter = ajouterAuPave; this.lu = surRibosome; this.dire = direRibosome;', ctx);
   return { ctx, dits };
 }
@@ -133,7 +133,7 @@ test('page : une seule réponse par tour ; le ribosome y allume ses mots au fil 
   ctx.lu({ tour: 7, k: 2, texte: 'tu veux parler du calcul ?', pave: 'Oui papa, je suis là. Tu veux me parler du calcul ?', mots: [0, 1, 5, 6, 8, 9, 10] });
   const paves = ctx.etat.aCote.filter(x => String(x.cle).startsWith('pave-'));
   assert.strictEqual(paves.length, 1, 'tous ses chunks dans la même réponse');
-  assert.match(paves[0].html, /Oui papa, je suis là\. Tu veux me parler du calcul \?/, '(12:40) allumés seulement quand sa voix les dit : test suivant');
+  assert.match(paves[0].html, /🗣 « Oui papa tu veux parler du calcul \? »/, '(15:30) sa parole épissée, morceau après morceau, dans le même pavé');
   assert.deepStrictEqual(dits, [], 'pas pendant que papa parle');
   ctx.etat.conversation.capteur.enParole = false;                    // papa se tait
   ctx.dire();
@@ -169,21 +169,31 @@ test('le ribosome dit aussi les petits mots qu’il ajoute', async () => {
   assert.deepStrictEqual([lu.texte, nu(lu.mots), nu(lu.ajoutes)], ['alors oui papa', [0, 1], ['alors']]);
 });
 
-test('page : l’épissure se voit tout le temps, dans le fil et sous l’orbe : ce qu’il garde, ce qu’il laisse, ce qu’il ajoute', () => {
-  const { ctx, tic } = pageSync();
+// (04/11, 15:30, Ahmed : « sa parole complète, je ne dois pas la voir ; seulement son épissure, avec les chunks qui se rajoutent au fur et à
+// mesure à la fin de son bout de phrase en train d'être lu par le ribosome, et ses pensées internes : pensée interne pour ce qu'il décide de
+// ne pas dire, parole épissée pour ce qu'il veut prononcer » ; « les 2 process doivent être parallélisés et émerger en même temps »)
+test('page : ses deux fils, sa pensée interne (ce qu’il ne dit pas) et sa parole épissée (ce qu’il dit), émergent ensemble dès que le ribosome lit', () => {
+  const { ctx } = pageSync();
   const scene = { innerHTML: '', hidden: true };
   ctx.$ = (id) => (id === 'epissureScene' ? scene : null);
+  const pave = () => ctx.etat.aCote.find(x => String(x.cle).startsWith('pave-7-')).html;
   ctx.ajouter(7, 'Oui papa, je suis là.');
-  ctx.lu({ tour: 7, k: 1, texte: 'alors oui papa', pave: 'Oui papa, je suis là.', mots: [0, 1], ajoutes: ['alors'] });
-  ctx.voix('alors oui papa', 0.9); tic();
-  const h = ctx.etat.aCote.find(x => String(x.cle).startsWith('pave-')).html;
-  assert.match(h, /<b class="garde"[^>]*>Oui<\/b>/, 'ce qu’il garde');
-  assert.match(h, /<span class="jete"[^>]*>je<\/span>/, 'ce qu’il laisse');
-  assert.match(h, /🗣 « <b class="ajoute"[^>]*>alors<\/b> oui papa »/, 'ce qu’il ajoute');
+  assert.doesNotMatch(pave(), /je suis là/, 'une pensée pas encore lue : ni dite, ni écartée');
+  ctx.lu({ tour: 7, k: 1, texte: 'alors oui papa', pave: 'Oui papa, je suis là.', mots: [0, 1], ajoutes: ['alors'], lus: 5 });
+  assert.match(pave(), /💭 je suis là/, 'sa pensée interne : ce qu’il ne dit pas');
+  assert.match(pave(), /🗣 « alors oui papa »/, 'sa parole épissée : tout de suite, sans attendre sa voix');
+  ctx.ajouter(7, 'Tu veux le calcul ?');
+  ctx.lu({ tour: 7, k: 2, texte: 'tu veux le calcul', pave: 'Oui papa, je suis là. Tu veux le calcul ?', mots: [0, 1, 5, 6, 7, 8], ajoutes: [], lus: 9 });
+  assert.match(pave(), /🗣 « alors oui papa tu veux le calcul »/, 'le morceau suivant se colle à la fin');
+  assert.match(pave(), /💭 je suis là</);
   assert.strictEqual(scene.hidden, false, 'sous l’orbe aussi');
-  assert.match(scene.innerHTML, /<b class="ajoute"[^>]*>alors<\/b>/);
+  assert.match(scene.innerHTML, /🗣 « alors oui papa tu veux le calcul »/);
   const HTML = fs.readFileSync(path.join(__dirname, 'public', 'parler.html'), 'utf8');
   assert.match(HTML, /id="epissureScene"/);
+});
+
+test('page : avec l’épissage, sa parole complète ne s’écrit pas (ses fichiers, toujours)', () => {
+  assert.match(PAGE, /const parolesVisibles = \(\) => !!etat\.reglages\.sesParoles && !enTelepathie\(\) && !\(typeof voixEpissee === 'function' && voixEpissee\(\)\);/);
 });
 
 // ---- (04/11, 12:05, Ahmed, capture à l'appui : « je ne vois toujours pas l'épissage ; je veux qu'il soit visible comme sur cette photo,
@@ -237,8 +247,8 @@ test('page : un pavé par tour ; la réponse d’un tour fini rejoint son pavé,
   ctx.voix('Oui papa', 0.6); tic();
   const paves = ctx.etat.aCote.filter(x => String(x.cle).startsWith('pave-'));
   assert.strictEqual(paves.length, 2);
-  assert.match(paves.find(x => x.cle.startsWith('pave-8-')).html, /Tu repars déjà \?/, 'le pavé de 8 reste');
-  assert.match(paves.find(x => x.cle.startsWith('pave-7-')).html, /<b class="garde"[^>]*>Oui<\/b>/, 'le pavé de 7 est mis à jour');
+  assert.ok(paves.find(x => x.cle.startsWith('pave-8-')), 'le pavé de 8 reste');
+  assert.match(paves.find(x => x.cle.startsWith('pave-7-')).html, /🗣 « Oui papa »/, 'le pavé de 7 est mis à jour');
 });
 
 test('le ribosome : ses trois lecteurs muets (panne, délai), la pensée entière est gardée, sa voix ne se tait pas', async () => {
@@ -262,29 +272,22 @@ function pageSync() {
   vm.createContext(ctx);
   const prendre = (nom) => { const i = PAGE.indexOf(`function ${nom}(`); return PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2); };
   const ligne = (debut) => { const i = PAGE.indexOf(debut); return PAGE.slice(i, PAGE.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
-  vm.runInContext(ligne('const MOTS_EPISSES = ') + ['htmlPave', 'htmlDit', 'poserPave', 'paveDe', 'ajouterAuPave', 'surRibosome', 'direRibosome', 'revelerRibosome', 'preparerRibosome']
+  vm.runInContext(ligne('const MOTS_EPISSES = ') + ligne('const TITRE_EPISSURE = ') + ['htmlPave', 'htmlDit', 'poserPave', 'paveDe', 'ajouterAuPave', 'surRibosome', 'direRibosome', 'revelerRibosome', 'preparerRibosome']
     .map(prendre).join('\n') + ligne('const htmlEpissure = ') + '\nthis.ajouter = ajouterAuPave; this.lu = surRibosome; this.voix = revelerRibosome;', ctx);
   const tic = () => { minuteurs.sort((a, b) => a[0] - b[0]).splice(0).forEach(([, f]) => f()); };
   return { ctx, dits, minuteurs, tic };
 }
 
-test('ce que le ribosome a choisi ne s’écrit pas avant sa voix : chaque mot s’allume et s’écrit quand sa voix le dit', () => {
+test('sa voix dit ce que le ribosome a choisi, au rythme de ses mots ; ce qui est dit et écrit est suivi jusqu’au bout', () => {
   const { ctx, dits, minuteurs, tic } = pageSync();
-  const pave = () => ctx.etat.aCote.find(x => String(x.cle).startsWith('pave-7-')).html;
   ctx.ajouter(7, 'Oui papa, je suis là.');
-  ctx.lu({ tour: 7, k: 1, texte: 'alors oui papa', pave: 'Oui papa, je suis là.', mots: [0, 1], ajoutes: ['alors'] });
+  ctx.lu({ tour: 7, k: 1, texte: 'alors oui papa', pave: 'Oui papa, je suis là.', mots: [0, 1], ajoutes: ['alors'], lus: 5 });
   assert.deepStrictEqual(dits.map(d => d[0]), ['alors oui papa'], 'envoyé à sa voix');
-  assert.doesNotMatch(pave(), /garde|🗣/, 'rien d’allumé ni d’écrit avant que sa voix commence');
   ctx.voix('alors oui papa', 0.9);                                    // sa voix commence ce segment (0,9 s)
   assert.strictEqual(minuteurs.length, 3, 'un mot à la fois');
   assert.ok(minuteurs.every(([ms], k) => Math.abs(ms - k * 300) < 1), 'au rythme de sa voix (0,9 s / 3 mots)');
-  minuteurs.sort((a, b) => a[0] - b[0]).shift()[1]();                 // le premier mot
-  assert.match(pave(), /🗣 « <b class="ajoute"[^>]*>alors<\/b> »/, 'le premier mot, son petit mot ajouté');
-  assert.doesNotMatch(pave(), /<b class="garde"[^>]*>Oui<\/b>/);
   tic();
-  assert.match(pave(), /<b class="garde"[^>]*>Oui<\/b> <b class="garde"[^>]*>papa<\/b>/, 'ses mots gardés s’allument quand il les dit');
-  assert.match(pave(), /🗣 « <b class="ajoute"[^>]*>alors<\/b> oui papa »/);
-  assert.strictEqual((ctx.etat.riboEnVoix || []).length, 0, 'tout est dit et écrit');
+  assert.strictEqual((ctx.etat.riboEnVoix || []).length, 0, 'tout est dit');
 });
 
 test('sa voix et son écriture reliées : chaque segment qui commence (téléphone ou Chatterbox) écrit ses mots', () => {
@@ -302,7 +305,7 @@ test('prête avant ta fin : sa voix se calcule d’avance pendant qu’il attend
   vm.createContext(ctx);
   const prendre = (nom) => { const i = PAGE.indexOf(`function ${nom}(`); return PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2); };
   const ligne = (debut) => { const i = PAGE.indexOf(debut); return PAGE.slice(i, PAGE.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
-  vm.runInContext(ligne('const MOTS_EPISSES = ') + ['htmlPave', 'htmlDit', 'poserPave', 'paveDe', 'surRibosome', 'direRibosome', 'preparerRibosome']
+  vm.runInContext(ligne('const MOTS_EPISSES = ') + ligne('const TITRE_EPISSURE = ') + ['htmlPave', 'htmlDit', 'poserPave', 'paveDe', 'surRibosome', 'direRibosome', 'preparerRibosome']
     .map(prendre).join('\n') + ligne('const htmlEpissure = ') + '\nthis.lu = surRibosome; this.dire = direRibosome;', ctx);
   ctx.lu({ tour: 7, k: 1, texte: 'Oui papa', pave: 'Oui papa.', mots: [0, 1], ajoutes: [] });
   ctx.lu({ tour: 7, k: 2, texte: 'je t’écoute', pave: 'Oui papa. Je t’écoute.', mots: [0, 1, 2, 3], ajoutes: [] });
@@ -343,35 +346,39 @@ test('versRibosome : le texte part au cockpit (sa non-réponse, jamais)', async 
 
 // (04/11, 13:45, Ahmed : « le ribosome doit prendre un pack de chunks, genre 50 ou 100, qu'il traite et qu'il met l'un derrière l'autre pour
 // faire l'épissure en temps réel, et qu'il parle »)
-test('le ribosome lit par paquets : jusqu’à 3 en même temps ; ce qui arrive ensuite forme un paquet, mis l’un derrière l’autre ; tout sort dans l’ordre', async () => {
+// (04/11, 15:25, Ahmed : « il n'arrive pas à tout rajouter bout à bout pendant que le ribosome lit ; il faut vraiment que le ribosome lise
+// dès l'entrée du premier chunk de réponse de Hakim : c'est ça son start ») une lecture à la fois, qui part dès sa première pensée ; ce qui
+// arrive pendant qu'il lit est collé bout à bout et lu juste après, avec toutes ses pensées déjà lues sous les yeux
+test('le ribosome lit dès sa première pensée ; ce qui arrive pendant sa lecture est collé bout à bout et lu juste après, avec tout ce qui précède', async () => {
   const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
   const ribo = () => b.appels.filter(a => a.etiquette === 'ribosome_haiku');
   const piste = (k) => b.appels.filter(a => a.etiquette.startsWith('piste_'))[k];
-  const dits = ['papa,', 'papa, tu sais quoi,', 'papa, tu sais quoi, le sable,', 'papa, tu sais quoi, le sable, cette nuit,', 'papa, tu sais quoi, le sable, cette nuit, il a fini,'];
-  const pensees = ['Oui papa, je suis là.', 'Tu veux me parler du calcul ?', 'Le sable a fini.', 'Cette nuit, oui.', 'Il a fini tôt.'];
-  for (let k = 0; k < 3; k++) { b.ctx.morceau(dits[k]); piste(k).resoudre({ texte: pensees[k] }); await attendre(); await attendre(); }
-  assert.strictEqual(ribo().length, 3, 'trois pensées, trois paquets lus en même temps');
-  for (let k = 3; k < 5; k++) { b.ctx.morceau(dits[k]); piste(k).resoudre({ texte: pensees[k] }); await attendre(); await attendre(); }
-  assert.strictEqual(ribo().length, 3, 'les trois en vol : les suivantes s’empilent');
-  const lus = () => b.diffuses.filter(x => x.niveau === 'ribosome');
-  lireLes3(b, 1, 'GARDE : « tu veux parler du calcul ? »');
+  b.ctx.morceau('papa,');
+  piste(0).resoudre({ texte: 'Oui papa, je suis là.' });
   await attendre(); await attendre();
-  assert.strictEqual(ribo().length, 4, 'une place libre : les deux qui attendaient, un seul paquet');
-  assert.match(ribo()[3].prompt, /l'une derrière l'autre : \[1\] « Cette nuit, oui\. » \[2\] « Il a fini tôt\. »/);
-  assert.match(ribo()[3].prompt, /au plus 4 petits mots/, 'ses petits mots de liaison : 2 par pensée du paquet');
-  assert.strictEqual(lus().length, 0, 'le deuxième, lu le premier, attend que le premier sorte');
+  assert.strictEqual(ribo().length, 1, 'sa première pensée : lue tout de suite');
+  b.ctx.morceau('papa, tu sais quoi,');
+  piste(1).resoudre({ texte: 'Tu veux me parler du calcul ?' });
+  b.ctx.morceau('papa, tu sais quoi, le sable,');
+  piste(2).resoudre({ texte: 'Le sable a fini.' });
+  await attendre(); await attendre();
+  assert.strictEqual(ribo().length, 1, 'pendant sa lecture, les suivantes se collent');
   lireLes3(b, 0, 'GARDE : « Oui papa »');
   await attendre(); await attendre();
-  assert.deepStrictEqual(lus().map(x => [x.k, x.texte]), [[1, 'Oui papa'], [2, 'tu veux parler du calcul ?']], 'dans l’ordre');
-  lireLes3(b, 3, 'GARDE : « cette nuit il a fini »');
+  assert.strictEqual(ribo().length, 2, 'les deux, collées bout à bout : une seule lecture');
+  assert.match(ribo()[1].prompt, /Tes pensées déjà lues, bout à bout : « Oui papa, je suis là\. »/, 'avec tout ce qui précède');
+  assert.match(ribo()[1].prompt, /l'une derrière l'autre : \[1\] « Tu veux me parler du calcul \? » \[2\] « Le sable a fini\. »/);
+  assert.match(ribo()[1].prompt, /Ta réponse déjà lue : « Oui papa »/);
+  assert.match(ribo()[1].prompt, /au plus 4 petits mots/, 'ses petits mots de liaison : 2 par pensée du paquet');
+  lireLes3(b, 1, 'GARDE : « tu veux parler du calcul ? alors le sable a fini »');
   await attendre(); await attendre();
-  assert.strictEqual(lus().length, 2, 'le quatrième attend le troisième');
-  lireLes3(b, 2, 'GARDE : rien');
-  await attendre(); await attendre();
-  assert.deepStrictEqual(lus().map(x => [x.k, x.texte]), [[1, 'Oui papa'], [2, 'tu veux parler du calcul ?'], [3, ''], [4, 'cette nuit il a fini']]);
-  assert.deepStrictEqual(nu(lus()[3].mots), [0, 1, 5, 6, 8, 9, 10, 15, 16, 18, 19, 20]);
-  assert.strictEqual(lus()[3].pave, pensees.join(' '));
-  assert.match(SRC, /const RIBOSOME_PAQUETS_EN_VOL = 3;/, '3 paquets en vol : 9 lecteurs, le plus que son pool de voix vivantes tient sans affamer ses pistes');
+  const lus = b.diffuses.filter(x => x.niveau === 'ribosome');
+  assert.deepStrictEqual(lus.map(x => [x.k, x.texte]), [[1, 'Oui papa'], [2, 'tu veux parler du calcul ? alors le sable a fini']]);
+  assert.deepStrictEqual(nu(lus[1].mots), [0, 1, 5, 6, 8, 9, 10, 11, 12, 13, 14]);
+  assert.deepStrictEqual(nu(lus[1].ajoutes), ['alors']);
+  assert.strictEqual(lus[1].pave, 'Oui papa, je suis là. Tu veux me parler du calcul ? Le sable a fini.');
+  assert.deepStrictEqual(lus.map(x => x.lus), [5, 15], '(15:30) combien de mots de ses pensées sont déjà lus : le reste n’est pas encore décidé');
+  assert.match(SRC, /const RIBOSOME_PAQUETS_EN_VOL = 1;/);
   // (04/11, 14:58, Ahmed : « le nombre de chunks à épisser doit être bien plus important, un truc comme 1000 chunks »)
   // (14:59, Ahmed : « si ça peut aller au-delà de 1000 chunks, alors on le fait ») plus de plafond : tout ce qui attend
   assert.match(SRC, /const RIBOSOME_PAQUET_MAX = Infinity;/);
@@ -440,11 +447,11 @@ test('page : sa voix libre, ce qui restait à allumer d’avant s’allume d’u
   ctx.lu({ tour: 8, k: 1, texte: 'Tu repars', pave: 'Tu repars déjà ?', mots: [0, 1], ajoutes: [] });
   assert.deepStrictEqual(dits.map(d => d[1]), [7, 8]);
   const p7 = ctx.etat.aCote.find(x => String(x.cle).startsWith('pave-7-')).html;
-  assert.match(p7, /<b class="garde"[^>]*>là<\/b>/, 'le reste du tour 7, allumé');
+  assert.match(p7, /🗣 « Oui papa je suis là »/, 'le tour 7, écrit');
+  assert.strictEqual(ctx.etat.riboEnVoix.length, 1, 'ce qui restait du tour 7 est rangé : le tour 8 a sa voix');
   ctx.voix('Tu repars', 0.4); tic();
   const p8 = ctx.etat.aCote.find(x => String(x.cle).startsWith('pave-8-')).html;
-  assert.match(p8, /🧬 sa réponse/);
-  assert.match(p8, /<b class="garde"[^>]*>repars<\/b>/, 'le tour 8 s’écrit dans son pavé');
+  assert.match(p8, /🗣 « Tu repars »/, 'le tour 8 s’écrit dans son pavé');
 });
 
 // ---- (04/11, 13:58, Ahmed, capture : trois « coupé » de suite et sa réponse retardée — « coupure interdite : comme le codon start et stop,
@@ -479,23 +486,21 @@ test('un gros paquet : une longue lecture n’est pas prise pour une pensée par
   const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
   const r = b.ctx.nouveau();
   const flux = b.ctx.reponse(5, r, 'papa : dis-moi');
-  flux.pousser('Oui papa. Je suis là. Je t’écoute. ');                   // trois paquets en vol
+  flux.pousser('Oui papa. ');                                          // sa première lecture
   await attendre(); await attendre();
   const phrases = ['Le calcul du sable a fini cette nuit, enfin.', 'La densité colle au modèle, presque partout.',
     'Il reste un écart au bord, près du mur.', 'Je te montre la courbe demain matin, promis.'];
   flux.pousser(phrases.join(' ') + ' ');
   flux.finir();
   await attendre(); await attendre();
-  lireLes3(b, 0, 'GARDE : « Oui papa »');                              // une place : les quatre, un seul paquet
-  await attendre(); await attendre();
-  lireLes3(b, 1, 'GARDE : rien'); lireLes3(b, 2, 'GARDE : rien');
+  lireLes3(b, 0, 'GARDE : « Oui papa »');                              // les quatre, collées : un seul paquet
   await attendre(); await attendre();
   const long = phrases.join(' ').replace(/[.,]/g, '');
   assert.ok(long.length > 160);
-  lireLes3(b, 3, `GARDE : « ${long} »`);
+  lireLes3(b, 1, `GARDE : « ${long} »`);
   await attendre(); await attendre();
   const lus = b.diffuses.filter(x => x.niveau === 'ribosome');
-  assert.strictEqual(lus[3].texte, long, 'lue, pas en panne');
+  assert.strictEqual(lus[1].texte, long, 'lue, pas en panne');
 });
 
 // (04/11, 14:20, Ahmed, capture : « la pensée part seule en mode conversation, alors que je devrais voir la pensée épissée pour parler »)

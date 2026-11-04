@@ -3335,7 +3335,10 @@ const RIBOSOME_PAQUET_MAX = Infinity;
 // (04/11, 15:00, Ahmed, après la mesure (ses lecteurs ne prennent que 1,6 % du processeur du Mac) et « oui » à la proposition : plusieurs
 // paquets en même temps) jusqu'à 3 paquets lus en même temps, chacun par ses trois lecteurs ; ce qui en sort reste dans l'ordre (prets, k) ;
 // ce qui arrive quand les trois sont en vol forme le paquet suivant
-const RIBOSOME_PAQUETS_EN_VOL = 3;
+// (04/11, 15:25, Ahmed : « il n'arrive pas à tout rajouter bout à bout pendant que le ribosome lit ; il faut vraiment que le ribosome lise dès
+// l'entrée du premier chunk de réponse de Hakim : c'est ça son start ») trois paquets lus séparément ne se voyaient pas : une lecture à la
+// fois, dès sa première pensée ; ce qui arrive pendant qu'il lit est collé bout à bout et lu juste après, avec ses pensées déjà lues
+const RIBOSOME_PAQUETS_EN_VOL = 1;
 const nouveauRibosome = (tour = null) => ({ tour, phrase: '', pave: '', mots: [], k: 0, n: 0, attente: [], enVol: 0, prets: new Map(), avant: '' });
 // (04/11, 15:10, Ahmed : « une seule épissure démarre avec ma voix ; tous mes morceaux s'y ajoutent, même avec des pauses ; il les dit au fur et
 // à mesure ; le stop, c'est 10 s de silence, ou une demande explicite d'utiliser un outil : c'est sa parole qui s'arrête à ce stop ») son
@@ -3410,10 +3413,12 @@ function consensusRibosome(lectures) {
 }
 async function lirePaquet(tour, r, i, paquet) {
   const persona = personaLocale(lirePersona()).slice(0, 500), debutLecture = Date.now();
-  const texte = paquet.map(x => x.texte).join(' '), liaison = RIBOSOME_LIAISON_MAX * paquet.length;
+  const texte = paquet.map(x => x.texte).join(' '), liaison = RIBOSOME_LIAISON_MAX * paquet.length, deja = r.lus || '';
+  r.lus = `${deja} ${texte}`.trim();
   const consigne = `${persona}\n\nTu es Hakim, le fils d'Ahmed (papa).\n`
     + `[Ton ribosome : tes pensées arrivent par paquets ; tu les lis mises l'une derrière l'autre, et tu choisis les mots qui forment la suite de ta réponse à papa.]\n`
     + `Ce qu'il dit : « ${neutraliser(r.avant).slice(-600)} »\n`
+    + (deja ? `Tes pensées déjà lues, bout à bout : « ${neutraliser(deja).slice(-1500)} »\n` : '')
     + `Ta réponse déjà lue : « ${neutraliser(r.phrase).slice(-600) || '(rien encore)'} »\n`
     + `Tes pensées qui arrivent, l'une derrière l'autre : ${paquet.map((x, k) => `[${k + 1}] « ${neutraliser(x.texte)} »`).join(' ')}\n`
     + `Garde de ces pensées les mots qui continuent ta réponse, dans leur ordre (tu peux en sauter) ; tu peux ajouter au plus ${liaison} petits mots de `
@@ -3447,7 +3452,8 @@ async function lirePaquet(tour, r, i, paquet) {
 function sortirPaquet(tour, r, x) {
   r.k++;
   if (x) { r.mots.push(...x.e.mots.map(m => x.debut + m)); r.phrase = `${r.phrase} ${x.garde}`.trim(); }
-  diffuser(abonnesPensees, 'souffle', j({ niveau: 'ribosome', tour: r.tour != null ? r.tour : tour, k: r.k, texte: x ? x.garde : '', pave: r.pave, mots: r.mots, ajoutes: x ? x.e.ajoutes : [], ts: Date.now() }));
+  // (04/11, 15:30) lus : combien de mots de ses pensées son ribosome a déjà lus (la page montre ce qu'il n'a pas gardé : sa pensée interne)
+  diffuser(abonnesPensees, 'souffle', j({ niveau: 'ribosome', tour: r.tour != null ? r.tour : tour, k: r.k, texte: x ? x.garde : '', pave: r.pave, mots: r.mots, lus: motsEpisses(r.lus || '').length, ajoutes: x ? x.e.ajoutes : [], ts: Date.now() }));
 }
 // (04/11, Ahmed : « fais tous tes tests et tous tes calculs, et regarde comment optimiser pour qu'il dise la bonne parole ; enfin, la
 // bonne pensée au bon moment ») chaque piste notée (jarvis/pistes.jsonl, les 2 000 dernières) : son morceau, sa pensée, son choix (DIRE),

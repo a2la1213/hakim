@@ -1130,7 +1130,9 @@ const motsPapaCaches = () => !!etat.conversation && !motsEnConversation();
 // (04/11, 10:20, Ahmed : « je ne vois plus quand il m'envoie des documents ; qu'il soit aussi possible de réafficher ses paroles dans le
 // mode normal et le mode Conversation ») « Ses paroles » : d'un geste (gardé), ses réponses cachées se réaffichent, dans les deux modes ;
 // Télépathie reste sans texte. Ses fichiers se montrent toujours, même quand sa réponse est cachée (sans son texte).
-const parolesVisibles = () => !!etat.reglages.sesParoles && !enTelepathie();
+// (04/11, 15:30, Ahmed : « sa parole complète, je ne dois pas la voir ») avec l'épissage, seulement ses deux fils (sa pensée interne, sa
+// parole épissée) ; ses fichiers se montrent toujours
+const parolesVisibles = () => !!etat.reglages.sesParoles && !enTelepathie() && !(typeof voixEpissee === 'function' && voixEpissee());
 const reponseCachee = () => !!etat.conversation && !parolesVisibles();
 // (04/11, 12:05) en Conversation avec l'épissage (Sens, oui par défaut), sa voix suit son ribosome, pas sa réponse en entier
 const voixEpissee = () => !!etat.conversation && typeof reglagesCorps !== 'undefined' && !!reglagesCorps && reglagesCorps.epissage !== false;
@@ -3374,8 +3376,12 @@ function poserPave(cle, titre, html) {
 // (04/11, 11:50, Ahmed : « tous les chunks s'intègrent dans la même réponse, sélectionnée comme un ribosome qui lit et choisit les mots au
 // fur et à mesure ») un seul pavé par tour : ses pensées s'y ajoutent, son ribosome y allume au fil les mots qu'il garde ; sa voix dit
 // ce qu'il a choisi, d'un seul souffle, dès que papa se tait (et la suite, à la fin de chaque phrase)
-const htmlEpissure = (p) => htmlPave(p.textes.join(' '), p.mots) + (p.dits.length ? `<div class="dit" style="font-style:normal;margin-top:4px">🗣 « ${htmlDit(p.dits)} »</div>` : '')
-  + (p.coupure ? `<div class="coupure" style="font-style:normal;margin-top:2px">${p.coupure === 'continue' ? '✋ coupé : il finit ce qu’il disait' : '✋ coupé : il te laisse la parole'}</div>` : '');
+// (04/11, 15:30, Ahmed : « seulement son épissure, avec les chunks qui se rajoutent au fur et à mesure à la fin de son bout de phrase en
+// train d'être lu par le ribosome, et ses pensées internes : pensée interne pour ce qu'il décide de ne pas dire, parole épissée pour ce
+// qu'il veut prononcer » ; « les 2 process doivent être parallélisés et émerger en même temps ») ses deux fils, mis à jour ensemble à
+// chaque lecture de son ribosome, sans attendre sa voix : 💭 les mots lus qu'il n'a pas gardés, 🗣 ce qu'il a gardé, morceau après morceau
+const TITRE_EPISSURE = '💭 sa pensée interne · 🗣 sa parole épissée';
+const htmlEpissure = (p) => `<div class="interne" style="opacity:.6">💭 ${esc(p.interne || '…')}</div>` + `<div class="dit" style="font-style:normal;margin-top:4px">🗣 « ${esc(p.episse || '…')} »</div>` + (p.coupure ? `<div class="coupure" style="font-style:normal;margin-top:2px">${p.coupure === 'continue' ? '✋ coupé : il finit ce qu’il disait' : '✋ coupé : il te laisse la parole'}</div>` : '');
 // (04/11, 12:05) un pavé par tour : la réponse d'un tour fini rejoint le sien, même quand papa a déjà repris (les 8 derniers gardés)
 function paveDe(tour) {
   etat.paves = etat.paves || {};
@@ -3389,7 +3395,7 @@ function paveDe(tour) {
 function ajouterAuPave(tour, texte) {
   const p = paveDe(tour);
   p.textes.push(String(texte));
-  poserPave(p.cle, p.mots ? '🧬 sa réponse, épissée au fil' : '🧠 sa pensée', htmlEpissure(p));
+  poserPave(p.cle, TITRE_EPISSURE, htmlEpissure(p));
 }
 // (04/11, 12:40, Ahmed : « le ribosome qui lit l'épissage balance le signal en parallèle à la voix et à l'écriture : ça doit s'écrire
 // pendant que ça parle ») ce qu'il choisit attend sa voix : rien ne s'allume ni ne s'écrit avant qu'elle le dise (revelerRibosome)
@@ -3398,6 +3404,12 @@ function surRibosome(o) {
   if (String(o.pave || '').length > p.textes.join(' ').length) p.textes = [String(o.pave)];   // le cockpit fait foi
   etat.epissureTour = Math.max(Number(etat.epissureTour) || 0, Number(o.tour) || 0);
   if (o.texte && etat.riboStop != null && Number(o.tour) <= etat.riboStop) o = { ...o, texte: '' };   // (15:10) son épissure arrêtée : plus un mot
+  // (15:30) ses deux fils : ce qu'il a lu sans le garder (sa pensée interne), et ce qu'il garde, collé à la fin (sa parole épissée)
+  if (o.pave != null && Number(o.lus) >= 0) {
+    const g = new Set(Array.isArray(o.mots) ? o.mots : []);
+    p.interne = [...String(o.pave).matchAll(MOTS_EPISSES)].map(m => m[0]).slice(0, Number(o.lus) || 0).filter((_, k) => !g.has(k)).join(' ');
+  }
+  if (o.texte && Number(o.k) > (p.kEpisse || 0)) { p.episse = `${p.episse || ''} ${o.texte}`.trim(); p.kEpisse = Number(o.k); }
   if (o.texte) {
     const vus = new Set(p.motsLus || []), mots = Array.isArray(o.mots) ? o.mots : [];
     etat.riboFile = (etat.riboFile || []).concat([{ tour: o.tour, texte: String(o.texte), recu: Date.now(), mots: mots.filter(i => !vus.has(i)),
@@ -3405,7 +3417,7 @@ function surRibosome(o) {
     p.motsLus = mots.slice();
     if (typeof journalVoix === 'function') journalVoix('ribosome_recu', { tour: o.tour, k: o.k, mots: String(o.texte).split(/\s+/).filter(Boolean).length });   // (14:20) de quoi suivre chaque morceau épissé
   }
-  poserPave(p.cle, p.mots ? '🧬 sa réponse, épissée au fil' : '🧠 sa pensée', htmlEpissure(p));
+  poserPave(p.cle, TITRE_EPISSURE, htmlEpissure(p));
   direRibosome();
   preparerRibosome();
 }
@@ -3475,7 +3487,7 @@ function direRibosome() {
     if (!vieux.mots.length) continue;
     const pv = paveDe(vieux.tour);
     pv.mots = (pv.mots || []).concat(vieux.mots.splice(0));
-    poserPave(pv.cle, '🧬 sa réponse, épissée au fil', htmlEpissure(pv));
+    poserPave(pv.cle, TITRE_EPISSURE, htmlEpissure(pv));
   }
   const v = { tour, mots: lot.flatMap(x => x.mots || []), ajoutes: lot.flatMap(x => x.ajoutes || []), dit: null };
   etat.riboEnVoix = [v];
@@ -3499,7 +3511,7 @@ function revelerRibosome(t, duree) {
     if (a >= 0) { v.ajoutes.splice(a, 1); v.dit.ajoutes.push(m[0]); }
     else if (v.mots.length) p.mots = (p.mots || []).concat([v.mots.shift()]);
     v.dit.texte = `${base} ${texte.slice(0, m.index + m[0].length)}`.trim();
-    poserPave(p.cle, '🧬 sa réponse, épissée au fil', htmlEpissure(p));
+    poserPave(p.cle, TITRE_EPISSURE, htmlEpissure(p));
     if (!v.mots.length && !v.ajoutes.length) etat.riboEnVoix = (etat.riboEnVoix || []).filter(x => x !== v);
   }, k * pas));
 }
