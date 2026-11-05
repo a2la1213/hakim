@@ -356,3 +356,12 @@ test('ses gestes : seulement les boutons permis, et récents', () => {
   assert.deepStrictEqual(d, ['pause']);
   assert.ok(!fs.existsSync(f));
 });
+
+test('le tunnel : la dernière toujours, au plus 2 autres, dans son ordre ; réponse vide : la dernière seule', () => {
+  const ctx = {}; vm.createContext(ctx);
+  vm.runInContext(prendre(SRC, 'ordreTunnel') + 'this.o = ordreTunnel;', ctx);
+  assert.deepStrictEqual([...ctx.o('ORDRE : 7 5 3', 9)], [7, 5, 9]);
+  assert.deepStrictEqual([...ctx.o('rien', 9)], [9]);
+  assert.deepStrictEqual([...ctx.o(null, 4)], [4]);
+  assert.deepStrictEqual([...ctx.o('4 2 2', 4)], [2, 4], 'ni la dernière deux fois, ni un doublon');
+});

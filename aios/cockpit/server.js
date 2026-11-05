@@ -3459,6 +3459,7 @@ function libererRibosome(r) {
   if (!r || r.libere || !aToutSorti(r)) return;
   r.libere = true; r.precedent = null;
   if (r.relaye) memoriserEpissure(r);
+  if (r.tunnel && r.tunnel.length && typeof viderTunnel === 'function') { clearTimeout(r.tunnelT); viderTunnel(r); }
   const s = r.suivant;
   if (s && s.precedent === r) { s.herite = String(r.phrase || '').slice(-300); s.precedent = null; sortirDansLOrdre(s.tour, s); }
 }
@@ -3485,7 +3486,8 @@ function memoriserEpissure(r) {
   const dit = String(r.phrase || '').trim();
   if (!dit && !r.lus) return;
   r.memorisee = true;
-  const garde = new Set(r.mots || []), interne = motsEpisses(r.lus || '').filter((_, k) => !garde.has(k)).join(' ');
+  // (05/11, Ahmed : « ce qui est pensée s'écrit en cache et s'oublie ; seules les paroles épissées restent en mémoire ») avec le tunnel, sa pensée non dite n'est plus gardée
+  const garde = new Set(r.mots || []), interne = typeof corpsReglages === 'function' && corpsReglages().tunnel ? '' : motsEpisses(r.lus || '').filter((_, k) => !garde.has(k)).join(' ');
   deposerEchange({ ahmed: (r.papa || []).join(' … ').slice(-4000), hakim: `${dit || '(rien de dit)'}${interne ? ` [sa pensée interne, non dite : ${interne}]` : ''}`,
     vecu: r.vecu || undefined, oral: true, epissure: true });
 }
@@ -3812,9 +3814,38 @@ function sortirPaquet(tour, r, x) {
   // (04/11, 18:50) son épissure du téléphone : la sienne, dite à la pause du son (entenduSorti), jamais par la route de papa
   if (r.source && typeof entenduSorti === 'function') return entenduSorti(r, x);
   // (04/11, 15:30) lus : combien de mots de ses pensées son ribosome a déjà lus (la page montre ce qu'il n'a pas gardé : sa pensée interne)
-  diffuser(abonnesPensees, 'souffle', j({ niveau: 'ribosome', tour: r.tour != null ? r.tour : tour, k: r.k, texte: x ? x.garde : '', pave: r.pave, mots: r.mots, lus: motsEpisses(r.lus || '').length, ajoutes: x ? x.e.ajoutes : [], ...(r.coeur ? { coeur: r.coeur } : {}), ts: Date.now() }));
+  // (05/11, Ahmed : « parole 1 toujours dite dès la pensée ; ensuite il trie, choisit l'ordre, et la dernière est toujours dite ; pas de longue file ») le tunnel : la
+  // première part, les suivantes attendent ici ; quand le ribosome n'a plus rien à lire, 1,5 s après, viderTunnel choisit
+  const tunnel = x && x.garde && !(r.k === 1 && !r.relais) && typeof corpsReglages === 'function' && corpsReglages().tunnel;
+  if (tunnel) {
+    (r.tunnel = r.tunnel || []).push({ texte: x.garde, ajoutes: x.e.ajoutes });
+    clearTimeout(r.tunnelT);
+    r.tunnelT = setTimeout(() => { if (r.enVol || r.attente.length) return; viderTunnel(r); }, 1500);
+    if (r.tunnelT && r.tunnelT.unref) r.tunnelT.unref();
+  }
+  diffuser(abonnesPensees, 'souffle', j({ niveau: 'ribosome', tour: r.tour != null ? r.tour : tour, k: r.k, texte: x && !tunnel ? x.garde : '', pave: r.pave, mots: r.mots, lus: motsEpisses(r.lus || '').length, ajoutes: x ? x.e.ajoutes : [], ...(r.coeur ? { coeur: r.coeur } : {}), ts: Date.now() }));
   // (05/11) le relais n'attend plus sa pensée suivante : dès le seuil, le cœur suivant s'ouvre, avec son blanc
   if (x && pistes.ribo === r && ribosomeAuRelais(r)) relayer();
+}
+// le tri du tunnel : la dernière toujours ; parmi les autres, Mini Hakim garde au plus 2 paroles et décide de l'ordre (1,5 s au plus, sinon la dernière seule)
+function ordreTunnel(reponse, n) {
+  const v = [...new Set((String(reponse || '').match(/\d+/g) || []).map(Number).filter(k => k >= 1 && k < n))].slice(0, 2);
+  return v.concat([n]);
+}
+async function viderTunnel(r) {
+  const l = r.tunnel || [];
+  if (!l.length) return;
+  r.tunnel = [];
+  let ordre = l.map((_, k) => k + 1);
+  if (l.length > 2) {
+    const o = await sonnetTeteDeFond(`Tu es Hakim. Papa disait : « ${neutraliser(r.avant).slice(-300)} ».\nTu as déjà commencé : « ${neutraliser(r.phrase).slice(0, 200)} ».\nTes paroles possibles :\n${l.map((x, k) => `${k + 1}. ${neutraliser(x.texte).slice(0, 200)}`).join('\n')}\n`
+      + `La ${l.length} sera dite en dernier. Parmi les autres, garde au plus 2 numéros, les plus opportunes, dans l'ordre où tu les dirais ; aucune si rien n'apporte. Réponds seulement : ORDRE : numéros.`, 'ribosome_tri', modelePiste(), 1500).catch(() => null);
+    ordre = ordreTunnel(o && o.texte, l.length);
+  }
+  for (const k of ordre) {
+    r.nTunnel = (r.nTunnel || 0) + 1;
+    diffuser(abonnesPensees, 'souffle', j({ niveau: 'ribosome', tour: r.tour, k: r.k + r.nTunnel / 1000, texte: l[k - 1].texte, pave: r.pave, mots: r.mots, lus: motsEpisses(r.lus || '').length, ajoutes: l[k - 1].ajoutes || [], ...(r.coeur ? { coeur: r.coeur } : {}), ts: Date.now() }));
+  }
 }
 // le cœur suivant prend ses nouvelles pensées ; il s'ouvre en réflexion (son blanc)
 function relayer() {
@@ -6972,6 +7003,7 @@ function corpsReglages() {
     profils_auto: r.profils_auto !== false,   // (05/11) ses réglages suivent son mode (Mini Hakim, Hakim, Super Hakim)
     ribosome_intelligent: r.ribosome_intelligent !== false,
     papa_passe_avant: r.papa_passe_avant !== false,   // (05/11) ce que papa règle passe avant Hakim pendant 30 min
+    tunnel: r.tunnel === true,
     parole_libre: r.parole_libre === true,   // (05/11, Ahmed : « on lève toutes tes contraintes de parole ») plus de plafond ; stop, parasites et sécurité restent
     pensee_en_boucle: r.pensee_en_boucle !== false,
     boucle_ribosomes: r.boucle_ribosomes !== false };   // (05/11) un ribosome toujours prêt, sauf s'il dort ou si papa coupe   // (05/11) il règle lui-même son ribosome (ribosome_regler, ribosome_bilan)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
@@ -12026,6 +12058,7 @@ async function traiter(req, res) {
       if (q.sauter_suite_ms != null && Number.isFinite(Number(q.sauter_suite_ms))) r.sauter_suite_ms = Math.max(300, Math.min(5000, Math.round(Number(q.sauter_suite_ms))));
       if (typeof q.sauter_passe === 'boolean') r.sauter_passe = q.sauter_passe;   // (05/11) sauter les morceaux passés
       if (typeof q.papa_passe_avant === 'boolean') r.papa_passe_avant = q.papa_passe_avant;
+      if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;
