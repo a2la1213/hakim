@@ -9132,7 +9132,7 @@ async function voixAzure(texte, tempo) {
   if (!cle || !/^[a-z0-9]+$/.test(c.region || '')) return null;
   const voix = /^[a-zA-Z]{2}-[a-zA-Z]{2}-[A-Za-z]+Neural$/.test(c.voix || '') ? c.voix : 'fr-FR-RemyMultilingualNeural';
   const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const vitesse = tempo ? `${Math.round((tempo - 1) * 100)}%` : '0%';
+  const vitesse = '0%';   // (05/11, Ahmed : « le timbre au ralenti ») son rythme d'humeur la ralentissait : Azure parle à sa vitesse
   const t0 = Date.now(), ctl = new AbortController(), m = setTimeout(() => ctl.abort(), 8000);
   try {
     const r = await fetch(`https://${c.region}.tts.speech.microsoft.com/cognitiveservices/v1`, { method: 'POST', signal: ctl.signal,
