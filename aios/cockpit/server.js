@@ -7016,7 +7016,7 @@ function corpsReglages() {
     economie: r.economie === true,   // (05/11) mode économie : ni pensées en boucle, ni lecteurs, ni tri du tunnel
     fenetre_partagee: r.fenetre_partagee === true, tournesol: r.tournesol === true,
     un_par_un: r.un_par_un !== false, meubles_entre: r.meubles_entre !== false,   // (05/11, 21:20) ses morceaux un à un, et ses « euh » entre eux
-    voix_azure: r.voix_azure === true,
+    voix_azure: r.voix_azure === true, stt_azure: r.stt_azure === true,
     tunnel: r.tunnel === true,
     parole_libre: r.parole_libre === true,   // (05/11, Ahmed : « on lève toutes tes contraintes de parole ») plus de plafond ; stop, parasites et sécurité restent
     pensee_en_boucle: r.pensee_en_boucle !== false,
@@ -9127,6 +9127,21 @@ function cleAzure() {
   try { azureCle.v = execFileSync('/usr/bin/security', ['find-generic-password', '-s', 'hakim-azure-tts', '-w'], { encoding: 'utf8', timeout: 3000 }).trim() || null; } catch (_) { azureCle.v = null; }
   return azureCle.v;
 }
+async function oreilleAzure(fichier) {
+  const cle = cleAzure(), c = lireJson(AZURE, {}) || {};
+  if (!cle || !/^[a-z0-9]+$/.test(c.region || '')) return null;
+  const fd = new FormData();
+  fd.append('audio', new Blob([fs.readFileSync(fichier)]), path.basename(fichier));
+  fd.append('definition', JSON.stringify({ locales: ['fr-FR', 'ar-DZ', 'en-US', 'ar-SA'] }));
+  const t0 = Date.now(), ctl = new AbortController(), m = setTimeout(() => ctl.abort(), 15000);
+  try {
+    const r = await fetch(`https://${c.region}.api.cognitive.microsoft.com/speechtotext/transcriptions:transcribe?api-version=2024-11-15`,
+      { method: 'POST', body: fd, signal: ctl.signal, headers: { 'Ocp-Apim-Subscription-Key': cle } });
+    if (!r.ok) { azureCle.erreur = `${r.status}`; return null; }
+    const o = await r.json(), p = (o.phrases || [])[0] || {};
+    return { texte: String(((o.combinedPhrases || [])[0] || {}).text || '').trim(), langue: p.locale || null, ms: Date.now() - t0 };
+  } finally { clearTimeout(m); }
+}
 async function voixAzure(texte, tempo) {
   const cle = cleAzure(), c = lireJson(AZURE, {}) || {};
   if (!cle || !/^[a-z0-9]+$/.test(c.region || '')) return null;
@@ -10051,7 +10066,13 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
     // (03/11) le téléphone jouait de la musique à cet instant : les voix de la salle le savent (la musique ne fausse pas son empreinte)
     const musique = typeof instantTexte === 'function' && /papa écoute|le téléphone joue/.test(instantTexte());
     const telephone = temps.source === 'telephone';
-    r = await voixDemander({ op: 'transcrire', fichier: f, langue: /^[a-z]{2}$/.test(langue || '') ? langue : null, contexte: contexte || '',
+    // (05/11, Ahmed : « un système en ligne qui reconnaît ma voix en arabe, français, anglais, même en darija ») Azure, la même clé que sa voix : la langue
+    // choisie seule parmi quatre ; en panne ou éteint : Whisper, comme avant (et lui seul pour le son du téléphone et l'apprentissage de l'empreinte)
+    if (corpsReglages().stt_azure && !telephone && apprentissageVoix <= 0) {
+      const a = await oreilleAzure(f).catch(() => null);
+      if (a) { r = { texte: a.texte, langue: a.langue, azure: true }; try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'transcription_azure', ms: a.ms, langue: a.langue }) + '\n', { mode: 0o600 }); } catch (_) {} }
+    }
+    if (!r) r = await voixDemander({ op: 'transcrire', fichier: f, langue: /^[a-z]{2}$/.test(langue || '') ? langue : null, contexte: contexte || '',
       voix: telephone ? null : modeVoix, avec_temps: telephone, musique }, 180000);
   } finally { liberer(); transcriptionsEnAttente--; if (dePapa && !--transcriptionsPapa) reprendreVoix(); pomperVoix(); }
   try {
@@ -11998,7 +12019,14 @@ async function traiter(req, res) {
     }
     const c = lireJson(AZURE, {}) || {};
     let essai = null;
-    if (new URL(req.url, 'http://x').searchParams.get('essai') === '1') { const a = await voixAzure('Salut papa, je suis là.').catch(() => null); essai = a ? `ok, ${a.ms} ms` : 'échec'; }
+    if (new URL(req.url, 'http://x').searchParams.get('essai') === '1') {
+      const a = await voixAzure('Salut papa, je suis là.').catch(() => null);
+      essai = a ? `voix ok, ${a.ms} ms` : 'voix : échec';
+      if (a) {
+        const f = path.join(os.tmpdir(), `azure-essai-${Date.now()}.wav`);
+        try { fs.writeFileSync(f, a.data); const o = await oreilleAzure(f).catch(() => null); essai += o ? ` · oreille ok, ${o.ms} ms : « ${o.texte} » (${o.langue || '?'})` : ` · oreille : échec ${azureCle.erreur || ''}`; } finally { fs.unlink(f, () => {}); }
+      }
+    }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     return res.end(j({ cle: !!cleAzure(), region: c.region || null, voix: c.voix || 'fr-FR-RemyMultilingualNeural', essai }));
   }
@@ -12157,6 +12185,7 @@ async function traiter(req, res) {
       if (typeof q.un_par_un === 'boolean') r.un_par_un = q.un_par_un;
       if (typeof q.meubles_entre === 'boolean') r.meubles_entre = q.meubles_entre;
       if (typeof q.voix_azure === 'boolean') r.voix_azure = q.voix_azure;
+      if (typeof q.stt_azure === 'boolean') r.stt_azure = q.stt_azure;
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
