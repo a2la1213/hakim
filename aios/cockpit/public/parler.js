@@ -6240,6 +6240,7 @@ function appliquerReglages() {
   $('source').value = r.source || 'auto';
   $('modele').disabled = $('modeleConversation').disabled = r.source === 'local' || r.source === 'gemma';   // le local n'a qu'un modèle
   $('reconnaissance').value = r.reconnaissance; $('langue').value = r.langue;
+  if (typeof reglagesCorps !== 'undefined') { if (reglagesCorps.stt_azure) $('reconnaissance').value = 'azure'; if (reglagesCorps.voix_azure) $('voix').value = 'azure'; }   // (05/11)
   $('patience').value = String(r.patience);
   $('patienceConversation').value = String(r.patienceConversation ?? 0.3);
   $('vitesse').value = r.vitesse; $('lectureAuto').checked = !!r.lectureAuto; $('voix').value = r.voix;
