@@ -4529,7 +4529,8 @@ function blancDeReflexion(r, quoi, peutDire = false, o = {}) {
     + etatDeLui()
     + `Tu te mets en réflexion, en toi : une pensée intérieure très courte (${mots ? `${mots} mots` : 'six mots'} au plus), pour toi seul ; elle n'est pas dite. Rien d'autre.`;
   sonnetTeteDeFond(consigne, 'piste_blanc', modelePiste(), mots > 12 ? 9000 : 6000).then((x) => {
-    const t = boutDe(x && x.texte).replace(/^[\s"«]+|[\s"»]+$/g, '').slice(0, mots ? Math.max(120, mots * 12) : 120);
+    // (06/11, vu en vrai : « *Réflexion (pour moi seul) :* Il dort encore… ») l'étiquette qu'il met parfois devant sa pensée n'en est pas une
+    const t = boutDe(x && x.texte).replace(/^[\s*_]*(?:r[ée]flexion|pens[ée]e)[^:\n]{0,40}:[\s*_]*/i, '').replace(/^[\s"«]+|[\s"»]+$/g, '').slice(0, mots ? Math.max(120, mots * 12) : 120);
     if (!t || estParasite(t, 160) || pistes.ribo !== r || r.ferme) return;
     const dire = peutDire && /^DIRE\s*:\s*(.+)/i.exec(t);
     if (typeof o.retour === 'function') try { o.retour(dire ? dire[1] : t, !!dire); } catch (_) {}
