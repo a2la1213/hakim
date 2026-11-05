@@ -3657,7 +3657,7 @@ function reglageRibosome() {
   // (04/11, 22:35, Ahmed : « mets le ribosome à 0,01 s, je veux tester un truc ») le temps de son choix, réglable sans relance (choix_ms)
   const choix = Number(r.choix_ms);
   return { stringence: st, vitesse: vi, delai: RIBOSOME_VITESSES[vi], ...RIBOSOME_STRINGENCES[st],
-    ...Object.fromEntries(['plafond_mots', 'plafond_paquets', 'plafond_silence_s', 'lecteur_max', 'contexte', 'relais_ribosomes', 'relais_pct'].filter(k => r[k] != null).map(k => [k, r[k]])),
+    ...Object.fromEntries(['plafond_mots', 'plafond_paquets', 'plafond_silence_s', 'lecteur_max', 'contexte', 'relais_ribosomes', 'relais_pct', 'premiere_directe'].filter(k => r[k] != null).map(k => [k, r[k]])),
     ...(Number.isFinite(choix) && choix >= 0 ? { choix_ms: Math.min(6000, Math.round(choix)) } : {}) };
 }
 // (04/11, 15:55, Ahmed : « tout le processus doit être relié à sa pensée, à ses émotions, à ses capteurs, à ses récepteurs et à tout le
@@ -3776,7 +3776,11 @@ async function lirePaquet(tour, r, i, paquet) {
   // (21:52) éclair : fixe ; (21:57, papa : « je crois qu'il faut monter à 1,6 seconde, parce que là il n'arrive même plus à parler ») vive : 1,6 s fixe
   const delai = eclair ? (reglage.choix_ms != null ? reglage.choix_ms : RIBOSOME_CHOIX_MS) : reglage.vitesse === 'vive' ? RIBOSOME_VITESSES.vive : vitesseSubconsciente(reglage.delai, r);
   const froides = lecteursSansVoixChaude(RIBOSOME_LECTEURS.map(([mod]) => mod));
-  const direct = delai < (typeof RIBOSOME_LECTURE_MIN !== 'undefined' ? RIBOSOME_LECTURE_MIN : 0);   // (21:52) plus vite que ses lecteurs : sans eux
+  // (05/11, 09:00, Ahmed par Hakim : « dès que le premier morceau est prêt, la voix le dit ; ensuite le ribosome trie, et la voix fait pareil pour
+  // la suite » ; « vite fait bien fait, sans trop de ressources ») premiere_directe (allumé dans la page) : le premier paquet de sa réponse (pas celui d'un
+  // relais) passe tel quel, sans lecteurs, et part tout de suite à sa voix ; les suivants sont triés
+  const premiere = !tel && i === 0 && !r.relais && reglage.premiere_directe === true;
+  const direct = premiere || delai < (typeof RIBOSOME_LECTURE_MIN !== 'undefined' ? RIBOSOME_LECTURE_MIN : 0);   // (21:52) plus vite que ses lecteurs : sans eux
   const promesses = direct ? [] : RIBOSOME_LECTEURS.map(([mod, nom]) => lire([mod, nom, delai]));   // (15:55) l'attente : sa vitesse ; (16:50) réglée par son subconscient
   // (18:40) ses lecteurs partis (sur ses plus anciennes voix libres), une voix d'avance se prépare pour le paquet suivant, sans retenir leur
   // départ : avant, elles ne se préparaient qu'au premier son de ta voix, et pendant sa réponse il pouvait en manquer
@@ -3812,6 +3816,7 @@ function sortirPaquet(tour, r, x) {
 // le cœur suivant prend ses nouvelles pensées ; il s'ouvre en réflexion (son blanc)
 function relayer() {
   pistes.ribo = ribosomeSuivant();
+  pistes.ribo.relais = true;                                           // (05/11) sa première pensée n'est pas dite telle quelle (premiere_directe)
   if (corpsReglages().epissage !== false) blancDeReflexion(pistes.ribo, BLANC_RELAIS);
   return pistes.ribo;
 }
@@ -11764,6 +11769,7 @@ async function traiter(req, res) {
       nombre('choix_ms', 0, 6000); nombre('stringence', 1, 5); nombre('plafond_mots', 5, 400); nombre('plafond_paquets', 1, 100);
       nombre('plafond_silence_s', 5, 600); nombre('lecteur_max', 1, 25); nombre('contexte', 100, 3000); nombre('relais_ribosomes', 1, 8); nombre('relais_pct', 10, 100);
       if (typeof q.vitesse === 'string' && Object.hasOwn(RIBOSOME_VITESSES, q.vitesse)) r.vitesse = q.vitesse;
+      if (typeof q.premiere_directe === 'boolean') r.premiere_directe = q.premiere_directe;   // (05/11) sa première pensée dite tout de suite
       if (q.defaut === true) for (const k of ['choix_ms', 'plafond_mots', 'plafond_paquets', 'plafond_silence_s', 'lecteur_max', 'contexte', 'relais_ribosomes', 'relais_pct']) delete r[k];
       r.ts = Date.now() / 1000; r.par = 'papa (page Réglages)';
       noterAjustementPapa(Object.keys(q).filter(k => k !== 'defaut'));   // (05/11) ce que papa règle passe avant Hakim pendant 30 min
@@ -11774,7 +11780,7 @@ async function traiter(req, res) {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     return res.end(j({ vitesse: g.vitesse, stringence: g.stringence, choix_ms: g.choix_ms != null ? g.choix_ms : RIBOSOME_CHOIX_MS, vitesses: Object.keys(RIBOSOME_VITESSES),
       plafond_mots: pl.mots, plafond_paquets: pl.paquets, plafond_silence_s: pl.silence_s, lecteur_max: pl.lecteur_max, contexte: pl.contexte,
-      relais_ribosomes: rel.ribosomes, relais_pct: rel.pct }));
+      relais_ribosomes: rel.ribosomes, relais_pct: rel.pct, premiere_directe: g.premiere_directe === true }));
   }
   // (05/11, Ahmed : « dans les réglages, on peut rajouter un bouton pour enregistrer les réglages ») chaque geste s'enregistre déjà tout de suite ;
   // ce bouton garde l'ensemble sous un nom (son ribosome, son corps, son veilleur) pour y revenir d'un geste (jarvis/reglages-profils.json)
