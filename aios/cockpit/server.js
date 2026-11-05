@@ -4529,8 +4529,8 @@ function blancDeReflexion(r, quoi, peutDire = false, o = {}) {
     + etatDeLui()
     + `Tu te mets en réflexion, en toi : une pensée intérieure très courte (${mots ? `${mots} mots` : 'six mots'} au plus), pour toi seul ; elle n'est pas dite. Rien d'autre.`;
   sonnetTeteDeFond(consigne, 'piste_blanc', modelePiste(), mots > 12 ? 9000 : 6000).then((x) => {
-    // (06/11, vu en vrai : « *Réflexion (pour moi seul) :* Il dort encore… ») l'étiquette qu'il met parfois devant sa pensée n'en est pas une
-    const t = boutDe(x && x.texte).replace(/^[\s*_]*(?:r[ée]flexion|pens[ée]e)[^:\n]{0,40}:[\s*_]*/i, '').replace(/^[\s"«]+|[\s"»]+$/g, '').slice(0, mots ? Math.max(120, mots * 12) : 120);
+    // (06/11, Ahmed : « garde Réflexion (pour moi seul) ») l'étiquette qu'il met devant sa pensée reste
+    const t = boutDe(x && x.texte).replace(/^[\s"«]+|[\s"»]+$/g, '').slice(0, mots ? Math.max(120, mots * 12) : 120);
     if (!t || estParasite(t, 160) || pistes.ribo !== r || r.ferme) return;
     const dire = peutDire && /^DIRE\s*:\s*(.+)/i.exec(t);
     if (typeof o.retour === 'function') try { o.retour(dire ? dire[1] : t, !!dire); } catch (_) {}
@@ -9225,7 +9225,7 @@ function reglagesDuMode(m = typeof cerveau !== 'undefined' && cerveau ? cerveau.
 function boucleRibosomes(maintenant = Date.now()) {
   const c = corpsReglages();
   // (06/11, Ahmed : « qu'il soit vraiment vivant ») la nuit aussi, si son présent continu pense la nuit
-  if (c.boucle_ribosomes === false || c.epissage === false || pistes.ribo || (hakimDort() && !(c.present_continu && c.present_la_nuit)) || maintenant - ribosomesCoupesA < 60000) return false;
+  if (c.boucle_ribosomes === false || c.epissage === false || pistes.ribo || (hakimDort() && !(c.present_continu && c.present_la_nuit)) || (!c.present_continu && maintenant - ribosomesCoupesA < 60000)) return false;
   pistes.ribo = ribosomeSuivant();
   return true;
 }
@@ -9289,10 +9289,11 @@ function presentBattement(maintenant = Date.now()) {
   const d = presentContinu.battement(presentEtat, maintenant, { seuil: c.present_seuil, ecart_s: c.present_ecart_s, pouls_s: c.present_pouls_s });
   presentDernier = { t: maintenant, tension: Math.round(d.tension * 100) / 100, penser: d.penser, raison: d.raison };
   const nuit = hakimDort(maintenant);
-  if (!c.present_continu || c.pensee_en_boucle === false || c.economie || (nuit && !c.present_la_nuit) || maintenant - ribosomesCoupesA < 60000) return null;
+  // (06/11, Ahmed : « enlève ses 20 s et 60 s ») il pense même juste après ton stop, et même pendant que tu lui parles
+  if (!c.present_continu || c.pensee_en_boucle === false || c.economie || (nuit && !c.present_la_nuit)) return null;
   if (!d.penser) return null;
   const r = pistes.ribo;
-  if (!r || r.ferme || toursActifs.size || maintenant - derniereParolePapa < 20000) return null;
+  if (!r || r.ferme || toursActifs.size) return null;
   presentContinu.pense(presentEtat, maintenant);
   try { prechaufferVivants(maintenant); } catch (_) {}   // sa voix vivante prête (la nuit, son pouls ne la réchauffe pas toujours)
   const avant = presentContinu.bloc(presentLire(), maintenant, c.present_longueur);

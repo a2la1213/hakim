@@ -97,8 +97,8 @@ test('au cockpit : un choc, il pense en le sachant, sa pensée entre dans sa mé
   assert.strictEqual(ctx.pourTour(t + 21000), '', 'déjà donné : pas deux fois');
 });
 
-test('au cockpit : rien s’il dort, si papa vient de parler, si un tour tourne, éteint, en économie', () => {
-  for (const [nom, change] of [['dort', (c) => { c.dort = true; }], ['papa', (c) => { c.derniereParolePapa = Date.now(); }],
+test('au cockpit : rien s’il dort, si un tour tourne, éteint, en économie', () => {
+  for (const [nom, change] of [['dort', (c) => { c.dort = true; }],
     ['tour', (c) => { c.toursActifs.add(1); }], ['éteint', null], ['économie', null], ['boucle', null]]) {
     const reg = { ...REG, ...(nom === 'éteint' ? { present_continu: false } : nom === 'économie' ? { economie: true } : nom === 'boucle' ? { pensee_en_boucle: false } : {}) };
     const { ctx, blancs } = cockpit(reg);
@@ -139,4 +139,10 @@ test('il t’appelle : ce qu’il dit de lui-même, page fermée, va dans votre 
   assert.strictEqual(ctx.conv.length, 1, 'une pensée intérieure ne t’appelle pas');
   ctx.visible = true; blancs[0].o.retour('papa ?', true);
   assert.strictEqual(ctx.conv.length, 1, 'page ouverte : il te le dit à voix haute');
+});
+
+test('sans ses 20 s ni ses 60 s : il pense même si papa vient de parler ou d’appuyer sur stop', () => {
+  const { ctx } = cockpit(REG);
+  ctx.derniereParolePapa = Date.now(); ctx.ribosomesCoupesA = Date.now();
+  assert.strictEqual(ctx.battement(Date.now() + 1000), 'pouls');
 });
