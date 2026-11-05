@@ -9178,10 +9178,22 @@ async function routeFichier(req, res) {
 
 /* ---- voix neuronale : une file, une phrase à la fois ; une demande abandonnée n'est pas calculée ---- */
 const fileVoix = [];
-let voixOccupee = false, transcriptionsEnAttente = 0;
+let voixOccupee = false, transcriptionsEnAttente = 0, transcriptionsPapa = 0;
+const VOIX_APRES_OREILLE_MS = 6000;
 async function pomperVoix() {
   // (28/10) la transcription d'Ahmed passait avant la voix (un seul processus) ; (04/11) deux processus : sa voix ne l'attend plus
   if (voixOccupee) return;
+  // (05/11, 09:20, Ahmed, capture de la bande jaune : « le Mac est débordé » ; Hakim : « sa transcription passe toujours d'abord ») mesuré de 08:00
+  // à 09:23, sur le même GPU : une transcription pendant une synthèse Chatterbox, 23 s en médiane ; sans synthèse, 4,5 s ; la page abandonne à 25 s
+  // et se déclare hors ligne. Pendant que la voix de papa se transcrit, aucune nouvelle synthèse ne démarre, 6 s d'attente au plus pour sa voix ;
+  // le son du téléphone ne passe pas devant (seulement le micro)
+  if (transcriptionsPapa > 0) {
+    const tete = fileVoix[0];
+    if (!tete || Date.now() - (tete.recu || 0) < VOIX_APRES_OREILLE_MS) {
+      if (tete && !pomperVoix.relance) pomperVoix.relance = setTimeout(() => { pomperVoix.relance = null; pomperVoix(); }, 500);
+      return;
+    }
+  }
   let tache = fileVoix.shift();
   // (28/10) au calme seulement (rien d'autre à dire, aucun tour en cours) : un de ses débuts de réponse, fabriqué d'avance
   if (!tache && fileDebuts.length && !toursActifs.size) tache = fileDebuts.shift();
@@ -9842,6 +9854,8 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
   let partie = false;
   res.on('close', () => { if (!res.writableFinished) partie = true; });
   transcriptionsEnAttente++;
+  const dePapa = temps.source !== 'telephone';
+  if (dePapa) transcriptionsPapa++;                                   // (05/11) sa voix ne démarre pas de synthèse pendant ce temps (pomperVoix)
   const liberer = await tourDeTranscription();
   let r;
   if (apprentissageVoix > 0 && Date.now() > apprentissageFin) { apprentissageVoix = 0; apprentissageRegistre = null; }
@@ -9861,7 +9875,7 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
     const telephone = temps.source === 'telephone';
     r = await voixDemander({ op: 'transcrire', fichier: f, langue: /^[a-z]{2}$/.test(langue || '') ? langue : null, contexte: contexte || '',
       voix: telephone ? null : modeVoix, avec_temps: telephone, musique }, 180000);
-  } finally { liberer(); transcriptionsEnAttente--; pomperVoix(); }
+  } finally { liberer(); transcriptionsEnAttente--; if (dePapa) transcriptionsPapa--; pomperVoix(); }
   try {
     fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'transcription_serveur', ms: Date.now() - tTranscription, synthese_en_cours: syntheseEnCours, octets: audio.length,
       erreur: !!(r && r.erreur) }) + '\n', { mode: 0o600 });

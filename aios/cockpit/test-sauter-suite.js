@@ -245,3 +245,41 @@ test('sa première pensée dite tout de suite : le premier paquet de sa réponse
   assert.match(SRC, /if \(typeof q\.premiere_directe === 'boolean'\) r\.premiere_directe = q\.premiere_directe;/);
   assert.match(fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8'), /\['premiere_directe', /);
 });
+
+// (05/11, 09:20, Ahmed : « libérer et jeter ce qui ne va pas être gardé ; une fois parallélisé et nettoyé, envoyer le flux de parole prononcé de façon
+// séquentielle »)
+test('sa voix du Mac : un morceau à la fois, ce qui attend vieillit et le dernier seul reste ; un calcul bloqué ne retient plus après 30 s', () => {
+  const t = 1_800_000_000_000;
+  const ctx = { Math, Number, Date: { now: () => t }, journalVoix: () => {}, reglagesCorps: { sauter_passe: true, sauter_passe_s: 3 }, lecteur: { actif: false },
+    bouts: { liste: new Map([[1, { n: 1, t: t - 2000, buf: null, rate: false }]]) },
+    etat: { riboFile: [{ tour: 4, texte: 'deux', recu: t - 5000 }, { tour: 5, texte: 'le dernier', recu: t - 200 }], conversation: { capteur: { enParole: false } } } };
+  vm.createContext(ctx);
+  const src = prendre(PAGE, 'direRibosome');
+  vm.runInContext(prendre(PAGE, 'voixEnCalcul') + src.slice(0, src.indexOf('  const tour = f[0].tour, lot')) + '  this.lot = f.map(x => x.texte);\n}\nthis.f = direRibosome; this.v = voixEnCalcul;', ctx);
+  ctx.f();
+  assert.strictEqual(ctx.lot, undefined, 'sa voix se calcule encore : le suivant attend, rien ne part');
+  assert.strictEqual(ctx.etat.riboFile.length, 2);
+  assert.strictEqual(ctx.v(t + 40000), false, 'bloqué depuis plus de 30 s : il ne retient plus');
+  ctx.bouts.liste.clear();
+  ctx.f();
+  assert.deepStrictEqual([...ctx.lot], ['le dernier'], 'sa voix libre : le passé est sauté, le dernier est dit');
+});
+
+test('la voix de papa se transcrit d’abord : aucune synthèse ne démarre pendant ce temps, 6 s d’attente au plus ; le son du téléphone ne passe pas devant', async () => {
+  const appels = [];
+  let now = 1_800_000_000_000;
+  const ctx = { Date: { now: () => now }, setTimeout: () => 1, fileVoix: [], fileDebuts: [], toursActifs: new Set(), JARVIS_VOIX_DIAGNOSTIC: 'x',
+    fs: { appendFileSync: () => {} }, j: JSON.stringify, Number, Math,
+    voixDemander: async (q) => { appels.push(q.texte); return {}; } };
+  vm.createContext(ctx);
+  vm.runInContext('let voixOccupee = false, transcriptionsEnAttente = 0, transcriptionsPapa = 1;\nconst VOIX_APRES_OREILLE_MS = 6000;\n' + 'async ' + prendre(SRC, 'pomperVoix')
+    + 'this.p = pomperVoix; this.fin = () => { transcriptionsPapa = 0; };', ctx);
+  ctx.fileVoix.push({ texte: 'un', recu: now, fin: () => {} });
+  await ctx.p();
+  assert.deepStrictEqual(appels, [], 'papa se transcrit : sa voix attend');
+  now += 7000;
+  await ctx.p();
+  assert.deepStrictEqual(appels, ['un'], '6 s au plus');
+  assert.match(SRC, /const dePapa = temps\.source !== 'telephone';\n  if \(dePapa\) transcriptionsPapa\+\+;/);
+  assert.match(SRC, /liberer\(\); transcriptionsEnAttente--; if \(dePapa\) transcriptionsPapa--; pomperVoix\(\);/);
+});

@@ -3571,6 +3571,12 @@ function libererRibosomes() {
   fetch('/api/jarvis/ribosome/stop', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ tout: true }) })
     .then((r) => (r.ok ? r.json() : null)).then((o) => { const n = o && Number(o.tour); if (n > (etat.riboStop != null ? etat.riboStop : -1)) etat.riboStop = n; }).catch(() => {});
 }
+// un morceau dont la voix se calcule encore au Mac (30 s au plus : au-delà, il ne retient plus rien)
+function voixEnCalcul(maintenant = Date.now()) {
+  if (typeof bouts === 'undefined' || !bouts.liste) return false;
+  for (const b of bouts.liste.values()) if (!b.buf && !b.rate && maintenant - (b.t || 0) < 30000) return true;
+  return false;
+}
 // ce que son ribosome a choisi, dit d'un seul souffle (un tour à la fois, dans l'ordre), quand sa voix est libre
 function direRibosome() {
   let f = etat.riboFile || [];
@@ -3579,7 +3585,11 @@ function direRibosome() {
   // (04/11, 14:48) une attente de plus de 5 s est notée, avec sa cause (sa voix qui parle encore, ou la pièce qui parle), une fois par 10 s
   const noterAttente = (cause) => { if (attente > 5000 && Date.now() - (etat.riboAttenteNotee || 0) > 10000 && typeof journalVoix === 'function') { etat.riboAttenteNotee = Date.now(); journalVoix('ribosome_attente', { cause, ms: attente }); } };
   if (!f.length || !c) return;
-  if (lecteur.actif) { noterAttente('voix'); return; }
+  // (05/11, 09:20, Ahmed : « libérer et jeter ce qui ne va pas être gardé ; une fois parallélisé et nettoyé, envoyer le flux de parole prononcé de façon
+  // séquentielle ») mesuré : sa voix du Mac (Chatterbox) calcule 2 fois plus lentement qu'elle ne parle, et chaque morceau partait la calculer sans
+  // attendre le précédent (jusqu'à 3 min 30 de file, le GPU toujours pris) : un morceau à la fois ; ce qui attend pendant ce temps vieillit et
+  // « Sauter les morceaux passés » ne garde que le dernier
+  if (lecteur.actif || (typeof voixEnCalcul === 'function' && voixEnCalcul())) { noterAttente('voix'); return; }
   // (05/11, Ahmed : « un autre réglage : en combien de temps après mon silence le chunk suivant est lu ») lire_apres_silence_ms : 0, sans
   // attendre (comme depuis le 04/11, 21:10) ; sinon le morceau suivant attend que tu te sois tu ce temps-là
   const apres = typeof reglagesCorps !== 'undefined' ? Number(reglagesCorps.lire_apres_silence_ms) || 0 : 0;
