@@ -42,9 +42,8 @@
     // (papa parle, l'oreille ouverte de Hakim peut le couper : les deux mêlées) ; null : l'ancien choix par le mode
     let qui = null;
     function viser() {
-      const ec = PALETTES.ecoute.map(rgb);
-      cible = qui === 'papa' ? ec : qui === 'partage' ? [ec[0], paletteHumeur[1], ec[2]] : qui === 'coupe' ? PALETTES.coupe.map(rgb)
-        : qui ? paletteHumeur : (mode === 'ecoute' ? ec : paletteHumeur);
+      // (05/11, Ahmed : « une seule couleur pour toutes les orbes : celle de l'humeur de Hakim ») qui parle ne change plus la couleur
+      cible = paletteHumeur;
     }
     const t0 = performance.now();
 

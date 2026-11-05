@@ -1040,15 +1040,15 @@ const orbeScene = Orbe.creer($('orbeScene'), { reduit: REDUCED });
 const orbeVision = $('orbeVision') ? Orbe.creer($('orbeVision'), { reduit: REDUCED }) : null;
 if ($('visionSortir')) $('visionSortir').addEventListener('click', () => { arreterCamera(); humeur(); });
 if ($('visionEcran')) $('visionEcran').addEventListener('click', () => { if ($('ecran')) $('ecran').click(); });
+// (05/11, Ahmed : « quand Hakim parle ou que je parle, même si on se chevauche, l'orbe bouge au son de nos voix ») le plus fort des deux ; sa voix du téléphone
+// ne donne pas son niveau à la page (l'appli) : un mouvement doux tant qu'elle parle
 function niveauCourant() {
-  // (30/10, 22:44, Ahmed : « quand l'orbe est de sa couleur à lui, je la vois quand même bouger quand je parle ») la parole est
-  // à lui (il prépare, il parle, il a coupé ton micro) : seule sa voix la fait bouger
-  const qui = quiALaParole();
-  if (qui === 'hakim' || qui === 'coupe') return niveauVoix();
-  if (etat.conversation && etat.conversation.capteur && etat.conversation.capteur.enParole)
-    return { niveau: etat.niveauMicro || 0, bandes: [etat.niveauMicro || 0, (etat.niveauMicro || 0) * 0.8, (etat.niveauMicro || 0) * 0.6] };
-  if (etat.micro) return { niveau: etat.niveauMicro || 0, bandes: [etat.niveauMicro || 0, (etat.niveauMicro || 0) * 0.8, (etat.niveauMicro || 0) * 0.6] };
-  return niveauVoix();
+  const v = niveauVoix();
+  const c = etat.conversation;
+  const m = (c && c.capteur && c.capteur.enParole) || etat.micro ? { niveau: etat.niveauMicro || 0, bandes: [etat.niveauMicro || 0, (etat.niveauMicro || 0) * 0.8, (etat.niveauMicro || 0) * 0.6] } : null;
+  const t = typeof lecteurSysteme !== 'undefined' && lecteurSysteme && lecteurSysteme.actif ? 0.3 + 0.2 * Math.sin(Date.now() / 130) : 0;
+  const tel = t ? { niveau: t, bandes: [t, t * 0.8, t * 0.6] } : null;
+  return [v, m, tel].filter(Boolean).sort((a, b) => b.niveau - a.niveau)[0] || null;
 }
 orbeTete.source(niveauCourant);
 orbeScene.source(niveauCourant);

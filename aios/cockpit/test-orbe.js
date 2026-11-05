@@ -70,13 +70,9 @@ test('(21:36) elle prend la couleur de celui qui a la parole : papa, lui, ou les
   let t = 0;
   const vivre = () => { for (let k = 0; k < 400; k++) image((t++) * 16); return couleurs().map(c => c.match(/\d+/g).slice(0, 3).map(Number)); };
   const proche = (a, b, quoi) => assert.ok(a.every((x, i) => Math.abs(x - b[i]) <= 2), `${quoi} : ${a} au lieu de ${b}`);
-  const ROSE = [249, 168, 212], TURQUOISE = [45, 212, 191], CIEL = [14, 165, 233];
-  o.parole('papa');
-  proche(vivre()[0], ROSE, 'papa : son rose violet');
-  o.parole('hakim');
-  let c = vivre(); proche(c[0], TURQUOISE, 'lui : son humeur'); proche(c[1], CIEL, 'lui : son humeur');
-  o.parole('partage');
-  c = vivre(); proche(c[0], ROSE, 'partagée : papa'); proche(c[1], CIEL, 'partagée : lui');
+  const TURQUOISE = [45, 212, 191], CIEL = [14, 165, 233];
+  // (05/11, Ahmed : « une seule couleur : celle de l'humeur de Hakim »)
+  for (const q of ['papa', 'hakim', 'partage', 'coupe']) { o.parole(q); const c = vivre(); proche(c[0], TURQUOISE, q); proche(c[1], CIEL, q); }
   // qui a la parole, côté page
   const i = page.indexOf('function quiALaParole() {'), f = page.slice(i, page.indexOf('\n}\n', i) + 2);
   const qui = (etat, reglagesCorps = {}, actif = false, motDirectJusqua = 0) => {
@@ -95,15 +91,7 @@ test('(21:36) elle prend la couleur de celui qui a la parole : papa, lui, ou les
   assert.equal(qui({}), null, 'hors conversation : comme avant');
 });
 
-test('(22:44) quand la parole est à lui, l’orbe ne bouge qu’avec sa voix, jamais avec celle de papa', () => {
-  const i = page.indexOf('function niveauCourant() {'), f = page.slice(i, page.indexOf('\n}\n', i) + 2);
-  const niveau = (qui, enParole = true) => {
-    const c = vm.createContext({ quiALaParole: () => qui, niveauVoix: () => ({ niveau: 0.2, bandes: [0.2, 0.2, 0.2] }),
-      etat: { conversation: { capteur: { enParole } }, niveauMicro: 0.9, micro: null } });
-    vm.runInContext(f, c); return c.niveauCourant().niveau;
-  };
-  assert.equal(niveau('hakim'), 0.2, 'il prépare ou parle : sa voix, pas la tienne');
-  assert.equal(niveau('coupe'), 0.2, 'il a coupé ton micro');
-  assert.equal(niveau('papa'), 0.9, 'ta parole : ta voix');
-  assert.equal(niveau('partage'), 0.9);
+test('(05/11) l’orbe bouge avec le plus fort des deux, même quand ils se chevauchent', () => {
+  const P = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(P, /return \[v, m, tel\]\.filter\(Boolean\)\.sort\(\(a, b\) => b\.niveau - a\.niveau\)\[0\] \|\| null;/);
 });
