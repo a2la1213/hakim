@@ -9140,13 +9140,20 @@ async function oreilleAzure(fichier, langueDemandee) {
     if (!r.ok) {
       azureCle.erreur = `${r.status} ${(await r.text().catch(() => '')).slice(0, 300)}`;
       // (05/11) la transcription rapide (langue trouvée seule) n'existe pas dans toutes les régions (pas en Suisse) : l'oreille courte, une langue (azure.json : langue)
-      // (05/11) la langue d'écoute de la page : arabe → arabe d'Algérie (Darija), anglais, sinon français
-      const langue = { ar: 'ar-DZ', en: 'en-US', fr: 'fr-FR' }[langueDemandee] || (/^[a-z]{2}-[A-Z]{2}$/.test(c.langue || '') ? c.langue : 'fr-FR');
-      const q = await fetch(`https://${c.region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=${langue}&format=simple`,
-        { method: 'POST', body: fs.readFileSync(fichier), signal: ctl.signal, headers: { 'Ocp-Apim-Subscription-Key': cle, 'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000' } });
-      if (!q.ok) { azureCle.erreur = `${q.status}`; return null; }
-      const o = await q.json();
-      return { texte: String(o.DisplayText || '').trim(), langue, ms: Date.now() - t0 };
+      // (05/11, Ahmed : « une reconnaissance multilangue pour moi ») sans détection de langue dans la région : les trois langues en même temps (français,
+      // arabe d'Algérie, anglais), la plus sûre gagne ; une langue choisie dans la page : celle-là seule (trois fois moins cher)
+      const choisie = { ar: 'ar-DZ', en: 'en-US', fr: 'fr-FR' }[langueDemandee];
+      const audio = fs.readFileSync(fichier);
+      const une = async (langue) => {
+        const q = await fetch(`https://${c.region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=${langue}&format=detailed`,
+          { method: 'POST', body: audio, signal: ctl.signal, headers: { 'Ocp-Apim-Subscription-Key': cle, 'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000' } });
+        if (!q.ok) return null;
+        const o = await q.json(), b = (o.NBest || [])[0];
+        return b && o.RecognitionStatus === 'Success' ? { texte: String(b.Display || '').trim(), langue, sur: Number(b.Confidence) || 0 } : null;
+      };
+      const l = (await Promise.all((choisie ? [choisie] : ['fr-FR', 'ar-DZ', 'en-US']).map(x => une(x).catch(() => null)))).filter(Boolean).sort((a, b) => b.sur - a.sur);
+      if (!l.length) { azureCle.erreur = 'aucune langue'; return null; }
+      return { texte: l[0].texte, langue: l[0].langue, ms: Date.now() - t0 };
     }
     const o = await r.json(), p = (o.phrases || [])[0] || {};
     return { texte: String(((o.combinedPhrases || [])[0] || {}).text || '').trim(), langue: p.locale || null, ms: Date.now() - t0 };
