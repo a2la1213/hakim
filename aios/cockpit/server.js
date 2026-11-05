@@ -11033,6 +11033,20 @@ async function traiter(req, res) {
     // (05/11, Ahmed : « s'il parle et que je réponds, au bout d'une seconde, la 2e partie n'est pas dite, elle est directement sautée ») la page
     // saute la suite : son épissure se ferme, quel que soit son numéro, et ses ribosomes d'avant ne retiennent plus le suivant ; la page tait
     // tout jusqu'au dernier numéro (rendu)
+    // (05/11, Ahmed : « quand j'appuie sur stop, ça libère tous les ribosomes et ça remet tout à zéro ») tous fermés, rien n'attend plus, ses
+    // pensées pas encore lancées sont laissées ; le suivant repart du premier cœur, sans rien hériter
+    if (q.tout === true) {
+      const tour = dernierRibosome ? dernierRibosome.tour : null;
+      if (pistes.ribo && !pistes.ribo.ferme) { pistes.ribo.ferme = 'stop'; memoriserEpissure(pistes.ribo); }
+      pistes.ribo = null; pistes.attente.length = 0;
+      for (let x = dernierRibosome; x; x = x.precedent) {
+        x.libere = true; x.sautee = true; x.attente.length = 0; x.prets.clear();
+        if (x.retenu) { clearTimeout(x.retenu); x.retenu = null; }
+      }
+      dernierRibosome = null;
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      return res.end(j({ tour }));
+    }
     if (q.sauter === true) {
       const r = pistes.ribo;
       if (r && !r.ferme) { r.ferme = 'sautee'; memoriserEpissure(r); pistes.ribo = null; }

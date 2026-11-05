@@ -1624,7 +1624,7 @@ etat.demarrerAuToucher = new URLSearchParams(location.search).get('conversation'
 if (etat.demarrerAuToucher) { try { history.replaceState(null, '', '/parler'); } catch (_) {} }
 $('scene').addEventListener('click', (e) => {
   if (etat.demarrerAuToucher && !etat.conversation) { etat.demarrerAuToucher = false; basculerConversation(); return; }
-  if (e.target.id === 'stopScene') { arreterMicro(false); arreterTout(); majBoutonsPause(); rendre(); humeur(); return; }
+  if (e.target.id === 'stopScene') { arreterMicro(false); arreterTout(); libererRibosomes(); majBoutonsPause(); rendre(); humeur(); return; }
   if (e.target.id === 'pauseScene') { if (lecteur.enPause) reprendreVoix(); else pauseVoix(); return; }
   if (e.target.id === 'finConversation') return;
   if (etat.micro) return arreterMicro(true);           // il t'écoute : un clic, c'est « j'ai fini »
@@ -3559,6 +3559,17 @@ function blancsPourSautes(sautes) {
     p.episse = `${p.episse.slice(0, i)}…${p.episse.slice(i + t.length)}`.replace(/…(?:\s*…)+/g, '…');
     poserPave(p.cle, titreEpissure(p), htmlEpissure(p));
   }
+}
+// (05/11, Ahmed : « quand j'appuie sur stop dans l'interface, ça libère tous les ribosomes, et ça remet tout à zéro ») son bouton stop (et
+// Échap) : ce que ses ribosomes avaient lu ou allaient dire est laissé, et le cockpit les ferme tous ; le suivant repart du premier
+function libererRibosomes() {
+  const t = Math.max(Number(etat.epissureTour) || 0, ...(etat.riboFile || []).map(x => Number(x.tour) || 0));
+  if (t > 0) etat.riboStop = Math.max(etat.riboStop != null ? etat.riboStop : -1, t);
+  etat.riboFile = []; etat.riboEnVoix = [];
+  if (typeof bouts !== 'undefined') { bouts.fileTel = []; bouts.attenteTel = null; }
+  if (typeof journalVoix === 'function') journalVoix('ribosomes_liberes', { tour: t });
+  fetch('/api/jarvis/ribosome/stop', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ tout: true }) })
+    .then((r) => (r.ok ? r.json() : null)).then((o) => { const n = o && Number(o.tour); if (n > (etat.riboStop != null ? etat.riboStop : -1)) etat.riboStop = n; }).catch(() => {});
 }
 // ce que son ribosome a choisi, dit d'un seul souffle (un tour à la fois, dans l'ordre), quand sa voix est libre
 function direRibosome() {
@@ -6608,7 +6619,7 @@ $('nouvelle').addEventListener('click', () => {
 });
 $('micro').addEventListener('click', basculerMicro);
 $('envoyer').addEventListener('click', () => envoyerEcrit($('q').value));
-$('stop').addEventListener('click', () => { arreterTout(); majBoutonsPause(); rendre(); humeur(); });
+$('stop').addEventListener('click', () => { arreterTout(); libererRibosomes(); majBoutonsPause(); rendre(); humeur(); });
 $('q').addEventListener('input', () => { ajuster(); activite(); });
 $('q').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); envoyerEcrit($('q').value); }
@@ -6619,7 +6630,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.altKey && e.code === 'KeyX') { e.preventDefault(); basculerMuet(); }
   else if (e.altKey && e.code === 'KeyV') { e.preventDefault(); basculerCamera(); }
   else if (e.altKey && e.code === 'KeyP') { e.preventDefault(); if (lecteur.enPause) reprendreVoix(); else pauseVoix(); }
-  else if (e.key === 'Escape') { if (etat.conversation) finirConversation(false); arreterMicro(false); arreterTout(); majBoutonsPause(); rendre(); humeur(); }
+  else if (e.key === 'Escape') { if (etat.conversation) finirConversation(false); arreterMicro(false); arreterTout(); libererRibosomes(); majBoutonsPause(); rendre(); humeur(); }
 });
 /* (31/10, 00:30, Ahmed : « un bouton Télépathie sous Conversation : le réglage actuel, automatiquement, sans mes textes ni les
    siens ») Conversation : vos paroles s'écrivent ; Télépathie : la Conversation sans aucun texte écrit, avec son oreille, son

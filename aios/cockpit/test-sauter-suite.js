@@ -231,3 +231,9 @@ test('ribosome intelligent : l’interrupteur (oui), papa noté quand il règle,
   assert.match(REG, /const f = route \? \{ \.\.\.f0, route \} : f0;/);
   assert.match(REG, /appeler\('\/api\/ribosome\/ajustements'\)/);
 });
+
+// (05/11, Ahmed : « quand j'appuie sur stop dans l'interface, ça libère tous les ribosomes, et ça remet tout à zéro »)
+test('stop (les deux boutons et Échap) : tous ses ribosomes libérés, et le cockpit repart de zéro', () => {
+  assert.strictEqual((PAGE.match(/arreterTout\(\); libererRibosomes\(\);/g) || []).length, 3);
+  assert.match(SRC, /if \(q\.tout === true\) \{[\s\S]{0,400}pistes\.ribo = null; pistes\.attente\.length = 0;[\s\S]{0,300}dernierRibosome = null;/);
+});
