@@ -3490,8 +3490,12 @@ function versRibosome(texte, avant = '') {
 function preparerRibosome() {
   const f = etat.riboFile || [];
   if (!f.length || typeof voixDuTelephone !== 'function' || !voixDuTelephone() || !lecteurSysteme || typeof lecteurSysteme.preparer !== 'function') return;
-  const tour = f[0].tour;
-  lecteurSysteme.preparer(f.filter(x => x.tour === tour).map(x => x.texte).join(' '));
+  const tour = f[0].tour, lot = f.filter(x => x.tour === tour).map(x => x.texte).join(' ');
+  lecteurSysteme.preparer(lot);
+  // (05/11, Ahmed : « il faut bien coordonner la sortie du ribosome avec la sortie de la voix ») mesuré : 2,5 s (médiane) entre l'envoi à sa
+  // voix et le premier son ; quand les morceaux passés sont sautés, c'est le dernier qui est dit : sa voix le calcule aussi d'avance
+  const dernier = String(f[f.length - 1].texte || '');
+  if (f.length > 1 && dernier && dernier !== lot) lecteurSysteme.preparer(dernier);
 }
 // (04/11, 13:15, Ahmed : « l'épissure a été notée, mais je n'ai rien entendu ») mesuré : traduit pendant qu'il parlait, rien ne relançait sa voix
 // après sa fin ; en Conversation, ce qui est traduit et attend part au plus 0,3 s après que sa voix est libre et que tu t'es tu
@@ -3514,6 +3518,7 @@ function arreterEpissure(cause, tour, o = {}) {
   const t = Number(tour != null ? tour : etat.epissureTour);
   if (!(t > 0) || (etat.riboStop != null && t <= etat.riboStop)) return;   // (15:33) une épissure arrêtée ne s'arrête pas deux fois
   etat.riboStop = Math.max(etat.riboStop != null ? etat.riboStop : -1, t);
+  if (cause === 'sautee' && typeof blancsPourSautes === 'function') blancsPourSautes((etat.riboFile || []).filter(x => Number(x.tour) <= etat.riboStop));
   etat.riboFile = (etat.riboFile || []).filter(x => Number(x.tour) > etat.riboStop);
   if (typeof bouts !== 'undefined' && Number(bouts.tour) <= etat.riboStop) { bouts.fileTel = []; bouts.attenteTel = null; }
   // (05/11) la suite sautée : le morceau qu'il dit va jusqu'au bout
@@ -3543,6 +3548,17 @@ function sauterLaSuite(ms) {
       if (n > (etat.riboStop != null ? etat.riboStop : -1)) { etat.riboStop = n; etat.riboFile = (etat.riboFile || []).filter(x => Number(x.tour) > n); }
     }).catch(() => {});
 }
+// (05/11, Ahmed : « quand des chunks sont sautés, il faut envoyer des … jusqu'à l'arrivée du chunk qui doit être prononcé ») ce qui est sauté
+// devient « … » dans son pavé : sa parole reste un fil, sans trou (et le cockpit ouvre le ribosome suivant avec son blanc)
+function blancsPourSautes(sautes) {
+  for (const x of sautes || []) {
+    const p = paveDe(x.tour), t = String(x.texte || '').trim();
+    const i = t && p.episse ? p.episse.lastIndexOf(t) : -1;
+    if (i < 0) continue;
+    p.episse = `${p.episse.slice(0, i)}…${p.episse.slice(i + t.length)}`.replace(/…(?:\s*…)+/g, '…');
+    poserPave(p.cle, titreEpissure(p), htmlEpissure(p));
+  }
+}
 // ce que son ribosome a choisi, dit d'un seul souffle (un tour à la fois, dans l'ordre), quand sa voix est libre
 function direRibosome() {
   let f = etat.riboFile || [];
@@ -3569,6 +3585,7 @@ function direRibosome() {
   if (f.length > 1 && typeof reglagesCorps !== 'undefined' && reglagesCorps.sauter_passe !== false
     && attente >= (Number(reglagesCorps.sauter_passe_s) || 3) * 1000) {
     if (typeof journalVoix === 'function') journalVoix('passe_saute', { sautes: f.length - 1, ms: attente });
+    if (typeof blancsPourSautes === 'function') blancsPourSautes(f.slice(0, -1));
     f = etat.riboFile = f.slice(-1);
   }
   const tour = f[0].tour, lot = f.filter(x => x.tour === tour);

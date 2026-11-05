@@ -129,3 +129,32 @@ test('lu après ton silence : 0, sans attendre ; réglé, il attend que tu te so
   assert.match(SRC, /lire_apres_silence_ms: Number\.isFinite/);
   assert.match(fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8'), /\['lire_apres_silence_ms', /);
 });
+
+// (05/11, Ahmed : « quand des chunks sont sautés, il faut envoyer des … jusqu'à l'arrivée du chunk qui doit être prononcé ; le ribosome ne
+// s'arrête jamais »)
+test('ce qui est sauté devient « … » dans son pavé ; après une suite sautée, le ribosome suivant s’ouvre tout de suite avec son blanc', () => {
+  const poses = [];
+  const ctx = { String, etat: { paves: { 4: { cle: 'p4', episse: 'Oui papa. deux trois le dernier' } } }, poses,
+    paveDe: (t) => ctx.etat.paves[t], titreEpissure: () => 't', htmlEpissure: (p) => p.episse, poserPave: (cle, titre, html) => poses.push(html) };
+  vm.createContext(ctx);
+  vm.runInContext(prendre(PAGE, 'blancsPourSautes') + 'this.b = blancsPourSautes;', ctx);
+  ctx.b([{ tour: 4, texte: 'deux' }, { tour: 4, texte: 'trois' }]);
+  assert.strictEqual(ctx.etat.paves[4].episse, 'Oui papa. … le dernier', 'deux morceaux sautés : un seul « … »');
+  ctx.b([{ tour: 9, texte: 'inconnu' }].filter(() => false));
+  assert.match(PAGE, /if \(typeof blancsPourSautes === 'function'\) blancsPourSautes\(f\.slice\(0, -1\)\);/);
+  assert.match(PAGE, /if \(cause === 'sautee' && typeof blancsPourSautes === 'function'\) blancsPourSautes\(/);
+  assert.match(SRC, /const tour = dernierRibosome \? dernierRibosome\.tour : null;\n[^\n]*\n[^\n]*\n      if \(corpsReglages\(\)\.epissage !== false\) relayer\(\);/);
+});
+
+// (05/11, Ahmed : « il faut bien coordonner la sortie du ribosome avec la sortie de la voix »)
+test('sa voix calcule d’avance ce qui sera dit : le lot en tête, et le dernier morceau (celui qui reste quand les passés sont sautés)', () => {
+  const prepares = [];
+  const ctx = { String, etat: { riboFile: [{ tour: 4, texte: 'deux' }, { tour: 4, texte: 'trois' }, { tour: 5, texte: 'le dernier' }] },
+    voixDuTelephone: () => true, lecteurSysteme: { preparer: (t) => prepares.push(t) } };
+  vm.createContext(ctx);
+  vm.runInContext(prendre(PAGE, 'preparerRibosome') + 'this.p = preparerRibosome;', ctx);
+  ctx.p();
+  assert.deepStrictEqual([...prepares], ['deux trois', 'le dernier']);
+  prepares.length = 0; ctx.etat.riboFile = [{ tour: 4, texte: 'seul' }]; ctx.p();
+  assert.deepStrictEqual([...prepares], ['seul'], 'un seul morceau : calculé une fois');
+});

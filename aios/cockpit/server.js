@@ -10995,8 +10995,12 @@ async function traiter(req, res) {
       const r = pistes.ribo;
       if (r && !r.ferme) { r.ferme = 'sautee'; memoriserEpissure(r); pistes.ribo = null; }
       for (let x = dernierRibosome; x && !x.libere; x = x.precedent) x.sautee = true;
+      const tour = dernierRibosome ? dernierRibosome.tour : null;
+      // (05/11, Ahmed : « ne jamais oublier que le ribosome ne s'arrête jamais : il continue jusqu'au signal de fin, en enchaînant ») le suivant
+      // s'ouvre tout de suite, avec son blanc « … », jusqu'au morceau qui sera dit
+      if (corpsReglages().epissage !== false) relayer();
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-      return res.end(j({ tour: dernierRibosome ? dernierRibosome.tour : null }));
+      return res.end(j({ tour }));
     }
     if (pistes.ribo && Number(q.tour) === pistes.ribo.tour) { pistes.ribo.ferme = 'silence'; memoriserEpissure(pistes.ribo); pistes.ribo = null; }
     res.writeHead(204); return res.end();
