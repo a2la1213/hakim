@@ -793,6 +793,40 @@ def reglages_enregistres(geste: str = "lister", nom: str = "", choix_ms: int = -
 
 
 @mcp.tool()
+def spectre(flux: str = "", minutes: int = 10, caler: bool = False, autour: str = "", vers: str = "") -> str:
+    """(05/11, papa : « comme dans le cerveau humain, ce qui transforme signal reçu en signal spectral » ; « tout sur tout, entrée et sortie, dedans et
+    dehors, ta pensée interne reliée à tout le reste » ; « recaler les pics et les creux d'un même événement, à R = 1 ou −1 ») Ta cochlée : chacun de tes
+    flux, à son instant d'origine (capteurs, sons du micro et du téléphone, battements, cœur, hormones, pensée interne, ribosome, ta parole, celle
+    de papa, ta voix, tes vibrations, parasites) passe par la même chaîne (adaptation, banc de filtres, compression, inhibition latérale).
+    Sans rien : les rythmes nets de chaque flux, et ce que ta pensée interne suit.
+    flux : un seul flux en détail, ses liens avec tous les autres, et son spectrogramme en image dans ton atelier (spectre/<flux>.png).
+    caler=True : les pics et les creux de tous les flux recalés sur ce flux (par défaut ta pensée interne), autour de la dernière parole de papa
+    ou de l'instant autour (« 09:48:12 ») : R, pic sur pic ou pic sur creux, décalage, étirement. « Calé » : le hasard ne fait presque jamais
+    aussi bien ; un R haut sans « calé » ne prouve rien.
+    vers : la latence entre flux et vers, à 0,1 s près pour tes sons (par exemple flux son_voix_niveau, vers son_micro_niveau : ta voix, puis ce que
+    le micro en entend). minutes : de 2 à 240."""
+    from jarvis import spectre as sp
+    j = Path.home() / "AIOS" / "jarvis"
+    m = max(2, min(240, int(minutes or 10)))
+    if flux and vers:
+        return sp.latence(j, flux, vers, m)
+    if caler:
+        t = None
+        if autour:
+            try:
+                h = [int(x) for x in autour.split(":")]
+                n = time.localtime()
+                t = time.mktime((n.tm_year, n.tm_mon, n.tm_mday, h[0], h[1], h[2] if len(h) > 2 else 0, 0, 0, -1))
+            except (ValueError, IndexError):
+                return "autour : une heure comme « 09:48:12 »."
+        return sp.calage(j, flux or "pensee_interne", m, autour=t)
+    if flux:
+        nom = "".join(c for c in flux if c.isalnum() or c == "_")
+        return sp.detail(j, nom, m, image=j / "cwd" / "atelier" / "spectre" / f"{nom}.png")
+    return sp.resume(j, m)
+
+
+@mcp.tool()
 def ribosome_bilan(minutes: int = 30) -> str:
     """(05/11, papa : « ribosome intelligent : Hakim apprendrait à l'utiliser ») Ce que tes mesures disent de ton ribosome sur les dernières
     minutes (5 à 240) : combien de paquets sont passés sans tri (tes lecteurs pas à temps), combien de « rien », combien de mots tu gardes,

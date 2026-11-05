@@ -2416,6 +2416,18 @@ function suivreVoix(qui, parle) {
   if (!voixEnCours[qui]) { voixEnCours[qui] = { qui, debut: t, dernier: t }; envoyerTourVoix(voixEnCours[qui], true); }
   else voixEnCours[qui].dernier = t;
 }
+// (05/11, Ahmed : « le spectre de la parole dite et reçue doit être inclus dans le calibrage ») le niveau de sa voix du Mac, dix fois par seconde, pour
+// sa cochlée (jarvis/spectre.py) : seulement ce chiffre, jamais le son
+const voixFlux = { t0: 0, l: [] };
+setInterval(() => {
+  const joue = typeof lecteurNeuronal !== 'undefined' && lecteurNeuronal.joue;
+  if (joue) { if (!voixFlux.l.length) voixFlux.t0 = Date.now(); voixFlux.l.push([Number((niveauVoix() || {}).niveau) || 0, 0, 0, 0, 0, 0]); }
+  if (voixFlux.l.length >= 10 || (!joue && voixFlux.l.length)) {
+    const corps = JSON.stringify({ source: 'voix', t0: voixFlux.t0, pas_ms: 100, trames: voixFlux.l, maintenant: Date.now() });
+    voixFlux.l = [];
+    fetch('/api/voix/son-flux', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: corps }).catch(() => {});
+  }
+}, 100);
 function voixAuCorps(niveauMicro) {
   try {
     const cc = etat.conversation;

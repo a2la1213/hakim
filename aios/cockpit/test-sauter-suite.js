@@ -223,7 +223,7 @@ test('ribosome intelligent : l’interrupteur (oui), papa noté quand il règle,
   assert.match(SRC, /if \(parole\.length\) noterAjustementPapa\(parole\);/);
   assert.match(prendre(SRC, 'reglagesDuMode'), /modeDesReglages = m;\n  try \{ ecrireAtomique\(MODE_COURANT, j\(\{ modele: m, profil: PROFIL_DU_MODE\[m\], ts: Date\.now\(\) \}\)\); \} catch \(_\) \{\}\n  if \(premier\) return null;/,
     'son mode est écrit dès le premier vu (ses réglages vont dans le bon réglage enregistré)');
-  assert.match(SRC, /'ribosome_regler', 'ribosome_bilan', 'reglages_enregistres',/);
+  assert.match(SRC, /'ribosome_regler', 'ribosome_bilan', 'reglages_enregistres', 'spectre',/);
   assert.match(SRC, /par: x\.par === 'hakim' \|\| x\.modifie_par === 'hakim' \? 'hakim' : 'papa'/, '(05/11) ses réglages enregistrés, montrés comme les siens');
   assert.match(SRC, /\['-m', 'jarvis\.ribosome_intelligent', 'retours'\]/, 'le retour de chaque réglage lui revient');
   const REG = fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8');
@@ -282,4 +282,12 @@ test('la voix de papa se transcrit d’abord : aucune synthèse ne démarre pend
   assert.deepStrictEqual(appels, ['un'], '6 s au plus');
   assert.match(SRC, /const dePapa = temps\.source !== 'telephone';\n  if \(dePapa\) transcriptionsPapa\+\+;/);
   assert.match(SRC, /liberer\(\); transcriptionsEnAttente--; if \(dePapa\) transcriptionsPapa--; pomperVoix\(\);/);
+});
+
+// (05/11, Ahmed : « tout sur tout, en spectre ; la parole dite et reçue incluse dans le calibrage »)
+test('sa cochlée : ses sons gardés à leur instant (six chiffres par trame, jamais le son), et le niveau de sa voix dite ; son outil permis', () => {
+  assert.match(SRC, /fs\.appendFile\(SON_FLUX, JSON\.stringify\(\{ s: src, t: Math\.round\(t0\), p: pasMs, l: /);
+  assert.match(SRC, /if \(src === 'voix'\) return '';/);
+  assert.match(SRC, /'reglages_enregistres', 'spectre',/);
+  assert.match(PAGE, /source: 'voix', t0: voixFlux\.t0, pas_ms: 100, trames: voixFlux\.l/);
 });
