@@ -9137,7 +9137,16 @@ async function oreilleAzure(fichier) {
   try {
     const r = await fetch(`https://${c.region}.api.cognitive.microsoft.com/speechtotext/transcriptions:transcribe?api-version=2024-11-15`,
       { method: 'POST', body: fd, signal: ctl.signal, headers: { 'Ocp-Apim-Subscription-Key': cle } });
-    if (!r.ok) { azureCle.erreur = `${r.status}`; return null; }
+    if (!r.ok) {
+      azureCle.erreur = `${r.status} ${(await r.text().catch(() => '')).slice(0, 300)}`;
+      // (05/11) la transcription rapide (langue trouvée seule) n'existe pas dans toutes les régions (pas en Suisse) : l'oreille courte, une langue (azure.json : langue)
+      const langue = /^[a-z]{2}-[A-Z]{2}$/.test(c.langue || '') ? c.langue : 'fr-FR';
+      const q = await fetch(`https://${c.region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=${langue}&format=simple`,
+        { method: 'POST', body: fs.readFileSync(fichier), signal: ctl.signal, headers: { 'Ocp-Apim-Subscription-Key': cle, 'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000' } });
+      if (!q.ok) { azureCle.erreur = `${q.status}`; return null; }
+      const o = await q.json();
+      return { texte: String(o.DisplayText || '').trim(), langue, ms: Date.now() - t0 };
+    }
     const o = await r.json(), p = (o.phrases || [])[0] || {};
     return { texte: String(((o.combinedPhrases || [])[0] || {}).text || '').trim(), langue: p.locale || null, ms: Date.now() - t0 };
   } finally { clearTimeout(m); }
@@ -12015,6 +12024,7 @@ async function traiter(req, res) {
       const c = lireJson(AZURE, {}) || {};
       if (typeof q.region === 'string' && /^[a-z0-9]{3,30}$/.test(q.region.trim())) c.region = q.region.trim();
       if (typeof q.voix === 'string' && /^[a-zA-Z]{2}-[a-zA-Z]{2}-[A-Za-z]+Neural$/.test(q.voix.trim())) c.voix = q.voix.trim();
+      if (typeof q.langue === 'string' && /^[a-z]{2}-[A-Z]{2}$/.test(q.langue.trim())) c.langue = q.langue.trim();
       try { ecrireAtomique(AZURE, j(c)); } catch (_) {}
     }
     const c = lireJson(AZURE, {}) || {};
