@@ -2045,7 +2045,8 @@ function rendre() {
   // (26/10) des éléments montrés dans le fil sans être des messages de la conversation (etat.aCote : [{ ts, html }], fournis
   // par un bloc plus bas) : chacun à son heure, jamais enregistré dans la conversation
   const debut = caches ? quandMessage(vus[0]) : 0;
-  const aCote = (etat.aCote || []).filter(x => x.ts >= debut).sort((a, b) => a.ts - b.ts);
+  // (05/11, Ahmed : « l'option de masquer les pensées internes et l'épissage »)
+  const aCote = (etat.aCote || []).filter(x => x.ts >= debut && !(etat.reglages && etat.reglages.masquerEpissure && String(x.cle || '').startsWith('pave'))).sort((a, b) => a.ts - b.ts);
   let k = 0;
   const avant = (t) => { let h = ''; while (t && k < aCote.length && aCote[k].ts <= t) h += aCote[k++].html; return h; };
   let jourPrecedent = '';
@@ -3421,7 +3422,7 @@ function htmlDit(dits) {
 function poserPave(cle, titre, html) {
   // (04/11, 11:59) sous l'orbe aussi : en Conversation, c'est là que papa regarde
   const scene = typeof $ === 'function' ? $('epissureScene') : null;
-  if (scene) { scene.innerHTML = `<span class="quand">${titre}</span> ${html}`; scene.hidden = false; }
+  if (scene) { scene.innerHTML = `<span class="quand">${titre}</span> ${html}`; scene.hidden = !!(etat.reglages && etat.reglages.masquerEpissure); }
   // (04/11, 14:30, Ahmed, capture : « la pensée s'affiche avant l'affichage ; j'aimerais l'inverse ») mis à jour, il garde sa place :
   // l'instant où sa pensée est née, avant sa réponse consciente
   const avant = (etat.aCote || []).find(x => x.cle === cle);
@@ -6246,6 +6247,7 @@ function appliquerReglages() {
   $('vitesse').value = r.vitesse; $('lectureAuto').checked = !!r.lectureAuto; $('voix').value = r.voix;
   $('sceneActive').checked = r.scene !== false;
   $('rapide').checked = r.rapide !== false;
+  $('masquerEpissure').checked = !!r.masquerEpissure;
   $('position').checked = !!r.position; suivrePosition(!!r.position);
   $('voixNeutre').checked = !!r.voixNeutre;
   majSesParoles();
@@ -6259,7 +6261,7 @@ for (const [id, cle, val] of [['source', 'source', e => e.value], ['modele', 'mo
   ['langue', 'langue', e => e.value], ['voixFr', 'voixFr', e => e.value], ['voixAr', 'voixAr', e => e.value],
   ['vitesse', 'vitesse', e => parseFloat(e.value) || 1], ['lectureAuto', 'lectureAuto', e => e.checked],
   ['patience', 'patience', e => parseFloat(e.value)], ['patienceConversation', 'patienceConversation', e => parseFloat(e.value)],
-  ['voix', 'voix', e => ((etat.choixAzure = e.value === 'azure') ? 'neuronale' : e.value)], ['sceneActive', 'scene', e => e.checked], ['rapide', 'rapide', e => e.checked],
+  ['masquerEpissure', 'masquerEpissure', e => e.checked], ['voix', 'voix', e => ((etat.choixAzure = e.value === 'azure') ? 'neuronale' : e.value)], ['sceneActive', 'scene', e => e.checked], ['rapide', 'rapide', e => e.checked],
   ['position', 'position', e => e.checked], ['voixNeutre', 'voixNeutre', e => e.checked]]) {
   $(id).addEventListener('change', (ev) => { etat.reglages[cle] = val(ev.target); appliquerReglages(); sauver(); });
 }

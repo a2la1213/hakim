@@ -3492,7 +3492,7 @@ function memoriserEpissure(r) {
   deposerEchange({ ahmed: (r.papa || []).join(' … ').slice(-4000), hakim: `${dit || '(rien de dit)'}${interne ? ` [sa pensée interne, non dite : ${interne}]` : ''}`,
     vecu: r.vecu || undefined, oral: true, epissure: true });
 }
-function lireRibosome(tour, pensee, avant, r = pistes.ribo || (pistes.ribo = ribosomeSuivant())) {
+function lireRibosome(tour, pensee, avant, r = pistes.ribo || (pistes.ribo = ribosomeSuivant()), reponse = false) {
   // (04/11, 23:10) une pensée en retard pour un ribosome qui a déjà passé la main : au suivant (il parle après) ; sans suivant, il rouvre
   while (r.libere && r.suivant) r = r.suivant;
   if (r.libere) r.libere = false;
@@ -3503,7 +3503,7 @@ function lireRibosome(tour, pensee, avant, r = pistes.ribo || (pistes.ribo = rib
   // (16:05) ce que papa disait, tour après tour (une phrase qui s'allonge remplace la précédente)
   const pa = String(avant || '').trim();
   if (pa) { r.papa = r.papa || []; const der = r.papa[r.papa.length - 1]; if (der && pa.startsWith(der)) r.papa[r.papa.length - 1] = pa; else if (pa !== der) r.papa.push(pa); }
-  r.attente.push({ texte: pensee, debut: motsEpisses(r.pave).length });
+  r.attente.push({ texte: pensee, debut: motsEpisses(r.pave).length, ...(reponse ? { reponse: true } : {}) });
   r.pave = `${r.pave} ${pensee}`.trim();
   lireLaSuite(tour, r);
 }
@@ -3535,7 +3535,7 @@ function ribosomeDeReponse(tour, r, avant) {
   let tampon = '';
   const lire = (phrase) => {
     const t = boutDe(phrase).replace(/\s+/g, ' ').trim();
-    if (t && !/^No response requested\.?$/i.test(t)) lireRibosome(tour, t, avant, r);
+    if (t && !/^No response requested\.?$/i.test(t)) lireRibosome(tour, t, avant, r, true);   // (05/11) sa réponse consciente : dite telle quelle
   };
   return {
     pousser(x) {
@@ -3789,7 +3789,7 @@ async function lirePaquet(tour, r, i, paquet) {
   // (05/11, 09:00, Ahmed par Hakim : « dès que le premier morceau est prêt, la voix le dit ; ensuite le ribosome trie, et la voix fait pareil pour
   // la suite » ; « vite fait bien fait, sans trop de ressources ») premiere_directe (allumé dans la page) : le premier paquet de sa réponse (pas celui d'un
   // relais) passe tel quel, sans lecteurs, et part tout de suite à sa voix ; les suivants sont triés
-  const premiere = !tel && i === 0 && !r.relais && reglage.premiere_directe === true;
+  const premiere = (!tel && i === 0 && !r.relais && reglage.premiere_directe === true) || (paquet.some(x => x.reponse) && typeof corpsReglages === 'function' && corpsReglages().reponse_directe === true);   // (05/11, Ahmed : « sa parole en texte n'est pas prononcée »)
   const direct = premiere || (typeof corpsReglages === 'function' && corpsReglages().economie) || delai < (typeof RIBOSOME_LECTURE_MIN !== 'undefined' ? RIBOSOME_LECTURE_MIN : 0);   // (21:52) plus vite que ses lecteurs : sans eux
   const promesses = direct ? [] : (cr.tournesol && !tel ? [[tournesol().entree, 'son entrée', 3000]] : RIBOSOME_LECTEURS).map(([mod, nom]) => lire([mod, nom, delai]));   // (15:55) l'attente : sa vitesse ; (16:50) réglée par son subconscient
   // (18:40) ses lecteurs partis (sur ses plus anciennes voix libres), une voix d'avance se prépare pour le paquet suivant, sans retenir leur
@@ -3808,7 +3808,7 @@ async function lirePaquet(tour, r, i, paquet) {
     } catch (_) {}
   });
   if (ok && choisie && choisie.repondu && choisie.repondu.length) fenetreRepondu(choisie.repondu);
-  r.prets.set(i, ok ? { garde, e, debut: paquet[0].debut } : null);
+  r.prets.set(i, ok ? { garde, e, debut: paquet[0].debut, ...(paquet.some(x => x.reponse) ? { reponse: true } : {}) } : null);
 }
 // ce qu'il a gardé du paquet : ses mots allumés dans le pavé, la suite de sa réponse, envoyés à la page (sa voix les dit)
 function sortirPaquet(tour, r, x) {
@@ -3822,7 +3822,7 @@ function sortirPaquet(tour, r, x) {
   // (04/11, 15:30) lus : combien de mots de ses pensées son ribosome a déjà lus (la page montre ce qu'il n'a pas gardé : sa pensée interne)
   // (05/11, Ahmed : « parole 1 toujours dite dès la pensée ; ensuite il trie, choisit l'ordre, et la dernière est toujours dite ; pas de longue file ») le tunnel : la
   // première part, les suivantes attendent ici ; quand le ribosome n'a plus rien à lire, 1,5 s après, viderTunnel choisit
-  const tunnel = x && x.garde && !(r.k === 1 && !r.relais) && typeof corpsReglages === 'function' && corpsReglages().tunnel;
+  const tunnel = x && x.garde && !(x.reponse && corpsReglages().reponse_directe === true) && !(r.k === 1 && !r.relais) && typeof corpsReglages === 'function' && corpsReglages().tunnel;
   if (tunnel) {
     (r.tunnel = r.tunnel || []).push({ texte: x.garde, ajoutes: x.e.ajoutes });
     clearTimeout(r.tunnelT);
@@ -7016,7 +7016,7 @@ function corpsReglages() {
     economie: r.economie === true,   // (05/11) mode économie : ni pensées en boucle, ni lecteurs, ni tri du tunnel
     fenetre_partagee: r.fenetre_partagee === true, tournesol: r.tournesol === true,
     un_par_un: r.un_par_un !== false, meubles_entre: r.meubles_entre !== false,   // (05/11, 21:20) ses morceaux un à un, et ses « euh » entre eux
-    voix_azure: r.voix_azure === true, stt_azure: r.stt_azure === true,
+    voix_azure: r.voix_azure === true, stt_azure: r.stt_azure === true, reponse_directe: r.reponse_directe === true,
     tunnel: r.tunnel === true,
     parole_libre: r.parole_libre === true,   // (05/11, Ahmed : « on lève toutes tes contraintes de parole ») plus de plafond ; stop, parasites et sécurité restent
     pensee_en_boucle: r.pensee_en_boucle !== false,
@@ -12204,6 +12204,7 @@ async function traiter(req, res) {
       if (typeof q.meubles_entre === 'boolean') r.meubles_entre = q.meubles_entre;
       if (typeof q.voix_azure === 'boolean') r.voix_azure = q.voix_azure;
       if (typeof q.stt_azure === 'boolean') r.stt_azure = q.stt_azure;
+      if (typeof q.reponse_directe === 'boolean') r.reponse_directe = q.reponse_directe;
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
