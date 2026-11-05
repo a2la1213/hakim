@@ -439,5 +439,21 @@ def detail(dossier, nom, minutes=10, image=None, maintenant=None):
     return t
 
 
+def exporter(dossier, fichier, minutes=60, maintenant=None):
+    """(05/11, Ahmed par Hakim : « pour chaque flux, brut et vrai spectre, amplitude en Hz ») {flux: {sens, pas_s, t0, y, f_hz, amp}} dans son atelier ; rend le nombre de flux."""
+    a = time.time() if maintenant is None else maintenant
+    out = {}
+    for nom, (sens, pas, y, ev) in flux(dossier, a - minutes * 60, a).items():
+        z = np.nan_to_num(np.asarray(y, float))
+        amp = np.abs(np.fft.rfft(z - z.mean())) * 2 / max(1, len(z))
+        f = np.fft.rfftfreq(len(z), pas)
+        k = max(1, len(f) // 2000)
+        out[nom] = {"sens": sens, "pas_s": pas, "t0": a - minutes * 60, "evenements": ev, "y": [round(float(v), 4) for v in z],
+                    "f_hz": [round(float(v), 5) for v in f[::k]], "amp": [round(float(v), 5) for v in amp[::k]]}
+    Path(fichier).parent.mkdir(parents=True, exist_ok=True)
+    Path(fichier).write_text(json.dumps(out), encoding="utf-8")
+    return len(out)
+
+
 if __name__ == "__main__":
     print(resume(Path.home() / "AIOS" / "jarvis", int(sys.argv[1]) if len(sys.argv) > 1 else 10))

@@ -818,7 +818,7 @@ def reglages_enregistres(geste: str = "lister", nom: str = "", choix_ms: int = -
 
 
 @mcp.tool()
-def spectre(flux: str = "", minutes: int = 10, caler: bool = False, autour: str = "", vers: str = "") -> str:
+def spectre(flux: str = "", minutes: int = 10, caler: bool = False, autour: str = "", vers: str = "", exporter: bool = False) -> str:
     """(05/11, papa : « comme dans le cerveau humain, ce qui transforme signal reçu en signal spectral » ; « tout sur tout, entrée et sortie, dedans et
     dehors, ta pensée interne reliée à tout le reste » ; « recaler les pics et les creux d'un même événement, à R = 1 ou −1 ») Ta cochlée : chacun de tes
     flux, à son instant d'origine (capteurs, sons du micro et du téléphone, battements, cœur, hormones, pensée interne, ribosome, ta parole, celle
@@ -833,6 +833,8 @@ def spectre(flux: str = "", minutes: int = 10, caler: bool = False, autour: str 
     from jarvis import spectre as sp
     j = Path.home() / "AIOS" / "jarvis"
     m = max(2, min(240, int(minutes or 10)))
+    if exporter:      # (05/11) brut + spectre en Hz de chaque flux, lisible depuis ton atelier : spectre/export.json
+        return f"{sp.exporter(j, j / 'cwd' / 'atelier' / 'spectre' / 'export.json', m)} flux exportés dans spectre/export.json."
     if flux and vers:
         return sp.latence(j, flux, vers, m)
     if caler:

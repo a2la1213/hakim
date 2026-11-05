@@ -141,3 +141,14 @@ def test_une_seule_bosse_ne_prouve_jamais_un_calage():
     x = np.exp(-0.5 * ((np.arange(n) - 300) / 8) ** 2)
     r = sp.caler({"ref": x, "autre": np.roll(x, 3)}, "ref", 300)
     assert r[0]["r"] > 0.9 and not r[0]["cale"] and not r[0]["assez"]
+
+
+def test_export_brut_et_spectre_en_hz(tmp_path):
+    t0 = 1_800_000_000.0
+    with open(tmp_path / "corps-flux.jsonl", "w") as f:
+        f.write("\n")
+        for i in range(600):
+            f.write(json.dumps({"ts": (t0 + i) * 1000, "etat": {"agitation_g": float(np.sin(2 * np.pi * i / 20))}}) + "\n")
+    assert sp.exporter(tmp_path, tmp_path / "x" / "e.json", 10, maintenant=t0 + 600) >= 1
+    a = json.loads((tmp_path / "x" / "e.json").read_text())["agitation"]
+    assert abs(a["f_hz"][int(np.argmax(a["amp"]))] - 0.05) < 0.005 and len(a["y"]) == 600

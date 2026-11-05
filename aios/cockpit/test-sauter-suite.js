@@ -217,7 +217,7 @@ test('modifier un réglage enregistré : il passe dans les curseurs, puis « Enr
 
 // (05/11, Ahmed : « un bouton ribosome intelligent, et Hakim apprendrait à l'utiliser »)
 test('ribosome intelligent : l’interrupteur (oui), papa noté quand il règle, son mode du moment écrit, ses réglages dans la page, son outil permis', () => {
-  assert.match(SRC, /ribosome_intelligent: r\.ribosome_intelligent !== false \}/);
+  assert.match(SRC, /ribosome_intelligent: r\.ribosome_intelligent !== false,/);
   assert.match(SRC, /if \(typeof q\.ribosome_intelligent === 'boolean'\) r\.ribosome_intelligent = q\.ribosome_intelligent;/);
   assert.match(SRC, /noterAjustementPapa\(Object\.keys\(q\)\.filter\(k => k !== 'defaut'\)\);/);
   assert.match(SRC, /if \(parole\.length\) noterAjustementPapa\(parole\);/);
@@ -315,4 +315,20 @@ test('la synthèse en cours attend que papa se transcrive (8 s au plus, puis 4 s
 test('le Mac débordé : ce qui attend sur le téléphone depuis plus de 30 s est jeté sans lui être envoyé ; une vraie coupure du réseau garde tout', () => {
   assert.match(PAGE, /if \(horsLigne\.panne !== 'reseau' && Date\.now\(\) - t\.t > HORS_LIGNE_MAX_MS\) \{ t\.texte = ''; t\.wav = null; journalVoix\('tour_jete'/);
   assert.match(PAGE, /HORS_LIGNE_MAX_MS = 8000;/);
+});
+
+test('boucle toujours prête : rien s’il dort ou 60 s après le stop ; une pensée qui ressemble à ce qui est dit est jetée', () => {
+  const ctx = { pistes: {}, ribosomesCoupesA: 0, dort: false, n: 0 };
+  ctx.corpsReglages = () => ({}); ctx.hakimDort = () => ctx.dort; ctx.ribosomeSuivant = () => ++ctx.n;
+  vm.createContext(ctx);
+  vm.runInContext('var pistes = this.pistes;' + prendre(SRC, 'boucleRibosomes') + 'this.b = boucleRibosomes;', ctx);
+  ctx.dort = true; assert.strictEqual(ctx.b(1e6), false);
+  ctx.dort = false; ctx.ribosomesCoupesA = 1e6 - 1000; assert.strictEqual(ctx.b(1e6), false);
+  ctx.ribosomesCoupesA = 0; assert.strictEqual(ctx.b(1e6), true); assert.strictEqual(ctx.b(1e6), false, 'déjà ouvert');
+  const c2 = { Math, Number, Date, String, etat: { riboDits: [['oui', 'papa', 'calcul', 'fini']], riboFile: [{ tour: 1, texte: 'Oui papa, le calcul a fini' }, { tour: 1, texte: 'une idee toute neuve ici' }], conversation: {} }, lecteur: { actif: false } };
+  vm.createContext(c2);
+  const src = prendre(PAGE, 'direRibosome');
+  vm.runInContext(src.slice(0, src.indexOf('  const tour = f[0].tour, lot')) + '  this.lot = f.map(x => x.texte);\n}\nthis.f = direRibosome;', c2);
+  c2.f();
+  assert.deepStrictEqual([...c2.lot], ['une idee toute neuve ici']);
 });

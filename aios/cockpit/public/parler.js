@@ -3622,6 +3622,15 @@ function direRibosome() {
     if (typeof blancsPourSautes === 'function') blancsPourSautes(f.slice(0, -1));
     f = etat.riboFile = f.slice(-1);
   }
+  // (05/11, Ahmed par Hakim : « dès que la première pensée est sortie, jeter toutes celles qui lui ressemblent ») 70 % de ses mots déjà dits il y a peu : jetée
+  const motsRibo = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^\p{L}\p{N}]+/u).filter(m => m.length > 2);
+  const neufs = f.filter((x) => { const m = motsRibo(x.texte); return !(m.length >= 3 && (etat.riboDits || []).some((d) => m.filter(w => d.includes(w)).length / m.length >= 0.7)); });
+  if (neufs.length < f.length) {
+    if (typeof journalVoix === 'function') journalVoix('redondance_jetee', { n: f.length - neufs.length });
+    if (typeof blancsPourSautes === 'function') blancsPourSautes(f.filter(x => !neufs.includes(x)));
+    f = etat.riboFile = neufs;
+    if (!f.length) return;
+  }
   const tour = f[0].tour, lot = f.filter(x => x.tour === tour);
   // (04/11, 13:10, Ahmed : « dès que le ribosome commence, il ne s'arrête jamais jusqu'à la fin, excepté si je parle : il attend la fin de
   // ma parole ») tu parles : sa voix attend ta fin, puis reprend là où elle en était ; rien de ce qui est traduit n'est laissé
@@ -3646,6 +3655,7 @@ function direRibosome() {
   etat.riboN = etat.riboN || {};
   const n = Math.max(typeof bouts !== 'undefined' && bouts.tour === tour ? bouts.prochain : 1, (etat.riboN[tour] || 0) + 1);
   etat.riboN[tour] = n;
+  etat.riboDits = (etat.riboDits || []).concat(lot.map(x => motsRibo(x.texte))).slice(-8);
   if (typeof journalVoix === 'function') journalVoix('ribosome_dit', { tour, n, morceaux: lot.length });
   recevoirBout({ texte: lot.map(x => x.texte).join(' '), pret: true, sansMeuble: true, ribosome: true }, n, tour);
 }
