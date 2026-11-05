@@ -73,6 +73,7 @@
       <div id="profilsListe"></div>
       <div class="sous">« Mini Hakim », « Hakim » et « Super Hakim » s’appliquent tout seuls quand il change de mode (interrupteur dans « Sa parole »).</div>
     </section>
+    <section class="glass famille" aria-labelledby="t-conso"><h2 id="t-conso"><span class="ic" aria-hidden="true">⛽</span>Sa consommation aujourd’hui</h2><div class="sous">Le mode économie est dans « Son ribosome ».</div><div id="conso"></div></section>
     <div id="familles"><div class="vide">Chargement…</div></div>
   </main>
   <div class="bulle" id="bulle" role="status" hidden></div>
@@ -92,6 +93,7 @@
       ['ribosome_intelligent', '🧠 Ribosome intelligent', 'Hakim règle lui-même ces curseurs à partir de ses mesures, et apprend avec le temps. Ce que tu règles passe avant lui pendant 30 min.', 'oui', null, 'corps'],
       ['papa_passe_avant', '🤚 Tes réglages passent avant lui (30 min)', 'Éteint : il peut changer tout de suite ce que tu viens de régler.', 'oui', null, 'corps'],
       ['voix_par_appareil', '📱 Sa voix suit l’appareil', 'Supertonic dans l’appli du téléphone, Chatterbox sur le Mac. Éteint : la voix choisie dans Parler.', 'oui', null, 'corps'],
+      ['economie', '🪫 Mode économie', 'Plus de pensées en boucle, ni de lecteurs, ni de tri : ses pensées passent telles quelles. Son grand cerveau ne change pas.', 'oui', null, 'corps'],
       ['tunnel', '🚇 Tunnel de parole', 'La 1re dite tout de suite ; à la fin de la lecture, la dernière toujours, et au plus 2 autres choisies, dans l’ordre qu’il veut. Le reste est jeté, sa pensée non dite n’est plus mémorisée.', 'oui', null, 'corps'],
       ['parole_libre', '🕊️ Parole libre', 'Plus de plafond imposé à ses épissures : il parle autant qu’il veut. Ton stop, le filtre des parasites et la sécurité restent.', 'oui', null, 'corps'],
       ['pensee_en_boucle', '💓 Pensées en boucle', 'Tous les 60 battements, quand personne ne lui parle, une pensée intérieure jamais dite. Coûte un petit appel à chaque fois.', 'oui', null, 'corps'],
@@ -268,6 +270,13 @@
     for (const b of document.querySelectorAll('[data-apparence]')) b.setAttribute('aria-pressed', String(b.dataset.apparence === ap));
   }
 
+  async function conso() {
+    try {
+      const d = await appeler('/api/conso'), z = document.getElementById('conso'); z.textContent = '';
+      const tot = d.lignes.reduce((a, x) => a + x.usd, 0), t = document.createElement('div'); t.className = 'nom'; t.textContent = `Équivalent ${tot.toFixed(2)} $`; z.appendChild(t);
+      for (const x of d.lignes.slice(0, 6)) { const l = document.createElement('div'); l.className = 'aide'; l.textContent = `${x.source === 'api' ? '💳 API payante' : '✅ forfait'} · ${x.modele} : ${x.appels} appels, ${x.usd.toFixed(2)} $, ${Math.round(x.jetons / 1000)} k jetons`; z.appendChild(l); }
+    } catch (_) {}
+  }
   async function ajustements() {
     const zone = document.getElementById('ajustements'); if (!zone) return;
     try {
@@ -286,7 +295,7 @@
     } catch (_) {}
   }
   async function charger() {
-    ajustements();
+    ajustements(); conso();
     const res = await Promise.allSettled(Object.entries(ROUTES).map(async ([k, r]) => { valeurs[k] = r.depuis(await appeler(r.lire)); }));
     const rates = res.filter((x) => x.status === 'rejected');
     if (rates.length) dire(`Certains réglages ne répondent pas (${rates[0].reason.message})`, true);

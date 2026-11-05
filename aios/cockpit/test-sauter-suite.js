@@ -240,7 +240,7 @@ test('stop (les deux boutons et Échap) : tous ses ribosomes libérés, et le co
 
 // (05/11, 09:00, Ahmed par Hakim : « dès que le premier morceau est prêt, la voix le dit ; ensuite le ribosome trie »)
 test('sa première pensée dite tout de suite : le premier paquet de sa réponse sans lecteurs (pas celui d’un relais) ; réglable', () => {
-  assert.match(SRC, /const premiere = !tel && i === 0 && !r\.relais && reglage\.premiere_directe === true;\n  const direct = premiere \|\| delai </);
+  assert.match(SRC, /const premiere = !tel && i === 0 && !r\.relais && reglage\.premiere_directe === true;\n  const direct = premiere \|\| /);
   assert.match(prendre(SRC, 'relayer'), /pistes\.ribo\.relais = true;/);
   assert.match(SRC, /if \(typeof q\.premiere_directe === 'boolean'\) r\.premiere_directe = q\.premiere_directe;/);
   assert.match(fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8'), /\['premiere_directe', /);

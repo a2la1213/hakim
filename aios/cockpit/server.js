@@ -3785,7 +3785,7 @@ async function lirePaquet(tour, r, i, paquet) {
   // la suite » ; « vite fait bien fait, sans trop de ressources ») premiere_directe (allumé dans la page) : le premier paquet de sa réponse (pas celui d'un
   // relais) passe tel quel, sans lecteurs, et part tout de suite à sa voix ; les suivants sont triés
   const premiere = !tel && i === 0 && !r.relais && reglage.premiere_directe === true;
-  const direct = premiere || delai < (typeof RIBOSOME_LECTURE_MIN !== 'undefined' ? RIBOSOME_LECTURE_MIN : 0);   // (21:52) plus vite que ses lecteurs : sans eux
+  const direct = premiere || (typeof corpsReglages === 'function' && corpsReglages().economie) || delai < (typeof RIBOSOME_LECTURE_MIN !== 'undefined' ? RIBOSOME_LECTURE_MIN : 0);   // (21:52) plus vite que ses lecteurs : sans eux
   const promesses = direct ? [] : RIBOSOME_LECTEURS.map(([mod, nom]) => lire([mod, nom, delai]));   // (15:55) l'attente : sa vitesse ; (16:50) réglée par son subconscient
   // (18:40) ses lecteurs partis (sur ses plus anciennes voix libres), une voix d'avance se prépare pour le paquet suivant, sans retenir leur
   // départ : avant, elles ne se préparaient qu'au premier son de ta voix, et pendant sa réponse il pouvait en manquer
@@ -3837,7 +3837,8 @@ async function viderTunnel(r) {
   if (!l.length) return;
   r.tunnel = [];
   let ordre = l.map((_, k) => k + 1);
-  if (l.length > 2) {
+  if (l.length > 2 && corpsReglages().economie) ordre = [l.length];
+  else if (l.length > 2) {
     const o = await sonnetTeteDeFond(`Tu es Hakim. Papa disait : « ${neutraliser(r.avant).slice(-300)} ».\nTu as déjà commencé : « ${neutraliser(r.phrase).slice(0, 200)} ».\nTes paroles possibles :\n${l.map((x, k) => `${k + 1}. ${neutraliser(x.texte).slice(0, 200)}`).join('\n')}\n`
       + `La ${l.length} sera dite en dernier. Parmi les autres, garde au plus 2 numéros, les plus opportunes, dans l'ordre où tu les dirais ; aucune si rien n'apporte. Réponds seulement : ORDRE : numéros.`, 'ribosome_tri', modelePiste(), 1500).catch(() => null);
     ordre = ordreTunnel(o && o.texte, l.length);
@@ -3851,7 +3852,7 @@ async function viderTunnel(r) {
 function relayer() {
   pistes.ribo = ribosomeSuivant();
   pistes.ribo.relais = true;                                           // (05/11) sa première pensée n'est pas dite telle quelle (premiere_directe)
-  if (corpsReglages().epissage !== false) blancDeReflexion(pistes.ribo, BLANC_RELAIS);
+  if (corpsReglages().epissage !== false && !corpsReglages().economie) blancDeReflexion(pistes.ribo, BLANC_RELAIS);
   return pistes.ribo;
 }
 // (04/11, Ahmed : « fais tous tes tests et tous tes calculs, et regarde comment optimiser pour qu'il dise la bonne parole ; enfin, la
@@ -7004,6 +7005,7 @@ function corpsReglages() {
     ribosome_intelligent: r.ribosome_intelligent !== false,
     papa_passe_avant: r.papa_passe_avant !== false,   // (05/11) ce que papa règle passe avant Hakim pendant 30 min
     voix_par_appareil: r.voix_par_appareil !== false,
+    economie: r.economie === true,   // (05/11) mode économie : ni pensées en boucle, ni lecteurs, ni tri du tunnel
     tunnel: r.tunnel === true,
     parole_libre: r.parole_libre === true,   // (05/11, Ahmed : « on lève toutes tes contraintes de parole ») plus de plafond ; stop, parasites et sécurité restent
     pensee_en_boucle: r.pensee_en_boucle !== false,
@@ -9134,7 +9136,7 @@ function boucleRibosomes(maintenant = Date.now()) {
 // (05/11, Ahmed : « il a le droit de vivre, gogogo ») tous les 60 battements : son oreille (Whisper) et ses voix vivantes gardées prêtes, et, si personne ne lui
 // parle depuis 20 s, une pensée intérieure (jamais dite, dans 💭 ; un appel à Mini Hakim) ; rien s'il dort, si un tour tourne ou 60 s après le stop
 function poulsDeVie(maintenant = Date.now()) {
-  if (corpsReglages().pensee_en_boucle === false || hakimDort() || maintenant - ribosomesCoupesA < 60000) return false;
+  if (corpsReglages().economie || corpsReglages().pensee_en_boucle === false || hakimDort() || maintenant - ribosomesCoupesA < 60000) return false;
   voixDemarrer('ecoute');
   prechaufferVivants();
   const r = pistes.ribo;
@@ -11922,6 +11924,18 @@ async function traiter(req, res) {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     return res.end(j({ ajustements: lignesJson(AJUSTEMENTS_RIBOSOME, 30).reverse() }));
   }
+  // (05/11, Ahmed : « j'aime bien l'idée ») ce qu'il consomme aujourd'hui, par source et par modèle (jetons.jsonl)
+  if (p === '/api/conso' && req.method === 'GET') {
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    const jour = jourLocal(), g = {};
+    for (const x of lignesJson(JARVIS_JETONS, 5000)) {
+      if (x.jour !== jour) continue;
+      const c = `${x.source || '?'}|${x.modele || '?'}`, v = g[c] || (g[c] = { source: x.source || '?', modele: x.modele || '?', appels: 0, usd: 0, jetons: 0 });
+      v.appels++; v.usd += Number(x.cout_usd) || 0; v.jetons += (Number(x.entree) || 0) + (Number(x.cache_lu) || 0) + (Number(x.cache_ecrit) || 0) + (Number(x.sortie) || 0);
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j({ lignes: Object.values(g).sort((a, b) => b.usd - a.usd) }));
+  }
   if (p === '/api/reglages/profils') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     const repondre = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o)); };
@@ -12060,6 +12074,7 @@ async function traiter(req, res) {
       if (typeof q.sauter_passe === 'boolean') r.sauter_passe = q.sauter_passe;   // (05/11) sauter les morceaux passés
       if (typeof q.papa_passe_avant === 'boolean') r.papa_passe_avant = q.papa_passe_avant;
       if (typeof q.voix_par_appareil === 'boolean') r.voix_par_appareil = q.voix_par_appareil;
+      if (typeof q.economie === 'boolean') r.economie = q.economie;
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
