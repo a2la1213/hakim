@@ -9216,7 +9216,7 @@ function boucleRibosomes(maintenant = Date.now()) {
 // parle depuis 20 s, une pensée intérieure (jamais dite, dans 💭 ; un appel à Mini Hakim) ; rien s'il dort, si un tour tourne ou 60 s après le stop
 function poulsDeVie(maintenant = Date.now()) {
   if (corpsReglages().economie || corpsReglages().pensee_en_boucle === false || hakimDort() || maintenant - ribosomesCoupesA < 60000) return false;
-  voixDemarrer('ecoute');
+  if (!corpsReglages().stt_azure) voixDemarrer('ecoute');   // (05/11, Ahmed : « décharge Whisper ») avec l'oreille Azure, Whisper n'est plus gardé chargé
   prechaufferVivants();
   const r = pistes.ribo;
   if (!r || r.ferme || toursActifs.size || maintenant - derniereParolePapa < 20000) return false;
