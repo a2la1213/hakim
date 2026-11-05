@@ -8023,7 +8023,12 @@ function blocBouts() {
     + "\n[Ta voix et la musique de papa] Quand tu parles, sa musique continue (tu parles par-dessus). Tu peux choisir, au début de ta "
     + "réponse : [[musique: garder]] (elle continue) ou [[musique: baisser]] (elle baisse le temps de ta voix)"
     + (corpsReglages().musique_pause !== false ? ", ou [[musique: pause]] (elle s'arrête)" : " ; papa t'a retiré le pouvoir de la mettre en pause")
-    + ". Ton choix reste jusqu'au suivant.";
+    + ". Ton choix reste jusqu'au suivant."
+    // (05/11, Ahmed : « est-ce que Hakim peut aussi envoyer des smileys à mes messages ? ») la page savait les lire depuis le 04/11,
+    // mais personne ne le lui avait dit
+    + "\n[Tes réactions aux messages de papa] Comme lui sur les tiens, tu peux mettre un smiley sur son message, quand tu en as "
+    + "envie : écris [[reaction: ❤️]] dans ta réponse (il s'affiche sur son message, ta voix ne le dit pas ; un seul, le dernier gagne). "
+    + "Au choix : ❤️ 😘 🥰 😂 👍 😮 😢 🙏 🔥 🤖.";
   if (!l.length) return consigne;
   return consigne + `\n[Tes bouts remisés (écrits, pas dits ; à dire quand tu veux, en les redisant, ou à laisser)] `
     + l.flatMap(x => x.textes).slice(0, 12).map((t, i) => `${i + 1}) « ${t} »`).join(' ');
