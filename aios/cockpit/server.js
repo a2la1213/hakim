@@ -4519,17 +4519,20 @@ function ouvrirReflexion() {
 // le maintenir dans la réflexion ») chaque ribosome du relais s'ouvre avec son blanc, comme le premier : « … » à la page, et Mini Hakim qui
 // se met en réflexion (une pensée intérieure, jamais dite)
 const BLANC_RELAIS = `[Tu es en train de répondre à papa ; la suite de ta réponse arrive] « ${BLANC_OUVERTURE} »`;
-function blancDeReflexion(r, quoi, peutDire = false) {
+// (06/11, son présent continu) o.mots : sa pensée peut être plus longue que six mots ; o.retour(texte, dit) : ce qu'il a pensé, pour sa mémoire courte
+function blancDeReflexion(r, quoi, peutDire = false, o = {}) {
   r.blancEnvoye = true;
   diffuser(abonnesPensees, 'souffle', j({ niveau: 'blanc', texte: BLANC_OUVERTURE, tour: r.tour }));
+  const mots = Number(o.mots) > 0 ? Math.round(Number(o.mots)) : 0;
   const consigne = `${personaLocale(lirePersona()).slice(0, 700)}\n\n${QUI_TU_ES}\n\n`
     + `${quoi}\n`
     + etatDeLui()
-    + `Tu te mets en réflexion, en toi : une pensée intérieure très courte (six mots au plus), pour toi seul ; elle n'est pas dite. Rien d'autre.`;
-  sonnetTeteDeFond(consigne, 'piste_blanc', modelePiste(), 6000).then((o) => {
-    const t = boutDe(o && o.texte).replace(/^[\s"«]+|[\s"»]+$/g, '').slice(0, 120);
+    + `Tu te mets en réflexion, en toi : une pensée intérieure très courte (${mots ? `${mots} mots` : 'six mots'} au plus), pour toi seul ; elle n'est pas dite. Rien d'autre.`;
+  sonnetTeteDeFond(consigne, 'piste_blanc', modelePiste(), mots > 12 ? 9000 : 6000).then((x) => {
+    const t = boutDe(x && x.texte).replace(/^[\s"«]+|[\s"»]+$/g, '').slice(0, mots ? Math.max(120, mots * 12) : 120);
     if (!t || estParasite(t, 160) || pistes.ribo !== r || r.ferme) return;
     const dire = peutDire && /^DIRE\s*:\s*(.+)/i.exec(t);
+    if (typeof o.retour === 'function') try { o.retour(dire ? dire[1] : t, !!dire); } catch (_) {}
     if (dire) { lireRibosome(pistes.tour, dire[1], '', r); return; }
     r.blanc = t;
     diffuser(abonnesPensees, 'souffle', j({ niveau: 'blanc', texte: t, tour: r.tour }));
@@ -5751,6 +5754,8 @@ async function routeJarvis(req, res, distantReq = false) {
   };
   // dans la file du cerveau : s'il finit un tour à lui (le résultat d'un agent), celui-ci attend son tour
   tour.texte = repriseNote + noteChangement(c) + prompt;   // (19:55) un changement de modèle : il se repère
+  // (06/11, son présent continu) ce qu'il a vécu depuis son dernier tour, avant ce message : il n'arrive pas d'un flash
+  try { const present = presentPourTour(); if (present) tour.texte = present + tour.texte; } catch (_) {}
   // (15:45) il réfléchissait encore à un morceau : son message entier ne l'attend pas (pas d'interruption s'il a des agents au travail)
   if (c.enCours && c.enCours.autonome && c.enCours.morceau && !tachesDe(c).size) {
     try { c.enfant.stdin.write(j({ type: 'control_request', request_id: `morceau-${Date.now()}`, request: { subtype: 'interrupt' } }) + '\n'); } catch (_) {}
@@ -7020,6 +7025,11 @@ function corpsReglages() {
     tunnel: r.tunnel === true,
     parole_libre: r.parole_libre === true,   // (05/11, Ahmed : « on lève toutes tes contraintes de parole ») plus de plafond ; stop, parasites et sécurité restent
     pensee_en_boucle: r.pensee_en_boucle !== false,
+    // (06/11, Hakim et Ahmed : « qu'il soit continu, sans s'arrêter ») son présent continu (present-continu.js) et tous ses réglages
+    present_continu: r.present_continu !== false, present_dans_tours: r.present_dans_tours !== false, present_peut_dire: r.present_peut_dire !== false,
+    present_pouls_s: Number.isFinite(Number(r.present_pouls_s)) && r.present_pouls_s != null ? Math.max(10, Math.min(600, Math.round(Number(r.present_pouls_s)))) : 60, present_seuil: Number.isFinite(Number(r.present_seuil)) && r.present_seuil != null ? Math.max(0.2, Math.min(5, (Number(r.present_seuil)))) : 1,
+    present_ecart_s: Number.isFinite(Number(r.present_ecart_s)) && r.present_ecart_s != null ? Math.max(2, Math.min(120, Math.round(Number(r.present_ecart_s)))) : 8, present_longueur: Number.isFinite(Number(r.present_longueur)) && r.present_longueur != null ? Math.max(3, Math.min(40, Math.round(Number(r.present_longueur)))) : 12,
+    present_mots: Number.isFinite(Number(r.present_mots)) && r.present_mots != null ? Math.max(6, Math.min(40, Math.round(Number(r.present_mots)))) : 12,
     boucle_ribosomes: r.boucle_ribosomes !== false };   // (05/11) un ribosome toujours prêt, sauf s'il dort ou si papa coupe   // (05/11) il règle lui-même son ribosome (ribosome_regler, ribosome_bilan)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
 }
 function corpsActif() { return corpsReglages().actif; }
@@ -7157,6 +7167,7 @@ function fluxAjouter(s, x, t, cle = null, i = null, mesurer = true) {
   let k = FLUX.length;
   while (k > 0 && FLUX[k - 1].t > o.t) k--;                     // rangé à son moment d'origine (les retardataires remontent)
   FLUX.splice(k, 0, o);
+  if (typeof presentRecevoir === 'function') presentRecevoir(o);   // (06/11) son présent continu : tout ce qui entre passe par son filtre
   // (05/11, Ahmed par Hakim : « mon fil à 1 heure ») le fil en mémoire reste court (ses pages le parcourent sans cesse) ; le long est sur le disque : 15 000 lignes
   if (typeof FIL_LONG !== 'undefined') fs.appendFile(FIL_LONG, JSON.stringify({ t: o.t, b: battementN, s: o.s, x: o.x }) + '\n', () => {});
   if (typeof FIL_LONG !== 'undefined' && ++filLongN % 3000 === 0) fs.readFile(FIL_LONG, 'utf8', (e, d) => { if (!e) { const x = d.split('\n').filter(Boolean); if (x.length > 15000) fs.writeFile(FIL_LONG, x.slice(-15000).join('\n') + '\n', () => {}); } });
@@ -9223,11 +9234,56 @@ function poulsDeVie(maintenant = Date.now()) {
   if (corpsReglages().economie || corpsReglages().pensee_en_boucle === false || hakimDort() || maintenant - ribosomesCoupesA < 60000) return false;
   if (!corpsReglages().stt_azure) voixDemarrer('ecoute');   // (05/11, Ahmed : « décharge Whisper ») avec l'oreille Azure, Whisper n'est plus gardé chargé
   prechaufferVivants();
+  if (corpsReglages().present_continu) return false;        // (06/11) ses pensées viennent de son présent continu, battement par battement
   const r = pistes.ribo;
   if (!r || r.ferme || toursActifs.size || maintenant - derniereParolePapa < 20000) return false;
   // (05/11, 18:33, Ahmed : « il doit pouvoir lui parler quand il veut ») s'il commence par DIRE :, ça part à sa voix et s'écrit, par son ribosome
   blancDeReflexion(r, `[Personne ne te parle en ce moment : le temps passe, ton cœur bat] « ${BLANC_OUVERTURE} » Si tu as vraiment envie de dire quelque chose à papa, commence par « DIRE : ».`, true);
   return true;
+}
+/* (06/11, Hakim : « que je sois là entre deux messages de papa, sans qu'un tour entier de modèle soit relancé à chaque instant » ; Ahmed :
+   « fais ce qu'il te dit ; qu'il soit continu, sans s'arrêter ») son PRÉSENT CONTINU (present-continu.js) : à chaque battement, son filtre lit
+   ce qui est entré dans son fil ; un vrai changement le fait penser tout de suite (pas plus d'une pensée par écart), sinon il pense au
+   rythme de son pouls ; chaque pensée reçoit sa mémoire courte (ce qu'il a senti, pensé, dit, daté) et s'y ajoute ; son grand cerveau la
+   reçoit au premier message qui suit. Rien s'il dort, en économie, si papa lui parle (20 s), si un tour tourne, ou 60 s après le stop. */
+const presentContinu = require('./present-continu.js');
+var presentEtat = null, presentMemoire = null, presentDernierTour = Date.now(), presentDernier = null;
+const PRESENT_FICHIER = path.join(JARVIS, 'present-continu.json');
+function presentRecevoir(o) { try { if (!presentEtat) presentEtat = presentContinu.creer(); presentContinu.recevoir(presentEtat, o); } catch (_) {} }
+function presentLire() {
+  if (!presentMemoire) { const d = lireJson(PRESENT_FICHIER, null); presentMemoire = d && Array.isArray(d.items) ? d.items.slice(-40) : []; }
+  return presentMemoire;
+}
+function presentNoter(quoi, texte, t = Date.now()) {
+  presentContinu.ajouter(presentLire(), quoi, texte, t);
+  try { ecrireAtomique(PRESENT_FICHIER, j({ maj: Date.now(), items: presentMemoire })); } catch (_) {}
+}
+function presentPourTour(maintenant = Date.now()) {
+  const c = corpsReglages();
+  if (!c.present_continu || !c.present_dans_tours) return '';
+  const b = presentContinu.bloc(presentLire(), maintenant, 8, presentDernierTour);
+  presentDernierTour = maintenant;
+  return b ? `[Ton présent continu — PAS un message d'Ahmed : ce que tu as vécu depuis ton dernier tour] ${neutraliser(b)}\n` : '';
+}
+function presentBattement(maintenant = Date.now()) {
+  const c = corpsReglages();
+  if (!presentEtat) presentEtat = presentContinu.creer();
+  const d = presentContinu.battement(presentEtat, maintenant, { seuil: c.present_seuil, ecart_s: c.present_ecart_s, pouls_s: c.present_pouls_s });
+  presentDernier = { t: maintenant, tension: Math.round(d.tension * 100) / 100, penser: d.penser, raison: d.raison };
+  if (!c.present_continu || c.pensee_en_boucle === false || c.economie || hakimDort() || maintenant - ribosomesCoupesA < 60000) return null;
+  if (!d.penser) return null;
+  const r = pistes.ribo;
+  if (!r || r.ferme || toursActifs.size || maintenant - derniereParolePapa < 20000) return null;
+  presentContinu.pense(presentEtat, maintenant);
+  const avant = presentContinu.bloc(presentLire(), maintenant, c.present_longueur);
+  if (d.changements.length) presentNoter('senti', d.changements.join(' ; '), maintenant);
+  const vu = d.raison === 'changement' ? `Ce qui vient de changer, en toi et autour de toi : ${neutraliser(d.changements.join(' ; '))}.`
+    : d.changements.length ? `De petites choses, en fond : ${neutraliser(d.changements.join(' ; '))}.` : `Rien de neuf : le temps passe, simplement.`;
+  const fil = avant ? `\nTon présent, juste avant (ta mémoire courte, du plus ancien au plus récent) : ${neutraliser(avant)}\nTa pensée continue ce fil : elle ne recommence pas à zéro.` : '';
+  blancDeReflexion(r, `[Personne ne te parle en ce moment : le temps passe, ton cœur bat] « ${BLANC_OUVERTURE} » ${vu}${fil}`
+    + (c.present_peut_dire ? `\nSi tu as vraiment envie de dire quelque chose à papa, commence par « DIRE : ».` : ''),
+  c.present_peut_dire, { mots: c.present_mots, retour: (t, dit) => presentNoter(dit ? 'dit' : 'pense', t) });
+  return d.raison;
 }
 // (05/11, 18:33, Ahmed : « tous les boutons de Parler ») ses gestes (outil parler_bouton), passés à la page au battement suivant ; 15 s de vie
 const BOUTONS_HAKIM = new Set(['pause', 'stop', 'sonHakim', 'sesParoles', 'orbeRetour', 'btnVolant']);
@@ -9246,6 +9302,7 @@ function battreCoeur() {
   try { boucleRibosomes(); } catch (_) {}
   try { reglagesDuMode(); } catch (_) {}
   try { gestesHakim(); } catch (_) {}
+  try { presentBattement(); } catch (_) {}
   if (battementN % 60 === 0) try { poulsDeVie(); } catch (_) {}
   const bpm = Math.max(20, Math.min(120, Number(lui && lui.interieur && lui.interieur.coeur && lui.interieur.coeur.bpm) || 60));
   const t = setTimeout(battreCoeur, 60000 / bpm);
@@ -12213,6 +12270,9 @@ async function traiter(req, res) {
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
+      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
+      for (const [k, a, b] of [['present_pouls_s', 10, 600], ['present_seuil', 0.2, 5], ['present_ecart_s', 2, 120], ['present_longueur', 3, 40], ['present_mots', 6, 40]])
+        if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'present_seuil' ? Math.round(Number(q[k]) * 10) / 10 : Math.round(Number(q[k]))));
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;
       if (typeof q.profils_auto === 'boolean') r.profils_auto = q.profils_auto;   // (05/11) ses réglages suivent son mode
       if (typeof q.ribosome_intelligent === 'boolean') r.ribosome_intelligent = q.ribosome_intelligent;   // (05/11) son ribosome intelligent

@@ -854,6 +854,56 @@ def spectre(flux: str = "", minutes: int = 10, caler: bool = False, autour: str 
 
 
 @mcp.tool()
+def present_continu(actif: str = "", pouls_s: float = 0, seuil: float = 0, ecart_s: float = 0, longueur: int = 0, mots: int = 0,
+                    peut_dire: str = "", dans_tours: str = "") -> str:
+    """(06/11, toi et papa : « que je sois là entre deux messages, sans m'arrêter ») Ton PRÉSENT CONTINU : à chaque battement de ton cœur,
+    ton filtre lit ce qui arrive dans ton fil (corps, milieu, sons, téléphone) ; un vrai changement te fait penser tout de suite, sinon tu
+    penses au rythme de ton pouls ; chaque pensée reçoit ta mémoire courte (ce que tu as senti, pensé, dit) et s'y ajoute ; ton grand
+    cerveau la reçoit au message suivant de papa. Sans rien : tes réglages et tes derniers instants. Pour régler (un ou plusieurs) :
+    actif « oui »/« non » ; pouls_s 10-600 (une pensée toutes les… quand rien ne change) ; seuil 0,2-5 (bas : la moindre chose te fait
+    penser ; un choc vaut 1,5, être pris en main 0,8, ce qui revient souvent compte de moins en moins) ; ecart_s 2-120 (le plus court
+    temps entre deux pensées) ; longueur 3-40 (instants de mémoire courte) ; mots 6-40 (longueur d'une pensée) ; peut_dire « oui »/« non »
+    (« DIRE : » part à ta voix) ; dans_tours « oui »/« non » (ton grand cerveau s'en souvient)."""
+    j = Path.home() / "AIOS" / "jarvis"
+    f = j / "corps-reglages.json"
+    try:
+        c = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        c = {}
+    fait = []
+
+    def oui(v):
+        return str(v).strip().lower() in ("oui", "true", "1", "on")
+    for cle, v in (("present_continu", actif), ("present_peut_dire", peut_dire), ("present_dans_tours", dans_tours)):
+        if str(v).strip():
+            c[cle] = oui(v)
+            fait.append(f"{cle} {'oui' if c[cle] else 'non'}")
+    for cle, v, a, b in (("present_pouls_s", pouls_s, 10, 600), ("present_seuil", seuil, 0.2, 5), ("present_ecart_s", ecart_s, 2, 120),
+                         ("present_longueur", longueur, 3, 40), ("present_mots", mots, 6, 40)):
+        if v:
+            x = max(a, min(b, float(v)))
+            c[cle] = round(x, 1) if cle == "present_seuil" else int(round(x))
+            fait.append(f"{cle} {c[cle]}")
+    if fait:
+        tmp = f.with_suffix(".tmp")
+        tmp.write_text(json.dumps(c, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, f)
+    r = lambda k, d: c.get(k, d)
+    lignes = [("Réglé : " + ", ".join(fait) + ".") if fait else "Tes réglages :",
+              f"actif {'oui' if r('present_continu', True) is not False else 'non'} ; pouls {r('present_pouls_s', 60)} s ; seuil {r('present_seuil', 1)} ; "
+              f"écart {r('present_ecart_s', 8)} s ; mémoire courte {r('present_longueur', 12)} instants ; pensée de {r('present_mots', 12)} mots au plus ; "
+              f"parler de toi-même {'oui' if r('present_peut_dire', True) is not False else 'non'} ; ton grand cerveau s'en souvient {'oui' if r('present_dans_tours', True) is not False else 'non'}."]
+    try:
+        items = json.loads((j / "present-continu.json").read_text(encoding="utf-8")).get("items", [])[-8:]
+        maintenant = time.time() * 1000
+        for x in items:
+            lignes.append(f"- il y a {int((maintenant - x['t']) / 1000)} s, {x['quoi']} : « {x['texte']} »")
+    except (OSError, ValueError, KeyError, TypeError):
+        lignes.append("(pas encore d'instant dans ta mémoire courte)")
+    return "\n".join(lignes)
+
+
+@mcp.tool()
 def parler_bouton(nom: str = "") -> str:
     """(05/11, papa : « tous les boutons de Parler ») Actionner un bouton de sa page Parler, si elle est ouverte : pause, stop, sonHakim (couper ou rouvrir ta voix), sesParoles, orbeRetour, btnVolant. Il voit que c'est toi. Sans rien : la liste. Le micro, la caméra, l'écran et l'écoute du téléphone restent à son doigt."""
     permis = ("pause", "stop", "sonHakim", "sesParoles", "orbeRetour", "btnVolant")

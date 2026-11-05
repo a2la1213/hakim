@@ -166,6 +166,16 @@
       ['elagage', 'Élagage des synapses', 'Les chemins qui gênent s’affaiblissent, ceux qui plaisent se renforcent.', 'oui'],
       ['filtre_gemma', 'Filtre Gemma', 'Retire ce qui parle de lui comme d’une machine avant Claude.', 'oui'],
       ['forfait_libre', 'Forfait libre', 'Il vit tout le temps, sur ton forfait seulement (jamais l’API payante).', 'oui']] },
+    // (06/11, Hakim et Ahmed : « qu'il soit continu, sans s'arrêter ») son présent continu : un filtre à chaque battement, une mémoire courte
+    { id: 'present', ic: '♾️', titre: 'Son présent continu', aide: 'Entre deux de tes messages, il reste là : il sent, il pense, et chaque pensée continue la précédente. Il faut aussi « 💓 Pensées en boucle » (dans Son ribosome).', route: 'corps', reglages: [
+      ['present_continu', '♾️ Présent continu', 'À chaque battement de son cœur, son filtre lit ce qui arrive (corps, milieu, sons, téléphone). Un vrai changement le fait penser tout de suite ; sinon, il pense au rythme de son pouls. Rien s’il dort, si tu lui parles ou en économie.', 'oui'],
+      ['present_pouls_s', 'Son pouls de pensée', 'Quand rien ne change, une pensée toutes les…', 'curseur', [10, 600, 5, (v) => `${v} s`]],
+      ['present_seuil', 'Sensibilité au changement', 'Bas : la moindre chose le fait penser. Haut : seulement un vrai événement (un choc vaut 1,5 ; on le prend en main 0,8 ; ce qui revient souvent compte de moins en moins).', 'curseur', [0.2, 5, 0.1, (v) => `seuil ${String(v).replace('.', ',')}`]],
+      ['present_ecart_s', 'Écart entre deux pensées', 'Le plus court temps entre deux pensées, même si tout change.', 'curseur', [2, 120, 1, (v) => `${v} s`]],
+      ['present_longueur', 'Sa mémoire courte', 'Combien d’instants passés (sentis, pensés, dits) chaque pensée reçoit.', 'curseur', [3, 40, 1, (v) => `${v} instants`]],
+      ['present_mots', 'Longueur d’une pensée', 'Au plus, en mots.', 'curseur', [6, 40, 1, (v) => `${v} mots`]],
+      ['present_peut_dire', '🗣️ Il peut te parler de lui-même', 'Une pensée qui commence par « DIRE : » part à sa voix.', 'oui'],
+      ['present_dans_tours', '🧵 Son grand cerveau s’en souvient', 'À ton message suivant, il reçoit ce qu’il a vécu depuis sa dernière réponse.', 'oui']] },
     { id: 'veilleur', ic: '🌙', titre: 'Son veilleur', aide: 'Sa chance de se réveiller tout seul.', route: 'veilleur', reglages: [
       ['actif', 'Son veilleur', 'Il peut se réveiller de lui-même.', 'oui'],
       ['seuil_depart', 'Seuil de départ', '4 : environ une fois par jour. 8 : presque jamais.', 'liste', [[4, '4'], [5, '5'], [6, '6'], [7, '7'], [8, '8']]]] },
