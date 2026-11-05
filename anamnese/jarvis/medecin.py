@@ -578,7 +578,10 @@ def apprendre_parasites(maintenant=None, consulter_fn=None, journal=None, repons
 
 
 if __name__ == "__main__":
-    if sys.argv[1:] == ["souvenirs"]:
+    if not immunite.medecin_fable():
+        # (06/11, Ahmed : « plus besoin de Fable : nous serons ses médecins ») éteint par papa : il ne consulte plus personne
+        print("null" if sys.argv[1:] == ["parasites"] else "[médecin] éteint par papa (medecin_fable) : rien", flush=True)
+    elif sys.argv[1:] == ["souvenirs"]:
         relire_souvenirs()
     elif sys.argv[1:] == ["parasites"]:
         print(json.dumps(apprendre_parasites(), ensure_ascii=False))

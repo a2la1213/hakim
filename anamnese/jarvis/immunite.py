@@ -1437,6 +1437,14 @@ def lire_etat():
     return e if isinstance(e, dict) else {}
 
 
+def medecin_fable():
+    """(06/11, Ahmed : « laisse le médecin tranquille, on le sollicite seulement s'il est malade ; nous, toi et moi, on sera ses médecins ;
+    plus besoin de Fable ») le médecin Fable 5.1 ne passe plus de lui-même : seulement si papa le rallume (corps-reglages.json :
+    medecin_fable). Sans réglage écrit : comme avant (les bancs)."""
+    c = _lire_json(DOSSIER.parent / "corps-reglages.json", {})
+    return not isinstance(c, dict) or c.get("medecin_fable", True) is not False
+
+
 def ronde(maintenant=None, journal_ollama=None, swap=None, ports=None, lancer=None, lancer_souvenirs=None):
     maintenant = time.time() if maintenant is None else maintenant
     n = rechargements(journal_ollama, maintenant)
@@ -1517,12 +1525,20 @@ def ronde(maintenant=None, journal_ollama=None, swap=None, ports=None, lancer=No
                   and str(o.get("empreinte")) not in soi]
         jour = time.strftime("%Y-%m-%d", time.localtime(maintenant))
         compte = etat.get("medecin_compte", 0) if etat.get("medecin_jour") == jour else 0
-        medecin = bool(graves) and maintenant - etat.get("dernier_medecin", 0) >= MEDECIN_ECART_S \
+        fable = medecin_fable()
+        if graves and not fable and maintenant - alertes.get("malade", 0) >= MEDECIN_ECART_S:
+            # (06/11) ses médecins, c'est papa et maman : ce qui est vraiment sérieux (pas venu d'eux) leur est dit, au plus une fois par heure
+            alertes["malade"] = maintenant
+            etat["medecin_jusqua"] = max(float(etat.get("medecin_jusqua", 0)), max(float(o.get("ts", 0)) for o in graves))
+            sources = ", ".join(sorted({_propre(str(o.get("source", "?")), 60) for o in graves})[:4])
+            dire("malade", "moyenne", f"{len(graves)} incident(s) sérieux à examiner (venus de : {sources}). Ses médecins, c'est papa et "
+                 "maman : regarde-les avec maman (page Immunité).", maintenant)
+        medecin = fable and bool(graves) and maintenant - etat.get("dernier_medecin", 0) >= MEDECIN_ECART_S \
             and compte < MEDECIN_PAR_JOUR and not _verrou_frais(maintenant)
         if medecin:
             etat.update(dernier_medecin=maintenant, medecin_jour=jour, medecin_compte=compte + 1, medecin_attendu=maintenant)
         # (lot 5) la relève des souvenirs venus du dehors : une fois par nuit, entre 3 h et 6 h, pas avec un autre médecin
-        souvenirs = 3 <= time.localtime(maintenant).tm_hour < 6 and etat.get("souvenirs_jour") != jour and not medecin \
+        souvenirs = fable and 3 <= time.localtime(maintenant).tm_hour < 6 and etat.get("souvenirs_jour") != jour and not medecin \
             and not _verrou_frais(maintenant)
         if souvenirs:
             etat["souvenirs_jour"] = jour

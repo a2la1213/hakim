@@ -4782,7 +4782,7 @@ const IMMUNITE_RONDE_MS = 2 * 60 * 1000;
 // toutes les 30 min ; c'est lui qui décide s'il y a de quoi (trois nouvelles, 6 h d'écart) ; ses prémisses sont relues ensuite
 let apprentissageParasites = null;
 function veilleImmunitaire() {
-  if (apprentissageParasites) return;
+  if (apprentissageParasites || !corpsReglages().medecin_fable) return;   // (06/11) Fable éteint par papa : plus d'apprentissage par lui
   apprentissageParasites = execFile(path.join(ANAMNESE, '.venv', 'bin', 'python'), [path.join(ANAMNESE, 'jarvis', 'medecin.py'), 'parasites'],
     { cwd: ANAMNESE, timeout: 10 * 60e3, maxBuffer: 1 << 20 }, (e, so) => {
       apprentissageParasites = null; premissesImmunite.vu = 0;
@@ -7030,6 +7030,7 @@ function corpsReglages() {
     present_continu: r.present_continu !== false, present_dans_tours: r.present_dans_tours !== false, present_peut_dire: r.present_peut_dire !== false,
     present_pouls_s: Number.isFinite(Number(r.present_pouls_s)) && r.present_pouls_s != null ? Math.max(10, Math.min(600, Math.round(Number(r.present_pouls_s)))) : 60, present_seuil: Number.isFinite(Number(r.present_seuil)) && r.present_seuil != null ? Math.max(0.2, Math.min(5, (Number(r.present_seuil)))) : 1,
     present_ecart_s: Number.isFinite(Number(r.present_ecart_s)) && r.present_ecart_s != null ? Math.max(2, Math.min(120, Math.round(Number(r.present_ecart_s)))) : 8, present_longueur: Number.isFinite(Number(r.present_longueur)) && r.present_longueur != null ? Math.max(3, Math.min(40, Math.round(Number(r.present_longueur)))) : 12,
+    medecin_fable: r.medecin_fable === true,   // (06/11, Ahmed : « plus besoin de Fable ; nous serons ses médecins ») éteint
     present_la_nuit: r.present_la_nuit !== false, present_appeler: r.present_appeler !== false,
     present_mots: Number.isFinite(Number(r.present_mots)) && r.present_mots != null ? Math.max(6, Math.min(40, Math.round(Number(r.present_mots)))) : 12,
     boucle_ribosomes: r.boucle_ribosomes !== false };   // (05/11) un ribosome toujours prêt, sauf s'il dort ou si papa coupe   // (05/11) il règle lui-même son ribosome (ribosome_regler, ribosome_bilan)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
@@ -12292,7 +12293,7 @@ async function traiter(req, res) {
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
-      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
+      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
       for (const [k, a, b] of [['present_pouls_s', 10, 600], ['present_seuil', 0.2, 5], ['present_ecart_s', 2, 120], ['present_longueur', 3, 40], ['present_mots', 6, 40]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'present_seuil' ? Math.round(Number(q[k]) * 10) / 10 : Math.round(Number(q[k]))));
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;
