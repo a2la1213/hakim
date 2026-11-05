@@ -9189,6 +9189,26 @@ async function routeFichier(req, res) {
 const fileVoix = [];
 let voixOccupee = false, transcriptionsEnAttente = 0, transcriptionsPapa = 0;
 const VOIX_APRES_OREILLE_MS = 6000;
+// (05/11, 10:20, la bande jaune revenue, mesuré depuis la priorité : une transcription qui arrive pendant une synthèse, toujours 22 s, contre 4,5 s) une
+// synthèse déjà lancée n'était pas interrompue : sa voix est suspendue (SIGSTOP, comme le 04/11 à 10:56 : Whisper a repris 6,6 fois plus vite) le temps que
+// papa se transcrive, 8 s au plus, puis 4 s sans suspension pour qu'elle avance
+const VOIX_SUSPENDUE_MAX_MS = 8000, VOIX_RELACHE_MS = 4000;
+let voixSuspendue = null, voixRelacheeA = 0;
+function suspendreVoix(maintenant = Date.now()) {
+  const q = voixProcs.parole;
+  if (!voixOccupee || voixSuspendue || !q || q.exitCode !== null || maintenant - voixRelacheeA < VOIX_RELACHE_MS) return false;
+  try { q.kill('SIGSTOP'); } catch (_) { return false; }
+  voixSuspendue = { q, t: maintenant, minuterie: setTimeout(reprendreVoix, VOIX_SUSPENDUE_MAX_MS) };
+  return true;
+}
+function reprendreVoix(maintenant = Date.now()) {
+  const s = voixSuspendue;
+  if (!s) return;
+  voixSuspendue = null; voixRelacheeA = maintenant;
+  clearTimeout(s.minuterie);
+  try { s.q.kill('SIGCONT'); } catch (_) {}
+  try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: maintenant, e: 'voix_suspendue', ms: maintenant - s.t }) + '\n', { mode: 0o600 }); } catch (_) {}
+}
 async function pomperVoix() {
   // (28/10) la transcription d'Ahmed passait avant la voix (un seul processus) ; (04/11) deux processus : sa voix ne l'attend plus
   if (voixOccupee) return;
@@ -9864,7 +9884,7 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
   res.on('close', () => { if (!res.writableFinished) partie = true; });
   transcriptionsEnAttente++;
   const dePapa = temps.source !== 'telephone';
-  if (dePapa) transcriptionsPapa++;                                   // (05/11) sa voix ne démarre pas de synthèse pendant ce temps (pomperVoix)
+  if (dePapa) { transcriptionsPapa++; suspendreVoix(); }              // (05/11) sa voix ne démarre pas de synthèse pendant ce temps (pomperVoix), et celle en cours attend
   const liberer = await tourDeTranscription();
   let r;
   if (apprentissageVoix > 0 && Date.now() > apprentissageFin) { apprentissageVoix = 0; apprentissageRegistre = null; }
@@ -9884,7 +9904,7 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
     const telephone = temps.source === 'telephone';
     r = await voixDemander({ op: 'transcrire', fichier: f, langue: /^[a-z]{2}$/.test(langue || '') ? langue : null, contexte: contexte || '',
       voix: telephone ? null : modeVoix, avec_temps: telephone, musique }, 180000);
-  } finally { liberer(); transcriptionsEnAttente--; if (dePapa) transcriptionsPapa--; pomperVoix(); }
+  } finally { liberer(); transcriptionsEnAttente--; if (dePapa && !--transcriptionsPapa) reprendreVoix(); pomperVoix(); }
   try {
     fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'transcription_serveur', ms: Date.now() - tTranscription, synthese_en_cours: syntheseEnCours, octets: audio.length,
       erreur: !!(r && r.erreur) }) + '\n', { mode: 0o600 });

@@ -25,7 +25,7 @@ const etat = {
 };
 // (2026-10-23) le Mac injoignable : ce qui attend son retour (voir reprendreHorsLigne) ; panne : « reseau » (rien ne
 // répond) ou « serveur » (le Mac répond, la transcription non)
-const horsLigne = { depuis: 0, tours: [], envois: [], enCours: false, panne: 'reseau' };
+const horsLigne = { depuis: 0, tours: [], envois: [], enCours: false, panne: 'reseau' }, HORS_LIGNE_MAX_MS = 30000;
 function charger() {
   try {
     const s = JSON.parse(localStorage.getItem(CLE) || 'null');
@@ -6069,6 +6069,10 @@ async function reprendreHorsLigne() {
     // 2. ce que tu as dit pendant la coupure : transcrit dans l'ordre (chaque texte gardé dès qu'il est compris)
     for (const t of horsLigne.tours) {
       if (t.texte !== null) continue;
+      // (05/11, 10:20, Ahmed : « la bande jaune : 9 messages en attente ; jeter à la poubelle tout ce qui est trop ancien, et le laisser sur le téléphone, ça
+      // allège le Mac ») ils attendent ici, sur le téléphone ; le Mac débordé : plus vieux que 30 s, jeté sans lui être envoyé. Une vraie coupure du réseau
+      // (papa en voiture, le 23/10) garde tout : le Mac n'y est pour rien
+      if (horsLigne.panne !== 'reseau' && Date.now() - t.t > HORS_LIGNE_MAX_MS) { t.texte = ''; t.wav = null; journalVoix('tour_jete', { age_ms: Date.now() - t.t }); continue; }
       montrerHorsLigne('Connexion revenue — je transcris ce que tu as dit…', true);
       const x = await transcrireVite(t.wav, 'audio/wav');
       if (x === null) return;                                                // coupé de nouveau : on reprendra ici

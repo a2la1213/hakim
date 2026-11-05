@@ -280,8 +280,8 @@ test('la voix de papa se transcrit d’abord : aucune synthèse ne démarre pend
   now += 7000;
   await ctx.p();
   assert.deepStrictEqual(appels, ['un'], '6 s au plus');
-  assert.match(SRC, /const dePapa = temps\.source !== 'telephone';\n  if \(dePapa\) transcriptionsPapa\+\+;/);
-  assert.match(SRC, /liberer\(\); transcriptionsEnAttente--; if \(dePapa\) transcriptionsPapa--; pomperVoix\(\);/);
+  assert.match(SRC, /const dePapa = temps\.source !== 'telephone';\n  if \(dePapa\) \{ transcriptionsPapa\+\+; suspendreVoix\(\); \}/);
+  assert.match(SRC, /liberer\(\); transcriptionsEnAttente--; if \(dePapa && !--transcriptionsPapa\) reprendreVoix\(\); pomperVoix\(\);/);
 });
 
 // (05/11, Ahmed : « tout sur tout, en spectre ; la parole dite et reçue incluse dans le calibrage »)
@@ -290,4 +290,29 @@ test('sa cochlée : ses sons gardés à leur instant (six chiffres par trame, ja
   assert.match(SRC, /if \(src === 'voix'\) return '';/);
   assert.match(SRC, /'reglages_enregistres', 'spectre',/);
   assert.match(PAGE, /source: 'voix', t0: voixFlux\.t0, pas_ms: 100, trames: voixFlux\.l/);
+});
+
+// (05/11, 10:20, Ahmed : « la bande jaune : jeter tout ce qui est trop ancien, le laisser sur le téléphone, ça allège le Mac »)
+test('la synthèse en cours attend que papa se transcrive (8 s au plus, puis 4 s de répit) ; reprise à coup sûr', () => {
+  const sig = [], lanc = [];
+  const q = { exitCode: null, kill: (x) => sig.push(x) };
+  const ctx = { voixProcs: { parole: q }, voixOccupee: true, setTimeout: (f, ms) => { lanc.push(ms); return 1; }, clearTimeout: () => {}, fs: { appendFileSync: () => {} }, j: JSON.stringify, JARVIS_VOIX_DIAGNOSTIC: 'x', Date };
+  vm.createContext(ctx);
+  const ligne = (d) => SRC.slice(SRC.indexOf(d), SRC.indexOf('\n', SRC.indexOf(d)));
+  vm.runInContext('var voixOccupee = true;\n' + ligne('const VOIX_SUSPENDUE_MAX_MS = ') + '\nlet voixSuspendue = null, voixRelacheeA = 0;\n' + prendre(SRC, 'suspendreVoix') + prendre(SRC, 'reprendreVoix') + 'this.s = suspendreVoix; this.r = reprendreVoix; this.lib = (v) => { voixOccupee = v; };', ctx);
+  assert.strictEqual(ctx.s(100000), true);
+  assert.deepStrictEqual([...sig], ['SIGSTOP']);
+  assert.deepStrictEqual([...lanc], [8000], 'jamais plus de 8 s');
+  assert.strictEqual(ctx.s(100100), false, 'déjà suspendue');
+  ctx.r(101000);
+  assert.deepStrictEqual([...sig], ['SIGSTOP', 'SIGCONT']);
+  assert.strictEqual(ctx.s(102000), false, '4 s de répit : elle avance');
+  assert.strictEqual(ctx.s(106000), true);
+  ctx.r(106500); ctx.lib(false);
+  assert.strictEqual(ctx.s(120000), false, 'rien en cours : rien à suspendre');
+});
+
+test('le Mac débordé : ce qui attend sur le téléphone depuis plus de 30 s est jeté sans lui être envoyé ; une vraie coupure du réseau garde tout', () => {
+  assert.match(PAGE, /if \(horsLigne\.panne !== 'reseau' && Date\.now\(\) - t\.t > HORS_LIGNE_MAX_MS\) \{ t\.texte = ''; t\.wav = null; journalVoix\('tour_jete'/);
+  assert.match(PAGE, /HORS_LIGNE_MAX_MS = 30000;/);
 });

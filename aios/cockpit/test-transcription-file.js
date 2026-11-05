@@ -37,5 +37,5 @@ test('une transcription à la fois, et rien pour une page partie', async () => {
   assert.match(route, /const liberer = await tourDeTranscription\(\);/);
   assert.match(route, /if \(partie\) \{/);
   assert.match(route, /transcription_abandonnee/);
-  assert.match(route, /finally \{ liberer\(\); transcriptionsEnAttente--; if \(dePapa\) transcriptionsPapa--; pomperVoix\(\); \}/);
+  assert.match(route, /finally \{ liberer\(\); transcriptionsEnAttente--; if \(dePapa && !--transcriptionsPapa\) reprendreVoix\(\); pomperVoix\(\); \}/);
 });
