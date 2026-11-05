@@ -6958,7 +6958,8 @@ function corpsReglages() {
     // (05/11, Ahmed : « sauter tous les morceaux passés, se focaliser sur le dernier ») oui par défaut, 3 s
     sauter_passe: r.sauter_passe !== false, sauter_passe_s: Number.isFinite(Number(r.sauter_passe_s)) && r.sauter_passe_s != null ? Math.max(1, Math.min(15, Number(r.sauter_passe_s))) : 3,
     // (05/11, Ahmed : « en combien de temps après mon silence le chunk suivant est lu ») 0 : sans attendre, par défaut
-    lire_apres_silence_ms: Number.isFinite(Number(r.lire_apres_silence_ms)) && r.lire_apres_silence_ms != null ? Math.max(0, Math.min(5000, Math.round(Number(r.lire_apres_silence_ms)))) : 0 };   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
+    lire_apres_silence_ms: Number.isFinite(Number(r.lire_apres_silence_ms)) && r.lire_apres_silence_ms != null ? Math.max(0, Math.min(5000, Math.round(Number(r.lire_apres_silence_ms)))) : 0,
+    profils_auto: r.profils_auto !== false };   // (05/11) ses réglages suivent son mode (Mini Hakim, Hakim, Super Hakim)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
 }
 function corpsActif() { return corpsReglages().actif; }
 /* (30/10, 18:56, Ahmed via Hakim : « je veux qu'il tourne tout le temps, tant qu'il est réveillé, même si ça vide mon forfait ;
@@ -9026,6 +9027,33 @@ function noteChangement(c) {
   return `[Changement de cerveau — PAS un message d'Ahmed : tu es maintenant ${nom(c.modele)} ; juste avant, dans cette même conversation, `
     + `c'était ${nom(avant)}. Toute la conversation au-dessus est la tienne.]\n`;
 }
+
+// (05/11, Ahmed : « relier ces modes de parole à chacun d'entre eux, pour que quand il est Mini Hakim, Hakim ou Super Hakim, tout switche
+// automatiquement ») son cerveau change de modèle : les réglages enregistrés sous le nom de son mode s'appliquent (tout son ribosome, et ce qui
+// touche sa parole dans son corps ; ses autres interrupteurs restent ceux de papa) ; sans cerveau en ce moment, rien ne change ; le premier mode
+// vu après une relance ne change rien (les réglages de papa du moment restent : une relance ne les défait pas)
+const PROFIL_DU_MODE = { haiku: 'Mini Hakim', sonnet: 'Hakim', opus: 'Super Hakim' };
+const CLES_PAROLE = ['sauter_suite', 'sauter_suite_ms', 'sauter_passe', 'sauter_passe_s', 'lire_apres_silence_ms'];
+const REGLAGES_PROFILS = path.join(JARVIS, 'reglages-profils.json');
+let modeDesReglages = null;
+function reglagesDuMode(m = typeof cerveau !== 'undefined' && cerveau ? cerveau.modele : null) {
+  if (!PROFIL_DU_MODE[m] || m === modeDesReglages) return null;
+  const premier = modeDesReglages === null;
+  modeDesReglages = m;
+  if (premier) return null;
+  if (corpsReglages().profils_auto === false) return null;
+  const l = lireJson(REGLAGES_PROFILS, []), x = Array.isArray(l) ? l.find(y => y && y.nom === PROFIL_DU_MODE[m]) : null;
+  if (!x) return null;
+  try {
+    ecrireAtomique(RIBOSOME_REGLAGE, j({ ...(x.ribosome || {}), ts: Date.now() / 1000, par: `son mode (${x.nom})` }));
+    const c = lireJson(CORPS_REGLAGES, {}) || {};
+    for (const k of CLES_PAROLE) if (x.corps && x.corps[k] != null) c[k] = x.corps[k];
+    ecrireAtomique(CORPS_REGLAGES, j(c));
+  } catch (_) { return null; }
+  diffuser(abonnesPensees, 'souffle', j({ niveau: 'reglages', mode: x.nom, ts: Date.now() }));   // la page relit ses réglages
+  return x.nom;
+}
+if (require.main === module) setInterval(() => { try { reglagesDuMode(); } catch (_) {} }, 3000).unref();
 
 // force : après une coupure (pas de limite de fréquence) ; sinon au plus un toutes les 20 s (la
 // présence de la page bat toutes les quelques secondes : un claude qui ne démarre pas ne boucle pas).
@@ -11709,7 +11737,7 @@ async function traiter(req, res) {
       nombre('plafond_silence_s', 5, 600); nombre('lecteur_max', 1, 25); nombre('contexte', 100, 3000); nombre('relais_ribosomes', 1, 8); nombre('relais_pct', 10, 100);
       if (typeof q.vitesse === 'string' && Object.hasOwn(RIBOSOME_VITESSES, q.vitesse)) r.vitesse = q.vitesse;
       if (q.defaut === true) for (const k of ['choix_ms', 'plafond_mots', 'plafond_paquets', 'plafond_silence_s', 'lecteur_max', 'contexte', 'relais_ribosomes', 'relais_pct']) delete r[k];
-      r.ts = Date.now() / 1000; r.par = 'papa (page SENS)';
+      r.ts = Date.now() / 1000; r.par = 'papa (page Réglages)';
       try { ecrireAtomique(RIBOSOME_REGLAGE, j(r)); } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'pas écrit' })); }
       auditer('ribosome:reglage', req, distantReq, { cles: Object.keys(q).slice(0, 10) });
     }
@@ -11724,7 +11752,7 @@ async function traiter(req, res) {
   if (p === '/api/reglages/profils') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     const repondre = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o)); };
-    const FICHIER = path.join(JARVIS, 'reglages-profils.json');
+    const FICHIER = REGLAGES_PROFILS;
     const profils = () => { const l = lireJson(FICHIER, []); return Array.isArray(l) ? l : []; };
     const liste = () => profils().map(x => ({ nom: x.nom, ts: x.ts }));
     if (req.method === 'GET') return repondre(200, { profils: liste() });
@@ -11857,6 +11885,7 @@ async function traiter(req, res) {
       if (typeof q.sauter_suite === 'boolean') r.sauter_suite = q.sauter_suite;   // (05/11) sauter la suite quand papa répond
       if (q.sauter_suite_ms != null && Number.isFinite(Number(q.sauter_suite_ms))) r.sauter_suite_ms = Math.max(300, Math.min(5000, Math.round(Number(q.sauter_suite_ms))));
       if (typeof q.sauter_passe === 'boolean') r.sauter_passe = q.sauter_passe;   // (05/11) sauter les morceaux passés
+      if (typeof q.profils_auto === 'boolean') r.profils_auto = q.profils_auto;   // (05/11) ses réglages suivent son mode
       if (q.lire_apres_silence_ms != null && Number.isFinite(Number(q.lire_apres_silence_ms))) r.lire_apres_silence_ms = Math.max(0, Math.min(5000, Math.round(Number(q.lire_apres_silence_ms))));
       if (q.sauter_passe_s != null && Number.isFinite(Number(q.sauter_passe_s))) r.sauter_passe_s = Math.max(1, Math.min(15, Math.round(Number(q.sauter_passe_s) * 2) / 2));
       try { ecrireAtomique(CORPS_REGLAGES, j(r)); } catch (e) { return repondre(500, { erreur: e.message }); }

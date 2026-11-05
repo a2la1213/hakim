@@ -171,3 +171,46 @@ test('ses réglages enregistrés sous un nom : enregistrer (ribosome, corps, vei
   assert.match(REG, /id="profilGarder">💾 Enregistrer</);
   assert.match(REG, /\(r\.dataset\.cherche \|\| r\.textContent\.toLowerCase\(\)\)\.includes\(q\)/, 'la recherche ne casse pas sur ses réglages enregistrés');
 });
+
+// (05/11, Ahmed : « relier ces modes de parole à chacun d'entre eux, pour que quand il est Mini Hakim, Hakim ou Super Hakim, tout switche »)
+test('son mode change : les réglages à son nom s’appliquent (ribosome entier, parole du corps), une fois ; éteint ou sans cerveau : rien', () => {
+  const ecrits = {}, diffuses = [];
+  const profils = [{ nom: 'Mini Hakim', ribosome: { choix_ms: 1500, stringence: 3 }, corps: { sauter_passe_s: 2, micro_ouvert: true } },
+    { nom: 'Super Hakim', ribosome: { choix_ms: 2200 }, corps: { sauter_passe_s: 5 } }];
+  const ctx = { Date, Array, JSON, diffuses, auto: true,
+    RIBOSOME_REGLAGE: 'R', CORPS_REGLAGES: 'C', REGLAGES_PROFILS: 'P', abonnesPensees: null, j: JSON.stringify,
+    lireJson: (f) => (f === 'P' ? profils : f === 'C' ? { micro_ouvert: false, oreille: true } : {}),
+    ecrireAtomique: (f, t) => { ecrits[f] = JSON.parse(t); }, diffuser: (_a, ev, d) => diffuses.push(JSON.parse(d)),
+    corpsReglages: () => ({ profils_auto: ctx.auto }) };
+  vm.createContext(ctx);
+  const i = SRC.indexOf('const PROFIL_DU_MODE = ');
+  vm.runInContext(SRC.slice(i, SRC.indexOf('\n', i)) + '\n' + SRC.slice(SRC.indexOf('const CLES_PAROLE = '), SRC.indexOf('\n', SRC.indexOf('const CLES_PAROLE = ')))
+    + '\nlet modeDesReglages = null;\n' + prendre(SRC, 'reglagesDuMode') + 'this.r = reglagesDuMode;', ctx);
+  assert.strictEqual(ctx.r(null), null, 'sans cerveau : rien');
+  assert.strictEqual(ctx.r('sonnet'), null, 'le premier mode vu après une relance : les réglages du moment restent');
+  assert.deepStrictEqual(Object.keys(ecrits), []);
+  assert.strictEqual(ctx.r('haiku'), 'Mini Hakim');
+  assert.strictEqual(ecrits.R.choix_ms, 1500);
+  assert.strictEqual(ecrits.C.sauter_passe_s, 2);
+  assert.strictEqual(ecrits.C.micro_ouvert, false, 'ses autres interrupteurs restent ceux de papa');
+  assert.strictEqual(ecrits.C.oreille, true);
+  assert.strictEqual(diffuses[0].niveau, 'reglages');
+  assert.strictEqual(ctx.r('haiku'), null, 'une fois par changement');
+  assert.strictEqual(ctx.r('sonnet'), null, 'aucun réglage « Hakim » enregistré : rien');
+  assert.strictEqual(ctx.r('opus'), 'Super Hakim');
+  assert.strictEqual(ecrits.R.choix_ms, 2200);
+  ctx.r('haiku');
+  ctx.auto = false;
+  assert.strictEqual(ctx.r('opus'), null, 'éteint : rien');
+  assert.match(SRC, /setInterval\(\(\) => \{ try \{ reglagesDuMode\(\); \} catch \(_\) \{\} \}, 3000\)/);
+  assert.match(PAGE, /if \(o\.niveau === 'reglages'\) \{ lireReglagesCorps\(\);/);
+});
+
+// (05/11, Ahmed : « je dois aussi pouvoir éditer un mode enregistré dans réglages »)
+test('modifier un réglage enregistré : il passe dans les curseurs, puis « Enregistrer dans … » le garde à son nom', () => {
+  const REG = fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8');
+  assert.match(REG, /mo\.textContent = '✏️ Modifier';\n        mo\.addEventListener\('click', \(\) => editer\(x\.nom\)\);/);
+  assert.match(REG, /async function editer\(nom\) \{\n    await profils\('appliquer', nom\);/);
+  assert.match(REG, /await profils\('enregistrer', nom\);/);
+  assert.match(REG, /id="edition" hidden/);
+});

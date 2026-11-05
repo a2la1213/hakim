@@ -3179,6 +3179,7 @@ function surSouffle(o) {
   if (o.niveau === 'ribosome') { surRibosome(o); return; }           // (04/11, 11:50) son ribosome a lu une pensée
   if (o.niveau === 'ribosome_stop') { arreterEpissure(o.cause || 'outil', o.tour); return; }   // (04/11, 15:10) ta demande d'outil
   if (o.niveau === 'blanc') { surBlanc(o); return; }                 // (04/11, 17:50) sa parole vide : sa réflexion s'ouvre
+  if (o.niveau === 'reglages') { lireReglagesCorps(); humeur(`réglages de ${o.mode || 'son mode'}`); return; }   // (05/11) son mode a changé
   // (04/11, Ahmed : « mes pensées parasites sont bien flagguées ; maintenant il faut la jeter sans la calculer, sinon ça alourdit tout »)
   // jetée : ni écrite, ni dite, ni sa dernière pensée, ni une voix calculée d'avance ; trop longue (coupée au milieu d'un mot) aussi
   // (04/11) Super Hakim qui a choisi de grands morceaux : ses pensées peuvent être plus longues (o.limite, donnée par le cockpit)

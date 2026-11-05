@@ -52,6 +52,9 @@
       max-width: calc(100vw - 32px); }
     .bulle.ko { border-color: var(--err); }
     .vide { font-size: 14px; color: var(--txt-3); padding: 8px 0; }
+    .edition { position: sticky; bottom: 10px; z-index: 40; margin: 0 16px; padding: 10px 14px; border: 1px solid var(--teal); max-width: 788px; }
+    @media (min-width: 852px) { .edition { margin: 0 auto; } }
+    .actions button.principal { background: rgba(45,212,191,.18); border-color: var(--teal); color: var(--txt); font-weight: 600; }
   </style>
 </head>
 <body>
@@ -68,10 +71,16 @@
       <div class="actions"><input class="chercher" id="profilNom" type="text" maxlength="40" placeholder="Un nom (ex. « soirée calme »)" aria-label="Nom des réglages" style="flex:1;min-width:0;min-height:38px">
         <button type="button" id="profilGarder">💾 Enregistrer</button></div>
       <div id="profilsListe"></div>
+      <div class="sous">« Mini Hakim », « Hakim » et « Super Hakim » s’appliquent tout seuls quand il change de mode (interrupteur dans « Sa parole »).</div>
     </section>
     <div id="familles"><div class="vide">Chargement…</div></div>
   </main>
   <div class="bulle" id="bulle" role="status" hidden></div>
+  <!-- (05/11, Ahmed : « je dois aussi pouvoir éditer un mode enregistré ») ses réglages, chargés dans les curseurs ; puis enregistrés à leur nom -->
+  <div class="edition glass" id="edition" hidden>
+    <div class="sous" id="editionTexte"></div>
+    <div class="actions"><button type="button" id="editionGarder" class="principal">💾 Enregistrer</button><button type="button" id="editionAnnuler">Annuler</button></div>
+  </div>
   <script src="/badges.js"></script>
   <script>
   const jeton = () => (document.querySelector('meta[name="cockpit-jeton"]') || {}).content || '';
@@ -104,6 +113,7 @@
       ['oreille_interne_route', 'La route de ta voix', 'Ce que joue le téléphone devient ses pensées, et il en parle à chaque pause du son.', 'oui'],
       ['cascade', 'Séparation en cascade', 'Chaque voix à part (jusqu’à 8), et chaque instrument décrit à part.', 'oui']] },
     { id: 'parole', ic: '🗣️', titre: 'Sa parole', aide: 'Ce qu’il dit, et comment.', route: 'corps', reglages: [
+      ['profils_auto', 'Ses réglages suivent son mode', 'Quand il passe en Mini Hakim, Hakim ou Super Hakim, les réglages enregistrés à ce nom s’appliquent tout seuls.', 'oui'],
       ['epissage', 'Épissage', 'Il ne se coupe plus : ses pensées en un pavé, puis il choisit ses mots.', 'oui'],
       ['dire_inverse', 'Pensées dites, pas écrites', 'Sa voix dit ses pensées, et écrit sans les dire celles qu’il disait.', 'oui'],
       ['meubles_auto', 'Petits « euh » automatiques', 'Dans ses blancs. Ceux qu’il choisit lui-même restent.', 'oui'],
@@ -274,9 +284,11 @@
         const b = document.createElement('div'); b.className = 'choix'; b.style.gridColumn = 'auto';
         const ap = document.createElement('button'); ap.type = 'button'; ap.textContent = '↺ Appliquer';
         ap.addEventListener('click', () => profils('appliquer', x.nom));
+        const mo = document.createElement('button'); mo.type = 'button'; mo.textContent = '✏️ Modifier';
+        mo.addEventListener('click', () => editer(x.nom));
         const ef = document.createElement('button'); ef.type = 'button'; ef.textContent = '✕'; ef.setAttribute('aria-label', `Effacer « ${x.nom} »`);
         ef.addEventListener('click', () => { if (confirm(`Effacer « ${x.nom} » ?`)) profils('effacer', x.nom); });
-        b.append(ap, ef);
+        b.append(ap, mo, ef);
         const q = document.createElement('div'); q.className = 'aide'; q.textContent = `enregistré le ${new Date(x.ts).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}`;
         l.append(n, b, q); zone.appendChild(l);
       }
@@ -285,6 +297,22 @@
       if (geste === 'effacer') dire(`« ${nom} » effacé`);
     } catch (e) { dire(`Pas fait (${e.message})`, true); }
   }
+  // modifier : ses réglages passent dans les curseurs (et servent tout de suite), puis « Enregistrer » les garde à leur nom
+  let edition = null;
+  async function editer(nom) {
+    await profils('appliquer', nom);
+    edition = nom;
+    document.getElementById('editionTexte').textContent = `✏️ Tu modifies « ${nom} » : règle les curseurs, puis enregistre.`;
+    document.getElementById('editionGarder').textContent = `💾 Enregistrer dans « ${nom} »`;
+    document.getElementById('edition').hidden = false;
+    document.getElementById('familles').scrollIntoView({ behavior: 'smooth' });
+  }
+  document.getElementById('editionGarder').addEventListener('click', async () => {
+    if (!edition) return;
+    const nom = edition; edition = null; document.getElementById('edition').hidden = true;
+    await profils('enregistrer', nom);
+  });
+  document.getElementById('editionAnnuler').addEventListener('click', () => { edition = null; document.getElementById('edition').hidden = true; });
   document.getElementById('profilGarder').addEventListener('click', () => {
     const c = document.getElementById('profilNom'), nom = c.value.trim();
     if (!nom) { c.focus(); dire('Donne-lui un nom', true); return; }
