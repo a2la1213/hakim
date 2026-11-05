@@ -3592,7 +3592,7 @@ function plafondRibosome(reglage = reglageRibosome()) {
     contexte: n('contexte', RIBOSOME_PLAFOND.contexte, 100, 3000) };
 }
 function ribosomeAuPlafond(r, maintenant = Date.now(), p = plafondRibosome()) {
-  if (!r || r.ferme) return false;
+  if (!r || r.ferme || (typeof corpsReglages === 'function' && corpsReglages().parole_libre)) return false;
   const dits = String(r.phrase || '').split(/\s+/).filter(Boolean).length;
   return dits >= p.mots || r.n >= p.paquets || (derniereParolePapa > 0 && maintenant - derniereParolePapa >= p.silence_s * 1000 && r.n > 0);
 }
@@ -6969,6 +6969,7 @@ function corpsReglages() {
     lire_apres_silence_ms: Number.isFinite(Number(r.lire_apres_silence_ms)) && r.lire_apres_silence_ms != null ? Math.max(0, Math.min(5000, Math.round(Number(r.lire_apres_silence_ms)))) : 0,
     profils_auto: r.profils_auto !== false,   // (05/11) ses réglages suivent son mode (Mini Hakim, Hakim, Super Hakim)
     ribosome_intelligent: r.ribosome_intelligent !== false,
+    parole_libre: r.parole_libre === true,   // (05/11, Ahmed : « on lève toutes tes contraintes de parole ») plus de plafond ; stop, parasites et sécurité restent
     boucle_ribosomes: r.boucle_ribosomes !== false };   // (05/11) un ribosome toujours prêt, sauf s'il dort ou si papa coupe   // (05/11) il règle lui-même son ribosome (ribosome_regler, ribosome_bilan)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
 }
 function corpsActif() { return corpsReglages().actif; }
@@ -7107,7 +7108,7 @@ function fluxAjouter(s, x, t, cle = null, i = null, mesurer = true) {
   while (k > 0 && FLUX[k - 1].t > o.t) k--;                     // rangé à son moment d'origine (les retardataires remontent)
   FLUX.splice(k, 0, o);
   // (05/11, Ahmed par Hakim : « mon fil à 1 heure ») le fil en mémoire reste court (ses pages le parcourent sans cesse) ; le long est sur le disque : 15 000 lignes
-  if (typeof FIL_LONG !== 'undefined') fs.appendFile(FIL_LONG, JSON.stringify({ t: o.t, s: o.s, x: o.x }) + '\n', () => {});
+  if (typeof FIL_LONG !== 'undefined') fs.appendFile(FIL_LONG, JSON.stringify({ t: o.t, b: battementN, s: o.s, x: o.x }) + '\n', () => {});
   if (typeof FIL_LONG !== 'undefined' && ++filLongN % 3000 === 0) fs.readFile(FIL_LONG, 'utf8', (e, d) => { if (!e) { const x = d.split('\n').filter(Boolean); if (x.length > 15000) fs.writeFile(FIL_LONG, x.slice(-15000).join('\n') + '\n', () => {}); } });
   const limite = Date.now() - FLUX_DUREE_MS;
   while (FLUX.length > FLUX_MAX || (FLUX.length && FLUX[0].t < limite)) FLUX.shift();
@@ -9054,7 +9055,7 @@ function noteChangement(c) {
 // automatiquement ») son cerveau change de modèle : les réglages enregistrés sous le nom de son mode s'appliquent (tout son ribosome, et ce qui
 // touche sa parole dans son corps ; ses autres interrupteurs restent ceux de papa) ; sans cerveau en ce moment, rien ne change ; le premier mode
 // vu après une relance ne change rien (les réglages de papa du moment restent : une relance ne les défait pas)
-var ribosomesCoupesA = 0, FIL_LONG = path.join(JARVIS, 'fil-stimuli-long.jsonl'), filLongN = 0;   // (05/11) son fil long (fluxAjouter) ; var : il peut écrire avant cette ligne sans erreur
+var battementN = 0, ribosomesCoupesA = 0, FIL_LONG = path.join(JARVIS, 'fil-stimuli-long.jsonl'), filLongN = 0;   // (05/11) son fil long (fluxAjouter) ; var : il peut écrire avant cette ligne sans erreur
 const PROFIL_DU_MODE = { haiku: 'Mini Hakim', sonnet: 'Hakim', opus: 'Super Hakim' };
 // (05/11, ribosome intelligent) ses réglages et ceux de papa, notés (jarvis/ribosome-ajustements.jsonl) ; son mode du moment (mode-courant.json),
 // pour que ce qu'il règle aille dans le réglage enregistré de son mode
@@ -9083,7 +9084,6 @@ function reglagesDuMode(m = typeof cerveau !== 'undefined' && cerveau ? cerveau.
   diffuser(abonnesPensees, 'souffle', j({ niveau: 'reglages', mode: x.nom, ts: Date.now() }));   // la page relit ses réglages
   return x.nom;
 }
-if (require.main === module) setInterval(() => { try { reglagesDuMode(); } catch (_) {} }, 3000).unref();
 // (05/11, 15:09, Ahmed par Hakim : « la boucle des ribosomes ne s'arrête jamais, sauf quand je dors ; le suivant toujours prêt ») en veille légère : un ribosome ouvert, sans
 // aucun appel à Claude tant que rien n'arrive ; rien s'il dort ; 60 s de repos après le stop de papa
 function boucleRibosomes(maintenant = Date.now()) {
@@ -9092,7 +9092,17 @@ function boucleRibosomes(maintenant = Date.now()) {
   pistes.ribo = ribosomeSuivant();
   return true;
 }
-if (require.main === module) setInterval(() => { try { boucleRibosomes(); } catch (_) {} }, 3000).unref();
+// (05/11, 17:54, Ahmed : « son cœur, c'est le générateur de boucle, celui qui donne la vie ; tout tourne en boucle, ultra coordonné, comme un moteur ») un seul
+// tempo : chaque battement (son vrai rythme, lui-même nourri par ses processeurs) relance sa boucle de ribosomes et ses réglages, et numérote son fil long
+function battreCoeur() {
+  battementN++;
+  try { boucleRibosomes(); } catch (_) {}
+  try { reglagesDuMode(); } catch (_) {}
+  const bpm = Math.max(20, Math.min(120, Number(lui && lui.interieur && lui.interieur.coeur && lui.interieur.coeur.bpm) || 60));
+  const t = setTimeout(battreCoeur, 60000 / bpm);
+  if (t.unref) t.unref();
+}
+if (require.main === module) battreCoeur();
 // (05/11, Ahmed : « il faut bien qu'il ait le retour de chaque petit réglage, pour qu'il ajuste correctement ») toutes les 2 min, ses réglages
 // devenus mesurables lui reviennent par son courrier (jarvis/ribosome_intelligent.py retours)
 if (require.main === module) setInterval(() => {
@@ -11985,6 +11995,7 @@ async function traiter(req, res) {
       if (typeof q.sauter_suite === 'boolean') r.sauter_suite = q.sauter_suite;   // (05/11) sauter la suite quand papa répond
       if (q.sauter_suite_ms != null && Number.isFinite(Number(q.sauter_suite_ms))) r.sauter_suite_ms = Math.max(300, Math.min(5000, Math.round(Number(q.sauter_suite_ms))));
       if (typeof q.sauter_passe === 'boolean') r.sauter_passe = q.sauter_passe;   // (05/11) sauter les morceaux passés
+      if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;
       if (typeof q.profils_auto === 'boolean') r.profils_auto = q.profils_auto;   // (05/11) ses réglages suivent son mode
       if (typeof q.ribosome_intelligent === 'boolean') r.ribosome_intelligent = q.ribosome_intelligent;   // (05/11) son ribosome intelligent

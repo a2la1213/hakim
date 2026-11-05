@@ -202,7 +202,7 @@ test('son mode change : les réglages à son nom s’appliquent (ribosome entier
   ctx.r('haiku');
   ctx.auto = false;
   assert.strictEqual(ctx.r('opus'), null, 'éteint : rien');
-  assert.match(SRC, /setInterval\(\(\) => \{ try \{ reglagesDuMode\(\); \} catch \(_\) \{\} \}, 3000\)/);
+  assert.match(prendre(SRC, 'battreCoeur'), /boucleRibosomes\(\);[\s\S]*reglagesDuMode\(\);[\s\S]*setTimeout\(battreCoeur, 60000 \/ bpm\)/);
   assert.match(PAGE, /if \(o\.niveau === 'reglages'\) \{ lireReglagesCorps\(\);/);
 });
 
