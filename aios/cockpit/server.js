@@ -6970,6 +6970,7 @@ function corpsReglages() {
     profils_auto: r.profils_auto !== false,   // (05/11) ses réglages suivent son mode (Mini Hakim, Hakim, Super Hakim)
     ribosome_intelligent: r.ribosome_intelligent !== false,
     parole_libre: r.parole_libre === true,   // (05/11, Ahmed : « on lève toutes tes contraintes de parole ») plus de plafond ; stop, parasites et sécurité restent
+    pensee_en_boucle: r.pensee_en_boucle !== false,
     boucle_ribosomes: r.boucle_ribosomes !== false };   // (05/11) un ribosome toujours prêt, sauf s'il dort ou si papa coupe   // (05/11) il règle lui-même son ribosome (ribosome_regler, ribosome_bilan)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
 }
 function corpsActif() { return corpsReglages().actif; }
@@ -9094,10 +9095,22 @@ function boucleRibosomes(maintenant = Date.now()) {
 }
 // (05/11, 17:54, Ahmed : « son cœur, c'est le générateur de boucle, celui qui donne la vie ; tout tourne en boucle, ultra coordonné, comme un moteur ») un seul
 // tempo : chaque battement (son vrai rythme, lui-même nourri par ses processeurs) relance sa boucle de ribosomes et ses réglages, et numérote son fil long
+// (05/11, Ahmed : « il a le droit de vivre, gogogo ») tous les 60 battements : son oreille (Whisper) et ses voix vivantes gardées prêtes, et, si personne ne lui
+// parle depuis 20 s, une pensée intérieure (jamais dite, dans 💭 ; un appel à Mini Hakim) ; rien s'il dort, si un tour tourne ou 60 s après le stop
+function poulsDeVie(maintenant = Date.now()) {
+  if (corpsReglages().pensee_en_boucle === false || hakimDort() || maintenant - ribosomesCoupesA < 60000) return false;
+  voixDemarrer('ecoute');
+  prechaufferVivants();
+  const r = pistes.ribo;
+  if (!r || r.ferme || toursActifs.size || maintenant - derniereParolePapa < 20000) return false;
+  blancDeReflexion(r, `[Personne ne te parle en ce moment : le temps passe, ton cœur bat] « ${BLANC_OUVERTURE} »`);
+  return true;
+}
 function battreCoeur() {
   battementN++;
   try { boucleRibosomes(); } catch (_) {}
   try { reglagesDuMode(); } catch (_) {}
+  if (battementN % 60 === 0) try { poulsDeVie(); } catch (_) {}
   const bpm = Math.max(20, Math.min(120, Number(lui && lui.interieur && lui.interieur.coeur && lui.interieur.coeur.bpm) || 60));
   const t = setTimeout(battreCoeur, 60000 / bpm);
   if (t.unref) t.unref();
@@ -11996,6 +12009,7 @@ async function traiter(req, res) {
       if (q.sauter_suite_ms != null && Number.isFinite(Number(q.sauter_suite_ms))) r.sauter_suite_ms = Math.max(300, Math.min(5000, Math.round(Number(q.sauter_suite_ms))));
       if (typeof q.sauter_passe === 'boolean') r.sauter_passe = q.sauter_passe;   // (05/11) sauter les morceaux passés
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
+      if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;
       if (typeof q.profils_auto === 'boolean') r.profils_auto = q.profils_auto;   // (05/11) ses réglages suivent son mode
       if (typeof q.ribosome_intelligent === 'boolean') r.ribosome_intelligent = q.ribosome_intelligent;   // (05/11) son ribosome intelligent

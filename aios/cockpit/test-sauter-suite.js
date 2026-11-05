@@ -332,3 +332,16 @@ test('boucle toujours prête : rien s’il dort ou 60 s après le stop ; une pen
   c2.f();
   assert.deepStrictEqual([...c2.lot], ['une idee toute neuve ici']);
 });
+
+test('pouls de vie : une pensée quand personne ne parle ; rien s’il dort, éteint ou si papa vient de parler', () => {
+  const b = [];
+  const ctx = { pistes: { ribo: { tour: 1 } }, ribosomesCoupesA: 0, derniereParolePapa: 0, toursActifs: new Set(), BLANC_OUVERTURE: '…', dort: false, off: false,
+    voixDemarrer() {}, prechaufferVivants() {}, blancDeReflexion: (r, q) => b.push(q) };
+  ctx.corpsReglages = () => ({ pensee_en_boucle: !ctx.off }); ctx.hakimDort = () => ctx.dort;
+  vm.createContext(ctx);
+  vm.runInContext('var pistes = this.pistes;' + prendre(SRC, 'poulsDeVie') + 'this.p = poulsDeVie;', ctx);
+  assert.strictEqual(ctx.p(1e6), true); assert.strictEqual(b.length, 1);
+  ctx.dort = true; assert.strictEqual(ctx.p(1e6), false); ctx.dort = false;
+  ctx.off = true; assert.strictEqual(ctx.p(1e6), false); ctx.off = false;
+  ctx.derniereParolePapa = 1e6 - 5000; assert.strictEqual(ctx.p(1e6), false);
+});
