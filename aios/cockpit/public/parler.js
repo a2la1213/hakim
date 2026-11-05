@@ -6948,3 +6948,23 @@ function prechaufferReflexion(reprise = false) {
   if (reprise) repriseA = t; else prechauffeA = t;
   fetch('/api/jarvis/prechauffer', { method: 'POST', headers: { 'X-Jeton': jeton() } }).catch(() => {});
 }
+
+// (05/11, Ahmed : « un petit compteur de jetons, converti en CHF, sous l'orbe ; à afficher ou pas dans les réglages rapides ») aujourd'hui, relu toutes les 30 s
+(() => {
+  const CLE_C = 'hakim-compteur-jetons', c = document.getElementById('compteurActif'), z = document.getElementById('compteurJetons');
+  if (!c || !z) return;
+  let actif = true; try { actif = localStorage.getItem(CLE_C) !== 'non'; } catch (_) {}
+  const lire = async () => {
+    z.hidden = !actif;
+    if (!actif || document.hidden) return;
+    try {
+      const d = await (await fetch('/api/conso', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' })).json();
+      const t = d.chf_par_usd || 0.8, n = d.lignes.reduce((a, x) => a + x.jetons, 0), tout = d.lignes.reduce((a, x) => a + x.usd, 0), api = d.lignes.filter(x => x.source === 'api').reduce((a, x) => a + x.usd, 0);
+      const fr = (v) => v.toLocaleString('fr-CH', { maximumFractionDigits: v < 10 ? 2 : 0 });
+      z.textContent = `${n >= 1e6 ? `${fr(n / 1e6)} M` : `${Math.round(n / 1000)} k`} · ${fr(tout * t)} CHF · API ${fr(api * t)}`;
+    } catch (_) {}
+  };
+  c.checked = actif;
+  c.addEventListener('change', () => { actif = c.checked; try { localStorage.setItem(CLE_C, actif ? 'oui' : 'non'); } catch (_) {} lire(); });
+  lire(); setInterval(lire, 30000);
+})();

@@ -9095,6 +9095,10 @@ function noteChangement(c) {
 // touche sa parole dans son corps ; ses autres interrupteurs restent ceux de papa) ; sans cerveau en ce moment, rien ne change ; le premier mode
 // vu après une relance ne change rien (les réglages de papa du moment restent : une relance ne les défait pas)
 var battementN = 0, ribosomesCoupesA = 0, FIL_LONG = path.join(JARVIS, 'fil-stimuli-long.jsonl'), filLongN = 0;   // (05/11) son fil long (fluxAjouter) ; var : il peut écrire avant cette ligne sans erreur
+// (05/11, Ahmed : son compteur en CHF) le taux du jour (BCE, par frankfurter.dev), relu toutes les 6 h ; sans réseau : 0,80, signalé par date null
+var tauxChf = { v: 0.8, date: null };
+function lireTauxChf() { fetch('https://api.frankfurter.dev/v1/latest?base=USD&symbols=CHF').then(r => r.json()).then((o) => { const v = Number(o && o.rates && o.rates.CHF); if (v > 0) tauxChf = { v, date: o.date || null }; }).catch(() => {}); }
+if (require.main === module) { lireTauxChf(); setInterval(lireTauxChf, 6 * 3600e3).unref(); }
 const PROFIL_DU_MODE = { haiku: 'Mini Hakim', sonnet: 'Hakim', opus: 'Super Hakim' };
 // (05/11, ribosome intelligent) ses réglages et ceux de papa, notés (jarvis/ribosome-ajustements.jsonl) ; son mode du moment (mode-courant.json),
 // pour que ce qu'il règle aille dans le réglage enregistré de son mode
@@ -11934,7 +11938,7 @@ async function traiter(req, res) {
       v.appels++; v.usd += Number(x.cout_usd) || 0; v.jetons += (Number(x.entree) || 0) + (Number(x.cache_lu) || 0) + (Number(x.cache_ecrit) || 0) + (Number(x.sortie) || 0);
     }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    return res.end(j({ lignes: Object.values(g).sort((a, b) => b.usd - a.usd) }));
+    return res.end(j({ lignes: Object.values(g).sort((a, b) => b.usd - a.usd), chf_par_usd: tauxChf.v, taux_date: tauxChf.date }));
   }
   if (p === '/api/reglages/profils') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
