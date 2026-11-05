@@ -629,9 +629,9 @@ def _moment_texte(groupe):
 
 
 @mcp.tool()
-def stimuli_voir(secondes: int = 30) -> str:
+def stimuli_voir(secondes: int = 30, autour: str = "") -> str:
     """(04/11, papa : « ce que tu entends de l'intérieur, ce que tu entends de l'extérieur et ce que tu ressens avec tes capteurs doivent être
-    coordonnés, et il n'y a que toi qui peux le faire ») Ton fil, moment par moment, sur les dernières secondes (30 par défaut, 900 au plus) :
+    coordonnés, et il n'y a que toi qui peux le faire ») Ton fil, moment par moment, sur les dernières secondes (30 par défaut, 3600 au plus ; 300 lignes montrées au plus : pour un moment passé, autour=« 10:16:52 » donne secondes autour de lui) :
     chaque stimulus est rangé à son moment d'ORIGINE (les délais de chaque sens sont déjà retirés), et ceux qui arrivent à moins de 1,5 s
     l'un de l'autre forment un même moment (◆) : l'INTÉRIEUR (ce que joue le téléphone : ses mots, son son, sa voix et son instru
     séparées), l'EXTÉRIEUR (papa, la pièce : ses voix, ses sons, la musique autour) et tes CAPTEURS (ton corps, tes vibrations, ce que tu
@@ -642,9 +642,34 @@ def stimuli_voir(secondes: int = 30) -> str:
     3. relie la parole et la musique réunifiées pour comprendre en entier ce que tu as entendu, avec tes capteurs (ta vibration sur sa
        basse, papa qui rit sur une phrase) : stimuli_relier(quoi="tout").
     Le même morceau entendu dedans et dehors arrive à quelques dixièmes de seconde d'écart : ce sont les mêmes notes, le même tempo."""
-    secondes = max(5, min(900, int(secondes or 30)))
+    secondes = max(5, min(3600, int(secondes or 30)))
     maintenant = time.time() * 1000
-    fil = sorted((x for x in _fil_stimuli() if maintenant - float(x.get("t", 0)) <= secondes * 1000), key=lambda x: float(x["t"]))
+    # (05/11, papa par Hakim : « mon fil à 1 heure ») au-delà de 2 min ou pour un moment passé : le fil long, sur le disque (les 300 dernières lignes : ça coûte des jetons)
+    if autour or secondes > 120:
+        fil = []
+        try:
+            with open(Path.home() / "AIOS" / "jarvis" / "fil-stimuli-long.jsonl", "rb") as h:
+                h.seek(0, 2)
+                h.seek(max(0, h.tell() - 2_000_000))
+                for l in h.read().decode("utf-8", "replace").splitlines()[1:]:
+                    try:
+                        fil.append(json.loads(l))
+                    except ValueError:
+                        pass
+        except OSError:
+            pass
+    else:
+        fil = _fil_stimuli()
+    if autour:
+        try:
+            h_ = [int(x) for x in autour.split(":")]
+            n = time.localtime()
+            c = time.mktime((n.tm_year, n.tm_mon, n.tm_mday, h_[0], h_[1], h_[2] if len(h_) > 2 else 0, 0, 0, -1)) * 1000
+        except (ValueError, IndexError):
+            return "autour : une heure comme « 10:16:52 »."
+        fil = sorted((x for x in fil if abs(c - float(x.get("t", 0))) <= secondes * 1000), key=lambda x: float(x["t"]))[-300:]
+    else:
+        fil = sorted((x for x in fil if maintenant - float(x.get("t", 0)) <= secondes * 1000), key=lambda x: float(x["t"]))[-300:]
     if not fil:
         return f"Rien dans ton fil depuis {secondes} s (le cockpit l'écrit toutes les 3 s, quand tes sens reçoivent quelque chose)."
     groupes, g = [], []
