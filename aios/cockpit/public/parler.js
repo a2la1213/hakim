@@ -6255,11 +6255,11 @@ function appliquerReglages() {
   // Vu le 2026-10-16 : un français précédé d'un salam a déjà été pris pour de l'arabe ; « français » reste
   // au choix pour forcer la langue.
 }
-for (const [id, cle, val] of [['source', 'source', e => e.value], ['modele', 'modele', e => e.value], ['modeleConversation', 'modeleConversation', e => e.value], ['reconnaissance', 'reconnaissance', e => (e.value === 'azure' ? 'locale' : e.value)],
+for (const [id, cle, val] of [['source', 'source', e => e.value], ['modele', 'modele', e => e.value], ['modeleConversation', 'modeleConversation', e => e.value], ['reconnaissance', 'reconnaissance', e => ((etat.choixSttAzure = e.value === 'azure') ? 'locale' : e.value)],
   ['langue', 'langue', e => e.value], ['voixFr', 'voixFr', e => e.value], ['voixAr', 'voixAr', e => e.value],
   ['vitesse', 'vitesse', e => parseFloat(e.value) || 1], ['lectureAuto', 'lectureAuto', e => e.checked],
   ['patience', 'patience', e => parseFloat(e.value)], ['patienceConversation', 'patienceConversation', e => parseFloat(e.value)],
-  ['voix', 'voix', e => (e.value === 'azure' ? 'neuronale' : e.value)], ['sceneActive', 'scene', e => e.checked], ['rapide', 'rapide', e => e.checked],
+  ['voix', 'voix', e => ((etat.choixAzure = e.value === 'azure') ? 'neuronale' : e.value)], ['sceneActive', 'scene', e => e.checked], ['rapide', 'rapide', e => e.checked],
   ['position', 'position', e => e.checked], ['voixNeutre', 'voixNeutre', e => e.checked]]) {
   $(id).addEventListener('change', (ev) => { etat.reglages[cle] = val(ev.target); appliquerReglages(); sauver(); });
 }
@@ -6984,11 +6984,14 @@ function prechaufferReflexion(reprise = false) {
 })();
 
 // (05/11, Ahmed : « dans les réglages de Parler, l'option Microsoft Azure pour la voix de Hakim et pour la reconnaissance ») le choix va au cockpit
-for (const [id, cle] of [['voix', 'voix_azure'], ['reconnaissance', 'stt_azure']]) {
+// le choix est lu par le premier écouteur (etat.choixAzure), avant que la page ne remette la liste sur Chatterbox
+for (const [id, cle, voulu] of [['voix', 'voix_azure', 'choixAzure'], ['reconnaissance', 'stt_azure', 'choixSttAzure']]) {
   const el = document.getElementById(id);
   if (el) el.addEventListener('change', () => {
-    fetch('/api/corps/reglages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ [cle]: el.value === 'azure' }) })
-      .then(() => lireReglagesCorps()).catch(() => {});
-    humeur(el.value === 'azure' ? 'Microsoft Azure choisi' : 'Azure retiré');
+    const oui = !!etat[voulu];
+    if (oui) el.value = 'azure';
+    fetch('/api/corps/reglages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ [cle]: oui }) })
+      .then(() => lireReglagesCorps()).then(() => { if (oui) el.value = 'azure'; }).catch(() => {});
+    humeur(oui ? 'Microsoft Azure choisi' : 'Azure retiré');
   });
 }
