@@ -7003,6 +7003,7 @@ function corpsReglages() {
     profils_auto: r.profils_auto !== false,   // (05/11) ses réglages suivent son mode (Mini Hakim, Hakim, Super Hakim)
     ribosome_intelligent: r.ribosome_intelligent !== false,
     papa_passe_avant: r.papa_passe_avant !== false,   // (05/11) ce que papa règle passe avant Hakim pendant 30 min
+    voix_par_appareil: r.voix_par_appareil !== false,
     tunnel: r.tunnel === true,
     parole_libre: r.parole_libre === true,   // (05/11, Ahmed : « on lève toutes tes contraintes de parole ») plus de plafond ; stop, parasites et sécurité restent
     pensee_en_boucle: r.pensee_en_boucle !== false,
@@ -12058,6 +12059,7 @@ async function traiter(req, res) {
       if (q.sauter_suite_ms != null && Number.isFinite(Number(q.sauter_suite_ms))) r.sauter_suite_ms = Math.max(300, Math.min(5000, Math.round(Number(q.sauter_suite_ms))));
       if (typeof q.sauter_passe === 'boolean') r.sauter_passe = q.sauter_passe;   // (05/11) sauter les morceaux passés
       if (typeof q.papa_passe_avant === 'boolean') r.papa_passe_avant = q.papa_passe_avant;
+      if (typeof q.voix_par_appareil === 'boolean') r.voix_par_appareil = q.voix_par_appareil;
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
