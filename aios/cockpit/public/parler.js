@@ -1589,9 +1589,9 @@ let reglagesCorps = { oreille: false, je_te_suis: true }, oreilleDernier = 0, pa
 async function lireReglagesCorps() {
   try { const r = await fetch('/api/corps/reglages', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' }); if (r.ok) reglagesCorps = { ...reglagesCorps, ...(await r.json()) }; } catch (_) {}
   // (05/11, Ahmed : « tout sur le smartphone quand on est dessus, sur le Mac quand on est dessus ») sa voix suit l'appareil : Supertonic dans l'appli, Chatterbox sur le Mac (qui se libère seul après 15 min)
-  if (reglagesCorps.voix_azure) etat.reglages.voix = 'neuronale';
   if (reglagesCorps.stt_azure && etat.reglages.reconnaissance === 'navigateur') etat.reglages.reconnaissance = 'locale';
-  try { if (reglagesCorps.voix_azure) $('voix').value = 'azure'; if (reglagesCorps.stt_azure) $('reconnaissance').value = 'azure'; } catch (_) {}   // (05/11) Azure : par le Mac, sur les deux appareils
+  try { if (reglagesCorps.voix_azure) $('voix').value = 'azure'; if (reglagesCorps.stt_azure) $('reconnaissance').value = 'azure'; } catch (_) {}
+  if (reglagesCorps.voix_azure) etat.reglages.voix = 'neuronale';   // (05/11) Azure : par le Mac, sur les deux appareils
   else if (reglagesCorps.voix_par_appareil !== false) etat.reglages.voix = window.HakimApp && window.HakimApp.voixTelephone ? 'telephone' : 'neuronale';
   if (typeof surOreilleHakim === 'function') surOreilleHakim({ fermee: !!reglagesCorps.oreille_hakim_jusqua, jusqua: reglagesCorps.oreille_hakim_jusqua });   // (01:00)
 }
