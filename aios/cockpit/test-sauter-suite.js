@@ -158,3 +158,16 @@ test('sa voix calcule d’avance ce qui sera dit : le lot en tête, et le dernie
   prepares.length = 0; ctx.etat.riboFile = [{ tour: 4, texte: 'seul' }]; ctx.p();
   assert.deepStrictEqual([...prepares], ['seul'], 'un seul morceau : calculé une fois');
 });
+
+// (05/11, Ahmed : « dans les réglages, on peut rajouter un bouton pour enregistrer les réglages »)
+test('ses réglages enregistrés sous un nom : enregistrer (ribosome, corps, veilleur), appliquer, effacer ; dans la page Réglages', () => {
+  const i = SRC.indexOf("if (p === '/api/reglages/profils') {"), route = SRC.slice(i, SRC.indexOf("\n  if (p.startsWith('/api/corps/'))", i));
+  assert.match(route, /if \(!jetonValide\(req\)\)/);
+  assert.match(route, /ribosome: lireJson\(RIBOSOME_REGLAGE, \{\}\) \|\| \{\}, corps: corpsReglages\(\), veilleur: veilleurReglages\(\)/);
+  assert.match(route, /ecrireAtomique\(RIBOSOME_REGLAGE,[\s\S]*ecrireAtomique\(CORPS_REGLAGES,[\s\S]*ecrireAtomique\(VEILLEUR_REGLAGES,/);
+  assert.match(route, /\.slice\(-30\)/, 'trente au plus');
+  assert.match(route, /auditer\(`reglages:\$\{q\.geste\}`/);
+  const REG = fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8');
+  assert.match(REG, /id="profilGarder">💾 Enregistrer</);
+  assert.match(REG, /\(r\.dataset\.cherche \|\| r\.textContent\.toLowerCase\(\)\)\.includes\(q\)/, 'la recherche ne casse pas sur ses réglages enregistrés');
+});

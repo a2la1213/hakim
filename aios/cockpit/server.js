@@ -11719,6 +11719,39 @@ async function traiter(req, res) {
       plafond_mots: pl.mots, plafond_paquets: pl.paquets, plafond_silence_s: pl.silence_s, lecteur_max: pl.lecteur_max, contexte: pl.contexte,
       relais_ribosomes: rel.ribosomes, relais_pct: rel.pct }));
   }
+  // (05/11, Ahmed : « dans les réglages, on peut rajouter un bouton pour enregistrer les réglages ») chaque geste s'enregistre déjà tout de suite ;
+  // ce bouton garde l'ensemble sous un nom (son ribosome, son corps, son veilleur) pour y revenir d'un geste (jarvis/reglages-profils.json)
+  if (p === '/api/reglages/profils') {
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    const repondre = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o)); };
+    const FICHIER = path.join(JARVIS, 'reglages-profils.json');
+    const profils = () => { const l = lireJson(FICHIER, []); return Array.isArray(l) ? l : []; };
+    const liste = () => profils().map(x => ({ nom: x.nom, ts: x.ts }));
+    if (req.method === 'GET') return repondre(200, { profils: liste() });
+    if (req.method !== 'POST') return repondre(405, { erreur: 'méthode refusée' });
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 2048) || '{}')); } catch (_) {}
+    const nom = String(q.nom || '').replace(/[\x00-\x1f]/g, ' ').trim().slice(0, 40);
+    if (!nom) return repondre(400, { erreur: 'un nom' });
+    let l = profils();
+    if (q.geste === 'enregistrer') {
+      const snap = { nom, ts: Date.now(), ribosome: lireJson(RIBOSOME_REGLAGE, {}) || {}, corps: corpsReglages(), veilleur: veilleurReglages() };
+      l = l.filter(x => x.nom !== nom).concat([snap]).slice(-30);
+    } else if (q.geste === 'appliquer') {
+      const x = l.find(y => y.nom === nom);
+      if (!x) return repondre(404, { erreur: 'inconnu' });
+      try {
+        ecrireAtomique(RIBOSOME_REGLAGE, j({ ...(x.ribosome || {}), ts: Date.now() / 1000, par: `papa (réglages « ${nom} »)` }));
+        ecrireAtomique(CORPS_REGLAGES, j({ ...corpsReglages(), ...(x.corps || {}) }));
+        const v = { ...veilleurReglages(), ...(x.veilleur || {}) };
+        ecrireAtomique(VEILLEUR_REGLAGES, j(v));
+        sauverVeilleurEtat({ ...veilleurEtat(), seuil: v.seuil_depart });
+      } catch (e) { return repondre(500, { erreur: 'pas appliqué' }); }
+    } else if (q.geste === 'effacer') l = l.filter(x => x.nom !== nom);
+    else return repondre(400, { erreur: 'geste inconnu' });
+    if (q.geste !== 'appliquer') { try { ecrireAtomique(FICHIER, j(l)); } catch (_) { return repondre(500, { erreur: 'pas enregistré' }); } }
+    auditer(`reglages:${q.geste}`, req, distantReq, { nom });
+    return repondre(200, { profils: liste() });
+  }
   if (p.startsWith('/api/corps/')) {                         // (30/10) son corps : ses événements, son milieu, ses réglages
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     const repondre = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o)); };

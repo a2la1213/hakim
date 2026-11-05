@@ -61,6 +61,14 @@
     <div class="sous">Chaque réglage sert tout de suite, sans relance. Hakim le sent au tour suivant.</div>
     <input class="chercher" id="chercher" type="search" placeholder="Chercher un réglage (ribosome, micro, voix…)" aria-label="Chercher un réglage" autocomplete="off">
     <nav class="sauts" id="sauts" aria-label="Aller à une famille"></nav>
+    <!-- (05/11, Ahmed : « un bouton pour enregistrer les réglages ») tout s'enregistre déjà à chaque geste ; ici, l'ensemble sous un nom -->
+    <section class="glass famille" id="profils" aria-labelledby="t-profils">
+      <h2 id="t-profils"><span class="ic" aria-hidden="true">💾</span>Mes réglages enregistrés</h2>
+      <div class="sous">Chaque geste s’enregistre déjà tout seul. Ici, tu gardes l’ensemble sous un nom pour y revenir d’un geste.</div>
+      <div class="actions"><input class="chercher" id="profilNom" type="text" maxlength="40" placeholder="Un nom (ex. « soirée calme »)" aria-label="Nom des réglages" style="flex:1;min-width:0;min-height:38px">
+        <button type="button" id="profilGarder">💾 Enregistrer</button></div>
+      <div id="profilsListe"></div>
+    </section>
     <div id="familles"><div class="vide">Chargement…</div></div>
   </main>
   <div class="bulle" id="bulle" role="status" hidden></div>
@@ -250,10 +258,39 @@
     const q = e.target.value.trim().toLowerCase();
     for (const s of document.querySelectorAll('.famille')) {
       let vus = 0;
-      for (const r of s.querySelectorAll('.reglage')) { const ok = !q || r.dataset.cherche.includes(q); r.classList.toggle('cache', !ok); if (ok) vus++; }
+      for (const r of s.querySelectorAll('.reglage')) { const ok = !q || (r.dataset.cherche || r.textContent.toLowerCase()).includes(q); r.classList.toggle('cache', !ok); if (ok) vus++; }
       s.hidden = !!q && !vus && !s.querySelector('h2').textContent.toLowerCase().includes(q);
     }
   });
+  // (05/11) ses réglages enregistrés : enregistrer, appliquer, effacer
+  async function profils(geste, nom) {
+    try {
+      const d = await appeler('/api/reglages/profils', geste ? { geste, nom } : null);
+      const zone = document.getElementById('profilsListe'); zone.textContent = '';
+      if (!d.profils.length) { const v = document.createElement('div'); v.className = 'vide'; v.textContent = 'Rien d’enregistré pour l’instant.'; zone.appendChild(v); }
+      for (const x of d.profils.slice().reverse()) {
+        const l = document.createElement('div'); l.className = 'reglage';
+        const n = document.createElement('div'); n.className = 'nom'; n.textContent = x.nom;
+        const b = document.createElement('div'); b.className = 'choix'; b.style.gridColumn = 'auto';
+        const ap = document.createElement('button'); ap.type = 'button'; ap.textContent = '↺ Appliquer';
+        ap.addEventListener('click', () => profils('appliquer', x.nom));
+        const ef = document.createElement('button'); ef.type = 'button'; ef.textContent = '✕'; ef.setAttribute('aria-label', `Effacer « ${x.nom} »`);
+        ef.addEventListener('click', () => { if (confirm(`Effacer « ${x.nom} » ?`)) profils('effacer', x.nom); });
+        b.append(ap, ef);
+        const q = document.createElement('div'); q.className = 'aide'; q.textContent = `enregistré le ${new Date(x.ts).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}`;
+        l.append(n, b, q); zone.appendChild(l);
+      }
+      if (geste === 'enregistrer') dire(`✓ « ${nom} » enregistré`);
+      if (geste === 'appliquer') { dire(`✓ « ${nom} » appliqué`); charger(); }
+      if (geste === 'effacer') dire(`« ${nom} » effacé`);
+    } catch (e) { dire(`Pas fait (${e.message})`, true); }
+  }
+  document.getElementById('profilGarder').addEventListener('click', () => {
+    const c = document.getElementById('profilNom'), nom = c.value.trim();
+    if (!nom) { c.focus(); dire('Donne-lui un nom', true); return; }
+    profils('enregistrer', nom); c.value = '';
+  });
+  profils();
   document.addEventListener('apparence', peindre);
   construire(); charger();
   // un autre écran (ou Hakim, avec ribosome_regler) peut changer un réglage : relu quand la page revient
