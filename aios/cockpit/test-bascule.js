@@ -36,7 +36,10 @@ test('une vraie erreur de limite : API pendant 10 min, puis le forfait est rées
 
 test('le forfait répond « allowed » : la limite s’efface ; sans API, le secours est le local', () => {
   const m = monde(false);
+  // (05/11, Ahmed : « tant qu'il n'y a pas le message d'erreur ») 100 % seul ne bascule pas (ses crédits du forfait) ; une vraie erreur, si
   m.f.noterAbonnement({ status: 'rejected', resetsAt: Math.floor(Date.now() / 1000) + 3600 });
+  assert.equal(m.f.sourcePour('auto'), 'abonnement');
+  m.f.noterAbonnement(null, Date.now() + 3600e3);
   assert.equal(m.f.sourcePour('auto'), 'local');
   m.f.noterAbonnement({ status: 'allowed', utilization: 0.99, unifiedWindows: { seven_day: { utilization: 0.99 } } });
   assert.equal(m.abonnement.limiteJusqua, 0);

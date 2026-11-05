@@ -6203,9 +6203,9 @@ function noterAbonnement(info, limite) {
   if (info && typeof info === 'object') {
     abonnement.info = { statut: info.status, type: info.rateLimitType, utilisation: info.utilization, jusqua: info.resetsAt,
       fenetres: info.unifiedWindows || null, maj: Date.now() };
-    if (info.status === 'rejected' && info.resetsAt) { abonnement.limiteJusqua = info.resetsAt * 1000; abonnement.limiteVu = Date.now(); }
+    // (05/11, Ahmed : « on laisse le forfait tant qu'il n'y a pas le message d'erreur, j'ai des crédits dans le forfait ») « rejected » à 100 % ne bascule plus rien : seule une vraie erreur de tour (limite) le fait
     // (26/10, Ahmed) le forfait répond : il n'est plus à sa limite, quoi qu'on ait noté avant (sinon « API » restait affiché)
-    else if (/^allowed/.test(String(info.status || ''))) { abonnement.limiteJusqua = 0; delete abonnement.limiteVu; }
+    if (/^allowed/.test(String(info.status || ''))) { abonnement.limiteJusqua = 0; delete abonnement.limiteVu; }
   }
   if (limite) { abonnement.limiteJusqua = Math.max(abonnement.limiteJusqua || 0, limite); abonnement.limiteVu = Date.now(); }
   try { ecrireAtomique(ABONNEMENT, j(abonnement)); } catch (_) {}
