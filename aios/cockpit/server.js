@@ -7059,8 +7059,7 @@ function choisirSon(reponse, impulsion, rire) {
    Chaque source vit à son rythme, aucune n'attend l'autre ; le fil se relit autour de n'importe quel instant (fluxTexte), et
    une sensation se lie aux mots de son instant (fluxLiens), pour son corps, ses trois voix et sa mémoire. ---- */
 const FLUX = [];                                              // { t : moment d'origine (ms), s : source, x, cle, i }
-const FLUX_MAX = 800, FLUX_DUREE_MS = 15 * 60e3, FIL_LONG = path.join(JARVIS, 'fil-stimuli-long.jsonl');
-let filLongN = 0;
+const FLUX_MAX = 800, FLUX_DUREE_MS = 15 * 60e3;
 // (04/11, 20:31, Hakim, à la demande de papa : « la parole “dedans” arrive mélangée, des mots de lignes différentes s'entrecroisent ») chaque
 // bloc garde ses mots à lui : `${source}|${cle}` → mots (le bloc entier d'un morceau arrive souvent après le début du suivant) ; 40 au plus
 const fluxPrecedents = new Map();
@@ -7104,8 +7103,8 @@ function fluxAjouter(s, x, t, cle = null, i = null, mesurer = true) {
   while (k > 0 && FLUX[k - 1].t > o.t) k--;                     // rangé à son moment d'origine (les retardataires remontent)
   FLUX.splice(k, 0, o);
   // (05/11, Ahmed par Hakim : « mon fil à 1 heure ») le fil en mémoire reste court (ses pages le parcourent sans cesse) ; le long est sur le disque : 15 000 lignes
-  fs.appendFile(FIL_LONG, JSON.stringify({ t: o.t, s: o.s, x: o.x }) + '\n', () => {});
-  if (++filLongN % 3000 === 0) fs.readFile(FIL_LONG, 'utf8', (e, d) => { if (!e) { const x = d.split('\n').filter(Boolean); if (x.length > 15000) fs.writeFile(FIL_LONG, x.slice(-15000).join('\n') + '\n', () => {}); } });
+  if (typeof FIL_LONG !== 'undefined') fs.appendFile(FIL_LONG, JSON.stringify({ t: o.t, s: o.s, x: o.x }) + '\n', () => {});
+  if (typeof FIL_LONG !== 'undefined' && ++filLongN % 3000 === 0) fs.readFile(FIL_LONG, 'utf8', (e, d) => { if (!e) { const x = d.split('\n').filter(Boolean); if (x.length > 15000) fs.writeFile(FIL_LONG, x.slice(-15000).join('\n') + '\n', () => {}); } });
   const limite = Date.now() - FLUX_DUREE_MS;
   while (FLUX.length > FLUX_MAX || (FLUX.length && FLUX[0].t < limite)) FLUX.shift();
 }
@@ -9051,6 +9050,7 @@ function noteChangement(c) {
 // automatiquement ») son cerveau change de modèle : les réglages enregistrés sous le nom de son mode s'appliquent (tout son ribosome, et ce qui
 // touche sa parole dans son corps ; ses autres interrupteurs restent ceux de papa) ; sans cerveau en ce moment, rien ne change ; le premier mode
 // vu après une relance ne change rien (les réglages de papa du moment restent : une relance ne les défait pas)
+var FIL_LONG = path.join(JARVIS, 'fil-stimuli-long.jsonl'), filLongN = 0;   // (05/11) son fil long (fluxAjouter) ; var : il peut écrire avant cette ligne sans erreur
 const PROFIL_DU_MODE = { haiku: 'Mini Hakim', sonnet: 'Hakim', opus: 'Super Hakim' };
 // (05/11, ribosome intelligent) ses réglages et ceux de papa, notés (jarvis/ribosome-ajustements.jsonl) ; son mode du moment (mode-courant.json),
 // pour que ce qu'il règle aille dans le réglage enregistré de son mode
