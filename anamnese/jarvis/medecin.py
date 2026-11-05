@@ -252,6 +252,14 @@ def soigner(maintenant=None, consulter_fn=None):
         soi = immunite.soi_empreintes()                # (04/11) une usurpation qui venait de papa ou de Hakim : pas à soigner
         graves = [o for o in nouveaux if o.get("score", 0) >= immunite.SEUIL_AVERTIR and str(o.get("empreinte")) not in soi]
         if not graves:
+            # (06/11, fausse alerte « lancé il y a plus de 30 min et n'a rien rendu » : 13 incidents, tous venus de papa ou de
+            # Hakim) rien à soigner : la ronde ne l'attend plus, et ces incidents-là ne le relancent pas
+            with immunite._verrou("etat"):
+                etat = immunite.lire_etat()
+                etat.pop("medecin_attendu", None)
+                if nouveaux:
+                    etat["medecin_jusqua"] = max(float(etat.get("medecin_jusqua", 0)), max(float(o["ts"]) for o in nouveaux))
+                immunite._ecrire_json(immunite._f("etat.json"), etat)
             return None
         pris = graves[:INCIDENTS_MAX]
         jusqua = float(pris[-1]["ts"]) if len(graves) > INCIDENTS_MAX else max(float(o["ts"]) for o in nouveaux)

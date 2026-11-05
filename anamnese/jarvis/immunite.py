@@ -1511,8 +1511,10 @@ def ronde(maintenant=None, journal_ollama=None, swap=None, ports=None, lancer=No
                     _ecrire_json(_f("ports-connus.json"), {"connus": sorted(set(connues.get("connus", [])) | set(vues)),
                                                           "depuis": connues.get("depuis", maintenant)})
         # le médecin : de nouveaux incidents graves, au plus une fois par heure et MEDECIN_PAR_JOUR fois par jour, un seul
+        soi = soi_empreintes()                         # (06/11) ce qui venait de papa ou de Hakim : le médecin ne le soigne pas, ne le lance pas
         graves = [o for o in _queue(_f(INCIDENTS), 262144)
-                  if float(o.get("ts", 0)) > float(etat.get("medecin_jusqua", 0)) and o.get("score", 0) >= SEUIL_AVERTIR]
+                  if float(o.get("ts", 0)) > float(etat.get("medecin_jusqua", 0)) and o.get("score", 0) >= SEUIL_AVERTIR
+                  and str(o.get("empreinte")) not in soi]
         jour = time.strftime("%Y-%m-%d", time.localtime(maintenant))
         compte = etat.get("medecin_compte", 0) if etat.get("medecin_jour") == jour else 0
         medecin = bool(graves) and maintenant - etat.get("dernier_medecin", 0) >= MEDECIN_ECART_S \
