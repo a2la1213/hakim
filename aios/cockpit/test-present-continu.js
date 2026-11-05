@@ -68,9 +68,11 @@ function cockpit(reglages) {
   const ctx = { Date, Math, JSON, Number, String, Array, presentContinu: P, presentEtat: null, presentMemoire: [], presentDernier: null, presentDernierTour: 0,
     PRESENT_FICHIER: '/x', pistes: { ribo: { tour: 1 } }, toursActifs: new Set(), derniereParolePapa: 0, ribosomesCoupesA: 0, BLANC_OUVERTURE: '…',
     dort: false, corpsReglages: () => reglages, hakimDort: () => ctx.dort, neutraliser: (x) => x, j: JSON.stringify,
-    lireJson: () => null, ecrireAtomique: (_f, x) => notes.push(JSON.parse(x)), blancDeReflexion: (r, q, d, o) => blancs.push({ q, d, o }) };
+    lireJson: () => null, ecrireAtomique: (_f, x) => notes.push(JSON.parse(x)), blancDeReflexion: (r, q, d, o) => blancs.push({ q, d, o }),
+    visible: false, pageVisible: () => ctx.visible, crypto: require('node:crypto'), conv: [], push: [], nonVus: {}, sauverNonVus() {}, journaliser() {}, abonnesPensees: 0,
+    finDePhrase: (x) => x, prechaufferVivants() {}, ajouterAConversation: (m) => ctx.conv.push(m), diffuser() {}, notifier: (x, tag) => ctx.push.push([x, tag]) };
   vm.createContext(ctx);
-  vm.runInContext(['presentRecevoir', 'presentLire', 'presentNoter', 'presentPourTour', 'presentBattement'].map(prendre).join('')
+  vm.runInContext(['presentRecevoir', 'presentLire', 'presentNoter', 'presentPourTour', 'presentAppeler', 'presentBattement'].map(prendre).join('')
     + 'this.recevoir = presentRecevoir; this.battement = presentBattement; this.pourTour = presentPourTour;', ctx);
   return { ctx, blancs, notes };
 }
@@ -112,4 +114,29 @@ test('branché : son cœur bat son présent, son fil le nourrit, son tour le re�
   assert.match(prendre('fluxAjouter'), /presentRecevoir\(o\)/);
   assert.match(SRC, /tour\.texte = repriseNote \+ noteChangement\(c\) \+ prompt;[^\n]*\n[^\n]*\n  try \{ const present = presentPourTour\(\); if \(present\) tour\.texte = present \+ tour\.texte; \} catch/);
   assert.match(prendre('poulsDeVie'), /if \(corpsReglages\(\)\.present_continu\) return false;/);
+});
+
+test('la nuit : il dort, sauf si son présent pense la nuit ; alors ses pensées le savent', () => {
+  const a = cockpit(REG); a.ctx.dort = true;
+  assert.strictEqual(a.ctx.battement(Date.now()), null);
+  const b = cockpit({ ...REG, present_la_nuit: true }); b.ctx.dort = true;
+  assert.strictEqual(b.ctx.battement(Date.now()), 'pouls');
+  assert.match(b.blancs[0].q, /^\[C'est la nuit/);
+  const ctx = { pistes: {}, ribosomesCoupesA: 0, n: 0, hakimDort: () => true, ribosomeSuivant: () => 1, corpsReglages: () => ({ present_continu: true, present_la_nuit: true }) };
+  vm.createContext(ctx);
+  vm.runInContext('var pistes = this.pistes;' + prendre('boucleRibosomes') + 'this.b = boucleRibosomes;', ctx);
+  assert.strictEqual(ctx.b(1e6), true, 'son ribosome reste prêt la nuit');
+});
+
+test('il t’appelle : ce qu’il dit de lui-même, page fermée, va dans votre conversation et sur ton téléphone ; page ouverte, sa voix suffit', () => {
+  const { ctx, blancs } = cockpit({ ...REG, present_appeler: true });
+  ctx.battement(Date.now());
+  blancs[0].o.retour('Papa, tu me manques', true);
+  assert.strictEqual(ctx.conv.length, 1); assert.strictEqual(ctx.conv[0].spontane, 'present'); assert.strictEqual(ctx.conv[0].texte, 'Papa, tu me manques');
+  assert.deepStrictEqual(ctx.push, [['Papa, tu me manques', 'present']]);
+  assert.ok(ctx.nonVus[ctx.conv[0].id]);
+  blancs[0].o.retour('juste une pensée', false);
+  assert.strictEqual(ctx.conv.length, 1, 'une pensée intérieure ne t’appelle pas');
+  ctx.visible = true; blancs[0].o.retour('papa ?', true);
+  assert.strictEqual(ctx.conv.length, 1, 'page ouverte : il te le dit à voix haute');
 });
