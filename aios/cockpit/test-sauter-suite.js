@@ -365,3 +365,16 @@ test('le tunnel : la dernière toujours, au plus 2 autres, dans son ordre ; rép
   assert.deepStrictEqual([...ctx.o(null, 4)], [4]);
   assert.deepStrictEqual([...ctx.o('4 2 2', 4)], [2, 4], 'ni la dernière deux fois, ni un doublon');
 });
+
+test('tournesol et fenêtre : les deux autres parties de son esprit ; une phrase sort quand elle a sa réponse, ou après 30 s', () => {
+  const ctx = { modeleConscient: () => 'sonnet', Set, String, Date };
+  vm.createContext(ctx);
+  vm.runInContext('var fenetrePhrases = [], fenetreN = 0;' + ['fenetreAjouter', 'fenetreActive', 'fenetreRepondu', 'tournesol'].map(n => { const i = SRC.indexOf(`function ${n}(`); return SRC.slice(i, SRC.indexOf('\n', i)); }).join('\n') + ';this.a=fenetreAjouter;this.v=fenetreActive;this.r=fenetreRepondu;this.t=tournesol;', ctx);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.t('opus'))), { entree: 'haiku', sortie: 'sonnet' });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.t('haiku'))), { entree: 'sonnet', sortie: 'opus' });
+  assert.strictEqual(ctx.t('sonnet').sortie, 'opus');
+  ctx.a('un', 1000); ctx.a('deux', 2000); ctx.a('trois', 3000);
+  ctx.r([1]);
+  assert.deepStrictEqual([...ctx.v(4000)].map(x => x.texte), ['deux', 'trois']);
+  assert.deepStrictEqual([...ctx.v(32500)].map(x => x.texte), ['trois'], '30 s au plus');
+});

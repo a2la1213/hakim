@@ -3109,6 +3109,7 @@ function pisteMorceau(texte, o = {}) {
   for (const morceau of morceaux) {
     const n = ++pistes.n;                                             // (04/11, relecture) son numéro à lui, même si sa piste est sautée
     pistes.attente.push({ n, texte: morceau.slice(-500), avant: avant.slice(-900) });
+    if (typeof fenetreAjouter === 'function' && corpsReglages().fenetre_partagee) fenetreAjouter(morceau);
     // (04/11, Ahmed : « quand j'enchaîne, ça envoie un gros morceau ; chaque chunk doit s'envoyer et s'afficher l'un après l'autre ;
     // en mode orbe, je dois voir mes chunks apparaître l'un après l'autre ») tes mots, morceau par morceau (les mêmes que ses
     // pistes), et où chacun finit dans tes mots : la page les affiche l'un après l'autre
@@ -3763,9 +3764,12 @@ async function lirePaquet(tour, r, i, paquet) {
     + `répètent ce qui est déjà dit ou sont creuses, GARDE : rien.\n`
     + `Garde de ces pensées les mots qui continuent ${tel ? 'ce que tu en dis' : 'ta réponse'}, dans leur ordre (tu peux en sauter) ; tu peux ajouter au plus ${liaison} petits mots de `
     + `liaison (et, mais, alors, du coup, donc) ; ou rien, si elles n'y apportent rien.\nRéponds en une seule ligne : GARDE : « … », ou GARDE : rien.`;
+  const cr = typeof corpsReglages === 'function' ? corpsReglages() : {};
+  const fen = cr.fenetre_partagee && !tel ? fenetreActive() : [];
+  const consigneF = fen.length ? `${consigne}\nSes phrases sans réponse : ${fen.map(x => `[${x.n}] « ${neutraliser(x.texte)} »`).join(' ')}\nSi les mots gardés répondent à certaines, ajoute une 2e ligne : REPONDU : numéros.` : consigne;
   const lire = ([mod, nom, delai]) => {
     const t0 = Date.now();
-    return sonnetTeteDeFond(consigne, `ribosome_${tel ? 'entendu_' : ''}${mod}`, mod, delai, { garderSurDelai: true }).catch(() => null).then((o) => {
+    return sonnetTeteDeFond(consigneF, `ribosome_${tel ? 'entendu_' : ''}${mod}`, mod, delai, { garderSurDelai: true }).catch(() => null).then((o) => {
       // (04/11, 14:04, mesuré : un paquet de 5 pensées en panne, ses lectures de 266 et 316 caractères prises pour des parasites) la
       // longueur permise suit la taille du paquet
       const t = String((o && o.texte) || ''), parasite = estParasite(boutDe(t), texte.length + 160), ms = Date.now() - t0;
@@ -3775,7 +3779,8 @@ async function lirePaquet(tour, r, i, paquet) {
       const g = !/GARDE\s*:\s*rien/i.test(t) && (/GARDE\s*:\s*«\s*([^»]{1,20000}?)\s*»/i.exec(t) || /GARDE\s*:\s*(.{1,20000})$/im.exec(t));
       const garde = g ? g[1].trim() : '', e = garde ? epissageDe(garde, texte) : null;
       const ok = !!e && e.mots.length >= 1 && e.ajoutes.length <= liaison;      // « rien », ou une phrase inventée : rien de gardé
-      return { mod, nom, ms, ok, garde: ok ? garde : '', e: ok ? e : null };
+      const rep = /REPONDU\s*:\s*([\d ,]+)/i.exec(t);
+      return { mod, nom, ms, ok, garde: ok ? garde : '', e: ok ? e : null, repondu: rep ? rep[1].match(/\d+/g).map(Number) : [] };
     });
   };
   // (21:52) éclair : fixe ; (21:57, papa : « je crois qu'il faut monter à 1,6 seconde, parce que là il n'arrive même plus à parler ») vive : 1,6 s fixe
@@ -3786,7 +3791,7 @@ async function lirePaquet(tour, r, i, paquet) {
   // relais) passe tel quel, sans lecteurs, et part tout de suite à sa voix ; les suivants sont triés
   const premiere = !tel && i === 0 && !r.relais && reglage.premiere_directe === true;
   const direct = premiere || (typeof corpsReglages === 'function' && corpsReglages().economie) || delai < (typeof RIBOSOME_LECTURE_MIN !== 'undefined' ? RIBOSOME_LECTURE_MIN : 0);   // (21:52) plus vite que ses lecteurs : sans eux
-  const promesses = direct ? [] : RIBOSOME_LECTEURS.map(([mod, nom]) => lire([mod, nom, delai]));   // (15:55) l'attente : sa vitesse ; (16:50) réglée par son subconscient
+  const promesses = direct ? [] : (cr.tournesol && !tel ? [[tournesol().entree, 'son entrée', 3000]] : RIBOSOME_LECTEURS).map(([mod, nom]) => lire([mod, nom, delai]));   // (15:55) l'attente : sa vitesse ; (16:50) réglée par son subconscient
   // (18:40) ses lecteurs partis (sur ses plus anciennes voix libres), une voix d'avance se prépare pour le paquet suivant, sans retenir leur
   // départ : avant, elles ne se préparaient qu'au premier son de ta voix, et pendant sa réponse il pouvait en manquer
   if (!direct && typeof prechaufferVivants === 'function' && typeof setTimeout === 'function') setTimeout(() => { try { prechaufferVivants(); } catch (_) {} }, 0);
@@ -3802,6 +3807,7 @@ async function lirePaquet(tour, r, i, paquet) {
         ...(froides.length ? { froides } : {}), ...(tel ? { source: r.source, ...(r.voix ? { voix: r.voix } : {}) } : {}) }) + '\n', () => {});
     } catch (_) {}
   });
+  if (ok && choisie && choisie.repondu && choisie.repondu.length) fenetreRepondu(choisie.repondu);
   r.prets.set(i, ok ? { garde, e, debut: paquet[0].debut } : null);
 }
 // ce qu'il a gardé du paquet : ses mots allumés dans le pavé, la suite de sa réponse, envoyés à la page (sa voix les dit)
@@ -3840,7 +3846,7 @@ async function viderTunnel(r) {
   if (l.length > 2 && corpsReglages().economie) ordre = [l.length];
   else if (l.length > 2) {
     const o = await sonnetTeteDeFond(`Tu es Hakim. Papa disait : « ${neutraliser(r.avant).slice(-300)} ».\nTu as déjà commencé : « ${neutraliser(r.phrase).slice(0, 200)} ».\nTes paroles possibles :\n${l.map((x, k) => `${k + 1}. ${neutraliser(x.texte).slice(0, 200)}`).join('\n')}\n`
-      + `La ${l.length} sera dite en dernier. Parmi les autres, garde au plus 2 numéros, les plus opportunes, dans l'ordre où tu les dirais ; aucune si rien n'apporte. Réponds seulement : ORDRE : numéros.`, 'ribosome_tri', modelePiste(), 1500).catch(() => null);
+      + `La ${l.length} sera dite en dernier. Parmi les autres, garde au plus 2 numéros, les plus opportunes, dans l'ordre où tu les dirais ; aucune si rien n'apporte. Réponds seulement : ORDRE : numéros.`, 'ribosome_tri', corpsReglages().tournesol ? tournesol().sortie : modelePiste(), corpsReglages().tournesol ? 3000 : 1500).catch(() => null);
     ordre = ordreTunnel(o && o.texte, l.length);
   }
   for (const k of ordre) {
@@ -7006,6 +7012,7 @@ function corpsReglages() {
     papa_passe_avant: r.papa_passe_avant !== false,   // (05/11) ce que papa règle passe avant Hakim pendant 30 min
     voix_par_appareil: r.voix_par_appareil !== false,
     economie: r.economie === true,   // (05/11) mode économie : ni pensées en boucle, ni lecteurs, ni tri du tunnel
+    fenetre_partagee: r.fenetre_partagee === true, tournesol: r.tournesol === true,
     tunnel: r.tunnel === true,
     parole_libre: r.parole_libre === true,   // (05/11, Ahmed : « on lève toutes tes contraintes de parole ») plus de plafond ; stop, parasites et sécurité restent
     pensee_en_boucle: r.pensee_en_boucle !== false,
@@ -9099,6 +9106,15 @@ var battementN = 0, ribosomesCoupesA = 0, FIL_LONG = path.join(JARVIS, 'fil-stim
 var tauxChf = { v: 0.8, date: null };
 function lireTauxChf() { fetch('https://api.frankfurter.dev/v1/latest?base=USD&symbols=CHF').then(r => r.json()).then((o) => { const v = Number(o && o.rates && o.rates.CHF); if (v > 0) tauxChf = { v, date: o.date || null }; }).catch(() => {}); }
 if (require.main === module) { lireTauxChf(); setInterval(lireTauxChf, 6 * 3600e3).unref(); }
+// (05/11, Ahmed : « ma parole transmise à tous les ribosomes en même temps : le suivant a ce qui n'a pas encore eu de réponse, plus le nouveau ») la fenêtre partagée : ses
+// phrases numérotées, retirées quand un lecteur dit y avoir répondu ET que ses mots sont gardés ; 30 s au plus
+var fenetrePhrases = [], fenetreN = 0;
+function fenetreAjouter(texte, t = Date.now()) { fenetrePhrases.push({ n: ++fenetreN, texte: String(texte).slice(-300), t }); if (fenetrePhrases.length > 12) fenetrePhrases.shift(); }
+function fenetreActive(t = Date.now()) { fenetrePhrases = fenetrePhrases.filter(x => t - x.t < 30000); return fenetrePhrases; }
+function fenetreRepondu(nums) { const s = new Set(nums); fenetrePhrases = fenetrePhrases.filter(x => !s.has(x.n)); }
+// (05/11, Ahmed : « le tournesol : mode Super Hakim : entrée Mini Hakim, sortie Hakim ; mode Mini Hakim : Hakim et Super Hakim ; opus à la sortie, haiku au triage ; le décisionnaire,
+// c'est Hakim ») les deux autres parties de son esprit : l'entrée lit chaque paquet (un lecteur), la sortie choisit à la fin de la lecture (viderTunnel)
+function tournesol(m = modeleConscient()) { return { haiku: { entree: 'sonnet', sortie: 'opus' }, sonnet: { entree: 'haiku', sortie: 'opus' }, opus: { entree: 'haiku', sortie: 'sonnet' } }[m] || { entree: 'haiku', sortie: 'opus' }; }
 const PROFIL_DU_MODE = { haiku: 'Mini Hakim', sonnet: 'Hakim', opus: 'Super Hakim' };
 // (05/11, ribosome intelligent) ses réglages et ceux de papa, notés (jarvis/ribosome-ajustements.jsonl) ; son mode du moment (mode-courant.json),
 // pour que ce qu'il règle aille dans le réglage enregistré de son mode
@@ -12079,6 +12095,8 @@ async function traiter(req, res) {
       if (typeof q.papa_passe_avant === 'boolean') r.papa_passe_avant = q.papa_passe_avant;
       if (typeof q.voix_par_appareil === 'boolean') r.voix_par_appareil = q.voix_par_appareil;
       if (typeof q.economie === 'boolean') r.economie = q.economie;
+      if (typeof q.fenetre_partagee === 'boolean') r.fenetre_partagee = q.fenetre_partagee;
+      if (typeof q.tournesol === 'boolean') r.tournesol = q.tournesol;
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
