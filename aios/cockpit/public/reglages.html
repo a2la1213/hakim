@@ -75,6 +75,14 @@
     </section>
     <section class="glass famille" aria-labelledby="t-conso"><h2 id="t-conso"><span class="ic" aria-hidden="true">⛽</span>Sa consommation aujourd’hui</h2><div class="sous">Le mode économie est dans « Son ribosome ».</div><div id="conso"></div></section>
     <div id="familles"><div class="vide">Chargement…</div></div>
+    <section class="glass famille" aria-labelledby="t-azure"><h2 id="t-azure"><span class="ic" aria-hidden="true">☁️</span>Voix Microsoft Azure</h2>
+      <div class="sous" id="azureEtat">…</div>
+      <div class="actions" style="flex-direction:column;align-items:stretch">
+        <input class="chercher" id="azureCle" type="password" placeholder="Clé (KEY 1 de la ressource Speech)" autocomplete="off" aria-label="Clé Azure">
+        <input class="chercher" id="azureRegion" type="text" placeholder="Région (ex. westeurope)" aria-label="Région Azure">
+        <input class="chercher" id="azureVoix" type="text" placeholder="Voix (ex. fr-FR-RemyMultilingualNeural)" aria-label="Voix Azure">
+        <div class="choix"><button type="button" id="azureGarder">💾 Enregistrer</button><button type="button" id="azureEssai">▶︎ Essayer</button></div>
+      </div></section>
   </main>
   <div class="bulle" id="bulle" role="status" hidden></div>
   <!-- (05/11, Ahmed : « je dois aussi pouvoir éditer un mode enregistré ») ses réglages, chargés dans les curseurs ; puis enregistrés à leur nom -->
@@ -98,6 +106,7 @@
       ['tournesol', '🌻 Tournesol', 'Les deux autres parties de son esprit : Hakim → entrée Mini Hakim, sortie Super Hakim ; Super Hakim → Mini Hakim, Hakim ; Mini Hakim → Hakim, Super Hakim.', 'oui', null, 'corps'],
       ['un_par_un', '⏩ Morceaux un à un', 'Chaque morceau part à sa voix dès qu’il est prêt, au lieu d’être regroupé (plus court à calculer).', 'oui', null, 'corps'],
       ['meubles_entre', '🪑 « Euh » entre ses morceaux', 'Un de ses meubles glissé dans la coupure entre deux morceaux, 3 s au moins entre deux.', 'oui', null, 'corps'],
+      ['voix_azure', '☁️ Voix Microsoft Azure', 'Une seule voix, en ligne, sur le téléphone comme sur le Mac ; en panne, Chatterbox. Clé et région : section Azure en bas.', 'oui', null, 'corps'],
       ['tunnel', '🚇 Tunnel de parole', 'La 1re dite tout de suite ; à la fin de la lecture, la dernière toujours, et au plus 2 autres choisies, dans l’ordre qu’il veut. Le reste est jeté, sa pensée non dite n’est plus mémorisée.', 'oui', null, 'corps'],
       ['parole_libre', '🕊️ Parole libre', 'Plus de plafond imposé à ses épissures : il parle autant qu’il veut. Ton stop, le filtre des parasites et la sécurité restent.', 'oui', null, 'corps'],
       ['pensee_en_boucle', '💓 Pensées en boucle', 'Tous les 60 battements, quand personne ne lui parle, une pensée intérieure jamais dite. Coûte un petit appel à chaque fois.', 'oui', null, 'corps'],
@@ -281,6 +290,17 @@
       for (const x of d.lignes.slice(0, 6)) { const l = document.createElement('div'); l.className = 'aide'; l.textContent = `${x.source === 'api' ? '💳 API payante' : '✅ forfait'} · ${x.modele} : ${x.appels} appels, ${x.usd.toFixed(2)} $, ${Math.round(x.jetons / 1000)} k jetons`; z.appendChild(l); }
     } catch (_) {}
   }
+  async function azure(corps, essai) {
+    try {
+      const d = await (await fetch('/api/voix/azure' + (essai ? '?essai=1' : ''), corps ? { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify(corps) } : { headers: { 'X-Jeton': jeton() } })).json();
+      document.getElementById('azureEtat').textContent = `Clé : ${d.cle ? 'enregistrée' : 'aucune'} · région : ${d.region || 'aucune'} · voix : ${d.voix}${d.essai ? ` · essai : ${d.essai}` : ''}`;
+      if (d.region) document.getElementById('azureRegion').value = d.region;
+      document.getElementById('azureVoix').value = d.voix;
+    } catch (_) {}
+  }
+  document.getElementById('azureGarder').addEventListener('click', () => { const c = document.getElementById('azureCle'); azure({ cle: c.value, region: document.getElementById('azureRegion').value, voix: document.getElementById('azureVoix').value }); c.value = ''; dire('✓ Azure enregistré'); });
+  document.getElementById('azureEssai').addEventListener('click', () => azure(null, true));
+  azure();
   async function ajustements() {
     const zone = document.getElementById('ajustements'); if (!zone) return;
     try {

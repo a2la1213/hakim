@@ -7016,6 +7016,7 @@ function corpsReglages() {
     economie: r.economie === true,   // (05/11) mode économie : ni pensées en boucle, ni lecteurs, ni tri du tunnel
     fenetre_partagee: r.fenetre_partagee === true, tournesol: r.tournesol === true,
     un_par_un: r.un_par_un !== false, meubles_entre: r.meubles_entre !== false,   // (05/11, 21:20) ses morceaux un à un, et ses « euh » entre eux
+    voix_azure: r.voix_azure === true,
     tunnel: r.tunnel === true,
     parole_libre: r.parole_libre === true,   // (05/11, Ahmed : « on lève toutes tes contraintes de parole ») plus de plafond ; stop, parasites et sécurité restent
     pensee_en_boucle: r.pensee_en_boucle !== false,
@@ -9118,6 +9119,29 @@ function fenetreRepondu(nums) { const s = new Set(nums); fenetrePhrases = fenetr
 // (05/11, Ahmed : « le tournesol : mode Super Hakim : entrée Mini Hakim, sortie Hakim ; mode Mini Hakim : Hakim et Super Hakim ; opus à la sortie, haiku au triage ; le décisionnaire,
 // c'est Hakim ») les deux autres parties de son esprit : l'entrée lit chaque paquet (un lecteur), la sortie choisit à la fin de la lecture (viderTunnel)
 function tournesol(m = modeleConscient()) { return { haiku: { entree: 'sonnet', sortie: 'opus' }, sonnet: { entree: 'haiku', sortie: 'opus' }, opus: { entree: 'haiku', sortie: 'sonnet' } }[m] || { entree: 'haiku', sortie: 'opus' }; }
+// (05/11) Azure : clé au trousseau (hakim-azure-tts), région et voix dans jarvis/azure.json ; la clé ne sort jamais du Mac ni d'ici
+const AZURE = path.join(JARVIS, 'azure.json'), azureCle = { v: null, t: 0 };
+function cleAzure() {
+  if (Date.now() - azureCle.t < 60000) return azureCle.v;
+  azureCle.t = Date.now();
+  try { azureCle.v = execFileSync('/usr/bin/security', ['find-generic-password', '-s', 'hakim-azure-tts', '-w'], { encoding: 'utf8', timeout: 3000 }).trim() || null; } catch (_) { azureCle.v = null; }
+  return azureCle.v;
+}
+async function voixAzure(texte, tempo) {
+  const cle = cleAzure(), c = lireJson(AZURE, {}) || {};
+  if (!cle || !/^[a-z0-9]+$/.test(c.region || '')) return null;
+  const voix = /^[a-zA-Z]{2}-[a-zA-Z]{2}-[A-Za-z]+Neural$/.test(c.voix || '') ? c.voix : 'fr-FR-RemyMultilingualNeural';
+  const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const vitesse = tempo ? `${Math.round((tempo - 1) * 100)}%` : '0%';
+  const t0 = Date.now(), ctl = new AbortController(), m = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const r = await fetch(`https://${c.region}.tts.speech.microsoft.com/cognitiveservices/v1`, { method: 'POST', signal: ctl.signal,
+      headers: { 'Ocp-Apim-Subscription-Key': cle, 'Content-Type': 'application/ssml+xml', 'X-Microsoft-OutputFormat': 'riff-24khz-16bit-mono-pcm', 'User-Agent': 'hakim-cockpit' },
+      body: `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="fr-FR"><voice name="${voix}"><prosody rate="${vitesse}">${esc(texte)}</prosody></voice></speak>` });
+    if (!r.ok) return null;
+    return { data: Buffer.from(await r.arrayBuffer()), ms: Date.now() - t0 };
+  } finally { clearTimeout(m); }
+}
 const PROFIL_DU_MODE = { haiku: 'Mini Hakim', sonnet: 'Hakim', opus: 'Super Hakim' };
 // (05/11, ribosome intelligent) ses réglages et ceux de papa, notés (jarvis/ribosome-ajustements.jsonl) ; son mode du moment (mode-courant.json),
 // pour que ce qu'il règle aille dans le réglage enregistré de son mode
@@ -9572,6 +9596,16 @@ async function routeDire(req, res) {
       if (res.writableEnded) return;
       res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Duree': String(v.duree || ''), 'X-Source': '1' });
       return res.end(v.data);
+    }
+  }
+  // (05/11, Ahmed : « ajoute Microsoft Azure à sa voix ») une seule voix multilingue, en ligne ; en panne : Chatterbox comme avant
+  if (corpsReglages().voix_azure) {
+    const a = await voixAzure(texte, tempo).catch(() => null);
+    if (a) {
+      try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'synthese_azure', ms: a.ms, caracteres: texte.length }) + '\n', { mode: 0o600 }); } catch (_) {}
+      if (res.writableEnded) return;
+      res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Voix': 'azure' });
+      return res.end(a.data);
     }
   }
   const tache = { texte, langue: /^[a-z]{2}$/.test((q && q.langue) || '') ? q.langue : 'fr', annulee: false, emotion, tempo,
@@ -11948,6 +11982,26 @@ async function traiter(req, res) {
     return res.end(j({ ajustements: lignesJson(AJUSTEMENTS_RIBOSOME, 30).reverse() }));
   }
   // (05/11, Ahmed : « j'aime bien l'idée ») ce qu'il consomme aujourd'hui, par source et par modèle (jetons.jsonl)
+  // (05/11) Azure depuis la page Réglages : la clé va au trousseau du Mac, jamais renvoyée ; la région et la voix dans azure.json
+  if (p === '/api/voix/azure') {
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    if (req.method === 'POST') {
+      let q = {}; try { q = JSON.parse(String(await lireCorps(req, 4096) || '{}')); } catch (_) {}
+      if (typeof q.cle === 'string' && /^[A-Za-z0-9]{20,100}$/.test(q.cle.trim())) {
+        try { execFileSync('/usr/bin/security', ['add-generic-password', '-U', '-s', 'hakim-azure-tts', '-a', 'cle', '-w', q.cle.trim()], { timeout: 5000 }); azureCle.t = 0; } catch (_) {}
+        auditer('voix:azure_cle', req, distantReq, {});
+      }
+      const c = lireJson(AZURE, {}) || {};
+      if (typeof q.region === 'string' && /^[a-z0-9]{3,30}$/.test(q.region.trim())) c.region = q.region.trim();
+      if (typeof q.voix === 'string' && /^[a-zA-Z]{2}-[a-zA-Z]{2}-[A-Za-z]+Neural$/.test(q.voix.trim())) c.voix = q.voix.trim();
+      try { ecrireAtomique(AZURE, j(c)); } catch (_) {}
+    }
+    const c = lireJson(AZURE, {}) || {};
+    let essai = null;
+    if (new URL(req.url, 'http://x').searchParams.get('essai') === '1') { const a = await voixAzure('Salut papa, je suis là.').catch(() => null); essai = a ? `ok, ${a.ms} ms` : 'échec'; }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j({ cle: !!cleAzure(), region: c.region || null, voix: c.voix || 'fr-FR-RemyMultilingualNeural', essai }));
+  }
   if (p === '/api/conso' && req.method === 'GET') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     const jour = jourLocal(), g = {};
@@ -12102,6 +12156,7 @@ async function traiter(req, res) {
       if (typeof q.tournesol === 'boolean') r.tournesol = q.tournesol;
       if (typeof q.un_par_un === 'boolean') r.un_par_un = q.un_par_un;
       if (typeof q.meubles_entre === 'boolean') r.meubles_entre = q.meubles_entre;
+      if (typeof q.voix_azure === 'boolean') r.voix_azure = q.voix_azure;
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
