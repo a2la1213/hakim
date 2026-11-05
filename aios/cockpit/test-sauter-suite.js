@@ -345,3 +345,14 @@ test('pouls de vie : une pensée quand personne ne parle ; rien s’il dort, ét
   ctx.off = true; assert.strictEqual(ctx.p(1e6), false); ctx.off = false;
   ctx.derniereParolePapa = 1e6 - 5000; assert.strictEqual(ctx.p(1e6), false);
 });
+
+test('ses gestes : seulement les boutons permis, et récents', () => {
+  const d = []; const f = require('node:os').tmpdir() + '/gestes-' + process.pid;
+  fs.writeFileSync(f, JSON.stringify({ t: Date.now(), bouton: 'pause' }) + '\n' + JSON.stringify({ t: Date.now(), bouton: 'camera' }) + '\n' + JSON.stringify({ t: 1, bouton: 'stop' }) + '\n');
+  const ctx = { fs, Date, JSON, Number, path, JARVIS: '/x', abonnesPensees: 0, j: JSON.stringify, diffuser: (_a, _e, x) => d.push(JSON.parse(x).id) };
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(SRC.indexOf('const BOUTONS_HAKIM'), SRC.indexOf('function battreCoeur')) + 'this.g = gestesHakim;', ctx);
+  ctx.g(f);
+  assert.deepStrictEqual(d, ['pause']);
+  assert.ok(!fs.existsSync(f));
+});

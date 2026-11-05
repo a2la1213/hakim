@@ -153,3 +153,8 @@ def test_il_enregistre_modifie_applique_et_liste_ses_reglages(tmp_path, monkeypa
     (j / "corps-reglages.json").write_text(json.dumps({"ribosome_intelligent": False}))
     assert "papa n'a pas allumé" in m.reglages_enregistres("modifier", "le mien", choix_ms=1500)
     assert "papa n'a pas allumé" in m.reglages_enregistres("appliquer", "le mien")
+
+
+def test_papa_peut_lever_sa_priorite(tmp_path):
+    j = _maison(tmp_path, corps={"papa_passe_avant": False}, ajustements=[{"ts": T - 60_000, "par": "papa", "cles": ["choix_ms"]}])
+    assert ri.ajuster(j, {"choix_ms": 2000}, "essai", maintenant=T)["fait"] == {"choix_ms": [1800, 2000]}

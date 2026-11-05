@@ -119,7 +119,8 @@ def ajuster(dossier, changements, raison, maintenant=None):
         if b is None:
             refuse[k] = "inconnu"
             continue
-        if maintenant - papa.get(k, 0) < PAPA_PASSE_AVANT_MS:
+        # (05/11, 18:32, Ahmed : lever cette priorité ; interrupteur papa_passe_avant dans Réglages)
+        if corps.get("papa_passe_avant") is not False and maintenant - papa.get(k, 0) < PAPA_PASSE_AVANT_MS:
             refuse[k] = "papa l'a réglé il y a moins de 30 min"
             continue
         cible = corps if k in CLES_CORPS else rib
@@ -321,7 +322,7 @@ def lister(dossier):
         return "Aucun réglage enregistré."
     def ligne(x):
         r, c = x.get("ribosome") or {}, x.get("corps") or {}
-        vals = ", ".join(f"{k} {r[k]}" for k in ("choix_ms", "stringence", "plafond_mots", "relais_pct") if r.get(k) is not None)
+        vals = ", ".join(f"{k} {r[k]}" for k in ("choix_ms", "stringence", "plafond_mots", "plafond_paquets", "relais_ribosomes", "relais_pct") if r.get(k) is not None)
         vals += "".join(f", {k} {c[k]}" for k in CLES_CORPS if c.get(k) is not None)
         return f"« {x['nom']} »{' (le tien)' if x.get('par') == 'hakim' else ''} : {vals}"
     return "Tes réglages enregistrés :\n" + "\n".join(ligne(x) for x in l)

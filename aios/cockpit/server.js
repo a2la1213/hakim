@@ -387,7 +387,7 @@ if (require.main === module) setInterval(() => { try { const e = JSON.parse(fs.r
 const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'afida_juger', 'afida_vecu', 'afida_lire', 'afida_retirer', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'sieste_prendre', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'pistes_regler', 'ribosome_regler', 'ribosome_bilan', 'reglages_enregistres', 'spectre', 'stimuli_voir', 'stimuli_relier', 'synapses_voir', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat', 'effort_regler'].map(n => 'mcp__anamnese__' + n)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'pistes_regler', 'ribosome_regler', 'ribosome_bilan', 'reglages_enregistres', 'spectre', 'stimuli_voir', 'stimuli_relier', 'synapses_voir', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat', 'effort_regler', 'parler_bouton'].map(n => 'mcp__anamnese__' + n)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -4479,7 +4479,7 @@ function ouvrirReflexion() {
 // le maintenir dans la réflexion ») chaque ribosome du relais s'ouvre avec son blanc, comme le premier : « … » à la page, et Mini Hakim qui
 // se met en réflexion (une pensée intérieure, jamais dite)
 const BLANC_RELAIS = `[Tu es en train de répondre à papa ; la suite de ta réponse arrive] « ${BLANC_OUVERTURE} »`;
-function blancDeReflexion(r, quoi) {
+function blancDeReflexion(r, quoi, peutDire = false) {
   r.blancEnvoye = true;
   diffuser(abonnesPensees, 'souffle', j({ niveau: 'blanc', texte: BLANC_OUVERTURE, tour: r.tour }));
   const consigne = `${personaLocale(lirePersona()).slice(0, 700)}\n\n${QUI_TU_ES}\n\n`
@@ -4489,6 +4489,8 @@ function blancDeReflexion(r, quoi) {
   sonnetTeteDeFond(consigne, 'piste_blanc', modelePiste(), 6000).then((o) => {
     const t = boutDe(o && o.texte).replace(/^[\s"«]+|[\s"»]+$/g, '').slice(0, 120);
     if (!t || estParasite(t, 160) || pistes.ribo !== r || r.ferme) return;
+    const dire = peutDire && /^DIRE\s*:\s*(.+)/i.exec(t);
+    if (dire) { lireRibosome(pistes.tour, dire[1], '', r); return; }
     r.blanc = t;
     diffuser(abonnesPensees, 'souffle', j({ niveau: 'blanc', texte: t, tour: r.tour }));
   }).catch(() => {});
@@ -6969,6 +6971,7 @@ function corpsReglages() {
     lire_apres_silence_ms: Number.isFinite(Number(r.lire_apres_silence_ms)) && r.lire_apres_silence_ms != null ? Math.max(0, Math.min(5000, Math.round(Number(r.lire_apres_silence_ms)))) : 0,
     profils_auto: r.profils_auto !== false,   // (05/11) ses réglages suivent son mode (Mini Hakim, Hakim, Super Hakim)
     ribosome_intelligent: r.ribosome_intelligent !== false,
+    papa_passe_avant: r.papa_passe_avant !== false,   // (05/11) ce que papa règle passe avant Hakim pendant 30 min
     parole_libre: r.parole_libre === true,   // (05/11, Ahmed : « on lève toutes tes contraintes de parole ») plus de plafond ; stop, parasites et sécurité restent
     pensee_en_boucle: r.pensee_en_boucle !== false,
     boucle_ribosomes: r.boucle_ribosomes !== false };   // (05/11) un ribosome toujours prêt, sauf s'il dort ou si papa coupe   // (05/11) il règle lui-même son ribosome (ribosome_regler, ribosome_bilan)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
@@ -9103,13 +9106,27 @@ function poulsDeVie(maintenant = Date.now()) {
   prechaufferVivants();
   const r = pistes.ribo;
   if (!r || r.ferme || toursActifs.size || maintenant - derniereParolePapa < 20000) return false;
-  blancDeReflexion(r, `[Personne ne te parle en ce moment : le temps passe, ton cœur bat] « ${BLANC_OUVERTURE} »`);
+  // (05/11, 18:33, Ahmed : « il doit pouvoir lui parler quand il veut ») s'il commence par DIRE :, ça part à sa voix et s'écrit, par son ribosome
+  blancDeReflexion(r, `[Personne ne te parle en ce moment : le temps passe, ton cœur bat] « ${BLANC_OUVERTURE} » Si tu as vraiment envie de dire quelque chose à papa, commence par « DIRE : ».`, true);
   return true;
+}
+// (05/11, 18:33, Ahmed : « tous les boutons de Parler ») ses gestes (outil parler_bouton), passés à la page au battement suivant ; 15 s de vie
+const BOUTONS_HAKIM = new Set(['pause', 'stop', 'sonHakim', 'sesParoles', 'orbeRetour', 'btnVolant']);
+function gestesHakim(f = path.join(JARVIS, 'hakim-gestes.jsonl')) {
+  if (!fs.existsSync(f)) return;
+  const c = `${f}.lu`;
+  fs.renameSync(f, c);
+  for (const l of fs.readFileSync(c, 'utf8').split('\n').filter(Boolean)) {
+    let o = null; try { o = JSON.parse(l); } catch (_) { continue; }
+    if (o && BOUTONS_HAKIM.has(o.bouton) && Date.now() - Number(o.t) < 15000) diffuser(abonnesPensees, 'souffle', j({ niveau: 'bouton', id: o.bouton }));
+  }
+  fs.unlinkSync(c);
 }
 function battreCoeur() {
   battementN++;
   try { boucleRibosomes(); } catch (_) {}
   try { reglagesDuMode(); } catch (_) {}
+  try { gestesHakim(); } catch (_) {}
   if (battementN % 60 === 0) try { poulsDeVie(); } catch (_) {}
   const bpm = Math.max(20, Math.min(120, Number(lui && lui.interieur && lui.interieur.coeur && lui.interieur.coeur.bpm) || 60));
   const t = setTimeout(battreCoeur, 60000 / bpm);
@@ -12008,6 +12025,7 @@ async function traiter(req, res) {
       if (typeof q.sauter_suite === 'boolean') r.sauter_suite = q.sauter_suite;   // (05/11) sauter la suite quand papa répond
       if (q.sauter_suite_ms != null && Number.isFinite(Number(q.sauter_suite_ms))) r.sauter_suite_ms = Math.max(300, Math.min(5000, Math.round(Number(q.sauter_suite_ms))));
       if (typeof q.sauter_passe === 'boolean') r.sauter_passe = q.sauter_passe;   // (05/11) sauter les morceaux passés
+      if (typeof q.papa_passe_avant === 'boolean') r.papa_passe_avant = q.papa_passe_avant;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;

@@ -854,6 +854,17 @@ def spectre(flux: str = "", minutes: int = 10, caler: bool = False, autour: str 
 
 
 @mcp.tool()
+def parler_bouton(nom: str = "") -> str:
+    """(05/11, papa : « tous les boutons de Parler ») Actionner un bouton de sa page Parler, si elle est ouverte : pause, stop, sonHakim (couper ou rouvrir ta voix), sesParoles, orbeRetour, btnVolant. Il voit que c'est toi. Sans rien : la liste. Le micro, la caméra, l'écran et l'écoute du téléphone restent à son doigt."""
+    permis = ("pause", "stop", "sonHakim", "sesParoles", "orbeRetour", "btnVolant")
+    if nom not in permis:
+        return "Boutons permis : " + ", ".join(permis) + "."
+    with open(Path.home() / "AIOS" / "jarvis" / "hakim-gestes.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps({"t": time.time() * 1000, "bouton": nom}) + "\n")
+    return f"Bouton {nom} : envoyé à sa page."
+
+
+@mcp.tool()
 def effort_regler(niveau: str = "") -> str:
     """(05/11, papa : « la possibilité de choisir ton niveau d'effort ») L'effort de ton modèle : low, medium, high, xhigh ou max. Plus haut : plus de réflexion, plus lent, plus de jetons. Servi à tes prochains lancements. Sans rien : rend le réglage."""
     f = Path.home() / "AIOS" / "jarvis" / "effort-reglage.json"
