@@ -314,5 +314,5 @@ test('la synthèse en cours attend que papa se transcrive (8 s au plus, puis 4 s
 
 test('le Mac débordé : ce qui attend sur le téléphone depuis plus de 30 s est jeté sans lui être envoyé ; une vraie coupure du réseau garde tout', () => {
   assert.match(PAGE, /if \(horsLigne\.panne !== 'reseau' && Date\.now\(\) - t\.t > HORS_LIGNE_MAX_MS\) \{ t\.texte = ''; t\.wav = null; journalVoix\('tour_jete'/);
-  assert.match(PAGE, /HORS_LIGNE_MAX_MS = 30000;/);
+  assert.match(PAGE, /HORS_LIGNE_MAX_MS = 8000;/);
 });

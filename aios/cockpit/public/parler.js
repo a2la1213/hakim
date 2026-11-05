@@ -25,7 +25,7 @@ const etat = {
 };
 // (2026-10-23) le Mac injoignable : ce qui attend son retour (voir reprendreHorsLigne) ; panne : « reseau » (rien ne
 // répond) ou « serveur » (le Mac répond, la transcription non)
-const horsLigne = { depuis: 0, tours: [], envois: [], enCours: false, panne: 'reseau' }, HORS_LIGNE_MAX_MS = 30000;
+const horsLigne = { depuis: 0, tours: [], envois: [], enCours: false, panne: 'reseau' }, HORS_LIGNE_MAX_MS = 8000;
 function charger() {
   try {
     const s = JSON.parse(localStorage.getItem(CLE) || 'null');

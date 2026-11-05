@@ -14,7 +14,7 @@ const SRC = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
 const fonction = (nom) => { const i = SRC.indexOf(`function ${nom}(`); assert.ok(i >= 0, nom); return SRC.slice(i, SRC.indexOf('\n}\n', i) + 2); };
 
 test('le niveau de réflexion de Hakim est le plus bas : low', () => {
-  const m = /^const EFFORT_HAKIM = (.+);/m.exec(SRC);
+  const m = /^let EFFORT_HAKIM = (.+);/m.exec(SRC);
   assert.ok(m, 'EFFORT_HAKIM défini');
   assert.strictEqual(eval(m[1].replace(/process\.env\.\w+/, 'undefined')), 'low');
 });

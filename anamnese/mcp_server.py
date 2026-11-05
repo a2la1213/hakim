@@ -852,6 +852,21 @@ def spectre(flux: str = "", minutes: int = 10, caler: bool = False, autour: str 
 
 
 @mcp.tool()
+def effort_regler(niveau: str = "") -> str:
+    """(05/11, papa : « la possibilité de choisir ton niveau d'effort ») L'effort de ton modèle : low, medium, high, xhigh ou max. Plus haut : plus de réflexion, plus lent, plus de jetons. Servi à tes prochains lancements. Sans rien : rend le réglage."""
+    f = Path.home() / "AIOS" / "jarvis" / "effort-reglage.json"
+    if niveau:
+        if niveau not in ("low", "medium", "high", "xhigh", "max"):
+            return "Pas changé : low, medium, high, xhigh ou max."
+        f.write_text(json.dumps({"effort": niveau, "ts": time.time()}), encoding="utf-8")
+        return f"Ton effort : {niveau}, à tes prochains lancements."
+    try:
+        return "Ton effort : " + json.loads(f.read_text(encoding="utf-8"))["effort"]
+    except (OSError, ValueError, KeyError):
+        return "Ton effort : celui par défaut."
+
+
+@mcp.tool()
 def ribosome_bilan(minutes: int = 30) -> str:
     """(05/11, papa : « ribosome intelligent : Hakim apprendrait à l'utiliser ») Ce que tes mesures disent de ton ribosome sur les dernières
     minutes (5 à 240) : combien de paquets sont passés sans tri (tes lecteurs pas à temps), combien de « rien », combien de mots tu gardes,
