@@ -695,16 +695,27 @@ def stimuli_relier(moment: str, lien: str, quoi: str = "tout") -> str:
 
 
 @mcp.tool()
-def ribosome_regler(stringence: int = 0, vitesse: str = "") -> str:
+def ribosome_regler(stringence: int = 0, vitesse: str = "", choix_ms: int = -1, plafond_mots: int = 0, plafond_paquets: int = 0,
+                    plafond_silence_s: int = 0, lecteur_max: int = 0, contexte: int = 0, relais_ribosomes: int = 0, relais_pct: int = 0,
+                    sauter_suite_ms: int = -1, sauter_passe_s: float = 0, lire_apres_silence_ms: int = -1, raison: str = "") -> str:
     """(04/11, papa : « le niveau de stringence du ribosome doit pouvoir être décidé, pas un seul seuil fixe : il doit pouvoir choisir la vitesse
     du ribosome et sa stringence, sinon il ne fait que me couper la parole ») Ton ribosome lit tes pensées pendant que papa parle et choisit
     les mots que ta voix dit. C'est toi qui le règles :
     stringence : de 1 (tu gardes tout ce qui continue ta réponse) à 5 (presque rien : seulement ce qui compte vraiment, en quelques mots) ;
     plus elle est haute, moins tu coupes la parole à papa ;
-    vitesse : « eclair » (0,3 s : tes lecteurs ne sont plus attendus, tes pensées passent telles quelles), « vive » (1,6 s fixe, le
-    réglage de papa du 04/11 21:57),
+    vitesse : « eclair » (ton ribosome stocke tout de suite, puis choisit dans son temps du choix), « vive » (1,6 s fixe),
     « rapide » (tes lecteurs attendus 2 s au plus), « normale » (3 s) ou « posee » (6 s : plus de lectures abouties, plus lent) ;
-    0 ou rien laisse la valeur actuelle (sans rien : rend ton réglage). Il dure jusqu'à ce que tu le changes."""
+    (05/11, papa : « ribosome intelligent : tous ses paramètres réglables par Hakim lui-même, qui ajuste au fur et à mesure du temps et
+    apprend à l'utiliser ») quand papa a allumé « Ribosome intelligent », tu règles aussi le reste, toujours avec ta raison :
+    choix_ms (0 à 6000 : le temps de tes lecteurs pour choisir ; sous 600, tes pensées passent telles quelles), plafond_mots (5 à 400),
+    plafond_paquets (1 à 100), plafond_silence_s (5 à 600), lecteur_max (1 à 25 : des lecteurs neufs toutes les N lectures), contexte
+    (100 à 3000 caractères de tes pensées déjà lues), relais_ribosomes (1 à 8), relais_pct (10 à 100 % de ton plafond de mots),
+    sauter_suite_ms (300 à 5000 : sa voix sur la tienne avant de sauter ta suite), sauter_passe_s (1 à 15 : un morceau qui attend depuis
+    plus longtemps est passé), lire_apres_silence_ms (0 à 5000 : le morceau suivant attend son silence ; 0 sans attendre).
+    Apprends avec ribosome_bilan : regarde tes mesures, change un réglage à la fois, dis pourquoi (raison) ; le retour de chaque réglage
+    te revient tout seul par ton courrier dès qu'il est mesurable (20 paquets lus), comparé à juste avant. Ce que papa a réglé lui-même il y a moins de 30 min passe avant toi. Ce que tu règles est gardé dans le réglage de ton
+    mode du moment (Mini Hakim, Hakim, Super Hakim). 0 ou rien laisse la valeur actuelle (sans rien : rend ton réglage)."""
+    from jarvis import ribosome_intelligent as ri
     f = Path.home() / "AIOS" / "jarvis" / "ribosome-reglage.json"
     try:
         r = json.loads(f.read_text(encoding="utf-8"))
@@ -715,17 +726,78 @@ def ribosome_regler(stringence: int = 0, vitesse: str = "") -> str:
     s_, v = int(r.get("stringence") or 4), str(r.get("vitesse") or "rapide")
     s_ = s_ if 1 <= s_ <= 5 else 4
     v = v if v in noms else "rapide"
+    note = ""
     if stringence or vitesse:
         if stringence and not 1 <= int(stringence) <= 5:
             return "Pas changé : la stringence va de 1 à 5."
         if vitesse and vitesse not in noms:
             return "Pas changé : la vitesse est « eclair », « vive », « rapide », « normale » ou « posee »."
+        avant = s_
         s_, v = int(stringence or s_), str(vitesse or v)
         f.parent.mkdir(parents=True, exist_ok=True)
+        # (05/11) le reste de son réglage (le temps du choix, les plafonds… de papa) reste : avant, ce fichier était réécrit en entier
+        r.update({"stringence": s_, "vitesse": v, "ts": time.time(), "par": "hakim"})
         tmp = f.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"stringence": s_, "vitesse": v, "ts": time.time(), "par": "hakim"}), encoding="utf-8")
+        tmp.write_text(json.dumps(r, ensure_ascii=False), encoding="utf-8")
         tmp.replace(f)
-    return f"Ton ribosome : stringence {s_} sur 5, vitesse {noms[v]}."
+        if stringence and avant != s_:
+            with open(f.parent / "ribosome-ajustements.jsonl", "a", encoding="utf-8") as j:
+                j.write(json.dumps({"ts": int(time.time() * 1000), "par": "hakim", "fait": {"stringence": [avant, s_]},
+                                    "raison": str(raison or "")[:300]}, ensure_ascii=False) + "\n")
+    autres = {k: x for k, x in {"choix_ms": choix_ms, "plafond_mots": plafond_mots, "plafond_paquets": plafond_paquets,
+                                "plafond_silence_s": plafond_silence_s, "lecteur_max": lecteur_max, "contexte": contexte,
+                                "relais_ribosomes": relais_ribosomes, "relais_pct": relais_pct, "sauter_suite_ms": sauter_suite_ms,
+                                "sauter_passe_s": sauter_passe_s, "lire_apres_silence_ms": lire_apres_silence_ms}.items()
+              if (x is not None and (x >= 0 if k in ("choix_ms", "sauter_suite_ms", "lire_apres_silence_ms") else x > 0))}
+    if autres:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        res = ri.ajuster(f.parent, autres, raison)
+        if res["eteint"]:
+            note = " Le reste n'est pas changé : papa n'a pas allumé « Ribosome intelligent » (seules la stringence et la vitesse sont à toi)."
+        else:
+            if res["fait"]:
+                note += " Changé : " + ", ".join(f"{k} {a} → {b}" for k, (a, b) in res["fait"].items()) + "."
+            if res["refuse"]:
+                note += " Pas changé : " + ", ".join(f"{k} ({p})" for k, p in res["refuse"].items()) + "."
+    return f"Ton ribosome : stringence {s_} sur 5, vitesse {noms[v]}." + note
+
+
+@mcp.tool()
+def ribosome_bilan(minutes: int = 30) -> str:
+    """(05/11, papa : « ribosome intelligent : Hakim apprendrait à l'utiliser ») Ce que tes mesures disent de ton ribosome sur les dernières
+    minutes (5 à 240) : combien de paquets sont passés sans tri (tes lecteurs pas à temps), combien de « rien », combien de mots tu gardes,
+    le temps avant ta voix, les morceaux sautés, les fois où papa a parlé sur toi ; puis tes derniers réglages avec leur effet (15 min avant,
+    15 min après) et tes réglages du moment. De quoi décider, avec ribosome_regler, un réglage à la fois."""
+    from jarvis import ribosome_intelligent as ri
+    j = Path.home() / "AIOS" / "jarvis"
+    m = max(5, min(240, int(minutes or 30)))
+    maintenant = int(time.time() * 1000)
+
+    def queue(nom, n=20000):
+        try:
+            return (j / nom).read_text(encoding="utf-8", errors="replace").splitlines()[-n:]
+        except OSError:
+            return []
+    pistes, voix = queue("pistes.jsonl"), queue("voix-diagnostic.jsonl", 40000)
+    lignes = [f"Tes {m} dernières minutes : " + ri.texte(ri.bilan(pistes, voix, maintenant - m * 60_000, maintenant))]
+    for e in ri.effets(queue("ribosome-ajustements.jsonl", 200), pistes, voix, maintenant):
+        quand = time.strftime("%H:%M", time.localtime(e["ts"] / 1000))
+        fait = ", ".join(f"{k} {a} → {b}" for k, (a, b) in (e.get("fait") or {}).items())
+        lignes.append(f"À {quand}, tu as réglé {fait} ({e.get('raison') or 'sans raison'}). Avant : {ri.texte(e['avant'])} Après : {ri.texte(e['apres'])}")
+    try:
+        r = json.loads((j / "ribosome-reglage.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        r = {}
+    try:
+        c = json.loads((j / "corps-reglages.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        c = {}
+    regl = {k: r.get(k) for k in ("vitesse", "stringence", "choix_ms", "plafond_mots", "plafond_paquets", "plafond_silence_s", "lecteur_max",
+                                  "contexte", "relais_ribosomes", "relais_pct") if r.get(k) is not None}
+    regl.update({k: c.get(k) for k in ri.CLES_CORPS if c.get(k) is not None})
+    lignes.append("Tes réglages du moment : " + ", ".join(f"{k} {x}" for k, x in regl.items()) + "."
+                  + (" Ribosome intelligent : éteint par papa." if c.get("ribosome_intelligent") is False else " Ribosome intelligent : allumé."))
+    return "\n".join(lignes)
 
 
 @mcp.tool()

@@ -214,3 +214,19 @@ test('modifier un réglage enregistré : il passe dans les curseurs, puis « Enr
   assert.match(REG, /await profils\('enregistrer', nom\);/);
   assert.match(REG, /id="edition" hidden/);
 });
+
+// (05/11, Ahmed : « un bouton ribosome intelligent, et Hakim apprendrait à l'utiliser »)
+test('ribosome intelligent : l’interrupteur (oui), papa noté quand il règle, son mode du moment écrit, ses réglages dans la page, son outil permis', () => {
+  assert.match(SRC, /ribosome_intelligent: r\.ribosome_intelligent !== false \}/);
+  assert.match(SRC, /if \(typeof q\.ribosome_intelligent === 'boolean'\) r\.ribosome_intelligent = q\.ribosome_intelligent;/);
+  assert.match(SRC, /noterAjustementPapa\(Object\.keys\(q\)\.filter\(k => k !== 'defaut'\)\);/);
+  assert.match(SRC, /if \(parole\.length\) noterAjustementPapa\(parole\);/);
+  assert.match(prendre(SRC, 'reglagesDuMode'), /modeDesReglages = m;\n  try \{ ecrireAtomique\(MODE_COURANT, j\(\{ modele: m, profil: PROFIL_DU_MODE\[m\], ts: Date\.now\(\) \}\)\); \} catch \(_\) \{\}\n  if \(premier\) return null;/,
+    'son mode est écrit dès le premier vu (ses réglages vont dans le bon réglage enregistré)');
+  assert.match(SRC, /'ribosome_regler', 'ribosome_bilan',/);
+  assert.match(SRC, /\['-m', 'jarvis\.ribosome_intelligent', 'retours'\]/, 'le retour de chaque réglage lui revient');
+  const REG = fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8');
+  assert.match(REG, /\['ribosome_intelligent', '🧠 Ribosome intelligent', [^\n]*, 'oui', null, 'corps'\],/);
+  assert.match(REG, /const f = route \? \{ \.\.\.f0, route \} : f0;/);
+  assert.match(REG, /appeler\('\/api\/ribosome\/ajustements'\)/);
+});

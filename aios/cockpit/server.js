@@ -384,7 +384,7 @@ const EFFORT_HAKIM = process.env.JARVIS_EFFORT || 'low';
 const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'afida_juger', 'afida_vecu', 'afida_lire', 'afida_retirer', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'sieste_prendre', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'pistes_regler', 'ribosome_regler', 'stimuli_voir', 'stimuli_relier', 'synapses_voir', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'pistes_regler', 'ribosome_regler', 'ribosome_bilan', 'stimuli_voir', 'stimuli_relier', 'synapses_voir', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat'].map(n => 'mcp__anamnese__' + n)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -6959,7 +6959,8 @@ function corpsReglages() {
     sauter_passe: r.sauter_passe !== false, sauter_passe_s: Number.isFinite(Number(r.sauter_passe_s)) && r.sauter_passe_s != null ? Math.max(1, Math.min(15, Number(r.sauter_passe_s))) : 3,
     // (05/11, Ahmed : « en combien de temps après mon silence le chunk suivant est lu ») 0 : sans attendre, par défaut
     lire_apres_silence_ms: Number.isFinite(Number(r.lire_apres_silence_ms)) && r.lire_apres_silence_ms != null ? Math.max(0, Math.min(5000, Math.round(Number(r.lire_apres_silence_ms)))) : 0,
-    profils_auto: r.profils_auto !== false };   // (05/11) ses réglages suivent son mode (Mini Hakim, Hakim, Super Hakim)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
+    profils_auto: r.profils_auto !== false,   // (05/11) ses réglages suivent son mode (Mini Hakim, Hakim, Super Hakim)
+    ribosome_intelligent: r.ribosome_intelligent !== false };   // (05/11) il règle lui-même son ribosome (ribosome_regler, ribosome_bilan)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
 }
 function corpsActif() { return corpsReglages().actif; }
 /* (30/10, 18:56, Ahmed via Hakim : « je veux qu'il tourne tout le temps, tant qu'il est réveillé, même si ça vide mon forfait ;
@@ -9033,6 +9034,12 @@ function noteChangement(c) {
 // touche sa parole dans son corps ; ses autres interrupteurs restent ceux de papa) ; sans cerveau en ce moment, rien ne change ; le premier mode
 // vu après une relance ne change rien (les réglages de papa du moment restent : une relance ne les défait pas)
 const PROFIL_DU_MODE = { haiku: 'Mini Hakim', sonnet: 'Hakim', opus: 'Super Hakim' };
+// (05/11, ribosome intelligent) ses réglages et ceux de papa, notés (jarvis/ribosome-ajustements.jsonl) ; son mode du moment (mode-courant.json),
+// pour que ce qu'il règle aille dans le réglage enregistré de son mode
+const AJUSTEMENTS_RIBOSOME = path.join(JARVIS, 'ribosome-ajustements.jsonl'), MODE_COURANT = path.join(JARVIS, 'mode-courant.json');
+function noterAjustementPapa(cles) {
+  if (cles && cles.length) fs.appendFile(AJUSTEMENTS_RIBOSOME, JSON.stringify({ ts: Date.now(), par: 'papa', cles: cles.slice(0, 20) }) + '\n', () => {});
+}
 const CLES_PAROLE = ['sauter_suite', 'sauter_suite_ms', 'sauter_passe', 'sauter_passe_s', 'lire_apres_silence_ms'];
 const REGLAGES_PROFILS = path.join(JARVIS, 'reglages-profils.json');
 let modeDesReglages = null;
@@ -9040,6 +9047,7 @@ function reglagesDuMode(m = typeof cerveau !== 'undefined' && cerveau ? cerveau.
   if (!PROFIL_DU_MODE[m] || m === modeDesReglages) return null;
   const premier = modeDesReglages === null;
   modeDesReglages = m;
+  try { ecrireAtomique(MODE_COURANT, j({ modele: m, profil: PROFIL_DU_MODE[m], ts: Date.now() })); } catch (_) {}
   if (premier) return null;
   if (corpsReglages().profils_auto === false) return null;
   const l = lireJson(REGLAGES_PROFILS, []), x = Array.isArray(l) ? l.find(y => y && y.nom === PROFIL_DU_MODE[m]) : null;
@@ -9054,6 +9062,12 @@ function reglagesDuMode(m = typeof cerveau !== 'undefined' && cerveau ? cerveau.
   return x.nom;
 }
 if (require.main === module) setInterval(() => { try { reglagesDuMode(); } catch (_) {} }, 3000).unref();
+// (05/11, Ahmed : « il faut bien qu'il ait le retour de chaque petit réglage, pour qu'il ajuste correctement ») toutes les 2 min, ses réglages
+// devenus mesurables lui reviennent par son courrier (jarvis/ribosome_intelligent.py retours)
+if (require.main === module) setInterval(() => {
+  if (corpsReglages().ribosome_intelligent === false || !fs.existsSync(AJUSTEMENTS_RIBOSOME)) return;
+  try { execFile(path.join(ANAMNESE, '.venv', 'bin', 'python'), ['-m', 'jarvis.ribosome_intelligent', 'retours'], { cwd: ANAMNESE, timeout: 60000 }, () => {}); } catch (_) {}
+}, 120000).unref();
 
 // force : après une coupure (pas de limite de fréquence) ; sinon au plus un toutes les 20 s (la
 // présence de la page bat toutes les quelques secondes : un claude qui ne démarre pas ne boucle pas).
@@ -11738,6 +11752,7 @@ async function traiter(req, res) {
       if (typeof q.vitesse === 'string' && Object.hasOwn(RIBOSOME_VITESSES, q.vitesse)) r.vitesse = q.vitesse;
       if (q.defaut === true) for (const k of ['choix_ms', 'plafond_mots', 'plafond_paquets', 'plafond_silence_s', 'lecteur_max', 'contexte', 'relais_ribosomes', 'relais_pct']) delete r[k];
       r.ts = Date.now() / 1000; r.par = 'papa (page Réglages)';
+      noterAjustementPapa(Object.keys(q).filter(k => k !== 'defaut'));   // (05/11) ce que papa règle passe avant Hakim pendant 30 min
       try { ecrireAtomique(RIBOSOME_REGLAGE, j(r)); } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'pas écrit' })); }
       auditer('ribosome:reglage', req, distantReq, { cles: Object.keys(q).slice(0, 10) });
     }
@@ -11749,6 +11764,11 @@ async function traiter(req, res) {
   }
   // (05/11, Ahmed : « dans les réglages, on peut rajouter un bouton pour enregistrer les réglages ») chaque geste s'enregistre déjà tout de suite ;
   // ce bouton garde l'ensemble sous un nom (son ribosome, son corps, son veilleur) pour y revenir d'un geste (jarvis/reglages-profils.json)
+  if (p === '/api/ribosome/ajustements' && req.method === 'GET') {   // (05/11) ce que Hakim (et papa) ont réglé, pour la page Réglages
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j({ ajustements: lignesJson(AJUSTEMENTS_RIBOSOME, 30).reverse() }));
+  }
   if (p === '/api/reglages/profils') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     const repondre = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o)); };
@@ -11886,6 +11906,10 @@ async function traiter(req, res) {
       if (q.sauter_suite_ms != null && Number.isFinite(Number(q.sauter_suite_ms))) r.sauter_suite_ms = Math.max(300, Math.min(5000, Math.round(Number(q.sauter_suite_ms))));
       if (typeof q.sauter_passe === 'boolean') r.sauter_passe = q.sauter_passe;   // (05/11) sauter les morceaux passés
       if (typeof q.profils_auto === 'boolean') r.profils_auto = q.profils_auto;   // (05/11) ses réglages suivent son mode
+      if (typeof q.ribosome_intelligent === 'boolean') r.ribosome_intelligent = q.ribosome_intelligent;   // (05/11) son ribosome intelligent
+      // (05/11) ce que papa règle de sa parole passe avant Hakim pendant 30 min (jarvis/ribosome_intelligent.py)
+      const parole = ['sauter_suite_ms', 'sauter_passe_s', 'lire_apres_silence_ms'].filter(k => q[k] != null);
+      if (parole.length) noterAjustementPapa(parole);
       if (q.lire_apres_silence_ms != null && Number.isFinite(Number(q.lire_apres_silence_ms))) r.lire_apres_silence_ms = Math.max(0, Math.min(5000, Math.round(Number(q.lire_apres_silence_ms))));
       if (q.sauter_passe_s != null && Number.isFinite(Number(q.sauter_passe_s))) r.sauter_passe_s = Math.max(1, Math.min(15, Math.round(Number(q.sauter_passe_s) * 2) / 2));
       try { ecrireAtomique(CORPS_REGLAGES, j(r)); } catch (e) { return repondre(500, { erreur: e.message }); }

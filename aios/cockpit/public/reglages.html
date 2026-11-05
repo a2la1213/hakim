@@ -89,6 +89,7 @@
   // Chaque réglage : [clé, nom, aide, type, options]. type : 'oui' (interrupteur), 'curseur' [min, max, pas, format], 'liste' [[valeur, nom]…]
   const FAMILLES = [
     { id: 'ribosome', ic: '🧬', titre: 'Son ribosome', aide: 'Il lit ses pensées, les stocke, puis choisit ce qu’il dit (l’épissure).', route: 'ribosome', reglages: [
+      ['ribosome_intelligent', '🧠 Ribosome intelligent', 'Hakim règle lui-même ces curseurs à partir de ses mesures, et apprend avec le temps. Ce que tu règles passe avant lui pendant 30 min.', 'oui', null, 'corps'],
       ['vitesse', 'Vitesse', 'Éclair : il stocke tout de suite, puis prend le temps du choix ci-dessous.', 'liste',
         [['eclair', '⚡ Éclair'], ['vive', 'Vive (1,6 s)'], ['rapide', 'Rapide (2 s)'], ['normale', 'Normale (3 s)'], ['posee', 'Posée (6 s)']]],
       ['choix_ms', 'Temps du choix', 'Le temps qu’il prend pour choisir ses mots (en Éclair). Sous 0,6 s, il dit sans relire.', 'curseur', [0, 3000, 100, sec]],
@@ -177,7 +178,8 @@
     peindre();
   }
 
-  function ligne(f, [cle, nom, aide, type, opt]) {
+  function ligne(f0, [cle, nom, aide, type, opt, route]) {
+    const f = route ? { ...f0, route } : f0;   // (05/11) une ligne peut écrire ailleurs que sa famille
     const el = document.createElement('div'); el.className = 'reglage'; el.dataset.cherche = `${f.titre} ${nom} ${aide}`.toLowerCase();
     const n = document.createElement('div'); n.className = 'nom'; n.textContent = nom; n.id = `n-${f.id}-${cle}`;
     const a = document.createElement('div'); a.className = 'aide'; a.textContent = aide;
@@ -225,6 +227,8 @@
       s.append(h, a);
       for (const r of f.reglages) s.appendChild(ligne(f, r));
       if (f.id === 'ribosome') {
+        // (05/11) ce que Hakim a réglé lui-même, avec sa raison (et ce que papa a réglé)
+        const aj = document.createElement('div'); aj.id = 'ajustements'; s.appendChild(aj);
         const act = document.createElement('div'); act.className = 'actions';
         const b = document.createElement('button'); b.type = 'button'; b.textContent = '↺ Temps, plafonds et relais d’origine';
         b.addEventListener('click', async () => {
@@ -257,7 +261,25 @@
     for (const b of document.querySelectorAll('[data-apparence]')) b.setAttribute('aria-pressed', String(b.dataset.apparence === ap));
   }
 
+  async function ajustements() {
+    const zone = document.getElementById('ajustements'); if (!zone) return;
+    try {
+      const d = await appeler('/api/ribosome/ajustements');
+      zone.textContent = '';
+      const t = document.createElement('div'); t.className = 'sous'; t.style.marginTop = '10px'; t.textContent = '🧠 Ce qu’il a réglé lui-même'; zone.appendChild(t);
+      const siens = d.ajustements.filter(a => a.par === 'hakim').slice(0, 8);
+      if (!siens.length) { const v = document.createElement('div'); v.className = 'vide'; v.textContent = 'Rien encore : il apprend à s’en servir.'; zone.appendChild(v); }
+      for (const a of siens) {
+        const l = document.createElement('div'); l.className = 'aide'; l.style.padding = '4px 0';
+        const quand = new Date(a.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        const fait = Object.entries(a.fait || {}).map(([k, [x, y]]) => `${k} ${x ?? '?'} → ${y}`).join(', ');
+        l.textContent = `${quand}${a.mode ? ` (${a.mode})` : ''} : ${fait}${a.raison ? ` — « ${a.raison} »` : ''}`;
+        zone.appendChild(l);
+      }
+    } catch (_) {}
+  }
   async function charger() {
+    ajustements();
     const res = await Promise.allSettled(Object.entries(ROUTES).map(async ([k, r]) => { valeurs[k] = r.depuis(await appeler(r.lire)); }));
     const rates = res.filter((x) => x.status === 'rejected');
     if (rates.length) dire(`Certains réglages ne répondent pas (${rates[0].reason.message})`, true);
