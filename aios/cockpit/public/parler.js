@@ -6664,11 +6664,11 @@ $('verrouCode').addEventListener('click', async () => {
   try {
     const o = await verrouPoster('/api/verrou/code');
     $('etatVerrou').textContent = `code ${o.code.slice(0, 3)} ${o.code.slice(3)} — sur le téléphone, ouvre ${o.adresse || 'l’adresse Tailscale'} et tape-le (10 min, une seule fois)`;
-  } catch (e) { humeur(e.message); }
+  } catch (e) { humeur(e.message); $('etatVerrou').textContent = `⚠ ${e.message}`; }   // (06/11) l'erreur visible là où tu as touché
 });
 $('verrouOublier').addEventListener('click', async () => {
   if (!confirm("Oublier tous les téléphones associés ?\nLe téléphone redevient protégé par le compte Tailscale seul, jusqu'à une nouvelle association.")) return;
-  try { await verrouPoster('/api/verrou/oublier'); afficherVerrou(); } catch (e) { humeur(e.message); }
+  try { await verrouPoster('/api/verrou/oublier'); afficherVerrou(); } catch (e) { humeur(e.message); $('etatVerrou').textContent = `⚠ ${e.message}`; }
 });
 $('verrouFermer').addEventListener('click', async () => {
   try { await verrouPoster('/api/verrou/verrouiller'); location.reload(); } catch (e) { humeur(e.message); }
