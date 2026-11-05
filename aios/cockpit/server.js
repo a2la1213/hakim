@@ -3826,7 +3826,9 @@ function sortirPaquet(tour, r, x) {
   if (tunnel) {
     (r.tunnel = r.tunnel || []).push({ texte: x.garde, ajoutes: x.e.ajoutes });
     clearTimeout(r.tunnelT);
-    r.tunnelT = setTimeout(() => { if (r.enVol || r.attente.length) return; viderTunnel(r); }, 1500);
+    // (05/11, 20:25) encore en lecture : il réessaie (avant, un dernier paquet « rien » laissait le tunnel plein, et sa voix muette)
+    const fin = () => { if (r.enVol || r.attente.length) { r.tunnelT = setTimeout(fin, 500); if (r.tunnelT.unref) r.tunnelT.unref(); return; } viderTunnel(r); };
+    r.tunnelT = setTimeout(fin, 1500);
     if (r.tunnelT && r.tunnelT.unref) r.tunnelT.unref();
   }
   diffuser(abonnesPensees, 'souffle', j({ niveau: 'ribosome', tour: r.tour != null ? r.tour : tour, k: r.k, texte: x && !tunnel ? x.garde : '', pave: r.pave, mots: r.mots, lus: motsEpisses(r.lus || '').length, ajoutes: x ? x.e.ajoutes : [], ...(r.coeur ? { coeur: r.coeur } : {}), ts: Date.now() }));
