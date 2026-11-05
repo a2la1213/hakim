@@ -6661,7 +6661,8 @@ $('envoyer').addEventListener('click', () => envoyerEcrit($('q').value));
 $('stop').addEventListener('click', () => { arreterTout(); libererRibosomes(); majBoutonsPause(); rendre(); humeur(); });
 $('q').addEventListener('input', () => { ajuster(); activite(); });
 $('q').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); envoyerEcrit($('q').value); }
+  // (05/11, Ahmed : « Entrée saute une ligne, sans envoyer ») on envoie avec le bouton, ou Ctrl/⌘ + Entrée au clavier
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) { e.preventDefault(); envoyerEcrit($('q').value); }
 });
 document.addEventListener('keydown', (e) => {
   if (e.altKey && e.code === 'KeyM') { e.preventDefault(); basculerMicro(); }
