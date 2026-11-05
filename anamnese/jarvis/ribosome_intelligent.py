@@ -242,6 +242,91 @@ def rendre_retours(dossier, maintenant=None, envoyer=None):
     return len(dus)
 
 
+# (05/11, Ahmed : « il doit aussi pouvoir enregistrer ses réglages et les éditer ») ses réglages enregistrés, comme ceux de papa (le même
+# fichier, reglages-profils.json, que la page Réglages montre) : enregistrer l'ensemble du moment sous un nom, en modifier un sans
+# l'appliquer, en appliquer un (par ajuster : bornes, interrupteur, ce que papa vient de régler passe avant, raison notée), les lister
+CLES_RIBOSOME = tuple(k for k in BORNES if k not in CLES_CORPS)
+PROFILS_MAX = 30
+
+
+def _profils(d):
+    l = _lire(Path(d) / "reglages-profils.json", [])
+    return l if isinstance(l, list) else []
+
+
+def _nom(nom):
+    return " ".join(str(nom or "").split())[:40]
+
+
+def enregistrer(dossier, nom, maintenant=None):
+    d, nom = Path(dossier), _nom(nom)
+    if not nom:
+        return "Pas enregistré : il faut un nom."
+    maintenant = int(time.time() * 1000) if maintenant is None else maintenant
+    rib, corps = _lire(d / "ribosome-reglage.json", {}), _lire(d / "corps-reglages.json", {})
+    rib, corps = (rib if isinstance(rib, dict) else {}), (corps if isinstance(corps, dict) else {})
+    snap = {"nom": nom, "ts": maintenant, "par": "hakim", "ribosome": {k: v for k, v in rib.items() if k not in ("ts", "par")},
+            "corps": corps, "veilleur": _lire(d / "veilleur-reglages.json", {}) or {}}
+    l = [x for x in _profils(d) if not (isinstance(x, dict) and x.get("nom") == nom)] + [snap]
+    _ecrire(d / "reglages-profils.json", l[-PROFILS_MAX:])
+    return f"Enregistré sous « {nom} »."
+
+
+def modifier(dossier, nom, changements, maintenant=None):
+    d, nom = Path(dossier), _nom(nom)
+    corps = _lire(d / "corps-reglages.json", {})
+    if isinstance(corps, dict) and corps.get("ribosome_intelligent") is False:
+        return "Pas modifié : papa n'a pas allumé « Ribosome intelligent »."
+    l = _profils(d)
+    p = next((x for x in l if isinstance(x, dict) and x.get("nom") == nom), None)
+    if not p:
+        return f"Aucun réglage enregistré sous « {nom} »."
+    fait = []
+    for k, v in (changements or {}).items():
+        b = borner(k, v)
+        if b is None:
+            continue
+        p.setdefault("corps" if k in CLES_CORPS else "ribosome", {})[k] = b
+        fait.append(f"{k} {b}")
+    if not fait:
+        return "Rien à modifier."
+    p["ts"] = int(time.time() * 1000) if maintenant is None else maintenant
+    p["modifie_par"] = "hakim"
+    _ecrire(d / "reglages-profils.json", l)
+    return f"« {nom} » modifié : {', '.join(fait)} (pas appliqué : reglages_appliquer pour t'en servir)."
+
+
+def appliquer(dossier, nom, raison="", maintenant=None):
+    d, nom = Path(dossier), _nom(nom)
+    p = next((x for x in _profils(d) if isinstance(x, dict) and x.get("nom") == nom), None)
+    if not p:
+        return f"Aucun réglage enregistré sous « {nom} »."
+    vals = {k: v for k, v in (p.get("ribosome") or {}).items() if k in CLES_RIBOSOME and v is not None}
+    vals.update({k: v for k, v in (p.get("corps") or {}).items() if k in CLES_CORPS and v is not None})
+    r = ajuster(d, vals, raison or f"j'applique « {nom} »", maintenant)
+    if r["eteint"]:
+        return "Pas appliqué : papa n'a pas allumé « Ribosome intelligent »."
+    v = (p.get("ribosome") or {}).get("vitesse")
+    rib = _lire(d / "ribosome-reglage.json", {})
+    if v and isinstance(rib, dict) and rib.get("vitesse") != v:
+        rib["vitesse"] = v
+        _ecrire(d / "ribosome-reglage.json", rib)
+    t = f"« {nom} » appliqué" + (f" : {', '.join(f'{k} {b}' for k, (_, b) in r['fait'].items())}" if r["fait"] else " (rien ne changeait)")
+    return t + (f" ; pas changé : {', '.join(r['refuse'])} (papa l'a réglé il y a moins de 30 min)." if r["refuse"] else ".")
+
+
+def lister(dossier):
+    l = [x for x in _profils(dossier) if isinstance(x, dict) and x.get("nom")]
+    if not l:
+        return "Aucun réglage enregistré."
+    def ligne(x):
+        r, c = x.get("ribosome") or {}, x.get("corps") or {}
+        vals = ", ".join(f"{k} {r[k]}" for k in ("choix_ms", "stringence", "plafond_mots", "relais_pct") if r.get(k) is not None)
+        vals += "".join(f", {k} {c[k]}" for k in CLES_CORPS if c.get(k) is not None)
+        return f"« {x['nom']} »{' (le tien)' if x.get('par') == 'hakim' else ''} : {vals}"
+    return "Tes réglages enregistrés :\n" + "\n".join(ligne(x) for x in l)
+
+
 if __name__ == "__main__":
     import sys
     if sys.argv[1:2] == ["retours"]:

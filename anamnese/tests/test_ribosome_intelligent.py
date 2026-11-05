@@ -132,3 +132,24 @@ def test_le_retour_de_chaque_reglage_lui_revient_tout_seul(tmp_path):
     envois = []
     assert ri.rendre_retours(j, maintenant=T, envoyer=envois.append) == 1 and "Retour de ton réglage" in envois[0]
     assert ri.rendre_retours(j, maintenant=T, envoyer=envois.append) == 0, "noté : pas deux fois"
+
+
+def test_il_enregistre_modifie_applique_et_liste_ses_reglages(tmp_path, monkeypatch):
+    """(05/11, Ahmed : « il doit aussi pouvoir enregistrer ses réglages et les éditer »)"""
+    m = _mcp(tmp_path, monkeypatch)
+    j = _maison(tmp_path, profils=[{"nom": "Hakim", "ribosome": {"choix_ms": 1800}, "corps": {"sauter_passe_s": 3}}])
+    assert m.reglages_enregistres("enregistrer", "le mien") == "Enregistré sous « le mien »."
+    p = [x for x in json.loads((j / "reglages-profils.json").read_text()) if x["nom"] == "le mien"][0]
+    assert p["par"] == "hakim" and p["ribosome"]["choix_ms"] == 1800 and "ts" not in p["ribosome"]
+    t = m.reglages_enregistres("modifier", "le mien", choix_ms=2100, sauter_passe_s=5)
+    assert "choix_ms 2100" in t and "pas appliqué" in t
+    assert json.loads((j / "ribosome-reglage.json").read_text())["choix_ms"] == 1800, "modifier n'applique pas"
+    t = m.reglages_enregistres("appliquer", "le mien", raison="je l'essaie")
+    assert "appliqué" in t and json.loads((j / "ribosome-reglage.json").read_text())["choix_ms"] == 2100
+    assert json.loads((j / "corps-reglages.json").read_text())["sauter_passe_s"] == 5
+    l = m.reglages_enregistres()
+    assert "« le mien » (le tien) : choix_ms 2100" in l and "« Hakim »" in l
+    assert "Aucun réglage" in m.reglages_enregistres("appliquer", "inconnu")
+    (j / "corps-reglages.json").write_text(json.dumps({"ribosome_intelligent": False}))
+    assert "papa n'a pas allumé" in m.reglages_enregistres("modifier", "le mien", choix_ms=1500)
+    assert "papa n'a pas allumé" in m.reglages_enregistres("appliquer", "le mien")

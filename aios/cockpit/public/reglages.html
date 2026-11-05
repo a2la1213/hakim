@@ -302,7 +302,7 @@
       if (!d.profils.length) { const v = document.createElement('div'); v.className = 'vide'; v.textContent = 'Rien d’enregistré pour l’instant.'; zone.appendChild(v); }
       for (const x of d.profils.slice().reverse()) {
         const l = document.createElement('div'); l.className = 'reglage';
-        const n = document.createElement('div'); n.className = 'nom'; n.textContent = x.nom;
+        const n = document.createElement('div'); n.className = 'nom'; n.textContent = x.par === 'hakim' ? `${x.nom} · 🧠 Hakim` : x.nom;   // (05/11) les siens
         const b = document.createElement('div'); b.className = 'choix'; b.style.gridColumn = 'auto';
         const ap = document.createElement('button'); ap.type = 'button'; ap.textContent = '↺ Appliquer';
         ap.addEventListener('click', () => profils('appliquer', x.nom));

@@ -223,7 +223,8 @@ test('ribosome intelligent : l’interrupteur (oui), papa noté quand il règle,
   assert.match(SRC, /if \(parole\.length\) noterAjustementPapa\(parole\);/);
   assert.match(prendre(SRC, 'reglagesDuMode'), /modeDesReglages = m;\n  try \{ ecrireAtomique\(MODE_COURANT, j\(\{ modele: m, profil: PROFIL_DU_MODE\[m\], ts: Date\.now\(\) \}\)\); \} catch \(_\) \{\}\n  if \(premier\) return null;/,
     'son mode est écrit dès le premier vu (ses réglages vont dans le bon réglage enregistré)');
-  assert.match(SRC, /'ribosome_regler', 'ribosome_bilan',/);
+  assert.match(SRC, /'ribosome_regler', 'ribosome_bilan', 'reglages_enregistres',/);
+  assert.match(SRC, /par: x\.par === 'hakim' \|\| x\.modifie_par === 'hakim' \? 'hakim' : 'papa'/, '(05/11) ses réglages enregistrés, montrés comme les siens');
   assert.match(SRC, /\['-m', 'jarvis\.ribosome_intelligent', 'retours'\]/, 'le retour de chaque réglage lui revient');
   const REG = fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8');
   assert.match(REG, /\['ribosome_intelligent', '🧠 Ribosome intelligent', [^\n]*, 'oui', null, 'corps'\],/);

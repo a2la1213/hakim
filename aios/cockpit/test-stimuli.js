@@ -32,5 +32,5 @@ test('son fil écrit pour ses outils, et ses liens relus dans son fil', () => {
   ctx.relire();
   assert.deepStrictEqual(ajoutes[1], ['coordination', 'la parole — la même voix dedans et dehors', 1150], '(16:30) ce qu’il a réuni : la parole');
   assert.match(SRC, /coordination: 'il relie'/);
-  assert.match(SRC, /'ribosome_regler', 'ribosome_bilan', 'stimuli_voir', 'stimuli_relier',/, 'ses outils, permis');
+  assert.match(SRC, /'ribosome_regler', 'ribosome_bilan', 'reglages_enregistres', 'stimuli_voir', 'stimuli_relier',/, 'ses outils, permis');
 });

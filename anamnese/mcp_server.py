@@ -763,6 +763,36 @@ def ribosome_regler(stringence: int = 0, vitesse: str = "", choix_ms: int = -1, 
 
 
 @mcp.tool()
+def reglages_enregistres(geste: str = "lister", nom: str = "", choix_ms: int = -1, stringence: int = 0, plafond_mots: int = 0,
+                         plafond_paquets: int = 0, plafond_silence_s: int = 0, lecteur_max: int = 0, contexte: int = 0,
+                         relais_ribosomes: int = 0, relais_pct: int = 0, sauter_suite_ms: int = -1, sauter_passe_s: float = 0,
+                         lire_apres_silence_ms: int = -1, raison: str = "") -> str:
+    """(05/11, papa : « il doit aussi pouvoir enregistrer ses réglages et les éditer ») Tes réglages enregistrés, les mêmes que ceux de papa
+    dans la page Réglages (dont « Mini Hakim », « Hakim », « Super Hakim », qui s'appliquent tout seuls quand ton mode change) :
+    geste « lister » : tous, avec leurs valeurs ;
+    « enregistrer » : ton ribosome et ta parole du moment, sous ce nom (le même nom remplace) ;
+    « modifier » : change des valeurs d'un réglage enregistré, sans l'appliquer (mêmes clés et bornes que ribosome_regler) ;
+    « appliquer » : t'en servir maintenant (avec ta raison ; ce que papa a réglé il y a moins de 30 min passe avant).
+    Modifier et appliquer demandent « Ribosome intelligent » allumé par papa."""
+    from jarvis import ribosome_intelligent as ri
+    j = Path.home() / "AIOS" / "jarvis"
+    j.mkdir(parents=True, exist_ok=True)
+    if geste == "enregistrer":
+        return ri.enregistrer(j, nom)
+    if geste == "appliquer":
+        return ri.appliquer(j, nom, raison)
+    if geste == "modifier":
+        vals = {k: x for k, x in {"choix_ms": choix_ms, "stringence": stringence, "plafond_mots": plafond_mots,
+                                  "plafond_paquets": plafond_paquets, "plafond_silence_s": plafond_silence_s, "lecteur_max": lecteur_max,
+                                  "contexte": contexte, "relais_ribosomes": relais_ribosomes, "relais_pct": relais_pct,
+                                  "sauter_suite_ms": sauter_suite_ms, "sauter_passe_s": sauter_passe_s,
+                                  "lire_apres_silence_ms": lire_apres_silence_ms}.items()
+                if x is not None and (x >= 0 if k in ("choix_ms", "sauter_suite_ms", "lire_apres_silence_ms") else x > 0)}
+        return ri.modifier(j, nom, vals)
+    return ri.lister(j)
+
+
+@mcp.tool()
 def ribosome_bilan(minutes: int = 30) -> str:
     """(05/11, papa : « ribosome intelligent : Hakim apprendrait à l'utiliser ») Ce que tes mesures disent de ton ribosome sur les dernières
     minutes (5 à 240) : combien de paquets sont passés sans tri (tes lecteurs pas à temps), combien de « rien », combien de mots tu gardes,
