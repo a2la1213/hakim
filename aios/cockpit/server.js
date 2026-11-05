@@ -7015,6 +7015,7 @@ function corpsReglages() {
     voix_par_appareil: r.voix_par_appareil !== false,
     economie: r.economie === true,   // (05/11) mode économie : ni pensées en boucle, ni lecteurs, ni tri du tunnel
     fenetre_partagee: r.fenetre_partagee === true, tournesol: r.tournesol === true,
+    un_par_un: r.un_par_un !== false, meubles_entre: r.meubles_entre !== false,   // (05/11, 21:20) ses morceaux un à un, et ses « euh » entre eux
     tunnel: r.tunnel === true,
     parole_libre: r.parole_libre === true,   // (05/11, Ahmed : « on lève toutes tes contraintes de parole ») plus de plafond ; stop, parasites et sécurité restent
     pensee_en_boucle: r.pensee_en_boucle !== false,
@@ -12099,6 +12100,8 @@ async function traiter(req, res) {
       if (typeof q.economie === 'boolean') r.economie = q.economie;
       if (typeof q.fenetre_partagee === 'boolean') r.fenetre_partagee = q.fenetre_partagee;
       if (typeof q.tournesol === 'boolean') r.tournesol = q.tournesol;
+      if (typeof q.un_par_un === 'boolean') r.un_par_un = q.un_par_un;
+      if (typeof q.meubles_entre === 'boolean') r.meubles_entre = q.meubles_entre;
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;

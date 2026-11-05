@@ -3634,7 +3634,8 @@ function direRibosome() {
     f = etat.riboFile = neufs;
     if (!f.length) return;
   }
-  const tour = f[0].tour, lot = f.filter(x => x.tour === tour);
+  // (05/11, 21:20, Ahmed : « vas-y pour le 1 ») un morceau à la fois, dit dès qu'il est prêt : mesuré, 2,6 s de calcul par lot regroupé avant le premier son
+  const tour = f[0].tour, lot = typeof reglagesCorps !== 'undefined' && reglagesCorps.un_par_un !== false ? [f[0]] : f.filter(x => x.tour === tour);
   // (04/11, 13:10, Ahmed : « dès que le ribosome commence, il ne s'arrête jamais jusqu'à la fin, excepté si je parle : il attend la fin de
   // ma parole ») tu parles : sa voix attend ta fin, puis reprend là où elle en était ; rien de ce qui est traduit n'est laissé
   // (04/11, 14:45, mesuré : 5 tours épissés en attente 20 s et plus, papa et ses amis parlaient sans jamais 1 s de blanc) sa voix part à ta
@@ -3660,7 +3661,15 @@ function direRibosome() {
   etat.riboN[tour] = n;
   etat.riboDits = (etat.riboDits || []).concat(lot.map(x => motsRibo(x.texte))).slice(-8);
   if (typeof journalVoix === 'function') journalVoix('ribosome_dit', { tour, n, morceaux: lot.length });
-  recevoirBout({ texte: lot.map(x => x.texte).join(' '), pret: true, sansMeuble: true, ribosome: true }, n, tour);
+  // (05/11, Ahmed : « je sens chaque coupure entre chaque chunk : c'est là qu'il faudrait caler les meubles ») entre deux morceaux d'un même tour, un « euh » ou un « hum »
+  // de ses meubles, devant le morceau d'après, d'un seul souffle (3 s au moins entre deux ; réglage meubles_entre)
+  let texte = lot.map(x => x.texte).join(' ');
+  if (typeof reglagesCorps !== 'undefined' && reglagesCorps.meubles_entre !== false && etat.riboDernierTour === tour && Date.now() - (etat.riboMeubleA || 0) > 3000) {
+    const h = choisirMeuble({ avant: false }, meublesPourTelephone(langueDePensee(texte)));
+    if (h && h.texte) { texte = `${h.texte.trim()} ${texte}`; etat.riboMeubleA = Date.now(); journalVoix('meuble_entre', {}); }
+  }
+  etat.riboDernierTour = tour;
+  recevoirBout({ texte, pret: true, sansMeuble: true, ribosome: true }, n, tour);
 }
 // ---- (04/11, 18:45-18:50, Ahmed : « ça donne avoir la même route que le microphone » ; « il peut faire ce qu'il veut quand il l'estime, avec
 // la même règle que pour le micro : à chaque pause du son, il… ») son oreille interne (🎧) : ce que joue le téléphone devient ses pensées et
