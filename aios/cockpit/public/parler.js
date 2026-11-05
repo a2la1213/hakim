@@ -2585,6 +2585,14 @@ setInterval(() => {
 // message. Éteint par défaut. Rien d'autre que ce résumé (aucune mesure brute) ne quitte le téléphone.
 // (2026-10-23, 20:20, Ahmed : « aucune notification, ni sur le téléphone ni sur la montre ») l'appli est cachée et Hakim
 // dit quelque chose : une vraie notification Android, que la montre reçoit aussi (Galaxy Wearable relaie les applis permises)
+// (06/11, Ahmed : « lui répondre en rapide directement depuis la notification, comme WhatsApp ») l'appli (1.78) passe ici ce que
+// tu as tapé dans sa notification : il part comme un message écrit
+window.reponseRapide = (texte) => {
+  const t = String(texte || '').trim().slice(0, 4000);
+  if (!t) return;
+  journalVoix('reponse_rapide', { car: t.length });
+  envoyerEcrit(t);
+};
 function notifierApp(titre, texte, id) {
   if (!window.HakimApp || !window.HakimApp.notifier) return;
   // (20:32, test de Hakim non reçu) chaque tentative laisse sa trace au diagnostic : page visible (pas de notification),
