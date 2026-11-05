@@ -1589,7 +1589,9 @@ let reglagesCorps = { oreille: false, je_te_suis: true }, oreilleDernier = 0, pa
 async function lireReglagesCorps() {
   try { const r = await fetch('/api/corps/reglages', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' }); if (r.ok) reglagesCorps = { ...reglagesCorps, ...(await r.json()) }; } catch (_) {}
   // (05/11, Ahmed : « tout sur le smartphone quand on est dessus, sur le Mac quand on est dessus ») sa voix suit l'appareil : Supertonic dans l'appli, Chatterbox sur le Mac (qui se libère seul après 15 min)
-  if (reglagesCorps.voix_azure) etat.reglages.voix = 'neuronale';   // (05/11) Azure : par le Mac, sur les deux appareils
+  if (reglagesCorps.voix_azure) etat.reglages.voix = 'neuronale';
+  if (reglagesCorps.stt_azure && etat.reglages.reconnaissance === 'navigateur') etat.reglages.reconnaissance = 'locale';
+  try { if (reglagesCorps.voix_azure) $('voix').value = 'azure'; if (reglagesCorps.stt_azure) $('reconnaissance').value = 'azure'; } catch (_) {}   // (05/11) Azure : par le Mac, sur les deux appareils
   else if (reglagesCorps.voix_par_appareil !== false) etat.reglages.voix = window.HakimApp && window.HakimApp.voixTelephone ? 'telephone' : 'neuronale';
   if (typeof surOreilleHakim === 'function') surOreilleHakim({ fermee: !!reglagesCorps.oreille_hakim_jusqua, jusqua: reglagesCorps.oreille_hakim_jusqua });   // (01:00)
 }
@@ -6252,11 +6254,11 @@ function appliquerReglages() {
   // Vu le 2026-10-16 : un français précédé d'un salam a déjà été pris pour de l'arabe ; « français » reste
   // au choix pour forcer la langue.
 }
-for (const [id, cle, val] of [['source', 'source', e => e.value], ['modele', 'modele', e => e.value], ['modeleConversation', 'modeleConversation', e => e.value], ['reconnaissance', 'reconnaissance', e => e.value],
+for (const [id, cle, val] of [['source', 'source', e => e.value], ['modele', 'modele', e => e.value], ['modeleConversation', 'modeleConversation', e => e.value], ['reconnaissance', 'reconnaissance', e => (e.value === 'azure' ? 'locale' : e.value)],
   ['langue', 'langue', e => e.value], ['voixFr', 'voixFr', e => e.value], ['voixAr', 'voixAr', e => e.value],
   ['vitesse', 'vitesse', e => parseFloat(e.value) || 1], ['lectureAuto', 'lectureAuto', e => e.checked],
   ['patience', 'patience', e => parseFloat(e.value)], ['patienceConversation', 'patienceConversation', e => parseFloat(e.value)],
-  ['voix', 'voix', e => e.value], ['sceneActive', 'scene', e => e.checked], ['rapide', 'rapide', e => e.checked],
+  ['voix', 'voix', e => (e.value === 'azure' ? 'neuronale' : e.value)], ['sceneActive', 'scene', e => e.checked], ['rapide', 'rapide', e => e.checked],
   ['position', 'position', e => e.checked], ['voixNeutre', 'voixNeutre', e => e.checked]]) {
   $(id).addEventListener('change', (ev) => { etat.reglages[cle] = val(ev.target); appliquerReglages(); sauver(); });
 }
@@ -6979,3 +6981,13 @@ function prechaufferReflexion(reprise = false) {
   c.addEventListener('change', () => { actif = c.checked; try { localStorage.setItem(CLE_C, actif ? 'oui' : 'non'); } catch (_) {} lire(); });
   lire(); setInterval(lire, 30000);
 })();
+
+// (05/11, Ahmed : « dans les réglages de Parler, l'option Microsoft Azure pour la voix de Hakim et pour la reconnaissance ») le choix va au cockpit
+for (const [id, cle] of [['voix', 'voix_azure'], ['reconnaissance', 'stt_azure']]) {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('change', () => {
+    fetch('/api/corps/reglages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ [cle]: el.value === 'azure' }) })
+      .then(() => lireReglagesCorps()).catch(() => {});
+    humeur(el.value === 'azure' ? 'Microsoft Azure choisi' : 'Azure retiré');
+  });
+}

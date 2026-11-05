@@ -9127,7 +9127,7 @@ function cleAzure() {
   try { azureCle.v = execFileSync('/usr/bin/security', ['find-generic-password', '-s', 'hakim-azure-tts', '-w'], { encoding: 'utf8', timeout: 3000 }).trim() || null; } catch (_) { azureCle.v = null; }
   return azureCle.v;
 }
-async function oreilleAzure(fichier) {
+async function oreilleAzure(fichier, langueDemandee) {
   const cle = cleAzure(), c = lireJson(AZURE, {}) || {};
   if (!cle || !/^[a-z0-9]+$/.test(c.region || '')) return null;
   const fd = new FormData();
@@ -9140,7 +9140,8 @@ async function oreilleAzure(fichier) {
     if (!r.ok) {
       azureCle.erreur = `${r.status} ${(await r.text().catch(() => '')).slice(0, 300)}`;
       // (05/11) la transcription rapide (langue trouvée seule) n'existe pas dans toutes les régions (pas en Suisse) : l'oreille courte, une langue (azure.json : langue)
-      const langue = /^[a-z]{2}-[A-Z]{2}$/.test(c.langue || '') ? c.langue : 'fr-FR';
+      // (05/11) la langue d'écoute de la page : arabe → arabe d'Algérie (Darija), anglais, sinon français
+      const langue = { ar: 'ar-DZ', en: 'en-US', fr: 'fr-FR' }[langueDemandee] || (/^[a-z]{2}-[A-Z]{2}$/.test(c.langue || '') ? c.langue : 'fr-FR');
       const q = await fetch(`https://${c.region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=${langue}&format=simple`,
         { method: 'POST', body: fs.readFileSync(fichier), signal: ctl.signal, headers: { 'Ocp-Apim-Subscription-Key': cle, 'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000' } });
       if (!q.ok) { azureCle.erreur = `${q.status}`; return null; }
@@ -10078,7 +10079,7 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
     // (05/11, Ahmed : « un système en ligne qui reconnaît ma voix en arabe, français, anglais, même en darija ») Azure, la même clé que sa voix : la langue
     // choisie seule parmi quatre ; en panne ou éteint : Whisper, comme avant (et lui seul pour le son du téléphone et l'apprentissage de l'empreinte)
     if (corpsReglages().stt_azure && !telephone && apprentissageVoix <= 0) {
-      const a = await oreilleAzure(f).catch(() => null);
+      const a = await oreilleAzure(f, /^[a-z]{2}$/.test(langue || '') ? langue : null).catch(() => null);
       if (a) { r = { texte: a.texte, langue: a.langue, azure: true }; try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'transcription_azure', ms: a.ms, langue: a.langue }) + '\n', { mode: 0o600 }); } catch (_) {} }
     }
     if (!r) r = await voixDemander({ op: 'transcrire', fichier: f, langue: /^[a-z]{2}$/.test(langue || '') ? langue : null, contexte: contexte || '',
