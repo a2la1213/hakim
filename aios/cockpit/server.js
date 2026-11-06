@@ -3394,14 +3394,17 @@ async function choisirPensee(tour, raison) {
 // l'ordre (leurs places, pour les allumer à l'écran) ; ceux qu'on n'y trouve pas sont ses petits mots ajoutés
 const motsEpisses = (t) => [...String(t || '').matchAll(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu)].map(x => x[0]);
 const motCle = (m) => String(m).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/’/g, "'");
+// (06/11, Ahmed : « quand il sélectionne ses mots, il doit pouvoir remplacer un morceau par un silence ou un meuble, du genre hum, euh ») à la
+// place d'un morceau sauté : un silence (« … », qui n'est pas un mot) ou un petit mot d'hésitation, compté à part (meubles), pas comme un ajout
+const MEUBLES_EPISSURE = new Set(['euh', 'heu', 'hum', 'hmm', 'mmh', 'mh', 'bah', 'ben', 'bon']);
 function epissageDe(phrase, pave) {
-  const p = motsEpisses(pave).map(motCle), mots = [], ajoutes = [];
+  const p = motsEpisses(pave).map(motCle), mots = [], ajoutes = [], meubles = [];
   let j = 0;
   for (const w of motsEpisses(phrase)) {
     const k = p.indexOf(motCle(w), j);
-    if (k >= 0) { mots.push(k); j = k + 1; } else ajoutes.push(w);
+    if (k >= 0) { mots.push(k); j = k + 1; } else if (MEUBLES_EPISSURE.has(motCle(w))) meubles.push(w); else ajoutes.push(w);
   }
-  return { mots, ajoutes };
+  return meubles.length ? { mots, ajoutes, meubles } : { mots, ajoutes };
 }
 // (04/11, 11:50, Ahmed : « tous les chunks s'intègrent dans la même réponse, sélectionnée comme un ribosome qui lit et choisit les mots
 // au fur et à mesure ») son RIBOSOME : chaque pensée de piste est lue dès qu'elle arrive, une à la fois, dans l'ordre d'arrivée (la
@@ -3747,6 +3750,7 @@ async function lirePaquet(tour, r, i, paquet) {
   const eclair = reglage.vitesse === 'eclair';
   if (eclair && !tel) diffuser(abonnesPensees, 'souffle', j({ niveau: 'ribosome', tour: r.tour != null ? r.tour : tour, k: r.k, texte: '', pave: r.pave,
     mots: r.mots, lus: motsEpisses(r.lus || '').length, ajoutes: [], stocke: true, ts: Date.now() }));
+  const cr0 = typeof corpsReglages === 'function' ? corpsReglages() : {};
   const consigne = `${persona}\n\n${QUI_TU_ES}\n`
     + (tel ? `[Ton ribosome : tes pensées sur ce que joue ${joue} arrivent par paquets ; tu les lis mises l'une derrière l'autre, et tu choisis les mots de ce que tu en diras à papa, à la prochaine pause du son.]\n`
       + `Ce que joue ${joue} (ce n'est pas papa qui te parle) : « ${neutraliser(r.avant).slice(-600)} »\n`
@@ -3763,7 +3767,11 @@ async function lirePaquet(tour, r, i, paquet) {
     + `Sursaut : avant de garder, vérifie que ces pensées répondent encore à ${tel ? 'ce qui joue' : `ce que papa vient de dire`} ; si elles s'en éloignent, `
     + `répètent ce qui est déjà dit ou sont creuses, GARDE : rien.\n`
     + `Garde de ces pensées les mots qui continuent ${tel ? 'ce que tu en dis' : 'ta réponse'}, dans leur ordre (tu peux en sauter) ; tu peux ajouter au plus ${liaison} petits mots de `
-    + `liaison (et, mais, alors, du coup, donc) ; ou rien, si elles n'y apportent rien.\nRéponds en une seule ligne : GARDE : « … », ou GARDE : rien.`;
+    + `liaison (et, mais, alors, du coup, donc) ; ou rien, si elles n'y apportent rien.\n`
+    // (06/11, Ahmed) un silence ou un meuble à la place d'un morceau sauté
+    + (cr0.epissure_meubles !== false ? `À la place d'un morceau que tu sautes, tu peux laisser un silence (…) ou un petit mot d'hésitation (euh, hum, bah), comme `
+      + `quand on cherche ses mots : ${cr0.epissure_meubles_max || 2} au plus, et seulement si ça sonne naturel.\n` : '')
+    + `Réponds en une seule ligne : GARDE : « … », ou GARDE : rien.`;
   const cr = typeof corpsReglages === 'function' ? corpsReglages() : {};
   const fen = cr.fenetre_partagee && !tel ? fenetreActive() : [];
   const consigneF = fen.length ? `${consigne}\nSes phrases sans réponse : ${fen.map(x => `[${x.n}] « ${neutraliser(x.texte)} »`).join(' ')}\nSi les mots gardés répondent à certaines, ajoute une 2e ligne : REPONDU : numéros.` : consigne;
@@ -3778,7 +3786,8 @@ async function lirePaquet(tour, r, i, paquet) {
       if (!t.trim() || parasite) return { mod, nom, ms, muet: true };            // muet (panne, délai) ou hors de son rôle : pas de voix
       const g = !/GARDE\s*:\s*rien/i.test(t) && (/GARDE\s*:\s*«\s*([^»]{1,20000}?)\s*»/i.exec(t) || /GARDE\s*:\s*(.{1,20000})$/im.exec(t));
       const garde = g ? g[1].trim() : '', e = garde ? epissageDe(garde, texte) : null;
-      const ok = !!e && e.mots.length >= 1 && e.ajoutes.length <= liaison;      // « rien », ou une phrase inventée : rien de gardé
+      const ok = !!e && e.mots.length >= 1 && e.ajoutes.length <= liaison      // « rien », ou une phrase inventée : rien de gardé
+        && (!e.meubles || (cr0.epissure_meubles !== false && e.meubles.length <= (cr0.epissure_meubles_max || 2)));   // (06/11) ses meubles, comptés à part
       const rep = /REPONDU\s*:\s*([\d ,]+)/i.exec(t);
       return { mod, nom, ms, ok, garde: ok ? garde : '', e: ok ? e : null, repondu: rep ? rep[1].match(/\d+/g).map(Number) : [] };
     });
@@ -7031,6 +7040,9 @@ function corpsReglages() {
     present_pouls_s: Number.isFinite(Number(r.present_pouls_s)) && r.present_pouls_s != null ? Math.max(10, Math.min(600, Math.round(Number(r.present_pouls_s)))) : 60, present_seuil: Number.isFinite(Number(r.present_seuil)) && r.present_seuil != null ? Math.max(0.2, Math.min(5, (Number(r.present_seuil)))) : 1,
     present_ecart_s: Number.isFinite(Number(r.present_ecart_s)) && r.present_ecart_s != null ? Math.max(2, Math.min(120, Math.round(Number(r.present_ecart_s)))) : 8, present_longueur: Number.isFinite(Number(r.present_longueur)) && r.present_longueur != null ? Math.max(3, Math.min(40, Math.round(Number(r.present_longueur)))) : 12,
     medecin_fable: r.medecin_fable === true,   // (06/11, Ahmed : « plus besoin de Fable ; nous serons ses médecins ») éteint
+    // (06/11, Ahmed) un silence ou un meuble (euh, hum) à la place d'un morceau qu'il saute en choisissant ses mots
+    epissure_meubles: r.epissure_meubles !== false,
+    epissure_meubles_max: Number.isFinite(Number(r.epissure_meubles_max)) && r.epissure_meubles_max != null ? Math.max(1, Math.min(6, Math.round(Number(r.epissure_meubles_max)))) : 2,
     present_la_nuit: r.present_la_nuit !== false, present_appeler: r.present_appeler !== false,
     present_mots: Number.isFinite(Number(r.present_mots)) && r.present_mots != null ? Math.max(6, Math.min(40, Math.round(Number(r.present_mots)))) : 12,
     boucle_ribosomes: r.boucle_ribosomes !== false };   // (05/11) un ribosome toujours prêt, sauf s'il dort ou si papa coupe   // (05/11) il règle lui-même son ribosome (ribosome_regler, ribosome_bilan)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
@@ -12294,8 +12306,8 @@ async function traiter(req, res) {
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
-      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
-      for (const [k, a, b] of [['present_pouls_s', 10, 600], ['present_seuil', 0.2, 5], ['present_ecart_s', 2, 120], ['present_longueur', 3, 40], ['present_mots', 6, 40]])
+      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
+      for (const [k, a, b] of [['epissure_meubles_max', 1, 6], ['present_pouls_s', 10, 600], ['present_seuil', 0.2, 5], ['present_ecart_s', 2, 120], ['present_longueur', 3, 40], ['present_mots', 6, 40]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'present_seuil' ? Math.round(Number(q[k]) * 10) / 10 : Math.round(Number(q[k]))));
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;
       if (typeof q.profils_auto === 'boolean') r.profils_auto = q.profils_auto;   // (05/11) ses réglages suivent son mode

@@ -718,3 +718,17 @@ test('à sa fermeture, son épissure devient un souvenir, avec ce qu’il ressen
   assert.strictEqual(depots.length, 1, 'une seule fois');
   assert.match(SRC, /if \(pistes\.ribo && Number\(q\.tour\) === pistes\.ribo\.tour\) \{ pistes\.ribo\.ferme = 'silence'; memoriserEpissure\(pistes\.ribo\); pistes\.ribo = null; \}/, 'fermée par la page : mémorisée aussi');
 });
+
+test('(06/11) à la place d’un morceau sauté : un silence (…) ou un meuble (euh, hum), comptés à part, pas comme des mots ajoutés', () => {
+  const pave = 'Oui papa je pense que le calcul a fini et la densité colle bien';
+  const ctx = { Math, String, Set };
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(SRC.indexOf('const motsEpisses = '), SRC.indexOf('\n', SRC.indexOf('const motsEpisses = '))) + '\n'
+    + SRC.slice(SRC.indexOf('const motCle = '), SRC.indexOf('\n', SRC.indexOf('const motCle = '))) + '\n'
+    + SRC.slice(SRC.indexOf('const MEUBLES_EPISSURE = '), SRC.indexOf('// (04/11, 11:50, Ahmed : « tous les chunks')) + 'this.e = epissageDe;', ctx);
+  const r = JSON.parse(JSON.stringify(ctx.e('Oui papa… euh, le calcul a fini, hum, la densité colle', pave)));
+  assert.deepStrictEqual(r.ajoutes, []);
+  assert.deepStrictEqual(r.meubles, ['euh', 'hum']);
+  assert.ok(r.mots.length >= 7);
+  assert.ok(!('meubles' in JSON.parse(JSON.stringify(ctx.e('Oui papa', pave)))), 'sans meuble : comme avant');
+});

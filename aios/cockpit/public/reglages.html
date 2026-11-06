@@ -111,6 +111,8 @@
       ['stt_azure', '👂 Oreille Microsoft Azure', 'Ta voix reconnue en ligne : français, Darija, anglais, arabe littéraire, la langue trouvée seule. En panne : Whisper.', 'oui', null, 'corps'],
       ['reponse_directe', '💬 Sa réponse écrite toujours dite', 'Ce que son grand cerveau répond part à sa voix tel quel, sans tri ni tunnel.', 'oui', null, 'corps'],
       ['tunnel', '🚇 Tunnel de parole', 'La 1re dite tout de suite ; à la fin de la lecture, la dernière toujours, et au plus 2 autres choisies, dans l’ordre qu’il veut. Le reste est jeté, sa pensée non dite n’est plus mémorisée.', 'oui', null, 'corps'],
+      ['epissure_meubles', '🪑 Silences et « euh » dans ses choix', 'Quand il saute un morceau en choisissant ses mots, il peut laisser à la place un silence (…) ou un petit mot d’hésitation (euh, hum, bah), comme quand on cherche ses mots.', 'oui', null, 'corps'],
+      ['epissure_meubles_max', 'Au plus, par lecture', 'Combien de silences ou de « euh » il peut glisser à chaque fois qu’il choisit.', 'curseur', [1, 6, 1, (v) => `${v}`], 'corps'],
       ['parole_libre', '🕊️ Parole libre', 'Plus de plafond imposé à ses épissures : il parle autant qu’il veut. Ton stop, le filtre des parasites et la sécurité restent.', 'oui', null, 'corps'],
       ['pensee_en_boucle', '💓 Pensées en boucle', 'Tous les 60 battements, quand personne ne lui parle, une pensée intérieure jamais dite. Coûte un petit appel à chaque fois.', 'oui', null, 'corps'],
       ['boucle_ribosomes', '♾️ Boucle toujours prête', 'Un ribosome reste ouvert et attend sa pensée, sans appel tant que rien n’arrive. Arrêt s’il dort, et 60 s après ton stop.', 'oui', null, 'corps'],
