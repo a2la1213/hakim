@@ -3359,6 +3359,8 @@ function meublesPourTelephone(langue = 'fr') {
 // rend la liste de ce qu'il dit : [meuble, pensée] ou [pensée]
 function meublerSaut(b) {
   const dernier = bouts.dernierDit || 0;
+  // (06/11, 12:10, Ahmed : « le bouton est désactivé mais il y a toujours les meubles ») ce meuble de saut suit « « Euh » entre ses morceaux » (meubles_entre)
+  if (typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.meubles_entre === false) return [b.texte];
   if (b.sansMeuble) return [b.texte];                                    // (04/11) déjà meublé : le choix s'est fait pendant le meuble
   // (04/11, Ahmed : « c'est à ce moment-là, quand il coupe au milieu d'une pensée pour en reprendre une autre, que les meubles avec
   // transition apparaissent ») coupé au milieu : la transition, toujours ; sinon un saut, et pas de meuble depuis 3 s

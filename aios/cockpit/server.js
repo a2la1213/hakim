@@ -3831,7 +3831,8 @@ async function lirePaquet(tour, r, i, paquet) {
     + `Garde de ces pensées les mots qui continuent ${tel ? 'ce que tu en dis' : 'ta réponse'}, dans leur ordre (tu peux en sauter) ; tu peux ajouter au plus ${liaison} petits mots de `
     + `liaison (et, mais, alors, du coup, donc) ; ou rien, si elles n'y apportent rien.\n`
     // (06/11, Ahmed) un silence ou un meuble à la place d'un morceau sauté
-    + (cr0.epissure_meubles !== false ? `À la place d'un morceau que tu sautes, tu peux laisser un silence (…) ou un petit mot d'hésitation (euh, hum, bah), comme `
+    // (06/11, 12:05, Ahmed : « enlève les blancs pour meubler, ça le fait bugger ») plus de silence (…) : seulement un petit mot d'hésitation
+    + (cr0.epissure_meubles !== false ? `À la place d'un morceau que tu sautes, tu peux laisser un petit mot d'hésitation (euh, hum, bah), jamais de points de suspension, comme `
       + `quand on cherche ses mots : ${cr0.epissure_meubles_max || 2} au plus, et seulement si ça sonne naturel.\n` : '')
     + (cr0.epissure_grammaire !== false ? `Règles de ton épissage (06/11, papa) : reconnais seul la langue de tes pensées (français, arabe, anglais) et suis sa grammaire : `
       + `en français et en anglais, sujet, verbe, complément (en anglais, l'auxiliaire et l'ordre des mots) ; en arabe, la phrase verbale (verbe, sujet, complément) `
@@ -3854,7 +3855,8 @@ async function lirePaquet(tour, r, i, paquet) {
       if (!t.trim() || parasite) return { mod, nom, ms, muet: true };            // muet (panne, délai) ou hors de son rôle : pas de voix
       const g = !/GARDE\s*:\s*rien/i.test(t) && (/GARDE\s*:\s*«\s*([^»]{1,20000}?)\s*»/i.exec(t) || /GARDE\s*:\s*(.{1,20000})$/im.exec(t));
       // (06/11) par parties préordonnées (règles de l'épissage) ; sans réglage, comme avant : une seule suite dans l'ordre de ses pensées
-      const brut = g ? g[1].trim() : '', pp = brut && cr0.epissure_grammaire !== false ? epissageParParties(brut, texte, (typeof ditRecemment !== 'undefined' ? ditRecemment : []).filter(x => Date.now() - x.t < 120000).map(x => x.texte)) : null;
+      const brut = g ? g[1].replace(/\s*(?:…|\.{3,})\s*/g, ' ').trim() : '',   // (06/11, 12:05) ses blancs (…) retirés : ils le faisaient bugger
+      pp = brut && cr0.epissure_grammaire !== false ? epissageParParties(brut, texte, (typeof ditRecemment !== 'undefined' ? ditRecemment : []).filter(x => Date.now() - x.t < 120000).map(x => x.texte)) : null;
       const garde = pp ? pp.dit : brut, e = pp ? (pp.parties ? pp.e : null) : (garde ? epissageDe(garde, texte) : null);
       const ok = !!e && e.mots.length >= 1 && e.ajoutes.length <= liaison      // « rien », ou une phrase inventée : rien de gardé
         && (!e.meubles || (cr0.epissure_meubles !== false && e.meubles.length <= (cr0.epissure_meubles_max || 2)));   // (06/11) ses meubles, comptés à part
