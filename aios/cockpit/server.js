@@ -10462,7 +10462,7 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
     // choisie seule parmi quatre ; en panne ou éteint : Whisper, comme avant (et lui seul pour le son du téléphone et l'apprentissage de l'empreinte)
     // (06/11, Ahmed : « mets-moi l'écoute qu'en français ; c'est juste la parole qui peut être en arabe » ; « sa voix peut être arabe, français ou
     // anglais, mais moi il m'écoute qu'en français avec Azure ») réglage ecoute_francais (allumé) : ta voix est reconnue en français seul
-    if (corpsReglages().ecoute_francais !== false) langue = 'fr';
+    if (corpsReglages().ecoute_francais !== false && !telephone) langue = 'fr';   // (06/11) TA voix seulement : ce que joue le téléphone garde sa langue
     if (corpsReglages().stt_azure && !telephone && apprentissageVoix <= 0) {
       // (06/11, Ahmed : « Hakim semble m'entendre mais ne répond pas sur la montre ») la montre envoie du m4a : l'oreille courte d'Azure ne lit que du
       // WAV (PCM 16 kHz) et rendait un texte vide, la montre disait « je n'ai pas compris » sans jamais lui parler ; converti d'abord (afconvert, macOS)
