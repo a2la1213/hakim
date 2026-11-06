@@ -388,7 +388,7 @@ if (require.main === module) setInterval(() => { try { const e = JSON.parse(fs.r
 const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'afida_juger', 'afida_vecu', 'afida_lire', 'afida_retirer', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'sieste_prendre', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'pistes_regler', 'ribosome_regler', 'ribosome_bilan', 'reglages_enregistres', 'spectre', 'stimuli_voir', 'stimuli_relier', 'synapses_voir', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat', 'effort_regler', 'parler_bouton', 'ribosome_boutons', 'present_continu', 'chanter', 'studio_mixer', 'studio_avis'].map(n => 'mcp__anamnese__' + n)   // (06/11) son studio d'ingé son (studio_mixer, studio_avis) ; tous ses boutons du ribosome ; son présent continu ; chanter (ACE-Step, accord d'Ahmed)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'pistes_regler', 'ribosome_regler', 'ribosome_bilan', 'reglages_enregistres', 'spectre', 'stimuli_voir', 'stimuli_relier', 'synapses_voir', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat', 'effort_regler', 'parler_bouton', 'ribosome_boutons', 'present_continu', 'chanter', 'studio_mixer', 'studio_avis', 'image_creer', 'clip_creer', 'atelier_voir'].map(n => 'mcp__anamnese__' + n)   // (06/11) son atelier visuel (image_creer, clip_creer, atelier_voir) ; son studio d'ingé son (studio_mixer, studio_avis) ; tous ses boutons du ribosome ; son présent continu ; chanter (ACE-Step, accord d'Ahmed)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -10596,6 +10596,8 @@ function requeteLocale(chemin, corps, type) {
     r.end(b);
   });
 }
+// (06/11) l'Atelier visuel (atelier.js) : ses images et ses clips, des tâches de fond ordinaires (anamnese/jarvis/atelier_visuel.py)
+const ATELIER_VISUEL = require('./atelier.js').creer({ jarvis: JARVIS, anamnese: ANAMNESE, lireCorps });
 const STUDIO = require('./studio.js').creer({ jarvis: JARVIS, anamnese: ANAMNESE, lireCorps, envoyer: requeteLocale,
   noter: (texte) => { try { fluxAjouter('studio', texte, Date.now()); } catch (_) {} } });
 
@@ -10651,7 +10653,7 @@ const VERROU = new Verrou(process.env.JARVIS_VERROU || path.join(JARVIS, 'verrou
 const COOKIE_VERROU = 'verrou';
 const PAGES = { '/': 'index.html', '/brain': 'brain.html', '/dreams': 'dreams.html', '/memory': 'memory.html', '/chat': 'chat.html',
   '/parler': 'parler.html', '/verrou': 'verrou.html', '/duel': 'duel.html', '/interieur': 'interieur.html',
-  '/code': 'code.html', '/immunite': 'immunite.html', '/cafe': 'cafe.html', '/sens': 'sens.html', '/synapses': 'synapses.html', '/telephone': 'telephone.html', '/reglages': 'reglages.html', '/studio': 'studio.html' };   // (06/11) le studio   // (04/11, 22:50) ses réglages, pour papa   // (04/11) ses synapses   // (29/10) la salle de café des agents      // (29/10) son système immunitaire, pour Ahmed                                     // (28/10) le code de Hakim : une page fermée
+  '/code': 'code.html', '/immunite': 'immunite.html', '/cafe': 'cafe.html', '/sens': 'sens.html', '/synapses': 'synapses.html', '/telephone': 'telephone.html', '/reglages': 'reglages.html', '/studio': 'studio.html', '/atelier': 'atelier.html' };   // (06/11) l'Atelier visuel   // (06/11) le studio   // (04/11, 22:50) ses réglages, pour papa   // (04/11) ses synapses   // (29/10) la salle de café des agents      // (29/10) son système immunitaire, pour Ahmed                                     // (28/10) le code de Hakim : une page fermée
 const LIBRES_VERROUILLE = new Set(['/verrou.js', '/theme.css',        // ce que la page du verrou charge
   '/sw.js', '/manifest.webmanifest', '/icone-192.png', '/icone-512.png']);   // l'appli et ses notifications (sans secret)
 const cookieSession = (s) => `${COOKIE_VERROU}=${s}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(DUREE_SESSION / 1000)}`;
@@ -12567,6 +12569,11 @@ async function traiter(req, res) {
     if (q.geste !== 'appliquer') { try { ecrireAtomique(FICHIER, j(l)); } catch (_) { return repondre(500, { erreur: 'pas enregistré' }); } }
     auditer(`reglages:${q.geste}`, req, distantReq, { nom });
     return repondre(200, { profils: liste() });
+  }
+  if (p.startsWith('/api/atelier/')) {                       // (06/11) l'Atelier visuel : ses images, ses clips, les créer
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    if (req.method === 'POST') auditer(`atelier:${p.slice(13)}`, req, distantReq, {});
+    return ATELIER_VISUEL.route(req, res, p).catch(() => { if (!res.headersSent) { res.writeHead(500); res.end(j({ erreur: 'atelier' })); } });
   }
   if (p.startsWith('/api/studio/')) {                        // (06/11) le studio : ses sons, tes prises, le mix, lui faire écouter
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }

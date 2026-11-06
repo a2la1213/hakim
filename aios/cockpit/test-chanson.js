@@ -28,5 +28,5 @@ test('écouter : chargé derrière le jeton (blobPiece), typé en son, joué dan
 });
 
 test('chanter fait partie de ses outils permis', () => {
-  assert.match(fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8'), /'present_continu', 'chanter', 'studio_mixer', 'studio_avis'\]\.map\(n => 'mcp__anamnese__' \+ n\)/);
+  assert.match(fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8'), /'present_continu', 'chanter', 'studio_mixer', 'studio_avis', 'image_creer', 'clip_creer', 'atelier_voir'\]\.map\(n => 'mcp__anamnese__' \+ n\)/);
 });

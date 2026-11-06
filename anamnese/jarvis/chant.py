@@ -286,6 +286,10 @@ def lancer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune=F
         chants = [e for e in en_cours if e.get("chanson")]
         if chants:
             raise Refus(f"je compose déjà « {chants[0]['chanson'].get('titre')} » ({chants[0]['id']}) : une chanson à la fois")
+        visuels = [e for e in en_cours if e.get("visuel")]          # (06/11) l'Atelier visuel : une image, un clip
+        if visuels:
+            raise Refus(f"l'atelier crée « {visuels[0]['visuel'].get('titre')} » ({visuels[0]['id']}) : attends qu'il finisse "
+                        "(une grosse tâche à la fois)")
         if demarrer is None and _studio_occupe():
             raise Refus("le studio calcule un mix ou une instru : attends qu'il finisse (une grosse tâche à la fois)")
         if len(en_cours) >= MAX_TACHES:

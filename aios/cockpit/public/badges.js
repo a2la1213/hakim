@@ -9,7 +9,7 @@
    le téléphone, lui, a sa notification à lui, par l'appli). */
 (() => {
   const PAGES = { cafe: '/cafe', immunite: '/immunite', parler: '/parler', sens: '/sens', code: '/code' };
-  const MENU = [['dashboard', '/', 'Dashboard'], ['parler', '/parler', 'Parler'], ['reglages', '/reglages', 'Réglages'], ['sens', '/sens', 'Sens'], ['telephone', '/telephone', 'Téléphone'], ['studio', '/studio', 'Studio'], ['immunite', '/immunite', 'Immunité'], ['synapses', '/synapses', 'Synapses'],
+  const MENU = [['dashboard', '/', 'Dashboard'], ['parler', '/parler', 'Parler'], ['reglages', '/reglages', 'Réglages'], ['sens', '/sens', 'Sens'], ['telephone', '/telephone', 'Téléphone'], ['studio', '/studio', 'Studio'], ['atelier', '/atelier', 'Atelier'], ['immunite', '/immunite', 'Immunité'], ['synapses', '/synapses', 'Synapses'],
     ['cafe', '/cafe', 'Café'], ['code', '/code', 'Code'], ['interieur', '/interieur', 'Intérieur'], ['memory', '/memory', 'Mémoire'],
     ['brain', '/brain', 'Cerveau 3D'], ['dreams', '/dreams', 'Labo des rêves'], ['chat', '/chat', 'Chat']];
   const NOMS = Object.fromEntries(MENU.map(([k, , l]) => [k, l]));

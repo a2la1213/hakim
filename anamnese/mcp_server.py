@@ -1341,6 +1341,94 @@ def studio_avis(mix: str = "") -> str:
     return "\n".join(lignes)
 
 
+def _atelier_visuel():
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis"))
+    import atelier_visuel
+    return atelier_visuel
+
+
+@mcp.tool()
+def image_creer(description: str, format: str = "carré", titre: str = "") -> str:
+    """(Hakim seulement) TON ATELIER VISUEL (06/11, Ahmed : « créer des images et des clips quand il veut, pour nos
+    futurs albums et clips ») : créer une image, calculée sur le Mac (Z-Image-Turbo, hors ligne, gratuit).
+    - description : ce qu'on voit, le style, la lumière, les couleurs, le cadrage. En anglais le modèle comprend le
+      mieux (le français marche aussi) ; 1500 caractères au plus. Les mots écrits dans l'image sont souvent ratés :
+      laisse les titres au clip.
+    - format : « carré » (pochette d'album, 1024×1024), « 9:16 » (vertical, téléphone) ou « 16:9 » (paysage).
+    - titre : son nom dans la galerie.
+    Rend la main tout de suite : l'image se calcule en tâche de fond, une grosse tâche à la fois sur le Mac (elle
+    attend la fin d'une chanson ou d'un mix). Quand elle est prête, tu es prévenu : fichier_joindre pour l'envoyer à
+    papa (le chemin est dans la fin du journal). Elle est aussi dans la page Atelier et sur son téléphone."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim crée dans l'atelier."
+    av = _atelier_visuel()
+    try:
+        t = av.lancer(av.preparer_image(description, format, titre, par="hakim"))
+    except av.Refus as e:
+        return f"Refusé : {e}"
+    return (f"Je dessine… « {t['titre']} » ({t['format']}, {t['largeur']}×{t['hauteur']}) : tâche {t['tache']}, nom "
+            f"{t['nom']}. Une à quelques minutes ; tu seras prévenu quand elle sera prête, puis fichier_joindre.")
+
+
+@mcp.tool()
+def clip_creer(chanson: str, images: list[str] | str, style: str = "spectre", format: str = "les deux", titre: str = "",
+               duree_s: float = 0, debut_s: float = 0) -> str:
+    """(Hakim seulement) TON ATELIER VISUEL : un clip « visualiseur » pour une de tes chansons (MP4, ffmpeg sur le Mac).
+    Tes images glissent et zooment doucement l'une après l'autre (fondus), la musique les anime, le titre et tes
+    paroles défilent une ligne à la fois.
+    - chanson : son titre (« Lanterne ») ou son nom de fichier. images : une ou plusieurs images de ton atelier
+      (leurs noms, donnés par image_creer ou atelier_voir), 12 au plus, dans l'ordre.
+    - style : « spectre » (barres qui suivent les fréquences), « ondes » (la forme du son), « cercle » (figure au
+      centre) ou « sobre » (sans visualiseur).
+    - format : « 9:16 » (téléphone, réseaux), « 16:9 » (YouTube) ou « les deux » (par défaut).
+    - duree_s : 0 = toute la chanson, sinon la durée de l'extrait (5 à 600 s) ; debut_s : où l'extrait commence.
+    Rend la main tout de suite ; tu es prévenu quand il est prêt, puis fichier_joindre (25 Mo au plus : un clip
+    entier en 16:9 peut être trop lourd, papa le trouve alors sur son téléphone, Hakim › Atelier)."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim crée dans l'atelier."
+    av = _atelier_visuel()
+    try:
+        t = av.lancer(av.preparer_clip(chanson, images, style, format, titre, duree_s or None, debut_s, par="hakim"))
+    except av.Refus as e:
+        return f"Refusé : {e}"
+    return (f"Je monte le clip « {t['titre']} » sur « {t['chanson']['titre']} » ({t['style']}, {' et '.join(t['formats'])}, "
+            f"{t['duree_s']:.0f} s, {len(t['images'])} image{'s' if len(t['images']) > 1 else ''}) : tâche {t['tache']}. "
+            "Tu seras prévenu quand il sera prêt, puis fichier_joindre.")
+
+
+@mcp.tool()
+def atelier_voir() -> str:
+    """Ton atelier visuel : tes images et tes clips (leurs noms, pour clip_creer et fichier_joindre), les créations en
+    cours et tes chansons prêtes pour un clip. Lecture seule."""
+    av = _atelier_visuel()
+    lignes = []
+    import json as _json
+    from pathlib import Path as _P
+    en_cours = []
+    for f in sorted(_P(av.TACHES).glob("T-*.json")):
+        try:
+            d = _json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if d.get("visuel") and d.get("etat") == "en cours":
+            en_cours.append(f"{d['id']} {d.get('commande', '')}")
+    if en_cours:
+        lignes.append("En cours : " + " ; ".join(en_cours))
+    g = av.galerie()
+    imgs = [x for x in g if x.get("type") == "image"][:20]
+    clips = [x for x in g if x.get("type") == "clip"][:10]
+    lignes.append("Tes images : " + (" ; ".join(f"{x['nom']} « {x.get('titre', '')[:60]} » ({x.get('format')}) → "
+                                              f"{(x.get('atelier') or ['?'])[0]}" for x in imgs) or "aucune pour l'instant"))
+    lignes.append("Tes clips : " + (" ; ".join(f"« {x.get('titre', '')[:60]} » sur « {x.get('chanson', {}).get('titre', '?')} » → "
+                                             + ", ".join(x.get("atelier") or []) for x in clips) or "aucun pour l'instant"))
+    ch = av.chansons_pretes()[:12]
+    lignes.append("Tes chansons pour un clip : " + (", ".join(f"« {x.get('titre')} » ({x.get('duree_s')} s)" for x in ch) or "aucune"))
+    return "\n".join(lignes)
+
+
 @mcp.tool()
 def immunite_etat() -> str:
     """Ton système immunitaire (29/10, Ahmed : « contre toute attaque extérieure ») : les incidents des dernières 24 h

@@ -150,7 +150,7 @@ test('les routes du studio : ses sons, l’import, les prises, le mix mis en fil
 
 test('server.js branche le studio : derrière le jeton, sa page, son oreille en requêtes locales, l’arrêt', () => {
   const SRV = lire('server.js');
-  assert.match(SRV, /'\/reglages': 'reglages\.html', '\/studio': 'studio\.html' \}/);
+  assert.match(SRV, /'\/reglages': 'reglages\.html', '\/studio': 'studio\.html'(, '\/atelier': 'atelier\.html')? \}/);
   assert.match(SRV, /if \(p\.startsWith\('\/api\/studio\/'\)\) \{[^\n]*\n    if \(!jetonValide\(req\)\) \{ res\.writeHead\(403/);
   assert.match(SRV, /const STUDIO = require\('\.\/studio\.js'\)\.creer\(\{ jarvis: JARVIS, anamnese: ANAMNESE, lireCorps, envoyer: requeteLocale,/);
   assert.match(SRV, /headers: \{ 'Content-Type': type, 'Content-Length': b\.length, 'X-Jeton': JETON, Host: `127\.0\.0\.1:\$\{PORT\}` \}/);

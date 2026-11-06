@@ -420,10 +420,11 @@ def _travaux(studio=None):
 
 
 def chant_en_cours(taches=None):
-    """Une chanson d'ACE-Step se calcule-t-elle ? (12 à 15 Go : le studio attend)"""
+    """Une chanson d'ACE-Step se calcule-t-elle ? (12 à 15 Go : le studio attend) (06/11) Une création de l'Atelier
+    visuel (atelier_visuel.py : une image, un clip) aussi : un gros calcul à la fois."""
     for p in Path(taches or TACHES).glob("T-*.json"):
         d = _lire(p, {}) or {}
-        if d.get("chanson") and d.get("etat") == "en cours" and (not d.get("superviseur") or _vivant(d["superviseur"])):
+        if (d.get("chanson") or d.get("visuel")) and d.get("etat") == "en cours" and (not d.get("superviseur") or _vivant(d["superviseur"])):
             return d
     return None
 
