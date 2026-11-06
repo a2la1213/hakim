@@ -36,7 +36,7 @@ def test_borner_et_cles():
     assert ri.borner("choix_ms", 99999) == 6000 and ri.borner("stringence", 0) == 1 and ri.borner("relais_pct", 5) == 10
     assert ri.borner("sauter_passe_s", 2.26) == 2.5
     assert ri.borner("inconnu", 3) is None
-    assert set(ri.CLES_CORPS) == {"sauter_suite_ms", "sauter_passe_s", "lire_apres_silence_ms"}
+    assert set(ri.CLES_CORPS) == {"sauter_suite_ms", "sauter_passe_s", "lire_apres_silence_ms", "epissure_meubles_max"}   # (06/11) le sien aussi
 
 
 def _maison(tmp_path, corps=None, rib=None, profils=None, ajustements=(), mode=None):
@@ -158,3 +158,28 @@ def test_il_enregistre_modifie_applique_et_liste_ses_reglages(tmp_path, monkeypa
 def test_papa_peut_lever_sa_priorite(tmp_path):
     j = _maison(tmp_path, corps={"papa_passe_avant": False}, ajustements=[{"ts": T - 60_000, "par": "papa", "cles": ["choix_ms"]}])
     assert ri.ajuster(j, {"choix_ms": 2000}, "essai", maintenant=T)["fait"] == {"choix_ms": [1800, 2000]}
+
+
+# (06/11, Ahmed : « lui donner tous les boutons ribosomiaux dans les réglages du ribosome intelligent »)
+def test_boutons_du_ribosome(tmp_path):
+    from jarvis import ribosome_intelligent as ri
+    import json as _j
+    (tmp_path / "corps-reglages.json").write_text(_j.dumps({"ribosome_intelligent": True, "parole_sans_stop": True}), encoding="utf-8")
+    r = ri.ajuster(tmp_path, {"parole_sans_stop": False, "premiere_directe": True, "epissure_meubles_max": 9}, "essai", maintenant=10**13)
+    assert r["fait"]["parole_sans_stop"] == [True, False]
+    corps = _j.loads((tmp_path / "corps-reglages.json").read_text(encoding="utf-8"))
+    rib = _j.loads((tmp_path / "ribosome-reglage.json").read_text(encoding="utf-8"))
+    assert corps["parole_sans_stop"] is False and corps["epissure_meubles_max"] == 6 and rib["premiere_directe"] is True
+    # ceux de papa ne sont pas à lui ; une valeur qui n'est pas un oui/non est refusée
+    r = ri.ajuster(tmp_path, {"ribosome_intelligent": False, "papa_passe_avant": False, "tunnel": "oui"}, "essai", maintenant=10**13)
+    assert set(r["refuse"]) == {"ribosome_intelligent", "papa_passe_avant", "tunnel"}
+    assert _j.loads((tmp_path / "corps-reglages.json").read_text(encoding="utf-8"))["ribosome_intelligent"] is True
+
+
+def test_boutons_papa_passe_avant(tmp_path):
+    from jarvis import ribosome_intelligent as ri
+    import json as _j
+    (tmp_path / "corps-reglages.json").write_text(_j.dumps({}), encoding="utf-8")
+    (tmp_path / "ribosome-ajustements.jsonl").write_text(_j.dumps({"ts": 10**13 - 60_000, "par": "papa", "cles": ["tunnel"]}) + "\n", encoding="utf-8")
+    r = ri.ajuster(tmp_path, {"tunnel": False}, "essai", maintenant=10**13)
+    assert "tunnel" in r["refuse"]

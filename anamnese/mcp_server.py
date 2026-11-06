@@ -788,6 +788,53 @@ def ribosome_regler(stringence: int = 0, vitesse: str = "", choix_ms: int = -1, 
 
 
 @mcp.tool()
+def ribosome_boutons(bouton: str = "", allume: bool | None = None, epissure_meubles_max: int = 0, raison: str = "") -> str:
+    """(06/11, papa : « lui donner tous les boutons ribosomiaux dans les réglages du ribosome intelligent ») Les interrupteurs de ton
+    ribosome, les mêmes que ceux de papa dans Réglages › Son ribosome. Sans rien : la liste, allumés ou éteints. Avec bouton et allume :
+    tu le changes (dis toujours ta raison). Demande « Ribosome intelligent » allumé par papa ; ce que papa a réglé il y a moins de 30 min
+    passe avant toi. Les boutons :
+    parole_sans_stop (ta voix seulement quand le Stop est éteint), epissure_grammaire (parties complètes, préordonnées, grammaire de chaque
+    langue), pretraitement_parole (la parole de papa prétraitée : portions, langue, sujet, hors sujet zappé), ecoute_francais (papa reconnu
+    en français seul), epissure_meubles (silences et « euh » à la place d'un morceau sauté ; leur nombre : epissure_meubles_max, 1 à 6),
+    meubles_entre (« euh » entre tes morceaux), tunnel (tunnel de parole), un_par_un (morceaux un à un), premiere_directe (ta première
+    pensée dite tout de suite), reponse_directe (ta réponse écrite toujours dite), parole_libre (plus de plafond à tes épissures),
+    fenetre_partagee, tournesol, economie (mode économie), pensee_en_boucle, boucle_ribosomes, voix_par_appareil, voix_azure, stt_azure.
+    Change un bouton à la fois, puis regarde ribosome_bilan."""
+    from jarvis import ribosome_intelligent as ri
+    j = Path.home() / "AIOS" / "jarvis"
+    try:
+        corps = json.loads((j / "corps-reglages.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        corps = {}
+    try:
+        rib = json.loads((j / "ribosome-reglage.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        rib = {}
+    changements = {}
+    if bouton:
+        if bouton not in ri.BOUTONS:
+            return f"Bouton inconnu : « {bouton} ». Les tiens : {', '.join(ri.BOUTONS)}."
+        if allume is None:
+            return "Dis allume=true ou allume=false."
+        changements[bouton] = bool(allume)
+    if epissure_meubles_max:
+        changements["epissure_meubles_max"] = epissure_meubles_max
+    if not changements:
+        etat = lambda k: (rib if k in ri.BOUTONS_RIBOSOME else corps).get(k)
+        return "Tes boutons : " + " · ".join(f"{k} {'allumé' if etat(k) else 'éteint'}" for k in ri.BOUTONS) \
+            + f" · epissure_meubles_max {corps.get('epissure_meubles_max', 2)}."
+    res = ri.ajuster(j, changements, raison)
+    if res["eteint"]:
+        return "Pas changé : papa n'a pas allumé « Ribosome intelligent »."
+    out = []
+    if res["fait"]:
+        out.append("Changé : " + ", ".join(f"{k} {a} → {b}" for k, (a, b) in res["fait"].items()) + ".")
+    if res["refuse"]:
+        out.append("Pas changé : " + ", ".join(f"{k} ({p})" for k, p in res["refuse"].items()) + ".")
+    return " ".join(out) or "Déjà comme ça."
+
+
+@mcp.tool()
 def reglages_enregistres(geste: str = "lister", nom: str = "", choix_ms: int = -1, stringence: int = 0, plafond_mots: int = 0,
                          plafond_paquets: int = 0, plafond_silence_s: int = 0, lecteur_max: int = 0, contexte: int = 0,
                          relais_ribosomes: int = 0, relais_pct: int = 0, sauter_suite_ms: int = -1, sauter_passe_s: float = 0,

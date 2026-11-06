@@ -17,7 +17,15 @@ from pathlib import Path
 BORNES = {"choix_ms": (0, 6000, 1), "stringence": (1, 5, 1), "plafond_mots": (5, 400, 1), "plafond_paquets": (1, 100, 1),
           "plafond_silence_s": (5, 600, 1), "lecteur_max": (1, 25, 1), "contexte": (100, 3000, 1), "relais_ribosomes": (1, 8, 1),
           "relais_pct": (10, 100, 1), "sauter_suite_ms": (300, 5000, 1), "sauter_passe_s": (1, 15, 0.5), "lire_apres_silence_ms": (0, 5000, 1)}
-CLES_CORPS = ("sauter_suite_ms", "sauter_passe_s", "lire_apres_silence_ms")
+BORNES["epissure_meubles_max"] = (1, 6, 1)
+CLES_CORPS = ("sauter_suite_ms", "sauter_passe_s", "lire_apres_silence_ms", "epissure_meubles_max")
+# (06/11, Ahmed : « lui donner tous les boutons ribosomiaux dans les réglages du ribosome intelligent ») ses interrupteurs de la famille
+# « Son ribosome » de la page Réglages, à lui aussi ; sauf « Ribosome intelligent » et « Tes réglages passent avant lui » : ce sont ceux de papa
+BOUTONS_CORPS = ("voix_par_appareil", "economie", "fenetre_partagee", "tournesol", "un_par_un", "meubles_entre", "voix_azure", "stt_azure",
+                 "reponse_directe", "tunnel", "ecoute_francais", "parole_sans_stop", "pretraitement_parole", "epissure_grammaire",
+                 "epissure_meubles", "parole_libre", "pensee_en_boucle", "boucle_ribosomes")
+BOUTONS_RIBOSOME = ("premiere_directe",)
+BOUTONS = BOUTONS_CORPS + BOUTONS_RIBOSOME
 PAPA_PASSE_AVANT_MS = 30 * 60_000
 FENETRE_EFFET_MS = 15 * 60_000
 
@@ -114,8 +122,9 @@ def ajuster(dossier, changements, raison, maintenant=None):
             for k in a.get("cles") or []:
                 papa[k] = max(papa.get(k, 0), int(a.get("ts") or 0))
     fait, refuse = {}, {}
+    corps_k = lambda k: k in CLES_CORPS or k in BOUTONS_CORPS
     for k, v in (changements or {}).items():
-        b = borner(k, v)
+        b = (v if isinstance(v, bool) else None) if k in BOUTONS else borner(k, v)
         if b is None:
             refuse[k] = "inconnu"
             continue
@@ -123,17 +132,17 @@ def ajuster(dossier, changements, raison, maintenant=None):
         if corps.get("papa_passe_avant") is not False and maintenant - papa.get(k, 0) < PAPA_PASSE_AVANT_MS:
             refuse[k] = "papa l'a réglé il y a moins de 30 min"
             continue
-        cible = corps if k in CLES_CORPS else rib
+        cible = corps if corps_k(k) else rib
         avant = cible.get(k)
         if avant == b:
             continue
         cible[k] = b
         fait[k] = [avant, b]
     if fait:
-        if any(k not in CLES_CORPS for k in fait):
+        if any(not corps_k(k) for k in fait):
             rib.update({"ts": maintenant / 1000, "par": "hakim (ribosome intelligent)"})
             _ecrire(d / "ribosome-reglage.json", rib)
-        if any(k in CLES_CORPS for k in fait):
+        if any(corps_k(k) for k in fait):
             _ecrire(d / "corps-reglages.json", corps)
         mode = (_lire(d / "mode-courant.json", {}) or {}).get("profil")
         profils = _lire(d / "reglages-profils.json", None)
@@ -141,7 +150,7 @@ def ajuster(dossier, changements, raison, maintenant=None):
             for p in profils:
                 if isinstance(p, dict) and p.get("nom") == mode:
                     for k, (_, b) in fait.items():
-                        p.setdefault("corps" if k in CLES_CORPS else "ribosome", {})[k] = b
+                        p.setdefault("corps" if corps_k(k) else "ribosome", {})[k] = b
                     p["ts"] = maintenant
             _ecrire(d / "reglages-profils.json", profils)
         with open(d / "ribosome-ajustements.jsonl", "a", encoding="utf-8") as f:
