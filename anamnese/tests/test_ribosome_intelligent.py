@@ -36,7 +36,7 @@ def test_borner_et_cles():
     assert ri.borner("choix_ms", 99999) == 6000 and ri.borner("stringence", 0) == 1 and ri.borner("relais_pct", 5) == 10
     assert ri.borner("sauter_passe_s", 2.26) == 2.5
     assert ri.borner("inconnu", 3) is None
-    assert set(ri.CLES_CORPS) == {"sauter_suite_ms", "sauter_passe_s", "lire_apres_silence_ms", "epissure_meubles_max"}   # (06/11) le sien aussi
+    assert set(ri.CLES_CORPS) == {"sauter_suite_ms", "sauter_passe_s", "lire_apres_silence_ms", "epissure_meubles_max", "chunk_papa_ms"}   # (06/11) les siens aussi
 
 
 def _maison(tmp_path, corps=None, rib=None, profils=None, ajustements=(), mode=None):
@@ -183,3 +183,12 @@ def test_boutons_papa_passe_avant(tmp_path):
     (tmp_path / "ribosome-ajustements.jsonl").write_text(_j.dumps({"ts": 10**13 - 60_000, "par": "papa", "cles": ["tunnel"]}) + "\n", encoding="utf-8")
     r = ri.ajuster(tmp_path, {"tunnel": False}, "essai", maintenant=10**13)
     assert "tunnel" in r["refuse"]
+
+
+def test_chunk_papa_ms(tmp_path):
+    from jarvis import ribosome_intelligent as ri
+    import json as _j
+    (tmp_path / "corps-reglages.json").write_text(_j.dumps({}), encoding="utf-8")
+    r = ri.ajuster(tmp_path, {"chunk_papa_ms": 50}, "ses phrases coupées", maintenant=10**13)
+    assert r["fait"]["chunk_papa_ms"] == [None, 200]
+    assert _j.loads((tmp_path / "corps-reglages.json").read_text(encoding="utf-8"))["chunk_papa_ms"] == 200

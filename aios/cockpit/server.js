@@ -7064,6 +7064,9 @@ function corpsReglages() {
     sauter_passe: r.sauter_passe !== false, sauter_passe_s: Number.isFinite(Number(r.sauter_passe_s)) && r.sauter_passe_s != null ? Math.max(1, Math.min(15, Number(r.sauter_passe_s))) : 3,
     // (05/11, Ahmed : « en combien de temps après mon silence le chunk suivant est lu ») 0 : sans attendre, par défaut
     lire_apres_silence_ms: Number.isFinite(Number(r.lire_apres_silence_ms)) && r.lire_apres_silence_ms != null ? Math.max(0, Math.min(5000, Math.round(Number(r.lire_apres_silence_ms)))) : 0,
+    // (06/11, Ahmed : « que mes paroles ne soient pas coupées trop tôt : attendre en moyenne 0,6 s avant de créer un chunk de ma parole ; paramétrable
+    // dans le ribosome, et il doit pouvoir y accéder tout comme moi ») le blanc de ta voix qui coupe un morceau de ta parole
+    chunk_papa_ms: Number.isFinite(Number(r.chunk_papa_ms)) && r.chunk_papa_ms != null ? Math.max(200, Math.min(3000, Math.round(Number(r.chunk_papa_ms)))) : 600,
     profils_auto: r.profils_auto !== false,   // (05/11) ses réglages suivent son mode (Mini Hakim, Hakim, Super Hakim)
     ribosome_intelligent: r.ribosome_intelligent !== false,
     papa_passe_avant: r.papa_passe_avant !== false,   // (05/11) ce que papa règle passe avant Hakim pendant 30 min
@@ -12431,7 +12434,8 @@ async function traiter(req, res) {
       if (typeof q.profils_auto === 'boolean') r.profils_auto = q.profils_auto;   // (05/11) ses réglages suivent son mode
       if (typeof q.ribosome_intelligent === 'boolean') r.ribosome_intelligent = q.ribosome_intelligent;   // (05/11) son ribosome intelligent
       // (05/11) ce que papa règle de sa parole passe avant Hakim pendant 30 min (jarvis/ribosome_intelligent.py)
-      const parole = ['sauter_suite_ms', 'sauter_passe_s', 'lire_apres_silence_ms'].filter(k => q[k] != null);
+      const parole = ['sauter_suite_ms', 'sauter_passe_s', 'lire_apres_silence_ms', 'chunk_papa_ms', 'epissure_meubles_max'].filter(k => q[k] != null);
+      if (q.chunk_papa_ms != null && Number.isFinite(Number(q.chunk_papa_ms))) r.chunk_papa_ms = Math.max(200, Math.min(3000, Math.round(Number(q.chunk_papa_ms))));   // (06/11)
       if (parole.length) noterAjustementPapa(parole);
       if (q.lire_apres_silence_ms != null && Number.isFinite(Number(q.lire_apres_silence_ms))) r.lire_apres_silence_ms = Math.max(0, Math.min(5000, Math.round(Number(q.lire_apres_silence_ms))));
       if (q.sauter_passe_s != null && Number.isFinite(Number(q.sauter_passe_s))) r.sauter_passe_s = Math.max(1, Math.min(15, Math.round(Number(q.sauter_passe_s) * 2) / 2));

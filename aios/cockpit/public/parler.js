@@ -4186,6 +4186,9 @@ const patienceConversation = () => (Number(etat.reglages.patienceConversation) >
 // (04/11, 14:25, Ahmed : « le premier morceau va dans le ribosome, les suivants se collent à celui qui est en train d'être épissé, jusqu'à
 // ce qu'il n'en reçoive plus : son start, c'est ma voix ; son stop, c'est mon 1 s de silence ») avec l'épissage, ton tour se ferme à 1 s
 // de silence (tes morceaux se coupent toujours à ta respiration, patienceConversation)
+// (06/11, Ahmed : « que mes paroles ne soient pas coupées trop tôt : en moyenne 0,6 s avant de créer un chunk ; paramétrable dans le ribosome, pour lui
+// comme pour moi ») le blanc de ta voix qui coupe un morceau de ta parole (et, avec le tri des morceaux, celui qui les assemble) : chunk_papa_ms
+const blancDeMorceau = () => { const v = typeof reglagesCorps !== 'undefined' && reglagesCorps ? Number(reglagesCorps.chunk_papa_ms) : NaN; return Number.isFinite(v) && v >= 200 ? Math.min(3000, v) : 600; };
 const finDeTourConversation = () => (typeof voixEpissee === 'function' && voixEpissee() ? Math.max(1000, patienceConversation()) : patienceConversation());
 
 /* (30/10, 23:05, Ahmed : « il y a plusieurs voix qui sortent quand il parle ») deux onglets en Conversation sur le Mac
@@ -4218,7 +4221,7 @@ async function basculerConversation() {
     conv.capteur = await Conversation.demarrer({
       ctx: actx,
       patienceMs: finDeTourConversation,                // (14:25) avec l'épissage, 1 s : son codon stop
-      pauseMs: patienceConversation,                     // (04/11, 11:03) la respiration qui coupe un morceau : le même délai
+      pauseMs: blancDeMorceau,                           // (06/11) le blanc qui coupe un morceau de ta parole : chunk_papa_ms (0,6 s)
       jarvisParle: () => lecteur.actif || Date.now() < motDirectJusqua,
       sourd: () => Date.now() < sonJusqua,              // (30/10, Bumblebee) son bout de musique n'est pas une voix
       dernierBattement: () => dernierBattementCoeur,
@@ -4622,7 +4625,7 @@ setInterval(reprendreTranscription, 400);
    blanc, UN morceau : le plus prioritaire (1 : on lui parle, une question, une demande ; 2 : le sujet le touche ; 3 : pour suivre),
    le plus ancien d'abord à priorité égale ; un morceau de priorité 1 déjà classé part sans attendre les autres jugements ; les
    autres attendent le blanc suivant, avec les nouveaux, et se périment au bout de 2 min. */
-const VIDE_MS = 500, MORCEAUX_MAX = 8, MORCEAU_ATTENTE_MS = 8000, PRIORITE_ATTENTE_MS = 2000, MORCEAU_PERIME_MS = 120000;
+const VIDE_MS = 600, MORCEAUX_MAX = 8, MORCEAU_ATTENTE_MS = 8000, PRIORITE_ATTENTE_MS = 2000, MORCEAU_PERIME_MS = 120000;
 // (09:25, Ahmed : « l'option pour quand du bruit le coupe, en conversation à plusieurs ; il doit pouvoir l'activer ou pas ») éteint
 // par défaut : Hakim l'allume ([[morceaux: oui]]) et l'éteint lui-même ; papa aussi, page SENS
 const trierMorceaux = () => typeof reglagesCorps !== 'undefined' && reglagesCorps.trier_morceaux === true;
@@ -4696,7 +4699,7 @@ function prochainMorceau(conv) {
   return { texte: (m.verdict && m.verdict.texte) || m.texte, priorite: priorite(m), restent: conv.morceaux.length, infos: m.infos };
 }
 const prioriteUnClassee = (c) => (c.morceaux || []).some(m => m.etat === 'transcrit' && m.verdict && m.verdict.garder && priorite(m) === 1);
-const silenceDeTaVoix = (cap) => !cap || !cap.enParole || Date.now() - (Number(cap.derniereVoix) || 0) >= VIDE_MS;
+const silenceDeTaVoix = (cap) => !cap || !cap.enParole || Date.now() - (Number(cap.derniereVoix) || 0) >= (typeof blancDeMorceau === 'function' ? blancDeMorceau() : VIDE_MS);
 async function assemblerMorceaux() {
   const c = etat.conversation;
   if (!c || !(c.morceaux || []).length || c.assemblage || c.enAttente || transcriptionEnPause()) return false;

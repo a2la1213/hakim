@@ -17,7 +17,8 @@ test('à la page : chaque attente de ta pause suit le délai de la Conversation'
   assert.match(a, /silenceMs < Math\.min\(SILENCE_ANTICIPE_MS, patienceConversation\(\)\)/);
   assert.match(a, /const seuil = Math\.min\(patienceConversation\(\), s && s\.pret && s\.rebond \? s\.rebond \* 1000 : seuilRythme\);/);
   assert.match(prendre(page, 'rebondirDernierePensee'), /const seuil = Math\.min\(patienceConversation\(\), \(typeof rythmeVoix === 'function' \? rythmeVoix\('pause_derniere_pensee', 1\) : 1\) \* 1000\);/);
-  assert.match(page, /patienceMs: finDeTourConversation,[^\n]*\n\s+pauseMs: patienceConversation,/, 'la respiration qui coupe un morceau');
+  assert.match(page, /patienceMs: finDeTourConversation,[^\n]*\n\s+pauseMs: blancDeMorceau,/, 'la respiration qui coupe un morceau : son propre réglage depuis le 06/11 (chunk_papa_ms, 0,6 s)');
+  assert.match(page, /const blancDeMorceau = \(\) => \{[^\n]*chunk_papa_ms[^\n]*: 600; \};/);
   assert.match(page, /pensees_dites: dites, delai_ms: etat\.conversation \? patienceConversation\(\) : null,/, 'le délai part au Mac avec ton tour');
 });
 

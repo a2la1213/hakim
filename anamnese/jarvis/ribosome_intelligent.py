@@ -18,7 +18,8 @@ BORNES = {"choix_ms": (0, 6000, 1), "stringence": (1, 5, 1), "plafond_mots": (5,
           "plafond_silence_s": (5, 600, 1), "lecteur_max": (1, 25, 1), "contexte": (100, 3000, 1), "relais_ribosomes": (1, 8, 1),
           "relais_pct": (10, 100, 1), "sauter_suite_ms": (300, 5000, 1), "sauter_passe_s": (1, 15, 0.5), "lire_apres_silence_ms": (0, 5000, 1)}
 BORNES["epissure_meubles_max"] = (1, 6, 1)
-CLES_CORPS = ("sauter_suite_ms", "sauter_passe_s", "lire_apres_silence_ms", "epissure_meubles_max")
+BORNES["chunk_papa_ms"] = (200, 3000, 1)   # (06/11) le blanc de la voix de papa qui coupe un morceau de sa parole
+CLES_CORPS = ("sauter_suite_ms", "sauter_passe_s", "lire_apres_silence_ms", "epissure_meubles_max", "chunk_papa_ms")
 # (06/11, Ahmed : « lui donner tous les boutons ribosomiaux dans les réglages du ribosome intelligent ») ses interrupteurs de la famille
 # « Son ribosome » de la page Réglages, à lui aussi ; sauf « Ribosome intelligent » et « Tes réglages passent avant lui » : ce sont ceux de papa
 BOUTONS_CORPS = ("voix_par_appareil", "economie", "fenetre_partagee", "tournesol", "un_par_un", "meubles_entre", "voix_azure", "stt_azure",
