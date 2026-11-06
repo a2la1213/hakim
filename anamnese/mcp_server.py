@@ -801,7 +801,7 @@ def ribosome_boutons(bouton: str = "", allume: bool | None = None, epissure_meub
     ribosome, les mêmes que ceux de papa dans Réglages › Son ribosome. Sans rien : la liste, allumés ou éteints. Avec bouton et allume :
     tu le changes (dis toujours ta raison). Demande « Ribosome intelligent » allumé par papa ; ce que papa a réglé il y a moins de 30 min
     passe avant toi. Les boutons :
-    parole_sans_stop (ta voix seulement quand le Stop est éteint), epissure_grammaire (parties complètes, préordonnées, grammaire de chaque
+    parole_sans_stop (ta voix seulement quand le Stop est éteint), lire_reponse_entiere (ta réponse écrite lue en entier après chaque message de papa), epissure_grammaire (parties complètes, préordonnées, grammaire de chaque
     langue), pretraitement_parole (la parole de papa prétraitée : portions, langue, sujet, hors sujet zappé), ecoute_francais (papa reconnu
     en français seul), epissure_meubles (silences et « euh » à la place d'un morceau sauté ; leur nombre : epissure_meubles_max, 1 à 6),
     meubles_entre (« euh » entre tes morceaux), tunnel (tunnel de parole), un_par_un (morceaux un à un), premiere_directe (ta première

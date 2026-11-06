@@ -5564,7 +5564,8 @@ async function routeJarvis(req, res, distantReq = false) {
   // être épissé, écrit et prononcé ») ses pensées de piste, nées de tes premiers mots, sont ce premier output ; sa réponse consciente
   // (écrite) n'est épissée et dite que si aucune pensée n'a démarré ce tour (un message écrit, par exemple)
   // (06/11) « parole sans Stop » : sa réponse consciente (le Stop allumé) n'est plus épissée pour sa voix
-  const epissageReponse = corpsReglages().epissage !== false && corpsReglages().parole_sans_stop === false && Number(q && q.delai_ms) > 0 && !premierOutput
+  // (06/11) lue en entier par la page (lire_reponse_entiere) : pas épissée en plus, sinon il la dirait deux fois
+  const epissageReponse = corpsReglages().epissage !== false && corpsReglages().parole_sans_stop === false && corpsReglages().lire_reponse_entiere === false && Number(q && q.delai_ms) > 0 && !premierOutput
     ? ribosomeDeReponse(riboTour, epissureGardee || nouveauRibosome(tourEpissure()), texte) : null;
   let sortieTampon = '';                                               // (06/11) sa sortie, choisie dans sa réponse
   // (06/11, Ahmed : « pour la montre, ce qu'il dit doit s'afficher partout, même sur smartphone et Mac : tout doit être connecté ») un tour de la
@@ -7150,6 +7151,8 @@ function corpsReglages() {
     // (06/11, Ahmed : « qu'il parle seulement dans le mode où le bouton stop ne s'affiche pas, le reste il ne le dit pas ») en Conversation et en
     // Télépathie, sa voix ne dit que ce qui sort pendant que sa réponse consciente ne tourne pas (le Stop éteint) : ses pensées épissées
     parole_sans_stop: r.parole_sans_stop !== false,
+    // (06/11, Ahmed : « en Conversation ou en Télépathie, il doit toujours lire en entier ce qu'il écrit après mon dernier message ») sa réponse écrite, dite en entier
+    lire_reponse_entiere: r.lire_reponse_entiere !== false,
     epissure_grammaire: r.epissure_grammaire !== false,
     pretraitement_parole: r.pretraitement_parole !== false,
     trois_pistes: r.trois_pistes !== false,   // (06/11, Ahmed) ce qu'il entend en trois pistes (parole, musique, fond), ses notes brutes hors du fil   // (06/11) ta parole prétraitée : portions, langue (l'arabe en phonétique), sujet, hors sujet   // (06/11) parties complètes, hors sujet exclu, grammaire de chaque langue, préordonnées

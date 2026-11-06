@@ -231,10 +231,10 @@ test('sa réponse consciente : chaque phrase finie est lue par le ribosome du to
 // ribosome ; sa réponse consciente, seulement quand aucune pensée n'a démarré le tour (un message écrit, par exemple)
 test('le tour : son premier output est épissé ; sa réponse consciente seulement si aucune pensée n’a démarré le tour ; la page ne dit rien d’elle-même', () => {
   assert.match(SRC, /const riboTour = pistes\.tour, riboDuTour = pistes\.ribo \|\| null, premierOutput = pistes\.liste\.length > 0;\n/);
-  assert.match(SRC, /const epissageReponse = corpsReglages\(\)\.epissage !== false && corpsReglages\(\)\.parole_sans_stop === false && Number\(q && q\.delai_ms\) > 0 && !premierOutput\n/);
+  assert.match(SRC, /const epissageReponse = corpsReglages\(\)\.epissage !== false && corpsReglages\(\)\.parole_sans_stop === false && corpsReglages\(\)\.lire_reponse_entiere === false && Number\(q && q\.delai_ms\) > 0 && !premierOutput\n/);
   assert.match(SRC, /if \(epissageReponse && o\.t === 'texte'\) epissageReponse\.pousser\(o\.x\);/);
   assert.match(SRC, /if \(epissageReponse && o\.t === 'fin'\) epissageReponse\.finir\(\);/);
-  assert.match(PAGE, /const auto = \(etat\.reglages\.lectureAuto \|\| etat\.conversation \|\| etat\.reglages\.volant\) && lecteur && \(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\);/);
+  assert.match(PAGE, /const auto = \(etat\.reglages\.lectureAuto \|\| etat\.conversation \|\| etat\.reglages\.volant\) && lecteur && \(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\) \|\| \(typeof lireEntiere === 'function' && lireEntiere\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\);/);
 });
 
 test('page : un pavé par tour ; la réponse d’un tour fini rejoint son pavé, même quand papa a déjà repris', () => {
@@ -738,9 +738,9 @@ test('parole sans Stop : sa réponse consciente reste muette, ses pensées épis
   const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
   assert.doesNotMatch(PAGE, /stopAllume/, 'plus aucun morceau épissé tu sous le Stop');
   assert.match(PAGE, /reglagesCorps\.parole_sans_stop !== false/);
-  assert.match(PAGE, /\(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\)/, 'sa réponse écrite : jamais lue par la page');
+  assert.match(PAGE, /\(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\) \|\| \(typeof lireEntiere === 'function' && lireEntiere\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\)/, 'sa réponse écrite : jamais lue par la page');
   const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
-  assert.match(SRV, /corpsReglages\(\)\.parole_sans_stop === false && Number\(q && q\.delai_ms\) > 0 && !premierOutput/, 'ni épissée pour sa voix');
+  assert.match(SRV, /corpsReglages\(\)\.parole_sans_stop === false && corpsReglages\(\)\.lire_reponse_entiere === false && Number\(q && q\.delai_ms\) > 0 && !premierOutput/, 'ni épissée pour sa voix');
 });
 
 // (06/11, Ahmed : « il m'écoute qu'en français avec Azure ; sa voix peut être arabe, français ou anglais »)
@@ -940,6 +940,20 @@ test('micro coupé par papa : sa réponse écrite est dite telle quelle, pas ép
   assert.equal(ctx.e(), true, 'son épissage continue : son oreille interne parle encore'); assert.equal(ctx.s(), false);
   ctx.etat.conversation.muetParHakim = { attente: false };
   assert.equal(ctx.s(), true, 'sa coupure à lui (le temps de sa voix) ne change rien');
-  assert.match(PAGE, /lecteur && \(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\);/, 'sa réponse écrite : dite');
+  assert.match(PAGE, /lecteur && \(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\) \|\| \(typeof lireEntiere === 'function' && lireEntiere\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\);/, 'sa réponse écrite : dite');
   assert.match(PAGE, /delai_ms: etat\.conversation && !\(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\) \? patienceConversation\(\) : null/);
+});
+
+
+// (06/11, Ahmed : « en Conversation ou en Télépathie, il doit toujours lire en entier ce qu'il écrit après mon dernier message »)
+test('sa réponse écrite lue en entier en Conversation et Télépathie (lire_reponse_entiere), sans être épissée en plus', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const ligne = (debut) => { const i = PAGE.indexOf(debut); return PAGE.slice(i, PAGE.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  const ctx = { etat: { conversation: {} }, reglagesCorps: {} }; vm.createContext(ctx);
+  vm.runInContext(ligne('const lireEntiere = ') + 'this.f = lireEntiere;', ctx);
+  assert.equal(ctx.f(), true, 'allumé par défaut');
+  ctx.reglagesCorps.lire_reponse_entiere = false; assert.equal(ctx.f(), false);
+  ctx.reglagesCorps.lire_reponse_entiere = true; ctx.etat.conversation = null; assert.equal(ctx.f(), false, 'hors Conversation : rien ne change');
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(SRV, /lire_reponse_entiere: r\.lire_reponse_entiere !== false,/);
 });
