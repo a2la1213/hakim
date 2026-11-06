@@ -21,8 +21,9 @@ BORNES["epissure_meubles_max"] = (1, 6, 1)
 BORNES["chunk_papa_ms"] = (200, 3000, 1)   # (06/11) le blanc de la voix de papa qui coupe un morceau de sa parole
 CLES_CORPS = ("sauter_suite_ms", "sauter_passe_s", "lire_apres_silence_ms", "epissure_meubles_max", "chunk_papa_ms")
 # (06/11, Ahmed : « lui donner tous les boutons ribosomiaux dans les réglages du ribosome intelligent ») ses interrupteurs de la famille
-# « Son ribosome » de la page Réglages, à lui aussi ; sauf « Ribosome intelligent » et « Tes réglages passent avant lui » : ce sont ceux de papa
-BOUTONS_CORPS = ("voix_par_appareil", "economie", "fenetre_partagee", "tournesol", "un_par_un", "meubles_entre", "voix_azure", "stt_azure",
+# « Son ribosome » de la page Réglages, à lui aussi ; (06/11, Ahmed : « donne accès à tous les boutons du ribosome pour Hakim ») y compris
+# « Ribosome intelligent » (éteint par lui, seul papa le rallume : éteint, il ne règle plus rien) et « Tes réglages passent avant lui »
+BOUTONS_CORPS = ("ribosome_intelligent", "papa_passe_avant", "voix_par_appareil", "economie", "fenetre_partagee", "tournesol", "un_par_un", "meubles_entre", "voix_azure", "stt_azure",
                  "reponse_directe", "tunnel", "ecoute_francais", "parole_sans_stop", "pretraitement_parole", "epissure_grammaire",
                  "epissure_meubles", "parole_libre", "pensee_en_boucle", "boucle_ribosomes")
 BOUTONS_RIBOSOME = ("premiere_directe",)

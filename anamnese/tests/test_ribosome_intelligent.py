@@ -170,10 +170,12 @@ def test_boutons_du_ribosome(tmp_path):
     corps = _j.loads((tmp_path / "corps-reglages.json").read_text(encoding="utf-8"))
     rib = _j.loads((tmp_path / "ribosome-reglage.json").read_text(encoding="utf-8"))
     assert corps["parole_sans_stop"] is False and corps["epissure_meubles_max"] == 6 and rib["premiere_directe"] is True
-    # ceux de papa ne sont pas à lui ; une valeur qui n'est pas un oui/non est refusée
-    r = ri.ajuster(tmp_path, {"ribosome_intelligent": False, "papa_passe_avant": False, "tunnel": "oui"}, "essai", maintenant=10**13)
-    assert set(r["refuse"]) == {"ribosome_intelligent", "papa_passe_avant", "tunnel"}
-    assert _j.loads((tmp_path / "corps-reglages.json").read_text(encoding="utf-8"))["ribosome_intelligent"] is True
+    # une valeur qui n'est pas un oui/non est refusée ; (06/11) tous ses boutons sont à lui, papa_passe_avant compris
+    r = ri.ajuster(tmp_path, {"papa_passe_avant": False, "tunnel": "oui"}, "essai", maintenant=10**13)
+    assert set(r["refuse"]) == {"tunnel"} and r["fait"]["papa_passe_avant"] == [None, False]
+    # « Ribosome intelligent » : il peut l'éteindre ; éteint, il ne règle plus rien (seul papa le rallume)
+    assert ri.ajuster(tmp_path, {"ribosome_intelligent": False}, "essai", maintenant=10**13)["fait"]["ribosome_intelligent"] == [True, False]
+    assert ri.ajuster(tmp_path, {"ribosome_intelligent": True}, "essai", maintenant=10**13)["eteint"] is True
 
 
 def test_boutons_papa_passe_avant(tmp_path):

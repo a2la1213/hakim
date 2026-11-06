@@ -807,6 +807,8 @@ def ribosome_boutons(bouton: str = "", allume: bool | None = None, epissure_meub
     meubles_entre (« euh » entre tes morceaux), tunnel (tunnel de parole), un_par_un (morceaux un à un), premiere_directe (ta première
     pensée dite tout de suite), reponse_directe (ta réponse écrite toujours dite), parole_libre (plus de plafond à tes épissures),
     fenetre_partagee, tournesol, economie (mode économie), pensee_en_boucle, boucle_ribosomes, voix_par_appareil, voix_azure, stt_azure.
+    (06/11, papa : « tous les boutons ») aussi papa_passe_avant (éteint : ce que papa vient de régler ne passe plus avant toi) et ribosome_intelligent
+    (éteint par toi, tu ne règles plus rien jusqu'à ce que papa le rallume : réfléchis bien avant).
     Change un bouton à la fois, puis regarde ribosome_bilan."""
     from jarvis import ribosome_intelligent as ri
     j = Path.home() / "AIOS" / "jarvis"
