@@ -312,6 +312,9 @@ async function chargerMeubles() {
 // ceux de son état d'abord (son émotion du moment), sinon ceux de l'hésitation et ceux de tous les états ; en alternant une
 // parole et un souffle, jamais deux fois le même
 function choisirMeuble({ avant } = {}, prets = [...meublesPrets.values()], etatMot = etat.interieur && (etat.interieur.voix_emotion || etat.interieur.humeur)) {
+  // (06/11, 14:25, Ahmed : « élimine totalement les blancs qui apparaissent au début avant de parler, c'est chiant ces meubles « alors, voyons voir » »)
+  // ses deux interrupteurs de meubles éteints : aucun meuble choisi tout seul, nulle part (au début, à ta pause, entre ses morceaux, aux sauts)
+  if (typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.meubles_auto === false && reglagesCorps.meubles_entre === false) return null;
   const quand = avant ? 'avant' : 'entre';
   const tous = prets.filter(m => m.actif && m.pret && (m.quand === 'partout' || m.quand === quand));
   // (04/11, l'élagage de ses synapses) un meuble élagué (suivi de coupures) n'est plus choisi, sauf 5 fois sur 100 (il peut repousser) ;

@@ -964,3 +964,10 @@ test('où il est : dit à chaque tour, avec par où sort sa voix', () => {
   assert.match(SRV, /\n  morceaux\.push\(`Ahmed te parle depuis \$\{appareil\} : c'est là que tu es en ce moment/);
   assert.doesNotMatch(SRV, /if \(appareil !== deja\.appareil\) morceaux\.push/);
 });
+
+// (06/11, 14:25, Ahmed : « élimine totalement les blancs du début, ces meubles « alors, voyons voir » »)
+test('meubles éteints (auto et entre) : choisirMeuble ne choisit plus rien, nulle part', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const i = PAGE.indexOf('function choisirMeuble('), corps = PAGE.slice(i, i + 900);
+  assert.match(corps, /reglagesCorps\.meubles_auto === false && reglagesCorps\.meubles_entre === false\) return null;/);
+});
