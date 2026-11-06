@@ -234,7 +234,7 @@ test('le tour : son premier output est épissé ; sa réponse consciente seuleme
   assert.match(SRC, /const epissageReponse = corpsReglages\(\)\.epissage !== false && corpsReglages\(\)\.parole_sans_stop === false && Number\(q && q\.delai_ms\) > 0 && !premierOutput\n/);
   assert.match(SRC, /if \(epissageReponse && o\.t === 'texte'\) epissageReponse\.pousser\(o\.x\);/);
   assert.match(SRC, /if \(epissageReponse && o\.t === 'fin'\) epissageReponse\.finir\(\);/);
-  assert.match(PAGE, /const auto = \(etat\.reglages\.lectureAuto \|\| etat\.conversation \|\| etat\.reglages\.volant\) && lecteur && !voixEpissee\(\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\);/);
+  assert.match(PAGE, /const auto = \(etat\.reglages\.lectureAuto \|\| etat\.conversation \|\| etat\.reglages\.volant\) && lecteur && \(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\);/);
 });
 
 test('page : un pavé par tour ; la réponse d’un tour fini rejoint son pavé, même quand papa a déjà repris', () => {
@@ -738,7 +738,7 @@ test('parole sans Stop : sa réponse consciente reste muette, ses pensées épis
   const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
   assert.doesNotMatch(PAGE, /stopAllume/, 'plus aucun morceau épissé tu sous le Stop');
   assert.match(PAGE, /reglagesCorps\.parole_sans_stop !== false/);
-  assert.match(PAGE, /!voixEpissee\(\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\)/, 'sa réponse écrite : jamais lue par la page');
+  assert.match(PAGE, /\(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\)/, 'sa réponse écrite : jamais lue par la page');
   const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   assert.match(SRV, /corpsReglages\(\)\.parole_sans_stop === false && Number\(q && q\.delai_ms\) > 0 && !premierOutput/, 'ni épissée pour sa voix');
 });
@@ -929,7 +929,7 @@ test('échange de la montre : sa question tout de suite, sa réponse au fil, dan
 });
 
 // (06/11, Ahmed : « quand je ferme mon micro, il ne reçoit plus que ce que j'écris, et c'est sa parole écrite qui doit être prononcée, hors épissage »)
-test('micro coupé par papa : ni épissage ni « sans Stop » ; sa réponse écrite est dite telle quelle', () => {
+test('micro coupé par papa : sa réponse écrite est dite telle quelle, pas épissée ; son oreille interne continue', () => {
   const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
   const ligne = (debut) => { const i = PAGE.indexOf(debut); return PAGE.slice(i, PAGE.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
   const ctx = { etat: { conversation: { capteur: { estMuet: false } } }, reglagesCorps: { epissage: true, parole_sans_stop: true } };
@@ -937,8 +937,9 @@ test('micro coupé par papa : ni épissage ni « sans Stop » ; sa réponse écr
   vm.runInContext(ligne('const micPapaCoupe = ') + ligne('const voixEpissee = ') + ligne('const paroleSansStop = ') + 'this.e = voixEpissee; this.s = paroleSansStop;', ctx);
   assert.equal(ctx.e(), true); assert.equal(ctx.s(), true);
   ctx.etat.conversation.capteur.estMuet = true;
-  assert.equal(ctx.e(), false, 'micro coupé : hors épissage'); assert.equal(ctx.s(), false);
+  assert.equal(ctx.e(), true, 'son épissage continue : son oreille interne parle encore'); assert.equal(ctx.s(), false);
   ctx.etat.conversation.muetParHakim = { attente: false };
-  assert.equal(ctx.e(), true, 'sa coupure à lui (le temps de sa voix) ne change rien');
+  assert.equal(ctx.s(), true, 'sa coupure à lui (le temps de sa voix) ne change rien');
+  assert.match(PAGE, /lecteur && \(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\);/, 'sa réponse écrite : dite');
   assert.match(PAGE, /delai_ms: etat\.conversation && !\(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\) \? patienceConversation\(\) : null/);
 });
