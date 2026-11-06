@@ -53,7 +53,7 @@ test('tu t’es tu avant la seconde, ou le réglage éteint : rien n’est saut�
 });
 
 test('branché : à ta voix sur la sienne, ses réglages (oui, 1 s), le cockpit qui ferme, la page Réglages', () => {
-  assert.match(PAGE, /if \(voixEpissee\(\)\) \{ conv\.coupeAuChunk = Date\.now\(\); journalVoix\('coupure_au_chunk', mesure \|\| \{\}\); prevoirSaut\(conv\); return; \}/);
+  assert.match(PAGE, /if \(voixEpissee\(\) && garde\) \{ conv\.coupeAuChunk = Date\.now\(\); journalVoix\('coupure_au_chunk', mesure \|\| \{\}\); prevoirSaut\(conv\); return; \}/);
   assert.match(SRC, /sauter_suite: r\.sauter_suite !== false, sauter_suite_ms: /);
   assert.match(SRC, /if \(typeof q\.sauter_suite === 'boolean'\) r\.sauter_suite = q\.sauter_suite;/);
   assert.match(SRC, /if \(q\.sauter === true\) \{\n      const r = pistes\.ribo;\n      if \(r && !r\.ferme\) \{ r\.ferme = 'sautee';/);

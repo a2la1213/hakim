@@ -979,3 +979,10 @@ test('une seule voix : sa réponse lue prend la même voix que ses pensées en C
   assert.match(PAGE, /if \(!m\.complet\) etat\.montreParleA = Date\.now\(\);/);
   assert.match(PAGE, /Number\(etat\.montreParleA\) > 0 && Date\.now\(\) - Number\(etat\.montreParleA\) < 20000 && \(etat\.sortie \|\| 'ici'\) !== \(typeof appareilIci === 'function' \? appareilIci\(\) : ''\)\) \{[^\n]*return; \}/);
 });
+
+// (06/11, 14:40, Ahmed : « le bouton « il garde la parole » ne fonctionne pas »)
+test('« il garde la parole » éteint : ta voix l’arrête aussi en Conversation épissée', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /const garde = typeof reglagesCorps === 'undefined' \|\| reglagesCorps\.garder_parole !== false;\n\s+if \(voixEpissee\(\) && garde\) \{/);
+  assert.match(PAGE, /if \(voixEpissee\(\) && !garde && typeof arreterEpissure === 'function' && etat\.epissureTour\) arreterEpissure\('parole', etat\.epissureTour\);/);
+});

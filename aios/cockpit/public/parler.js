@@ -4256,7 +4256,11 @@ async function basculerConversation() {
         // (04/11, Ahmed : « il parle quand il veut, mais s'il entend ma voix lui couper la parole sur 2 secondes, il se tait ») il garde
         // la parole sur un mot ou un rire ; ta voix qui dure 2 s sur la sienne : il se tait (ses pensées restent écrites)
         // (04/11, 12:15, Ahmed) avec l'épissage : ta voix ne le coupe pas au milieu d'un morceau ; il le finit, et à sa fenêtre d'oreille il choisit
-        if (voixEpissee()) { conv.coupeAuChunk = Date.now(); journalVoix('coupure_au_chunk', mesure || {}); prevoirSaut(conv); return; }   // (05/11) et la suite sautée
+        // (06/11, 14:40, Ahmed : « le bouton « il garde la parole » dans les réglages ne fonctionne pas ») avec l'épissage, ce chemin passait AVANT le
+        // réglage : éteint (garder_parole), ta voix l'arrête maintenant aussi en Conversation épissée, et ce qu'il avait encore à dire est laissé
+        const garde = typeof reglagesCorps === 'undefined' || reglagesCorps.garder_parole !== false;
+        if (voixEpissee() && garde) { conv.coupeAuChunk = Date.now(); journalVoix('coupure_au_chunk', mesure || {}); prevoirSaut(conv); return; }   // (05/11) et la suite sautée
+        if (voixEpissee() && !garde && typeof arreterEpissure === 'function' && etat.epissureTour) arreterEpissure('parole', etat.epissureTour);
         if (typeof reglagesCorps !== 'undefined' && reglagesCorps.garder_parole) { journalVoix('coupure_ignoree', mesure || {}); veillerDeuxSecondes(conv); return; }
         etat.coupeParAhmed = true;
         journalVoix('coupure', mesure || {});
