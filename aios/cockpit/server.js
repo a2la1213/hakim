@@ -12795,6 +12795,12 @@ async function traiter(req, res) {
     req.on('close', () => clients.delete(res));
     return;
   }
+  // (06/11, capture d'Ahmed : « Verrou du téléphone : ⚠ This is an invalid domain » sur 127.0.0.1:4317) Touch ID (WebAuthn) refuse une
+  // adresse IP : une page ouverte par 127.0.0.1 ou [::1] repart sur localhost, la même page
+  if (req.method === 'GET' && (PAGES[p] || p.endsWith('.html')) && /^(127\.0\.0\.1|\[::1\]):/.test(String(req.headers.host || ''))) {
+    res.writeHead(302, { Location: `http://localhost:${PORT}${req.url}` });
+    return res.end();
+  }
   const fp = path.join(PUBLIC, PAGES[p] || p);
   if (!fp.startsWith(PUBLIC + path.sep)) { res.writeHead(403); return res.end('forbidden'); }
   servirPage(res, fp, p);
