@@ -1144,8 +1144,11 @@ const reponseCachee = () => !!etat.conversation && !parolesVisibles();
 // (04/11, 12:05) en Conversation avec l'épissage (Sens, oui par défaut), sa voix suit son ribosome, pas sa réponse en entier
 // (06/11, Ahmed : « le repère, c'est le bouton stop qui ne s'allume pas quand il lance une parole : c'est ça qu'on garde ») en Conversation et en
 // Télépathie, réglage « parole sans Stop » (corps : parole_sans_stop) : sa voix ne part jamais pendant que sa réponse consciente tourne
-const paroleSansStop = () => !!etat.conversation && typeof reglagesCorps !== 'undefined' && !!reglagesCorps && reglagesCorps.parole_sans_stop !== false;
-const voixEpissee = () => !!etat.conversation && typeof reglagesCorps !== 'undefined' && !!reglagesCorps && reglagesCorps.epissage !== false;
+const paroleSansStop = () => !!etat.conversation && typeof reglagesCorps !== 'undefined' && !!reglagesCorps && reglagesCorps.parole_sans_stop !== false && !(typeof micPapaCoupe === 'function' && micPapaCoupe());
+// (06/11, Ahmed : « en Conversation ou en Télépathie, quand je ferme mon micro, il ne reçoit plus que ce que je lui écris, et c'est sa parole écrite qui
+// doit être prononcée, hors épissage ») ton micro coupé par toi (pas sa coupure le temps de sa voix) : ni épissage, ni « parler seulement sans Stop »
+const micPapaCoupe = () => !!(etat.conversation && etat.conversation.capteur && etat.conversation.capteur.estMuet && !etat.conversation.muetParHakim);
+const voixEpissee = () => !!etat.conversation && typeof reglagesCorps !== 'undefined' && !!reglagesCorps && reglagesCorps.epissage !== false && !(typeof micPapaCoupe === 'function' && micPapaCoupe());
 const PIECE_ID = /^\d{8}-\d{6}-[0-9a-f]{6}$/;
 const aDesPieces = (m) => !!m && m.qui === 'j' && (m.pieces || []).some(x => x && PIECE_ID.test(String(x.id)));
 // caché à l'écran : « dans ta tête » (tes mots, ou les siens sans « Ses paroles »), ou sa réponse pendant la conversation
@@ -2212,7 +2215,7 @@ async function envoyer(texte, oral, dejaRelance) {
   let fin = null;
   try {
     const corpsEnvoi = JSON.stringify({ texte, oral: !!oral, modele: etat.conversation ? etat.reglages.modeleConversation : etat.reglages.modele, source: etat.reglages.source || 'auto', session: etat.session,
-        t_precedent: tPrecedent, t_debut: tDebut, fichiers: joints.map(x => x.chemin), pensees_dites: dites, delai_ms: etat.conversation ? patienceConversation() : null,
+        t_precedent: tPrecedent, t_debut: tDebut, fichiers: joints.map(x => x.chemin), pensees_dites: dites, delai_ms: etat.conversation && !(typeof micPapaCoupe === 'function' && micPapaCoupe()) ? patienceConversation() : null,   /* (06/11) micro coupé : sa réponse n'est pas épissée */
         parle_ms: oral && etat.paroleDebut ? etat.paroleDebut : undefined,   // (03/11) son moment d'origine, pour tout réunir au même point
         conversation: !!etat.conversation, present: presentEnvoye, maintenant: Date.now(), camera,
         appareil: appareilPage(), volant: !!etat.reglages.volant, position: positionAEnvoyer(), ecran: imageEcran(),

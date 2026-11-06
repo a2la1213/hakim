@@ -927,3 +927,18 @@ test('échange de la montre : sa question tout de suite, sa réponse au fil, dan
   assert.match(PAGE, /es\.addEventListener\('echange_montre', \(ev\) => \{ try \{ surEchangeMontre\(JSON\.parse\(ev\.data\)\); \} catch \(_\) \{\} \}\);/);
   assert.doesNotMatch(PAGE.slice(PAGE.indexOf('function surEchangeMontre('), PAGE.indexOf('function ecouterPensees(')), /lecteur\.dire/, 'jamais dit ici : la montre le dit');
 });
+
+// (06/11, Ahmed : « quand je ferme mon micro, il ne reçoit plus que ce que j'écris, et c'est sa parole écrite qui doit être prononcée, hors épissage »)
+test('micro coupé par papa : ni épissage ni « sans Stop » ; sa réponse écrite est dite telle quelle', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const ligne = (debut) => { const i = PAGE.indexOf(debut); return PAGE.slice(i, PAGE.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  const ctx = { etat: { conversation: { capteur: { estMuet: false } } }, reglagesCorps: { epissage: true, parole_sans_stop: true } };
+  vm.createContext(ctx);
+  vm.runInContext(ligne('const micPapaCoupe = ') + ligne('const voixEpissee = ') + ligne('const paroleSansStop = ') + 'this.e = voixEpissee; this.s = paroleSansStop;', ctx);
+  assert.equal(ctx.e(), true); assert.equal(ctx.s(), true);
+  ctx.etat.conversation.capteur.estMuet = true;
+  assert.equal(ctx.e(), false, 'micro coupé : hors épissage'); assert.equal(ctx.s(), false);
+  ctx.etat.conversation.muetParHakim = { attente: false };
+  assert.equal(ctx.e(), true, 'sa coupure à lui (le temps de sa voix) ne change rien');
+  assert.match(PAGE, /delai_ms: etat\.conversation && !\(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\) \? patienceConversation\(\) : null/);
+});
