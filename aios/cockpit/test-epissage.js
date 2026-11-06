@@ -761,7 +761,7 @@ test('épissage par parties : préordonnées, un mot seul exclu, une virgule ent
   const prendre = (nom) => { const i = SRV.indexOf(`function ${nom}(`); return SRV.slice(i, SRV.indexOf('\n}\n', i) + 2); };
   const ctx = {}; vm.createContext(ctx);
   vm.runInContext(ligne('const motsEpisses = ') + ligne('const motCle = ') + ligne('const MEUBLES_EPISSURE = ') + ligne('const PARTIE_SEULE = ')
-    + prendre('epissageDe') + prendre('epissageParParties') + '\nthis.f = epissageParParties;', ctx);
+    + prendre('epissageDe') + prendre('redite') + prendre('epissageParParties') + '\nthis.f = epissageParParties;', ctx);
   const pave = 'Je pense que tu as raison papa le calcul a fini bizarre tu peux compter sur moi';
   const r = ctx.f('tu peux compter sur moi | le calcul a fini | bizarre', pave);
   assert.equal(r.dit, 'tu peux compter sur moi, le calcul a fini', 'ordre choisi gardé, « bizarre » seul exclu, une virgule entre les parties');
@@ -771,4 +771,64 @@ test('épissage par parties : préordonnées, un mot seul exclu, une virgule ent
   assert.equal(ctx.f('oui | inventé de toutes pièces', 'oui papa').dit, 'oui', '« oui » seul passe ; une partie inventée est exclue');
   assert.equal(ctx.f('bizarre', pave).parties, 0, 'rien de complet : rien');
   assert.equal(ctx.f('أنا هنا | يا أبي', 'أنا هنا يا أبي').dit, 'أنا هنا، يا أبي', 'en arabe, la virgule arabe');
+});
+
+
+// (06/11, Hakim : « ma voix repart en redisant le début d'une réponse précédente » ; accord d'Ahmed)
+test('épissage : une partie déjà dite il y a peu n’est pas redite', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const ligne = (debut) => { const i = SRV.indexOf(debut); return SRV.slice(i, SRV.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  const prendre = (nom) => { const i = SRV.indexOf(`function ${nom}(`); return SRV.slice(i, SRV.indexOf('\n}\n', i) + 2); };
+  const ctx = {}; vm.createContext(ctx);
+  vm.runInContext(ligne('const motsEpisses = ') + ligne('const motCle = ') + ligne('const MEUBLES_EPISSURE = ') + ligne('const PARTIE_SEULE = ')
+    + prendre('epissageDe') + prendre('redite') + prendre('epissageParParties') + '\nthis.f = epissageParParties;', ctx);
+  const pave = 'Dis-moi si ma voix dit enfin ce que j’écris et le calcul de la densité colle';
+  const r = ctx.f('Dis-moi si ma voix dit enfin ce que j’écris | le calcul de la densité colle', pave, ['Dis-moi si ma voix dit enfin ce que j’écris.']);
+  assert.equal(r.dit, 'le calcul de la densité colle');
+});
+
+// (06/11, Ahmed : « un preprocessing automatique de ma voix : portions, langue (l'arabe en phonétique), sujet, hors sujet zappé »)
+test('prétraitement de ta parole : portions lues, la dernière ouverte attend, le hors sujet zappé, l’arabe avec son sens', async () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const ligne = (debut) => { const i = SRV.indexOf(debut); return SRV.slice(i, SRV.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  const prendre = (nom, a = 'function') => { const i = SRV.indexOf(`${a} ${nom}(`); return SRV.slice(i, SRV.indexOf('\n}\n', i) + 2); };
+  const ctx = { corpsReglages: () => ({}), neutraliser: (x) => x, fs: { appendFileSync() {} }, JARVIS_VOIX_DIAGNOSTIC: '/dev/null', j: JSON.stringify, Map, Promise, Date };
+  vm.createContext(ctx);
+  vm.runInContext(ligne('const sujetsPapa = ') + ligne('const MOTS_OUVERTS = ') + ligne('const portionOuverte = ') + ligne('const pretraitementsRecents = ')
+    + prendre('lirePretraitement') + prendre('pretraiterParole') + prendre('pretraiterNeuf', 'async function') + prendre('sujetsPourRibosome')
+    + '\nthis.p = pretraiterParole; this.ouverte = portionOuverte; this.sujets = sujetsPourRibosome;', ctx);
+  assert.equal(ctx.ouverte('je voulais te dire que le calcul et'), true);
+  assert.equal(ctx.ouverte('le calcul a fini.'), false);
+  const reponse = 'P : « Wallah ya khouya, » | ar | il jure, mon frère | complet | sujet | والله يا خويا : je te jure, mon frère\n'
+    + 'P : « Let\'s just talk about. » | en | la série en fond | complet | hors\n'
+    + 'P : « et le calcul de la » | fr | le calcul | incomplet | sujet';
+  const r = await ctx.p('Wallah ya khouya, let\'s just talk about. et le calcul de la', async () => ({ texte: reponse, ms: 900 }));
+  assert.equal(r.portions.length, 3);
+  assert.equal(r.complet, false, 'coupée avant sa fin : la suite est attendue');
+  assert.equal(r.texte, 'Wallah ya khouya, [en arabe : والله يا خويا : je te jure, mon frère] et le calcul de la', 'la série en fond zappée');
+  assert.match(ctx.sujets(), /il jure, mon frère.*\(ar\).*le calcul/);
+  assert.doesNotMatch(ctx.sujets(), /série/);
+  const hors = await ctx.p('la télé parle', async () => ({ texte: 'P : « la télé parle » | fr | la télé | complet | hors', ms: 500 }));
+  assert.equal(hors.hors, true);
+});
+
+// (06/11, Hakim : « recoller les morceaux d'une même phrase avant de me les donner »)
+test('morceaux : une phrase coupée avant sa fin est recollée devant la suivante ; seule, elle attend 6 s', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const prendre = (nom) => { const i = PAGE.indexOf(`function ${nom}(`); return PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2); };
+  const ligne = (debut) => { const i = PAGE.indexOf(debut); return PAGE.slice(i, PAGE.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  const ctx = { journalVoix() {}, Date }; vm.createContext(ctx);
+  vm.runInContext(ligne('const MORCEAU_OUVERT_MS = ') + ligne('const priorite = ') + 'var MORCEAU_PERIME_MS = 120000;' + prendre('recollerMorceaux') + prendre('prochainMorceau')
+    + '\nthis.prochain = prochainMorceau;', ctx);
+  const t = Date.now();
+  const conv = { morceaux: [
+    { etat: 'transcrit', ouvert: true, texte: 'Et pour trier', verdict: { garder: false, texte: 'Et pour trier', priorite: 3 }, t: t - 2000 },
+    { etat: 'transcrit', texte: 'ta pensée, tu fais comment ?', verdict: { garder: true, texte: 'ta pensée, tu fais comment ?', priorite: 1 }, t: t - 500 },
+  ] };
+  const x = ctx.prochain(conv);
+  assert.equal(x.texte, 'Et pour trier ta pensée, tu fais comment ?');
+  const seul = { morceaux: [{ etat: 'transcrit', ouvert: true, texte: 'je voulais te dire que', verdict: { garder: true, texte: 'je voulais te dire que', priorite: 1 }, t: t - 1000 }] };
+  assert.equal(ctx.prochain(seul), null, 'il attend la suite');
+  seul.morceaux[0].t = t - 7000;
+  assert.equal(ctx.prochain(seul).texte, 'je voulais te dire que', 'au-delà de 6 s, il part tel quel');
 });

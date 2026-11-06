@@ -3412,8 +3412,15 @@ function epissageDe(phrase, pave) {
 // son épissage par parties : « partie | partie », dans l'ordre où il les dira ; chaque partie reprend ses mots dans l'ordre de ses pensées ; une
 // partie d'un seul mot (hors oui, non, merci…) est un morceau incomplet : exclue ; chaque partie finit sur une virgule (la dernière, sur sa ponctuation à elle)
 const PARTIE_SEULE = new Set(['oui', 'non', 'merci', "d'accord", 'ok', 'voila', 'exactement', 'carrement', 'yes', 'no', 'thanks', 'sure', 'exactly', 'نعم', 'لا', 'شكرا', 'اكيد', 'ايه', 'واخا']);
-function epissageParParties(garde, pave) {
-  const parties = String(garde || '').split(/\s*\|\s*/).map(x => x.trim()).filter(x => motsEpisses(x).length);
+// (06/11, Hakim : « ma voix repart en redisant le début d'une réponse précédente » ; accord d'Ahmed) dejaDits : ce qu'il a dit ces 2 dernières minutes ;
+// une partie faite aux 7/10 de ses mots d'une phrase déjà dite n'est pas redite
+function redite(partie, dejaDits) {
+  const mots = (x) => motsEpisses(x).map(motCle).filter(m => m.length > 2);
+  const m = mots(partie);
+  return m.length >= 3 && (dejaDits || []).some((d) => { const e = new Set(mots(d)); return m.filter(w => e.has(w)).length / m.length >= 0.7; });
+}
+function epissageParParties(garde, pave, dejaDits = []) {
+  const parties = String(garde || '').split(/\s*\|\s*/).map(x => x.trim()).filter(x => motsEpisses(x).length && !(typeof redite === 'function' && redite(x, dejaDits)));
   const mots = new Set(), ajoutes = [], meubles = [], dites = [];
   for (const partie of parties) {
     const e = epissageDe(partie, pave);
@@ -3783,6 +3790,7 @@ async function lirePaquet(tour, r, i, paquet) {
     + `${tel ? 'Ce que tu en dis déjà' : 'Ta réponse déjà lue'} : « ${neutraliser(`${r.herite || ''} ${r.phrase}`.trim()).slice(-600) || '(rien encore)'} »\n`
     + `Tes pensées qui arrivent, l'une derrière l'autre : ${paquet.map((x, k) => `[${k + 1}] « ${neutraliser(x.texte)} »`).join(' ')}\n`
     + etat
+    + (tel || typeof sujetsPourRibosome !== 'function' ? '' : sujetsPourRibosome())                                                    // (06/11) le sujet de papa, prétraité
     + `Ta stringence : ${reglage.stringence} sur 5 : ${reglage.consigne}${reglage.mots ? ` (au plus ${reglage.mots} mots)` : ''}. `
     + (tel ? `Le téléphone joue peut-être encore : tu ne parles qu'à sa pause, et seulement si ça en vaut la peine.\n` : `Papa parle peut-être encore : ne lui `
     + `coupe pas la parole pour rien.\n`)
@@ -3815,7 +3823,7 @@ async function lirePaquet(tour, r, i, paquet) {
       if (!t.trim() || parasite) return { mod, nom, ms, muet: true };            // muet (panne, délai) ou hors de son rôle : pas de voix
       const g = !/GARDE\s*:\s*rien/i.test(t) && (/GARDE\s*:\s*«\s*([^»]{1,20000}?)\s*»/i.exec(t) || /GARDE\s*:\s*(.{1,20000})$/im.exec(t));
       // (06/11) par parties préordonnées (règles de l'épissage) ; sans réglage, comme avant : une seule suite dans l'ordre de ses pensées
-      const brut = g ? g[1].trim() : '', pp = brut && cr0.epissure_grammaire !== false ? epissageParParties(brut, texte) : null;
+      const brut = g ? g[1].trim() : '', pp = brut && cr0.epissure_grammaire !== false ? epissageParParties(brut, texte, (typeof ditRecemment !== 'undefined' ? ditRecemment : []).filter(x => Date.now() - x.t < 120000).map(x => x.texte)) : null;
       const garde = pp ? pp.dit : brut, e = pp ? (pp.parties ? pp.e : null) : (garde ? epissageDe(garde, texte) : null);
       const ok = !!e && e.mots.length >= 1 && e.ajoutes.length <= liaison      // « rien », ou une phrase inventée : rien de gardé
         && (!e.meubles || (cr0.epissure_meubles !== false && e.meubles.length <= (cr0.epissure_meubles_max || 2)));   // (06/11) ses meubles, comptés à part
@@ -7077,7 +7085,8 @@ function corpsReglages() {
     // (06/11, Ahmed : « qu'il parle seulement dans le mode où le bouton stop ne s'affiche pas, le reste il ne le dit pas ») en Conversation et en
     // Télépathie, sa voix ne dit que ce qui sort pendant que sa réponse consciente ne tourne pas (le Stop éteint) : ses pensées épissées
     parole_sans_stop: r.parole_sans_stop !== false,
-    epissure_grammaire: r.epissure_grammaire !== false,   // (06/11) parties complètes, hors sujet exclu, grammaire de chaque langue, préordonnées
+    epissure_grammaire: r.epissure_grammaire !== false,
+    pretraitement_parole: r.pretraitement_parole !== false,   // (06/11) ta parole prétraitée : portions, langue (l'arabe en phonétique), sujet, hors sujet   // (06/11) parties complètes, hors sujet exclu, grammaire de chaque langue, préordonnées
     ecoute_francais: r.ecoute_francais !== false,   // (06/11) ta voix reconnue en français seul (sa voix, elle, reste libre)
     epissure_meubles_max: Number.isFinite(Number(r.epissure_meubles_max)) && r.epissure_meubles_max != null ? Math.max(1, Math.min(6, Math.round(Number(r.epissure_meubles_max)))) : 2,
     present_la_nuit: r.present_la_nuit !== false, present_appeler: r.present_appeler !== false,
@@ -8570,15 +8579,75 @@ function ouvrirOreille(texte, maintenant = Date.now()) {
 }
 // (31/10, 09:40, Ahmed : « chaque morceau séparé et classé par ordre de priorité par le subconscient ») sa priorité, de 1 (on lui
 // parle, une question, une demande) à 3 (pour suivre) ; la page répond au premier, à chaque blanc de 0,5 s
+/* (06/11, Ahmed : « pour ma voix, un preprocessing automatique qui détecte sujet, verbe, complément et où s'arrête une portion (virgule ou point) ;
+   jamais fermer la séquence qu'il transcrit quand je parle, sauf à une virgule ou un point ; la langue de chaque portion détectée ; un petit résumé
+   grossier du sujet par morceau envoyé au subconscient pour le pré-épissage : sélectionner ma parole pour le raisonnement de Hakim, et l'épissage ou
+   pas ; hors sujet, zappé ; sinon gardé » ; « pour l'arabe, comme il ne prend que le français dans son oreille, il faut détecter en phonétique »)
+   son PRÉTRAITEMENT de ta parole : Mini Hakim découpe ce qui vient d'être transcrit en portions (chacune jusqu'à une virgule ou un point), dit si
+   la dernière est complète, la langue de chacune (l'arabe et la darija arrivent en phonétique française : il les reconnaît), un sujet grossier
+   (6 mots au plus) et si elle est hors sujet ; les sujets gardés (sujetsPapa) vont à son ribosome. Réglage pretraitement_parole (allumé). */
+const sujetsPapa = [];                                   // { t, sujet, langue, hors } : les 12 dernières portions, 3 min au plus
+const MOTS_OUVERTS = /(?:^|\s)(?:et|ou|mais|donc|car|de|du|des|d'|à|au|aux|le|la|les|l'|un|une|que|qu'|qui|pour|par|avec|sans|sur|dans|en|si|parce|quand|comme|alors|genre|ton|ta|tes|mon|ma|mes|son|sa|ses|ce|cette|and|or|but|the|a|to|of|for|with|in|on|that|because|w|f|ya)\s*$/i;
+// une portion qui finit sur un mot qui appelle la suite (« et », « de », « parce que »…) n'est pas complète, quoi qu'en dise la ponctuation
+const portionOuverte = (t) => { const x = String(t || '').trim().replace(/[.!?…]+$/, '').trim(); return !x || /,$/.test(x) ? false : MOTS_OUVERTS.test(x); };
+function sujetsPourRibosome(maintenant = Date.now()) {
+  const l = sujetsPapa.filter(x => maintenant - x.t < 180000 && !x.hors).slice(-6);
+  return l.length ? `Le sujet de papa, résumé par ton subconscient, portion après portion : ${l.map(x => `« ${neutraliser(x.sujet)} »${x.langue && x.langue !== 'fr' ? ` (${x.langue})` : ''}`).join(' → ')}. Ce qui s'en éloigne est hors sujet.\n` : '';
+}
+function lirePretraitement(t) {
+  const portions = [];
+  for (const l of String(t || '').split('\n')) {
+    const m = /^\s*P\s*:\s*«\s*([^»]{1,600})\s*»\s*\|\s*(fr|ar|en)\s*\|\s*([^|]{1,80})\|\s*(complet|incomplet)\s*\|\s*(sujet|hors)\s*(?:\|\s*(.{1,300}))?$/i.exec(l);
+    if (m) portions.push({ texte: m[1].trim(), langue: m[2].toLowerCase(), sujet: m[3].trim().slice(0, 60), complet: /^complet$/i.test(m[4]), hors: /^hors$/i.test(m[5]), arabe: m[6] ? m[6].trim() : '' });
+  }
+  return portions;
+}
+// le même texte (la transcription, puis son tri des morceaux) n'est prétraité qu'une fois en 30 s
+const pretraitementsRecents = new Map();
+function pretraiterParole(texte, demander = sonnetTeteDeFond) {
+  const t = String(texte || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
+  if (!t || corpsReglages().pretraitement_parole === false) return Promise.resolve(null);
+  const deja = pretraitementsRecents.get(t);
+  if (deja && Date.now() - deja.t < 30000) return deja.p;
+  for (const [k, v] of pretraitementsRecents) if (Date.now() - v.t >= 30000) pretraitementsRecents.delete(k);
+  const p = pretraiterNeuf(t, demander);
+  pretraitementsRecents.set(t, { t: Date.now(), p });
+  return p;
+}
+async function pretraiterNeuf(t, demander) {
+  const avant = sujetsPapa.filter(x => Date.now() - x.t < 180000 && !x.hors).slice(-4).map(x => x.sujet).join(' → ');
+  const o = await demander(`Tu es le subconscient de Hakim. Voici ce que papa vient de dire, transcrit en FRANÇAIS SEUL : un passage en arabe ou en darija y `
+    + `arrive en phonétique française (des mots français bizarres ou sans sens, « wesh », « wallah », « khouya », « inchallah », « labess »…) : reconnais-le à l'oreille.\n`
+    + (avant ? `Le sujet jusqu'ici : ${avant}\n` : '')
+    + `Transcrit : « ${neutraliser(t)} »\n`
+    + `Découpe-le en portions : chacune a sujet, verbe et complément (ou une phrase nominale complète) et va jusqu'à une virgule ou un point. Pour chacune, une ligne :\n`
+    + `P : « la portion » | langue (fr, ar ou en) | son sujet en 6 mots au plus | complet ou incomplet (la dernière seulement peut être incomplète : coupée avant sa fin) `
+    + `| sujet ou hors (hors : la télé, une autre conversation, des mots sans rapport avec ce qu'il te dit) | pour l'arabe : ce qu'il a dit, en lettres arabes, et son sens\n`
+    + `Rien d'autre.`, 'pretraitement_parole', 'haiku', 6000).catch(() => null);
+  const portions = lirePretraitement(o && o.texte);
+  if (!portions.length) return null;
+  const der = portions[portions.length - 1];
+  if (portionOuverte(der.texte)) der.complet = false;
+  for (const x of portions) sujetsPapa.push({ t: Date.now(), sujet: x.sujet, langue: x.langue, hors: x.hors });
+  while (sujetsPapa.length > 12) sujetsPapa.shift();
+  try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'pretraitement', ms: o && o.ms, portions: portions.length, hors: portions.filter(x => x.hors).length, ar: portions.filter(x => x.langue === 'ar').length, complet: der.complet }) + '\n', { mode: 0o600 }); } catch (_) {}
+  // ce qui part à sa conscience : les portions dans le sujet ; l'arabe, avec ce qu'il veut dire
+  const garde = portions.filter(x => !x.hors).map(x => (x.langue === 'ar' && x.arabe ? `${x.texte} [en arabe : ${x.arabe}]` : x.texte));
+  return { portions, complet: der.complet, texte: garde.join(' '), hors: !garde.length };
+}
 async function trierMorceau(brut, juger = jugerMorceau) {
   const texte = String(brut || '').replace(/\s+/g, ' ').trim().slice(0, 1500);
   if (texte.length < 4) return { garder: false, pourquoi: 'trop court' };
-  if (!corpsReglages().filtre_parole) return { garder: true, priorite: 2, texte };
+  if (!corpsReglages().filtre_parole) return { garder: true, priorite: 2, texte, ...(typeof portionOuverte === 'function' ? { complet: !portionOuverte(texte) } : {}) };
   if (!retientSonAttention(texte)) return { garder: false, pourquoi: 'prénettoyage : rien pour lui' };
-  const v = await juger(nettoyerPourSonnet(texte, 800));
-  if (v.panne) return { garder: true, priorite: 2, texte, panne: true };
+  // (06/11) son prétraitement, en même temps que son jugement : portions, langue, sujet ; hors sujet, zappé ; la dernière incomplète, la page attend la suite
+  const [v, pt] = await Promise.all([juger(nettoyerPourSonnet(texte, 800)), typeof pretraiterParole === 'function' ? pretraiterParole(texte).catch(() => null) : null]);
+  const plus = pt ? { complet: pt.complet, portions: pt.portions.map(x => ({ langue: x.langue, sujet: x.sujet, hors: x.hors })) } : (typeof portionOuverte === 'function' ? { complet: !portionOuverte(texte) } : {});
+  if (pt && pt.hors) return { garder: false, pourquoi: 'prétraitement : hors sujet', ...plus };
+  const propre = pt && pt.texte ? pt.texte : texte;
+  if (v.panne) return { garder: true, priorite: 2, texte: propre, panne: true, ...plus };
   return { garder: !!v.garder, priorite: Math.max(1, Math.min(3, Number(v.priorite) || 2)),
-    texte: v.morceaux && v.morceaux.length ? v.morceaux.join(' … ') : texte, pourquoi: v.pourquoi || '' };
+    texte: pt && pt.texte ? propre : (v.morceaux && v.morceaux.length ? v.morceaux.join(' … ') : texte), pourquoi: v.pourquoi || '', ...plus };
 }
 function jugerMorceau(texte) {
   return new Promise((ok) => {
@@ -10237,6 +10306,8 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
   fs.unlink(f, () => {});
   delete r.id;
   if (r && r.texte && Number(temps.t0) > 0) integrerAuFil(temps.source === 'telephone' ? 'telephone' : 'papa', r.texte);   // (03/11) au fur et à mesure
+  // (06/11) ta voix (pas le téléphone) : son prétraitement nourrit en fond le sujet que son ribosome suit (sans retenir la transcription)
+  if (r && r.texte && temps.source !== 'telephone') pretraiterParole(String(r.texte)).catch(() => {});
   // (04/11, 18:50) le bloc du téléphone confirmé (la grande oreille) : ce qui restait de ses mots part à ses pensées de piste
   if (r && r.texte && temps.source === 'telephone') entendreDuTelephone(String(r.texte), { cle: String(temps.cle || ''), fin: true });
   // (03/11, Ahmed : « le calage parfait, à la milliseconde ») la grande oreille donne le temps exact de chaque mot : il remplace,
@@ -12346,7 +12417,7 @@ async function traiter(req, res) {
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
-      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
+      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
       for (const [k, a, b] of [['epissure_meubles_max', 1, 6], ['present_pouls_s', 10, 600], ['present_seuil', 0.2, 5], ['present_ecart_s', 2, 120], ['present_longueur', 3, 40], ['present_mots', 6, 40]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'present_seuil' ? Math.round(Number(q[k]) * 10) / 10 : Math.round(Number(q[k]))));
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;

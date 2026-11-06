@@ -4655,18 +4655,40 @@ async function trierLesMorceaux(conv) {
         .then(r => (r.ok ? r.json() : null)).catch(() => null)
         .then((v) => {
           m.verdict = v && typeof v.garder === 'boolean' ? v : { garder: true, texte, panne: true };   // une panne laisse passer
+          // (06/11, Hakim : « ses phrases m'arrivent en bouts » ; Ahmed : « jamais fermer la séquence, sauf à une virgule ou un point ») sa phrase
+          // coupée avant sa fin attend la suite (prochainMorceau la recolle)
+          m.ouvert = m.verdict.complet === false;
           journalVoix('morceau_trie', { ms: Date.now() - t0, garde: m.verdict.garder, panne: !!m.verdict.panne });
         }));
     }
   } finally { conv.trieEnCours = false; }
 }
+// (06/11, Hakim : « recoller les morceaux d'une même phrase avant de me les donner » ; Ahmed, avec son accord) un morceau coupé avant sa fin (son
+// prétraitement : incomplet) est collé devant le suivant, qui prend sa place ; seul, il attend au plus MORCEAU_OUVERT_MS (6 s), puis part tel quel
+const MORCEAU_OUVERT_MS = 6000;
+function recollerMorceaux(conv, t = Date.now()) {
+  const l = conv.morceaux || [];
+  for (let k = 0; k < l.length - 1; k++) {
+    const a = l[k], b = l[k + 1];
+    if (a.etat !== 'transcrit' || !a.ouvert || (b.etat !== 'transcrit' && b.etat !== 'attente' && b.etat !== 'transcription')) continue;
+    if (b.etat !== 'transcrit') { a.t = Math.max(a.t, t - MORCEAU_OUVERT_MS + 1500); continue; }   // la suite est en transcription : il l'attend
+    const ta = (a.verdict && a.verdict.garder !== false && a.verdict.texte) || a.texte;
+    b.texte = `${a.texte} ${b.texte}`.trim();
+    if (b.verdict) b.verdict = { ...b.verdict, garder: b.verdict.garder || !!(a.verdict && a.verdict.garder), texte: `${ta} ${(b.verdict.texte || '')}`.trim(), priorite: Math.min(priorite(a), priorite(b)) };
+    b.t = Math.min(a.t, b.t);
+    l.splice(k, 1); k--;
+    journalVoix('morceaux_recolles', {});
+  }
+}
 const priorite = (m) => (m.verdict && Number(m.verdict.priorite)) || 2;   // pas encore classé : au milieu
 // le morceau à dire maintenant (le plus prioritaire), retiré de la file ; les écartés et les périmés partent
 function prochainMorceau(conv) {
   const t = Date.now();
+  recollerMorceaux(conv, t);
   conv.morceaux = (conv.morceaux || []).filter(m => m.etat === 'attente' || m.etat === 'transcription'
+    || (m.etat === 'transcrit' && m.ouvert && t - m.t < MORCEAU_OUVERT_MS)
     || (m.etat === 'transcrit' && !(m.verdict && !m.verdict.garder) && t - m.t < MORCEAU_PERIME_MS));
-  const prets = conv.morceaux.filter(m => m.etat === 'transcrit').sort((a, b) => priorite(a) - priorite(b) || a.t - b.t);
+  const prets = conv.morceaux.filter(m => m.etat === 'transcrit' && !(m.ouvert && t - m.t < MORCEAU_OUVERT_MS)).sort((a, b) => priorite(a) - priorite(b) || a.t - b.t);
   if (!prets.length) return null;
   const m = prets[0];
   conv.morceaux = conv.morceaux.filter(x => x !== m);
