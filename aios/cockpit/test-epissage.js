@@ -832,3 +832,13 @@ test('morceaux : une phrase coupée avant sa fin est recollée devant la suivant
   seul.morceaux[0].t = t - 7000;
   assert.equal(ctx.prochain(seul).texte, 'je voulais te dire que', 'au-delà de 6 s, il part tel quel');
 });
+
+// (06/11, montre 0.8 : la complication Stop envoie { tout: true })
+test('Stop de la montre : tout arrête chaque tour en cours et appuie sur le Stop de la page', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const i = SRV.indexOf("p === '/api/jarvis/stop'"), route = SRV.slice(i, SRV.indexOf("p === '/api/promesses'", i));
+  assert.match(route, /if \(q && q\.tout === true\) \{\n\s+for \(const x of toursActifs\.values\(\)\)/);
+  assert.match(route, /diffuser\(abonnesPensees, 'souffle', j\(\{ niveau: 'bouton', id: 'stop' \}\)\)/);
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /if \(o\.niveau === 'bouton'\) \{ const b = document\.getElementById\(o\.id\); if \(b && \['pause', 'stop'/);
+});

@@ -11403,6 +11403,13 @@ async function traiter(req, res) {
   }
   if (p === '/api/jarvis/stop' && req.method === 'POST') {          // (2026-10-21) Stop explicite d'une réponse
     let q = null; try { q = JSON.parse(String(await lireCorps(req, 4096) || '')); } catch (_) {}
+    // (06/11, montre 0.8, Ahmed : « un bouton pour mettre en stop » dans les complications) tout : chaque tour en cours s'arrête, et la page
+    // Parler ouverte appuie sur son Stop (sa voix se tait, ses ribosomes sont libérés)
+    if (q && q.tout === true) {
+      for (const x of toursActifs.values()) { try { x.arreter(Object.hasOwn(RAISONS_ARRET, q.raison) ? q.raison : 'stop'); } catch (_) {} }
+      diffuser(abonnesPensees, 'souffle', j({ niveau: 'bouton', id: 'stop' }));
+      res.writeHead(204); return res.end();
+    }
     const t = q && typeof q.tour_id === 'string' ? toursActifs.get(q.tour_id) : null;
     if (t) t.arreter(q && Object.hasOwn(RAISONS_ARRET, q.raison) ? q.raison : 'stop');
     res.writeHead(204); return res.end();
