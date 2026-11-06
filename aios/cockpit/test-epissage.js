@@ -971,3 +971,11 @@ test('meubles éteints (auto et entre) : choisirMeuble ne choisit plus rien, nul
   const i = PAGE.indexOf('function choisirMeuble('), corps = PAGE.slice(i, i + 900);
   assert.match(corps, /reglagesCorps\.meubles_auto === false && reglagesCorps\.meubles_entre === false\) return null;/);
 });
+
+// (06/11, 14:30, Ahmed : « des fois il parle en parallèle, il dit 2 trucs en même temps »)
+test('une seule voix : sa réponse lue prend la même voix que ses pensées en Conversation ; un tour de la montre, la page se tait', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /if \(etat\.conversation && typeof voixEpissee === 'function' && voixEpissee\(\)\) return lecteurNeuronal;/);
+  assert.match(PAGE, /if \(!m\.complet\) etat\.montreParleA = Date\.now\(\);/);
+  assert.match(PAGE, /Number\(etat\.montreParleA\) > 0 && Date\.now\(\) - Number\(etat\.montreParleA\) < 20000 && \(etat\.sortie \|\| 'ici'\) !== \(typeof appareilIci === 'function' \? appareilIci\(\) : ''\)\) \{[^\n]*return; \}/);
+});

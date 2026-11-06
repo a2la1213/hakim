@@ -962,7 +962,10 @@ function niveauVoix() {
 const lecteurNeuronal = creerLecteurNeuronal();
 // Un seul lecteur pour le reste de la page : la voix neuronale si elle est là, sinon celle du Mac.
 const lecteur = {
-  get impl() { if (voixDuTelephone() && lecteurSysteme) return lecteurSysteme; return (etat.reglages.voix === 'neuronale' && etat.ttsLocal) || !lecteurSysteme ? lecteurNeuronal : lecteurSysteme; },
+  // (06/11, 14:30, Ahmed : « des fois il parle en parallèle, il dit 2 trucs en même temps, c'est du cafouillage ») en Conversation, ses pensées épissées
+  // partent par la voix du téléphone ou par lecteurNeuronal (recevoirBout) ; sa réponse lue en entier doit prendre LA MÊME voix, sinon deux moteurs
+  // parlent en même temps (la voix système d'un côté, la voix du cockpit de l'autre)
+  get impl() { if (voixDuTelephone() && lecteurSysteme) return lecteurSysteme; if (etat.conversation && typeof voixEpissee === 'function' && voixEpissee()) return lecteurNeuronal; return (etat.reglages.voix === 'neuronale' && etat.ttsLocal) || !lecteurSysteme ? lecteurNeuronal : lecteurSysteme; },
   dire(p) { this.impl.dire(p); },
   finFlux() { if (this.impl.finFlux) this.impl.finFlux(); },     // le texte est complet : vider la file
   arreter() { lecteurNeuronal.arreter(); if (lecteurSysteme) lecteurSysteme.arreter(); },
@@ -3284,6 +3287,8 @@ function recevoirBout(s, n, tour) {
   const conv = etat.conversation;
   // (04/11, 13:10, Ahmed : « tout ce qui est traduit par le ribosome sort en priorité par la bouche ») ce que son ribosome a traduit passe toujours
   if (!conv || !n || (!s.ribosome && !souffleAutorise())) return;
+  // (06/11, 14:30, Ahmed : « il dit 2 trucs en même temps ») un tour de la montre (ces 20 s) : la montre dit elle-même ses pensées épissées ; ici, pas une 2e voix
+  if (!s.ici && Number(etat.montreParleA) > 0 && Date.now() - Number(etat.montreParleA) < 20000 && (etat.sortie || 'ici') !== (typeof appareilIci === 'function' ? appareilIci() : '')) { if (typeof journalVoix === 'function') journalVoix('tu_montre_parle', { bout: n }); return; }
   if (!s.ici && typeof sortieAilleurs === 'function' && sortieAilleurs()) { voixAilleurs(s.texte, () => recevoirBout({ ...s, ici: true }, n, tour)); return; }   // (06/11) sa voix part là où il l'a dirigée
   if (bouts.tour !== tour) bouts = { tour, prochain: 1, liste: new Map(), enFile: [], dits: [], fileTel: bouts.fileTel || [] };
   if (n < bouts.prochain || bouts.liste.has(n)) return;
@@ -5304,6 +5309,7 @@ function surEchangeMontre(m) {
   const i = etat.messages.findIndex(x => String(x.id) === String(m.id));
   const neuf = { ...(i >= 0 ? etat.messages[i] : {}), id: m.id, qui: m.qui, texte: String(m.texte || ''), ts: m.ts, oral: m.qui === 'u' ? true : undefined, depuis: 'montre', ...(m.complet ? { complet: true } : {}) };
   if (i >= 0) etat.messages[i] = neuf; else etat.messages.push(neuf);
+  if (!m.complet) etat.montreParleA = Date.now();   // (06/11) un tour de la montre en cours : c'est elle qui dit ses pensées
   sauver(); rendre();
 }
 function ecouterPensees() {
