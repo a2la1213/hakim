@@ -61,23 +61,27 @@ def test_finir_depose_le_mp3_dans_l_atelier(lieux, tmp_path):
     c = chant.lancer("la la", "nasheed", 30, "Nour", demarrer=_faux_demarrage([]), **lieux)
     mp3 = lieux["chansons"] / f"{c['nom']}.mp3"
     mp3.write_bytes(b"ID3 faux mp3")
-    ligne = chant.finir(c["tache"], mp3=mp3, calcul_s=42.3, atelier=tmp_path / "atelier" / "chansons", **lieux)
+    ligne = chant.finir(c["tache"], mp3=mp3, calcul_s=42.3, atelier=tmp_path / "atelier" / "chansons",
+                        telephone=tmp_path / "tel", **lieux)
     assert "CHANSON PRÊTE" in ligne and f'fichier_joindre("atelier/chansons/{c["nom"]}.mp3"' in ligne
     assert (tmp_path / "atelier" / "chansons" / f"{c['nom']}.mp3").read_bytes() == b"ID3 faux mp3"
     t = json.loads((lieux["dossier"] / f"{c['tache']}.json").read_text())
     assert t["etat"] == "finie" and t["code"] == 0 and t["fin"] >= t["debut"]
     fiche = json.loads((lieux["chansons"] / f"{c['nom']}.json").read_text())
     assert fiche["etat"] == "prête" and fiche["calcul_s"] == 42.3
+    # (06/11) la copie pour le téléphone d'Ahmed (Hakim/Chansons)
+    assert (tmp_path / "tel" / f"{c['nom']}.mp3").read_bytes() == b"ID3 faux mp3"
+    assert fiche["telephone"] == str(tmp_path / "tel" / f"{c['nom']}.mp3")
     # une fois finie, une autre chanson peut partir
     chant.lancer("la", "rap", 30, demarrer=_faux_demarrage([]), **lieux)
 
 
 def test_une_panne_finit_la_tache_avec_un_code(lieux, tmp_path):
     c = chant.lancer("la", "pop", 30, demarrer=_faux_demarrage([]), **lieux)
-    ligne = chant.finir(c["tache"], erreur="RuntimeError: plus de mémoire", atelier=tmp_path / "a", **lieux)
+    ligne = chant.finir(c["tache"], erreur="RuntimeError: plus de mémoire", atelier=tmp_path / "a", telephone=tmp_path / "tel", **lieux)
     t = json.loads((lieux["dossier"] / f"{c['tache']}.json").read_text())
     assert "RATÉE" in ligne and t["etat"] == "finie" and t["code"] == 1
-    assert not (tmp_path / "a").exists()
+    assert not (tmp_path / "a").exists() and not (tmp_path / "tel").exists()
 
 
 def test_sans_installation_refus_clair(lieux, monkeypatch):
@@ -137,3 +141,14 @@ def test_caler_recale_sur_la_gamme_et_laisse_le_silence():
     assert min(abs(out[3] - 261.63), abs(out[3] - 293.66)) < 0.05       # C# → C ou D
     mi = chant.caler([la * 2 ** (0.4 / 12)], do_majeur, force=0.5)[0]   # à moitié : entre les deux
     assert la < mi < la * 2 ** (0.4 / 12)
+
+
+def test_bpm_et_instru_pour_le_studio(lieux, tmp_path):
+    with pytest.raises(chant.Refus, match="tempo"):
+        chant.preparer("la", "rap", 30, bpm=500)
+    c = chant.lancer("[instrumental]", "trap", 40, "Instru", bpm=140, pour_studio=True, demarrer=_faux_demarrage([]), **lieux)
+    assert c["bpm"] == 140 and c["instrumental"] and c["pour_studio"]
+    mp3 = lieux["chansons"] / f"{c['nom']}.mp3"
+    mp3.write_bytes(b"ID3")
+    ligne = chant.finir(c["tache"], mp3=mp3, calcul_s=1, atelier=tmp_path / "a", telephone=tmp_path / "tel", **lieux)
+    assert ligne.startswith("INSTRU PRÊTE pour le studio") and "fichier_joindre" not in ligne

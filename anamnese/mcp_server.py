@@ -1221,7 +1221,7 @@ def fichier_joindre(chemin: str, titre: str = "") -> str:
 
 @mcp.tool()
 def chanter(paroles: str, style: str, duree_s: int = 60, titre: str = "", langue: str = "",
-            autotune: bool = False) -> str:
+            autotune: bool = False, bpm: int = 0) -> str:
     """(Hakim seulement) COMPOSER ET CHANTER une chanson (accord d'Ahmed, 06/11) : tes paroles (ou celles de papa), un
     style et une durée donnent un vrai morceau chanté, voix et instrumental, calculé sur le Mac (ACE-Step, hors ligne).
     - paroles : en sections, par exemple « [verse] … [chorus] … » (des paroles nues deviennent un couplet) ;
@@ -1232,6 +1232,7 @@ def chanter(paroles: str, style: str, duree_s: int = 60, titre: str = "", langue
     - duree_s : de 10 à 240 secondes (60 à 120 conseillé). titre : son nom. langue : « fr », « ar »… (devinée sinon).
     - autotune : True pour la voix autotunée (le son du rap et du raï d'aujourd'hui : recalée note par note sur la
       gamme) ; False (par défaut) pour ta voix naturelle.
+    - bpm : le tempo (30 à 300) ; 0 (par défaut) le laisse choisir.
     Rend la main tout de suite : la chanson se compose en tâche de fond (quelques minutes, suivre_tache pour la jauge).
     Quand elle est prête, tu es prévenu : envoie-la à papa avec fichier_joindre (le chemin est dans la fin du journal)."""
     import courrier
@@ -1241,12 +1242,99 @@ def chanter(paroles: str, style: str, duree_s: int = 60, titre: str = "", langue
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis"))
     import chant
     try:
-        c = chant.lancer(paroles, style, duree_s, titre, langue, bool(autotune))
+        c = chant.lancer(paroles, style, duree_s, titre, langue, bool(autotune), bpm=bpm)
     except chant.Refus as e:
         return f"Refusé : {e}"
     avec = ", avec autotune" if c.get("autotune") else ""
     return (f"Je compose… « {c['titre']} » ({c['style']}{avec}, {c['duree_s']} s, langue {c['langue']}) : tâche {c['tache']}. "
             "Quelques minutes de calcul ; tu seras prévenu quand elle sera prête, puis fichier_joindre pour l'envoyer à papa.")
+
+
+def _studio():
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis"))
+    import studio
+    return studio
+
+
+def _studio_fiches(dossier, motif="*.json"):
+    import json as _json
+    from pathlib import Path as _P
+    l = []
+    for f in _P(dossier).glob(motif):
+        try:
+            l.append(_json.loads(f.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            pass
+    return l
+
+
+@mcp.tool()
+def studio_mixer(prise: str = "", instru: str = "", titre: str = "", autotune: bool = False, voix_db: float = 0.0,
+                 reverb: float = 0.3, echo: float = 0.0) -> str:
+    """(Hakim seulement) TON STUDIO : tu es l'ingé son de papa (06/11). Lance le mixage et le mastering d'une prise de
+    voix de papa sur son instru, sur le Mac (ffmpeg : nettoyage, égaliseur, dé-essage, compression, réverb, écho,
+    équilibre, mastering à −14 LUFS, limiteur ; export MP3 et WAV, copié dans Hakim/Chansons de son téléphone).
+    - prise : l'identifiant d'une prise (studio_avis les liste) ; vide = la prise choisie par papa, sinon la dernière.
+    - instru : vide = l'instru de cette prise.
+    - autotune : True recale sa voix sur la gamme de l'instru. voix_db : la voix plus forte (+) ou plus basse (−), en
+      dB, de −6 à +6. reverb, echo : de 0 (sec) à 1 (beaucoup) ; 0,2 à 0,4 de réverb conseillé.
+    Rend la main tout de suite (calcul en tâche de fond, une à la fois) ; studio_avis donne ensuite le résultat."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim mixe dans le studio."
+    st = _studio()
+    prises = sorted(_studio_fiches(st.STUDIO / "prises"), key=lambda x: x.get("ts", 0))
+    if not prises:
+        return "Aucune prise de papa dans le studio pour l'instant."
+    p = next((x for x in prises if x.get("id") == prise), None) if prise else (
+        next((x for x in reversed(prises) if x.get("choisie")), None) or prises[-1])
+    if not p:
+        return f"Prise inconnue : {prise}. Les prises : " + ", ".join(x.get("id", "?") for x in prises[-8:])
+    inst = instru or p.get("instru_chemin") or ""
+    try:
+        v = max(-6.0, min(6.0, float(voix_db or 0)))
+        j = st.lancer("mixer", {"prise": p["fichier"], "instru": inst, "titre": titre or p.get("titre") or "Mix",
+                                "latence_ms": p.get("latence_ms", 0), "autotune": bool(autotune), "voix_db": v,
+                                "reverb": max(0.0, min(1.0, float(reverb))), "echo": max(0.0, min(1.0, float(echo))),
+                                "par": "hakim"})
+    except (st.Refus, KeyError, ValueError) as e:
+        return f"Refusé : {e}"
+    return (f"Mix lancé ({j['id']}) : prise {p['id']}, voix {v:+.1f} dB, réverb {reverb}, écho {echo}"
+            f"{', autotune' if autotune else ''}. Une à deux minutes ; studio_avis ensuite pour l'écouter en chiffres.")
+
+
+@mcp.tool()
+def studio_avis(mix: str = "") -> str:
+    """Ton oreille d'ingé son (06/11) : les prises de papa, les calculs en cours, et ce que tu entends d'un mix fini, en
+    chiffres (niveau en LUFS, crête, souffle, saturation, écart sur le temps) avec tes conseils courts déjà formulés.
+    mix : le nom d'un mix ; vide = le dernier. Lecture seule. Donne à papa un avis court et concret (deux ou trois
+    points), dans tes mots."""
+    st = _studio()
+    lignes = []
+    prises = sorted(_studio_fiches(st.STUDIO / "prises"), key=lambda x: x.get("ts", 0))[-6:]
+    if prises:
+        lignes.append("Prises de papa : " + " ; ".join(
+            f"{x.get('id')}{' (choisie)' if x.get('choisie') else ''} {x.get('duree_s') or '?'} s sur « {x.get('instru_titre', '?')} »"
+            for x in prises))
+    travaux = [x for x in _studio_fiches(st.STUDIO / "travaux", "J-*.json") if x.get("etat") in ("en attente", "en cours")]
+    for t in travaux:
+        lignes.append(f"En cours : {t['type']} {t['id']} — étape {t.get('etape', 0)}/{t.get('etapes', '?')} {t.get('texte', '')}")
+    mixes = sorted(_studio_fiches(st.STUDIO), key=lambda x: x.get("fin", 0))
+    m = next((x for x in mixes if x.get("nom") == mix), None) if mix else (mixes[-1] if mixes else None)
+    if not m:
+        lignes.append("Aucun mix fini." if not mix else f"Mix inconnu : {mix}")
+        return "\n".join(lignes)
+    me = (m.get("avis") or {}).get("mesures", {})
+    r = m.get("reglages", {})
+    lignes.append(f"Mix « {m.get('titre')} » ({m.get('nom')}, {m.get('duree_s')} s, calculé en {m.get('calcul_s')} s) : "
+                  f"{(m.get('mesure') or {}).get('lufs')} LUFS intégrés, crête {(m.get('mesure') or {}).get('crete_db')} dBFS ; "
+                  f"souffle de la prise {me.get('souffle_db')} dB, saturation {me.get('saturation')}, écart sur le temps "
+                  f"{me.get('decalage_ms')} ms (confiance {me.get('decalage_confiance')}) ; réglages : voix {r.get('voix_db')} dB, "
+                  f"réverb {r.get('reverb')}, écho {r.get('echo')}, autotune {'oui' if r.get('autotune') else 'non'}, "
+                  f"latence retirée {r.get('latence_ms')} ms.")
+    lignes.append("Ce que tu entends : " + " ; ".join((m.get("avis") or {}).get("conseils", [])))
+    return "\n".join(lignes)
 
 
 @mcp.tool()

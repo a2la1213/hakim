@@ -114,8 +114,8 @@ def nom_de(titre, quand=None):
     return time.strftime("%Y%m%d-%H%M%S", time.localtime(quand or time.time())) + "-" + t
 
 
-def preparer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune=False):
-    """La demande vérifiée et mise en forme (aucun effet de bord)."""
+def preparer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune=False, bpm=0, pour_studio=False):
+    """La demande vérifiée et mise en forme (aucun effet de bord). bpm : 0 = au choix d'ACE-Step (sinon 30 à 300)."""
     try:
         d = int(round(float(duree_s or DUREE_DEFAUT)))
     except (TypeError, ValueError):
@@ -125,12 +125,18 @@ def preparer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune
     instrumental = _cle(paroles) in ("[instrumental]", "instrumental")
     texte = "[Instrumental]" if instrumental else structurer(paroles)
     titre = " ".join(str(titre or "").split())[:80] or "Sans titre"
+    try:
+        bpm = int(round(float(bpm or 0)))
+    except (TypeError, ValueError):
+        raise Refus("un tempo en BPM (30 à 300), ou 0 pour le laisser choisir")
+    if bpm and not 30 <= bpm <= 300:
+        raise Refus(f"tempo de 30 à 300 BPM (demandé : {bpm})")
     desc = description(style)
     if autotune:
         desc = (desc + ", " + TAG_AUTOTUNE)[:512]
     return {"titre": titre, "style": " ".join(str(style or "").split())[:200], "description": desc, "autotune": bool(autotune),
             "paroles": texte, "langue": "unknown" if instrumental else langue_de(texte, langue), "duree_s": d,
-            "instrumental": instrumental, "nom": nom_de(titre)}
+            "instrumental": instrumental, "nom": nom_de(titre), "bpm": bpm, "pour_studio": bool(pour_studio)}
 
 
 # ---------------------------------------------------------------------------------------------------- l'autotune
@@ -254,10 +260,20 @@ def _demarrer(args, log):
     return p.pid
 
 
+def _studio_occupe():
+    """(06/11) le studio calcule-t-il (Demucs, un mix) ? Jamais deux gros calculs à la fois sur 16 Go."""
+    try:
+        sys.path.insert(0, str(ICI))
+        import studio
+        return studio.occupe()
+    except Exception:                                        # noqa: BLE001 — sans studio lisible, on ne bloque pas
+        return None
+
+
 def lancer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune=False, dossier=None, chansons=None,
-           demarrer=None):
+           demarrer=None, bpm=0, pour_studio=False):
     """Lance la composition en tâche de fond ; rend {tache, nom, …} tout de suite."""
-    demande = preparer(paroles, style, duree_s, titre, langue, autotune)
+    demande = preparer(paroles, style, duree_s, titre, langue, autotune, bpm, pour_studio)
     dossier, chansons = Path(dossier or TACHES), Path(chansons or CHANSONS)
     if demarrer is None and not (PYTHON_CHANT.exists() and (ACE / "checkpoints").is_dir()):
         raise Refus("ACE-Step n'est pas installé sur le Mac (demande à Ahmed ou à Nour)")
@@ -270,6 +286,8 @@ def lancer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune=F
         chants = [e for e in en_cours if e.get("chanson")]
         if chants:
             raise Refus(f"je compose déjà « {chants[0]['chanson'].get('titre')} » ({chants[0]['id']}) : une chanson à la fois")
+        if demarrer is None and _studio_occupe():
+            raise Refus("le studio calcule un mix ou une instru : attends qu'il finisse (une grosse tâche à la fois)")
         if len(en_cours) >= MAX_TACHES:
             raise Refus(f"déjà {len(en_cours)} tâches de fond en cours : attends qu'une finisse")
         tid = f"T-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:4]}"
@@ -288,7 +306,7 @@ def lancer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune=F
         verrou.close()
 
 
-def finir(tid, dossier=None, chansons=None, atelier=None, erreur=None, mp3=None, calcul_s=None, raison=None):
+def finir(tid, dossier=None, chansons=None, atelier=None, erreur=None, mp3=None, calcul_s=None, raison=None, telephone=None):
     """L'état final de la tâche et de la fiche de la chanson ; la copie dans l'atelier. Rend la ligne de fin."""
     dossier, chansons, atelier = Path(dossier or TACHES), Path(chansons or CHANSONS), Path(atelier or ATELIER)
     d = json.loads((dossier / f"{tid}.json").read_text(encoding="utf-8"))
@@ -310,8 +328,19 @@ def finir(tid, dossier=None, chansons=None, atelier=None, erreur=None, mp3=None,
         rel = f"atelier/chansons/{copie.name}"
         ligne = (f"CHANSON PRÊTE : « {c['titre']} » ({c['style']}, {c['duree_s']} s, calculée en {round(calcul_s or 0)} s). "
                  f"Envoie-la à papa : fichier_joindre(\"{rel}\", \"{c['titre']}\")")
+        if c.get("pour_studio"):
+            ligne = (f"INSTRU PRÊTE pour le studio de papa : « {c['titre']} » ({c['style']}, {c['duree_s']} s). Elle l'attend "
+                     "dans la page Studio, inutile de la joindre.")
         d.update(etat="finie", raison=None, code=0, fichier=rel)
         fiche.update(etat="prête", mp3=str(mp3), atelier=rel, calcul_s=round(calcul_s or 0, 1), taille=Path(mp3).stat().st_size)
+        # (06/11, Ahmed : « dans quel dossier je trouve ses sons sur le smartphone ») une copie dans Hakim/Chansons
+        try:
+            sys.path.insert(0, str(ICI))
+            import studio
+            tel = studio.copier_au_telephone(mp3, telephone)
+            fiche["telephone"] = str(tel) if tel else None
+        except Exception as e:                               # noqa: BLE001 — la chanson reste prête sans la copie
+            fiche["telephone_erreur"] = str(e)[:200]
     d.update(fin=fin, duree_s=round(fin - d["debut"], 1))
     fiche["fin"] = fin
     _ecrire(fiche_p, fiche)
@@ -372,7 +401,8 @@ def composer(c, sortie_dir):
         raise RuntimeError(f"LM : {msg}")
     print("PROGRESSION 2/5 composition", flush=True)
     params = GenerationParams(caption=c["description"], lyrics=c["paroles"], duration=float(c["duree_s"]),
-                              vocal_language=c["langue"], instrumental=bool(c.get("instrumental")), inference_steps=8)
+                              vocal_language=c["langue"], instrumental=bool(c.get("instrumental")), inference_steps=8,
+                              **({"bpm": int(c["bpm"])} if c.get("bpm") else {}))
     r = generate_music(dit, lm, params, GenerationConfig(batch_size=1, audio_format="wav"), save_dir=str(sortie_dir))
     if not r.success or not r.audios:
         raise RuntimeError(f"ACE-Step : {getattr(r, 'error', None) or 'aucun son'}")

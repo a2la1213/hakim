@@ -5388,7 +5388,12 @@ function ecouterPensees() {
     if (o.ici && !(o.extrait && (o.extrait.cible === 'deux' || o.extrait.cible === appareilIci()))) return;
     recevoirSon(o.extrait); } catch (_) {} });
   es.addEventListener('micro', (ev) => { try { microParHakim(JSON.parse(ev.data)); } catch (_) {} });   // (22:27) de lui-même aussi
-  es.addEventListener('modele', (ev) => { try { montrerMode(JSON.parse(ev.data).modele); } catch (_) {} });   // (03/11) il change de mode
+  es.addEventListener('modele', (ev) => { try { const m = JSON.parse(ev.data).modele; montrerMode(m);   // (03/11) il change de mode
+    // (06/11, 19:15, Hakim : « mode bloqué en Super Hakim malgré [[modele: hakim]] ») la page renvoyait à chaque message le mode choisi dans ses réglages
+    // (« opus » par défaut à l'écrit) : sa bascule ne tenait jamais ; elle devient aussi le choix de la page (le mode « auto » reste auto)
+    if (['haiku', 'sonnet', 'opus'].includes(m)) { let change = false;
+      for (const k of ['modele', 'modeleConversation']) if (etat.reglages[k] !== 'auto' && etat.reglages[k] !== m) { etat.reglages[k] = m; change = true; }
+      if (change) { try { if ($('modele')) $('modele').value = etat.reglages.modele; if ($('modeleConversation')) $('modeleConversation').value = etat.reglages.modeleConversation; } catch (_) {} sauver(); } } } catch (_) {} });
   es.addEventListener('morceaux', (ev) => { try { const o = JSON.parse(ev.data);   // (09:25) son tri des morceaux, allumé ou éteint par lui
     reglagesCorps = { ...reglagesCorps, trier_morceaux: !!o.actif }; journalVoix('tri_morceaux', { actif: !!o.actif }); } catch (_) {} });
   es.addEventListener('oreille_hakim', (ev) => { try { surOreilleHakim(JSON.parse(ev.data)); } catch (_) {} });   // (01:00) le signe
