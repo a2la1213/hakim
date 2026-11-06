@@ -1900,7 +1900,7 @@ function blocNonEntendus(texteAhmed, nonce, maintenant = Date.now()) {
     + `ne ${n > 1 ? 'les' : 'la'} redis pas de toi-même ; s'il te demande de répéter, ${n > 1 ? 'elles te seront données' : 'elle te sera donnée'}]`;
 }
 function reecouterNonDites(lot, maintenant = Date.now()) {
-  if (!lot.length || !abonnesPensees.size) return false;
+  if (!lot.length || ![...abonnesPensees].some(r => !r.temoin)) return false;   // (06/11) une vraie page, pas le témoin de l'orbe
   diffuser(abonnesPensees, 'reecoute', j({ textes: lot.map(x => ({ texte: x.texte, coupe: !!x.coupe, heure_ms: Number(x.origine_ts) || Number(x.recu) || maintenant })) }));
   return true;
 }
@@ -4059,7 +4059,7 @@ function fermerChemin(c) {
 }
 // en Conversation (le micro de papa ouvert pour vous deux), et une page qui l'écoute : sinon personne ne dirait ce qu'il pense
 const conversationOuverte = () => (typeof HOMEO === 'undefined' || !HOMEO || !HOMEO.s || HOMEO.s.micro === 'conversation')
-  && !(typeof abonnesPensees !== 'undefined' && abonnesPensees && abonnesPensees.size === 0);
+  && !(typeof abonnesPensees !== 'undefined' && abonnesPensees && ![...abonnesPensees].some(r => !r.temoin));   // (06/11) sans le témoin de l'orbe
 // ses mots : le bloc du téléphone en entier à chaque passage (cle : son début) ; seuls les mots neufs partent, une fois chacun
 function entendreMorceau(texte, o = {}, maintenant = Date.now()) {
   const reg = corpsReglages();
@@ -12981,11 +12981,15 @@ async function traiter(req, res) {
     if (ok) diffuser(abonnesPensees, 'voix_vers', j({ cible, quoi, texte: String(q.texte || '').slice(0, 4000), degre: Number(q.degre) || 0, x: String(q.x || '').slice(0, 40), id: String(q.id || '').slice(0, 60) }));
     res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j({ ok, cible }));
   }
-  if (p === '/api/jarvis/flux') {
+  // (06/11, Ahmed : « l'orbe sur chaque page doit bouger comme partout ailleurs ») /api/jarvis/flux-orbe : le même flux, pour la petite
+  // orbe des autres pages (orbe-coin.js) ; un TÉMOIN : il ne compte ni comme une page qui dit ses réponses (reecouterNonDites), ni comme
+  // une Conversation ouverte, ni comme un appareil
+  if (p === '/api/jarvis/flux' || p === '/api/jarvis/flux-orbe') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
     res.write('retry: 3000\n\n');
     res.distant = distantReq; res.sessionVerrou = lireCookie(req.headers.cookie, COOKIE_VERROU);
-    { const a = new URL(req.url, 'http://x').searchParams.get('appareil'); if (['montre', 'tel', 'mac'].includes(a)) res.appareil = a; }   // (06/11) qui il est
+    if (p === '/api/jarvis/flux-orbe') res.temoin = true;
+    else { const a = new URL(req.url, 'http://x').searchParams.get('appareil'); if (['montre', 'tel', 'mac'].includes(a)) res.appareil = a; }   // (06/11) qui il est
     abonnesPensees.add(res);
     req.on('close', () => abonnesPensees.delete(res));
     return;
