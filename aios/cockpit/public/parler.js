@@ -3306,7 +3306,7 @@ function recevoirBout(s, n, tour) {
     if (lecteurSysteme.actif) {
       // (04/11, 14:20, Ahmed : « je vois sa pensée seule, pas l'épissée pour parler ») ce que son ribosome a épissé n'est jamais remplacé
       // ni oublié : il attend son tour, dans l'ordre
-      if (s.ribosome) { b.dit = meublerSaut(b); bouts.fileTel = (bouts.fileTel || []).concat([b]); return; }
+      if (s.ribosome) { b.dit = meublerSaut(b); if (typeof lecteurSysteme.preparer === 'function') b.dit.forEach(x => lecteurSysteme.preparer(x)); bouts.fileTel = (bouts.fileTel || []).concat([b]); return; }   // (06/11) calculée d'avance : pas de blanc
       if (bouts.attenteTel) montrerPensee('🧠 il pense, sans le dire', bouts.attenteTel.texte, true);   // remplacé : pensé, pas dit
       // (1.60, Ahmed : « chaque cœur qui traite le même chunk sur le Mac et sur le smartphone doit être relié et coordonné ») ce qu'il
       // dira (son meuble compris) : sa voix se calcule déjà sur le téléphone, pendant que la précédente se dit
@@ -3416,6 +3416,7 @@ function direBouts() {
     bouts.enFile.push(b.texte);
     lecteurNeuronal.direAudio(b.texte, b.buf);                        // à la suite de ce qu'il dit déjà : le lecteur les enchaîne
   }
+  if (prets.length && typeof direRibosome === 'function') setTimeout(direRibosome, 0);   // (06/11) sa voix prête : la suivante se calcule déjà
 }
 // (04/11, Ahmed, capture à l'appui : « il faut décharger la pensée à la première pensée, sinon il envoie toutes ses pensées au fur et à
 // mesure et ça fait des gros pavés ; chaque pensée prononcée est envoyée dans la pensée, puis la 2e dans une nouvelle pensée ») une
@@ -3639,7 +3640,11 @@ function direRibosome() {
   // séquentielle ») mesuré : sa voix du Mac (Chatterbox) calcule 2 fois plus lentement qu'elle ne parle, et chaque morceau partait la calculer sans
   // attendre le précédent (jusqu'à 3 min 30 de file, le GPU toujours pris) : un morceau à la fois ; ce qui attend pendant ce temps vieillit et
   // « Sauter les morceaux passés » ne garde que le dernier
-  if (lecteur.actif || (typeof voixEnCalcul === 'function' && voixEnCalcul())) { noterAttente('voix'); return; }
+  // (06/11, 15:05, Ahmed : « quand la parole est épissée, juste avant qu'elle sorte, il faut bien la relier et la consolider, pour qu'il n'y ait pas de pauses
+  // entre chaque morceau épissé ») parole_liee (allumé) : le morceau suivant n'attend plus que sa voix se taise ; sa voix se calcule PENDANT que la
+  // précédente parle et se met à sa suite (une seule voix en calcul à la fois) ; ce qui attend du même tour part d'un seul tenant
+  const liee = typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.parole_liee !== false;
+  if ((!liee && lecteur.actif) || (typeof voixEnCalcul === 'function' && voixEnCalcul())) { noterAttente('voix'); return; }
   // (05/11, Ahmed : « un autre réglage : en combien de temps après mon silence le chunk suivant est lu ») lire_apres_silence_ms : 0, sans
   // attendre (comme depuis le 04/11, 21:10) ; sinon le morceau suivant attend que tu te sois tu ce temps-là
   const apres = typeof reglagesCorps !== 'undefined' ? Number(reglagesCorps.lire_apres_silence_ms) || 0 : 0;
@@ -3654,7 +3659,9 @@ function direRibosome() {
   // (05/11, Ahmed : « quand une parole est passée depuis un moment, il faut sauter tous les morceaux passés et se focaliser sur le dernier ; la
   // première phrase est dite, et quelques secondes de coupure suffisent à sauter le second chunk et tous les autres, jusqu'au dernier préparé
   // avant la fin de ma parole ») ce qui attend depuis sauter_passe_s (3 s) est passé : seul le dernier morceau préparé est dit
-  if (f.length > 1 && typeof reglagesCorps !== 'undefined' && reglagesCorps.sauter_passe !== false
+  // (06/11, 15:10, Ahmed : « ce qui sort du ribosome doit être soudé, figé, dit en entier du début à la fin, ou jusqu'à ce qu'on lui coupe la parole ») parole
+  // liée : rien de ce qui est sorti n'est sauté parce qu'il a attendu ; seuls ta voix (il garde la parole éteint), « stop » ou le bouton l'arrêtent
+  if (!liee && f.length > 1 && typeof reglagesCorps !== 'undefined' && reglagesCorps.sauter_passe !== false
     && attente >= (Number(reglagesCorps.sauter_passe_s) || 3) * 1000) {
     if (typeof journalVoix === 'function') journalVoix('passe_saute', { sautes: f.length - 1, ms: attente });
     if (typeof blancsPourSautes === 'function') blancsPourSautes(f.slice(0, -1));
@@ -3670,7 +3677,7 @@ function direRibosome() {
     if (!f.length) return;
   }
   // (05/11, 21:20, Ahmed : « vas-y pour le 1 ») un morceau à la fois, dit dès qu'il est prêt : mesuré, 2,6 s de calcul par lot regroupé avant le premier son
-  const tour = f[0].tour, lot = typeof reglagesCorps !== 'undefined' && reglagesCorps.un_par_un !== false ? [f[0]] : f.filter(x => x.tour === tour);
+  const tour = f[0].tour, lot = typeof reglagesCorps !== 'undefined' && reglagesCorps.un_par_un !== false && !(liee && lecteur.actif) ? [f[0]] : f.filter(x => x.tour === tour);   // (06/11) sa voix parle : tout ce qui attend, consolidé
   // (04/11, 13:10, Ahmed : « dès que le ribosome commence, il ne s'arrête jamais jusqu'à la fin, excepté si je parle : il attend la fin de
   // ma parole ») tu parles : sa voix attend ta fin, puis reprend là où elle en était ; rien de ce qui est traduit n'est laissé
   // (04/11, 14:45, mesuré : 5 tours épissés en attente 20 s et plus, papa et ses amis parlaient sans jamais 1 s de blanc) sa voix part à ta

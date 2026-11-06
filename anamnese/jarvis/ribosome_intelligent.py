@@ -24,7 +24,7 @@ CLES_CORPS = ("sauter_suite_ms", "sauter_passe_s", "lire_apres_silence_ms", "epi
 # « Son ribosome » de la page Réglages, à lui aussi ; (06/11, Ahmed : « donne accès à tous les boutons du ribosome pour Hakim ») y compris
 # « Ribosome intelligent » (éteint par lui, seul papa le rallume : éteint, il ne règle plus rien) et « Tes réglages passent avant lui »
 BOUTONS_CORPS = ("ribosome_intelligent", "papa_passe_avant", "voix_par_appareil", "economie", "fenetre_partagee", "tournesol", "un_par_un", "meubles_entre", "voix_azure", "stt_azure",
-                 "reponse_directe", "tunnel", "ecoute_francais", "parole_sans_stop", "lire_reponse_entiere", "pretraitement_parole", "epissure_grammaire",
+                 "reponse_directe", "tunnel", "ecoute_francais", "parole_sans_stop", "lire_reponse_entiere", "parole_liee", "pretraitement_parole", "epissure_grammaire",
                  "epissure_meubles", "parole_libre", "pensee_en_boucle", "boucle_ribosomes")
 BOUTONS_RIBOSOME = ("premiere_directe",)
 BOUTONS = BOUTONS_CORPS + BOUTONS_RIBOSOME

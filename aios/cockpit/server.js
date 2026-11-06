@@ -7156,6 +7156,7 @@ function corpsReglages() {
     parole_sans_stop: r.parole_sans_stop !== false,
     // (06/11, Ahmed : « en Conversation ou en Télépathie, il doit toujours lire en entier ce qu'il écrit après mon dernier message ») sa réponse écrite, dite en entier
     lire_reponse_entiere: r.lire_reponse_entiere !== false,
+    parole_liee: r.parole_liee !== false,   // (06/11) ses morceaux épissés reliés, sans pause entre eux
     epissure_grammaire: r.epissure_grammaire !== false,
     pretraitement_parole: r.pretraitement_parole !== false,
     trois_pistes: r.trois_pistes !== false,   // (06/11, Ahmed) ce qu'il entend en trois pistes (parole, musique, fond), ses notes brutes hors du fil   // (06/11) ta parole prétraitée : portions, langue (l'arabe en phonétique), sujet, hors sujet   // (06/11) parties complètes, hors sujet exclu, grammaire de chaque langue, préordonnées
@@ -12608,7 +12609,7 @@ async function traiter(req, res) {
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
-      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
+      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
       for (const [k, a, b] of [['epissure_meubles_max', 1, 6], ['present_pouls_s', 10, 600], ['present_seuil', 0.2, 5], ['present_ecart_s', 2, 120], ['present_longueur', 3, 40], ['present_mots', 6, 40]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'present_seuil' ? Math.round(Number(q[k]) * 10) / 10 : Math.round(Number(q[k]))));
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;

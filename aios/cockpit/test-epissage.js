@@ -136,9 +136,9 @@ test('page : une seule réponse par tour ; le ribosome y allume ses mots au fil 
   assert.match(paves[0].html, /🗣 « Oui papa tu veux parler du calcul \? »/, '(15:30) sa parole épissée, morceau après morceau, dans le même pavé');
   // (21:10) dès qu'il a lu, il parle, même pendant que papa parle
   assert.deepStrictEqual(dits.map(d => [d[0], d[2], d[3], d[4]]), [['Oui papa', 7, true, true], ['tu veux parler du calcul ?', 7, true, true]]);
-  ctx.lecteur.actif = true;                                          // il parle : la suite attend sa fin
+  ctx.lecteur.actif = true;                                          // il parle : (06/11, parole_liee) la suite part déjà, à sa suite, sans pause
   ctx.lu({ tour: 7, k: 3, texte: 'il a fini cette nuit', pave: 'x', mots: [] });
-  assert.strictEqual(dits.length, 2, 'sa voix sonne : la suite attend sa fin (une à la fois)');
+  assert.strictEqual(dits.length, 3, 'sa voix sonne : la suite se prépare déjà et se met à sa suite (parole liée)');
   ctx.lecteur.actif = false;
   ctx.dire();
   assert.deepStrictEqual(dits.map(d => d[0]), ['Oui papa', 'tu veux parler du calcul ?', 'il a fini cette nuit']);
@@ -593,6 +593,7 @@ test('ses pensées et ce que son ribosome en sort portent le numéro de leur ép
 test('page : à 10 s de ton silence, ou à sa demande d’outil, sa parole de cette épissure s’arrête ; la suivante parle', () => {
   const { ctx, dits } = pageRibosome();
   const arrets = [];
+  ctx.reglagesCorps = { ...(ctx.reglagesCorps || {}), parole_liee: false };   // (06/11) l'ancien rythme : la suite attend sa voix
   ctx.lecteur = { actif: true, arreter: () => arrets.push('voix') };
   ctx.fetch = (u, o) => { arrets.push(['fetch', u, JSON.parse(o.body).tour]); return Promise.resolve(); };
   ctx.jeton = () => 'x'; ctx.journalVoix = () => {};
@@ -985,4 +986,14 @@ test('« il garde la parole » éteint : ta voix l’arrête aussi en Conversati
   const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
   assert.match(PAGE, /const garde = typeof reglagesCorps === 'undefined' \|\| reglagesCorps\.garder_parole !== false;\n\s+if \(voixEpissee\(\) && garde\) \{/);
   assert.match(PAGE, /if \(voixEpissee\(\) && !garde && typeof arreterEpissure === 'function' && etat\.epissureTour\) arreterEpissure\('parole', etat\.epissureTour\);/);
+});
+
+
+// (06/11, 15:05, Ahmed : « relier et consolider la parole épissée, pas de pauses entre chaque morceau »)
+test('parole liée : le morceau suivant se calcule pendant que sa voix parle ; éteint, il attend sa fin', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /if \(\(!liee && lecteur\.actif\) \|\| \(typeof voixEnCalcul === 'function' && voixEnCalcul\(\)\)\) \{ noterAttente\('voix'\); return; \}/);
+  assert.match(PAGE, /if \(prets\.length && typeof direRibosome === 'function'\) setTimeout\(direRibosome, 0\);/);
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(SRV, /parole_liee: r\.parole_liee !== false,/);
 });

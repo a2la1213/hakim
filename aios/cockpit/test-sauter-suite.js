@@ -83,7 +83,7 @@ test('ce qui attend depuis 3 s est passé : seul le dernier morceau préparé es
   const monter = (file, reglage = {}) => {
     const dits = [], journal = [];
     const ctx = { Math, Number, Date: { now: () => t }, journal, dits,
-      reglagesCorps: { sauter_passe: true, sauter_passe_s: 3, ...reglage },
+      reglagesCorps: { sauter_passe: true, sauter_passe_s: 3, parole_liee: false, ...reglage },   // (06/11) l'ancien rythme (parole liée éteinte)
       etat: { riboFile: file, conversation: { capteur: { enParole: false } }, paves: {} },
       lecteur: { actif: false }, journalVoix: (e, o) => journal.push([e, o]) };
     vm.createContext(ctx);
@@ -250,7 +250,7 @@ test('sa première pensée dite tout de suite : le premier paquet de sa réponse
 // séquentielle »)
 test('sa voix du Mac : un morceau à la fois, ce qui attend vieillit et le dernier seul reste ; un calcul bloqué ne retient plus après 30 s', () => {
   const t = 1_800_000_000_000;
-  const ctx = { Math, Number, Date: { now: () => t }, journalVoix: () => {}, reglagesCorps: { sauter_passe: true, sauter_passe_s: 3 }, lecteur: { actif: false },
+  const ctx = { Math, Number, Date: { now: () => t }, journalVoix: () => {}, reglagesCorps: { sauter_passe: true, sauter_passe_s: 3, parole_liee: false }, lecteur: { actif: false },
     bouts: { liste: new Map([[1, { n: 1, t: t - 2000, buf: null, rate: false }]]) },
     etat: { riboFile: [{ tour: 4, texte: 'deux', recu: t - 5000 }, { tour: 5, texte: 'le dernier', recu: t - 200 }], conversation: { capteur: { enParole: false } } } };
   vm.createContext(ctx);
