@@ -2566,7 +2566,8 @@ if (window.HakimApp && window.HakimApp.telepathie) {
 let focusTenu = false, focusLache = 0;
 // (04/11, 12:55, papa par Hakim, accord d'Ahmed : « que sa voix ne mette plus jamais ma musique en pause, et un bouton pour lui retirer ce
 // pouvoir ») par défaut il parle par-dessus (« garder ») ; sa pause n'agit que si papa la lui permet (Sens : musique_pause)
-const modeMusique = () => { const m = etat.musiqueVoix || 'garder'; return m === 'pause' && typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.musique_pause === false ? 'garder' : m; };
+// (06/11, Ahmed : « que le son de la musique baisse pendant que sa voix parle, pour pouvoir l'entendre ») par défaut, elle baisse
+const modeMusique = () => { const m = etat.musiqueVoix || 'baisser'; return m === 'pause' && typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.musique_pause === false ? 'garder' : m; };
 setInterval(() => {
   if (!window.HakimApp || !window.HakimApp.focusVoix) return;
   const mode = modeMusique(), baisser = mode === 'baisser' && !!window.HakimApp.focusVoixMode;

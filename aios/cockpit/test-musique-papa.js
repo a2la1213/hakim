@@ -17,7 +17,7 @@ test('par défaut, il parle par-dessus ta musique ; sa pause n’agit que si tu 
     vm.runInContext(ligne(PAGE, 'const modeMusique = '), ctx);
     return ctx.modeMusique();
   };
-  assert.strictEqual(mode(undefined, {}), 'garder', 'sans choix de sa part : ta musique continue');
+  assert.strictEqual(mode(undefined, {}), 'baisser', 'sans choix de sa part : (06/11) ta musique baisse le temps de sa voix');
   assert.strictEqual(mode('pause', { musique_pause: true }), 'pause', 'tu le lui permets : il peut');
   assert.strictEqual(mode('pause', { musique_pause: false }), 'garder', 'tu le lui retires : jamais en pause');
   assert.strictEqual(mode('baisser', { musique_pause: false }), 'baisser', 'la baisser reste à lui');
@@ -30,7 +30,7 @@ test('ton interrupteur : dans Sens, gardé par le cockpit (permis par défaut), 
   assert.match(SENS, /\['musiquePause', 'musique_pause'\]/);
   const i = SRC.indexOf('function blocBouts('), f = SRC.slice(i, SRC.indexOf('\n}\n', i) + 2);
   const consigne = (reglages) => { const ctx = { Date, boutsRemises: new Map(), corpsReglages: () => reglages }; vm.createContext(ctx); vm.runInContext(f + 'this.f = blocBouts;', ctx); return ctx.f(); };
-  assert.match(consigne({ musique_pause: true }), /Quand tu parles, sa musique continue/);
+  assert.match(consigne({ musique_pause: true }), /Quand tu parles, sa musique baisse le temps de ta voix/);
   assert.match(consigne({ musique_pause: true }), /\[\[musique: pause\]\]/);
   assert.doesNotMatch(consigne({ musique_pause: false }), /\[\[musique: pause\]\]/, 'retiré par papa : il ne la lui propose plus');
 });

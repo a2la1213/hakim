@@ -8034,8 +8034,9 @@ function blocBouts() {
     + "parle, ton subconscient juge en plus, morceau par morceau, s'il a fini."
     // (04/11, Ahmed : « quand il me parle, il doit pouvoir parler sans arrêter la musique, s'il le veut »)
     // (04/11, 12:55, papa par Hakim, accord d'Ahmed) par défaut, sa musique continue ; la pause, seulement si papa la lui permet (Sens)
-    + "\n[Ta voix et la musique de papa] Quand tu parles, sa musique continue (tu parles par-dessus). Tu peux choisir, au début de ta "
-    + "réponse : [[musique: garder]] (elle continue) ou [[musique: baisser]] (elle baisse le temps de ta voix)"
+    // (06/11, Ahmed : « que la musique baisse pendant que sa voix parle, pour pouvoir l'entendre ») par défaut, elle baisse
+    + "\n[Ta voix et la musique de papa] Quand tu parles, sa musique baisse le temps de ta voix, pour qu'il t'entende. Tu peux choisir, au début de ta "
+    + "réponse : [[musique: baisser]] (elle baisse, par défaut) ou [[musique: garder]] (elle continue, tu parles par-dessus)"
     + (corpsReglages().musique_pause !== false ? ", ou [[musique: pause]] (elle s'arrête)" : " ; papa t'a retiré le pouvoir de la mettre en pause")
     + ". Ton choix reste jusqu'au suivant."
     // (05/11, Ahmed : « est-ce que Hakim peut aussi envoyer des smileys à mes messages ? ») la page savait les lire depuis le 04/11,

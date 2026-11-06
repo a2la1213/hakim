@@ -879,7 +879,7 @@ test('(04/11) la musique : il choisit de la garder, de la baisser ou de la mettr
   assert.match(PAGE, /if \(baisser\) window\.HakimApp\.focusVoixMode\('baisser'\)/);
   const Voix = require(path.join(__dirname, 'public', 'voix.js'));
   assert.deepStrictEqual(Voix.prononcable('[[musique: garder]] Oui papa.').map(x => x.texte), ['Oui papa.'], 'sa voix ne la dit pas');
-  assert.match(SRC, /\[\[musique: garder\]\] \(elle continue\)/, 'il le sait');
+  assert.match(SRC, /\[\[musique: garder\]\] \(elle continue, tu parles par-dessus\)/, 'il le sait');
 });
 
 // (04/11, Ahmed : « le signal qui arrive le plus tôt, c'est là-dedans qu'il trouvera comment anticiper l'arrivée de l'input qui induit le LLM »)
