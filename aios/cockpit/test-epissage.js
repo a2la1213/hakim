@@ -753,3 +753,22 @@ test('écoute en français seul : la langue de ta voix est forcée à fr avant A
   assert.ok(k > 0, 'le réglage est lu');
   assert.ok(k < corps.indexOf('oreilleAzure(f,') && k < corps.indexOf("op: 'transcrire'"), 'avant Azure et Whisper');
 });
+
+// (06/11, Ahmed : « un morceau seul incomplet ou hors sujet est exclu ; la parole épissée complète jusqu'à une virgule ou un point ; préordonnée »)
+test('épissage par parties : préordonnées, un mot seul exclu, une virgule entre deux parties', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const ligne = (debut) => { const i = SRV.indexOf(debut); return SRV.slice(i, SRV.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  const prendre = (nom) => { const i = SRV.indexOf(`function ${nom}(`); return SRV.slice(i, SRV.indexOf('\n}\n', i) + 2); };
+  const ctx = {}; vm.createContext(ctx);
+  vm.runInContext(ligne('const motsEpisses = ') + ligne('const motCle = ') + ligne('const MEUBLES_EPISSURE = ') + ligne('const PARTIE_SEULE = ')
+    + prendre('epissageDe') + prendre('epissageParParties') + '\nthis.f = epissageParParties;', ctx);
+  const pave = 'Je pense que tu as raison papa le calcul a fini bizarre tu peux compter sur moi';
+  const r = ctx.f('tu peux compter sur moi | le calcul a fini | bizarre', pave);
+  assert.equal(r.dit, 'tu peux compter sur moi, le calcul a fini', 'ordre choisi gardé, « bizarre » seul exclu, une virgule entre les parties');
+  assert.equal(r.parties, 2);
+  assert.equal(r.e.ajoutes.length, 0);
+  assert.ok(r.e.mots.length === 9 && r.e.mots[0] < r.e.mots[8], 'les mots allumés, triés pour le pavé');
+  assert.equal(ctx.f('oui | inventé de toutes pièces', 'oui papa').dit, 'oui', '« oui » seul passe ; une partie inventée est exclue');
+  assert.equal(ctx.f('bizarre', pave).parties, 0, 'rien de complet : rien');
+  assert.equal(ctx.f('أنا هنا | يا أبي', 'أنا هنا يا أبي').dit, 'أنا هنا، يا أبي', 'en arabe, la virgule arabe');
+});

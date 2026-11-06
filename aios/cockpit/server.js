@@ -3406,6 +3406,29 @@ function epissageDe(phrase, pave) {
   }
   return meubles.length ? { mots, ajoutes, meubles } : { mots, ajoutes };
 }
+// (06/11, Ahmed : « si un morceau seul est incomplet ou ne veut rien dire par rapport au sujet, il est exclu de la chaîne ; la parole épissée
+// doit être complète jusqu'à une virgule ou un point ; hors sujet, elle est automatiquement épissée ; le ribosome repère sujet, verbe, complément
+// et préordonne chaque partie épissée pour la prononciation ; les règles de chaque langue, l'arabe et l'anglais, et la langue reconnue seule »)
+// son épissage par parties : « partie | partie », dans l'ordre où il les dira ; chaque partie reprend ses mots dans l'ordre de ses pensées ; une
+// partie d'un seul mot (hors oui, non, merci…) est un morceau incomplet : exclue ; chaque partie finit sur une virgule (la dernière, sur sa ponctuation à elle)
+const PARTIE_SEULE = new Set(['oui', 'non', 'merci', "d'accord", 'ok', 'voila', 'exactement', 'carrement', 'yes', 'no', 'thanks', 'sure', 'exactly', 'نعم', 'لا', 'شكرا', 'اكيد', 'ايه', 'واخا']);
+function epissageParParties(garde, pave) {
+  const parties = String(garde || '').split(/\s*\|\s*/).map(x => x.trim()).filter(x => motsEpisses(x).length);
+  const mots = new Set(), ajoutes = [], meubles = [], dites = [];
+  for (const partie of parties) {
+    const e = epissageDe(partie, pave);
+    if (!e.mots.length) continue;                                                  // rien de ses pensées : inventée, exclue
+    if (e.mots.length === 1 && !e.ajoutes.length && !PARTIE_SEULE.has(motCle(motsEpisses(partie)[0]).replace(/[ً-ْٰ]/g, ''))) continue;   // un mot seul : incomplet
+    e.mots.forEach(m => mots.add(m)); ajoutes.push(...e.ajoutes); if (e.meubles) meubles.push(...e.meubles);
+    dites.push(partie);
+  }
+  // entre deux parties, une virgule (sa voix respire) ; la dernière garde sa ponctuation à elle : la suite peut venir au paquet d'après
+  const fin = (t, der) => (der || /[.,!?…;:،؟]$/.test(t) ? t : `${t}${/[\u0600-\u06FF]/.test(t) ? '،' : ','}`);
+  const dit = dites.map((t, k) => fin(t, k === dites.length - 1)).join(' ');
+  const e = { mots: [...mots].sort((a, b) => a - b), ajoutes };
+  if (meubles.length) e.meubles = meubles;
+  return { dit, e, parties: dites.length };
+}
 // (04/11, 11:50, Ahmed : « tous les chunks s'intègrent dans la même réponse, sélectionnée comme un ribosome qui lit et choisit les mots
 // au fur et à mesure ») son RIBOSOME : chaque pensée de piste est lue dès qu'elle arrive, une à la fois, dans l'ordre d'arrivée (la
 // suivante attend que la précédente soit lue) ; Mini Hakim y garde les mots qui continuent sa réponse (au plus 2 petits mots de liaison),
@@ -3771,6 +3794,12 @@ async function lirePaquet(tour, r, i, paquet) {
     // (06/11, Ahmed) un silence ou un meuble à la place d'un morceau sauté
     + (cr0.epissure_meubles !== false ? `À la place d'un morceau que tu sautes, tu peux laisser un silence (…) ou un petit mot d'hésitation (euh, hum, bah), comme `
       + `quand on cherche ses mots : ${cr0.epissure_meubles_max || 2} au plus, et seulement si ça sonne naturel.\n` : '')
+    + (cr0.epissure_grammaire !== false ? `Règles de ton épissage (06/11, papa) : reconnais seul la langue de tes pensées (français, arabe, anglais) et suis sa grammaire : `
+      + `en français et en anglais, sujet, verbe, complément (en anglais, l'auxiliaire et l'ordre des mots) ; en arabe, la phrase verbale (verbe, sujet, complément) `
+      + `ou nominale (mubtada', khabar), avec l'accord du verbe et ses particules (و، ف، ثم، لكن). Garde seulement des parties complètes : chacune a un sens seule `
+      + `et va jusqu'à une virgule ou un point ; un morceau incomplet, ou qui ne veut rien dire seul, est exclu ; un morceau hors sujet par rapport à ce que `
+      + `${tel ? 'joue le téléphone' : 'papa vient de dire'} est exclu, toujours. Préordonne tes parties dans l'ordre où tu les prononceras, séparées par « | » `
+      + `(dans chaque partie, les mots gardent l'ordre de tes pensées), par exemple : GARDE : « je suis là, | tu peux compter sur moi. »\n` : '')
     + `Réponds en une seule ligne : GARDE : « … », ou GARDE : rien.`;
   const cr = typeof corpsReglages === 'function' ? corpsReglages() : {};
   const fen = cr.fenetre_partagee && !tel ? fenetreActive() : [];
@@ -3785,7 +3814,9 @@ async function lirePaquet(tour, r, i, paquet) {
       if (o && o.vivant && o.vivant.n >= plafondRibosome(reglage).lecteur_max) o.vivant.n = VIVANT_RENOUVELER;   // (22:40) neuf toutes les 6 lectures
       if (!t.trim() || parasite) return { mod, nom, ms, muet: true };            // muet (panne, délai) ou hors de son rôle : pas de voix
       const g = !/GARDE\s*:\s*rien/i.test(t) && (/GARDE\s*:\s*«\s*([^»]{1,20000}?)\s*»/i.exec(t) || /GARDE\s*:\s*(.{1,20000})$/im.exec(t));
-      const garde = g ? g[1].trim() : '', e = garde ? epissageDe(garde, texte) : null;
+      // (06/11) par parties préordonnées (règles de l'épissage) ; sans réglage, comme avant : une seule suite dans l'ordre de ses pensées
+      const brut = g ? g[1].trim() : '', pp = brut && cr0.epissure_grammaire !== false ? epissageParParties(brut, texte) : null;
+      const garde = pp ? pp.dit : brut, e = pp ? (pp.parties ? pp.e : null) : (garde ? epissageDe(garde, texte) : null);
       const ok = !!e && e.mots.length >= 1 && e.ajoutes.length <= liaison      // « rien », ou une phrase inventée : rien de gardé
         && (!e.meubles || (cr0.epissure_meubles !== false && e.meubles.length <= (cr0.epissure_meubles_max || 2)));   // (06/11) ses meubles, comptés à part
       const rep = /REPONDU\s*:\s*([\d ,]+)/i.exec(t);
@@ -7046,6 +7077,7 @@ function corpsReglages() {
     // (06/11, Ahmed : « qu'il parle seulement dans le mode où le bouton stop ne s'affiche pas, le reste il ne le dit pas ») en Conversation et en
     // Télépathie, sa voix ne dit que ce qui sort pendant que sa réponse consciente ne tourne pas (le Stop éteint) : ses pensées épissées
     parole_sans_stop: r.parole_sans_stop !== false,
+    epissure_grammaire: r.epissure_grammaire !== false,   // (06/11) parties complètes, hors sujet exclu, grammaire de chaque langue, préordonnées
     ecoute_francais: r.ecoute_francais !== false,   // (06/11) ta voix reconnue en français seul (sa voix, elle, reste libre)
     epissure_meubles_max: Number.isFinite(Number(r.epissure_meubles_max)) && r.epissure_meubles_max != null ? Math.max(1, Math.min(6, Math.round(Number(r.epissure_meubles_max)))) : 2,
     present_la_nuit: r.present_la_nuit !== false, present_appeler: r.present_appeler !== false,
@@ -12314,7 +12346,7 @@ async function traiter(req, res) {
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
-      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
+      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
       for (const [k, a, b] of [['epissure_meubles_max', 1, 6], ['present_pouls_s', 10, 600], ['present_seuil', 0.2, 5], ['present_ecart_s', 2, 120], ['present_longueur', 3, 40], ['present_mots', 6, 40]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'present_seuil' ? Math.round(Number(q[k]) * 10) / 10 : Math.round(Number(q[k]))));
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;
