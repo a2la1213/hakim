@@ -795,6 +795,7 @@ test('prétraitement de ta parole : portions lues, la dernière ouverte attend, 
   const ctx = { corpsReglages: () => ({}), neutraliser: (x) => x, fs: { appendFileSync() {} }, JARVIS_VOIX_DIAGNOSTIC: '/dev/null', j: JSON.stringify, Map, Promise, Date };
   vm.createContext(ctx);
   vm.runInContext(ligne('const sujetsPapa = ') + ligne('const MOTS_OUVERTS = ') + ligne('const portionOuverte = ') + ligne('const pretraitementsRecents = ')
+    + (() => { const i = SRV.indexOf('const DECOUPES = '); return SRV.slice(i, SRV.indexOf('\n};\n', i) + 4).replace(/^const /, 'var '); })()
     + prendre('lirePretraitement') + prendre('pretraiterParole') + prendre('pretraiterNeuf', 'async function') + prendre('sujetsPourRibosome')
     + '\nthis.p = pretraiterParole; this.ouverte = portionOuverte; this.sujets = sujetsPourRibosome;', ctx);
   assert.equal(ctx.ouverte('je voulais te dire que le calcul et'), true);
@@ -841,4 +842,26 @@ test('Stop de la montre : tout arrête chaque tour en cours et appuie sur le Sto
   assert.match(route, /diffuser\(abonnesPensees, 'souffle', j\(\{ niveau: 'bouton', id: 'stop' \}\)\)/);
   const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
   assert.match(PAGE, /if \(o\.niveau === 'bouton'\) \{ const b = document\.getElementById\(o\.id\); if \(b && \['pause', 'stop'/);
+});
+
+
+// (06/11, Ahmed : « régler la finesse du découpage de ma parole : jusqu'à la virgule, au sujet ou au point ; par lui et moi »)
+test('finesse du découpage de ta parole : virgule, point ou sujet changent ce que son subconscient appelle une portion', async () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const ligne = (debut) => { const i = SRV.indexOf(debut); return SRV.slice(i, SRV.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  const prendre = (nom, a = 'function') => { const i = SRV.indexOf(`${a} ${nom}(`); return SRV.slice(i, SRV.indexOf('\n}\n', i) + 2); };
+  let decoupe = 'point';
+  const ctx = { corpsReglages: () => ({ decoupe_papa: decoupe }), neutraliser: (x) => x, fs: { appendFileSync() {} }, JARVIS_VOIX_DIAGNOSTIC: '/dev/null', j: JSON.stringify, Map, Promise, Date };
+  vm.createContext(ctx);
+  const i = SRV.indexOf('const DECOUPES = ');
+  vm.runInContext(ligne('const sujetsPapa = ') + ligne('const MOTS_OUVERTS = ') + ligne('const portionOuverte = ') + ligne('const pretraitementsRecents = ')
+    + SRV.slice(i, SRV.indexOf('\n};\n', i) + 4).replace(/^const /, 'var ') + prendre('lirePretraitement') + prendre('pretraiterParole') + prendre('pretraiterNeuf', 'async function')
+    + '\nthis.p = pretraiterParole;', ctx);
+  const vus = [];
+  const demander = async (consigne) => { vus.push(consigne); return { texte: 'P : « bonjour » | fr | salut | complet | sujet' }; };
+  await ctx.p('un', demander); decoupe = 'sujet'; await ctx.p('deux', demander); decoupe = 'virgule'; await ctx.p('trois', demander);
+  assert.match(vus[0], /une phrase entière, jusqu'à son point/);
+  assert.match(vus[1], /tout ce qu'il dit sur un même sujet/);
+  assert.match(vus[2], /jusqu'à une virgule ou un point/);
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8'), /\['decoupe_papa', [^\n]*'liste', \[\['virgule', 'Virgule'\], \['point', 'Point'\], \['sujet', 'Sujet'\]\], 'corps'\]/);
 });

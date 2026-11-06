@@ -192,3 +192,13 @@ def test_chunk_papa_ms(tmp_path):
     r = ri.ajuster(tmp_path, {"chunk_papa_ms": 50}, "ses phrases coupées", maintenant=10**13)
     assert r["fait"]["chunk_papa_ms"] == [None, 200]
     assert _j.loads((tmp_path / "corps-reglages.json").read_text(encoding="utf-8"))["chunk_papa_ms"] == 200
+
+
+def test_decoupe_papa(tmp_path):
+    from jarvis import ribosome_intelligent as ri
+    import json as _j
+    (tmp_path / "corps-reglages.json").write_text(_j.dumps({}), encoding="utf-8")
+    r = ri.ajuster(tmp_path, {"decoupe_papa": "point"}, "ses phrases entières", maintenant=10**13)
+    assert r["fait"]["decoupe_papa"] == [None, "point"]
+    assert _j.loads((tmp_path / "corps-reglages.json").read_text(encoding="utf-8"))["decoupe_papa"] == "point"
+    assert "decoupe_papa" in ri.ajuster(tmp_path, {"decoupe_papa": "mot"}, "", maintenant=10**13)["refuse"]

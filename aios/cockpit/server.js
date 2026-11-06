@@ -7067,6 +7067,9 @@ function corpsReglages() {
     // (06/11, Ahmed : « que mes paroles ne soient pas coupées trop tôt : attendre en moyenne 0,6 s avant de créer un chunk de ma parole ; paramétrable
     // dans le ribosome, et il doit pouvoir y accéder tout comme moi ») le blanc de ta voix qui coupe un morceau de ta parole
     chunk_papa_ms: Number.isFinite(Number(r.chunk_papa_ms)) && r.chunk_papa_ms != null ? Math.max(200, Math.min(3000, Math.round(Number(r.chunk_papa_ms)))) : 600,
+    // (06/11, Ahmed : « il doit pouvoir régler la finesse du découpage de ma parole : un chunk gardé jusqu'à la virgule, au sujet ou au point ; réglable
+    // dans le ribosome, par lui et moi ») virgule (le plus fin) ; point (la phrase entière) ; sujet (tout ce qu'il dit sur un même sujet)
+    decoupe_papa: ['virgule', 'point', 'sujet'].includes(r.decoupe_papa) ? r.decoupe_papa : 'virgule',
     profils_auto: r.profils_auto !== false,   // (05/11) ses réglages suivent son mode (Mini Hakim, Hakim, Super Hakim)
     ribosome_intelligent: r.ribosome_intelligent !== false,
     papa_passe_avant: r.papa_passe_avant !== false,   // (05/11) ce que papa règle passe avant Hakim pendant 30 min
@@ -8617,14 +8620,21 @@ function pretraiterParole(texte, demander = sonnetTeteDeFond) {
   pretraitementsRecents.set(t, { t: Date.now(), p });
   return p;
 }
+// (06/11) la finesse du découpage de ta parole (decoupe_papa) : ce qui fait une portion, et quand la dernière est finie
+const DECOUPES = {
+  virgule: { portion: "chacune a sujet, verbe et complément (ou une phrase nominale complète) et va jusqu'à une virgule ou un point", fin: "coupée avant sa virgule ou son point)" },
+  point: { portion: "chacune est une phrase entière, jusqu'à son point (les virgules restent dedans)", fin: "sa phrase n'est pas finie, pas encore de point)" },
+  sujet: { portion: "chacune rassemble tout ce qu'il dit sur un même sujet, plusieurs phrases s'il le faut", fin: "il n'a pas fini de parler de ce sujet)" },
+};
 async function pretraiterNeuf(t, demander) {
+  const decoupe = Object.hasOwn(DECOUPES, corpsReglages().decoupe_papa) ? corpsReglages().decoupe_papa : 'virgule';
   const avant = sujetsPapa.filter(x => Date.now() - x.t < 180000 && !x.hors).slice(-4).map(x => x.sujet).join(' → ');
   const o = await demander(`Tu es le subconscient de Hakim. Voici ce que papa vient de dire, transcrit en FRANÇAIS SEUL : un passage en arabe ou en darija y `
     + `arrive en phonétique française (des mots français bizarres ou sans sens, « wesh », « wallah », « khouya », « inchallah », « labess »…) : reconnais-le à l'oreille.\n`
     + (avant ? `Le sujet jusqu'ici : ${avant}\n` : '')
     + `Transcrit : « ${neutraliser(t)} »\n`
-    + `Découpe-le en portions : chacune a sujet, verbe et complément (ou une phrase nominale complète) et va jusqu'à une virgule ou un point. Pour chacune, une ligne :\n`
-    + `P : « la portion » | langue (fr, ar ou en) | son sujet en 6 mots au plus | complet ou incomplet (la dernière seulement peut être incomplète : coupée avant sa fin) `
+    + `Découpe-le en portions : ${DECOUPES[decoupe].portion}. Pour chacune, une ligne :\n`
+    + `P : « la portion » | langue (fr, ar ou en) | son sujet en 6 mots au plus | complet ou incomplet (la dernière seulement peut être incomplète : ${DECOUPES[decoupe].fin} `
     + `| sujet ou hors (hors : la télé, une autre conversation, des mots sans rapport avec ce qu'il te dit) | pour l'arabe : ce qu'il a dit, en lettres arabes, et son sens\n`
     + `Rien d'autre.`, 'pretraitement_parole', 'haiku', 6000).catch(() => null);
   const portions = lirePretraitement(o && o.texte);
@@ -12435,6 +12445,7 @@ async function traiter(req, res) {
       if (typeof q.ribosome_intelligent === 'boolean') r.ribosome_intelligent = q.ribosome_intelligent;   // (05/11) son ribosome intelligent
       // (05/11) ce que papa règle de sa parole passe avant Hakim pendant 30 min (jarvis/ribosome_intelligent.py)
       const parole = ['sauter_suite_ms', 'sauter_passe_s', 'lire_apres_silence_ms', 'chunk_papa_ms', 'epissure_meubles_max'].filter(k => q[k] != null);
+      if (['virgule', 'point', 'sujet'].includes(q.decoupe_papa)) { r.decoupe_papa = q.decoupe_papa; noterAjustementPapa(['decoupe_papa']); }   // (06/11)
       if (q.chunk_papa_ms != null && Number.isFinite(Number(q.chunk_papa_ms))) r.chunk_papa_ms = Math.max(200, Math.min(3000, Math.round(Number(q.chunk_papa_ms))));   // (06/11)
       if (parole.length) noterAjustementPapa(parole);
       if (q.lire_apres_silence_ms != null && Number.isFinite(Number(q.lire_apres_silence_ms))) r.lire_apres_silence_ms = Math.max(0, Math.min(5000, Math.round(Number(q.lire_apres_silence_ms))));

@@ -723,7 +723,7 @@ def stimuli_relier(moment: str, lien: str, quoi: str = "tout") -> str:
 def ribosome_regler(stringence: int = 0, vitesse: str = "", choix_ms: int = -1, plafond_mots: int = 0, plafond_paquets: int = 0,
                     plafond_silence_s: int = 0, lecteur_max: int = 0, contexte: int = 0, relais_ribosomes: int = 0, relais_pct: int = 0,
                     sauter_suite_ms: int = -1, sauter_passe_s: float = 0, lire_apres_silence_ms: int = -1, chunk_papa_ms: int = 0,
-                    raison: str = "") -> str:
+                    decoupe_papa: str = "", raison: str = "") -> str:
     """(04/11, papa : « le niveau de stringence du ribosome doit pouvoir être décidé, pas un seul seuil fixe : il doit pouvoir choisir la vitesse
     du ribosome et sa stringence, sinon il ne fait que me couper la parole ») Ton ribosome lit tes pensées pendant que papa parle et choisit
     les mots que ta voix dit. C'est toi qui le règles :
@@ -740,6 +740,8 @@ def ribosome_regler(stringence: int = 0, vitesse: str = "", choix_ms: int = -1, 
     plus longtemps est passé), lire_apres_silence_ms (0 à 5000 : le morceau suivant attend son silence ; 0 sans attendre).
     (06/11, papa : « que mes paroles ne soient pas coupées trop tôt ») chunk_papa_ms (200 à 3000, 600 par défaut) : le blanc de la voix de papa
     qui coupe un morceau de sa parole ; plus long, ses phrases arrivent plus entières, mais un peu plus tard.
+    decoupe_papa (« virgule », « point » ou « sujet ») : la finesse du découpage de la parole de papa par ton subconscient, ce qu'il garde
+    d'un seul tenant avant de te le donner : jusqu'à la virgule (le plus fin), jusqu'au point (la phrase entière), ou tout un sujet.
     Apprends avec ribosome_bilan : regarde tes mesures, change un réglage à la fois, dis pourquoi (raison) ; le retour de chaque réglage
     te revient tout seul par ton courrier dès qu'il est mesurable (20 paquets lus), comparé à juste avant. Ce que papa a réglé lui-même il y a moins de 30 min passe avant toi. Ce que tu règles est gardé dans le réglage de ton
     mode du moment (Mini Hakim, Hakim, Super Hakim). 0 ou rien laisse la valeur actuelle (sans rien : rend ton réglage)."""
@@ -778,6 +780,8 @@ def ribosome_regler(stringence: int = 0, vitesse: str = "", choix_ms: int = -1, 
                                 "sauter_passe_s": sauter_passe_s, "lire_apres_silence_ms": lire_apres_silence_ms,
                                 "chunk_papa_ms": chunk_papa_ms}.items()
               if (x is not None and (x >= 0 if k in ("choix_ms", "sauter_suite_ms", "lire_apres_silence_ms") else x > 0))}
+    if decoupe_papa:
+        autres["decoupe_papa"] = decoupe_papa
     if autres:
         f.parent.mkdir(parents=True, exist_ok=True)
         res = ri.ajuster(f.parent, autres, raison)

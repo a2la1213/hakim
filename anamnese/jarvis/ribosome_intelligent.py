@@ -27,6 +27,8 @@ BOUTONS_CORPS = ("voix_par_appareil", "economie", "fenetre_partagee", "tournesol
                  "epissure_meubles", "parole_libre", "pensee_en_boucle", "boucle_ribosomes")
 BOUTONS_RIBOSOME = ("premiere_directe",)
 BOUTONS = BOUTONS_CORPS + BOUTONS_RIBOSOME
+# (06/11, Ahmed : « régler la finesse du découpage de ma parole : virgule, sujet ou point ; par lui et moi ») ses choix dans une liste
+CHOIX_CORPS = {"decoupe_papa": ("virgule", "point", "sujet")}
 PAPA_PASSE_AVANT_MS = 30 * 60_000
 FENETRE_EFFET_MS = 15 * 60_000
 
@@ -123,9 +125,9 @@ def ajuster(dossier, changements, raison, maintenant=None):
             for k in a.get("cles") or []:
                 papa[k] = max(papa.get(k, 0), int(a.get("ts") or 0))
     fait, refuse = {}, {}
-    corps_k = lambda k: k in CLES_CORPS or k in BOUTONS_CORPS
+    corps_k = lambda k: k in CLES_CORPS or k in BOUTONS_CORPS or k in CHOIX_CORPS
     for k, v in (changements or {}).items():
-        b = (v if isinstance(v, bool) else None) if k in BOUTONS else borner(k, v)
+        b = (v if isinstance(v, bool) else None) if k in BOUTONS else (v if v in CHOIX_CORPS[k] else None) if k in CHOIX_CORPS else borner(k, v)
         if b is None:
             refuse[k] = "inconnu"
             continue
