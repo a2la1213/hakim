@@ -865,3 +865,9 @@ test('finesse du découpage de ta parole : virgule, point ou sujet changent ce q
   assert.match(vus[2], /jusqu'à une virgule ou un point/);
   assert.match(fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8'), /\['decoupe_papa', [^\n]*'liste', \[\['virgule', 'Virgule'\], \['point', 'Point'\], \['sujet', 'Sujet'\]\], 'corps'\]/);
 });
+
+// (06/11, 08:47, Hakim : « ribosome_boutons me répond permissions not granted » ; Ahmed : « lance le point 1 »)
+test('ses outils permis : ribosome_boutons et present_continu', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(SRV, /'parler_bouton', 'ribosome_boutons', 'present_continu'\]\.map\(n => 'mcp__anamnese__' \+ n\)/);
+});
