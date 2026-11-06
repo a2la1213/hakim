@@ -322,3 +322,20 @@ def test_sans_empreinte_la_reponse_d_avant_reste():
     r = separation.traiter({"id": 6, "fichier": "x.wav", "cascade": True}, o)
     assert {"voix", "fond", "texte", "ms"} <= set(r) and r["voix_separees"] == []
     assert "onnxruntime" in r["cascade_erreurs"]["voix"]
+
+
+def test_les_notes_du_temps_nomment_chaque_note_avec_son_octave_a_sa_seconde():
+    """(06/11, Ahmed : « il sait que c'est telle note, ou telle note et tel piano ») une basse La2 puis Fa2 ; un piano Do4 + Mi4"""
+    import cascade as C2
+    sr = 22050
+
+    def note(midi, d):
+        t = np.arange(int(d * sr)) / sr
+        return (0.3 * np.sin(2 * np.pi * 440 * 2 ** ((midi - 69) / 12) * t)).astype(np.float32)
+    basse = np.concatenate([note(45, 2.0), note(41, 2.0)])
+    l = C2.notes_du_temps("bass", basse, sr)
+    assert [n for _, n in l] == [["La2"], ["La2"], ["Fa2"], ["Fa2"]], l
+    assert [t for t, _ in l] == [0.0, 1.0, 2.0, 3.0]
+    piano = note(60, 1.0) + note(64, 1.0)
+    assert sorted(C2.notes_du_temps("piano", piano, sr)[0][1]) == ["Do4", "Mi4"]
+    assert C2.notes_du_temps("drums", basse, sr) == []

@@ -134,6 +134,97 @@ def en_mots(voix, fond):
     return f"{v} · {f}"
 
 
+# ---- (06/11, Ahmed : « que toutes ses mesures et découpes soient processées par le subconscient, et que le signal arrive net : parole,
+# musique ou background, la piste de musique ou de background calée sur les mots ») les trois pistes : le fond séparé, seconde par
+# seconde, dit s'il est de la musique (et son accord) ou un bruit (et sa nature : chocs, sourd, souffle, pièce), avec son intensité ;
+# les instants sont ceux du fichier (le cockpit les cale sur l'horloge des mots).
+
+def _gabarits():
+    g = []
+    for r in range(12):
+        for nom, tierce in (("", 4), ("m", 3)):
+            v = np.zeros(12)
+            v[[r, (r + tierce) % 12, (r + 7) % 12]] = 1.0
+            g.append((f"{NOTES[r]}{nom}", v / np.linalg.norm(v)))
+    return g
+
+
+GABARITS = _gabarits()
+SEUIL_ACCORD = 0.75                                                  # un chroma plat donne 0,5 ; une triade nette, plus de 0,8
+
+
+def accord(chroma):
+    """L'accord majeur ou mineur le plus proche d'un chroma (cosinus) : (nom, score) ; (None, 0) sans énergie."""
+    c = np.asarray(chroma, dtype=float)
+    n = float(np.linalg.norm(c))
+    if n <= 0:
+        return None, 0.0
+    c = c / n
+    s, nom = max((float(c @ v), k) for k, v in GABARITS)
+    return nom, round(s, 2)
+
+
+def _chroma(x, sr, n=4096):
+    S, f, _ = _spectre(x, sr, n=n, pas=n // 2)
+    m = (f >= 80) & (f <= 2000)
+    classes = (np.round(69 + 12 * np.log2(f[m] / 440)).astype(int)) % 12
+    return np.bincount(classes, weights=np.sqrt((S[:, m] ** 2).sum(axis=0)), minlength=12)
+
+
+def _db_de(x):
+    x = np.asarray(x, np.float64)
+    return float(10 * np.log10((x ** 2).mean() + 1e-12)) if len(x) else -120.0
+
+
+def _chocs(x, sr):
+    """Les coups brefs : une trame de 10 ms bien au-dessus du niveau médian (×6 en énergie) et audible."""
+    n = max(1, int(0.01 * sr))
+    e = np.asarray(x[: len(x) // n * n], np.float64).reshape(-1, n)
+    e = (e ** 2).mean(axis=1)
+    if len(e) < 3:
+        return 0
+    med = float(np.median(e)) + 1e-12
+    pic = (e[1:-1] > 6 * med) & (e[1:-1] > 1e-4) & (e[1:-1] >= e[:-2]) & (e[1:-1] >= e[2:])
+    return int(pic.sum())
+
+
+def _nature(x, sr, chocs):
+    if chocs:
+        return "chocs"
+    S, f, _ = _spectre(x, sr)
+    e = (S ** 2).sum(axis=0)
+    b = [e[(f >= a) & (f < z)].sum() for a, z in ((20, 250), (250, 4000), (4000, sr / 2))]
+    tot = sum(b) or 1.0
+    return "sourd" if b[0] / tot > 0.6 else "souffle" if b[2] / tot > 0.4 else "pièce"
+
+
+def pistes_du_fond(melange, voix, fond, sr, musique=False, pas=1.0):
+    """Seconde par seconde : {t0, t1, db (le mélange), voix_db, fond_db, quoi (musique | bruit | silence), accord, score, chocs,
+    nature}. musique : la première écoute (aiguiller) a trouvé un rythme ou des notes tenues dans tout le fond ; une seconde sans
+    accord net reste alors de la musique (une batterie seule)."""
+    melange, voix, fond = (np.asarray(a, np.float32) for a in (melange, voix, fond))
+    n = max(1, int(pas * sr))
+    md = _db_de(melange)
+    out = []
+    for i in range(0, len(fond), n):
+        seg = fond[i:i + n]
+        if len(seg) < n // 2:
+            break
+        fd, vd, d = _db_de(seg), _db_de(voix[i:i + n]), _db_de(melange[i:i + n])
+        w = {"t0": round(i / sr, 2), "t1": round((i + len(seg)) / sr, 2), "db": round(d, 1), "voix_db": round(vd, 1), "fond_db": round(fd, 1)}
+        if fd < max(-60.0, md - 30):
+            out.append({**w, "quoi": "silence"})
+            continue
+        nom, score = accord(_chroma(seg, sr))
+        tonal = score >= SEUIL_ACCORD
+        chocs = _chocs(seg, sr)
+        if tonal or musique:
+            out.append({**w, "quoi": "musique", "accord": nom if tonal else None, "score": score, "chocs": chocs})
+        else:
+            out.append({**w, "quoi": "bruit", "chocs": chocs, "nature": _nature(seg, sr, chocs)})
+    return out
+
+
 def separer(modele, x, appareil, apply_model):
     """(04/11, vu : le téléphone envoie 8 s de sa musique et htdemucs n'en prend que 7,8 d'un seul tenant : « Given length 380607 is
     longer than training length 343980 », à chaque morceau, et rien de séparé du téléphone) découpé par Demucs en segments qui se
@@ -166,6 +257,17 @@ def traiter(d, outils):
     if d.get("voix_wav") and av["presente"]:                         # la voix seule, un instant, pour l'oreille (les mots)
         outils.ecrire(str(d["voix_wav"]), voix, sr)
         sortie["voix_wav"] = str(d["voix_wav"])
+    if d.get("pistes"):                                              # (06/11) les trois pistes : le fond, seconde par seconde
+        import cascade as C
+        route = C.aiguiller(x, voix, fond, sr, p)
+        sortie["pistes"] = {"fenetres": pistes_du_fond(x, voix, fond, sr, musique=route["musique"]), "musique": route["musique"],
+                            "bpm": af.get("bpm"), "tonalite": af.get("tonalite"), "voix": av["presente"], "duree_s": round(len(x) / sr, 2)}
+        # (06/11, mesuré : la voix séparée est prête en 0,5 à 2,8 s, la cascade en rajoute 4) avant la cascade, une réponse partielle : ses
+        # pistes et sa voix séparée partent tout de suite (la grande oreille n'attend pas les instruments) ; la réponse finale ne les répète pas
+        tot = getattr(outils, "tot", None)
+        if d.get("cascade") and tot is not None:
+            tot({"partiel": True, "pistes": sortie.pop("pistes"), **({"voix_wav": sortie.pop("voix_wav")} if "voix_wav" in sortie else {}),
+                 "ms": int((time.time() - t0) * 1000)})
     if d.get("cascade"):
         sortie.update(en_cascade(d, x, p, voix, fond, sr, outils, t0))
     sortie["ms"] = int((time.time() - t0) * 1000)
@@ -220,9 +322,11 @@ def en_cascade(d, x, p, voix, fond, sr, outils, t0):
             p6 = outils.pistes6(fond)
             presents = C.instruments_presents(p6, route["mesures"]["fond_db"])
             analyses = [(k, lancer(C.analyser_instrument, k, p6[k], sr, _tonalite, analyser_fond)) for k in presents]
+            temps_notes = {k: lancer(C.notes_du_temps, k, p6[k], sr) for k in presents} if d.get("pistes") else {}
             for k, a in analyses:
                 a = a.result()
-                instruments.append({"instrument": k, **a, "texte": C.instrument_en_mots(k, a)})
+                instruments.append({"instrument": k, **a, "texte": C.instrument_en_mots(k, a),
+                                    **({"notes_du_temps": temps_notes[k].result()} if k in temps_notes else {})})
         except Exception as e:  # noqa: BLE001
             erreur_musique = str(e)[:200]
         temps["musique"] = int((time.time() - t) * 1000)
@@ -332,6 +436,7 @@ def main():
                 print(json.dumps({"id": d.get("id"), "chaud": True, "ms": int((time.time() - t0) * 1000)}), flush=True)
                 continue
             outils.coeurs = coeurs() if d.get("cascade") else None
+            outils.tot = (lambda s, i=d.get("id"): print(json.dumps({"id": i, **s}, ensure_ascii=False, default=_json), flush=True)) if d.get("pistes") else None
             sortie = traiter(d, outils)
         except Exception as e:  # noqa: BLE001  (une demande ratée ne tue pas ses oreilles)
             sortie = {"erreur": str(e)[:200]}

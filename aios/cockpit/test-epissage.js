@@ -749,7 +749,7 @@ test('écoute en français seul : la langue de ta voix est forcée à fr avant A
   const i = SRV.indexOf('async function routeTranscrire('), corps = SRV.slice(i, SRV.indexOf('\n}\n', i));
   const k = corps.indexOf("if (corpsReglages().ecoute_francais !== false) langue = 'fr';");
   assert.ok(k > 0, 'le réglage est lu');
-  assert.ok(k < corps.indexOf('oreilleAzure(f,') && k < corps.indexOf("op: 'transcrire'"), 'avant Azure et Whisper');
+  assert.ok(k < corps.indexOf('oreilleAzure(') && k < corps.indexOf("op: 'transcrire'"), 'avant Azure et Whisper');
 });
 
 // (06/11, Ahmed : « un morceau seul incomplet ou hors sujet est exclu ; la parole épissée complète jusqu'à une virgule ou un point ; préordonnée »)
@@ -898,4 +898,32 @@ test('sa sortie : [[sortie: …]] choisit l’appareil, gardé, annoncé ; sa vo
   assert.match(PAGE, /new EventSource\(`\/api\/jarvis\/flux\?appareil=\$\{appareilIci\(\)\}`\)/);
   assert.match(PAGE, /if \(!s\.ici && typeof sortieAilleurs === 'function' && sortieAilleurs\(\)\) \{ voixAilleurs\(s\.texte, \(\) => recevoirBout\(\{ \.\.\.s, ici: true \}, n, tour\)\); return; \}/);
   assert.match(PAGE, /es\.addEventListener\('rire', \(ev\) => \{ try \{ if \(balisesIci\(\)\) surRire/);
+});
+
+// (06/11, Ahmed : « Hakim semble m'entendre mais ne répond pas sur la montre ») le m4a de la montre converti en WAV avant Azure
+test('oreille Azure : un son qui n’est pas du WAV (la montre) est converti en WAV 16 kHz avant Azure', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(SRV, /const fAzure = ext === '\.wav' \? f : await enWav16k\(f\)\.catch\(\(\) => null\);/);
+  assert.match(SRV, /execFile\('\/usr\/bin\/afconvert', \['-f', 'WAVE', '-d', 'LEI16@16000', '-c', '1', fichier, sortie\]/);
+});
+
+// (06/11, Ahmed : « pour la montre, ce qu'il dit doit s'afficher partout, même sur smartphone et Mac »)
+test('échange de la montre : sa question tout de suite, sa réponse au fil, dans la conversation commune et sur les pages', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const prendre = (nom) => { const i = SRV.indexOf(`function ${nom}(`); return SRV.slice(i, SRV.indexOf('\n}\n', i) + 2); };
+  const poses = [], diffuses = [];
+  const ctx = { completerReponse: (id, m) => poses.push(m), diffuser: (a, t, d) => diffuses.push(t), abonnesPensees: new Set(), j: JSON.stringify, Date, setTimeout: () => ({}), clearTimeout() {} };
+  vm.createContext(ctx);
+  vm.runInContext(prendre('echangeMontre') + '\nthis.f = echangeMontre;', ctx);
+  const m = ctx.f({ tour_id: 'montre-1000-r', maintenant: 1000, texte: 'Salut fiston' });
+  assert.equal(poses[0].id, 'montre-1000'); assert.equal(poses[0].qui, 'u'); assert.equal(poses[0].texte, 'Salut fiston');
+  m.suivre({ t: 'texte', x: 'Salut papa [[anticipe: court]]' });
+  m.suivre({ t: 'fin' });
+  const fin = poses[poses.length - 1];
+  assert.equal(fin.id, 'montre-1000-r'); assert.equal(fin.texte, 'Salut papa'); assert.equal(fin.complet, true);
+  assert.ok(diffuses.every(t => t === 'echange_montre'));
+  assert.match(SRV, /const montre = typeof echangeMontre === 'function' && q && q\.appareil && q\.appareil\.montre === true/);
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /es\.addEventListener\('echange_montre', \(ev\) => \{ try \{ surEchangeMontre\(JSON\.parse\(ev\.data\)\); \} catch \(_\) \{\} \}\);/);
+  assert.doesNotMatch(PAGE.slice(PAGE.indexOf('function surEchangeMontre('), PAGE.indexOf('function ecouterPensees(')), /lecteur\.dire/, 'jamais dit ici : la montre le dit');
 });

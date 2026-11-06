@@ -61,3 +61,83 @@ def test_un_son_plus_long_que_son_segment_est_decoupe_pas_refuse():
         return ["sorties"]
     assert separation.separer("htdemucs", "x", "mps", apply_model) == "sorties"
     assert vu["split"] is True and vu["overlap"] > 0 and vu["device"] == "mps"
+
+
+# ---- (06/11, Ahmed : « parole, musique ou background, calés sur les mots ») les trois pistes : le fond, seconde par seconde ----
+
+def _accord(fondamentale, mineur, duree, sr=SR):
+    return sum(_note(fondamentale + k, duree, sr) for k in (0, 3 if mineur else 4, 7)) / 3
+
+
+def test_un_accord_se_reconnait_majeur_ou_mineur():
+    nom, s = separation.accord(separation._chroma(_accord(57, True, 1.0), SR))      # La mineur
+    assert nom == "Lam" and s >= separation.SEUIL_ACCORD, (nom, s)
+    nom, s = separation.accord(separation._chroma(_accord(53, False, 1.0), SR))     # Fa majeur
+    assert nom == "Fa" and s >= separation.SEUIL_ACCORD, (nom, s)
+
+
+def test_un_bruit_blanc_n_est_pas_un_accord():
+    rng = np.random.default_rng(1)
+    _, s = separation.accord(separation._chroma(rng.normal(0, 0.1, SR).astype(np.float32), SR))
+    assert s < separation.SEUIL_ACCORD, s
+
+
+def test_les_pistes_du_fond_disent_musique_et_accord_puis_bruit_et_chocs_a_leur_seconde():
+    """2 s de La mineur puis 2 s de Fa, puis 2 s de bruit de pièce traversé de deux chocs : chaque seconde à sa place."""
+    rng = np.random.default_rng(2)
+    bruit = (0.02 * rng.normal(0, 1, SR * 2)).astype(np.float32)
+    for a in (int(0.3 * SR), int(1.4 * SR)):
+        bruit[a:a + 80] += 0.9
+    fond = np.concatenate([_accord(57, True, 2.0), _accord(53, False, 2.0), bruit])
+    voix = np.zeros_like(fond)
+    p = separation.pistes_du_fond(fond + voix, voix, fond, SR)
+    assert [w["quoi"] for w in p] == ["musique"] * 4 + ["bruit"] * 2, p
+    assert [w.get("accord") for w in p[:4]] == ["Lam", "Lam", "Fa", "Fa"], p
+    assert p[4]["chocs"] >= 1 and p[5]["chocs"] >= 1 and p[4]["nature"] == "chocs", p
+    assert p[2]["t0"] == 2.0 and p[5]["t1"] == 6.0
+
+
+def test_un_silence_reste_un_silence():
+    fond = np.concatenate([_accord(60, False, 2.0), np.zeros(SR, np.float32)])
+    p = separation.pistes_du_fond(fond, np.zeros_like(fond), fond, SR)
+    assert p[-1]["quoi"] == "silence", p
+
+
+def test_traiter_rend_les_pistes_quand_on_les_demande_et_seulement_alors():
+    fond = _accord(57, True, 3.0)
+    voix = (0.2 * _note(64, 3.0)).astype(np.float32)
+
+    class O:
+        taux = SR
+        lire = staticmethod(lambda f: (fond + voix, SR))
+        pistes = staticmethod(lambda x: {"vocals": voix, "drums": fond * 0, "bass": fond * 0, "other": fond})
+    sans = separation.traiter({"fichier": "x.wav"}, O())
+    assert "pistes" not in sans
+    avec = separation.traiter({"fichier": "x.wav", "pistes": True}, O())
+    assert avec["pistes"]["fenetres"][0]["accord"] == "Lam", avec["pistes"]
+    assert avec["pistes"]["duree_s"] == 3.0 and avec["pistes"]["voix"] is True
+
+
+def test_avec_la_cascade_les_pistes_et_la_voix_partent_avant_elle():
+    """(06/11, mesuré : la cascade rajoutait 4 s avant que la grande oreille ait sa voix séparée) une réponse partielle d'abord"""
+    fond = _accord(57, True, 3.0)
+    voix = (0.2 * _note(64, 3.0)).astype(np.float32)
+    envois, ordre = [], []
+
+    class O:
+        taux = SR
+        lire = staticmethod(lambda f: (fond + voix, SR))
+        pistes = staticmethod(lambda x: {"vocals": voix, "drums": fond * 0, "bass": fond * 0, "other": fond})
+        ecrire = staticmethod(lambda f, son, taux: ordre.append("ecrit"))
+        tot = staticmethod(lambda s: (envois.append(s), ordre.append("tot")))
+    import types
+    sep = types.ModuleType("x")
+    orig = separation.en_cascade
+    separation.en_cascade = lambda *a: (ordre.append("cascade"), {"instruments": []})[1]
+    try:
+        s = separation.traiter({"fichier": "x.wav", "pistes": True, "cascade": True, "voix_wav": "/tmp/v.wav"}, O())
+    finally:
+        separation.en_cascade = orig
+    assert ordre == ["ecrit", "tot", "cascade"], ordre
+    assert envois[0]["partiel"] and envois[0]["pistes"]["fenetres"] and envois[0]["voix_wav"] == "/tmp/v.wav"
+    assert "pistes" not in s and "voix_wav" not in s

@@ -46,7 +46,11 @@
     + 'border-left:0;border-radius:0 12px 12px 0;background:var(--panneau,rgba(15,23,28,.72));color:var(--txt-2,#c9d4dc);font-size:16px;line-height:1;cursor:pointer;'
     + 'display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent}'
     + '.menu-languette:focus-visible{outline:2px solid #2dd4bf;outline-offset:2px}.menu-languette .point{top:4px;right:3px;width:7px;height:7px}'
-    + '[hidden]{display:none !important}';
+    + '[hidden]{display:none !important}'
+    // (06/11, Ahmed : « l'orbe sur toutes les pages du cockpit ») la petite orbe de Hakim, juste avant PARLER (orbe-coin.js)
+    + '.orbe-coin{margin-left:auto;flex:none;display:inline-flex;width:60px;height:60px;margin-top:-10px;margin-bottom:-10px;border-radius:50%;-webkit-tap-highlight-color:transparent}'
+    + '.orbe-coin canvas{width:100%;height:100%;display:block}.orbe-coin:focus-visible{outline:2px solid #2dd4bf;outline-offset:0}'
+    + '.orbe-coin + .parler-bouton{margin-left:2px}';
   document.head.appendChild(style);
 
   async function lire() {
@@ -81,6 +85,11 @@
       p.className = 'parler-bouton'; p.href = '/parler'; p.textContent = 'PARLER';
       const st = nav.querySelector('.status');
       if (st) nav.insertBefore(p, st); else nav.appendChild(p);
+      // (06/11) l'orbe de Hakim, sur toutes les pages qui ont ce menu (Parler a déjà la sienne) ; fermée elle aussi, voir orbe-coin.js
+      const so = document.createElement('script');
+      so.src = '/orbe-coin.js';
+      so.onload = () => { if (window.OrbeCoin) window.OrbeCoin.monter(nav); };
+      document.head.appendChild(so);
     }
     const voile = document.createElement('div'); voile.className = 'menu-voile'; voile.hidden = true;
     const panneau = document.createElement('nav');

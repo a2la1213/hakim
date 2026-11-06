@@ -5286,11 +5286,21 @@ function voixAilleurs(texte, siNon) {
     .then(r => (r.ok ? r.json() : null)).then((o) => { journalVoix('voix_envoyee', { ok: !!(o && o.ok), cible: o && o.cible }); if (!(o && o.ok)) siNon(); })
     .catch(() => siNon());
 }
+// (06/11, Ahmed : « pour la montre, ce qu'il dit doit s'afficher partout, même sur smartphone et Mac ») l'échange de la montre, écrit en direct (jamais dit
+// ici : la montre le dit elle-même) ; même identifiant : il se met à jour au fil
+function surEchangeMontre(m) {
+  if (!m || !m.id || (m.qui !== 'u' && m.qui !== 'j')) return;
+  const i = etat.messages.findIndex(x => String(x.id) === String(m.id));
+  const neuf = { ...(i >= 0 ? etat.messages[i] : {}), id: m.id, qui: m.qui, texte: String(m.texte || ''), ts: m.ts, oral: m.qui === 'u' ? true : undefined, depuis: 'montre', ...(m.complet ? { complet: true } : {}) };
+  if (i >= 0) etat.messages[i] = neuf; else etat.messages.push(neuf);
+  sauver(); rendre();
+}
 function ecouterPensees() {
   const es = new EventSource(`/api/jarvis/flux?appareil=${appareilIci()}`);   // (06/11) chaque appareil s'annonce : sa sortie peut le viser
   es.addEventListener('rire', (ev) => { try { if (balisesIci()) surRire(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('sortie', (ev) => { try { etat.sortie = JSON.parse(ev.data).appareil || 'ici'; journalVoix('sortie', { appareil: etat.sortie }); } catch (_) {} });
   es.addEventListener('voix_vers', (ev) => { try { surVoixVers(JSON.parse(ev.data)); } catch (_) {} });
+  es.addEventListener('echange_montre', (ev) => { try { surEchangeMontre(JSON.parse(ev.data)); } catch (_) {} });   // (06/11) la montre, en direct
   es.addEventListener('reecoute', (ev) => { try { surReecoute(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('souffle', (ev) => { try { surSouffle(JSON.parse(ev.data)); } catch (_) {} });   // (15:02) ses brouillons, écrits
   es.addEventListener('entendu', (ev) => { try { surEntendu(JSON.parse(ev.data)); } catch (_) {} });   // (04/11, 18:50) son oreille interne, par la route du micro

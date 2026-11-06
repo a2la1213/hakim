@@ -21,17 +21,23 @@ import stt  # noqa: E402  (l'amorce et le filtre des inventions, les mêmes que 
 MODELE = os.environ.get("JARVIS_WHISPER_VIF", "mlx-community/whisper-small-mlx")
 
 
-def transcrire(mlx_whisper, fichier, langue=None, contexte=""):
+def transcrire(mlx_whisper, fichier, langue=None, contexte="", avec_temps=False):
+    """(06/11) avec_temps : le temps de chaque mot ([mot, début, fin] en secondes du fichier), pour caler la voix séparée sur le fil."""
     t0 = time.time()
     base = stt.AMORCES.get(langue or "fr", stt.AMORCE)
     amorce = base + (" " + contexte.strip()[-200:] if contexte and contexte.strip() else "")
     r = mlx_whisper.transcribe(fichier, path_or_hf_repo=MODELE, initial_prompt=amorce, language=langue or None,
-                               condition_on_previous_text=False)
+                               condition_on_previous_text=False, word_timestamps=bool(avec_temps))
     if not langue and r.get("language") not in stt.LANGUES_PERMISES:     # une langue qui n'est pas la sienne : en français
         r = mlx_whisper.transcribe(fichier, path_or_hf_repo=MODELE, initial_prompt=amorce, language="fr",
-                                   condition_on_previous_text=False)
+                                   condition_on_previous_text=False, word_timestamps=bool(avec_temps))
     texte = stt.filtrer_segments(r.get("segments") or [{"text": r.get("text")}], base)
-    return {"texte": texte, "langue": r.get("language"), "ms": int((time.time() - t0) * 1000)}
+    sortie = {"texte": texte, "langue": r.get("language"), "ms": int((time.time() - t0) * 1000)}
+    if avec_temps:
+        sortie["mots"] = [[w["word"].strip(), round(float(w["start"]), 3), round(float(w["end"]), 3)]
+                          for sg in stt.segments_gardes(r.get("segments") or [], base) for w in (sg.get("words") or [])
+                          if (w.get("word") or "").strip()]
+    return sortie
 
 
 def forme(fichier):
@@ -68,7 +74,8 @@ def main():
             if d.get("op") == "famille":
                 sortie = famille(str(d["fichier"]), bool(d.get("parole")), int(d.get("voix") or 0))
             else:
-                sortie = transcrire(mlx_whisper, str(d["fichier"]), d.get("langue") or None, str(d.get("contexte") or ""))
+                sortie = transcrire(mlx_whisper, str(d["fichier"]), d.get("langue") or None, str(d.get("contexte") or ""),
+                                    bool(d.get("avec_temps")))
         except Exception as e:  # noqa: BLE001  (une demande ratée ne tue pas l'oreille)
             sortie = {"erreur": str(e)[:200]}
         print(json.dumps({"id": d.get("id"), **sortie}, ensure_ascii=False), flush=True)

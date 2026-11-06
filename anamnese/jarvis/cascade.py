@@ -241,6 +241,46 @@ def analyser_instrument(nom, x, sr, tonalite, analyser_fond):
             "attaques_s": round(_attaques(S, h / sr), 1)}
 
 
+def notes_du_temps(nom, x, sr, pas=1.0):
+    """(06/11, Ahmed : « il sait que c'est telle note, ou telle note et tel piano ou telle guitare ») les notes d'un instrument séparé,
+    seconde par seconde, avec leur octave : [[t0 (s), ["La2"]], …] ; la basse : sa note la plus forte ; le piano, la guitare, le reste :
+    leurs deux plus fortes (un pic de spectre à moins de 25 % du premier est laissé) ; la batterie n'a pas de note. Une seconde trop
+    faible (20 dB sous l'instrument) : rien."""
+    if nom == "drums":
+        return []
+    x = np.asarray(x, np.float32)
+    n = max(1, int(pas * sr))
+    lo, hi = REGISTRES.get(nom, (60, 2000))
+    tout = _db(x)
+    out = []
+    for i in range(0, len(x) - n // 2, n):
+        seg = x[i:i + n]
+        if _db(seg) < max(-60.0, tout - 20):
+            continue
+        N = 8192
+        S = np.abs(np.fft.rfft(np.pad(seg[:N], (0, max(0, N - len(seg[:N])))) * np.hanning(N)))
+        f = np.fft.rfftfreq(N, 1 / sr)
+        m = (f >= lo) & (f <= hi)
+        if not m.any():
+            continue
+        Sm, fm = S[m], f[m]
+        pics = [k for k in range(1, len(Sm) - 1) if Sm[k] >= Sm[k - 1] and Sm[k] >= Sm[k + 1]]
+        pics.sort(key=lambda k: -Sm[k])
+        noms = []
+        for k in pics[: 8]:
+            if Sm[k] < 0.25 * Sm[pics[0]]:
+                break
+            midi = int(round(69 + 12 * np.log2(fm[k] / 440)))
+            nn = f"{NOTES[midi % 12]}{midi // 12 - 1}"
+            if nn not in noms:
+                noms.append(nn)
+            if len(noms) >= (1 if nom == "bass" else 2):
+                break
+        if noms:
+            out.append([round(i / sr, 2), noms])
+    return out
+
+
 def instrument_en_mots(nom, a):
     lien = dict(ORDRE).get(nom, nom)
     morceaux = []
