@@ -231,10 +231,10 @@ test('sa réponse consciente : chaque phrase finie est lue par le ribosome du to
 // ribosome ; sa réponse consciente, seulement quand aucune pensée n'a démarré le tour (un message écrit, par exemple)
 test('le tour : son premier output est épissé ; sa réponse consciente seulement si aucune pensée n’a démarré le tour ; la page ne dit rien d’elle-même', () => {
   assert.match(SRC, /const riboTour = pistes\.tour, riboDuTour = pistes\.ribo \|\| null, premierOutput = pistes\.liste\.length > 0;\n/);
-  assert.match(SRC, /const epissageReponse = corpsReglages\(\)\.epissage !== false && Number\(q && q\.delai_ms\) > 0 && !premierOutput\n/);
+  assert.match(SRC, /const epissageReponse = corpsReglages\(\)\.epissage !== false && corpsReglages\(\)\.parole_sans_stop === false && Number\(q && q\.delai_ms\) > 0 && !premierOutput\n/);
   assert.match(SRC, /if \(epissageReponse && o\.t === 'texte'\) epissageReponse\.pousser\(o\.x\);/);
   assert.match(SRC, /if \(epissageReponse && o\.t === 'fin'\) epissageReponse\.finir\(\);/);
-  assert.match(PAGE, /const auto = \(etat\.reglages\.lectureAuto \|\| etat\.conversation \|\| etat\.reglages\.volant\) && lecteur && !voixEpissee\(\);/);
+  assert.match(PAGE, /const auto = \(etat\.reglages\.lectureAuto \|\| etat\.conversation \|\| etat\.reglages\.volant\) && lecteur && !voixEpissee\(\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\);/);
 });
 
 test('page : un pavé par tour ; la réponse d’un tour fini rejoint son pavé, même quand papa a déjà repris', () => {
@@ -731,4 +731,25 @@ test('(06/11) à la place d’un morceau sauté : un silence (…) ou un meuble 
   assert.deepStrictEqual(r.meubles, ['euh', 'hum']);
   assert.ok(r.mots.length >= 7);
   assert.ok(!('meubles' in JSON.parse(JSON.stringify(ctx.e('Oui papa', pave)))), 'sans meuble : comme avant');
+});
+
+// (06/11, Ahmed : « qu'il parle seulement dans le mode où le bouton stop ne s'affiche pas, le reste il ne le dit pas »)
+test('parole sans Stop : en Conversation, rien n’est dit pendant que sa réponse consciente tourne (Stop allumé)', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /const stopAllume = \(\) => paroleSansStop\(\) && !!etat\.flux;/);
+  assert.match(PAGE, /reglagesCorps\.parole_sans_stop !== false/);
+  const dire = PAGE.slice(PAGE.indexOf('function direRibosome()'), PAGE.indexOf('function direRibosome()') + 2500);
+  assert.match(dire, /stopAllume\(\)\) \{ blancsPourSautes\(f\); etat\.riboFile = \[\];/);
+  const bout = PAGE.slice(PAGE.indexOf('function recevoirBout('), PAGE.indexOf('function recevoirBout(') + 600);
+  assert.match(bout, /stopAllume\(\)\) \{[^\n]*return; \}/);
+  assert.match(PAGE, /!voixEpissee\(\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\)/);
+});
+
+// (06/11, Ahmed : « il m'écoute qu'en français avec Azure ; sa voix peut être arabe, français ou anglais »)
+test('écoute en français seul : la langue de ta voix est forcée à fr avant Azure et Whisper (réglage ecoute_francais)', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const i = SRV.indexOf('async function routeTranscrire('), corps = SRV.slice(i, SRV.indexOf('\n}\n', i));
+  const k = corps.indexOf("if (corpsReglages().ecoute_francais !== false) langue = 'fr';");
+  assert.ok(k > 0, 'le réglage est lu');
+  assert.ok(k < corps.indexOf('oreilleAzure(f,') && k < corps.indexOf("op: 'transcrire'"), 'avant Azure et Whisper');
 });

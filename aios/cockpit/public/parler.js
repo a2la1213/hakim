@@ -1142,6 +1142,10 @@ const motsPapaCaches = () => !!etat.conversation && !motsEnConversation();
 const parolesVisibles = () => !enTelepathie() && ((typeof voixEpissee === 'function' && voixEpissee()) ? !!etat.reglages.sesParolesEpissage : !!etat.reglages.sesParoles);
 const reponseCachee = () => !!etat.conversation && !parolesVisibles();
 // (04/11, 12:05) en Conversation avec l'épissage (Sens, oui par défaut), sa voix suit son ribosome, pas sa réponse en entier
+// (06/11, Ahmed : « le repère, c'est le bouton stop qui ne s'allume pas quand il lance une parole : c'est ça qu'on garde ») en Conversation et en
+// Télépathie, réglage « parole sans Stop » (corps : parole_sans_stop) : sa voix ne part jamais pendant que sa réponse consciente tourne
+const paroleSansStop = () => !!etat.conversation && typeof reglagesCorps !== 'undefined' && !!reglagesCorps && reglagesCorps.parole_sans_stop !== false;
+const stopAllume = () => paroleSansStop() && !!etat.flux;
 const voixEpissee = () => !!etat.conversation && typeof reglagesCorps !== 'undefined' && !!reglagesCorps && reglagesCorps.epissage !== false;
 const PIECE_ID = /^\d{8}-\d{6}-[0-9a-f]{6}$/;
 const aDesPieces = (m) => !!m && m.qui === 'j' && (m.pieces || []).some(x => x && PIECE_ID.test(String(x.id)));
@@ -2195,7 +2199,7 @@ async function envoyer(texte, oral, dejaRelance) {
   rendre(); humeur();
   const decoupe = Voix.decoupeur({ vif: true });           // (03/11) ses premiers mots partent tout de suite
   // (04/11, 12:05) en Conversation, avec l'épissage, seul son ribosome parle : sa réponse s'écrit, ses mots choisis se disent
-  const auto = (etat.reglages.lectureAuto || etat.conversation || etat.reglages.volant) && lecteur && !voixEpissee();
+  const auto = (etat.reglages.lectureAuto || etat.conversation || etat.reglages.volant) && lecteur && !voixEpissee() && !(typeof paroleSansStop === 'function' && paroleSansStop());   // (06/11) Stop allumé : pas dit
   if (auto) etat.decoupeFlux = decoupe;                  // (23/10) sa phrase en cours d'arrivée, si on le coupe
   if (auto) etat.reponseVoix = m.id;                                  // (13:30) une réponse dite : ses meubles peuvent couvrir ses trous
   if (auto && etat.conversation && lecteur.impl === lecteurNeuronal) lecteurNeuronal.attendreReponse();   // (03/11) il réfléchit : un trou se meuble
@@ -3272,6 +3276,7 @@ function recevoirBout(s, n, tour) {
   const conv = etat.conversation;
   // (04/11, 13:10, Ahmed : « tout ce qui est traduit par le ribosome sort en priorité par la bouche ») ce que son ribosome a traduit passe toujours
   if (!conv || !n || (!s.ribosome && !souffleAutorise())) return;
+  if (typeof stopAllume === 'function' && stopAllume()) { if (typeof journalVoix === 'function') journalVoix('tu_sous_stop', { bout: n }); return; }   // (06/11) Stop allumé : pas dit
   if (bouts.tour !== tour) bouts = { tour, prochain: 1, liste: new Map(), enFile: [], dits: [], fileTel: bouts.fileTel || [] };
   if (n < bouts.prochain || bouts.liste.has(n)) return;
   const b = { n, texte: s.texte, buf: null, rate: false, t: Date.now(), coupe: !!s.remplace, sansMeuble: !!s.sansMeuble };
@@ -3613,6 +3618,9 @@ function direRibosome() {
   // (04/11, 14:48) une attente de plus de 5 s est notée, avec sa cause (sa voix qui parle encore, ou la pièce qui parle), une fois par 10 s
   const noterAttente = (cause) => { if (attente > 5000 && Date.now() - (etat.riboAttenteNotee || 0) > 10000 && typeof journalVoix === 'function') { etat.riboAttenteNotee = Date.now(); journalVoix('ribosome_attente', { cause, ms: attente }); } };
   if (!f.length || !c) return;
+  // (06/11, Ahmed : « qu'il parle seulement dans le mode où le bouton stop ne s'affiche pas, le reste il ne le dit pas ») sa réponse consciente
+  // tourne (le Stop allumé) : ce qui attendait sa voix n'est pas dit, laissé en blanc dans son épissure
+  if (typeof stopAllume === 'function' && stopAllume()) { blancsPourSautes(f); etat.riboFile = []; if (typeof journalVoix === 'function') journalVoix('tu_sous_stop', { n: f.length }); return; }
   // (05/11, 09:20, Ahmed : « libérer et jeter ce qui ne va pas être gardé ; une fois parallélisé et nettoyé, envoyer le flux de parole prononcé de façon
   // séquentielle ») mesuré : sa voix du Mac (Chatterbox) calcule 2 fois plus lentement qu'elle ne parle, et chaque morceau partait la calculer sans
   // attendre le précédent (jusqu'à 3 min 30 de file, le GPU toujours pris) : un morceau à la fois ; ce qui attend pendant ce temps vieillit et

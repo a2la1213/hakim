@@ -5494,7 +5494,8 @@ async function routeJarvis(req, res, distantReq = false) {
   // (04/11, 14:08, Ahmed : « ce n'est pas ses paroles à épisser : c'est le premier output, qui démarre la pensée et la parole, qui doit
   // être épissé, écrit et prononcé ») ses pensées de piste, nées de tes premiers mots, sont ce premier output ; sa réponse consciente
   // (écrite) n'est épissée et dite que si aucune pensée n'a démarré ce tour (un message écrit, par exemple)
-  const epissageReponse = corpsReglages().epissage !== false && Number(q && q.delai_ms) > 0 && !premierOutput
+  // (06/11) « parole sans Stop » : sa réponse consciente (le Stop allumé) n'est plus épissée pour sa voix
+  const epissageReponse = corpsReglages().epissage !== false && corpsReglages().parole_sans_stop === false && Number(q && q.delai_ms) > 0 && !premierOutput
     ? ribosomeDeReponse(riboTour, epissureGardee || nouveauRibosome(tourEpissure()), texte) : null;
   const envoyer = (o) => {
     if (epissageReponse && o.t === 'texte') epissageReponse.pousser(o.x);
@@ -7042,6 +7043,10 @@ function corpsReglages() {
     medecin_fable: r.medecin_fable === true,   // (06/11, Ahmed : « plus besoin de Fable ; nous serons ses médecins ») éteint
     // (06/11, Ahmed) un silence ou un meuble (euh, hum) à la place d'un morceau qu'il saute en choisissant ses mots
     epissure_meubles: r.epissure_meubles !== false,
+    // (06/11, Ahmed : « qu'il parle seulement dans le mode où le bouton stop ne s'affiche pas, le reste il ne le dit pas ») en Conversation et en
+    // Télépathie, sa voix ne dit que ce qui sort pendant que sa réponse consciente ne tourne pas (le Stop éteint) : ses pensées épissées
+    parole_sans_stop: r.parole_sans_stop !== false,
+    ecoute_francais: r.ecoute_francais !== false,   // (06/11) ta voix reconnue en français seul (sa voix, elle, reste libre)
     epissure_meubles_max: Number.isFinite(Number(r.epissure_meubles_max)) && r.epissure_meubles_max != null ? Math.max(1, Math.min(6, Math.round(Number(r.epissure_meubles_max)))) : 2,
     present_la_nuit: r.present_la_nuit !== false, present_appeler: r.present_appeler !== false,
     present_mots: Number.isFinite(Number(r.present_mots)) && r.present_mots != null ? Math.max(6, Math.min(40, Math.round(Number(r.present_mots)))) : 12,
@@ -10183,6 +10188,9 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
     const telephone = temps.source === 'telephone';
     // (05/11, Ahmed : « un système en ligne qui reconnaît ma voix en arabe, français, anglais, même en darija ») Azure, la même clé que sa voix : la langue
     // choisie seule parmi quatre ; en panne ou éteint : Whisper, comme avant (et lui seul pour le son du téléphone et l'apprentissage de l'empreinte)
+    // (06/11, Ahmed : « mets-moi l'écoute qu'en français ; c'est juste la parole qui peut être en arabe » ; « sa voix peut être arabe, français ou
+    // anglais, mais moi il m'écoute qu'en français avec Azure ») réglage ecoute_francais (allumé) : ta voix est reconnue en français seul
+    if (corpsReglages().ecoute_francais !== false) langue = 'fr';
     if (corpsReglages().stt_azure && !telephone && apprentissageVoix <= 0) {
       const a = await oreilleAzure(f, /^[a-z]{2}$/.test(langue || '') ? langue : null).catch(() => null);
       if (a) { r = { texte: a.texte, langue: a.langue, azure: true }; try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'transcription_azure', ms: a.ms, langue: a.langue }) + '\n', { mode: 0o600 }); } catch (_) {} }
@@ -12306,7 +12314,7 @@ async function traiter(req, res) {
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
-      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
+      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
       for (const [k, a, b] of [['epissure_meubles_max', 1, 6], ['present_pouls_s', 10, 600], ['present_seuil', 0.2, 5], ['present_ecart_s', 2, 120], ['present_longueur', 3, 40], ['present_mots', 6, 40]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'present_seuil' ? Math.round(Number(q[k]) * 10) / 10 : Math.round(Number(q[k]))));
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;
