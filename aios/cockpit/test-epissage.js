@@ -734,15 +734,13 @@ test('(06/11) à la place d’un morceau sauté : un silence (…) ou un meuble 
 });
 
 // (06/11, Ahmed : « qu'il parle seulement dans le mode où le bouton stop ne s'affiche pas, le reste il ne le dit pas »)
-test('parole sans Stop : en Conversation, rien n’est dit pendant que sa réponse consciente tourne (Stop allumé)', () => {
+test('parole sans Stop : sa réponse consciente reste muette, ses pensées épissées passent même Stop allumé (06/11, 08:50)', () => {
   const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
-  assert.match(PAGE, /const stopAllume = \(\) => paroleSansStop\(\) && !!etat\.flux;/);
+  assert.doesNotMatch(PAGE, /stopAllume/, 'plus aucun morceau épissé tu sous le Stop');
   assert.match(PAGE, /reglagesCorps\.parole_sans_stop !== false/);
-  const dire = PAGE.slice(PAGE.indexOf('function direRibosome()'), PAGE.indexOf('function direRibosome()') + 2500);
-  assert.match(dire, /stopAllume\(\)\) \{ blancsPourSautes\(f\); etat\.riboFile = \[\];/);
-  const bout = PAGE.slice(PAGE.indexOf('function recevoirBout('), PAGE.indexOf('function recevoirBout(') + 600);
-  assert.match(bout, /stopAllume\(\)\) \{[^\n]*return; \}/);
-  assert.match(PAGE, /!voixEpissee\(\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\)/);
+  assert.match(PAGE, /!voixEpissee\(\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\)/, 'sa réponse écrite : jamais lue par la page');
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(SRV, /corpsReglages\(\)\.parole_sans_stop === false && Number\(q && q\.delai_ms\) > 0 && !premierOutput/, 'ni épissée pour sa voix');
 });
 
 // (06/11, Ahmed : « il m'écoute qu'en français avec Azure ; sa voix peut être arabe, français ou anglais »)
