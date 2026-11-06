@@ -2239,7 +2239,8 @@ function capteursDe(c, maintenant) {
 function blocSituation(q, distantReq, deja, maintenant, contexte = 0) {
   const jauge = jaugeForfait(maintenant), appareil = appareilDe(q, distantReq), volant = q.volant === true;
   const morceaux = [];
-  if (appareil !== deja.appareil) morceaux.push(`Ahmed te parle depuis ${appareil}`);
+  // (06/11, Ahmed : « il faut qu'il réalise s'il est sur la montre, le smartphone ou le Mac ») dit à chaque tour, plus seulement quand ça change
+  morceaux.push(`Ahmed te parle depuis ${appareil} : c'est là que tu es en ce moment${/montre/.test(appareil) ? ' (ta voix sort à son poignet)' : /téléphone/.test(appareil) ? ' (ta voix sort de son téléphone)' : /Mac/.test(appareil) ? ' (ta voix sort du Mac)' : ''}`);
   // (30/10) la clé de « déjà dit » : le nom du lieu, ou une empreinte (jamais les coordonnées en clair)
   const pos = positionDe(q, maintenant);
   let nomLieu = null; if (pos) try { nomLieu = lieuDe(pos, lireLieux(), null); } catch (_) {}

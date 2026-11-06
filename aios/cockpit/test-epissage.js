@@ -957,3 +957,10 @@ test('sa réponse écrite lue en entier en Conversation et Télépathie (lire_re
   const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   assert.match(SRV, /lire_reponse_entiere: r\.lire_reponse_entiere !== false,/);
 });
+
+// (06/11, Ahmed : « il faut qu'il réalise s'il est sur la montre, le smartphone ou le Mac »)
+test('où il est : dit à chaque tour, avec par où sort sa voix', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(SRV, /\n  morceaux\.push\(`Ahmed te parle depuis \$\{appareil\} : c'est là que tu es en ce moment/);
+  assert.doesNotMatch(SRV, /if \(appareil !== deja\.appareil\) morceaux\.push/);
+});
