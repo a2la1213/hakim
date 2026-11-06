@@ -51,10 +51,12 @@ def test_le_processus_voix_transmet_le_timbre_et_les_morceaux(monkeypatch):
             return 1.0
 
     monkeypatch.setattr(V, "_charger_tts", lambda: Faux())
-    monkeypatch.setattr(V, "apprendre_ma_voix", lambda f: None)
+    appris = []
+    monkeypatch.setattr(V, "apprendre_ma_voix", lambda f, registre=None: appris.append(registre))   # (06/11) sa voix de rap, apprise à part
     fichier = str(Path(tempfile.gettempdir()) / "jarvis-voix-test-rap.wav")
     segs = [{"texte": "Salut", "langue": "fr"}, {"texte": "bro", "langue": "en"}]
     r = V.traiter({"op": "dire", "texte": "Salut bro", "langue": "fr", "fichier": fichier, "voix": "rap", "segments": segs})
     assert r["duree_s"] == 1.0 and vu == {"texte": "Salut bro", "voix": "rap", "segments": segs}
     V.traiter({"op": "dire", "texte": "Salut", "fichier": fichier})              # comme avant : ni timbre ni morceaux
     assert vu["voix"] is None and vu["segments"] is None
+    assert appris == ["rap", None], "sa voix de rap apprend son registre ; celle d'avant, le sien"

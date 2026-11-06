@@ -389,3 +389,76 @@ def test_mot_a_mot_une_candidate_laisse_ses_mots_a_la_voix_d_avant(tmp_path, mon
     assert texte == "[papa] salut Hakim regarde non attends frérot bon ok" and r["voix"] == ["Ahmed"]
     assert [x["nom"] for x in E._salle["voix"]] == ["voix 2"]
     assert [k["parole"] for k in E._salle["candidates"]] == [[[1000.0, 3.0]]]
+
+
+# ---- (06/11, Ahmed : « il entend sa propre voix et ça le perturbe ; il faut qu'il reconnaisse sa voix comme étant la sienne ») ----
+
+def _base_soi():
+    b = {"ahmed": np.r_[np.ones(128), np.zeros(128)], "rap": np.r_[np.ones(64), -np.ones(64), np.ones(64), -np.ones(64)],
+         "azure": np.tile(np.r_[np.ones(32), -np.ones(32)], 4), "pote": np.r_[np.zeros(128), np.ones(128)]}
+    return {k: v / np.linalg.norm(v) for k, v in b.items()}
+
+
+def test_ses_deux_voix_apprises_a_part_et_reconnues_chacune(tmp_path, monkeypatch):
+    """sa voix de rap et sa voix Azure : deux registres, deux moyennes ; il se reconnaît dans l'une ou l'autre ; papa et un pote, jamais"""
+    V = _base_soi()
+    f, moi = tmp_path / "empreinte.json", tmp_path / "moi.json"
+    monkeypatch.setattr(E, "embedding", lambda a, *x, **k: V[a] if isinstance(a, str) else V[["ahmed", "rap", "azure", "pote"][int(a[0])]])
+    E.apprendre("ahmed", fichier=f); E.apprendre("ahmed", fichier=f)
+    for _ in range(3):
+        E.apprendre_moi("rap", fichier=moi, registre="rap")
+        E.apprendre_moi("azure", fichier=moi, registre="azure-fr-FR-RemyMultilingualNeural")
+    mes = E.moyennes_moi(moi)
+    assert sorted(mes) == ["azure-fr-fr-remymultilingualneural", "rap"]
+    morceau = lambda k: np.full(48000, ["ahmed", "rap", "azure", "pote"].index(k), dtype=np.float32)
+    assert E.qui_parle(morceau("rap"), fichier=f, moi=moi)["verdict"] == "moi"
+    q = E.qui_parle(morceau("azure"), fichier=f, moi=moi)
+    assert q["verdict"] == "moi" and q["registre"].startswith("azure")
+    assert E.qui_parle(morceau("ahmed"), fichier=f, moi=moi)["verdict"] is None, "papa : jamais son écho"
+    assert E.qui_parle(morceau("pote"), fichier=f, moi=moi)["verdict"] is None
+
+
+def test_papa_proche_de_sa_voix_reste_papa(tmp_path, monkeypatch):
+    """une voix de rap clonée peut ressembler à papa : sa voix ne l'emporte qu'avec 0,05 d'avance, et jamais si papa est reconnu"""
+    V = _base_soi()
+    proche = V["ahmed"] * 0.75 + V["rap"] * 0.66
+    proche /= np.linalg.norm(proche)
+    f, moi = tmp_path / "empreinte.json", tmp_path / "moi.json"
+    monkeypatch.setattr(E, "embedding", lambda a, *x, **k: V["ahmed"])
+    E.apprendre("x", fichier=f); E.apprendre("x", fichier=f)
+    monkeypatch.setattr(E, "embedding", lambda a, *x, **k: V["rap"])
+    for _ in range(3):
+        E.apprendre_moi("x", fichier=moi, registre="rap")
+    monkeypatch.setattr(E, "embedding", lambda a, *x, **k: proche)
+    assert E.qui_parle(np.zeros(48000, np.float32), fichier=f, moi=moi)["verdict"] is None
+
+
+def test_un_morceau_tout_dans_sa_voix_de_rap_est_mis_de_cote_jamais_papa(tmp_path, monkeypatch):
+    """etiqueter (Whisper) : avec sa voix de rap, le morceau est son écho (texte vide, « moi ») ; celui de papa reste à papa"""
+    V = _base_soi()
+    f, moi = tmp_path / "empreinte.json", tmp_path / "moi.json"
+    monkeypatch.setattr(E, "embedding", lambda a, *x, **k: V["ahmed"])
+    E.apprendre("x", fichier=f); E.apprendre("x", fichier=f)
+    monkeypatch.setattr(E, "embedding", lambda a, *x, **k: V["rap"])
+    for _ in range(3):
+        E.apprendre_moi("x", fichier=moi, registre="rap")
+    monkeypatch.setattr(E, "embedding", lambda a, *x, **k: V[["ahmed", "rap"][int(a[0])]])
+    E._salle.update(voix=[], ts=0.0, dernier=None)
+    t, r = E.etiqueter(np.full(48000, 1, np.float32), [{"start": 0, "end": 3, "text": "je suis un bébé pour moi"}], fichier=f, moi=moi, maintenant=5000.0)
+    assert t == "" and r["moi"] == "je suis un bébé pour moi" and r["voix"] == []
+    E._salle.update(voix=[], ts=0.0, dernier=None)
+    t, r = E.etiqueter(np.full(48000, 0, np.float32), [{"start": 0, "end": 3, "text": "envoie le zip"}], fichier=f, moi=moi, maintenant=6000.0)
+    assert not (r or {}).get("moi"), "papa n'est jamais retiré"
+
+
+def test_le_cockpit_lui_apprend_sa_voix_azure_par_un_fichier_jetable(tmp_path, monkeypatch):
+    import wave
+    V = _base_soi()
+    monkeypatch.setattr(E, "embedding", lambda a, *x, **k: V["azure"])
+    w = tmp_path / "jarvis-moi-azure-1.wav"
+    with wave.open(str(w), "wb") as o:
+        o.setnchannels(1); o.setsampwidth(2); o.setframerate(24000)
+        o.writeframes((np.sin(np.arange(24000 * 7) / 10) * 8000).astype("<i2").tobytes())
+    x = E.lire_wav16(w)
+    assert abs(len(x) - 16000 * 7) <= 1
+    assert E.apprendre_moi_fichier(w, "azure-x", fichier_moi=tmp_path / "moi.json") == 2, "7 s : deux morceaux de 3 s (la dernière seconde, trop courte, laissée)"

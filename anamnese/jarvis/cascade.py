@@ -319,9 +319,8 @@ def references(fichier_ahmed=None, fichier_connues=None, fichier_moi=None):
         refs.append({"nom": ev.NOM_PAPA, "genre": "papa", "d": d})
     for x in ev.connues(fichier_connues):
         refs.append({"nom": x["nom"], "genre": "connue", "v": np.array(x["moyenne"], float)})
-    moi = ev._moyenne_moi(fichier_moi)
-    if moi is not None:
-        refs.append({"nom": "moi", "genre": "moi", "v": np.asarray(moi, float)})
+    for m in ev.moyennes_moi(fichier_moi).values():                 # (06/11) chacune de ses voix : rap, Azure, celle d'avant
+        refs.append({"nom": "moi", "genre": "moi", "v": np.asarray(m, float)})
     return refs
 
 
@@ -342,6 +341,10 @@ def nommer(v, refs):
     seuil = ev.SEUIL_MOI if r["genre"] == "moi" else ev.SEUIL_AHMED
     if s < seuil:
         return {"nom": None, "score": round(s, 2)}
+    # (06/11) sa propre voix seulement 0,05 au-dessus de toute autre (comme etiqueter) : papa n'est jamais pris pour son écho
+    if r["genre"] == "moi" and any(x >= s - 0.05 for x, y in notes if y["genre"] != "moi"):
+        autre = max(((x, y) for x, y in notes if y["genre"] != "moi"), key=lambda p: p[0])
+        return {"nom": autre[1]["nom"], "score": round(autre[0], 2)} if autre[0] >= ev.SEUIL_AHMED else {"nom": None, "score": round(s, 2)}
     return {"nom": r["nom"], "score": round(s, 2)}
 
 

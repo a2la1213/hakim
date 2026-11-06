@@ -190,7 +190,10 @@ def transcrire(fichier, langue=None, contexte="", voix=None, avec_temps=False, m
                 if etiquete is not None and resume and (resume["autres"] or resume["plusieurs"] or resume.get("moi")):
                     sortie["texte"] = etiquete
                     sortie["voix"] = {**(sortie.get("voix") or {}), "locuteurs": resume["voix"],
-                                      "verdict": "plusieurs" if resume["plusieurs"] and resume["ahmed"]
+                                      # (06/11, Ahmed : « il entend sa propre voix et ça le perturbe ») rien que SA voix : « moi », son écho,
+                                      # jamais une voix inconnue
+                                      "verdict": "moi" if not resume["voix"]
+                                      else "plusieurs" if resume["plusieurs"] and resume["ahmed"]
                                       else ("autre" if not resume["ahmed"] else (sortie.get("voix") or {}).get("verdict", "ahmed"))}
         except Exception as e:                                           # jamais bloquant pour la transcription
             print(f"[voix] empreinte indisponible : {type(e).__name__}: {e}", file=sys.stderr)

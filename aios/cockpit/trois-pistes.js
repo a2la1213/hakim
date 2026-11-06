@@ -72,8 +72,9 @@ function creer() {
     }
     // (06/11) qui parle : chaque voix séparée (la cascade), sur ses segments ; papa, une voix connue par son nom, ou « voix n »
     for (const v of Array.isArray(voix) ? voix : []) {
-      if (!v || v.moi) continue;
-      const qui = String(v.nom || v.timbre || `voix ${Number(v.numero) || 0}`).slice(0, 40);
+      if (!v) continue;
+      // (06/11, Ahmed : « il faut qu'il reconnaisse sa voix comme étant la sienne ») sa voix (l'empreinte « soi ») : « ta propre voix », son écho
+      const qui = v.moi ? 'ta propre voix' : String(v.nom || v.timbre || `voix ${Number(v.numero) || 0}`).slice(0, 40);
       for (const sg of Array.isArray(v.segments) ? v.segments : []) {
         if (!Array.isArray(sg)) continue;
         locuteurs[src].push({ t0: Number(t0) + Number(sg[0]) * 1000, t1: Number(t0) + Number(sg[1]) * 1000, qui });

@@ -71,7 +71,16 @@ def main():
         except ValueError:
             continue
         try:
-            if d.get("op") == "famille":
+            if d.get("op") == "qui":
+                # (06/11, Ahmed : « il entend sa propre voix et ça le perturbe ») un morceau que l'oreille Azure a transcrit (sans dire qui
+                # parlait) : est-ce SA voix ? (empreinte_vocale.qui_parle, sur le processeur, ~0,1 s par fenêtre de 1,5 s)
+                import empreinte_vocale
+                import mlx_whisper.audio
+                import numpy as np
+                t0 = time.time()
+                sortie = {**empreinte_vocale.qui_parle(np.array(mlx_whisper.audio.load_audio(str(d["fichier"])), dtype=np.float32)),
+                          "ms": int((time.time() - t0) * 1000)}
+            elif d.get("op") == "famille":
                 sortie = famille(str(d["fichier"]), bool(d.get("parole")), int(d.get("voix") or 0))
             else:
                 sortie = transcrire(mlx_whisper, str(d["fichier"]), d.get("langue") or None, str(d.get("contexte") or ""),

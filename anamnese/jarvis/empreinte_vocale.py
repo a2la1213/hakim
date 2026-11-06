@@ -291,24 +291,82 @@ MOI_MAX, SEUIL_MOI = 40, 0.5
 FENETRE_S, PAS_S = 1.5, 0.75
 
 
-def apprendre_moi(audio, fichier=None):
-    """Un échantillon de SA voix (ce qu'il vient de dire) ; rend le nombre d'échantillons, ou None si trop court."""
+def apprendre_moi(audio, fichier=None, registre=None):
+    """Un échantillon de SA voix (ce qu'il vient de dire) ; rend le nombre d'échantillons de ce registre, ou None si trop court.
+    (06/11, Ahmed : « il entend sa propre voix et ça le perturbe ; il faut qu'il reconnaisse sa voix comme étant la sienne ») registre :
+    laquelle de SES voix (« rap » : Chatterbox et sa référence ; « azure-… » : sa voix Azure ; sans : sa voix Chatterbox d'avant,
+    « mac ») ; chacune a sa moyenne, il se reconnaît dans la plus proche (deux timbres si différents ne se moyennent pas)."""
     v = embedding(audio)
     if v is None:
         return None
+    return apprendre_moi_vecteur(v, fichier, registre)
+
+
+def _registre_moi(registre):
+    r = re.sub(r"[^\w.-]+", "-", str(registre or "").strip().lower())[:60]
+    return r if r and r != "mac" else None
+
+
+def apprendre_moi_vecteur(v, fichier=None, registre=None):
     f = Path(fichier or MOI)
     d = _lire(f) or {"vecteurs": []}
-    d["vecteurs"] = (d.get("vecteurs", []) + [v.round(5).tolist()])[-MOI_MAX:]
-    m = np.mean(np.array(d["vecteurs"]), axis=0)
-    d["moyenne"] = (m / (np.linalg.norm(m) or 1.0)).round(5).tolist()
-    d["maj"] = time.time()
+    reg = _registre_moi(registre)
+    cible = d if reg is None else d.setdefault("registres", {}).setdefault(reg, {"vecteurs": []})
+    cible["vecteurs"] = (cible.get("vecteurs", []) + [np.asarray(v, float).round(5).tolist()])[-MOI_MAX:]
+    m = np.mean(np.array(cible["vecteurs"]), axis=0)
+    cible["moyenne"] = (m / (np.linalg.norm(m) or 1.0)).round(5).tolist()
+    cible["maj"] = d["maj"] = time.time()
     _ecrire(f, d)
-    return len(d["vecteurs"])
+    return len(cible["vecteurs"])
+
+
+def moyennes_moi(fichier=None):
+    """Ses voix connues : {registre : moyenne} (au moins 3 échantillons chacune ; « mac » : celle d'avant)."""
+    d = _lire(fichier or MOI) or {}
+    out = {}
+    if d.get("moyenne") and len(d.get("vecteurs", [])) >= 3:
+        out["mac"] = np.array(d["moyenne"])
+    for k, r in (d.get("registres") or {}).items():
+        if r and r.get("moyenne") and len(r.get("vecteurs", [])) >= 3:
+            out[k] = np.array(r["moyenne"])
+    return out
+
+
+def score_moi(v, moyennes):
+    """(score, registre) : la plus proche de ses voix ; (-1, None) sans voix connue."""
+    if not moyennes or v is None:
+        return -1.0, None
+    return max((float(np.dot(v, m)), k) for k, m in moyennes.items())
 
 
 def _moyenne_moi(fichier=None):
     d = _lire(fichier or MOI)
     return np.array(d["moyenne"]) if d and d.get("moyenne") and len(d.get("vecteurs", [])) >= 3 else None
+
+
+def qui_parle(audio, fichier=None, moi=None):
+    """(06/11) tout un morceau (l'oreille Azure ne date pas les mots) : par fenêtres de 1,5 s, chacune est-elle SA voix (au moins SEUIL_MOI
+    et 0,05 au-dessus de papa) ? {"moi": meilleur score de soi, "ahmed": meilleur score de papa, "part_moi", "registre", "verdict":
+    « moi » quand au moins 80 % des fenêtres sont lui, sinon None}. Jamais « moi » quand papa est reconnu (au moins SEUIL_AHMED)."""
+    a = np.asarray(audio, dtype=np.float32)
+    mes = moyennes_moi(moi)
+    if not mes:
+        return {"verdict": None, "raison": "sa voix pas encore apprise"}
+    d = _lire(fichier)
+    papa = (lambda v: score_ahmed(v, d)) if d and d.get("moyenne") and len(d.get("vecteurs", [])) >= 2 else (lambda v: -1.0)
+    n, pas = int(FENETRE_S * 16000), int(PAS_S * 16000)
+    debuts = list(range(0, max(1, len(a) - n + 1), pas)) if len(a) >= n else [0]
+    fen = [embedding(a[i:i + n], min_s=1.0) for i in debuts]
+    fen = [v for v in fen if v is not None]
+    if not fen:
+        return {"verdict": None, "raison": "court"}
+    sm = [score_moi(v, mes) for v in fen]
+    sa = [papa(v) for v in fen]
+    sont_moi = [s >= SEUIL_MOI and s > p + 0.05 for (s, _), p in zip(sm, sa)]
+    part = sum(sont_moi) / len(fen)
+    meilleur = max(sm)
+    verdict = "moi" if part >= 0.8 and max(sa) < SEUIL_AHMED else None
+    return {"moi": round(meilleur[0], 2), "registre": meilleur[1], "ahmed": round(max(sa), 2), "part_moi": round(part, 2), "verdict": verdict}
 
 
 def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None, moi=None, musique=False):
@@ -329,13 +387,13 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
     d = _lire(fichier)
     moyenne = np.array(d["moyenne"]) if d and d.get("moyenne") and len(d.get("vecteurs", [])) >= 2 else None
     ahmed = (lambda v: score_ahmed(v, d)) if moyenne is not None else None
-    sa_voix = _moyenne_moi(moi)
+    mes_voix = moyennes_moi(moi)                          # (06/11) toutes ses voix (rap, Azure, celle d'avant)
     nommees = [(x["nom"], np.array(x["moyenne"])) for x in connues()]
     a = np.asarray(audio, dtype=np.float32)
 
     def connu(v):
         """La voix d'un vecteur parmi celles qu'il connaît (lui, Ahmed, les nommées, celles de la salle) ; None : inconnue."""
-        sm = float(np.dot(v, sa_voix)) if sa_voix is not None else -1.0
+        sm = score_moi(v, mes_voix)[0]
         sa = ahmed(v) if ahmed else -1.0
         proches = [(float(np.dot(v, x["c"])), x) for x in _salle["voix"]]
         s, x = max(proches, key=lambda p: p[0]) if proches else (-1.0, None)
@@ -585,3 +643,54 @@ def etat(fichier=None):
         if r:
             regs[r] = regs.get(r, 0) + 1
     return {"echantillons": len(d.get("vecteurs", [])), "registres": regs, "modele": MODELE.exists()}
+
+
+# ---- (06/11, Ahmed : « il faut qu'il reconnaisse sa voix comme étant la sienne ») ses voix apprises de dehors ----
+
+def lire_wav16(fichier):
+    """Un WAV PCM (Azure : 24 kHz, 16 bits, mono ; la référence de rap) en 16 kHz mono float32, sans ffmpeg."""
+    import wave
+    with wave.open(str(fichier), "rb") as w:
+        sr, n, canaux, largeur = w.getframerate(), w.getnframes(), w.getnchannels(), w.getsampwidth()
+        brut = w.readframes(n)
+    if largeur != 2:
+        raise ValueError("seulement du PCM 16 bits")
+    x = np.frombuffer(brut, dtype="<i2").astype(np.float32) / 32768.0
+    if canaux > 1:
+        x = x.reshape(-1, canaux).mean(axis=1)
+    if sr != 16000 and len(x):
+        k = int(len(x) * 16000 / sr)
+        x = np.interp(np.linspace(0, len(x) - 1, k), np.arange(len(x)), x).astype(np.float32)
+    return x
+
+
+def apprendre_moi_fichier(fichier, registre=None, fichier_moi=None, morceau_s=3.0):
+    """Un fichier de SA voix, appris par morceaux de 3 s (une référence de 10 s donne 3 échantillons) ; rend le nombre d'échantillons."""
+    x = lire_wav16(fichier)
+    n = int(morceau_s * TAUX)
+    morceaux = [x[i:i + n] for i in range(0, len(x), n) if len(x[i:i + n]) >= PAROLE_MIN_S * TAUX] or [x]
+    total = None
+    for m in morceaux:
+        total = apprendre_moi(m, fichier=fichier_moi, registre=registre) or total
+    return total
+
+
+if __name__ == "__main__":
+    # (06/11) le cockpit lui apprend sa voix Azure : « moi <registre> <fichier> » (le fichier, un jarvis-moi-….wav du dossier temporaire,
+    # est effacé ensuite) ; « moi-semer <registre> <fichier> » : une référence gardée (sa voix de rap), jamais effacée
+    import sys
+    import tempfile
+    if len(sys.argv) == 4 and sys.argv[1] in ("moi", "moi-semer"):
+        f = Path(sys.argv[3]).resolve()
+        jetable = sys.argv[1] == "moi" and f.parent == Path(tempfile.gettempdir()).resolve() and re.match(r"^jarvis-moi-[\w.-]{1,80}\.wav$", f.name)
+        if sys.argv[1] == "moi" and not jetable:
+            print(json.dumps({"erreur": "seulement un jarvis-moi-….wav du dossier temporaire"}))
+            sys.exit(2)
+        try:
+            print(json.dumps({"registre": sys.argv[2], "echantillons": apprendre_moi_fichier(f, sys.argv[2])}))
+        finally:
+            if jetable:
+                try:
+                    os.unlink(f)
+                except OSError:
+                    pass

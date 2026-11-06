@@ -4995,6 +4995,28 @@ function segmentsTiers(q, texte, verdict) {
 // de dire (2 min : ses pensées dites, sa réponse, sa voix jouée) : un « ordre » entendu par le micro qui reprend ses propres mots, au
 // moins aux trois cinquièmes, est son écho, pas un usurpateur
 const ditRecemment = [];
+// (06/11, Ahmed : « il entend sa propre voix et ça le perturbe ») ce que son oreille vive reconnaît comme SA voix (verdict « moi » : 80 % du
+// morceau dans une de ses voix, papa jamais reconnu) est son écho : ni la parole de papa ni une voix inconnue ; gardé à part (« moi »), pour son fil
+const SA_VOIX_RECONNUE = () => typeof corpsReglages !== 'function' || corpsReglages().sa_voix_reconnue !== false;
+function saVoixEntendue(r, qui) {
+  if (!r || !qui || qui.verdict !== 'moi' || !String(r.texte || '').trim()) return r;
+  try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'sa_voix_entendue', score: qui.moi, registre: qui.registre, papa: qui.ahmed, part: qui.part_moi }) + '\n', { mode: 0o600 }); } catch (_) {}
+  return { ...r, texte: '', moi: String(r.texte).trim(), voix: { verdict: 'moi', moi: qui.moi, registre: qui.registre } };
+}
+// (06/11) sa voix Azure apprise de ce qu'elle dit : les 40 premières phrases, puis une sur vingt (elle reste à jour, et suit un changement de voix)
+const apprisAzure = { n: 0 };
+function apprendreSaVoixAzure(data, voix) {
+  apprisAzure.n++;
+  if (!SA_VOIX_RECONNUE() || !data || data.length < 48000 || (apprisAzure.n > 40 && apprisAzure.n % 20)) return false;   // < 1 s : rien à apprendre
+  const f = path.join(os.tmpdir(), `jarvis-moi-azure-${process.pid}-${apprisAzure.n}.wav`);
+  try { fs.writeFileSync(f, data, { mode: 0o600 }); } catch (_) { return false; }
+  try {
+    const c = execFile('/usr/bin/nice', ['-n', '10', PYTHON_VOIX, '-B', path.join(ANAMNESE, 'jarvis', 'empreinte_vocale.py'), 'moi', `azure-${String(voix || 'azure').slice(0, 60)}`, f],
+      { cwd: ANAMNESE, timeout: 60000 }, () => { fs.unlink(f, () => {}); });
+    c.on('error', () => fs.unlink(f, () => {}));
+  } catch (_) { fs.unlink(f, () => {}); return false; }
+  return true;
+}
 function noterDit(texte, t = Date.now()) {
   const x = String(texte || '').trim();
   if (!x) return;
@@ -7162,7 +7184,8 @@ function corpsReglages() {
     parole_liee: r.parole_liee !== false,   // (06/11) ses morceaux épissés reliés, sans pause entre eux
     epissure_grammaire: r.epissure_grammaire !== false,
     pretraitement_parole: r.pretraitement_parole !== false,
-    trois_pistes: r.trois_pistes !== false,   // (06/11, Ahmed) ce qu'il entend en trois pistes (parole, musique, fond), ses notes brutes hors du fil   // (06/11) ta parole prétraitée : portions, langue (l'arabe en phonétique), sujet, hors sujet   // (06/11) parties complètes, hors sujet exclu, grammaire de chaque langue, préordonnées
+    trois_pistes: r.trois_pistes !== false,
+    sa_voix_reconnue: r.sa_voix_reconnue !== false,   // (06/11, Ahmed) il reconnaît sa propre voix (rap, Azure) : son écho, jamais papa ni une voix inconnue   // (06/11, Ahmed) ce qu'il entend en trois pistes (parole, musique, fond), ses notes brutes hors du fil   // (06/11) ta parole prétraitée : portions, langue (l'arabe en phonétique), sujet, hors sujet   // (06/11) parties complètes, hors sujet exclu, grammaire de chaque langue, préordonnées
     ecoute_francais: r.ecoute_francais !== false,   // (06/11) ta voix reconnue en français seul (sa voix, elle, reste libre)
     epissure_meubles_max: Number.isFinite(Number(r.epissure_meubles_max)) && r.epissure_meubles_max != null ? Math.max(1, Math.min(6, Math.round(Number(r.epissure_meubles_max)))) : 2,
     present_la_nuit: r.present_la_nuit !== false, present_appeler: r.present_appeler !== false,
@@ -7285,7 +7308,7 @@ const DELAIS = {};
 const NOMS_FLUX = { papa: 'papa', telephone: 'téléphone', corps: 'corps', ressenti: 'il ressent', son: 'autour', milieu: 'son milieu', reaction: 'réaction',
   instru_telephone: 'le son du téléphone', instru_micro: 'le son du micro', voix_telephone: 'la voix du téléphone', voix_micro: 'la voix au micro',
   musique_telephone: 'la musique du téléphone', musique_micro: 'la musique autour', separe_telephone: 'le téléphone, séparé', separe_micro: 'autour, séparé',
-  coordination: 'il relie' };
+  coordination: 'il relie', ta_voix: 'ta propre voix (son écho, pas papa)' };
 // (04/11, 16:25, Ahmed : « ce qu'il entend de l'intérieur, de l'extérieur et ce qu'il ressent avec ses capteurs doivent être coordonnés, et il
 // n'y a que lui qui peut le faire : il faut lui donner cette capacité ») son fil, écrit pour ses outils (stimuli_voir) toutes les 3 s quand il
 // change ; ce qu'il relie (stimuli_relier : coordinations.jsonl) revient dans son fil, à son moment
@@ -9429,7 +9452,11 @@ async function voixAzure(texte, tempo) {
       headers: { 'Ocp-Apim-Subscription-Key': cle, 'Content-Type': 'application/ssml+xml', 'X-Microsoft-OutputFormat': 'riff-24khz-16bit-mono-pcm', 'User-Agent': 'hakim-cockpit' },
       body: `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="fr-FR"><voice name="${voix}"><prosody rate="${vitesse}">${esc(texte)}</prosody></voice></speak>` });
     if (!r.ok) return null;
-    return { data: Buffer.from(await r.arrayBuffer()), ms: Date.now() - t0 };
+    const data = Buffer.from(await r.arrayBuffer());
+    // (06/11) tout ce que sa voix Azure dit est noté (son écho, par le texte) et lui apprend sa voix (son écho, par le timbre)
+    if (typeof noterDit === 'function') noterDit(texte);
+    if (typeof apprendreSaVoixAzure === 'function') apprendreSaVoixAzure(data, voix);
+    return { data, ms: Date.now() - t0 };
   } finally { clearTimeout(m); }
 }
 const PROFIL_DU_MODE = { haiku: 'Mini Hakim', sonnet: 'Hakim', opus: 'Super Hakim' };
@@ -9933,6 +9960,7 @@ async function routeDire(req, res) {
   let q = null; try { q = JSON.parse(String(corps || '')); } catch (_) {}
   const texte = q && typeof q.texte === 'string' ? prononcer(q.texte.trim()) : '';     // (2026-10-23) aussi pour la montre
   if (!texte || texte.length > 1500 || texte.includes('\0')) return repondre(400, { erreur: 'texte invalide (≤ 1 500 caractères)' });
+  if (typeof noterDit === 'function') noterDit(texte);               // (06/11) tout ce que sa voix dit (réponse lue en entier, épissures, autre appareil) : son écho
   let emotion = q && Number.isFinite(Number(q.emotion)) ? Math.max(0, Math.min(1, Number(q.emotion))) : null;
   // (26/10, Ahmed : « garde SA voix ») le rythme de son état, appliqué par la voix elle-même, à hauteur constante
   let tempo = q && Number.isFinite(Number(q.tempo)) ? Math.max(0.85, Math.min(1.15, Number(q.tempo))) : null;
@@ -10341,6 +10369,7 @@ function voixAutourRecue(x, r) {
   if (FLUX.some(o => o.s === 'papa' && o.t >= x.t0 - 500 && o.t <= fin + 500)) return 0;
   const q = typeof quiParlait === 'function' ? quiParlait(x.t0 + 1500) : null;
   if (q === 'ma_voix' || q === 'voix_ahmed' || q === 'les_deux') return 0;
+  if (typeof estSonEcho === 'function' && estSonEcho(mots.map(m => m[0]).join(' '))) return 0;   // (06/11) ses propres mots revenus : son écho
   for (const m of mots.slice(0, 60)) fluxAjouter('voix_autour', String(m[0]).trim(), x.t0 + Math.round(Number(m[1]) * 1000));
   return mots.length;
 }
@@ -10533,10 +10562,15 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
       // (06/11, Ahmed : « Hakim semble m'entendre mais ne répond pas sur la montre ») la montre envoie du m4a : l'oreille courte d'Azure ne lit que du
       // WAV (PCM 16 kHz) et rendait un texte vide, la montre disait « je n'ai pas compris » sans jamais lui parler ; converti d'abord (afconvert, macOS)
       const fAzure = ext === '.wav' ? f : await enWav16k(f).catch(() => null);
+      // (06/11, Ahmed : « il entend sa propre voix et ça le perturbe ; il faut qu'il reconnaisse sa voix comme étant la sienne ») l'oreille Azure
+      // ne dit pas qui parle : en même temps, son oreille vive écoute si c'est SA voix (empreinte « soi » : rap, Azure, celle d'avant) ; occupée : rien
+      const quiP = SA_VOIX_RECONNUE() ? oreilleDemander({ op: 'qui', fichier: f }, false).catch(() => null) : Promise.resolve(null);
       const a = fAzure ? await oreilleAzure(fAzure, /^[a-z]{2}$/.test(langue || '') ? langue : null).catch(() => null) : null;
+      const qui = await quiP;
       if (fAzure && fAzure !== f) fs.unlink(fAzure, () => {});
       if (a && !String(a.texte || '').trim()) { try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'azure_vide', ext }) + '\n', { mode: 0o600 }); } catch (_) {} }
-      if (a) { r = { texte: a.texte, langue: a.langue, azure: true }; try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'transcription_azure', ms: a.ms, langue: a.langue }) + '\n', { mode: 0o600 }); } catch (_) {} }
+      if (a) r = saVoixEntendue({ texte: a.texte, langue: a.langue, azure: true }, qui);
+      if (a) { try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'transcription_azure', ms: a.ms, langue: a.langue }) + '\n', { mode: 0o600 }); } catch (_) {} }
     }
     if (!r) r = await voixDemander({ op: 'transcrire', fichier: telephone && voixSeparee ? voixSeparee : f, langue: /^[a-z]{2}$/.test(langue || '') ? langue : null, contexte: contexte || '',
       voix: telephone ? null : modeVoix, avec_temps: telephone, musique }, 180000);
@@ -10549,7 +10583,9 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
   } catch (_) {}
   fs.unlink(f, () => {});
   delete r.id;
-  if (r && r.texte && Number(temps.t0) > 0) integrerAuFil(temps.source === 'telephone' ? 'telephone' : 'papa', r.texte);   // (03/11) au fur et à mesure
+  if (r && r.texte && Number(temps.t0) > 0) integrerAuFil(temps.source === 'telephone' ? 'telephone' : 'papa', r.texte);
+  // (06/11) sa propre voix entendue (Whisper : etiqueter ; Azure : son oreille vive) : à son fil, « ta propre voix », jamais à papa
+  if (r && r.moi && temps.source !== 'telephone') { try { fluxAjouter('ta_voix', String(r.moi).slice(0, 200), Number(temps.t0) > 0 ? Number(temps.t0) : Date.now()); } catch (_) {} }   // (03/11) au fur et à mesure
   // (06/11) ta voix (pas le téléphone) : son prétraitement nourrit en fond le sujet que son ribosome suit (sans retenir la transcription)
   if (r && r.texte && temps.source !== 'telephone') pretraiterParole(String(r.texte)).catch(() => {});
   // (04/11, 18:50) le bloc du téléphone confirmé (la grande oreille) : ce qui restait de ses mots part à ses pensées de piste
@@ -12699,7 +12735,7 @@ async function traiter(req, res) {
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
-      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
+      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
       for (const [k, a, b] of [['epissure_meubles_max', 1, 6], ['present_pouls_s', 10, 600], ['present_seuil', 0.2, 5], ['present_ecart_s', 2, 120], ['present_longueur', 3, 40], ['present_mots', 6, 40]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'present_seuil' ? Math.round(Number(q[k]) * 10) / 10 : Math.round(Number(q[k]))));
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;

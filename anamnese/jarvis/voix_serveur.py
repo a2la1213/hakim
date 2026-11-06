@@ -80,11 +80,13 @@ def sortie_permise(fichier):
 _moi = {"n": None, "dits": 0}
 
 
-def apprendre_ma_voix(fichier):
+def apprendre_ma_voix(fichier, registre=None):
     """(03/11, Ahmed : « micro ouvert ; qu'il apprenne de lui-même à écouter ») sa voix s'apprend de ce qu'il dit : les 40
     premières phrases, puis une sur vingt (elle reste à jour) ; à côté, sans faire attendre la suivante. Jamais bloquant."""
-    _moi["dits"] += 1
-    if _moi["n"] is not None and _moi["n"] >= 40 and _moi["dits"] % 20:
+    # (06/11) chacune de ses voix apprend à part (« rap » : sa voix de rap ; sans : celle d'avant) : les 40 premières, puis une sur vingt
+    cle = registre or "mac"
+    _moi["dits_" + cle] = _moi.get("dits_" + cle, 0) + 1
+    if (_moi.get("n_" + cle) or 0) >= 40 and _moi["dits_" + cle] % 20:
         return
     import shutil
     import threading
@@ -99,7 +101,8 @@ def apprendre_ma_voix(fichier):
             import numpy as np
             import empreinte_vocale
             import mlx_whisper
-            _moi["n"] = empreinte_vocale.apprendre_moi(np.array(mlx_whisper.audio.load_audio(copie), dtype=np.float32)) or _moi["n"]
+            n = empreinte_vocale.apprendre_moi(np.array(mlx_whisper.audio.load_audio(copie), dtype=np.float32), registre=registre)
+            _moi["n_" + cle] = n or _moi.get("n_" + cle)
         except Exception as e:  # noqa: BLE001
             print(f"[voix] sa voix pas apprise : {type(e).__name__}: {e}", file=sys.stderr)
         finally:
@@ -134,7 +137,7 @@ def traiter(req):
         # (06/11) sa voix de rap (un timbre connu, par son nom) et ses morceaux de langue (arabe, français, anglais)
         extra = {k: req[k] for k in ("voix", "segments") if req.get(k)}
         duree = voix.dire(str(req["texte"]), req.get("langue") or "fr", req["fichier"], req.get("exaggeration"), req.get("tempo"), **extra)
-        apprendre_ma_voix(req["fichier"])
+        apprendre_ma_voix(req["fichier"], "rap" if req.get("voix") == "rap" else None)
         return {"fichier": req["fichier"], "ms": int((time.time() - t0) * 1000), "duree_s": duree}
     return {"erreur": f"opération inconnue : {op}"}
 
