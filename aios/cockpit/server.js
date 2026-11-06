@@ -11,7 +11,8 @@ const { enMatiere } = require('./matiere.js');             // (27/10) il SENT so
 const coeur = require('./coeur.js');                         // (28/10) le cœur de Hakim dans l'appli
 const afida = require('./afida.js');                         // (28/10) Al-Afida, sa jauge d'amour (lue seulement : page et bloc)
 const Veilleur = require('./veilleur.js');                   // (28/10) le garde-fou contre les pannes d'Anthropic
-const D = require('./debuts.js');                            // (28/10) ses débuts de réponse, leur voix prête d'avance
+const D = require('./debuts.js');
+const VoixHakim = require('./voix-hakim.js');                 // (06/11) sa voix : Azure ou sa voix de rap (Chatterbox), ses morceaux de langue                            // (28/10) ses débuts de réponse, leur voix prête d'avance
 const enOff = require('./en-off.js');                        // (28/10) le panneau « En off » : pas de coulisses
 const os = require('os');
 const crypto = require('crypto');
@@ -7140,7 +7141,9 @@ function corpsReglages() {
     economie: r.economie === true,   // (05/11) mode économie : ni pensées en boucle, ni lecteurs, ni tri du tunnel
     fenetre_partagee: r.fenetre_partagee === true, tournesol: r.tournesol === true,
     un_par_un: r.un_par_un !== false, meubles_entre: r.meubles_entre !== false,   // (05/11, 21:20) ses morceaux un à un, et ses « euh » entre eux
-    voix_azure: r.voix_azure === true, stt_azure: r.stt_azure === true, reponse_directe: r.reponse_directe === true,
+    voix_azure: r.voix_azure === true,
+    voix_hakim: r.voix_hakim === 'rap' ? 'rap' : 'azure',   // (06/11, Ahmed : « sa voix de rap ») 'azure' (rapide, en ligne) ou 'rap' (ses chansons, Chatterbox au Mac)
+    stt_azure: r.stt_azure === true, reponse_directe: r.reponse_directe === true,
     tunnel: r.tunnel === true,
     parole_libre: r.parole_libre === true,   // (05/11, Ahmed : « on lève toutes tes contraintes de parole ») plus de plafond ; stop, parasites et sécurité restent
     pensee_en_boucle: r.pensee_en_boucle !== false,
@@ -9680,6 +9683,24 @@ async function routeFichier(req, res) {
 /* ---- voix neuronale : une file, une phrase à la fois ; une demande abandonnée n'est pas calculée ---- */
 const fileVoix = [];
 let voixOccupee = false, transcriptionsEnAttente = 0, transcriptionsPapa = 0;
+/* (06/11, Ahmed : « sa voix de rap ») la phrase en cours de synthèse, et le dernier processus parole qui a parlé (avec quel timbre) :
+   sa voix de rap ne part que d'un Chatterbox chaud, sinon Azure (voix-hakim.js) */
+let voixEnCours = null, voixChaude = null;
+const voixRap = () => (corpsReglages().voix_hakim === 'rap' ? 'rap' : null);
+// la tâche de voix en rap : le timbre et les morceaux de langue (arabe, français, anglais) ; un seul morceau : sa langue, sans découpe
+function optionsVoix(texte, langue) {
+  if (!voixRap()) return {};
+  const segs = VoixHakim.segmenterLangues(texte);
+  return segs.length > 1 ? { voix: 'rap', segments: segs.slice(0, 16) } : { voix: 'rap', langue: segs.length ? segs[0].langue : langue };
+}
+const parolePrete = (voix) => !!(voixChaude && voixChaude.voix === voix && voixChaude.proc && voixChaude.proc === voixProcs.parole && voixChaude.proc.exitCode === null);
+function chaufferVoixRap() {
+  if (fileVoix.some(x => x.chauffe)) return;
+  const fichier = path.join(os.tmpdir(), `jarvis-voix-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.wav`);
+  fileVoix.push({ texte: 'Salam.', langue: 'fr', voix: 'rap', fond: true, chauffe: true, annulee: false, recu: Date.now(), fichier,
+    fin: () => fs.unlink(fichier, () => {}) });
+  pomperVoix();
+}
 const VOIX_APRES_OREILLE_MS = 6000;
 // (05/11, 10:20, la bande jaune revenue, mesuré depuis la priorité : une transcription qui arrive pendant une synthèse, toujours 22 s, contre 4,5 s) une
 // synthèse déjà lancée n'était pas interrompue : sa voix est suspendue (SIGSTOP, comme le 04/11 à 10:56 : Whisper a repris 6,6 fois plus vite) le temps que
@@ -9723,12 +9744,15 @@ async function pomperVoix() {
   voixOccupee = true;
   const tSynthese = Date.now();
   // L'humeur s'entend : son expressivité (interieur.py, 0,38 morosité … 0,72 joie) règle Chatterbox.
+  voixEnCours = tache;
   const r = await voixDemander({ op: 'dire', texte: tache.texte, langue: tache.langue, fichier: tache.fichier,
-    exaggeration: tache.emotion == null ? null : Math.max(0.3, Math.min(1.0, tache.emotion)), tempo: tache.tempo }, 180000);   // (26/10) jusqu’à 1,0 : eval/voix_plage.py
-  voixOccupee = false;
+    exaggeration: tache.emotion == null ? null : Math.max(0.3, Math.min(1.0, tache.emotion)), tempo: tache.tempo,
+    ...(tache.voix ? { voix: tache.voix } : {}), ...(tache.segments ? { segments: tache.segments } : {}) }, 180000);   // (26/10) jusqu’à 1,0 : eval/voix_plage.py ; (06/11) sa voix de rap, ses langues
+  voixOccupee = false; voixEnCours = null;
+  if (r && !r.erreur && typeof voixProcs !== 'undefined') voixChaude = { proc: voixProcs.parole, voix: tache.voix || null };   // (06/11) le processus parole a parlé, avec ce timbre
   // (28/10, Ahmed via Hakim : accélérer la voix) l'attente dans la file, puis la synthèse elle-même
   try {
-    fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'synthese_serveur', attente_ms: tSynthese - (tache.recu || tSynthese), ms: Date.now() - tSynthese, caracteres: tache.texte.length,
+    fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'synthese_serveur', attente_ms: tSynthese - (tache.recu || tSynthese), ms: Date.now() - tSynthese, caracteres: tache.texte.length, ...(tache.voix ? { voix: tache.voix, morceaux: (tache.segments || []).length || 1 } : {}),
       audio_s: r && Number.isFinite(Number(r.duree_s)) ? Number(r.duree_s) : null, erreur: !!(r && r.erreur) }) + '\n', { mode: 0o600 });
   } catch (_) {}
   tache.fin(r);
@@ -9768,11 +9792,11 @@ function fabriquerDebuts(langue, emotion, tempo) {
   // ses débuts (en majuscule, comme dans ses réponses) et ses meubles qui parlent (tels qu'il les a écrits)
   for (const t of VoixPage.DEBUTS.map(d => d.charAt(0).toUpperCase() + d.slice(1)).concat(lireMeubles().filter(m => m.actif && m.texte && m.langue === langue).map(m => m.texte))) {
     const e = emotion === null ? null : VoixPage.expressivitePhrase(emotion, t);      // le niveau que la page lui donnera
-    const c = D.cle(t, langue, e, tempo);
+    const c = D.cle(t, langue, e, tempo, typeof voixRap === 'function' ? voixRap() : null);   // (06/11) sa voix de rap a ses propres débuts
     if (D.lire(c) || (debutsEssais.get(c) || 0) >= 2 || fileDebuts.some(x => x.cle === c)) continue;
     debutsEssais.set(c, (debutsEssais.get(c) || 0) + 1);
     const fichier = path.join(os.tmpdir(), `jarvis-voix-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.wav`);
-    fileDebuts.push({ texte: prononcer(t), langue, emotion: e, tempo, fichier, cle: c, annulee: false, recu: Date.now(),
+    fileDebuts.push({ texte: prononcer(t), langue, emotion: e, tempo, fichier, cle: c, annulee: false, recu: Date.now(), ...(typeof optionsVoix === 'function' ? optionsVoix(prononcer(t), langue) : {}),
       fin: (r) => fs.readFile(fichier, (e, data) => {
         fs.unlink(fichier, () => {});
         if (!e && r && !r.erreur && D.plausible(t, r.duree_s)) D.garder(c, data, r.duree_s);
@@ -9784,7 +9808,7 @@ function fabriquerDebuts(langue, emotion, tempo) {
 // [début, palier de son expressivité] : chaque début a le niveau de voix que la page lui donnera (expressivitePhrase)
 function debutsPrets(langue, emotion, tempo) {
   return VoixPage.DEBUTS.concat(lireMeubles().filter(m => m.texte).map(m => m.texte)).map(d => [d, emotion === null ? null : VoixPage.expressivitePhrase(emotion, d)])
-    .filter(([d, e]) => D.lire(D.cle(d, langue, e, tempo))).map(([d, e]) => [d, D.palier(e, 0.1)]);
+    .filter(([d, e]) => D.lire(D.cle(d, langue, e, tempo, typeof voixRap === 'function' ? voixRap() : null))).map(([d, e]) => [d, D.palier(e, 0.1)]);
 }
 
 /* ---- Hakim s'entend (demande de Hakim, accord d'Ahmed le 2026-10-22) : les 30 derniers morceaux de SA voix sont
@@ -9889,7 +9913,7 @@ function voixDeLaSource(texteBrut, o = {}) {
       if (ex != null && Number.isFinite(Number(ex))) emotion = Math.max(0, Math.min(1, Number(VoixPage.expressivitePhrase(ex, String(texteBrut)))));
       tempo = frais && e.voix && Number.isFinite(e.voix.vitesse) ? Math.max(0.86, Math.min(1.12, e.voix.vitesse)) : 1;
     } catch (_) {}
-    const tache = { texte, langue: 'fr', annulee: false, emotion, tempo, fond: true,
+    const tache = { texte, langue: 'fr', annulee: false, emotion, tempo, fond: true, ...(typeof optionsVoix === 'function' ? optionsVoix(texte, 'fr') : {}),
       fichier: path.join(os.tmpdir(), `jarvis-voix-source-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.wav`) };
     entree.tache = tache;
     const r = await new Promise((resolve) => { tache.recu = Date.now(); tache.fin = resolve; fileVoix.push(tache); pomperVoix(); });
@@ -9929,7 +9953,8 @@ async function routeDire(req, res) {
   // (28/10) un de ses débuts de réponse : sa voix gardée part tout de suite (debuts.js) ; sinon fabriquée, gardée si plausible
   const langueVoix = /^[a-z]{2}$/.test((q && q.langue) || '') ? q.langue : 'fr';
   const debut = VoixPage.debutDe(texte + ' x') === texte || estMeuble(texte);   // (13:30) un de ses meubles aussi
-  const cleVoix = debut ? D.cle(texte, langueVoix, emotion, tempo) : null;
+  const rap = voixRap();                                       // (06/11, Ahmed) sa voix de rap : ses débuts à elle, jamais ceux d'une autre voix
+  const cleVoix = debut ? D.cle(texte, langueVoix, emotion, tempo, rap) : null;
   const garde = debut ? D.lire(cleVoix) : null;
   // (03/11) une hésitation demandée d'avance (parler.js) : seulement si sa voix est gardée, jamais une synthèse de plus
   if (!garde && q && q.gardee === true) return repondre(404, { erreur: 'pas encore gardée' });
@@ -9938,10 +9963,30 @@ async function routeDire(req, res) {
     res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Duree': String(garde.duree || '') });
     return res.end(garde.data);
   }
+  /* (06/11, Ahmed : « sa voix de rap ; Azure en secours si Chatterbox est occupé ou trop lent ») en rap, Azure répond tout de suite quand
+     Chatterbox ne peut pas suivre (voix-hakim.js : pas encore chaud, une chanson ou le Studio en calcul, une file trop longue) ; plus
+     loin, une erreur ou une synthèse plus lente que son budget. Chaque relais est noté dans le journal de la voix. */
+  const secoursAzure = async (raison, extra = {}) => {
+    const a = await voixAzure(texte, tempo).catch(() => null);
+    try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'secours_azure', raison, ok: !!a, ms: a ? a.ms : null, caracteres: texte.length, ...extra }) + '\n', { mode: 0o600 }); } catch (_) {}
+    if (!a || res.writableEnded) return !!a;
+    res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Voix': 'azure', 'X-Secours': encodeURIComponent(raison).slice(0, 80) });
+    res.end(a.data);
+    return true;
+  };
+  if (rap) {
+    const attente_s = VoixHakim.attenteFile(fileVoix, voixEnCours);
+    const raison = VoixHakim.raisonSecours({ chaude: parolePrete('rap'), studio: VoixHakim.studioOccupe(JARVIS), attente_s });
+    if (raison === 'chatterbox se charge') chaufferVoixRap();
+    if (raison && await secoursAzure(raison, { attente_s: Math.round(attente_s * 10) / 10 })) return;
+  }
   // (16:45) sa pensée : sa voix est née avec elle (voixDeLaSource), faite ou en train de se faire ; jamais deux fois
   const source = voixALaSource.get(texte.replace(/\s+/g, ' ').trim());   // texte : déjà prononcé
   if (source && source.promesse) {
-    const v = await source.promesse.catch(() => null);
+    // (06/11) en rap, elle a le même budget qu'une synthèse : au-delà, Azure
+    const v = rap ? await Promise.race([source.promesse.catch(() => null), new Promise(r => setTimeout(() => r('lente'), VoixHakim.budgetMs(texte)))])
+      : await source.promesse.catch(() => null);
+    if (v === 'lente' && await secoursAzure('pensée trop lente')) return;
     if (v && v.data) {
       // (04/11, Ahmed : « rien n'est gardé en cache pour la voix : tout s'efface instantanément ; pas de mémoire sur ce qui est prononcé,
       // seulement ce qui est pensé ») servie une fois, effacée
@@ -9952,7 +9997,7 @@ async function routeDire(req, res) {
     }
   }
   // (05/11, Ahmed : « ajoute Microsoft Azure à sa voix ») une seule voix multilingue, en ligne ; en panne : Chatterbox comme avant
-  if (corpsReglages().voix_azure) {
+  if (!rap && corpsReglages().voix_azure) {
     const a = await voixAzure(texte, tempo).catch(() => null);
     if (a) {
       try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'synthese_azure', ms: a.ms, caracteres: texte.length }) + '\n', { mode: 0o600 }); } catch (_) {}
@@ -9963,6 +10008,7 @@ async function routeDire(req, res) {
   }
   const tache = { texte, langue: /^[a-z]{2}$/.test((q && q.langue) || '') ? q.langue : 'fr', annulee: false, emotion, tempo,
     fichier: path.join(os.tmpdir(), `jarvis-voix-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.wav`) };
+  if (rap) Object.assign(tache, optionsVoix(texte, tache.langue));
   res.on('close', () => { if (!res.writableFinished) tache.annulee = true; });
   // (20:34, Hakim : ses petits mots dits 5 à 20 s après, derrière les phrases de ses réponses) un petit mot passe en tête de file
   // (03/11, 16:30, Ahmed via Hakim : « sa voix en parallèle de sa pensée ; coupe le glisse-mot, il ralentit l'arrivée de sa voix » ; mesuré :
@@ -9974,8 +10020,21 @@ async function routeDire(req, res) {
     if (q && q.prioritaire === true) fileVoix.unshift(tache);
     else if (tache.fond) fileVoix.push(tache);
     else { const k = fileVoix.findIndex(x => x.fond); if (k >= 0) fileVoix.splice(k, 0, tache); else fileVoix.push(tache); }
+    // (06/11) en rap : plus lente que son budget, Azure prend la phrase ; pas encore commencée, elle sort de la file, sinon elle finit
+    // (le processus ne s'interrompt pas) et son son est jeté
+    if (rap) {
+      let fini = false;
+      // ce qui passe devant elle compte dans son budget (une voix préparée d'avance attend derrière tout ce qu'il dit)
+      tache.budget_ms = VoixHakim.budgetMs(texte) + Math.round(1000 * VoixHakim.attenteFile(fileVoix.slice(0, Math.max(0, fileVoix.indexOf(tache))), voixEnCours, true));
+      const m = setTimeout(() => { fini = true; const k = fileVoix.indexOf(tache); if (k >= 0) fileVoix.splice(k, 1); resolve({ erreur: 'trop lente', secours: true }); }, tache.budget_ms);
+      tache.fin = (x) => { clearTimeout(m); if (fini) { fs.unlink(tache.fichier, () => {}); return; } fini = true; resolve(x); };
+    }
     pomperVoix();
   });
+  if (r.erreur && rap && r.erreur !== 'annulée' && !res.writableEnded) {
+    if (!r.secours) fs.unlink(tache.fichier, () => {});
+    if (await secoursAzure(r.secours ? 'trop lente' : `erreur : ${String(r.erreur).slice(0, 60)}`, { budget_ms: tache.budget_ms })) return;
+  }
   if (r.erreur) { fs.unlink(tache.fichier, () => {}); return repondre(r.erreur === 'annulée' ? 499 : 503, { erreur: r.erreur }); }
   fs.readFile(tache.fichier, (e, data) => {
     if (e) { fs.unlink(tache.fichier, () => {}); return repondre(500, { erreur: 'audio introuvable' }); }
@@ -12627,6 +12686,7 @@ async function traiter(req, res) {
       if (typeof q.un_par_un === 'boolean') r.un_par_un = q.un_par_un;
       if (typeof q.meubles_entre === 'boolean') r.meubles_entre = q.meubles_entre;
       if (typeof q.voix_azure === 'boolean') r.voix_azure = q.voix_azure;
+      if (VoixHakim.VOIX.includes(q.voix_hakim)) { r.voix_hakim = q.voix_hakim; noterAjustementPapa(['voix_hakim']); }   // (06/11) sa voix de rap
       if (typeof q.stt_azure === 'boolean') r.stt_azure = q.stt_azure;
       if (typeof q.reponse_directe === 'boolean') r.reponse_directe = q.reponse_directe;
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;

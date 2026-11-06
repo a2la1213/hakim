@@ -9,8 +9,9 @@ const DOSSIER = path.join(process.env.JARVIS_DIR || path.join(require('os').home
 const norme = (t) => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim();
 const palier = (x, pas) => (Number.isFinite(Number(x)) && x !== null ? (Math.round(Number(x) / pas) * pas).toFixed(2) : '-');
 
-function cle(texte, langue, emotion, tempo) {
-  return crypto.createHash('sha256').update([norme(texte), langue || 'fr', palier(emotion, 0.1), palier(tempo, 0.05)].join('|'))
+// (06/11, sa voix de rap) une voix autre que celle d'avant (voix : « rap ») a ses propres débuts : jamais l'un pour l'autre ; sans voix, la clé d'avant
+function cle(texte, langue, emotion, tempo, voix) {
+  return crypto.createHash('sha256').update([norme(texte), langue || 'fr', palier(emotion, 0.1), palier(tempo, 0.05)].concat(voix ? [voix] : []).join('|'))
     .digest('hex').slice(0, 32);
 }
 // la durée qu'on attend pour ce texte (comme /api/voix/reecouter) : au-delà de 1,6 fois, la voix a divagué

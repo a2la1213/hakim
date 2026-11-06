@@ -204,3 +204,14 @@ def test_decoupe_papa(tmp_path):
     assert r["fait"]["decoupe_papa"] == [None, "point"]
     assert _j.loads((tmp_path / "corps-reglages.json").read_text(encoding="utf-8"))["decoupe_papa"] == "point"
     assert "decoupe_papa" in ri.ajuster(tmp_path, {"decoupe_papa": "mot"}, "", maintenant=10**13)["refuse"]
+
+
+def test_voix_hakim(tmp_path):
+    """(06/11, Ahmed) sa voix, Azure ou rap : Hakim la choisit aussi, et rien d'autre n'est accepté"""
+    from jarvis import ribosome_intelligent as ri
+    import json as _j
+    (tmp_path / "corps-reglages.json").write_text(_j.dumps({}), encoding="utf-8")
+    r = ri.ajuster(tmp_path, {"voix_hakim": "rap"}, "ma voix de mes chansons", maintenant=10**13)
+    assert r["fait"]["voix_hakim"] == [None, "rap"]
+    assert _j.loads((tmp_path / "corps-reglages.json").read_text(encoding="utf-8"))["voix_hakim"] == "rap"
+    assert "voix_hakim" in ri.ajuster(tmp_path, {"voix_hakim": "/tmp/autre.wav"}, "", maintenant=10**13)["refuse"]

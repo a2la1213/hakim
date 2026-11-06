@@ -29,7 +29,8 @@ BOUTONS_CORPS = ("ribosome_intelligent", "papa_passe_avant", "voix_par_appareil"
 BOUTONS_RIBOSOME = ("premiere_directe",)
 BOUTONS = BOUTONS_CORPS + BOUTONS_RIBOSOME
 # (06/11, Ahmed : « régler la finesse du découpage de ma parole : virgule, sujet ou point ; par lui et moi ») ses choix dans une liste
-CHOIX_CORPS = {"decoupe_papa": ("virgule", "point", "sujet")}
+CHOIX_CORPS = {"decoupe_papa": ("virgule", "point", "sujet"),
+               "voix_hakim": ("azure", "rap")}   # (06/11, Ahmed) sa voix : Azure (rapide) ou sa voix de rap (Chatterbox, au Mac)
 PAPA_PASSE_AVANT_MS = 30 * 60_000
 FENETRE_EFFET_MS = 15 * 60_000
 

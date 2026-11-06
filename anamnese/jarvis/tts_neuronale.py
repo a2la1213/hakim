@@ -24,6 +24,7 @@ from mlx_audio.tts.utils import load_model
 from mlx_audio.utils import load_audio
 
 import tts_garde
+import voix_morceaux
 
 MODELE = "mlx-community/chatterbox-multilingual-v3"
 FICHIERS = ["model.safetensors", "tokenizer.json", "config.json", "Cangjie5_TC.json"]
@@ -54,6 +55,7 @@ class Voix:
         self.modele.s3gen.flow.n_timesteps = int(os.environ.get("JARVIS_TTS_PAS", "6"))
         self._defaut = self._voix_resemble()
         self.conds, self._ref_mtime = self._defaut, None
+        self._voix = {}                                              # (06/11) nom → (mtime, conds) : ses autres timbres
         self._suivre_reference()
         self._generer("Bonjour.", "fr")                              # chauffe les noyaux Metal
 
@@ -78,7 +80,21 @@ class Voix:
             self.conds = self.modele.prepare_conditionals(ref, SR, exaggeration=REGLAGES["exaggeration"])
             self._ref_mtime = mtime
 
-    def _generer(self, texte, langue, exaggeration=None):
+    def _conds_de(self, voix):
+        """(06/11, Ahmed : « sa voix de rap ») le timbre d'une voix connue (voix_morceaux.VOIX, par nom), préparé une fois par
+        version du fichier ; inconnue ou absente : la voix de REFERENCE (ou celle par défaut)."""
+        f = voix_morceaux.reference_de(voix)
+        if f is None:
+            return self.conds
+        mtime = f.stat().st_mtime_ns
+        deja = self._voix.get(voix)
+        if not deja or deja[0] != mtime:
+            ref = load_audio(str(f), sample_rate=SR)
+            deja = (mtime, self.modele.prepare_conditionals(ref, SR, exaggeration=REGLAGES["exaggeration"]))
+            self._voix[voix] = deja
+        return deja[1]
+
+    def _generer(self, texte, langue, exaggeration=None, conds=None):
         reglages = dict(REGLAGES)
         if isinstance(exaggeration, (int, float)):               # l'humeur s'entend (éveil → expressivité)
             reglages["exaggeration"] = max(0.3, min(1.0, float(exaggeration)))       # (26/10) jusqu'à 1,0 : eval/voix_plage.py
@@ -87,19 +103,24 @@ class Voix:
             reglages["cfg_weight"] = round(max(0.2, min(0.55, 0.5 - (reglages["exaggeration"] - 0.5) * 0.8)), 3)
         # (2026-10-22) un plafond de jetons proportionnel au texte : plus de parole inventée après la phrase
         self.derniers_reglages = reglages                       # (2026-10-23) notés avec les nombres du morceau
-        res = next(self.modele.generate(texte, conds=self.conds, lang_code=langue, verbose=False,
+        res = next(self.modele.generate(texte, conds=conds if conds is not None else self.conds, lang_code=langue, verbose=False,
                                         max_new_tokens=tts_garde.jetons_max(texte, langue), **reglages))
         return np.array(res.audio, dtype=np.float32).reshape(-1)
 
-    def dire(self, texte, langue, fichier, exaggeration=None, tempo=None):
-        """Écrit un WAV 24 kHz mono 16 bits ; rend sa durée en secondes."""
+    def dire(self, texte, langue, fichier, exaggeration=None, tempo=None, voix=None, segments=None):
+        """Écrit un WAV 24 kHz mono 16 bits ; rend sa durée en secondes. (06/11) `voix` : un timbre connu par son nom (« rap ») ;
+        `segments` : [{texte, langue}] (le cockpit découpe arabe / français / anglais), chaque morceau dans sa langue, recollés."""
         self._suivre_reference()
-        texte = tts_garde.phrase_finie(texte)
-        if texte is None:                                         # rien à dire : un silence, jamais une invention
-            audio = np.zeros(int(0.05 * SR), dtype=np.float32)
-        else:
-            audio = self._generer(texte, langue if langue in LANGUES else "fr", exaggeration)
-        audio = _rogner(audio)
+        conds = self._conds_de(voix)
+        morceaux = voix_morceaux.segments_valides(segments, LANGUES) or [(texte, langue)]
+        audios = []
+        for t, lg in morceaux:
+            t = tts_garde.phrase_finie(t)
+            if t is not None:                                    # rien à dire : un silence, jamais une invention
+                audios.append(_rogner(self._generer(t, lg if lg in LANGUES else "fr", exaggeration, conds)))
+        texte = " ".join(t for t, _ in morceaux) if audios else None
+        langue = morceaux[0][1]
+        audio = voix_morceaux.assembler(audios, SR)
         if isinstance(tempo, (int, float)) and abs(float(tempo) - 1.0) >= 0.01:   # (26/10) le rythme de l'état, sa voix intacte
             import etirement
             audio = etirement.etirer(audio, max(0.85, min(1.15, float(tempo))), SR)

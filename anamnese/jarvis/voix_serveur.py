@@ -131,7 +131,9 @@ def traiter(req):
         if voix is None:
             return {"erreur": "synthèse neuronale indisponible"}
         t0 = time.time()
-        duree = voix.dire(str(req["texte"]), req.get("langue") or "fr", req["fichier"], req.get("exaggeration"), req.get("tempo"))
+        # (06/11) sa voix de rap (un timbre connu, par son nom) et ses morceaux de langue (arabe, français, anglais)
+        extra = {k: req[k] for k in ("voix", "segments") if req.get(k)}
+        duree = voix.dire(str(req["texte"]), req.get("langue") or "fr", req["fichier"], req.get("exaggeration"), req.get("tempo"), **extra)
         apprendre_ma_voix(req["fichier"])
         return {"fichier": req["fichier"], "ms": int((time.time() - t0) * 1000), "duree_s": duree}
     return {"erreur": f"opération inconnue : {op}"}
