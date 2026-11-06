@@ -10,3 +10,4 @@ eval/data/
 eval/banc/*.jsonl
 eval/banc/bases/
 .venv-separation/
+.venv-chant/

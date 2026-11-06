@@ -1853,7 +1853,10 @@ function htmlMessage(m) {
   const err = m.erreur ? `<div class="txt">${esc(m.erreur)}</div>` : '';
   const pieces = (m.pieces || []).filter(x => x && /^\d{8}-\d{6}-[0-9a-f]{6}$/.test(String(x.id))).map(x => {
     const image = /^(png|jpe?g|gif|webp)$/.test(String(x.type));
+    // (06/11) ses chansons (outil chanter) et tout son joint : écoutées ici, sur le Mac comme sur le téléphone
+    const son = typeSon(x.type);
     return `<div class="piece">${image ? `<img data-apercu="${x.id}" alt="${esc(x.titre || x.nom)}">` : ''}`
+      + `${son ? `<button class="btn ecouter-piece" data-ecouter="${x.id}" data-son="${son}">▶ écouter${x.titre ? ` « ${esc(x.titre)} »` : ''}</button>` : ''}`
       + `<button class="btn" data-piece="${x.id}" data-nom="${esc(x.nom)}">📎 ${esc(x.nom)} · ${tailleLisible(x.taille)}</button>`
       + `${x.titre ? `<span class="titre-piece">${esc(x.titre)}</span>` : ''}</div>`;
   }).join('');
@@ -1920,6 +1923,24 @@ async function chargerApercus() {
     } catch (_) { img.remove(); }
   }
 }
+// Écouter une pièce sonore : chargée au premier toucher (derrière le jeton, comme le téléchargement), puis jouée ici.
+function typeSon(t) { return ({ mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', wav: 'audio/wav', flac: 'audio/flac', opus: 'audio/ogg' })[String(t || '').toLowerCase()] || ''; }
+$('fil').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-ecouter]');
+  if (!b) return;
+  e.stopPropagation();
+  const id = b.dataset.ecouter;
+  b.disabled = true; b.textContent = 'chargement…';
+  try {
+    const brut = await blobPiece(id);
+    if (!apercus.has('son:' + id)) apercus.set('son:' + id, URL.createObjectURL(new Blob([brut], { type: b.dataset.son || 'audio/mpeg' })));
+    const lecteur = document.createElement('audio');
+    lecteur.controls = true; lecteur.preload = 'auto'; lecteur.src = apercus.get('son:' + id);
+    lecteur.className = 'lecteur-piece';
+    b.replaceWith(lecteur);
+    lecteur.play().catch(() => {});
+  } catch (err) { b.disabled = false; b.textContent = '▶ écouter'; humeur(String(err.message || err)); }
+});
 $('fil').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-piece]');
   if (!b) return;

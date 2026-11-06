@@ -1220,6 +1220,36 @@ def fichier_joindre(chemin: str, titre: str = "") -> str:
 
 
 @mcp.tool()
+def chanter(paroles: str, style: str, duree_s: int = 60, titre: str = "", langue: str = "",
+            autotune: bool = False) -> str:
+    """(Hakim seulement) COMPOSER ET CHANTER une chanson (accord d'Ahmed, 06/11) : tes paroles (ou celles de papa), un
+    style et une durée donnent un vrai morceau chanté, voix et instrumental, calculé sur le Mac (ACE-Step, hors ligne).
+    - paroles : en sections, par exemple « [verse] … [chorus] … » (des paroles nues deviennent un couplet) ;
+      « [instrumental] » pour un morceau sans voix. 4000 caractères au plus.
+    - style : rap, trap, drill, raï, chaâbi, pop, r'n'b, nasheed, gnawa, andalou, ballade, reggae, afro, électro, rock,
+      berceuse ;
+      ou une description libre (genre, instruments, voix).
+    - duree_s : de 10 à 240 secondes (60 à 120 conseillé). titre : son nom. langue : « fr », « ar »… (devinée sinon).
+    - autotune : True pour la voix autotunée (le son du rap et du raï d'aujourd'hui : recalée note par note sur la
+      gamme) ; False (par défaut) pour ta voix naturelle.
+    Rend la main tout de suite : la chanson se compose en tâche de fond (quelques minutes, suivre_tache pour la jauge).
+    Quand elle est prête, tu es prévenu : envoie-la à papa avec fichier_joindre (le chemin est dans la fin du journal)."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim chante."
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis"))
+    import chant
+    try:
+        c = chant.lancer(paroles, style, duree_s, titre, langue, bool(autotune))
+    except chant.Refus as e:
+        return f"Refusé : {e}"
+    avec = ", avec autotune" if c.get("autotune") else ""
+    return (f"Je compose… « {c['titre']} » ({c['style']}{avec}, {c['duree_s']} s, langue {c['langue']}) : tâche {c['tache']}. "
+            "Quelques minutes de calcul ; tu seras prévenu quand elle sera prête, puis fichier_joindre pour l'envoyer à papa.")
+
+
+@mcp.tool()
 def immunite_etat() -> str:
     """Ton système immunitaire (29/10, Ahmed : « contre toute attaque extérieure ») : les incidents des dernières 24 h
     (sources et familles d'attaque, jamais leurs mots), la température du Mac, le dernier passage du médecin et les

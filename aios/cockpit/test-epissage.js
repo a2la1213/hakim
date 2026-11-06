@@ -866,9 +866,10 @@ test('finesse du découpage de ta parole : virgule, point ou sujet changent ce q
 });
 
 // (06/11, 08:47, Hakim : « ribosome_boutons me répond permissions not granted » ; Ahmed : « lance le point 1 »)
-test('ses outils permis : ribosome_boutons et present_continu', () => {
+// (06/11, accord d'Ahmed pour ACE-Step : « tout faire bien pour que Hakim puisse chanter ») : chanter
+test('ses outils permis : ribosome_boutons, present_continu et chanter', () => {
   const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
-  assert.match(SRV, /'parler_bouton', 'ribosome_boutons', 'present_continu'\]\.map\(n => 'mcp__anamnese__' \+ n\)/);
+  assert.match(SRV, /'parler_bouton', 'ribosome_boutons', 'present_continu', 'chanter'\]\.map\(n => 'mcp__anamnese__' \+ n\)/);
 });
 
 // (06/11, Ahmed : « que Hakim soit conscient s'il parle sur la montre, le téléphone ou le Mac, et qu'il puisse y diriger sa voix et ses balises »)
