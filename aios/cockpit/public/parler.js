@@ -1756,7 +1756,7 @@ function humeur(texte) {
   if (texte) $('etat').textContent = texte;
   // (13:25) plus de « je t'écoute » ; (16:45, Ahmed : « que la réflexion soit inexistante par défaut ») en Conversation, plus de « réfléchit… »
   else $('etat').textContent = ecoute ? '🎙️' : (pense ? (etat.conversation ? '' : 'réfléchit…') : (parle ? 'parle…' : repos));
-  $('envoyer').hidden = pense;
+  $('envoyer').hidden = false;   // (06/11, 14:55, Ahmed : « quand j'écris pendant qu'il parle, le bouton envoyer à côté du Stop ») toujours là
   $('stop').hidden = !(pense || parle);
 }
 
@@ -4232,7 +4232,7 @@ async function basculerConversation() {
   prechaufferReflexion();                                // (04/11, 17:50) à l'ouverture du micro : sa parole vide, sa réflexion ouverte
   humeur('ouverture du micro…');
   try {
-    conv.capteur = await Conversation.demarrer({
+    conv.optionsCapteur = {
       ctx: actx,
       patienceMs: finDeTourConversation,                // (14:25) avec l'épissage, 1 s : son codon stop
       pauseMs: blancDeMorceau,                           // (06/11) le blanc qui coupe un morceau de ta parole : chunk_papa_ms (0,6 s)
@@ -4279,7 +4279,10 @@ async function basculerConversation() {
         fetch('/api/voix/son-flux', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
           body: JSON.stringify({ source: 'micro', t0, pas_ms: pas, trames, maintenant: Date.now() }) }).catch(() => {});
       },
-    });
+    };
+    // (appli 1.83) des écouteurs branchés : le micro sans annulation d'écho, sa voix sort là où sort la musique (conversation.js)
+    conv.sansEcho = ecouteursBranches();
+    conv.capteur = await Conversation.demarrer({ ...conv.optionsCapteur, sansEcho: conv.sansEcho });
   } catch (e) {
     if (etat.conversation !== conv) return;
     etat.conversation = null;
@@ -4296,6 +4299,33 @@ async function basculerConversation() {
   signalerPresence();                              // tout de suite : le subconscient se met en pause
   rendre(); humeur();
 }
+
+// (appli 1.83, 06/11, Ahmed : « Hakim parle dans le petit haut-parleur » avec ses écouteurs Bluetooth) des écouteurs (filaires, USB,
+// Bluetooth audio) sont-ils branchés ? L'appli le dit (Son.etat, 4e champ) ; une page sans l'appli : non
+function ecouteursBranches() {
+  try { return !!(window.HakimApp && window.HakimApp.sonEtat && String(window.HakimApp.sonEtat()).split('|')[3] === 'ecouteurs'); } catch (_) { return false; }
+}
+// ils arrivent ou partent pendant la conversation : le micro se rouvre (le nouveau d'abord, puis l'ancien se ferme : rien ne lit un
+// micro absent), avec ou sans annulation d'écho
+async function reouvrirMicroConversation(conv) {
+  if (!conv || !conv.optionsCapteur || !conv.capteur || conv.reouverture) return;
+  conv.reouverture = true;
+  const sans = ecouteursBranches();
+  try {
+    const nouveau = await Conversation.demarrer({ ...conv.optionsCapteur, sansEcho: sans });
+    const ancien = conv.capteur;
+    conv.capteur = nouveau; conv.sansEcho = sans;
+    try { ancien.arreter(); } catch (_) {}
+    if (etat.conversation !== conv) nouveau.arreter();
+    journalVoix('micro_rouvert', { sans_echo: sans });
+  } catch (_) {
+    journalVoix('micro_rouvert', { echec: true });
+  } finally { conv.reouverture = false; }
+}
+if (window.HakimApp && window.HakimApp.sonEtat) setInterval(() => {
+  const conv = etat.conversation;
+  if (conv && conv.capteur && typeof conv.sansEcho === 'boolean' && ecouteursBranches() !== conv.sansEcho) reouvrirMicroConversation(conv);
+}, 2000);
 
 // les boutons de ton micro : coupé par toi, coupé par Hakim (22:27), ou ouvert
 function majBoutonsMuet(conv) {

@@ -87,8 +87,17 @@
     return out;
   }
 
+  // (appli 1.83, 06/11, Ahmed : « quand j'ai branché le Bluetooth, le son sort bien pour ma musique, mais Hakim parle dans le petit
+  // haut-parleur, celui qu'on utilise oreille contre le téléphone ») vérifié dans Chromium (audio_manager_android.cc) : un micro ouvert
+  // AVEC effets (annulation d'écho…) passe Android en mode communication, et la sortie de la page prend alors l'usage « appel »
+  // (VOICE_COMMUNICATION), qui suit l'écouteur du téléphone, pas les écouteurs Bluetooth de la musique. Avec des écouteurs, pas d'écho
+  // possible : o.sansEcho ouvre le micro sans aucun effet, sa voix garde l'usage média, comme la musique.
+  const contraintesMicro = (sansEcho) => (sansEcho
+    ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    : { echoCancellation: true, noiseSuppression: true, autoGainControl: true });
+
   async function demarrer(o) {
-    const flux = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    const flux = await navigator.mediaDevices.getUserMedia({ audio: contraintesMicro(!!o.sansEcho) });
     const ctx = o.ctx;
     const url = URL.createObjectURL(new Blob([CODE_CAPTEUR], { type: 'application/javascript' }));
     let src, noeud;
@@ -340,5 +349,5 @@
     return t.replace(/[^\p{L}]/gu, '').length >= 2 && !HALLUCINATIONS.test(t);
   }
 
-  racine.Conversation = { demarrer, encoderWav, reechantillonner, utile, hauteur, enVibration };
+  racine.Conversation = { demarrer, encoderWav, reechantillonner, utile, hauteur, enVibration, contraintesMicro };
 })(window);

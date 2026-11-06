@@ -245,3 +245,31 @@ test('câblage : chaque tour envoie sa mesure des éclats au journal de la voix 
   const tour = page.slice(page.indexOf('async function tourDeParole('), page.indexOf('async function tourDeParole(') + 700);   // (04/11) une ligne de plus en tête
   assert.match(tour, /if \(infos && infos\.vibration && \(infos\.vibration\.eclats \|\| infos\.vibration\.battements\)\) journalVoix\('vibration_tour', infos\.vibration\);/);
 });
+
+// (appli 1.83, 06/11, Ahmed : « Hakim parle dans le petit haut-parleur » avec ses écouteurs Bluetooth) un micro avec effets passe la page
+// en usage « appel » (Chromium) : avec des écouteurs, le micro s'ouvre sans aucun effet ; sans écouteurs, comme avant
+test('écouteurs branchés : le micro sans aucun effet (sa voix garde l\'usage média) ; sinon, avec l\'annulation d\'écho', async () => {
+  let demande = null;
+  const ctx = { console, Float32Array, ArrayBuffer, DataView, Math, Blob, Date,
+    URL: { createObjectURL: () => 'blob:capteur', revokeObjectURL() {} },
+    navigator: { mediaDevices: { getUserMedia: async (c) => { demande = c; return { getTracks: () => [], getAudioTracks: () => [] }; } } },
+    AudioWorkletNode: class { constructor() { this.port = { postMessage() {}, onmessage: null }; } connect() {} disconnect() {} } };
+  ctx.window = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'public', 'conversation.js'), 'utf8'), ctx);
+  const C = ctx.Conversation;
+  assert.deepStrictEqual({ ...C.contraintesMicro(true) }, { echoCancellation: false, noiseSuppression: false, autoGainControl: false });
+  assert.deepStrictEqual({ ...C.contraintesMicro(false) }, { echoCancellation: true, noiseSuppression: true, autoGainControl: true });
+  const actx = { sampleRate: 16000, destination: {}, audioWorklet: { addModule: async () => {} },
+    createMediaStreamSource: () => ({ connect() {}, disconnect() {} }), createGain: () => ({ gain: { value: 1 }, connect() {}, disconnect() {} }),
+    createAnalyser: () => ({ connect() {}, disconnect() {}, getFloatFrequencyData() {}, frequencyBinCount: 1024 }) };
+  const cap = await C.demarrer({ ctx: actx, sansEcho: true, surFin() {} });
+  assert.strictEqual(demande.audio.echoCancellation, false, 'avec des écouteurs : pas d\'annulation d\'écho');
+  cap.arreter();
+  const cap2 = await C.demarrer({ ctx: actx, surFin() {} });
+  assert.strictEqual(demande.audio.echoCancellation, true, 'sans écouteurs : comme avant');
+  cap2.arreter();
+  const page = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(page, /conv\.sansEcho = ecouteursBranches\(\);\n    conv\.capteur = await Conversation\.demarrer\(\{ \.\.\.conv\.optionsCapteur, sansEcho: conv\.sansEcho \}\);/);
+  assert.match(page, /ecouteursBranches\(\) !== conv\.sansEcho\) reouvrirMicroConversation\(conv\)/);
+});
