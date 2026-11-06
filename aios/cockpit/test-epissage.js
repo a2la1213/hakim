@@ -869,3 +869,33 @@ test('ses outils permis : ribosome_boutons et present_continu', () => {
   const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   assert.match(SRV, /'parler_bouton', 'ribosome_boutons', 'present_continu'\]\.map\(n => 'mcp__anamnese__' \+ n\)/);
 });
+
+// (06/11, Ahmed : « que Hakim soit conscient s'il parle sur la montre, le téléphone ou le Mac, et qu'il puisse y diriger sa voix et ses balises »)
+test('sa sortie : [[sortie: …]] choisit l’appareil, gardé, annoncé ; sa voix y part, et reste ici si rien n’y est branché', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sortie-'));
+  const ligne = (debut) => { const i = SRV.indexOf(debut); return SRV.slice(i, SRV.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  const prendre = (nom) => { const i = SRV.indexOf(`function ${nom}(`); return SRV.slice(i, SRV.indexOf('\n}\n', i) + 2); };
+  const diffuses = [], abonnes = new Set([{ appareil: 'mac' }, { appareil: 'montre' }, {}]);
+  const ctx = { path, fs, JARVIS: dir, JARVIS_VOIX_DIAGNOSTIC: path.join(dir, 'd.jsonl'), j: JSON.stringify, abonnesPensees: abonnes,
+    lireJson: (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_) { return d; } },
+    ecrireAtomique: (f, t) => fs.writeFileSync(f, t), diffuser: (a, type, d) => diffuses.push({ type, d: JSON.parse(d) }), Date, Object, Set };
+  vm.createContext(ctx);
+  vm.runInContext(['const SORTIE_VOIX = ', 'const SORTIES = ', 'const NOMS_SORTIE = ', 'const BALISE_SORTIE = '].map(ligne).join('')
+    + ['lireSortie', 'appareilsBranches', 'texteSortie', 'choisirSortie'].map(prendre).join('\n') + '\nthis.choisir = choisirSortie; this.lire = lireSortie; this.texte = texteSortie;', ctx);
+  assert.equal(ctx.lire(), 'ici');
+  assert.match(ctx.texte(), /sortent par : là où papa te parle ; branchés en ce moment : le Mac, sa montre/);
+  assert.equal(ctx.choisir('Je te le dis au poignet [[sortie: montre]]'), 'montre');
+  assert.equal(ctx.lire(), 'montre');
+  assert.deepEqual(diffuses.map(x => [x.type, x.d.appareil]), [['sortie', 'montre']]);
+  assert.equal(ctx.choisir('[[sortie: téléphone]]'), 'tel');
+  assert.equal(ctx.choisir('rien ici'), null);
+  // la route : seulement vers un appareil branché ; la page parle elle-même sinon
+  const i = SRV.indexOf("p === '/api/jarvis/voix-vers'"), route = SRV.slice(i, SRV.indexOf("p === '/api/jarvis/flux'", i));
+  assert.match(route, /const ok = cible !== 'ici' && appareilsBranches\(\)\.has\(cible\);/);
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /new EventSource\(`\/api\/jarvis\/flux\?appareil=\$\{appareilIci\(\)\}`\)/);
+  assert.match(PAGE, /if \(!s\.ici && typeof sortieAilleurs === 'function' && sortieAilleurs\(\)\) \{ voixAilleurs\(s\.texte, \(\) => recevoirBout\(\{ \.\.\.s, ici: true \}, n, tour\)\); return; \}/);
+  assert.match(PAGE, /es\.addEventListener\('rire', \(ev\) => \{ try \{ if \(balisesIci\(\)\) surRire/);
+});

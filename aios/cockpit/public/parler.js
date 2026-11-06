@@ -3275,6 +3275,7 @@ function recevoirBout(s, n, tour) {
   const conv = etat.conversation;
   // (04/11, 13:10, Ahmed : « tout ce qui est traduit par le ribosome sort en priorité par la bouche ») ce que son ribosome a traduit passe toujours
   if (!conv || !n || (!s.ribosome && !souffleAutorise())) return;
+  if (!s.ici && typeof sortieAilleurs === 'function' && sortieAilleurs()) { voixAilleurs(s.texte, () => recevoirBout({ ...s, ici: true }, n, tour)); return; }   // (06/11) sa voix part là où il l'a dirigée
   if (bouts.tour !== tour) bouts = { tour, prochain: 1, liste: new Map(), enFile: [], dits: [], fileTel: bouts.fileTel || [] };
   if (n < bouts.prochain || bouts.liste.has(n)) return;
   const b = { n, texte: s.texte, buf: null, rate: false, t: Date.now(), coupe: !!s.remplace, sansMeuble: !!s.sansMeuble };
@@ -5267,9 +5268,29 @@ function surRire(o) {
   if (!window.HakimApp || !window.HakimApp.vibrerMotif) return;
   jouerVibration(v);                                     // (19:38) un rire réflexe part tout de suite, même si papa parle encore
 }
+// (06/11, Ahmed : « que Hakim soit conscient s'il parle sur la montre, le téléphone ou le Mac, et qu'il puisse y diriger sa voix et ses balises ») sa
+// sortie ([[sortie: …]], gardée au cockpit) : « ici » = comme avant ; un autre appareil : sa voix d'ici y part (/api/jarvis/voix-vers), ses rires et
+// impulsions ne se jouent que là-bas ; l'appareil visé pas branché, le cockpit répond « non » et la voix reste ici
+etat.sortie = 'ici';
+fetch('/api/jarvis/sortie', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).then((o) => { if (o && o.appareil) etat.sortie = o.appareil; }).catch(() => {});
+const sortieAilleurs = () => !!etat.sortie && etat.sortie !== 'ici' && etat.sortie !== appareilIci();
+const balisesIci = () => !sortieAilleurs();
+function surVoixVers(o) {
+  if (!o || o.cible !== appareilIci()) return;
+  journalVoix('voix_recue', { quoi: o.quoi });
+  if (o.quoi === 'voix' && o.texte) { lecteur.dire(String(o.texte)); humeur(); }
+  else if (o.quoi === 'rire') surRire({ degre: o.degre, source: 'lui' });
+}
+function voixAilleurs(texte, siNon) {
+  fetch('/api/jarvis/voix-vers', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ quoi: 'voix', texte }) })
+    .then(r => (r.ok ? r.json() : null)).then((o) => { journalVoix('voix_envoyee', { ok: !!(o && o.ok), cible: o && o.cible }); if (!(o && o.ok)) siNon(); })
+    .catch(() => siNon());
+}
 function ecouterPensees() {
-  const es = new EventSource('/api/jarvis/flux');
-  es.addEventListener('rire', (ev) => { try { surRire(JSON.parse(ev.data)); } catch (_) {} });
+  const es = new EventSource(`/api/jarvis/flux?appareil=${appareilIci()}`);   // (06/11) chaque appareil s'annonce : sa sortie peut le viser
+  es.addEventListener('rire', (ev) => { try { if (balisesIci()) surRire(JSON.parse(ev.data)); } catch (_) {} });
+  es.addEventListener('sortie', (ev) => { try { etat.sortie = JSON.parse(ev.data).appareil || 'ici'; journalVoix('sortie', { appareil: etat.sortie }); } catch (_) {} });
+  es.addEventListener('voix_vers', (ev) => { try { surVoixVers(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('reecoute', (ev) => { try { surReecoute(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('souffle', (ev) => { try { surSouffle(JSON.parse(ev.data)); } catch (_) {} });   // (15:02) ses brouillons, écrits
   es.addEventListener('entendu', (ev) => { try { surEntendu(JSON.parse(ev.data)); } catch (_) {} });   // (04/11, 18:50) son oreille interne, par la route du micro
@@ -5288,7 +5309,7 @@ function ecouterPensees() {
     const r = window.HakimApp && window.HakimApp.lumiere ? String(window.HakimApp.lumiere(String(o.mode), String(o.emotion || ''))) : 'pas_de_pont';
     journalVoix('lumiere', { mode: String(o.mode), retour: codeRetour(r) }); } catch (_) {} });
   // (19:36) l'impulsion d'un tour de lui-même (son oreille…) : jouée tout de suite
-  es.addEventListener('impulsion', (ev) => { try { const o = JSON.parse(ev.data); const mi = MOTIFS_IMPULSION[o.x] || (Array.isArray(o.motif) ? o.motif : null);
+  es.addEventListener('impulsion', (ev) => { try { if (!balisesIci()) return; const o = JSON.parse(ev.data); const mi = MOTIFS_IMPULSION[o.x] || (Array.isArray(o.motif) ? o.motif : null);
     if (mi && window.HakimApp && window.HakimApp.vibrerMotif) jouerVibration({ motif: mi, genre: 'impulsion', degre: 0, t: Date.now() }); } catch (_) {} });
   es.addEventListener('alerte', (ev) => { try { surAlerte(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('ecran', (ev) => { try { surEcran(JSON.parse(ev.data)); } catch (_) {} });

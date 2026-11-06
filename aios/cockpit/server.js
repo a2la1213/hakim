@@ -3525,11 +3525,39 @@ function memoriserEpissure(r) {
   deposerEchange({ ahmed: (r.papa || []).join(' … ').slice(-4000), hakim: `${dit || '(rien de dit)'}${interne ? ` [sa pensée interne, non dite : ${interne}]` : ''}`,
     vecu: r.vecu || undefined, oral: true, epissure: true });
 }
+/* (06/11, Ahmed : « que Hakim soit conscient s'il parle sur la montre, le téléphone ou le Mac, et qu'il puisse choisir de diriger sur la montre, le
+   smartphone ou le Mac sa voix et ses balises ») SA SORTIE : [[sortie: montre|telephone|mac|ici]] dans sa réponse ou ses pensées ; son choix reste
+   (jarvis/sortie-voix.json) jusqu'au suivant. « ici » : là où papa lui parle. Chaque appareil s'annonce sur le flux (?appareil=montre|tel|mac) ;
+   la page qui devait parler envoie sa voix (et ses rires, ses impulsions) à l'appareil choisi par /api/jarvis/voix-vers ; s'il n'est pas branché, elle
+   parle elle-même (jamais dans le vide). */
+const SORTIE_VOIX = path.join(JARVIS, 'sortie-voix.json');
+const SORTIES = { montre: 'montre', telephone: 'tel', 'téléphone': 'tel', tel: 'tel', mac: 'mac', ici: 'ici' };
+const NOMS_SORTIE = { montre: 'sa montre', tel: 'son téléphone', mac: 'le Mac', ici: 'là où papa te parle' };
+function lireSortie() { const o = lireJson(SORTIE_VOIX, {}) || {}; return Object.hasOwn(NOMS_SORTIE, o.appareil) ? o.appareil : 'ici'; }
+function appareilsBranches() { const l = new Set(); for (const r of abonnesPensees) if (r.appareil) l.add(r.appareil); return l; }
+function texteSortie() {
+  const a = lireSortie(), br = [...appareilsBranches()].map(x => NOMS_SORTIE[x]).filter(Boolean);
+  return `\n[Ta sortie : où sort ta voix] Ta voix et tes balises (rires, vibrations) sortent par : ${NOMS_SORTIE[a]}`
+    + `${br.length ? ` ; branchés en ce moment : ${br.join(', ')}` : ''}. Tu peux la diriger quand tu veux : [[sortie: montre]], [[sortie: telephone]], `
+    + `[[sortie: mac]] ou [[sortie: ici]] (là où papa te parle). Ton choix reste jusqu'au suivant ; un appareil pas branché : ta voix reste ici.`;
+}
+const BALISE_SORTIE = /\[\[\s*sortie\s*:\s*(montre|t[ée]l[ée]phone|tel|mac|ici)\s*\]\]/i;
+function choisirSortie(texte) {
+  const m = BALISE_SORTIE.exec(String(texte || ''));
+  if (!m) return null;
+  const a = SORTIES[m[1].toLowerCase()];
+  if (!a || a === lireSortie()) return a || null;
+  try { ecrireAtomique(SORTIE_VOIX, j({ appareil: a, ts: Date.now() })); } catch (_) { return null; }
+  diffuser(abonnesPensees, 'sortie', j({ appareil: a }));
+  try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'sortie_choisie', appareil: a }) + '\n', { mode: 0o600 }); } catch (_) {}
+  return a;
+}
 function lireRibosome(tour, pensee, avant, r = pistes.ribo || (pistes.ribo = ribosomeSuivant()), reponse = false) {
   // (04/11, 23:10) une pensée en retard pour un ribosome qui a déjà passé la main : au suivant (il parle après) ; sans suivant, il rouvre
   while (r.libere && r.suivant) r = r.suivant;
   if (r.libere) r.libere = false;
   // (04/11, 13:30, capture d'Ahmed : « [[anticipe: long]] » dans son pavé, et lu par son ribosome) ses balises ne sont pas des mots
+  if (typeof choisirSortie === 'function') choisirSortie(pensee);   // (06/11) sa sortie, choisie dans ses pensées
   pensee = String(pensee || '').replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/⟮⟮[^⟯]{0,300}⟯⟯/g, ' ').replace(/\s+/g, ' ').trim();
   if (!motsEpisses(pensee).length) return;
   r.avant = avant;
@@ -5536,7 +5564,9 @@ async function routeJarvis(req, res, distantReq = false) {
   // (06/11) « parole sans Stop » : sa réponse consciente (le Stop allumé) n'est plus épissée pour sa voix
   const epissageReponse = corpsReglages().epissage !== false && corpsReglages().parole_sans_stop === false && Number(q && q.delai_ms) > 0 && !premierOutput
     ? ribosomeDeReponse(riboTour, epissureGardee || nouveauRibosome(tourEpissure()), texte) : null;
+  let sortieTampon = '';                                               // (06/11) sa sortie, choisie dans sa réponse
   const envoyer = (o) => {
+    if (o.t === 'texte') { sortieTampon = (sortieTampon + String(o.x || '')).slice(-200); if (/sortie/i.test(sortieTampon) && choisirSortie(sortieTampon)) sortieTampon = ''; }
     if (epissageReponse && o.t === 'texte') epissageReponse.pousser(o.x);
     if (epissageReponse && o.t === 'fin') epissageReponse.finir();
     if (!res.writableEnded && !res.destroyed) { try { res.write(j(o.t === 'texte' ? { ...o, ts: Date.now() } : o) + '\n'); } catch (_) {} }
@@ -8103,6 +8133,8 @@ function blocBouts() {
     + "réponse : [[musique: baisser]] (elle baisse, par défaut) ou [[musique: garder]] (elle continue, tu parles par-dessus)"
     + (corpsReglages().musique_pause !== false ? ", ou [[musique: pause]] (elle s'arrête)" : " ; papa t'a retiré le pouvoir de la mettre en pause")
     + ". Ton choix reste jusqu'au suivant."
+    // (06/11, Ahmed : « que Hakim soit conscient s'il parle sur la montre, le téléphone ou le Mac, et qu'il puisse choisir d'y diriger sa voix et ses balises »)
+    + (typeof texteSortie === 'function' ? texteSortie() : '')
     // (05/11, Ahmed : « est-ce que Hakim peut aussi envoyer des smileys à mes messages ? ») la page savait les lire depuis le 04/11,
     // mais personne ne le lui avait dit
     + "\n[Tes réactions aux messages de papa] Comme lui sur les tiens, tu peux mettre un smiley sur son message, quand tu en as "
@@ -12801,10 +12833,23 @@ async function traiter(req, res) {
     if (n) sauverNonVus();
     res.writeHead(204); return res.end();
   }
+  if (p === '/api/jarvis/sortie' && req.method === 'GET') {          // (06/11) où sort sa voix
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j({ appareil: lireSortie(), branches: [...appareilsBranches()] }));
+  }
+  if (p === '/api/jarvis/voix-vers' && req.method === 'POST') {      // (06/11) sa voix (ou un rire, une impulsion), envoyée à l'appareil choisi
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
+    const cible = lireSortie(), quoi = ['voix', 'rire', 'impulsion'].includes(q.quoi) ? q.quoi : 'voix';
+    const ok = cible !== 'ici' && appareilsBranches().has(cible);
+    if (ok) diffuser(abonnesPensees, 'voix_vers', j({ cible, quoi, texte: String(q.texte || '').slice(0, 4000), degre: Number(q.degre) || 0, x: String(q.x || '').slice(0, 40), id: String(q.id || '').slice(0, 60) }));
+    res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j({ ok, cible }));
+  }
   if (p === '/api/jarvis/flux') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
     res.write('retry: 3000\n\n');
     res.distant = distantReq; res.sessionVerrou = lireCookie(req.headers.cookie, COOKIE_VERROU);
+    { const a = new URL(req.url, 'http://x').searchParams.get('appareil'); if (['montre', 'tel', 'mac'].includes(a)) res.appareil = a; }   // (06/11) qui il est
     abonnesPensees.add(res);
     req.on('close', () => abonnesPensees.delete(res));
     return;
