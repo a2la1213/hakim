@@ -5136,6 +5136,18 @@ function noterContexte(sid, o) {
   contextes = Object.fromEntries(garde.map(k => [k, contextes[k]]));
   try { ecrireAtomique(JARVIS_CONTEXTES, j({ sessions: contextes, maj_ms: Date.now(), max: CONTEXTE_MAX, derniere: sid })); } catch (_) {}
 }
+// (07/11) ce qu'il a dit de lui-même depuis le dernier message de papa (au plus 30 min) : déjà livré
+function livresDepuisPapa(lignes = null, maintenant = Date.now()) {
+  if (!lignes) { try { lignes = fs.readFileSync(JARVIS_JOURNAL, 'utf8').trim().split('\n').slice(-200); } catch (_) { lignes = []; } }
+  const L = [];
+  for (let i = lignes.length - 1; i >= 0; i--) {
+    let e = null; try { e = JSON.parse(lignes[i]); } catch (_) {}
+    if (!e) continue;
+    if (e.qui === 'ahmed' || maintenant - Number(e.ts) > 30 * 60e3) break;
+    if (e.qui === 'jarvis' && /\[de lui-même[^\]]*\]\s*$/.test(String(e.texte || ''))) L.unshift(String(e.texte));
+  }
+  return L;
+}
 function filRecent(n, messageDuTour) {
   let lignes = [];
   // (04/11, Hakim : « je tourne à 269 k au lieu de 150 k ») ses réveils sans un mot remplissent le journal : 68 des 121 dernières

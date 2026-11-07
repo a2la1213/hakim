@@ -2199,7 +2199,8 @@ async function envoyer(texte, oral, dejaRelance) {
   if (oral && etat.conversation && typeof bouts !== 'undefined' && bouts.enFile.length) {
     lecteurNeuronal.retirerAudio(bouts.enFile.slice()); bouts.dits.splice(bouts.dits.length - bouts.enFile.length); bouts.enFile = [];
   }
-  const souffleDit = oral && etat.conversation && (etat.conversation.souffleDit || etat.conversation.penseeDite) ? (etat.conversation.souffleDit || etat.conversation.penseeDite) : '';
+  // (07/11, Hakim : son avis « mon image est prête » redit à 22:05) ce qu'il a déjà donné de lui-même depuis ton dernier message n'est pas le début de sa réponse
+  const souffleDit = souffleSansLivres(oral && etat.conversation && (etat.conversation.souffleDit || etat.conversation.penseeDite) ? (etat.conversation.souffleDit || etat.conversation.penseeDite) : '');
   if (etat.conversation) { etat.conversation.souffleDit = ''; etat.conversation.penseeDite = ''; }
   // (04/11, vu à 04:55 : ses pensées du tour d'avant redites en tête du message suivant, quand le Mac n'avait pas encore changé de
   // tour) ce qu'il a dit compte depuis CE message ; les pensées d'avant restent pour ne pas les redire
@@ -6066,6 +6067,15 @@ function garderNonDit() {
   if (!/\p{L}{2,}/u.test(texte) || NON_REPONSE.test(texte)) return;
   envoyerNonDits([{ id: idNonDit(), texte, coupe: true, origine_ts: origine }]);
   journalVoix('non_dit_garde', { car: texte.length, en_attente: nonDitsAEnvoyer.length });
+}
+// (07/11) ses messages de lui-même depuis ton dernier message : déjà livrés, ils ne repartent pas en tête de sa réponse suivante
+function souffleSansLivres(dit, messages = etat.messages) {
+  if (!dit) return '';
+  const l = messages || [];
+  let k = l.length - 1;
+  while (k >= 0 && l[k].qui !== 'u') k--;
+  const livres = l.slice(k + 1).filter(x => x.qui === 'j' && x.spontane && x.texte).map(x => x.texte);
+  return livres.length && typeof Voix !== 'undefined' && Voix.sansDejaLivre ? Voix.sansDejaLivre(dit, livres) : dit;
 }
 function direSpontanes() {
   const c = etat.conversation;

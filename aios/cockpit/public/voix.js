@@ -526,9 +526,29 @@
     return lecteur;
   }
 
+  // (07/11, Hakim : « Papa, mon image est prête… » dit à 21:55, puis redit à 22:05 en tête de sa réponse) un message qu'il a déjà
+  // donné de lui-même (un avis de fin de tâche, dit par sa voix épissée) restait dans « ce qu'il a déjà dit » jusqu'au message
+  // suivant de papa, et repartait comme le début de sa réponse. Ce qu'il a déjà dit, sans ce qui est déjà livré : phrase par phrase,
+  // une phrase contenue dans un message livré est retirée (ses deux premiers mots peuvent être un meuble : « hum », « voyons voir »).
+  function sansDejaLivre(dit, livres) {
+    const net = (x) => String(x || '').replace(/⟮⟮[^⟯]{0,300}⟯⟯|\[\[[^\]]{0,300}\]\]|\[de lui-même[^\]]{0,300}\]/g, ' ')
+      .replace(/\s+/g, ' ').trim().toLowerCase();
+    const l = (livres || []).map(net).filter(x => x.length >= 12);
+    const brut = String(dit || '');
+    if (!l.length || !brut.trim()) return brut;
+    const phrases = brut.replace(/\s+/g, ' ').trim().match(/[^.!?…؟]+(?:[.!?…؟]+|$)/g) || [];
+    const livree = (ph) => {
+      const mots = net(ph).split(' ').filter(Boolean);
+      for (let k = 0; k <= 2 && mots.length - k >= 3; k++) { const t = mots.slice(k).join(' '); if (t && l.some(x => x.includes(t))) return true; }
+      return false;
+    };
+    const reste = phrases.filter(ph => !livree(ph));
+    return reste.length === phrases.length ? brut : reste.join(' ').replace(/\s+/g, ' ').trim();
+  }
+
   const Voix = { versArabe, segmenter, pourLaVoix, decoupeur, choisirVoix, creerLecteur, FORMULE, VOIX_SEULE, AFFECT, sansAffect, latexParle,
     definirPrononciations,
-    diction, prononcable, enLettres, DEBUTS, HESITATIONS, debutDe, expressivitePhrase };
+    diction, prononcable, enLettres, DEBUTS, HESITATIONS, debutDe, expressivitePhrase, sansDejaLivre };
   racine.Voix = Voix;
   if (typeof module !== 'undefined' && module.exports) module.exports = Voix;
 })(typeof window !== 'undefined' ? window : globalThis);
