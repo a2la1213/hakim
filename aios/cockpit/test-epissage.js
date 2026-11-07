@@ -1050,3 +1050,20 @@ test('ton message écrit l’arrête et part tout de suite (ecrit_coupe), l’an
   assert.strictEqual(faits[0][1].garder, false);
   assert.strictEqual(ctx.etat.riboFile.length, 0);
 });
+
+// (07/11, Ahmed : « un bouton stop et pause à côté de la barre de progression »)
+test('ses calculs : un bouton pause/reprise et un bouton arrêt à côté de la jauge ; les routes vérifient le jeton et la tâche', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const i = PAGE.indexOf('function htmlCalcul('), f = PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2);
+  const j = PAGE.indexOf('function dureeCourte('), d = PAGE.slice(j, PAGE.indexOf('\n}\n', j) + 2);
+  const ctx = { esc: (x) => String(x) }; vm.createContext(ctx); vm.runInContext(d + f + 'this.f = htmlCalcul;', ctx);
+  const h = ctx.f({ id: 'T-20261107-050259-242a', commande: 'chanter', fraction: 0.4, ecoule_ms: 60000, pause: false });
+  assert.match(h, /class="btn ico tache-pause" data-tache="T-20261107-050259-242a" data-pause="1"/);
+  assert.match(h, /class="btn ico tache-stop" data-tache="T-20261107-050259-242a"/);
+  assert.match(ctx.f({ id: 'T-x-123456', commande: 'c', ecoule_ms: 1, pause: true }), /en pause · en cours[\s\S]*data-pause="0"[\s\S]*▶/);
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const k = SRV.indexOf("p === '/api/jarvis/taches/arreter'"), route = SRV.slice(k, k + 2200);
+  assert.match(route, /if \(!jetonValide\(req\)\)/);
+  assert.match(route, /lireTaches\(\)\.find\(x => x\.id === id && x\.etat === 'en cours'\)/);
+  assert.match(route, /process\.kill\(-Number\(t\.pid\), veut \? 'SIGSTOP' : 'SIGCONT'\)/);
+});

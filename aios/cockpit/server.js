@@ -1525,6 +1525,7 @@ function tachesEnCours(maintenant = Date.now()) {
     return { id: x.id, commande: String(x.commande).slice(0, 160), debut_ms: x.debut * 1000, ecoule_ms: maintenant - x.debut * 1000,
       fraction: p ? p.f : null, etape: p ? p.etape : null, libelle: p ? p.libelle : '', reste_ms: p ? p.reste_ms ?? null : null,
       total_ms: p ? p.total_ms ?? null : null, devinee: !!(p && p.devinee),
+      pause: fs.existsSync(path.join(JARVIS_TACHES, `${x.id}.pause`)),   // (07/11) en pause par papa
       derniere: derniereLigne(finFichier(path.join(JARVIS_TACHES, `${x.id}.log`), 2048)) };
   });
 }
@@ -12186,6 +12187,29 @@ async function traiter(req, res) {
       finFichier(path.join(JARVIS, 'journal-off.jsonl'), 300_000)) }));
   }
   // FERME-FIN presence
+  // (07/11, Ahmed : « un bouton stop et pause à côté de la barre de progression, pour tout arrêter en cas de besoin ») arrêter une tâche (son fichier
+  // .stop : le superviseur tue son groupe et écrit « arrêtée ») ; la mettre en pause ou la reprendre (SIGSTOP / SIGCONT sur son groupe, noté .pause)
+  if ((p === '/api/jarvis/taches/arreter' || p === '/api/jarvis/taches/pause') && req.method === 'POST') {
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 2048) || '{}')); } catch (_) {}
+    const id = String(q.id || '');
+    const t = /^T-[\w-]{6,60}$/.test(id) ? lireTaches().find(x => x.id === id && x.etat === 'en cours') : null;
+    if (!t) { res.writeHead(404, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'aucune tâche en cours de ce nom' })); }
+    const pause = path.join(JARVIS_TACHES, `${id}.pause`);
+    try {
+      if (p.endsWith('/arreter')) {
+        if (Number(t.pid) > 0) { try { process.kill(-Number(t.pid), 'SIGCONT'); } catch (_) {} }   // une tâche en pause doit pouvoir mourir
+        fs.writeFileSync(path.join(JARVIS_TACHES, `${id}.stop`), ''); fs.rmSync(pause, { force: true });
+      } else {
+        const veut = q.pause !== false;
+        if (!(Number(t.pid) > 0)) throw new Error('pas de processus');
+        process.kill(-Number(t.pid), veut ? 'SIGSTOP' : 'SIGCONT');
+        if (veut) fs.writeFileSync(pause, String(Date.now())); else fs.rmSync(pause, { force: true });
+      }
+    } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: String(e.message || e).slice(0, 120) })); }
+    diffuser(abonnesPensees, 'tache', j({ id, geste: p.endsWith('/arreter') ? 'arret' : (q.pause !== false ? 'pause' : 'reprise'), par: 'papa' }));
+    res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j({ ok: true }));
+  }
   if (p === '/api/jarvis/taches' && req.method === 'GET') {         // (23/10) ses calculs en cours, avec leur jauge
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });

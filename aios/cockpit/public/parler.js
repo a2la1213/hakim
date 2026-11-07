@@ -7054,8 +7054,12 @@ function htmlCalcul(x) {
   // (25/10, Ahmed) sans jauge lisible : la dernière ligne de son journal, telle quelle
   if (!connu && x.derniere) details.push(`dernière ligne : « ${x.derniere} »`);
   else if (!connu) details.push('pas encore de sortie');
+  // (07/11, Ahmed : « un bouton stop et pause à côté de la barre, pour tout arrêter en cas de besoin »)
+  const boutons = `<span class="gestes-tache" style="display:inline-flex;gap:6px;margin-left:8px">`
+    + `<button class="btn ico tache-pause" data-tache="${esc(x.id)}" data-pause="${x.pause ? '0' : '1'}" aria-label="${x.pause ? 'Reprendre' : 'Pause'}" title="${x.pause ? 'Reprendre ce calcul' : 'Mettre ce calcul en pause'}">${x.pause ? '▶' : '⏸'}</button>`
+    + `<button class="btn ico tache-stop" data-tache="${esc(x.id)}" aria-label="Arrêter" title="Arrêter ce calcul">■</button></span>`;
   return `<div class="calcul"><div class="ligne"><span class="quoi" title="${esc(x.commande)}">${esc(quoi)}</span>`
-    + `<span class="chiffres">${esc(fait)}</span></div>`
+    + `<span class="chiffres">${esc(x.pause ? `en pause · ${fait}` : fait)}</span>${boutons}</div>`
     + `<div class="barre${connu ? '' : ' inconnue'}" role="progressbar" aria-label="${esc(quoi)}" aria-valuemin="0" aria-valuemax="100"${connu ? ` aria-valuenow="${pc}"` : ''}>`
     + `<span${connu ? ` style="width:${pc}%"` : ''}></span></div><div class="details">${esc(details.join(' · '))}</div></div>`;
 }
@@ -7071,6 +7075,15 @@ async function chargerCalculs() {
     if (!b.hidden) b.innerHTML = `<div class="titre">Calculs de Hakim en cours</div>${taches.map(htmlCalcul).join('')}`;
   } catch (_) {}
 }
+document.addEventListener('click', (ev) => {   // (07/11) ses gestes sur un calcul : pause, reprise, arrêt
+  const b = ev.target && ev.target.closest && ev.target.closest('.tache-pause, .tache-stop');
+  if (!b || !b.dataset.tache) return;
+  const arret = b.classList.contains('tache-stop');
+  if (arret && !confirm('Arrêter ce calcul ?')) return;
+  fetch(arret ? '/api/jarvis/taches/arreter' : '/api/jarvis/taches/pause', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+    body: JSON.stringify({ id: b.dataset.tache, pause: b.dataset.pause === '1' }) }).then(() => setTimeout(chargerCalculs, 600)).catch(() => {});
+  journalVoix('tache_geste', { geste: arret ? 'arret' : (b.dataset.pause === '1' ? 'pause' : 'reprise') });
+});
 chargerCalculs(); setInterval(chargerCalculs, 10000);
 document.addEventListener('visibilitychange', chargerCalculs);
 
