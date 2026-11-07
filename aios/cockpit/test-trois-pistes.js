@@ -190,7 +190,7 @@ test('server : son tour reçoit le bloc à trois pistes ; le fil n’y répète 
   assert.match(SRC, /fichier: telephone && voixSeparee \? voixSeparee : f,/, 'la grande oreille : la voix séparée');
   assert.match(SRC, /lot\.fil = `\[ce qu'il entend, en trois pistes\] \$\{tp\} \[le reste du fil\] \$\{lot\.fil\}`/, 'son subconscient aussi');
   assert.match(SRC, /trois_pistes: r\.trois_pistes !== false,/);
-  assert.match(SRC, /'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies'\]\) if \(typeof q\[k\] === 'boolean'\) r\[k\] = q\[k\];/);
+  assert.match(SRC, /'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe'\]\) if \(typeof q\[k\] === 'boolean'\) r\[k\] = q\[k\];/);
   const page = fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8');
   assert.match(page, /\['trois_pistes', '🎚️ Trois pistes : parole, musique, fond'/);
 });

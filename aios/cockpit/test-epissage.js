@@ -1020,3 +1020,33 @@ test('morceaux unifiés : au blanc, tout ce qui est prêt part ensemble, dans l�
   assert.match(PAGE, /for \(let y; \(y = prochainMorceau\(c\)\);\) tous\.push\(y\);\n\s+tous\.sort\(\(a, b\) => \(a\.t \|\| 0\) - \(b\.t \|\| 0\)\);/);
   assert.match(fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8'), /morceaux_unifies: r\.morceaux_unifies !== false,/);
 });
+
+// (07/11, Ahmed, capture : six bulles pour une seule phrase)
+test('tes morceaux affichés : une seule bulle par tour, qui grandit (morceaux_unifies)', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const i = PAGE.indexOf('function montrerMorceauPapa('), f = PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2);
+  const aCote = [];
+  const ctx = { etat: { conversation: {}, aCote }, motsEnConversation: () => true, enTelepathie: () => false, reglagesCorps: {}, esc: (x) => x, rendre() {}, ligneEnDirectMontrer() {}, sousTitre() {}, $: () => null };
+  vm.createContext(ctx); vm.runInContext(f + 'this.f = montrerMorceauPapa;', ctx);
+  ctx.f({ tour: 5, n: 1, texte: 'Pour qu’on valide', jusqua: 3 });
+  ctx.f({ tour: 5, n: 2, texte: 'le son ensemble,', jusqua: 6 });
+  ctx.f({ tour: 5, n: 3, texte: 'tu te souviens ?', jusqua: 9 });
+  const bulles = ctx.etat.aCote.filter(x => String(x.cle).startsWith('papa-'));
+  assert.strictEqual(bulles.length, 1);
+  assert.match(bulles[0].html, /Pour qu’on valide le son ensemble, tu te souviens \?/);
+});
+
+// (07/11, Ahmed : « quand je lui envoie un message, il n'arrive toujours pas à s'arrêter et à passer au message suivant »)
+test('ton message écrit l’arrête et part tout de suite (ecrit_coupe), l’ancienne réponse laissée', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const i = PAGE.indexOf('function envoyerEcrit('), f = PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2);
+  const faits = [];
+  const ctx = { etat: { conversation: {}, joints: [], riboFile: [{ tour: 1, texte: 'vieux' }] }, reglagesCorps: {}, sonTourEnCours: () => true, chacunSonTour: () => true,
+    COMMANDE_STOP: /^stop$/i, journalVoix() {}, blancsPourSautes() {}, majBoutonsPause() {}, prendreEcritsGardes: () => '', $: () => ({ value: '' }), ajuster() {}, humeur() {},
+    arreterTout: (e, o) => faits.push(['arret', o]), envoyer: (t) => faits.push(['envoi', t]) };
+  vm.createContext(ctx); vm.runInContext(f + 'this.f = envoyerEcrit;', ctx);
+  ctx.f('on passe à autre chose');
+  assert.deepStrictEqual(faits.map(x => x[0]), ['arret', 'envoi']);
+  assert.strictEqual(faits[0][1].garder, false);
+  assert.strictEqual(ctx.etat.riboFile.length, 0);
+});

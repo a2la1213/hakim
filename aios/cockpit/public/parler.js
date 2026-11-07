@@ -3952,9 +3952,16 @@ function montrerMorceauPapa(o) {
   conv.morceauPapa = { tour: o.tour, jusqua: Number(o.jusqua) || 0, texte: String(o.texte) };
   if (!motsEnConversation() || enTelepathie() || (typeof reglagesCorps !== 'undefined' && reglagesCorps.afficher_papa === false)) return;
   conv.morceauxMontres = (conv.morceauxMontres || 0) + 1;
-  const cle = `papa-${o.tour}-${o.n}`;
+  // (07/11, Ahmed, capture : six bulles « À L'ORAL » pour une seule phrase — « tous les chunks en un seul message, réunis au fur et à mesure que je
+  // les prononce ») morceaux_unifies (allumé) : une seule bulle par tour de ta parole, qui grandit morceau après morceau, à la place de la première
+  const unifie = typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.morceaux_unifies !== false;
+  const cle = unifie ? `papa-${o.tour}` : `papa-${o.tour}-${o.n}`;
+  const avant = (etat.aCote || []).find(x => x.cle === cle);
+  conv.texteTour = conv.texteTour || {};
+  const texte = unifie ? `${avant && conv.texteTour[o.tour] ? `${conv.texteTour[o.tour]} ` : ''}${String(o.texte)}` : String(o.texte);
+  if (unifie) conv.texteTour = { [o.tour]: texte };
   etat.aCote = (etat.aCote || []).filter(x => x.cle !== cle);
-  etat.aCote.push({ ts: Date.now(), cle, html: `<div class="m u"><span class="oral">À L’ORAL</span><div class="txt">${esc(o.texte)}</div></div>` });
+  etat.aCote.push({ ts: avant ? avant.ts : Date.now(), cle, html: `<div class="m u"><span class="oral">À L’ORAL</span><div class="txt">${esc(texte)}</div></div>` });
   const siens = etat.aCote.filter(x => String(x.cle).startsWith('papa-'));
   if (siens.length > 12) { const vieux = new Set(siens.slice(0, siens.length - 12)); etat.aCote = etat.aCote.filter(x => !vieux.has(x)); }
   rendre();
@@ -4635,6 +4642,18 @@ function prendreEcritsGardes(c) {
 }
 function envoyerEcrit(texte) {
   const c = etat.conversation, t = String(texte || '').trim();
+  // (07/11, Ahmed : « quand je lui envoie un message, il n'arrive toujours pas à s'arrêter et à passer au message suivant ») ton message écrit l'arrête :
+  // sa voix et sa réponse en cours s'arrêtent, ce qui restait de l'ancienne est laissé (sauf « ↩️ reprendre là où il s'était arrêté »), et ton message part
+  if (t && c && sonTourEnCours() && !COMMANDE_STOP.test(t) && (typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.ecrit_coupe !== false)) {
+    const garder = typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.reprendre_ancien === true;
+    if (!garder) { const vieux = (etat.riboFile || []).slice(); if (vieux.length && typeof blancsPourSautes === 'function') blancsPourSautes(vieux); etat.riboFile = [];
+      if (typeof bouts !== 'undefined') { bouts.fileTel = []; bouts.attenteTel = null; } }
+    journalVoix('ecrit_coupe', { garde: garder });
+    arreterTout(true, { garder, raison: 'message' }); majBoutonsPause();
+    const avant = prendreEcritsGardes(c);
+    envoyer(avant ? `${avant}\n${t}` : texte, false);
+    return;
+  }
   if (t && c && chacunSonTour() && sonTourEnCours() && !COMMANDE_STOP.test(t) && !etat.joints.length) {
     if (!c.tourGarde && !(c.ecritGarde || []).length) c.tourGardeDepuis = Date.now();
     (c.ecritGarde = c.ecritGarde || []).push(t);

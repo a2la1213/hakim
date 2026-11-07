@@ -740,7 +740,7 @@ test('(04/11) le Mac renvoie tes mots morceau par morceau (les mêmes que ses pi
 test('(04/11) la page : chaque morceau de tes mots, une bulle à lui ; sous l’orbe, seulement le morceau en cours ; à la fin, pas de gros bloc', () => {
   const rendus = [];
   const ctx = { etat: { conversation: { ecrit: { confirme: '', vif: '' } } }, esc: (t) => t, rendre: () => rendus.push(1),
-    motsEnConversation: () => true, enTelepathie: () => false, reglagesCorps: { afficher_papa: true }, Date, Number, String,
+    motsEnConversation: () => true, enTelepathie: () => false, reglagesCorps: { afficher_papa: true, morceaux_unifies: false }, Date, Number, String,
     ligneEnDirectMontrer: () => {}, lecteur: { actif: false }, $: () => null, envoyerParoles: () => {}, sousTitre: () => {} };
   vm.createContext(ctx);
   vm.runInContext(extraire('function montrerMorceauPapa') + extraire('function motsEnCours') + '\nthis.morceau = montrerMorceauPapa; this.enCours = motsEnCours;', ctx);

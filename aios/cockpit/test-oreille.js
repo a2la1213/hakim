@@ -303,7 +303,7 @@ test('(31/10, 08:22, en live) chacun son tour vaut aussi pour l’écrit : un me
   const a = page.indexOf('const chacunSonTour = '), b = page.indexOf('setInterval(libererSonTour, 300);');
   const envois = [], journal = [], q = { value: '' };
   const ctx = vm.createContext({ Date, etat: { flux: {}, joints: [], conversation: { tourGarde: '', enAttente: 0, capteur: { enParole: false } }, finVoixA: 0 },
-    lecteur: { actif: false, enPause: false }, reglagesCorps: { chacun_son_tour: true }, journalVoix: (e, d) => journal.push([e, d]), humeur() {},
+    lecteur: { actif: false, enPause: false }, reglagesCorps: { chacun_son_tour: true, ecrit_coupe: false }, journalVoix: (e, d) => journal.push([e, d]), humeur() {},
     envoyer: (t, oral) => envois.push([t, oral]), setInterval() {}, $: () => q, ajuster() {}, COMMANDE_STOP: /^\s*stop\s*$/i });
   vm.runInContext(page.slice(a, b).replace(/^const /gm, 'var '), ctx);
   const conv = ctx.etat.conversation;
