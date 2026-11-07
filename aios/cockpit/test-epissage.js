@@ -1013,3 +1013,10 @@ test('coupé par une vraie phrase : l’ancienne réponse est laissée (reprendr
   const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   assert.match(SRV, /reprendre_ancien: r\.reprendre_ancien === true,/);
 });
+
+// (07/11, Ahmed : « tous les chunks de ma parole en un seul message réunifié, au fur et à mesure »)
+test('morceaux unifiés : au blanc, tout ce qui est prêt part ensemble, dans l’ordre où papa l’a dit', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /for \(let y; \(y = prochainMorceau\(c\)\);\) tous\.push\(y\);\n\s+tous\.sort\(\(a, b\) => \(a\.t \|\| 0\) - \(b\.t \|\| 0\)\);/);
+  assert.match(fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8'), /morceaux_unifies: r\.morceaux_unifies !== false,/);
+});

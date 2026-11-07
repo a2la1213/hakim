@@ -4776,7 +4776,7 @@ function prochainMorceau(conv) {
   const m = prets[0];
   conv.morceaux = conv.morceaux.filter(x => x !== m);
   journalVoix('morceau_choisi', { priorite: priorite(m), classe: !!m.verdict, restent: conv.morceaux.length });
-  return { texte: (m.verdict && m.verdict.texte) || m.texte, priorite: priorite(m), restent: conv.morceaux.length, infos: m.infos };
+  return { texte: (m.verdict && m.verdict.texte) || m.texte, priorite: priorite(m), restent: conv.morceaux.length, infos: m.infos, t: m.t };
 }
 const prioriteUnClassee = (c) => (c.morceaux || []).some(m => m.etat === 'transcrit' && m.verdict && m.verdict.garder && priorite(m) === 1);
 const silenceDeTaVoix = (cap) => !cap || !cap.enParole || Date.now() - (Number(cap.derniereVoix) || 0) >= (typeof blancDeMorceau === 'function' ? blancDeMorceau() : VIDE_MS);
@@ -4802,8 +4802,17 @@ async function assemblerMorceaux() {
       journalVoix('assemblage_repris', {}); return false;                // tu as repris : au blanc suivant
     }
     if (etat.conversation !== c || sonTourEnCours() || c.enAttente) return false;
-    const x = prochainMorceau(c);
+    let x = prochainMorceau(c);
     if (!x) return false;                                           // tout écarté : il n'a rien à répondre
+    // (07/11, Ahmed : « quand ça découpe mes phrases, tous les chunks doivent partir en un seul message : ça réunit les bouts au fur et à mesure que je
+    // les prononce, et ça envoie un message réunifié ») morceaux_unifies (allumé) : au blanc, TOUT ce qui est prêt part ensemble, dans l'ordre où tu l'as dit
+    if (typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.morceaux_unifies !== false) {
+      const tous = [x];
+      for (let y; (y = prochainMorceau(c));) tous.push(y);
+      tous.sort((a, b) => (a.t || 0) - (b.t || 0));
+      x = { texte: tous.map(y => y.texte).join(' '), priorite: Math.min(...tous.map(y => y.priorite)), restent: 0, infos: tous[tous.length - 1].infos };
+      if (tous.length > 1) journalVoix('morceaux_unifies', { n: tous.length });
+    }
     const reste = x.restent ? ` ; ton subconscient l'a classé en premier (priorité ${x.priorite}), ${x.restent} autre${x.restent > 1 ? 's' : ''} attend${x.restent > 1 ? 'ent' : ''} le blanc suivant` : '';
     journalVoix('morceau_dit', { attente_ms: Date.now() - t1 });
     await tourDeParole(c, null, x.infos, { texte: `(dit pendant ta parole${reste}) ${x.texte}`, differe: true });

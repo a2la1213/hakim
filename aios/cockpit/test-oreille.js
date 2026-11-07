@@ -811,7 +811,7 @@ test('(31/10, 09:12-09:42) trier chaque morceau : transcrits et classés un à u
   const capteur = { enParole: false, derniereVoix: 0 };
   const ctx = vm.createContext({ Date, Promise, setTimeout, JSON, console,
     etat: { conversation: { capteur, enAttente: 0 }, finVoixA: 0, lectureDe: null },
-    reglagesCorps: { trier_morceaux: true, garder_parole: true }, lecteur: { actif: false, enPause: false },
+    reglagesCorps: { trier_morceaux: true, garder_parole: true, morceaux_unifies: false }, lecteur: { actif: false, enPause: false },   // (07/11) l'ancien tri un à un
     journalVoix: (e, d) => journal.push([e, d]), jeton: () => 'x', setInterval() {},
     enTour: true, sonTourEnCours: () => ctx.enTour, transcriptionEnPause: () => ctx.enTour,
     transcrireVite: (wav) => new Promise(r => setTimeout(() => r(T[wav]), 20)),
