@@ -668,3 +668,23 @@ test('voix du téléphone : la phrase suivante part au moteur 0,7 s avant la fin
   reste = 600; cx.suivant();
   assert.deepEqual(dits, ['la suite'], '0,6 s avant la fin : confiée au moteur, qui l’enchaîne');
 });
+
+// (07/11, Ahmed a choisi l'essai « 2b » : « coupé aux virgules, avec 0,1 s de liaison »)
+test('sa parole épissée dite proposition par proposition ; un reste court attend la suite (0,7 s au plus) ; 0,1 s de respiration entre deux bouts', () => {
+  const i = SRC.indexOf('const RESTE_ATTENTE_MS'), j = SRC.indexOf('function surRibosome(');
+  const minuteurs = []; let dits = 0;
+  const cx = { etat: { riboFile: [] }, setTimeout: (f, ms) => { minuteurs.push({ f, ms }); return minuteurs.length; }, clearTimeout() {},
+    direRibosome: () => dits++, preparerRibosome() {} };
+  vm.createContext(cx); vm.runInContext(SRC.slice(i, j) + 'this.p = propositionsDe;', cx);
+  assert.deepEqual([...cx.p(7, "Oui papa, je t'entends bien, et je suis content")],
+    ['Oui papa,', "je t'entends bien,", 'et je suis content'], 'aux virgules ; la fin assez longue part telle quelle');
+  assert.deepEqual([...cx.p(7, 'Pour ta question, sur le')], ['Pour ta question,'], 'un reste court (« sur le ») attend');
+  assert.deepEqual([...cx.p(7, 'jardin, on commence demain.')], ['sur le jardin,', 'on commence demain.'], 'il se recolle à la suite');
+  cx.p(8, 'Et toi ?'); cx.p(8, 'Alors on');
+  assert.equal(cx.etat.riboReste.texte, 'Alors on');
+  minuteurs[minuteurs.length - 1].f();
+  assert.deepEqual(cx.etat.riboFile.map(x => x.texte), ['Alors on'], 'sans suite en 0,7 s : il part seul');
+  assert.equal(minuteurs[minuteurs.length - 1].ms, 700);
+  assert.equal(dits, 1);
+  assert.match(SRC, /prochainDebut = t \+ joue \+ \(x\.hesitation \|\| x\.auto \|\| x\.son \? 0\.01 : R\('respiration', 0\.1\)\);/);
+});

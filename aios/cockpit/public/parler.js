@@ -781,7 +781,8 @@ function creerLecteurNeuronal() {
     // (1.66, 04/11, 19:35, Ahmed : « … soit depuis la voie de ses haut-parleurs ») l'appli sait d'avance jusqu'à quand sa voix (ou son
     // son) joue : son oreille par l'air, le micro du téléphone, jette tout ce qu'il capte pendant ce temps (jamais sa propre voix)
     try { if (window.HakimApp && window.HakimApp.saVoixPendant) window.HakimApp.saVoixPendant(Math.max(0, (t + joue - actx.currentTime) * 1000)); } catch (_) {}
-    prochainDebut = t + joue + 0.01;                                // (04/11) plus de blanc entre deux bouts
+    // (04/11) plus de blanc entre deux bouts ; (07/11, Ahmed a choisi l'essai « 2b » : 0,1 s) une respiration de 0,1 s après chaque bout de sa voix
+    prochainDebut = t + joue + (x.hesitation || x.auto || x.son ? 0.01 : R('respiration', 0.1));
     src._texte = x.hesitation ? '' : x.texte; src._hesitation = !!x.hesitation; src._auto = !!x.auto; src._gain = force;
     src._langue = x.langue; src._debut = t; src._fin = t + joue;
     if (!x.hesitation && !x.auto) L.finVoixA = t + joue;
@@ -3815,6 +3816,30 @@ function ajouterAuPave(tour, texte) {
 }
 // (04/11, 12:40, Ahmed : « le ribosome qui lit l'épissage balance le signal en parallèle à la voix et à l'écriture : ça doit s'écrire
 // pendant que ça parle ») ce qu'il choisit attend sa voix : rien ne s'allume ni ne s'écrit avant qu'elle le dise (revelerRibosome)
+// (07/11, essai « 2b » choisi par Ahmed) découpe aux propositions : rend celles qui sont complètes ; un reste court (moins de 4 mots, sans
+// ponctuation finale) attend la suite du même tour, et part seul après 0,7 s
+const RESTE_ATTENTE_MS = 700;
+function propositionsDe(tour, texte) {
+  const r = etat.riboReste && etat.riboReste.tour === tour ? etat.riboReste.texte : '';
+  if (etat.riboReste) { clearTimeout(etat.riboReste.minuteur); etat.riboReste = null; }
+  const tout = `${r} ${texte}`.replace(/\s+/g, ' ').trim();
+  const morceaux = tout.match(/[^,;:.!?…؟،]+(?:[,;:.!?…؟،]+["»”)]*|$)/g) || [tout];
+  const out = morceaux.map(x => x.trim()).filter(Boolean);
+  const dernier = out[out.length - 1] || '';
+  if (out.length && !/[,;:.!?…؟،]["»”)]*$/.test(dernier) && dernier.split(' ').length < 4) {
+    out.pop();
+    const reste = { tour, texte: dernier, minuteur: null };
+    reste.minuteur = setTimeout(() => {
+      if (etat.riboReste !== reste) return;
+      etat.riboReste = null;
+      etat.riboFile = (etat.riboFile || []).concat([{ tour, texte: reste.texte, recu: Date.now(), mots: [], ajoutes: [] }]);
+      if (typeof direRibosome === 'function') direRibosome();
+      if (typeof preparerRibosome === 'function') preparerRibosome();
+    }, RESTE_ATTENTE_MS);
+    etat.riboReste = reste;
+  }
+  return out;
+}
 function surRibosome(o) {
   const p = paveDe(o.tour);
   if (String(o.pave || '').length > p.textes.join(' ').length) p.textes = [String(o.pave)];   // le cockpit fait foi
@@ -3832,8 +3857,12 @@ function surRibosome(o) {
   if (o.texte && Number(o.k) > (p.kEpisse || 0)) { p.episse = `${p.episse || ''} ${o.texte}`.trim(); p.kEpisse = Number(o.k); }
   if (o.texte) {
     const vus = new Set(p.motsLus || []), mots = Array.isArray(o.mots) ? o.mots : [];
-    etat.riboFile = (etat.riboFile || []).concat([{ tour: o.tour, texte: String(o.texte), recu: Date.now(), mots: mots.filter(i => !vus.has(i)),
-      ajoutes: Array.isArray(o.ajoutes) ? o.ajoutes.slice() : [] }]);
+    // (07/11, Ahmed a choisi l'essai « 2b » : « coupé aux virgules, avec 0,1 s ») sa parole épissée dite proposition par proposition : chaque
+    // virgule ou point ferme un morceau (sa voix garde une seule intonation par proposition) ; un bout trop court sans ponctuation attend la
+    // suite (0,7 s au plus), pour ne jamais dire un mot seul
+    const props = typeof propositionsDe === 'function' ? propositionsDe(o.tour, String(o.texte)) : [String(o.texte)];
+    etat.riboFile = (etat.riboFile || []).concat(props.map((t, k) => ({ tour: o.tour, texte: t, recu: Date.now(), mots: k ? [] : mots.filter(i => !vus.has(i)),
+      ajoutes: k ? [] : (Array.isArray(o.ajoutes) ? o.ajoutes.slice() : []) })));
     p.motsLus = mots.slice();
     if (typeof journalVoix === 'function') journalVoix('ribosome_recu', { tour: o.tour, k: o.k, mots: String(o.texte).split(/\s+/).filter(Boolean).length });   // (14:20) de quoi suivre chaque morceau épissé
   }

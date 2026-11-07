@@ -25,7 +25,7 @@ def _faux_demarrage(vus):
 
 def test_styles_langue_et_sections():
     assert "rai" in chant.description("Raï") and "chaabi" in chant.description("chaâbi")
-    assert "r&b" in chant.description("r'n'b") and chant.description("jazz manouche, voix douce") == "jazz manouche, voix douce"
+    assert "r&b" in chant.description("r'n'b") and chant.description("jazz manouche, voix douce") == "gypsy jazz, soft vocals"  # (07/11) traduit pour ACE-Step
     assert chant.langue_de("يا ليل يا عين، قلبي معاك") == "ar"
     assert chant.langue_de("Papa, je chante pour toi") == "fr"
     assert chant.langue_de("anything", "en") == "en"
@@ -165,3 +165,22 @@ def test_chargement_trop_long_arrete_la_chanson_et_dit_pourquoi():
     assert "trop longue" in chant.raison_arret(False, t0 + chant.DELAI_S + 1, t0, None)
     src = Path(chant.__file__).read_text(encoding="utf-8")
     assert 'CHARGEMENT["depuis"] = time.time()' in src and 'CHARGEMENT["depuis"] = None' in src
+
+
+def test_sa_demande_en_francais_traduite_tonalite_donnee_et_legende_gardee():
+    """(07/11, Hakim, accord d'Ahmed) la légende réécrite en « chiptune », Sol mineur au lieu de La mineur : sa phrase française traduite,
+    ses styles reconnus dedans, la tonalité lue et donnée à ACE-Step, sa légende jamais réécrite par le LM."""
+    st = ("instrumental trap sombre algérien, rythmique trap type GTR, 808 graves, hi-hats serrés, mélodie et instruments old school "
+          "dziria type MBS, La mineur, sans voix")
+    p = chant.preparer("[instrumental]", st, 20, bpm=140)
+    assert p["tonalite"] == "A minor"
+    d = p["description"]
+    assert "dark trap" in d and "algerian" in d and "heavy 808 bass" in d and "tight rolling hi-hats" in d
+    assert "mineur" not in d and "sombre" not in d, "plus de français"
+    assert "vocal" not in d.replace("no vocals", ""), "sans voix : aucune étiquette de voix"
+    assert "darbuka" in d, "le chaabi reconnu dans la phrase apporte ses instruments"
+    for texte, attendu in [("Ré# majeur", "D# major"), ("sol bémol mineur", "Gb minor"), ("Am", "A minor"), ("C# minor", "C# minor"), ("rap", None)]:
+        assert chant.tonalite_demandee(texte) == attendu, texte
+    assert chant.preparer("Salut papa", "rap", 30)["description"] == chant.STYLES["rap"], "un style connu : inchangé"
+    src = Path(chant.__file__).read_text(encoding="utf-8")
+    assert "use_cot_caption=False," in src and '**({"keyscale": c["tonalite"]} if c.get("tonalite") else {})' in src

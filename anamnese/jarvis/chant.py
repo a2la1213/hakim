@@ -81,6 +81,56 @@ def _cle(s):
     return " ".join(str(s or "").lower().split())
 
 
+# (07/11, Hakim, avec l'accord d'Ahmed : « la légende est réécrite par le LM d'ACE-Step en « chiptune, synthé bell-like », keyscale G minor, alors que
+# j'avais demandé La mineur et un trap sombre algérien ») mesuré dans le journal de T-20261107-101006-823d : sa description passait en français,
+# que le LM d'ACE-Step (appris sur des légendes anglaises) comprenait mal et réécrivait (use_cot_caption), et la tonalité n'était donnée nulle
+# part (seulement dans le texte) : le LM la choisissait. Désormais : les mots de musique français traduits, ses styles connus reconnus DANS
+# la phrase, la tonalité lue (« La mineur », « Ré# majeur », « Am ») et donnée à ACE-Step (keyscale), et sa légende gardée telle quelle.
+FR_EN = [
+    (r"\bjazz manouche\b", "gypsy jazz"), (r"\bvoix douce\b", "soft vocals"), (r"\bvoix grave\b", "deep vocals"), (r"\bvoix\b", "vocals"),
+    (r"\btrap sombre\b", "dark trap"), (r"\bsombres?\b", "dark"), (r"\balg[ée]riens?\b|\balg[ée]rienne\b", "algerian"),
+    (r"\bmarocaine?s?\b", "moroccan"), (r"\borientales?\b|\boriental\b", "oriental"), (r"\bcordes\b", "strings"),
+    (r"\bfl[ûu]te\b", "flute"), (r"\bmélodie\b|\bmelodie\b", "melody"), (r"\brythmique\b", "rhythm"), (r"\binstruments?\b", "instruments"),
+    (r"\bhi-?hats serr[ée]s\b", "tight rolling hi-hats"), (r"\b808 graves?\b|\bgraves? 808\b", "heavy 808 bass"), (r"\bbasses?\b", "bass"),
+    (r"\bbatterie\b", "drums"), (r"\bpiano\b", "piano"), (r"\bguitare\b", "guitar"), (r"\bviolons?\b", "violin"),
+    (r"\bsans voix\b", "instrumental, no vocals"), (r"\binstrumentale?\b", "instrumental"), (r"\bdziri+a\b", "algerian chaabi"),
+    (r"\blent\b", "slow"), (r"\brapide\b", "fast"), (r"\btriste\b", "sad"), (r"\bjoyeu(x|se)\b", "joyful"), (r"\bdoux\b|\bdouce\b", "soft"),
+    (r"\btype beat\b", "type beat"), (r"\btype\b", "style of"), (r"\bet\b", ","),
+]
+NOTES_FR = {"do": "C", "ré": "D", "re": "D", "mi": "E", "fa": "F", "sol": "G", "la": "A", "si": "B"}
+
+
+def tonalite_demandee(texte):
+    """« La mineur », « ré# majeur », « Sol b mineur », « Am », « C# minor » → « A minor »… (None : pas de tonalité dite)."""
+    t = " " + _cle(texte) + " "
+    m = re.search(r"\b(do|ré|re|mi|fa|sol|la|si)\s?(#|♯|b|♭|dièse|bémol)?\s+(majeur|mineur)\b", t)
+    if m:
+        alt = {"#": "#", "♯": "#", "dièse": "#", "b": "b", "♭": "b", "bémol": "b"}.get(m.group(2) or "", "")
+        return f"{NOTES_FR[m.group(1)]}{alt} {'minor' if m.group(3) == 'mineur' else 'major'}"
+    m = re.search(r"\b([a-g])(#|b)?\s?(minor|major|min|maj)\b", t)
+    if m:
+        return f"{m.group(1).upper()}{m.group(2) or ''} {'minor' if m.group(3).startswith('min') else 'major'}"
+    m = re.search(r"(?<![\w])([a-g])(#|b)?m(?![\w])", t)
+    if m:
+        return f"{m.group(1).upper()}{m.group(2) or ''} minor"
+    return None
+
+
+def en_anglais(texte):
+    """Ses mots de musique français → les étiquettes anglaises qu'ACE-Step a apprises ; ses styles connus reconnus dans la phrase."""
+    t = _cle(texte)
+    t = re.sub(r"\b(do|ré|re|mi|fa|sol|la|si)\s?(#|♯|b|♭|dièse|bémol)?\s+(majeur|mineur)\b", " ", t)   # la tonalité part à keyscale
+    for motif, en in FR_EN:
+        t = re.sub(motif, en, t)
+    vus = []
+    for cle in list(STYLES) + list(ALIAS):
+        c = ALIAS.get(cle, cle)
+        if re.search(r"(?<![\w])" + re.escape(cle) + r"(?![\w])", t) and STYLES[c] not in vus:
+            vus.append(STYLES[c])
+    t = re.sub(r"\s*,\s*(,\s*)*", ", ", re.sub(r"\s+", " ", t)).strip(" ,")
+    return (t + (", " + ", ".join(vus) if vus else ""))[:512]
+
+
 def description(style):
     """Le style de Hakim → la description donnée à ACE-Step (512 caractères au plus)."""
     s = _cle(style)
@@ -90,7 +140,9 @@ def description(style):
     if cle in STYLES:
         return STYLES[cle]
     sans_accent = "".join(c for c in unicodedata.normalize("NFD", cle) if unicodedata.category(c) != "Mn")
-    return STYLES.get(ALIAS.get(sans_accent, sans_accent), " ".join(str(style).split()))[:512]
+    if ALIAS.get(sans_accent, sans_accent) in STYLES:
+        return STYLES[ALIAS.get(sans_accent, sans_accent)]
+    return en_anglais(style)
 
 
 def langue_de(paroles, langue=""):
@@ -137,11 +189,17 @@ def preparer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune
     if bpm and not 30 <= bpm <= 300:
         raise Refus(f"tempo de 30 à 300 BPM (demandé : {bpm})")
     desc = description(style)
+    tonalite = tonalite_demandee(style)
+    if instrumental:                                         # (07/11) sans voix : aucune étiquette de voix ne reste
+        desc = ", ".join(x for x in (y.strip() for y in desc.split(",")) if x and ("vocal" not in x or x.startswith("no ")))
+        if "no vocals" not in desc:
+            desc += ", instrumental, no vocals"
+        desc = desc[:512]
     if autotune:
         desc = (desc + ", " + TAG_AUTOTUNE)[:512]
     return {"titre": titre, "style": " ".join(str(style or "").split())[:200], "description": desc, "autotune": bool(autotune),
             "paroles": texte, "langue": "unknown" if instrumental else langue_de(texte, langue), "duree_s": d,
-            "instrumental": instrumental, "nom": nom_de(titre), "bpm": bpm, "pour_studio": bool(pour_studio)}
+            "instrumental": instrumental, "nom": nom_de(titre), "bpm": bpm, "pour_studio": bool(pour_studio), "tonalite": tonalite}
 
 
 # ---------------------------------------------------------------------------------------------------- l'autotune
@@ -423,9 +481,12 @@ def composer(c, sortie_dir):
     print(f"Chargé en {time.time() - CHARGEMENT['depuis']:.0f} s", flush=True)
     CHARGEMENT["depuis"] = None
     print("PROGRESSION 2/5 composition", flush=True)
+    # (07/11) sa légende gardée telle quelle (use_cot_caption=False : le LM ne la réécrit plus), sa tonalité donnée si elle l'a dite
     params = GenerationParams(caption=c["description"], lyrics=c["paroles"], duration=float(c["duree_s"]),
                               vocal_language=c["langue"], instrumental=bool(c.get("instrumental")), inference_steps=8,
-                              **({"bpm": int(c["bpm"])} if c.get("bpm") else {}))
+                              use_cot_caption=False,
+                              **({"bpm": int(c["bpm"])} if c.get("bpm") else {}),
+                              **({"keyscale": c["tonalite"]} if c.get("tonalite") else {}))
     r = generate_music(dit, lm, params, GenerationConfig(batch_size=1, audio_format="wav"), save_dir=str(sortie_dir))
     if not r.success or not r.audios:
         raise RuntimeError(f"ACE-Step : {getattr(r, 'error', None) or 'aucun son'}")
