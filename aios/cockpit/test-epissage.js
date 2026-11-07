@@ -869,7 +869,7 @@ test('finesse du découpage de ta parole : virgule, point ou sujet changent ce q
 // (06/11, accord d'Ahmed pour ACE-Step : « tout faire bien pour que Hakim puisse chanter ») : chanter
 test('ses outils permis : ribosome_boutons, present_continu, chanter, son studio (studio_mixer, studio_avis) et son atelier (image_creer, clip_creer, atelier_voir)', () => {
   const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
-  assert.match(SRV, /'parler_bouton', 'ribosome_boutons', 'present_continu', 'chanter', 'studio_mixer', 'studio_avis', 'image_creer', 'clip_creer', 'atelier_voir'\]\.map\(n => 'mcp__anamnese__' \+ n\)/);
+  assert.match(SRV, /'parler_bouton', 'ribosome_boutons', 'present_continu', 'chanter', 'studio_mixer', 'studio_avis', 'image_creer', 'clip_creer', 'atelier_voir', 'ecouter_morceau', 'instrument_apprendre'\]\.map\(n => 'mcp__anamnese__' \+ n\)/);
 });
 
 // (06/11, Ahmed : « que Hakim soit conscient s'il parle sur la montre, le téléphone ou le Mac, et qu'il puisse y diriger sa voix et ses balises »)

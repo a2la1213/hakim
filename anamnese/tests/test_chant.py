@@ -184,3 +184,32 @@ def test_sa_demande_en_francais_traduite_tonalite_donnee_et_legende_gardee():
     assert chant.preparer("Salut papa", "rap", 30)["description"] == chant.STYLES["rap"], "un style connu : inchangé"
     src = Path(chant.__file__).read_text(encoding="utf-8")
     assert "use_cot_caption=False," in src and '**({"keyscale": c["tonalite"]} if c.get("tonalite") else {})' in src
+
+
+def test_ses_morceaux_de_reference(tmp_path, monkeypatch):
+    """(07/11, accord d'Ahmed « lance tout ») reference (le groove, écouté par ACE-Step) et inspiration (les instruments) : seulement ses
+    sons ; leur analyse enrichit sa légende, donne tempo et tonalité s'il ne les a pas dits."""
+    monkeypatch.setattr(chant, "JARVIS", tmp_path)
+    monkeypatch.setattr(chant, "CHANSONS", tmp_path / "chansons")
+    recu = tmp_path / "cwd" / "fichiers"
+    recu.mkdir(parents=True)
+    gtr = recu / "gtr.mp3"
+    gtr.write_bytes(b"x")
+    assert chant.morceau_valide("gtr.mp3") == str(gtr.resolve()), "un son reçu, par son nom"
+    ailleurs = tmp_path / "ailleurs.mp3"
+    ailleurs.write_bytes(b"x")
+    for mauvais, mot in ((str(ailleurs), "seulement"), (str(recu / "absent.mp3"), "introuvable")):
+        with pytest.raises(chant.Refus, match=mot):
+            chant.morceau_valide(mauvais)
+    texte = recu / "notes.txt"
+    texte.write_text("x")
+    with pytest.raises(chant.Refus, match="audio"):
+        chant.morceau_valide(str(texte))
+    p = chant.preparer("[instrumental]", "trap sombre", 20, reference="gtr.mp3")
+    assert p["reference"] == str(gtr.resolve()) and p["inspiration"] == ""
+    ref = {"legende": "140 BPM, A minor, drums pattern kick x.......", "tempo": 140.0, "tonalite": ["A", "minor", 0.8]}
+    ins = {"legende": "mandolin melody (A, C, E)"}
+    assert chant.legende_avec("dark trap", ref, ins) == "dark trap, 140 BPM, A minor, drums pattern kick x......., mandolin melody (A, C, E)"
+    src = Path(chant.__file__).read_text(encoding="utf-8")
+    assert '**({"reference_audio": c["reference"]} if c.get("reference") else {})' in src
+    assert 'res = {nom: I.ressemblance(a, sienne)' in src, "son instru réécoutée et comparée"

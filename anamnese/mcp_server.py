@@ -1225,7 +1225,7 @@ def fichier_joindre(chemin: str, titre: str = "") -> str:
 
 @mcp.tool()
 def chanter(paroles: str, style: str, duree_s: int = 60, titre: str = "", langue: str = "",
-            autotune: bool = False, bpm: int = 0) -> str:
+            autotune: bool = False, bpm: int = 0, reference: str = "", inspiration: str = "") -> str:
     """(Hakim seulement) COMPOSER ET CHANTER une chanson (accord d'Ahmed, 06/11) : tes paroles (ou celles de papa), un
     style et une durée donnent un vrai morceau chanté, voix et instrumental, calculé sur le Mac (ACE-Step, hors ligne).
     - paroles : en sections, par exemple « [verse] … [chorus] … » (des paroles nues deviennent un couplet) ;
@@ -1237,6 +1237,10 @@ def chanter(paroles: str, style: str, duree_s: int = 60, titre: str = "", langue
     - autotune : True pour la voix autotunée (le son du rap et du raï d'aujourd'hui : recalée note par note sur la
       gamme) ; False (par défaut) pour ta voix naturelle.
     - bpm : le tempo (30 à 300) ; 0 (par défaut) le laisse choisir.
+    - reference : (07/11) un morceau dont tu veux le GROOVE et le grain (un son reçu de papa, une de tes chansons) : ACE-Step
+      l'écoute, et tu en tires tempo, tonalité, motif de batterie, basse et instruments nommés pour ta légende.
+    - inspiration : un autre morceau dont tu veux les INSTRUMENTS et la mélodie (ta légende seulement).
+    Avec une référence, ton instru est réécoutée à la fin et comparée (la ressemblance, dans le journal de la tâche).
     Rend la main tout de suite : la chanson se compose en tâche de fond (quelques minutes, suivre_tache pour la jauge).
     Quand elle est prête, tu es prévenu : envoie-la à papa avec fichier_joindre (le chemin est dans la fin du journal)."""
     import courrier
@@ -1246,12 +1250,68 @@ def chanter(paroles: str, style: str, duree_s: int = 60, titre: str = "", langue
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis"))
     import chant
     try:
-        c = chant.lancer(paroles, style, duree_s, titre, langue, bool(autotune), bpm=bpm)
+        c = chant.lancer(paroles, style, duree_s, titre, langue, bool(autotune), bpm=bpm, reference=reference, inspiration=inspiration)
     except chant.Refus as e:
         return f"Refusé : {e}"
     avec = ", avec autotune" if c.get("autotune") else ""
     return (f"Je compose… « {c['titre']} » ({c['style']}{avec}, {c['duree_s']} s, langue {c['langue']}) : tâche {c['tache']}. "
             "Quelques minutes de calcul ; tu seras prévenu quand elle sera prête, puis fichier_joindre pour l'envoyer à papa.")
+
+
+
+@mcp.tool()
+def ecouter_morceau(fichier: str, debut_s: float = 30, duree_s: float = 30) -> str:
+    """(Hakim seulement, 07/11, accord d'Ahmed) ÉCOUTER VRAIMENT un morceau (un son reçu de papa, une de tes chansons) : chaque
+    instrument séparé et nommé (un par cœur), UN tempo, UNE tonalité, le motif de la batterie (kick, caisse claire, hi-hats sur 16
+    cases, ses roulements), la basse (ses notes, ses glissés), les notes de chaque instrument. 10 à 30 s de calcul sur 30 s de son.
+    Rend tes mots et la légende anglaise à donner à chanter (ou passe le morceau en reference / inspiration à chanter)."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim écoute ainsi."
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis"))
+    import chant
+    try:
+        f = chant.morceau_valide(fichier, "fichier")
+    except chant.Refus as e:
+        return f"Refusé : {e}"
+    a = chant.ecouter(f, max(0.0, float(debut_s)), max(5.0, min(60.0, float(duree_s))))
+    if not a:
+        return "Je n'ai pas réussi à l'écouter (le Mac est peut-être trop chargé) : réessaie dans un moment."
+    return f"Ce que j'entends ({a.get('ms', 0) // 1000} s de calcul) : {a.get('mots')}\nLégende pour chanter : {a.get('legende')}"
+
+
+@mcp.tool()
+def instrument_apprendre(nom: str, fichier: str, debut_s: float = 0, duree_s: float = 10, piste: str = "") -> str:
+    """(Hakim seulement, 07/11) APPRENDRE un instrument : son empreinte entre dans ta bibliothèque d'instruments (comme tes voix
+    connues) ; ensuite, quand tu l'entends dans un morceau, tu le reconnais par son nom. fichier : le son (reçu de papa, tes
+    chansons) ; debut_s / duree_s : le passage où il joue (10 s conseillé) ; piste : vide pour tout le passage, ou la piste séparée
+    où il est (drums, bass, guitar, piano, other, vocals). Apprendre deux fois le même nom affine son empreinte."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim apprend ses instruments."
+    import subprocess
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis"))
+    import chant
+    try:
+        f = chant.morceau_valide(fichier, "fichier")
+    except chant.Refus as e:
+        return f"Refusé : {e}"
+    if piste and piste not in ("drums", "bass", "guitar", "piano", "other", "vocals"):
+        return "Refusé : piste parmi drums, bass, guitar, piano, other, vocals (ou vide)."
+    nom = " ".join(str(nom).split())[:60]
+    if not nom:
+        return "Refusé : un nom pour cet instrument."
+    try:
+        r = subprocess.run([str(chant.PYTHON_SEPARATION), "-W", "ignore", str(chant.INSTRUMENTS), "apprendre", nom, f, str(float(debut_s)),
+                            str(max(2.0, min(30.0, float(duree_s)))), *([piste] if piste else [])], capture_output=True, text=True, timeout=240)
+        o = __import__("json").loads(r.stdout) if r.returncode == 0 and r.stdout.strip() else None
+    except Exception:                                           # noqa: BLE001
+        o = None
+    if not o:
+        return "Je n'ai pas réussi à l'apprendre (le Mac est peut-être trop chargé) : réessaie dans un moment."
+    return f"Appris : « {o['nom']} ». Ta bibliothèque connaît maintenant {o['connus']} instrument(s)."
 
 
 def _studio():

@@ -171,7 +171,61 @@ def nom_de(titre, quand=None):
     return time.strftime("%Y%m%d-%H%M%S", time.localtime(quand or time.time())) + "-" + t
 
 
-def preparer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune=False, bpm=0, pour_studio=False):
+# (07/11, Hakim, accord d'Ahmed « lance tout, a b c d ») ses MORCEAUX DE RÉFÉRENCE : `reference`, un morceau dont il veut le groove et le grain
+# (ACE-Step l'écoute : reference_audio ; jarvis/instruments.py en tire tempo, tonalité, batterie, basse, instruments nommés pour sa légende) ;
+# `inspiration`, un autre morceau dont il veut les instruments et la mélodie (sa légende seulement). Après le calcul, son instru est réécoutée
+# et comparée à chacun (la ressemblance, dans sa fiche et son journal).
+EXT_AUDIO = (".mp3", ".wav", ".m4a", ".flac", ".ogg", ".opus", ".aac")
+INSTRUMENTS = ICI / "instruments.py"
+
+
+def racines_audio():
+    return [JARVIS / "cwd" / "fichiers", CHANSONS, JARVIS / "cwd" / "atelier"]
+
+
+def morceau_valide(f, nom="reference"):
+    """Un chemin audio sous ses dossiers (fichiers reçus, chansons, atelier) ; sinon Refus."""
+    if not f:
+        return ""
+    p = Path(str(f)).expanduser()
+    if not p.is_absolute():
+        for r in racines_audio():
+            if (r / p).exists():
+                p = r / p
+                break
+    try:
+        p = p.resolve(strict=True)
+    except OSError:
+        raise Refus(f"{nom} introuvable : {f}")
+    if p.suffix.lower() not in EXT_AUDIO:
+        raise Refus(f"{nom} : un fichier audio ({', '.join(EXT_AUDIO)})")
+    if not any(str(p).startswith(str(r.resolve()) + os.sep) for r in racines_audio() if r.exists()):
+        raise Refus(f"{nom} : seulement un son reçu de papa, une de tes chansons ou de ton atelier")
+    return str(p)
+
+
+def ecouter(fichier, debut=30.0, duree=30.0, delai=300):
+    """jarvis/instruments.py dans le venv de la séparation : l'analyse du morceau (dict), ou None."""
+    try:
+        r = subprocess.run([str(PYTHON_SEPARATION), "-W", "ignore", str(INSTRUMENTS), "analyser", str(fichier), str(debut), str(duree)],
+                           capture_output=True, text=True, timeout=delai, cwd=str(ICI))
+        return json.loads(r.stdout) if r.returncode == 0 and r.stdout.strip() else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def legende_avec(desc, ref=None, ins=None):
+    """Sa description, puis ce que la référence et l'inspiration lui ont appris (512 caractères au plus)."""
+    p = [desc]
+    if ref and ref.get("legende"):
+        p.append(ref["legende"])
+    if ins and ins.get("legende"):
+        p.append(ins["legende"])
+    return ", ".join(x for x in p if x)[:512]
+
+
+def preparer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune=False, bpm=0, pour_studio=False,
+             reference="", inspiration=""):
     """La demande vérifiée et mise en forme (aucun effet de bord). bpm : 0 = au choix d'ACE-Step (sinon 30 à 300)."""
     try:
         d = int(round(float(duree_s or DUREE_DEFAUT)))
@@ -199,7 +253,8 @@ def preparer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune
         desc = (desc + ", " + TAG_AUTOTUNE)[:512]
     return {"titre": titre, "style": " ".join(str(style or "").split())[:200], "description": desc, "autotune": bool(autotune),
             "paroles": texte, "langue": "unknown" if instrumental else langue_de(texte, langue), "duree_s": d,
-            "instrumental": instrumental, "nom": nom_de(titre), "bpm": bpm, "pour_studio": bool(pour_studio), "tonalite": tonalite}
+            "instrumental": instrumental, "nom": nom_de(titre), "bpm": bpm, "pour_studio": bool(pour_studio), "tonalite": tonalite,
+            "reference": morceau_valide(reference, "reference"), "inspiration": morceau_valide(inspiration, "inspiration")}
 
 
 # ---------------------------------------------------------------------------------------------------- l'autotune
@@ -334,9 +389,9 @@ def _studio_occupe():
 
 
 def lancer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune=False, dossier=None, chansons=None,
-           demarrer=None, bpm=0, pour_studio=False):
+           demarrer=None, bpm=0, pour_studio=False, reference="", inspiration=""):
     """Lance la composition en tâche de fond ; rend {tache, nom, …} tout de suite."""
-    demande = preparer(paroles, style, duree_s, titre, langue, autotune, bpm, pour_studio)
+    demande = preparer(paroles, style, duree_s, titre, langue, autotune, bpm, pour_studio, reference, inspiration)
     dossier, chansons = Path(dossier or TACHES), Path(chansons or CHANSONS)
     if demarrer is None and not (PYTHON_CHANT.exists() and (ACE / "checkpoints").is_dir()):
         raise Refus("ACE-Step n'est pas installé sur le Mac (demande à Ahmed ou à Nour)")
@@ -486,7 +541,8 @@ def composer(c, sortie_dir):
                               vocal_language=c["langue"], instrumental=bool(c.get("instrumental")), inference_steps=8,
                               use_cot_caption=False,
                               **({"bpm": int(c["bpm"])} if c.get("bpm") else {}),
-                              **({"keyscale": c["tonalite"]} if c.get("tonalite") else {}))
+                              **({"keyscale": c["tonalite"]} if c.get("tonalite") else {}),
+                              **({"reference_audio": c["reference"]} if c.get("reference") else {}))
     r = generate_music(dit, lm, params, GenerationConfig(batch_size=1, audio_format="wav"), save_dir=str(sortie_dir))
     if not r.success or not r.audios:
         raise RuntimeError(f"ACE-Step : {getattr(r, 'error', None) or 'aucun son'}")
@@ -516,6 +572,20 @@ def generer(tid, dossier=None):
     print(f"Je compose « {c['titre']} » : {c['style']} → {c['description']} ; {c['duree_s']} s ; langue {c['langue']}", flush=True)
     travail = CHANSONS / f".{c['nom']}"
     travail.mkdir(parents=True, exist_ok=True)
+    ref = ins = None
+    if c.get("reference") or c.get("inspiration"):                    # (07/11) il écoute d'abord ses morceaux de référence
+        print("J'écoute tes morceaux de référence (chaque instrument, son rythme, ses notes)…", flush=True)
+        ref = ecouter(c["reference"]) if c.get("reference") else None
+        ins = ecouter(c["inspiration"]) if c.get("inspiration") else None
+        for nom, a in (("référence", ref), ("inspiration", ins)):
+            if a:
+                print(f"{nom.capitalize()} : {a.get('mots')}", flush=True)
+        c = dict(c, description=legende_avec(c["description"], ref, ins))
+        if not c.get("bpm") and ref and ref.get("tempo"):
+            c["bpm"] = int(round(ref["tempo"]))
+        if not c.get("tonalite") and ref and ref.get("tonalite"):
+            c["tonalite"] = f"{ref['tonalite'][0]} {ref['tonalite'][1]}"
+        print(f"Légende : {c['description']}", flush=True)
     try:
         wav, tonalite = composer(c, travail)
         if c.get("autotune"):
@@ -526,6 +596,21 @@ def generer(tid, dossier=None):
             wav = travail / "autotune.wav"
         print("PROGRESSION 4/5 encodage", flush=True)
         mp3 = en_mp3(wav, CHANSONS / f"{c['nom']}.mp3")
+        if ref or ins:                                                   # (07/11) réécoutée, comparée aux originaux
+            sys.path.insert(0, str(ICI))
+            import instruments as I
+            sienne = ecouter(wav, 0, min(30.0, float(c["duree_s"])))
+            if sienne:
+                res = {nom: I.ressemblance(a, sienne) for nom, a in (("reference", ref), ("inspiration", ins)) if a}
+                print("Ressemblance : " + " ; ".join(f"{k} {int(100 * v['score'])} % ({', '.join(f'{x} {int(100 * y)} %' for x, y in v.items() if x != 'score')})"
+                                                     for k, v in res.items()), flush=True)
+                try:
+                    fp = CHANSONS / f"{c['nom']}.json"
+                    f = json.loads(fp.read_text(encoding="utf-8"))
+                    f.update(ressemblance=res, ecoute=sienne.get("mots"))
+                    _ecrire(fp, f)
+                except (OSError, ValueError):
+                    pass
         print("PROGRESSION 5/5 prête", flush=True)
         print(finir(tid, dossier, mp3=mp3, calcul_s=time.time() - debut), flush=True)
     except Exception as e:                                       # noqa: BLE001 — toute panne finit la tâche proprement

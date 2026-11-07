@@ -114,5 +114,5 @@ test('server.js : la route derrière le jeton, la page, et ses outils à la fin 
   assert.match(SRV.slice(i, i + 400), /if \(!jetonValide\(req\)\) \{ res\.writeHead\(403/);
   assert.match(SRV.slice(i, i + 400), /auditer\(`atelier:/);
   assert.match(SRV, /'\/studio': 'studio\.html', '\/atelier': 'atelier\.html' \}/);
-  assert.match(SRV, /'studio_avis', 'image_creer', 'clip_creer', 'atelier_voir'\]\.map\(n => 'mcp__anamnese__' \+ n\)/);
+  assert.match(SRV, /'studio_avis', 'image_creer', 'clip_creer', 'atelier_voir', 'ecouter_morceau', 'instrument_apprendre'\]\.map\(n => 'mcp__anamnese__' \+ n\)/);
 });
