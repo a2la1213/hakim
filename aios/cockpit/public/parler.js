@@ -616,6 +616,7 @@ function creerLecteurNeuronal() {
     },
     get actif() { return unites.length > 0 || lots.length > 0 || sources.size > 0 || !!element; },
     get joue() { return sources.size > 0 || !!element; },
+    get resteS() { return avance(); },                              // (07/11) le temps de voix déjà programmé devant lui
     // (16:00) sa vraie voix (une réponse dite, à dire, ou en cours) : ses meubles n'en sont pas
     get parle() { return lots.length > 0 || vraiesSources() || !!element || unites.some(u => !u.meuble); },
     // (04/11) retirer des paroles déjà fabriquées qui n'ont pas encore commencé (ses bouts devenus inutiles : sa vraie réponse arrive)
@@ -3378,6 +3379,44 @@ function surSouffle(o) {
    qu'il arrive), dits l'un après l'autre, pendant que tu parles encore ; chaque bout s'écrit quand sa voix le dit ; ton message les
    porte comme déjà dits */
 let bouts = { tour: null, prochain: 1, liste: new Map(), enFile: [], dits: [] };
+/* (07/11, Ahmed : « il ne doit pas jeter la parole préparée quand la voix est prête, même si je le coupe et qu'il libère le ribosome ; il garde
+   les 30 dernières secondes de voix prête, en cache, pour pouvoir sélectionner parmi ses paroles coupées pour répondre, sans répéter ce qu'il
+   aurait déjà dit ») chaque voix prête (calculée au Mac, ou préparée par le téléphone) est gardée 30 s ; coupé, ce qui était prêt et pas dit
+   y reste et part à son prochain tour comme « non dit » (il peut le reprendre) ; s'il reprend une de ces paroles, sa voix sort tout de suite ;
+   ce qu'il a déjà dit (ces 30 s) n'est jamais redit. */
+const VOIX_GARDEE_MS = 30000;
+const voixGardees = new Map(), ditsRecents = new Map();
+const cleParole = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+function purgerVoixGardees(maintenant = Date.now()) {
+  for (const [k, x] of voixGardees) if (maintenant - x.t > VOIX_GARDEE_MS) voixGardees.delete(k);
+  for (const [k, t] of ditsRecents) if (maintenant - t > VOIX_GARDEE_MS) ditsRecents.delete(k);
+  while (voixGardees.size > 40) voixGardees.delete(voixGardees.keys().next().value);
+}
+function noterParoleDite(texte) { const k = cleParole(texte); if (k) { ditsRecents.set(k, Date.now()); voixGardees.delete(k); } }
+function garderVoixPrete(b) {
+  if (!b || !b.texte || !(b.buf || b.prepA)) return;
+  const k = cleParole(b.texte);
+  if (!k || ditsRecents.has(k)) return;
+  voixGardees.set(k, { texte: b.texte, buf: b.buf || null, prepA: b.prepA || null, t: Date.now() });
+  purgerVoixGardees();
+}
+function voixGardeePour(texte) {
+  purgerVoixGardees();
+  const k = cleParole(texte);
+  return k && !ditsRecents.has(k) ? voixGardees.get(k) || null : null;
+}
+function garderVoixCoupees() {
+  if (typeof bouts === 'undefined') return [];
+  const l = [...(bouts.liste ? bouts.liste.values() : []), ...(bouts.fileTel || []), ...(bouts.attenteTel ? [bouts.attenteTel] : [])]
+    .filter(b => b && b.texte && (b.buf || b.prepA) && !ditsRecents.has(cleParole(b.texte)));
+  l.forEach(garderVoixPrete);
+  if (l.length) {
+    const texte = l.map(b => b.texte).join(' ').replace(/\s+/g, ' ').trim();
+    if (typeof envoyerNonDits === 'function' && typeof idNonDit === 'function' && /\p{L}{2,}/u.test(texte)) envoyerNonDits([{ id: idNonDit(), texte, coupe: true, origine_ts: Date.now() }]);
+    if (typeof journalVoix === 'function') journalVoix('voix_pretes_gardees', { n: l.length });
+  }
+  return l;
+}
 function recevoirBout(s, n, tour) {
   const conv = etat.conversation;
   // (04/11, 13:10, Ahmed : « tout ce qui est traduit par le ribosome sort en priorité par la bouche ») ce que son ribosome a traduit passe toujours
@@ -3401,7 +3440,7 @@ function recevoirBout(s, n, tour) {
     if (lecteurSysteme.actif) {
       // (04/11, 14:20, Ahmed : « je vois sa pensée seule, pas l'épissée pour parler ») ce que son ribosome a épissé n'est jamais remplacé
       // ni oublié : il attend son tour, dans l'ordre
-      if (s.ribosome) { b.dit = meublerSaut(b); if (typeof lecteurSysteme.preparer === 'function') { b.dit.forEach(x => lecteurSysteme.preparer(x)); b.prepA = Date.now(); } bouts.fileTel = (bouts.fileTel || []).concat([b]); return; }   // (06/11) calculée d'avance : pas de blanc
+      if (s.ribosome) { b.dit = meublerSaut(b); const gardee = typeof voixGardeePour === 'function' ? voixGardeePour(b.texte) : null; if (gardee && gardee.prepA) { b.prepA = gardee.prepA; if (typeof journalVoix === 'function') journalVoix('voix_reprise_gardee', { ou: 'telephone' }); } else if (typeof lecteurSysteme.preparer === 'function') { b.dit.forEach(x => lecteurSysteme.preparer(x)); b.prepA = Date.now(); } bouts.fileTel = (bouts.fileTel || []).concat([b]); return; }   // (06/11) calculée d'avance : pas de blanc
       if (bouts.attenteTel) montrerPensee('🧠 il pense, sans le dire', bouts.attenteTel.texte, true);   // remplacé : pensé, pas dit
       // (1.60, Ahmed : « chaque cœur qui traite le même chunk sur le Mac et sur le smartphone doit être relié et coordonné ») ce qu'il
       // dira (son meuble compris) : sa voix se calcule déjà sur le téléphone, pendant que la précédente se dit
@@ -3416,11 +3455,13 @@ function recevoirBout(s, n, tour) {
   if (s.remplace) { for (const k of [...bouts.liste.keys()]) if (k < n) bouts.liste.delete(k); if (lecteurNeuronal.actif) lecteurNeuronal.arreter(); }
   bouts.liste.set(n, b);
   if (!actx || actx.state === 'closed') { b.rate = true; return direBouts(); }
+  const gardee = typeof voixGardeePour === 'function' ? voixGardeePour(s.texte) : null;   // (07/11) sa voix est déjà prête (une parole coupée qu'il reprend)
+  if (gardee && gardee.buf) { b.buf = gardee.buf; if (typeof journalVoix === 'function') journalVoix('voix_reprise_gardee', { ou: 'mac' }); return direBouts(); }
   fetch('/api/voix/dire', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
     body: JSON.stringify({ texte: s.texte, langue: 'fr', fond: true, emotion: etat.interieur && !etat.reglages.voixNeutre ? expressivitePhrase(etat.interieur.expressivite, s.texte) : null, tempo: tempoVoix() }) })
     .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('voix'))))
     .then(ab => actx.decodeAudioData(ab))
-    .then((buf) => { b.buf = buf; direBouts(); })
+    .then((buf) => { b.buf = buf; if (typeof garderVoixPrete === 'function') garderVoixPrete(b); etat.calculVoixMacMs = Number.isFinite(etat.calculVoixMacMs) ? Math.round(etat.calculVoixMacMs * 0.7 + (Date.now() - b.t) * 0.3) : Date.now() - b.t; direBouts(); })
     .catch(() => { b.rate = true; direBouts(); });
 }
 // (04/11, Hakim pour papa : « quand je ne dis que la dernière pensée, ou que je saute de la pensée 2 à la 5, un meuble (« voyons
@@ -3476,7 +3517,7 @@ function meublerSaut(b) {
   return [h.texte.trim(), b.texte];
 }
 function direBoutTelephone(conv, b) {
-  bouts.dits.push(b.texte);
+  bouts.dits.push(b.texte); if (typeof noterParoleDite === 'function') noterParoleDite(b.texte);
   conv.souffleParle = true; conv.penseeDite = bouts.dits.slice(bouts.base || 0).join(' ');
   // (04/11, Ahmed : « il parle sans écrire ; il n'écrit que ses pensées sans les dire ») dite : pas écrite
   for (const x of b.dit || meublerSaut(b)) lecteurSysteme.dire(x);     // (04/11) un saut de pensée : meublé (choisi d'avance s'il attendait)
@@ -3509,6 +3550,29 @@ function boutTelephoneSuivant() {
 function direBouts() {
   const conv = etat.conversation;
   if (!conv) return;
+  // (07/11, Ahmed : « fais-le partout, même sur la montre : que tout soit coordonné ») sa voix du Mac choisit comme celle du téléphone
+  // (Voix.choisirDansLatence) : rien ne s'empile devant elle ; quand ce qui joue va finir, le plus récent prêt, ou une portion prête qui
+  // remplit le temps de calcul du plus récent ; le plus récent pas encore prêt et sans rien d'autre : il l'attend
+  if (typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.choisir_latence !== false && typeof Voix !== 'undefined' && Voix.choisirDansLatence) {
+    for (const b of [...bouts.liste.values()]) if (b.rate || b.n < bouts.prochain - 30) bouts.liste.delete(b.n);
+    const reste = lecteurNeuronal.resteS || 0;
+    if (lecteurNeuronal.joue && reste > 0.35) { clearTimeout(bouts.minuteur); bouts.minuteur = setTimeout(direBouts, Math.max(50, (reste - 0.3) * 1000)); return; }
+    const file = [...bouts.liste.values()].filter(b => !bouts.dits.includes(b.texte)).sort((x, y) => x.n - y.n)
+      .map(b => ({ n: b.n, texte: b.texte, t: b.t, prepA: b.t, pret: !!b.buf, b }));
+    const r = Voix.choisirDansLatence(file, { maintenant: Date.now(), calculMs: Number(etat.calculVoixMacMs) || 2600, sortieMs: 60 });
+    for (const x of file) if (x !== r.choix && !r.garde.includes(x)) bouts.liste.delete(x.n);       // plus de 30 s : oubliés
+    if (!r.choix || !r.choix.b.buf) return;                            // le meilleur se calcule encore : il arrive bientôt
+    const b = r.choix.b;
+    bouts.liste.delete(b.n);
+    if (typeof journalVoix === 'function') journalVoix('choix_latence', { n: b.n, revenu: r.revenu, latence_ms: r.latenceMs, en_attente: r.garde.length, ou: 'mac' });
+    conv.penseeEnPause = true; conv.souffleParle = true;
+    bouts.prochain = Math.max(bouts.prochain, b.n + 1);
+    bouts.dits.push(b.texte); bouts.enFile.push(b.texte); if (typeof noterParoleDite === 'function') noterParoleDite(b.texte);
+    lecteurNeuronal.direAudio(b.texte, b.buf);
+    if (typeof direRibosome === 'function') setTimeout(direRibosome, 0);
+    if (bouts.liste.size) { clearTimeout(bouts.minuteur); bouts.minuteur = setTimeout(direBouts, 300); }
+    return;
+  }
   const prets = [...bouts.liste.values()].filter(b => b.buf || b.rate).sort((x, y) => x.n - y.n);
   for (const b of prets) {
     bouts.liste.delete(b.n);
@@ -3617,7 +3681,7 @@ function nouveauTourDePapa(tour) {
   if (vieux.length) { if (typeof blancsPourSautes === 'function') blancsPourSautes(vieux); etat.riboFile = (etat.riboFile || []).filter(x => Number(x.tour) >= n); }
   let voix = false;
   if (typeof bouts !== 'undefined' && bouts.tour != null && Number(bouts.tour) < n) {
-    if (bouts.liste) bouts.liste.clear(); bouts.fileTel = []; bouts.attenteTel = null; bouts.enFile = [];
+    if (typeof garderVoixCoupees === 'function') garderVoixCoupees(); if (bouts.liste) bouts.liste.clear(); bouts.fileTel = []; bouts.attenteTel = null; bouts.enFile = [];
     if (lecteur && lecteur.actif) { try { if (typeof couperSaVoix === 'function') couperSaVoix(); else lecteur.arreter(); } catch (_) {} voix = true; }   // (07/11) il finit sa phrase
   }
   etat.riboStop = Math.max(etat.riboStop != null ? etat.riboStop : -1, avant);   // ses morceaux tardifs de l'ancien tour : jetés
@@ -3752,7 +3816,7 @@ function libererRibosomes() {
   const t = Math.max(Number(etat.epissureTour) || 0, ...(etat.riboFile || []).map(x => Number(x.tour) || 0));
   if (t > 0) etat.riboStop = Math.max(etat.riboStop != null ? etat.riboStop : -1, t);
   etat.riboFile = []; etat.riboEnVoix = [];
-  if (typeof bouts !== 'undefined') { bouts.fileTel = []; bouts.attenteTel = null; }
+  if (typeof bouts !== 'undefined') { if (typeof garderVoixCoupees === 'function') garderVoixCoupees(); bouts.fileTel = []; bouts.attenteTel = null; }
   if (typeof journalVoix === 'function') journalVoix('ribosomes_liberes', { tour: t });
   fetch('/api/jarvis/ribosome/stop', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ tout: true }) })
     .then((r) => (r.ok ? r.json() : null)).then((o) => { const n = o && Number(o.tour); if (n > (etat.riboStop != null ? etat.riboStop : -1)) etat.riboStop = n; }).catch(() => {});
@@ -4761,7 +4825,7 @@ function envoyerEcrit(texte) {
   if (t && c && occupe && !COMMANDE_STOP.test(t) && (typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.ecrit_coupe !== false)) {
     const garder = typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.reprendre_ancien === true;
     if (!garder) { const vieux = (etat.riboFile || []).slice(); if (vieux.length && typeof blancsPourSautes === 'function') blancsPourSautes(vieux); etat.riboFile = [];
-      if (typeof bouts !== 'undefined') { bouts.fileTel = []; bouts.attenteTel = null; if (bouts.liste) bouts.liste.clear(); bouts.enFile = []; }
+      if (typeof bouts !== 'undefined') { if (typeof garderVoixCoupees === 'function') garderVoixCoupees(); bouts.fileTel = []; bouts.attenteTel = null; if (bouts.liste) bouts.liste.clear(); bouts.enFile = []; }
       if (typeof libererRibosomes === 'function') libererRibosomes();          // ses ribosomes de l'ancienne réponse : fermés, leurs morceaux tardifs jetés
       try { if (lecteur) { if (lecteur.actif && typeof couperSaVoix === 'function') { etat.finitSaPhrase = finirSaPhraseActif(); couperSaVoix(); } else lecteur.arreter(); } } catch (_) {} }   // (07/11) il finit sa phrase
     journalVoix('ecrit_coupe', { garde: garder });
@@ -5102,7 +5166,7 @@ async function tourDeParole(conv, wav, infos, extra) {
   if (lacher && (lecteur.actif || lecteur.enPause || etat.flux) && voixEpissee()) {
     const vieux = (etat.riboFile || []).slice();
     if (vieux.length) { if (typeof blancsPourSautes === 'function') blancsPourSautes(vieux); etat.riboFile = []; }
-    if (typeof bouts !== 'undefined') { bouts.fileTel = []; bouts.attenteTel = null; }
+    if (typeof bouts !== 'undefined') { if (typeof garderVoixCoupees === 'function') garderVoixCoupees(); bouts.fileTel = []; bouts.attenteTel = null; }
     journalVoix('ancien_laisse', { morceaux: vieux.length });
   }
   if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(true, { garder: !lacher, raison: 'parole', garderVoix: voixEpissee() && !lacher }); }   // (12:30) sa voix continue ; (07/11) sauf s'il lâche l'ancien

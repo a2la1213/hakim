@@ -487,3 +487,52 @@ test('branché : la file de sa voix du téléphone passe par le choix (réglage 
   assert.match(SRC, /etat\.calculVoixMs = lisse\(etat\.calculVoixMs, d\.calcul_ms\)/);
   assert.match(SRC, /b\.dit\.forEach\(x => lecteurSysteme\.preparer\(x\)\); b\.prepA = Date\.now\(\);/);
 });
+
+test('voix du Mac : rien ne s’empile ; quand ce qui joue va finir, il choisit (le plus récent prêt, ou une portion prête qui remplit le temps)', () => {
+  const fn = (nom) => { const i = SRC.indexOf(`function ${nom}(`); return SRC.slice(i, SRC.indexOf('\n}\n', i) + 3); };
+  let now = 100000; const dits = [], minuteurs = [];
+  const cx = { Date: { now: () => now }, Math, Number, String, Voix, journalVoix() {}, reglagesCorps: { choisir_latence: true },
+    setTimeout: (f, ms) => { minuteurs.push(ms); return 1; }, clearTimeout() {}, direRibosome() {},
+    etat: { conversation: {}, calculVoixMacMs: 3000 },
+    lecteurNeuronal: { joue: true, resteS: 2, direAudio: (t) => dits.push(t) },
+    bouts: { tour: 1, prochain: 1, liste: new Map(), enFile: [], dits: [] } };
+  vm.createContext(cx); vm.runInContext(fn('direBouts') + 'this.dire = direBouts;', cx);
+  const ajouter = (n, texte, t, buf) => cx.bouts.liste.set(n, { n, texte, t, buf, rate: false });
+  ajouter(1, 'Une portion prête qui dure à peu près trois secondes.', now - 6000, { duration: 3 });
+  ajouter(2, 'La plus récente, encore en calcul', now - 100, null);
+  cx.dire();
+  assert.deepEqual(dits, [], 'sa voix joue encore 2 s : il attend');
+  assert.ok(minuteurs[0] > 1500 && minuteurs[0] < 1800, 'il revient juste avant sa fin');
+  cx.lecteurNeuronal.resteS = 0.2;
+  cx.dire();
+  assert.deepEqual(dits, ['Une portion prête qui dure à peu près trois secondes.'], 'la portion prête remplit le temps de calcul du plus récent');
+  cx.bouts.liste.get(2).buf = { duration: 2 }; cx.lecteurNeuronal.resteS = 0;
+  cx.dire();
+  assert.equal(dits[1], 'La plus récente, encore en calcul');
+});
+
+// (07/11, Ahmed : « il ne doit pas jeter la parole préparée quand la voix est prête, même si je le coupe ; garder les 30 dernières secondes
+// de voix prête en cache, pour sélectionner parmi ses paroles coupées pour répondre, sans répéter ce qu'il aurait déjà dit »)
+test('coupé : ses voix prêtes et pas dites sont gardées 30 s, lui sont redonnées, et reprises sans recalcul ; jamais ce qu’il a déjà dit', () => {
+  const i = SRC.indexOf('const VOIX_GARDEE_MS'), j = SRC.indexOf('function recevoirBout(');
+  let now = 1000; const envois = [], journal = [];
+  const cx = { Date: { now: () => now }, Map, String, envoyerNonDits: (l) => envois.push(...l), idNonDit: () => 'nd', journalVoix: (e, d) => journal.push(e),
+    bouts: { liste: new Map(), fileTel: [], attenteTel: null } };
+  vm.createContext(cx);
+  vm.runInContext(SRC.slice(i, j) + 'this.f = { garderVoixCoupees, voixGardeePour, noterParoleDite, garderVoixPrete };', cx);
+  cx.bouts.liste.set(3, { n: 3, texte: 'Le jardin, on le fait demain.', buf: { duration: 2 } });
+  cx.bouts.liste.set(4, { n: 4, texte: 'Pas encore calculé', buf: null });
+  cx.bouts.fileTel = [{ n: 5, texte: 'Et la cuisine après.', prepA: 900 }];
+  cx.f.noterParoleDite('Et la cuisine après.');                     // déjà dit : jamais redonné
+  const l = cx.f.garderVoixCoupees();
+  assert.deepEqual(l.map(b => b.n), [3], 'seulement la voix prête et pas dite');
+  assert.equal(envois[0].texte, 'Le jardin, on le fait demain.', 'redonnée à son prochain tour (non dit)');
+  assert.equal(cx.f.voixGardeePour('le jardin on le fait demain').buf.duration, 2, 'reprise telle quelle : sa voix est déjà là');
+  assert.equal(cx.f.voixGardeePour('Et la cuisine après.'), null);
+  cx.f.noterParoleDite('Le jardin, on le fait demain.');
+  assert.equal(cx.f.voixGardeePour('Le jardin, on le fait demain.'), null, 'dite : plus jamais reprise');
+  cx.f.garderVoixPrete({ texte: 'Une autre parole prête.', buf: { duration: 1 } });
+  now += 31000;
+  assert.equal(cx.f.voixGardeePour('Une autre parole prête.'), null, 'après 30 s : oubliée');
+  assert.match(SRC, /garderVoixCoupees === 'function'\) garderVoixCoupees\(\); if \(bouts\.liste\) bouts\.liste\.clear\(\);/, 'ta voix ouvre un nouveau tour : gardées avant d’être lâchées');
+});

@@ -65,3 +65,8 @@ test('sa voix Azure suit son émotion : plus haute, plus forte et plus vive quan
   assert.match(srv, /<prosody rate="\$\{pr\.rate\}" pitch="\$\{pr\.pitch\}" volume="\$\{pr\.volume\}">/);
   assert.equal((srv.match(/voixAzure\(texte, tempo, emotion\)/g) || []).length, 2, 'ses deux chemins Azure reçoivent son émotion');
 });
+
+test('la montre ne dit pas son émotion : le cockpit prend son expressivité du moment ; une page en voix neutre (emotion: null) reste neutre', () => {
+  const srv = require('node:fs').readFileSync(require('node:path').join(__dirname, 'server.js'), 'utf8');
+  assert.match(srv, /if \(emotion === null && q && q\.emotion === undefined && !q\.neutre\) \{/);
+});

@@ -591,7 +591,8 @@
   function choisirDansLatence(file, { maintenant = Date.now(), calculMs = 3500, sortieMs = 150, vieuxMs = 30000, cps = 15, seuilMs = 1500 } = {}) {
     const vivants = (file || []).filter(b => b && maintenant - (Number(b.t) || maintenant) <= vieuxMs);
     if (!vivants.length) return { choix: null, garde: [], latenceMs: 0, revenu: false };
-    const latence = (b) => Math.round(sortieMs + (b.prepA ? Math.max(0, calculMs - (maintenant - b.prepA)) : calculMs));
+    // pret : sa voix est déjà là (true) ou pas encore (false) ; inconnu : estimée depuis le début de son calcul (prepA)
+    const latence = (b) => Math.round(sortieMs + (b.pret === true ? 0 : b.pret === false ? Math.max(200, calculMs - (maintenant - (b.prepA || maintenant))) : b.prepA ? Math.max(0, calculMs - (maintenant - b.prepA)) : calculMs));
     const duree = (b) => (String(b.texte || '').length / cps) * 1000;
     const dernier = vivants[vivants.length - 1];
     let choix = dernier;

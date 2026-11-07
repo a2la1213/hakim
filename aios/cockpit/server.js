@@ -9988,6 +9988,16 @@ async function routeDire(req, res) {
   if (!texte || texte.length > 1500 || texte.includes('\0')) return repondre(400, { erreur: 'texte invalide (≤ 1 500 caractères)' });
   if (typeof noterDit === 'function') noterDit(texte);               // (06/11) tout ce que sa voix dit (réponse lue en entier, épissures, autre appareil) : son écho
   let emotion = q && Number.isFinite(Number(q.emotion)) ? Math.max(0, Math.min(1, Number(q.emotion))) : null;
+  // (07/11, Ahmed : « relie partout ses émotions au ton de sa voix ; même sur la montre, tout coordonné ») la montre ne dit pas son émotion :
+  // le cockpit prend son expressivité du moment, comme pour ses pensées (q.neutre : la page a choisi la voix neutre)
+  if (emotion === null && q && q.emotion === undefined && !q.neutre) {
+    try {
+      const e = await etatInterieur();
+      const frais = Number.isFinite(e.ts) && Date.now() / 1000 - e.ts < FRAICHEUR_S;
+      const ex = frais ? (e.voix && Number.isFinite(e.voix.expressivite) ? e.voix.expressivite : e.expressivite ?? null) : null;
+      if (ex != null && Number.isFinite(Number(ex))) emotion = Math.max(0, Math.min(1, Number(VoixPage.expressivitePhrase(Number(ex), texte))));
+    } catch (_) {}
+  }
   // (26/10, Ahmed : « garde SA voix ») le rythme de son état, appliqué par la voix elle-même, à hauteur constante
   let tempo = q && Number.isFinite(Number(q.tempo)) ? Math.max(0.85, Math.min(1.15, Number(q.tempo))) : null;
   // (03/11, Ahmed : « chaque mot prononcé possède son intonation à l'avance, avec le bon timbre ; c'est le subconscient qui gère
