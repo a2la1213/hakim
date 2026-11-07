@@ -789,7 +789,7 @@ function creerLecteurNeuronal() {
     // (04/11) plus de blanc entre deux bouts ; (07/11, Ahmed a choisi l'essai « 2b » : 0,1 s) une respiration de 0,1 s après chaque bout de sa voix
     prochainDebut = t + joue + (x.hesitation || x.auto || x.son ? 0.01 : R('respiration', 0.1));
     src._texte = x.hesitation ? '' : x.texte; src._hesitation = !!x.hesitation; src._auto = !!x.auto; src._gain = force;
-    src._langue = x.langue; src._debut = t; src._fin = t + joue;
+    src._langue = x.langue; src._debut = t; src._fin = t + joue; src._transition = x.transition || null;   // (07/11) celle de son plan
     if (!x.hesitation && !x.auto) L.finVoixA = t + joue;
     sources.add(src);
     if (!x.auto) { aParle = true; couvre = 0; }                      // un meuble choisi par lui compte comme sa parole
@@ -831,18 +831,22 @@ function creerLecteurNeuronal() {
       // sans attendre sa fin ; un meuble pas encore commencé ne part pas
       if (sources.size && [...sources].every(s2 => s2._auto) && fluide()) {
         const now = actx.currentTime;
-        for (const s2 of sources) {
+        // (07/11, son plan de meubles) la transition qu'il a choisie : enchaîné, sa réponse attend la fin du meuble ; net, 30 ms ; fondu, 0,3 s
+        const enchaine = [...sources].some(s2 => s2._transition === 'enchaine');
+        if (enchaine) { prochainDebut = Math.max(prochainDebut, ...[...sources].map(s2 => s2._fin || 0)); x.apresMeuble = true; }
+        const fondu = (s2) => (s2._transition === 'net' ? 0.03 : s2._transition === 'fondu' ? 0.3 : R('fondu_reponse', 0.08));
+        if (!enchaine) for (const s2 of sources) {
           if (s2._debut > now) { try { s2.stop(now); } catch (_) {} s2._fin = now; continue; }
           try {                                                  // de là où il en est, vers 0 en 0,2 s
             const gg = s2._gain && s2._gain.gain;
             if (gg && gg.cancelAndHoldAtTime) gg.cancelAndHoldAtTime(now);
             else if (gg && gg.cancelScheduledValues) { gg.cancelScheduledValues(now); gg.setValueAtTime(gg.value, now); }
-            if (gg && gg.linearRampToValueAtTime) gg.linearRampToValueAtTime(0, now + R('fondu_reponse', 0.08));
+            if (gg && gg.linearRampToValueAtTime) gg.linearRampToValueAtTime(0, now + fondu(s2));
           } catch (_) {}
-          try { s2.stop(now + R('fondu_reponse', 0.08)); } catch (_) {}
-          s2._fin = Math.min(s2._fin, now + R('fondu_reponse', 0.08));
+          try { s2.stop(now + fondu(s2)); } catch (_) {}
+          s2._fin = Math.min(s2._fin, now + fondu(s2));
         }
-        prochainDebut = now + R('fondu_reponse', 0.08) + R('blanc_avant_reprise', 0);   // (15:15) le meuble s'éteint, 1 s de silence, puis sa voix
+        if (!enchaine) prochainDebut = now + Math.max(0.03, ...[...sources].map(fondu)) + R('blanc_avant_reprise', 0);   // (15:15) le meuble s'éteint, puis sa voix
         x.apresMeuble = true;
       }
       // (Avant le 2026-10-17, une machine lente attendait 8 s de voix d'avance, voire la fin de tout le
@@ -1055,6 +1059,11 @@ const finLecture = () => {
   const tuParlais = Date.now() - (Number(etat.papaVoixA) || 0) < 1500;
   if (typeof direRibosome === 'function') setTimeout(direRibosome, tuParlais && typeof patienceConversation === 'function' ? patienceConversation() : 0);   // fenêtre d'oreille
   if (typeof boutTelephoneSuivant === 'function') setTimeout(boutTelephoneSuivant, 0);   // (04/11) le bout qui attendait sa voix
+  // (07/11, son plan de meubles, au téléphone) sa réponse s'écrit encore et sa voix s'est tue : un blanc ; l'entrée suivante de son plan
+  if (etat.flux && etat.reponseVoix != null && typeof voixDuTelephone === 'function' && voixDuTelephone() && lecteurSysteme && !lecteurSysteme.actif && typeof meubleDuPlan === 'function') {
+    const p = meubleDuPlan();
+    if (p && p.texte) lecteurSysteme.dire(p.taille === 'court' ? String(p.texte).split(/\s+/).slice(0, 2).join(' ') : p.texte);
+  }
   if (lecteur.actif) return;
   if (etat.conversation) etat.conversation.penseeEnPause = false;     // (04/11) sa pensée dite : ton tour reprend la main
   for (const x of etat.messages.slice(-6)) if (x.auRythme && !x.enCours) x.auRythme = false;   // (16:45) sa voix a fini : tout s'écrit
@@ -1068,8 +1077,43 @@ lecteurNeuronal.surFin = finLecture;
 // (03/11) un trou dans sa réponse : un de ses meubles, choisi par son subconscient, seulement pendant une réponse dite à voix
 // haute (pas une réécoute) et quand papa ne parle pas
 let vitesseFinMeuble = 0.35;
+/* (07/11, Ahmed : « s'il y a 5 blancs, il choisit 5 meubles ; il choisit s'il fusionne ses blancs en un seul meuble, ou 2 ou 3, la taille et la
+   transition de son meuble ») son PLAN DE MEUBLES (plan_meubles, oui) : demandé à son subconscient dès la première phrase de sa réponse
+   (/api/jarvis/plan-meubles) ; chaque blanc prend l'entrée suivante : un meuble (court ou long, sa transition), ou rien ; un meuble qui couvre
+   2 ou 3 blancs laisse les suivants en silence. Sans plan (pas encore là, ou réglage éteint) : comme avant. */
+const planDeMeubles = { l: null, i: 0, silences: 0 };
+const planMeublesActif = () => (typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.plan_meubles !== false) && !!planDeMeubles.l;
+function demanderPlanMeubles(debut) {
+  planDeMeubles.l = null; planDeMeubles.i = 0; planDeMeubles.silences = 0;
+  if (typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.plan_meubles === false) return;
+  const tel = typeof voixDuTelephone === 'function' && voixDuTelephone();
+  const meubles = (tel ? meublesPourTelephone(langueDePensee(String(debut || ''))) : [...meublesPrets.values()]).filter(m => m.actif !== false && m.texte).slice(0, 30)
+    .map(m => ({ nom: m.nom, texte: m.texte }));
+  if (!meubles.length) return;
+  const humeur = etat.interieur && (etat.interieur.voix_emotion || etat.interieur.humeur) || '';
+  fetch('/api/jarvis/plan-meubles', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ debut, meubles, humeur }) })
+    .then(r => (r.ok ? r.json() : null)).catch(() => null)
+    .then((o) => { if (o && Array.isArray(o.plan) && o.plan.length) { planDeMeubles.l = o.plan; planDeMeubles.i = 0; planDeMeubles.silences = 0; journalVoix('plan_meubles_recu', { blancs: o.plan.length }); } });
+}
+// le blanc suivant : undefined (pas de plan : comme avant), null (silence), ou { nom, texte, taille, transition }
+function meubleDuPlan() {
+  if (!planMeublesActif()) return undefined;
+  if (planDeMeubles.silences > 0) { planDeMeubles.silences--; return null; }
+  const e = planDeMeubles.l[planDeMeubles.i++];
+  if (!e) return null;                                                   // son plan épuisé : silence (il n'en voulait pas plus)
+  if (e.rien) return null;
+  planDeMeubles.silences = Math.max(0, (Number(e.couvre) || 1) - 1);
+  const m = meublesPrets.get(e.nom) || (typeof meublesPourTelephone === 'function' ? meublesPourTelephone('fr').concat(meublesPourTelephone('ar'), meublesPourTelephone('en')).find(x => x.nom === e.nom) : null);
+  if (!m) return null;
+  journalVoix('meuble_du_plan', { taille: e.taille, transition: e.transition, couvre: e.couvre });
+  return { ...m, taille: e.taille, transition: e.transition };
+}
 lecteurNeuronal.hesitation = (o) => {
-  const h = choisirMeuble(o);
+  const duPlan = meubleDuPlan();
+  if (duPlan === null) return null;                                      // (07/11) son plan : ce blanc reste en silence
+  const h = duPlan ? (duPlan.pret ? { ...duPlan } : null) : choisirMeuble(o);
+  if (h && duPlan && duPlan.taille === 'court') { h.dureeMax = Math.min(h.pret.duration, 0.6); h.transition = duPlan.transition; return h; }
+  if (h && duPlan) h.transition = duPlan.transition;
   if (!h || !h.pret || !h.voix) return h;
   // (14:20) un peu plus long que sa voix (0,6 à 1,5 s de plus), jamais plus que sa durée au plus : il s'étale sur la pause ;
   // (14:40) au ralenti, et il repart de la vitesse où le meuble d'avant s'est arrêté (après sa voix : un départ lent, 0,35)
@@ -1084,7 +1128,7 @@ lecteurNeuronal.hesitation = (o) => {
 // (04/11, 01:46-01:50, Ahmed : « annule tous les blancs » ; « j'ai l'impression que c'est ça qui le ralentit » ; via Hakim : « les blancs
 // glissés dans mes réponses, meubles et blancs entre bouts, me rajoutent du temps ») ses meubles automatiques : éteints par défaut
 // (SENS : meubles_auto) ; ceux qu'il choisit lui-même ([[meuble: nom]]) restent
-lecteurNeuronal.peutHesiter = () => typeof reglagesCorps !== 'undefined' && reglagesCorps.meubles_auto === true && etat.reponseVoix != null && jarvisPeutParler();
+lecteurNeuronal.peutHesiter = () => typeof reglagesCorps !== 'undefined' && (reglagesCorps.meubles_auto === true || planMeublesActif()) && etat.reponseVoix != null && jarvisPeutParler();
 // (15:15) la même transition entre sa voix et ses meubles : sa voix repart au ralenti (de 0,35 à la normale sur sa première lettre),
 // et sa dernière parole avant un trou ralentit sur sa fin (+0,3 s)
 const rythmeVoix = (k, d) => { const v = lecteurNeuronal.rythme && Number(lecteurNeuronal.rythme[k]); return Number.isFinite(v) ? v : d; };   // (15:24)
@@ -2391,7 +2435,7 @@ async function envoyer(texte, oral, dejaRelance) {
           if (/musique/i.test(o.x) || /\[\[\s*musique/i.test(m.texte.slice(-80))) lireMusique(m.texte.slice(-120));      // (04/11)
           if (/reaction/i.test(m.texte.slice(-90))) reactionDeHakim(m);                                                    // (15:38)
           orbeTete.pulser(0.05);
-          if (auto) decoupe.ajouter(o.x).forEach(p => { if (NON_REPONSE.test(p)) return; if (!boutDire(m, p)) return; noterOrigine(p, o.ts, recu); etat.lectureDe = m.id; lecteur.dire(p); });
+          if (auto) decoupe.ajouter(o.x).forEach(p => { if (NON_REPONSE.test(p)) return; if (!boutDire(m, p)) return; noterOrigine(p, o.ts, recu); etat.lectureDe = m.id; if (!m.planMeubles && typeof demanderPlanMeubles === 'function') { m.planMeubles = true; demanderPlanMeubles(p); } lecteur.dire(p); });
           // (21:02, Ahmed : « sa voix part tout de suite, et l'écriture se fait après, en arrière-plan ») son texte ne s'écrit
           // pas pendant qu'il parle quand papa l'a choisi : il apparaît d'un coup à la fin
           if (typeof reglagesCorps === 'undefined' || reglagesCorps.afficher_hakim !== false || !auto) { majMessage(m); if (!m.cache && o.x.trim()) mesurerEcran('message', o.ts, recu); }

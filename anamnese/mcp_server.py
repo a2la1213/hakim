@@ -1225,7 +1225,7 @@ def fichier_joindre(chemin: str, titre: str = "") -> str:
 
 @mcp.tool()
 def chanter(paroles: str, style: str, duree_s: int = 60, titre: str = "", langue: str = "",
-            autotune: bool = False, bpm: int = 0, reference: str = "", inspiration: str = "") -> str:
+            autotune: bool = False, bpm: int = 0, reference: str = "", inspiration: str = "", base: str = "") -> str:
     """(Hakim seulement) COMPOSER ET CHANTER une chanson (accord d'Ahmed, 06/11) : tes paroles (ou celles de papa), un
     style et une durée donnent un vrai morceau chanté, voix et instrumental, calculé sur le Mac (ACE-Step, hors ligne).
     - paroles : en sections, par exemple « [verse] … [chorus] … » (des paroles nues deviennent un couplet) ;
@@ -1240,6 +1240,9 @@ def chanter(paroles: str, style: str, duree_s: int = 60, titre: str = "", langue
     - reference : (07/11) un morceau dont tu veux le GROOVE et le grain (un son reçu de papa, une de tes chansons) : ACE-Step
       l'écoute, et tu en tires tempo, tonalité, motif de batterie, basse et instruments nommés pour ta légende.
     - inspiration : un autre morceau dont tu veux les INSTRUMENTS et la mélodie (ta légende seulement).
+    - base : (07/11, un FEAT avec papa) l'instru de papa (un son reçu de lui, ou une instru du Studio) : tu chantes TES paroles dessus,
+      ta voix seule est retirée puis mixée sur la vraie instru (durée : duree_s depuis son début) ; le mix entre aussi dans les instrus
+      du Studio, pour que papa y pose sa prise. Il faut tes paroles (pas « [instrumental] »).
     Avec une référence, ton instru est réécoutée à la fin et comparée (la ressemblance, dans le journal de la tâche).
     Rend la main tout de suite : la chanson se compose en tâche de fond (quelques minutes, suivre_tache pour la jauge).
     Quand elle est prête, tu es prévenu : envoie-la à papa avec fichier_joindre (le chemin est dans la fin du journal)."""
@@ -1250,7 +1253,7 @@ def chanter(paroles: str, style: str, duree_s: int = 60, titre: str = "", langue
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis"))
     import chant
     try:
-        c = chant.lancer(paroles, style, duree_s, titre, langue, bool(autotune), bpm=bpm, reference=reference, inspiration=inspiration)
+        c = chant.lancer(paroles, style, duree_s, titre, langue, bool(autotune), bpm=bpm, reference=reference, inspiration=inspiration, base=base)
     except chant.Refus as e:
         return f"Refusé : {e}"
     avec = ", avec autotune" if c.get("autotune") else ""

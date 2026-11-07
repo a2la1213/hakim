@@ -380,7 +380,7 @@ test('(04/11) le silence autour de chaque bout de sa voix est rogné ; ses meubl
   const t = faireTampon(tout);
   assert.strictEqual(ctx.rogner(t), t, 'rien à rogner : le même');
   assert.match(PAGE, /x\.pret = L\.rogner\(x\.pret\);/, 'chaque bout de sa voix passe par là');
-  assert.match(PAGE, /lecteurNeuronal\.peutHesiter = \(\) => typeof reglagesCorps !== 'undefined' && reglagesCorps\.meubles_auto === true/,
+  assert.match(PAGE, /lecteurNeuronal\.peutHesiter = \(\) => typeof reglagesCorps !== 'undefined' && \(reglagesCorps\.meubles_auto === true \|\| planMeublesActif\(\)\)/,
     'ses meubles automatiques seulement si SENS les allume');
 });
 

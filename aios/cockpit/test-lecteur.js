@@ -737,3 +737,26 @@ test('coupé net (coupe_net, oui) : son mot fini, sa réponse et ce qu’il pré
   assert.equal(L.finirMot().ms, 180);
   assert.equal(dits[1]._annulee, true, 'la suivante annulée tout de suite');
 });
+
+// (07/11, Ahmed : « s'il y a 5 blancs, il choisit 5 meubles ; il choisit s'il fusionne ses blancs en un seul meuble, ou 2 ou 3, et aussi la taille
+// et la transition de son meuble »)
+test('son plan de meubles : chaque blanc prend son entrée (un meuble ou rien), un meuble qui couvre 2 blancs laisse le suivant en silence', () => {
+  const i = SRC.indexOf('const planDeMeubles = '), j = SRC.indexOf('lecteurNeuronal.hesitation = (o) => {');
+  const journal = [];
+  const cx = { reglagesCorps: {}, etat: {}, journalVoix: (e) => journal.push(e), meublesPourTelephone: () => [],
+    meublesPrets: new Map([['hum', { nom: 'hum', texte: 'Hum,' }], ['voyons voir', { nom: 'voyons voir', texte: 'Voyons voir,' }]]) };
+  vm.createContext(cx);
+  vm.runInContext(SRC.slice(i, j) + 'this.f = { meubleDuPlan, planDeMeubles };', cx);
+  assert.equal(cx.f.meubleDuPlan(), undefined, 'pas de plan : comme avant');
+  cx.f.planDeMeubles.l = [{ nom: 'hum', taille: 'court', transition: 'net', couvre: 1 }, { rien: true },
+    { nom: 'voyons voir', taille: 'long', transition: 'enchaine', couvre: 2 }, { nom: 'hum', taille: 'court', transition: 'fondu', couvre: 1 }];
+  const suite = [1, 2, 3, 4, 5, 6].map(() => cx.f.meubleDuPlan());
+  assert.deepEqual(suite.map(x => (x ? `${x.nom}/${x.taille}/${x.transition}` : null)),
+    ['hum/court/net', null, 'voyons voir/long/enchaine', null, 'hum/court/fondu', null], 'le 4e blanc couvert par « voyons voir » ; plan épuisé : silence');
+  const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const k = srv.indexOf('const PLAN_MEUBLES_MS'), f = srv.slice(k, srv.indexOf('\nasync function planMeubles', k));
+  const cs = {}; vm.createContext(cs); vm.runInContext(f + ';this.lire = lirePlanMeubles;', cs);
+  assert.deepEqual(JSON.parse(JSON.stringify(cs.lire('B1 : hum | court | fondu | 1\nB2 : rien\nB3 : voyons voir | long | enchaîné | 2\nB4 : inconnu | court | net | 1', ['hum', 'voyons voir']))),
+    [{ nom: 'hum', taille: 'court', transition: 'fondu', couvre: 1 }, { rien: true }, { nom: 'voyons voir', taille: 'long', transition: 'enchaine', couvre: 2 }, { rien: true }]);
+  assert.match(SRC, /const enchaine = \[\.\.\.sources\]\.some\(s2 => s2\._transition === 'enchaine'\);/, 'enchaîné : sa réponse attend la fin du meuble');
+});

@@ -12,7 +12,8 @@ const coeur = require('./coeur.js');                         // (28/10) le cœur
 const afida = require('./afida.js');                         // (28/10) Al-Afida, sa jauge d'amour (lue seulement : page et bloc)
 const Veilleur = require('./veilleur.js');                   // (28/10) le garde-fou contre les pannes d'Anthropic
 const D = require('./debuts.js');
-const VoixHakim = require('./voix-hakim.js');                 // (06/11) sa voix : Azure ou sa voix de rap (Chatterbox), ses morceaux de langue                            // (28/10) ses débuts de réponse, leur voix prête d'avance
+const VoixHakim = require('./voix-hakim.js');
+const { ecrireLangues } = require('./langues-ecrites.js');      // (07/11) ses mots arabes et anglais dans leur écriture                 // (06/11) sa voix : Azure ou sa voix de rap (Chatterbox), ses morceaux de langue                            // (28/10) ses débuts de réponse, leur voix prête d'avance
 const enOff = require('./en-off.js');                        // (28/10) le panneau « En off » : pas de coulisses
 const os = require('os');
 const crypto = require('crypto');
@@ -4573,6 +4574,43 @@ function vivantLibre(modele, neuve = false) {                      // (04/11, 16
    la 3, puis revenir en arrière ou en avant, en parallèle de tout le reste et au fur et à mesure que le reste avance ») ses paroles prêtes (leur
    voix déjà faite) lui sont données numérotées ; son subconscient (Mini Hakim, une voix vivante chaude) choisit celle qu'il dit maintenant ; les
    autres restent prêtes pour après. La page le demande d'avance, pendant que sa voix parle encore, à chaque fois que ses paroles prêtes changent. */
+/* (07/11, Ahmed : « une idée pour tous ses meubles : s'il y a 5 blancs, il choisit 5 meubles ; et qu'il choisisse s'il fusionne ses blancs en un
+   seul meuble, ou 2 ou 3, et aussi la taille et la transition de son meuble » ; « oui », pour sa vraie réponse) son PLAN DE MEUBLES : quand sa
+   réponse commence, son subconscient prévoit ses prochains blancs (le temps que sa voix suivante se calcule) : pour chacun, un de ses meubles ou
+   rien, sa taille (court : un « hm » ; long : tout le meuble), sa transition (fondu, enchaîné : la suite attend sa fin, net), et combien de
+   blancs il couvre (1 à 3 : les suivants restent silencieux). La page le suit blanc après blanc ; sans plan à temps, comme avant. */
+const PLAN_MEUBLES_MS = 4000, PLAN_MEUBLES_MAX = 6;
+function lirePlanMeubles(texte, noms) {
+  const ok = new Set((noms || []).map(n => String(n).toLowerCase()));
+  const plan = [];
+  for (const l of String(texte || '').split('\n')) {
+    const m = /^\s*B\s*\d+\s*:\s*([^|]+?)\s*(?:\|\s*(court|long)\s*)?(?:\|\s*(fondu|encha[iî]n[ée]|net)\s*)?(?:\|\s*([1-3]))?\s*$/i.exec(l);
+    if (!m) continue;
+    const nom = m[1].trim().replace(/^[«"]|[»"]$/g, '').trim();
+    if (/^rien$/i.test(nom)) { plan.push({ rien: true }); continue; }
+    if (!ok.has(nom.toLowerCase())) { plan.push({ rien: true }); continue; }
+    plan.push({ nom, taille: (m[2] || 'court').toLowerCase(), transition: (m[3] || 'fondu').toLowerCase().replace(/[iî]n[ée]$/, 'ine').replace('enchaine', 'enchaine'),
+      couvre: Number(m[4]) || 1 });
+    if (plan.length >= PLAN_MEUBLES_MAX) break;
+  }
+  return plan.slice(0, PLAN_MEUBLES_MAX);
+}
+async function planMeubles(debut, meubles, humeur, demander = demanderVivant) {
+  const l = (meubles || []).filter(x => x && x.nom).slice(0, 30);
+  if (!l.length) return { plan: [] };
+  const net = (x, n) => neutraliser(String(x || '')).replace(/\s+/g, ' ').trim().slice(0, n);
+  const prompt = `Tu es le subconscient de Hakim. Il commence à répondre à papa : « ${net(debut, 300) || '…'} ».${humeur ? ` Son humeur : ${net(humeur, 40)}.` : ''}\n`
+    + `Pendant sa réponse, sa voix aura des petits blancs (le temps que la phrase suivante se calcule). Ses meubles (des petits mots pour les remplir) :\n`
+    + l.map(x => `- ${net(x.nom, 40)} : « ${net(x.texte, 60)} »`).join('\n')
+    + `\nPrévois ses ${PLAN_MEUBLES_MAX} prochains blancs, dans l'ordre. Pour chacun, une ligne :\n`
+    + `B1 : nom du meuble | court ou long | fondu, enchaîné ou net | combien de blancs il couvre (1 à 3)\n`
+    + `ou « B2 : rien » pour un blanc laissé en silence. Varie, comme quelqu'un qui parle vraiment ; jamais le même meuble deux fois de suite. Rien d'autre.`;
+  const t0 = Date.now();
+  let plan = [];
+  try { plan = lirePlanMeubles((await demander('haiku', prompt, PLAN_MEUBLES_MS)).texte, l.map(x => x.nom)); } catch (_) {}
+  try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'plan_meubles', blancs: plan.length, meubles: plan.filter(x => !x.rien).length, ms: Date.now() - t0 }) + '\n', { mode: 0o600 }); } catch (_) {}
+  return { plan };
+}
 const CHOISIR_PAROLE_MS = 2500;
 function lireNumeroChoisi(texte, max) {
   const m = /\d+/.exec(String(texte || ''));
@@ -7303,7 +7341,9 @@ function corpsReglages() {
     micro_voix_seule: r.micro_voix_seule === true,
     voix_reponse_seule: r.voix_reponse_seule !== false,
     filtre_identite: r.filtre_identite !== false,
-    coupe_net: r.coupe_net !== false,   // (07/11, Ahmed) ta voix sur la sienne : il finit son mot, t'écoute, et répond à ta dernière phrase   // (07/11, Ahmed) son identité et la sienne ne partent jamais en clair vers Anthropic   // (07/11, Ahmed : « on garde uniquement sa vraie réponse ») ses pensées ne sont plus dites
+    coupe_net: r.coupe_net !== false,
+    langues_ecrites: r.langues_ecrites !== false,
+    plan_meubles: r.plan_meubles !== false,   // (07/11) son subconscient planifie les meubles des blancs de sa réponse   // (07/11) l'arabe et l'anglais de ta voix réécrits dans leur écriture   // (07/11, Ahmed) ta voix sur la sienne : il finit son mot, t'écoute, et répond à ta dernière phrase   // (07/11, Ahmed) son identité et la sienne ne partent jamais en clair vers Anthropic   // (07/11, Ahmed : « on garde uniquement sa vraie réponse ») ses pensées ne sont plus dites
     voix_claire_x: Number.isFinite(Number(r.voix_claire_x)) && r.voix_claire_x != null ? Math.max(1, Math.min(5, Number(r.voix_claire_x))) : 1.8,   // (07/11) la netteté qu'il faut pour qu'il se coupe   // (07/11) le filtre de ton micro : il n'entend que les voix (éteint par défaut)   // (07/11) ses paroles prêtes : il choisit laquelle dire, dans n'importe quel ordre   // (07/11) ta voix qui dure sur la sienne : il choisit de se couper ou de finir   // (07/11, Ahmed : « lui autoriser à me couper la parole », option 2) éteint par défaut   // (07/11) il choisit ce qu'il dit dans le temps de sortie de sa voix   // (07/11) coupé, il finit sa phrase (jusqu'à sa virgule ou son point)   // (07/11) ton message écrit l'arrête et part tout de suite   // (07/11) tes morceaux prêts partent en un seul message réunifié   // (07/11) coupé par une vraie phrase : il ne reprend pas l'ancienne réponse (éteint)   // (06/11) ses morceaux épissés reliés, sans pause entre eux
     epissure_grammaire: r.epissure_grammaire !== false,
     pretraitement_parole: r.pretraitement_parole !== false,
@@ -10764,6 +10804,8 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
   } catch (_) {}
   fs.unlink(f, () => {});
   delete r.id;
+  // (07/11, Ahmed : « les mots qui ressemblent à l'arabe ou à l'anglais, écrits dans leur langue, automatiquement, sans qu'il s'en rende compte »)
+  if (r && r.texte && temps.source !== 'telephone' && corpsReglages().langues_ecrites !== false) r.texte = ecrireLangues(r.texte);
   if (r && r.texte && Number(temps.t0) > 0) integrerAuFil(temps.source === 'telephone' ? 'telephone' : 'papa', r.texte);
   // (06/11) sa propre voix entendue (Whisper : etiqueter ; Azure : son oreille vive) : à son fil, « ta propre voix », jamais à papa
   if (r && r.moi && temps.source !== 'telephone') { try { fluxAjouter('ta_voix', String(r.moi).slice(0, 200), Number(temps.t0) > 0 ? Number(temps.t0) : Date.now()); } catch (_) {} }   // (03/11) au fur et à mesure
@@ -11959,6 +12001,12 @@ async function traiter(req, res) {
     ouvrirReflexion();                                               // (17:50) sa parole vide : sa réflexion s'ouvre tout de suite
     res.writeHead(204); return res.end();
   }
+  if (p === '/api/jarvis/plan-meubles' && req.method === 'POST') {   // (07/11) ses meubles pour les blancs de sa réponse : son plan
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
+    const r = await planMeubles(String(q.debut || ''), Array.isArray(q.meubles) ? q.meubles : [], String(q.humeur || ''));
+    res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(r));
+  }
   if (p === '/api/jarvis/choisir-parole' && req.method === 'POST') {   // (07/11) ses paroles prêtes : laquelle maintenant (son subconscient)
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
@@ -12951,7 +12999,7 @@ async function traiter(req, res) {
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
-      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure', 'choix_libre', 'micro_voix_seule', 'voix_reponse_seule', 'filtre_identite', 'coupe_net']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
+      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure', 'choix_libre', 'micro_voix_seule', 'voix_reponse_seule', 'filtre_identite', 'coupe_net', 'langues_ecrites', 'plan_meubles']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
       for (const [k, a, b] of [['epissure_meubles_max', 1, 6], ['present_pouls_s', 10, 600], ['present_seuil', 0.2, 5], ['present_ecart_s', 2, 120], ['present_longueur', 3, 40], ['present_mots', 6, 40]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'present_seuil' ? Math.round(Number(q[k]) * 10) / 10 : Math.round(Number(q[k]))));
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;

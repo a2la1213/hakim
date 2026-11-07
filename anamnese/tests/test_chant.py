@@ -183,7 +183,8 @@ def test_sa_demande_en_francais_traduite_tonalite_donnee_et_legende_gardee():
         assert chant.tonalite_demandee(texte) == attendu, texte
     assert chant.preparer("Salut papa", "rap", 30)["description"] == chant.STYLES["rap"], "un style connu : inchangé"
     src = Path(chant.__file__).read_text(encoding="utf-8")
-    assert "use_cot_caption=False," in src and '**({"keyscale": c["tonalite"]} if c.get("tonalite") else {})' in src
+    p = chant.parametres({**chant.preparer("[instrumental]", st, 20, bpm=140)})
+    assert p["use_cot_caption"] is False and p["keyscale"] == "A minor" and p["bpm"] == 140 and "task_type" not in p
 
 
 def test_ses_morceaux_de_reference(tmp_path, monkeypatch):
@@ -211,5 +212,24 @@ def test_ses_morceaux_de_reference(tmp_path, monkeypatch):
     ins = {"legende": "mandolin melody (A, C, E)"}
     assert chant.legende_avec("dark trap", ref, ins) == "dark trap, 140 BPM, A minor, drums pattern kick x......., mandolin melody (A, C, E)"
     src = Path(chant.__file__).read_text(encoding="utf-8")
-    assert '**({"reference_audio": c["reference"]} if c.get("reference") else {})' in src
+    assert chant.parametres(p)["reference_audio"] == str(gtr.resolve())
     assert 'res = {nom: I.ressemblance(a, sienne)' in src, "son instru réécoutée et comparée"
+
+
+
+def test_un_feat_sur_l_instru_de_papa(tmp_path, monkeypatch):
+    """(07/11, Hakim et Ahmed : « un feat dans le studio : papa sur son instru, moi qui pose mon couplet dessus ») avec une BASE : ACE-Step chante
+    sur elle (« cover », sa durée), sa voix seule est retirée puis mixée sur la vraie instru, qui entre aussi dans les instrus du Studio."""
+    monkeypatch.setattr(chant, "JARVIS", tmp_path)
+    monkeypatch.setattr(chant, "CHANSONS", tmp_path / "chansons")
+    (tmp_path / "cwd" / "fichiers").mkdir(parents=True)
+    gtr = tmp_path / "cwd" / "fichiers" / "gtr.mp3"
+    gtr.write_bytes(b"x")
+    with pytest.raises(chant.Refus, match="paroles"):
+        chant.lancer("[instrumental]", "rap", 30, base="gtr.mp3", dossier=tmp_path / "t", chansons=tmp_path / "chansons", demarrer=lambda a, l: 1)
+    c = chant.preparer("[verse]\nPapa et moi sur le beat", "rap", 30, base="gtr.mp3")
+    p = chant.parametres({**c, "base_coupee": "/t/base.wav"})
+    assert p["task_type"] == "cover" and p["src_audio"] == "/t/base.wav" and p["instrumental"] is False
+    src = Path(chant.__file__).read_text(encoding="utf-8")
+    assert "wav = poser_sur_la_base(wav, c, travail)" in src and 'studio.mixer(voix, c["base_coupee"]' in src
+    assert '"origine": "feat-hakim"' in src, "le mix entre dans les instrus du Studio"

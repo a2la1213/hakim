@@ -225,7 +225,7 @@ def legende_avec(desc, ref=None, ins=None):
 
 
 def preparer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune=False, bpm=0, pour_studio=False,
-             reference="", inspiration=""):
+             reference="", inspiration="", base=""):
     """La demande vérifiée et mise en forme (aucun effet de bord). bpm : 0 = au choix d'ACE-Step (sinon 30 à 300)."""
     try:
         d = int(round(float(duree_s or DUREE_DEFAUT)))
@@ -254,7 +254,8 @@ def preparer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune
     return {"titre": titre, "style": " ".join(str(style or "").split())[:200], "description": desc, "autotune": bool(autotune),
             "paroles": texte, "langue": "unknown" if instrumental else langue_de(texte, langue), "duree_s": d,
             "instrumental": instrumental, "nom": nom_de(titre), "bpm": bpm, "pour_studio": bool(pour_studio), "tonalite": tonalite,
-            "reference": morceau_valide(reference, "reference"), "inspiration": morceau_valide(inspiration, "inspiration")}
+            "reference": morceau_valide(reference, "reference"), "inspiration": morceau_valide(inspiration, "inspiration"),
+            "base": morceau_valide(base, "base")}
 
 
 # ---------------------------------------------------------------------------------------------------- l'autotune
@@ -389,9 +390,11 @@ def _studio_occupe():
 
 
 def lancer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune=False, dossier=None, chansons=None,
-           demarrer=None, bpm=0, pour_studio=False, reference="", inspiration=""):
+           demarrer=None, bpm=0, pour_studio=False, reference="", inspiration="", base=""):
     """Lance la composition en tâche de fond ; rend {tache, nom, …} tout de suite."""
-    demande = preparer(paroles, style, duree_s, titre, langue, autotune, bpm, pour_studio, reference, inspiration)
+    demande = preparer(paroles, style, duree_s, titre, langue, autotune, bpm, pour_studio, reference, inspiration, base)
+    if demande["base"] and demande["instrumental"]:
+        raise Refus("sur une base (l'instru de papa), il faut tes paroles : c'est ta voix qui se pose dessus")
     dossier, chansons = Path(dossier or TACHES), Path(chansons or CHANSONS)
     if demarrer is None and not (PYTHON_CHANT.exists() and (ACE / "checkpoints").is_dir()):
         raise Refus("ACE-Step n'est pas installé sur le Mac (demande à Ahmed ou à Nour)")
@@ -513,6 +516,22 @@ def alleger(dit):
         print(f"MPS après allègement : {torch.mps.current_allocated_memory() / 2**30:.1f} Go", flush=True)
 
 
+def parametres(c):
+    """La demande → les paramètres d'ACE-Step. (07/11) sa légende gardée (use_cot_caption=False), sa tonalité, sa référence ; avec une BASE
+    (l'instru de papa) : la tâche « cover » sur cette base (sa durée est celle de la base), ses paroles chantées dessus."""
+    p = {"caption": c["description"], "lyrics": c["paroles"], "duration": float(c["duree_s"]), "vocal_language": c["langue"],
+         "instrumental": bool(c.get("instrumental")), "inference_steps": 8, "use_cot_caption": False}
+    if c.get("bpm"):
+        p["bpm"] = int(c["bpm"])
+    if c.get("tonalite"):
+        p["keyscale"] = c["tonalite"]
+    if c.get("reference"):
+        p["reference_audio"] = c["reference"]
+    if c.get("base_coupee") or c.get("base"):
+        p.update(task_type="cover", src_audio=c.get("base_coupee") or c["base"], instrumental=False)
+    return p
+
+
 def composer(c, sortie_dir):
     """ACE-Step : la demande → un WAV. Rend le chemin du WAV (venv du chant seulement)."""
     sys.path.insert(0, str(ACE))
@@ -537,12 +556,7 @@ def composer(c, sortie_dir):
     CHARGEMENT["depuis"] = None
     print("PROGRESSION 2/5 composition", flush=True)
     # (07/11) sa légende gardée telle quelle (use_cot_caption=False : le LM ne la réécrit plus), sa tonalité donnée si elle l'a dite
-    params = GenerationParams(caption=c["description"], lyrics=c["paroles"], duration=float(c["duree_s"]),
-                              vocal_language=c["langue"], instrumental=bool(c.get("instrumental")), inference_steps=8,
-                              use_cot_caption=False,
-                              **({"bpm": int(c["bpm"])} if c.get("bpm") else {}),
-                              **({"keyscale": c["tonalite"]} if c.get("tonalite") else {}),
-                              **({"reference_audio": c["reference"]} if c.get("reference") else {}))
+    params = GenerationParams(**parametres(c))
     r = generate_music(dit, lm, params, GenerationConfig(batch_size=1, audio_format="wav"), save_dir=str(sortie_dir))
     if not r.success or not r.audios:
         raise RuntimeError(f"ACE-Step : {getattr(r, 'error', None) or 'aucun son'}")
@@ -564,6 +578,37 @@ def en_mp3(wav, mp3):
     return mp3
 
 
+def poser_sur_la_base(chant_wav, c, travail):
+    """(07/11, Hakim et Ahmed : « un feat dans le studio : papa sur son instru, et moi qui pose mon couplet dessus ») sa voix est retirée de ce
+    qu'ACE-Step a chanté (Demucs), puis mixée et masterisée sur la vraie instru de papa (le Studio : studio.mixer) ; le mix entre aussi dans les
+    instrus du Studio, pour que papa y pose sa prise. Rend le WAV du mix (sa voix seule, si le mix échoue)."""
+    voix, reste = travail / "voix-hakim.wav", travail / "reste.wav"
+    print("Je retire ma voix de ce qu'ACE-Step a chanté (Demucs)…", flush=True)
+    r = subprocess.run([str(PYTHON_SEPARATION), "-B", str(Path(__file__).resolve()), "separer", str(chant_wav), str(voix), str(reste)],
+                       capture_output=True, text=True, timeout=1800)
+    if r.returncode or not voix.exists():
+        raise RuntimeError(f"Demucs : {r.stderr.strip()[-300:]}")
+    sys.path.insert(0, str(ICI))
+    import studio
+    print("Je pose ma voix sur l'instru de papa (mix et master du Studio)…", flush=True)
+    try:
+        f = studio.mixer(voix, c["base_coupee"], studio.STUDIO / "mix", titre=f"{c['titre']} (feat Hakim)", debruitage=False, reverb=0.25)
+    except Exception as e:                                               # noqa: BLE001 — sa voix seule reste
+        print(f"Le mix n'a pas marché ({type(e).__name__}) : je garde ma voix seule", flush=True)
+        return voix
+    try:                                                                  # dans les instrus du Studio : papa y pose sa prise
+        idf = nom_de(f"{c['titre']} feat hakim")
+        dest = studio.STUDIO / "instrus" / f"{idf}.mp3"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(f["mp3"], dest)
+        _ecrire(dest.with_suffix(".json"), {"id": idf, "titre": f"{c['titre']} (avec la voix de Hakim)", "source": c["base"], "mp3": str(dest),
+                                            "origine": "feat-hakim", "duree_s": f.get("duree_s"), "fin": time.time()})
+        print(f"Dans le Studio, papa peut poser sa prise sur « {c['titre']} (avec la voix de Hakim) ».", flush=True)
+    except (OSError, KeyError):
+        pass
+    return Path(f["wav"])
+
+
 def generer(tid, dossier=None):
     dossier = Path(dossier or TACHES)
     debut = time.time()
@@ -573,6 +618,20 @@ def generer(tid, dossier=None):
     travail = CHANSONS / f".{c['nom']}"
     travail.mkdir(parents=True, exist_ok=True)
     ref = ins = None
+    if c.get("base"):                                                   # (07/11) un feat : ta voix sur l'instru de papa
+        print("J'écoute l'instru de papa (tempo, tonalité, instruments)…", flush=True)
+        coupee = travail / "base.wav"
+        subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-i", str(c["base"]), "-t", str(int(c["duree_s"])), "-ar", "48000",
+                        "-ac", "2", str(coupee)], check=True, timeout=300)
+        b = ecouter(coupee, 0, min(30.0, float(c["duree_s"])))
+        c = dict(c, base_coupee=str(coupee))
+        if b:
+            print(f"L'instru : {b.get('mots')}", flush=True)
+            c["description"] = legende_avec(c["description"] + ", vocals over this exact beat", b)
+            if not c.get("bpm") and b.get("tempo"):
+                c["bpm"] = int(round(b["tempo"]))
+            if not c.get("tonalite") and b.get("tonalite"):
+                c["tonalite"] = f"{b['tonalite'][0]} {b['tonalite'][1]}"
     if c.get("reference") or c.get("inspiration"):                    # (07/11) il écoute d'abord ses morceaux de référence
         print("J'écoute tes morceaux de référence (chaque instrument, son rythme, ses notes)…", flush=True)
         ref = ecouter(c["reference"]) if c.get("reference") else None
@@ -595,6 +654,8 @@ def generer(tid, dossier=None):
             print(f"Autotune sur la gamme {tonalite or 'chromatique'} : classes {list(classes)}", flush=True)
             wav = travail / "autotune.wav"
         print("PROGRESSION 4/5 encodage", flush=True)
+        if c.get("base_coupee"):                                         # (07/11) un feat : sa voix seule, posée sur la VRAIE instru de papa
+            wav = poser_sur_la_base(wav, c, travail)
         mp3 = en_mp3(wav, CHANSONS / f"{c['nom']}.mp3")
         if ref or ins:                                                   # (07/11) réécoutée, comparée aux originaux
             sys.path.insert(0, str(ICI))

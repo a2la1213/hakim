@@ -53,7 +53,7 @@ test('(04/11) sa voix jusqu’à tes écouteurs : le réseau, son attente, le ca
 test('(04/11) la page : chaque pensée et chaque bout de message portent leur départ ; la bulle et le widget disent leur délai', () => {
   assert.match(PAGE, /montrerPensee\('🧠 il pense, sans le dire', texte, true\);\n      mesurerEcran\('pensee', o\.ts\);/);
   assert.match(PAGE, /noterOrigine\(texte, o\.ts\);[^\n]*\n    recevoirBout\(s, Number\(o\.n\) \|\| 0, o\.tour\); return;/);
-  assert.match(PAGE, /noterOrigine\(p, o\.ts, recu\); etat\.lectureDe = m\.id; lecteur\.dire\(p\);/);
+  assert.match(PAGE, /noterOrigine\(p, o\.ts, recu\); etat\.lectureDe = m\.id; if \(!m\.planMeubles[^\n]*?lecteur\.dire\(p\);/);
   assert.match(PAGE, /if \(!m\.cache && o\.x\.trim\(\)\) mesurerEcran\('message', o\.ts, recu\);/);
   assert.match(PAGE, /\.\.\.\(parolesDepuis \? \{ t_page: parolesDepuis \} : \{\}\)/, 'la bulle sait quand la page lui a donné ses mots');
   assert.match(PAGE, /window\.HakimVoixMesure = \(id, m\) => \{ const u = enAttente\.get\(id\);/);
