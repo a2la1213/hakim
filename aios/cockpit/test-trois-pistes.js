@@ -187,10 +187,10 @@ test('server : son tour reçoit le bloc à trois pistes ; le fil n’y répète 
   assert.match(SRC, /Ce que tu entends, en trois pistes sur la même ligne du temps/);
   assert.strictEqual((SRC.match(/typeof pistesTexte === 'function' \? pistesTexte\(/g) || []).length, 3, 'ses trois fiches');
   assert.match(SRC, /const l = FLUX\.filter\(o => o\.t >= a - avant && o\.t <= a \+ apres && !\(sansPistes && SOURCES_PISTES\.test\(o\.s\)\)\);/);
-  assert.match(SRC, /fichier: telephone && voixSeparee \? voixSeparee : f,/, 'la grande oreille : la voix séparée');
+  assert.match(SRC, /fichier: telephone && voixSeparee \? voixSeparee : \(telephone \? f : fichierPapa\),/, 'la grande oreille : la voix séparée');
   assert.match(SRC, /lot\.fil = `\[ce qu'il entend, en trois pistes\] \$\{tp\} \[le reste du fil\] \$\{lot\.fil\}`/, 'son subconscient aussi');
   assert.match(SRC, /trois_pistes: r\.trois_pistes !== false,/);
-  assert.match(SRC, /'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure', 'choix_libre'\]\) if \(typeof q\[k\] === 'boolean'\) r\[k\] = q\[k\];/);
+  assert.match(SRC, /'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure', 'choix_libre', 'micro_voix_seule'\]\) if \(typeof q\[k\] === 'boolean'\) r\[k\] = q\[k\];/);
   const page = fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8');
   assert.match(page, /\['trois_pistes', '🎚️ Trois pistes : parole, musique, fond'/);
 });
@@ -227,4 +227,18 @@ test('(mesuré sur « Rose ») une phrase qui change de voix se coupe à la voix
   const b = p.bloc(flux, A, 30000, 3000);
   assert.match(b, /−12,0 s voix 2 « Toujours dans » · −10,2 s papa « tes bras, je »/);
   assert.strictEqual(p.sections('telephone').length, 1, b);
+});
+
+// (07/11, Ahmed : « ajoute un bouton pour le filtre de mon micro, pour qu'il n'entende que les voix »)
+test('filtre de ton micro (micro_voix_seule, éteint par défaut) : ta voix seule transcrite (2,5 s au plus pour l’avoir), ni musique ni bruit de la pièce', () => {
+  assert.match(SRC, /micro_voix_seule: r\.micro_voix_seule === true,/);
+  assert.match(SRC, /if \(temps\.source !== 'telephone' && ext === '\.wav' && corpsReglages\(\)\.micro_voix_seule === true\) \{/);
+  assert.match(SRC, /separerSon\(fs3, 'papa', \{ voixSeule: true, quand \}\)/);
+  assert.match(SRC, /const FILTRE_VOIX_MS = 2500;/);
+  assert.match(SRC, /const fichierPapa = voixSeulePapa \|\| f;/, 'sans voix à temps : le son entier, comme avant');
+  assert.match(SRC, /if \(src === 'micro' && corpsReglages\(\)\.micro_voix_seule === true\) return '';/, 'le fond de la pièce ne lui arrive plus');
+  assert.match(SRC, /if \(corpsReglages\(\)\.micro_voix_seule !== true\) try \{ const fs2 = path\.join\(os\.tmpdir\(\), `jarvis-amb-sep-/);
+  assert.match(SRC, /\.\.\.\(seule \? \{ voix_wav: path\.join\(os\.tmpdir\(\), `jarvis-sep-\$\{process\.pid\}-\$\{id\}-voix\.wav`\) \} : \{\}\)/);
+  assert.match(SRC, /if \(a\.src === 'papa'\) \{ const vw = o\.voix_wav && wavDeVoix\(o\.voix_wav\) \? o\.voix_wav : null;/, 'ta voix seule : jamais notée comme musique');
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8'), /\['micro_voix_seule', '🎙️ Il n’entend que les voix \(filtre de ton micro\)'/);
 });

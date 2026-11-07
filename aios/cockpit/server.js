@@ -7269,7 +7269,8 @@ function corpsReglages() {
     choisir_latence: r.choisir_latence !== false,
     te_couper: r.te_couper === true,
     choix_coupure: r.choix_coupure !== false,
-    choix_libre: r.choix_libre !== false,   // (07/11) ses paroles prêtes : il choisit laquelle dire, dans n'importe quel ordre   // (07/11) ta voix qui dure sur la sienne : il choisit de se couper ou de finir   // (07/11, Ahmed : « lui autoriser à me couper la parole », option 2) éteint par défaut   // (07/11) il choisit ce qu'il dit dans le temps de sortie de sa voix   // (07/11) coupé, il finit sa phrase (jusqu'à sa virgule ou son point)   // (07/11) ton message écrit l'arrête et part tout de suite   // (07/11) tes morceaux prêts partent en un seul message réunifié   // (07/11) coupé par une vraie phrase : il ne reprend pas l'ancienne réponse (éteint)   // (06/11) ses morceaux épissés reliés, sans pause entre eux
+    choix_libre: r.choix_libre !== false,
+    micro_voix_seule: r.micro_voix_seule === true,   // (07/11) le filtre de ton micro : il n'entend que les voix (éteint par défaut)   // (07/11) ses paroles prêtes : il choisit laquelle dire, dans n'importe quel ordre   // (07/11) ta voix qui dure sur la sienne : il choisit de se couper ou de finir   // (07/11, Ahmed : « lui autoriser à me couper la parole », option 2) éteint par défaut   // (07/11) il choisit ce qu'il dit dans le temps de sortie de sa voix   // (07/11) coupé, il finit sa phrase (jusqu'à sa virgule ou son point)   // (07/11) ton message écrit l'arrête et part tout de suite   // (07/11) tes morceaux prêts partent en un seul message réunifié   // (07/11) coupé par une vraie phrase : il ne reprend pas l'ancienne réponse (éteint)   // (06/11) ses morceaux épissés reliés, sans pause entre eux
     epissure_grammaire: r.epissure_grammaire !== false,
     pretraitement_parole: r.pretraitement_parole !== false,
     trois_pistes: r.trois_pistes !== false,
@@ -7707,6 +7708,7 @@ function recevoirSon(source, t0, pasMs, trames) {
   if (src === 'micro') t0 = recaleMicro(t0);                      // (03/11) au fil, le micro recalé sur le téléphone quand c'est sûr
   while (buf.length > 1200) buf.shift();                          // 2 min de trames de 100 ms
   const r = resumeSon(l, avant);
+  if (src === 'micro' && corpsReglages().micro_voix_seule === true) return '';   // (07/11) le filtre de ton micro : ni musique ni bruit de la pièce
   const tp = troisPistes();                                         // (06/11) ses trois pistes : rien de brut au fil
   if (r && !tp) fluxAjouter(`instru_${src}`, r, t0 + (l.length * pasMs) / 2);
   if (tp) { try { TP.noterTrames(src, t0, pasMs, l, notesVoix(l, t0, pasMs)); } catch (_) {} }
@@ -10435,6 +10437,7 @@ if (typeof setInterval === 'function') setInterval(() => { try { memoirePourChan
 // le micro, pour une voix lointaine quand ni papa ni lui ne parlent)
 const pistesSeparation = () => typeof troisPistes === 'function' && troisPistes();
 const ATTENTE_VOIX_SEPAREE_MS = 6000;
+const FILTRE_VOIX_MS = 2500;                                      // (07/11) le filtre de ton micro : la voix seule, attendue 2,5 s au plus
 function separerSon(fichier, src, o = {}) {
   lancerSeparation();
   const cascade = (o.cascade || src === 'micro') && cascadeAllumee();
@@ -10448,11 +10451,13 @@ function separerSon(fichier, src, o = {}) {
   const id = ++separation.ids;
   const tp = pistesSeparation();
   const autour = tp && src === 'micro' && !(typeof papaParle === 'function' && papaParle());
+  const seule = !!o.voixSeule;                                        // (07/11) ta voix seule, pour tes mots (le filtre de ton micro)
   separation.attente = { id, src, fichier, cle: o.cle || '', debut: Number(o.debut) || 0, voix: !!(o.cascade && cascade), minuteur: setTimeout(() => {
     if (separation.attente && separation.attente.id === id) { const a = separation.attente; separation.attente = null; fs.unlink(fichier, () => {}); if (a.quand) a.quand(null); separationSuivante(); }
-  }, cascade ? 20000 : 15000), ...(tp ? { t0: Number(o.t0) || 0, recu: Date.now(), quand: o.quand || null } : {}) };
+  }, cascade ? 20000 : 15000), ...(tp || seule ? { t0: Number(o.t0) || 0, recu: Date.now(), quand: o.quand || null } : {}) };
   const demande = { id, fichier, ...(cascade ? { cascade: true, ...(o.cascade ? { voix_dossier: os.tmpdir() } : {}) } : {}),
-    ...(tp ? { pistes: true, ...(o.quand || autour ? { voix_wav: path.join(os.tmpdir(), `jarvis-sep-${process.pid}-${id}-voix.wav`) } : {}) } : {}) };
+    ...(tp && !seule ? { pistes: true, ...(o.quand || autour ? { voix_wav: path.join(os.tmpdir(), `jarvis-sep-${process.pid}-${id}-voix.wav`) } : {}) } : {}),
+    ...(seule ? { voix_wav: path.join(os.tmpdir(), `jarvis-sep-${process.pid}-${id}-voix.wav`) } : {}) };
   try { separation.proc.stdin.write(j(demande) + '\n'); return true; }
   catch (_) { clearTimeout(separation.attente.minuteur); separation.attente = null; fs.unlink(fichier, () => {}); if (o.quand) o.quand(null); return false; }
 }
@@ -10544,6 +10549,7 @@ function separationRecue(o) {
   if (separation.suivante) separationSuivante();
   if (o.voix_separees || o.texte_cascade) cascadeRecue(o, a);
   const tp = pistesSeparation();
+  if (a.src === 'papa') { const vw = o.voix_wav && wavDeVoix(o.voix_wav) ? o.voix_wav : null; if (a.quand) { const q = a.quand; a.quand = null; q(vw); } else if (vw) fs.unlink(vw, () => {}); return; }   // (07/11) ta voix seule : rien d'autre
   pistesRecues(o, a);
   if (o.erreur || !o.texte) return;
   const t = Date.now() - 2000, source = a.src === 'micro' ? 'autour' : 'du téléphone';
@@ -10601,7 +10607,8 @@ async function routeAmbiance(req, res, parole, voix) {
   // (04/11, 15:58, mesuré : la séparation ne s'est jamais lancée depuis 15:36 ; Ahmed : « il a du mal ») la séparation d'abord, même quand
   // son oreille vive est occupée (en conversation, elle transcrit tes mots en direct presque tout le temps)
   let partie = false;
-  try { const fs2 = path.join(os.tmpdir(), `jarvis-amb-sep-${process.pid}-${Date.now()}.wav`); fs.writeFileSync(fs2, audio); partie = separerSon(fs2, 'micro'); } catch (_) {}
+  // (07/11) le filtre de ton micro : le fond de la pièce n'est pas analysé (il n'entend que les voix)
+  if (corpsReglages().micro_voix_seule !== true) try { const fs2 = path.join(os.tmpdir(), `jarvis-amb-sep-${process.pid}-${Date.now()}.wav`); fs.writeFileSync(fs2, audio); partie = separerSon(fs2, 'micro'); } catch (_) {}
   // (04/11, 16:00) de quoi voir si le son de la pièce arrive et part à la séparation (une ligne par minute au plus)
   if (Date.now() - (routeAmbiance.note || 0) > 60000) {
     routeAmbiance.note = Date.now();
@@ -10648,6 +10655,20 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
     } catch (_) {}
     if (attendue) { const t = Date.now(); voixSeparee = await attendue; attenteVoix = Date.now() - t; }
   }
+  // (07/11, Ahmed : « un bouton pour le filtre de mon micro, pour qu'il n'entende que les voix ») micro_voix_seule (éteint) : ce que dit ton micro
+  // est d'abord séparé par Demucs, et c'est la VOIX seule qui est transcrite (la musique, la télé, le bruit retirés) ; 2,5 s au plus pour
+  // l'avoir, sinon le son entier, comme avant. Le prix : jusqu'à 2,5 s de plus avant tes mots.
+  let voixSeulePapa = null;
+  if (temps.source !== 'telephone' && ext === '.wav' && corpsReglages().micro_voix_seule === true) {
+    let attendue = null;
+    try {
+      const fs3 = f.replace(/\.wav$/, '-papa.wav'); fs.writeFileSync(fs3, audio);
+      attendue = new Promise((ok) => { let fini = false; const quand = (w) => { if (fini) { if (w) fs.unlink(w, () => {}); return; } fini = true; ok(w); };
+        setTimeout(() => quand(null), FILTRE_VOIX_MS); separerSon(fs3, 'papa', { voixSeule: true, quand }); });
+    } catch (_) {}
+    if (attendue) { const t = Date.now(); voixSeulePapa = await attendue; try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'filtre_voix_micro', ok: !!voixSeulePapa, ms: Date.now() - t }) + '\n', { mode: 0o600 }); } catch (_) {} }
+  }
+  const fichierPapa = voixSeulePapa || f;
   // (28/10, Ahmed via Hakim : accélérer l'oreille) la voix et l'oreille partagent un processus : une synthèse en cours fait attendre
   const tTranscription = Date.now(), syntheseEnCours = voixOccupee;
   let partie = false;
@@ -10681,21 +10702,22 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
     if (corpsReglages().stt_azure && !telephone && apprentissageVoix <= 0) {
       // (06/11, Ahmed : « Hakim semble m'entendre mais ne répond pas sur la montre ») la montre envoie du m4a : l'oreille courte d'Azure ne lit que du
       // WAV (PCM 16 kHz) et rendait un texte vide, la montre disait « je n'ai pas compris » sans jamais lui parler ; converti d'abord (afconvert, macOS)
-      const fAzure = ext === '.wav' ? f : await enWav16k(f).catch(() => null);
+      const fAzure = ext === '.wav' ? fichierPapa : await enWav16k(f).catch(() => null);
       // (06/11, Ahmed : « il entend sa propre voix et ça le perturbe ; il faut qu'il reconnaisse sa voix comme étant la sienne ») l'oreille Azure
       // ne dit pas qui parle : en même temps, son oreille vive écoute si c'est SA voix (empreinte « soi » : rap, Azure, celle d'avant) ; occupée : rien
       const quiP = SA_VOIX_RECONNUE() ? oreilleDemander({ op: 'qui', fichier: f }, false).catch(() => null) : Promise.resolve(null);
       const a = fAzure ? await oreilleAzure(fAzure, /^[a-z]{2}$/.test(langue || '') ? langue : null).catch(() => null) : null;
       const qui = await quiP;
-      if (fAzure && fAzure !== f) fs.unlink(fAzure, () => {});
+      if (fAzure && fAzure !== f && fAzure !== fichierPapa) fs.unlink(fAzure, () => {});
       if (a && !String(a.texte || '').trim()) { try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'azure_vide', ext }) + '\n', { mode: 0o600 }); } catch (_) {} }
       if (a) r = saVoixEntendue({ texte: a.texte, langue: a.langue, azure: true }, qui);
       if (a) { try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'transcription_azure', ms: a.ms, langue: a.langue }) + '\n', { mode: 0o600 }); } catch (_) {} }
     }
-    if (!r) r = await voixDemander({ op: 'transcrire', fichier: telephone && voixSeparee ? voixSeparee : f, langue: /^[a-z]{2}$/.test(langue || '') ? langue : null, contexte: contexte || '',
+    if (!r) r = await voixDemander({ op: 'transcrire', fichier: telephone && voixSeparee ? voixSeparee : (telephone ? f : fichierPapa), langue: /^[a-z]{2}$/.test(langue || '') ? langue : null, contexte: contexte || '',
       voix: telephone ? null : modeVoix, avec_temps: telephone, musique }, 180000);
   } finally { liberer(); transcriptionsEnAttente--; if (dePapa && !--transcriptionsPapa) reprendreVoix(); pomperVoix(); }
   if (voixSeparee) fs.unlink(voixSeparee, () => {});
+  if (voixSeulePapa) fs.unlink(voixSeulePapa, () => {});
   if (temps.source === 'telephone' && pistesSeparation()) { try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'trois_pistes_voix', separee: !!voixSeparee, attente_ms: attenteVoix, ms: Date.now() - tTranscription, mots: r && Array.isArray(r.mots) ? r.mots.length : 0 }) + '\n', { mode: 0o600 }); } catch (_) {} }
   try {
     fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'transcription_serveur', ms: Date.now() - tTranscription, synthese_en_cours: syntheseEnCours, octets: audio.length,
@@ -12890,7 +12912,7 @@ async function traiter(req, res) {
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
-      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure', 'choix_libre']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
+      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure', 'choix_libre', 'micro_voix_seule']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
       for (const [k, a, b] of [['epissure_meubles_max', 1, 6], ['present_pouls_s', 10, 600], ['present_seuil', 0.2, 5], ['present_ecart_s', 2, 120], ['present_longueur', 3, 40], ['present_mots', 6, 40]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'present_seuil' ? Math.round(Number(q[k]) * 10) / 10 : Math.round(Number(q[k]))));
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;

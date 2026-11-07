@@ -905,7 +905,7 @@ test('sa sortie : [[sortie: …]] choisit l’appareil, gardé, annoncé ; sa vo
 // (06/11, Ahmed : « Hakim semble m'entendre mais ne répond pas sur la montre ») le m4a de la montre converti en WAV avant Azure
 test('oreille Azure : un son qui n’est pas du WAV (la montre) est converti en WAV 16 kHz avant Azure', () => {
   const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
-  assert.match(SRV, /const fAzure = ext === '\.wav' \? f : await enWav16k\(f\)\.catch\(\(\) => null\);/);
+  assert.match(SRV, /const fAzure = ext === '\.wav' \? fichierPapa : await enWav16k\(f\)\.catch\(\(\) => null\);/);
   assert.match(SRV, /execFile\('\/usr\/bin\/afconvert', \['-f', 'WAVE', '-d', 'LEI16@16000', '-c', '1', fichier, sortie\]/);
 });
 
