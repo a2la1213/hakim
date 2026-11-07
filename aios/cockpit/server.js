@@ -4539,6 +4539,33 @@ function vivantLibre(modele, neuve = false) {                      // (04/11, 16
 /* (07/11, Ahmed : « faut aussi lui laisser le choix de se couper ou pas quand il reçoit ce signal ») ta voix a duré « Sauter au bout de » sur la
    sienne : son subconscient (Mini Hakim, une voix vivante déjà chaude) choisit en un mot, COUPER (il se tait et t'écoute) ou CONTINUER (ce qu'il
    dit compte, il finit). 1,5 s sans réponse, ou une réponse illisible : il se coupe (papa d'abord). Chaque choix est noté au journal de la voix. */
+/* (07/11, Ahmed : « la liste d'attente du cache de la parole est stockée linéairement, mais elle contient des bouts de parole vocale qui peuvent
+   être choisis directement : sauter au bon numéro de parole pour le dire sans redire tout le reste ; s'il prépare 4 phrases, il peut commencer par
+   la 3, puis revenir en arrière ou en avant, en parallèle de tout le reste et au fur et à mesure que le reste avance ») ses paroles prêtes (leur
+   voix déjà faite) lui sont données numérotées ; son subconscient (Mini Hakim, une voix vivante chaude) choisit celle qu'il dit maintenant ; les
+   autres restent prêtes pour après. La page le demande d'avance, pendant que sa voix parle encore, à chaque fois que ses paroles prêtes changent. */
+const CHOISIR_PAROLE_MS = 2500;
+function lireNumeroChoisi(texte, max) {
+  const m = /\d+/.exec(String(texte || ''));
+  const k = m ? Number(m[0]) : NaN;
+  return Number.isInteger(k) && k >= 1 && k <= max ? k : null;
+}
+async function choisirParole(pretes, papa, dits, ou = '', demander = demanderVivant) {
+  const l = (pretes || []).filter(x => x && Number.isFinite(Number(x.n)) && String(x.texte || '').trim()).slice(0, 12);
+  if (l.length < 2) return { n: l.length ? Number(l[0].n) : null, lu: false, ms: 0 };
+  const net = (x, n) => neutraliser(String(x || '')).replace(/\s+/g, ' ').trim().slice(0, n);
+  const prompt = `Tu es le subconscient de Hakim, en pleine conversation avec papa.\nPapa vient de dire : « ${net(papa, 400) || '…'} ».\n`
+    + `Tu as déjà dit à voix haute : « ${net((dits || []).slice(-3).join(' '), 400) || 'rien encore'} ».\n`
+    + `Tes paroles prêtes (leur voix est déjà faite) :\n${l.map((x, k) => `${k + 1}. ${net(x.texte, 240)}`).join('\n')}\n`
+    + `Laquelle dis-tu MAINTENANT, au meilleur moment ? Tu peux commencer par n'importe laquelle, revenir à une plus ancienne ou sauter en avant ; `
+    + `les autres restent prêtes pour après. Réponds seulement par son numéro.`;
+  const t0 = Date.now();
+  let k = null;
+  try { k = lireNumeroChoisi((await demander('haiku', prompt, CHOISIR_PAROLE_MS)).texte, l.length); } catch (_) {}
+  const r = { n: k ? Number(l[k - 1].n) : null, lu: !!k, ms: Date.now() - t0 };
+  try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'choix_parole', parmi: l.length, rang: k, lu: r.lu, ms: r.ms, ou: String(ou).slice(0, 12) }) + '\n', { mode: 0o600 }); } catch (_) {}
+  return r;
+}
 const SE_COUPER_MS = 1500;
 function lireChoixCoupure(texte) {
   const t = String(texte || '').trim();
@@ -7241,7 +7268,8 @@ function corpsReglages() {
     finir_phrase: r.finir_phrase !== false,
     choisir_latence: r.choisir_latence !== false,
     te_couper: r.te_couper === true,
-    choix_coupure: r.choix_coupure !== false,   // (07/11) ta voix qui dure sur la sienne : il choisit de se couper ou de finir   // (07/11, Ahmed : « lui autoriser à me couper la parole », option 2) éteint par défaut   // (07/11) il choisit ce qu'il dit dans le temps de sortie de sa voix   // (07/11) coupé, il finit sa phrase (jusqu'à sa virgule ou son point)   // (07/11) ton message écrit l'arrête et part tout de suite   // (07/11) tes morceaux prêts partent en un seul message réunifié   // (07/11) coupé par une vraie phrase : il ne reprend pas l'ancienne réponse (éteint)   // (06/11) ses morceaux épissés reliés, sans pause entre eux
+    choix_coupure: r.choix_coupure !== false,
+    choix_libre: r.choix_libre !== false,   // (07/11) ses paroles prêtes : il choisit laquelle dire, dans n'importe quel ordre   // (07/11) ta voix qui dure sur la sienne : il choisit de se couper ou de finir   // (07/11, Ahmed : « lui autoriser à me couper la parole », option 2) éteint par défaut   // (07/11) il choisit ce qu'il dit dans le temps de sortie de sa voix   // (07/11) coupé, il finit sa phrase (jusqu'à sa virgule ou son point)   // (07/11) ton message écrit l'arrête et part tout de suite   // (07/11) tes morceaux prêts partent en un seul message réunifié   // (07/11) coupé par une vraie phrase : il ne reprend pas l'ancienne réponse (éteint)   // (06/11) ses morceaux épissés reliés, sans pause entre eux
     epissure_grammaire: r.epissure_grammaire !== false,
     pretraitement_parole: r.pretraitement_parole !== false,
     trois_pistes: r.trois_pistes !== false,
@@ -11870,6 +11898,12 @@ async function traiter(req, res) {
     ouvrirReflexion();                                               // (17:50) sa parole vide : sa réflexion s'ouvre tout de suite
     res.writeHead(204); return res.end();
   }
+  if (p === '/api/jarvis/choisir-parole' && req.method === 'POST') {   // (07/11) ses paroles prêtes : laquelle maintenant (son subconscient)
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
+    const r = await choisirParole(Array.isArray(q.pretes) ? q.pretes : [], String(q.papa || ''), Array.isArray(q.dits) ? q.dits : [], String(q.ou || ''));
+    res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(r));
+  }
   if (p === '/api/jarvis/se-couper' && req.method === 'POST') {    // (07/11) papa parle par-dessus lui depuis « Sauter au bout de » : il choisit
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 8192) || '{}')); } catch (_) {}
@@ -12856,7 +12890,7 @@ async function traiter(req, res) {
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
-      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
+      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure', 'choix_libre']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
       for (const [k, a, b] of [['epissure_meubles_max', 1, 6], ['present_pouls_s', 10, 600], ['present_seuil', 0.2, 5], ['present_ecart_s', 2, 120], ['present_longueur', 3, 40], ['present_mots', 6, 40]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'present_seuil' ? Math.round(Number(q[k]) * 10) / 10 : Math.round(Number(q[k]))));
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;

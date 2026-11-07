@@ -3461,6 +3461,37 @@ function avancerVoix(texte) {
   if (typeof journalVoix === 'function') journalVoix('voix_avancee', { car: t.length });
 }
 const avancees = new Map();                                            // (téléphone) clé du texte → quand sa voix a commencé à se calculer
+/* (07/11, Ahmed : « la liste d'attente du cache de la parole est stockée linéairement, mais ses bouts de parole vocale peuvent être choisis
+   directement : sauter au bon numéro pour le dire sans redire le reste ; s'il prépare 4 phrases, il peut commencer par la 3, puis revenir en
+   arrière ou en avant, en parallèle, au fur et à mesure que le reste avance ») choix_libre (oui) : dès que deux paroles prêtes attendent, son
+   subconscient choisit laquelle dire (/api/jarvis/choisir-parole), d'avance, pendant que sa voix parle encore, et à chaque fois qu'elles
+   changent ; quand sa voix se libère, c'est celle-là ; les autres restent prêtes. Sans choix à temps (1,5 s), le choix par la latence. */
+const choixParole = { cle: '', n: null, enVol: false, depuis: 0 };
+const CHOIX_ATTENTE_MS = 1500;
+const choixLibreActif = () => typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.choix_libre !== false;
+const cleChoix = (pool) => `${typeof bouts !== 'undefined' ? bouts.tour : ''}|${pool.map(x => x.n).sort((a, b) => a - b).join(',')}`;
+function preparerChoix(pool, ou) {
+  if (!choixLibreActif() || !pool || pool.length < 2) return;
+  const cle = cleChoix(pool);
+  if (choixParole.cle === cle) return;
+  Object.assign(choixParole, { cle, n: null, enVol: true, depuis: Date.now() });
+  const conv = etat.conversation, papa = conv && conv.ecrit ? `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}`.trim() : '';
+  fetch('/api/jarvis/choisir-parole', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+    body: JSON.stringify({ pretes: pool.map(x => ({ n: x.n, texte: x.texte })), papa, dits: ((typeof bouts !== 'undefined' && bouts.dits) || []).slice(-3), ou }) })
+    .then(r => (r.ok ? r.json() : null)).catch(() => null)
+    .then((o) => {
+      if (choixParole.cle !== cle) return;
+      choixParole.enVol = false; choixParole.n = o && Number.isFinite(Number(o.n)) && o.n !== null ? Number(o.n) : null;
+      if (typeof direBouts === 'function') direBouts();
+      if (typeof boutTelephoneSuivant === 'function') boutTelephoneSuivant();
+    });
+}
+// rend : { choix } (son choix), { attendre: true } (son choix arrive), ou null (pas de choix : la latence décide)
+function choixLibre(pool) {
+  if (!choixLibreActif() || !pool || pool.length < 2 || choixParole.cle !== cleChoix(pool)) return null;
+  if (choixParole.n != null) { const x = pool.find(y => y.n === choixParole.n); return x ? { choix: x } : null; }
+  return choixParole.enVol && Date.now() - choixParole.depuis < CHOIX_ATTENTE_MS ? { attendre: true } : null;
+}
 function recevoirBout(s, n, tour) {
   const conv = etat.conversation;
   // (04/11, 13:10, Ahmed : « tout ce qui est traduit par le ribosome sort en priorité par la bouche ») ce que son ribosome a traduit passe toujours
@@ -3485,7 +3516,7 @@ function recevoirBout(s, n, tour) {
     if (lecteurSysteme.actif) {
       // (04/11, 14:20, Ahmed : « je vois sa pensée seule, pas l'épissée pour parler ») ce que son ribosome a épissé n'est jamais remplacé
       // ni oublié : il attend son tour, dans l'ordre
-      if (s.ribosome) { b.dit = Array.isArray(s.parties) && s.parties.length ? [s.meuble, ...s.parties].filter(Boolean) : meublerSaut(b); const gardee = typeof voixGardeePour === 'function' ? voixGardeePour(b.texte) : null; const avA = typeof avancees !== 'undefined' ? Math.min(...b.dit.map(x => avancees.get(cleParole(x)) || Infinity)) : Infinity; if (Number.isFinite(avA)) b.prepA = avA; else if (gardee && gardee.prepA) { b.prepA = gardee.prepA; if (typeof journalVoix === 'function') journalVoix('voix_reprise_gardee', { ou: 'telephone' }); } else if (typeof lecteurSysteme.preparer === 'function') { b.dit.forEach(x => lecteurSysteme.preparer(x)); b.prepA = Date.now(); } bouts.fileTel = (bouts.fileTel || []).concat([b]); return; }   // (06/11) calculée d'avance : pas de blanc
+      if (s.ribosome) { b.dit = Array.isArray(s.parties) && s.parties.length ? [s.meuble, ...s.parties].filter(Boolean) : meublerSaut(b); const gardee = typeof voixGardeePour === 'function' ? voixGardeePour(b.texte) : null; const avA = typeof avancees !== 'undefined' ? Math.min(...b.dit.map(x => avancees.get(cleParole(x)) || Infinity)) : Infinity; if (Number.isFinite(avA)) b.prepA = avA; else if (gardee && gardee.prepA) { b.prepA = gardee.prepA; if (typeof journalVoix === 'function') journalVoix('voix_reprise_gardee', { ou: 'telephone' }); } else if (typeof lecteurSysteme.preparer === 'function') { b.dit.forEach(x => lecteurSysteme.preparer(x)); b.prepA = Date.now(); } bouts.fileTel = (bouts.fileTel || []).concat([b]); if (typeof preparerChoix === 'function') preparerChoix(bouts.fileTel, 'telephone'); return; }   // (06/11) calculée d'avance : pas de blanc
       if (bouts.attenteTel) montrerPensee('🧠 il pense, sans le dire', bouts.attenteTel.texte, true);   // remplacé : pensé, pas dit
       // (1.60, Ahmed : « chaque cœur qui traite le même chunk sur le Mac et sur le smartphone doit être relié et coordonné ») ce qu'il
       // dira (son meuble compris) : sa voix se calcule déjà sur le téléphone, pendant que la précédente se dit
@@ -3575,16 +3606,20 @@ function direBoutTelephone(conv, b) {
 }
 function boutTelephoneSuivant() {
   const f = typeof bouts !== 'undefined' ? bouts.fileTel || [] : [];
+  if (typeof preparerChoix === 'function' && etat.conversation) preparerChoix(f, 'telephone');   // (07/11) son choix, d'avance
   if (f.length && etat.conversation && !(lecteurSysteme && lecteurSysteme.actif)) {
     // (07/11, Ahmed : « anticiper la latence de la sortie de sa voix, et choisir parmi les dernières voix prêtes celle qui va au mieux dans ce
     // temps ; il peut revenir sur une portion prête ») réglage choisir_latence (oui) ; éteint : dans l'ordre, comme le 04/11 à 14:20
     if (typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.choisir_latence !== false) {
-      const r = Voix.choisirDansLatence(f, { maintenant: Date.now(), calculMs: Number(etat.calculVoixMs) || 3500, sortieMs: Number(etat.sortieVoixMs) || 150 });
+      const libre = typeof choixLibre === 'function' ? choixLibre(f) : null;
+      if (libre && libre.attendre) { clearTimeout(bouts.minuteurTel); bouts.minuteurTel = setTimeout(boutTelephoneSuivant, 150); return; }
+      const r = libre && libre.choix ? { choix: libre.choix, garde: f.filter(x => x !== libre.choix), latenceMs: 0, revenu: libre.choix !== f[f.length - 1], libre: true }
+        : Voix.choisirDansLatence(f, { maintenant: Date.now(), calculMs: Number(etat.calculVoixMs) || 3500, sortieMs: Number(etat.sortieVoixMs) || 150 });
       const perdus = f.length - r.garde.length - (r.choix ? 1 : 0);
       bouts.fileTel = r.garde;
       if (perdus > 0 && typeof journalVoix === 'function') journalVoix('latence_trop_vieux', { n: perdus });
       if (r.choix) {
-        if (typeof journalVoix === 'function') journalVoix('choix_latence', { n: r.choix.n, revenu: r.revenu, latence_ms: r.latenceMs, en_attente: r.garde.length });
+        if (typeof journalVoix === 'function') journalVoix(r.libre ? 'choix_libre' : 'choix_latence', { n: r.choix.n, revenu: r.revenu, latence_ms: r.latenceMs, en_attente: r.garde.length });
         direBoutTelephone(etat.conversation, r.choix); return;
       }
     } else { direBoutTelephone(etat.conversation, f.shift()); return; }   // (14:20) l'épissé d'abord, sans délai d'oubli
@@ -3604,16 +3639,21 @@ function direBouts() {
   // remplit le temps de calcul du plus récent ; le plus récent pas encore prêt et sans rien d'autre : il l'attend
   if (typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.choisir_latence !== false && typeof Voix !== 'undefined' && Voix.choisirDansLatence) {
     for (const b of [...bouts.liste.values()]) if (b.rate || b.n < bouts.prochain - 30) bouts.liste.delete(b.n);
-    const reste = lecteurNeuronal.resteS || 0;
-    if (lecteurNeuronal.joue && reste > 0.35) { clearTimeout(bouts.minuteur); bouts.minuteur = setTimeout(direBouts, Math.max(50, (reste - 0.3) * 1000)); return; }
     const file = [...bouts.liste.values()].filter(b => !bouts.dits.includes(b.texte)).sort((x, y) => x.n - y.n)
       .map(b => ({ n: b.n, texte: b.texte, t: b.t, prepA: b.t, pret: !!b.buf, b }));
-    const r = Voix.choisirDansLatence(file, { maintenant: Date.now(), calculMs: Number(etat.calculVoixMacMs) || 2600, sortieMs: 60 });
+    const pretes = file.filter(x => x.pret);
+    if (typeof preparerChoix === 'function') preparerChoix(pretes, 'mac');   // (07/11) son choix se prépare pendant que sa voix parle
+    const reste = lecteurNeuronal.resteS || 0;
+    if (lecteurNeuronal.joue && reste > 0.35) { clearTimeout(bouts.minuteur); bouts.minuteur = setTimeout(direBouts, Math.max(50, (reste - 0.3) * 1000)); return; }
+    const libre = typeof choixLibre === 'function' ? choixLibre(pretes) : null;
+    if (libre && libre.attendre) { clearTimeout(bouts.minuteur); bouts.minuteur = setTimeout(direBouts, 150); return; }
+    const r = libre && libre.choix ? { choix: libre.choix, garde: file.filter(x => x !== libre.choix), latenceMs: 60, revenu: libre.choix !== pretes[pretes.length - 1], libre: true }
+      : Voix.choisirDansLatence(file, { maintenant: Date.now(), calculMs: Number(etat.calculVoixMacMs) || 2600, sortieMs: 60 });
     for (const x of file) if (x !== r.choix && !r.garde.includes(x)) bouts.liste.delete(x.n);       // plus de 30 s : oubliés
     if (!r.choix || !r.choix.b.buf) return;                            // le meilleur se calcule encore : il arrive bientôt
     const b = r.choix.b;
     bouts.liste.delete(b.n);
-    if (typeof journalVoix === 'function') journalVoix('choix_latence', { n: b.n, revenu: r.revenu, latence_ms: r.latenceMs, en_attente: r.garde.length, ou: 'mac' });
+    if (typeof journalVoix === 'function') journalVoix(r.libre ? 'choix_libre' : 'choix_latence', { n: b.n, revenu: r.revenu, latence_ms: r.latenceMs, en_attente: r.garde.length, ou: 'mac' });
     conv.penseeEnPause = true; conv.souffleParle = true;
     bouts.prochain = Math.max(bouts.prochain, b.n + 1);
     bouts.dits.push(b.texte); bouts.enFile.push(b.texte); if (typeof noterParoleDite === 'function') noterParoleDite(b.texte);

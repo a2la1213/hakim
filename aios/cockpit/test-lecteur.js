@@ -483,7 +483,7 @@ test('choisir dans la latence : le plus récent s’il sort vite ; sinon une por
 });
 
 test('branché : la file de sa voix du téléphone passe par le choix (réglage choisir_latence), ses mesures de sortie l’apprennent', () => {
-  assert.match(SRC, /reglagesCorps\.choisir_latence !== false\) \{\s*const r = Voix\.choisirDansLatence\(f,/);
+  assert.match(SRC, /reglagesCorps\.choisir_latence !== false\) \{[\s\S]{0,400}?: Voix\.choisirDansLatence\(f,/);
   assert.match(SRC, /etat\.calculVoixMs = lisse\(etat\.calculVoixMs, d\.calcul_ms\)/);
   assert.match(SRC, /b\.dit\.forEach\(x => lecteurSysteme\.preparer\(x\)\); b\.prepA = Date\.now\(\);/);
 });
@@ -578,4 +578,58 @@ test('te_couper : allumé, sa voix parle pendant ta parole et ta voix ne le fait
   const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   assert.match(srv, /te_couper: r\.te_couper === true,/, 'éteint par défaut');
   assert.match(fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8'), /\['te_couper', '🗣️ Il peut te couper la parole'/);
+});
+
+// (07/11, Ahmed : « s'il prépare 4 phrases, il peut commencer par la 3 directement, puis revenir en arrière ou en avant, en parallèle de tout le reste »)
+test('choix libre : son subconscient choisit d’avance laquelle de ses paroles prêtes dire ; il attend son choix 1,5 s au plus ; les autres restent', async () => {
+  const i = SRC.indexOf('const choixParole = '), j = SRC.indexOf('function recevoirBout(');
+  let now = 1000; const envois = [], relances = [];
+  let reponse = { n: 3 };
+  const cx = { Date: { now: () => now }, Number, JSON, Promise, reglagesCorps: { choix_libre: true }, jeton: () => 'x',
+    etat: { conversation: { ecrit: { confirme: 'tu peux', vif: 'me dire' } } }, bouts: { tour: 7, dits: ['Bonjour papa'] },
+    direBouts: () => relances.push('mac'), boutTelephoneSuivant: () => relances.push('tel'),
+    fetch: (u, o) => { envois.push([u, JSON.parse(o.body)]); return Promise.resolve({ ok: true, json: () => Promise.resolve(reponse) }); } };
+  vm.createContext(cx);
+  vm.runInContext(SRC.slice(i, j) + 'this.f = { preparerChoix, choixLibre };', cx);
+  const pool = [{ n: 1, texte: 'un' }, { n: 2, texte: 'deux' }, { n: 3, texte: 'trois' }, { n: 4, texte: 'quatre' }];
+  cx.f.preparerChoix(pool, 'mac');
+  cx.f.preparerChoix(pool, 'mac');
+  assert.equal(envois.length, 1, 'une seule demande pour les mêmes paroles prêtes');
+  assert.deepEqual(envois[0], ['/api/jarvis/choisir-parole', { pretes: pool, papa: 'tu peux me dire', dits: ['Bonjour papa'], ou: 'mac' }]);
+  assert.deepEqual({ ...cx.f.choixLibre(pool) }, { attendre: true }, 'son choix arrive : sa voix l’attend');
+  await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
+  assert.equal(cx.f.choixLibre(pool).choix.n, 3, 'il commence par la 3');
+  assert.deepEqual(relances, ['mac', 'tel'], 'son choix arrivé : sa voix repart');
+  const reste = pool.filter(x => x.n !== 3);                        // la 3 dite : un nouveau choix parmi les autres
+  reponse = { n: 1 };
+  cx.f.preparerChoix(reste, 'mac');
+  await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
+  assert.equal(cx.f.choixLibre(reste).choix.n, 1, 'il revient à la 1');
+  const autre = [{ n: 5, texte: 'cinq' }, { n: 6, texte: 'six' }];
+  reponse = { n: null };
+  cx.f.preparerChoix(autre, 'mac'); now += 2000;
+  assert.equal(cx.f.choixLibre(autre), null, 'pas de choix en 1,5 s : la latence décide');
+  cx.reglagesCorps.choix_libre = false;
+  assert.equal(cx.f.choixLibre(pool), null, 'réglage éteint');
+  assert.equal(cx.f.choixLibre([{ n: 9, texte: 'seule' }]), null, 'une seule prête : rien à choisir');
+});
+
+test('cockpit : ses paroles prêtes numérotées à son subconscient, son numéro lu, sinon rien ; noté au journal', async () => {
+  const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const i = srv.indexOf('const CHOISIR_PAROLE_MS'), f = srv.slice(i, srv.indexOf('const SE_COUPER_MS', i));
+  const notes = [];
+  const cx = { fs: { appendFileSync: (_, l) => notes.push(JSON.parse(l)) }, j: JSON.stringify, JARVIS_VOIX_DIAGNOSTIC: '/x', Date, String, Number, Array, neutraliser: (x) => x };
+  vm.createContext(cx); vm.runInContext(f + 'this.lire = lireNumeroChoisi; this.choisir = choisirParole;', cx);
+  assert.equal(cx.lire('3', 4), 3); assert.equal(cx.lire('Je dis la 2.', 4), 2); assert.equal(cx.lire('7', 4), null); assert.equal(cx.lire('aucune', 4), null);
+  let demande;
+  const r = await cx.choisir([{ n: 11, texte: 'un' }, { n: 12, texte: 'deux' }, { n: 13, texte: 'trois' }], 'papa dit', ['déjà'], 'mac',
+    (m, p, d) => { demande = { m, p, d }; return Promise.resolve({ texte: '3' }); });
+  assert.equal(r.n, 13, 'son numéro (3e) rendu en numéro de parole (13)');
+  assert.equal(demande.m, 'haiku'); assert.equal(demande.d, 2500);
+  assert.match(demande.p, /1\. un\n2\. deux\n3\. trois/);
+  assert.match(demande.p, /Tu peux commencer par n'importe laquelle, revenir à une plus ancienne ou sauter en avant/);
+  assert.equal((await cx.choisir([{ n: 1, texte: 'seule' }], '', [], '', () => { throw new Error('jamais'); })).n, 1, 'une seule : pas de demande');
+  assert.equal((await cx.choisir([{ n: 1, texte: 'a' }, { n: 2, texte: 'b' }], '', [], '', () => Promise.reject(new Error('lent')))).n, null);
+  assert.deepEqual(notes.map(x => [x.e, x.rang]), [['choix_parole', 3], ['choix_parole', null]]);
+  assert.match(srv, /choix_libre: r\.choix_libre !== false,/);
 });
