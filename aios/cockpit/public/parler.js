@@ -3828,7 +3828,6 @@ function arreterEpissure(cause, tour, o = {}) {
 // qu'il dit va jusqu'au bout, la suite de son épissure est sautée ; ce qu'il pensera de ta réponse part dans une épissure neuve
 function prevoirSaut(conv) {
   if (typeof reglagesCorps === 'undefined' || reglagesCorps.sauter_suite === false || conv.sautPrevu) return;
-  if (typeof teCouper === 'function' && teCouper()) return;          // (07/11) il peut te couper : sa suite n'est pas sautée
   const ms = Number(reglagesCorps.sauter_suite_ms) || 1000, t0 = Date.now();
   conv.sautPrevu = setTimeout(() => {
     conv.sautPrevu = null;
@@ -4522,7 +4521,9 @@ async function basculerConversation() {
         // (04/11, 12:15, Ahmed) avec l'épissage : ta voix ne le coupe pas au milieu d'un morceau ; il le finit, et à sa fenêtre d'oreille il choisit
         // (06/11, 14:40, Ahmed : « le bouton « il garde la parole » dans les réglages ne fonctionne pas ») avec l'épissage, ce chemin passait AVANT le
         // réglage : éteint (garder_parole), ta voix l'arrête maintenant aussi en Conversation épissée, et ce qu'il avait encore à dire est laissé
-        if (typeof teCouper === 'function' && teCouper()) { journalVoix('te_coupe', mesure || {}); return; }   // (07/11) il a le droit de te couper : ta voix ne le fait pas taire
+        // (07/11) il a le droit de te couper : ta voix ne le met pas en pause au morceau ; mais ta voix qui dure « Sauter au bout de » (sauter_suite_ms)
+        // sur la sienne le coupe toujours (Ahmed : « le réglage pour que je lui coupe la parole selon un temps déterminé qu'il m'entend »)
+        if (typeof teCouper === 'function' && teCouper()) { journalVoix('te_coupe', mesure || {}); if (voixEpissee()) prevoirSaut(conv); return; }
         const garde = typeof reglagesCorps === 'undefined' || reglagesCorps.garder_parole !== false;
         if (voixEpissee() && garde) { conv.coupeAuChunk = Date.now(); journalVoix('coupure_au_chunk', mesure || {}); prevoirSaut(conv); return; }   // (05/11) et la suite sautée
         if (voixEpissee() && !garde && typeof arreterEpissure === 'function' && etat.epissureTour) arreterEpissure('parole', etat.epissureTour);
