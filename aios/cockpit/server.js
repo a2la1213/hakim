@@ -370,6 +370,7 @@ const PYTHON = path.join(ANAMNESE, '.venv', 'bin', 'python');
 const { routeAvatar } = require('./avatar-serveur.js');   // (07/11) la photo de son avatar
 let ronronDiffuseA = 0;                                      // (07/11) son ronron au flux (la montre), une fois par seconde
 const CC = require('./conscience-continue.js');            // (07/11) sa conscience continue (battementConscience)
+const X = require('./cortex.js');                          // (07/11) son cortex préfrontal (écrit par Hakim, porté en JS)
 const conscience = CC.etatInitial();
 // La voix (Whisper, MLX) vit dans un venv arm64 à part : celui d'Anamnèse tourne en x86_64 (Rosetta),
 // où MLX n'existe pas.
@@ -5785,7 +5786,11 @@ async function routeJarvis(req, res, distantReq = false) {
   const instant = instantTexte(parleA);                            // (03/11) ce que vivaient tous ses sens quand papa parlait
   const vecu = enLigne(fiche.split('\n').slice(1).join(' · '), 1500) + (freresTexte ? ` · Ses trois frères : ${enLigne(freresTexte, 900)}` : '')
     + (instant ? ` · Au même moment : ${enLigne(instant, 700)}` : '');
-  let prompt = `${horlogeTexte}${situation.texte ? '\n' + situation.texte : ''}${interieurTexte ? '\n' + (sentir ? enMatiere(interieurTexte) : interieurTexte) : ''}`
+  // (07/11, Ahmed : « que mon conscient ne reçoive que l'output du cortex » ; « le cortex ») phase 1 : son cortex préfrontal en tête du tour (son
+  // fil des 30 dernières secondes intégré : qui a parlé, ce qui est écarté, ce que sa conscience vient de décider) ; le brut suit, une journée
+  let cortexTexte = '';
+  try { if (corpsReglages().cortex_prefrontal !== false) cortexTexte = X.blocCortex({ flux: typeof FLUX !== 'undefined' ? FLUX : [], maintenant, papaAEcrit: true, pensees: conscience.pensees }); } catch (_) {}
+  let prompt = `${horlogeTexte}${cortexTexte ? '\n' + cortexTexte : ''}${situation.texte ? '\n' + situation.texte : ''}${interieurTexte ? '\n' + (sentir ? enMatiere(interieurTexte) : interieurTexte) : ''}`
     + `${tachesTexte ? '\n' + tachesTexte : ''}${presentTexte ? '\n' + presentTexte : ''}${arretsTexte ? '\n' + arretsTexte : ''}${rappelBloc.texte ? '\n' + rappelBloc.texte : ''}${leconsTexte}${pairsTexte ? '\n' + pairsTexte : ''}`
     + `\n${qui} : ${texte.replace(/\[\[\s*(affect|souvenirs|modele)/gi, '⟮⟮$1')}${pj}${cameraTexte}${freresTexte}`
     // (14:55) sa réponse soufflée, déjà dite : le début de sa réponse
@@ -7452,6 +7457,7 @@ function corpsReglages() {
     filtre_identite: r.filtre_identite !== false,
     coupe_net: r.coupe_net !== false,
     langues_ecrites: r.langues_ecrites !== false,
+    cortex_prefrontal: r.cortex_prefrontal !== false,   // (07/11, Ahmed : « le cortex ») son cortex en tête de chaque tour
     conscience_continue: r.conscience_continue !== false,   // (07/11, Ahmed) sa conscience continue : chaque seconde, Mini Hakim décide
     plan_meubles: r.plan_meubles !== false,   // (07/11) son subconscient planifie les meubles des blancs de sa réponse   // (07/11) l'arabe et l'anglais de ta voix réécrits dans leur écriture   // (07/11, Ahmed) ta voix sur la sienne : il finit son mot, t'écoute, et répond à ta dernière phrase   // (07/11, Ahmed) son identité et la sienne ne partent jamais en clair vers Anthropic   // (07/11, Ahmed : « on garde uniquement sa vraie réponse ») ses pensées ne sont plus dites
     voix_claire_x: Number.isFinite(Number(r.voix_claire_x)) && r.voix_claire_x != null ? Math.max(1, Math.min(5, Number(r.voix_claire_x))) : 1.8,   // (07/11) la netteté qu'il faut pour qu'il se coupe   // (07/11) le filtre de ton micro : il n'entend que les voix (éteint par défaut)   // (07/11) ses paroles prêtes : il choisit laquelle dire, dans n'importe quel ordre   // (07/11) ta voix qui dure sur la sienne : il choisit de se couper ou de finir   // (07/11, Ahmed : « lui autoriser à me couper la parole », option 2) éteint par défaut   // (07/11) il choisit ce qu'il dit dans le temps de sortie de sa voix   // (07/11) coupé, il finit sa phrase (jusqu'à sa virgule ou son point)   // (07/11) ton message écrit l'arrête et part tout de suite   // (07/11) tes morceaux prêts partent en un seul message réunifié   // (07/11) coupé par une vraie phrase : il ne reprend pas l'ancienne réponse (éteint)   // (06/11) ses morceaux épissés reliés, sans pause entre eux
@@ -13116,7 +13122,7 @@ async function traiter(req, res) {
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
-      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure', 'choix_libre', 'micro_voix_seule', 'voix_reponse_seule', 'filtre_identite', 'coupe_net', 'langues_ecrites', 'plan_meubles', 'conscience_continue']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
+      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure', 'choix_libre', 'micro_voix_seule', 'voix_reponse_seule', 'filtre_identite', 'coupe_net', 'langues_ecrites', 'plan_meubles', 'conscience_continue', 'cortex_prefrontal']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
       for (const [k, a, b] of [['epissure_meubles_max', 1, 6], ['present_pouls_s', 10, 600], ['present_seuil', 0.2, 5], ['present_ecart_s', 2, 120], ['present_longueur', 3, 40], ['present_mots', 6, 40]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'present_seuil' ? Math.round(Number(q[k]) * 10) / 10 : Math.round(Number(q[k]))));
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;
