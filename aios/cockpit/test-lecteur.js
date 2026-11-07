@@ -759,6 +759,10 @@ test('son plan de meubles : chaque blanc prend son entrée (un meuble ou rien), 
   assert.deepEqual(JSON.parse(JSON.stringify(cs.lire('B1 : hum | court | fondu | 1\nB2 : rien\nB3 : voyons voir | long | enchaîné | 2\nB4 : inconnu | court | net | 1', ['hum', 'voyons voir']))),
     [{ nom: 'hum', taille: 'court', transition: 'fondu', couvre: 1 }, { rien: true }, { nom: 'voyons voir', taille: 'long', transition: 'enchaine', couvre: 2 }, { rien: true }]);
   assert.match(SRC, /const enchaine = \[\.\.\.sources\]\.some\(s2 => s2\._transition === 'enchaine'\);/, 'enchaîné : sa réponse attend la fin du meuble');
+  // (07/11, Ahmed : « pourquoi il ne choisit pas un seul meuble, comme j'ai mis dans les réglages ? ») « Au plus, par lecture » borne son plan
+  assert.deepEqual(JSON.parse(JSON.stringify(cs.lire('B1 : hum | court | fondu | 1\nB2 : voyons voir | long | net | 1\nB3 : hum | court | net | 1', ['hum', 'voyons voir'], 1))),
+    [{ nom: 'hum', taille: 'court', transition: 'fondu', couvre: 1 }, { rien: true }, { rien: true }], 'réglé à 1 : un seul meuble');
+  assert.match(srv, /AU PLUS \$\{max\} meuble/);
 });
 
 // (07/11, 14:23, Ahmed via Hakim : « ma voix se bloque et ça s'accumule » : deux réponses lâchées avant leur première phrase par un petit mot)

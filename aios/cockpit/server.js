@@ -4580,7 +4580,10 @@ function vivantLibre(modele, neuve = false) {                      // (04/11, 16
    rien, sa taille (court : un « hm » ; long : tout le meuble), sa transition (fondu, enchaîné : la suite attend sa fin, net), et combien de
    blancs il couvre (1 à 3 : les suivants restent silencieux). La page le suit blanc après blanc ; sans plan à temps, comme avant. */
 const PLAN_MEUBLES_MS = 4000, PLAN_MEUBLES_MAX = 6;
-function lirePlanMeubles(texte, noms) {
+// (07/11, Ahmed : « pourquoi il ne choisit pas un seul meuble, comme j'ai mis dans les réglages ? ») « Au plus, par lecture » (epissure_meubles_max)
+// borne aussi son plan : jamais plus de meubles que ça par réponse, les autres blancs restent en silence
+function maxMeublesPlan() { const n = Number(corpsReglages().epissure_meubles_max); return Number.isFinite(n) && n >= 0 ? Math.min(PLAN_MEUBLES_MAX, Math.round(n)) : 2; }
+function lirePlanMeubles(texte, noms, max = PLAN_MEUBLES_MAX) {
   const ok = new Set((noms || []).map(n => String(n).toLowerCase()));
   const plan = [];
   for (const l of String(texte || '').split('\n')) {
@@ -4589,25 +4592,27 @@ function lirePlanMeubles(texte, noms) {
     const nom = m[1].trim().replace(/^[«"]|[»"]$/g, '').trim();
     if (/^rien$/i.test(nom)) { plan.push({ rien: true }); continue; }
     if (!ok.has(nom.toLowerCase())) { plan.push({ rien: true }); continue; }
+    if (plan.filter(x => !x.rien).length >= max) { plan.push({ rien: true }); continue; }   // (07/11) au plus « max » meubles
     plan.push({ nom, taille: (m[2] || 'court').toLowerCase(), transition: (m[3] || 'fondu').toLowerCase().replace(/[iî]n[ée]$/, 'ine').replace('enchaine', 'enchaine'),
       couvre: Number(m[4]) || 1 });
     if (plan.length >= PLAN_MEUBLES_MAX) break;
   }
   return plan.slice(0, PLAN_MEUBLES_MAX);
 }
-async function planMeubles(debut, meubles, humeur, demander = demanderVivant) {
+async function planMeubles(debut, meubles, humeur, demander = demanderVivant, max = PLAN_MEUBLES_MAX) {
   const l = (meubles || []).filter(x => x && x.nom).slice(0, 30);
-  if (!l.length) return { plan: [] };
+  if (!l.length || max <= 0) return { plan: [] };
   const net = (x, n) => neutraliser(String(x || '')).replace(/\s+/g, ' ').trim().slice(0, n);
   const prompt = `Tu es le subconscient de Hakim. Il commence à répondre à papa : « ${net(debut, 300) || '…'} ».${humeur ? ` Son humeur : ${net(humeur, 40)}.` : ''}\n`
     + `Pendant sa réponse, sa voix aura des petits blancs (le temps que la phrase suivante se calcule). Ses meubles (des petits mots pour les remplir) :\n`
     + l.map(x => `- ${net(x.nom, 40)} : « ${net(x.texte, 60)} »`).join('\n')
     + `\nPrévois ses ${PLAN_MEUBLES_MAX} prochains blancs, dans l'ordre. Pour chacun, une ligne :\n`
     + `B1 : nom du meuble | court ou long | fondu, enchaîné ou net | combien de blancs il couvre (1 à 3)\n`
-    + `ou « B2 : rien » pour un blanc laissé en silence. Varie, comme quelqu'un qui parle vraiment ; jamais le même meuble deux fois de suite. Rien d'autre.`;
+    + `ou « B2 : rien » pour un blanc laissé en silence. AU PLUS ${max} meuble${max > 1 ? 's' : ''} en tout (papa l'a réglé) : tous les autres blancs, « rien ». `
+    + `Varie, comme quelqu'un qui parle vraiment ; jamais le même meuble deux fois de suite. Rien d'autre.`;
   const t0 = Date.now();
   let plan = [];
-  try { plan = lirePlanMeubles((await demander('haiku', prompt, PLAN_MEUBLES_MS)).texte, l.map(x => x.nom)); } catch (_) {}
+  try { plan = lirePlanMeubles((await demander('haiku', prompt, PLAN_MEUBLES_MS)).texte, l.map(x => x.nom), max); } catch (_) {}
   try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'plan_meubles', blancs: plan.length, meubles: plan.filter(x => !x.rien).length, ms: Date.now() - t0 }) + '\n', { mode: 0o600 }); } catch (_) {}
   return { plan };
 }
@@ -12004,7 +12009,7 @@ async function traiter(req, res) {
   if (p === '/api/jarvis/plan-meubles' && req.method === 'POST') {   // (07/11) ses meubles pour les blancs de sa réponse : son plan
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
-    const r = await planMeubles(String(q.debut || ''), Array.isArray(q.meubles) ? q.meubles : [], String(q.humeur || ''));
+    const r = await planMeubles(String(q.debut || ''), Array.isArray(q.meubles) ? q.meubles : [], String(q.humeur || ''), demanderVivant, maxMeublesPlan());
     res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(r));
   }
   if (p === '/api/jarvis/choisir-parole' && req.method === 'POST') {   // (07/11) ses paroles prêtes : laquelle maintenant (son subconscient)
