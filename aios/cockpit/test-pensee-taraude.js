@@ -43,7 +43,7 @@ test('branché : sa consigne de l’oreille interne lui offre SOLLICITER, la lig
   assert.match(f, /const sollicite = \/\(\?:\^\|\\n\)\\s\*SOLLICITER\\s\*:\\s\*oui\/i\.test\(brut\);/);
   assert.match(f, /penseeQuiTaraude\(reponse, c\.source === 'micro' \? 'piece' : 'entendu', sollicite\);/);
   assert.match(SRC, /\(\?:PREDIT\|COMPRENDS\?\|DIRE\|COUPER\|SOLLICITER\)\\s\*:/, 'boutDe retire la ligne de sa pensée');
-  assert.match(SRC, /const SOLLICITATIONS = new Set\(\['boucle', 'question', 'taraude'\]\);/);
+  assert.match(SRC, /const SOLLICITATIONS = new Set\(\['boucle', 'question', 'taraude'(?:, 'faire')?\]\);/);
   assert.match(SRC, /d\.raison === 'taraude' \? "Cette pensée te taraude/);
-  assert.match(SRC, /execFile\(PYTHON, \['-B', path\.join\(ANAMNESE, 'cli\.py'\), 'reveil-interieur', 'solliciter', String\(source\), raison\]/);
+  assert.match(SRC, /execFile\(PYTHON, \['-B', path\.join\(ANAMNESE, 'cli\.py'\), 'reveil-interieur', 'solliciter', String\(source\), raison(?:, \.\.\.\(reessai \? \['reessai'\] : \[\]\))?\]/);
 });

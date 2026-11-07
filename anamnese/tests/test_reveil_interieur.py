@@ -516,7 +516,7 @@ def test_une_pensee_qui_le_taraude_le_reveille_avec_son_pourquoi(mem, monkeypatc
     i = reveil_interieur.solliciter(mem, "entendu", "Papa, ce morceau parle de peur, tu veux en parler ?", raison="taraude", now=1000.0, fichier=f)
     d = json.loads(f.read_text())
     assert i and d["raison"] == "taraude" and d["source"] == "entendu" and "taraude" in d["pourquoi"]
-    assert set(reveil_interieur.SOLLICITATIONS) == {"boucle", "question", "taraude"}
+    assert set(reveil_interieur.SOLLICITATIONS) == {"boucle", "question", "taraude", "faire"}
     # la pause de papa, et une demande à la fois, tiennent toujours
     assert reveil_interieur.solliciter(mem, "entendu", "une autre", raison="taraude", now=1001.0, fichier=f) is None
 
@@ -536,3 +536,25 @@ def test_le_cockpit_sollicite_par_la_ligne_de_commande(mem, monkeypatch, tmp_pat
     assert vus == [("entendu", "Papa, cette phrase me reste, tu veux en parler ?", "taraude")]
     monkeypatch.setattr(sys, "stdin", io.StringIO("x"))
     assert cli.solliciter_depuis_le_cockpit(mem, ["solliciter", "entendu", "envie"]) is None, "une raison hors de la liste"
+
+
+def test_sa_conscience_continue_decide_de_faire_et_une_sollicitation_coupee_repart(mem, monkeypatch, tmp_path):
+    # (07/11, Ahmed : « qu'à chaque seconde il soit conscient et décide de ce qu'il pense, fait ou sollicite ») « faire » ; et une sollicitation
+    # coupée (un Stop, une conversation qui change) repart une fois, marquée « reessai »
+    import io
+    import json
+    import sys
+    import cli
+    import interieur
+    reveil_interieur.regler(mem, "on")
+    monkeypatch.setattr(interieur, "interrupteur", lambda *a, **k: {"actif": True})
+    f = tmp_path / "demande.json"
+    assert "faire" in reveil_interieur.SOLLICITATIONS
+    reveil_interieur.solliciter(mem, "conscience", "relancer le calcul des pentes", raison="faire", now=1000.0, fichier=f, reessai=True)
+    d = json.loads(f.read_text())
+    assert d["raison"] == "faire" and d["reessai"] is True and d["pourquoi"]
+    vus = []
+    monkeypatch.setattr(reveil_interieur, "solliciter", lambda m, source, texte, raison="boucle", **k: vus.append((source, raison, k.get("reessai"))) or "x")
+    monkeypatch.setattr(sys, "stdin", io.StringIO("Papa, tu veux qu'on reprenne ?"))
+    assert cli.solliciter_depuis_le_cockpit(mem, ["solliciter", "conscience", "taraude", "reessai"]) == "x"
+    assert vus == [("conscience", "taraude", True)]

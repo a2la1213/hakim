@@ -129,7 +129,8 @@ def solliciter_depuis_le_cockpit(m, rest):
     if raison not in RI.SOLLICITATIONS:
         return None
     texte = sys.stdin.read(4000).strip()[:1200]
-    return RI.solliciter(m, source, texte, raison=raison) if len(texte) >= 8 else None
+    reessai = len(rest) > 3 and rest[3] == "reessai"           # (07/11) une sollicitation coupée qui repart, une fois
+    return RI.solliciter(m, source, texte, raison=raison, reessai=reessai) if len(texte) >= 8 else None
 
 
 def main():

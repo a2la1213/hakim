@@ -5989,7 +5989,10 @@ function ecouterPensees() {
   es.addEventListener('echange_montre', (ev) => { try { surEchangeMontre(JSON.parse(ev.data)); } catch (_) {} });   // (06/11) la montre, en direct
   es.addEventListener('reecoute', (ev) => { try { surReecoute(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('souffle', (ev) => { try { surSouffle(JSON.parse(ev.data)); } catch (_) {} });   // (15:02) ses brouillons, écrits
-  es.addEventListener('entendu', (ev) => { try { surEntendu(JSON.parse(ev.data)); } catch (_) {} });   // (04/11, 18:50) son oreille interne, par la route du micro
+  es.addEventListener('entendu', (ev) => { try { surEntendu(JSON.parse(ev.data)); } catch (_) {} });
+  // (07/11, Ahmed : « qu'à chaque seconde il soit conscient et décide de ce qu'il pense, fait ou sollicite ») sa conscience continue : ce qu'il décide
+  es.addEventListener('conscience', (ev) => { try { const o = JSON.parse(ev.data); if (!o.texte || (etat.reglages && etat.reglages.masquerEpissure)) return;
+    montrerPensee(o.action === 'solliciter' ? '💡 il veut te parler' : o.action === 'faire' ? '💡 il décide de faire' : '💡 sa conscience', o.texte, true); } catch (_) {} });   // (04/11, 18:50) son oreille interne, par la route du micro
   // (19:58) sa lumière : la lampe du téléphone (l'appli 1.36), ou son SOS selon son émotion
   es.addEventListener('son', (ev) => { try { const o = JSON.parse(ev.data);   // (22:51) ; (01:30) à sa place, sur l'autre appareil s'il l'a voulu
     if (o.ici && !(o.extrait && (o.extrait.cible === 'deux' || o.extrait.cible === appareilIci()))) return;
