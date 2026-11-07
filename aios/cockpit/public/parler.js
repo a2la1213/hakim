@@ -7764,7 +7764,7 @@ function texteCompteur(d) {
    au cockpit, jamais publiée), ses points trouvés ici une fois (gardés dans ce navigateur), puis son visage animé ici, sans rien envoyer :
    sa voix qui sort (niveau, timbre) fait bouger ses lèvres, son émotion son expression, son rire, son écoute, ses clignements */
 // var : humeur() peut passer avant cette ligne au chargement de la page (majAvatar le vérifie)
-var avatarEtat = { actif: true, instance: null, maj: 0, enCharge: false, vu: 0, erreur: '' };
+var avatarEtat = { actif: true, instance: null, maj: 0, enCharge: false, vu: 0, erreur: '', image: null, points: null, cadrage: { zoom: 1, dy: 0 } };
 try { avatarEtat.actif = localStorage.getItem('hakim-avatar') !== 'non'; } catch (_) {}
 const CLE_POINTS_AVATAR = 'hakim-avatar-points';
 const tamponAvatar = { temps: null, freq: null };
@@ -7786,39 +7786,59 @@ function lireAvatar() {
 }
 function lirePointsAvatar(maj) { try { const o = JSON.parse(localStorage.getItem(CLE_POINTS_AVATAR) || 'null'); return o && o.maj === maj && Array.isArray(o.points) ? o.points : null; } catch (_) { return null; } }
 function garderPointsAvatar(maj, points) { try { localStorage.setItem(CLE_POINTS_AVATAR, JSON.stringify({ maj, points: points.map(p => ({ x: +p.x.toFixed(5), y: +p.y.toFixed(5) })) })); } catch (_) {} }
-function construireAvatar(image, points, maj) {
-  const cadre = Avatar.cadrer(points, image.width, image.height);
+// (07/11, Ahmed : « pour le visage de l'avatar, je dois pouvoir supprimer ou éditer ») son cadrage (taille, hauteur), vu dans l'aperçu des
+// réglages et sur la scène à l'instant, gardé au cockpit (le même sur le Mac et le téléphone) ; supprimer : la grande orbe revient
+function construireAvatar(image, points, maj, cadrage = avatarEtat.cadrage) {
+  const cadre = Avatar.cadrer(points, image.width, image.height, 480, 600, cadrage);
   const m = Avatar.preparer(cadre.points, cadre.L, cadre.H);
+  const enMarche = !!(avatarEtat.instance && avatarEtat.instance.actif);
   if (avatarEtat.instance) avatarEtat.instance.detruire();
-  avatarEtat.instance = Avatar.creer($('avatarScene'), { maillage: m, image: Avatar.photoCadree(image, cadre), reduit: REDUCED });
-  avatarEtat.maj = maj; avatarEtat.erreur = '';
+  const photo = Avatar.photoCadree(image, cadre);
+  avatarEtat.instance = Avatar.creer($('avatarScene'), { maillage: m, image: photo, reduit: REDUCED });
+  Object.assign(avatarEtat, { maj, erreur: '', image, points, cadrage: { zoom: Number(cadrage.zoom) || 1, dy: Number(cadrage.dy) || 0 } });
+  const a = $('avatarApercu');
+  if (a) { const cx = a.getContext('2d'); cx.clearRect(0, 0, a.width, a.height); cx.drawImage(photo, 0, 0, a.width, a.height); }
+  if (enMarche) avatarEtat.instance.demarrer(lireAvatar);
 }
+function oublierAvatar() {
+  if (avatarEtat.instance) avatarEtat.instance.detruire();
+  Object.assign(avatarEtat, { instance: null, maj: 0, image: null, points: null, cadrage: { zoom: 1, dy: 0 }, erreur: 'pas de photo' });
+  try { localStorage.removeItem(CLE_POINTS_AVATAR); } catch (_) {}
+}
+const memeCadrage = (a, b) => !!a && !!b && Math.abs(a.zoom - b.zoom) < 1e-6 && Math.abs(a.dy - b.dy) < 1e-6;
 async function chargerAvatar() {
   if (avatarEtat.enCharge || typeof Avatar === 'undefined') return;
   avatarEtat.enCharge = true; avatarEtat.vu = Date.now();
   try {
     const meta = await (await fetch('/api/avatar', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' })).json();
-    if (!meta || !meta.existe) { avatarEtat.erreur = 'pas encore de photo'; return; }
-    if (meta.maj === avatarEtat.maj && avatarEtat.instance) return;
+    if (!meta || !meta.existe) { oublierAvatar(); return; }              // effacée (ici ou sur l'autre appareil)
+    const cadrage = meta.cadrage || { zoom: 1, dy: 0 };
+    if (meta.maj === avatarEtat.maj && avatarEtat.instance) {
+      if (!memeCadrage(cadrage, avatarEtat.cadrage) && avatarEtat.image) construireAvatar(avatarEtat.image, avatarEtat.points, meta.maj, cadrage);
+      return;
+    }
     const r = await fetch('/api/avatar/visage', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
     if (!r.ok) throw new Error(`photo ${r.status}`);
     const image = await createImageBitmap(await r.blob());
     let points = lirePointsAvatar(meta.maj);
     if (!points) { points = await Avatar.detecter(image); garderPointsAvatar(meta.maj, points); }
-    construireAvatar(image, points, meta.maj);
+    construireAvatar(image, points, meta.maj, cadrage);
     journalVoix('avatar_pret', { maj: meta.maj });
   } catch (e) { avatarEtat.erreur = String(e.message || e).slice(0, 80); journalVoix('avatar_erreur', { erreur: avatarEtat.erreur }); }
   finally { avatarEtat.enCharge = false; afficherEtatAvatar(); if (typeof humeur === 'function') humeur(); }
 }
 function afficherEtatAvatar() {
-  const e = $('avatarEtat');
-  if (e) e.textContent = avatarEtat.instance ? 'son visage est prêt' : avatarEtat.enCharge ? 'son visage se prépare…' : avatarEtat.erreur;
+  const e = $('avatarEtat'), pret = !!avatarEtat.instance;
+  if (e) e.textContent = pret ? 'son visage est prêt' : avatarEtat.enCharge ? 'son visage se prépare…' : avatarEtat.erreur;
+  for (const id of ['avatarApercu', 'avatarSupprimer', 'groupeAvatarZoom', 'groupeAvatarHauteur']) if ($(id)) $(id).hidden = !pret;
+  if ($('avatarZoom') && pret) { $('avatarZoom').value = String(avatarEtat.cadrage.zoom); $('avatarHauteur').value = String(avatarEtat.cadrage.dy); }
 }
-// en Conversation et en Télépathie, la scène visible : son visage à la place de la grande orbe (l'animation ne tourne que là)
+// en Conversation et en Télépathie, la scène visible : son visage à la place de la grande orbe (l'animation ne tourne que là) ; relu
+// au cockpit toutes les minutes (effacée ou recadrée sur l'autre appareil)
 function majAvatar(sceneVisible) {
   if (typeof avatarEtat === 'undefined' || !avatarEtat || !$('avatarScene')) return;
   const voulu = !!(sceneVisible && etat.conversation && avatarEtat.actif);
-  if (voulu && !avatarEtat.instance && !avatarEtat.enCharge && Date.now() - avatarEtat.vu > 60000) chargerAvatar();
+  if (voulu && !avatarEtat.enCharge && Date.now() - avatarEtat.vu > 60000) chargerAvatar();
   const montre = voulu && !!avatarEtat.instance;
   $('avatarScene').hidden = !montre;
   $('orbeScene').hidden = montre;
@@ -7830,7 +7850,7 @@ function majAvatar(sceneVisible) {
   if (!c || !f) return;
   c.checked = avatarEtat.actif;
   c.addEventListener('change', () => { avatarEtat.actif = c.checked; try { localStorage.setItem('hakim-avatar', c.checked ? 'oui' : 'non'); } catch (_) {} humeur(); });
-  // ta photo : son visage d'abord trouvé ici (sinon rien n'est envoyé), puis gardée au cockpit
+  // ta photo : son visage d'abord trouvé ici (sinon rien n'est envoyé), puis gardée au cockpit ; une nouvelle photo repart du cadrage de base
   f.addEventListener('change', async () => {
     const fichier = f.files && f.files[0];
     f.value = '';
@@ -7843,12 +7863,34 @@ function majAvatar(sceneVisible) {
       const o = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(o.erreur || `envoi ${r.status}`);
       garderPointsAvatar(o.maj, points);
-      construireAvatar(image, points, o.maj);
+      construireAvatar(image, points, o.maj, { zoom: 1, dy: 0 });
       journalVoix('avatar_photo', { maj: o.maj });
     } catch (e) { avatarEtat.erreur = String(e.message || e).slice(0, 80); }
     finally { avatarEtat.enCharge = false; afficherEtatAvatar(); humeur(); }
   });
+  // éditer : la taille et la hauteur du visage, vues à l'instant ; gardées au cockpit une fois le curseur posé
+  let envoiCadrage = null;
+  const recadrer = () => {
+    if (!avatarEtat.image) return;
+    const cadrage = { zoom: Number($('avatarZoom').value) || 1, dy: Number($('avatarHauteur').value) || 0 };
+    construireAvatar(avatarEtat.image, avatarEtat.points, avatarEtat.maj, cadrage);
+    clearTimeout(envoiCadrage);
+    envoiCadrage = setTimeout(() => fetch('/api/avatar/cadrage', { method: 'POST', headers: { 'X-Jeton': jeton(), 'Content-Type': 'application/json' }, body: JSON.stringify(cadrage) })
+      .then(r => { if (!r.ok) throw new Error(`cadrage ${r.status}`); }).catch((e) => { avatarEtat.erreur = String(e.message || e); afficherEtatAvatar(); }), 600);
+  };
+  if ($('avatarZoom')) { $('avatarZoom').addEventListener('input', recadrer); $('avatarHauteur').addEventListener('input', recadrer); }
+  // supprimer : la photo et son cadrage effacés au cockpit, la grande orbe revient (sur chaque appareil)
+  if ($('avatarSupprimer')) $('avatarSupprimer').addEventListener('click', async () => {
+    if (!confirm('Supprimer son visage ? La grande orbe revient à sa place.')) return;
+    try {
+      const r = await fetch('/api/avatar/visage', { method: 'DELETE', headers: { 'X-Jeton': jeton() } });
+      if (!r.ok) throw new Error(`suppression ${r.status}`);
+      oublierAvatar(); journalVoix('avatar_supprime', {});
+    } catch (e) { avatarEtat.erreur = String(e.message || e).slice(0, 80); }
+    afficherEtatAvatar(); humeur();
+  });
   afficherEtatAvatar();
+  setTimeout(chargerAvatar, 1500);                                     // les réglages montrent son visage dès l'ouverture de la page
 })();
 
 // (05/11, Ahmed : « un petit compteur de jetons, converti en CHF, sous l'orbe ; à afficher ou pas dans les réglages rapides ») aujourd'hui, relu toutes les 30 s

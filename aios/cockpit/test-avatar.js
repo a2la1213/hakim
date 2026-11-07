@@ -122,3 +122,26 @@ test('rien ne sort de l’appareil : avatar.js ne fait aucun envoi', () => {
   const src = fs.readFileSync(path.join(__dirname, 'public', 'avatar.js'), 'utf8');
   assert.doesNotMatch(src, /fetch\(|XMLHttpRequest|sendBeacon|WebSocket/);
 });
+
+test('(07/11, « éditer ») le cadrage : plus grand (zoom), plus haut ou plus bas (dy) ; sans cadrage, comme avant', () => {
+  const pts = visage().map(([x, y]) => ({ x: (x + 300) / 1200, y: (y + 100) / 900 }));
+  const etendue = (c) => { const xs = c.points.map(p => p[0]); return Math.max(...xs) - Math.min(...xs); };
+  const milieuY = (c) => c.points.reduce((a, p) => a + p[1], 0) / c.points.length;
+  const base = Avatar.cadrer(pts, 1200, 900), pareil = Avatar.cadrer(pts, 1200, 900, 480, 600, { zoom: 1, dy: 0 });
+  assert.deepEqual(pareil.points, base.points);
+  assert.ok(etendue(Avatar.cadrer(pts, 1200, 900, 480, 600, { zoom: 1.4 })) > etendue(base) * 1.35, 'zoom 1,4 : le visage plus grand');
+  assert.ok(milieuY(Avatar.cadrer(pts, 1200, 900, 480, 600, { dy: 0.1 })) > milieuY(base) + 40, 'dy > 0 : le visage plus bas');
+  assert.ok(milieuY(Avatar.cadrer(pts, 1200, 900, 480, 600, { dy: -0.1 })) < milieuY(base) - 40, 'dy < 0 : plus haut');
+  assert.deepEqual(Avatar.cadrer(pts, 1200, 900, 480, 600, { zoom: 99, dy: 99 }).points, Avatar.cadrer(pts, 1200, 900, 480, 600, { zoom: 1.8, dy: 0.35 }).points, 'borné');
+});
+
+test('(07/11, « supprimer ou éditer ») la page : l’aperçu, la taille et la hauteur gardées au cockpit, la suppression rend la grande orbe', () => {
+  const page = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const html = fs.readFileSync(path.join(__dirname, 'public', 'parler.html'), 'utf8');
+  for (const id of ['avatarApercu', 'avatarSupprimer', 'avatarZoom', 'avatarHauteur']) assert.match(html, new RegExp(`id="${id}"`));
+  assert.match(page, /const cadre = Avatar\.cadrer\(points, image\.width, image\.height, 480, 600, cadrage\);/);
+  assert.match(page, /fetch\('\/api\/avatar\/cadrage', \{ method: 'POST'/);
+  assert.match(page, /fetch\('\/api\/avatar\/visage', \{ method: 'DELETE'/);
+  assert.match(page, /if \(!meta \|\| !meta\.existe\) \{ oublierAvatar\(\); return; \}/, 'effacée sur l’autre appareil : oubliée ici aussi');
+  assert.match(page, /function oublierAvatar\(\) \{\n  if \(avatarEtat\.instance\) avatarEtat\.instance\.detruire\(\);/);
+});

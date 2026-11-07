@@ -63,13 +63,16 @@
   }
 
   // ---------- la photo cadrée : un portrait 4:5 autour du visage (points MediaPipe normalisés 0..1 → pixels du cadre)
-  function cadrer(points, largeurImage, hauteurImage, L = 480, H = 600) {
+  // (07/11, « éditer ») cadrage : zoom (0,6 à 1,8 : le visage plus petit ou plus grand), dy (−0,35 à 0,35 : plus haut ou plus bas)
+  function cadrer(points, largeurImage, hauteurImage, L = 480, H = 600, cadrage = {}) {
+    const zoom = borne(Number.isFinite(Number(cadrage.zoom)) ? Number(cadrage.zoom) : 1, 0.6, 1.8);
+    const dy = borne(Number.isFinite(Number(cadrage.dy)) ? Number(cadrage.dy) : 0, -0.35, 0.35);
     const px = points.map(p => [p.x * largeurImage, p.y * hauteurImage]);
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const [x, y] of px) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
     const lv = x1 - x0, hv = y1 - y0, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-    const largeur = Math.max(lv * 1.8, hv * 1.45), hauteur = largeur * H / L;
-    const sx = cx - largeur / 2, sy = cy - hauteur * 0.47;                 // le visage un peu au-dessus du milieu
+    const largeur = Math.max(lv * 1.8, hv * 1.45) / zoom, hauteur = largeur * H / L;
+    const sx = cx - largeur / 2, sy = cy - hauteur * (0.47 + dy);          // le visage un peu au-dessus du milieu
     const k = L / largeur;
     return { source: { x: sx, y: sy, l: largeur, h: hauteur }, L, H, points: px.map(([x, y]) => [(x - sx) * k, (y - sy) * k]) };
   }

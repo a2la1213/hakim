@@ -31,7 +31,7 @@ test('sans photo : rien ; papa en dépose une : elle est gardée, servie, et rem
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'avatar-'));
   assert.equal(await appel(d, 'GET', '/api/autre'), null, 'une autre route : pas la sienne');
   let r = await appel(d, 'GET', '/api/avatar');
-  assert.deepEqual(JSON.parse(r.corps), { existe: false, maj: 0 });
+  assert.deepEqual(JSON.parse(r.corps), { existe: false, maj: 0, cadrage: { zoom: 1, dy: 0 } });
   r = await appel(d, 'POST', '/api/avatar/visage', JPEG, false);
   assert.equal(r.code, 403, 'sans le jeton : refusé');
   r = await appel(d, 'POST', '/api/avatar/visage', Buffer.from('pas une image'));
@@ -58,4 +58,29 @@ test('branché au cockpit, et sa photo n’est jamais dans ce qui est publié', 
   const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   assert.match(srv, /const \{ routeAvatar \} = require\('\.\/avatar-serveur\.js'\);/);
   assert.match(srv, /if \(p\.startsWith\('\/api\/avatar'\) && routeAvatar\(req, res, p, \{ dossier: path\.join\(JARVIS, 'avatar'\), jetonValide \}\)\) return;/);
+});
+
+// (07/11, Ahmed : « pour le visage de l'avatar, je dois pouvoir supprimer ou éditer ») le cadrage (taille, hauteur du visage) et la suppression
+test('son cadrage se règle (borné), se lit avec la photo ; supprimer efface la photo et son cadrage ; jamais sans le jeton', async () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'avatar-'));
+  await appel(d, 'POST', '/api/avatar/visage', JPEG);
+  let r = await appel(d, 'POST', '/api/avatar/cadrage', Buffer.from(JSON.stringify({ zoom: 1.3, dy: -0.1 })));
+  assert.equal(r.code, 200);
+  assert.deepEqual(JSON.parse(r.corps).cadrage, { zoom: 1.3, dy: -0.1 });
+  r = await appel(d, 'GET', '/api/avatar');
+  assert.deepEqual(JSON.parse(r.corps).cadrage, { zoom: 1.3, dy: -0.1 });
+  r = await appel(d, 'POST', '/api/avatar/cadrage', Buffer.from(JSON.stringify({ zoom: 9, dy: -4 })));
+  assert.deepEqual(JSON.parse(r.corps).cadrage, { zoom: 1.8, dy: -0.35 }, 'borné');
+  r = await appel(d, 'POST', '/api/avatar/cadrage', Buffer.from('pas du json'));
+  assert.equal(r.code, 400);
+  r = await appel(d, 'DELETE', '/api/avatar/visage', null, false);
+  assert.equal(r.code, 403, 'sans le jeton : rien n’est effacé');
+  r = await appel(d, 'DELETE', '/api/avatar/visage');
+  assert.equal(r.code, 200);
+  assert.deepEqual(fs.readdirSync(d), [], 'la photo et son cadrage, effacés');
+  r = await appel(d, 'GET', '/api/avatar');
+  assert.deepEqual(JSON.parse(r.corps), { existe: false, maj: 0, cadrage: { zoom: 1, dy: 0 } });
+  r = await appel(d, 'POST', '/api/avatar/visage', JPEG);
+  r = await appel(d, 'GET', '/api/avatar');
+  assert.deepEqual(JSON.parse(r.corps).cadrage, { zoom: 1, dy: 0 }, 'une nouvelle photo repart du cadrage de base');
 });
