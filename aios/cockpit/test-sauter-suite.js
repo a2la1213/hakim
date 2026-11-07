@@ -402,6 +402,9 @@ test('ta voix dure sur la sienne : son subconscient choisit ; CONTINUER, il fini
   assert.deepStrictEqual(finit.montrees, ['presque fini'], 'son choix se voit');
   const coupe = await essai({ couper: true });
   assert.deepStrictEqual(coupe.ctx.etat.riboFile.map((x) => x.texte), ['plus tard'], 'il se coupe : la suite est sautée');
+  assert.strictEqual(coupe.ctx.lecteur.arrete, true, '(07/11) il a décidé de se taire : sa voix s’arrête tout de suite, sans finir le morceau');
+  assert.ok(coupe.journal.some(([e, o]) => e === 'suite_sautee' && o.net === true));
+  assert.strictEqual(finit.ctx.lecteur.arrete, false, 'il finit : sa voix continue');
   const panne = await essai('panne');
   assert.deepStrictEqual(panne.ctx.etat.riboFile.map((x) => x.texte), ['plus tard'], 'sans réponse : il se coupe (papa d’abord)');
 });

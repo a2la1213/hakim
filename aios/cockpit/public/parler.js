@@ -3884,14 +3884,21 @@ function prevoirSaut(conv) {
       .then((c) => {
         if (etat.conversation !== conv) return;
         if (c && c.couper === false) { journalVoix('garde_la_parole', { ms: ecoute }); if (c.pourquoi) montrerPensee('🗣 il finit ce qu’il dit', c.pourquoi, true); return; }
-        sauterLaSuite(Date.now() - t0);
+        sauterLaSuite(Date.now() - t0, true);                          // (07/11) il a décidé de se taire : tout de suite
       });
   }, ms);
 }
-function sauterLaSuite(ms) {
+// net : (07/11, Ahmed : « quand je lui coupe la parole et qu'il décide de se taire, il doit finir immédiatement, sans attendre la fin du morceau
+// qu'il prononce ») sa voix s'arrête tout de suite ; ce qui était prêt et pas dit est gardé (5 min) pour après
+function sauterLaSuite(ms, net = false) {
   const t = Number(etat.epissureTour) || 0;
-  if (typeof journalVoix === 'function') journalVoix('suite_sautee', { tour: t, ms });
-  arreterEpissure('sautee', t, { laisserFinir: true });
+  if (typeof journalVoix === 'function') journalVoix('suite_sautee', { tour: t, ms, ...(net ? { net: true } : {}) });
+  arreterEpissure('sautee', t, { laisserFinir: !net });
+  if (net) {
+    if (typeof garderVoixCoupees === 'function') garderVoixCoupees();
+    if (typeof bouts !== 'undefined') { if (bouts.liste) bouts.liste.clear(); bouts.fileTel = []; bouts.attenteTel = null; bouts.enFile = []; }
+    try { if (lecteur) lecteur.arreter(); } catch (_) {}
+  }
   fetch('/api/jarvis/ribosome/stop', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ tour: t, sauter: true }) })
     .then((r) => (r.ok ? r.json() : null)).then((o) => {
       const n = o && Number(o.tour);
