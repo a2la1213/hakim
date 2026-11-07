@@ -2339,7 +2339,7 @@ setInterval(() => {
 }, 250);
 
 let envoiPrepare = null;
-async function envoyer(texte, oral, dejaRelance) {
+async function envoyer(texte, oral, dejaRelance, { fusionner = false } = {}) {
   texte = (texte || '').trim();
   if (etat.joints.some(x => !x.chemin && !x.erreur)) { humeur('fichiers en cours d’envoi…'); return; }   // le texte reste
   if (!dejaRelance && texte) {
@@ -2355,6 +2355,10 @@ async function envoyer(texte, oral, dejaRelance) {
   const joints = dejaRelance ? (dejaRelance.joints || []) : etat.joints.filter(x => x.chemin);
   if (!texte && joints.length) texte = joints.length > 1 ? 'Regarde ces fichiers.' : 'Regarde ce fichier.';
   if (!texte) return;
+  // (07/11, 15:20, Ahmed : « c'est envoyé en messages séparés ») ta suite, arrivée avant sa réponse : ton message d'avant se complète
+  // (même bulle, même identifiant) et Hakim reçoit ta phrase entière
+  const fusion = fusionner && !dejaRelance && oral && etat.conversation && typeof messageAFusionner === 'function' ? messageAFusionner() : null;
+  if (fusion) { fusion.texte = `${fusion.texte} ${texte}`.trim(); texte = fusion.texte; journalVoix('fusion_message', { id: String(fusion.id) }); }
   activite();
   contexteAudio();
   etat.dernierOral = !!oral;
@@ -2377,7 +2381,7 @@ async function envoyer(texte, oral, dejaRelance) {
   arreterTout(true, { garder: true, raison: 'message', garderVoix: !!souffleDit || voixEpissee() });
   $('q').value = ''; ajuster();
   const avant = etat.messages.filter(x => x.qui === 'u' && x.ts);
-  const tPrecedent = etat.session && avant.length ? avant[avant.length - (dejaRelance ? 2 : 1)]?.ts : null;
+  const tPrecedent = etat.session && avant.length ? avant[avant.length - (dejaRelance || fusion ? 2 : 1)]?.ts : null;
   const tDebut = etat.session && avant.length ? avant[0].ts : null;
   // (30/10, 21:00, Ahmed : « deux modes Conversation » — « comme de la télépathie, mais à haute voix ») « dans sa tête » : ses
   // paroles dites lui parviennent, mais ne s'affichent pas comme message
@@ -2385,7 +2389,7 @@ async function envoyer(texte, oral, dejaRelance) {
   const enTete = !!oral && ((typeof reglagesCorps !== 'undefined' && (reglagesCorps.afficher_papa === false || motsPapaCaches()))
     || !!(oral && etat.conversation && etat.conversation.morceauxMontres > 0));
   if (oral && etat.conversation) etat.conversation.morceauxMontres = 0;
-  if (!dejaRelance) etat.messages.push({ id: nouvelId(), qui: 'u', texte, oral: !!oral, ts: Date.now(), joints: joints.map(x => x.nom), ...(enTete ? { cache: true } : {}) });
+  if (!dejaRelance && !fusion) etat.messages.push({ id: nouvelId(), qui: 'u', texte, oral: !!oral, ts: Date.now(), joints: joints.map(x => x.nom), ...(enTete ? { cache: true } : {}) });
   // (21:13, Ahmed : « dans ce mode, ses paroles aussi ne s'affichent plus, seulement sa voix ») la case « ses paroles »
   const m = { id: nouvelId(), qui: 'j', texte: souffleDit ? `${souffleDit} ` : '', outils: [], enCours: true,
     ...(oral && reponseCachee() ? { cache: true } : {}),                    // (04/11) dans les deux modes : dite, pas écrite
@@ -3238,6 +3242,46 @@ function phraseFinie(t) {
   if (!Conversation.utile(x) || /(\.\.\.|…|,)$/.test(x) || !/[.!?؟]$/.test(x)) return false;
   const dernier = x.replace(/[.!?؟]+$/, '').trim().split(/\s+/).pop() || '';
   return !FIN_SUSPENDUE.test(dernier.replace(/[^\p{L}']/gu, ''));
+}
+/* (07/11, 15:20, Ahmed : « ma voix se coupe en petits morceaux même quand j'enchaîne, et c'est envoyé en messages séparés » ; mesuré :
+   des blancs de 0,5 à 0,8 s, six fins de tour, six messages, sa réponse lâchée à chaque fois ; « Ouiii » aux deux corrections)
+   1. ta phrase finie en suspens (« de », « ou », « le », une virgule…, la transcription y met quand même un point) attend ta suite 1,5 s
+      de plus (2,5 s en tout) ; ta suite s'y colle ; tant que tu parles ou qu'un tour se transcrit, elle attend (20 s au plus) */
+const SUSPENS_ATTENTE_MS = 1500;
+function finSuspendue(t) {
+  const x = String(t || '').trim();
+  if (!x || /[?؟]$/.test(x)) return false;
+  if (/(\.\.\.|…|,)$/.test(x)) return true;
+  const dernier = x.replace(/[.!]+$/, '').trim().split(/\s+/).pop() || '';
+  return FIN_SUSPENDUE.test(dernier.replace(/[^\p{L}']/gu, ''));
+}
+function garderEnSuspens(conv, texte, infos, extra, t0Tour) {
+  journalVoix('suspens_garde', { mots: String(texte).split(/\s+/).length });
+  const s = { texte, infos, depuis: Date.now() };
+  const verifier = () => {
+    if (conv.suspens !== s) return;                                         // ta suite l'a prise
+    const occupe = !!(conv.capteur && conv.capteur.enParole) || conv.enAttente > 0;
+    if (occupe && Date.now() - s.depuis < 20000) { s.minuteur = setTimeout(verifier, 300); return; }
+    conv.suspens = null;
+    journalVoix('suspens_envoye', { attente_ms: Date.now() - s.depuis });
+    envoyerTour(conv, s.texte, s.infos, extra, t0Tour);
+  };
+  s.minuteur = setTimeout(verifier, SUSPENS_ATTENTE_MS);
+  conv.suspens = s;
+}
+/* 2. un bout de ta parole qui arrive avant qu'il ait commencé à te répondre se colle à ton message d'avant : une bulle, une réponse
+      (ton dernier message oral, sans fichier, de moins de 30 s ; ni sa voix ni une réponse finie depuis) */
+const FUSION_MAX_MS = 30000;
+function messageAFusionner() {
+  const ms = etat.messages || [];
+  let i = ms.length - 1;
+  while (i >= 0 && ms[i].qui !== 'u') i--;
+  if (i < 0) return null;
+  const prev = ms[i];
+  if (!prev.oral || !prev.ts || Date.now() - prev.ts > FUSION_MAX_MS || (prev.joints || []).length) return null;
+  if (ms.slice(i + 1).some(m => m.qui === 'j' && !m.enCours && !m.coupe && String(m.texte || '').trim())) return null;   // il a répondu
+  if ((etat.parleDepuis && etat.parleDepuis > prev.ts) || voixJouee.some(v => v.debut > prev.ts)) return null;          // il a parlé
+  return prev;
 }
 // (30/10, 07:50-08:05) un tour de 5 min (9,6 Mo) prend ~35 s à transcrire : abandonné à 25 s, il était renvoyé en boucle et
 // chaque copie s'empilait dans la file du Mac (jusqu'à 3 min de retard pour tout le monde). Le délai suit la durée du morceau :
@@ -5476,11 +5520,17 @@ async function tourDeParole(conv, wav, infos, extra) {
     journalVoix('ancien_laisse', { morceaux: vieux.length });
   }
   if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(true, { garder: !lacher, raison: 'parole', garderVoix: voixEpissee() && !lacher }); }   // (12:30) sa voix continue ; (07/11) sauf s'il lâche l'ancien
+  // (07/11, 15:20) ta phrase gardée en suspens se colle devant ta suite ; une fin en suspens attend ta suite (garderEnSuspens)
+  if (conv.suspens) { clearTimeout(conv.suspens.minuteur); texte = `${conv.suspens.texte} ${texte}`; conv.suspens = null; }
+  if (!(extra && extra.differe) && etat.conversation === conv && finSuspendue(texte) && !COMMANDE_FIN.test(texte)) { garderEnSuspens(conv, texte, infos, extra, t0Tour); return; }
+  await envoyerTour(conv, texte, infos, extra, t0Tour);
+}
+async function envoyerTour(conv, texte, infos, extra, t0Tour) {
   sousTitre(texte);
   mesureTour = { fin: Number(infos && (infos.derniere_voix || infos.fin)) || t0Tour, debut: t0Tour, transcrit: Date.now(), premier_texte: 0, premier_son: 0,
     pauses: ((infos && infos.pauses) || []).slice(0, 30), anticipe: extra != null, patience: patienceConversation() };   // (27/10) pour rejouer la fin de tour
   etat.paroleDebut = infos && Number(infos.debut) ? Number(infos.debut) : null;   // (03/11) l'instant où papa a commencé à parler
-  await envoyer(texte, true);
+  await envoyer(texte, true, null, { fusionner: !(extra && extra.differe) });       // (07/11) ta suite, avant sa réponse : la même bulle
   if (mesureTour && mesureTour.premier_texte) setTimeout(() => { if (mesureTour && !mesureTour.premier_son) finMesureTour(); }, 20000);
   if (COMMANDE_FIN.test(texte)) {                                         // il répond au revoir, puis on ferme
     conv.finDemandee = true;
