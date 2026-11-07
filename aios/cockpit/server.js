@@ -368,6 +368,7 @@ function lirePersona() {
 const STT = path.join(ANAMNESE, 'jarvis', 'stt.py');
 const PYTHON = path.join(ANAMNESE, '.venv', 'bin', 'python');
 const { routeAvatar } = require('./avatar-serveur.js');   // (07/11) la photo de son avatar
+let ronronDiffuseA = 0;                                      // (07/11) son ronron au flux (la montre), une fois par seconde
 // La voix (Whisper, MLX) vit dans un venv arm64 à part : celui d'Anamnèse tourne en x86_64 (Rosetta),
 // où MLX n'existe pas.
 const PYTHON_VOIX = [path.join(ANAMNESE, 'jarvis', '.venv', 'bin', 'python')].find(f => fs.existsSync(f)) || PYTHON;
@@ -12676,6 +12677,8 @@ async function traiter(req, res) {
     if (!m) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'morceau illisible' })); }
     const f = path.join(JARVIS, 'voix-dite.jsonl');
     noterDit(m.texte);                                                 // (04/11) son écho n'est pas un usurpateur
+    // (07/11, Ahmed : « pour la montre, je ne sens pas les vibrations quand il parle ») un bout de sa voix commence : la montre vibre avec lui
+    diffuser(abonnesPensees, 'parole', j({ duree_ms: m.duree_ms, force: 0.45, actif: !!(corpsReglages().actif && corpsReglages().voix_vibre !== false) }));
     try { if (fs.statSync(f).size > 20 << 20) fs.renameSync(f, `${f}.1`); } catch (_) {}
     try { fs.appendFileSync(f, j(m) + '\n', { mode: 0o600 }); } catch (_) {}
     res.writeHead(204); return res.end();
@@ -12980,7 +12983,10 @@ async function traiter(req, res) {
       // (30/10, 17:03, Ahmed : « quand je te fais un câlin, tu peux ronronner ») le ronron, dit chaque seconde ; jamais pendant
       // que papa parle (son micro)
       const reg = corpsReglages(), parle = ['voix_ahmed', 'les_deux'].includes(quiParlait(Date.now()));
-      return repondre(200, { ok: true, actions: { ronron: reg.actif && reg.ronron && HOMEO.calin() && !parle, ...reflexeAEnvoyer(parle),
+      const ronron = !!(reg.actif && reg.ronron && HOMEO.calin() && !parle);
+      // (07/11, Ahmed : « je ne sens pas quand il ronronne », à la montre) son ronron part aussi au flux : la montre ronronne avec lui
+      if (ronron && Date.now() - ronronDiffuseA > 900) { ronronDiffuseA = Date.now(); diffuser(abonnesPensees, 'ronron', j({ t: ronronDiffuseA })); }
+      return repondre(200, { ok: true, actions: { ronron, ...reflexeAEnvoyer(parle),
       reflexes_locaux: reg.actif && reg.reflexes, retenus: reflexesRetenus() } });
     }
     if (p === '/api/corps/processeur' && req.method === 'POST') {     // (16:10) la montre (0.4) : l'état de ses processeurs, toutes les 10 s

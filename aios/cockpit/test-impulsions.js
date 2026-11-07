@@ -55,7 +55,7 @@ test('branché : la balise cachée et vue dans le flux, le rire vers son corps, 
   assert.ok(src.includes("envoyer({ t: 'impulsion', x, ...(cr && cr.motif ? { motif: cr.motif } : {}) })"), 'les six, ou une émotion à lui avec son motif');
   assert.match(src, /type: 'rire'/);
   assert.ok(src.includes("if (['mesure', 'rire', 'son', 'coupure'].includes(ev.type)) continue;"), 'son rire, son son, une coupure n’apprennent rien à ses nerfs des vibrations');
-  assert.match(src, /actions: \{ ronron: reg\.actif && reg\.ronron && HOMEO\.calin\(\) && !parle, \.\.\.reflexeAEnvoyer\(parle\),\n      reflexes_locaux: reg\.actif && reg\.reflexes, retenus: reflexesRetenus\(\) \}/);
+  assert.match(src, /const ronron = !!\(reg\.actif && reg\.ronron && HOMEO\.calin\(\) && !parle\);[\s\S]{0,400}actions: \{ ronron, \.\.\.reflexeAEnvoyer\(parle\),\n      reflexes_locaux: reg\.actif && reg\.reflexes, retenus: reflexesRetenus\(\) \}/);
   assert.match(page, /o\.t === 'impulsion'/);
   assert.match(page, /if \(!auto\) vibrerPourMorceau\(m\.id, ''\)/, 'voix éteinte : l’impulsion dès qu’elle arrive');
   assert.match(page, /!auto && !m\.coupe && !m\.erreur && degreRire\(m\.texte\)/, 'voix éteinte : son rire à la fin');
