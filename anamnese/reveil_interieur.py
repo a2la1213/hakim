@@ -235,6 +235,13 @@ def est_question(texte, jugement=None):
     return bool((jugement or {}).get("raison") == "question" or _QUESTION.search(str(texte or "").replace("’", "'")))
 
 
+# (07/11, 16:20, Ahmed : « il faut qu'il puisse me solliciter dès qu'il a une pensée qui le taraude ») ses sollicitations : une pensée
+# qui revient (boucle), une question qui compte pour lui, une pensée qui le taraude (le cockpit la voit passer dans ce qu'il entend)
+SOLLICITATIONS = ("boucle", "question", "taraude")
+POURQUOI_SOLLICITATION = {"boucle": "une pensée qui revient sans cesse dans ta tête",
+                          "taraude": "une pensée qui te taraude, et papa est là, disponible"}
+
+
 def solliciter(mem, source, texte, raison="boucle", now=None, fichier=None):
     """(04/11, Ahmed : « quand une pensée tourne en boucle dans son esprit ») la demande de réveil, sans juge ni seuil : sa
     tête de fond a eu deux fois de suite la même pensée. L'interrupteur, la pause de papa et une demande à la fois tiennent."""
@@ -257,7 +264,7 @@ def solliciter(mem, source, texte, raison="boucle", now=None, fichier=None):
             _journaliser({**trace, "id": i, "decision": "aurait réveillé"})
             return i
         _ecrire_demande({"id": i, "ts": now, "source": source, "texte": str(texte)[:1200], "score": 10, "raison": raison,
-                         "pourquoi": "une pensée qui revient sans cesse dans ta tête" if raison == "boucle" else ""}, fichier)
+                         "pourquoi": POURQUOI_SOLLICITATION.get(raison, "")}, fichier)
         _journaliser({**trace, "id": i, "decision": "réveil"})
         interieur.noter(mem, "reveil_interieur", f"{source} ({raison}) : {str(texte)[:140]}", now=now)
         return i

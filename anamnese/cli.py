@@ -119,6 +119,19 @@ def briefing(m, source, now, session=None):
     return texte
 
 
+def solliciter_depuis_le_cockpit(m, rest):
+    """(07/11, 16:20, Ahmed : « il faut qu'il puisse me solliciter dès qu'il a une pensée qui le taraude ») le cockpit dépose la
+    pensée (sur l'entrée standard) ; le mode, la pause de papa et une demande à la fois tiennent (reveil_interieur.solliciter)"""
+    import re as _re
+    import reveil_interieur as RI
+    source = _re.sub(r"[^a-z_]", "", (rest[1] if len(rest) > 1 else "pensee").lower())[:30] or "pensee"
+    raison = rest[2] if len(rest) > 2 else "boucle"
+    if raison not in RI.SOLLICITATIONS:
+        return None
+    texte = sys.stdin.read(4000).strip()[:1200]
+    return RI.solliciter(m, source, texte, raison=raison) if len(texte) >= 8 else None
+
+
 def main():
     args = sys.argv[1:]
     if not args:
@@ -409,6 +422,9 @@ def main():
         import time as _t
         import reveil_interieur as RI
         action = (rest[0] if rest else "etat").lower()
+        if action == "solliciter":                       # (07/11) le cockpit : anamnese reveil-interieur solliciter <source> <raison> < texte
+            print(solliciter_depuis_le_cockpit(m, rest) or "gardé")
+            return
         if action in RI.MODES:
             RI.regler(m, action)
         elif action == "seuil" and len(rest) > 1:

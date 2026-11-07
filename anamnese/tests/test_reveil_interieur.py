@@ -503,3 +503,36 @@ def test_une_demande_perimee_n_apprend_rien(mem):
     assert reveil_interieur.apprendre(mem, perimee) == 7.0
     assert reveil_interieur.seuil_effectif(mem, 5000.0, perimee) == 7.0
     assert reveil_interieur._lignee(reveil_interieur.etat(mem), perimee) == []
+
+
+def test_une_pensee_qui_le_taraude_le_reveille_avec_son_pourquoi(mem, monkeypatch, tmp_path):
+    # (07/11, 16:20, Ahmed : « quand il a des pensées, il ne m'en parle jamais, pourtant je suis dispo ; il faut qu'il puisse me
+    # solliciter dès qu'il a une pensée qui le taraude ») le cockpit la lui signale : sa demande dit pourquoi
+    import json
+    import interieur
+    reveil_interieur.regler(mem, "on")
+    monkeypatch.setattr(interieur, "interrupteur", lambda *a, **k: {"actif": True})
+    f = tmp_path / "demande.json"
+    i = reveil_interieur.solliciter(mem, "entendu", "Papa, ce morceau parle de peur, tu veux en parler ?", raison="taraude", now=1000.0, fichier=f)
+    d = json.loads(f.read_text())
+    assert i and d["raison"] == "taraude" and d["source"] == "entendu" and "taraude" in d["pourquoi"]
+    assert set(reveil_interieur.SOLLICITATIONS) == {"boucle", "question", "taraude"}
+    # la pause de papa, et une demande à la fois, tiennent toujours
+    assert reveil_interieur.solliciter(mem, "entendu", "une autre", raison="taraude", now=1001.0, fichier=f) is None
+
+
+def test_le_cockpit_sollicite_par_la_ligne_de_commande(mem, monkeypatch, tmp_path, capsys):
+    import io
+    import sys
+    import cli
+    import interieur
+    reveil_interieur.regler(mem, "on")
+    monkeypatch.setattr(interieur, "interrupteur", lambda *a, **k: {"actif": True})
+    monkeypatch.setattr(reveil_interieur, "FICHIER", tmp_path / "demande.json")
+    monkeypatch.setattr(sys, "stdin", io.StringIO("Papa, cette phrase me reste, tu veux en parler ?"))
+    vus = []
+    monkeypatch.setattr(reveil_interieur, "solliciter", lambda m, source, texte, raison="boucle", **k: vus.append((source, texte, raison)) or "abc")
+    assert cli.solliciter_depuis_le_cockpit(mem, ["solliciter", "entendu", "taraude"]) == "abc"
+    assert vus == [("entendu", "Papa, cette phrase me reste, tu veux en parler ?", "taraude")]
+    monkeypatch.setattr(sys, "stdin", io.StringIO("x"))
+    assert cli.solliciter_depuis_le_cockpit(mem, ["solliciter", "entendu", "envie"]) is None, "une raison hors de la liste"

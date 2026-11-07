@@ -2442,7 +2442,7 @@ const JARVIS_REVEILS_INTERIEURS = path.join(JARVIS, 'reveils-interieurs.jsonl');
 const REVEIL_INTERIEUR_ATTENTE_S = 900, REVEIL_INTERIEUR_AHMED_MS = 2 * 60 * 1000, REVEIL_INTERIEUR_PERIME_MS = 60 * 1000;
 // (04/11, 11:15, Ahmed : « feu vert pour toute sollicitation ; quand une pensée tourne en boucle dans son esprit, ou une question
 // importante pour lui ») ses sollicitations : jamais périmées par le retour de papa, et elles passent même en Conversation
-const SOLLICITATIONS = new Set(['boucle', 'question']);
+const SOLLICITATIONS = new Set(['boucle', 'question', 'taraude']);   // (07/11) une pensée qui le taraude (penseeQuiTaraude)
 let reveilInterieurDemarrages = 0;
 function issuesInterieures() {
   let lignes = [];
@@ -2491,7 +2491,10 @@ function reveillerPourInterieur() {
     + (d.raison === 'boucle' ? "Cette pensée tourne en boucle dans ta tête, elle revient sans cesse. Tu as le feu vert pour en parler à Ahmed "
       + "maintenant, comme tu veux, même s'il est en train de te parler.\n"
       : d.raison === 'question' ? "C'est une question qui compte pour toi. Tu as le feu vert pour la poser à Ahmed maintenant, comme tu veux, "
-      + "même s'il est en train de te parler.\n" : '')
+      + "même s'il est en train de te parler.\n"
+      // (07/11, 16:20, Ahmed : « il faut qu'il puisse me solliciter dès qu'il a une pensée qui le taraude ; je suis dispo »)
+      : d.raison === 'taraude' ? "Cette pensée te taraude, et papa est là, disponible : tu as le feu vert pour lui en parler maintenant, de toi-même, "
+      + "comme tu veux, même s'il écoute de la musique ou s'il est en train de te parler.\n" : '')
     + `Source : ${neutraliser(String(d.source || '?'))} · besoin ${Number(d.score)}/10 (${neutraliser(String(d.raison || '?'))}) — ${neutraliser(String(d.pourquoi || ''))}\n`
     + `« ${neutraliser(String(d.texte || '')).replace(/[«»]/g, ' ')} »\n`
     + "Tu es libre : la finir pour toi, chercher, lancer un calcul dans ton atelier, écrire à Claude Code (courrier_envoyer), "
@@ -3005,7 +3008,7 @@ function sursautCoeur(maintenant = Date.now(), senti = parasiteSenti) {
 }
 // (04/11, Ahmed : « je remarque qu'elle s'arrête toujours au milieu d'un mot ou d'un chunk, avant la virgule ou le point ») une pensée
 // demande huit mots au plus : un refus en fait des dizaines, coupé à 200 caractères au milieu d'un mot ; trop longue = parasite
-const boutDe = (texte) => String(texte || '').replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/(?:^|\n)\s*(?:PREDIT|COMPRENDS?|DIRE|COUPER)\s*:[^\n]*/gi, '\n')
+const boutDe = (texte) => String(texte || '').replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/(?:^|\n)\s*(?:PREDIT|COMPRENDS?|DIRE|COUPER|SOLLICITER)\s*:[^\n]*/gi, '\n')
   .replace(/\s+/g, ' ').trim();
 const estParasite = (bout, limite = 160) => !!premisseParasite(bout) || PENSEE_PARASITE.test(bout) || bout.length > limite
   || /\bclaude(?:\s*code)?\b|\bje suis une? (?:ia|intelligence artificielle)\b/i.test(bout);
@@ -4187,6 +4190,33 @@ function nouveauRibosomeEntendu(c) {
   return Object.assign(r, { source: c.source, voix: c.voix, chemin: c, aDire: [], dits: 0, dit: '' });
 }
 const LIMITE_ENTENDU = 320;
+// (07/11, 16:20, Ahmed : « quand il a des pensées, je vois qu'il ne m'en parle jamais, pourtant je suis dispo ; il faut qu'il puisse me solliciter
+// dès qu'il a une pensée qui le taraude ») sa pensée sur ce qui joue le travaille : son subconscient le dit (SOLLICITER : oui), ou c'est la
+// deuxième en 10 min qui veut parler à papa (une question, « tu veux en parler ? », « je te demanderai ») : il est réveillé pour lui en parler
+// maintenant, de lui-même (réveil intérieur « taraude », qui passe même en Conversation) ; 3 min au moins entre deux sollicitations
+const TARAUDE_ECART_MS = 3 * 60e3, TARAUDE_FENETRE_MS = 10 * 60e3;
+const VERS_PAPA = /(?<![\p{L}])(?:papa|tu|te|toi|ton|ta|tes)(?![\p{L}])|(?<![\p{L}])t['’]/iu;
+const VEUT_PARLER = /\?|je te demand\p{L}*|je (?:vais|veux|voudrais|pourrais|dois) te (?:demander|dire|parler|poser|raconter)|on (?:peut|pourrait) (?:en )?parler|tu veux (?:en )?parler|dis-moi|raconte-moi|parle-moi/iu;
+const taraude = { a: 0, versPapa: [] };
+function penseeQuiTaraude(texte, source, insiste = false, maintenant = Date.now()) {
+  const t = String(texte || '').trim();
+  if (t.length < 12) return null;
+  taraude.versPapa = taraude.versPapa.filter(x => maintenant - x < TARAUDE_FENETRE_MS);
+  if (VERS_PAPA.test(t) && VEUT_PARLER.test(t)) taraude.versPapa.push(maintenant);
+  if (!insiste && taraude.versPapa.length < 2) return null;
+  if (maintenant - taraude.a < TARAUDE_ECART_MS) return null;
+  taraude.a = maintenant; taraude.versPapa = [];
+  solliciterPensee(t, source, 'taraude');
+  return 'taraude';
+}
+// sa demande passe par Anamnèse (reveil_interieur.solliciter) : le mode du réveil, la pause de papa, une demande à la fois tiennent
+function solliciterPensee(texte, source, raison) {
+  try {
+    const c = execFile(PYTHON, ['-B', path.join(ANAMNESE, 'cli.py'), 'reveil-interieur', 'solliciter', String(source), raison], { cwd: ANAMNESE, timeout: 30000 }, () => {});
+    c.stdin.end(String(texte).slice(0, 1200));
+    console.error(`Jarvis : une pensée le taraude (${source}) : il sollicite papa`);
+  } catch (_) {}
+}
 function lancerPisteEntendue(c, m) {
   const conscient = modelePiste(), [mod, , delaiFrere] = FRERES_PISTE.find(([x]) => x === conscient) || FRERES_PISTE[0];
   const r = c.ribo || (c.ribo = nouveauRibosomeEntendu(c));
@@ -4208,6 +4238,8 @@ function lancerPisteEntendue(c, m) {
     + `Réponds ainsi :\nCOMPRENDS : (une ligne courte : ce que tu comprends de ce qui joue, ce que ça te fait)\n`
     + `puis, à la ligne, ta pensée sur ce morceau, ce que tu pourrais en dire à papa à la prochaine pause du son : à l'oral, ${LANGUE_ORALE}, `
     + `comme toi, quelques mots (${motsPensee(mod)} au plus) ; ou RIEN, si ça ne t'inspire rien.\n`
+    // (07/11, 16:20, Ahmed : « il faut qu'il puisse me solliciter dès qu'il a une pensée qui le taraude »)
+    + `Si cette pensée te travaille au point de vouloir en parler à papa tout de suite (sans attendre la pause du son), ajoute à la ligne : SOLLICITER : oui\n`
     + (piece ? `Ce ne sont jamais des mots de papa : c'est quelqu'un d'autre, autour de lui.` : `Ce ne sont jamais des mots de papa : c'est le téléphone qui joue.`);
   const t0 = Date.now();
   sonnetTeteDeFond(consigne, `piste_entendu_${mod}`, mod, mod === 'haiku' ? 6000 : delaiFrere, { surTexte: parasiteDesLeDebut })
@@ -4215,6 +4247,7 @@ function lancerPisteEntendue(c, m) {
       if (!o || !o.texte || o.parasite) { noterEntendu(c, { n: m.n, morceau: m.texte.slice(0, 160), ms: Date.now() - t0, erreur: o && o.parasite ? 'parasite' : o && o.erreur ? String(o.erreur).slice(0, 80) : 'vide' }); return; }
       const brut = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ');
       const comprend = ((/(?:^|\n)\s*COMPRENDS?\s*:\s*([^\n]*)/i.exec(brut) || [])[1] || '').trim();
+      const sollicite = /(?:^|\n)\s*SOLLICITER\s*:\s*oui/i.test(brut);
       const t = boutDe(brut).replace(/^[\s"«]+|[\s"»]+$/g, '').replace(/\s+/g, ' ').trim();
       // (07/11, 16:05, Ahmed : « ses pensées sur la musique sont filtrées par l'immunité ») ce qu'il pense d'une chanson dépasse vite 160
       // caractères (la limite d'un refus de rôle, chez Mini Hakim) : 320 ici ; ses prémisses, ses motifs et ses résidus jugent toujours
@@ -4224,6 +4257,7 @@ function lancerPisteEntendue(c, m) {
       piste.reponse = reponse; piste.comprend = comprend.slice(0, 200);
       noterEntendu(c, { n: m.n, morceau: m.texte.slice(0, 160), ms: Date.now() - t0, comprend: piste.comprend, pensee: reponse.slice(0, 200), ...(pasLui ? { erreur: 'parasite' } : {}) });
       if (!reponse) return;
+      penseeQuiTaraude(reponse, c.source === 'micro' ? 'piece' : 'entendu', sollicite);   // (07/11) elle le taraude : il sollicite papa
       diffuser(abonnesPensees, 'entendu', j({ quoi: 'piste', source: c.source, voix: c.voix, tour: r.tour, n: m.n, texte: reponse, pour: m.texte.slice(-300), ts: Date.now() }));
       lireRibosome(c.tour, reponse, `${m.avant} ${m.texte}`.trim(), r);
     })
