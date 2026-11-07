@@ -132,5 +132,5 @@ test('câblage : la fin de tour reprend la transcription en avance avant de retr
 test('(30/10, 22:33, Ahmed) la fin de ta parole se décide après 0,5 s de silence, dans la reconnaissance ; ta patience des réglages ne bouge pas', () => {
   const page = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
   assert.match(page, /const SILENCE_ANTICIPE_MS = 500;/);
-  assert.match(page, /patience: 3\.5,/, 'le réglage par défaut reste');
+  assert.match(page, /patience: 1,/, 'le réglage par défaut : 1 s depuis le 07/11 (Ahmed : « fermer le micro en 1 s »)');
 });

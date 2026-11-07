@@ -18,7 +18,7 @@ const NOMS_OUTILS = {
 const etat = {
   session: null, messages: [], flux: null, micro: null, transcription: null, lectureDe: null, joints: [],
   reglages: { modele: 'opus', modeleConversation: 'auto', reconnaissance: 'navigateur', langue: 'auto', voix: 'neuronale', voixFr: '', voixAr: '',
-    vitesse: 1.05, lectureAuto: false, patience: 3.5, scene: true, rapide: true, source: 'auto', volant: false, position: false, voixNeutre: false, sesParoles: true, patienceConversation: 0.3 },
+    vitesse: 1.05, lectureAuto: false, patience: 1, scene: true, rapide: true, source: 'auto', volant: false, position: false, voixNeutre: false, sesParoles: true, patienceConversation: 0.3 },
   sttLocal: false, ttsLocal: false,
   interieur: null, derniereActivite: Date.now(), dites: [],
   conversation: null, present: [], parleDepuis: 0, coupeParAhmed: false, vision: null,
@@ -44,6 +44,12 @@ function charger() {
   // Ahmed (2026-10-18) : par défaut, la langue est DÉTECTÉE parmi le français, l'arabe et l'anglais (plus
   // jamais l'islandais) ; l'ancien défaut « français » passe une fois à ce mode, son choix reste libre ensuite
   try {
+    // (07/11, Ahmed : « Hakim doit fermer le micro en 1 seconde et pas trois après ma parole ») le défaut passe à 1 s, et un réglage plus long
+    // passe une fois à 1 s ; son choix reste libre ensuite (Réglages de Parler : « Patience du micro avant de fermer »)
+    if (!localStorage.getItem(CLE + '.patience1s')) {
+      if (!(Number(etat.reglages.patience) > 0 && Number(etat.reglages.patience) <= 1)) etat.reglages.patience = 1;
+      localStorage.setItem(CLE + '.patience1s', '1');
+    }
     if (!localStorage.getItem(CLE + '.langues3')) {
       if (etat.reglages.langue === 'fr-FR') etat.reglages.langue = 'auto';
       localStorage.setItem(CLE + '.langues3', '1');

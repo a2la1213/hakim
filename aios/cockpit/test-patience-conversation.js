@@ -28,3 +28,20 @@ test('le réglage dans la page, à côté de la patience du micro', () => {
   assert.match(page, /\['patienceConversation', 'patienceConversation', e => parseFloat\(e\.value\)\]/);
   assert.match(page, /\$\('patienceConversation'\)\.value = String\(r\.patienceConversation \?\? 0\.3\);/);
 });
+
+// (07/11, Ahmed : « Hakim doit fermer le micro en 1 seconde et pas trois après ma parole »)
+test('le micro se ferme à 1 s de silence par défaut ; un réglage plus long passe une fois à 1 s, puis le choix reste libre', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(src, /lectureAuto: false, patience: 1, scene:/);
+  const i = src.indexOf("    if (!localStorage.getItem(CLE + '.patience1s')) {"), bloc = src.slice(i, src.indexOf('\n    }\n', i) + 7);
+  const essai = (patience, deja) => {
+    const store = new Map(deja ? [['k.patience1s', '1']] : []);
+    const cx = { CLE: 'k', Number, etat: { reglages: { patience } }, localStorage: { getItem: (k) => store.get(k) || null, setItem: (k, v) => store.set(k, v) } };
+    vm.createContext(cx); vm.runInContext(bloc, cx);
+    return cx.etat.reglages.patience;
+  };
+  assert.equal(essai(3.5, false), 1, 'l’ancien 3,5 s : 1 s');
+  assert.equal(essai(0.5, false), 0.5, 'plus court : gardé');
+  assert.equal(essai(3.5, true), 3.5, 'déjà passé une fois : son choix reste');
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'parler.html'), 'utf8'), /<option value="1">1 s de silence \(par défaut\)<\/option>/);
+});
