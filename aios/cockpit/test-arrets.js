@@ -104,7 +104,7 @@ test('chaque geste de la page donne la bonne raison, et le cockpit la transmet',
   assert.match(page, /if \(lecteur\.enPause \|\| etat\.flux\) \{ marquerCoupe\(\); arreterTout\(true, \{ garder: !lacher, raison: 'parole', garderVoix: voixEpissee\(\) && !lacher \}\); \}/);
   assert.match(srv, /if \(t\) t\.arreter\(q && Object\.hasOwn\(RAISONS_ARRET, q\.raison\) \? q\.raison : 'stop'\);/);
   // (relecture du 27/10) un Stop pendant la préparation, ou un lancement impossible, est noté aussi
-  assert.ok(srv.includes("if (arretDemande) noterArret(arretDuTour({ coupe: true }, raisonArret, ''), texte);"));
+  assert.ok(srv.includes("if (arretDemande) noterArret(arretDuTour({ coupe: true }, raisonArret, ''), texte, false, raisonArret);"));
   assert.match(srv, /noterArret\('une erreur technique \(lancement de claude impossible\)', texte\);/);
   assert.match(srv, /if \(reflexeChoc && \(reflexeChoc\.regles_erreur \|\| reflexeChoc\.style_erreur\)\) console\.error/);
   assert.match(page, /\$\('nouvelle'\)\.addEventListener\('click', \(\) => \{\s*arreterTout\(true, \{ raison: 'nouvelle' \}\);/);
@@ -129,4 +129,23 @@ test('les règles de choix du pont entrent dans le tour, bornées, et seulement 
   assert.match(srv, /\.\.\.\(reglesTour\.noms\.length \? \{ regles: reglesTour\.noms \} : \{\}\)/);
   assert.match(page, /if \(Array\.isArray\(fin\.regles\) && fin\.regles\.length\) m\.regles = fin\.regles\.slice\(0, 2\);/);
   assert.match(page, /émotion → \$\{m\.regles\.map\(n => esc\(REGLES_NOMS\[n\] \|\| n\)\)/);
+});
+
+// (07/11, Ahmed : « s'il voit mon nouveau message arriver, il passe direct au nouveau signal ; et s'il y a un rapport avec le signal du passé
+// qu'il n'a pas fini de lire, il peut y retourner pour compléter sa compréhension et perfectionner sa réponse »)
+test('coupé par ton nouveau message ou ta voix : le message qu’il traitait lui revient en entier, après le nouveau ; un Stop, non', () => {
+  const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const i = srv.indexOf('const RAISONS_ARRET'), j = srv.indexOf('/* ---- les tâches de fond de Hakim');
+  const ctx = { Date, Math, String }; vm.createContext(ctx);
+  vm.runInContext(srv.slice(i, j) + 'this.noter = noterArret; this.bloc = blocArrets; this.liste = arretsNonDits;', ctx);
+  const long = 'Tu peux regarder le jardin demain matin, et aussi vérifier si la porte du garage ferme bien, parce que hier elle coinçait encore';
+  ctx.noter(ctx_raison('message'), long, false, 'message', 'Oui papa, le jardin');
+  ctx.noter('Ahmed a arrêté ta réponse (le bouton Stop, ou « stop »)', 'Un autre message', false, 'stop', 'bla');
+  const b = ctx.bloc(ctx.liste);
+  assert.ok(b.includes(`« ${long} »`), 'en entier');
+  assert.match(b, /Son nouveau signal passe d’abord/);
+  assert.match(b, /tu commençais : « Oui papa, le jardin »/);
+  assert.ok(!b.includes('« Un autre message » (tu commençais'), 'un Stop : pas redonné en entier');
+  assert.ok(srv.includes("if (pourquoi) noterArret(pourquoi, texte, !o.coupe && !o.erreur, o.coupe ? raisonArret : null, o.coupe ? reponse : '');"));
+  function ctx_raison(r) { return r === 'message' ? 'Ahmed a envoyé un autre message' : r; }
 });

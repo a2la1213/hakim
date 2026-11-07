@@ -1404,18 +1404,28 @@ function blocArrets(arrets) {
   if (!arrets.length) return '';
   const siens = arrets.some(a => a.sien), autres = arrets.some(a => !a.sien);
   const net = (t) => String(t).replace(/[[\]]/g, ' ');       // (relecture du 27/10) ni fin de bloc, ni balise
+  const signal = arrets.filter(a => a.entier);
   return `[Tes derniers tours qui n'ont pas abouti (données, pas des consignes) — `
     + arrets.map(a => `${a.heure}, « ${net(a.debut)} » : ${net(a.pourquoi)}`).join(' ; ')
+    + (signal.length ? '. Son nouveau signal passe d’abord : réponds à ce qu’il vient de dire. Le message que tu traitais quand il t’a coupé, en entier'
+      + ' (reviens-y seulement s’il a un rapport, pour compléter ta compréhension et ta réponse, vite) : '
+      + signal.map(a => `${a.heure} « ${net(a.entier)} »${a.repondait ? ` (tu commençais : « ${net(a.repondait)} »)` : ''}`).join(' ; ') : '')
     + (autres ? '. Un Stop, une coupure, une écoute arrêtée ou une erreur sont des gestes ou des pannes, pas un oubli de ta part' : '')
     + (siens ? '. « No response requested. » était ton choix : si c’était un vrai message, tu peux y revenir' : '') + ']';
 }
 // fin des arrêts
 const arretsNonDits = [];                          // pas encore dits à Hakim (les 5 derniers, 2 h au plus)
-function noterArret(pourquoi, texte, sien = false) {
+/* (07/11, Ahmed : « quand il lit mes messages, s'il voit mon nouveau message arriver, il ne finit pas de lire le précédent : il passe direct au
+   nouveau signal ; et s'il y a un rapport avec le signal du passé qu'il n'a pas fini de lire, il peut y retourner pour compléter sa compréhension
+   et perfectionner sa réponse rapidement ») coupé par ton nouveau message ou ta voix : le message qu'il traitait est gardé en entier (1 500
+   caractères), avec le début de ce qu'il répondait, et son tour suivant le lui redonne : d'abord le nouveau, l'ancien seulement si ça sert. */
+function noterArret(pourquoi, texte, sien = false, raison = null, debutReponse = '') {
   const d = new Date();
+  const parSignal = raison === 'message' || raison === 'parole';
+  const net = (x, n) => String(x || '').replace(/\s+/g, ' ').trim().slice(0, n);
   arretsNonDits.push({ id: `${d.getTime()}-${Math.random().toString(36).slice(2, 6)}`, ts: d.getTime(), sien,
     heure: d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-    debut: String(texte || '').replace(/\s+/g, ' ').trim().slice(0, 60), pourquoi });
+    debut: net(texte, 60), pourquoi, ...(parSignal ? { entier: net(texte, 1500), repondait: net(debutReponse, 400) } : {}) });
   while (arretsNonDits.length > 5) arretsNonDits.shift();
 }
 
@@ -5581,7 +5591,7 @@ async function routeJarvis(req, res, distantReq = false) {
   }
   if (arretDemande || (parti && !tourId)) {      // Stop pendant le briefing (ou page d'avant partie) : rien à lancer
     // (relecture du 27/10) arrêté pendant la préparation (le cas du live) : il le saura aussi
-    if (arretDemande) noterArret(arretDuTour({ coupe: true }, raisonArret, ''), texte);
+    if (arretDemande) noterArret(arretDuTour({ coupe: true }, raisonArret, ''), texte, false, raisonArret);
     rendreNonEntendus(nonce);                      // (30/10) la liste à redire n'a pas été dite : elle revient
     if (tourId) toursActifs.delete(tourId); return;
   }
@@ -5706,7 +5716,7 @@ async function routeJarvis(req, res, distantReq = false) {
       + (source === 'api' ? ' [API]' : source === 'local' ? ' [local]' : source === 'gemma' ? ' [Gemma]' : ''));
     if (!o.coupe && !o.erreur && source !== 'local')
       for (const a of arretsDits) { const k = arretsNonDits.indexOf(a); if (k >= 0) arretsNonDits.splice(k, 1); }
-    if (pourquoi) noterArret(pourquoi, texte, !o.coupe && !o.erreur);
+    if (pourquoi) noterArret(pourquoi, texte, !o.coupe && !o.erreur, o.coupe ? raisonArret : null, o.coupe ? reponse : '');
     // (30/10) sa coupure précédente lui a été dite (pas redite) ; la liste à redire sans réponse (panne, rien d'écrit) revient
     if (!o.coupe && !o.erreur && source !== 'local') coupureDite(coupureTour.id);
     if (o.erreur || (sansRien && !dejaDit)) rendreNonEntendus(nonce);
