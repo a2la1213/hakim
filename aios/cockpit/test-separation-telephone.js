@@ -18,7 +18,7 @@ test('le son du téléphone en direct (🎧) passe aussi par la séparation, ava
 // presque jamais (elle transcrit tes mots en direct) : la séparation part d'abord
 test('le son de la pièce (micro ouvert) part à la séparation avant que son oreille vive soit libre ou non', () => {
   const i = SRC.indexOf('async function routeAmbiance('), corps = SRC.slice(i, SRC.indexOf('\n}\n', i));
-  const sep = corps.indexOf("separerSon(fs2, 'micro')");
+  const sep = corps.indexOf("separerSon(fs2, 'micro', { voixMicro: true");
   assert.ok(sep > 0, 'séparé');
   assert.ok(sep < corps.indexOf('if (!oreilleVive.pret || oreilleVive.attente || oreilleVive.suivante) return repondre(429'), 'même quand son oreille vive est occupée');
 });

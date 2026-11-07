@@ -77,6 +77,6 @@ test('(04/11) ses deux oreilles séparées (Demucs) : au fil, dans son instant, 
   T += 5000; ctx.sep.attente = { id: 2, src: 'micro', fichier: '/tmp/y.wav', minuteur: 1 };
   ctx.recue({ ...o, id: 2 });
   assert.strictEqual(evenements.length, 1, 'au plus toutes les 15 s à son subconscient');
-  assert.match(SRC, /separerSon\(fs2, 'micro'\); \} catch \(_\) \{\}/);
+  assert.match(SRC, /separerSon\(fs2, 'micro', \{ voixMicro: true, debut: Date\.now\(\) - 3000 \}\); \} catch \(_\) \{\}/);
   assert.match(SRC, /if \(ms && ms\.texte\) l\.push\(`ce qu'il entend \$\{ms\.source\}, séparé : /, 'dans son instant, relié');
 });

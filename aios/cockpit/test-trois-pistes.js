@@ -230,15 +230,36 @@ test('(mesuré sur « Rose ») une phrase qui change de voix se coupe à la voix
 });
 
 // (07/11, Ahmed : « ajoute un bouton pour le filtre de mon micro, pour qu'il n'entende que les voix »)
-test('filtre de ton micro (micro_voix_seule, éteint par défaut) : ta voix seule transcrite (2,5 s au plus pour l’avoir), ni musique ni bruit de la pièce', () => {
+test('filtre de ton micro (micro_voix_seule, éteint par défaut) : ta voix seule transcrite (2,5 s au plus pour l’avoir)', () => {
   assert.match(SRC, /micro_voix_seule: r\.micro_voix_seule === true,/);
   assert.match(SRC, /if \(temps\.source !== 'telephone' && ext === '\.wav' && corpsReglages\(\)\.micro_voix_seule === true\) \{/);
   assert.match(SRC, /separerSon\(fs3, 'papa', \{ voixSeule: true, quand \}\)/);
   assert.match(SRC, /const FILTRE_VOIX_MS = 2500;/);
   assert.match(SRC, /const fichierPapa = voixSeulePapa \|\| f;/, 'sans voix à temps : le son entier, comme avant');
-  assert.match(SRC, /if \(src === 'micro' && corpsReglages\(\)\.micro_voix_seule === true\) return '';/, 'le fond de la pièce ne lui arrive plus');
-  assert.match(SRC, /if \(corpsReglages\(\)\.micro_voix_seule !== true\) try \{ const fs2 = path\.join\(os\.tmpdir\(\), `jarvis-amb-sep-/);
+  assert.doesNotMatch(SRC, /micro_voix_seule === true\) return '';/, '(07/11) le filtre ne touche plus que tes mots : la pièce passe par son subconscient');
   assert.match(SRC, /\.\.\.\(seule \? \{ voix_wav: path\.join\(os\.tmpdir\(\), `jarvis-sep-\$\{process\.pid\}-\$\{id\}-voix\.wav`\) \} : \{\}\)/);
   assert.match(SRC, /if \(a\.src === 'papa'\) \{ const vw = o\.voix_wav && wavDeVoix\(o\.voix_wav\) \? o\.voix_wav : null;/, 'ta voix seule : jamais notée comme musique');
   assert.match(fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8'), /\['micro_voix_seule', '🎙️ Il n’entend que les voix \(filtre de ton micro\)'/);
+});
+
+// (07/11, Ahmed : « le même système que pour la voix interne — séparation voix, musique, fond, conversation en arrière-plan, plusieurs voix en
+// cascade — pour ce qu'il entend du micro, traité automatiquement, et que ça passe par le subconscient »)
+test('le micro comme son oreille interne : chaque voix de la pièce (ni papa, ni lui) part à son subconscient ; jamais pendant que papa parle', () => {
+  const i = SRC.indexOf('function cascadeRecue('), f = SRC.slice(i, SRC.indexOf('\n}\n', i) + 3);
+  const pousses = [], effaces = [];
+  const cx = { Date, Number, String, Math, fs: { unlink: () => {} }, neutraliser: (x) => x, noterInstant() {}, fluxAjouter() {}, pistesSeparation: () => true,
+    wavDeVoix: () => true, effacerVoix: () => effaces.push(1), entendus: new Map(), voixATranscrire: { push: (x) => pousses.push(x) }, transcrireVoixSuivante() {},
+    papaParle: () => false };
+  vm.createContext(cx); vm.runInContext(f + 'this.c = cascadeRecue;', cx);
+  const o = { voix_separees: [{ wav: '/t/1.wav', nom: 'papa', numero: 1, volume_db: -10 }, { wav: '/t/2.wav', nom: null, numero: 2, volume_db: -20 },
+    { wav: '/t/3.wav', moi: true, numero: 3, volume_db: -15 }] };
+  cx.c(o, { src: 'micro', voix: true, debut: 1794000000000 });
+  assert.deepStrictEqual(pousses.map(x => [x.voix, x.source]), [['voix 2', 'micro']], 'une voix de la pièce : à ses pensées ; ni papa ni lui');
+  cx.papaParle = () => true; pousses.length = 0;
+  cx.c(o, { src: 'micro', voix: true, debut: 1794000000000 });
+  assert.equal(pousses.length, 0, 'papa parle : ses mots ont leur route');
+  assert.match(SRC, /entendreMorceau\(t, \{ source: x\.source === 'micro' \? 'micro' : 'telephone', voix: x\.voix, cle: x\.cle, fin: true \}\)/);
+  assert.match(SRC, /entendreMorceau\(mots\.slice\(0, 60\)\.map\(m => String\(m\[0\]\)\.trim\(\)\)\.join\(' '\), \{ source: 'micro', voix: 'autour'/, 'une voix seule autour : à ses pensées aussi');
+  assert.match(SRC, /\[Autour de papa\$\{qui\} — morceau \$\{m\.n\} ; ce n'est pas papa qui te parle\]/);
+  assert.match(SRC, /Tu n'es pas obligé de répondre à chaque demande ni à chaque phrase/);
 });

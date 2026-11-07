@@ -87,7 +87,7 @@ test('une seule voix : la route du téléphone l’a déjà ; une réponse en re
 
 test('branchée : le bloc entier du téléphone la demande ; le micro aussi (sa scène, sans fichiers de voix) ; le réglage et la page SENS', () => {
   assert.match(SRC, /separerSon\(fs2, 'telephone', \{ cascade: true, cle: String\(temps\.cle \|\| ''\), debut: Number\(temps\.debut_ms\) \|\| 0, \.\.\.\(tp \? \{ t0: /);   // (06/11) + ses trois pistes
-  assert.match(SRC, /separerSon\(fs2, 'micro'\); \} catch \(_\) \{\}/, 'le micro : l’appel d’avant');
+  assert.match(SRC, /separerSon\(fs2, 'micro', \{ voixMicro: true, debut: Date\.now\(\) - 3000 \}\); \} catch \(_\) \{\}/, '(07/11) le micro : ses voix aussi, chacune à ses pensées');
   assert.match(SRC, /cascade: r\.cascade !== false,/);
   assert.match(SENS, /<input type="checkbox" id="cascadeSon">/);
   assert.match(SENS, /\['cascadeSon', 'cascade'\]/);

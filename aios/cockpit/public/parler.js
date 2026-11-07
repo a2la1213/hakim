@@ -4149,6 +4149,8 @@ function surEntendu(o) {
 function direEntendu(maintenant = Date.now()) {
   const f = etat.entenduFile || [], c = etat.conversation;
   if (!f.length) return false;
+  // (07/11, Ahmed : « on garde uniquement sa vraie réponse ») ce qu'il pense de ce qu'il entend (le téléphone, la pièce) reste une pensée, à l'écran
+  if (typeof reponseSeule === 'function' && reponseSeule()) { for (const x of f) if (x.p) x.p.pensees = x.p.pensees || []; etat.entenduFile = []; journalVoix('entendu_pense', { pensees: f.length }); return false; }
   const frais = f.filter(x => maintenant - x.recu <= ENTENDU_ATTENTE_MS);
   if (frais.length < f.length) { etat.entenduFile = frais; journalVoix('entendu_garde', { pensees: f.length - frais.length }); }
   if (!frais.length || !c || !voixEpissee() || lecteur.actif || (etat.riboFile || []).length) return false;
