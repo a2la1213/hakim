@@ -483,7 +483,7 @@ test('choisir dans la latence : le plus récent s’il sort vite ; sinon une por
 });
 
 test('branché : la file de sa voix du téléphone passe par le choix (réglage choisir_latence), ses mesures de sortie l’apprennent', () => {
-  assert.match(SRC, /reglagesCorps\.choisir_latence !== false\) \{[\s\S]{0,400}?: Voix\.choisirDansLatence\(f,/);
+  assert.match(SRC, /reglagesCorps\.choisir_latence !== false\) \{[\s\S]{0,900}?: Voix\.choisirDansLatence\(f,/);
   assert.match(SRC, /etat\.calculVoixMs = lisse\(etat\.calculVoixMs, d\.calcul_ms\)/);
   assert.match(SRC, /b\.dit\.forEach\(x => lecteurSysteme\.preparer\(x\)\); b\.prepA = Date\.now\(\);/);
 });
@@ -502,7 +502,7 @@ test('voix du Mac : rien ne s’empile ; quand ce qui joue va finir, il choisit 
   ajouter(2, 'La plus récente, encore en calcul', now - 100, null);
   cx.dire();
   assert.deepEqual(dits, [], 'sa voix joue encore 2 s : il attend');
-  assert.ok(minuteurs[0] > 1500 && minuteurs[0] < 1800, 'il revient juste avant sa fin');
+  assert.ok(minuteurs[0] > 900 && minuteurs[0] < 1100, 'il revient 1 s avant sa fin (07/11 : le suivant programmé sans blanc)');
   cx.lecteurNeuronal.resteS = 0.2;
   cx.dire();
   assert.deepEqual(dits, ['Une portion prête qui dure à peu près trois secondes.'], 'la portion prête remplit le temps de calcul du plus récent');
@@ -632,4 +632,39 @@ test('cockpit : ses paroles prêtes numérotées à son subconscient, son numér
   assert.equal((await cx.choisir([{ n: 1, texte: 'a' }, { n: 2, texte: 'b' }], '', [], '', () => Promise.reject(new Error('lent')))).n, null);
   assert.deepEqual(notes.map(x => [x.e, x.rang]), [['choix_parole', 3], ['choix_parole', null]]);
   assert.match(srv, /choix_libre: r\.choix_libre !== false,/);
+});
+
+// (07/11, Ahmed : « il arrive pas encore à être totalement fluide : un petit décalage entre chaque bloc ; il faut une liaison élégante »)
+test('voix du téléphone : ce qu’il reste à dire de la phrase qui sort, et le blanc entre deux phrases, mesuré', () => {
+  let now = 0; const RealNow = Date.now; Date.now = () => now;
+  try {
+    const dits = []; class E { constructor(t) { this.text = t; } }
+    const L = Voix.creerLecteur({ speak: (u) => dits.push(u), cancel() {} }, E, () => null, 1);
+    const blancs = []; L.surBlanc = (ms) => blancs.push(ms);
+    L.dire('Une phrase de quarante-deux caractères ici.');
+    dits[0].onstart();
+    now = 1000;
+    assert.ok(Math.abs(L.resteEstimeMs() - (dits[0].text.length / 14 * 1000 - 1000)) < 1, 'estimé à 14 caractères par seconde');
+    L.dire('La suivante.');
+    assert.equal(L.resteEstimeMs(), Infinity, 'une suivante déjà confiée au moteur : rien de plus');
+    dits[0].onend(); now = 1300; dits[1].onstart();
+    assert.deepEqual(blancs, [300], 'le blanc entre les deux, mesuré');
+  } finally { Date.now = RealNow; }
+});
+
+test('voix du téléphone : la phrase suivante part au moteur 0,7 s avant la fin de celle qui sort (sans blanc) ; plus tôt, on revient à ce moment-là', () => {
+  const fn = (nom) => { const i = SRC.indexOf(`function ${nom}(`); return SRC.slice(i, SRC.indexOf('\n}\n', i) + 3); };
+  const dits = [], minuteurs = [];
+  let reste = 3000;
+  const cx = { Date, Number, Math, Voix, journalVoix() {}, reglagesCorps: { choisir_latence: true, choix_libre: false }, setTimeout: (f, ms) => { minuteurs.push(ms); return 1; }, clearTimeout() {},
+    etat: { conversation: {} }, montrerPensee() {},
+    lecteurSysteme: { actif: true, resteEstimeMs: () => reste },
+    bouts: { tour: 1, fileTel: [{ n: 2, texte: 'la suite', t: Date.now(), prepA: Date.now() - 5000 }], dits: [] },
+    direBoutTelephone: (c, b) => dits.push(b.texte) };
+  vm.createContext(cx); vm.runInContext(fn('boutTelephoneSuivant') + 'this.suivant = boutTelephoneSuivant;', cx);
+  cx.suivant();
+  assert.deepEqual(dits, [], '3 s de phrase encore : pas maintenant');
+  assert.equal(minuteurs[0], 2300, 'il revient 0,7 s avant la fin');
+  reste = 600; cx.suivant();
+  assert.deepEqual(dits, ['la suite'], '0,6 s avant la fin : confiée au moteur, qui l’enchaîne');
 });

@@ -149,7 +149,7 @@ test('page : une seule réponse par tour ; le ribosome y allume ses mots au fil 
 test('page : sa voix dit ce que le ribosome a choisi à ta pause et à la fin de chaque phrase ; ses pensées épissées ne sont plus dites seules', () => {
   assert.match(PAGE, /if \(o\.niveau === 'ribosome'\) \{ surRibosome\(o\); return; \}/);
   assert.match(PAGE, /if \(silenceMs >= patienceConversation\(\) && typeof direRibosome === 'function'\) direRibosome\(\);/);
-  assert.match(PAGE, /const finLecture = \(\) => \{\n  segmentTelephone = null;\n(?:  \/\/[^\n]*\n)*  if \(typeof direRibosome === 'function'\) setTimeout\(direRibosome, typeof patienceConversation === 'function' \? patienceConversation\(\) : 0\);/);
+  assert.match(PAGE, /const finLecture = \(\) => \{\n  segmentTelephone = null;\n(?:  \/\/[^\n]*\n)*  const tuParlais = Date\.now\(\) - \(Number\(etat\.papaVoixA\) \|\| 0\) < 1500;\n  if \(typeof direRibosome === 'function'\) setTimeout\(direRibosome, tuParlais && typeof patienceConversation === 'function' \? patienceConversation\(\) : 0\);/);
   assert.match(PAGE, /if \(!dp \|\| dp\.jamais \|\| dp\.epissage \|\| silenceMs < seuil/);
 });
 
@@ -293,7 +293,7 @@ test('sa voix dit ce que le ribosome a choisi, au rythme de ses mots ; ce qui es
 });
 
 test('sa voix et son écriture reliées : chaque segment qui commence (téléphone ou Chatterbox) écrit ses mots', () => {
-  assert.match(PAGE, /lecteurSysteme\.surSegment = \(t\) => \{[^\n]*revelerRibosome\(t\);/);
+  assert.match(PAGE, /lecteurSysteme\.surSegment = \(t\) => \{[\s\S]{0,300}?revelerRibosome\(t\);/);
   assert.match(PAGE, /lecteurNeuronal\.surSegment = \(t, duree\) => \{\n[^\n]*\n  if \(typeof revelerRibosome === 'function'\) revelerRibosome\(t, duree\);/);
 });
 

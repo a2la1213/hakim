@@ -28,8 +28,8 @@ test('il ne coupe plus ton micro de lui-même par défaut (réglage micro_hakim 
   assert.match(SRC, /micro_hakim: r\.micro_hakim === true/);
 });
 
-test('une fenêtre d’oreille après chaque morceau qu’il dit ; ta voix pendant son morceau ne le coupe plus au milieu : il finit, puis il choisit', () => {
-  assert.match(PAGE, /const finLecture = \(\) => \{\n  segmentTelephone = null;\n(?:  \/\/[^\n]*\n)*  if \(typeof direRibosome === 'function'\) setTimeout\(direRibosome, typeof patienceConversation === 'function' \? patienceConversation\(\) : 0\);/);
+test('une fenêtre d’oreille après chaque morceau qu’il dit, si tu parlais à l’instant (07/11 : sinon il enchaîne sans blanc) ; ta voix pendant son morceau ne le coupe plus au milieu : il finit, puis il choisit', () => {
+  assert.match(PAGE, /const finLecture = \(\) => \{\n  segmentTelephone = null;\n(?:  \/\/[^\n]*\n)*  const tuParlais = Date\.now\(\) - \(Number\(etat\.papaVoixA\) \|\| 0\) < 1500;\n  if \(typeof direRibosome === 'function'\) setTimeout\(direRibosome, tuParlais && typeof patienceConversation === 'function' \? patienceConversation\(\) : 0\);/);
   const f = PAGE.slice(PAGE.indexOf('surInterruption: (mesure) => {'), PAGE.indexOf('surFin: (wav, infos, extra) =>'));
   assert.match(f, /if \(voixEpissee\(\) && garde\) \{ conv\.coupeAuChunk = Date\.now\(\); journalVoix\('coupure_au_chunk', mesure \|\| \{\}\); prevoirSaut\(conv\); return; \}/);
   assert.ok(f.indexOf('voixEpissee()') < f.indexOf('veillerDeuxSecondes(conv)'), 'avant les 2 s qui le faisaient taire');

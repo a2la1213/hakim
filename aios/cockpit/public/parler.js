@@ -765,6 +765,8 @@ function creerLecteurNeuronal() {
       if (x.apresMeuble && L.adoucirDebut) x.pret = L.adoucirDebut(x.pret);
       if (!unites.length && !lots.length && !L.fluxFini && L.adoucirFin) x.pret = L.adoucirFin(x.pret);
     }
+    // (07/11, Ahmed : « un petit décalage entre chaque bloc ») le blanc entre deux bouts de sa voix, mesuré (au-delà de 80 ms, sous 5 s)
+    if (!x.hesitation && !x.auto && L.finVoixA && fluide()) { const blanc = (t - L.finVoixA) * 1000; if (blanc > 80 && blanc < 5000 && typeof journalVoix === 'function') journalVoix('blanc_entre_blocs', { ms: Math.round(blanc), ou: 'mac' }); }
     const vitesse = x.son || x.brut ? 1 : vitesseVoix();             // (01:27) un son garde sa vitesse ; (13:30) un souffle aussi
     const src = actx.createBufferSource();
     src.buffer = x.pret;
@@ -782,6 +784,7 @@ function creerLecteurNeuronal() {
     prochainDebut = t + joue + 0.01;                                // (04/11) plus de blanc entre deux bouts
     src._texte = x.hesitation ? '' : x.texte; src._hesitation = !!x.hesitation; src._auto = !!x.auto; src._gain = force;
     src._langue = x.langue; src._debut = t; src._fin = t + joue;
+    if (!x.hesitation && !x.auto) L.finVoixA = t + joue;
     sources.add(src);
     if (!x.auto) { aParle = true; couvre = 0; }                      // un meuble choisi par lui compte comme sa parole
     if (!x.hesitation) { dejaParle = true; attendre = false; }
@@ -1035,7 +1038,10 @@ const finLecture = () => {
   segmentTelephone = null;
   // (04/11, 11:50) la suite que son ribosome a choisie ; (12:15, Ahmed : « des fenêtres d'ouverture d'oreille à chaque fois qu'il finit un
   // chunk ») après chaque morceau, son oreille s'ouvre le délai de la Conversation : si tu parles, sa voix attend
-  if (typeof direRibosome === 'function') setTimeout(direRibosome, typeof patienceConversation === 'function' ? patienceConversation() : 0);
+  // (07/11, Ahmed : « un petit décalage entre chaque bloc ; il faut une liaison élégante ») la fenêtre d'oreille seulement si tu parlais à
+  // l'instant (1,5 s) ; sinon le morceau suivant enchaîne sans attendre
+  const tuParlais = Date.now() - (Number(etat.papaVoixA) || 0) < 1500;
+  if (typeof direRibosome === 'function') setTimeout(direRibosome, tuParlais && typeof patienceConversation === 'function' ? patienceConversation() : 0);   // fenêtre d'oreille
   if (typeof boutTelephoneSuivant === 'function') setTimeout(boutTelephoneSuivant, 0);   // (04/11) le bout qui attendait sa voix
   if (lecteur.actif) return;
   if (etat.conversation) etat.conversation.penseeEnPause = false;     // (04/11) sa pensée dite : ton tour reprend la main
@@ -1322,7 +1328,16 @@ lecteurNeuronal.surSegment = (t, duree) => {
   couperAuDebutDeSaVoix();                                             // (09:12)
 };
 lecteurNeuronal.surPanne = noterPanneVoix;
-if (lecteurSysteme) { lecteurSysteme.surSegment = (t) => { noterSegmentTelephone(t); noterParole(t); noterMorceau(t); sousTitre(t); if (typeof revelerRibosome === 'function') revelerRibosome(t); }; lecteurSysteme.surMot = () => pulser(0.35); }
+if (lecteurSysteme) {
+  lecteurSysteme.surSegment = (t) => {
+    noterSegmentTelephone(t); noterParole(t); noterMorceau(t); sousTitre(t); if (typeof revelerRibosome === 'function') revelerRibosome(t);
+    // (07/11) une phrase commence : on revoit quand confier la suivante au moteur (juste avant sa fin, sans blanc)
+    if (typeof bouts !== 'undefined' && (bouts.fileTel || []).length && typeof boutTelephoneSuivant === 'function') setTimeout(boutTelephoneSuivant, 0);
+  };
+  lecteurSysteme.surMot = () => pulser(0.35);
+  // (07/11, Ahmed : « un petit décalage entre chaque bloc ») chaque blanc entre deux phrases de sa voix, mesuré pour le voir baisser
+  lecteurSysteme.surBlanc = (ms) => { if (typeof journalVoix === 'function') journalVoix('blanc_entre_blocs', { ms: Math.round(ms), ou: 'telephone' }); };
+}
 /* ---------- Comment et où sa parole s'est arrêtée (30/10, 14:50, Ahmed, relayé par Hakim et confirmé : « qu'il sache, à
    l'oral comme à l'écrit, comment sa réponse a été interrompue et où exactement sa phrase s'est arrêtée ») ----------
    Chaque fin de sa parole a sa CAUSE : voix_ahmed (Ahmed l'a coupé en parlant : le micro), stop (Stop, « stop », Échap), pause,
@@ -3605,14 +3620,22 @@ function direBoutTelephone(conv, b) {
   if (typeof journalVoix === 'function') journalVoix('bout_entendu', { n: b.n, tour: Number(bouts.tour) || 0 });   // (relecture) la pensée qu'il dit vraiment
 }
 function boutTelephoneSuivant() {
+  const ENCHAINER_TEL_MS = 700;                                       // (07/11) confiée au moteur 0,7 s avant la fin de la phrase qui sort
   const f = typeof bouts !== 'undefined' ? bouts.fileTel || [] : [];
   if (typeof preparerChoix === 'function' && etat.conversation) preparerChoix(f, 'telephone');   // (07/11) son choix, d'avance
-  if (f.length && etat.conversation && !(lecteurSysteme && lecteurSysteme.actif)) {
+  // (07/11, Ahmed : « un petit décalage entre chaque bloc ») la phrase suivante part au moteur du téléphone 0,7 s avant la fin de celle qui
+  // sort : il l'enchaîne sans blanc ; sinon on revient voir juste à ce moment-là
+  const resteTel = lecteurSysteme && lecteurSysteme.actif && typeof lecteurSysteme.resteEstimeMs === 'function' ? lecteurSysteme.resteEstimeMs() : (lecteurSysteme && lecteurSysteme.actif ? Infinity : 0);
+  if (f.length && etat.conversation && Number.isFinite(resteTel) && resteTel > ENCHAINER_TEL_MS) {
+    clearTimeout(bouts.minuteurTel); bouts.minuteurTel = setTimeout(boutTelephoneSuivant, resteTel - ENCHAINER_TEL_MS);
+  }
+  if (f.length && etat.conversation && resteTel <= ENCHAINER_TEL_MS) {
     // (07/11, Ahmed : « anticiper la latence de la sortie de sa voix, et choisir parmi les dernières voix prêtes celle qui va au mieux dans ce
     // temps ; il peut revenir sur une portion prête ») réglage choisir_latence (oui) ; éteint : dans l'ordre, comme le 04/11 à 14:20
     if (typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.choisir_latence !== false) {
       const libre = typeof choixLibre === 'function' ? choixLibre(f) : null;
-      if (libre && libre.attendre) { clearTimeout(bouts.minuteurTel); bouts.minuteurTel = setTimeout(boutTelephoneSuivant, 150); return; }
+      // son choix arrive : il l'attend tant que sa voix parle encore ; sa voix libre, la latence décide (jamais de blanc pour attendre)
+      if (libre && libre.attendre && resteTel > 120) { clearTimeout(bouts.minuteurTel); bouts.minuteurTel = setTimeout(boutTelephoneSuivant, 150); return; }
       const r = libre && libre.choix ? { choix: libre.choix, garde: f.filter(x => x !== libre.choix), latenceMs: 0, revenu: libre.choix !== f[f.length - 1], libre: true }
         : Voix.choisirDansLatence(f, { maintenant: Date.now(), calculMs: Number(etat.calculVoixMs) || 3500, sortieMs: Number(etat.sortieVoixMs) || 150 });
       const perdus = f.length - r.garde.length - (r.choix ? 1 : 0);
@@ -3644,9 +3667,11 @@ function direBouts() {
     const pretes = file.filter(x => x.pret);
     if (typeof preparerChoix === 'function') preparerChoix(pretes, 'mac');   // (07/11) son choix se prépare pendant que sa voix parle
     const reste = lecteurNeuronal.resteS || 0;
-    if (lecteurNeuronal.joue && reste > 0.35) { clearTimeout(bouts.minuteur); bouts.minuteur = setTimeout(direBouts, Math.max(50, (reste - 0.3) * 1000)); return; }
+    // (07/11, Ahmed : « un petit décalage entre chaque bloc ») le morceau suivant est confié à sa voix 1 s avant la fin de celui qui sonne : il
+    // est programmé à l'instant exact où l'autre finit, sans blanc
+    if (lecteurNeuronal.joue && reste > 1.0) { clearTimeout(bouts.minuteur); bouts.minuteur = setTimeout(direBouts, Math.max(50, (reste - 1.0) * 1000)); return; }
     const libre = typeof choixLibre === 'function' ? choixLibre(pretes) : null;
-    if (libre && libre.attendre) { clearTimeout(bouts.minuteur); bouts.minuteur = setTimeout(direBouts, 150); return; }
+    if (libre && libre.attendre && lecteurNeuronal.joue && reste > 0.12) { clearTimeout(bouts.minuteur); bouts.minuteur = setTimeout(direBouts, 100); return; }
     const r = libre && libre.choix ? { choix: libre.choix, garde: file.filter(x => x !== libre.choix), latenceMs: 60, revenu: libre.choix !== pretes[pretes.length - 1], libre: true }
       : Voix.choisirDansLatence(file, { maintenant: Date.now(), calculMs: Number(etat.calculVoixMacMs) || 2600, sortieMs: 60 });
     for (const x of file) if (x !== r.choix && !r.garde.includes(x)) bouts.liste.delete(x.n);       // plus de 30 s : oubliés

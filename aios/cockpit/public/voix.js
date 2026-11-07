@@ -494,7 +494,7 @@
     const enCours = new Set();      // garder les références : sinon Chrome peut perdre onend
     // (07/11, Ahmed : « quand je le coupe, il finit juste sa phrase ») finirPhrase : la phrase qui sort va au bout, celles déjà confiées
     // au moteur sont annulées à sa fin ; ce qu'on lui donne entre-temps (sa nouvelle réponse) attend cette fin, puis part
-    let courant = null, finissant = null, retenues = [];
+    let courant = null, finissant = null, retenues = [], finA = 0;
     const lecteur = {
       surFin: null,
       dire(phrase) {
@@ -507,6 +507,7 @@
           const fini = () => {
             if (u._annulee) return;
             enCours.delete(u); if (courant === u) courant = null;
+            finA = Date.now();
             if (finissant === u) {
               finissant = null; for (const x of enCours) x._annulee = true; enCours.clear(); synth.cancel();
               const r = retenues.splice(0); if (r.length) { r.forEach(x => lecteur.dire(x)); return; }
@@ -514,7 +515,14 @@
             if (!enCours.size && lecteur.surFin) lecteur.surFin();
           };
           u.onend = fini; u.onerror = fini;
-          u.onstart = () => { if (u._annulee) { synth.cancel(); return; } courant = u; if (lecteur.surSegment) lecteur.surSegment(seg.texte); };
+          u.onstart = () => {
+            if (u._annulee) { synth.cancel(); return; }
+            courant = u; u._debutA = Date.now();
+            // (07/11, Ahmed : « un petit décalage entre chaque bloc ») le blanc entre deux phrases de sa voix, mesuré
+            const blanc = finA ? u._debutA - finA : 0;
+            if (blanc > 80 && blanc < 5000 && lecteur.surBlanc) lecteur.surBlanc(blanc);
+            if (lecteur.surSegment) lecteur.surSegment(seg.texte);
+          };
           u.onboundary = () => { if (lecteur.surMot) lecteur.surMot(); };      // la voix du Mac : une impulsion par mot
           enCours.add(u);
           synth.speak(u);
@@ -541,6 +549,13 @@
         return { dit: String(courant.text || ''), ms: -1 };
       },
       get finit() { return !!finissant; },
+      // (07/11, Ahmed : « un petit décalage entre chaque bloc : une liaison élégante ») combien il reste à dire de la seule phrase qui sort
+      // (estimé à ~14 caractères par seconde) : la suivante peut partir au moteur juste avant sa fin, sans blanc ; une file déjà pleine : jamais
+      resteEstimeMs(maintenant = Date.now(), cps = 14) {
+        if (!courant || courant._debutA == null || finissant || enCours.size !== 1) return Infinity;
+        const debit = Math.max(0.5, Number(courant.rate) || 1);
+        return Math.max(0, (String(courant.text || '').length / (cps * debit)) * 1000 - (maintenant - courant._debutA));
+      },
       get actif() { return enCours.size > 0 || retenues.length > 0; },
     };
     return lecteur;
