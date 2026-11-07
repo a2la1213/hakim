@@ -367,6 +367,7 @@ function lirePersona() {
 }
 const STT = path.join(ANAMNESE, 'jarvis', 'stt.py');
 const PYTHON = path.join(ANAMNESE, '.venv', 'bin', 'python');
+const { routeAvatar } = require('./avatar-serveur.js');   // (07/11) la photo de son avatar
 // La voix (Whisper, MLX) vit dans un venv arm64 à part : celui d'Anamnèse tourne en x86_64 (Rosetta),
 // où MLX n'existe pas.
 const PYTHON_VOIX = [path.join(ANAMNESE, 'jarvis', '.venv', 'bin', 'python')].find(f => fs.existsSync(f)) || PYTHON;
@@ -2104,8 +2105,20 @@ const MODELE_CONVERSATION = 'sonnet';
 const ALIAS_MODELE = { 'super hakim': 'opus', superhakim: 'opus', super: 'opus', 'mini hakim': 'haiku', minihakim: 'haiku', mini: 'haiku', hakim: 'sonnet' };
 const versModele = (x) => { const t = String(x || '').toLowerCase().replace(/\s+/g, ' ').trim(); return ALIAS_MODELE[t] || t; };
 const DEMANDE_MODELE = /\b(?:passe|reste|mets?[- ]toi|bascule)\s+(?:en\s+|sur\s+)?(?:mode\s+)?(opus|sonnet|haiku|super ?hakim|mini ?hakim)\b|\bmode\s+(opus|sonnet|haiku|super ?hakim|mini ?hakim)\b/i;
+// (07/11, Ahmed : « Hakim doit décider quel mode il se met (Mini Hakim, Super Hakim…), sans limiter Super Hakim ou autre dans le temps ») son
+// mode vivait dans la conversation, en mémoire : perdu à chaque relance du cockpit et à chaque nouvelle conversation (le fil trop long), Super
+// Hakim retombait en Hakim. Son dernier choix (le sien, ou « passe en … » de papa) est gardé sur le disque et vaut partout, jusqu'au suivant.
+const JARVIS_MODELE_CHOISI = path.join(JARVIS, 'modele-choisi.json');
+const modeleChoisi = { v: null };
+try { const m = JSON.parse(fs.readFileSync(JARVIS_MODELE_CHOISI, 'utf8')).modele; if (['haiku', 'sonnet', 'opus'].includes(m)) modeleChoisi.v = m; } catch (_) {}
+function garderModeleChoisi(modele) {
+  if (!['haiku', 'sonnet', 'opus'].includes(modele) || modeleChoisi.v === modele) return;
+  modeleChoisi.v = modele;
+  try { ecrireAtomique(JARVIS_MODELE_CHOISI, j({ modele, ts: Date.now() })); } catch (_) {}
+}
 const modeleDeSession = new Map();                 // conversation → le modèle qu'Ahmed ou Hakim y a choisi
 function noterModele(session, modele) {
+  if (typeof garderModeleChoisi === 'function') garderModeleChoisi(modele);   // (07/11) son choix vaut partout, sans limite de temps
   if (!session) return;
   modeleDeSession.delete(session); modeleDeSession.set(session, modele);
   while (modeleDeSession.size > 50) modeleDeSession.delete(modeleDeSession.keys().next().value);
@@ -2120,7 +2133,7 @@ function bascullePermise(session, modele, maintenant = Date.now()) {
   return true;
 }
 function modeleDeConversation(session) {
-  return modeleDeSession.get(session || '') || MODELE_CONVERSATION;
+  return modeleDeSession.get(session || '') || (typeof modeleChoisi !== 'undefined' && modeleChoisi.v) || MODELE_CONVERSATION;
 }
 function modeleAuto(session, texte) {
   const d = String(texte).match(DEMANDE_MODELE);
@@ -8410,7 +8423,7 @@ const AIDE_OUTILS_SONNET = `\n\n[Rappel outils] le passé → memory_recall ; le
 // (03/11, Ahmed : « c'est lui qui reconnaît la tâche et qui choisit son modèle ») il le sait à chaque tour
 const NOMS_MODELE = { haiku: 'Mini Hakim', sonnet: 'Hakim', opus: 'Super Hakim' };   // (03/11) ses noms
 const ligneModele = (modele) => `\n\n[Ton esprit en ce moment : ${NOMS_MODELE[modele] || modele}. C'est toi qui choisis ton mode, quand tu le juges utile : `
-  + `[[modele: super]] pour devenir Super Hakim sur une tâche complexe, [[modele: mini]] pour Mini Hakim sur le léger et le rapide, [[modele: hakim]] pour revenir. Le fil te suit.]`;
+  + `[[modele: super]] pour devenir Super Hakim, [[modele: mini]] pour Mini Hakim, [[modele: hakim]] pour Hakim. Celui que tu choisis reste ton mode tant que tu n'en changes pas, sans limite de temps (même d'une conversation à l'autre). Le fil te suit.]`;
 const boutsRemises = new Map();                                 // (03/11) id du message → { ts, textes } : écrits, pas dits
 function blocBouts() {
   const l = [...boutsRemises.values()].filter(x => Date.now() - x.ts < 30 * 60e3);
@@ -12875,6 +12888,8 @@ async function traiter(req, res) {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     return res.end(j({ cle: !!cleAzure(), region: c.region || null, voix: c.voix || 'fr-FR-RemyMultilingualNeural', essai }));
   }
+  // (07/11, Ahmed : « un avatar avec mon visage pour lui ») la photo de son avatar : gardée ici, jamais publiée
+  if (p.startsWith('/api/avatar') && routeAvatar(req, res, p, { dossier: path.join(JARVIS, 'avatar'), jetonValide })) return;
   if (p === '/api/conso' && req.method === 'GET') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     const jour = jourLocal(), g = {};

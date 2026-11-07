@@ -1915,7 +1915,9 @@ function humeur(texte) {
   $('pause').hidden = !(etat.conversation || (lecteur && (lecteur.actif || lecteur.enPause)));
   $('finConversation').hidden = !etat.conversation;
   if (!voixEnJeu) { etat.sceneMasquee = false; if (!parle) sousTitre(''); }
-  scene(!!((etat.reglages.scene && voixEnJeu && !etat.sceneMasquee) || etat.demarrerAuToucher || etat.modeOrbe));
+  const sceneVisible = !!((etat.reglages.scene && voixEnJeu && !etat.sceneMasquee) || etat.demarrerAuToucher || etat.modeOrbe);
+  scene(sceneVisible);
+  if (typeof majAvatar === 'function') majAvatar(sceneVisible);       // (07/11) son avatar à la place de la grande orbe
   if (etat.demarrerAuToucher && !etat.conversation) sousTitre('touche l’orbe pour commencer la conversation');
   // (2026-10-21, Ahmed) la grande orbe masquée d'un toucher pendant une conversation : un bouton pour y revenir
   $('orbeRetour').hidden = !(etat.reglages.scene && etat.conversation && etat.sceneMasquee);
@@ -5944,6 +5946,7 @@ function surRire(o) {
   const v = { motif: motifRire(d), genre: d === 5 ? 'rire_max' : 'rire', degre: d, t: Date.now() };
   const micro = etat.conversation && etat.conversation.capteur && etat.conversation.capteur.estMuet ? 'coupe' : etat.conversation ? 'ouvert' : 'sans_conversation';
   journalVoix('rire_recu', { degre: d, source: String(o.source || ''), depuis_message_ms: Number.isFinite(o.t0) ? Date.now() - o.t0 : null, micro });
+  if (typeof avatarEtat !== 'undefined' && avatarEtat.instance) avatarEtat.instance.rire(d);   // (07/11) son rire se voit sur son visage
   if (!window.HakimApp || !window.HakimApp.vibrerMotif) return;
   jouerVibration(v);                                     // (19:38) un rire réflexe part tout de suite, même si papa parle encore
 }
@@ -7756,6 +7759,98 @@ function texteCompteur(d) {
   const fin = EFFORTS_NOMS[d.effort] ? `effort ${EFFORTS_NOMS[d.effort]}` : `API ${fr(api * t)}`;
   return `${n >= 1e6 ? `${fr(n / 1e6)} M` : `${Math.round(n / 1000)} k`} · ${fr(tout * t)} CHF · ${fin}`;
 }
+/* (07/11, Ahmed : « qu'il crée un avatar avec mon visage pour lui : en mode Conversation ou Télépathie, c'est son avatar qui reprend mon
+   image et qui parle, en faisant correctement les mouvements des lèvres et du visage à chaque émotion, parole, réaction ») ta photo (gardée
+   au cockpit, jamais publiée), ses points trouvés ici une fois (gardés dans ce navigateur), puis son visage animé ici, sans rien envoyer :
+   sa voix qui sort (niveau, timbre) fait bouger ses lèvres, son émotion son expression, son rire, son écoute, ses clignements */
+// var : humeur() peut passer avant cette ligne au chargement de la page (majAvatar le vérifie)
+var avatarEtat = { actif: true, instance: null, maj: 0, enCharge: false, vu: 0, erreur: '' };
+try { avatarEtat.actif = localStorage.getItem('hakim-avatar') !== 'non'; } catch (_) {}
+const CLE_POINTS_AVATAR = 'hakim-avatar-points';
+const tamponAvatar = { temps: null, freq: null };
+function lireAvatar() {
+  const i = etat.interieur || {}, c = etat.conversation;
+  let voix = null;
+  if (analyseurVoix && lecteurNeuronal.joue && actx) {
+    const n = analyseurVoix.fftSize;
+    if (!tamponAvatar.temps || tamponAvatar.temps.length !== n) { tamponAvatar.temps = new Float32Array(n); tamponAvatar.freq = new Uint8Array(analyseurVoix.frequencyBinCount); }
+    analyseurVoix.getFloatTimeDomainData(tamponAvatar.temps);
+    let s = 0; for (const v of tamponAvatar.temps) s += v * v;
+    analyseurVoix.getByteFrequencyData(tamponAvatar.freq);
+    const hz = actx.sampleRate / n, bande = (a, b) => { let t = 0; for (let k = Math.floor(a / hz); k <= Math.min(tamponAvatar.freq.length - 1, Math.ceil(b / hz)); k++) t += tamponAvatar.freq[k]; return t; };
+    const grave = bande(250, 1000), aigu = bande(1200, 3500);
+    voix = { niveau: Math.sqrt(s / n), aigu: (aigu - grave) / (aigu + grave + 1e-6) };
+  }
+  return { voix, parleSansSon: !voix && !!(lecteurSysteme && lecteurSysteme.actif), expression: Avatar.expressionDe(i.voix_emotion || i.humeur || ''),
+    eveil: Number(i.arousal), ecoute: !!(c && c.capteur && c.capteur.enParole) };
+}
+function lirePointsAvatar(maj) { try { const o = JSON.parse(localStorage.getItem(CLE_POINTS_AVATAR) || 'null'); return o && o.maj === maj && Array.isArray(o.points) ? o.points : null; } catch (_) { return null; } }
+function garderPointsAvatar(maj, points) { try { localStorage.setItem(CLE_POINTS_AVATAR, JSON.stringify({ maj, points: points.map(p => ({ x: +p.x.toFixed(5), y: +p.y.toFixed(5) })) })); } catch (_) {} }
+function construireAvatar(image, points, maj) {
+  const cadre = Avatar.cadrer(points, image.width, image.height);
+  const m = Avatar.preparer(cadre.points, cadre.L, cadre.H);
+  if (avatarEtat.instance) avatarEtat.instance.detruire();
+  avatarEtat.instance = Avatar.creer($('avatarScene'), { maillage: m, image: Avatar.photoCadree(image, cadre), reduit: REDUCED });
+  avatarEtat.maj = maj; avatarEtat.erreur = '';
+}
+async function chargerAvatar() {
+  if (avatarEtat.enCharge || typeof Avatar === 'undefined') return;
+  avatarEtat.enCharge = true; avatarEtat.vu = Date.now();
+  try {
+    const meta = await (await fetch('/api/avatar', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' })).json();
+    if (!meta || !meta.existe) { avatarEtat.erreur = 'pas encore de photo'; return; }
+    if (meta.maj === avatarEtat.maj && avatarEtat.instance) return;
+    const r = await fetch('/api/avatar/visage', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+    if (!r.ok) throw new Error(`photo ${r.status}`);
+    const image = await createImageBitmap(await r.blob());
+    let points = lirePointsAvatar(meta.maj);
+    if (!points) { points = await Avatar.detecter(image); garderPointsAvatar(meta.maj, points); }
+    construireAvatar(image, points, meta.maj);
+    journalVoix('avatar_pret', { maj: meta.maj });
+  } catch (e) { avatarEtat.erreur = String(e.message || e).slice(0, 80); journalVoix('avatar_erreur', { erreur: avatarEtat.erreur }); }
+  finally { avatarEtat.enCharge = false; afficherEtatAvatar(); if (typeof humeur === 'function') humeur(); }
+}
+function afficherEtatAvatar() {
+  const e = $('avatarEtat');
+  if (e) e.textContent = avatarEtat.instance ? 'son visage est prêt' : avatarEtat.enCharge ? 'son visage se prépare…' : avatarEtat.erreur;
+}
+// en Conversation et en Télépathie, la scène visible : son visage à la place de la grande orbe (l'animation ne tourne que là)
+function majAvatar(sceneVisible) {
+  if (typeof avatarEtat === 'undefined' || !avatarEtat || !$('avatarScene')) return;
+  const voulu = !!(sceneVisible && etat.conversation && avatarEtat.actif);
+  if (voulu && !avatarEtat.instance && !avatarEtat.enCharge && Date.now() - avatarEtat.vu > 60000) chargerAvatar();
+  const montre = voulu && !!avatarEtat.instance;
+  $('avatarScene').hidden = !montre;
+  $('orbeScene').hidden = montre;
+  if (montre && !avatarEtat.instance.actif) avatarEtat.instance.demarrer(lireAvatar);
+  if (!montre && avatarEtat.instance && avatarEtat.instance.actif) avatarEtat.instance.arreter();
+}
+(() => {
+  const c = $('avatarActif'), f = $('avatarPhoto');
+  if (!c || !f) return;
+  c.checked = avatarEtat.actif;
+  c.addEventListener('change', () => { avatarEtat.actif = c.checked; try { localStorage.setItem('hakim-avatar', c.checked ? 'oui' : 'non'); } catch (_) {} humeur(); });
+  // ta photo : son visage d'abord trouvé ici (sinon rien n'est envoyé), puis gardée au cockpit
+  f.addEventListener('change', async () => {
+    const fichier = f.files && f.files[0];
+    f.value = '';
+    if (!fichier) return;
+    avatarEtat.enCharge = true; afficherEtatAvatar();
+    try {
+      const image = await createImageBitmap(fichier);
+      const points = await Avatar.detecter(image);
+      const r = await fetch('/api/avatar/visage', { method: 'POST', headers: { 'X-Jeton': jeton(), 'Content-Type': fichier.type || 'application/octet-stream' }, body: fichier });
+      const o = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(o.erreur || `envoi ${r.status}`);
+      garderPointsAvatar(o.maj, points);
+      construireAvatar(image, points, o.maj);
+      journalVoix('avatar_photo', { maj: o.maj });
+    } catch (e) { avatarEtat.erreur = String(e.message || e).slice(0, 80); }
+    finally { avatarEtat.enCharge = false; afficherEtatAvatar(); humeur(); }
+  });
+  afficherEtatAvatar();
+})();
+
 // (05/11, Ahmed : « un petit compteur de jetons, converti en CHF, sous l'orbe ; à afficher ou pas dans les réglages rapides ») aujourd'hui, relu toutes les 30 s
 (() => {
   const CLE_C = 'hakim-compteur-jetons', c = document.getElementById('compteurActif'), z = document.getElementById('compteurJetons');

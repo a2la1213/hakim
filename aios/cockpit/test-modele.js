@@ -71,3 +71,29 @@ test('le crochet est branché sur chaque bloc des réponses de Hakim (pas celles
   const lanceur = prendre('cerveauLancer');
   assert.match(lanceur, /!o\.parent_tool_use_id\)\n\s*for \(const b of o\.message\.content\) \{[^}]*suivreModeleParOutil\(c, b\)/);
 });
+
+// (07/11, Ahmed : « Hakim doit décider quel mode il se met (Mini Hakim, Super Hakim…), sans limiter Super Hakim ou autre dans le temps »)
+// son mode vivait dans la conversation, en mémoire : perdu à chaque relance du cockpit et à chaque nouvelle conversation (le fil trop
+// long), Super Hakim retombait en Hakim. Son dernier choix est gardé sur le disque et vaut partout, jusqu'à ce qu'il en change.
+test('son mode reste tant qu’il n’en change pas : une nouvelle conversation et une relance du cockpit le gardent', () => {
+  const ecrits = new Map();
+  const fsx = { readFileSync: (f) => { if (!ecrits.has(f)) { const e = new Error('absent'); e.code = 'ENOENT'; throw e; } return ecrits.get(f); } };
+  const charger = () => {
+    const ctx = { Date, String, Map, JSON, fs: fsx, path, JARVIS: '/j', j: JSON.stringify, ecrireAtomique: (f, c) => ecrits.set(f, c) };
+    vm.createContext(ctx);
+    const i = src.indexOf('const JARVIS_MODELE_CHOISI'), k = src.indexOf('\n}\n', src.indexOf('function garderModeleChoisi(')) + 3;
+    vm.runInContext(ligne('const MODELE_CONVERSATION') + ligne('const ALIAS_MODELE') + ligne('const versModele') + ligne('const DEMANDE_MODELE')
+      + src.slice(i, k) + 'const modeleDeSession = new Map();\n' + ['noterModele', 'modeleDeConversation', 'modeleAuto'].map(prendre).join('\n')
+      + 'this.f = { modeleAuto, noterModele, modeleDeConversation };', ctx);
+    return ctx.f;
+  };
+  let f = charger();
+  assert.equal(f.modeleDeConversation('s1'), 'sonnet', 'rien de choisi : Hakim');
+  f.noterModele('s1', 'opus');                                        // [[modele: super]]
+  assert.equal(f.modeleDeConversation('s2'), 'opus', 'une nouvelle conversation (le fil trop long) : toujours Super Hakim');
+  f = charger();                                                       // le cockpit relancé
+  assert.equal(f.modeleDeConversation('s3'), 'opus', 'après une relance : toujours Super Hakim');
+  f.noterModele('s3', 'haiku');
+  assert.equal(charger().modeleDeConversation(null), 'haiku', 'il change quand il le décide');
+  assert.match(src, /reste ton mode tant que tu n'en changes pas, sans limite de temps/);
+});
