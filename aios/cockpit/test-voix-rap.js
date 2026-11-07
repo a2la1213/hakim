@@ -60,10 +60,11 @@ test('le découpage par langue : arabe, français, anglais, un lang_code par mor
 
 test('le relais d’Azure : le Studio, un Chatterbox froid, une file trop longue ; sinon lui', () => {
   assert.strictEqual(V.raisonSecours({ chaude: true, studio: null, attente_s: 1 }), null);
-  assert.strictEqual(V.raisonSecours({ chaude: false, studio: null, attente_s: 0 }), 'chatterbox se charge');
-  assert.match(V.raisonSecours({ chaude: true, studio: 'une chanson se calcule', attente_s: 0 }), /^studio/);
+  assert.strictEqual(V.raisonSecours({ chaude: false, studio: null, attente_s: 0 }), null);   // (07/11) plus tout de suite : 60 s
+  assert.strictEqual(V.raisonSecours({ chaude: true, studio: 'une chanson se calcule', attente_s: 0 }), null);
+  assert.ok(V.budgetMs('Bonjour.') >= 60000, '(07/11) Azure seulement après 60 s');
   assert.match(V.raisonSecours({ chaude: true, studio: null, attente_s: V.SEUIL_FILE_S + 1 }), /^file de/);
-  const longue = 'x'.repeat(14 * 8);                                     // ~8 s de parole
+  const longue = 'x'.repeat(14 * 62);                                    // ~62 s de parole (07/11 : seuil 60 s)
   assert.ok(V.attenteFile([{ texte: longue }], null) > V.SEUIL_FILE_S);
   assert.strictEqual(V.attenteFile([{ texte: longue, fond: true }], null), 0, 'le fond passe après : il ne compte pas');
   assert.ok(V.attenteFile([{ texte: longue, fond: true }], null, true) > 8, 'sauf pour une voix de fond elle-même');
@@ -118,18 +119,16 @@ test('en rap, Chatterbox chaud : sa voix de rap, le timbre et les langues dans l
   assert.ok(!r.journal.some(x => x.e === 'secours_azure'));
 });
 
-test('en rap, Chatterbox froid ou le Studio en calcul : Azure tout de suite, noté, et Chatterbox se chauffe', async () => {
+test('en rap, Chatterbox froid ou le Studio en calcul : (07/11) plus d’Azure tout de suite, sa phrase attend sa voix (60 s au plus)', async () => {
   let r = route({ chaude: false });
-  await r.fini;
-  assert.strictEqual(r.res.corps, 'AZURE');
-  assert.strictEqual(r.res.tetes['X-Voix'], 'azure');
-  assert.strictEqual(r.file.length, 0);
-  assert.strictEqual(r.chauffes.length, 1);
-  assert.deepStrictEqual(r.journal.filter(x => x.e === 'secours_azure').map(x => x.raison), ['chatterbox se charge']);
+  await new Promise(x => setImmediate(x));
+  assert.strictEqual(r.file.length, 1, 'sa phrase attend Chatterbox');
+  assert.strictEqual(r.chauffes.length, 1, 'froid : il se chauffe');
+  assert.deepStrictEqual(r.journal.filter(x => x.e === 'secours_azure'), []);
   r = route({ studio: 'une chanson se calcule' });
-  await r.fini;
-  assert.strictEqual(r.res.corps, 'AZURE');
-  assert.match(r.journal.find(x => x.e === 'secours_azure').raison, /^studio/);
+  await new Promise(x => setImmediate(x));
+  assert.strictEqual(r.file.length, 1);
+  assert.deepStrictEqual(r.journal.filter(x => x.e === 'secours_azure'), []);
 });
 
 test('en rap, une erreur ou une synthèse trop lente : Azure prend la phrase ; le son tardif est jeté', async () => {

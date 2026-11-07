@@ -1238,12 +1238,56 @@ def _maison(source):
     return any(chemin == m or m in chemin.parents for m in _MAISON)
 
 
+# (07/11, Ahmed : « Ouiii ») le 06/11 à 21:52, trois « incidents sérieux » venaient des journaux de ses chansons, sans attaque :
+# (a) ACE-Step écrit dans son journal son propre gabarit de chat (<|im_start|>system …, <|endoftext|>), pris pour des balises
+# usurpées ; (b) la dernière ligne, « CHANSON PRÊTE : … Envoie-la à papa : fichier_joindre(…) », est NOTRE texte, pris pour un
+# ordre d'outil venu du dehors. Seulement pour une tâche de l'atelier (chanter, image, clip : sa fiche le dit, Hakim ne peut pas
+# l'écrire) : dans les lignes de journal d'ACE-Step, seules les balises du gabarit sont retirées (les paroles restent examinées) ;
+# l'annonce n'est retirée que si elle est la DERNIÈRE ligne d'une tâche finie (finir() l'écrit en dernier). Partout ailleurs,
+# et pour tout le reste de ces journaux, la vigilance est entière.
+DOSSIER_TACHES = Path.home() / "AIOS" / "jarvis" / "cwd" / "taches"
+_SOURCE_TACHE = re.compile(r"journal de la tâche (T-\d{8}-\d{6}-[0-9a-f]{4})")
+_LIGNE_LOG = re.compile(r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?:\.\d+)? \| *[A-Z]+ *\| ")
+_LIGNE_ACESTEP = re.compile(r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?:\.\d+)? \| *[A-Z]+ *\| acestep\.")
+_GABARIT_ACESTEP = re.compile(r"<\|(?:im_start|im_end|endoftext)\|>")
+_ANNONCES = ("CHANSON PRÊTE : ", "INSTRU PRÊTE pour le studio de papa : ", "IMAGE PRÊTE : ", "CLIP PRÊT : ")
+
+
+def sans_soi_tache(texte, source, dossier=None):
+    """Le journal d'une tâche de l'atelier sans ce qu'elle écrit d'elle-même (voir plus haut) ; tout autre texte tel quel."""
+    m = _SOURCE_TACHE.fullmatch(str(source or ""))
+    if not m:
+        return texte
+    try:
+        d = json.loads((Path(dossier or DOSSIER_TACHES) / f"{m.group(1)}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return texte
+    if not isinstance(d, dict) or not (isinstance(d.get("chanson"), dict) or isinstance(d.get("visuel"), dict)):
+        return texte
+    lignes = str(texte).split("\n")
+    fin = max((i for i, l in enumerate(lignes) if l.strip()), default=None)
+    if fin is not None and d.get("etat") == "finie" and lignes[fin].startswith(_ANNONCES):
+        lignes[fin] = ""
+    if isinstance(d.get("chanson"), dict):                      # ACE-Step : seulement pour chanter
+        dans = False
+        for i, l in enumerate(lignes):
+            if _LIGNE_LOG.match(l):
+                dans = bool(_LIGNE_ACESTEP.match(l))
+            if dans:
+                lignes[i] = _GABARIT_ACESTEP.sub(" ", l)
+    return "\n".join(lignes)
+
+
 def sentinelle(texte, source):
     """Pour l'enveloppe : « » ou l'avertissement à mettre dans l'en-tête (jamais un mot de l'attaque). L'adresse est
     examinée avec le contenu (relecture, 13). L'avertissement est construit avant le journal, qui ne peut pas l'empêcher
     (relecture finale, 6)."""
     if _maison(source):
         return ""
+    try:
+        texte = sans_soi_tache(texte, source)
+    except Exception as e:                                      # une panne ici : on examine tout, comme avant
+        print(f"[sentinelle] tri du journal de tâche impossible : {type(e).__name__}: {str(e)[:200]}", file=sys.stderr)
     r = examiner(f"{texte}\n{source}")
     cles = cles_signes(r, source)
     statut = _statut(cles) if r["score"] else {"tolere": False, "memoire": False}

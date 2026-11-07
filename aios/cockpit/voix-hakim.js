@@ -52,11 +52,13 @@ function segmenterLangues(texte) {
 }
 
 /* ---- le relais d'Azure ---- */
-const SEUIL_FILE_S = 6;             // ce qui attend avant lui, en secondes de parole : au-delà, Azure (la page prépare la suite pendant qu'il parle)
+// (07/11, Ahmed : « pour sa voix, le secours Azure doit partir seulement à 60 s ») sa voix de rap attend jusqu'à 60 s avant de laisser la place à Azure
+const SECOURS_S = 60;
+const SEUIL_FILE_S = SECOURS_S;    // ce qui attend avant lui, en secondes de parole : au-delà, Azure
 const CARACTERES_PAR_S = 14;        // son débit (comme debuts.plausible) ; Chatterbox calcule à peu près au temps réel (mesuré le 06/11 : 2,3 s pour 2,1 s)
 const dureeParlee = (t) => String(t || '').length / CARACTERES_PAR_S + 0.6;
 // le temps qu'on lui laisse pour une phrase : 4 s, plus 1,5 fois sa durée parlée ; au-delà, Azure
-const budgetMs = (texte) => Math.round(1000 * (4 + 1.5 * dureeParlee(texte)));
+const budgetMs = (texte) => Math.max(SECOURS_S * 1000, Math.round(1000 * (4 + 1.5 * dureeParlee(texte))));   // (07/11) 60 s au moins
 // ce qui attend devant elle, en secondes de parole, et la moitié de la phrase en cours ; sans `tout`, le fond (fabriqué d'avance,
 // il passe après sa parole) ne compte pas
 function attenteFile(file, enCours, tout = false) {
@@ -65,8 +67,8 @@ function attenteFile(file, enCours, tout = false) {
 /* pourquoi Azure plutôt que lui, ou null : { chaude (le processus parole a déjà parlé), studio (une chanson ou un travail du Studio
    en calcul), attente_s } */
 function raisonSecours({ chaude, studio, attente_s }) {
-  if (studio) return `studio : ${studio}`;
-  if (!chaude) return 'chatterbox se charge';
+  // (07/11) ni une chanson en calcul ni son chargement ne passent plus tout de suite à Azure : il attend jusqu'à 60 s (budgetMs), puis Azure
+  void chaude; void studio;
   if (attente_s > SEUIL_FILE_S) return `file de ${Math.round(attente_s * 10) / 10} s`;
   return null;
 }

@@ -5364,6 +5364,8 @@ async function routeJarvis(req, res, distantReq = false) {
   const voixDepuis = Math.max(dernierMessageAhmed, Date.now() - 5 * 60 * 1000);   // les morceaux de CE message
   const prosodieTexte = q.oral ? prosodieDepuis(voixDepuis) + tonVoixDepuis(voixDepuis) : (prosodieDepuis(Infinity), tonVoixDepuis(Infinity), '');
   const ahmedAvant = dernierMessageAhmedMs();
+  // (07/11, Hakim : « Papa, mon image est prête… » à 21:55, redit à 22:05) ce que la page dit déjà dit ne reprend pas ce qu'il a livré de lui-même
+  if (q.souffle_dit) q.souffle_dit = VoixPage.sansDejaLivre(String(q.souffle_dit), livresDepuisPapa()) || undefined;
   dernierMessageAhmed = Date.now();                          // (le réveil pour une tâche finie ne part plus)
   silenceSurMessage(texte);                                  // (27/10) sa relance dans un silence a eu sa réponse
   dejaRecuSurMessage(texte, ahmedAvant).catch(() => { dejaRecuEnVol = false; });   // (27/10) ce qu'il a reçu, tenu par le subconscient
@@ -10007,7 +10009,7 @@ async function routeDire(req, res) {
   if (rap) {
     const attente_s = VoixHakim.attenteFile(fileVoix, voixEnCours);
     const raison = VoixHakim.raisonSecours({ chaude: parolePrete('rap'), studio: VoixHakim.studioOccupe(JARVIS), attente_s });
-    if (raison === 'chatterbox se charge') chaufferVoixRap();
+    if (!parolePrete('rap')) chaufferVoixRap();                        // (07/11) froid : il se chauffe, et sa phrase l'attend (Azure seulement après 60 s)
     if (raison && await secoursAzure(raison, { attente_s: Math.round(attente_s * 10) / 10 })) return;
   }
   // (16:45) sa pensée : sa voix est née avec elle (voixDeLaSource), faite ou en train de se faire ; jamais deux fois
