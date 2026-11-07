@@ -9759,6 +9759,7 @@ function optionsVoix(texte, langue) {
 const parolePrete = (voix) => !!(voixChaude && voixChaude.voix === voix && voixChaude.proc && voixChaude.proc === voixProcs.parole && voixChaude.proc.exitCode === null);
 function chaufferVoixRap() {
   if (fileVoix.some(x => x.chauffe)) return;
+  if (typeof VoixHakim !== 'undefined' && VoixHakim.studioOccupe(JARVIS)) return;   // (07/11) une chanson se calcule : sa voix reste déchargée (Azure parle)
   const fichier = path.join(os.tmpdir(), `jarvis-voix-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.wav`);
   fileVoix.push({ texte: 'Salam.', langue: 'fr', voix: 'rap', fond: true, chauffe: true, annulee: false, recu: Date.now(), fichier,
     fin: () => fs.unlink(fichier, () => {}) });
@@ -10341,6 +10342,7 @@ function effacerVoixPerdues() {
 }
 function lancerSeparation() {
   if (separation.proc || !fs.existsSync(PYTHON_SEPARATION)) return;
+  if (typeof VoixHakim !== 'undefined' && VoixHakim.studioOccupe(JARVIS)) return;   // (07/11) une chanson se calcule : la séparation attend (memoirePourChanson)
   effacerVoixPerdues();
   const p = spawn(PYTHON_SEPARATION, ['-W', 'ignore', SEPARATION], { stdio: ['pipe', 'pipe', 'ignore'], env: { ...process.env, PATH: CHEMIN_OUTILS } });
   separation.proc = p; separation.pret = false; separation.tampon = '';
@@ -10357,6 +10359,24 @@ function lancerSeparation() {
   const fin = () => { if (separation.proc !== p) return; separation.proc = null; separation.pret = false; const a = separation.attente; separation.attente = null; if (a) { clearTimeout(a.minuteur); fs.unlink(a.fichier, () => {}); if (a.quand) a.quand(null); } };
   p.on('exit', fin); p.on('error', fin);
 }
+/* (07/11, Hakim, avec l'accord d'Ahmed : « chanson bloquée 3 min au chargement d'ACE-Step ; swap 10,2/12 Go, un python3.12 de 3,9 Go + ma voix
+   MLX 2,4 Go tournent en parallèle ») pendant une chanson ou un travail du Studio, deux gros processus sont déchargés : sa voix Chatterbox
+   (~2 Go ; Azure parle pendant ce temps, comme le secours le prévoit déjà) et la séparation Demucs (~3,7 Go ; ses sons ne sont pas séparés
+   pendant ce temps). Ils reviennent d'eux-mêmes après : la voix à sa prochaine phrase, la séparation au prochain son. Jamais pendant une
+   demande en cours ; arrêt par l'objet du processus (son PID), jamais par motif. */
+function memoirePourChanson(occupe = VoixHakim.studioOccupe(JARVIS)) {
+  if (!occupe) return [];
+  const liberes = [];
+  const v = voixProcs.parole;
+  if (v && v.exitCode === null && v.signalCode === null && ![...voixAttente.values()].some(a => a.proc === v) && !fileVoix.some(x => x.chauffe)) {
+    voixProcs.parole = null; try { v.kill('SIGTERM'); } catch (_) {} liberes.push('voix');
+  }
+  const sp = separation.proc;
+  if (sp && !separation.attente) { try { sp.kill('SIGTERM'); } catch (_) {} liberes.push('separation'); }
+  if (liberes.length) try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'memoire_pour_chanson', liberes, pour: String(occupe).slice(0, 40) }) + '\n', { mode: 0o600 }); } catch (_) {}
+  return liberes;
+}
+if (typeof setInterval === 'function') setInterval(() => { try { memoirePourChanson(); } catch (_) {} }, 2000).unref();
 // (06/11) ses trois pistes : la séparation rend aussi le fond seconde par seconde, et la voix séparée (le bloc du téléphone, pour ses mots ;
 // le micro, pour une voix lointaine quand ni papa ni lui ne parlent)
 const pistesSeparation = () => typeof troisPistes === 'function' && troisPistes();

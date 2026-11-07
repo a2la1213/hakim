@@ -42,6 +42,11 @@ DUREE_MIN, DUREE_MAX, DUREE_DEFAUT = 10, 240, 60
 PAROLES_MAX = 4000
 DELAI_S = 40 * 60                       # au-delà, le calcul est arrêté (une chanson de 4 min prend quelques minutes)
 MAX_TACHES = 3                          # comme jarvis/taches.py
+# (07/11, Hakim, avec l'accord d'Ahmed : « bloquée 3 min à PROGRESSION 1/5 chargement ; y a-t-il un timeout au chargement ? ») le chargement des
+# modèles (DiT puis LM) a sa propre limite : au-delà, la chanson s'arrête et dit pourquoi (la mémoire du Mac, le plus souvent), au lieu d'attendre
+# les 40 min du délai entier. Sa durée est notée dans le journal de la tâche (« Chargé en … s »), pour savoir ce qui est normal.
+CHARGEMENT_MAX_S = int(os.environ.get("JARVIS_CHANT_CHARGEMENT_S", 6 * 60))
+CHARGEMENT = {"depuis": None}
 
 # Les styles : le mot de Hakim → la description qu'ACE-Step comprend le mieux (en anglais, genre + instruments + voix).
 # Un style absent passe tel quel : « jazz manouche, guitare, voix douce » marche aussi.
@@ -354,12 +359,23 @@ def finir(tid, dossier=None, chansons=None, atelier=None, erreur=None, mp3=None,
 
 # ---------------------------------------------------------------------------------------------------- le calcul
 
+def raison_arret(stop, maintenant, debut, chargement_depuis):
+    """Pourquoi arrêter maintenant (None : continuer) : à la demande, chargement trop long, ou délai entier dépassé."""
+    if stop:
+        return "arrêtée à la demande (Ahmed ou Hakim)"
+    if chargement_depuis is not None and maintenant - chargement_depuis > CHARGEMENT_MAX_S:
+        return (f"bloquée au chargement des modèles (plus de {CHARGEMENT_MAX_S // 60} min) : la mémoire du Mac était sans doute pleine ; "
+                "relance-la quand le Mac est plus calme")
+    if maintenant - debut > DELAI_S:
+        return f"trop longue (plus de {DELAI_S // 60} min)"
+    return None
+
+
 def _veiller(tid, dossier, debut):
-    """Arrêt demandé (arreter_tache) ou délai dépassé : l'état est écrit, puis le processus s'arrête net."""
+    """Arrêt demandé (arreter_tache), chargement trop long ou délai dépassé : l'état est écrit, puis le processus s'arrête net."""
     while True:
         time.sleep(1)
-        raison = ("arrêtée à la demande (Ahmed ou Hakim)" if (dossier / f"{tid}.stop").exists()
-                  else f"trop longue (plus de {DELAI_S // 60} min)" if time.time() - debut > DELAI_S else None)
+        raison = raison_arret((dossier / f"{tid}.stop").exists(), time.time(), debut, CHARGEMENT["depuis"])
         if raison:
             print(finir(tid, dossier, raison=raison), flush=True)
             try:
@@ -392,6 +408,7 @@ def composer(c, sortie_dir):
     from acestep.inference import GenerationConfig, GenerationParams, generate_music
     from acestep.llm_inference import LLMHandler
     print("PROGRESSION 1/5 chargement", flush=True)
+    CHARGEMENT["depuis"] = time.time()
     dit, lm = AceStepHandler(), LLMHandler()
     msg, ok = dit.initialize_service(project_root=str(ACE), config_path="acestep-v15-turbo", device="auto")
     if not ok:
@@ -403,6 +420,8 @@ def composer(c, sortie_dir):
     msg, ok = lm.initialize(checkpoint_dir=str(ACE / "checkpoints"), lm_model_path=lm_modele, backend="mlx", device="auto")
     if not ok:
         raise RuntimeError(f"LM : {msg}")
+    print(f"Chargé en {time.time() - CHARGEMENT['depuis']:.0f} s", flush=True)
+    CHARGEMENT["depuis"] = None
     print("PROGRESSION 2/5 composition", flush=True)
     params = GenerationParams(caption=c["description"], lyrics=c["paroles"], duration=float(c["duree_s"]),
                               vocal_language=c["langue"], instrumental=bool(c.get("instrumental")), inference_steps=8,

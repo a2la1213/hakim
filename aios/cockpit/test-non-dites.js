@@ -258,7 +258,7 @@ test('(19:06) réentendues par le cockpit, elles ne dépendent plus de son tour 
   // câblage : le bloc à la fin de ses tâches ; rendues si le tour n'a rien dit, ou s'il s'arrête avant de commencer
   assert.match(srv, /\+ corpsTexte \+ blocNonEntendus\(texte, nonce\) \+ blocDejaReagi\(\) \+ aideOutils\(modele\) \+ blocRapportBascule\(session\);/);
   assert.match(srv, /if \(o\.erreur \|\| \(sansRien && !dejaDit\)\) rendreNonEntendus\(nonce\);/);
-  assert.match(srv, /if \(arretDemande\) noterArret\(arretDuTour\(\{ coupe: true \}, raisonArret, ''\), texte\);\n\s+rendreNonEntendus\(nonce\);/);
+  assert.match(srv, /if \(arretDemande\) noterArret\(arretDuTour\(\{ coupe: true \}, raisonArret, ''\), texte, false, raisonArret\);\n\s+rendreNonEntendus\(nonce\);/);
   assert.match(srv, /if \(Array\.isArray\(q\.non_dites\) && q\.non_dites\.length\) recevoirNonDites\(\{ textes: q\.non_dites \}\);/);
 });
 

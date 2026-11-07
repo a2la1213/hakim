@@ -175,3 +175,22 @@ test('le processus voix reçoit le timbre et les morceaux ; un Chatterbox froid 
   assert.strictEqual(file[0].voix, 'rap');
   assert.strictEqual(file[0].fond, true, 'derrière ce qu’il dit vraiment');
 });
+
+// (07/11, Hakim, accord d'Ahmed : chanson bloquée au chargement, swap plein) pendant une chanson, sa voix Chatterbox et la séparation sont déchargées
+test('pendant une chanson : sa voix et la séparation déchargées (jamais pendant une demande), et rien ne les relance', () => {
+  const srv = require('node:fs').readFileSync(require('node:path').join(__dirname, 'server.js'), 'utf8');
+  const i = srv.indexOf('function memoirePourChanson('), f = srv.slice(i, srv.indexOf('\n}\n', i) + 3);
+  const tues = [];
+  const proc = (nom) => ({ exitCode: null, signalCode: null, kill: () => tues.push(nom) });
+  const cx = { VoixHakim: { studioOccupe: () => null }, JARVIS: '/x', fs: { appendFileSync() {} }, j: JSON.stringify, JARVIS_VOIX_DIAGNOSTIC: '/x/d',
+    voixProcs: { parole: proc('voix') }, voixAttente: new Map(), fileVoix: [], separation: { proc: proc('separation'), attente: null } };
+  require('node:vm').createContext(cx); require('node:vm').runInContext(f + 'this.m = memoirePourChanson;', cx);
+  assert.deepEqual(cx.m(null), [], 'rien ne se calcule : on garde tout');
+  cx.voixAttente.set(1, { proc: cx.voixProcs.parole });
+  assert.deepEqual(cx.m('une chanson se calcule'), ['separation'], 'sa voix répond à une demande : gardée');
+  cx.voixAttente.clear(); cx.separation.proc = proc('separation');
+  assert.deepEqual(cx.m('une chanson se calcule'), ['voix', 'separation']);
+  assert.equal(cx.voixProcs.parole, null);
+  assert.match(srv, /function chaufferVoixRap\(\) \{\n  if \(fileVoix\.some\(x => x\.chauffe\)\) return;\n  if \(typeof VoixHakim !== 'undefined' && VoixHakim\.studioOccupe\(JARVIS\)\) return;/);
+  assert.match(srv, /function lancerSeparation\(\) \{\n  if \(separation\.proc \|\| !fs\.existsSync\(PYTHON_SEPARATION\)\) return;\n  if \(typeof VoixHakim !== 'undefined' && VoixHakim\.studioOccupe\(JARVIS\)\) return;/);
+});

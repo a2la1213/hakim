@@ -152,3 +152,16 @@ def test_bpm_et_instru_pour_le_studio(lieux, tmp_path):
     mp3.write_bytes(b"ID3")
     ligne = chant.finir(c["tache"], mp3=mp3, calcul_s=1, atelier=tmp_path / "a", telephone=tmp_path / "tel", **lieux)
     assert ligne.startswith("INSTRU PRÊTE pour le studio") and "fichier_joindre" not in ligne
+
+
+def test_chargement_trop_long_arrete_la_chanson_et_dit_pourquoi():
+    """(07/11, Hakim, accord d'Ahmed) le chargement des modèles a sa propre limite ; finie, la composition n'a plus que le délai entier."""
+    t0 = 1000.0
+    assert chant.raison_arret(False, t0 + 60, t0, t0) is None
+    r = chant.raison_arret(False, t0 + chant.CHARGEMENT_MAX_S + 1, t0, t0)
+    assert r and "bloquée au chargement" in r and "mémoire" in r
+    assert chant.raison_arret(False, t0 + chant.CHARGEMENT_MAX_S + 1, t0, None) is None, "chargée : la composition continue"
+    assert chant.raison_arret(True, t0 + 1, t0, t0).startswith("arrêtée à la demande")
+    assert "trop longue" in chant.raison_arret(False, t0 + chant.DELAI_S + 1, t0, None)
+    src = Path(chant.__file__).read_text(encoding="utf-8")
+    assert 'CHARGEMENT["depuis"] = time.time()' in src and 'CHARGEMENT["depuis"] = None' in src
