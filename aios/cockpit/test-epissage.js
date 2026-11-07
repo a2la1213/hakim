@@ -234,7 +234,7 @@ test('le tour : son premier output est épissé ; sa réponse consciente seuleme
   assert.match(SRC, /const epissageReponse = corpsReglages\(\)\.epissage !== false && corpsReglages\(\)\.parole_sans_stop === false && corpsReglages\(\)\.lire_reponse_entiere === false && Number\(q && q\.delai_ms\) > 0 && !premierOutput\n/);
   assert.match(SRC, /if \(epissageReponse && o\.t === 'texte'\) epissageReponse\.pousser\(o\.x\);/);
   assert.match(SRC, /if \(epissageReponse && o\.t === 'fin'\) epissageReponse\.finir\(\);/);
-  assert.match(PAGE, /const auto = \(etat\.reglages\.lectureAuto \|\| etat\.conversation \|\| etat\.reglages\.volant\) && lecteur && \(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\) \|\| \(typeof lireEntiere === 'function' && lireEntiere\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\);/);
+  assert.match(PAGE, /const auto = \(etat\.reglages\.lectureAuto \|\| etat\.conversation \|\| etat\.reglages\.volant\) && lecteur && \(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\) \|\| \(typeof lireEntiere === 'function' && lireEntiere\(\)\) \|\| \(typeof reponseSeule === 'function' && !!etat\.conversation && reponseSeule\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\);/);
 });
 
 test('page : un pavé par tour ; la réponse d’un tour fini rejoint son pavé, même quand papa a déjà repris', () => {
@@ -739,7 +739,7 @@ test('parole sans Stop : sa réponse consciente reste muette, ses pensées épis
   const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
   assert.doesNotMatch(PAGE, /stopAllume/, 'plus aucun morceau épissé tu sous le Stop');
   assert.match(PAGE, /reglagesCorps\.parole_sans_stop !== false/);
-  assert.match(PAGE, /\(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\) \|\| \(typeof lireEntiere === 'function' && lireEntiere\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\)/, 'sa réponse écrite : jamais lue par la page');
+  assert.match(PAGE, /\(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\) \|\| \(typeof lireEntiere === 'function' && lireEntiere\(\)\) \|\| \(typeof reponseSeule === 'function' && !!etat\.conversation && reponseSeule\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\)/, 'sa réponse écrite : jamais lue par la page');
   const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   assert.match(SRV, /corpsReglages\(\)\.parole_sans_stop === false && corpsReglages\(\)\.lire_reponse_entiere === false && Number\(q && q\.delai_ms\) > 0 && !premierOutput/, 'ni épissée pour sa voix');
 });
@@ -942,7 +942,7 @@ test('micro coupé par papa : sa réponse écrite est dite telle quelle, pas ép
   assert.equal(ctx.e(), true, 'son épissage continue : son oreille interne parle encore'); assert.equal(ctx.s(), false);
   ctx.etat.conversation.muetParHakim = { attente: false };
   assert.equal(ctx.s(), true, 'sa coupure à lui (le temps de sa voix) ne change rien');
-  assert.match(PAGE, /lecteur && \(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\) \|\| \(typeof lireEntiere === 'function' && lireEntiere\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\);/, 'sa réponse écrite : dite');
+  assert.match(PAGE, /lecteur && \(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\) \|\| \(typeof lireEntiere === 'function' && lireEntiere\(\)\) \|\| \(typeof reponseSeule === 'function' && !!etat\.conversation && reponseSeule\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\);/, 'sa réponse écrite : dite');
   assert.match(PAGE, /delai_ms: etat\.conversation && !\(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\) \? patienceConversation\(\) : null/);
 });
 

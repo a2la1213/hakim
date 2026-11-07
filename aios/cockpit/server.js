@@ -7272,6 +7272,7 @@ function corpsReglages() {
     choix_coupure: r.choix_coupure !== false,
     choix_libre: r.choix_libre !== false,
     micro_voix_seule: r.micro_voix_seule === true,
+    voix_reponse_seule: r.voix_reponse_seule !== false,   // (07/11, Ahmed : « on garde uniquement sa vraie réponse ») ses pensées ne sont plus dites
     voix_claire_x: Number.isFinite(Number(r.voix_claire_x)) && r.voix_claire_x != null ? Math.max(1, Math.min(5, Number(r.voix_claire_x))) : 1.8,   // (07/11) la netteté qu'il faut pour qu'il se coupe   // (07/11) le filtre de ton micro : il n'entend que les voix (éteint par défaut)   // (07/11) ses paroles prêtes : il choisit laquelle dire, dans n'importe quel ordre   // (07/11) ta voix qui dure sur la sienne : il choisit de se couper ou de finir   // (07/11, Ahmed : « lui autoriser à me couper la parole », option 2) éteint par défaut   // (07/11) il choisit ce qu'il dit dans le temps de sortie de sa voix   // (07/11) coupé, il finit sa phrase (jusqu'à sa virgule ou son point)   // (07/11) ton message écrit l'arrête et part tout de suite   // (07/11) tes morceaux prêts partent en un seul message réunifié   // (07/11) coupé par une vraie phrase : il ne reprend pas l'ancienne réponse (éteint)   // (06/11) ses morceaux épissés reliés, sans pause entre eux
     epissure_grammaire: r.epissure_grammaire !== false,
     pretraitement_parole: r.pretraitement_parole !== false,
@@ -12914,7 +12915,7 @@ async function traiter(req, res) {
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
-      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure', 'choix_libre', 'micro_voix_seule']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
+      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure', 'choix_libre', 'micro_voix_seule', 'voix_reponse_seule']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
       for (const [k, a, b] of [['epissure_meubles_max', 1, 6], ['present_pouls_s', 10, 600], ['present_seuil', 0.2, 5], ['present_ecart_s', 2, 120], ['present_longueur', 3, 40], ['present_mots', 6, 40]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'present_seuil' ? Math.round(Number(q[k]) * 10) / 10 : Math.round(Number(q[k]))));
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;

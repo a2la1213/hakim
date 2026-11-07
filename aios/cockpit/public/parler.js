@@ -2330,7 +2330,7 @@ async function envoyer(texte, oral, dejaRelance) {
   rendre(); humeur();
   const decoupe = Voix.decoupeur({ vif: true });           // (03/11) ses premiers mots partent tout de suite
   // (04/11, 12:05) en Conversation, avec l'épissage, seul son ribosome parle : sa réponse s'écrit, ses mots choisis se disent
-  const auto = (etat.reglages.lectureAuto || etat.conversation || etat.reglages.volant) && lecteur && (!voixEpissee() || (typeof micPapaCoupe === 'function' && micPapaCoupe()) || (typeof lireEntiere === 'function' && lireEntiere())) && !(typeof paroleSansStop === 'function' && paroleSansStop());   // (06/11) Stop allumé : pas dit
+  const auto = (etat.reglages.lectureAuto || etat.conversation || etat.reglages.volant) && lecteur && (!voixEpissee() || (typeof micPapaCoupe === 'function' && micPapaCoupe()) || (typeof lireEntiere === 'function' && lireEntiere()) || (typeof reponseSeule === 'function' && !!etat.conversation && reponseSeule())) && !(typeof paroleSansStop === 'function' && paroleSansStop());   // (06/11) Stop allumé : pas dit
   if (auto) etat.decoupeFlux = decoupe;                  // (23/10) sa phrase en cours d'arrivée, si on le coupe
   if (auto) etat.reponseVoix = m.id;                                  // (13:30) une réponse dite : ses meubles peuvent couvrir ses trous
   if (auto && etat.conversation && lecteur.impl === lecteurNeuronal) lecteurNeuronal.attendreReponse();   // (03/11) il réfléchit : un trou se meuble
@@ -3883,6 +3883,7 @@ function versRibosome(texte, avant = '') {
 // quand je finis ») ce qu'il dira, s'il attend encore : sa voix du téléphone le calcule d'avance (exactement le texte que direRibosome
 // lui donnera), pour partir d'un coup à ton silence
 function preparerRibosome() {
+  if (typeof reponseSeule === 'function' && reponseSeule()) return;    // (07/11) aucune voix préparée pour ses pensées
   // (07/11, Ahmed : « en parallèle, il doit déjà préparer sa voix à chaque ribosome ») chaque morceau, un par un, dès qu'il arrive (au téléphone
   // comme au Mac) : exactement le texte que sa voix dira (le meuble reste à part)
   if (typeof avancerVoix !== 'function') return;
@@ -4096,6 +4097,13 @@ function direRibosome() {
     if (h && h.texte) { meuble = h.texte.trim(); texte = `${meuble} ${texte}`; etat.riboMeubleA = Date.now(); journalVoix('meuble_entre', {}); }
   }
   etat.riboDernierTour = tour;
+  // (07/11, Ahmed : « on garde uniquement sa vraie réponse ») sa pensée épissée reste à l'écran : ses mots s'allument, rien ne part à sa voix
+  if (typeof reponseSeule === 'function' && reponseSeule()) {
+    const pv = paveDe(tour); pv.mots = (pv.mots || []).concat(v.mots.splice(0)); poserPave(pv.cle, titreEpissure(pv), htmlEpissure(pv));
+    etat.riboEnVoix = []; journalVoix('pensee_non_dite', { tour, n });
+    if ((etat.riboFile || []).length) setTimeout(direRibosome, 0);
+    return;
+  }
   // (07/11) le meuble et chaque morceau restent séparés : la voix de chaque morceau, préparée dès son arrivée (avancerVoix), sert telle quelle
   recevoirBout({ texte, parties, meuble, pret: true, sansMeuble: true, ribosome: true }, n, tour);
 }
@@ -4236,6 +4244,7 @@ function penseePrete(conv) {
 // ouvert, pourvu que tu sois dans une pause à cet instant (0,3 s sans ta voix) ; ses mots revenus par le micro sont retirés de ta phrase
 // (retirerEcho), et ton tour ne la bloque pas (jarvisPeutParler : penseeEnPause)
 function direPenseeSiPossible() {
+  if (typeof reponseSeule === 'function' && reponseSeule()) return false;   // (07/11) sa pensée reste dans sa tête
   const conv = etat.conversation, cap = conv && conv.capteur;
   if (!penseePrete(conv)) return false;
   const ouvert = !!(cap && cap.enParole);
@@ -4248,7 +4257,10 @@ function direPenseeSiPossible() {
   direSouffle(conv, etat.pensee, 'pensee');
   return true;
 }
-const souffleAutorise = () => (lecteur.impl === lecteurNeuronal || voixDuTelephone()) && !(typeof reglagesCorps !== 'undefined' && reglagesCorps.reponse_soufflee === false);
+// (07/11, Ahmed : « on garde uniquement sa vraie réponse » ; « du coup la voix ne doit pas être préparée pour la pensée ») voix_reponse_seule (oui) :
+// sa voix ne dit que sa vraie réponse (écrite, lue au fil) ; ses pensées (épissées, soufflées) restent à l'écran, et aucune voix ne se calcule pour elles
+const reponseSeule = () => typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.voix_reponse_seule !== false;
+const souffleAutorise = () => !reponseSeule() && (lecteur.impl === lecteurNeuronal || voixDuTelephone()) && !(typeof reglagesCorps !== 'undefined' && reglagesCorps.reponse_soufflee === false);
 // (16:00, Ahmed : « fais le test de décalage entre la dernière parole de son subconscient avant que je finisse et le moment où il parle »)
 // à chaque fin de tour : son dernier brouillon, combien avant ta fin il est arrivé, et quand sa voix part après ta fin (voix-diagnostic)
 function noterEcartSouffle(conv, s, dit, par, prete) {

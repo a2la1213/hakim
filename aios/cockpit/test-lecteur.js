@@ -688,3 +688,24 @@ test('sa parole épissée dite proposition par proposition ; un reste court atte
   assert.equal(dits, 1);
   assert.match(SRC, /prochainDebut = t \+ joue \+ \(x\.hesitation \|\| x\.auto \|\| x\.son \? 0\.01 : R\('respiration', 0\.1\)\);/);
 });
+
+// (07/11, Ahmed : « on garde uniquement sa vraie réponse » ; « du coup la voix ne doit pas être préparée pour la pensée »)
+test('voix_reponse_seule (oui) : ses pensées restent à l’écran, aucune voix calculée pour elles ; seule sa vraie réponse est dite', () => {
+  const fn = (nom) => { const i = SRC.indexOf(`function ${nom}(`); return SRC.slice(i, SRC.indexOf('\n}\n', i) + 3); };
+  const ligne = (debut) => { const i = SRC.indexOf(debut); return SRC.slice(i, SRC.indexOf('\n', i) + 1); };
+  const prep = [];
+  const cx = { reglagesCorps: {}, etat: { riboFile: [{ texte: 'une pensée' }] }, avancerVoix: (t) => prep.push(t), lecteur: { impl: 1 }, lecteurNeuronal: 1, voixDuTelephone: () => true, Date };
+  vm.createContext(cx);
+  vm.runInContext(ligne('const reponseSeule = ') + ligne('const souffleAutorise = ') + fn('preparerRibosome') + 'this.f = { reponseSeule, souffleAutorise, preparerRibosome };', cx);
+  assert.equal(cx.f.reponseSeule(), true, 'par défaut : sa vraie réponse seulement');
+  assert.equal(cx.f.souffleAutorise(), false, 'ses pensées soufflées : pas dites');
+  cx.f.preparerRibosome();
+  assert.deepEqual(prep, [], 'aucune voix préparée pour ses pensées');
+  cx.reglagesCorps.voix_reponse_seule = false;
+  assert.equal(cx.f.souffleAutorise(), true);
+  cx.f.preparerRibosome();
+  assert.deepEqual(prep, ['une pensée'], 'éteint : comme avant');
+  assert.match(SRC, /if \(typeof reponseSeule === 'function' && reponseSeule\(\)\) \{\n    const pv = paveDe\(tour\);[^\n]*\n    etat\.riboEnVoix = \[\]; journalVoix\('pensee_non_dite'/, 'son pavé s’allume, rien ne part à sa voix');
+  assert.match(SRC, /function direPenseeSiPossible\(\) \{\n  if \(typeof reponseSeule === 'function' && reponseSeule\(\)\) return false;/);
+  assert.match(fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8'), /voix_reponse_seule: r\.voix_reponse_seule !== false,/);
+});
