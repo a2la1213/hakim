@@ -4644,10 +4644,15 @@ function envoyerEcrit(texte) {
   const c = etat.conversation, t = String(texte || '').trim();
   // (07/11, Ahmed : « quand je lui envoie un message, il n'arrive toujours pas à s'arrêter et à passer au message suivant ») ton message écrit l'arrête :
   // sa voix et sa réponse en cours s'arrêtent, ce qui restait de l'ancienne est laissé (sauf « ↩️ reprendre là où il s'était arrêté »), et ton message part
-  if (t && c && sonTourEnCours() && !COMMANDE_STOP.test(t) && (typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.ecrit_coupe !== false)) {
+  // (07/11, 05:20, Ahmed : « il ne se coupe pas quand il reçoit mon message ; même s'il calcule encore la voix de sa phrase, dès qu'il reçoit mon signal
+  // il passe à ma dernière phrase ») occupé = sa réponse, sa voix, une voix en calcul ou des morceaux en attente : tout est lâché
+  const occupe = sonTourEnCours() || !!(lecteur && lecteur.actif) || (typeof voixEnCalcul === 'function' && voixEnCalcul()) || !!(etat.riboFile || []).length;
+  if (t && c && occupe && !COMMANDE_STOP.test(t) && (typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.ecrit_coupe !== false)) {
     const garder = typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.reprendre_ancien === true;
     if (!garder) { const vieux = (etat.riboFile || []).slice(); if (vieux.length && typeof blancsPourSautes === 'function') blancsPourSautes(vieux); etat.riboFile = [];
-      if (typeof bouts !== 'undefined') { bouts.fileTel = []; bouts.attenteTel = null; } }
+      if (typeof bouts !== 'undefined') { bouts.fileTel = []; bouts.attenteTel = null; if (bouts.liste) bouts.liste.clear(); bouts.enFile = []; }
+      if (typeof libererRibosomes === 'function') libererRibosomes();          // ses ribosomes de l'ancienne réponse : fermés, leurs morceaux tardifs jetés
+      try { if (lecteur) lecteur.arreter(); } catch (_) {} }
     journalVoix('ecrit_coupe', { garde: garder });
     arreterTout(true, { garder, raison: 'message' }); majBoutonsPause();
     const avant = prendreEcritsGardes(c);
@@ -7056,8 +7061,13 @@ function htmlCalcul(x) {
   else if (!connu) details.push('pas encore de sortie');
   // (07/11, Ahmed : « un bouton stop et pause à côté de la barre, pour tout arrêter en cas de besoin »)
   const boutons = `<span class="gestes-tache" style="display:inline-flex;gap:6px;margin-left:8px">`
-    + `<button class="btn ico tache-pause" data-tache="${esc(x.id)}" data-pause="${x.pause ? '0' : '1'}" aria-label="${x.pause ? 'Reprendre' : 'Pause'}" title="${x.pause ? 'Reprendre ce calcul' : 'Mettre ce calcul en pause'}">${x.pause ? '▶' : '⏸'}</button>`
-    + `<button class="btn ico tache-stop" data-tache="${esc(x.id)}" aria-label="Arrêter" title="Arrêter ce calcul">■</button></span>`;
+    // (07/11, Ahmed : « les boutons stop, pause et tout, comme partout dans l'interface, pas un simple smiley ») les mêmes boutons et icônes que Stop et Pause
+    + `<button class="btn ico pause tache-pause" data-tache="${esc(x.id)}" data-pause="${x.pause ? '0' : '1'}" aria-label="${x.pause ? 'Reprendre' : 'Pause'}" title="${x.pause ? 'Reprendre ce calcul' : 'Mettre ce calcul en pause'}">`
+    + (x.pause ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path class="plein" d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l10.6-6.8a.8.8 0 0 0 0-1.4L9.2 4.5a.8.8 0 0 0-1.2.7z"/></svg>'
+      : '<svg viewBox="0 0 24 24" aria-hidden="true"><rect class="plein" x="6" y="5" width="4" height="14" rx="1.2"/><rect class="plein" x="14" y="5" width="4" height="14" rx="1.2"/></svg>')
+    + `<span class="lib">${x.pause ? 'Reprendre' : 'Pause'}</span></button>`
+    + `<button class="btn ico stop tache-stop" data-tache="${esc(x.id)}" aria-label="Arrêter" title="Arrêter ce calcul">`
+    + '<svg viewBox="0 0 24 24" aria-hidden="true"><rect class="plein" x="6" y="6" width="12" height="12" rx="2.2"/></svg><span class="lib">Stop</span></button></span>';
   return `<div class="calcul"><div class="ligne"><span class="quoi" title="${esc(x.commande)}">${esc(quoi)}</span>`
     + `<span class="chiffres">${esc(x.pause ? `en pause · ${fait}` : fait)}</span>${boutons}</div>`
     + `<div class="barre${connu ? '' : ' inconnue'}" role="progressbar" aria-label="${esc(quoi)}" aria-valuemin="0" aria-valuemax="100"${connu ? ` aria-valuenow="${pc}"` : ''}>`

@@ -1043,11 +1043,16 @@ test('ton message écrit l’arrête et part tout de suite (ecrit_coupe), l’an
   const faits = [];
   const ctx = { etat: { conversation: {}, joints: [], riboFile: [{ tour: 1, texte: 'vieux' }] }, reglagesCorps: {}, sonTourEnCours: () => true, chacunSonTour: () => true,
     COMMANDE_STOP: /^stop$/i, journalVoix() {}, blancsPourSautes() {}, majBoutonsPause() {}, prendreEcritsGardes: () => '', $: () => ({ value: '' }), ajuster() {}, humeur() {},
+    lecteur: { actif: false, arreter: () => faits.push(['voix']) }, libererRibosomes: () => faits.push(['ribosomes']), voixEnCalcul: () => false,
     arreterTout: (e, o) => faits.push(['arret', o]), envoyer: (t) => faits.push(['envoi', t]) };
   vm.createContext(ctx); vm.runInContext(f + 'this.f = envoyerEcrit;', ctx);
   ctx.f('on passe à autre chose');
-  assert.deepStrictEqual(faits.map(x => x[0]), ['arret', 'envoi']);
-  assert.strictEqual(faits[0][1].garder, false);
+  assert.deepStrictEqual(faits.map(x => x[0]), ['ribosomes', 'voix', 'arret', 'envoi']);
+  assert.strictEqual(faits[2][1].garder, false);
+  // (05:20) même quand seule une voix se calcule encore (rien ne joue, plus de réponse en cours)
+  faits.length = 0; ctx.sonTourEnCours = () => false; ctx.voixEnCalcul = () => true;
+  ctx.f('et maintenant ?');
+  assert.deepStrictEqual(faits.map(x => x[0]), ['ribosomes', 'voix', 'arret', 'envoi']);
   assert.strictEqual(ctx.etat.riboFile.length, 0);
 });
 
@@ -1058,9 +1063,10 @@ test('ses calculs : un bouton pause/reprise et un bouton arrêt à côté de la 
   const j = PAGE.indexOf('function dureeCourte('), d = PAGE.slice(j, PAGE.indexOf('\n}\n', j) + 2);
   const ctx = { esc: (x) => String(x) }; vm.createContext(ctx); vm.runInContext(d + f + 'this.f = htmlCalcul;', ctx);
   const h = ctx.f({ id: 'T-20261107-050259-242a', commande: 'chanter', fraction: 0.4, ecoule_ms: 60000, pause: false });
-  assert.match(h, /class="btn ico tache-pause" data-tache="T-20261107-050259-242a" data-pause="1"/);
-  assert.match(h, /class="btn ico tache-stop" data-tache="T-20261107-050259-242a"/);
-  assert.match(ctx.f({ id: 'T-x-123456', commande: 'c', ecoule_ms: 1, pause: true }), /en pause · en cours[\s\S]*data-pause="0"[\s\S]*▶/);
+  assert.match(h, /class="btn ico pause tache-pause" data-tache="T-20261107-050259-242a" data-pause="1"/);
+  assert.match(h, /class="btn ico stop tache-stop" data-tache="T-20261107-050259-242a"/);
+  assert.doesNotMatch(h, /[⏸■▶]/, 'les icônes de l’interface, pas des caractères');
+  assert.match(ctx.f({ id: 'T-x-123456', commande: 'c', ecoule_ms: 1, pause: true }), /en pause · en cours[\s\S]*data-pause="0"[\s\S]*Reprendre/);
   const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   const k = SRV.indexOf("p === '/api/jarvis/taches/arreter'"), route = SRV.slice(k, k + 2200);
   assert.match(route, /if \(!jetonValide\(req\)\)/);
