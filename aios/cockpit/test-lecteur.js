@@ -571,7 +571,7 @@ test('te_couper : allumé, sa voix parle pendant ta parole et ta voix ne le fait
   assert.equal(cx.peut(), false, 'éteint : il attend ta fin');
   cx.reglagesCorps.te_couper = true;
   assert.equal(cx.peut(), true, 'allumé : il parle par-dessus toi');
-  assert.match(SRC, /if \(typeof teCouper === 'function' && teCouper\(\)\) \{ journalVoix\('te_coupe', mesure \|\| \{\}\); if \(voixEpissee\(\)\) prevoirSaut\(conv\); return; \}/, 'ta voix ne le met plus en pause au morceau ; ta voix qui dure le coupe toujours');
+  assert.match(SRC, /if \(typeof teCouper === 'function' && teCouper\(\)\) \{ journalVoix\('te_coupe', mesure \|\| \{\}\); if \(voixEpissee\(\)\) prevoirSaut\(conv, mesure\); return; \}/, 'ta voix ne le met plus en pause au morceau ; ta voix qui dure le coupe toujours');
   assert.match(SRC, /if \(voixEpissee\(\) && etat\.flux && lacherAncien && !\(typeof teCouper === 'function' && teCouper\(\)\)\)/, 'ni son ancienne réponse lâchée');
   assert.doesNotMatch(SRC, /il peut te couper : sa suite n'est pas sautée/, '« Sauter au bout de » vaut aussi quand il peut te couper');
   assert.match(SRC, /if \(typeof teCouper === 'function' && teCouper\(\)\) return;           \/\/ \(07\/11\) il peut te couper : ce qu'il préparait n'est pas lâché/);

@@ -3891,26 +3891,49 @@ function arreterEpissure(cause, tour, o = {}) {
 // (05/11, Ahmed : « dans les réglages, la possibilité de lui faire sauter la parole d'après : s'il commence à parler et que je réponds, au bout
 // d'une seconde, la 2e partie n'est pas dite, elle est directement sautée ») ta voix qui dure sauter_suite_ms (1 s) sur la sienne : le morceau
 // qu'il dit va jusqu'au bout, la suite de son épissure est sautée ; ce qu'il pensera de ta réponse part dans une épissure neuve
-function prevoirSaut(conv) {
+// (07/11, Ahmed : « il faut que ce soit une voix claire qui lui parle pour qu'il se coupe ») la clarté du signal (conversation.js : le niveau
+// moyen rapporté au seuil qui écarte son écho) ; sans mesure : comme avant
+function voixClaire(m) {
+  if (!m) return true;
+  const k = typeof reglagesCorps !== 'undefined' && reglagesCorps && Number(reglagesCorps.voix_claire_x) > 0 ? Number(reglagesCorps.voix_claire_x) : 1.8;
+  const c = Number.isFinite(Number(m.clarte)) && Number(m.clarte) > 0 ? Number(m.clarte) : (Number(m.seuil) > 0 ? Number(m.rms) / Number(m.seuil) : Infinity);
+  return c >= k;
+}
+const motsEcrits = (conv) => (conv && conv.ecrit ? `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}` : '').split(/\s+/).filter(w => /\p{L}/u.test(w)).length;
+function prevoirSaut(conv, mesure) {
   if (typeof reglagesCorps === 'undefined' || reglagesCorps.sauter_suite === false || conv.sautPrevu) return;
-  const ms = Number(reglagesCorps.sauter_suite_ms) || 1000, t0 = Date.now();
+  const ms = Number(reglagesCorps.sauter_suite_ms) || 1000, t0 = Date.now(), mots0 = motsEcrits(conv);
   conv.sautPrevu = setTimeout(() => {
     conv.sautPrevu = null;
     const parle = (conv.capteur && conv.capteur.enParole) || Date.now() - (etat.papaVoixA || 0) < 400;
     if (!parle || etat.conversation !== conv) return;
+    // (07/11, Ahmed : « si c'est un background et pas une parole, il ne se coupe pas ») une parole, pas un fond : au moins 2 mots entendus depuis
+    // le signal (ses mots vifs) ; il les attend 1,6 s au plus ; sans mots : un fond, il continue
+    const nouveaux = () => { const n = motsEcrits(conv); return n >= mots0 ? n - mots0 : n; };
+    const decider = (essai = 0) => {
+      if (etat.conversation !== conv) return;
+      if (nouveaux() < 2) {
+        if (essai < 8) { setTimeout(() => decider(essai + 1), 200); return; }
+        journalVoix('pas_de_parole', { ms: Date.now() - t0 }); return;
+      }
+      choisirOuSauter();
+    };
+    const choisirOuSauter = () => {
     // (07/11, Ahmed : « faut aussi lui laisser le choix de se couper ou pas quand il reçoit ce signal ») choix_coupure (oui) : son subconscient
     // choisit, en 1,5 s au plus, de se couper ou de finir ce qu'il dit ; sans réponse, il se coupe
     if (typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.choix_coupure === false) { sauterLaSuite(Date.now() - t0); return; }
     const dit = ((typeof bouts !== 'undefined' && bouts.dits) || []).slice(-2).join(' ');
     const papa = conv.ecrit ? `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}`.trim() : '';
     const ecoute = Date.now() - t0;
-    fetch('/api/jarvis/se-couper', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ dit, papa, ms: ecoute }) })
+    fetch('/api/jarvis/se-couper', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ dit, papa, ms: ecoute, clarte: mesure && Number(mesure.clarte) > 0 ? Number(mesure.clarte) : null }) })
       .then(r => (r.ok ? r.json() : { couper: true })).catch(() => ({ couper: true }))
       .then((c) => {
         if (etat.conversation !== conv) return;
         if (c && c.couper === false) { journalVoix('garde_la_parole', { ms: ecoute }); if (c.pourquoi) montrerPensee('🗣 il finit ce qu’il dit', c.pourquoi, true); return; }
         sauterLaSuite(Date.now() - t0, true);                          // (07/11) il a décidé de se taire : tout de suite
       });
+    };
+    decider();
   }, ms);
 }
 // net : (07/11, Ahmed : « quand je lui coupe la parole et qu'il décide de se taire, il doit finir immédiatement, sans attendre la fin du morceau
@@ -4599,6 +4622,9 @@ async function basculerConversation() {
       // dite ; « stop » → il lâche tout ; une vraie question → il lâche le reste et y répond.
       niveauSortie,
       surInterruption: (mesure) => {
+        // (07/11, Ahmed : « si c'est un background et pas une parole, il ne se coupe pas ; des paroles en fond pas assez fortes non plus ; il faut
+        // une voix claire qui lui parle ») sous la clarté voulue (voix_claire_x, 1,8 par défaut) : un fond, ignoré ; il continue
+        if (typeof voixClaire === 'function' && !voixClaire(mesure)) { journalVoix('fond_ignore', mesure || {}); return; }
         // (30/10, 19:08, Ahmed : « qu'il puisse répondre même quand je le coupe ou que je parle en même temps ; c'est
         // important ») il garde la parole : sa voix continue, ta phrase est quand même écoutée ; « stop » et le bouton l'arrêtent
         // (04/11, Ahmed : « il parle quand il veut, mais s'il entend ma voix lui couper la parole sur 2 secondes, il se tait ») il garde
@@ -4608,9 +4634,9 @@ async function basculerConversation() {
         // réglage : éteint (garder_parole), ta voix l'arrête maintenant aussi en Conversation épissée, et ce qu'il avait encore à dire est laissé
         // (07/11) il a le droit de te couper : ta voix ne le met pas en pause au morceau ; mais ta voix qui dure « Sauter au bout de » (sauter_suite_ms)
         // sur la sienne le coupe toujours (Ahmed : « le réglage pour que je lui coupe la parole selon un temps déterminé qu'il m'entend »)
-        if (typeof teCouper === 'function' && teCouper()) { journalVoix('te_coupe', mesure || {}); if (voixEpissee()) prevoirSaut(conv); return; }
+        if (typeof teCouper === 'function' && teCouper()) { journalVoix('te_coupe', mesure || {}); if (voixEpissee()) prevoirSaut(conv, mesure); return; }
         const garde = typeof reglagesCorps === 'undefined' || reglagesCorps.garder_parole !== false;
-        if (voixEpissee() && garde) { conv.coupeAuChunk = Date.now(); journalVoix('coupure_au_chunk', mesure || {}); prevoirSaut(conv); return; }   // (05/11) et la suite sautée
+        if (voixEpissee() && garde) { conv.coupeAuChunk = Date.now(); journalVoix('coupure_au_chunk', mesure || {}); prevoirSaut(conv, mesure); return; }   // (05/11) et la suite sautée
         if (voixEpissee() && !garde && typeof arreterEpissure === 'function' && etat.epissureTour) arreterEpissure('parole', etat.epissureTour);
         if (typeof reglagesCorps !== 'undefined' && reglagesCorps.garder_parole) { journalVoix('coupure_ignoree', mesure || {}); veillerDeuxSecondes(conv); return; }
         etat.coupeParAhmed = true;

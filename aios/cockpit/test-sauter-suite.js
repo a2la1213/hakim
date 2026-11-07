@@ -17,6 +17,7 @@ function page(reglage = {}, parle = true) {
     lecteur: { actif: true, arrete: false, arreter() { this.arrete = true; } },
     setTimeout: (f, ms) => { minuteries.push({ f, ms }); return minuteries.length; },
     journalVoix: (e, o) => journal.push([e, o]), jeton: () => 'j',
+    motsEcrits: (() => { let n = 0; return () => (n += 3); })(),   // (07/11) des mots arrivent : une vraie parole (le filtre : testé à part)
     fetch: (url, o) => { envois.push([url, JSON.parse(o.body)]); return Promise.resolve({ ok: true, json: () => Promise.resolve({ tour: 8 }) }); } };
   vm.createContext(ctx);
   vm.runInContext(['arreterEpissure', 'prevoirSaut', 'sauterLaSuite'].map((n) => prendre(PAGE, n)).join('\n') + 'this.prevoir = prevoirSaut;', ctx);
@@ -53,7 +54,7 @@ test('tu t’es tu avant la seconde, ou le réglage éteint : rien n’est saut�
 });
 
 test('branché : à ta voix sur la sienne, ses réglages (oui, 1 s), le cockpit qui ferme, la page Réglages', () => {
-  assert.match(PAGE, /if \(voixEpissee\(\) && garde\) \{ conv\.coupeAuChunk = Date\.now\(\); journalVoix\('coupure_au_chunk', mesure \|\| \{\}\); prevoirSaut\(conv\); return; \}/);
+  assert.match(PAGE, /if \(voixEpissee\(\) && garde\) \{ conv\.coupeAuChunk = Date\.now\(\); journalVoix\('coupure_au_chunk', mesure \|\| \{\}\); prevoirSaut\(conv, mesure\); return; \}/);
   assert.match(SRC, /sauter_suite: r\.sauter_suite !== false, sauter_suite_ms: /);
   assert.match(SRC, /if \(typeof q\.sauter_suite === 'boolean'\) r\.sauter_suite = q\.sauter_suite;/);
   assert.match(SRC, /if \(q\.sauter === true\) \{\n      const r = pistes\.ribo;\n      if \(r && !r\.ferme\) \{ r\.ferme = 'sautee';/);
@@ -396,7 +397,7 @@ test('ta voix dure sur la sienne : son subconscient choisit ; CONTINUER, il fini
     return { ...p, montrees };
   };
   const finit = await essai({ couper: false, pourquoi: 'presque fini' });
-  assert.deepStrictEqual(finit.envois[0], ['/api/jarvis/se-couper', { dit: 'Je te disais que le jardin sera prêt demain', papa: 'attends attends écoute-moi', ms: 0 }]);
+  assert.deepStrictEqual(finit.envois[0], ['/api/jarvis/se-couper', { dit: 'Je te disais que le jardin sera prêt demain', papa: 'attends attends écoute-moi', ms: 0, clarte: null }]);
   assert.strictEqual(finit.ctx.etat.riboFile.length, 2, 'il finit : rien n’est sauté');
   assert.ok(finit.journal.some(([e]) => e === 'garde_la_parole'));
   assert.deepStrictEqual(finit.montrees, ['presque fini'], 'son choix se voit');
@@ -422,10 +423,37 @@ test('cockpit : son choix lu en un mot, 1,5 s au plus, sinon il se coupe ; noté
   const r = await cx.choisir('le jardin', 'attends', 1200, (m, p, d) => { demande = { m, p, d }; return Promise.resolve({ texte: 'CONTINUER presque fini' }); });
   assert.strictEqual(r.couper, false);
   assert.strictEqual(demande.m, 'haiku'); assert.strictEqual(demande.d, 1500);
-  assert.match(demande.p, /Papa parle par-dessus lui depuis 1\.2 s : « attends »/);
+  assert.match(demande.p, /Une voix parle par-dessus lui depuis 1\.2 s : « attends »/);
+  assert.match(demande.p, /Si ce n'est pas papa qui parle À HAKIM \(la télé, une chanson, quelqu'un d'autre plus loin, du bruit, des mots sans rapport\) : CONTINUER/);
   const lent = await cx.choisir('x', 'y', 0, () => Promise.reject(new Error('délai dépassé')));
   assert.strictEqual(lent.couper, true);
   assert.deepStrictEqual(notes.map(n => [n.e, n.couper]), [['choix_coupure', false], ['choix_coupure', true]]);
   assert.match(SRC, /choix_coupure: r\.choix_coupure !== false,/);
   assert.match(fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8'), /\['choix_coupure', '🤔 Il choisit de se couper ou non'/);
+});
+
+// (07/11, Ahmed : « si c'est un background et pas une parole, il ne se coupe pas ; des paroles en fond pas assez fortes non plus ; il faut une voix
+// claire qui lui parle ; et même là, il évalue si elle mérite qu'il se coupe »)
+test('un fond ne le coupe pas : sans netteté (moins de 1,8 × le seuil) il est ignoré ; sans mots entendus, ce n’est pas une parole', async () => {
+  const fn = (nom) => { const i = PAGE.indexOf(`function ${nom}(`); return PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2); };
+  const cx = { Number, reglagesCorps: {} };
+  vm.createContext(cx); vm.runInContext(fn('voixClaire') + 'this.claire = voixClaire;', cx);
+  assert.equal(cx.claire({ clarte: 1.2 }), false, 'une voix lointaine, la télé : un fond');
+  assert.equal(cx.claire({ clarte: 3.4 }), true, 'une voix claire, tout près');
+  assert.equal(cx.claire({ rms: 0.04, seuil: 0.03 }), false, 'sans clarté mesurée : le niveau sur le seuil');
+  assert.equal(cx.claire(null), true, 'sans mesure : comme avant');
+  cx.reglagesCorps.voix_claire_x = 1.1;
+  assert.equal(cx.claire({ clarte: 1.2 }), true, 'le réglage décide');
+  // sans mots : pas une parole
+  const p = page({}, true);
+  let mots = 0; p.ctx.motsEcrits = () => mots;
+  p.ctx.prevoir(p.conv); p.minuteries[0].f();
+  for (let k = 1; k < p.minuteries.length; k++) p.minuteries[k].f();
+  for (let k = 0; k < 10 && p.minuteries.length < 10; k++) p.minuteries[p.minuteries.length - 1].f();
+  assert.strictEqual(p.ctx.etat.riboFile.length, 2, 'aucun mot : un fond, il continue');
+  assert.ok(p.journal.some(([e]) => e === 'pas_de_parole'));
+  assert.match(PAGE, /if \(typeof voixClaire === 'function' && !voixClaire\(mesure\)\) \{ journalVoix\('fond_ignore', mesure \|\| \{\}\); return; \}/);
+  const CONV = fs.readFileSync(path.join(__dirname, 'public', 'conversation.js'), 'utf8');
+  assert.match(CONV, /clarte: \+\(niveauxBarge\.reduce\(\(a, x\) => a \+ x, 0\) \/ Math\.max\(1, niveauxBarge\.length\)\)\.toFixed\(2\)/);
+  assert.match(SRC, /voix_claire_x: Number\.isFinite/);
 });

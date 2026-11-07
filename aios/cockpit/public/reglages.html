@@ -173,6 +173,7 @@
       ['sauter_suite', 'Sauter la suite quand tu réponds', 'S’il parle et que tu lui réponds, son morceau en cours finit, et la suite n’est pas dite.', 'oui'],
       ['sauter_suite_ms', 'Sauter au bout de', 'Le temps de ta voix sur la sienne avant de sauter la suite.', 'curseur', [300, 5000, 100, sec]],
       ['choix_coupure', '🤔 Il choisit de se couper ou non', 'Quand ta voix dure « Sauter au bout de » sur la sienne : son subconscient choisit, en 1,5 s au plus, de se taire pour t’écouter ou de finir ce qu’il dit (sans réponse : il se tait). Éteint : il se coupe toujours.', 'oui', null, 'corps'],
+      ['voix_claire_x', '🔊 Une voix claire pour qu’il se coupe', 'La netteté qu’il faut à une voix pour qu’il envisage de se couper : en dessous, c’est un fond (musique, télé, voix lointaine) et il continue. Plus haut : il faut te rapprocher ou parler plus fort.', 'curseur', [1, 5, 0.1, (v) => `${String(v).replace('.', ',')} ×`], 'corps'],
       ['lire_apres_silence_ms', 'Lu après ton silence de', 'Le morceau suivant attend que tu te sois tu ce temps-là. 0 : sans attendre, même pendant que tu parles.', 'curseur', [0, 5000, 100, (v) => (v ? sec(v) : 'sans attendre')]],
       ['sauter_passe', 'Sauter les morceaux passés', 'Ce qui attend depuis trop longtemps n’est pas dit : il passe directement au dernier morceau préparé.', 'oui'],
       ['sauter_passe_s', 'Passé au bout de', 'L’attente au-delà de laquelle un morceau est passé.', 'curseur', [1, 15, 0.5, (v) => `${v.toLocaleString('fr-FR')} s`]],

@@ -147,7 +147,7 @@
     let course = 0, creux = 0, courseDebut = 0, pauseAvant = 0, tenueVoix = false, tonCourse = [];
     // la mesure des éclats (les sons trop courts pour une voix) et des avis de battement, entre deux tours
     let eclats = [], avis = [], avisVu = 0, tenueDebut = 0;
-    const fortes = [];                                      // les 15 dernières fenêtres : fortes ou non
+    const fortes = []; const niveauxBarge = [];                                      // les 15 dernières fenêtres : fortes ou non
     let precedent = [];
     let actif = true, micCoupe = false;
     // (2026-10-23, Ahmed : un appel de sa mère, puis 9 min où rien ne passait) la dernière trame reçue du micro (un flux
@@ -235,6 +235,9 @@
         const fort = !vibre && (jarvis ? (rms > seuilBarge && maintenant - jarvisDepuis > 400) : rms > seuil);
         // « stop » a des creux (t, p) : 12 fenêtres fortes sur 15 suffisent pour couper Jarvis (relecture Opus)
         fortes.push(fort); if (fortes.length > 15) fortes.shift();
+        // (07/11, Ahmed : « il faut que ce soit une voix claire qui lui parle pour qu'il se coupe ») sa clarté : le niveau moyen de ces 15 fenêtres
+        // rapporté au seuil qui écarte son écho (1 : juste au seuil, un fond lointain ; 3 et plus : une voix claire, tout près)
+        if (jarvis) { niveauxBarge.push(rms / Math.max(1e-6, seuilBarge)); if (niveauxBarge.length > 15) niveauxBarge.shift(); }
         const nFortes = fortes.reduce((n, x) => n + (x ? 1 : 0), 0);
         if (fort && !tenue) tenueDebut = maintenant;
         if (fort && !tenue && o.surSon) o.surSon();               // (04/11, 16:50) le premier son, avant même qu'une voix parle
@@ -243,7 +246,9 @@
         preecoute.push(f.slice(0)); if (preecoute.length > PREECOUTE_MS / FENETRE_MS) preecoute.shift();
         if (jarvis ? nFortes >= 12 : tenue >= 120) {
           if (jarvis && o.surInterruption) o.surInterruption({ rms: +rms.toFixed(4), seuil: +seuilBarge.toFixed(4),
-            echo: +echo.toFixed(4), echo_instant: +echoInstant.toFixed(4), gain: +gainEcho.toFixed(3) });
+            echo: +echo.toFixed(4), echo_instant: +echoInstant.toFixed(4), gain: +gainEcho.toFixed(3),
+            clarte: +(niveauxBarge.reduce((a, x) => a + x, 0) / Math.max(1, niveauxBarge.length)).toFixed(2) });
+          niveauxBarge.length = 0;
           etatV = 'parole'; debut = maintenant - PREECOUTE_MS; derniereVoix = maintenant; voixMs = Math.max(tenue, nFortes * FENETRE_MS);
           pauses = []; pauseEnCours = 0; fortes.length = 0; energies = []; hauteurs = [];
           course = tenue || FENETRE_MS; creux = 0; tenueVoix = true; tonCourse = [];   // ce qui a commencé le tour est une voix

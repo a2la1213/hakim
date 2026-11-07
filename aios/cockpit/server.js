@@ -4573,10 +4573,11 @@ function lireChoixCoupure(texte) {
   if (!m) return { couper: true, pourquoi: 'sans réponse lisible : il se coupe (papa d’abord)', lu: false };
   return { couper: m[1].toUpperCase() === 'COUPER', pourquoi: m[2].replace(/\s+/g, ' ').trim().slice(0, 160), lu: true };
 }
-async function choisirDeSeCouper(dit, papa, ms, demander = demanderVivant) {
+async function choisirDeSeCouper(dit, papa, ms, demander = demanderVivant, clarte = null) {
   const net = (x, n) => neutraliser(String(x || '')).replace(/\s+/g, ' ').trim().slice(-n);
   const prompt = `Tu es le subconscient de Hakim. Hakim est en train de dire à voix haute : « ${net(dit, 400) || '…'} ».\n`
-    + `Papa parle par-dessus lui depuis ${(Math.max(0, ms) / 1000).toFixed(1)} s : « ${net(papa, 400) || '(ses mots ne sont pas encore transcrits)'} ».\n`
+    + `Une voix parle par-dessus lui depuis ${(Math.max(0, ms) / 1000).toFixed(1)} s${clarte ? ` (sa netteté : ${clarte.toFixed(1)} fois le seuil ; 3 et plus : tout près, claire)` : ''} : « ${net(papa, 400) || '(ses mots ne sont pas encore transcrits)'} ».\n`
+    + `Si ce n'est pas papa qui parle À HAKIM (la télé, une chanson, quelqu'un d'autre plus loin, du bruit, des mots sans rapport) : CONTINUER.\n`
     + `Choisis : COUPER (Hakim se tait tout de suite et écoute papa) ou CONTINUER (ce que Hakim dit compte vraiment maintenant, il finit). `
     + `Papa d'abord, sauf si ce que dit Hakim est important ou presque fini. Réponds par COUPER ou CONTINUER, puis 10 mots au plus pour dire pourquoi.`;
   const t0 = Date.now();
@@ -7270,7 +7271,8 @@ function corpsReglages() {
     te_couper: r.te_couper === true,
     choix_coupure: r.choix_coupure !== false,
     choix_libre: r.choix_libre !== false,
-    micro_voix_seule: r.micro_voix_seule === true,   // (07/11) le filtre de ton micro : il n'entend que les voix (éteint par défaut)   // (07/11) ses paroles prêtes : il choisit laquelle dire, dans n'importe quel ordre   // (07/11) ta voix qui dure sur la sienne : il choisit de se couper ou de finir   // (07/11, Ahmed : « lui autoriser à me couper la parole », option 2) éteint par défaut   // (07/11) il choisit ce qu'il dit dans le temps de sortie de sa voix   // (07/11) coupé, il finit sa phrase (jusqu'à sa virgule ou son point)   // (07/11) ton message écrit l'arrête et part tout de suite   // (07/11) tes morceaux prêts partent en un seul message réunifié   // (07/11) coupé par une vraie phrase : il ne reprend pas l'ancienne réponse (éteint)   // (06/11) ses morceaux épissés reliés, sans pause entre eux
+    micro_voix_seule: r.micro_voix_seule === true,
+    voix_claire_x: Number.isFinite(Number(r.voix_claire_x)) && r.voix_claire_x != null ? Math.max(1, Math.min(5, Number(r.voix_claire_x))) : 1.8,   // (07/11) la netteté qu'il faut pour qu'il se coupe   // (07/11) le filtre de ton micro : il n'entend que les voix (éteint par défaut)   // (07/11) ses paroles prêtes : il choisit laquelle dire, dans n'importe quel ordre   // (07/11) ta voix qui dure sur la sienne : il choisit de se couper ou de finir   // (07/11, Ahmed : « lui autoriser à me couper la parole », option 2) éteint par défaut   // (07/11) il choisit ce qu'il dit dans le temps de sortie de sa voix   // (07/11) coupé, il finit sa phrase (jusqu'à sa virgule ou son point)   // (07/11) ton message écrit l'arrête et part tout de suite   // (07/11) tes morceaux prêts partent en un seul message réunifié   // (07/11) coupé par une vraie phrase : il ne reprend pas l'ancienne réponse (éteint)   // (06/11) ses morceaux épissés reliés, sans pause entre eux
     epissure_grammaire: r.epissure_grammaire !== false,
     pretraitement_parole: r.pretraitement_parole !== false,
     trois_pistes: r.trois_pistes !== false,
@@ -11929,7 +11931,7 @@ async function traiter(req, res) {
   if (p === '/api/jarvis/se-couper' && req.method === 'POST') {    // (07/11) papa parle par-dessus lui depuis « Sauter au bout de » : il choisit
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 8192) || '{}')); } catch (_) {}
-    const r = await choisirDeSeCouper(String(q.dit || ''), String(q.papa || ''), Number(q.ms) || 0);
+    const r = await choisirDeSeCouper(String(q.dit || ''), String(q.papa || ''), Number(q.ms) || 0, demanderVivant, Number(q.clarte) > 0 ? Number(q.clarte) : null);
     res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(r));
   }
   if (p === '/api/jarvis/ribosome/stop' && req.method === 'POST') {   // (04/11, 15:10) 10 s de ton silence : la page ferme son épissure
@@ -12921,6 +12923,7 @@ async function traiter(req, res) {
       // (05/11) ce que papa règle de sa parole passe avant Hakim pendant 30 min (jarvis/ribosome_intelligent.py)
       const parole = ['sauter_suite_ms', 'sauter_passe_s', 'lire_apres_silence_ms', 'chunk_papa_ms', 'epissure_meubles_max'].filter(k => q[k] != null);
       if (['virgule', 'point', 'sujet'].includes(q.decoupe_papa)) { r.decoupe_papa = q.decoupe_papa; noterAjustementPapa(['decoupe_papa']); }   // (06/11)
+      if (q.voix_claire_x != null && Number.isFinite(Number(q.voix_claire_x))) r.voix_claire_x = Math.max(1, Math.min(5, Math.round(Number(q.voix_claire_x) * 10) / 10));   // (07/11)
       if (q.chunk_papa_ms != null && Number.isFinite(Number(q.chunk_papa_ms))) r.chunk_papa_ms = Math.max(200, Math.min(3000, Math.round(Number(q.chunk_papa_ms))));   // (06/11)
       if (parole.length) noterAjustementPapa(parole);
       if (q.lire_apres_silence_ms != null && Number.isFinite(Number(q.lire_apres_silence_ms))) r.lire_apres_silence_ms = Math.max(0, Math.min(5000, Math.round(Number(q.lire_apres_silence_ms))));
