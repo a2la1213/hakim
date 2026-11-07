@@ -1510,6 +1510,7 @@ function noterMorceau(texte, dureeMs, debutMs) {
   if (p.rejoue) { p.morceaux.pop(); p.rejoue = false; }           // après une pause : le morceau coupé repart du début
   // (07/11) l'heure où son son est vraiment parti (voix neuronale), pas celle où la page a eu le temps de le noter
   p.morceaux.push({ texte: x, debut: Number(debutMs) > 0 ? Math.round(Number(debutMs)) : Date.now(), duree: dureeMs > 0 ? dureeMs : (x.length / 15 / vitesseVoix()) * 1000 });
+  etat.dernierMotDitA = p.morceaux[p.morceaux.length - 1].debut;          // (07/11) un mot de sa réponse dit : ton message suivant est à part
   garderParoleEnCours();
   vibrerPourMorceau(etat.lectureDe, x);
   // (30/10, 16:20, Ahmed via Hakim : « l'heure à laquelle chaque phrase de ma voix est réellement dite ») au cockpit, pour son journal
@@ -3300,7 +3301,9 @@ function messageAFusionner() {
   const prev = ms[i];
   if (!prev.oral || !prev.ts || Date.now() - prev.ts > FUSION_MAX_MS || (prev.joints || []).length) return null;
   if (ms.slice(i + 1).some(m => m.qui === 'j' && !m.enCours && !m.coupe && String(m.texte || '').trim())) return null;   // il a répondu
-  if ((etat.parleDepuis && etat.parleDepuis > prev.ts) || voixJouee.some(v => v.debut > prev.ts)) return null;          // il a parlé
+  // (07/11, Ahmed : « pourquoi des fois mes paroles sont mergées et des fois non ? ») il a commencé à te répondre : un mot de sa réponse dit ;
+  // ses meubles (« hmm ») et ses hésitations ne comptent pas (avant, ils empêchaient de compléter ton message)
+  if (Number(etat.dernierMotDitA) > prev.ts) return null;
   return prev;
 }
 // (30/10, 07:50-08:05) un tour de 5 min (9,6 Mo) prend ~35 s à transcrire : abandonné à 25 s, il était renvoyé en boucle et
@@ -7768,8 +7771,16 @@ var avatarEtat = { actif: true, instance: null, maj: 0, enCharge: false, vu: 0, 
 try { avatarEtat.actif = localStorage.getItem('hakim-avatar') !== 'non'; } catch (_) {}
 const CLE_POINTS_AVATAR = 'hakim-avatar-points';
 const tamponAvatar = { temps: null, freq: null };
+// (07/11, Ahmed : « il faut coordonner le mouvement des lèvres avec le moment où la parole vocale sort, pas avec le texte qui s'affiche »)
+// la latence de la sortie (la page, puis le Bluetooth) : celle que donne le navigateur, ou celle que l'appli a mesurée jusqu'aux écouteurs
+const histoireVoixAvatar = [];
+function latenceSortieMs() {
+  let ms = 0;
+  try { if (actx) ms = ((Number(actx.outputLatency) || 0) + (Number(actx.baseLatency) || 0)) * 1000; } catch (_) {}
+  return Math.min(1500, Math.max(ms, Number(etat.sortieVoixMs) || 0));
+}
 function lireAvatar() {
-  const i = etat.interieur || {}, c = etat.conversation;
+  const i = etat.interieur || {}, c = etat.conversation, maintenant = Date.now(), lat = latenceSortieMs();
   let voix = null;
   if (analyseurVoix && lecteurNeuronal.joue && actx) {
     const n = analyseurVoix.fftSize;
@@ -7781,28 +7792,44 @@ function lireAvatar() {
     const grave = bande(250, 1000), aigu = bande(1200, 3500);
     voix = { niveau: Math.sqrt(s / n), aigu: (aigu - grave) / (aigu + grave + 1e-6) };
   }
-  return { voix, parleSansSon: !voix && !!(lecteurSysteme && lecteurSysteme.actif), expression: Avatar.expressionDe(i.voix_emotion || i.humeur || ''),
+  // ce que la page joue maintenant sortira des écouteurs dans « lat » : ses lèvres prennent la voix d'il y a « lat »
+  histoireVoixAvatar.push({ t: maintenant, niveau: voix ? voix.niveau : 0, aigu: voix ? voix.aigu : 0 });
+  while (histoireVoixAvatar.length && maintenant - histoireVoixAvatar[0].t > 2000) histoireVoixAvatar.shift();
+  const sortie = Avatar.retarder(histoireVoixAvatar, maintenant, lat);
+  const entendue = sortie && sortie.niveau > 0 ? { niveau: sortie.niveau, aigu: sortie.aigu } : null;
+  // sa voix du téléphone (son moteur) : le bout qui joue vraiment (son départ, sa durée), décalé de la même sortie
+  const parleSansSon = !entendue && !(analyseurVoix && lecteurNeuronal.joue) && Avatar.dansUnMorceau(parole.morceaux, maintenant - lat);
+  return { voix: entendue, parleSansSon, expression: Avatar.expressionDe(i.voix_emotion || i.humeur || ''),
     eveil: Number(i.arousal), ecoute: !!(c && c.capteur && c.capteur.enParole) };
 }
 function lirePointsAvatar(maj) { try { const o = JSON.parse(localStorage.getItem(CLE_POINTS_AVATAR) || 'null'); return o && o.maj === maj && Array.isArray(o.points) ? o.points : null; } catch (_) { return null; } }
 function garderPointsAvatar(maj, points) { try { localStorage.setItem(CLE_POINTS_AVATAR, JSON.stringify({ maj, points: points.map(p => ({ x: +p.x.toFixed(5), y: +p.y.toFixed(5) })) })); } catch (_) {} }
 // (07/11, Ahmed : « pour le visage de l'avatar, je dois pouvoir supprimer ou éditer ») son cadrage (taille, hauteur), vu dans l'aperçu des
 // réglages et sur la scène à l'instant, gardé au cockpit (le même sur le Mac et le téléphone) ; supprimer : la grande orbe revient
-function construireAvatar(image, points, maj, cadrage = avatarEtat.cadrage) {
-  const cadre = Avatar.cadrer(points, image.width, image.height, 480, 600, cadrage);
-  const m = Avatar.preparer(cadre.points, cadre.L, cadre.H);
+// (07/11) un visage humain (ses points MediaPipe) : le maillage ; un dessin (son gabarit : yeux, bouche, oreilles) : le dessin animé
+function construireAvatar(image, points, maj, cadrage = avatarEtat.cadrage, gabarit = avatarEtat.gabarit) {
   const enMarche = !!(avatarEtat.instance && avatarEtat.instance.actif);
   if (avatarEtat.instance) avatarEtat.instance.detruire();
-  const photo = Avatar.photoCadree(image, cadre);
-  avatarEtat.instance = Avatar.creer($('avatarScene'), { maillage: m, image: photo, reduit: REDUCED });
-  Object.assign(avatarEtat, { maj, erreur: '', image, points, cadrage: { zoom: Number(cadrage.zoom) || 1, dy: Number(cadrage.dy) || 0 } });
+  let photo;
+  if (gabarit) {
+    const s = Avatar.cadrerDessin(image.width, image.height, 480, 600, cadrage);
+    photo = Avatar.dessinCadre(image, s);
+    avatarEtat.instance = Avatar.creerDessin($('avatarScene'), { image: photo, gabarit: Avatar.gabaritDansCadre(gabarit, s, image.width, image.height), reduit: REDUCED });
+    avatarEtat.source = s;
+  } else {
+    const cadre = Avatar.cadrer(points, image.width, image.height, 480, 600, cadrage);
+    photo = Avatar.photoCadree(image, cadre);
+    avatarEtat.instance = Avatar.creer($('avatarScene'), { maillage: Avatar.preparer(cadre.points, cadre.L, cadre.H), image: photo, reduit: REDUCED });
+    avatarEtat.source = cadre.source;
+  }
+  Object.assign(avatarEtat, { maj, erreur: '', image, points, gabarit: gabarit || null, cadrage: { zoom: Number(cadrage.zoom) || 1, dy: Number(cadrage.dy) || 0 } });
   const a = $('avatarApercu');
   if (a) { const cx = a.getContext('2d'); cx.clearRect(0, 0, a.width, a.height); cx.drawImage(photo, 0, 0, a.width, a.height); }
   if (enMarche) avatarEtat.instance.demarrer(lireAvatar);
 }
 function oublierAvatar() {
   if (avatarEtat.instance) avatarEtat.instance.detruire();
-  Object.assign(avatarEtat, { instance: null, maj: 0, image: null, points: null, cadrage: { zoom: 1, dy: 0 }, erreur: 'pas de photo' });
+  Object.assign(avatarEtat, { instance: null, maj: 0, image: null, points: null, gabarit: null, cadrage: { zoom: 1, dy: 0 }, erreur: 'pas de photo' });
   try { localStorage.removeItem(CLE_POINTS_AVATAR); } catch (_) {}
 }
 const memeCadrage = (a, b) => !!a && !!b && Math.abs(a.zoom - b.zoom) < 1e-6 && Math.abs(a.dy - b.dy) < 1e-6;
@@ -7812,24 +7839,60 @@ async function chargerAvatar() {
   try {
     const meta = await (await fetch('/api/avatar', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' })).json();
     if (!meta || !meta.existe) { oublierAvatar(); return; }              // effacée (ici ou sur l'autre appareil)
-    const cadrage = meta.cadrage || { zoom: 1, dy: 0 };
+    const cadrage = meta.cadrage || { zoom: 1, dy: 0 }, gabarit = meta.gabarit || null;
     if (meta.maj === avatarEtat.maj && avatarEtat.instance) {
-      if (!memeCadrage(cadrage, avatarEtat.cadrage) && avatarEtat.image) construireAvatar(avatarEtat.image, avatarEtat.points, meta.maj, cadrage);
+      if ((!memeCadrage(cadrage, avatarEtat.cadrage) || JSON.stringify(gabarit) !== JSON.stringify(avatarEtat.gabarit)) && avatarEtat.image)
+        construireAvatar(avatarEtat.image, avatarEtat.points, meta.maj, cadrage, gabarit);
       return;
     }
     const r = await fetch('/api/avatar/visage', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
     if (!r.ok) throw new Error(`photo ${r.status}`);
     const image = await createImageBitmap(await r.blob());
-    let points = lirePointsAvatar(meta.maj);
-    if (!points) { points = await Avatar.detecter(image); garderPointsAvatar(meta.maj, points); }
-    construireAvatar(image, points, meta.maj, cadrage);
+    let points = gabarit ? null : lirePointsAvatar(meta.maj);
+    if (!gabarit && !points) { points = await Avatar.detecter(image); garderPointsAvatar(meta.maj, points); }
+    construireAvatar(image, points, meta.maj, cadrage, gabarit);
     journalVoix('avatar_pret', { maj: meta.maj });
   } catch (e) { avatarEtat.erreur = String(e.message || e).slice(0, 80); journalVoix('avatar_erreur', { erreur: avatarEtat.erreur }); }
   finally { avatarEtat.enCharge = false; afficherEtatAvatar(); if (typeof humeur === 'function') humeur(); }
 }
+// (07/11, « que cette image puisse bouger correctement ») un dessin : tu touches dans l'aperçu (agrandi) son œil gauche, son œil droit, sa
+// bouche, puis, s'il en a, la pointe de son oreille gauche et de la droite ; « Terminer » après la bouche s'il n'a pas d'oreilles
+const ETAPES_PLACEMENT = ['son œil gauche', 'son œil droit', 'sa bouche', 'la pointe de son oreille gauche (ou Terminer)', 'la pointe de son oreille droite'];
+let placement = null;
+function envoyerGabarit(g) {
+  return fetch('/api/avatar/gabarit', { method: 'POST', headers: { 'X-Jeton': jeton(), 'Content-Type': 'application/json' }, body: JSON.stringify(g) })
+    .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).erreur || `gabarit ${r.status}`); });
+}
+function commencerPlacement() {
+  if (!avatarEtat.image || !avatarEtat.gabarit) return;
+  placement = { touches: [] };
+  $('avatarApercu').classList.add('placement');
+  afficherEtatAvatar();
+}
+async function finirPlacement() {
+  const t = placement ? placement.touches : [];
+  placement = null;
+  $('avatarApercu').classList.remove('placement');
+  if (t.length >= 3) {
+    const g = Avatar.gabaritDepuisTouches(t);
+    try { await envoyerGabarit(g); construireAvatar(avatarEtat.image, null, avatarEtat.maj, avatarEtat.cadrage, g); journalVoix('avatar_gabarit', { oreilles: g.oreilles.length }); }
+    catch (e) { avatarEtat.erreur = String(e.message || e).slice(0, 80); }
+  }
+  afficherEtatAvatar();
+}
+function toucherApercu(ev) {
+  if (!placement || !avatarEtat.source) return;
+  const a = $('avatarApercu'), r = a.getBoundingClientRect(), s = avatarEtat.source;
+  const u = (ev.clientX - r.left) / r.width, v = (ev.clientY - r.top) / r.height;
+  placement.touches.push({ x: (s.x + u * s.l) / avatarEtat.image.width, y: (s.y + v * s.h) / avatarEtat.image.height });
+  if (placement.touches.length >= ETAPES_PLACEMENT.length) return finirPlacement();
+  afficherEtatAvatar();
+}
 function afficherEtatAvatar() {
   const e = $('avatarEtat'), pret = !!avatarEtat.instance;
-  if (e) e.textContent = pret ? 'son visage est prêt' : avatarEtat.enCharge ? 'son visage se prépare…' : avatarEtat.erreur;
+  if (e) e.textContent = placement ? `touche ${ETAPES_PLACEMENT[placement.touches.length]}` : pret ? (avatarEtat.gabarit ? 'son dessin est prêt' : 'son visage est prêt')
+    : avatarEtat.enCharge ? 'son visage se prépare…' : avatarEtat.erreur;
+  if ($('avatarPlacer')) { $('avatarPlacer').hidden = !(pret && avatarEtat.gabarit); $('avatarPlacer').textContent = placement ? (placement.touches.length >= 3 ? '✓ Terminer' : '✕ Annuler') : '✏️ Placer ses yeux et sa bouche'; }
   for (const id of ['avatarApercu', 'avatarSupprimer', 'groupeAvatarZoom', 'groupeAvatarHauteur']) if ($(id)) $(id).hidden = !pret;
   if ($('avatarZoom') && pret) { $('avatarZoom').value = String(avatarEtat.cadrage.zoom); $('avatarHauteur').value = String(avatarEtat.cadrage.dy); }
 }
@@ -7858,13 +7921,19 @@ function majAvatar(sceneVisible) {
     avatarEtat.enCharge = true; afficherEtatAvatar();
     try {
       const image = await createImageBitmap(fichier);
-      const points = await Avatar.detecter(image);
+      // un visage humain : ses points ; sinon (un fennec, un personnage dessiné) un dessin, dont on place les yeux et la bouche
+      const points = await Avatar.detecter(image).catch(() => null);
       const r = await fetch('/api/avatar/visage', { method: 'POST', headers: { 'X-Jeton': jeton(), 'Content-Type': fichier.type || 'application/octet-stream' }, body: fichier });
       const o = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(o.erreur || `envoi ${r.status}`);
-      garderPointsAvatar(o.maj, points);
-      construireAvatar(image, points, o.maj, { zoom: 1, dy: 0 });
-      journalVoix('avatar_photo', { maj: o.maj });
+      if (points) { garderPointsAvatar(o.maj, points); construireAvatar(image, points, o.maj, { zoom: 1, dy: 0 }, null); }
+      else {
+        const g = Avatar.gabaritParDefaut();
+        await envoyerGabarit(g);
+        construireAvatar(image, null, o.maj, { zoom: 1, dy: 0 }, g);
+        commencerPlacement();                                            // touche ses yeux, sa bouche, ses oreilles
+      }
+      journalVoix('avatar_photo', { maj: o.maj, dessin: !points });
     } catch (e) { avatarEtat.erreur = String(e.message || e).slice(0, 80); }
     finally { avatarEtat.enCharge = false; afficherEtatAvatar(); humeur(); }
   });
@@ -7879,6 +7948,8 @@ function majAvatar(sceneVisible) {
       .then(r => { if (!r.ok) throw new Error(`cadrage ${r.status}`); }).catch((e) => { avatarEtat.erreur = String(e.message || e); afficherEtatAvatar(); }), 600);
   };
   if ($('avatarZoom')) { $('avatarZoom').addEventListener('input', recadrer); $('avatarHauteur').addEventListener('input', recadrer); }
+  if ($('avatarPlacer')) $('avatarPlacer').addEventListener('click', () => (placement ? finirPlacement() : commencerPlacement()));
+  if ($('avatarApercu')) $('avatarApercu').addEventListener('click', toucherApercu);
   // supprimer : la photo et son cadrage effacés au cockpit, la grande orbe revient (sur chaque appareil)
   if ($('avatarSupprimer')) $('avatarSupprimer').addEventListener('click', async () => {
     if (!confirm('Supprimer son visage ? La grande orbe revient à sa place.')) return;

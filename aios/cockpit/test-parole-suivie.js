@@ -98,11 +98,11 @@ test('ton tour : la phrase gardée en suspens se colle devant ta suite ; une fin
 
 test('le message à compléter : ton dernier message oral, s’il n’a encore rien dit ni répondu depuis (30 s au plus)', () => {
   let t = 1_010_000;
-  const ctx = { Date: class extends Date { static now() { return t; } }, String, etat: { messages: [], parleDepuis: 0 }, voixJouee: [] };
+  const ctx = { Date: class extends Date { static now() { return t; } }, String, Number, etat: { messages: [], dernierMotDitA: 0 } };
   vm.createContext(ctx);
   vm.runInContext(ligne('const FUSION_MAX_MS') + fonction('messageAFusionner') + 'this.f = messageAFusionner;', ctx);
   const u = (o = {}) => ({ id: 1, qui: 'u', texte: 'Pour savoir, pour dire trop ou pas assez d’engrais.', oral: true, ts: 1_000_000, joints: [], ...o });
-  const poser = (...ms) => { ctx.etat.messages = ms; ctx.etat.parleDepuis = 0; ctx.voixJouee.length = 0; };
+  const poser = (...ms) => { ctx.etat.messages = ms; ctx.etat.dernierMotDitA = 0; };
   poser(u());
   assert.equal(ctx.f() && ctx.f().id, 1, 'rien dit depuis : ta suite s’y colle');
   poser(u(), { id: 2, qui: 'j', texte: '', coupe: true, enCours: false });
@@ -111,12 +111,12 @@ test('le message à compléter : ton dernier message oral, s’il n’a encore r
   assert.equal(ctx.f() && ctx.f().id, 1, 'sa réponse en train de s’écrire (pas encore dite) va être lâchée');
   poser(u(), { id: 2, qui: 'j', texte: 'Je te suis, papa.', enCours: false });
   assert.equal(ctx.f(), null, 'il a déjà répondu : un nouveau message');
-  poser(u()); ctx.voixJouee.push({ debut: 1_004_000, fin: 1_006_000 });
-  assert.equal(ctx.f(), null, 'sa voix a parlé depuis ton message : un nouveau message');
-  poser(u()); ctx.voixJouee.push({ debut: 990_000, fin: 1_001_000 });
-  assert.equal(ctx.f() && ctx.f().id, 1, 'sa voix d’avant ton message ne compte pas');
-  poser(u()); ctx.etat.parleDepuis = 1_005_000;
-  assert.equal(ctx.f(), null, 'il parle en ce moment');
+  poser(u()); ctx.etat.dernierMotDitA = 1_004_000;
+  assert.equal(ctx.f(), null, 'un mot de sa réponse dit depuis ton message : un nouveau message');
+  poser(u()); ctx.etat.dernierMotDitA = 990_000;
+  assert.equal(ctx.f() && ctx.f().id, 1, 'ce qu’il a dit avant ton message ne compte pas');
+  assert.match(fonction('messageAFusionner'), /Number\(etat\.dernierMotDitA\) > prev\.ts/, 'ses meubles et ses hésitations ne comptent pas : seuls ses mots dits (noterMorceau)');
+  assert.match(fonction('noterMorceau'), /etat\.dernierMotDitA = p\.morceaux\[p\.morceaux\.length - 1\]\.debut;/);
   poser(u({ oral: false }));
   assert.equal(ctx.f(), null, 'un message écrit reste à part');
   poser(u({ joints: ['photo.jpg'] }));

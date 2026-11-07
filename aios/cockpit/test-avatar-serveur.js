@@ -31,7 +31,7 @@ test('sans photo : rien ; papa en dépose une : elle est gardée, servie, et rem
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'avatar-'));
   assert.equal(await appel(d, 'GET', '/api/autre'), null, 'une autre route : pas la sienne');
   let r = await appel(d, 'GET', '/api/avatar');
-  assert.deepEqual(JSON.parse(r.corps), { existe: false, maj: 0, cadrage: { zoom: 1, dy: 0 } });
+  assert.deepEqual(JSON.parse(r.corps), { existe: false, maj: 0, cadrage: { zoom: 1, dy: 0 }, gabarit: null });
   r = await appel(d, 'POST', '/api/avatar/visage', JPEG, false);
   assert.equal(r.code, 403, 'sans le jeton : refusé');
   r = await appel(d, 'POST', '/api/avatar/visage', Buffer.from('pas une image'));
@@ -79,8 +79,31 @@ test('son cadrage se règle (borné), se lit avec la photo ; supprimer efface la
   assert.equal(r.code, 200);
   assert.deepEqual(fs.readdirSync(d), [], 'la photo et son cadrage, effacés');
   r = await appel(d, 'GET', '/api/avatar');
-  assert.deepEqual(JSON.parse(r.corps), { existe: false, maj: 0, cadrage: { zoom: 1, dy: 0 } });
+  assert.deepEqual(JSON.parse(r.corps), { existe: false, maj: 0, cadrage: { zoom: 1, dy: 0 }, gabarit: null });
   r = await appel(d, 'POST', '/api/avatar/visage', JPEG);
   r = await appel(d, 'GET', '/api/avatar');
   assert.deepEqual(JSON.parse(r.corps).cadrage, { zoom: 1, dy: 0 }, 'une nouvelle photo repart du cadrage de base');
+});
+
+// (07/11, « que cette image puisse bouger correctement ») un dessin : son gabarit (ses yeux, sa bouche, ses oreilles), placé d'un toucher
+test('le gabarit d’un dessin se garde avec sa photo (vérifié), s’efface avec elle, et une nouvelle photo repart sans gabarit', async () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'avatar-'));
+  await appel(d, 'POST', '/api/avatar/visage', PNG);
+  const g = { type: 'dessin', yeux: [{ x: 0.43, y: 0.49, rx: 0.04, ry: 0.02 }, { x: 0.58, y: 0.49, rx: 0.04, ry: 0.02 }], bouche: { x: 0.5, y: 0.57, l: 0.06 },
+    oreilles: [{ base: { x: 0.41, y: 0.41 }, pointe: { x: 0.35, y: 0.3 } }], visage: { x: 0.5, y: 0.5, r: 0.17 } };
+  let r = await appel(d, 'POST', '/api/avatar/gabarit', Buffer.from(JSON.stringify(g)));
+  assert.equal(r.code, 200);
+  r = await appel(d, 'GET', '/api/avatar');
+  assert.deepEqual(JSON.parse(r.corps).gabarit, g);
+  r = await appel(d, 'POST', '/api/avatar/gabarit', Buffer.from(JSON.stringify({ type: 'dessin', yeux: [] })));
+  assert.equal(r.code, 400, 'un gabarit incomplet : refusé');
+  r = await appel(d, 'POST', '/api/avatar/gabarit', Buffer.from(JSON.stringify(null)));
+  assert.equal(r.code, 200, 'null : plus de gabarit (un visage humain, trouvé par MediaPipe)');
+  assert.equal(JSON.parse((await appel(d, 'GET', '/api/avatar')).corps).gabarit, null);
+  await appel(d, 'POST', '/api/avatar/gabarit', Buffer.from(JSON.stringify(g)));
+  await appel(d, 'POST', '/api/avatar/visage', JPEG);
+  assert.equal(JSON.parse((await appel(d, 'GET', '/api/avatar')).corps).gabarit, null, 'une nouvelle photo : sans gabarit');
+  await appel(d, 'POST', '/api/avatar/gabarit', Buffer.from(JSON.stringify(g)));
+  await appel(d, 'DELETE', '/api/avatar/visage');
+  assert.deepEqual(fs.readdirSync(d), []);
 });

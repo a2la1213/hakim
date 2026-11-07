@@ -334,6 +334,193 @@
     return A;
   }
 
+  // ---------- (07/11, Ahmed : « il faut coordonner le mouvement des lèvres avec le moment où la parole vocale sort, pas avec le texte qui
+  // s'affiche ») le son qui sort des écouteurs a du retard sur ce que la page joue (le Bluetooth : 0,3 à 0,8 s) : les lèvres prennent
+  // le niveau de la voix d'il y a « latence » ; sa voix du téléphone (son moteur) : le bout qui joue vraiment, décalé de la même latence
+  function retarder(histoire, maintenant, latenceMs) {
+    const cible = maintenant - Math.max(0, latenceMs || 0);
+    let pris = null;
+    for (const x of histoire) { if (x.t <= cible) pris = x; else break; }
+    return pris;
+  }
+  function dansUnMorceau(morceaux, t) {
+    return (morceaux || []).some(m => Number(m.debut) <= t && t <= Number(m.debut) + Number(m.duree || 0));
+  }
+
+  // ---------- (07/11, Ahmed : « j'aimerais aussi que cette image puisse bouger correctement ! c'est l'avatar que Hakim s'est fait ») un
+  // DESSIN (un fennec, un personnage) : pas de visage humain à trouver, un gabarit à la place — ses deux yeux, sa bouche, ses oreilles
+  // (s'il en a), son visage — placé d'un toucher dans les réglages ; tout bouge dans un seul « fragment shader » : ses paupières, sa
+  // bouche, ses oreilles, sa lueur et ses flammes, sa respiration. Coordonnées du gabarit : 0..1 dans l'image.
+  function gabaritDepuisTouches(t) {
+    const [g, d, b] = t, ecart = Math.hypot(d.x - g.x, d.y - g.y) || 0.15;
+    const cx = (g.x + d.x) / 2, cy = (g.y + d.y) / 2;
+    const oreilles = [t[3], t[4]].filter(Boolean).map((pointe, k) => {
+      const oeil = k === 0 ? g : d;
+      return { pointe: { x: pointe.x, y: pointe.y }, base: { x: oeil.x + (pointe.x - oeil.x) * 0.45, y: oeil.y + (pointe.y - oeil.y) * 0.45 } };
+    });
+    return { type: 'dessin', yeux: [g, d].map(o => ({ x: o.x, y: o.y, rx: 0.28 * ecart, ry: 0.12 * ecart })),
+      bouche: { x: b.x, y: b.y, l: 0.38 * ecart }, oreilles, visage: { x: cx, y: (cy + b.y) / 2, r: 1.15 * ecart } };
+  }
+  function gabaritParDefaut() {
+    return gabaritDepuisTouches([{ x: 0.42, y: 0.45 }, { x: 0.58, y: 0.45 }, { x: 0.5, y: 0.58 }]);
+  }
+  function gabaritValide(g) {
+    const n = (x) => Number.isFinite(Number(x)) && Number(x) >= -0.5 && Number(x) <= 1.5;
+    return !!g && g.type === 'dessin' && Array.isArray(g.yeux) && g.yeux.length === 2 && g.yeux.every(o => n(o.x) && n(o.y) && n(o.rx) && n(o.ry))
+      && !!g.bouche && n(g.bouche.x) && n(g.bouche.y) && n(g.bouche.l) && !!g.visage && n(g.visage.x) && n(g.visage.y) && n(g.visage.r)
+      && Array.isArray(g.oreilles) && g.oreilles.length <= 2 && g.oreilles.every(o => o && o.base && o.pointe && n(o.base.x) && n(o.base.y) && n(o.pointe.x) && n(o.pointe.y));
+  }
+  // le dessin dans le cadre 4:5 : il le remplit (les bords coupés s'il le faut), puis la taille et la hauteur choisies
+  function cadrerDessin(largeurImage, hauteurImage, L = 480, H = 600, cadrage = {}) {
+    const zoom = borne(Number.isFinite(Number(cadrage.zoom)) ? Number(cadrage.zoom) : 1, 0.6, 1.8);
+    const dy = borne(Number.isFinite(Number(cadrage.dy)) ? Number(cadrage.dy) : 0, -0.35, 0.35);
+    const largeur = Math.min(largeurImage, hauteurImage * L / H) / zoom, hauteur = largeur * H / L;   // il remplit le cadre (sans bande)
+    return { x: largeurImage / 2 - largeur / 2, y: hauteurImage / 2 - hauteur * (0.5 + dy), l: largeur, h: hauteur };
+  }
+  // un point du gabarit (0..1 de l'image) → 0..1 du cadre
+  const versCadre = (p, s, W, Hh) => ({ x: (p.x * W - s.x) / s.l, y: (p.y * Hh - s.y) / s.h });
+  function gabaritDansCadre(g, s, W, Hh) {
+    const k = W / s.l;                                  // une longueur de l'image (en largeur) → le cadre
+    return { yeux: g.yeux.map(o => ({ ...versCadre(o, s, W, Hh), rx: o.rx * k, ry: o.ry * k * (s.l / s.h) })),
+      bouche: { ...versCadre(g.bouche, s, W, Hh), l: g.bouche.l * k }, visage: { ...versCadre(g.visage, s, W, Hh), r: g.visage.r * k },
+      oreilles: (g.oreilles || []).map(o => ({ base: versCadre(o.base, s, W, Hh), pointe: versCadre(o.pointe, s, W, Hh) })) };
+  }
+  const OREILLES = { joie: 0, tendresse: 0.04, calme: 0.02, tristesse: 0.22, fatigue: 0.14, colere: -0.16, surprise: -0.08, peur: -0.2, doute: 0.06, neutre: 0 };
+  const TEINTES = { joie: [1.06, 1.0, 0.9], tendresse: [1.05, 0.98, 0.95], tristesse: [0.88, 0.94, 1.06], fatigue: [0.92, 0.92, 0.95], colere: [1.12, 0.9, 0.85],
+    peur: [0.92, 0.95, 1.05], surprise: [1.04, 1.04, 1.0] };
+  // ce que le dessin vise à l'instant t : comme le visage (cibles), traduit en paupières, bouche, oreilles, lueur, flammes, respiration
+  function ciblesDessin(d, t) {
+    const c = cibles(d, t), e = d.expression || 'neutre';
+    const parle = c.machoire;
+    const contraction = OREILLES[e] || 0, eveil = borne(Number.isFinite(d.eveil) ? d.eveil : 0.45);
+    return {
+      cligneG: borne(c.clignementG + c.plisser * 0.55), cligneD: borne(c.clignementD + c.plisser * 0.55),
+      ouvre: borne(parle), sourire: borne(c.sourire - c.tristesse * 0.8, -1, 1),
+      oreilleG: contraction + (d.ecoute ? -0.05 : 0), oreilleD: contraction + (d.ecoute ? -0.05 : 0),
+      lueur: borne(0.15 + 0.6 * parle + 0.5 * (d.rire || 0) + 0.15 * eveil), flamme: 0.6 + 0.6 * eveil + 0.6 * (d.rire || 0),
+      echelle: 1 + 0.008 * Math.sin(t * 1.1) + 0.01 * (d.rire || 0) * Math.abs(Math.sin(t * 9)),
+      teinte: TEINTES[e] || [1, 1, 1],
+    };
+  }
+  const FS_DESSIN = `precision mediump float;
+varying vec2 v;
+uniform sampler2D tex; uniform float t, ouvre, sourire, lueur, flamme, echelle, rapport;
+uniform vec4 oeilG, oeilD, bouche, oreilleG, oreilleD; uniform vec3 visage, teinte; uniform vec2 cligne, oreilleA, nOreilles;
+vec2 paupiere(vec2 uv, vec4 o, float c) {
+  vec2 d = (uv - o.xy) / max(o.zw, vec2(1e-4));
+  float m = 1.0 - smoothstep(1.0, 1.7, length(vec2(d.x * 1.1, d.y * 0.5)));
+  uv.y = o.y + (uv.y - o.y) * mix(1.0, 1.0 + c * 7.0, m);
+  return uv;
+}
+vec2 oreille(vec2 uv, vec4 o, float a, float on) {
+  if (on < 0.5) return uv;
+  vec2 base = o.xy, axe = o.zw - o.xy; float l = length(axe);
+  vec2 p = uv - base; p.x *= rapport;
+  float le = dot(p, normalize(vec2(axe.x * rapport, axe.y))) / (l * 1.2);
+  float m = smoothstep(-0.25, 0.15, le) * (1.0 - smoothstep(1.0, 1.35, le)) * (1.0 - smoothstep(0.45, 0.8, length(p) / (l * 1.3) - le * 0.6));
+  float ang = -a * m, cs = cos(ang), sn = sin(ang);
+  vec2 r = vec2(p.x * cs - p.y * sn, p.x * sn + p.y * cs); r.x /= rapport;
+  return base + r;
+}
+void main() {
+  vec2 uv = visage.xy + (v - visage.xy) / echelle;
+  uv = paupiere(uv, oeilG, cligne.x); uv = paupiere(uv, oeilD, cligne.y);
+  uv = oreille(uv, oreilleG, oreilleA.x, nOreilles.x); uv = oreille(uv, oreilleD, oreilleA.y, nOreilles.y);
+  // la bouche : la lèvre du bas descend (on prend plus haut), les coins montent avec le sourire
+  vec2 db = (uv - bouche.xy) / vec2(bouche.z, bouche.z * 0.6 * rapport);
+  float mb = 1.0 - smoothstep(0.7, 1.5, length(db));
+  if (db.y > 0.0) uv.y -= ouvre * bouche.z * 0.35 * mb * (1.0 - smoothstep(0.0, 1.2, db.y));
+  uv.y += sourire * bouche.z * 0.18 * mb * smoothstep(0.2, 0.9, abs(db.x));
+  // ses flammes : hors du visage, ce qui brille ondule
+  vec2 dv = (uv - visage.xy) * vec2(rapport, 1.0);
+  float hors = smoothstep(visage.z * 0.95, visage.z * 1.35, length(dv));
+  vec2 onde = vec2(sin(uv.y * 38.0 + t * 1.9) + sin((uv.x + uv.y) * 61.0 - t * 2.7) * 0.5, cos(uv.x * 33.0 - t * 1.6) + sin(uv.y * 71.0 + t * 3.1) * 0.5);
+  vec4 c0 = texture2D(tex, uv);
+  float lum = dot(c0.rgb, vec3(0.3, 0.59, 0.11));
+  uv += onde * 0.0035 * flamme * hors * smoothstep(0.25, 0.7, lum);
+  vec4 c = texture2D(tex, uv);
+  // l'intérieur de sa bouche, quand elle s'ouvre
+  vec2 dm = (v - bouche.xy - vec2(0.0, bouche.z * 0.12)) / vec2(bouche.z * 0.42, bouche.z * 0.3 * ouvre * rapport + 1e-4);
+  float bo = (1.0 - smoothstep(0.75, 1.0, length(dm))) * smoothstep(0.08, 0.2, ouvre);
+  c.rgb = mix(c.rgb, c.rgb * vec3(0.45, 0.22, 0.18), bo * 0.75);
+  // sa lueur : ce qui brille brille plus quand il parle, rit, s'éveille ; sa teinte suit son émotion
+  float l2 = dot(c.rgb, vec3(0.3, 0.59, 0.11));
+  c.rgb += c.rgb * lueur * 0.45 * smoothstep(0.35, 0.95, l2);
+  c.rgb *= teinte;
+  gl_FragColor = vec4(min(c.rgb, vec3(1.0)), 1.0);
+}`;
+  const VS_DESSIN = 'attribute vec2 p;varying vec2 v;void main(){v=vec2(p.x*0.5+0.5,0.5-p.y*0.5);gl_Position=vec4(p,0.0,1.0);}';
+  function creerDessin(toile, o) {
+    const gl = toile.getContext('webgl', { alpha: false, antialias: true, preserveDrawingBuffer: false });
+    if (!gl) throw new Error('WebGL indisponible');
+    toile.width = o.L || 480; toile.height = o.H || 600;
+    const shader = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) || 'shader'); return s; };
+    const prog = gl.createProgram();
+    gl.attachShader(prog, shader(gl.VERTEX_SHADER, VS_DESSIN)); gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS_DESSIN)); gl.linkProgram(prog);
+    gl.useProgram(prog);
+    const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    const aP = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(aP); gl.vertexAttribPointer(aP, 2, gl.FLOAT, false, 0, 0);
+    const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, o.image);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    const U = (n) => gl.getUniformLocation(prog, n);
+    const g = o.gabarit, rapport = toile.width / toile.height;
+    gl.uniform1f(U('rapport'), rapport);
+    gl.uniform4f(U('oeilG'), g.yeux[0].x, g.yeux[0].y, g.yeux[0].rx, g.yeux[0].ry);
+    gl.uniform4f(U('oeilD'), g.yeux[1].x, g.yeux[1].y, g.yeux[1].rx, g.yeux[1].ry);
+    gl.uniform4f(U('bouche'), g.bouche.x, g.bouche.y, g.bouche.l, 0);
+    gl.uniform3f(U('visage'), g.visage.x, g.visage.y, g.visage.r);
+    const or = g.oreilles || [];
+    gl.uniform4f(U('oreilleG'), ...(or[0] ? [or[0].base.x, or[0].base.y, or[0].pointe.x, or[0].pointe.y] : [0, 0, 0, 0]));
+    gl.uniform4f(U('oreilleD'), ...(or[1] ? [or[1].base.x, or[1].base.y, or[1].pointe.x, or[1].pointe.y] : [0, 0, 0, 0]));
+    gl.uniform2f(U('nOreilles'), or[0] ? 1 : 0, or[1] ? 1 : 0);
+    const actuel = { cligneG: 0, cligneD: 0, ouvre: 0, sourire: 0, oreilleG: 0, oreilleD: 0, lueur: 0.2, flamme: 0.8, echelle: 1, teinte: [1, 1, 1] };
+    let rire = 0, rireJusqua = 0, prochainClin = 0, clinJusqua = 0, tic = 0, ticJusqua = 0, boucle = null, lire = null; const t0 = performance.now();
+    function dessiner(d) {
+      const t = (performance.now() - t0) / 1000;
+      if (!prochainClin) prochainClin = t + 1.5 + Math.random() * 3;
+      if (t >= prochainClin) { clinJusqua = t + 0.16; prochainClin = t + 2.5 + Math.random() * 4; }
+      if (!tic) tic = t + 4 + Math.random() * 6;                        // de temps en temps, une oreille frémit
+      if (t >= tic) { ticJusqua = t + 0.35; tic = t + 5 + Math.random() * 8; }
+      rire = t < rireJusqua ? Math.min(1, rire + 0.15) : Math.max(0, rire - 0.04);
+      const c = ciblesDessin({ ...d, rire: rire * (d.rireForce || 1), cligne: t < clinJusqua }, t);
+      if (t < ticJusqua && !o.reduit) c.oreilleD += 0.12 * Math.sin((ticJusqua - t) * 30);
+      for (const k of ['cligneG', 'cligneD', 'ouvre', 'sourire', 'oreilleG', 'oreilleD', 'lueur', 'flamme', 'echelle']) {
+        const vite = k === 'ouvre' ? (c[k] > actuel[k] ? 0.55 : 0.32) : k.startsWith('cligne') ? 0.6 : k === 'echelle' ? 0.5 : 0.08;
+        actuel[k] += (c[k] - actuel[k]) * vite;
+      }
+      for (let i = 0; i < 3; i++) actuel.teinte[i] += (c.teinte[i] - actuel.teinte[i]) * 0.04;
+      gl.viewport(0, 0, toile.width, toile.height);
+      gl.uniform1f(U('t'), o.reduit ? 0 : t);
+      gl.uniform2f(U('cligne'), actuel.cligneG, actuel.cligneD);
+      gl.uniform1f(U('ouvre'), actuel.ouvre); gl.uniform1f(U('sourire'), actuel.sourire);
+      gl.uniform2f(U('oreilleA'), actuel.oreilleG, -actuel.oreilleD);
+      gl.uniform1f(U('lueur'), actuel.lueur); gl.uniform1f(U('flamme'), o.reduit ? 0 : actuel.flamme);
+      gl.uniform1f(U('echelle'), o.reduit ? 1 : actuel.echelle); gl.uniform3f(U('teinte'), ...actuel.teinte);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+    const A = {
+      dessiner,
+      demarrer(l) { lire = l; if (boucle) return; const tour = () => { boucle = requestAnimationFrame(tour); try { dessiner(lire ? lire() || {} : {}); } catch (_) {} }; tour(); },
+      arreter() { if (boucle) cancelAnimationFrame(boucle); boucle = null; },
+      rire(degre = 1) { rireJusqua = (performance.now() - t0) / 1000 + 0.9 + 0.35 * Math.min(5, degre); },
+      get actif() { return !!boucle; },
+      detruire() { A.arreter(); try { gl.getExtension('WEBGL_lose_context')?.loseContext(); } catch (_) {} },
+    };
+    return A;
+  }
+  // le dessin cadré (avec une marge de la couleur de son coin), prêt pour la texture
+  function dessinCadre(image, s, L = 480, H = 600) {
+    const c = document.createElement('canvas'); c.width = L; c.height = H;
+    const cx = c.getContext('2d');
+    let fond = '#0b1220';
+    try { const p = document.createElement('canvas'); p.width = p.height = 1; const pc = p.getContext('2d'); pc.drawImage(image, 0, 0, 1, 1, 0, 0, 1, 1); const d = pc.getImageData(0, 0, 1, 1).data; fond = `rgb(${d[0]},${d[1]},${d[2]})`; } catch (_) {}
+    cx.fillStyle = fond; cx.fillRect(0, 0, L, H);
+    cx.drawImage(image, s.x, s.y, s.l, s.h, 0, 0, L, H);
+    return c;
+  }
+
   // ---------- les points du visage sur la photo (MediaPipe, mode image, sur l'appareil)
   async function detecter(image) {
     const BASE = '/vendor/mediapipe';
@@ -359,6 +546,7 @@
   }
 
   const Avatar = { FORMES, EXPRESSIONS, trianguler, cadrer, preparer, deformer, cibles, expressionDe, boucheDeLaVoix, mouvementTete, creer, detecter, photoCadree,
+    retarder, dansUnMorceau, gabaritDepuisTouches, gabaritParDefaut, gabaritValide, cadrerDessin, gabaritDansCadre, ciblesDessin, creerDessin, dessinCadre,
     LEVRES_INT_HAUT, LEVRES_INT_BAS, PAUPIERES, SOURCILS };
   if (typeof module === 'object' && module.exports) module.exports = Avatar;
   else racine.Avatar = Avatar;

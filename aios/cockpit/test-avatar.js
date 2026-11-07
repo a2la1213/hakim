@@ -145,3 +145,50 @@ test('(07/11, « supprimer ou éditer ») la page : l’aperçu, la taille et la
   assert.match(page, /if \(!meta \|\| !meta\.existe\) \{ oublierAvatar\(\); return; \}/, 'effacée sur l’autre appareil : oubliée ici aussi');
   assert.match(page, /function oublierAvatar\(\) \{\n  if \(avatarEtat\.instance\) avatarEtat\.instance\.detruire\(\);/);
 });
+
+test('(07/11, « les lèvres au moment où la voix sort ») le niveau de sa voix pris avec le retard de la sortie ; le bout qui joue vraiment', () => {
+  const h = [{ t: 1000, niveau: 0.1 }, { t: 1100, niveau: 0.2 }, { t: 1200, niveau: 0.3 }, { t: 1300, niveau: 0.4 }];
+  assert.equal(Avatar.retarder(h, 1300, 0).niveau, 0.4);
+  assert.equal(Avatar.retarder(h, 1300, 150).niveau, 0.2, '150 ms de sortie : la voix d’il y a 150 ms');
+  assert.equal(Avatar.retarder(h, 1300, 1000), null, 'rien d’aussi vieux');
+  const m = [{ debut: 5000, duree: 2000 }];
+  assert.ok(Avatar.dansUnMorceau(m, 6000) && !Avatar.dansUnMorceau(m, 7500) && !Avatar.dansUnMorceau(m, 4000));
+});
+
+test('(07/11, « que cette image puisse bouger correctement ») un dessin : son gabarit depuis trois touches (et ses oreilles), vérifié, cadré', () => {
+  const g = Avatar.gabaritDepuisTouches([{ x: 0.43, y: 0.49 }, { x: 0.58, y: 0.49 }, { x: 0.5, y: 0.57 }, { x: 0.35, y: 0.3 }, { x: 0.65, y: 0.3 }]);
+  assert.ok(Avatar.gabaritValide(g));
+  assert.equal(g.yeux.length, 2); assert.equal(g.oreilles.length, 2);
+  assert.ok(g.oreilles[0].base.y > g.oreilles[0].pointe.y && g.oreilles[0].base.y < g.yeux[0].y, 'la base de l’oreille entre l’œil et la pointe');
+  assert.ok(g.yeux[0].rx > g.yeux[0].ry, 'des yeux en amande');
+  assert.ok(Avatar.gabaritValide(Avatar.gabaritParDefaut()));
+  assert.ok(!Avatar.gabaritValide({ type: 'dessin', yeux: [] }) && !Avatar.gabaritValide(null) && !Avatar.gabaritValide({ ...g, oreilles: [1, 2, 3] }));
+  const s = Avatar.cadrerDessin(1024, 1024);
+  assert.ok(Math.abs(s.l / s.h - 0.8) < 1e-9 && s.l <= 1024 && s.h <= 1024 + 1e-9, 'le dessin carré remplit le cadre 4:5 (sans bande)');
+  const gc = Avatar.gabaritDansCadre(g, s, 1024, 1024);
+  assert.ok(Math.abs(gc.yeux[0].x - ((0.43 * 1024 - s.x) / s.l)) < 1e-9);
+  assert.ok(Avatar.cadrerDessin(1024, 1024, 480, 600, { zoom: 1.5 }).l < s.l, 'zoom : on s’approche');
+});
+
+test('un dessin vit : sa bouche suit sa voix, ses yeux clignent et se plissent au rire, ses oreilles tombent quand il est triste', () => {
+  const parle = Avatar.ciblesDessin({ voix: { niveau: 0.15, aigu: 0 } }, 0);
+  assert.ok(parle.ouvre > 0.5 && parle.lueur > 0.4, 'il parle : la bouche s’ouvre, il brille');
+  assert.equal(Avatar.ciblesDessin({ voix: { niveau: 0, aigu: 0 } }, 0).ouvre, 0);
+  assert.ok(Avatar.ciblesDessin({ cligne: true }, 0).cligneG === 1);
+  const rit = Avatar.ciblesDessin({ rire: 1 }, 0.05);
+  assert.ok(rit.cligneG > 0.25 && rit.sourire > 0.5 && rit.lueur > 0.5);
+  const triste = Avatar.ciblesDessin({ expression: 'tristesse' }, 0), fache = Avatar.ciblesDessin({ expression: 'colere' }, 0);
+  assert.ok(triste.oreilleG > 0.1 && fache.oreilleG < -0.1 && triste.sourire < 0, 'triste : les oreilles tombent ; en colère : en arrière');
+  assert.ok(triste.teinte[2] > triste.teinte[0], 'triste : plus froid');
+});
+
+test('(07/11) la page : les lèvres prennent la voix qui sort (la latence), un dessin se construit avec son gabarit, ses yeux et sa bouche se placent d’un toucher', () => {
+  const page = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(page, /const sortie = Avatar\.retarder\(histoireVoixAvatar, maintenant, lat\);/);
+  assert.match(page, /Avatar\.dansUnMorceau\(parole\.morceaux, maintenant - lat\)/, 'sa voix du téléphone : le bout qui joue vraiment, pas le texte');
+  assert.match(page, /return Math\.min\(1500, Math\.max\(ms, Number\(etat\.sortieVoixMs\) \|\| 0\)\);/);
+  assert.match(page, /avatarEtat\.instance = Avatar\.creerDessin\(\$\('avatarScene'\), \{ image: photo, gabarit: Avatar\.gabaritDansCadre\(gabarit, s, image\.width, image\.height\)/);
+  assert.match(page, /const points = await Avatar\.detecter\(image\)\.catch\(\(\) => null\);/, 'pas de visage humain : un dessin, pas une erreur');
+  assert.match(page, /const g = Avatar\.gabaritDepuisTouches\(t\);/);
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'parler.html'), 'utf8'), /id="avatarPlacer"/);
+});

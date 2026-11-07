@@ -74,6 +74,7 @@
     .scene canvas#avatarScene { width: min(56vmin, 360px, 52vw); height: auto; aspect-ratio: 4 / 5; border-radius: 28px; box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 18px 60px rgba(0,0,0,.45); }
     .avatar-reglages { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
     .avatar-reglages canvas { width: 96px; height: 120px; border-radius: 14px; flex: none; }
+    .avatar-reglages canvas.placement { width: min(320px, 80vw); height: auto; aspect-ratio: 4 / 5; cursor: crosshair; outline: 2px solid var(--accent, #6cf); }
     .avatar-outils { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
     .emotion-scene { font-size: 14px; color: var(--txt-2); min-height: 1.2em; margin: 0; }
     /* (31/10, 01:00) le signe « oreille fermée », qui saute aux yeux */
@@ -528,10 +529,11 @@
       <label class="case"><input type="checkbox" id="sceneActive"> la grande orbe quand Hakim parle ou t'écoute</label>
       <label class="case"><input type="checkbox" id="avatarActif"> son avatar (ton visage, qui parle avec sa voix et ses émotions) à la place de la grande orbe, en Conversation et en Télépathie</label>
       <div class="case avatar-reglages">
-        <canvas id="avatarApercu" width="96" height="120" hidden aria-label="son visage, tel qu'il sera cadré"></canvas>
+        <canvas id="avatarApercu" width="240" height="300" hidden aria-label="son visage, tel qu'il sera cadré"></canvas>
         <div class="avatar-outils">
           <span><label class="btn" for="avatarPhoto">📸 Ta photo pour son visage</label><input type="file" id="avatarPhoto" accept="image/*" hidden>
-            <button type="button" class="btn" id="avatarSupprimer" hidden>🗑️ Supprimer</button> <em id="avatarEtat"></em></span>
+            <button type="button" class="btn" id="avatarSupprimer" hidden>🗑️ Supprimer</button>
+            <button type="button" class="btn" id="avatarPlacer" hidden>✏️ Placer ses yeux et sa bouche</button> <em id="avatarEtat"></em></span>
           <label id="groupeAvatarZoom" hidden>Taille du visage <input type="range" id="avatarZoom" min="0.6" max="1.8" step="0.05" value="1"></label>
           <label id="groupeAvatarHauteur" hidden>Hauteur du visage <input type="range" id="avatarHauteur" min="-0.35" max="0.35" step="0.01" value="0"></label>
         </div>

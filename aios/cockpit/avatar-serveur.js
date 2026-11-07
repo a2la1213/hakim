@@ -7,6 +7,7 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
+const { gabaritValide } = require('./public/avatar.js');   // (07/11) le gabarit d'un dessin, vérifié comme la page
 
 const MAX = 10 << 20;
 const TYPES = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
@@ -31,6 +32,10 @@ function cadrage(dossier) {
   try { const o = JSON.parse(fs.readFileSync(path.join(dossier, 'cadrage.json'), 'utf8')); return { zoom: borne(o.zoom, 0.6, 1.8, 1), dy: borne(o.dy, -0.35, 0.35, 0) }; }
   catch (_) { return { ...CADRAGE_BASE }; }
 }
+// (07/11, « que cette image puisse bouger correctement ») un dessin : son gabarit (ses yeux, sa bouche, ses oreilles), sinon null (un visage humain)
+function gabarit(dossier) {
+  try { const g = JSON.parse(fs.readFileSync(path.join(dossier, 'gabarit.json'), 'utf8')); return gabaritValide(g) ? g : null; } catch (_) { return null; }
+}
 function lire(req, max) {
   return new Promise((fin) => {
     const morceaux = []; let n = 0;
@@ -41,10 +46,23 @@ function lire(req, max) {
 }
 // rend vrai si la route est la sienne (la réponse part, de façon asynchrone pour un dépôt)
 function routeAvatar(req, res, p, { dossier, jetonValide }) {
-  if (!/^\/api\/avatar(?:\/visage|\/cadrage)?$/.test(p)) return false;
+  if (!/^\/api\/avatar(?:\/visage|\/cadrage|\/gabarit)?$/.test(p)) return false;
   const json = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(o)); };
   if (!jetonValide(req)) { json(403, { erreur: 'jeton' }); return true; }
-  if (p === '/api/avatar' && req.method === 'GET') { const x = photo(dossier); json(200, { existe: !!x, maj: x ? x.maj : 0, cadrage: cadrage(dossier) }); return true; }
+  if (p === '/api/avatar' && req.method === 'GET') { const x = photo(dossier); json(200, { existe: !!x, maj: x ? x.maj : 0, cadrage: cadrage(dossier), gabarit: gabarit(dossier) }); return true; }
+  if (p === '/api/avatar/gabarit' && req.method === 'POST') {
+    lire(req, 4096).then((b) => {
+      let g; try { g = JSON.parse(String(b || '')); } catch (_) { return json(400, { erreur: 'gabarit illisible' }); }
+      try {
+        if (g === null) { try { fs.unlinkSync(path.join(dossier, 'gabarit.json')); } catch (_) {} return json(200, { ok: true, gabarit: null }); }
+        if (!gabaritValide(g)) return json(400, { erreur: 'gabarit incomplet : ses deux yeux et sa bouche' });
+        fs.mkdirSync(dossier, { recursive: true, mode: 0o700 });
+        fs.writeFileSync(path.join(dossier, 'gabarit.json'), JSON.stringify(g), { mode: 0o600 });
+        json(200, { ok: true, gabarit: g });
+      } catch (e) { json(500, { erreur: `enregistrement impossible (${e.code || e.message})` }); }
+    });
+    return true;
+  }
   if (p === '/api/avatar/cadrage' && req.method === 'POST') {
     lire(req, 1024).then((b) => {
       let o = null; try { o = JSON.parse(String(b || '')); } catch (_) {}
@@ -59,7 +77,7 @@ function routeAvatar(req, res, p, { dossier, jetonValide }) {
     return true;
   }
   if (p === '/api/avatar/visage' && req.method === 'DELETE') {
-    for (const n of [...Object.keys(TYPES).map(x => `visage.${x}`), 'cadrage.json']) try { fs.unlinkSync(path.join(dossier, n)); } catch (_) {}
+    for (const n of [...Object.keys(TYPES).map(x => `visage.${x}`), 'cadrage.json', 'gabarit.json']) try { fs.unlinkSync(path.join(dossier, n)); } catch (_) {}
     json(200, { ok: true });
     return true;
   }
@@ -83,7 +101,7 @@ function routeAvatar(req, res, p, { dossier, jetonValide }) {
         fs.writeFileSync(tmp, b, { mode: 0o600 });
         fs.renameSync(tmp, f);
         for (const autre of Object.keys(TYPES)) if (autre !== ext) try { fs.unlinkSync(path.join(dossier, `visage.${autre}`)); } catch (_) {}
-        try { fs.unlinkSync(path.join(dossier, 'cadrage.json')); } catch (_) {}      // une nouvelle photo : le cadrage de base
+        for (const n of ['cadrage.json', 'gabarit.json']) try { fs.unlinkSync(path.join(dossier, n)); } catch (_) {}   // une nouvelle photo : de zéro
         json(200, { ok: true, maj: Math.round(fs.statSync(f).mtimeMs) });
       } catch (e) { json(500, { erreur: `enregistrement impossible (${e.code || e.message})` }); }
     });
