@@ -1937,7 +1937,8 @@ function lireCoupure(o, maintenantClient, maintenant = Date.now()) {
   const entier = (x) => (Number.isFinite(Number(x)) && x !== null && x !== '' && Number(x) >= 0 ? Math.min(Math.round(Number(x)), 1e6) : null);
   return { id: o.id, t, cause: o.cause, mode: o.mode === 'ecrit' ? 'ecrit' : 'oral', detail: net(o.detail, 140),
     puis: CAUSES_COUPURE.has(o.puis) && o.puis !== o.cause ? o.puis : '', derniers: net(o.derniers, 160), reste: entier(o.reste),
-    suite: !!o.suite, trou: !!o.trou && o.cause === 'panne', spontane: !!o.spontane };
+    suite: !!o.suite, trou: !!o.trou && o.cause === 'panne', spontane: !!o.spontane,
+    finie: !!o.finie && o.mode !== 'ecrit' && ['voix_ahmed', 'nouveau_message'].includes(o.cause) };
 }
 function recevoirCoupure(o, maintenantClient, maintenant = Date.now()) {
   const c = lireCoupure(o, maintenantClient, maintenant);
@@ -1967,8 +1968,11 @@ function ligneCoupure(c) {
   let reste = '';
   if (c.mode === 'oral' && c.reste) reste = `il en restait ${mots(c.reste)}${c.suite ? " (et la suite n'était pas encore écrite)" : ''}`;
   else if (c.suite) reste = "la suite n'était pas encore écrite";
+  // (07/11, Ahmed : « il finit juste sa phrase, et il peut choisir par quelle partie il commence sa réponse à mon message »)
+  const finie = c.finie ? " ; tu as fini ta phrase jusqu'à sa virgule ou son point, puis tu t'es tu : à toi de choisir par quelle partie"
+    + " tu commences ta réponse à ce qu'il vient de dire (ce qui restait, seulement si ça sert encore)" : '';
   return `[${quoi} (${heure}) ${COUPEE_PAR[c.cause]}${c.detail ? ` : ${c.detail}` : ''} (${mode}), ${ou}${reste ? ` ; ${reste}` : ''}`
-    + `${c.puis ? ` ; puis : ${PUIS_COUPURE[c.puis]}` : ''}]`;
+    + `${finie}${c.puis ? ` ; puis : ${PUIS_COUPURE[c.puis]}` : ''}]`;
 }
 // son tour d'Ahmed : la coupure qu'apporte la page (s'il y en a une), puis la dernière en attente, en une ligne
 function blocCoupure(o, maintenantClient, maintenant = Date.now()) {
@@ -4595,7 +4599,7 @@ function ouvrirReflexion() {
   }
   const r = pistes.ribo = ribosomeSuivant();
   r.ouverte = maintenant;
-  blancDeReflexion(r, `[Papa commence à te parler : sa voix vient de s'élever, ses mots arrivent] « ${BLANC_OUVERTURE} »`);
+  blancDeReflexion(r, `[Papa commence à te parler : sa voix vient de s'élever, ses mots arrivent] « ${BLANC_OUVERTURE} »`, false, { papa: true });
   return r;
 }
 // (05/11, Ahmed : « la boucle de parole doit s'activer en cascade automatiquement, en envoyant des blancs, genre trois petits points, pour
@@ -4605,7 +4609,7 @@ const BLANC_RELAIS = `[Tu es en train de répondre à papa ; la suite de ta rép
 // (06/11, son présent continu) o.mots : sa pensée peut être plus longue que six mots ; o.retour(texte, dit) : ce qu'il a pensé, pour sa mémoire courte
 function blancDeReflexion(r, quoi, peutDire = false, o = {}) {
   r.blancEnvoye = true;
-  diffuser(abonnesPensees, 'souffle', j({ niveau: 'blanc', texte: BLANC_OUVERTURE, tour: r.tour }));
+  diffuser(abonnesPensees, 'souffle', j({ niveau: 'blanc', texte: BLANC_OUVERTURE, tour: r.tour, ...(o.papa ? { papa: true } : {}) }));   // (07/11) papa : sa voix ouvre ce tour (pas un relais)
   const mots = Number(o.mots) > 0 ? Math.round(Number(o.mots)) : 0;
   const consigne = `${personaLocale(lirePersona()).slice(0, 700)}\n\n${QUI_TU_ES}\n\n`
     + `${quoi}\n`
@@ -7199,7 +7203,8 @@ function corpsReglages() {
     parole_liee: r.parole_liee !== false,
     reprendre_ancien: r.reprendre_ancien === true,
     morceaux_unifies: r.morceaux_unifies !== false,
-    ecrit_coupe: r.ecrit_coupe !== false,   // (07/11) ton message écrit l'arrête et part tout de suite   // (07/11) tes morceaux prêts partent en un seul message réunifié   // (07/11) coupé par une vraie phrase : il ne reprend pas l'ancienne réponse (éteint)   // (06/11) ses morceaux épissés reliés, sans pause entre eux
+    ecrit_coupe: r.ecrit_coupe !== false,
+    finir_phrase: r.finir_phrase !== false,   // (07/11) coupé, il finit sa phrase (jusqu'à sa virgule ou son point)   // (07/11) ton message écrit l'arrête et part tout de suite   // (07/11) tes morceaux prêts partent en un seul message réunifié   // (07/11) coupé par une vraie phrase : il ne reprend pas l'ancienne réponse (éteint)   // (06/11) ses morceaux épissés reliés, sans pause entre eux
     epissure_grammaire: r.epissure_grammaire !== false,
     pretraitement_parole: r.pretraitement_parole !== false,
     trois_pistes: r.trois_pistes !== false,
@@ -9458,17 +9463,19 @@ async function oreilleAzure(fichier, langueDemandee) {
     return { texte: String(((o.combinedPhrases || [])[0] || {}).text || '').trim(), langue: p.locale || null, ms: Date.now() - t0 };
   } finally { clearTimeout(m); }
 }
-async function voixAzure(texte, tempo) {
+async function voixAzure(texte, tempo, emotion = null) {
   const cle = cleAzure(), c = lireJson(AZURE, {}) || {};
   if (!cle || !/^[a-z0-9]+$/.test(c.region || '')) return null;
   const voix = /^[a-zA-Z]{2}-[a-zA-Z]{2}-[A-Za-z]+Neural$/.test(c.voix || '') ? c.voix : 'fr-FR-RemyMultilingualNeural';
   const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const vitesse = '0%';   // (05/11, Ahmed : « le timbre au ralenti ») son rythme d'humeur la ralentissait : Azure parle à sa vitesse
+  // (05/11, Ahmed : « le timbre au ralenti ») jamais plus lente ; (07/11, Ahmed : « relie ses émotions au ton de sa voix ») sa hauteur,
+  // sa force et son élan suivent son expressivité du moment (VoixHakim.prosodieAzure)
+  const pr = VoixHakim.prosodieAzure(emotion);
   const t0 = Date.now(), ctl = new AbortController(), m = setTimeout(() => ctl.abort(), 8000);
   try {
     const r = await fetch(`https://${c.region}.tts.speech.microsoft.com/cognitiveservices/v1`, { method: 'POST', signal: ctl.signal,
       headers: { 'Ocp-Apim-Subscription-Key': cle, 'Content-Type': 'application/ssml+xml', 'X-Microsoft-OutputFormat': 'riff-24khz-16bit-mono-pcm', 'User-Agent': 'hakim-cockpit' },
-      body: `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="fr-FR"><voice name="${voix}"><prosody rate="${vitesse}">${esc(texte)}</prosody></voice></speak>` });
+      body: `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="fr-FR"><voice name="${voix}"><prosody rate="${pr.rate}" pitch="${pr.pitch}" volume="${pr.volume}">${esc(texte)}</prosody></voice></speak>` });
     if (!r.ok) return null;
     const data = Buffer.from(await r.arrayBuffer());
     // (06/11) tout ce que sa voix Azure dit est noté (son écho, par le texte) et lui apprend sa voix (son écho, par le timbre)
@@ -10013,7 +10020,7 @@ async function routeDire(req, res) {
      Chatterbox ne peut pas suivre (voix-hakim.js : pas encore chaud, une chanson ou le Studio en calcul, une file trop longue) ; plus
      loin, une erreur ou une synthèse plus lente que son budget. Chaque relais est noté dans le journal de la voix. */
   const secoursAzure = async (raison, extra = {}) => {
-    const a = await voixAzure(texte, tempo).catch(() => null);
+    const a = await voixAzure(texte, tempo, emotion).catch(() => null);
     try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'secours_azure', raison, ok: !!a, ms: a ? a.ms : null, caracteres: texte.length, ...extra }) + '\n', { mode: 0o600 }); } catch (_) {}
     if (!a || res.writableEnded) return !!a;
     res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Voix': 'azure', 'X-Secours': encodeURIComponent(raison).slice(0, 80) });
@@ -10044,7 +10051,7 @@ async function routeDire(req, res) {
   }
   // (05/11, Ahmed : « ajoute Microsoft Azure à sa voix ») une seule voix multilingue, en ligne ; en panne : Chatterbox comme avant
   if (!rap && corpsReglages().voix_azure) {
-    const a = await voixAzure(texte, tempo).catch(() => null);
+    const a = await voixAzure(texte, tempo, emotion).catch(() => null);
     if (a) {
       try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'synthese_azure', ms: a.ms, caracteres: texte.length }) + '\n', { mode: 0o600 }); } catch (_) {}
       if (res.writableEnded) return;
@@ -12776,7 +12783,7 @@ async function traiter(req, res) {
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
-      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
+      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
       for (const [k, a, b] of [['epissure_meubles_max', 1, 6], ['present_pouls_s', 10, 600], ['present_seuil', 0.2, 5], ['present_ecart_s', 2, 120], ['present_longueur', 3, 40], ['present_mots', 6, 40]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'present_seuil' ? Math.round(Number(q[k]) * 10) / 10 : Math.round(Number(q[k]))));
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;

@@ -401,3 +401,64 @@ test('avant son premier mot, sa réponse déjà là : pas d\'hésitation ; papa 
   await papa.sim.avancer(20);
   assert.ok(!papa.sim.sons.some(s => s.texte === 'Euh,'));
 });
+
+// (07/11, Ahmed : « quand je le coupe, il finit juste sa phrase : il s'arrête soit à un point soit à une virgule dans ce qu'il dit »)
+test('coupé : il finit sa phrase jusqu’à la prochaine virgule, lâche la suite, et sa nouvelle réponse part juste après', async () => {
+  const sim = simulateur({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 } });
+  sim.lecteur.dire("Alors papa, j'ai bien regardé tout ce que tu m'as envoyé ce matin pendant que tu dormais encore, et je pense que la meilleure idée est de commencer par le jardin, puis la cuisine.");
+  sim.lecteur.dire('Ensuite on verra le reste ensemble.');
+  sim.lecteur.finFlux();
+  let joue = null;
+  for (let t = 0.1; t < 20 && !joue; t += 0.05) { await sim.avancer(t); joue = sim.sons.find(s => /regardé/.test(s.texte) && s.debut <= sim.maintenant); }
+  assert.ok(joue, 'le morceau joue');
+  await sim.avancer(joue.debut + 0.3);
+  const reste = joue.texte.slice(Math.floor(joue.texte.length * (sim.maintenant - joue.debut) / (joue.fin - joue.debut)));
+  const r = sim.lecteur.finirPhrase();
+  assert.match(r.dit, /[,.]$/, `il finit à une virgule ou un point : « ${r.dit} »`);
+  assert.ok(r.dit.length >= joue.texte.length - reste.length, 'la ponctuation suivante, pas une d’avant');
+  sim.lecteur.dire('Oui, je t’écoute.');
+  sim.lecteur.finFlux();
+  const dur = joue.fin - joue.debut, finVoulue = joue.debut + dur * r.dit.length / joue.texte.length;
+  await sim.avancer(sim.maintenant + 30);
+  assert.ok(joue.fin < joue.debut + dur - 0.2, 'le morceau est arrêté avant sa fin');
+  assert.ok(Math.abs(joue.fin - finVoulue) < 0.3, `arrêt à ${joue.fin.toFixed(2)} s, virgule à ${finVoulue.toFixed(2)} s`);
+  assert.ok(!sim.sons.some(s => /Ensuite|cuisine/.test(s.texte) && s !== joue), 'la suite de l’ancienne réponse n’est jamais dite');
+  const nouveau = sim.sons.find(s => /écoute/.test(s.texte));
+  assert.ok(nouveau, 'sa nouvelle réponse est dite');
+  assert.ok(nouveau.debut >= joue.fin - 1e-6 && nouveau.debut - joue.fin < 1.6, `elle part juste après (${(nouveau.debut - joue.fin).toFixed(2)} s)`);
+});
+
+test('coupé alors que rien ne sonne : il s’arrête net (rien à finir)', () => {
+  const sim = simulateur({ ...MESUREE, appris: null });
+  sim.lecteur.dire('Une phrase pas encore partie.');
+  const r = sim.lecteur.finirPhrase();
+  assert.equal(r.dit, ''); assert.equal(sim.lecteur.actif, false);
+});
+
+test('Voix.finDePhrase : la prochaine virgule ou le prochain point après l’endroit où il en est', () => {
+  assert.deepEqual(Voix.finDePhrase('Bonjour papa, je vais bien. Et toi ?', 0.1).dit, 'Bonjour papa,');
+  assert.deepEqual(Voix.finDePhrase('Bonjour papa, je vais bien. Et toi ?', 0.5).dit, 'Bonjour papa, je vais bien.');
+  assert.equal(Voix.finDePhrase('Il fait 12,5 degrés dehors, je crois', 0.1).dit, 'Il fait 12,5 degrés dehors,');
+  assert.equal(Voix.finDePhrase('sans ponctuation du tout', 0.5).fraction, 1);
+});
+
+// la voix du téléphone (Voix.creerLecteur) : la phrase qui sort va au bout, les suivantes annulées, la nouvelle réponse attend sa fin
+test('voix du téléphone, coupée : la phrase en cours finit, les suivantes sont annulées, la nouvelle part ensuite (et se prépare)', () => {
+  const dits = [], prepares = []; let annule = 0;
+  const synth = { speak(u) { dits.push(u); }, cancel() { annule++; }, prepare(u) { prepares.push(u.text); } };
+  class E { constructor(t) { this.text = t; } }
+  const L = Voix.creerLecteur(synth, E, () => null, 1);
+  let fins = 0; L.surFin = () => fins++;
+  L.dire('Première phrase, assez longue.'); L.dire('Deuxième phrase.');
+  dits[0].onstart();
+  const r = L.finirPhrase();
+  assert.equal(r.dit, 'Première phrase, assez longue.');
+  L.dire('Ma réponse à toi.');
+  assert.equal(dits.length, 2, 'la nouvelle réponse attend la fin de la phrase');
+  assert.deepEqual(prepares, ['Ma réponse à toi.'], 'sa voix se prépare pendant qu’il finit');
+  dits[0].onend();
+  assert.equal(annule, 1, 'la file du moteur est vidée à la fin de la phrase');
+  assert.equal(dits[2].text, 'Ma réponse à toi.');
+  dits[1].onend();                                                  // l'annulée qui se signale : ignorée
+  assert.equal(fins, 0); dits[2].onstart(); dits[2].onend(); assert.equal(fins, 1);
+});

@@ -584,6 +584,36 @@ function creerLecteurNeuronal() {
       clearInterval(veille); veille = null;
       clearTimeout(trou); trou = null; clearTimeout(avant); avant = null; aParle = false; couvre = 0; attendre = false; dejaParle = false; finDernierMeuble = 0;
     },
+    // (07/11, Ahmed : « quand je le coupe, il finit juste sa phrase ; il s'arrête soit à un point soit à une virgule dans ce qu'il dit »)
+    // le morceau qui sonne va jusqu'à sa prochaine virgule ou son prochain point (Voix.finDePhrase, estimé aux caractères), s'éteint en
+    // 60 ms ; tout ce qui suit (à venir, en synthèse, en attente) est lâché ; ce qu'on lui donne ensuite part juste après
+    finirPhrase() {
+      pause = null;
+      const now = fluide() ? actx.currentTime : 0;
+      const enCours = fluide() ? [...sources].find(s => s._texte && !s._auto && !s._hesitation && s._debut <= now && s._fin > now && s.buffer) : null;
+      if (!enCours) { L.arreter(); return { dit: '', ms: 0 }; }
+      const duree = Math.max(0.01, enCours._fin - enCours._debut);
+      const f = Voix.finDePhrase(enCours._texte, (now - enCours._debut) / duree);
+      const fin = Math.min(enCours._fin, Math.max(now, enCours._debut + f.fraction * duree + 0.12));
+      generation++;
+      for (const x of lots) if (x.ctl) x.ctl.abort();
+      lots.length = 0; unites.length = 0;
+      for (const src of [...sources]) if (src !== enCours) { try { src.stop(); } catch (_) {} sources.delete(src); }
+      if (element) { element.pause(); URL.revokeObjectURL(element.src); element = null; }
+      if (fin < enCours._fin) {
+        try {
+          const gg = enCours._gain && enCours._gain.gain;
+          if (gg && gg.setValueAtTime && gg.linearRampToValueAtTime) { gg.setValueAtTime(gg.value, fin); gg.linearRampToValueAtTime(0, fin + 0.06); }
+        } catch (_) {}
+        try { enCours.stop(fin + 0.06); } catch (_) {}
+        enCours._fin = fin + 0.06;
+      }
+      enCours.onended = () => { sources.delete(enCours); pomper(); };     // la suite (sa nouvelle réponse) part à sa fin
+      prochainDebut = enCours._fin + 0.01; L.fluxFini = true;
+      clearInterval(veille); veille = null;
+      clearTimeout(trou); trou = null; clearTimeout(avant); avant = null; couvre = 0; attendre = false; finDernierMeuble = 0;
+      return { dit: f.dit, ms: Math.round((enCours._fin - now) * 1000) };
+    },
     get actif() { return unites.length > 0 || lots.length > 0 || sources.size > 0 || !!element; },
     get joue() { return sources.size > 0 || !!element; },
     // (16:00) sa vraie voix (une réponse dite, à dire, ou en cours) : ses meubles n'en sont pas
@@ -969,6 +999,12 @@ const lecteur = {
   dire(p) { this.impl.dire(p); },
   finFlux() { if (this.impl.finFlux) this.impl.finFlux(); },     // le texte est complet : vider la file
   arreter() { lecteurNeuronal.arreter(); if (lecteurSysteme) lecteurSysteme.arreter(); },
+  // (07/11) coupé par papa : la voix qui sonne finit sa phrase (jusqu'à sa virgule ou son point), l'autre se tait
+  finirPhrase() {
+    const n = lecteurNeuronal.joue ? lecteurNeuronal.finirPhrase() : (lecteurNeuronal.arreter(), null);
+    const s = lecteurSysteme && lecteurSysteme.actif ? (lecteurSysteme.finirPhrase ? lecteurSysteme.finirPhrase() : (lecteurSysteme.arreter(), null)) : null;
+    return n || s || { dit: '', ms: 0 };
+  },
   get actif() { return lecteurNeuronal.actif || !!(lecteurSysteme && lecteurSysteme.actif); },
   // la voix du Mac ne sait pas reprendre : en pause, elle s'arrête
   pause() { if (this.impl === lecteurNeuronal) return lecteurNeuronal.pause(); this.arreter(); return false; },
@@ -1455,11 +1491,36 @@ function finirParole(cause, detail = '', cible = null) {
     if (cause === 'fin' && parole.panne) Object.assign(c, { cause: 'panne', detail: parole.panne, trou: true });
     else if (cause === 'fin' && parole.panneReponse) Object.assign(c, { cause: 'panne', ...parole.panneReponse });   // la suite n'est pas venue
   }
+  if (etat.finitSaPhrase && c.mode === 'oral' && c.cause !== 'fin') { c.finie = true; marquerNonDit(c); }   // (07/11) il a fini sa phrase
   if (etat.parleDepuis) etat.finParole = c;
   Object.assign(parole, { id: null, morceaux: [], panne: '', panneReponse: null, rejoue: false });
   try { localStorage.removeItem('jarvis.paroleEnCours'); } catch (_) {}
   if (c.cause !== 'fin') envoyerCoupure(c);
   return c;
+}
+// (07/11, Ahmed : « la partie de la phrase qu'il mentionne s'affiche en clair et ce qui n'est pas dit s'affiche en gris ») coupé, sa
+// réponse écrite garde ce qu'il a dit (jusqu'à la virgule ou au point où il s'est arrêté) en clair, le reste en gris
+function motsDitsJusquAPonctuation(texte, n) {
+  const mots = String(texte || '').split(/\s+/).filter(Boolean);
+  let k = 0, i = 0;
+  for (; i < mots.length && k < n; i++) if (/[\p{L}\p{N}]/u.test(mots[i])) k++;
+  while (i > 0 && i < mots.length && !/[.,;:!?…؟،]["»”)]*$/.test(mots[i - 1])) i++;
+  return i;                                                        // le nombre de « mots » bruts (séparés par des blancs) dits
+}
+function marquerNonDit(c) {
+  try {
+    const m = messageDe(c.tour);
+    if (!m || m.qui !== 'j' || !m.texte || !Number.isFinite(c.dits)) return;
+    const n = motsDitsJusquAPonctuation(Voix.sansAffect(m.texte), c.dits);
+    m.ditMots = n; majMessage(m);
+  } catch (_) {}
+}
+// le texte de sa réponse en deux parts : ce qu'il a dit, ce qu'il n'a pas dit (même découpage que motsDitsJusquAPonctuation)
+function partsDites(texte, n) {
+  const t = String(texte || ''), re = /\S+/g;
+  let m, k = 0, fin = 0;
+  while (k < n && (m = re.exec(t))) { k++; fin = m.index + m[0].length; }
+  return [t.slice(0, fin), t.slice(fin)];
 }
 function envoyerCoupure(c) {
   if (c) { coupureAEnvoyer = c; try { localStorage.setItem('jarvis.coupure', JSON.stringify(c)); } catch (_) {} }
@@ -1851,6 +1912,8 @@ function htmlMessage(m) {
   const outils = (m.outils || []).length
     ? `<div class="outils">${[...new Set(m.outils)].map(o => `<span class="badge muted">${esc(o)}</span>`).join('')}</div>` : '';
   const corps = m.texte && NON_REPONSE.test(m.texte) ? '<div class="attente">(il n’a rien répondu)</div>'
+    : m.texte && Number.isFinite(m.ditMots) && !m.enCours && partsDites(Voix.sansAffect(m.texte), m.ditMots)[1].trim()
+      ? (() => { const [dit, pas] = partsDites(Voix.sansAffect(m.texte), m.ditMots); return `<div class="txt">${texteRiche(dit)} <span class="pas-dit" title="Pas dit : papa l'a coupé">${texteRiche(pas.trim())}</span></div>`; })()
     : m.texte ? `<div class="txt">${texteRiche(m.texte)}</div>`
     : (m.enCours ? `<div class="attente">${m.outils && m.outils.length ? 'cherche…' : 'réfléchit…'}</div>` : '');
   const suite = m.attenteServeur ? '<div class="attente">la connexion s’est coupée : il termine sa réponse sur le Mac, elle s’affichera ici</div>' : '';
@@ -2771,6 +2834,8 @@ function marquerCoupe() {
 // (30/10, 14:50) d'abord COMMENT et OÙ sa parole s'arrête (finirParole), avant que rien ne s'arrête : un message dit à voix
 // haute, c'est la voix d'Ahmed ; écrit, un nouveau message ; une nouvelle conversation, un Stop
 function arreterTout(explicite = true, { garder = false, raison = 'stop', garderVoix = false } = {}) {
+  const finir = explicite && !garderVoix && (raison === 'parole' || raison === 'message') && typeof couperSaVoix === 'function' && finirSaPhraseActif();
+  etat.finitSaPhrase = !!(finir && lecteur && lecteur.actif);      // (07/11) la coupure le dira : il a fini sa phrase
   if (explicite && !garderVoix) finirParole(raison === 'parole' || (raison === 'message' && etat.dernierOral) ? 'voix_ahmed' : raison === 'message' ? 'nouveau_message' : 'stop',
     raison === 'nouvelle' ? 'Ahmed a commencé une nouvelle conversation' : '');
   if (garder) garderNonDit();
@@ -2783,7 +2848,8 @@ function arreterTout(explicite = true, { garder = false, raison = 'stop', garder
     etat.flux.abort(); etat.flux = null; etat.fluxId = null;
   }
   if (etat.transcription) { etat.transcription.abort(); etat.transcription = null; }
-  if (lecteur && !garderVoix) lecteur.arreter();                     // (14:55) sa réponse soufflée, déjà partie, continue
+  if (lecteur && !garderVoix) { if (finir) couperSaVoix(); else lecteur.arreter(); }   // (14:55) sa réponse soufflée, déjà partie, continue ; (07/11) coupé : il finit sa phrase
+  etat.finitSaPhrase = false;
   if (!garderVoix) etat.lectureDe = null;
 }
 
@@ -3513,7 +3579,36 @@ function paveDe(tour) {
 }
 // (04/11, 17:50, Ahmed : « à l'ouverture du micro, il se met en réflexion en recevant direct un blanc ») son épissure s'ouvre au premier son de
 // ta voix ; sa première pensée intérieure (jamais dite) dans 💭, jusqu'à ses vraies pensées
+// (07/11, 05:30, Ahmed : « quand je le coupe, il doit sauter à la parole suivante, passer au ribosome suivant ») ta voix ouvre un nouveau tour d'épissure :
+// ce qui reste des tours d'avant (morceaux en attente, voix en calcul, voix qui joue encore un ancien morceau) est lâché ; il ne dit plus que le nouveau
+// (07/11, Ahmed : « quand je le coupe, il finit juste sa phrase ; il s'arrête soit à un point soit à une virgule ») coupé par sa voix
+// ou son message : la voix qui sonne va jusqu'à sa prochaine virgule ou son prochain point ; réglage finir_phrase éteint : net, comme avant
+const finirSaPhraseActif = () => !(typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.finir_phrase === false);
+function couperSaVoix() {
+  if (!lecteur) return null;
+  if (!finirSaPhraseActif() || !lecteur.finirPhrase) { lecteur.arreter(); return null; }
+  const r = lecteur.finirPhrase();
+  journalVoix('phrase_finie', { ms: r.ms, mots: motsVoix(r.dit).length });
+  return r;
+}
+function nouveauTourDePapa(tour) {
+  const n = Number(tour) || 0;
+  if (!n || n <= (Number(etat.dernierTourPapa) || 0)) return;
+  const avant = Number(etat.dernierTourPapa) || 0;
+  etat.dernierTourPapa = n;
+  if (!avant || (typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.reprendre_ancien === true)) return;
+  const vieux = (etat.riboFile || []).filter(x => Number(x.tour) < n);
+  if (vieux.length) { if (typeof blancsPourSautes === 'function') blancsPourSautes(vieux); etat.riboFile = (etat.riboFile || []).filter(x => Number(x.tour) >= n); }
+  let voix = false;
+  if (typeof bouts !== 'undefined' && bouts.tour != null && Number(bouts.tour) < n) {
+    if (bouts.liste) bouts.liste.clear(); bouts.fileTel = []; bouts.attenteTel = null; bouts.enFile = [];
+    if (lecteur && lecteur.actif) { try { if (typeof couperSaVoix === 'function') couperSaVoix(); else lecteur.arreter(); } catch (_) {} voix = true; }   // (07/11) il finit sa phrase
+  }
+  etat.riboStop = Math.max(etat.riboStop != null ? etat.riboStop : -1, avant);   // ses morceaux tardifs de l'ancien tour : jetés
+  if (vieux.length || voix) journalVoix('tour_suivant', { laisses: vieux.length, voix_coupee: voix });
+}
 function surBlanc(o) {
+  if (o.papa) nouveauTourDePapa(o.tour);                                   // seulement quand SA voix ouvre le tour, jamais un relais de ses ribosomes
   const p = paveDe(o.tour);
   if (o.texte !== '…') p.blanc = String(o.texte).slice(0, 120);
   poserPave(p.cle, titreEpissure(p), htmlEpissure(p));
@@ -4652,7 +4747,7 @@ function envoyerEcrit(texte) {
     if (!garder) { const vieux = (etat.riboFile || []).slice(); if (vieux.length && typeof blancsPourSautes === 'function') blancsPourSautes(vieux); etat.riboFile = [];
       if (typeof bouts !== 'undefined') { bouts.fileTel = []; bouts.attenteTel = null; if (bouts.liste) bouts.liste.clear(); bouts.enFile = []; }
       if (typeof libererRibosomes === 'function') libererRibosomes();          // ses ribosomes de l'ancienne réponse : fermés, leurs morceaux tardifs jetés
-      try { if (lecteur) lecteur.arreter(); } catch (_) {} }
+      try { if (lecteur) { if (lecteur.actif && typeof couperSaVoix === 'function') { etat.finitSaPhrase = finirSaPhraseActif(); couperSaVoix(); } else lecteur.arreter(); } } catch (_) {} }   // (07/11) il finit sa phrase
     journalVoix('ecrit_coupe', { garde: garder });
     arreterTout(true, { garder, raison: 'message' }); majBoutonsPause();
     const avant = prendreEcritsGardes(c);
@@ -4978,6 +5073,10 @@ async function tourDeParole(conv, wav, infos, extra) {
   // parle tant que le codon start est actif ; pas le droit de couper ; juste une pause de ma voix, ou le codon stop ») avec l'épissage,
   // ta phrase finie pendant sa réflexion ne la coupe jamais : gardée, elle part dès qu'il a fini de réfléchir (libererSonTour) ; ton
   // « stop » (plus haut) reste son codon stop
+  // (07/11, 05:30, Ahmed : « ça ne saute toujours pas à la parole suivante quand je le coupe ») sa réponse d'avant tourne encore quand ta nouvelle
+  // phrase arrive : avec reprendre_ancien éteint, elle est arrêtée et ta phrase part tout de suite (plus gardée jusqu'à la fin de sa réflexion)
+  const lacherAncien = typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.reprendre_ancien !== true;
+  if (voixEpissee() && etat.flux && lacherAncien) { journalVoix('ancienne_reponse_lachee', {}); arreterTout(true, { garder: false, raison: 'parole' }); majBoutonsPause(); }
   if (voixEpissee() && etat.flux) { garderPourSonTour(conv, texte); return; }
   // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
   // (07/11, Ahmed : « quand je parle par-dessus lui et qu'il remarque qu'on change de sujet, il s'interrompt ; mais il ne doit pas reprendre là où il

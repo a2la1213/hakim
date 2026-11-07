@@ -492,17 +492,29 @@
   /* ---- lecteur (navigateur) : file d'énoncés, une voix par langue ---- */
   function creerLecteur(synth, Enonce, voixPour, vitesse) {
     const enCours = new Set();      // garder les références : sinon Chrome peut perdre onend
+    // (07/11, Ahmed : « quand je le coupe, il finit juste sa phrase ») finirPhrase : la phrase qui sort va au bout, celles déjà confiées
+    // au moteur sont annulées à sa fin ; ce qu'on lui donne entre-temps (sa nouvelle réponse) attend cette fin, puis part
+    let courant = null, finissant = null, retenues = [];
     const lecteur = {
       surFin: null,
       dire(phrase) {
+        if (finissant) { retenues.push(phrase); try { lecteur.preparer(phrase); } catch (_) {} return; }   // sa voix se prépare pendant qu'il finit
         for (const seg of prononcable(phrase)) {
           const u = new Enonce(seg.texte);
           const v = voixPour(seg.langue);
           if (v) { u.voice = v; u.lang = v.lang; } else u.lang = seg.langue === 'ar' ? 'ar-SA' : 'fr-FR';
           u.rate = (typeof vitesse === 'function' ? vitesse() : vitesse) || 1;
-          const fini = () => { enCours.delete(u); if (!enCours.size && lecteur.surFin) lecteur.surFin(); };
+          const fini = () => {
+            if (u._annulee) return;
+            enCours.delete(u); if (courant === u) courant = null;
+            if (finissant === u) {
+              finissant = null; for (const x of enCours) x._annulee = true; enCours.clear(); synth.cancel();
+              const r = retenues.splice(0); if (r.length) { r.forEach(x => lecteur.dire(x)); return; }
+            }
+            if (!enCours.size && lecteur.surFin) lecteur.surFin();
+          };
           u.onend = fini; u.onerror = fini;
-          u.onstart = () => { if (lecteur.surSegment) lecteur.surSegment(seg.texte); };
+          u.onstart = () => { if (u._annulee) { synth.cancel(); return; } courant = u; if (lecteur.surSegment) lecteur.surSegment(seg.texte); };
           u.onboundary = () => { if (lecteur.surMot) lecteur.surMot(); };      // la voix du Mac : une impulsion par mot
           enCours.add(u);
           synth.speak(u);
@@ -520,8 +532,16 @@
           synth.prepare(u);
         }
       },
-      arreter() { enCours.clear(); synth.cancel(); },
-      get actif() { return enCours.size > 0; },
+      arreter() { for (const x of enCours) x._annulee = true; enCours.clear(); courant = null; finissant = null; retenues = []; synth.cancel(); },
+      finirPhrase() {
+        if (finissant) return { dit: finissant.text || '', ms: -1 };
+        if (!courant || !enCours.has(courant)) { lecteur.arreter(); return { dit: '', ms: 0 }; }
+        finissant = courant;
+        for (const x of [...enCours]) if (x !== courant) { x._annulee = true; enCours.delete(x); }
+        return { dit: String(courant.text || ''), ms: -1 };
+      },
+      get finit() { return !!finissant; },
+      get actif() { return enCours.size > 0 || retenues.length > 0; },
     };
     return lecteur;
   }
@@ -546,9 +566,25 @@
     return reste.length === phrases.length ? brut : reste.join(' ').replace(/\s+/g, ' ').trim();
   }
 
+  // (07/11, Ahmed : « quand je le coupe, il finit juste sa phrase : il s'arrête soit à un point soit à une virgule dans ce qu'il
+  // dit ») où s'arrêter dans un morceau de sa voix déjà parti : le premier point, virgule (ou ; : ! ? …) après l'endroit où il en est
+  // (fraction 0..1 de sa durée, estimée aux caractères), sinon la fin du morceau. Rend la fraction où s'arrêter et le texte dit jusque-là.
+  function finDePhrase(texte, fraction) {
+    const t = String(texte || '');
+    if (!t) return { fraction: 1, dit: '' };
+    const f = Math.max(0, Math.min(1, Number(fraction) || 0));
+    const depuis = Math.floor(f * t.length);
+    const re = /[.,;:!?…؟،]+(?=\s|$)/g; re.lastIndex = depuis;
+    let m = re.exec(t);
+    while (m && /\d[.,]$/.test(t.slice(0, m.index + 1)) && /^\d/.test(t.slice(m.index + m[0].length))) m = re.exec(t);   // « 12,5 » : pas une virgule
+    if (!m) return { fraction: 1, dit: t.trim() };
+    const fin = m.index + m[0].length;
+    return { fraction: fin >= t.trimEnd().length ? 1 : fin / t.length, dit: t.slice(0, fin).trim() };
+  }
+
   const Voix = { versArabe, segmenter, pourLaVoix, decoupeur, choisirVoix, creerLecteur, FORMULE, VOIX_SEULE, AFFECT, sansAffect, latexParle,
     definirPrononciations,
-    diction, prononcable, enLettres, DEBUTS, HESITATIONS, debutDe, expressivitePhrase, sansDejaLivre };
+    diction, prononcable, enLettres, DEBUTS, HESITATIONS, debutDe, expressivitePhrase, sansDejaLivre, finDePhrase };
   racine.Voix = Voix;
   if (typeof module !== 'undefined' && module.exports) module.exports = Voix;
 })(typeof window !== 'undefined' ? window : globalThis);

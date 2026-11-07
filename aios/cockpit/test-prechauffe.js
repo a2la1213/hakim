@@ -108,7 +108,7 @@ test('la parole vide : au premier son de ta voix, son épissure s’ouvre tout d
   const { ctx, diffuses, demandes, memos, avancer } = ouverture();
   const r = ctx.ouvrir();
   assert.ok(r && ctx.pistes.ribo === r, 'son épissure (le codon start) : ouverte');
-  assert.deepStrictEqual(diffuses[0], ['souffle', { niveau: 'blanc', texte: '…', tour: r.tour }], 'la page l’ouvre aussitôt, avant toute pensée');
+  assert.deepStrictEqual(diffuses[0], ['souffle', { niveau: 'blanc', texte: '…', tour: r.tour, papa: true }], 'la page l’ouvre aussitôt, avant toute pensée');
   assert.strictEqual(demandes.length, 1);
   assert.strictEqual(demandes[0].etiquette, 'piste_blanc', 'une voix vivante, chaude, de ses pensées');
   assert.strictEqual(demandes[0].modele, 'haiku');

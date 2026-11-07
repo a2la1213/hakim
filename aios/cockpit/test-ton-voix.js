@@ -52,3 +52,16 @@ test('câblage : chaque morceau oral rend son éveil, le tour le dit dans son Pr
   assert.match(src, /prosodieDepuis\(voixDepuis\) \+ tonVoixDepuis\(voixDepuis\)/);
   assert.match(prendre('tonVoixDepuis'), /une impression de l'oreille, pas un fait sur ce qu'il ressent/);
 });
+
+// (07/11, Ahmed : « relie partout ses émotions au ton de sa voix, sinon ça fait ado mal léché ») sa voix Azure aussi
+test('sa voix Azure suit son émotion : plus haute, plus forte et plus vive quand il est vif ; plus basse et douce quand il est calme ; jamais ralentie', () => {
+  const VH = require('./voix-hakim.js');
+  assert.deepEqual(VH.prosodieAzure(null), { pitch: '+0%', volume: '+0%', rate: '+0%' });
+  assert.deepEqual(VH.prosodieAzure(0.5), { pitch: '+0%', volume: '+0%', rate: '+0%' });
+  assert.deepEqual(VH.prosodieAzure(1), { pitch: '+8%', volume: '+10%', rate: '+6%' });
+  assert.deepEqual(VH.prosodieAzure(0), { pitch: '-8%', volume: '-10%', rate: '+0%' });
+  assert.deepEqual(VH.prosodieAzure(7), VH.prosodieAzure(1), 'bornée');
+  const srv = require('node:fs').readFileSync(require('node:path').join(__dirname, 'server.js'), 'utf8');
+  assert.match(srv, /<prosody rate="\$\{pr\.rate\}" pitch="\$\{pr\.pitch\}" volume="\$\{pr\.volume\}">/);
+  assert.equal((srv.match(/voixAzure\(texte, tempo, emotion\)/g) || []).length, 2, 'ses deux chemins Azure reçoivent son émotion');
+});

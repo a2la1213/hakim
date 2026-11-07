@@ -1073,3 +1073,21 @@ test('ses calculs : un bouton pause/reprise et un bouton arrêt à côté de la 
   assert.match(route, /lireTaches\(\)\.find\(x => x\.id === id && x\.etat === 'en cours'\)/);
   assert.match(route, /process\.kill\(-Number\(t\.pid\), veut \? 'SIGSTOP' : 'SIGCONT'\)/);
 });
+
+// (07/11, 05:30, Ahmed : « quand je le coupe, ça doit sauter à la parole suivante, passer au ribosome suivant »)
+test('ta voix ouvre un nouveau tour : les morceaux des tours d’avant sont lâchés, sa voix d’un ancien morceau coupée ; un relais ne coupe rien', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const i = PAGE.indexOf('function nouveauTourDePapa('), f = PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2);
+  const coupes = [];
+  const ctx = { etat: { riboFile: [{ tour: 10, texte: 'vieux' }, { tour: 20, texte: 'neuf' }], dernierTourPapa: 10 }, reglagesCorps: {},
+    bouts: { tour: 10, liste: new Map([[1, {}]]), fileTel: [1], attenteTel: {} }, lecteur: { actif: true, arreter: () => coupes.push('voix') },
+    blancsPourSautes() {}, journalVoix() {}, Number, Math };
+  vm.createContext(ctx); vm.runInContext(f + 'this.f = nouveauTourDePapa;', ctx);
+  ctx.f(20);
+  assert.deepStrictEqual(ctx.etat.riboFile.map(x => x.texte), ['neuf']);
+  assert.deepStrictEqual(coupes, ['voix']);
+  assert.strictEqual(ctx.etat.riboStop, 10, 'les morceaux tardifs de l’ancien tour seront jetés');
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(SRV, /\.\.\.\(o\.papa \? \{ papa: true \} : \{\}\)/);
+  assert.match(PAGE, /if \(o\.papa\) nouveauTourDePapa\(o\.tour\);/, 'un relais (sans papa) ne coupe rien');
+});

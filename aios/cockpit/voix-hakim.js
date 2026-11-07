@@ -89,4 +89,14 @@ function studioOccupe(jarvis, maintenant = Date.now()) {
   return v;
 }
 
-module.exports = { VOIX, choixVoix, langueLatine, segmenterLangues, SEUIL_FILE_S, dureeParlee, budgetMs, attenteFile, raisonSecours, studioOccupe };
+/* (07/11, Ahmed : « relie partout ses émotions au ton de sa voix, sinon ça fait ado mal léché ») sa voix Azure suivait le texte seul : le même
+   ton plat quelle que soit son humeur. Son expressivité du moment (0 calme, triste ; 1 vif, joyeux, excité : celle que la page et Chatterbox
+   reçoivent déjà) règle la hauteur, la force et, vers le haut seulement, le débit (05/11, Ahmed : « le timbre au ralenti » : jamais plus lent). */
+function prosodieAzure(emotion) {
+  const e = Number(emotion);
+  if (emotion == null || !Number.isFinite(e)) return { pitch: '+0%', volume: '+0%', rate: '+0%' };
+  const x = Math.max(0, Math.min(1, e)) - 0.5;                     // -0,5 .. +0,5
+  const pc = (v) => `${v >= 0 ? '+' : ''}${Math.round(v)}%`;
+  return { pitch: pc(x * 16), volume: pc(x * 20), rate: pc(Math.max(0, x) * 12) };
+}
+module.exports = { prosodieAzure, VOIX, choixVoix, langueLatine, segmenterLangues, SEUIL_FILE_S, dureeParlee, budgetMs, attenteFile, raisonSecours, studioOccupe };

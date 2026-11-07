@@ -366,3 +366,31 @@ test('le présent vécu du cockpit dit chaque fin de sa parole et sa cause (et l
   assert.equal((b.match(/\[/g) || []).length, 1, 'le détail ne ferme pas le bloc');
   assert.equal((b.match(/arrêté par Ahmed \(Stop\)/g) || []).length, 2, 'une page d’avant (coupe: "stop") se lit toujours');
 });
+
+// (07/11, Ahmed : « quand je le coupe il finit juste sa phrase, et il peut choisir par quelle partie il commence sa réponse à mon message »)
+test('il a fini sa phrase : son prochain tour le sait, et choisit par où commencer ; un Stop ne le dit jamais', () => {
+  const { f } = cockpit();
+  const t = Date.now() - 30000, h = heure(t);
+  const l = (o) => f.ligneCoupure({ t, mode: 'oral', detail: '', puis: '', derniers: 'le champ se referme,', reste: 12, suite: false, trou: false, spontane: false, ...o });
+  assert.equal(l({ cause: 'voix_ahmed', finie: true }), `[Ta réponse précédente (${h}) a été coupée par la voix d'Ahmed (oral), après « le champ se referme, » ; il en restait 12 mots`
+    + " ; tu as fini ta phrase jusqu'à sa virgule ou son point, puis tu t'es tu : à toi de choisir par quelle partie tu commences ta réponse à ce qu'il vient de dire (ce qui restait, seulement si ça sert encore)]");
+  f.recevoirCoupure({ id: 'c-stop', t, cause: 'stop', mode: 'oral', finie: true }, Date.now());
+  assert.equal(f.attente().finie, false, 'un Stop arrête net : jamais « fini sa phrase »');
+  f.recevoirCoupure({ id: 'c-voix', t: t + 1, cause: 'voix_ahmed', mode: 'oral', finie: true }, Date.now());
+  assert.equal(f.attente().finie, true);
+});
+
+test('page : ce qu’il a dit en clair, le reste en gris, coupé à la virgule où il s’est arrêté ; réglage finir_phrase', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const fn = (nom) => { const i = src.indexOf(`function ${nom}(`); return src.slice(i, src.indexOf('\n}\n', i) + 3); };
+  const cx = {}; vm.createContext(cx);
+  vm.runInContext(fn('motsDitsJusquAPonctuation') + fn('partsDites') + 'this.f = { motsDitsJusquAPonctuation, partsDites };', cx);
+  const texte = "Alors papa, j'ai regardé ton message, et je pense que oui. On commence demain ?";
+  const n = cx.f.motsDitsJusquAPonctuation(texte, 4);             // 4 mots dits (« Alors papa, j'ai regardé ») : jusqu'à « message, »
+  assert.deepEqual(cx.f.partsDites(texte, n), ["Alors papa, j'ai regardé ton message,", ' et je pense que oui. On commence demain ?']);
+  assert.equal(cx.f.motsDitsJusquAPonctuation(texte, 2), 2, 'déjà sur une virgule : rien de plus');
+  assert.match(src, /\.pas-dit|class="pas-dit"/);
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'parler.html'), 'utf8'), /\.m \.txt \.pas-dit \{ opacity: \.42; \}/);
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8'), /\['finir_phrase', /);
+  assert.match(src, /reglagesCorps\.finir_phrase === false/);
+});
