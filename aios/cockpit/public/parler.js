@@ -3944,7 +3944,10 @@ function prevoirSaut(conv, mesure) {
       if (etat.conversation !== conv) return;
       if (nouveaux() < 2) {
         if (essai < 8) { setTimeout(() => decider(essai + 1), 200); return; }
-        journalVoix('pas_de_parole', { ms: Date.now() - t0 }); return;
+        // (07/11, mesuré : 24 « pas de parole » sur 30 coupures, ses mots vifs arrivent trop tard) une voix claire qui TIENT encore
+        // après ce temps est une parole, même sans ses mots
+        const tient = (conv.capteur && conv.capteur.enParole) || Date.now() - (etat.papaVoixA || 0) < 500;
+        if (!tient) { journalVoix('pas_de_parole', { ms: Date.now() - t0 }); return; }
       }
       choisirOuSauter();
     };
@@ -3959,7 +3962,7 @@ function prevoirSaut(conv, mesure) {
       .then(r => (r.ok ? r.json() : { couper: true })).catch(() => ({ couper: true }))
       .then((c) => {
         if (etat.conversation !== conv) return;
-        if (c && c.couper === false) { journalVoix('garde_la_parole', { ms: ecoute }); if (c.pourquoi) montrerPensee('🗣 il finit ce qu’il dit', c.pourquoi, true); return; }
+        if (c && c.couper === false) { conv.gardeParoleA = Date.now(); journalVoix('garde_la_parole', { ms: ecoute }); if (c.pourquoi) montrerPensee('🗣 il finit ce qu’il dit', c.pourquoi, true); return; }
         sauterLaSuite(Date.now() - t0, true);                          // (07/11) il a décidé de se taire : tout de suite
       });
     };
@@ -3973,6 +3976,9 @@ function sauterLaSuite(ms, net = false) {
   if (typeof journalVoix === 'function') journalVoix('suite_sautee', { tour: t, ms, ...(net ? { net: true } : {}) });
   arreterEpissure('sautee', t, { laisserFinir: !net });
   if (net) {
+    // (07/11, Ahmed : « pourquoi il ne saute pas ce qu'il dit quand je le coupe pour répondre à ma dernière phrase ») sa réponse en cours
+    // (celle que sa voix lit) est lâchée aussi : ta phrase part aussitôt, il y répond
+    if (etat.flux && typeof arreterTout === 'function') { arreterTout(true, { garder: false, raison: 'parole' }); if (typeof majBoutonsPause === 'function') majBoutonsPause(); }
     if (typeof garderVoixCoupees === 'function') garderVoixCoupees();
     if (typeof bouts !== 'undefined') { if (bouts.liste) bouts.liste.clear(); bouts.fileTel = []; bouts.attenteTel = null; bouts.enFile = []; }
     try { if (lecteur) lecteur.arreter(); } catch (_) {}
@@ -5361,7 +5367,9 @@ async function tourDeParole(conv, wav, infos, extra) {
   // (07/11, 05:30, Ahmed : « ça ne saute toujours pas à la parole suivante quand je le coupe ») sa réponse d'avant tourne encore quand ta nouvelle
   // phrase arrive : avec reprendre_ancien éteint, elle est arrêtée et ta phrase part tout de suite (plus gardée jusqu'à la fin de sa réflexion)
   const lacherAncien = typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.reprendre_ancien !== true;
-  if (voixEpissee() && etat.flux && lacherAncien && !(typeof teCouper === 'function' && teCouper())) { journalVoix('ancienne_reponse_lachee', {}); arreterTout(true, { garder: false, raison: 'parole' }); majBoutonsPause(); }
+  // (07/11) il peut te couper, mais ta nouvelle phrase l'emporte, sauf s'il vient de choisir de finir (garde_la_parole, 15 s)
+  const ilGarde = typeof teCouper === 'function' && teCouper() && Date.now() - Number(conv.gardeParoleA || 0) < 15000;
+  if (voixEpissee() && etat.flux && lacherAncien && !ilGarde) { journalVoix('ancienne_reponse_lachee', {}); arreterTout(true, { garder: false, raison: 'parole' }); majBoutonsPause(); }
   if (voixEpissee() && etat.flux) { garderPourSonTour(conv, texte); return; }
   // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
   // (07/11, Ahmed : « quand je parle par-dessus lui et qu'il remarque qu'on change de sujet, il s'interrompt ; mais il ne doit pas reprendre là où il

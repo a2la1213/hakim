@@ -448,12 +448,31 @@ test('un fond ne le coupe pas : sans netteté (moins de 1,8 × le seuil) il est 
   const p = page({}, true);
   let mots = 0; p.ctx.motsEcrits = () => mots;
   p.ctx.prevoir(p.conv); p.minuteries[0].f();
-  for (let k = 1; k < p.minuteries.length; k++) p.minuteries[k].f();
-  for (let k = 0; k < 10 && p.minuteries.length < 10; k++) p.minuteries[p.minuteries.length - 1].f();
-  assert.strictEqual(p.ctx.etat.riboFile.length, 2, 'aucun mot : un fond, il continue');
+  p.conv.capteur.enParole = false;                                   // la voix s'est tue, et aucun mot
+  for (let k = 0; k < 12 && p.minuteries.length < 12; k++) p.minuteries[p.minuteries.length - 1].f();
+  assert.strictEqual(p.ctx.etat.riboFile.length, 2, 'aucun mot, plus de voix : un fond, il continue');
   assert.ok(p.journal.some(([e]) => e === 'pas_de_parole'));
+  // (07/11, mesuré : 24 « pas de parole » sur 30, ses mots vifs arrivent trop tard) une voix claire qui tient encore : une parole
+  const q = page({ choix_coupure: false }, true);
+  q.ctx.motsEcrits = () => 0;
+  q.ctx.prevoir(q.conv); q.minuteries[0].f();
+  for (let k = 0; k < 12 && q.minuteries.length < 12; k++) q.minuteries[q.minuteries.length - 1].f();
+  assert.deepStrictEqual(q.ctx.etat.riboFile.map((x) => x.texte), ['plus tard'], 'ta voix tient : sa suite est sautée');
   assert.match(PAGE, /if \(typeof voixClaire === 'function' && !voixClaire\(mesure\)\) \{ journalVoix\('fond_ignore', mesure \|\| \{\}\); return; \}/);
   const CONV = fs.readFileSync(path.join(__dirname, 'public', 'conversation.js'), 'utf8');
   assert.match(CONV, /clarte: \+\(niveauxBarge\.reduce\(\(a, x\) => a \+ x, 0\) \/ Math\.max\(1, niveauxBarge\.length\)\)\.toFixed\(2\)/);
   assert.match(SRC, /voix_claire_x: Number\.isFinite/);
+});
+
+// (07/11, Ahmed : « pourquoi il ne saute pas ce qu'il dit quand je le coupe pour répondre à ma dernière phrase »)
+test('il décide de se taire : sa réponse en cours (celle que sa voix lit) est lâchée aussi, ta phrase part aussitôt', () => {
+  const p = page({}, true);
+  const arrets = [];
+  p.ctx.etat.flux = { abort() {} };
+  p.ctx.arreterTout = (explicite, o) => { arrets.push(o); p.ctx.etat.flux = null; };
+  vm.runInContext(prendre(PAGE, 'sauterLaSuite') + 'this.sauter = sauterLaSuite;', p.ctx);
+  p.ctx.sauter(1000, true);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(arrets)), [{ garder: false, raison: 'parole' }]);
+  assert.strictEqual(p.ctx.lecteur.arrete, true);
+  assert.match(PAGE, /if \(c && c\.couper === false\) \{ conv\.gardeParoleA = Date\.now\(\);/, 'son choix de finir est retenu 15 s');
 });
