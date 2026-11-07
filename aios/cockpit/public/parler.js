@@ -440,8 +440,13 @@ const voixDuTelephone = () => !!synthTelephone && etat.reglages.voix === 'teleph
 // - lecture SANS TROU par Web Audio : chaque morceau est programmé à l'instant où finit le précédent.
 // Hakim ne commence pas à parler pendant que tu parles (ou que ta phrase est transcrite) : relecture
 // Opus du 2026-10-16 — sinon il parlait par-dessus ton tour et Whisper transcrivait son écho.
+// (07/11, Ahmed : « comment je fais dans les réglages pour lui autoriser à me couper la parole ? » ; « mets-le, option 2 ») te_couper (éteint par
+// défaut) : dès qu'un morceau de sa voix est prêt, il parle, même pendant que tu parles ; ta voix ne le fait plus taire (ni pause au morceau,
+// ni suite sautée, ni morceaux d'avant lâchés) ; « stop », le bouton et ton message écrit l'arrêtent toujours
+const teCouper = () => typeof reglagesCorps !== 'undefined' && !!reglagesCorps && reglagesCorps.te_couper === true;
 function jarvisPeutParler() {
   const c = etat.conversation;
+  if (typeof teCouper === 'function' && teCouper()) return true;
   // (14:55) sa réponse soufflée parle pendant que la grande oreille confirme ta phrase (tu t'es tu)
   // (04/11) sa pensée dite dans ta pause, ton tour encore ouvert (direPenseeSiPossible)
   return !(c && ((c.capteur && c.capteur.enParole && !c.penseeEnPause) || (c.enAttente > 0 && !c.souffleParle)));
@@ -3715,6 +3720,7 @@ function nouveauTourDePapa(tour) {
   const avant = Number(etat.dernierTourPapa) || 0;
   etat.dernierTourPapa = n;
   if (!avant || (typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.reprendre_ancien === true)) return;
+  if (typeof teCouper === 'function' && teCouper()) return;           // (07/11) il peut te couper : ce qu'il préparait n'est pas lâché
   const vieux = (etat.riboFile || []).filter(x => Number(x.tour) < n);
   if (vieux.length) { if (typeof blancsPourSautes === 'function') blancsPourSautes(vieux); etat.riboFile = (etat.riboFile || []).filter(x => Number(x.tour) >= n); }
   let voix = false;
@@ -3816,6 +3822,7 @@ function arreterEpissure(cause, tour, o = {}) {
 // qu'il dit va jusqu'au bout, la suite de son épissure est sautée ; ce qu'il pensera de ta réponse part dans une épissure neuve
 function prevoirSaut(conv) {
   if (typeof reglagesCorps === 'undefined' || reglagesCorps.sauter_suite === false || conv.sautPrevu) return;
+  if (typeof teCouper === 'function' && teCouper()) return;          // (07/11) il peut te couper : sa suite n'est pas sautée
   const ms = Number(reglagesCorps.sauter_suite_ms) || 1000, t0 = Date.now();
   conv.sautPrevu = setTimeout(() => {
     conv.sautPrevu = null;
@@ -3883,7 +3890,7 @@ function direRibosome() {
   // (05/11, Ahmed : « un autre réglage : en combien de temps après mon silence le chunk suivant est lu ») lire_apres_silence_ms : 0, sans
   // attendre (comme depuis le 04/11, 21:10) ; sinon le morceau suivant attend que tu te sois tu ce temps-là
   const apres = typeof reglagesCorps !== 'undefined' ? Number(reglagesCorps.lire_apres_silence_ms) || 0 : 0;
-  if (apres > 0) {
+  if (apres > 0 && !(typeof teCouper === 'function' && teCouper())) {
     const silence = Date.now() - (Number(etat.papaVoixA) || 0);
     if ((c.capteur && c.capteur.enParole) || silence < apres) {
       noterAttente('papa');
@@ -4509,6 +4516,7 @@ async function basculerConversation() {
         // (04/11, 12:15, Ahmed) avec l'épissage : ta voix ne le coupe pas au milieu d'un morceau ; il le finit, et à sa fenêtre d'oreille il choisit
         // (06/11, 14:40, Ahmed : « le bouton « il garde la parole » dans les réglages ne fonctionne pas ») avec l'épissage, ce chemin passait AVANT le
         // réglage : éteint (garder_parole), ta voix l'arrête maintenant aussi en Conversation épissée, et ce qu'il avait encore à dire est laissé
+        if (typeof teCouper === 'function' && teCouper()) { journalVoix('te_coupe', mesure || {}); return; }   // (07/11) il a le droit de te couper : ta voix ne le fait pas taire
         const garde = typeof reglagesCorps === 'undefined' || reglagesCorps.garder_parole !== false;
         if (voixEpissee() && garde) { conv.coupeAuChunk = Date.now(); journalVoix('coupure_au_chunk', mesure || {}); prevoirSaut(conv); return; }   // (05/11) et la suite sautée
         if (voixEpissee() && !garde && typeof arreterEpissure === 'function' && etat.epissureTour) arreterEpissure('parole', etat.epissureTour);
@@ -5192,7 +5200,7 @@ async function tourDeParole(conv, wav, infos, extra) {
   // (07/11, 05:30, Ahmed : « ça ne saute toujours pas à la parole suivante quand je le coupe ») sa réponse d'avant tourne encore quand ta nouvelle
   // phrase arrive : avec reprendre_ancien éteint, elle est arrêtée et ta phrase part tout de suite (plus gardée jusqu'à la fin de sa réflexion)
   const lacherAncien = typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.reprendre_ancien !== true;
-  if (voixEpissee() && etat.flux && lacherAncien) { journalVoix('ancienne_reponse_lachee', {}); arreterTout(true, { garder: false, raison: 'parole' }); majBoutonsPause(); }
+  if (voixEpissee() && etat.flux && lacherAncien && !(typeof teCouper === 'function' && teCouper())) { journalVoix('ancienne_reponse_lachee', {}); arreterTout(true, { garder: false, raison: 'parole' }); majBoutonsPause(); }
   if (voixEpissee() && etat.flux) { garderPourSonTour(conv, texte); return; }
   // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
   // (07/11, Ahmed : « quand je parle par-dessus lui et qu'il remarque qu'on change de sujet, il s'interrompt ; mais il ne doit pas reprendre là où il

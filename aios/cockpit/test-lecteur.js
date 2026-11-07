@@ -560,3 +560,22 @@ test('sa voix se prépare dès l’arrivée du morceau ; quand vient son tour, l
   assert.match(SRC, /recevoirBout\(\{ texte, parties, meuble, pret: true, sansMeuble: true, ribosome: true \}, n, tour\);/);
   assert.match(SRC, /for \(const x of etat\.riboFile \|\| \[\]\) if \(!x\.avance\) \{ x\.avance = Date\.now\(\); avancerVoix\(x\.texte\); \}/);
 });
+
+// (07/11, Ahmed : « lui autoriser à me couper la parole », option 2 : dès qu'un morceau de sa voix est prêt, il parle, même si tu parles)
+test('te_couper : allumé, sa voix parle pendant ta parole et ta voix ne le fait plus taire ; éteint (par défaut), comme avant', () => {
+  const fn = (nom) => { const i = SRC.indexOf(`function ${nom}(`); return SRC.slice(i, SRC.indexOf('\n}\n', i) + 3); };
+  const i = SRC.indexOf('const teCouper = ');
+  const cx = { reglagesCorps: {}, etat: { conversation: { capteur: { enParole: true }, enAttente: 0 } } };
+  vm.createContext(cx);
+  vm.runInContext(SRC.slice(i, SRC.indexOf('\n', i) + 1) + fn('jarvisPeutParler') + 'this.peut = jarvisPeutParler;', cx);
+  assert.equal(cx.peut(), false, 'éteint : il attend ta fin');
+  cx.reglagesCorps.te_couper = true;
+  assert.equal(cx.peut(), true, 'allumé : il parle par-dessus toi');
+  assert.match(SRC, /if \(typeof teCouper === 'function' && teCouper\(\)\) \{ journalVoix\('te_coupe', mesure \|\| \{\}\); return; \}/, 'ta voix ne le met plus en pause au morceau');
+  assert.match(SRC, /if \(voixEpissee\(\) && etat\.flux && lacherAncien && !\(typeof teCouper === 'function' && teCouper\(\)\)\)/, 'ni son ancienne réponse lâchée');
+  assert.match(SRC, /if \(typeof teCouper === 'function' && teCouper\(\)\) return;          \/\/ \(07\/11\) il peut te couper : sa suite n'est pas sautée/);
+  assert.match(SRC, /if \(typeof teCouper === 'function' && teCouper\(\)\) return;           \/\/ \(07\/11\) il peut te couper : ce qu'il préparait n'est pas lâché/);
+  const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(srv, /te_couper: r\.te_couper === true,/, 'éteint par défaut');
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8'), /\['te_couper', '🗣️ Il peut te couper la parole'/);
+});
