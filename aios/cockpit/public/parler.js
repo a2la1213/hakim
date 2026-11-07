@@ -4946,7 +4946,17 @@ async function tourDeParole(conv, wav, infos, extra) {
   // « stop » (plus haut) reste son codon stop
   if (voixEpissee() && etat.flux) { garderPourSonTour(conv, texte); return; }
   // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
-  if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(true, { garder: true, raison: 'parole', garderVoix: voixEpissee() }); }   // (12:30) sa voix continue
+  // (07/11, Ahmed : « quand je parle par-dessus lui et qu'il remarque qu'on change de sujet, il s'interrompt ; mais il ne doit pas reprendre là où il
+  // s'est arrêté, plutôt à la prochaine phrase après ma parole ») reprendre_ancien (éteint par défaut) : ta vraie phrase arrivée pendant sa parole, le
+  // reste de son ancienne réponse est laissé (plus gardé pour « le premier moment calme »), ses morceaux épissés en attente aussi ; il enchaîne sur toi
+  const lacher = typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.reprendre_ancien !== true;
+  if (lacher && (lecteur.actif || lecteur.enPause || etat.flux) && voixEpissee()) {
+    const vieux = (etat.riboFile || []).slice();
+    if (vieux.length) { if (typeof blancsPourSautes === 'function') blancsPourSautes(vieux); etat.riboFile = []; }
+    if (typeof bouts !== 'undefined') { bouts.fileTel = []; bouts.attenteTel = null; }
+    journalVoix('ancien_laisse', { morceaux: vieux.length });
+  }
+  if (lecteur.enPause || etat.flux) { marquerCoupe(); arreterTout(true, { garder: !lacher, raison: 'parole', garderVoix: voixEpissee() && !lacher }); }   // (12:30) sa voix continue ; (07/11) sauf s'il lâche l'ancien
   sousTitre(texte);
   mesureTour = { fin: Number(infos && (infos.derniere_voix || infos.fin)) || t0Tour, debut: t0Tour, transcrit: Date.now(), premier_texte: 0, premier_son: 0,
     pauses: ((infos && infos.pauses) || []).slice(0, 30), anticipe: extra != null, patience: patienceConversation() };   // (27/10) pour rejouer la fin de tour

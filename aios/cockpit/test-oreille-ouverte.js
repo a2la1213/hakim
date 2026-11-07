@@ -109,7 +109,7 @@ test('avec l’épissage, [[pause: …]] ne retient plus la suite de sa réponse
 // parole ») ta phrase qui arrive ne fait plus taire sa voix ; tu parles : elle attend ta fin, puis reprend ; rien de traduit n'est laissé
 test('ce qui est traduit sort jusqu’au bout, sans attendre que tu te taises ; chaque envoi a son numéro neuf', () => {
   assert.match(PAGE, /arreterTout\(true, \{ garder: true, raison: 'message', garderVoix: !!souffleDit \|\| voixEpissee\(\) \}\);/);
-  assert.match(PAGE, /arreterTout\(true, \{ garder: true, raison: 'parole', garderVoix: voixEpissee\(\) \}\);/);
+  assert.match(PAGE, /arreterTout\(true, \{ garder: !lacher, raison: 'parole', garderVoix: voixEpissee\(\) && !lacher \}\);/);
   const dits = [];
   const ctx = { Math, etat: { riboFile: [{ tour: 4, texte: 'Oui papa' }], paves: { 4: { dits: [] } }, conversation: { capteur: { enParole: false } } },
     lecteur: { actif: false }, bouts: { tour: 4, prochain: 1 }, recevoirBout: (s, n) => dits.push([s.texte, n, s.ribosome]) };

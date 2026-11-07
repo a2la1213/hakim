@@ -1004,3 +1004,12 @@ test('sa bascule de mode devient aussi le choix de la page (sinon la page renvoy
   const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
   assert.match(PAGE, /for \(const k of \['modele', 'modeleConversation'\]\) if \(etat\.reglages\[k\] !== 'auto' && etat\.reglages\[k\] !== m\) \{ etat\.reglages\[k\] = m; change = true; \}/);
 });
+
+// (07/11, Ahmed : « coupé par ma parole sur un autre sujet, il ne reprend pas là où il s'est arrêté, mais à la phrase après ma parole »)
+test('coupé par une vraie phrase : l’ancienne réponse est laissée (reprendre_ancien éteint), ses morceaux en attente aussi', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /const lacher = typeof reglagesCorps === 'undefined' \|\| !reglagesCorps \|\| reglagesCorps\.reprendre_ancien !== true;/);
+  assert.match(PAGE, /if \(vieux\.length\) \{ if \(typeof blancsPourSautes === 'function'\) blancsPourSautes\(vieux\); etat\.riboFile = \[\]; \}/);
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(SRV, /reprendre_ancien: r\.reprendre_ancien === true,/);
+});
