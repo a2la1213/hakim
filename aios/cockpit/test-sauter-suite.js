@@ -147,16 +147,16 @@ test('ce qui est sauté devient « … » dans son pavé ; après une suite saut
 });
 
 // (05/11, Ahmed : « il faut bien coordonner la sortie du ribosome avec la sortie de la voix »)
-test('sa voix calcule d’avance ce qui sera dit : le lot en tête, et le dernier morceau (celui qui reste quand les passés sont sautés)', () => {
+test('sa voix calcule d’avance ce qui sera dit : chaque morceau, dès son arrivée, une seule fois (07/11 : « en parallèle, à chaque ribosome »)', () => {
   const prepares = [];
-  const ctx = { String, etat: { riboFile: [{ tour: 4, texte: 'deux' }, { tour: 4, texte: 'trois' }, { tour: 5, texte: 'le dernier' }] },
-    voixDuTelephone: () => true, lecteurSysteme: { preparer: (t) => prepares.push(t) } };
+  const ctx = { String, Date, etat: { riboFile: [{ tour: 4, texte: 'deux' }, { tour: 4, texte: 'trois' }, { tour: 5, texte: 'le dernier' }] },
+    avancerVoix: (t) => prepares.push(t) };
   vm.createContext(ctx);
   vm.runInContext(prendre(PAGE, 'preparerRibosome') + 'this.p = preparerRibosome;', ctx);
   ctx.p();
-  assert.deepStrictEqual([...prepares], ['deux trois', 'le dernier']);
-  prepares.length = 0; ctx.etat.riboFile = [{ tour: 4, texte: 'seul' }]; ctx.p();
-  assert.deepStrictEqual([...prepares], ['seul'], 'un seul morceau : calculé une fois');
+  assert.deepStrictEqual([...prepares], ['deux', 'trois', 'le dernier'], 'chacun tel que sa voix le dira');
+  ctx.etat.riboFile.push({ tour: 5, texte: 'encore' }); ctx.p();
+  assert.deepStrictEqual([...prepares], ['deux', 'trois', 'le dernier', 'encore'], 'le neuf seulement : jamais deux fois');
 });
 
 // (05/11, Ahmed : « dans les réglages, on peut rajouter un bouton pour enregistrer les réglages »)

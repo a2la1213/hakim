@@ -3381,16 +3381,16 @@ function surSouffle(o) {
 let bouts = { tour: null, prochain: 1, liste: new Map(), enFile: [], dits: [] };
 /* (07/11, Ahmed : « il ne doit pas jeter la parole préparée quand la voix est prête, même si je le coupe et qu'il libère le ribosome ; il garde
    les 30 dernières secondes de voix prête, en cache, pour pouvoir sélectionner parmi ses paroles coupées pour répondre, sans répéter ce qu'il
-   aurait déjà dit ») chaque voix prête (calculée au Mac, ou préparée par le téléphone) est gardée 30 s ; coupé, ce qui était prêt et pas dit
+   aurait déjà dit ») chaque voix prête (calculée au Mac, ou préparée par le téléphone) est gardée 5 min (30 s jusqu'au 07/11, 07:00) ; coupé, ce qui était prêt et pas dit
    y reste et part à son prochain tour comme « non dit » (il peut le reprendre) ; s'il reprend une de ces paroles, sa voix sort tout de suite ;
    ce qu'il a déjà dit (ces 30 s) n'est jamais redit. */
-const VOIX_GARDEE_MS = 30000;
+const VOIX_GARDEE_MS = 5 * 60e3;                                     // (07/11, Ahmed : « augmente la durée du cache à 5 min pour la voix »)
 const voixGardees = new Map(), ditsRecents = new Map();
 const cleParole = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 function purgerVoixGardees(maintenant = Date.now()) {
   for (const [k, x] of voixGardees) if (maintenant - x.t > VOIX_GARDEE_MS) voixGardees.delete(k);
   for (const [k, t] of ditsRecents) if (maintenant - t > VOIX_GARDEE_MS) ditsRecents.delete(k);
-  while (voixGardees.size > 40) voixGardees.delete(voixGardees.keys().next().value);
+  while (voixGardees.size > 80) voixGardees.delete(voixGardees.keys().next().value);
 }
 function noterParoleDite(texte) { const k = cleParole(texte); if (k) { ditsRecents.set(k, Date.now()); voixGardees.delete(k); } }
 function garderVoixPrete(b) {
@@ -3417,6 +3417,39 @@ function garderVoixCoupees() {
   }
   return l;
 }
+/* (07/11, Ahmed : « en parallèle, qu'il fait une action ou quelque chose d'autre, il doit déjà préparer sa voix à chaque ribosome ») chaque morceau
+   que son ribosome sort part à sa voix DÈS son arrivée, quoi qu'il fasse (un outil, sa voix qui parle, ta voix) : au téléphone, Supertonic le
+   calcule d'avance ; au Mac, sa voix (Azure, ou sa voix de rap) est demandée tout de suite et gardée (voixGardees). Quand vient son tour, elle
+   est prête. Un meuble devant reste à part (sa voix à lui), pour que la voix préparée du morceau serve telle quelle. */
+const voixEnAvance = new Map();                                        // clé du texte → promesse de sa voix (AudioBuffer)
+function voixPourTexte(t) {
+  const k = cleParole(t);
+  const g = voixGardeePour(t);
+  if (g && g.buf) return Promise.resolve(g.buf);
+  if (voixEnAvance.has(k)) return voixEnAvance.get(k);
+  const p = fetch('/api/voix/dire', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+    body: JSON.stringify({ texte: t, langue: 'fr', fond: true, emotion: etat.interieur && !etat.reglages.voixNeutre ? expressivitePhrase(etat.interieur.expressivite, t) : null, tempo: tempoVoix() }) })
+    .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('voix'))))
+    .then(ab => actx.decodeAudioData(ab))
+    .then((buf) => { garderVoixPrete({ texte: t, buf }); return buf; })
+    .finally(() => { setTimeout(() => voixEnAvance.delete(k), 1000); });
+  voixEnAvance.set(k, p);
+  while (voixEnAvance.size > 20) voixEnAvance.delete(voixEnAvance.keys().next().value);
+  return p;
+}
+function avancerVoix(texte) {
+  const t = String(texte || '').trim();
+  if (!t || !etat.conversation || (typeof voixEpissee === 'function' && !voixEpissee())) return;
+  if (typeof sortieAilleurs === 'function' && sortieAilleurs()) return;            // sa voix part ailleurs : c'est là-bas qu'elle se prépare
+  if (typeof voixDuTelephone === 'function' && voixDuTelephone()) {
+    if (lecteurSysteme && typeof lecteurSysteme.preparer === 'function') { lecteurSysteme.preparer(t); avancees.set(cleParole(t), Date.now()); }
+    return;
+  }
+  if (!actx || actx.state === 'closed') return;
+  voixPourTexte(t).catch(() => {});
+  if (typeof journalVoix === 'function') journalVoix('voix_avancee', { car: t.length });
+}
+const avancees = new Map();                                            // (téléphone) clé du texte → quand sa voix a commencé à se calculer
 function recevoirBout(s, n, tour) {
   const conv = etat.conversation;
   // (04/11, 13:10, Ahmed : « tout ce qui est traduit par le ribosome sort en priorité par la bouche ») ce que son ribosome a traduit passe toujours
@@ -3427,6 +3460,7 @@ function recevoirBout(s, n, tour) {
   if (bouts.tour !== tour) bouts = { tour, prochain: 1, liste: new Map(), enFile: [], dits: [], fileTel: bouts.fileTel || [] };
   if (n < bouts.prochain || bouts.liste.has(n)) return;
   const b = { n, texte: s.texte, buf: null, rate: false, t: Date.now(), coupe: !!s.remplace, sansMeuble: !!s.sansMeuble };
+  if (s.ribosome && Array.isArray(s.parties) && s.parties.length) b.dit = [s.meuble, ...s.parties].filter(Boolean);   // (07/11) ses morceaux tels que préparés
   // (04/11) la voix du téléphone : dit tout de suite, sans voix fabriquée au Mac
   if (typeof voixDuTelephone === 'function' && voixDuTelephone()) {
     const motsDe = (x) => String(x).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(m => m.length > 2), m1 = motsDe(b.texte);
@@ -3440,7 +3474,7 @@ function recevoirBout(s, n, tour) {
     if (lecteurSysteme.actif) {
       // (04/11, 14:20, Ahmed : « je vois sa pensée seule, pas l'épissée pour parler ») ce que son ribosome a épissé n'est jamais remplacé
       // ni oublié : il attend son tour, dans l'ordre
-      if (s.ribosome) { b.dit = meublerSaut(b); const gardee = typeof voixGardeePour === 'function' ? voixGardeePour(b.texte) : null; if (gardee && gardee.prepA) { b.prepA = gardee.prepA; if (typeof journalVoix === 'function') journalVoix('voix_reprise_gardee', { ou: 'telephone' }); } else if (typeof lecteurSysteme.preparer === 'function') { b.dit.forEach(x => lecteurSysteme.preparer(x)); b.prepA = Date.now(); } bouts.fileTel = (bouts.fileTel || []).concat([b]); return; }   // (06/11) calculée d'avance : pas de blanc
+      if (s.ribosome) { b.dit = Array.isArray(s.parties) && s.parties.length ? [s.meuble, ...s.parties].filter(Boolean) : meublerSaut(b); const gardee = typeof voixGardeePour === 'function' ? voixGardeePour(b.texte) : null; const avA = typeof avancees !== 'undefined' ? Math.min(...b.dit.map(x => avancees.get(cleParole(x)) || Infinity)) : Infinity; if (Number.isFinite(avA)) b.prepA = avA; else if (gardee && gardee.prepA) { b.prepA = gardee.prepA; if (typeof journalVoix === 'function') journalVoix('voix_reprise_gardee', { ou: 'telephone' }); } else if (typeof lecteurSysteme.preparer === 'function') { b.dit.forEach(x => lecteurSysteme.preparer(x)); b.prepA = Date.now(); } bouts.fileTel = (bouts.fileTel || []).concat([b]); return; }   // (06/11) calculée d'avance : pas de blanc
       if (bouts.attenteTel) montrerPensee('🧠 il pense, sans le dire', bouts.attenteTel.texte, true);   // remplacé : pensé, pas dit
       // (1.60, Ahmed : « chaque cœur qui traite le même chunk sur le Mac et sur le smartphone doit être relié et coordonné ») ce qu'il
       // dira (son meuble compris) : sa voix se calcule déjà sur le téléphone, pendant que la précédente se dit
@@ -3456,12 +3490,16 @@ function recevoirBout(s, n, tour) {
   bouts.liste.set(n, b);
   if (!actx || actx.state === 'closed') { b.rate = true; return direBouts(); }
   const gardee = typeof voixGardeePour === 'function' ? voixGardeePour(s.texte) : null;   // (07/11) sa voix est déjà prête (une parole coupée qu'il reprend)
-  if (gardee && gardee.buf) { b.buf = gardee.buf; if (typeof journalVoix === 'function') journalVoix('voix_reprise_gardee', { ou: 'mac' }); return direBouts(); }
-  fetch('/api/voix/dire', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
-    body: JSON.stringify({ texte: s.texte, langue: 'fr', fond: true, emotion: etat.interieur && !etat.reglages.voixNeutre ? expressivitePhrase(etat.interieur.expressivite, s.texte) : null, tempo: tempoVoix() }) })
-    .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('voix'))))
-    .then(ab => actx.decodeAudioData(ab))
-    .then((buf) => { b.buf = buf; if (typeof garderVoixPrete === 'function') garderVoixPrete(b); etat.calculVoixMacMs = Number.isFinite(etat.calculVoixMacMs) ? Math.round(etat.calculVoixMacMs * 0.7 + (Date.now() - b.t) * 0.3) : Date.now() - b.t; direBouts(); })
+  if (gardee && gardee.buf && !b.dit) { b.buf = gardee.buf; if (typeof journalVoix === 'function') journalVoix('voix_reprise_gardee', { ou: 'mac' }); return direBouts(); }
+  // (07/11) chaque morceau (et son meuble à part) : sa voix préparée dès l'arrivée, ou demandée maintenant
+  const textes = b.dit || [s.texte];
+  Promise.all(textes.map(t => voixPourTexte(t)))
+    .then((bufs) => {
+      b.morceaux = textes.map((t, k) => ({ texte: t, buf: bufs[k] }));
+      b.buf = bufs[bufs.length - 1];
+      etat.calculVoixMacMs = Number.isFinite(etat.calculVoixMacMs) ? Math.round(etat.calculVoixMacMs * 0.7 + (Date.now() - b.t) * 0.3) : Date.now() - b.t;
+      direBouts();
+    })
     .catch(() => { b.rate = true; direBouts(); });
 }
 // (04/11, Hakim pour papa : « quand je ne dis que la dernière pensée, ou que je saute de la pensée 2 à la 5, un meuble (« voyons
@@ -3568,7 +3606,7 @@ function direBouts() {
     conv.penseeEnPause = true; conv.souffleParle = true;
     bouts.prochain = Math.max(bouts.prochain, b.n + 1);
     bouts.dits.push(b.texte); bouts.enFile.push(b.texte); if (typeof noterParoleDite === 'function') noterParoleDite(b.texte);
-    lecteurNeuronal.direAudio(b.texte, b.buf);
+    for (const m of b.morceaux || [{ texte: b.texte, buf: b.buf }]) lecteurNeuronal.direAudio(m.texte, m.buf);
     if (typeof direRibosome === 'function') setTimeout(direRibosome, 0);
     if (bouts.liste.size) { clearTimeout(bouts.minuteur); bouts.minuteur = setTimeout(direBouts, 300); }
     return;
@@ -3586,7 +3624,7 @@ function direBouts() {
     conv.penseeEnPause = true; conv.souffleParle = true;              // ton tour ouvert ne le bloque pas
     bouts.dits.push(b.texte);
     bouts.enFile.push(b.texte);
-    lecteurNeuronal.direAudio(b.texte, b.buf);                        // à la suite de ce qu'il dit déjà : le lecteur les enchaîne
+    for (const m of b.morceaux || [{ texte: b.texte, buf: b.buf }]) lecteurNeuronal.direAudio(m.texte, m.buf);   // à la suite de ce qu'il dit déjà : le lecteur les enchaîne
   }
   if (prets.length && typeof direRibosome === 'function') setTimeout(direRibosome, 0);   // (06/11) sa voix prête : la suivante se calcule déjà
 }
@@ -3739,14 +3777,10 @@ function versRibosome(texte, avant = '') {
 // quand je finis ») ce qu'il dira, s'il attend encore : sa voix du téléphone le calcule d'avance (exactement le texte que direRibosome
 // lui donnera), pour partir d'un coup à ton silence
 function preparerRibosome() {
-  const f = etat.riboFile || [];
-  if (!f.length || typeof voixDuTelephone !== 'function' || !voixDuTelephone() || !lecteurSysteme || typeof lecteurSysteme.preparer !== 'function') return;
-  const tour = f[0].tour, lot = f.filter(x => x.tour === tour).map(x => x.texte).join(' ');
-  lecteurSysteme.preparer(lot);
-  // (05/11, Ahmed : « il faut bien coordonner la sortie du ribosome avec la sortie de la voix ») mesuré : 2,5 s (médiane) entre l'envoi à sa
-  // voix et le premier son ; quand les morceaux passés sont sautés, c'est le dernier qui est dit : sa voix le calcule aussi d'avance
-  const dernier = String(f[f.length - 1].texte || '');
-  if (f.length > 1 && dernier && dernier !== lot) lecteurSysteme.preparer(dernier);
+  // (07/11, Ahmed : « en parallèle, il doit déjà préparer sa voix à chaque ribosome ») chaque morceau, un par un, dès qu'il arrive (au téléphone
+  // comme au Mac) : exactement le texte que sa voix dira (le meuble reste à part)
+  if (typeof avancerVoix !== 'function') return;
+  for (const x of etat.riboFile || []) if (!x.avance) { x.avance = Date.now(); avancerVoix(x.texte); }
 }
 // (04/11, 13:15, Ahmed : « l'épissure a été notée, mais je n'ai rien entendu ») mesuré : traduit pendant qu'il parlait, rien ne relançait sa voix
 // après sa fin ; en Conversation, ce qui est traduit et attend part au plus 0,3 s après que sa voix est libre et que tu t'es tu
@@ -3906,13 +3940,15 @@ function direRibosome() {
   if (typeof journalVoix === 'function') journalVoix('ribosome_dit', { tour, n, morceaux: lot.length });
   // (05/11, Ahmed : « je sens chaque coupure entre chaque chunk : c'est là qu'il faudrait caler les meubles ») entre deux morceaux d'un même tour, un « euh » ou un « hum »
   // de ses meubles, devant le morceau d'après, d'un seul souffle (3 s au moins entre deux ; réglage meubles_entre)
-  let texte = lot.map(x => x.texte).join(' ');
+  const parties = lot.map(x => x.texte);
+  let texte = parties.join(' '), meuble = '';
   if (typeof reglagesCorps !== 'undefined' && reglagesCorps.meubles_entre !== false && etat.riboDernierTour === tour && Date.now() - (etat.riboMeubleA || 0) > 3000) {
     const h = choisirMeuble({ avant: false }, meublesPourTelephone(langueDePensee(texte)));
-    if (h && h.texte) { texte = `${h.texte.trim()} ${texte}`; etat.riboMeubleA = Date.now(); journalVoix('meuble_entre', {}); }
+    if (h && h.texte) { meuble = h.texte.trim(); texte = `${meuble} ${texte}`; etat.riboMeubleA = Date.now(); journalVoix('meuble_entre', {}); }
   }
   etat.riboDernierTour = tour;
-  recevoirBout({ texte, pret: true, sansMeuble: true, ribosome: true }, n, tour);
+  // (07/11) le meuble et chaque morceau restent séparés : la voix de chaque morceau, préparée dès son arrivée (avancerVoix), sert telle quelle
+  recevoirBout({ texte, parties, meuble, pret: true, sansMeuble: true, ribosome: true }, n, tour);
 }
 // ---- (04/11, 18:45-18:50, Ahmed : « ça donne avoir la même route que le microphone » ; « il peut faire ce qu'il veut quand il l'estime, avec
 // la même règle que pour le micro : à chaque pause du son, il… ») son oreille interne (🎧) : ce que joue le téléphone devient ses pensées et

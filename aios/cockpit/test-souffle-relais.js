@@ -481,7 +481,7 @@ test('(04/11) la page envoie tes mots en direct à ses pistes dès un mot neuf, 
     '(04/11) il saute les pensées qu’il choisit de ne pas dire');
   assert.match(SRC, /const aDire = !autreLangue && \(premiere \? !\/\^\(non\|jamais\)\/i\.test\(dire \|\| ''\) : \(dire != null && !choix && !\/\^\(non\|jamais\)\/i\.test\(dire\)\)\);/);
   assert.match(SRC, /if \(voix\) voixDeLaSource\(ditDeSoi, \{ garder: true \}\);/, 'sa voix seulement pour ce qu’il dira (le passage choisi) : le même tri que son écriture');
-  assert.match(PAGE, /lecteurNeuronal\.direAudio\(b\.texte, b\.buf\);/, 'dans l’ordre des mots, à la suite');
+  assert.match(PAGE, /for \(const m of b\.morceaux \|\| \[\{ texte: b\.texte, buf: b\.buf \}\]\) lecteurNeuronal\.direAudio\(m\.texte, m\.buf\);/, 'dans l’ordre des mots, à la suite (07/11 : ses morceaux et son meuble, chacun sa voix)');
 });
 
 test('(04/11) rien n’est gardé de ce qui est prononcé : sa voix servie s’efface aussitôt', () => {

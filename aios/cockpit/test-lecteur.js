@@ -513,7 +513,7 @@ test('voix du Mac : rien ne s’empile ; quand ce qui joue va finir, il choisit 
 
 // (07/11, Ahmed : « il ne doit pas jeter la parole préparée quand la voix est prête, même si je le coupe ; garder les 30 dernières secondes
 // de voix prête en cache, pour sélectionner parmi ses paroles coupées pour répondre, sans répéter ce qu'il aurait déjà dit »)
-test('coupé : ses voix prêtes et pas dites sont gardées 30 s, lui sont redonnées, et reprises sans recalcul ; jamais ce qu’il a déjà dit', () => {
+test('coupé : ses voix prêtes et pas dites sont gardées 5 min, lui sont redonnées, et reprises sans recalcul ; jamais ce qu’il a déjà dit', () => {
   const i = SRC.indexOf('const VOIX_GARDEE_MS'), j = SRC.indexOf('function recevoirBout(');
   let now = 1000; const envois = [], journal = [];
   const cx = { Date: { now: () => now }, Map, String, envoyerNonDits: (l) => envois.push(...l), idNonDit: () => 'nd', journalVoix: (e, d) => journal.push(e),
@@ -532,7 +532,31 @@ test('coupé : ses voix prêtes et pas dites sont gardées 30 s, lui sont redonn
   cx.f.noterParoleDite('Le jardin, on le fait demain.');
   assert.equal(cx.f.voixGardeePour('Le jardin, on le fait demain.'), null, 'dite : plus jamais reprise');
   cx.f.garderVoixPrete({ texte: 'Une autre parole prête.', buf: { duration: 1 } });
-  now += 31000;
-  assert.equal(cx.f.voixGardeePour('Une autre parole prête.'), null, 'après 30 s : oubliée');
+  now += 4 * 60e3;
+  assert.ok(cx.f.voixGardeePour('Une autre parole prête.'), '4 min après : encore là (cache de 5 min)');
+  now += 61e3;
+  assert.equal(cx.f.voixGardeePour('Une autre parole prête.'), null, 'après 5 min : oubliée');
   assert.match(SRC, /garderVoixCoupees === 'function'\) garderVoixCoupees\(\); if \(bouts\.liste\) bouts\.liste\.clear\(\);/, 'ta voix ouvre un nouveau tour : gardées avant d’être lâchées');
+});
+
+// (07/11, Ahmed : « en parallèle, qu'il fait une action ou quelque chose d'autre, il doit déjà préparer sa voix à chaque ribosome »)
+test('sa voix se prépare dès l’arrivée du morceau ; quand vient son tour, la même voix sert (une seule synthèse), le meuble à part', async () => {
+  const i = SRC.indexOf('const VOIX_GARDEE_MS'), j = SRC.indexOf('function recevoirBout(');
+  const demandes = [];
+  const cx = { Date, Map, String, Promise, setTimeout: (f) => f(), journalVoix() {}, envoyerNonDits() {}, idNonDit: () => 'x', bouts: { liste: new Map() },
+    jeton: () => 'x', tempoVoix: () => 1, expressivitePhrase: (e) => e, sortieAilleurs: () => false, voixEpissee: () => true, voixDuTelephone: () => false,
+    etat: { conversation: {}, interieur: null, reglages: {} }, lecteurSysteme: null,
+    actx: { state: 'running', decodeAudioData: (ab) => Promise.resolve({ duration: 1, texte: ab.texte }) },
+    fetch: (u, o) => { const t = JSON.parse(o.body).texte; demandes.push(t); return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve({ texte: t }) }); } };
+  vm.createContext(cx);
+  vm.runInContext(SRC.slice(i, j) + 'this.f = { avancerVoix, voixPourTexte };', cx);
+  cx.f.avancerVoix('Je regarde ça pour toi.');                     // le ribosome vient de le sortir : sa voix part tout de suite
+  assert.deepEqual(demandes, ['Je regarde ça pour toi.']);
+  const buf = await cx.f.voixPourTexte('Je regarde ça pour toi.');   // son tour : la même voix, sans nouvelle synthèse
+  assert.equal(buf.texte, 'Je regarde ça pour toi.');
+  assert.deepEqual(demandes, ['Je regarde ça pour toi.'], 'une seule synthèse');
+  await cx.f.voixPourTexte('Hum,');
+  assert.deepEqual(demandes, ['Je regarde ça pour toi.', 'Hum,'], 'le meuble : sa propre voix, à part');
+  assert.match(SRC, /recevoirBout\(\{ texte, parties, meuble, pret: true, sansMeuble: true, ribosome: true \}, n, tour\);/);
+  assert.match(SRC, /for \(const x of etat\.riboFile \|\| \[\]\) if \(!x\.avance\) \{ x\.avance = Date\.now\(\); avancerVoix\(x\.texte\); \}/);
 });
