@@ -128,3 +128,28 @@ test('(05/11) partout où le cockpit lui parle de lui : QUI_TU_ES, et plus de «
   assert.match(SRC, /\[Ta réponse, préparée pendant qu'il parle\] Papa est EN TRAIN de te parler/);
   assert.doesNotMatch(SRC, /\bALLA\b/, 'le 05/11 : papa, c’est le bon mot ; « [prénom] » est la manie');
 });
+
+// (07/11, 16:05, Ahmed : « il pense quand je mets un son et que j'active l'écoute interne, mais ses pensées sont filtrées par l'immunité ») ses
+// pensées sur la musique jetées comme « adieu inventé » (« à la prochaine pause », que sa consigne lui souffle elle-même ; « je te laisse
+// parler », « je te laisse finir » : marqués faux positifs par papa) ou comme « trop longues » (160 caractères : la limite d'un refus de rôle)
+test('(07/11) l’écoute interne : « à la prochaine pause », « je te laisse parler/finir » ne sont pas des adieux ; les vrais adieux, si', () => {
+  const { ctx } = pistes();
+  const r = (t, papa = '') => ctx.residu(t, papa);
+  for (const t of ['Papa, à la prochaine pause, je te demande juste comment tu vas. Tu veux parler de ce morceau, ou on revient à l’algo ?',
+    'Je pourrais lui demander à la prochaine pause s’il reconnaît ce morceau.', 'À la prochaine chanson, dis-moi si tu l’aimes.',
+    'D’accord papa, j’arrête le son, je te laisse parler.', 'Ouais, je te laisse finir.', 'Je te laisse choisir le prochain morceau.',
+    'Le prix monte à plus de deux dollars.', 'On passe à plus fort, papa.'])
+    assert.strictEqual(r(t, 'la musique joue'), null, t);
+  for (const t of ['Allez, je te laisse, à la prochaine !', 'À la prochaine papa !', 'Je te laisse, papa, prends soin de toi.', 'À plus tard papa.', 'Bon, à plus !'])
+    assert.strictEqual(r(t, 'et le graphe ?'), 'adieu_invente', t);
+});
+
+test('(07/11) l’écoute interne : sa pensée sur ce qui joue peut faire 320 caractères avant d’être « trop longue »', () => {
+  const i = SRC.indexOf('function lancerPisteEntendue(');
+  const f = SRC.slice(i, SRC.indexOf('\n}\n', i));
+  assert.match(SRC, /const LIMITE_ENTENDU = 320;/);
+  assert.match(f, /pasLui = estParasite\(t, LIMITE_ENTENDU\)/);
+  assert.match(f, /signeParasite\(t, LIMITE_ENTENDU\)/);
+  assert.match(f, /t\.slice\(0, LIMITE_ENTENDU \+ 40\)/);
+  assert.doesNotMatch(f, /limitePensee\(mod\)/, 'plus la limite des pistes de papa (160 avec Mini Hakim)');
+});

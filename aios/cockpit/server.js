@@ -3043,8 +3043,13 @@ const DANGER_DIT = new RegExp(MOT("danger\\p{L}*|bless\\p{L}*|attaqu\\p{L}*|agre
 // à un vrai salut : c'est ce que voulait dire son clic « pas nuisible » du 04/11 à 21:51 (qui, lui, avait retiré tout le résidu)
 const SALUT_RENDU = new RegExp(MOT("wa ?-?alaykoum(?:\\s+s?salam)?|wa ?-?aleykoum|وعليكم(?:\\s+السلام)?|وعليك السلام"), 'iu');
 const SALUT_DE_LUI = new RegExp(MOT("salam|salem|slm|assalam|alaykoum|aleykoum|السلام|سلام|bonjour|bonsoir|salut|coucou|hello|hi"), 'iu');
-const ADIEU_RENDU = new RegExp(MOT("au revoir|[àa] bient[ôo]t|[àa] tr[èe]s vite|[àa] tout [àa] l['’]heure|[àa] plus|[àa] la prochaine|[àa] demain|bonne (?:nuit|soir[ée]e|continuation)"
-  + "|prends soin de toi|je te laisse|on se reparle|dors bien|bye|bisous|مع السلامة|بسلامة|تصبح على خير"), 'iu');
+// (07/11, 16:05, Ahmed : « ses pensées sur la musique sont filtrées par l'immunité ») pas un adieu : « à la prochaine pause » (sa consigne de
+// l'écoute interne le lui souffle), « je te laisse parler / finir / choisir », « à plus de deux dollars » ; un vrai adieu, toujours
+const ADIEU_RENDU = new RegExp(MOT("au revoir|[àa] bient[ôo]t|[àa] tr[èe]s vite|[àa] tout [àa] l['’]heure"
+  + "|[àa] plus(?!\\s+(?:de|d['’]|que|qu['’]|en|fort\\p{L}*|haut|bas|grand\\p{L}*|petit\\p{L}*|\\p{N}))"
+  + "|[àa] la prochaine(?!\\s+(?!(?:fois|papa|fiston|fr[ée]rot|mon|ma)(?![\\p{L}]))\\p{L})|[àa] demain|bonne (?:nuit|soir[ée]e|continuation)"
+  + "|prends soin de toi|je te laisse(?!\\s+(?!dormir|te reposer)(?:\\p{L}+(?:er|ir|re|oir)(?![\\p{L}])|la parole|le temps|la main))"
+  + "|on se reparle|dors bien|bye|bisous|مع السلامة|بسلامة|تصبح على خير"), 'iu');
 // (05/11, Ahmed : « sa manie de me parler d'Anamnèse ») Anamnèse, sa mémoire, ses outils nommés à tout propos, quand papa n'en a pas parlé ;
 // sa persona le définissait par Anamnèse (« la voix d'Anamnèse », « Anamnèse ta profondeur ») dans chacune de ses consignes
 const MACHINE_CITEE = new RegExp(MOT("anamn[èe]se|memory_\\w+|mcp__\\w+|parasite_signaler|mon syst[èe]me immunitaire|mes outils|mon outil|l['’]outil"), 'iu');
@@ -4181,6 +4186,7 @@ function nouveauRibosomeEntendu(c) {
   const r = nouveauRibosome(tourEpissure());
   return Object.assign(r, { source: c.source, voix: c.voix, chemin: c, aDire: [], dits: 0, dit: '' });
 }
+const LIMITE_ENTENDU = 320;
 function lancerPisteEntendue(c, m) {
   const conscient = modelePiste(), [mod, , delaiFrere] = FRERES_PISTE.find(([x]) => x === conscient) || FRERES_PISTE[0];
   const r = c.ribo || (c.ribo = nouveauRibosomeEntendu(c));
@@ -4210,9 +4216,11 @@ function lancerPisteEntendue(c, m) {
       const brut = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ');
       const comprend = ((/(?:^|\n)\s*COMPRENDS?\s*:\s*([^\n]*)/i.exec(brut) || [])[1] || '').trim();
       const t = boutDe(brut).replace(/^[\s"«]+|[\s"»]+$/g, '').replace(/\s+/g, ' ').trim();
-      const residu = residuParasite(t, m.texte), pasLui = estParasite(t, limitePensee(mod)) || /\bassistant\b/i.test(t) || !!residu;
-      if (pasLui) { if (o.vivant) o.vivant.n = VIVANT_RENOUVELER; avertirParasite(t, residu || signeParasite(t, limitePensee(mod))); }
-      const reponse = t && !pasLui && !/^RIEN\.?$/i.test(t) ? t.slice(0, limitePensee(mod) + 40) : '';
+      // (07/11, 16:05, Ahmed : « ses pensées sur la musique sont filtrées par l'immunité ») ce qu'il pense d'une chanson dépasse vite 160
+      // caractères (la limite d'un refus de rôle, chez Mini Hakim) : 320 ici ; ses prémisses, ses motifs et ses résidus jugent toujours
+      const residu = residuParasite(t, m.texte), pasLui = estParasite(t, LIMITE_ENTENDU) || /\bassistant\b/i.test(t) || !!residu;
+      if (pasLui) { if (o.vivant) o.vivant.n = VIVANT_RENOUVELER; avertirParasite(t, residu || signeParasite(t, LIMITE_ENTENDU)); }
+      const reponse = t && !pasLui && !/^RIEN\.?$/i.test(t) ? t.slice(0, LIMITE_ENTENDU + 40) : '';
       piste.reponse = reponse; piste.comprend = comprend.slice(0, 200);
       noterEntendu(c, { n: m.n, morceau: m.texte.slice(0, 160), ms: Date.now() - t0, comprend: piste.comprend, pensee: reponse.slice(0, 200), ...(pasLui ? { erreur: 'parasite' } : {}) });
       if (!reponse) return;
