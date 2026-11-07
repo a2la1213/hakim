@@ -358,7 +358,7 @@
       const oeil = k === 0 ? g : d;
       return { pointe: { x: pointe.x, y: pointe.y }, base: { x: oeil.x + (pointe.x - oeil.x) * 0.45, y: oeil.y + (pointe.y - oeil.y) * 0.45 } };
     });
-    return { type: 'dessin', yeux: [g, d].map(o => ({ x: o.x, y: o.y, rx: 0.28 * ecart, ry: 0.12 * ecart })),
+    return { type: 'dessin', yeux: [g, d].map(o => ({ x: o.x, y: o.y, rx: 0.26 * ecart, ry: 0.17 * ecart })),   // en amande comme ronds
       bouche: { x: b.x, y: b.y, l: 0.38 * ecart }, oreilles, visage: { x: cx, y: (cy + b.y) / 2, r: 1.15 * ecart } };
   }
   function gabaritParDefaut() {
@@ -408,8 +408,8 @@ uniform sampler2D tex; uniform float t, ouvre, sourire, lueur, flamme, echelle, 
 uniform vec4 oeilG, oeilD, bouche, oreilleG, oreilleD; uniform vec3 visage, teinte; uniform vec2 cligne, oreilleA, nOreilles;
 vec2 paupiere(vec2 uv, vec4 o, float c) {
   vec2 d = (uv - o.xy) / max(o.zw, vec2(1e-4));
-  float m = 1.0 - smoothstep(1.0, 1.7, length(vec2(d.x * 1.1, d.y * 0.5)));
-  uv.y = o.y + (uv.y - o.y) * mix(1.0, 1.0 + c * 7.0, m);
+  float m = 1.0 - smoothstep(0.85, 1.35, length(vec2(d.x, d.y * 0.6)));        // serré sur l'œil : pas de traînées dans le pelage
+  uv.y = o.y + (uv.y - o.y) * mix(1.0, 1.0 + c * 5.0, m);
   return uv;
 }
 vec2 oreille(vec2 uv, vec4 o, float a, float on) {
