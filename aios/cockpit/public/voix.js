@@ -582,9 +582,30 @@
     return { fraction: fin >= t.trimEnd().length ? 1 : fin / t.length, dit: t.slice(0, fin).trim() };
   }
 
+  /* (07/11, Ahmed : « pour la parole qu'il a préparée et gardée, il doit anticiper la latence de la sortie de sa voix et sélectionner parmi
+     la dernière voix prête celle qui pourrait au mieux aller dans le temps de latence ; il peut revenir sur une portion de parole prête si
+     elle est probablement la meilleure dans le temps de la latence ») mesuré le 07/11 : sur le téléphone, chaque morceau attendait son tour
+     dans la file 19 à 29 s, puis 3 à 8 s de calcul. Ce qu'il dit maintenant : le plus récent ; si sa voix n'est pas encore prête (plus de
+     1,5 s avant de sortir), une portion plus ancienne déjà prête, celle dont la durée remplit au mieux ce temps (la plus récente à égalité),
+     et le plus récent passe ensuite. Rien n'est jeté avant 30 s : il peut y revenir. file : [{ n, texte, t, prepA }] dans l'ordre. */
+  function choisirDansLatence(file, { maintenant = Date.now(), calculMs = 3500, sortieMs = 150, vieuxMs = 30000, cps = 15, seuilMs = 1500 } = {}) {
+    const vivants = (file || []).filter(b => b && maintenant - (Number(b.t) || maintenant) <= vieuxMs);
+    if (!vivants.length) return { choix: null, garde: [], latenceMs: 0, revenu: false };
+    const latence = (b) => Math.round(sortieMs + (b.prepA ? Math.max(0, calculMs - (maintenant - b.prepA)) : calculMs));
+    const duree = (b) => (String(b.texte || '').length / cps) * 1000;
+    const dernier = vivants[vivants.length - 1];
+    let choix = dernier;
+    const attendre = latence(dernier);
+    if (attendre > seuilMs) {
+      const pretes = vivants.filter(b => b !== dernier && latence(b) <= seuilMs);
+      for (const b of pretes) if (choix === dernier || Math.abs(duree(b) - attendre) <= Math.abs(duree(choix) - attendre) + 1) choix = b;
+    }
+    return { choix, garde: vivants.filter(b => b !== choix), latenceMs: latence(choix), revenu: choix !== dernier };
+  }
+
   const Voix = { versArabe, segmenter, pourLaVoix, decoupeur, choisirVoix, creerLecteur, FORMULE, VOIX_SEULE, AFFECT, sansAffect, latexParle,
     definirPrononciations,
-    diction, prononcable, enLettres, DEBUTS, HESITATIONS, debutDe, expressivitePhrase, sansDejaLivre, finDePhrase };
+    diction, prononcable, enLettres, DEBUTS, HESITATIONS, debutDe, expressivitePhrase, sansDejaLivre, finDePhrase, choisirDansLatence };
   racine.Voix = Voix;
   if (typeof module !== 'undefined' && module.exports) module.exports = Voix;
 })(typeof window !== 'undefined' ? window : globalThis);

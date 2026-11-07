@@ -508,7 +508,7 @@ test('voix du téléphone : ce que son ribosome a épissé n’est jamais rempla
   const dits = [], journal = [];
   const ctx = { Date, Math, String, Number, Set, Map, etat: { conversation: {} }, bouts: { tour: 5, prochain: 1, liste: new Map(), enFile: [], dits: [] },
     voixDuTelephone: () => true, souffleAutorise: () => true, meublerSaut: (b) => [b.texte], meubleEnCours: () => false, montrerPensee() {},
-    journalVoix: (e, d) => journal.push([e, d]), lecteurSysteme: { actif: true, dire: (x) => dits.push(x), preparer() {}, arreter() {} } };
+    journalVoix: (e, d) => journal.push([e, d]), lecteurSysteme: { actif: true, dire: (x) => dits.push(x), preparer() {}, arreter() {} }, reglagesCorps: { choisir_latence: false } };   // (07/11) l'ordre d'avant, épinglé
   vm.createContext(ctx);
   const prendre = (nom) => { const i = PAGE.indexOf(`function ${nom}(`); return PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2); };
   vm.runInContext(['recevoirBout', 'direBoutTelephone', 'boutTelephoneSuivant'].map(prendre).join('\n') + '\nthis.recevoir = recevoirBout; this.suivant = boutTelephoneSuivant;', ctx);

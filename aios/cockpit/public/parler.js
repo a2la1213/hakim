@@ -1268,6 +1268,9 @@ function mesurerVoix(u, m) {
     calcul_ms: Math.max(0, Number(m.calcule) - Number(m.appel)), ecouteurs_ms: sortie, latence_annoncee_ms: Number(m.latence_ms), page_ms: Math.max(0, Number(m.appel) - appel) };
   if (o) { d.reseau_ms = depuisMac(o.ts, o.recu); d.attente_ms = Math.max(0, appel - o.recu); d.total_ms = depuisMac(o.ts, Number(m.entendu)); }
   journalVoix('sortie_voix', d);
+  // (07/11) ce qu'il apprend de sa sortie, pour choisir ce qu'il dit dans le temps qu'elle prend (Voix.choisirDansLatence)
+  const lisse = (a, x) => (Number.isFinite(a) ? Math.round(a * 0.7 + x * 0.3) : x);
+  if (typeof etat !== 'undefined') { if (!d.prechargee) etat.calculVoixMs = lisse(etat.calculVoixMs, d.calcul_ms); etat.sortieVoixMs = lisse(etat.sortieVoixMs, sortie); }
 }
 let parolesDepuis = 0;
 function envoyerParoles(qui, texte) {
@@ -3398,7 +3401,7 @@ function recevoirBout(s, n, tour) {
     if (lecteurSysteme.actif) {
       // (04/11, 14:20, Ahmed : « je vois sa pensée seule, pas l'épissée pour parler ») ce que son ribosome a épissé n'est jamais remplacé
       // ni oublié : il attend son tour, dans l'ordre
-      if (s.ribosome) { b.dit = meublerSaut(b); if (typeof lecteurSysteme.preparer === 'function') b.dit.forEach(x => lecteurSysteme.preparer(x)); bouts.fileTel = (bouts.fileTel || []).concat([b]); return; }   // (06/11) calculée d'avance : pas de blanc
+      if (s.ribosome) { b.dit = meublerSaut(b); if (typeof lecteurSysteme.preparer === 'function') { b.dit.forEach(x => lecteurSysteme.preparer(x)); b.prepA = Date.now(); } bouts.fileTel = (bouts.fileTel || []).concat([b]); return; }   // (06/11) calculée d'avance : pas de blanc
       if (bouts.attenteTel) montrerPensee('🧠 il pense, sans le dire', bouts.attenteTel.texte, true);   // remplacé : pensé, pas dit
       // (1.60, Ahmed : « chaque cœur qui traite le même chunk sur le Mac et sur le smartphone doit être relié et coordonné ») ce qu'il
       // dira (son meuble compris) : sa voix se calcule déjà sur le téléphone, pendant que la précédente se dit
@@ -3482,7 +3485,20 @@ function direBoutTelephone(conv, b) {
 }
 function boutTelephoneSuivant() {
   const f = typeof bouts !== 'undefined' ? bouts.fileTel || [] : [];
-  if (f.length && etat.conversation && !(lecteurSysteme && lecteurSysteme.actif)) { direBoutTelephone(etat.conversation, f.shift()); return; }   // (14:20) l'épissé d'abord, sans délai d'oubli
+  if (f.length && etat.conversation && !(lecteurSysteme && lecteurSysteme.actif)) {
+    // (07/11, Ahmed : « anticiper la latence de la sortie de sa voix, et choisir parmi les dernières voix prêtes celle qui va au mieux dans ce
+    // temps ; il peut revenir sur une portion prête ») réglage choisir_latence (oui) ; éteint : dans l'ordre, comme le 04/11 à 14:20
+    if (typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.choisir_latence !== false) {
+      const r = Voix.choisirDansLatence(f, { maintenant: Date.now(), calculMs: Number(etat.calculVoixMs) || 3500, sortieMs: Number(etat.sortieVoixMs) || 150 });
+      const perdus = f.length - r.garde.length - (r.choix ? 1 : 0);
+      bouts.fileTel = r.garde;
+      if (perdus > 0 && typeof journalVoix === 'function') journalVoix('latence_trop_vieux', { n: perdus });
+      if (r.choix) {
+        if (typeof journalVoix === 'function') journalVoix('choix_latence', { n: r.choix.n, revenu: r.revenu, latence_ms: r.latenceMs, en_attente: r.garde.length });
+        direBoutTelephone(etat.conversation, r.choix); return;
+      }
+    } else { direBoutTelephone(etat.conversation, f.shift()); return; }   // (14:20) l'épissé d'abord, sans délai d'oubli
+  }
   const b = typeof bouts !== 'undefined' ? bouts.attenteTel : null, conv = etat.conversation;
   if (!b || !conv || (lecteurSysteme && lecteurSysteme.actif)) return;
   bouts.attenteTel = null;

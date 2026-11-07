@@ -462,3 +462,28 @@ test('voix du téléphone, coupée : la phrase en cours finit, les suivantes son
   dits[1].onend();                                                  // l'annulée qui se signale : ignorée
   assert.equal(fins, 0); dits[2].onstart(); dits[2].onend(); assert.equal(fins, 1);
 });
+
+// (07/11, Ahmed : « anticiper la latence de la sortie de sa voix, sélectionner parmi la dernière voix prête celle qui va au mieux dans ce temps ;
+// il peut revenir sur une portion de parole prête si elle est probablement la meilleure dans le temps de la latence »)
+test('choisir dans la latence : le plus récent s’il sort vite ; sinon une portion prête qui remplit ce temps, et le plus récent garde sa place', () => {
+  const now = 100000;
+  const prete3s = { n: 1, texte: 'Une portion déjà prête qui dure trois secondes.', t: now - 8000, prepA: now - 8000 };
+  const courte = { n: 2, texte: 'courte', t: now - 6000, prepA: now - 6000 };
+  const neuve = { n: 3, texte: 'La toute dernière, pas encore calculée', t: now - 200, prepA: now - 200 };
+  let r = Voix.choisirDansLatence([prete3s, courte, neuve], { maintenant: now, calculMs: 3500, sortieMs: 150 });
+  assert.equal(r.choix, prete3s, 'la portion prête dont la durée remplit le temps de calcul du plus récent');
+  assert.equal(r.revenu, true);
+  assert.deepEqual(r.garde, [courte, neuve], 'rien de jeté : il peut y revenir');
+  r = Voix.choisirDansLatence([prete3s, courte, { ...neuve, prepA: now - 5000 }], { maintenant: now, calculMs: 3500, sortieMs: 150 });
+  assert.equal(r.choix.n, 3, 'le plus récent est prêt : c’est lui');
+  r = Voix.choisirDansLatence([{ ...prete3s, t: now - 40000 }, neuve], { maintenant: now });
+  assert.equal(r.choix, neuve, 'plus de 30 s : trop vieux, et rien d’autre de prêt');
+  assert.deepEqual(r.garde, []);
+  assert.equal(Voix.choisirDansLatence([], { maintenant: now }).choix, null);
+});
+
+test('branché : la file de sa voix du téléphone passe par le choix (réglage choisir_latence), ses mesures de sortie l’apprennent', () => {
+  assert.match(SRC, /reglagesCorps\.choisir_latence !== false\) \{\s*const r = Voix\.choisirDansLatence\(f,/);
+  assert.match(SRC, /etat\.calculVoixMs = lisse\(etat\.calculVoixMs, d\.calcul_ms\)/);
+  assert.match(SRC, /b\.dit\.forEach\(x => lecteurSysteme\.preparer\(x\)\); b\.prepA = Date\.now\(\);/);
+});
