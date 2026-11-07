@@ -2166,6 +2166,11 @@ function reagir(emoji) {
    [[bout: remiser]] garde le bout suivant pour plus tard (écrit, pas dit). Au-delà de 3 bouts, la suite est remisée d'office.
    Les bouts remisés partent au cockpit : il les retrouve à son tour suivant, et les dit quand il veut. */
 const BOUT_PHRASES = 3, BOUTS_MAX = 3;
+// (07/11, 15:17, Hakim à la demande de papa : « ma voix s'arrête seule ») sa réponse de 14 phrases s'est tue à la 9e, la suite remisée
+// d'office ; or papa veut sa réponse lue en entier (06/11) et l'épissage lui promet « ce que tu commences va au bout » (04/11). Le
+// plafond de 3 bouts ne vaut plus que sans les deux ; son geste conscient [[bout: remiser]] reste le sien.
+const plafondBouts = () => typeof reglagesCorps !== 'undefined' && !!reglagesCorps && reglagesCorps.epissage === false
+  && !(typeof lireEntiere === 'function' && lireEntiere());
 function boutDire(m, p) {
   const b = m.bouts || (m.bouts = { phrases: 0, remise: 0, remises: [] });
   const t = String(p || '');
@@ -2173,7 +2178,7 @@ function boutDire(m, p) {
   if (/\[\[\s*bout\s*:\s*remiser\s*\]\]/i.test(t)) { b.remise = BOUT_PHRASES; journalVoix('bout', { geste: 'remiser' }); }
   // (13:30) [[meuble: nom]] : un de ses meubles, à sa place dans ce bout (avant ce qui suit la balise)
   const MEUBLE = /\[\[\s*meuble\s*:\s*([^\]]{1,30})\]\]/gi;
-  if (MEUBLE.test(t) && lecteur.impl === lecteurNeuronal && !(b.remise > 0 || b.phrases >= BOUT_PHRASES * BOUTS_MAX)) {
+  if (MEUBLE.test(t) && lecteur.impl === lecteurNeuronal && !(b.remise > 0 || (plafondBouts() && b.phrases >= BOUT_PHRASES * BOUTS_MAX))) {
     MEUBLE.lastIndex = 0;
     let k = 0, x;
     while ((x = MEUBLE.exec(t))) {
@@ -2191,7 +2196,7 @@ function boutDire(m, p) {
   const propre = Voix.sansAffect(t).trim();
   if (!propre) return false;
   b.phrases++;
-  const auDela = b.phrases > BOUT_PHRASES * BOUTS_MAX;
+  const auDela = plafondBouts() && b.phrases > BOUT_PHRASES * BOUTS_MAX;
   if (b.remise > 0 || auDela) {
     if (b.remise > 0) b.remise--;
     b.remises.push(propre);
@@ -2304,22 +2309,34 @@ function noterPresent(ev) {
 }
 // les moments où SA voix a joué (2 min) : un écho ne peut venir que de là (la pièce résonne ~1,5 s après)
 const voixJouee = [];
+// (07/11, 15:17, Hakim : « tu as parlé 2,2 s, puis 31,9 s de silence » alors que sa voix a joué 23 s) un blanc de moins de 1,5 s entre
+// deux morceaux ne coupe pas sa parole ; elle se clôt après 1,5 s de silence (ou tout de suite si on l'a arrêtée), à la fin du son
+const BLANC_PAROLE_MS = 1500;
 function voixPendant(debut, fin) {
-  if (etat.parleDepuis && etat.parleDepuis <= fin + 500) return true;
+  if (etat.parleDepuis && etat.parleDepuis <= fin + 500 && (etat.taitDepuis || Infinity) + 1500 >= debut) return true;
   return voixJouee.some(v => v.debut <= fin + 500 && v.fin + 1500 >= debut);
 }
 function noterParoleJarvis(parle) {
-  if (parle && !etat.parleDepuis) { etat.parleDepuis = Date.now(); etat.coupeParAhmed = false; etat.finParole = null; }
-  else if (!parle && etat.parleDepuis) {
-    voixJouee.push({ debut: etat.parleDepuis, fin: Date.now() });
+  if (parle) {
+    if (!etat.parleDepuis) { etat.parleDepuis = Date.now(); etat.coupeParAhmed = false; etat.finParole = null; }
+    etat.taitDepuis = 0;
+  } else if (etat.parleDepuis) {
+    if (!etat.taitDepuis) etat.taitDepuis = Date.now();
+    if (!etat.finParole && Date.now() - etat.taitDepuis < BLANC_PAROLE_MS) return;   // un blanc entre deux morceaux
+    const finSon = etat.taitDepuis;
+    voixJouee.push({ debut: etat.parleDepuis, fin: finSon });
     while (voixJouee.length && Date.now() - voixJouee[0].fin > 120000) voixJouee.shift();
     // (30/10) comment elle s'est arrêtée (finirParole, coupureProvisoire) ; sans cause : un blanc, la réponse arrive encore
     const f = etat.finParole;
-    noterPresent({ e: 'jarvis', debut: etat.parleDepuis, fin: Date.now(), coupe: etat.coupeParAhmed,
+    noterPresent({ e: 'jarvis', debut: etat.parleDepuis, fin: finSon, coupe: etat.coupeParAhmed,
       ...(f ? { cause: f.cause, ...(f.detail ? { detail: f.detail } : {}) } : {}) });
-    etat.parleDepuis = 0; etat.finParole = null;
+    etat.parleDepuis = 0; etat.taitDepuis = 0; etat.finParole = null;
   }
 }
+// relevée 4 fois par seconde, pas seulement quand son humeur change (le 07/11, rien ne l'avait rouverte après le 1er morceau)
+setInterval(() => {
+  try { if (typeof lecteurNeuronal !== 'undefined') noterParoleJarvis(lecteurNeuronal.joue || !!(typeof lecteurSysteme !== 'undefined' && lecteurSysteme && lecteurSysteme.actif)); } catch (_) {}
+}, 250);
 
 let envoiPrepare = null;
 async function envoyer(texte, oral, dejaRelance) {

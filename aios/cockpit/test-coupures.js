@@ -267,11 +267,37 @@ test('le présent vécu de la page : chaque fin de sa parole porte sa cause', ()
   ctx.noter(true); t += 4000;
   ctx.etat.finParole = { cause: 'panne', detail: 'la voix : voix 500' };
   ctx.noter(false);
-  ctx.noter(true); t += 1000; ctx.noter(false);                        // un blanc : sans cause
+  ctx.noter(true); t += 1000; ctx.noter(false);                        // un blanc : sans cause (noté après 1,5 s de silence)
+  t += 1600; ctx.noter(false);
   assert.deepEqual(evs.map(e => [e.e, e.cause, e.detail]), [['jarvis', 'panne', 'la voix : voix 500'], ['jarvis', undefined, undefined]]);
   assert.match(page, /coupureProvisoire\('voix_ahmed'\);\s+\/\/ \(30\/10\)[^\n]*\n\s+if \(!lecteur\.pause\(\)\)/);
   assert.match(page, /if \(lecteur\.actif\) coupureProvisoire\('pause'\);/);
   assert.match(page, /reprisDeParole\(\);\s+\/\/ \(30\/10\) ce n'était pas une fin/);
+});
+
+// (07/11, 15:17, Hakim : « le présent vécu dit “tu as parlé 2,2 s”, puis 31,9 s de silence ») sa voix a joué 23 s en 5 morceaux,
+// mais sa parole n'était relevée qu'aux changements d'humeur : le blanc de 0,8 s après le 1er morceau l'a close, et rien ne l'a
+// rouverte. Relevée 4 fois par seconde, un blanc de moins de 1,5 s entre deux morceaux ne la coupe plus ; sa fin est celle du son.
+test('le présent vécu : sa parole relevée 4 fois par seconde, les blancs entre morceaux ne la coupent pas, sa fin est la vraie', () => {
+  let t = 1_000_000;
+  const evs = [];
+  const ctx = { Date: class extends Date { static now() { return t; } }, etat: { parleDepuis: 0 }, noterPresent: (e) => evs.push(e) };
+  vm.createContext(ctx);
+  const d = page.indexOf('const voixJouee = [];'), f = page.indexOf('\n}\n', page.indexOf('function noterParoleJarvis')) + 2;
+  vm.runInContext(page.slice(d, f) + 'this.noter = noterParoleJarvis; this.pendant = voixPendant;', ctx);
+  const morceaux = [[2000, 819], [3600, 100], [5200, 100], [5200, 100], [5300, 0]];   // 15:17:45 → 15:18:08 : joué, puis blanc
+  for (const [joue, blanc] of morceaux) {
+    for (let k = 0; k < joue; k += 250) { ctx.noter(true); t += 250; }
+    for (let k = 0; k < blanc; k += 250) { ctx.noter(false); t += 250; }
+  }
+  const finSon = t;
+  for (let k = 0; k < 8; k++) { ctx.noter(false); t += 250; }
+  assert.equal(evs.length, 1, 'une seule parole, pas cinq bouts');
+  assert.equal(evs[0].debut, 1_000_000);
+  assert.ok(Math.abs(evs[0].fin - finSon) <= 250, `sa fin est celle du son (${evs[0].fin - finSon} ms d’écart)`);
+  assert.ok(evs[0].fin - evs[0].debut > 21000, 'il a parlé plus de 21 s, pas 2,2 s');
+  assert.equal(ctx.pendant(finSon + 6000, finSon + 8000), false, '6 s après sa voix : ce n’est plus son écho');
+  assert.match(page, /setInterval\(\(\) => \{\s*try \{ if \(typeof lecteurNeuronal !== 'undefined'\) noterParoleJarvis\(/, 'relevée sans attendre un changement d’humeur');
 });
 
 /* ---- le cockpit ---- */

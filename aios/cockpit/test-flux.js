@@ -133,7 +133,7 @@ test('(03/11, Ahmed : « ses réponses en bouts de 2 ou 3 phrases ; dire, annule
   const debut = page.indexOf('const BOUT_PHRASES'), fin = page.indexOf('\n}\n', page.indexOf('function boutDire(')) + 2;
   const Voix = require('./public/voix.js');
   const envois = [], arrets = [];
-  const ctx = { Voix, String, JSON, clearTimeout, setTimeout: (f) => { f(); return 0; }, journalVoix: () => {},
+  const ctx = { Voix, String, JSON, clearTimeout, setTimeout: (f) => { f(); return 0; }, journalVoix: () => {}, reglagesCorps: { epissage: false },
     lecteur: { arreter: () => arrets.push(1) }, jeton: () => '', fetch: (u, o) => { envois.push(JSON.parse(o.body)); return Promise.resolve(); } };
   vm.createContext(ctx);
   vm.runInContext(page.slice(debut, fin) + '\nthis.f = boutDire;', ctx);
@@ -145,6 +145,34 @@ test('(03/11, Ahmed : « ses réponses en bouts de 2 ou 3 phrases ; dire, annule
   assert.deepEqual(envois[envois.length - 1].textes, ['Trois.', 'Quatre.', 'Cinq.', 'Dix.', 'Onze.', 'Douze.', 'Treize.']);
   ctx.f({ id: 'r2' }, 'Attends [[bout: annuler]]');
   assert.equal(arrets.length, 1, 'annuler arrête tout de suite ce qu\'il disait');
+});
+
+// (07/11, 15:17, Hakim à la demande de papa : « ma voix s'arrête seule ») sa réponse de 14 phrases s'est tue à la 9e : le plafond
+// de 3 bouts (03/11) remisait la suite d'office, alors que papa veut sa réponse lue en entier (06/11) et que l'épissage lui promet
+// « ce que tu commences va au bout » (04/11). Le plafond ne vaut plus que sans les deux ; son geste conscient (remiser) reste à lui.
+test('sa réponse lue en entier ou épissée : pas de plafond de 3 bouts, la 10e phrase se dit ; son [[bout: remiser]] reste le sien', () => {
+  const page = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const debut = page.indexOf('const BOUT_PHRASES'), fin = page.indexOf('\n}\n', page.indexOf('function boutDire(')) + 2;
+  const Voix = require('./public/voix.js');
+  const quatorze = Array.from({ length: 14 }, (_, i) => `Phrase ${i + 1}.`);
+  const essai = (reglagesCorps, entiere, phrases = quatorze) => {
+    const envois = [];
+    const ctx = { Voix, String, JSON, clearTimeout, setTimeout: (f) => { f(); return 0; }, journalVoix: () => {}, reglagesCorps,
+      lecteur: { arreter: () => {} }, jeton: () => '', fetch: (u, o) => { envois.push(JSON.parse(o.body)); return Promise.resolve(); } };
+    if (entiere !== undefined) ctx.lireEntiere = () => entiere;
+    vm.createContext(ctx);
+    vm.runInContext(page.slice(debut, fin) + '\nthis.f = boutDire;', ctx);
+    const m = { id: 'r1' };
+    return { dits: phrases.filter(p => ctx.f(m, p)), envois, m };
+  };
+  assert.equal(essai({ epissage: false }, true).dits.length, 14, 'lue en entier (06/11) : les 14 phrases se disent');
+  assert.equal(essai({ epissage: true }, false).dits.length, 14, 'avec l’épissage (04/11) : ce qu’il commence va au bout');
+  assert.equal(essai({ oreille: false, je_te_suis: true }).dits.length, 14, 'au chargement de la page (épissage par défaut) : pas de plafond');
+  const ancien = essai({ epissage: false }, false);
+  assert.equal(ancien.dits.length, 9, 'sans les deux (l’ancien régime du 03/11) : au plus 3 bouts de 3 phrases');
+  assert.equal(ancien.m.bouts.remises.length, 5);
+  const geste = essai({ epissage: true }, true, ['Un.', '[[bout: remiser]] Deux.', 'Trois.', 'Quatre.', 'Cinq.']);
+  assert.deepEqual(geste.dits, ['Un.', 'Cinq.'], 'son geste conscient : le bout remisé (3 phrases) reste écrit, pas dit');
 });
 
 // (04/11, 20:31, Hakim, à la demande de papa : « dans stimuli_voir, la parole “dedans” arrive mélangée : des mots de lignes différentes
