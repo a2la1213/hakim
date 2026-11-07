@@ -12842,7 +12842,7 @@ async function traiter(req, res) {
       v.appels++; v.usd += Number(x.cout_usd) || 0; v.jetons += (Number(x.entree) || 0) + (Number(x.cache_lu) || 0) + (Number(x.cache_ecrit) || 0) + (Number(x.sortie) || 0);
     }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    return res.end(j({ lignes: Object.values(g).sort((a, b) => b.usd - a.usd), chf_par_usd: tauxChf.v, taux_date: tauxChf.date }));
+    return res.end(j({ lignes: Object.values(g).sort((a, b) => b.usd - a.usd), chf_par_usd: tauxChf.v, taux_date: tauxChf.date, effort: EFFORT_HAKIM }));   // (07/11) son effort, sous l'orbe
   }
   if (p === '/api/reglages/profils') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }

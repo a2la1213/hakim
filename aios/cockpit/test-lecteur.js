@@ -16,7 +16,7 @@ const corps = (() => { const i = SRC.indexOf('function creerLecteurNeuronal'); r
 const Voix = require('./public/voix.js');
 
 // Une boucle d'événements à temps virtuel : les promesses se résolvent entre deux minuteries.
-function simulateur({ fixe, parSec, cps, appris, conversation = true, prets = [], sonsMac = {}, appli = false }) {
+function simulateur({ fixe, parSec, cps, appris, conversation = true, prets = [], sonsMac = {}, appli = false, horloge = false }) {
   let maintenant = 0, suivant = 1;
   const minuteries = new Map();
   const planifier = (fn, ms, repete) => { const id = suivant++; minuteries.set(id, { t: maintenant + Math.max(0, ms) / 1000, fn, repete }); return id; };
@@ -61,6 +61,7 @@ function simulateur({ fixe, parSec, cps, appris, conversation = true, prets = []
     },
   };
   cx.window = cx;
+  if (horloge) cx.Date = class extends Date { static now() { return Math.round(maintenant * 1000); } };   // (07/11) l'heure du mur suit l'horloge virtuelle
   if (appli) cx.HakimApp = { sonJouer: (source, ref, d, f) => { natifs.push({ t: maintenant, duree: (f - d) / 1000 }); return 'ok'; } };
   cx.vitesseVoix = () => (cx.etat.reglages.vitesse || 1);   // (26/10) le rythme de l'état passe par la voix (tempo), plus par la lecture
   cx.tempoVoix = () => 1;
@@ -78,7 +79,7 @@ function simulateur({ fixe, parSec, cps, appris, conversation = true, prets = []
       m.fn();
     }
   }
-  return { lecteur: cx.lecteur, sons, demandes, natifs, avancer, get maintenant() { return maintenant; } };
+  return { lecteur: cx.lecteur, sons, demandes, natifs, avancer, cx, get maintenant() { return maintenant; } };
 }
 
 // Une réponse de Jarvis : la 1re phrase est complète à t = 0, la suite s'écrit à 60 caractères/s.
@@ -772,4 +773,49 @@ test('seule une vraie phrase (4 mots, pas un « ok » ni un « vas-y ») lâche 
   for (const t of ['ok', 'Oui.', 'vas-y', 'mmh', "d'accord", 'ouais ouais', 'wesh', 'Ah bon']) assert.equal(cx.f(t), false, t);
   for (const t of ['Attends, parle-moi plutôt du jardin', 'Non mais écoute ce que je te dis']) assert.equal(cx.f(t), true, t);
   assert.match(SRC, /if \(voixEpissee\(\) && etat\.flux && lacherAncien && !ilGarde && vraiePhrase\)/);
+});
+
+// (07/11, Ahmed : « rajoute une dernière vérif : des fois, la transition de Hakim entre deux de ses paroles se chevauche, entre la fin d'un
+// morceau et le début du suivant ») la dernière vérification, juste avant qu'un bout de sa voix parte : rien d'autre ne sonne encore
+test('dernière vérification : sa voix de secours parle encore, le bout suivant attend sa fin (10 s au plus) ; c’est noté', async () => {
+  const sim = simulateur({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 } });
+  const journal = [];
+  sim.cx.journalVoix = (e, o) => journal.push([e, o]);
+  let reste = 4000;
+  sim.cx.lecteurSysteme = { actif: true, resteEstimeMs: () => reste, dire() {} };   // la voix de secours dit encore 4 s
+  sim.lecteur.dire('Une phrase assez courte.');
+  sim.lecteur.finFlux();
+  await sim.avancer(20);
+  assert.ok(sim.sons[0].debut >= 4, `elle part après la voix de secours (${sim.sons[0].debut.toFixed(2)} s)`);
+  assert.ok(journal.some(([e, o]) => e === 'chevauchement_evite' && o.avec === 'voix_de_secours'), 'noté au journal');
+  // une estimation qu'on ne connaît pas, ou trop longue (une voix bloquée) : jamais d'attente sans fin
+  const sim2 = simulateur({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 } });
+  sim2.cx.lecteurSysteme = { actif: true, resteEstimeMs: () => Infinity, dire() {} };
+  sim2.lecteur.dire('Une phrase assez courte.');
+  sim2.lecteur.finFlux();
+  await sim2.avancer(20);
+  assert.ok(sim2.sons[0].debut < 3, `pas d’attente sans fin (${sim2.sons[0].debut.toFixed(2)} s)`);
+});
+
+test('dernière vérification : aucun bout de sa voix ne chevauche le précédent, même quand le suivant est prêt d’avance', async () => {
+  const r = await jouer({ ...MESUREE, appris: { fixe: 0.2, parSec: 0.1, cps: 22 } });   // une machine rapide : tout est prêt d'avance
+  const voix = r.sons.slice().sort((a, b) => a.debut - b.debut);
+  for (let i = 1; i < voix.length; i++)
+    assert.ok(voix[i].debut >= voix[i - 1].fin - 1e-6, `« ${voix[i].texte.slice(0, 30)} » commence ${((voix[i - 1].fin - voix[i].debut) * 1000).toFixed(0)} ms avant la fin du précédent`);
+  assert.match(corps, /if \(!x\.auto && fluide\(\)\) \{/, 'la vérification, avant chaque bout de sa voix (les meubles s’éteignent en fondu)');
+});
+
+test('l’heure de chaque bout dit : celle où son son part vraiment, pas celle où la page a eu le temps de le noter', async () => {
+  const sim = simulateur({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 }, horloge: true });
+  const notes = [];
+  sim.lecteur.surSegment = (t, duree, debutMs) => notes.push({ t, debutMs });
+  for (const p of REPONSE.slice(0, 3)) sim.lecteur.dire(p);
+  sim.lecteur.finFlux();
+  await sim.avancer(60);
+  assert.ok(notes.length >= 3);
+  notes.forEach((n, i) => assert.ok(Math.abs(n.debutMs - sim.sons[i].debut * 1000) <= 1, `bout ${i} : noté à ${n.debutMs} ms, parti à ${Math.round(sim.sons[i].debut * 1000)} ms`));
+  assert.match(SRC, /function noterMorceau\(texte, dureeMs, debutMs\) \{/);
+  assert.match(SRC, /debut: Number\(debutMs\) > 0 \? Math\.round\(Number\(debutMs\)\) : Date\.now\(\)/, 'voix-dite.jsonl et le présent vécu prennent cette heure-là');
+  assert.match(SRC, /lecteurNeuronal\.surSegment = \(t, duree, debutMs\) => \{/);
+  assert.match(SRC, /noterMorceau\(t, duree, debutMs\)/);
 });

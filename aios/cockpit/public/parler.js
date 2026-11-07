@@ -751,6 +751,21 @@ function creerLecteurNeuronal() {
   }
 
   function programmer(x, t) {
+    // (07/11, Ahmed : « rajoute une dernière vérif : des fois, la transition entre deux de ses paroles se chevauche, entre la fin d'un morceau
+    // et le début du suivant ») la dernière vérification, juste avant qu'un bout de sa voix parte : plus rien d'autre ne sonne à cet instant
+    // (sa voix d'avant, un de ses sons, la voix de secours du téléphone ou du Mac) ; sinon il part juste après, et c'est noté. Les meubles
+    // (auto) n'y passent pas : sa réponse les éteint en fondu, et part à la fin du fondu.
+    if (!x.auto && fluide()) {
+      const finSources = Math.max(0, ...[...sources].map(s2 => s2._fin || 0));
+      const sys = typeof lecteurSysteme !== 'undefined' && lecteurSysteme && lecteurSysteme !== L && lecteurSysteme.actif
+        && typeof lecteurSysteme.resteEstimeMs === 'function' ? Number(lecteurSysteme.resteEstimeMs()) : 0;
+      const finSecours = Number.isFinite(sys) && sys > 0 && sys < 10000 ? actx.currentTime + sys / 1000 + 0.05 : 0;   // 10 s au plus
+      const libre = Math.max(finSources, finSecours);
+      if (libre > t + 0.005) {
+        if (typeof journalVoix === 'function') journalVoix('chevauchement_evite', { ms: Math.round((libre - t) * 1000), avec: finSecours >= libre ? 'voix_de_secours' : 'sa_voix' });
+        t = libre + 0.01;
+      }
+    }
     if (x.pret && x.pret.natif) {                                  // (01:50) joué par l'appli, à sa place ; la suite attend sa fin
       const s0 = x.son, dans = Math.max(0, (t - actx.currentTime) * 1000), fin = dans + x.pret.duration * 1000 + 150;
       // une place dans « sources » : sa voix reste « active » le temps de l'extrait (le micro ne se rouvre pas, la fin n'est pas dite)
@@ -796,7 +811,9 @@ function creerLecteurNeuronal() {
     if (!x.hesitation) { dejaParle = true; attendre = false; }
     const g = generation;
     const duree = joue * 1000;                                 // (30/10) sa durée : où il en est quand on le coupe
-    if (!x.son && !x.hesitation) setTimeout(() => { if (g === generation && L.surSegment) L.surSegment(x.texte, duree); }, Math.max(0, (t - actx.currentTime) * 1000));
+    // (07/11) l'heure où son son part vraiment (la minuterie de la page peut arriver en retard, téléphone chargé ou en poche)
+    const debutMs = Date.now() + Math.max(0, (t - actx.currentTime) * 1000);
+    if (!x.son && !x.hesitation) setTimeout(() => { if (g === generation && L.surSegment) L.surSegment(x.texte, duree, debutMs); }, Math.max(0, (t - actx.currentTime) * 1000));
     src.onended = () => { sources.delete(src); if (src._auto && fluide()) finDernierMeuble = actx.currentTime; if (g === generation) pomper(); };
   }
 
@@ -1364,7 +1381,7 @@ function envoyerParoles(qui, texte) {
     try { window.HakimApp.paroles(JSON.stringify(o)); } catch (_) {}
   }, 250);
 }
-lecteurNeuronal.surSegment = (t, duree) => {
+lecteurNeuronal.surSegment = (t, duree, debutMs) => {
   // (04/11) un bout de sa réponse commence : il s'écrit à cet instant, à la suite des bouts déjà dits ; (12:40) et ce que son ribosome a choisi
   if (typeof revelerRibosome === 'function') revelerRibosome(t, duree);
   if (typeof bouts !== 'undefined' && bouts.enFile[0] === t) {
@@ -1379,7 +1396,7 @@ lecteurNeuronal.surSegment = (t, duree) => {
   const mR = etat.lectureDe != null ? etat.messages.find(x => String(x.id) === String(etat.lectureDe)) : null;
   if (mR && mR.auRythme) { mR.ditCar = (mR.ditCar || 0) + String(t || '').length + 1; majMessage(mR); }
   if (mesureTour && mesureTour.premier_texte && !mesureTour.premier_son) { mesureTour.premier_son = Date.now(); finMesureTour(); }
-  noterParole(t); noterMorceau(t, duree); if (!reponseCachee()) sousTitre(t);   // (16:08 ; 04/11) en Conversation et en Télépathie, sa réponse ne s'écrit pas
+  noterParole(t); noterMorceau(t, duree, debutMs); if (!reponseCachee()) sousTitre(t);   // (16:08 ; 04/11) en Conversation et en Télépathie, sa réponse ne s'écrit pas
   if (!reponseCachee()) envoyerParoles('hakim', t);                   // (14:47) ce qu'il dit, sous l'orbe de l'appli ; (04/11) hors des deux modes
   couperAuDebutDeSaVoix();                                             // (09:12)
 };
@@ -1487,11 +1504,12 @@ function vibrerPourMorceau(id, texte) {
   } catch (_) {}
 }
 // un morceau commence à jouer (surSegment) : son texte, son heure, sa durée (connue pour la voix neuronale, estimée sinon)
-function noterMorceau(texte, dureeMs) {
+function noterMorceau(texte, dureeMs, debutMs) {
   if (etat.lectureDe == null) return;
   const p = paroleDe(etat.lectureDe), x = String(texte || '');
   if (p.rejoue) { p.morceaux.pop(); p.rejoue = false; }           // après une pause : le morceau coupé repart du début
-  p.morceaux.push({ texte: x, debut: Date.now(), duree: dureeMs > 0 ? dureeMs : (x.length / 15 / vitesseVoix()) * 1000 });
+  // (07/11) l'heure où son son est vraiment parti (voix neuronale), pas celle où la page a eu le temps de le noter
+  p.morceaux.push({ texte: x, debut: Number(debutMs) > 0 ? Math.round(Number(debutMs)) : Date.now(), duree: dureeMs > 0 ? dureeMs : (x.length / 15 / vitesseVoix()) * 1000 });
   garderParoleEnCours();
   vibrerPourMorceau(etat.lectureDe, x);
   // (30/10, 16:20, Ahmed via Hakim : « l'heure à laquelle chaque phrase de ma voix est réellement dite ») au cockpit, pour son journal
@@ -7729,6 +7747,15 @@ function prechaufferReflexion(reprise = false) {
   fetch('/api/jarvis/prechauffer', { method: 'POST', headers: { 'X-Jeton': jeton() } }).catch(() => {});
 }
 
+// (07/11, Ahmed : « dans la conversation de Parler, j'aimerais aussi avoir le niveau d'effort sous l'orbe au lieu du prix de l'API ») l'effort
+// qu'il s'est choisi (effort_regler) ; un cockpit qui ne le donne pas encore : le prix de l'API, comme avant
+const EFFORTS_NOMS = { low: 'bas', medium: 'moyen', high: 'haut', xhigh: 'très haut', max: 'max' };
+function texteCompteur(d) {
+  const t = d.chf_par_usd || 0.8, n = d.lignes.reduce((a, x) => a + x.jetons, 0), tout = d.lignes.reduce((a, x) => a + x.usd, 0), api = d.lignes.filter(x => x.source === 'api').reduce((a, x) => a + x.usd, 0);
+  const fr = (v) => v.toLocaleString('fr-CH', { maximumFractionDigits: v < 10 ? 2 : 0 });
+  const fin = EFFORTS_NOMS[d.effort] ? `effort ${EFFORTS_NOMS[d.effort]}` : `API ${fr(api * t)}`;
+  return `${n >= 1e6 ? `${fr(n / 1e6)} M` : `${Math.round(n / 1000)} k`} · ${fr(tout * t)} CHF · ${fin}`;
+}
 // (05/11, Ahmed : « un petit compteur de jetons, converti en CHF, sous l'orbe ; à afficher ou pas dans les réglages rapides ») aujourd'hui, relu toutes les 30 s
 (() => {
   const CLE_C = 'hakim-compteur-jetons', c = document.getElementById('compteurActif'), z = document.getElementById('compteurJetons');
@@ -7739,9 +7766,7 @@ function prechaufferReflexion(reprise = false) {
     if (!actif || document.hidden) return;
     try {
       const d = await (await fetch('/api/conso', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' })).json();
-      const t = d.chf_par_usd || 0.8, n = d.lignes.reduce((a, x) => a + x.jetons, 0), tout = d.lignes.reduce((a, x) => a + x.usd, 0), api = d.lignes.filter(x => x.source === 'api').reduce((a, x) => a + x.usd, 0);
-      const fr = (v) => v.toLocaleString('fr-CH', { maximumFractionDigits: v < 10 ? 2 : 0 });
-      z.textContent = `${n >= 1e6 ? `${fr(n / 1e6)} M` : `${Math.round(n / 1000)} k`} · ${fr(tout * t)} CHF · API ${fr(api * t)}`;
+      z.textContent = texteCompteur(d);
     } catch (_) {}
   };
   c.checked = actif;

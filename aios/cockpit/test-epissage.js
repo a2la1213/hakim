@@ -294,7 +294,7 @@ test('sa voix dit ce que le ribosome a choisi, au rythme de ses mots ; ce qui es
 
 test('sa voix et son écriture reliées : chaque segment qui commence (téléphone ou Chatterbox) écrit ses mots', () => {
   assert.match(PAGE, /lecteurSysteme\.surSegment = \(t\) => \{[\s\S]{0,300}?revelerRibosome\(t\);/);
-  assert.match(PAGE, /lecteurNeuronal\.surSegment = \(t, duree\) => \{\n[^\n]*\n  if \(typeof revelerRibosome === 'function'\) revelerRibosome\(t, duree\);/);
+  assert.match(PAGE, /lecteurNeuronal\.surSegment = \(t, duree, debutMs\) => \{\n[^\n]*\n  if \(typeof revelerRibosome === 'function'\) revelerRibosome\(t, duree\);/);
 });
 
 // (04/11, 12:45, Ahmed : « s'il a fini d'écrire et de préparer sa parole avant que j'aie fini de parler, il attend que je me taise et lance
