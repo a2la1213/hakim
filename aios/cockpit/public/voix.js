@@ -549,6 +549,15 @@
         return { dit: String(courant.text || ''), ms: -1 };
       },
       get finit() { return !!finissant; },
+      // (07/11, Ahmed : « je lui coupe la parole immédiatement : il finit juste son mot ») la phrase qui sort s'arrête 0,18 s plus tard (le
+      // temps d'un mot ; le moteur du téléphone ne dit pas où en sont ses mots) ; tout le reste est annulé ; ce qui suit attend cette fin
+      finirMot() {
+        if (!courant || !enCours.has(courant)) { lecteur.arreter(); return { dit: '', ms: 0 }; }
+        const u = courant;
+        for (const x of [...enCours]) if (x !== u) { x._annulee = true; enCours.delete(x); }
+        setTimeout(() => { if (enCours.has(u)) { u._annulee = true; enCours.delete(u); if (courant === u) courant = null; synth.cancel(); finA = Date.now(); if (!enCours.size && lecteur.surFin) lecteur.surFin(); } }, 180);
+        return { dit: '', ms: 180 };
+      },
       // (07/11, Ahmed : « un petit décalage entre chaque bloc : une liaison élégante ») combien il reste à dire de la seule phrase qui sort
       // (estimé à ~14 caractères par seconde) : la suivante peut partir au moteur juste avant sa fin, sans blanc ; une file déjà pleine : jamais
       resteEstimeMs(maintenant = Date.now(), cps = 14) {
@@ -584,12 +593,14 @@
   // (07/11, Ahmed : « quand je le coupe, il finit juste sa phrase : il s'arrête soit à un point soit à une virgule dans ce qu'il
   // dit ») où s'arrêter dans un morceau de sa voix déjà parti : le premier point, virgule (ou ; : ! ? …) après l'endroit où il en est
   // (fraction 0..1 de sa durée, estimée aux caractères), sinon la fin du morceau. Rend la fraction où s'arrêter et le texte dit jusque-là.
-  function finDePhrase(texte, fraction) {
+  // mot : (07/11, Ahmed : « il finit juste son mot et il m'écoute ») le prochain blanc au lieu de la prochaine ponctuation
+  function finDePhrase(texte, fraction, mot = false) {
     const t = String(texte || '');
     if (!t) return { fraction: 1, dit: '' };
     const f = Math.max(0, Math.min(1, Number(fraction) || 0));
     const depuis = Math.floor(f * t.length);
-    const re = /[.,;:!?…؟،]+(?=\s|$)/g; re.lastIndex = depuis;
+    const re = mot ? /[.,;:!?…؟،]*(?=\s)/g : /[.,;:!?…؟،]+(?=\s|$)/g; re.lastIndex = depuis;
+    if (mot) { const m = re.exec(t); if (!m) return { fraction: 1, dit: t.trim() }; const fin = m.index + m[0].length; return { fraction: fin / t.length, dit: t.slice(0, fin).trim() }; }
     let m = re.exec(t);
     while (m && /\d[.,]$/.test(t.slice(0, m.index + 1)) && /^\d/.test(t.slice(m.index + m[0].length))) m = re.exec(t);   // « 12,5 » : pas une virgule
     if (!m) return { fraction: 1, dit: t.trim() };

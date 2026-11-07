@@ -564,10 +564,10 @@ test('sa voix se prépare dès l’arrivée du morceau ; quand vient son tour, l
 // (07/11, Ahmed : « lui autoriser à me couper la parole », option 2 : dès qu'un morceau de sa voix est prêt, il parle, même si tu parles)
 test('te_couper : allumé, sa voix parle pendant ta parole et ta voix ne le fait plus taire ; éteint (par défaut), comme avant', () => {
   const fn = (nom) => { const i = SRC.indexOf(`function ${nom}(`); return SRC.slice(i, SRC.indexOf('\n}\n', i) + 3); };
-  const i = SRC.indexOf('const teCouper = ');
-  const cx = { reglagesCorps: {}, etat: { conversation: { capteur: { enParole: true }, enAttente: 0 } } };
+  const ligne = (d) => { const i = SRC.indexOf(d); return SRC.slice(i, SRC.indexOf('\n', i) + 1); };
+  const cx = { reglagesCorps: { coupe_net: false }, etat: { conversation: { capteur: { enParole: true }, enAttente: 0 } } };
   vm.createContext(cx);
-  vm.runInContext(SRC.slice(i, SRC.indexOf('\n', i) + 1) + fn('jarvisPeutParler') + 'this.peut = jarvisPeutParler;', cx);
+  vm.runInContext(ligne('const coupeNet = ') + ligne('const teCouper = ') + fn('jarvisPeutParler') + 'this.peut = jarvisPeutParler;', cx);
   assert.equal(cx.peut(), false, 'éteint : il attend ta fin');
   cx.reglagesCorps.te_couper = true;
   assert.equal(cx.peut(), true, 'allumé : il parle par-dessus toi');
@@ -708,4 +708,32 @@ test('voix_reponse_seule (oui) : ses pensées restent à l’écran, aucune voix
   assert.match(SRC, /if \(typeof reponseSeule === 'function' && reponseSeule\(\)\) \{\n    const pv = paveDe\(tour\);[^\n]*\n    etat\.riboEnVoix = \[\]; journalVoix\('pensee_non_dite'/, 'son pavé s’allume, rien ne part à sa voix');
   assert.match(SRC, /function direPenseeSiPossible\(\) \{\n  if \(typeof reponseSeule === 'function' && reponseSeule\(\)\) return false;/);
   assert.match(fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8'), /voix_reponse_seule: r\.voix_reponse_seule !== false,/);
+});
+
+// (07/11, Ahmed : « je lui coupe la parole immédiatement quand je parle au-dessus de lui ; il finit juste son mot et il m'écoute ; quand j'ai fini,
+// il saute direct à sa nouvelle réponse »)
+test('coupé net (coupe_net, oui) : son mot fini, sa réponse et ce qu’il préparait lâchés, ses voix prêtes gardées ; il l’emporte sur « il peut te couper »', () => {
+  assert.equal(Voix.finDePhrase('Bonjour papa je vais bien', 0.1, true).dit, 'Bonjour', 'le mot en cours, pas la virgule');
+  const fn = (nom) => { const i = SRC.indexOf(`function ${nom}(`); return SRC.slice(i, SRC.indexOf('\n}\n', i) + 3); };
+  const ligne = (d) => { const i = SRC.indexOf(d); return SRC.slice(i, SRC.indexOf('\n', i) + 1); };
+  const fait = [];
+  const cx = { reglagesCorps: { te_couper: true }, etat: { flux: {}, riboFile: [{ tour: 3, texte: 'la suite' }], riboEnVoix: [1] },
+    bouts: { liste: new Map([[1, {}]]), fileTel: [1], attenteTel: {}, enFile: [1] }, lecteur: { actif: true },
+    garderVoixCoupees: () => fait.push('gardees'), blancsPourSautes: () => fait.push('blancs'), libererRibosomes: () => fait.push('ribosomes'),
+    arreterTout: (e, o) => fait.push(`arret:${o.raison}:${o.garder}`), majBoutonsPause() {} };
+  vm.createContext(cx);
+  vm.runInContext(ligne('const coupeNet = ') + ligne('const teCouper = ') + fn('couperNet') + 'this.f = { coupeNet, teCouper, couperNet };', cx);
+  assert.equal(cx.f.coupeNet(), true, 'par défaut : tu le coupes net');
+  assert.equal(cx.f.teCouper(), false, 'il ne parle plus par-dessus toi');
+  cx.f.couperNet({});
+  assert.deepEqual(fait, ['gardees', 'blancs', 'ribosomes', 'arret:parole:false']);
+  assert.deepEqual(cx.etat.riboFile, []); assert.equal(cx.bouts.liste.size, 0);
+  assert.match(SRC, /if \(typeof coupeNet === 'function' && coupeNet\(\)\) \{ journalVoix\('coupe_net', mesure \|\| \{\}\); couperNet\(conv\); return; \}/);
+  assert.match(SRC, /if \(typeof coupeNet === 'function' && coupeNet\(\) && lecteur\.finirMot\) \{ const r = lecteur\.finirMot\(\);/, 'sa voix : son mot');
+  // la voix du téléphone : 0,18 s, puis rien
+  const dits = []; let annule = 0; class E { constructor(t) { this.text = t; } }
+  const L = Voix.creerLecteur({ speak: (u) => dits.push(u), cancel: () => annule++ }, E, () => null, 1);
+  L.dire('Une phrase.'); L.dire('La suivante.'); dits[0].onstart();
+  assert.equal(L.finirMot().ms, 180);
+  assert.equal(dits[1]._annulee, true, 'la suivante annulée tout de suite');
 });

@@ -41,7 +41,7 @@ test('branchée : l’oreille Azure écoute qui parle en même temps ; le fil di
   assert.match(extraire('async function voixAzure('), /noterDit\(texte\);[\s\S]*apprendreSaVoixAzure\(data, voix\);/, 'sa voix Azure : notée et apprise');
   assert.match(extraire('async function routeDire('), /if \(typeof noterDit === 'function'\) noterDit\(texte\);/, 'tout ce que sa voix dit, quel que soit l’appareil');
   assert.match(SRC, /sa_voix_reconnue: r\.sa_voix_reconnue !== false,/);
-  assert.match(SRC, /'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure', 'choix_libre', 'micro_voix_seule', 'voix_reponse_seule', 'filtre_identite'\]\) if/);
+  assert.match(SRC, /'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure', 'choix_libre', 'micro_voix_seule', 'voix_reponse_seule', 'filtre_identite', 'coupe_net'\]\) if/);
 });
 
 test('réglage éteint : rien n’est retiré', () => {

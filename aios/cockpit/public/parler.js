@@ -449,7 +449,12 @@ const voixDuTelephone = () => !!synthTelephone && etat.reglages.voix === 'teleph
 // (07/11, Ahmed : « comment je fais dans les réglages pour lui autoriser à me couper la parole ? » ; « mets-le, option 2 ») te_couper (éteint par
 // défaut) : dès qu'un morceau de sa voix est prêt, il parle, même pendant que tu parles ; ta voix ne le fait plus taire (ni pause au morceau,
 // ni suite sautée, ni morceaux d'avant lâchés) ; « stop », le bouton et ton message écrit l'arrêtent toujours
-const teCouper = () => typeof reglagesCorps !== 'undefined' && !!reglagesCorps && reglagesCorps.te_couper === true;
+// (07/11, Ahmed : « mets-moi en mode : je lui coupe la parole immédiatement quand je parle au-dessus de lui, il finit juste son mot et il
+// m'écoute ; quand j'ai fini, il saute direct à sa nouvelle réponse, celle qui vient après la parole par laquelle je l'ai coupé ») coupe_net (oui) :
+// ta voix claire sur la sienne l'arrête à la fin de son mot, sa réponse en cours et ce qu'il préparait sont lâchés (ses voix prêtes gardées),
+// il se tait tant que tu parles, et ta phrase part aussitôt finie : sa nouvelle réponse passe en premier. Il l'emporte sur « il peut te couper »
+const coupeNet = () => typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.coupe_net !== false;
+const teCouper = () => typeof reglagesCorps !== 'undefined' && !!reglagesCorps && reglagesCorps.te_couper === true && !coupeNet();
 function jarvisPeutParler() {
   const c = etat.conversation;
   if (typeof teCouper === 'function' && teCouper()) return true;
@@ -598,14 +603,14 @@ function creerLecteurNeuronal() {
     // (07/11, Ahmed : « quand je le coupe, il finit juste sa phrase ; il s'arrête soit à un point soit à une virgule dans ce qu'il dit »)
     // le morceau qui sonne va jusqu'à sa prochaine virgule ou son prochain point (Voix.finDePhrase, estimé aux caractères), s'éteint en
     // 60 ms ; tout ce qui suit (à venir, en synthèse, en attente) est lâché ; ce qu'on lui donne ensuite part juste après
-    finirPhrase() {
+    finirPhrase(mot = false) {
       pause = null;
       const now = fluide() ? actx.currentTime : 0;
       const enCours = fluide() ? [...sources].find(s => s._texte && !s._auto && !s._hesitation && s._debut <= now && s._fin > now && s.buffer) : null;
       if (!enCours) { L.arreter(); return { dit: '', ms: 0 }; }
       const duree = Math.max(0.01, enCours._fin - enCours._debut);
-      const f = Voix.finDePhrase(enCours._texte, (now - enCours._debut) / duree);
-      const fin = Math.min(enCours._fin, Math.max(now, enCours._debut + f.fraction * duree + 0.12));
+      const f = Voix.finDePhrase(enCours._texte, (now - enCours._debut) / duree, mot);
+      const fin = Math.min(enCours._fin, Math.max(now, enCours._debut + f.fraction * duree + (mot ? 0.04 : 0.12)));
       generation++;
       for (const x of lots) if (x.ctl) x.ctl.abort();
       lots.length = 0; unites.length = 0;
@@ -1019,6 +1024,12 @@ const lecteur = {
   finirPhrase() {
     const n = lecteurNeuronal.joue ? lecteurNeuronal.finirPhrase() : (lecteurNeuronal.arreter(), null);
     const s = lecteurSysteme && lecteurSysteme.actif ? (lecteurSysteme.finirPhrase ? lecteurSysteme.finirPhrase() : (lecteurSysteme.arreter(), null)) : null;
+    return n || s || { dit: '', ms: 0 };
+  },
+  // (07/11) coupé net : seulement son mot fini
+  finirMot() {
+    const n = lecteurNeuronal.joue ? lecteurNeuronal.finirPhrase(true) : (lecteurNeuronal.arreter(), null);
+    const s = lecteurSysteme && lecteurSysteme.actif ? (lecteurSysteme.finirMot ? lecteurSysteme.finirMot() : (lecteurSysteme.arreter(), null)) : null;
     return n || s || { dit: '', ms: 0 };
   },
   get actif() { return lecteurNeuronal.actif || !!(lecteurSysteme && lecteurSysteme.actif); },
@@ -3781,6 +3792,7 @@ function paveDe(tour) {
 const finirSaPhraseActif = () => !(typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.finir_phrase === false);
 function couperSaVoix() {
   if (!lecteur) return null;
+  if (typeof coupeNet === 'function' && coupeNet() && lecteur.finirMot) { const r = lecteur.finirMot(); journalVoix('mot_fini', { ms: r.ms }); return r; }
   if (!finirSaPhraseActif() || !lecteur.finirPhrase) { lecteur.arreter(); return null; }
   const r = lecteur.finirPhrase();
   journalVoix('phrase_finie', { ms: r.ms, mots: motsVoix(r.dit).length });
@@ -3930,6 +3942,17 @@ function voixClaire(m) {
   return c >= k;
 }
 const motsEcrits = (conv) => (conv && conv.ecrit ? `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}` : '').split(/\s+/).filter(w => /\p{L}/u.test(w)).length;
+// coupé net par ta voix : son mot fini, tout le reste lâché (sa réponse, ses ribosomes, ce qui attendait) ; ses voix prêtes gardées 5 min
+function couperNet(conv) {
+  if (typeof garderVoixCoupees === 'function') garderVoixCoupees();
+  if (typeof bouts !== 'undefined') { if (bouts.liste) bouts.liste.clear(); bouts.fileTel = []; bouts.attenteTel = null; bouts.enFile = []; }
+  const vieux = (etat.riboFile || []).slice();
+  if (vieux.length && typeof blancsPourSautes === 'function') blancsPourSautes(vieux);
+  etat.riboFile = []; etat.riboEnVoix = [];
+  if (typeof libererRibosomes === 'function') libererRibosomes();
+  if (etat.flux || (lecteur && lecteur.actif)) arreterTout(true, { garder: false, raison: 'parole' });   // sa voix : son mot (couperSaVoix)
+  if (typeof majBoutonsPause === 'function') majBoutonsPause();
+}
 function prevoirSaut(conv, mesure) {
   if (typeof reglagesCorps === 'undefined' || reglagesCorps.sauter_suite === false || conv.sautPrevu) return;
   const ms = Number(reglagesCorps.sauter_suite_ms) || 1000, t0 = Date.now(), mots0 = motsEcrits(conv);
@@ -4674,6 +4697,7 @@ async function basculerConversation() {
         // (07/11, Ahmed : « si c'est un background et pas une parole, il ne se coupe pas ; des paroles en fond pas assez fortes non plus ; il faut
         // une voix claire qui lui parle ») sous la clarté voulue (voix_claire_x, 1,8 par défaut) : un fond, ignoré ; il continue
         if (typeof voixClaire === 'function' && !voixClaire(mesure)) { journalVoix('fond_ignore', mesure || {}); return; }
+        if (typeof coupeNet === 'function' && coupeNet()) { journalVoix('coupe_net', mesure || {}); couperNet(conv); return; }
         // (30/10, 19:08, Ahmed : « qu'il puisse répondre même quand je le coupe ou que je parle en même temps ; c'est
         // important ») il garde la parole : sa voix continue, ta phrase est quand même écoutée ; « stop » et le bouton l'arrêtent
         // (04/11, Ahmed : « il parle quand il veut, mais s'il entend ma voix lui couper la parole sur 2 secondes, il se tait ») il garde

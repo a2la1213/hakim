@@ -397,7 +397,8 @@ test('ta voix dure sur la sienne : son subconscient choisit ; CONTINUER, il fini
     return { ...p, montrees };
   };
   const finit = await essai({ couper: false, pourquoi: 'presque fini' });
-  assert.deepStrictEqual(finit.envois[0], ['/api/jarvis/se-couper', { dit: 'Je te disais que le jardin sera prêt demain', papa: 'attends attends écoute-moi', ms: 0, clarte: null }]);
+  assert.ok(finit.envois[0][1].ms < 50, 'son instant'); delete finit.envois[0][1].ms;
+  assert.deepStrictEqual(finit.envois[0], ['/api/jarvis/se-couper', { dit: 'Je te disais que le jardin sera prêt demain', papa: 'attends attends écoute-moi', clarte: null }]);
   assert.strictEqual(finit.ctx.etat.riboFile.length, 2, 'il finit : rien n’est sauté');
   assert.ok(finit.journal.some(([e]) => e === 'garde_la_parole'));
   assert.deepStrictEqual(finit.montrees, ['presque fini'], 'son choix se voit');
