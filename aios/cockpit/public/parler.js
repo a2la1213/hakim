@@ -3832,7 +3832,20 @@ function prevoirSaut(conv) {
   conv.sautPrevu = setTimeout(() => {
     conv.sautPrevu = null;
     const parle = (conv.capteur && conv.capteur.enParole) || Date.now() - (etat.papaVoixA || 0) < 400;
-    if (parle && etat.conversation === conv) sauterLaSuite(Date.now() - t0);
+    if (!parle || etat.conversation !== conv) return;
+    // (07/11, Ahmed : « faut aussi lui laisser le choix de se couper ou pas quand il reçoit ce signal ») choix_coupure (oui) : son subconscient
+    // choisit, en 1,5 s au plus, de se couper ou de finir ce qu'il dit ; sans réponse, il se coupe
+    if (typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.choix_coupure === false) { sauterLaSuite(Date.now() - t0); return; }
+    const dit = ((typeof bouts !== 'undefined' && bouts.dits) || []).slice(-2).join(' ');
+    const papa = conv.ecrit ? `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}`.trim() : '';
+    const ecoute = Date.now() - t0;
+    fetch('/api/jarvis/se-couper', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ dit, papa, ms: ecoute }) })
+      .then(r => (r.ok ? r.json() : { couper: true })).catch(() => ({ couper: true }))
+      .then((c) => {
+        if (etat.conversation !== conv) return;
+        if (c && c.couper === false) { journalVoix('garde_la_parole', { ms: ecoute }); if (c.pourquoi) montrerPensee('🗣 il finit ce qu’il dit', c.pourquoi, true); return; }
+        sauterLaSuite(Date.now() - t0);
+      });
   }, ms);
 }
 function sauterLaSuite(ms) {

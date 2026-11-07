@@ -12,7 +12,7 @@ const prendre = (src, nom) => { const i = src.indexOf(`function ${nom}(`); retur
 function page(reglage = {}, parle = true) {
   const minuteries = [], journal = [], envois = [], conv = { capteur: { enParole: parle } };
   const ctx = { Number, Math, Date, JSON, conv, journal, envois,
-    reglagesCorps: { sauter_suite: true, sauter_suite_ms: 1000, ...reglage },
+    reglagesCorps: { sauter_suite: true, sauter_suite_ms: 1000, choix_coupure: false, ...reglage },   // (07/11) son choix : testé à part
     etat: { conversation: conv, epissureTour: 7, riboFile: [{ tour: 7, texte: 'la 2e partie' }, { tour: 9, texte: 'plus tard' }], riboEnVoix: [{ tour: 7, mots: [1] }] },
     lecteur: { actif: true, arrete: false, arreter() { this.arrete = true; } },
     setTimeout: (f, ms) => { minuteries.push({ f, ms }); return minuteries.length; },
@@ -377,4 +377,52 @@ test('tournesol et fenêtre : les deux autres parties de son esprit ; une phrase
   ctx.r([1]);
   assert.deepStrictEqual([...ctx.v(4000)].map(x => x.texte), ['deux', 'trois']);
   assert.deepStrictEqual([...ctx.v(32500)].map(x => x.texte), ['trois'], '30 s au plus');
+});
+
+// (07/11, Ahmed : « faut aussi lui laisser le choix de se couper ou pas quand il reçoit ce signal »)
+test('ta voix dure sur la sienne : son subconscient choisit ; CONTINUER, il finit ; COUPER ou rien, la suite est sautée', async () => {
+  const essai = async (reponse) => {
+    const p = page({ choix_coupure: true });
+    p.ctx.bouts = { dits: ['Je te disais que le jardin', 'sera prêt demain'] };
+    p.conv.ecrit = { confirme: 'attends attends', vif: 'écoute-moi' };
+    const montrees = []; p.ctx.montrerPensee = (titre, t) => montrees.push(t);
+    p.ctx.fetch = (url, o) => {
+      p.envois.push([url, JSON.parse(o.body)]);
+      if (url === '/api/jarvis/se-couper') return reponse === 'panne' ? Promise.reject(new Error('x')) : Promise.resolve({ ok: true, json: () => Promise.resolve(reponse) });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ tour: 8 }) });
+    };
+    p.ctx.prevoir(p.conv); p.minuteries[0].f();
+    await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
+    return { ...p, montrees };
+  };
+  const finit = await essai({ couper: false, pourquoi: 'presque fini' });
+  assert.deepStrictEqual(finit.envois[0], ['/api/jarvis/se-couper', { dit: 'Je te disais que le jardin sera prêt demain', papa: 'attends attends écoute-moi', ms: 0 }]);
+  assert.strictEqual(finit.ctx.etat.riboFile.length, 2, 'il finit : rien n’est sauté');
+  assert.ok(finit.journal.some(([e]) => e === 'garde_la_parole'));
+  assert.deepStrictEqual(finit.montrees, ['presque fini'], 'son choix se voit');
+  const coupe = await essai({ couper: true });
+  assert.deepStrictEqual(coupe.ctx.etat.riboFile.map((x) => x.texte), ['plus tard'], 'il se coupe : la suite est sautée');
+  const panne = await essai('panne');
+  assert.deepStrictEqual(panne.ctx.etat.riboFile.map((x) => x.texte), ['plus tard'], 'sans réponse : il se coupe (papa d’abord)');
+});
+
+test('cockpit : son choix lu en un mot, 1,5 s au plus, sinon il se coupe ; noté au journal', async () => {
+  const i = SRC.indexOf('const SE_COUPER_MS'), f = SRC.slice(i, SRC.indexOf('function demanderVivant(', i));
+  const notes = [];
+  const cx = { fs: { appendFileSync: (_, l) => notes.push(JSON.parse(l)) }, j: JSON.stringify, JARVIS_VOIX_DIAGNOSTIC: '/x', Date, String, Number, Math,
+    neutraliser: (x) => x };
+  vm.createContext(cx); vm.runInContext(f + 'this.lire = lireChoixCoupure; this.choisir = choisirDeSeCouper;', cx);
+  assert.deepStrictEqual({ ...cx.lire('CONTINUER — je finis ma phrase') }, { couper: false, pourquoi: 'je finis ma phrase', lu: true });
+  assert.strictEqual(cx.lire('COUPER, papa a une urgence').couper, true);
+  assert.strictEqual(cx.lire('je ne sais pas').couper, true, 'illisible : il se coupe');
+  let demande;
+  const r = await cx.choisir('le jardin', 'attends', 1200, (m, p, d) => { demande = { m, p, d }; return Promise.resolve({ texte: 'CONTINUER presque fini' }); });
+  assert.strictEqual(r.couper, false);
+  assert.strictEqual(demande.m, 'haiku'); assert.strictEqual(demande.d, 1500);
+  assert.match(demande.p, /Papa parle par-dessus lui depuis 1\.2 s : « attends »/);
+  const lent = await cx.choisir('x', 'y', 0, () => Promise.reject(new Error('délai dépassé')));
+  assert.strictEqual(lent.couper, true);
+  assert.deepStrictEqual(notes.map(n => [n.e, n.couper]), [['choix_coupure', false], ['choix_coupure', true]]);
+  assert.match(SRC, /choix_coupure: r\.choix_coupure !== false,/);
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8'), /\['choix_coupure', '🤔 Il choisit de se couper ou non'/);
 });

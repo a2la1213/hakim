@@ -4536,6 +4536,30 @@ function vivantLibre(modele, neuve = false) {                      // (04/11, 16
   VIVANTS.push(v);
   return v;
 }
+/* (07/11, Ahmed : « faut aussi lui laisser le choix de se couper ou pas quand il reçoit ce signal ») ta voix a duré « Sauter au bout de » sur la
+   sienne : son subconscient (Mini Hakim, une voix vivante déjà chaude) choisit en un mot, COUPER (il se tait et t'écoute) ou CONTINUER (ce qu'il
+   dit compte, il finit). 1,5 s sans réponse, ou une réponse illisible : il se coupe (papa d'abord). Chaque choix est noté au journal de la voix. */
+const SE_COUPER_MS = 1500;
+function lireChoixCoupure(texte) {
+  const t = String(texte || '').trim();
+  const m = /^\W*(COUPER|CONTINUER)\b\W*(.*)$/is.exec(t);
+  if (!m) return { couper: true, pourquoi: 'sans réponse lisible : il se coupe (papa d’abord)', lu: false };
+  return { couper: m[1].toUpperCase() === 'COUPER', pourquoi: m[2].replace(/\s+/g, ' ').trim().slice(0, 160), lu: true };
+}
+async function choisirDeSeCouper(dit, papa, ms, demander = demanderVivant) {
+  const net = (x, n) => neutraliser(String(x || '')).replace(/\s+/g, ' ').trim().slice(-n);
+  const prompt = `Tu es le subconscient de Hakim. Hakim est en train de dire à voix haute : « ${net(dit, 400) || '…'} ».\n`
+    + `Papa parle par-dessus lui depuis ${(Math.max(0, ms) / 1000).toFixed(1)} s : « ${net(papa, 400) || '(ses mots ne sont pas encore transcrits)'} ».\n`
+    + `Choisis : COUPER (Hakim se tait tout de suite et écoute papa) ou CONTINUER (ce que Hakim dit compte vraiment maintenant, il finit). `
+    + `Papa d'abord, sauf si ce que dit Hakim est important ou presque fini. Réponds par COUPER ou CONTINUER, puis 10 mots au plus pour dire pourquoi.`;
+  const t0 = Date.now();
+  let r;
+  try { r = lireChoixCoupure((await demander('haiku', prompt, SE_COUPER_MS)).texte); }
+  catch (e) { r = { couper: true, pourquoi: `pas de réponse à temps (${String(e.message || e).slice(0, 40)}) : il se coupe`, lu: false }; }
+  r.ms = Date.now() - t0;
+  try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'choix_coupure', couper: r.couper, lu: r.lu, ms: r.ms }) + '\n', { mode: 0o600 }); } catch (_) {}
+  return r;
+}
 function demanderVivant(modele, prompt, delai, opts = {}) {
   const v = vivantLibre(modele);
   if (!v) return Promise.reject(new Error('aucune voix vivante libre'));
@@ -7216,7 +7240,8 @@ function corpsReglages() {
     ecrit_coupe: r.ecrit_coupe !== false,
     finir_phrase: r.finir_phrase !== false,
     choisir_latence: r.choisir_latence !== false,
-    te_couper: r.te_couper === true,   // (07/11, Ahmed : « lui autoriser à me couper la parole », option 2) éteint par défaut   // (07/11) il choisit ce qu'il dit dans le temps de sortie de sa voix   // (07/11) coupé, il finit sa phrase (jusqu'à sa virgule ou son point)   // (07/11) ton message écrit l'arrête et part tout de suite   // (07/11) tes morceaux prêts partent en un seul message réunifié   // (07/11) coupé par une vraie phrase : il ne reprend pas l'ancienne réponse (éteint)   // (06/11) ses morceaux épissés reliés, sans pause entre eux
+    te_couper: r.te_couper === true,
+    choix_coupure: r.choix_coupure !== false,   // (07/11) ta voix qui dure sur la sienne : il choisit de se couper ou de finir   // (07/11, Ahmed : « lui autoriser à me couper la parole », option 2) éteint par défaut   // (07/11) il choisit ce qu'il dit dans le temps de sortie de sa voix   // (07/11) coupé, il finit sa phrase (jusqu'à sa virgule ou son point)   // (07/11) ton message écrit l'arrête et part tout de suite   // (07/11) tes morceaux prêts partent en un seul message réunifié   // (07/11) coupé par une vraie phrase : il ne reprend pas l'ancienne réponse (éteint)   // (06/11) ses morceaux épissés reliés, sans pause entre eux
     epissure_grammaire: r.epissure_grammaire !== false,
     pretraitement_parole: r.pretraitement_parole !== false,
     trois_pistes: r.trois_pistes !== false,
@@ -11845,6 +11870,12 @@ async function traiter(req, res) {
     ouvrirReflexion();                                               // (17:50) sa parole vide : sa réflexion s'ouvre tout de suite
     res.writeHead(204); return res.end();
   }
+  if (p === '/api/jarvis/se-couper' && req.method === 'POST') {    // (07/11) papa parle par-dessus lui depuis « Sauter au bout de » : il choisit
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 8192) || '{}')); } catch (_) {}
+    const r = await choisirDeSeCouper(String(q.dit || ''), String(q.papa || ''), Number(q.ms) || 0);
+    res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(r));
+  }
   if (p === '/api/jarvis/ribosome/stop' && req.method === 'POST') {   // (04/11, 15:10) 10 s de ton silence : la page ferme son épissure
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     let q = {}; try { q = JSON.parse(String(await lireCorps(req, 1024) || '{}')); } catch (_) {}
@@ -12825,7 +12856,7 @@ async function traiter(req, res) {
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
-      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
+      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
       for (const [k, a, b] of [['epissure_meubles_max', 1, 6], ['present_pouls_s', 10, 600], ['present_seuil', 0.2, 5], ['present_ecart_s', 2, 120], ['present_longueur', 3, 40], ['present_mots', 6, 40]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'present_seuil' ? Math.round(Number(q[k]) * 10) / 10 : Math.round(Number(q[k]))));
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;
