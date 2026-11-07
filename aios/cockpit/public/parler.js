@@ -3997,6 +3997,11 @@ function couperNet(conv) {
   if (etat.flux || (lecteur && lecteur.actif)) arreterTout(true, { garder: false, raison: 'parole' });   // sa voix : son mot (couperSaVoix)
   if (typeof majBoutonsPause === 'function') majBoutonsPause();
 }
+const PETITS_MOTS = /^(?:ok(?:ay)?|oui|ouais|non|vas[- ]y|mm+h?|hm+|d'?accord|ah|oh|bon|bah|euh|wesh|واش|yes|yeah|merci|cool|grave|exact|voilà|c'?est ça|ouais ouais|vas-y fiston)[\s.,!?…]*$/i;
+function phraseQuiCoupe(texte) {
+  const t = String(texte || '').trim();
+  return !PETITS_MOTS.test(t) && t.split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w)).length >= 4;
+}
 function prevoirSaut(conv, mesure) {
   if (typeof reglagesCorps === 'undefined' || reglagesCorps.sauter_suite === false || conv.sautPrevu) return;
   const ms = Number(reglagesCorps.sauter_suite_ms) || 1000, t0 = Date.now(), mots0 = motsEcrits(conv);
@@ -5437,7 +5442,10 @@ async function tourDeParole(conv, wav, infos, extra) {
   const lacherAncien = typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.reprendre_ancien !== true;
   // (07/11) il peut te couper, mais ta nouvelle phrase l'emporte, sauf s'il vient de choisir de finir (garde_la_parole, 15 s)
   const ilGarde = typeof teCouper === 'function' && teCouper() && Date.now() - Number(conv.gardeParoleA || 0) < 15000;
-  if (voixEpissee() && etat.flux && lacherAncien && !ilGarde) { journalVoix('ancienne_reponse_lachee', {}); arreterTout(true, { garder: false, raison: 'parole' }); majBoutonsPause(); }
+  // (07/11, 14:23, Ahmed via Hakim : « ma voix se bloque et ça s'accumule » ; mesuré : deux réponses lâchées avant leur première phrase) seule une VRAIE
+  // phrase (4 mots au moins, pas un « ok », « oui », « vas-y », « mmh ») lâche sa réponse en cours ; un petit mot attend la fin de sa réponse
+  const vraiePhrase = typeof phraseQuiCoupe === 'function' ? phraseQuiCoupe(texte) : true;
+  if (voixEpissee() && etat.flux && lacherAncien && !ilGarde && vraiePhrase) { journalVoix('ancienne_reponse_lachee', {}); arreterTout(true, { garder: false, raison: 'parole' }); majBoutonsPause(); }
   if (voixEpissee() && etat.flux) { garderPourSonTour(conv, texte); return; }
   // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
   // (07/11, Ahmed : « quand je parle par-dessus lui et qu'il remarque qu'on change de sujet, il s'interrompt ; mais il ne doit pas reprendre là où il

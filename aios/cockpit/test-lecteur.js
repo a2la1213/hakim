@@ -572,7 +572,7 @@ test('te_couper : allumé, sa voix parle pendant ta parole et ta voix ne le fait
   cx.reglagesCorps.te_couper = true;
   assert.equal(cx.peut(), true, 'allumé : il parle par-dessus toi');
   assert.match(SRC, /if \(typeof teCouper === 'function' && teCouper\(\)\) \{ journalVoix\('te_coupe', mesure \|\| \{\}\); if \(voixEpissee\(\)\) prevoirSaut\(conv, mesure\); return; \}/, 'ta voix ne le met plus en pause au morceau ; ta voix qui dure le coupe toujours');
-  assert.match(SRC, /const ilGarde = typeof teCouper === 'function' && teCouper\(\) && Date\.now\(\) - Number\(conv\.gardeParoleA \|\| 0\) < 15000;\n  if \(voixEpissee\(\) && etat\.flux && lacherAncien && !ilGarde\)/, '(07/11) ta nouvelle phrase l’emporte, sauf s’il vient de choisir de finir');
+  assert.match(SRC, /const ilGarde = typeof teCouper === 'function' && teCouper\(\) && Date\.now\(\) - Number\(conv\.gardeParoleA \|\| 0\) < 15000;[\s\S]{0,600}?if \(voixEpissee\(\) && etat\.flux && lacherAncien && !ilGarde && vraiePhrase\)/, '(07/11) ta nouvelle phrase l’emporte, sauf s’il vient de choisir de finir (et un petit mot attend)');
   assert.doesNotMatch(SRC, /il peut te couper : sa suite n'est pas sautée/, '« Sauter au bout de » vaut aussi quand il peut te couper');
   assert.match(SRC, /if \(typeof teCouper === 'function' && teCouper\(\)\) return;           \/\/ \(07\/11\) il peut te couper : ce qu'il préparait n'est pas lâché/);
   const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
@@ -759,4 +759,13 @@ test('son plan de meubles : chaque blanc prend son entrée (un meuble ou rien), 
   assert.deepEqual(JSON.parse(JSON.stringify(cs.lire('B1 : hum | court | fondu | 1\nB2 : rien\nB3 : voyons voir | long | enchaîné | 2\nB4 : inconnu | court | net | 1', ['hum', 'voyons voir']))),
     [{ nom: 'hum', taille: 'court', transition: 'fondu', couvre: 1 }, { rien: true }, { nom: 'voyons voir', taille: 'long', transition: 'enchaine', couvre: 2 }, { rien: true }]);
   assert.match(SRC, /const enchaine = \[\.\.\.sources\]\.some\(s2 => s2\._transition === 'enchaine'\);/, 'enchaîné : sa réponse attend la fin du meuble');
+});
+
+// (07/11, 14:23, Ahmed via Hakim : « ma voix se bloque et ça s'accumule » : deux réponses lâchées avant leur première phrase par un petit mot)
+test('seule une vraie phrase (4 mots, pas un « ok » ni un « vas-y ») lâche sa réponse en cours ; un petit mot attend', () => {
+  const i = SRC.indexOf('const PETITS_MOTS = '), j = SRC.indexOf('function prevoirSaut(');
+  const cx = {}; vm.createContext(cx); vm.runInContext(SRC.slice(i, j) + 'this.f = phraseQuiCoupe;', cx);
+  for (const t of ['ok', 'Oui.', 'vas-y', 'mmh', "d'accord", 'ouais ouais', 'wesh', 'Ah bon']) assert.equal(cx.f(t), false, t);
+  for (const t of ['Attends, parle-moi plutôt du jardin', 'Non mais écoute ce que je te dis']) assert.equal(cx.f(t), true, t);
+  assert.match(SRC, /if \(voixEpissee\(\) && etat\.flux && lacherAncien && !ilGarde && vraiePhrase\)/);
 });

@@ -584,7 +584,10 @@ def poser_sur_la_base(chant_wav, c, travail):
     instrus du Studio, pour que papa y pose sa prise. Rend le WAV du mix (sa voix seule, si le mix échoue)."""
     voix, reste = travail / "voix-hakim.wav", travail / "reste.wav"
     print("Je retire ma voix de ce qu'ACE-Step a chanté (Demucs)…", flush=True)
-    r = subprocess.run([str(PYTHON_SEPARATION), "-B", str(Path(__file__).resolve()), "separer", str(chant_wav), str(voix), str(reste)],
+    # (07/11, Hakim : « taux 48000 ≠ 44100 ») ACE-Step rend du 48 kHz, Demucs attend du 44,1 kHz stéréo : converti d'abord (comme l'autotune)
+    m44 = travail / "chant44.wav"
+    subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-i", str(chant_wav), "-ar", "44100", "-ac", "2", str(m44)], check=True, timeout=300)
+    r = subprocess.run([str(PYTHON_SEPARATION), "-B", str(Path(__file__).resolve()), "separer", str(m44), str(voix), str(reste)],
                        capture_output=True, text=True, timeout=1800)
     if r.returncode or not voix.exists():
         raise RuntimeError(f"Demucs : {r.stderr.strip()[-300:]}")

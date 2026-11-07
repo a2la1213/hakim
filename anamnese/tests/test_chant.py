@@ -232,4 +232,5 @@ def test_un_feat_sur_l_instru_de_papa(tmp_path, monkeypatch):
     assert p["task_type"] == "cover" and p["src_audio"] == "/t/base.wav" and p["instrumental"] is False
     src = Path(chant.__file__).read_text(encoding="utf-8")
     assert "wav = poser_sur_la_base(wav, c, travail)" in src and 'studio.mixer(voix, c["base_coupee"]' in src
+    assert '"-ar", "44100", "-ac", "2", str(m44)' in src and '"separer", str(m44), str(voix), str(reste)' in src, "Demucs reçoit du 44,1 kHz (bug du 07/11, 14:13)"
     assert '"origine": "feat-hakim"' in src, "le mix entre dans les instrus du Studio"
