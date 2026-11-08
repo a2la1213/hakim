@@ -15,7 +15,7 @@ const prendre = (nom) => { const i = SRC.indexOf(`function ${nom}(`); assert.ok(
 function banc(reglages = {}, decision = { couper: true, pourquoi: 'elle me parle' }) {
   const diffuses = [], demandes = [];
   const cx = { Date, Math, Number, String, JSON, Promise, X, j: JSON.stringify, abonnesPensees: null,
-    corpsReglages: () => ({ sauter_suite: true, sauter_suite_ms: 1000, choix_coupure: true, sauter_interieur: true, ...reglages }),
+    corpsReglages: () => ({ coupe_net: false, sauter_suite: true, sauter_suite_ms: 1000, choix_coupure: true, sauter_interieur: true, ...reglages }),
     diffuser: (_a, ev, x) => diffuses.push([ev, JSON.parse(x)]), demanderVivant: null,
     choisirDeSeCouper: (dit, voix, ms, d, c, qui) => { demandes.push({ dit, voix, ms, qui }); return Promise.resolve(decision); } };
   vm.createContext(cx);
@@ -70,4 +70,18 @@ test('son subconscient sait que c’est une voix de l’intérieur (jamais une c
   const reg = fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8');
   assert.match(reg, /\['sauter_interieur', [^\n]*'oui', null, 'corps'\]/);
   assert.ok(X.recouvrement('le jardin est magnifique', 'je te disais que le jardin est magnifique') >= 0.6);
+});
+
+// (08/11, 11:45, Ahmed : « son intérieur doit répondre aux mêmes règles que le micro, simplement » ; « il faut qu'il puisse couper la parole à ma voix
+// micro et à sa voix intérieure »)
+test('les mêmes règles que ton micro : « tu le coupes net » allumé, une voix intérieure le coupe net (0,3 s, sans choix) ; et lui peut couper la sienne', async () => {
+  const b = banc({ coupe_net: true });
+  b.cx.noter('je te disais que le jardin', 10_000, 4000);
+  await b.cx.sur('telephone', 'Hakim attends écoute ça', 10_500, 400, 11_000);
+  assert.deepEqual(b.demandes, [], 'sans choix, comme ta voix');
+  assert.deepEqual(b.diffuses.map(([e, o]) => [e, o.net]), [['couper_interieur', true]]);
+  assert.match(PAGE, /if \(o\.net\) \{ couperNet\(etat\.conversation\); return; \}/);
+  assert.match(SRC, /const coupe = corpsReglages\(\)\.te_couper === true;\n\s+if \(!r\.aDire\.length \|\| \(!coupe && \(!pauseDuSon\(c, maintenant\) \|\| papaParle\(maintenant\)\)\)\) return false;/,
+    '« il peut te couper » : il n’attend plus la pause du son pour dire ce qu’il pense de ce que joue le téléphone');
+  assert.match(PAGE, /const teCouper = \(\) => typeof reglagesCorps !== 'undefined' && !!reglagesCorps && reglagesCorps\.te_couper === true;/);
 });

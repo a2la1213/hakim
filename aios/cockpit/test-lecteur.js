@@ -715,7 +715,9 @@ test('voix_reponse_seule (oui) : ses pensées restent à l’écran, aucune voix
 
 // (07/11, Ahmed : « je lui coupe la parole immédiatement quand je parle au-dessus de lui ; il finit juste son mot et il m'écoute ; quand j'ai fini,
 // il saute direct à sa nouvelle réponse »)
-test('coupé net (coupe_net, oui) : son mot fini, sa réponse et ce qu’il préparait lâchés, ses voix prêtes gardées ; il l’emporte sur « il peut te couper »', () => {
+// (08/11, Ahmed : « il faut qu'il puisse couper la parole à ma voix micro et à sa voix intérieure ») les deux ensemble : tu le coupes net quand tu
+// commences à parler sur lui ; lui peut commencer à parler sur toi (« il peut te couper » ne s'éteint plus sous « tu le coupes net »)
+test('coupé net (coupe_net, oui) : son mot fini, sa réponse et ce qu’il préparait lâchés, ses voix prêtes gardées ; et lui peut toujours te couper', () => {
   assert.equal(Voix.finDePhrase('Bonjour papa je vais bien', 0.1, true).dit, 'Bonjour', 'le mot en cours, pas la virgule');
   const fn = (nom) => { const i = SRC.indexOf(`function ${nom}(`); return SRC.slice(i, SRC.indexOf('\n}\n', i) + 3); };
   const ligne = (d) => { const i = SRC.indexOf(d); return SRC.slice(i, SRC.indexOf('\n', i) + 1); };
@@ -727,7 +729,8 @@ test('coupé net (coupe_net, oui) : son mot fini, sa réponse et ce qu’il pré
   vm.createContext(cx);
   vm.runInContext(ligne('const coupeNet = ') + ligne('const teCouper = ') + fn('couperNet') + 'this.f = { coupeNet, teCouper, couperNet };', cx);
   assert.equal(cx.f.coupeNet(), true, 'par défaut : tu le coupes net');
-  assert.equal(cx.f.teCouper(), false, 'il ne parle plus par-dessus toi');
+  assert.equal(cx.f.teCouper(), true, '(08/11) il peut quand même commencer à parler sur toi');
+  cx.reglagesCorps.te_couper = false; assert.equal(cx.f.teCouper(), false); cx.reglagesCorps.te_couper = true;
   cx.f.couperNet({});
   assert.deepEqual(fait, ['gardees', 'blancs', 'ribosomes', 'arret:parole:false']);
   assert.deepEqual(cx.etat.riboFile, []); assert.equal(cx.bouts.liste.size, 0);

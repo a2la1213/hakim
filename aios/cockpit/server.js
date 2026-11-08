@@ -4385,7 +4385,9 @@ function direEntenduSiPause(c, maintenant = Date.now(), r = c && c.ribo) {
   if (!c || !r || !r.aDire || !r.aDire.length || entendus.get(c.cle) !== c) return false;
   const vieux = r.aDire.filter(x => maintenant - x.t > ENTENDU_DIRE_MS);
   if (vieux.length) { r.aDire = r.aDire.filter(x => maintenant - x.t <= ENTENDU_DIRE_MS); noterEntendu(c, { garde_pensee: vieux.map(x => x.garde).join(' ').slice(0, 300) }); }
-  if (!r.aDire.length || !pauseDuSon(c, maintenant) || papaParle(maintenant)) return false;
+  // (08/11, Ahmed : « il faut qu'il puisse couper la parole à ma voix micro et à sa voix intérieure ») « il peut te couper » : il n'attend plus la pause
+  const coupe = corpsReglages().te_couper === true;
+  if (!r.aDire.length || (!coupe && (!pauseDuSon(c, maintenant) || papaParle(maintenant)))) return false;
   const lot = r.aDire.splice(0), texte = lot.map(x => x.garde).join(' ').trim();
   r.dits++; r.dit = `${r.dit} ${texte}`.trim().slice(-4000);
   diffuser(abonnesPensees, 'entendu', j({ quoi: 'dire', source: c.source, voix: c.voix, tour: r.tour, n: r.dits, texte,
@@ -10767,19 +10769,22 @@ function noterSaVoixEnCours(texte, t, duree) {
   saVoixEnCours.fin = Math.max(saVoixEnCours.fin, t0 + d);
 }
 // une voix intérieure, dite de t0 pendant duree : sur la sienne assez longtemps, son subconscient choisit ; null : rien à décider
+// (08/11, 11:45, Ahmed : « son intérieur doit répondre aux mêmes règles que le micro, simplement ») « tu le coupes net » (coupe_net) : une voix
+// intérieure aussi, sans choix, dès qu'elle parle vraiment sur la sienne (0,3 s) ; sinon « Sauter au bout de » et son choix, comme pour ta voix
 function voixInterieureSurLui(source, texte, t0, duree, maintenant = Date.now()) {
   const r = corpsReglages();
-  if (r.sauter_interieur === false || r.sauter_suite === false) return null;
+  const net = r.coupe_net !== false;
+  if (r.sauter_interieur === false || (!net && r.sauter_suite === false)) return null;
   if (maintenant >= saVoixEnCours.fin) return null;                                 // il ne parle plus : rien à couper
   const chevauche = Math.min(Number(t0) + Number(duree), maintenant) - Math.max(Number(t0), saVoixEnCours.debut);
-  if (!(chevauche >= (Number(r.sauter_suite_ms) || 1000))) return null;
+  if (!(chevauche >= (net ? 300 : (Number(r.sauter_suite_ms) || 1000)))) return null;
   if (interieurSurLui.enVol || maintenant - interieurSurLui.a < 5000) return null;
   if (X.recouvrement(texte, saVoixEnCours.texte) >= 0.6) return null;               // sa propre voix revenue par le téléphone
   interieurSurLui.enVol = true; interieurSurLui.a = maintenant;
-  const choix = r.choix_coupure === false ? Promise.resolve({ couper: true, pourquoi: '' })
+  const choix = net || r.choix_coupure === false ? Promise.resolve({ couper: true, pourquoi: '' })
     : choisirDeSeCouper(saVoixEnCours.texte, String(texte || ''), chevauche, demanderVivant, null, source);
   return choix.then((c) => {
-    if (c && c.couper) diffuser(abonnesPensees, 'couper_interieur', j({ source, ms: Math.round(chevauche), pourquoi: String((c && c.pourquoi) || '').slice(0, 160) }));
+    if (c && c.couper) diffuser(abonnesPensees, 'couper_interieur', j({ source, ms: Math.round(chevauche), net, pourquoi: String((c && c.pourquoi) || '').slice(0, 160) }));
     return c;
   }).catch(() => null).finally(() => { interieurSurLui.enVol = false; });
 }

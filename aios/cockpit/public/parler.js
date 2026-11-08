@@ -442,7 +442,9 @@ const voixDuTelephone = () => !!synthTelephone && etat.reglages.voix === 'teleph
 // ta voix claire sur la sienne l'arrête à la fin de son mot, sa réponse en cours et ce qu'il préparait sont lâchés (ses voix prêtes gardées),
 // il se tait tant que tu parles, et ta phrase part aussitôt finie : sa nouvelle réponse passe en premier. Il l'emporte sur « il peut te couper »
 const coupeNet = () => typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.coupe_net !== false;
-const teCouper = () => typeof reglagesCorps !== 'undefined' && !!reglagesCorps && reglagesCorps.te_couper === true && !coupeNet();
+// (08/11, Ahmed : « il faut qu'il puisse couper la parole à ma voix micro et à sa voix intérieure ») les deux ensemble : tu le coupes net quand tu
+// commences à parler sur lui (surInterruption) ; lui peut commencer à parler sur toi (jarvisPeutParler)
+const teCouper = () => typeof reglagesCorps !== 'undefined' && !!reglagesCorps && reglagesCorps.te_couper === true;
 function jarvisPeutParler() {
   const c = etat.conversation;
   if (typeof teCouper === 'function' && teCouper()) return true;
@@ -5989,8 +5991,10 @@ function ecouterPensees() {
   // (07/11, Ahmed : « qu'à chaque seconde il soit conscient et décide de ce qu'il pense, fait ou sollicite ») sa conscience continue : ce qu'il décide
   // (08/11, Ahmed : « le même bouton que moi pour les voix intérieures, qui le coupent s'il l'accepte ») une voix du téléphone parlait sur la sienne :
   // son subconscient a choisi de se taire pour l'écouter ; la page qui joue sa voix la coupe net (ce qui était prêt est gardé)
+  // (08/11, 11:45, Ahmed : « son intérieur doit répondre aux mêmes règles que le micro, simplement ») « tu le coupes net » : comme ta voix
   es.addEventListener('couper_interieur', (ev) => { try { const o = JSON.parse(ev.data); if (!etat.conversation || !(lecteur && lecteur.actif)) return;
-    if (typeof journalVoix === 'function') journalVoix('coupe_interieur', { source: String(o.source || ''), ms: Number(o.ms) || 0 });
+    if (typeof journalVoix === 'function') journalVoix('coupe_interieur', { source: String(o.source || ''), ms: Number(o.ms) || 0, net: !!o.net });
+    if (o.net) { couperNet(etat.conversation); return; }
     if (o.pourquoi) montrerPensee('🤫 il se tait pour écouter', String(o.pourquoi), true);
     sauterLaSuite(Number(o.ms) || 0, true); } catch (_) {} });
   es.addEventListener('conscience', (ev) => { try { const o = JSON.parse(ev.data); if (!o.texte || (etat.reglages && etat.reglages.masquerEpissure)) return;
