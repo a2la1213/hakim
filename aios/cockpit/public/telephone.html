@@ -156,7 +156,7 @@
       if (b.dataset.couper !== undefined) { await poster('/api/telephone/couper', { raison: 'papa a touché « Tout couper » dans le cockpit' }); annonce('Tout est coupé : plus aucun geste.'); }
       else if (b.dataset.rallumer !== undefined) {
         const presence = await preuvePresence('telephone:rallumer', annonce);
-        await poster('/api/telephone/rallumer', { presence }); annonce('Ses gestes reprennent, dans les mêmes limites.');
+        await poster('/api/telephone/rallumer', { presence }); annonce('Ses gestes reprennent, dans les mêmes limites, jusqu’à ce que tu les coupes : le mot « stop » ne les coupe plus.');
       } else {
         const id = b.dataset.decider, oui = b.dataset.oui === '1';
         const presence = oui ? await preuvePresence(`telephone:autoriser:${id.replace(/^S-/, '')}`, annonce) : undefined;

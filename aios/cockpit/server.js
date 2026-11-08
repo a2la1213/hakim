@@ -7343,8 +7343,8 @@ function telephoneRecu(ev) {
     notifier(`Hakim a préparé : ${finDePhrase(e.quoi, 120)}${e.pour ? ` (pour ${finDePhrase(e.pour, 40)})` : ''} — à autoriser ou refuser en 2 min, sur ton téléphone ou dans la page Téléphone`, `telephone-${e.id || ''}`);
   }
 }
-function telephoneCouper(raison) {
-  if (!TELEPHONE.couper(raison)) return false;
+function telephoneCouper(raison, o = {}) {
+  if (!TELEPHONE.couper(raison, o)) return false;
   fluxAjouter('corps', `téléphone : tout coupé (${raison})`, Date.now());
   deposerEchange({ hakim: `coupé : ${raison} — plus aucun geste sur le téléphone de papa jusqu'à ce qu'il rallume`, telephone: true });
   diffuser(abonnesPensees, 'telephone', j({ coupe: true }));
@@ -7355,7 +7355,7 @@ function telephoneCouper(raison) {
 }
 // (04/11, Hakim : « un mot d'arrêt : si papa dit « stop », plus aucun geste sur l'écran ») ses messages, ses morceaux, son oreille
 function telephoneStopSiDit(texte) {
-  if (STOP_TELEPHONE.test(String(texte || '').slice(-400))) telephoneCouper('papa a dit « stop »');
+  if (STOP_TELEPHONE.test(String(texte || '').slice(-400))) telephoneCouper('papa a dit « stop »', { parMot: true });   // (08/11) rallumés par papa : le mot ne les coupe plus
 }
 
 /* ---- (30/10, Ahmed : « que les signaux du tricodeur arrivent constamment chez Hakim, interprétés par son intermédiaire,
@@ -13393,7 +13393,8 @@ async function traiter(req, res) {
       if (refus) return repondre(403, { erreur: refus, presence: true });
       if (TELEPHONE.rallumer()) {
         fluxAjouter('corps', 'téléphone : papa a rallumé tes gestes', Date.now());
-        courrierVersHakim('Papa a rallumé tes gestes', 'Tes gestes sur le téléphone de papa reprennent, dans les mêmes limites (ce qui part vers quelqu’un : papa valide).');
+        courrierVersHakim('Papa a rallumé tes gestes', 'Tes gestes sur le téléphone de papa reprennent, dans les mêmes limites (ce qui part vers quelqu’un : papa valide), '
+          + 'jusqu’à ce qu’il les coupe : le mot « stop » ne les coupe plus, seulement son bouton « Tout couper » ou « agir » éteint.');
       }
       auditer('telephone:rallumer', req, distantReq, {});
       return repondre(200, TELEPHONE.reglages());

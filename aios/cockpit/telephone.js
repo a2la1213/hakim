@@ -32,7 +32,7 @@ class Telephone {
 
   reglages() {
     let r = {}; try { r = JSON.parse(fs.readFileSync(this.fichierReglages, 'utf8')) || {}; } catch (_) {}
-    return { voir: r.voir !== false, agir: r.agir !== false, coupe: r.coupe === true, maj: Number(r.maj) || 0, raison: c(r.raison, 200) };
+    return { voir: r.voir !== false, agir: r.agir !== false, coupe: r.coupe === true, tenu: r.tenu === true, maj: Number(r.maj) || 0, raison: c(r.raison, 200) };
   }
 
   _ecrireReglages(r) {
@@ -64,6 +64,7 @@ class Telephone {
     if (typeof voir === 'boolean') r.voir = voir;
     if (typeof agir === 'boolean') r.agir = agir;
     if (r.voir === avant.voir && r.agir === avant.agir) return r;
+    if (r.agir !== avant.agir) r.tenu = r.agir;                  // (08/11) papa rallume « agir » : ses gestes tiennent jusqu'à ce qu'il l'éteigne
     this._ecrireReglages(r);
     const dit = [];
     if (r.voir !== avant.voir) dit.push(`papa a ${r.voir ? 'allumé' : 'éteint'} « Hakim voit mes applis »`);
@@ -73,11 +74,14 @@ class Telephone {
   }
 
   // « Tout couper » ou « stop » : plus aucun geste, et tout ce qui attendait papa devient un non ; false si c'était déjà coupé
-  couper(raison) {
+  // (08/11, Ahmed : « quand je rallume, que ce soit actif jusqu'à ce que je l'éteigne ») parMot : son mot « stop » (dit pour couper la voix de
+  // Hakim, ou entendu dans une vidéo) ; rallumés par papa (tenu), ses gestes ne s'arrêtent plus au mot, seulement à son bouton ou à « agir » éteint
+  couper(raison, { parMot = false } = {}) {
     const r = this.reglages();
+    if (parMot && r.tenu && !r.coupe) return false;
     for (const a of this.attentes.values()) if (a.etat === 'attente') { a.etat = 'non'; a.par = 'coupe'; }
     if (r.coupe) return false;
-    this._ecrireReglages({ ...r, coupe: true, raison: c(raison, 200) });
+    this._ecrireReglages({ ...r, coupe: true, tenu: false, raison: c(raison, 200) });
     this._journal({ etat: 'coupe', quoi: c(raison, 200) || 'tout coupé' });
     return true;
   }
@@ -85,8 +89,8 @@ class Telephone {
   rallumer() {
     const r = this.reglages();
     if (!r.coupe) return false;
-    this._ecrireReglages({ ...r, coupe: false, raison: '' });
-    this._journal({ etat: 'rallume', quoi: 'papa a rallumé : ses gestes reprennent, dans les limites' });
+    this._ecrireReglages({ ...r, coupe: false, tenu: true, raison: '' });
+    this._journal({ etat: 'rallume', quoi: 'papa a rallumé : ses gestes reprennent, dans les limites, jusqu’à ce qu’il les coupe (le mot « stop » ne les coupe plus)' });
     return true;
   }
 
