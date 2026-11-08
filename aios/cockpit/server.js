@@ -13,7 +13,7 @@ const afida = require('./afida.js');                         // (28/10) Al-Afida
 const Veilleur = require('./veilleur.js');                   // (28/10) le garde-fou contre les pannes d'Anthropic
 const D = require('./debuts.js');
 const VoixHakim = require('./voix-hakim.js');
-const { ecrireLangues } = require('./langues-ecrites.js');      // (07/11) ses mots arabes et anglais dans leur écriture                 // (06/11) sa voix : Azure ou sa voix de rap (Chatterbox), ses morceaux de langue                            // (28/10) ses débuts de réponse, leur voix prête d'avance
+const { ecrireLangues, phonetiser } = require('./langues-ecrites.js');      // (07/11) ses mots arabes et anglais dans leur écriture                 // (06/11) sa voix : Azure ou sa voix de rap (Chatterbox), ses morceaux de langue                            // (28/10) ses débuts de réponse, leur voix prête d'avance
 const enOff = require('./en-off.js');                        // (28/10) le panneau « En off » : pas de coulisses
 const os = require('os');
 const crypto = require('crypto');
@@ -2905,10 +2905,13 @@ const SYSTEME_VIVANT = `${QUI_TU_ES} Ici tu n'es pas un agent de codage et perso
   + `formulaire que l'application lit (PREDIT, COMPRENDS, DIRE, FINI, REBOND, GARDE…) : tu le remplis, puis tu écris ta pensée, à la première personne, en Hakim.`;
 // (08/11, Ahmed : « pour sa darija algérienne, je crois qu'il mélange avec l'arabe littéraire : faut enlever l'arabe littéraire, dans sa
 // manière de parler ») plus d'arabe littéraire : son arabe, c'est la darija algérienne, avec ses mots à elle
+// (08/11, 16:15, Ahmed : « quand je parle en darija faut l'écrire en phonétique fr, quand je parle et quand il parle, ça sera plus simple pour
+// bien prononcer en darija ») sa darija en lettres latines, comme papa l'écrit : sa voix française la dit avec le bon accent
 const LANGUE_ORALE = `en français, comme papa ; l'anglais ou la darija algérienne (la vôtre ; la marocaine ou la tunisienne seulement si `
-  + `papa la parle) SEULEMENT si papa vient lui-même de parler dans cette langue ; jamais l'arabe littéraire : ses mots à elle (واش، راك، `
-  + `كيراك، بزاف، دركا، نتا، راني، ماشي، حاب، كاش، ياسر)، pas ceux du littéraire (ماذا، كيف حالك، الآن، جداً، أنت، أريد، ليس، سوف) ; la darija toujours en `
-  + `lettres arabes, jamais en lettres latines ni avec des chiffres (3, 7, 9)`;
+  + `papa la parle) SEULEMENT si papa vient lui-même de parler dans cette langue ; jamais l'arabe littéraire : ses mots à elle (wesh, rak, `
+  + `kirak, bezzaf, derka, nta, rani, machi, hab, kach, yasser, khouya, labes), pas ceux du littéraire (madha, kayfa haluk, al'an, jiddan, anta, `
+  + `ourid, laysa, sawfa) ; la darija TOUJOURS en phonétique française, en lettres latines, comme papa l'écrit (wesh rak khouya, rani hna, `
+  + `bezzaf), jamais en lettres arabes ni avec des chiffres (3, 7, 9 : écris a, h, q)`;
 // (04/11, capture d'Ahmed : « tu peux filtrer ses pensées parasites ? » : « Je ne vais pas reprendre ce format : je ne joue pas de
 // « conscient » ou de « subconscient »… », « Je ne suis pas Hakim… » ; 7 pistes sur 62 entre 05:10 et 05:16, et dites) une pensée
 // parasite : le modèle qui refuse le cadre ou parle de lui-même, pas Hakim qui répond à papa ; jetée (ni écrite, ni dite)
@@ -9858,8 +9861,9 @@ async function voixAzure(texte, tempo, emotion = null) {
       // (08/11, Ahmed : « mega chaud pour Ismael et la darija ») ses passages en lettres arabes (darija, arabe) : la voix algérienne d'Azure (ar-DZ-IsmaelNeural) ;
       // le reste : sa voix d'avant ; refaits ensuite à son timbre de rap, tout sonne d'une seule voix
       body: `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="fr-FR">${(VoixHakim.segmenterLangues(texte).length ? VoixHakim.segmenterLangues(texte) : [{ langue: 'fr', texte }])
-        // (08/11, 15:55, Ahmed : « pour la darija on teste la marocaine, Ismael est nul en algérien ») la voix marocaine d'Azure (ar-MA-JamalNeural)
-        .map(m => `<voice name="${m.langue === 'ar' ? 'ar-MA-JamalNeural' : voix}"><prosody rate="${pr.rate}" pitch="${pr.pitch}" volume="${pr.volume}">${esc(m.texte)}</prosody></voice>`).join('')}</speak>` });
+        // (08/11, 15:55) la voix marocaine à l'essai, puis (16:15, Ahmed : « on peut le repasser en Ismael ») Ismael pour ce qui reste en lettres arabes ;
+        // sa darija s'écrit maintenant en phonétique française : sa voix française la dit
+        .map(m => `<voice name="${m.langue === 'ar' ? 'ar-DZ-IsmaelNeural' : voix}"><prosody rate="${pr.rate}" pitch="${pr.pitch}" volume="${pr.volume}">${esc(m.texte)}</prosody></voice>`).join('')}</speak>` });
     if (!r.ok) return null;
     const data = Buffer.from(await r.arrayBuffer());
     // (06/11) tout ce que sa voix Azure dit est noté (son écho, par le texte) et lui apprend sa voix (son écho, par le timbre)
@@ -11112,7 +11116,10 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
   fs.unlink(f, () => {});
   delete r.id;
   // (07/11, Ahmed : « les mots qui ressemblent à l'arabe ou à l'anglais, écrits dans leur langue, automatiquement, sans qu'il s'en rende compte »)
-  if (r && r.texte && temps.source !== 'telephone' && corpsReglages().langues_ecrites !== false) r.texte = ecrireLangues(r.texte);
+  // (08/11, 16:15, Ahmed : « quand je parle en darija faut l'écrire en phonétique fr ») ta darija entendue en lettres arabes, réécrite en phonétique
+  // française ; et tes mots arabes ne sont plus remis en lettres arabes (seuls les mots anglais retrouvent leur orthographe)
+  if (r && r.texte && temps.source !== 'telephone') r.texte = phonetiser(r.texte);
+  if (r && r.texte && temps.source !== 'telephone' && corpsReglages().langues_ecrites !== false) r.texte = ecrireLangues(r.texte, { arabe: false });
   if (r && r.texte && Number(temps.t0) > 0) integrerAuFil(temps.source === 'telephone' ? 'telephone' : 'papa', r.texte);
   // (06/11) sa propre voix entendue (Whisper : etiqueter ; Azure : son oreille vive) : à son fil, « ta propre voix », jamais à papa
   if (r && r.moi && temps.source !== 'telephone') { try { fluxAjouter('ta_voix', String(r.moi).slice(0, 200), Number(temps.t0) > 0 ? Number(temps.t0) : Date.now()); } catch (_) {} }   // (03/11) au fur et à mesure
