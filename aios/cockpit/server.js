@@ -7504,7 +7504,8 @@ function corpsReglages() {
     fenetre_partagee: r.fenetre_partagee === true, tournesol: r.tournesol === true,
     un_par_un: r.un_par_un !== false, meubles_entre: r.meubles_entre !== false,   // (05/11, 21:20) ses morceaux un à un, et ses « euh » entre eux
     voix_azure: r.voix_azure === true,
-    voix_hakim: ['rap', 'azure_rap'].includes(r.voix_hakim) ? r.voix_hakim : 'azure',   // (08/11) 'azure_rap' : Azure refait à son timbre de rap   // (06/11, Ahmed : « sa voix de rap ») 'azure' (rapide, en ligne) ou 'rap' (ses chansons, Chatterbox au Mac)
+    // (08/11, Ahmed : « on élimine totalement la voix standard d'Azure ») 'azure_rap' (Azure refait à son timbre de rap) ou 'rap' (Chatterbox) : rien d'autre
+    voix_hakim: r.voix_hakim === 'rap' ? 'rap' : 'azure_rap',   // (06/11, Ahmed : « sa voix de rap ») 'azure' (rapide, en ligne) ou 'rap' (ses chansons, Chatterbox au Mac)
     stt_azure: r.stt_azure === true, reponse_directe: r.reponse_directe === true,
     tunnel: r.tunnel === true,
     parole_libre: r.parole_libre === true,   // (05/11, Ahmed : « on lève toutes tes contraintes de parole ») plus de plafond ; stop, parasites et sécurité restent

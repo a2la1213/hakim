@@ -25,9 +25,9 @@ test('le choix de sa voix : azure par défaut, rap seulement si choisi ; dans le
   vm.runInContext(extraire('function corpsReglages(', '\nfunction corpsActif(') + '\nthis.f = corpsReglages;', ctx);
   assert.strictEqual(ctx.f().voix_hakim, 'rap');
   ctx.lireJson = () => ({ voix_hakim: 'autre' });
-  assert.strictEqual(ctx.f().voix_hakim, 'azure');
+  assert.strictEqual(ctx.f().voix_hakim, 'azure_rap', '(08/11) plus de voix standard d’Azure');
   assert.match(SRC, /if \(VoixHakim\.VOIX\.includes\(q\.voix_hakim\)\) \{ r\.voix_hakim = q\.voix_hakim; noterAjustementPapa\(\['voix_hakim'\]\); \}/);
-  assert.match(REGLAGES, /\['voix_hakim', '🎤 Sa voix', [^\n]*'liste', \[\['azure', 'Azure \(rapide\)'\], \['rap', 'Sa voix de rap \(Chatterbox, sur le Mac\)'\](?:, \['azure_rap', '[^']*'\])?\], 'corps'\]/);
+  assert.match(REGLAGES, /\['voix_hakim', '🎤 Sa voix', [^\n]*'liste', \[\['azure_rap', '[^']*'\], \['rap', 'Sa voix de rap \(Chatterbox, sur le Mac\)'\]\], 'corps'\]/);
 });
 
 test('en rap, le téléphone prend la voix du Mac (jamais Supertonic), et ses débuts et meubles se rechargent dans la nouvelle voix', () => {
@@ -203,7 +203,7 @@ test('azure_rap : Azure refait à son timbre de rap, jamais Azure tel quel ; le 
   assert.strictEqual(V.choixVoix({ voix_hakim: 'azure_rap' }), 'azure_rap');
   const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   assert.match(srv, /const voieVoix = \(req\) => \(req && \(req\.op === 'dire' \|\| req\.op === 'convertir'\) \? 'parole' : 'ecoute'\);/);
-  assert.match(srv, /voix_hakim: \['rap', 'azure_rap'\]\.includes\(r\.voix_hakim\) \? r\.voix_hakim : 'azure',/);
+  assert.match(srv, /voix_hakim: r\.voix_hakim === 'rap' \? 'rap' : 'azure_rap',/);
   assert.match(srv, /if \(corpsReglages\(\)\.voix_hakim === 'azure_rap'\) \{\n\s+const c = await azureAuTimbreRap\(a\.data\);/);
   const f = srv.slice(srv.indexOf('async function convertirAuTimbreRap('), srv.indexOf('\n}\n', srv.indexOf('async function convertirAuTimbreRap(')));
   assert.match(srv, /jamais Azure tel quel : ce morceau ne se dit pas/, '(08/11, Ahmed) plus jamais sa voix standard d’Azure');
