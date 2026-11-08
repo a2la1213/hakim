@@ -47,7 +47,7 @@ const CANON = { 'واش': 'wch', 'راك': 'rak', 'كيراك': 'kirak', 'بزا
   'شوية': 'chwiya', 'كيفاش': 'kifach', 'علاش': 'alach', 'والله': 'wallah', 'حبيبي': 'habibi', 'حبيبتي': 'habibti', 'يلا': 'yallah', 'هذا': 'hada',
   'هاذا': 'hada', 'هذي': 'hadi', 'هاذي': 'hadi', 'واحد': 'wahed', 'زوج': 'zouj', 'بابا': 'baba', 'ماما': 'mama', 'دابا': 'daba', 'مزيان': 'mzyan',
   'واخا': 'wakha', 'صافي': 'safi', 'بغيت': 'bghit', 'نحب': 'nhab', 'زعما': 'zaama', 'حشومة': 'hchouma', 'مسكين': 'meskine', 'وين': 'win',
-  'فين': 'fin', 'شحال': 'chhal', 'قداش': 'qaddach', 'كاين': 'kayen', 'ماكانش': 'makanch', 'نتوما': 'ntouma', 'حنا': 'hna', 'هنا': 'hna', 'تاع': 'taa',
+  'فين': 'fin', 'شحال': 'chhal', 'قداش': 'qaddach', 'كاين': 'kayn', 'ماكانش': 'makanch', 'نتوما': 'ntouma', 'حنا': 'hna', 'هنا': 'hna', 'تاع': 'taa',
   'ديال': 'dyal', 'برك': 'berk', 'غير': 'ghir', 'بلاك': 'blak', 'سمحلي': 'smahli', 'معليش': 'maalich', 'أنا': 'ana', 'انا': 'ana', 'هو': 'houwa',
   'هي': 'hiya', 'لا': 'la', 'إيه': 'ih', 'ايه': 'ih', 'آه': 'ah', 'وش': 'wesh', 'كي': 'ki', 'باش': 'bach', 'ولا': 'wella', 'بلا': 'bla', 'مع': 'maa' };
 const LETTRES = { 'ا': 'a', 'أ': 'a', 'إ': 'i', 'آ': 'a', 'ٱ': 'a', 'ء': "'", 'ؤ': 'ou', 'ئ': 'i', 'ب': 'b', 'ت': 't', 'ث': 'th', 'ج': 'dj', 'ح': 'ĥ',
