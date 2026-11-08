@@ -692,7 +692,7 @@ test('(04/11) la bonne parole : le français d’abord ; une pensée surtout en 
   const { ctx, appels, diffuses, notes } = pistesSandbox(undefined, 'sonnet');
   const attendre = async () => { await new Promise(r => setImmediate(r)); await new Promise(r => setImmediate(r)); };
   ctx.morceau('Tu m’entends, fiston ? Est-ce que tu m’entends ?');
-  assert.match(appels[0].prompt, /en français, comme papa ; l'anglais, l'arabe littéraire ou la darija .* SEULEMENT si papa vient lui-même de parler dans cette langue/);
+  assert.match(appels[0].prompt, /en français, comme papa ; l'anglais ou la darija algérienne .* SEULEMENT si papa vient lui-même de parler dans cette langue/);
   assert.match(appels[0].prompt, /« أنا سامعك », « كمل », « أنا معاك »/, 'l’attente, en darija aussi');
   assert.doesNotMatch(appels[0].prompt, /ni Claude, ni Claude Code/, 'qui il est, sans le nier (les garde-fous de Sonnet le bloquaient)');
   appels[0].resoudre({ texte: 'أيوه يا بابا، أنا معاك.' });
@@ -1066,7 +1066,8 @@ test('(04/11) ta voix 2 s sur la sienne : il se tait ; un mot ou un rire : il co
 test('(04/11) ses pistes parlent dans la langue de papa, darija comprise, l’arabe en lettres arabes', () => {
   const { ctx, appels } = pistesSandbox(undefined, 'sonnet');
   ctx.morceau('واش راك يا حكيم،');
-  assert.match(appels[0].prompt, /l'anglais, l'arabe littéraire ou la darija \(algérienne, marocaine ou tunisienne : celle qu'il emploie, pas une autre\)/);
+  assert.match(appels[0].prompt, /l'anglais ou la darija algérienne \(la vôtre ; la marocaine ou la tunisienne seulement si papa la parle\)/);
+  assert.match(appels[0].prompt, /jamais l'arabe littéraire : ses mots à elle \(واش/, '(08/11, Ahmed) plus d’arabe littéraire dans sa manière de parler');
   assert.match(appels[0].prompt, /toujours en lettres arabes, jamais en lettres latines ni avec des chiffres \(3, 7, 9\)/);
   assert.match(appels[0].prompt, /Son morceau 1, qu'il vient de dire : « واش راك يا »/, '(13:05) ses 3 premiers mots partent tout de suite');
   assert.match(appels[1].prompt, /Son morceau 2, qu'il vient de dire : « حكيم، »/, '(04/11) la virgule arabe coupe aussi');
