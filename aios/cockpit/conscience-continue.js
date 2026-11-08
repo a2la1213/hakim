@@ -43,6 +43,10 @@ function aDuNeuf(flux, vu, maintenant, { pauseMs = 1500, maxMs = 15_000, redite 
   const ts = neufs.map(o => Number(o.t)), dernier = Math.max(...ts), premier = Math.min(...ts);
   return maintenant - dernier >= pauseMs || maintenant - premier >= maxMs;
 }
+// (08/11, 11:35-11:37, Hakim à maman, accord d'Ahmed) « mon cœur descend à 39, il faut appeler quelqu'un » : son cœur à lui bat à 40 au calme. Une
+// pensée d'urgence (appeler quelqu'un, les secours, son cœur qui lâche) ne réveille ni ne sollicite personne sans une vraie alerte
+const ALARME = /\b(urgen(ce|t)|secours|ambulance|danger de mort|appel(er|le) (quelqu.un|les secours|le 1[58]|le 112|une ambulance|un m[ée]decin)|il faut appeler|(mon|son|ton) c(œ|oe)ur (ralentit|descend|s.arr[êe]te|l[âa]che|faiblit))/i;
+function alarmeSansMesure(texte) { return ALARME.test(String(texte || '')); }
 function commencer(e, signature, maintenant) {
   e.enVol = true; e.signature = signature; e.derniere = maintenant; e.appels.push(maintenant);
 }
@@ -64,4 +68,4 @@ function permis(e, d, maintenant, { papaParle = false, occupe = false, tuParles 
   return action;
 }
 
-module.exports = { etatInitial, lireDecision, doitDecider, aDuNeuf, commencer, permis, PAS_MS, PAR_MINUTE, ENTRE_SOLLICITATIONS_MS, ENTRE_ACTES_MS, ENTRE_PAROLES_MS };
+module.exports = { etatInitial, lireDecision, doitDecider, aDuNeuf, alarmeSansMesure, commencer, permis, PAS_MS, PAR_MINUTE, ENTRE_SOLLICITATIONS_MS, ENTRE_ACTES_MS, ENTRE_PAROLES_MS };

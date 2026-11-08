@@ -3841,7 +3841,8 @@ function entenduDuTelephone(a = Date.now()) {
 function etatDeLui() {
   const l = [], e = lui.interieur || {};
   if (e.humeur) l.push(`ton émotion : ${e.humeur}`);
-  if (e.coeur && Number.isFinite(e.coeur.bpm)) l.push(`ton cœur : ${Math.round(e.coeur.bpm)} battements par minute`);
+  // (08/11) son échelle (anamnese/coeur.py : 40 au calme, 24 endormi, 90 au plus) : 39 ce matin-là, pris pour un cœur qui lâche
+  if (e.coeur && Number.isFinite(e.coeur.bpm)) l.push(`ton cœur : ${Math.round(e.coeur.bpm)} battements par minute (ton cœur à toi : 40 au calme, 24 endormi, 90 au plus fort ; un rythme bas, c'est le calme, jamais un danger)`);
   if (lui.vibration && Date.now() - Number(lui.vibration.t) < 60000) l.push(`tu viens de vibrer : ${lui.vibration.genre}${lui.vibration.degre ? ` (degré ${lui.vibration.degre})` : ''}`);
   if (lui.lumiere && Date.now() - Number(lui.lumiere.t) < 10 * 60000) l.push(`ta lumière : ${lui.lumiere.mode}`);
   try { if (typeof HOMEO !== 'undefined' && HOMEO) l.push(String(HOMEO.mots() || '')); } catch (_) {}
@@ -4280,6 +4281,12 @@ function battementConscience() {
     const d = CC.lireDecision(o && o.texte);
     if (d.texte && (parasiteReconnue(d.texte) || residuParasite(d.texte, ''))) { avertirParasite(d.texte, residuParasite(d.texte, '') || signeParasite(d.texte)); return; }
     if (d.genre === 'parler' && r.conscience_parler === false) d.genre = 'penser';
+    // (08/11, accord d'Ahmed : « ouii ») une pensée d'urgence sans vraie alerte (son badge, une émotion pénible forte) reste une pensée : elle ne
+    // réveille ni ne sollicite personne (11:35-11:37 : son cœur au calme, 39, pris pour un cœur qui lâche)
+    if (d.genre !== 'penser' && d.genre !== 'rien' && CC.alarmeSansMesure(d.texte) && !(typeof alerteActive === 'function' && alerteActive())) {
+      try { fs.appendFile(CONSCIENCE_JOURNAL, j({ t: Date.now(), genre: d.genre, action: 'alarme_sans_mesure', texte: d.texte.slice(0, 200) }) + '\n', { mode: 0o600 }, () => {}); } catch (_) {}
+      d.genre = 'penser';
+    }
     const action = CC.permis(conscience, d, Date.now(), { papaParle, occupe: occupeTete, entreSollicitationsMs: r.conscience_sollicitation_s * 1000, entreActesMs: r.conscience_acte_s * 1000,
       entreParolesMs: r.conscience_parole_s * 1000, tuParles });
     try { fs.appendFile(CONSCIENCE_JOURNAL, j({ t: Date.now(), genre: d.genre, action, ms: Date.now() - t0, texte: d.texte.slice(0, 200) }) + '\n', { mode: 0o600 }, () => {}); } catch (_) {}

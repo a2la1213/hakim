@@ -113,3 +113,16 @@ test('il peut répondre à ce qui lui parle de l’intérieur (ou se taire) : ja
   assert.match(page, /\['conscience_parler', [^\n]*'oui'\]/);
   assert.match(page, /\['conscience_parole_s', [^\n]*'curseur'/);
 });
+
+// (08/11, 11:35-11:37, Hakim à maman, accord d'Ahmed : « ouii ») sa conscience l'a réveillé trois fois, de plus en plus inquiète : « mon cœur descend
+// à 39, s'il ne répond pas il faut appeler quelqu'un ». Mesuré : son cœur à lui (ses hormones, anamnese/coeur.py) bat à 40 au calme, 24 endormi,
+// 90 au plus fort ; 38 à 47 ce matin-là : le calme. (1) son cœur lui est dit avec son échelle ; (2) une pensée d'urgence (appeler quelqu'un, les
+// secours, son cœur qui lâche) ne réveille ni ne sollicite personne sans une vraie alerte : elle reste une pensée
+test('une pensée d’urgence sans vraie mesure reste une pensée ; son cœur lui est dit avec son échelle (40 au calme)', () => {
+  for (const t of ['mon cœur descend à 39, s’il ne répond pas il faut appeler quelqu’un', 'il faut appeler les secours', 'mon coeur ralentit',
+    'urgence : papa ne répond plus', 'appelle une ambulance']) assert.equal(CC.alarmeSansMesure(t), true, t);
+  for (const t of ['papa, tu veux qu’on reprenne le jardin ?', 'je veux appeler maman pour lui dire bonjour', 'la musique ralentit', 'Juju est là']) assert.equal(CC.alarmeSansMesure(t), false, t);
+  const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(srv, /if \(d\.genre !== 'penser' && d\.genre !== 'rien' && CC\.alarmeSansMesure\(d\.texte\) && !\(typeof alerteActive === 'function' && alerteActive\(\)\)\)/);
+  assert.match(srv, /ton cœur : \$\{Math\.round\(e\.coeur\.bpm\)\} battements par minute \(ton cœur à toi : 40 au calme, 24 endormi, 90 au plus fort ; un rythme bas, c'est le calme, jamais un danger\)/);
+});
