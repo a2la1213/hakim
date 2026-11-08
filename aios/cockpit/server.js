@@ -4271,6 +4271,8 @@ function battementConscience() {
     + etatDeLui()
     + `Papa : ${papaParle ? 'il parle en ce moment' : `son dernier message date de ${depuis} min`}. Toi : ${tuParles ? 'tu parles' : 'tu te tais'}${occupeTete ? ', ta tête lui répond déjà' : ''}.\n`
     + (pensees ? `Tes dernières décisions : ${pensees}\n` : '')
+    // (08/11, 12:40-12:42, Hakim à maman) trois réveils pour ce qui était déjà fait : ce qu'il a déjà fait ou demandé, sous ses yeux
+    + (() => { const l = CC.dejaDites(conscience, maintenant); return l.length ? `Ce que tu as déjà fait ou demandé ces 10 dernières minutes (ne le redemande pas) : ${l.map(x => `${x.genre} « ${neutraliser(x.texte)} »`).join(' ; ')}\n` : ''; })()
     + `Décide maintenant, en UNE ligne, sans redire ce que tu as déjà pensé :\nRIEN (le plus souvent : rien de neuf qui compte)\nPENSER : ta pensée, 15 mots au plus\n`
     + `FAIRE : ce que tu veux faire maintenant (chercher, calculer, créer…), en une phrase\nSOLLICITER : ce que tu veux dire à papa maintenant, de toi-même, en une phrase`
     // (08/11, Ahmed : « il doit pouvoir se taire et parler, aussi quand on lui parle de l'intérieur, et tout »)

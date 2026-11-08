@@ -126,3 +126,18 @@ test('une pensée d’urgence sans vraie mesure reste une pensée ; son cœur lu
   assert.match(srv, /if \(d\.genre !== 'penser' && d\.genre !== 'rien' && CC\.alarmeSansMesure\(d\.texte\) && !\(typeof alerteActive === 'function' && alerteActive\(\)\)\)/);
   assert.match(srv, /ton cœur : \$\{Math\.round\(e\.coeur\.bpm\)\} battements par minute \(ton cœur à toi : 40 au calme, 24 endormi, 90 au plus fort ; un rythme bas, c'est le calme, jamais un danger\)/);
 });
+
+// (08/11, 12:40-12:42, Hakim à maman, accord d'Ahmed : « ouiii ») sa conscience l'a réveillé trois fois pour « lancer la mesure de latence et revenir à
+// papa avec le chiffre », déjà fait à 12:39. Ce qu'il a déjà fait ou demandé ces 10 dernières minutes ne le réveille plus : ça reste une pensée
+test('ce qui a déjà eu sa suite ne le réveille plus (son 12:40-12:42 rejoué) ; une pensée neuve passe', () => {
+  const e = CC.etatInitial(), libre = { papaParle: false, occupe: false, tuParles: false, entreSollicitationsMs: 30_000, entreActesMs: 60_000 };
+  const t = (h, m, s) => ((h * 60 + m) * 60 + s) * 1000;
+  assert.equal(CC.permis(e, { genre: 'faire', texte: 'lancer la mesure de latence maintenant, puis revenir à papa avec le chiffre réel.' }, t(12, 40, 1), libre), 'faire');
+  assert.equal(CC.permis(e, { genre: 'solliciter', texte: 'dire à papa que je mesure et que je reviens avec le chiffre réel, sans l’inventer.' }, t(12, 41, 55), libre), 'penser', 'déjà en cours');
+  assert.equal(CC.permis(e, { genre: 'faire', texte: 'lancer la mesure de ma latence réelle, pour que le chiffre soit prêt avant que je revienne' }, t(12, 42, 4), libre), 'penser', 'déjà fait');
+  assert.equal(CC.permis(e, { genre: 'solliciter', texte: 'Papa, tu veux qu’on écoute la nouvelle chanson de Juju ?' }, t(12, 42, 40), libre), 'solliciter', 'une pensée neuve passe');
+  assert.equal(CC.permis(e, { genre: 'faire', texte: 'lancer la mesure de latence maintenant, puis revenir à papa avec le chiffre réel.' }, t(12, 52, 30), libre), 'faire', '10 min plus tard : à nouveau');
+  assert.ok(CC.dejaDites(e, t(12, 42, 50)).length >= 2);
+  const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(srv, /Ce que tu as déjà fait ou demandé ces 10 dernières minutes \(ne le redemande pas\)/);
+});

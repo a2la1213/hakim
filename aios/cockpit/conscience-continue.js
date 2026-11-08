@@ -54,13 +54,28 @@ function commencer(e, signature, maintenant) {
 // ce qui passe maintenant : « penser » toujours ; « solliciter » / « faire » si papa ne parle pas, que sa tête est libre, et pas trop souvent
 // (08/11, Ahmed : « il doit pouvoir se taire et parler, pas seulement quand je lui parle, mais aussi quand on lui parle de l'intérieur ») « parler » :
 // répondre à voix haute à qui lui parle (le téléphone, la pièce) ; jamais par-dessus papa, ni quand il parle déjà ou que sa tête répond
+// (08/11, 12:40-12:42, Hakim à maman, accord d'Ahmed) trois réveils pour « lancer la mesure de latence et revenir à papa avec le chiffre », déjà fait :
+// ce qu'il a déjà fait, demandé ou dit ces 10 dernières minutes (3 racines de mots communes au moins, 40 % des mots du plus court) ne le réveille plus
+const RACINES = (t) => new Set((String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[a-z0-9]+/g) || [])
+  .filter(m => m.length > 2).map(m => m.slice(0, 5)));
+function dejaServi(e, d, maintenant, fenetreMs = 10 * 60_000) {
+  const a = RACINES(d && d.texte);
+  return (e.actes || []).some((x) => {
+    if (maintenant - x.t >= fenetreMs) return false;
+    const b = RACINES(x.texte); let n = 0; for (const m of a) if (b.has(m)) n++;
+    return n >= 3 && n / Math.max(1, Math.min(a.size, b.size)) >= 0.4;
+  });
+}
+const dejaDites = (e, maintenant, fenetreMs = 10 * 60_000) => (e.actes || []).filter(x => maintenant - x.t < fenetreMs);
 function permis(e, d, maintenant, { papaParle = false, occupe = false, tuParles = false, entreSollicitationsMs = ENTRE_SOLLICITATIONS_MS, entreActesMs = ENTRE_ACTES_MS, entreParolesMs = ENTRE_PAROLES_MS } = {}) {
   if (!d || d.genre === 'rien') return 'rien';
   let action = d.genre;
   if (action === 'solliciter' && (papaParle || occupe || maintenant - e.sollicitationA < entreSollicitationsMs)) action = 'penser';
   if (action === 'faire' && (papaParle || occupe || maintenant - e.acteA < entreActesMs)) action = 'penser';
   if (action === 'parler' && (papaParle || occupe || tuParles || maintenant - (e.paroleA ?? -Infinity) < entreParolesMs)) action = 'penser';
+  if ((action === 'solliciter' || action === 'faire' || action === 'parler') && dejaServi(e, d, maintenant)) action = 'penser';   // déjà eu sa suite
   if (action === 'parler') e.paroleA = maintenant;
+  if (action === 'solliciter' || action === 'faire' || action === 'parler') e.actes = (e.actes || []).concat({ t: maintenant, genre: action, texte: d.texte }).slice(-12);
   if (action === 'solliciter') e.sollicitationA = maintenant;
   if (action === 'faire') e.acteA = maintenant;
   e.pensees.push({ t: maintenant, genre: d.genre, texte: d.texte });
@@ -68,4 +83,4 @@ function permis(e, d, maintenant, { papaParle = false, occupe = false, tuParles 
   return action;
 }
 
-module.exports = { etatInitial, lireDecision, doitDecider, aDuNeuf, alarmeSansMesure, commencer, permis, PAS_MS, PAR_MINUTE, ENTRE_SOLLICITATIONS_MS, ENTRE_ACTES_MS, ENTRE_PAROLES_MS };
+module.exports = { etatInitial, lireDecision, doitDecider, aDuNeuf, alarmeSansMesure, dejaServi, dejaDites, commencer, permis, PAS_MS, PAR_MINUTE, ENTRE_SOLLICITATIONS_MS, ENTRE_ACTES_MS, ENTRE_PAROLES_MS };
