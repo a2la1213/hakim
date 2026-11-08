@@ -48,7 +48,10 @@ test('en marche : une nouvelle demande pour un sens déjà permis ne fait ni car
 });
 
 test('ton geste est gardé : après une relance, une demande refusée ou autorisée ne revient pas', () => {
+  // (08/11) le geste passe par deciderMembre (la même fonction que son réglage « tout accepter / tout refuser ») : c'est elle qui le garde
   const route = SRC.slice(SRC.indexOf("if (p === '/api/membres') {"), SRC.indexOf("if (p === '/api/sorties') {"));
-  assert.match(route, /const t = lireJson\(JARVIS_MEMBRES_TRANCHES, \{\}\) \|\| \{\};\n\s+t\[x\.id\] = x\.etat;/);
+  assert.match(route, /deciderMembre\(x, true\)/); assert.match(route, /deciderMembre\(x, false\)/);
+  const decider = SRC.slice(SRC.indexOf('function deciderMembre('), SRC.indexOf('\n}\n', SRC.indexOf('function deciderMembre(')));
+  assert.match(decider, /const t = lireJson\(JARVIS_MEMBRES_TRANCHES, \{\}\) \|\| \{\};\n\s+t\[x\.id\] = x\.etat;/);
   assert.match(SRC, /const JARVIS_MEMBRES_TRANCHES = path\.join\(JARVIS, 'membres-tranches\.json'\);/);
 });

@@ -11520,7 +11520,7 @@ function surveillerSorties() {
     if (Date.now() / 1000 - x.ts > 2 * 3600) continue;      // au démarrage : seulement les demandes récentes
     sorties.set(x.id, x);
     while (sorties.size > 50) sorties.delete(sorties.keys().next().value);
-    if (premier) continue;
+    if (premier || (typeof modeDemandes === 'function' && modeDemandes() !== 'demander')) continue;   // (08/11) son réglage tranche de lui-même
     diffuser(abonnesPensees, 'sortie', j(x));
     notifier(`${x.qui} demande à ouvrir ${finDePhrase(x.url, 160)} après la lecture d'un de tes fichiers — à autoriser ou refuser dans Parler`, `sortie-${x.id}`);
     if (!/^Hakim/.test(x.qui)) courrierVersHakim(`Demande de sortie qui ne vient pas de toi : ${finDePhrase(x.url, 80)}`,
@@ -11557,12 +11557,83 @@ function surveillerMembres() {
     else if (permis[x.sens] === true) x.etat = 'autorise';
     membres.set(x.id, x);
     while (membres.size > 50) membres.delete(membres.keys().next().value);
-    if (premier || x.etat !== 'en_attente') continue;
+    if (premier || x.etat !== 'en_attente' || (typeof modeDemandes === 'function' && modeDemandes() !== 'demander')) continue;   // (08/11) son réglage
     diffuser(abonnesPensees, 'membre', j(x));
     notifier(`Hakim demande, la première fois, à utiliser « ${x.sens} » (${finDePhrase(x.quoi, 120)}) — à autoriser ou refuser dans Parler`, `membre-${x.id}`);
   }
 }
 setInterval(surveillerMembres, 3000).unref(); setTimeout(surveillerMembres, 1000).unref();
+
+// FERME-DEBUT demandes (08/11 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
+/* ---- (08/11, Ahmed : « j'aimerais un bouton dans Réglages pour accepter ou refuser toutes ses demandes, quelles qu'elles soient » ; son accord
+   (« ouiiiii ») sur le garde-fou : « tout accepter » demande son empreinte, et Hakim ne peut jamais y toucher) ses demandes : « demander » (comme
+   avant : une carte, ton geste), « accepter » (toutes, sans te demander), « refuser » (toutes). Tranchées par les mêmes fonctions que tes boutons,
+   écrites au journal d'audit (« auto: »), et Hakim est prévenu. Restent à toi : les anticorps et les signalements de son système immunitaire
+   (ce ne sont pas ses demandes), ses envois à ses pairs et les promotions de son code. ---- */
+const JARVIS_DEMANDES_MODE = path.join(JARVIS, 'demandes-mode.json');
+const MODES_DEMANDES = ['demander', 'accepter', 'refuser'];
+function modeDemandes() { const m = (lireJson(JARVIS_DEMANDES_MODE, {}) || {}).mode; return MODES_DEMANDES.includes(m) ? m : 'demander'; }
+// une sortie (après la lecture d'un de tes fichiers) : l'adresse exacte, une fois, dans les 15 minutes
+function deciderSortie(x, oui, auto = false) {
+  if (oui) {
+    let d = {}; try { d = JSON.parse(fs.readFileSync(JARVIS_SORTIES_PERMISES, 'utf8')) || {}; } catch (_) {}
+    const maintenant = Date.now() / 1000;
+    for (const k of Object.keys(d)) if (!(d[k] > maintenant)) delete d[k];
+    d[x.url] = maintenant + 15 * 60;
+    ecrireAtomique(JARVIS_SORTIES_PERMISES, j(d)); fs.chmodSync(JARVIS_SORTIES_PERMISES, 0o600);
+    courrierVersHakim(`Sortie autorisée par Ahmed${auto ? ' (son réglage : tout accepter)' : ''}`, `Ahmed a autorisé une fois (15 min) : ${x.url}\nTu peux réessayer cette adresse exacte.`);
+  } else courrierVersHakim(`Sortie refusée par Ahmed${auto ? ' (son réglage : tout refuser)' : ''}`, `Ahmed a refusé : ${x.url}`);
+  x.etat = oui ? 'autorisee' : 'refusee';
+  return x;
+}
+// un de ses sens ou de ses membres, la première fois : autorisé, c'est pour toujours
+function deciderMembre(x, oui, auto = false) {
+  if (oui) {
+    const d = lireJson(JARVIS_MEMBRES_PERMIS, {}) || {};
+    d[x.sens] = true;
+    ecrireAtomique(JARVIS_MEMBRES_PERMIS, j(d)); fs.chmodSync(JARVIS_MEMBRES_PERMIS, 0o600);
+    courrierVersHakim(`Papa t'autorise : ${x.sens}${auto ? ' (son réglage : tout accepter)' : ''}`, `Papa t'a donné son oui pour « ${x.sens} » (${x.quoi}). C'est pour toujours : sens_mesurer("${x.sens}"…) marche maintenant librement.`);
+  } else courrierVersHakim(`Papa refuse : ${x.sens}${auto ? ' (son réglage : tout refuser)' : ''}`, `Papa a dit non pour « ${x.sens} », pour l'instant.`);
+  x.etat = oui ? 'autorise' : 'refuse';
+  try {                                                    // (04/11, 19:22) ton geste, gardé pour les relances
+    const t = lireJson(JARVIS_MEMBRES_TRANCHES, {}) || {};
+    t[x.id] = x.etat;
+    ecrireAtomique(JARVIS_MEMBRES_TRANCHES, j(Object.fromEntries(Object.entries(t).slice(-200)))); fs.chmodSync(JARVIS_MEMBRES_TRANCHES, 0o600);
+  } catch (_) {}
+  return x;
+}
+let trancheEnCours = false;
+async function trancherSelonMode() {
+  const mode = modeDemandes();
+  if (mode === 'demander' || trancheEnCours) return 0;
+  trancheEnCours = true;
+  const oui = mode === 'accepter', faites = [];
+  const essai = async (quoi, id, f) => {
+    try {
+      await f(); faites.push(quoi);
+      fs.appendFileSync(AUDIT, j({ ts: Date.now(), action: `auto:${quoi}:${oui ? 'accepter' : 'refuser'}`, depuis: `son réglage : tout ${oui ? 'accepter' : 'refuser'}`, id: String(id).slice(0, 60) }) + '\n', { mode: 0o600 });
+    } catch (_) {}                                         // elle reste en attente : réessayée au tour suivant (une mission qui tourne déjà…)
+  };
+  try {
+    for (const x of [...sorties.values()].filter(x => x.etat === 'en_attente')) await essai('sortie', x.id, () => deciderSortie(x, oui, true));
+    for (const x of [...membres.values()].filter(x => x.etat === 'en_attente')) await essai('membre', x.id, () => deciderMembre(x, oui, true));
+    for (const a of TELEPHONE.enAttente()) await essai('telephone', a.id, () => { const r = TELEPHONE.decider(a.id, oui, 'auto'); if (!r.ok) throw new Error(r.erreur); });
+    for (const m of MISSIONS.liste().filter(m => m.etat === 'proposee')) await essai('mission', m.id, () => MISSIONS.trancher(m.id, oui ? 'accepter' : 'refuser', (MISSIONS.missions[m.id] || {}).empreinte));
+    for (const e of ECRITURES.liste().filter(e => e.etat === 'proposee')) await essai('ecriture', e.id, () => ECRITURES.trancher(e.id, oui ? 'appliquer' : 'refuser', (ECRITURES.ecritures[e.id] || {}).empreinte));
+    for (const r of REGLES_APPRISES.liste().filter(r => r.etat === 'proposee')) await essai('regle', r.id, () => REGLES_APPRISES.trancher(r.id, oui ? 'accepter' : 'refuser'));
+    for (const t of typesCarnets().filter(t => t.etat === 'proposee')) await essai('carnet', t.nom, () => trancherCarnet(t.nom, oui ? 'valider' : 'refuser'));
+    for (const p of propositionsRetractation().filter(p => p.etat === 'en_attente')) await essai('retractation', p.id, () => trancherRetractation(p.id, oui ? 'accepter' : 'refuser'));
+    for (const p of (await scruterIdentite()) || []) if (p.etat === 'en_attente') await essai('identite', p.id, async () => { const r = await identiteCli([oui ? 'accepter' : 'refuser', p.id]); if (!r.ok || !r.o.ok) throw new Error('identité'); });
+  } finally { trancheEnCours = false; }
+  if (faites.length) {
+    diffuser(abonnesPensees, 'demandes', j({ mode, tranchees: faites.length }));
+    courrierVersHakim(`Tes demandes : ${faites.length} ${oui ? 'acceptée' : 'refusée'}${faites.length > 1 ? 's' : ''} par le réglage de papa`,
+      `Papa a réglé tes demandes sur « tout ${oui ? 'accepter' : 'refuser'} » : ${faites.join(', ')}. Il peut le changer à tout moment dans Réglages.`);
+  }
+  return faites.length;
+}
+setInterval(() => { trancherSelonMode().catch(() => {}); }, 3000).unref();
+// FERME-FIN demandes
 
 /* ---- (lot 3 du système immunitaire, 29/10) les anticorps que le médecin propose : montrés dans Parler, acceptés ou
    refusés d'un geste d'Ahmed (accepter : avec sa présence). La phrase est une phrase d'attaque : elle va à la page
@@ -13448,6 +13519,30 @@ async function traiter(req, res) {
     if (p === '/api/telephone/limites' && req.method === 'POST') { TELEPHONE.limites(await lire(262144)); return repondre(200, { ok: true }); }
     return repondre(404, { erreur: 'inconnu' });
   }
+  // FERME-DEBUT demandes-route (08/11 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
+  if (p === '/api/demandes/mode') {                           // (08/11, Ahmed) ses demandes : demander, tout accepter (ton empreinte), tout refuser
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    if (req.method === 'POST') {
+      if (distantReq && !VERROU.actif()) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'associe d’abord ton téléphone (passkey)' })); }
+      let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
+      const mode = String(q.mode || '');
+      if (!MODES_DEMANDES.includes(mode)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'demander, accepter ou refuser' })); }
+      if (mode === 'accepter') {
+        const refus = exigerPresence(req, distantReq, q, 'demandes:tout-accepter');
+        if (refus) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: refus, presence: true })); }
+      }
+      const avant = modeDemandes();
+      try { ecrireAtomique(JARVIS_DEMANDES_MODE, j({ mode, maj: Date.now() })); fs.chmodSync(JARVIS_DEMANDES_MODE, 0o600); }
+      catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
+      auditer(`demandes:${mode}`, req, distantReq, { avant });
+      if (mode !== avant) courrierVersHakim(`Papa a réglé tes demandes : ${mode === 'demander' ? 'il te répond à chaque fois' : `tout ${mode}`}`,
+        mode === 'demander' ? 'Tes demandes repartent vers papa, une à une, comme avant.' : `Toutes tes demandes sont ${mode === 'accepter' ? 'acceptées' : 'refusées'} d’elles-mêmes, jusqu’à ce que papa change ce réglage.`);
+      trancherSelonMode().catch(() => {});
+      res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j({ mode }));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j({ mode: modeDemandes() }));
+  }
+  // FERME-FIN demandes-route
   if (p === '/api/membres') {                                 // (03/11) ses membres : la première fois, ton geste
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     if (req.method === 'POST') {
@@ -13458,17 +13553,8 @@ async function traiter(req, res) {
       if (action === 'autoriser') {
         const refus = exigerPresence(req, distantReq, q, `membre:autoriser:${x.id}`);
         if (refus) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: refus, presence: true })); }
-        const d = lireJson(JARVIS_MEMBRES_PERMIS, {}) || {};
-        d[x.sens] = true;
-        try { ecrireAtomique(JARVIS_MEMBRES_PERMIS, j(d)); fs.chmodSync(JARVIS_MEMBRES_PERMIS, 0o600); } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
-        courrierVersHakim(`Papa t'autorise : ${x.sens}`, `Papa t'a donné son oui pour « ${x.sens} » (${x.quoi}). C'est pour toujours : sens_mesurer("${x.sens}"…) marche maintenant librement.`);
-      } else courrierVersHakim(`Papa refuse : ${x.sens}`, `Papa a dit non pour « ${x.sens} », pour l'instant.`);
-      x.etat = action === 'autoriser' ? 'autorise' : 'refuse';
-      try {                                                    // (19:22) ton geste, gardé pour les relances
-        const t = lireJson(JARVIS_MEMBRES_TRANCHES, {}) || {};
-        t[x.id] = x.etat;
-        ecrireAtomique(JARVIS_MEMBRES_TRANCHES, j(Object.fromEntries(Object.entries(t).slice(-200)))); fs.chmodSync(JARVIS_MEMBRES_TRANCHES, 0o600);
-      } catch (_) {}
+        try { deciderMembre(x, true); } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
+      } else deciderMembre(x, false);                          // (08/11) la même fonction que son réglage « tout accepter / tout refuser »
       auditer(`membre:${action}`, req, distantReq, { id: x.id, sens: x.sens });
       res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(x));
     }
@@ -13486,14 +13572,8 @@ async function traiter(req, res) {
       if (action === 'autoriser') {
         const refus = exigerPresence(req, distantReq, q, `sortie:autoriser:${x.id}`);
         if (refus) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: refus, presence: true })); }
-        let d = {}; try { d = JSON.parse(fs.readFileSync(JARVIS_SORTIES_PERMISES, 'utf8')) || {}; } catch (_) {}
-        const maintenant = Date.now() / 1000;
-        for (const k of Object.keys(d)) if (!(d[k] > maintenant)) delete d[k];
-        d[x.url] = maintenant + 15 * 60;
-        try { ecrireAtomique(JARVIS_SORTIES_PERMISES, j(d)); fs.chmodSync(JARVIS_SORTIES_PERMISES, 0o600); } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
-        courrierVersHakim('Sortie autorisée par Ahmed', `Ahmed a autorisé une fois (15 min) : ${x.url}\nTu peux réessayer cette adresse exacte.`);
-      } else courrierVersHakim('Sortie refusée par Ahmed', `Ahmed a refusé : ${x.url}`);
-      x.etat = action === 'autoriser' ? 'autorisee' : 'refusee';
+        try { deciderSortie(x, true); } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: e.message })); }
+      } else deciderSortie(x, false);                          // (08/11) la même fonction que son réglage « tout accepter / tout refuser »
       auditer(`sortie:${action}`, req, distantReq, { id: x.id, url: x.url.slice(0, 300) });
       res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(x));
     }

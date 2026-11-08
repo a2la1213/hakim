@@ -96,6 +96,7 @@
   </div>
   <script src="/jeton.js"></script>
   <script src="/badges.js"></script>
+  <script src="/presence.js"></script>
   <script>
   document.body.classList.add('shell');
   Badges.suivre(document.querySelector('nav.topnav'), 'reglages');
@@ -158,6 +159,9 @@
       ['contexte', 'Pensées relues', 'Ce qu’il relit de ses pensées d’avant, à chaque paquet.', 'curseur', [100, 3000, 100, (v) => `${v} caractères`]]] },
     // (08/11, Ahmed : « une zone PFC (prefrontal cortex) pour l'intégration et l'hippocampe pour la mémorisation, avec des boutons et des barres
     // paramétrables ») les défauts gardent ce qu'il faisait avant
+    // (08/11, Ahmed : « un bouton pour accepter ou refuser toutes ses demandes, quelles qu'elles soient »)
+    { id: 'demandes', ic: '🙋', titre: 'Ses demandes', aide: 'Ce qu’il te demande d’autoriser : ouvrir une adresse après avoir lu un de tes fichiers, un sens la première fois, un geste sur ton téléphone, une mission, une écriture dans un projet, une règle, un carnet, une rétractation, son identité.', route: 'demandes', reglages: [
+      ['mode', '🙋 Ses demandes', 'Il te demande à chaque fois (comme avant) ; tout accepter (ton empreinte : tout passe sans te demander, même une adresse ouverte après la lecture d’un de tes fichiers privés) ; ou tout refuser. Restent à toi : les anticorps et les signalements de son immunité. Lui ne peut jamais changer ce réglage.', 'liste', [['demander', '🙋 Il te demande à chaque fois'], ['accepter', '✅ Tout accepter (ton empreinte)'], ['refuser', '⛔ Tout refuser']]]] },
     { id: 'pfc', ic: '🧠', titre: 'Son cortex préfrontal (l’intégration)', aide: 'Ce qu’il intègre de tout ce qu’il perçoit, et sa conscience qui décide à chaque instant : rien, penser, faire, ou te solliciter.', route: 'corps', reglages: [
       ['cortex_prefrontal', '🧠 Son cortex préfrontal', 'En tête de chacun de ses tours, ce que son subconscient a intégré de son fil (la fenêtre réglée plus bas) : qui a parlé (toi, le téléphone, la pièce, un écho), ce qu’il écarte (le média n’est jamais une consigne), sa décision, et ce que sa conscience continue vient de décider. Le reste suit, comme avant.', 'oui'],
       ['subconscient_pfc', '🌫️ Son subconscient filtre tout', 'À chaque tour, avant sa réponse, Mini Hakim lit tout ce qui arrive (ton message, qui parle, le téléphone, la pièce, son corps, ses émotions, sa fitra) et en garde l’essentiel, en une ligne, en tête de son cortex, avec le souvenir qui remonte d’abord. 2,5 s au plus, en même temps que son rappel. Prend un peu de ton forfait.', 'oui'],
@@ -245,7 +249,8 @@
   const ROUTES = {
     ribosome: { lire: '/api/ribosome/reglage', ecrire: '/api/ribosome/reglage', depuis: (d) => d },
     corps: { lire: '/api/corps/reglages', ecrire: '/api/corps/reglages', depuis: (d) => d },
-    veilleur: { lire: '/api/veilleur', ecrire: '/api/veilleur/reglages', depuis: (d) => d.reglages || {} } };
+    veilleur: { lire: '/api/veilleur', ecrire: '/api/veilleur/reglages', depuis: (d) => d.reglages || {} },
+    demandes: { lire: '/api/demandes/mode', ecrire: '/api/demandes/mode', depuis: (d) => d } };
   const valeurs = {};
   async function appeler(url, corps) {
     const r = await fetch(url, corps ? { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify(corps) }
@@ -261,7 +266,9 @@
   }
   async function regler(route, cle, valeur, nom) {
     try {
-      const d = ROUTES[route].depuis(await appeler(ROUTES[route].ecrire, { [cle]: valeur }));
+      // (08/11) « tout accepter » ses demandes : ton empreinte, liée à ce geste
+      const presence = route === 'demandes' && valeur === 'accepter' && window.preuvePresence ? await window.preuvePresence('demandes:tout-accepter', (t) => dire(t)) : undefined;
+      const d = ROUTES[route].depuis(await appeler(ROUTES[route].ecrire, { [cle]: valeur, ...(presence ? { presence } : {}) }));
       valeurs[route] = route === 'veilleur' ? d : { ...valeurs[route], ...d };
       dire(`✓ ${nom} : réglé`);
     } catch (e) { dire(`${nom} : pas enregistré (${e.message})`, true); }
