@@ -31,12 +31,15 @@ function doitDecider(e, signature, maintenant, pasMs = PAS_MS, parMinute = PAR_M
 // (08/11, mesuré : 2 729 décisions en 6 h, 90 % « rien » : chaque mot entendu changeait son présent) du neuf qui compte, depuis « vu » (sa
 // dernière décision) : un événement (son corps, son milieu, un ressenti, un son), tout de suite ; des mots (le téléphone, papa, la pièce), à la
 // fin de la phrase (pauseMs de blanc) ou au bout de maxMs ; jamais sa propre voix ; jamais la redite exacte de ce qui est arrivé juste avant
+const CONTINUS = /^(musique_|instru_|voix_|cascade_|separe_)|^(autour|milieu)$/;
 function aDuNeuf(flux, vu, maintenant, { pauseMs = 1500, maxMs = 15_000, redite = 30_000 } = {}) {
   const l = (flux || []).filter(o => o && Number(o.t) <= maintenant + 3000 && maintenant - Number(o.t) < 120_000);
   const avant = new Set(l.filter(o => Number(o.t) <= vu && maintenant - Number(o.t) < redite).map(o => `${o.s}|${o.x}`));
   const neufs = l.filter(o => Number(o.t) > vu && o.s !== 'ta_voix' && !avant.has(`${o.s}|${o.x}`));
   if (!neufs.length) return false;
-  if (neufs.some(o => o.i == null)) return true;
+  // (08/11, 09:40, mesuré : 669 décisions en 1 h après la relance, 695 avant) ses analyses continues (la musique, ses instruments, la hauteur d'une
+  // voix, sa cascade, une voix séparée, l'ambiance autour, son milieu) arrivent toutes les 2 s pendant une chanson : comme des mots, elles attendent
+  if (neufs.some(o => o.i == null && !CONTINUS.test(String(o.s)))) return true;
   const ts = neufs.map(o => Number(o.t)), dernier = Math.max(...ts), premier = Math.min(...ts);
   return maintenant - dernier >= pauseMs || maintenant - premier >= maxMs;
 }

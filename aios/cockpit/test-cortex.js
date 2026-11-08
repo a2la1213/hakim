@@ -84,6 +84,7 @@ test('branché : son subconscient part avec son rappel, attendu 2,5 s au plus ; 
   assert.ok(i > 0 && srv.slice(i, i + 600).includes("const subconscientP = "), 'il part juste après son rappel, en parallèle');
   assert.match(srv, /const sub = await Promise\.race\(\[subconscientP, new Promise\(r => setTimeout\(\(\) => r\(null\), Math\.max\(0, SUBCONSCIENT_MS - \(Date\.now\(\) - subT0\)\)\)\)\]\)/);
   assert.match(srv, /subconscient: sub, souvenir: rappelBloc\.premier/);
+  assert.match(srv, /FITRA : le plus souvent RIEN\. Une règle de ta fitra ne remonte que si ce moment la met vraiment en jeu/, 'discrète : 45 tours sur 51 avant');
   assert.match(srv, /subconscient_pfc: r\.subconscient_pfc !== false, fitra_discrete: r\.fitra_discrete !== false,/);
   assert.ok(srv.includes("premier: reviennent.length ? (typeof neutraliser === 'function' ? neutraliser : String)(String(reviennent[0]).replace(/\\s+/g, ' ').trim().slice(0, 240)) : ''"));
   const page = fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8');

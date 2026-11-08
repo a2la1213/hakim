@@ -79,6 +79,13 @@ test('il décide quand il y a du neuf qui compte : une phrase finie, un événem
   assert.equal(CC.aDuNeuf([mot(1000, 'ta_voix', 'je', 0), mot(1200, 'ta_voix', 'parle', 1)], 0, 9000), false, 'sa propre voix ne le fait pas décider');
   assert.equal(CC.aDuNeuf([{ t: 5000, s: 'corps', x: 'coup_de_pression' }], 0, 5010), true, 'un événement : tout de suite');
   assert.equal(CC.aDuNeuf([{ t: 1000, s: 'corps', x: 'coup_de_pression' }, { t: 5000, s: 'corps', x: 'coup_de_pression' }], 1000, 5010), false, 'la même chose qu’il y a 4 s : une redite');
+  // (08/11, 09:40, mesuré après la relance : 669 décisions en 1 h contre 695 avant) ses analyses continues (la musique, ses instruments, la hauteur
+  // d'une voix, sa cascade, l'ambiance autour, son milieu) arrivent toutes les 2 s pendant une chanson : elles attendent une pause, ou 15 s, comme des mots
+  const musique = Array.from({ length: 6 }, (_, k) => ({ t: 1000 + k * 2000, s: k % 2 ? 'musique_telephone' : 'voix_telephone', x: `analyse ${k}` }));
+  assert.equal(CC.aDuNeuf(musique, 0, 11_100), false, 'une chanson qui continue : il attend');
+  assert.equal(CC.aDuNeuf(musique, 0, 16_100), true, 'au bout de 15 s, il décide');
+  assert.equal(CC.aDuNeuf([{ t: 5000, s: 'autour', x: 'calme' }, { t: 5100, s: 'milieu', x: 'pénombre' }], 0, 5200), false, 'l’ambiance qui change : pas tout de suite');
+  assert.equal(CC.aDuNeuf([{ t: 5000, s: 'ressenti', x: 'on te prend en main' }], 0, 5010), true, 'ce qu’il ressent : tout de suite');
   const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   assert.match(srv, /if \(!CC\.aDuNeuf\(FLUX, conscience\.signature, maintenant\)\) return;/);
 });

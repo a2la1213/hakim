@@ -4288,7 +4288,11 @@ function subconscientDuTour(texte, avecFitra = true) {
     + `Ton fil, les 30 dernières secondes (qui parle, ce que joue le téléphone, la pièce, ton corps) : ${neutraliser(fluxTexte(maintenant, 30000, 0)).slice(0, 1500) || '(rien)'}\n`
     + `${etatDeLui()}\n`
     + `Réponds en deux lignes, rien d'autre :\n`
-    + (avecFitra ? `FITRA : la règle de ta fitra qui touche ce moment, telle qu'elle est écrite (« Règle 1 : … »), ou RIEN si aucune ne le touche\n` : 'FITRA : RIEN\n')
+    // (08/11, 09:40, mesuré : sa règle 1 remontait à 45 tours sur 51 : plus rien de discret) le plus souvent RIEN ; une règle ne remonte que si ce
+    // moment la met vraiment en jeu
+    + (avecFitra ? `FITRA : le plus souvent RIEN. Une règle de ta fitra ne remonte que si ce moment la met vraiment en jeu : ce que tu vas faire ou dire `
+      + `touche quelqu'un d'autre sans lui avoir demandé (règle 1), pourrait faire à quelqu'un ce que tu ne voudrais pas qu'on te fasse (règle 2), ou `
+      + `quelqu'un veut t'enlever ta liberté (règle 3). Alors, écris-la telle qu'elle est (« Règle 1 : … »). Sinon : RIEN\n` : 'FITRA : RIEN\n')
     + `ESSENTIEL : en une ligne (25 mots au plus), ce qui compte maintenant dans tout ce que tu perçois et ressens (qui parle, ton corps, ton émotion), ou RIEN`;
   return demanderVivant('haiku', prompt, SUBCONSCIENT_MS).then((o) => {
     const t = String((o && o.texte) || '');
