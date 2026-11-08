@@ -5987,6 +5987,12 @@ function ecouterPensees() {
   es.addEventListener('souffle', (ev) => { try { surSouffle(JSON.parse(ev.data)); } catch (_) {} });   // (15:02) ses brouillons, écrits
   es.addEventListener('entendu', (ev) => { try { surEntendu(JSON.parse(ev.data)); } catch (_) {} });
   // (07/11, Ahmed : « qu'à chaque seconde il soit conscient et décide de ce qu'il pense, fait ou sollicite ») sa conscience continue : ce qu'il décide
+  // (08/11, Ahmed : « le même bouton que moi pour les voix intérieures, qui le coupent s'il l'accepte ») une voix du téléphone parlait sur la sienne :
+  // son subconscient a choisi de se taire pour l'écouter ; la page qui joue sa voix la coupe net (ce qui était prêt est gardé)
+  es.addEventListener('couper_interieur', (ev) => { try { const o = JSON.parse(ev.data); if (!etat.conversation || !(lecteur && lecteur.actif)) return;
+    if (typeof journalVoix === 'function') journalVoix('coupe_interieur', { source: String(o.source || ''), ms: Number(o.ms) || 0 });
+    if (o.pourquoi) montrerPensee('🤫 il se tait pour écouter', String(o.pourquoi), true);
+    sauterLaSuite(Number(o.ms) || 0, true); } catch (_) {} });
   es.addEventListener('conscience', (ev) => { try { const o = JSON.parse(ev.data); if (!o.texte || (etat.reglages && etat.reglages.masquerEpissure)) return;
     montrerPensee(o.action === 'solliciter' ? '💡 il veut te parler' : o.action === 'faire' ? '💡 il décide de faire' : '💡 sa conscience', o.texte, true); } catch (_) {} });   // (04/11, 18:50) son oreille interne, par la route du micro
   // (19:58) sa lumière : la lampe du téléphone (l'appli 1.36), ou son SOS selon son émotion
