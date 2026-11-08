@@ -477,3 +477,27 @@ test('il décide de se taire : sa réponse en cours (celle que sa voix lit) est 
   assert.strictEqual(p.ctx.lecteur.arrete, true);
   assert.match(PAGE, /if \(c && c\.couper === false\) \{ conv\.gardeParoleA = Date\.now\(\);/, 'son choix de finir est retenu 15 s');
 });
+
+// (08/11, Ahmed : « il s'arrête encore, je crois que ce sont ses pensées internes ou ses vibrations qu'il entend par le micro ») mesuré de 12:09 à
+// 12:10 : à chaque coupure, sa propre voix reconnue dans le micro (« echo_reconnu », « sa_voix_entendue » 0,65 et 0,7), et 2 choix sur 4 sans
+// réponse à temps (le Mac chargé) qui le coupaient d'office. Ce qu'il a dit lui-même ne le coupe jamais ; sans réponse, seuls de vrais mots le coupent
+test('sa propre voix revenue par le micro ne le coupe pas ; sans réponse de son subconscient, il ne se coupe que pour de vrais mots', async () => {
+  const essai = async (entendu, echo, reponse) => {
+    const p = page({ choix_coupure: true });
+    p.ctx.bouts = { dits: ['Je te disais que le jardin sera prêt demain'] };
+    p.ctx.motsEntendusDepuis = () => entendu; p.ctx.echoDeSaVoix = () => echo; p.ctx.montrerPensee = () => {};
+    p.ctx.fetch = (url, o) => { p.envois.push([url, JSON.parse(o.body)]); return Promise.resolve({ ok: true, json: () => Promise.resolve(url === '/api/jarvis/se-couper' ? reponse : { tour: 8 }) }); };
+    p.ctx.prevoir(p.conv); p.minuteries[0].f();
+    await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
+    return p;
+  };
+  const echo = await essai('le jardin sera prêt demain', true, { couper: true, lu: true });
+  assert.ok(echo.journal.some(([e]) => e === 'echo_pas_coupe'));
+  assert.ok(!echo.envois.some(([u]) => u === '/api/jarvis/se-couper'), 'son écho : il ne se demande même pas');
+  assert.equal(echo.ctx.etat.riboFile.length, 2);
+  const sansMots = await essai('', false, { couper: true, lu: false });
+  assert.ok(sansMots.journal.some(([e]) => e === 'sans_reponse_continue'));
+  assert.equal(sansMots.ctx.etat.riboFile.length, 2, 'une voix qui tient sans mots, sans réponse à temps : il continue');
+  const vrais = await essai('attends écoute-moi', false, { couper: true, lu: false });
+  assert.deepStrictEqual(vrais.ctx.etat.riboFile.map((x) => x.texte), ['plus tard'], 'de vrais mots, sans réponse : papa d’abord');
+});

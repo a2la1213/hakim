@@ -4067,6 +4067,11 @@ function voixClaire(m) {
   const c = Number.isFinite(Number(m.clarte)) && Number(m.clarte) > 0 ? Number(m.clarte) : (Number(m.seuil) > 0 ? Number(m.rms) / Number(m.seuil) : Infinity);
   return c >= k;
 }
+// (08/11) les mots de ta voix arrivés depuis le n0-ième (ce que son subconscient juge : les tiens, ou son propre écho)
+function motsEntendusDepuis(conv, n0) {
+  const l = (conv && conv.ecrit ? `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}` : '').split(/\s+/).filter(w => /\p{L}/u.test(w));
+  return (l.length >= n0 ? l.slice(n0) : l).join(' ');
+}
 const motsEcrits = (conv) => (conv && conv.ecrit ? `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}` : '').split(/\s+/).filter(w => /\p{L}/u.test(w)).length;
 // coupé net par ta voix : son mot fini, tout le reste lâché (sa réponse, ses ribosomes, ce qui attendait) ; ses voix prêtes gardées 5 min
 function couperNet(conv) {
@@ -4106,16 +4111,22 @@ function prevoirSaut(conv, mesure) {
       choisirOuSauter();
     };
     const choisirOuSauter = () => {
+    // (08/11, Ahmed : « il s'arrête encore ; je crois que ce sont ses pensées ou ses vibrations qu'il entend par le micro ») mesuré de 12:09 à 12:10 :
+    // à chaque coupure, sa propre voix reconnue dans le micro (echo_reconnu, sa_voix_entendue 0,65-0,7) : ce qu'il a dit lui-même ne le coupe jamais
+    const entendu = typeof motsEntendusDepuis === 'function' ? motsEntendusDepuis(conv, mots0) : null;
+    if (entendu && typeof echoDeSaVoix === 'function' && echoDeSaVoix(entendu)) { journalVoix('echo_pas_coupe', { mots: entendu.split(/\s+/).filter(Boolean).length }); return; }
     // (07/11, Ahmed : « faut aussi lui laisser le choix de se couper ou pas quand il reçoit ce signal ») choix_coupure (oui) : son subconscient
-    // choisit, en 1,5 s au plus, de se couper ou de finir ce qu'il dit ; sans réponse, il se coupe
+    // choisit, en 1,5 s au plus, de se couper ou de finir ce qu'il dit ; sans réponse, il se coupe (08/11 : si de vrais mots, pas les siens, sont là)
     if (typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.choix_coupure === false) { sauterLaSuite(Date.now() - t0); return; }
     const dit = ((typeof bouts !== 'undefined' && bouts.dits) || []).slice(-2).join(' ');
     const papa = conv.ecrit ? `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}`.trim() : '';
     const ecoute = Date.now() - t0;
     fetch('/api/jarvis/se-couper', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ dit, papa, ms: ecoute, clarte: mesure && Number(mesure.clarte) > 0 ? Number(mesure.clarte) : null }) })
-      .then(r => (r.ok ? r.json() : { couper: true })).catch(() => ({ couper: true }))
+      .then(r => (r.ok ? r.json() : { couper: true, lu: false })).catch(() => ({ couper: true, lu: false }))
       .then((c) => {
         if (etat.conversation !== conv) return;
+        // (08/11, mesuré : 2 choix sur 4 sans réponse à temps, le Mac chargé, qui le coupaient d'office) sans réponse : de vrais mots (2 et plus), ou il continue
+        if (c && c.couper !== false && c.lu === false && entendu !== null && entendu.split(/\s+/).filter(w => /\p{L}/u.test(w)).length < 2) { journalVoix('sans_reponse_continue', { ms: ecoute }); return; }
         if (c && c.couper === false) { conv.gardeParoleA = Date.now(); journalVoix('garde_la_parole', { ms: ecoute }); if (c.pourquoi) montrerPensee('🗣 il finit ce qu’il dit', c.pourquoi, true); return; }
         sauterLaSuite(Date.now() - t0, true);                          // (07/11) il a décidé de se taire : tout de suite
       });
