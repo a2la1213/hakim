@@ -68,7 +68,7 @@ function motEnLatin(m) {
     if (x === '\u0652' || x === '\u0670') continue;
     if (x === 'و') { s += debut || ap === 'ا' || av === 'ا' ? 'w' : 'ou'; continue; }
     if (x === 'ي') { s += debut || ap === 'ا' ? 'y' : 'i'; continue; }
-    if (x === 'ع') { s += av === 'ا' || ap === 'ا' || ap === 'ة' ? "'" : 'a'; continue; }
+    if (x === 'ع') { s += '3'; continue; }
     s += LETTRES[x] !== undefined ? LETTRES[x] : x;
   }
   return s;
