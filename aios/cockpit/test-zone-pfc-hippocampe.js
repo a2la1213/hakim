@@ -63,7 +63,7 @@ test('le cockpit s’en sert : sa conscience, son cortex, et la question à son 
   const b = extraire('function battementConscience(');
   assert.match(b, /papaLa \? r\.conscience_pas_s \* 1000 : r\.conscience_absent_s \* 1000, r\.conscience_par_minute/);
   assert.match(b, /entreSollicitationsMs: r\.conscience_sollicitation_s \* 1000, entreActesMs: r\.conscience_acte_s \* 1000/);
-  assert.match(SRV, /X\.blocCortex\(\{ flux: typeof FLUX !== 'undefined' \? FLUX : \[\], maintenant, papaAEcrit: true, pensees: conscience\.pensees, fenetreMs: cr\.cortex_fenetre_s \* 1000 \}\)/);
+  assert.match(SRV, /X\.blocCortex\(\{ flux: typeof FLUX !== 'undefined' \? FLUX : \[\], maintenant, papaAEcrit: true, pensees: conscience\.pensees, fenetreMs: cr\.cortex_fenetre_s \* 1000,/);
   const q = extraire('function rappeler(');
   assert.match(q, /hippocampe: hippocampeReglages\(\)/);
   const h = extraire('function hippocampeReglages(');

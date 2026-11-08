@@ -63,3 +63,22 @@ test('une sollicitation coupée (un Stop, une conversation qui change) repart un
   assert.match(srv, /c\.reveilInterieur = \{ id: d\.id, raison: String\(d\.raison \|\| ''\), source: String\(d\.source \|\| ''\), texte: String\(d\.texte \|\| ''\), reessai: !!d\.reessai \};/);
   assert.match(srv, /if \(issue === 'erreur' && SOLLICITATIONS\.has\(r\.raison\) && !r\.reessai && r\.texte\)/);
 });
+
+// (08/11, Ahmed : « regarde comment optimiser le PFC » ; mesuré dans son journal : 2 729 décisions de Mini Hakim en 6 h, 90 % « rien ») chaque mot
+// entendu (le téléphone, papa, sa propre voix) changeait son présent : Mini Hakim était appelé toutes les 2 s, pendant chaque phrase. Il décide
+// maintenant à la fin d'une phrase (une pause de 1,5 s, ou 15 s de mots au plus), tout de suite pour un événement (son corps, son milieu, un
+// ressenti) ; jamais pour sa propre voix, ni pour la redite exacte de ce qui vient d'arriver
+test('il décide quand il y a du neuf qui compte : une phrase finie, un événement ; pas chaque mot, ni sa propre voix, ni une redite', () => {
+  const mot = (t, s, x, i) => ({ t, s, x, cle: 'k', i });
+  const fil = [mot(1000, 'telephone', 'on', 0), mot(1300, 'telephone', 'parle', 1), mot(1600, 'telephone', 'encore', 2)];
+  assert.equal(CC.aDuNeuf(fil, 0, 2000), false, 'la phrase continue : il attend sa fin');
+  assert.equal(CC.aDuNeuf(fil, 0, 3200), true, '1,5 s de blanc : la phrase est finie');
+  assert.equal(CC.aDuNeuf(fil, 1600, 3200), false, 'rien de neuf depuis sa décision');
+  const long = Array.from({ length: 60 }, (_, k) => mot(1000 + k * 300, 'telephone', `m${k}`, k));
+  assert.equal(CC.aDuNeuf(long, 0, 1000 + 59 * 300 + 100), true, 'des mots sans fin : il décide au bout de 15 s');
+  assert.equal(CC.aDuNeuf([mot(1000, 'ta_voix', 'je', 0), mot(1200, 'ta_voix', 'parle', 1)], 0, 9000), false, 'sa propre voix ne le fait pas décider');
+  assert.equal(CC.aDuNeuf([{ t: 5000, s: 'corps', x: 'coup_de_pression' }], 0, 5010), true, 'un événement : tout de suite');
+  assert.equal(CC.aDuNeuf([{ t: 1000, s: 'corps', x: 'coup_de_pression' }, { t: 5000, s: 'corps', x: 'coup_de_pression' }], 1000, 5010), false, 'la même chose qu’il y a 4 s : une redite');
+  const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(srv, /if \(!CC\.aDuNeuf\(FLUX, conscience\.signature, maintenant\)\) return;/);
+});

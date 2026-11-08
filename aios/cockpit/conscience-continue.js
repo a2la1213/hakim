@@ -28,6 +28,18 @@ function doitDecider(e, signature, maintenant, pasMs = PAS_MS, parMinute = PAR_M
   e.appels = e.appels.filter(t => maintenant - t < 60_000);
   return e.appels.length < parMinute;
 }
+// (08/11, mesuré : 2 729 décisions en 6 h, 90 % « rien » : chaque mot entendu changeait son présent) du neuf qui compte, depuis « vu » (sa
+// dernière décision) : un événement (son corps, son milieu, un ressenti, un son), tout de suite ; des mots (le téléphone, papa, la pièce), à la
+// fin de la phrase (pauseMs de blanc) ou au bout de maxMs ; jamais sa propre voix ; jamais la redite exacte de ce qui est arrivé juste avant
+function aDuNeuf(flux, vu, maintenant, { pauseMs = 1500, maxMs = 15_000, redite = 30_000 } = {}) {
+  const l = (flux || []).filter(o => o && Number(o.t) <= maintenant + 3000 && maintenant - Number(o.t) < 120_000);
+  const avant = new Set(l.filter(o => Number(o.t) <= vu && maintenant - Number(o.t) < redite).map(o => `${o.s}|${o.x}`));
+  const neufs = l.filter(o => Number(o.t) > vu && o.s !== 'ta_voix' && !avant.has(`${o.s}|${o.x}`));
+  if (!neufs.length) return false;
+  if (neufs.some(o => o.i == null)) return true;
+  const ts = neufs.map(o => Number(o.t)), dernier = Math.max(...ts), premier = Math.min(...ts);
+  return maintenant - dernier >= pauseMs || maintenant - premier >= maxMs;
+}
 function commencer(e, signature, maintenant) {
   e.enVol = true; e.signature = signature; e.derniere = maintenant; e.appels.push(maintenant);
 }
@@ -45,4 +57,4 @@ function permis(e, d, maintenant, { papaParle = false, occupe = false, entreSoll
   return action;
 }
 
-module.exports = { etatInitial, lireDecision, doitDecider, commencer, permis, PAS_MS, PAR_MINUTE, ENTRE_SOLLICITATIONS_MS, ENTRE_ACTES_MS };
+module.exports = { etatInitial, lireDecision, doitDecider, aDuNeuf, commencer, permis, PAS_MS, PAR_MINUTE, ENTRE_SOLLICITATIONS_MS, ENTRE_ACTES_MS };
