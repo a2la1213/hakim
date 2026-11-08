@@ -41,16 +41,16 @@ function ecrireLangues(texte, opts) {
 const EXPRESSIONS = [['وعليكم السلام', 'wa aleykoum salam'], ['السلام عليكم', 'salam aleykoum'], ['إن شاء الله', 'inchallah'],
   ['ان شاء الله', 'inchallah'], ['الحمد لله', 'hamdoullah'], ['ما شاء الله', 'machallah'], ['بسم الله', 'bismillah'], ['صباح الخير', 'sbah el khir'],
   ['مساء الخير', 'msa el khir'], ['بارك الله فيك', 'barakallahou fik'], ['الله أكبر', 'allahou akbar'], ['سبحان الله', 'soubhanallah'], ['يا ربي', 'ya rabbi']];
-const CANON = { 'واش': 'wch', 'راك': 'rak', 'كيراك': 'kirak', 'بزاف': 'bezzaf', 'دركا': 'derka', 'نتا': 'nta', 'نتي': 'nti', 'راني': 'rani',
+const CANON = { 'واش': 'wesh', 'راك': 'rak', 'كيراك': 'kirak', 'بزاف': 'bezzaf', 'دركا': 'derka', 'نتا': 'nta', 'نتي': 'nti', 'راني': 'rani',
   'راهو': 'rahou', 'راه': 'rah', 'ماشي': 'machi', 'حاب': 'hab', 'كاش': 'kach', 'ياسر': 'yasser', 'خويا': 'khouya', 'ختي': 'khti', 'صاحبي': 'sahbi',
   'لاباس': 'labes', 'شكرا': 'chokran', 'صحة': 'saha', 'يعني': 'yaani', 'خلاص': 'khlas', 'مليح': 'mlih', 'بصح': 'bessah', 'شوف': 'chouf',
-  'شوية': 'chwiya', 'كيفاش': 'kifach', 'علاش': '3lach', 'والله': 'wallah', 'حبيبي': 'habibi', 'حبيبتي': 'habibti', 'يلا': 'yallah', 'هذا': 'hada',
+  'شوية': 'chwiya', 'كيفاش': 'kifach', 'علاش': 'alach', 'والله': 'wallah', 'حبيبي': 'habibi', 'حبيبتي': 'habibti', 'يلا': 'yallah', 'هذا': 'hada',
   'هاذا': 'hada', 'هذي': 'hadi', 'هاذي': 'hadi', 'واحد': 'wahed', 'زوج': 'zouj', 'بابا': 'baba', 'ماما': 'mama', 'دابا': 'daba', 'مزيان': 'mzyan',
   'واخا': 'wakha', 'صافي': 'safi', 'بغيت': 'bghit', 'نحب': 'nhab', 'زعما': 'zaama', 'حشومة': 'hchouma', 'مسكين': 'meskine', 'وين': 'win',
-  'فين': 'fin', 'شحال': 'chhal', 'قداش': 'qaddach', 'كاين': 'kayn', 'ماكانش': 'makanch', 'نتوما': 'ntouma', 'حنا': 'hna', 'هنا': 'hna', 'تاع': 'taa',
+  'فين': 'fin', 'شحال': 'chhal', 'قداش': 'qaddach', 'كاين': 'kayen', 'ماكانش': 'makanch', 'نتوما': 'ntouma', 'حنا': 'hna', 'هنا': 'hna', 'تاع': 'taa',
   'ديال': 'dyal', 'برك': 'berk', 'غير': 'ghir', 'بلاك': 'blak', 'سمحلي': 'smahli', 'معليش': 'maalich', 'أنا': 'ana', 'انا': 'ana', 'هو': 'houwa',
   'هي': 'hiya', 'لا': 'la', 'إيه': 'ih', 'ايه': 'ih', 'آه': 'ah', 'وش': 'wesh', 'كي': 'ki', 'باش': 'bach', 'ولا': 'wella', 'بلا': 'bla', 'مع': 'maa' };
-const LETTRES = { 'ا': 'a', 'أ': 'a', 'إ': 'i', 'آ': 'a', 'ٱ': 'a', 'ء': "'", 'ؤ': 'ou', 'ئ': 'i', 'ب': 'b', 'ت': 't', 'ث': 'th', 'ج': 'dj', 'ح': 'ĥ',
+const LETTRES = { 'ا': 'a', 'أ': 'a', 'إ': 'i', 'آ': 'a', 'ٱ': 'a', 'ء': "'", 'ؤ': 'ou', 'ئ': 'i', 'ب': 'b', 'ت': 't', 'ث': 'th', 'ج': 'dj', 'ح': 'h',
   'خ': 'kh', 'د': 'd', 'ذ': 'dh', 'ر': 'r', 'ز': 'z', 'س': 's', 'ش': 'ch', 'ص': 's', 'ض': 'd', 'ط': 't', 'ظ': 'dh', 'غ': 'gh', 'ف': 'f', 'ق': 'q',
   'ك': 'k', 'ل': 'l', 'م': 'm', 'ن': 'n', 'ه': 'h', 'ى': 'a', 'ة': 'a', 'پ': 'p', 'ڤ': 'v', 'گ': 'g', 'ڨ': 'g' };
 const VOYELLES = { '\u064E': 'a', '\u064F': 'ou', '\u0650': 'i', '\u064B': 'an', '\u064C': 'oun', '\u064D': 'in' };
@@ -68,7 +68,7 @@ function motEnLatin(m) {
     if (x === '\u0652' || x === '\u0670') continue;
     if (x === 'و') { s += debut || ap === 'ا' || av === 'ا' ? 'w' : 'ou'; continue; }
     if (x === 'ي') { s += debut || ap === 'ا' ? 'y' : 'i'; continue; }
-    if (x === 'ع') { s += '3'; continue; }
+    if (x === 'ع') { s += av === 'ا' || ap === 'ا' || ap === 'ة' ? "'" : 'a'; continue; }
     s += LETTRES[x] !== undefined ? LETTRES[x] : x;
   }
   return s;
