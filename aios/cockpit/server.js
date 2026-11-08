@@ -11128,7 +11128,8 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
   // (07/11, Ahmed : « les mots qui ressemblent à l'arabe ou à l'anglais, écrits dans leur langue, automatiquement, sans qu'il s'en rende compte »)
   // (08/11, 16:15, Ahmed : « quand je parle en darija faut l'écrire en phonétique fr ») ta darija entendue en lettres arabes, réécrite en phonétique
   // française ; et tes mots arabes ne sont plus remis en lettres arabes (seuls les mots anglais retrouvent leur orthographe)
-  if (r && r.texte && temps.source !== 'telephone') r.texte = phonetiser(r.texte);
+  // (08/11, 18:20, Ahmed : « il reçoit toujours la darija en phonétique ») plus réécrite : il la reçoit en lettres arabes, comme Azure l'entend
+  // if (r && r.texte && temps.source !== 'telephone') r.texte = phonetiser(r.texte);
   if (r && r.texte && temps.source !== 'telephone' && corpsReglages().langues_ecrites !== false) r.texte = ecrireLangues(r.texte, { arabe: false });
   if (r && r.texte && Number(temps.t0) > 0) integrerAuFil(temps.source === 'telephone' ? 'telephone' : 'papa', r.texte);
   // (06/11) sa propre voix entendue (Whisper : etiqueter ; Azure : son oreille vive) : à son fil, « ta propre voix », jamais à papa
