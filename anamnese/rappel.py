@@ -195,6 +195,7 @@ def _par_mots(index, mots, exclus, avant_ts, limite=40):
 # (26/10, Ahmed : « balayer large, puis choisir ») 150 candidats par le sens et 100 par les mots au lieu de 30 et 40 :
 # gratuit (eval/rappel_large.py : même bruit, +0,7 point de rappel, le temps ne bouge pas) ; la porte reste celle réglée
 LIMITE_SENS, LIMITE_MOTS = 150, 100
+HIP_TETE, HIP_COS_MIN = 3, 0.45                # (08/11) ses premières traces d'hippocampe passent la porte
 
 
 def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=LIMITE_SENS, index=None, limite_mots=None):
@@ -213,14 +214,32 @@ def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=
         sem = {}
     mots = _par_mots(index, mots_cles(texte), exclus, avant_ts, limite=limite_mots or LIMITE_MOTS)
     rangs_mots = {eid: i for i, eid in enumerate(mots)}
+    # (08/11, Ahmed : « rajoute-lui un hippocampe ») un troisième balayage : la TRACE courte de chaque échange (le jour, le genre, les
+    # paroles, sans le vécu qui noyait leur sens), par le sens, et tout ce que la date désigne (« hier », « le 29 », « samedi »)
+    hip, dates_hip = {}, set()
+    try:
+        import hippocampe
+        rang = 0
+        for eid, s_h, special in hippocampe.chercher(mem, texte, now=now, embed=embed, exclus=exclus, avant_ts=avant_ts, limite=limite):
+            if special == "date":
+                dates_hip.add(eid)
+                continue
+            hip[eid] = (rang, s_h)
+            rang += 1
+    except Exception:
+        pass
     fusion = {}
-    for eid in set(sem) | set(mots):
+    for eid in set(sem) | set(mots) | set(hip):
         s = 0.0
         if eid in sem:
             s += 1.0 / (K_RRF + sem[eid][0])
         if eid in rangs_mots:
             s += 1.0 / (K_RRF + rangs_mots[eid])
+        if eid in hip:
+            s += 1.0 / (K_RRF + hip[eid][0])
         fusion[eid] = s
+    for eid in dates_hip:
+        fusion[eid] = fusion.get(eid, 0.0) + 1.0 / (K_RRF + 10)
     rares = getattr(_par_mots, "rares", {})
     # (2026-10-21, vu au premier essai d'Ahmed : « j'ai un anniversaire » ne retrouvait pas celui de sa fille, noté
     # « fait 6 ans le 21 octobre ») : ce qui porte la DATE DU JOUR remonte (anniversaires, échéances, promesses) ;
@@ -240,8 +259,13 @@ def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=
             if n in c and eid not in exclus and ts < avant_ts and eid not in fusion:
                 fusion[eid] = 1.0 / (K_RRF + 30)
                 avec_nom.add(eid)
-    out = [(eid, s, sem.get(eid, (None, 0.0))[1], mots.get(eid, 0.0),
-            "jour" if eid in du_jour else ("voix" if eid in avec_nom else ""), rares.get(eid, 0.0))
+    # (08/11) le sens d'une trace courte se mesure sur une autre échelle (mesuré sur le banc de 24 : la bonne trace 1re à 4e avec un cosinus
+    # de 0,50 à 0,71, sous la porte de 0,70) : ses 3 premières traces passent, si le message porte quelque chose (2 mots porteurs ou plus)
+    porteur = len(mots_cles(texte)) >= 2
+    tete_hip = {eid for eid, (r_h, c_h) in hip.items() if r_h < HIP_TETE and c_h >= HIP_COS_MIN} if porteur else set()
+    out = [(eid, s, max(sem.get(eid, (None, 0.0))[1], hip.get(eid, (None, 0.0))[1]), mots.get(eid, 0.0),
+            "jour" if eid in du_jour else ("voix" if eid in avec_nom else ("date" if eid in dates_hip else ("trace" if eid in tete_hip else ""))),
+            rares.get(eid, 0.0))
            for eid, s in fusion.items()]
     ordre = sorted(out, key=lambda x: -x[1])
     return ordre[:limite] + [x for x in ordre[limite:] if x[4] == "jour"]     # la date du jour n'est jamais coupée
