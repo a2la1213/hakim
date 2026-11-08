@@ -40,8 +40,8 @@ test('ses débuts gardés : une clé par voix, celle d’avant inchangée sans v
   assert.strictEqual(D.cle('Oui frérot,', 'fr', 0.7, 1, null), avant);
   assert.notStrictEqual(D.cle('Oui frérot,', 'fr', 0.7, 1, 'rap'), avant);
   assert.match(D.cle('Oui frérot,', 'fr', 0.7, 1, 'rap'), /^[0-9a-f]{32}$/);
-  assert.match(SRC, /const cleVoix = debut \? D\.cle\(texte, langueVoix, emotion, tempo, rap\) : null;/);
-  assert.match(SRC, /D\.lire\(D\.cle\(d, langue, e, tempo, typeof voixRap === 'function' \? voixRap\(\) : null\)\)/, '/api/voix/debuts : ceux de sa voix du moment');
+  assert.match(SRC, /const cleVoix = debut \? D\.cle\(texte, langueVoix, emotion, tempo, typeof voixCleDebuts === 'function' \? voixCleDebuts\(\) : null\) : null;/);
+  assert.match(SRC, /D\.lire\(D\.cle\(d, langue, e, tempo, typeof voixCleDebuts === 'function' \? voixCleDebuts\(\) : null\)\)/, '/api/voix/debuts : ceux de sa voix du moment');
 });
 
 test('le découpage par langue : arabe, français, anglais, un lang_code par morceau, voisins recollés', () => {
@@ -211,4 +211,17 @@ test('azure_rap : Azure refait à son timbre de rap, sinon Azure tel quel ; le p
   assert.match(f, /fs\.unlink/, 'rien ne reste sur le disque');
   const reg = fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8');
   assert.match(reg, /\['azure_rap', '[^']*'\]/);
+});
+
+// (08/11, Ahmed : « les meubles pour les euh, etc., faut qu'ils soient en mode voix rap Azure ») ses débuts et ses meubles qui parlent, fabriqués
+// au calme et gardés : en « azure_rap », par Azure puis refaits à son timbre de rap (jamais la voix de Chatterbox par défaut) ; ils ont leur clé à eux
+test('azure_rap : ses meubles et ses débuts gardés sont dits par Azure, refaits à son timbre de rap, sous leur clé à eux', () => {
+  const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(srv, /const voixCleDebuts = \(\) => \{ const v = corpsReglages\(\)\.voix_hakim; return v === 'rap' \|\| v === 'azure_rap' \? v : null; \};/);
+  assert.equal((srv.match(/typeof voixCleDebuts === 'function' \? voixCleDebuts\(\) : null/g) || []).length, 3, 'la fabrication, la liste prête et la route');
+  const f = srv.slice(srv.indexOf('function fabriquerDebuts('), srv.indexOf('\n}\n', srv.indexOf('function fabriquerDebuts(')));
+  assert.match(f, /if \(typeof voixCleDebuts === 'function' && voixCleDebuts\(\) === 'azure_rap'\) \{ fabriquerDebutsAzureRap\(/);
+  const g = srv.slice(srv.indexOf('async function fabriquerDebutsAzureRap('), srv.indexOf('\n}\n', srv.indexOf('async function fabriquerDebutsAzureRap(')));
+  assert.match(g, /await voixAzure\(/); assert.match(g, /await azureAuTimbreRap\(a\.data, 30000\)/); assert.match(g, /D\.garder\(c, rap, duree\)/);
+  assert.match(g, /toursActifs\.size/, 'au calme seulement');
 });

@@ -9814,14 +9814,14 @@ async function oreilleAzure(fichier, langueDemandee) {
    au-delà de son budget (2,5 s, plus 0,8 s par seconde de voix au-delà de 3 s) ou en panne : null, et Azure part tel quel. */
 const AZURE_RAP_MS = 2500;
 let azureRapEnVol = false;                                   // une conversion à la fois : une en retard ne fait pas attendre les suivantes
-async function azureAuTimbreRap(data) {
+async function azureAuTimbreRap(data, budgetMs = 0) {
   if (azureRapEnVol) return null;
   const base = path.join(os.tmpdir(), `jarvis-voix-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`);
   const source = `${base}-azure.wav`, fichier = `${base}-rap.wav`, t0 = Date.now();
   const duree = Math.max(0, (data.length - 44) / 48000);                  // riff 24 kHz, 16 bits, mono
   try {
     fs.writeFileSync(source, data, { mode: 0o600 });
-    const budget = AZURE_RAP_MS + Math.max(0, duree - 3) * 800;
+    const budget = budgetMs > 0 ? budgetMs : AZURE_RAP_MS + Math.max(0, duree - 3) * 800;   // fabriqué au calme : plus de temps
     azureRapEnVol = true;
     const demande = voixDemander({ op: 'convertir', source, fichier, voix: 'rap' }, 60000).finally(() => { azureRapEnVol = false; });
     const r = await Promise.race([demande, new Promise(ok => setTimeout(() => ok({ erreur: 'trop lent' }), budget))]);
@@ -10210,13 +10210,31 @@ function lireMeubles() {
   return l;
 }
 const estMeuble = (texte) => lireMeubles().some(m => m.texte && D.norme(prononcer(m.texte)) === D.norme(texte));
+// (08/11, Ahmed : « les meubles pour les euh, etc., faut qu'ils soient en mode voix rap Azure ») la voix de ses débuts et de ses meubles gardés
+const voixCleDebuts = () => { const v = corpsReglages().voix_hakim; return v === 'rap' || v === 'azure_rap' ? v : null; };
+// en « azure_rap » : dits par Azure, refaits à son timbre de rap, au calme (rien pendant un tour), un à la fois ; gardés sous leur clé à eux
+let fabricationAzureRap = false;
+async function fabriquerDebutsAzureRap(liste) {
+  if (fabricationAzureRap) return;
+  fabricationAzureRap = true;
+  try {
+    for (const { t, c, e, tempo } of liste) {
+      if (toursActifs.size || D.lire(c)) continue;
+      const a = await voixAzure(prononcer(t), tempo, e).catch(() => null);
+      const rap = a && a.data ? await azureAuTimbreRap(a.data, 30000) : null;
+      const duree = rap ? Math.max(0, (rap.length - 44) / 48000) : 0;
+      if (rap && D.plausible(t, duree)) D.garder(c, rap, duree);
+    }
+  } finally { fabricationAzureRap = false; }
+}
 function fabriquerDebuts(langue, emotion, tempo) {
   // ses débuts (en majuscule, comme dans ses réponses) et ses meubles qui parlent (tels qu'il les a écrits)
   for (const t of VoixPage.DEBUTS.map(d => d.charAt(0).toUpperCase() + d.slice(1)).concat(lireMeubles().filter(m => m.actif && m.texte && m.langue === langue).map(m => m.texte))) {
     const e = emotion === null ? null : VoixPage.expressivitePhrase(emotion, t);      // le niveau que la page lui donnera
-    const c = D.cle(t, langue, e, tempo, typeof voixRap === 'function' ? voixRap() : null);   // (06/11) sa voix de rap a ses propres débuts
+    const c = D.cle(t, langue, e, tempo, typeof voixCleDebuts === 'function' ? voixCleDebuts() : null);   // (06/11) sa voix de rap a ses propres débuts
     if (D.lire(c) || (debutsEssais.get(c) || 0) >= 2 || fileDebuts.some(x => x.cle === c)) continue;
     debutsEssais.set(c, (debutsEssais.get(c) || 0) + 1);
+    if (typeof voixCleDebuts === 'function' && voixCleDebuts() === 'azure_rap') { fabriquerDebutsAzureRap.liste = (fabriquerDebutsAzureRap.liste || []).concat({ t, c, e, tempo }); continue; }
     const fichier = path.join(os.tmpdir(), `jarvis-voix-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.wav`);
     fileDebuts.push({ texte: prononcer(t), langue, emotion: e, tempo, fichier, cle: c, annulee: false, recu: Date.now(), ...(typeof optionsVoix === 'function' ? optionsVoix(prononcer(t), langue) : {}),
       fin: (r) => fs.readFile(fichier, (e, data) => {
@@ -10225,12 +10243,13 @@ function fabriquerDebuts(langue, emotion, tempo) {
       }) });
   }
   while (fileDebuts.length > 200) fileDebuts.shift();
+  if (typeof voixCleDebuts === 'function' && voixCleDebuts() === 'azure_rap') { fabriquerDebutsAzureRap(fabriquerDebutsAzureRap.liste || []).catch(() => {}); fabriquerDebutsAzureRap.liste = []; return; }
   pomperVoix();
 }
 // [début, palier de son expressivité] : chaque début a le niveau de voix que la page lui donnera (expressivitePhrase)
 function debutsPrets(langue, emotion, tempo) {
   return VoixPage.DEBUTS.concat(lireMeubles().filter(m => m.texte).map(m => m.texte)).map(d => [d, emotion === null ? null : VoixPage.expressivitePhrase(emotion, d)])
-    .filter(([d, e]) => D.lire(D.cle(d, langue, e, tempo, typeof voixRap === 'function' ? voixRap() : null))).map(([d, e]) => [d, D.palier(e, 0.1)]);
+    .filter(([d, e]) => D.lire(D.cle(d, langue, e, tempo, typeof voixCleDebuts === 'function' ? voixCleDebuts() : null))).map(([d, e]) => [d, D.palier(e, 0.1)]);
 }
 
 /* ---- Hakim s'entend (demande de Hakim, accord d'Ahmed le 2026-10-22) : les 30 derniers morceaux de SA voix sont
@@ -10387,7 +10406,7 @@ async function routeDire(req, res) {
   const langueVoix = /^[a-z]{2}$/.test((q && q.langue) || '') ? q.langue : 'fr';
   const debut = VoixPage.debutDe(texte + ' x') === texte || estMeuble(texte);   // (13:30) un de ses meubles aussi
   const rap = voixRap();                                       // (06/11, Ahmed) sa voix de rap : ses débuts à elle, jamais ceux d'une autre voix
-  const cleVoix = debut ? D.cle(texte, langueVoix, emotion, tempo, rap) : null;
+  const cleVoix = debut ? D.cle(texte, langueVoix, emotion, tempo, typeof voixCleDebuts === 'function' ? voixCleDebuts() : null) : null;   // (08/11) azure_rap : les siens
   const garde = debut ? D.lire(cleVoix) : null;
   // (03/11) une hésitation demandée d'avance (parler.js) : seulement si sa voix est gardée, jamais une synthèse de plus
   if (!garde && q && q.gardee === true) return repondre(404, { erreur: 'pas encore gardée' });
