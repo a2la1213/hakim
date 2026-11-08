@@ -7480,14 +7480,7 @@ document.addEventListener('keydown', (e) => {
 /* (31/10, 00:30, Ahmed : « un bouton Télépathie sous Conversation : le réglage actuel, automatiquement, sans mes textes ni les
    siens ») Conversation : vos paroles s'écrivent ; Télépathie : la Conversation sans aucun texte écrit, avec son oreille, son
    micro, chacun son tour et son subconscient allumés. Le réglage part au cockpit (page SENS) ; un deuxième appui ferme. */
-// (08/11, Ahmed : « Azure doit détecter fr, en, ar et darija automatiquement ; ajoute ces options dans les réglages de Parler pour ma voix »)
-if ($('languePapa')) {
-  $('languePapa').addEventListener('change', async () => {
-    const v = $('languePapa').value; reglagesCorps = { ...reglagesCorps, langue_papa: v };
-    try { await fetch('/api/corps/reglages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ langue_papa: v }) }); } catch (_) {}
-  });
-  setTimeout(() => { try { if (reglagesCorps && reglagesCorps.langue_papa) $('languePapa').value = reglagesCorps.langue_papa; } catch (_) {} }, 3000);
-}
+// (08/11) l'ancien choix « Ta langue » de Parler est parti : la « Langue d'écoute » vaut pour Azure comme pour Whisper (Réglages aussi)
 async function reglerAffichage(telepathie) {
   const reglage = telepathie ? { afficher_papa: false, afficher_hakim: false, oreille: true, micro_hakim: true, chacun_son_tour: true, filtre_parole: true }
     : { afficher_papa: true, afficher_hakim: true };

@@ -102,11 +102,18 @@
     const acces = d.limites ? [[l.accessibilite, `l’accessibilité (ses yeux et ses mains) : ${l.accessibilite ? 'allumée' : 'pas allumée — voir plus bas'}`],
       [l.notifications, `l’accès aux notifications : ${l.notifications ? 'donné' : 'pas donné'}`],
       [true, `l’appli : ${l.version || '?'} (vue ${quand(l.recu / 1000)})`]]
+      .concat(typeof l.termux === 'boolean' ? [[l.termux && l.termux_permission, !l.termux ? 'Termux : pas installé'
+        : l.termux_permission ? 'Termux : installé, ses commandes autorisées (dans Termux, il faut aussi allow-external-apps=true)'
+          : 'Termux : installé, mais donne à Hakim « Exécuter des commandes dans l’environnement Termux » (Réglages › Applications › Hakim › Autorisations)']] : [])
       : [[false, 'le téléphone ne s’est pas encore annoncé (l’appli 1.64 le fait en ouvrant Hakim)']];
     $('maintenant').innerHTML = (r.coupe ? `<div class="coupe-bandeau">Tout est coupé${r.raison ? ` (${esc(r.raison)})` : ''} : plus aucun geste jusqu’à ce que tu rallumes.`
         + '<div class="gestes"><button class="oui" data-rallumer>Rallumer ses gestes</button></div></div>' : '')
       + `<label class="interrupteur"><input type="checkbox" data-reglage="voir" ${r.voir ? 'checked' : ''}> Hakim voit mes applis (l’écran, les notifications)</label>`
       + `<label class="interrupteur"><input type="checkbox" data-reglage="agir" ${r.agir ? 'checked' : ''}> Hakim peut agir dans mes applis (éteint : il voit, il n’agit pas)</label>`
+      + `<label class="interrupteur"><input type="checkbox" data-reglage="sensibles" ${r.sensibles ? 'checked' : ''}> Applis sensibles : banque, paiement, codes, bourse et crypto, réglages du téléphone</label>`
+      + '<div class="sous">Allumé (ton empreinte), Hakim y va comme dans tes autres applis : il voit, ouvre, fait défiler ; ce qu’il touche ou écrit, tu le valides '
+      + '(ou ton réglage « tout accepter » le fait). Le risque : une consigne piégée qu’il lirait sur le web ou dans un message pourrait lui faire envoyer de '
+      + 'l’argent ou toucher à tes comptes. Sa propre appli et ton téléphone verrouillé restent fermés ; les codes de validation restent masqués.</div>'
       + (r.coupe ? '' : '<div class="gestes"><button class="couper" data-couper>Tout couper</button><span class="quand">plus aucun geste jusqu’à ce que tu rallumes</span></div>')
       + '<h3>Sur ton téléphone</h3>' + acces.map(([bon, t]) => `<div class="ligne"><span class="${bon ? 'ok' : 'ko'}">${bon ? '●' : '▲'}</span> ${esc(t)}</div>`).join('');
   }
@@ -132,7 +139,9 @@
     if (!l) { $('interdites').innerHTML = '<div class="vide">Le téléphone enverra sa liste en s’ouvrant (appli 1.64).</div>'; return; }
     const inst = (l.installees || []).map((x) => `<div class="ligne"><div class="tete"><span>${esc(x.appli)}</span><span class="quand">${esc(x.raison)}</span></div></div>`).join('');
     const fam = Object.entries(l.familles || {}).map(([raison, mots]) => `<h3>${esc(raison)}</h3><div>${mots.map((m) => `<span class="puce">${esc(m)}</span>`).join('')}</div>`).join('');
-    $('interdites').innerHTML = '<div class="sous">La liste est dans le code de l’appli : ni Hakim ni le cockpit ne peuvent la changer. Une appli dont le nom de paquet '
+    $('interdites').innerHTML = ((d.reglages || {}).sensibles ? '<div class="coupe-bandeau">« Applis sensibles » est allumé : ces applis lui sont ouvertes comme '
+      + 'les autres (sauf la sienne). Éteins-le en haut de la page pour les refermer.</div>' : '')
+      + '<div class="sous">La liste est dans le code de l’appli : ni Hakim ni le cockpit ne peuvent la changer. Une appli dont le nom de paquet '
       + 'contient l’un de ces mots est fermée à ses yeux et à ses mains ; ses notifications ne lui arrivent jamais.</div>'
       + '<h3>Sur ton téléphone</h3>' + (inst || '<div class="vide">Aucune des applis installées n’est dans la liste.</div>') + fam;
   }
@@ -172,9 +181,9 @@
     c.disabled = true;
     try {
       const corps = { [c.dataset.reglage]: c.checked };
-      if (c.checked) corps.presence = await preuvePresence('telephone:allumer', annonce);
+      if (c.checked) corps.presence = await preuvePresence(c.dataset.reglage === 'sensibles' ? 'telephone:sensibles' : 'telephone:allumer', annonce);
       await poster('/api/telephone/reglages', corps);
-      annonce(`${c.dataset.reglage === 'voir' ? '« Hakim voit mes applis »' : '« Hakim peut agir dans mes applis »'} : ${c.checked ? 'allumé' : 'éteint'}.`);
+      annonce(`${{ voir: '« Hakim voit mes applis »', agir: '« Hakim peut agir dans mes applis »', sensibles: '« Applis sensibles »' }[c.dataset.reglage]} : ${c.checked ? 'allumé' : 'éteint'}.`);
     } catch (err) { c.checked = !c.checked; annonce(String(err.message || err)); }
     c.disabled = false;
     charger();

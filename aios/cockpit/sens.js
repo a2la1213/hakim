@@ -16,7 +16,8 @@ const SENS = new Set(['inventaire', 'imu', 'sismo', 'baro', 'magneto', 'son',
   'media_pause', 'media_lecture', 'media_suivant', 'media_precedent',   // (appli 1.46)
   'reseau_mobile',   // (13:33, appli 1.52)
   // (04/11, Ahmed : « tout sur tout ») ses mains sur le téléphone (appli 1.64 ; telephone.js, anamnese/jarvis/mains.py)
-  'telephone_voir', 'telephone_notifications', 'telephone_geste', 'telephone_preparer', 'telephone_partager']);
+  'telephone_voir', 'telephone_notifications', 'telephone_geste', 'telephone_preparer', 'telephone_partager',
+  'telephone_termux']);   // (08/11, appli 1.90) ses commandes dans Termux
 const EXPIRE_MS = 2 * 3600 * 1000, MARGE_MS = 120 * 1000, ESSAIS = 3;
 // (30/10, Ahmed : « ses propres modules ») ses instruments à lui : donnés à son Tricordeur (le module), qui rend par
 // Documents/Hakim/sens/<id>/ (Syncthing) ; on attend sa durée + 30 min (la synchronisation)

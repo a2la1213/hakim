@@ -74,11 +74,15 @@ INSTRUMENTS = {
                            "réponse en 2 min : rien", 120, 120),
     "telephone_partager": ("TON MEMBRE : partager un fichier de ton atelier ou un texte : le menu « Partager » d'Android s'ouvre "
                            "devant papa (Bluetooth, Quick Share, une appli), c'est lui qui choisit", 0, 0),
+    # (08/11, Ahmed : « qu'il ait accès à Termux du smartphone ; qu'il puisse tout contrôler ») appli 1.90 : l'intent officiel de Termux
+    "telephone_termux": ("TON MEMBRE : lancer une commande dans Termux, sur le téléphone de papa (bash, en arrière-plan) ; papa valide "
+                         "d'un toucher (ou son réglage « tout accepter ») ; la sortie revient", 120, 120),
 }
 RADIO = {"appareils", "bluetooth_scan", "wifi_scan", "bluetooth_signal", "nfc_ecrire", "bluetooth_activer", "bluetooth_appairer",
          "wifi_info", "wifi_connecter", "bluetooth_reglages", "wifi_reglages", "nfc_reglages", "appli_active",
          "media_pause", "media_lecture", "media_suivant", "media_precedent", "reseau_mobile",
-         "telephone_voir", "telephone_notifications", "telephone_geste", "telephone_preparer", "telephone_partager"}
+         "telephone_voir", "telephone_notifications", "telephone_geste", "telephone_preparer", "telephone_partager",
+         "telephone_termux"}
 AVEC_TEXTE = {"nfc_ecrire": "le texte à écrire sur la puce", "bluetooth_appairer": "l'adresse ou le nom de l'appareil",
               "wifi_connecter": "le nom du réseau (« nom » ou « nom ; mot de passe »)"}
 _ID_MEMBRE = re.compile(r"[0-9a-f]{10}")

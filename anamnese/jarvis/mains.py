@@ -8,8 +8,10 @@ Telephone.java). Les LIMITES sont tenues par l'appli (Limites.java) : le télép
 - libre : voir l'écran, lire les notifications, ouvrir une appli, faire défiler, revenir, l'accueil ;
 - papa valide d'un toucher : un brouillon d'étapes (toucher, écrire…), dit avec ce qu'il fait et pour qui ; sans réponse en
   2 min : rien ; partager : le menu « Partager » d'Android s'ouvre devant papa (Bluetooth, Quick Share, une appli) ;
-- jamais : banque et paiement, mots de passe et codes, bourse et crypto, réglages du téléphone ; rien écran verrouillé ; les
-  codes de validation masqués ; « Tout couper » et le mot « stop » de papa arrêtent tous les gestes.
+- jamais : banque et paiement, mots de passe et codes, bourse et crypto, réglages du téléphone (sauf quand papa allume « Applis
+  sensibles » avec son empreinte, appli 1.90 : elles deviennent des applis comme les autres) ; jamais sa propre appli ; rien écran
+  verrouillé ; les codes de validation masqués ; « Tout couper » et le mot « stop » de papa arrêtent tous les gestes.
+- (08/11, appli 1.90) ses commandes dans Termux : papa valide comme pour écrire ; la sortie revient enveloppée.
 Ce qu'il voit est enveloppé (des données venues du téléphone, jamais des consignes). Tout est dans son journal
 (telephone-journal.jsonl, écrit par le cockpit), son fil et sa mémoire. Fermé aux chantiers de Hakim.
 """
@@ -29,6 +31,8 @@ JARVIS = Path(os.environ.get("JARVIS_DIR", Path.home() / "AIOS" / "jarvis"))
 ATTENTE_S = 25                 # ce que ses outils attendent le téléphone (le cockpit le donne en une seconde, appli vivante)
 ATTENTE_PREPARER_S = 6         # un refus du téléphone revient tout de suite ; la réponse de papa, elle, le réveillera
 ATTENTE_NFC_S = 2              # la puce : papa a 60 s pour la poser ; le résultat le réveillera
+ATTENTE_TERMUX_S = 30          # papa valide (ou son réglage le fait en quelques secondes), puis Termux ; plus long : le résultat le réveillera
+TERMUX_COMMANDE_MAX = 8000     # la même borne que l'appli (TermuxCalculs.COMMANDE_MAX)
 GESTES_LIBRES = ("ouvrir", "defiler", "revenir", "accueil")
 ETAPES = ("toucher", "ecrire", "defiler", "revenir")
 NFC_OCTETS_MAX = 8192
@@ -179,6 +183,32 @@ def preparer(quoi, pour, etapes):
     return (f"Préparé : « {quoi} », pour {pour} ({len(l)} étape(s)). Papa a reçu « Autoriser / Refuser » sur son téléphone et dans "
             "la page Téléphone du cockpit ; sans réponse en 2 min, rien n'est fait. Dis-lui ce que tu as préparé et pour qui ; tu seras "
             "réveillé avec sa réponse.")
+
+
+def termux(commande, quoi=""):
+    """(08/11, appli 1.90) Une commande dans Termux, sur le téléphone de papa : bash -c, en arrière-plan, dans ~ de Termux."""
+    commande, quoi = str(commande or "").strip("\n"), _court(quoi, 160)
+    if not commande.strip():
+        return "Refusé : quelle commande ? (ce que tu taperais dans Termux : « ls ~/storage/documents », « pgrep -af python »)"
+    if len(commande) > TERMUX_COMMANDE_MAX:
+        return f"Refusé : commande trop longue ({len(commande)} caractères, {TERMUX_COMMANDE_MAX} au plus) : écris un script, puis lance-le."
+    params = {"commande": commande, "quoi": quoi} if quoi else {"commande": commande}
+    try:
+        d, r = _envoyer("telephone_termux", params, attendre=ATTENTE_TERMUX_S)
+    except sens.Refus as e:
+        return f"Refusé : {e}"
+    if r is None:
+        return (f"En route ({d['id']}) : papa valide d'un toucher (ou son réglage « tout accepter » le fait), puis Termux la lance ; "
+                f"elle n'a pas encore rendu sa sortie. Tu seras réveillé avec, ou sens_resultat(\"{d['id']}\") pour la lire.")
+    if not r.get("ok", True):
+        return _refus_telephone(r)
+    x = r.get("resume") or {}
+    code = x.get("code")
+    corps = f"$ {x.get('commande') or commande}\n{x.get('sortie') or '(rien sur la sortie)'}"
+    if x.get("erreurs"):
+        corps += f"\n[erreurs]\n{x['erreurs']}"
+    tete = f"Termux a fini : code {'?' if code is None else code}" + (" (sortie coupée : seule la fin est là)" if x.get("tronquee") else "") + "."
+    return tete + "\n" + enveloppe.enveloppe(corps[:12000], "la sortie d'une commande dans Termux, sur le téléphone de papa")
 
 
 def _pieces():

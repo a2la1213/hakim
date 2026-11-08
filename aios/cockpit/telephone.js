@@ -6,7 +6,10 @@
    - son journal daté (telephone-journal.jsonl) : chaque chose vue, préparée, autorisée, envoyée, faite, refusée, coupée ; le regard
      continu (l'appli qui change, les notifications qui arrivent) y est marqué « flux » ;
    - ce qui attend papa : un brouillon préparé vit 2 min ; papa dit oui ou non une fois (ici ou sur son téléphone) ; jamais trop tard ;
-   - les applis interdites que le téléphone a trouvées chez papa (telephone-limites.json), pour la page (lecture seule).
+   - les applis interdites que le téléphone a trouvées chez papa (telephone-limites.json), pour la page (lecture seule) ;
+   - (1.90, 08/11, Ahmed : « Termux et toutes les applis du téléphone ») « Applis sensibles » (sensibles) : éteint par défaut ; allumé
+     (son empreinte), l'appli ouvre banque, codes, bourse et réglages comme les autres applis (sa propre appli et l'écran verrouillé
+     restent interdits) ; ses commandes dans Termux attendent papa comme un brouillon (geste « termux »).
    Fermé aux chantiers de Hakim (pas dans sa liste ouverte). */
 'use strict';
 const fs = require('node:fs');
@@ -32,7 +35,7 @@ class Telephone {
 
   reglages() {
     let r = {}; try { r = JSON.parse(fs.readFileSync(this.fichierReglages, 'utf8')) || {}; } catch (_) {}
-    return { voir: r.voir !== false, agir: r.agir !== false, coupe: r.coupe === true, tenu: r.tenu === true, maj: Number(r.maj) || 0, raison: c(r.raison, 200) };
+    return { voir: r.voir !== false, agir: r.agir !== false, coupe: r.coupe === true, tenu: r.tenu === true, sensibles: r.sensibles === true, maj: Number(r.maj) || 0, raison: c(r.raison, 200) };
   }
 
   _ecrireReglages(r) {
@@ -58,17 +61,19 @@ class Telephone {
     } catch (_) {}
   }
 
-  // papa allume ou éteint « voir » et « agir » (de vrais booléens seulement)
-  regler({ voir, agir } = {}) {
+  // papa allume ou éteint « voir », « agir » et « Applis sensibles » (de vrais booléens seulement ; l'empreinte : la route)
+  regler({ voir, agir, sensibles } = {}) {
     const r = this.reglages(), avant = { ...r };
     if (typeof voir === 'boolean') r.voir = voir;
     if (typeof agir === 'boolean') r.agir = agir;
-    if (r.voir === avant.voir && r.agir === avant.agir) return r;
+    if (typeof sensibles === 'boolean') r.sensibles = sensibles;
+    if (r.voir === avant.voir && r.agir === avant.agir && r.sensibles === avant.sensibles) return r;
     if (r.agir !== avant.agir) r.tenu = r.agir;                  // (08/11) papa rallume « agir » : ses gestes tiennent jusqu'à ce qu'il l'éteigne
     this._ecrireReglages(r);
     const dit = [];
     if (r.voir !== avant.voir) dit.push(`papa a ${r.voir ? 'allumé' : 'éteint'} « Hakim voit mes applis »`);
     if (r.agir !== avant.agir) dit.push(`papa a ${r.agir ? 'allumé' : 'éteint'} « Hakim peut agir dans mes applis »`);
+    if (r.sensibles !== avant.sensibles) dit.push(`papa a ${r.sensibles ? 'allumé' : 'éteint'} « Applis sensibles »`);
     this._journal({ etat: 'reglage', quoi: dit.join(' ; ') });
     return this.reglages();
   }
@@ -123,7 +128,7 @@ class Telephone {
     o.ts = ts;
     if (e.id) {
       this._vieillir();
-      if (e.etat === 'prepare' && e.geste === 'preparer' && !this.attentes.has(e.id))
+      if (e.etat === 'prepare' && ['preparer', 'termux'].includes(e.geste) && !this.attentes.has(e.id))
         this.attentes.set(e.id, { id: e.id, quoi: e.quoi, pour: e.pour || '', appli: e.appli || '', etapes: e.etapes || '', ts: this.maintenant(), etat: 'attente' });
       const a = this.attentes.get(e.id);
       if (a && a.etat === 'attente' && (e.etat === 'autorise' || e.etat === 'refuse')) { a.etat = e.etat === 'autorise' ? 'oui' : 'non'; a.par = 'telephone'; }
@@ -187,7 +192,9 @@ class Telephone {
     const familles = {};
     if (o.familles && typeof o.familles === 'object') for (const [k, v] of Object.entries(o.familles).slice(0, 10))
       if (Array.isArray(v)) familles[c(k, 120)] = v.slice(0, 200).map(x => c(x, 60));
-    const r = { installees, familles, accessibilite: o.accessibilite === true, notifications: o.notifications === true, version: c(o.version, 20), recu: this.maintenant() };
+    const oui = (x) => (typeof x === 'boolean' ? x : null);      // (1.90) Termux : installé, permission accordée (rien d'une appli d'avant)
+    const r = { installees, familles, accessibilite: o.accessibilite === true, notifications: o.notifications === true, version: c(o.version, 20),
+      termux: oui(o.termux), termux_permission: oui(o.termux_permission), recu: this.maintenant() };
     const tmp = `${this.fichierLimites}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(r), { mode: 0o600 });
     fs.renameSync(tmp, this.fichierLimites);
