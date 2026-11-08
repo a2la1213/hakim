@@ -41,7 +41,7 @@ function ecrireLangues(texte, opts) {
 const EXPRESSIONS = [['وعليكم السلام', 'wa aleykoum salam'], ['السلام عليكم', 'salam aleykoum'], ['إن شاء الله', 'inchallah'],
   ['ان شاء الله', 'inchallah'], ['الحمد لله', 'hamdoullah'], ['ما شاء الله', 'machallah'], ['بسم الله', 'bismillah'], ['صباح الخير', 'sbah el khir'],
   ['مساء الخير', 'msa el khir'], ['بارك الله فيك', 'barakallahou fik'], ['الله أكبر', 'allahou akbar'], ['سبحان الله', 'soubhanallah'], ['يا ربي', 'ya rabbi']];
-const CANON = { 'واش': 'wesh', 'راك': 'rak', 'كيراك': 'kirak', 'بزاف': 'bezzaf', 'دركا': 'derka', 'نتا': 'nta', 'نتي': 'nti', 'راني': 'rani',
+const CANON = { 'واش': 'wch', 'راك': 'rak', 'كيراك': 'kirak', 'بزاف': 'bezzaf', 'دركا': 'derka', 'نتا': 'nta', 'نتي': 'nti', 'راني': 'rani',
   'راهو': 'rahou', 'راه': 'rah', 'ماشي': 'machi', 'حاب': 'hab', 'كاش': 'kach', 'ياسر': 'yasser', 'خويا': 'khouya', 'ختي': 'khti', 'صاحبي': 'sahbi',
   'لاباس': 'labes', 'شكرا': 'chokran', 'صحة': 'saha', 'يعني': 'yaani', 'خلاص': 'khlas', 'مليح': 'mlih', 'بصح': 'bessah', 'شوف': 'chouf',
   'شوية': 'chwiya', 'كيفاش': 'kifach', 'علاش': 'alach', 'والله': 'wallah', 'حبيبي': 'habibi', 'حبيبتي': 'habibti', 'يلا': 'yallah', 'هذا': 'hada',
