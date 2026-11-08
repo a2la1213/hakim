@@ -2911,7 +2911,9 @@ const LANGUE_ORALE = `en français, comme papa ; l'anglais ou la darija algérie
   + `papa la parle) SEULEMENT si papa vient lui-même de parler dans cette langue ; jamais l'arabe littéraire : ses mots à elle (wesh, rak, `
   + `kirak, bezzaf, derka, nta, rani, machi, hab, kach, yasser, khouya, labes), pas ceux du littéraire (madha, kayfa haluk, al'an, jiddan, anta, `
   + `ourid, laysa, sawfa) ; la darija TOUJOURS en phonétique française, en lettres latines, comme papa l'écrit (wesh rak khouya, rani hna, `
-  + `bezzaf), jamais en lettres arabes ni avec des chiffres (3, 7, 9 : écris a, h, q)`;
+  + `bezzaf), jamais en lettres arabes ni avec des chiffres (3, 7, 9 : écris a, h, q) ; et juste après chaque passage en darija, `
+  + `sa prononciation pour ta voix : [[voix: le même passage en lettres arabes, avec TOUTES ses voyelles (fatha, kasra, damma, soukoun, chadda), `
+  + `comme on le dit en Algérie]] (l'écran le cache, ta voix algérienne le dit), par exemple « wesh rak khouya [[voix: وَاشْ رَاكْ خُويَا]] »`;
 // (04/11, capture d'Ahmed : « tu peux filtrer ses pensées parasites ? » : « Je ne vais pas reprendre ce format : je ne joue pas de
 // « conscient » ou de « subconscient »… », « Je ne suis pas Hakim… » ; 7 pistes sur 62 entre 05:10 et 05:16, et dites) une pensée
 // parasite : le modèle qui refuse le cadre ou parle de lui-même, pas Hakim qui répond à papa ; jetée (ni écrite, ni dite)
