@@ -9852,7 +9852,10 @@ async function voixAzure(texte, tempo, emotion = null) {
   try {
     const r = await fetch(`https://${c.region}.tts.speech.microsoft.com/cognitiveservices/v1`, { method: 'POST', signal: ctl.signal,
       headers: { 'Ocp-Apim-Subscription-Key': cle, 'Content-Type': 'application/ssml+xml', 'X-Microsoft-OutputFormat': 'riff-24khz-16bit-mono-pcm', 'User-Agent': 'hakim-cockpit' },
-      body: `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="fr-FR"><voice name="${voix}"><prosody rate="${pr.rate}" pitch="${pr.pitch}" volume="${pr.volume}">${esc(texte)}</prosody></voice></speak>` });
+      // (08/11, Ahmed : « mega chaud pour Ismael et la darija ») ses passages en lettres arabes (darija, arabe) : la voix algérienne d'Azure (ar-DZ-IsmaelNeural) ;
+      // le reste : sa voix d'avant ; refaits ensuite à son timbre de rap, tout sonne d'une seule voix
+      body: `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="fr-FR">${(VoixHakim.segmenterLangues(texte).length ? VoixHakim.segmenterLangues(texte) : [{ langue: 'fr', texte }])
+        .map(m => `<voice name="${m.langue === 'ar' ? 'ar-DZ-IsmaelNeural' : voix}"><prosody rate="${pr.rate}" pitch="${pr.pitch}" volume="${pr.volume}">${esc(m.texte)}</prosody></voice>`).join('')}</speak>` });
     if (!r.ok) return null;
     const data = Buffer.from(await r.arrayBuffer());
     // (06/11) tout ce que sa voix Azure dit est noté (son écho, par le texte) et lui apprend sa voix (son écho, par le timbre)
