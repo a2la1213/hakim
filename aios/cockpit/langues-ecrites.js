@@ -44,7 +44,7 @@ const EXPRESSIONS = [['وعليكم السلام', 'wa aleykoum salam'], ['ال�
 const CANON = { 'واش': 'wch', 'راك': 'rak', 'كيراك': 'kirak', 'بزاف': 'bezzaf', 'دركا': 'derka', 'نتا': 'nta', 'نتي': 'nti', 'راني': 'rani',
   'راهو': 'rahou', 'راه': 'rah', 'ماشي': 'machi', 'حاب': 'hab', 'كاش': 'kach', 'ياسر': 'yasser', 'خويا': 'khouya', 'ختي': 'khti', 'صاحبي': 'sahbi',
   'لاباس': 'labes', 'شكرا': 'chokran', 'صحة': 'saha', 'يعني': 'yaani', 'خلاص': 'khlas', 'مليح': 'mlih', 'بصح': 'bessah', 'شوف': 'chouf',
-  'شوية': 'chwiya', 'كيفاش': 'kifach', 'علاش': 'alach', 'والله': 'wallah', 'حبيبي': 'habibi', 'حبيبتي': 'habibti', 'يلا': 'yallah', 'هذا': 'hada',
+  'شوية': 'chwiya', 'كيفاش': 'kifach', 'علاش': '3lach', 'والله': 'wallah', 'حبيبي': 'habibi', 'حبيبتي': 'habibti', 'يلا': 'yallah', 'هذا': 'hada',
   'هاذا': 'hada', 'هذي': 'hadi', 'هاذي': 'hadi', 'واحد': 'wahed', 'زوج': 'zouj', 'بابا': 'baba', 'ماما': 'mama', 'دابا': 'daba', 'مزيان': 'mzyan',
   'واخا': 'wakha', 'صافي': 'safi', 'بغيت': 'bghit', 'نحب': 'nhab', 'زعما': 'zaama', 'حشومة': 'hchouma', 'مسكين': 'meskine', 'وين': 'win',
   'فين': 'fin', 'شحال': 'chhal', 'قداش': 'qaddach', 'كاين': 'kayn', 'ماكانش': 'makanch', 'نتوما': 'ntouma', 'حنا': 'hna', 'هنا': 'hna', 'تاع': 'taa',
