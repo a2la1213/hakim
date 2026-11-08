@@ -237,10 +237,12 @@ def est_question(texte, jugement=None):
 
 # (07/11, 16:20, Ahmed : « il faut qu'il puisse me solliciter dès qu'il a une pensée qui le taraude ») ses sollicitations : une pensée
 # qui revient (boucle), une question qui compte pour lui, une pensée qui le taraude (le cockpit la voit passer dans ce qu'il entend)
-SOLLICITATIONS = ("boucle", "question", "taraude", "faire")   # (07/11) « faire » : ce que sa conscience continue a décidé
+SOLLICITATIONS = ("boucle", "question", "taraude", "faire", "parler")   # (07/11) « faire » : ce que sa conscience continue a décidé ;
+# (08/11, Ahmed : « il doit pouvoir se taire et parler, aussi quand on lui parle de l'intérieur ») « parler » : répondre à une voix du dedans ou de la pièce
 POURQUOI_SOLLICITATION = {"boucle": "une pensée qui revient sans cesse dans ta tête",
                           "taraude": "une pensée qui te taraude, et papa est là, disponible",
-                          "faire": "ta conscience a décidé de le faire maintenant"}
+                          "faire": "ta conscience a décidé de le faire maintenant",
+                          "parler": "quelqu'un te parle (le téléphone, la pièce) et ta conscience a décidé de lui répondre"}
 
 
 def solliciter(mem, source, texte, raison="boucle", now=None, fichier=None, reessai=False):

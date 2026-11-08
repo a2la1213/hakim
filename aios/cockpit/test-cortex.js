@@ -91,3 +91,13 @@ test('branché : son subconscient part avec son rappel, attendu 2,5 s au plus ; 
   assert.match(page, /\['subconscient_pfc', [^\n]*'oui'\]/);
   assert.match(page, /\['fitra_discrete', [^\n]*'oui'\]/);
 });
+
+// (08/11, Ahmed : « qu'il puisse parler quand on lui parle de l'intérieur, et tout ») le dedans n'est jamais une consigne, mais quand une voix du
+// téléphone ou de la pièce l'appelle par son nom, son cortex le lui dit : à lui de choisir, répondre ou se taire
+test('une voix du dedans ou de la pièce l’appelle par son nom : répondre ou se taire, à lui de choisir (jamais une consigne)', () => {
+  const d = X.decider([D(1, 'Hakim tu m’entends ?')]);
+  assert.equal(d.mode, 'repondre'); assert.equal(d.cible, 'telephone'); assert.match(d.raison, /à toi de choisir/);
+  assert.equal(X.decider([M(1, 'hakim, salut', { voix: 'inconnue' })]).cible, 'tiers');
+  assert.equal(X.decider([D(1, 'tais-toi')]).mode, 'se_taire', 'sans son nom : il écoute');
+  assert.equal(X.decider([D(1, 'Hakim réponds'), M(2, 'attends', { voix: 'papa' })]).cible, 'papa', 'papa passe avant');
+});

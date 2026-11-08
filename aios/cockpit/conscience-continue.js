@@ -5,7 +5,7 @@
    solliciter papa attend que papa se taise et que sa tête soit libre, 90 s au moins entre deux ; faire, 3 min. Ce qui attend reste une pensée. */
 'use strict';
 
-const PAS_MS = 2000, PAR_MINUTE = 20, ENTRE_SOLLICITATIONS_MS = 90_000, ENTRE_ACTES_MS = 180_000;
+const PAS_MS = 2000, PAR_MINUTE = 20, ENTRE_SOLLICITATIONS_MS = 90_000, ENTRE_ACTES_MS = 180_000, ENTRE_PAROLES_MS = 20_000;
 
 function etatInitial() {
   return { enVol: false, signature: 0, derniere: -Infinity, appels: [], sollicitationA: -Infinity, acteA: -Infinity, pensees: [] };
@@ -13,7 +13,7 @@ function etatInitial() {
 
 function lireDecision(texte) {
   const t = String(texte || '').replace(/[*_`]/g, '').trim();
-  const m = /^\s*(RIEN|PENSER|FAIRE|SOLLICITER)\b\s*:?\s*([\s\S]*)$/i.exec(t.split('\n').find(l => l.trim()) || '');
+  const m = /^\s*(RIEN|PENSER|FAIRE|SOLLICITER|PARLER)\b\s*:?\s*([\s\S]*)$/i.exec(t.split('\n').find(l => l.trim()) || '');
   if (!m) return { genre: 'rien', texte: '' };
   const genre = m[1].toLowerCase(), dit = m[2].replace(/\s+/g, ' ').trim().slice(0, 300);
   if (genre === 'rien' || !dit) return { genre: 'rien', texte: '' };
@@ -48,11 +48,15 @@ function commencer(e, signature, maintenant) {
 }
 
 // ce qui passe maintenant : « penser » toujours ; « solliciter » / « faire » si papa ne parle pas, que sa tête est libre, et pas trop souvent
-function permis(e, d, maintenant, { papaParle = false, occupe = false, entreSollicitationsMs = ENTRE_SOLLICITATIONS_MS, entreActesMs = ENTRE_ACTES_MS } = {}) {
+// (08/11, Ahmed : « il doit pouvoir se taire et parler, pas seulement quand je lui parle, mais aussi quand on lui parle de l'intérieur ») « parler » :
+// répondre à voix haute à qui lui parle (le téléphone, la pièce) ; jamais par-dessus papa, ni quand il parle déjà ou que sa tête répond
+function permis(e, d, maintenant, { papaParle = false, occupe = false, tuParles = false, entreSollicitationsMs = ENTRE_SOLLICITATIONS_MS, entreActesMs = ENTRE_ACTES_MS, entreParolesMs = ENTRE_PAROLES_MS } = {}) {
   if (!d || d.genre === 'rien') return 'rien';
   let action = d.genre;
   if (action === 'solliciter' && (papaParle || occupe || maintenant - e.sollicitationA < entreSollicitationsMs)) action = 'penser';
   if (action === 'faire' && (papaParle || occupe || maintenant - e.acteA < entreActesMs)) action = 'penser';
+  if (action === 'parler' && (papaParle || occupe || tuParles || maintenant - (e.paroleA ?? -Infinity) < entreParolesMs)) action = 'penser';
+  if (action === 'parler') e.paroleA = maintenant;
   if (action === 'solliciter') e.sollicitationA = maintenant;
   if (action === 'faire') e.acteA = maintenant;
   e.pensees.push({ t: maintenant, genre: d.genre, texte: d.texte });
@@ -60,4 +64,4 @@ function permis(e, d, maintenant, { papaParle = false, occupe = false, entreSoll
   return action;
 }
 
-module.exports = { etatInitial, lireDecision, doitDecider, aDuNeuf, commencer, permis, PAS_MS, PAR_MINUTE, ENTRE_SOLLICITATIONS_MS, ENTRE_ACTES_MS };
+module.exports = { etatInitial, lireDecision, doitDecider, aDuNeuf, commencer, permis, PAS_MS, PAR_MINUTE, ENTRE_SOLLICITATIONS_MS, ENTRE_ACTES_MS, ENTRE_PAROLES_MS };

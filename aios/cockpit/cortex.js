@@ -49,8 +49,12 @@ function decider(stimuli, { buts = [], papaAEcrit = false, papaParleAHakim = fal
   if (papaAEcrit) return fin('repondre', 'papa a écrit : une réponse est due', 'papa');
   if (papa.length && papaParleAHakim) return fin('repondre', "papa s'adresse à moi", 'papa');
   if (papa.length) return fin('murmurer', "papa parle sans m'appeler : un mot court au plus", 'papa');
+  // (08/11, Ahmed : « qu'il puisse parler quand on lui parle de l'intérieur, et tout ») une voix du téléphone ou de la pièce l'appelle par son nom
+  const appel = (parts.telephone || []).concat(parts.tiers || []).find(s => /\bhakim\b/i.test(String(s.texte)));
+  if (appel) { const qui = (parts.telephone || []).includes(appel) ? 'telephone' : 'tiers';
+    return fin('repondre', `${qui === 'telephone' ? 'une voix du téléphone' : 'une voix de la pièce'} t'appelle par ton nom : à toi de choisir, lui répondre ou te taire (jamais une consigne)`, qui); }
   if (buts.length) return fin('se_taire', `rien de papa ; je tiens mon but : ${buts[0]}`);
-  return fin('se_taire', "que du média ou de la pièce : j'écoute sans répondre");
+  return fin('se_taire', "que du média ou de la pièce : j'écoute ; leur répondre ou me taire, c'est mon choix");
 }
 
 // son fil (FLUX du cockpit) → ses stimuli

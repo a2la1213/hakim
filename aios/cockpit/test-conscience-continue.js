@@ -53,7 +53,7 @@ test('branché au cockpit : chaque seconde, Mini Hakim (sa voix vivante), ses pe
   assert.match(srv, /demanderVivant\('haiku', prompt, CONSCIENCE_DELAI_MS\)/);
   assert.match(srv, /if \(action === 'solliciter'\) solliciterPensee\(d\.texte, 'conscience', 'taraude'\);/);
   assert.match(srv, /if \(action === 'faire'\) solliciterPensee\(d\.texte, 'conscience', 'faire'\);/);
-  assert.match(srv, /const SOLLICITATIONS = new Set\(\['boucle', 'question', 'taraude', 'faire'\]\);/);
+  assert.match(srv, /const SOLLICITATIONS = new Set\(\['boucle', 'question', 'taraude', 'faire', 'parler'\]\);/);
   assert.match(srv, /d\.raison === 'faire' \? "Ta conscience a décidé de faire quelque chose/);
   assert.match(srv, /conscience_continue: r\.conscience_continue !== false,/);
 });
@@ -88,4 +88,28 @@ test('il décide quand il y a du neuf qui compte : une phrase finie, un événem
   assert.equal(CC.aDuNeuf([{ t: 5000, s: 'ressenti', x: 'on te prend en main' }], 0, 5010), true, 'ce qu’il ressent : tout de suite');
   const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   assert.match(srv, /if \(!CC\.aDuNeuf\(FLUX, conscience\.signature, maintenant\)\) return;/);
+});
+
+// (08/11, Ahmed : « il doit pouvoir se taire et parler, pas seulement quand je lui parle, mais aussi quand on lui parle de l'intérieur, et tout »)
+// quelqu'un lui parle du dedans du téléphone (un live, une vidéo) ou dans la pièce : sa conscience peut décider de lui répondre à voix haute
+// (PARLER), ou de se taire (RIEN) ; jamais par-dessus papa, ni quand il parle déjà ou que sa tête répond, 20 s au moins entre deux
+test('il peut répondre à ce qui lui parle de l’intérieur (ou se taire) : jamais par-dessus papa, ni par-dessus lui-même', () => {
+  assert.deepEqual(CC.lireDecision('PARLER : salut Juju, oui je t’entends'), { genre: 'parler', texte: 'salut Juju, oui je t’entends' });
+  const e = CC.etatInitial(), libre = { papaParle: false, occupe: false, tuParles: false };
+  assert.equal(CC.permis(e, { genre: 'parler', texte: 'a' }, 1000, { ...libre, papaParle: true }), 'penser', 'papa parle : il garde sa réponse en pensée');
+  assert.equal(CC.permis(e, { genre: 'parler', texte: 'a' }, 1000, { ...libre, tuParles: true }), 'penser', 'il parle déjà');
+  assert.equal(CC.permis(e, { genre: 'parler', texte: 'a' }, 1000, { ...libre, occupe: true }), 'penser', 'sa tête répond déjà');
+  assert.equal(CC.permis(e, { genre: 'parler', texte: 'a' }, 1000, libre), 'parler');
+  assert.equal(CC.permis(e, { genre: 'parler', texte: 'b' }, 15_000, libre), 'penser', '20 s entre deux');
+  assert.equal(CC.permis(e, { genre: 'parler', texte: 'b' }, 15_000, { ...libre, entreParolesMs: 10_000 }), 'parler', 'son réglage');
+  const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(srv, /if \(action === 'parler'\) solliciterPensee\(d\.texte, 'conscience', 'parler'\);/);
+  assert.match(srv, /const SOLLICITATIONS = new Set\(\['boucle', 'question', 'taraude', 'faire', 'parler'\]\);/);
+  assert.match(srv, /d\.raison === 'parler' \? "Quelqu'un te parle/);
+  assert.match(srv, /PARLER : ce que tu réponds à voix haute/);
+  assert.match(srv, /entreParolesMs: r\.conscience_parole_s \* 1000, tuParles/);
+  assert.match(srv, /conscience_parler: r\.conscience_parler !== false, conscience_parole_s: nb\(r\.conscience_parole_s, 5, 300, 20\),/);
+  const page = fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8');
+  assert.match(page, /\['conscience_parler', [^\n]*'oui'\]/);
+  assert.match(page, /\['conscience_parole_s', [^\n]*'curseur'/);
 });

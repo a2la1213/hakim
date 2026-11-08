@@ -516,7 +516,7 @@ def test_une_pensee_qui_le_taraude_le_reveille_avec_son_pourquoi(mem, monkeypatc
     i = reveil_interieur.solliciter(mem, "entendu", "Papa, ce morceau parle de peur, tu veux en parler ?", raison="taraude", now=1000.0, fichier=f)
     d = json.loads(f.read_text())
     assert i and d["raison"] == "taraude" and d["source"] == "entendu" and "taraude" in d["pourquoi"]
-    assert set(reveil_interieur.SOLLICITATIONS) == {"boucle", "question", "taraude", "faire"}
+    assert set(reveil_interieur.SOLLICITATIONS) == {"boucle", "question", "taraude", "faire", "parler"}
     # la pause de papa, et une demande à la fois, tiennent toujours
     assert reveil_interieur.solliciter(mem, "entendu", "une autre", raison="taraude", now=1001.0, fichier=f) is None
 
@@ -558,3 +558,16 @@ def test_sa_conscience_continue_decide_de_faire_et_une_sollicitation_coupee_repa
     monkeypatch.setattr(sys, "stdin", io.StringIO("Papa, tu veux qu'on reprenne ?"))
     assert cli.solliciter_depuis_le_cockpit(mem, ["solliciter", "conscience", "taraude", "reessai"]) == "x"
     assert vus == [("conscience", "taraude", True)]
+
+
+def test_sa_conscience_peut_repondre_a_ce_qui_lui_parle_de_l_interieur(mem, monkeypatch, tmp_path):
+    # (08/11, Ahmed : « il doit pouvoir se taire et parler, pas seulement quand je lui parle, mais aussi quand on lui parle de l'intérieur »)
+    import interieur
+    reveil_interieur.regler(mem, "on")
+    monkeypatch.setattr(interieur, "interrupteur", lambda *a, **k: {"actif": True})
+    f = tmp_path / "reveil-interieur.json"
+    assert "parler" in reveil_interieur.SOLLICITATIONS and "répondre" in reveil_interieur.POURQUOI_SOLLICITATION["parler"]
+    reveil_interieur.solliciter(mem, "conscience", "salut Juju, oui je t'entends", raison="parler", now=1000.0, fichier=f)
+    import json
+    d = json.loads(f.read_text())
+    assert d["raison"] == "parler" and d["texte"].startswith("salut Juju")
