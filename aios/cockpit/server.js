@@ -2637,7 +2637,7 @@ function sonnetTeteDeFond(prompt, etiquette, modele = 'sonnet', delai = 60000, o
       const enfant = execFile(CLAUDE_BIN, ['-p', '--model', (typeof MODELE_CLI !== 'undefined' && MODELE_CLI[modele]) || modele, '--effort', EFFORT_HAKIM, '--max-turns', '1', '--tools', '', '--restricted', '--strict-mcp-config',
         '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence', '--output-format', 'json',
         ...(typeof POUR_VIVANTS !== 'undefined' && POUR_VIVANTS.test(String(etiquette)) ? ['--append-system-prompt', SYSTEME_VIVANT] : []),   // (05/11) ses voix : Hakim, pas un agent de codage
-        ...(parApi ? ['--settings', JSON.stringify({ apiKeyHelper: aideCle() })] : [])],
+        ...(parApi ? ['--settings', JSON.stringify({ apiKeyHelper: aideCle(), ...envEspaceApi() })] : [])],
       { cwd: vide || os.tmpdir(), timeout: delai, maxBuffer: 1 << 20, env }, (e, so) => {
         if (e) return fin({ erreur: e.killed ? 'délai dépassé' : String(e.message || e).slice(0, 160) });
         let o = {}; try { o = JSON.parse(so || '{}'); } catch (_) { return fin({ erreur: 'sortie illisible' }); }
@@ -5267,7 +5267,7 @@ function reglagesCerveau(source) {
     // (30/10) qui lit le café, signé de même : un juge n'y voit que son propre retour (garde-message.js --cafe-lire)
     { matcher: 'mcp__terminal__cafe_lire', hooks: [{ type: 'command', timeout: 10, onFailure: 'block', command: `${GARDE_MESSAGE} --cafe-lire` }] }] },
     permissions: { deny: CLES_MASQUEES },
-    ...(source === 'api' ? { apiKeyHelper: aideCle() } : {}) });
+    ...(source === 'api' ? { apiKeyHelper: aideCle(), ...envEspaceApi() } : {}) });
 }
 /* (lot 4 du système immunitaire, 29/10) l'usurpation de voix : à l'oral, ce qu'une voix qui n'est pas celle d'Ahmed
    (« [voix 2] », un prénom connu, ou tout le message quand l'empreinte dit « autre ») demande de sensible — envoyer,
@@ -6685,6 +6685,14 @@ function prevenirPlafond(jour = jourLocal()) {
   plafondPrevenu = jour;
   notifier(`Plafond de l'API atteint : ${PLAFOND_API_JOUR_USD} $ aujourd'hui. Hakim passe sur son cerveau local (sans ses outils) `
     + `jusqu'au retour du forfait ou jusqu'à minuit. Pour continuer quand même sur l'API, choisis « API » dans les réglages de Parler.`, 'plafond');
+}
+// (08/11 soir, Ahmed : sa clé sk-ant-usr-… : « This API key is not scoped to a workspace, so this request must include the
+// anthropic-workspace-id header ») l'espace de travail de la clé, lu à chaque appel dans ~/.config/jarvis/espace-api-anthropic
+// (wrkspc_…) : claude l'ajoute à ses requêtes (ANTHROPIC_CUSTOM_HEADERS, par le env de ses réglages) ; absent : rien ne change
+const ESPACE_API = path.join(HOME, '.config', 'jarvis', 'espace-api-anthropic');
+function envEspaceApi() {
+  try { const w = fs.readFileSync(ESPACE_API, 'utf8').trim(); return /^[A-Za-z0-9_-]{4,100}$/.test(w) ? { env: { ANTHROPIC_CUSTOM_HEADERS: `anthropic-workspace-id: ${w}` } } : {}; }
+  catch (_) { return {}; }
 }
 // la commande que claude exécute pour lire la clé : celle de la page si Ahmed en a collé une, sinon le trousseau
 function aideCle() {
