@@ -745,10 +745,10 @@ test('parole sans Stop : sa réponse consciente reste muette, ses pensées épis
 });
 
 // (06/11, Ahmed : « il m'écoute qu'en français avec Azure ; sa voix peut être arabe, français ou anglais »)
-test('écoute en français seul : la langue de ta voix est forcée à fr avant Azure et Whisper (réglage ecoute_francais)', () => {
+test('ta langue (langue_papa) : automatique par défaut, ou une seule, avant Azure et Whisper (08/11 : remplace ecoute_francais)', () => {
   const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   const i = SRV.indexOf('async function routeTranscrire('), corps = SRV.slice(i, SRV.indexOf('\n}\n', i));
-  const k = corps.indexOf("if (corpsReglages().ecoute_francais !== false && !telephone) langue = 'fr';");
+  const k = corps.indexOf("if (!telephone) { const lp = corpsReglages().langue_papa; langue = ['fr', 'en', 'ar'].includes(lp) ? lp : null; }");
   assert.ok(k > 0, 'le réglage est lu');
   assert.ok(k < corps.indexOf('oreilleAzure(') && k < corps.indexOf("op: 'transcrire'"), 'avant Azure et Whisper');
 });

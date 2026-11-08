@@ -198,14 +198,15 @@ test('pendant une chanson : sa voix et la séparation déchargées (jamais penda
 // (08/11, Ahmed : « prendre juste la voix rap de Hakim et la rattacher à Azure : il garde fr, ar, en et dz, on continue de solliciter Azure, avec sa
 // voix sur mesure (Chatterbox) qui tourne en local ») un 3e choix : « azure_rap ». Azure dit (ses langues, son élan), le processus parole refait sa
 // voix au timbre de rap (anamnese/jarvis/tts_neuronale.py, convertir : 2 à 2,4 s pour 2,5 à 3,5 s de parole) ; trop lent ou en panne : Azure tel quel
-test('azure_rap : Azure refait à son timbre de rap, sinon Azure tel quel ; le processus parole reçoit « convertir »', () => {
+test('azure_rap : Azure refait à son timbre de rap, jamais Azure tel quel ; le processus parole reçoit « convertir »', () => {
   assert.deepStrictEqual(V.VOIX, ['azure', 'rap', 'azure_rap']);
   assert.strictEqual(V.choixVoix({ voix_hakim: 'azure_rap' }), 'azure_rap');
   const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   assert.match(srv, /const voieVoix = \(req\) => \(req && \(req\.op === 'dire' \|\| req\.op === 'convertir'\) \? 'parole' : 'ecoute'\);/);
   assert.match(srv, /voix_hakim: \['rap', 'azure_rap'\]\.includes\(r\.voix_hakim\) \? r\.voix_hakim : 'azure',/);
   assert.match(srv, /if \(corpsReglages\(\)\.voix_hakim === 'azure_rap'\) \{\n\s+const c = await azureAuTimbreRap\(a\.data\);/);
-  const f = srv.slice(srv.indexOf('async function azureAuTimbreRap('), srv.indexOf('\n}\n', srv.indexOf('async function azureAuTimbreRap(')));
+  const f = srv.slice(srv.indexOf('async function convertirAuTimbreRap('), srv.indexOf('\n}\n', srv.indexOf('async function convertirAuTimbreRap(')));
+  assert.match(srv, /jamais Azure tel quel : ce morceau ne se dit pas/, '(08/11, Ahmed) plus jamais sa voix standard d’Azure');
   assert.match(f, /voixDemander\(\{ op: 'convertir', source, fichier, voix: 'rap' \}/);
   assert.match(f, /jarvis-voix-/, 'des fichiers que le processus voix accepte');
   assert.match(f, /fs\.unlink/, 'rien ne reste sur le disque');

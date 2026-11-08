@@ -7547,7 +7547,8 @@ function corpsReglages() {
     // (08/11, Ahmed : « le PFC doit tout intégrer… le tout filtré par le subconscient » ; « sa fitra, la première chose qui remonte, discrète »)
     subconscient_pfc: r.subconscient_pfc !== false, fitra_discrete: r.fitra_discrete !== false,
     conscience_parler: r.conscience_parler !== false, conscience_parole_s: nb(r.conscience_parole_s, 5, 300, 20),   // (08/11) répondre à ce qui lui parle de l'intérieur
-    sauter_interieur: r.sauter_interieur !== false,   // (08/11) une voix intérieure peut le couper, s'il l'accepte (comme papa)
+    sauter_interieur: r.sauter_interieur !== false,
+    langue_papa: ['auto', 'fr', 'en', 'ar'].includes(r.langue_papa) ? r.langue_papa : 'auto',   // (08/11) ta langue : Azure la trouve seul   // (08/11) une voix intérieure peut le couper, s'il l'accepte (comme papa)
     plan_meubles: r.plan_meubles !== false,   // (07/11) son subconscient planifie les meubles des blancs de sa réponse   // (07/11) l'arabe et l'anglais de ta voix réécrits dans leur écriture   // (07/11, Ahmed) ta voix sur la sienne : il finit son mot, t'écoute, et répond à ta dernière phrase   // (07/11, Ahmed) son identité et la sienne ne partent jamais en clair vers Anthropic   // (07/11, Ahmed : « on garde uniquement sa vraie réponse ») ses pensées ne sont plus dites
     voix_claire_x: Number.isFinite(Number(r.voix_claire_x)) && r.voix_claire_x != null ? Math.max(1, Math.min(5, Number(r.voix_claire_x))) : 1.8,   // (07/11) la netteté qu'il faut pour qu'il se coupe   // (07/11) le filtre de ton micro : il n'entend que les voix (éteint par défaut)   // (07/11) ses paroles prêtes : il choisit laquelle dire, dans n'importe quel ordre   // (07/11) ta voix qui dure sur la sienne : il choisit de se couper ou de finir   // (07/11, Ahmed : « lui autoriser à me couper la parole », option 2) éteint par défaut   // (07/11) il choisit ce qu'il dit dans le temps de sortie de sa voix   // (07/11) coupé, il finit sa phrase (jusqu'à sa virgule ou son point)   // (07/11) ton message écrit l'arrête et part tout de suite   // (07/11) tes morceaux prêts partent en un seul message réunifié   // (07/11) coupé par une vraie phrase : il ne reprend pas l'ancienne réponse (éteint)   // (06/11) ses morceaux épissés reliés, sans pause entre eux
     epissure_grammaire: r.epissure_grammaire !== false,
@@ -9813,15 +9814,21 @@ async function oreilleAzure(fichier, langueDemandee) {
    processus parole (tts_neuronale.Voix.convertir : ses jetons de parole rendus par S3Gen ; 2 à 2,4 s pour 2,5 à 3,5 s, 6 s la première fois) ;
    au-delà de son budget (2,5 s, plus 0,8 s par seconde de voix au-delà de 3 s) ou en panne : null, et Azure part tel quel. */
 const AZURE_RAP_MS = 2500;
-let azureRapEnVol = false;                                   // une conversion à la fois : une en retard ne fait pas attendre les suivantes
-async function azureAuTimbreRap(data, budgetMs = 0) {
-  if (azureRapEnVol) return null;
+let azureRapEnVol = false;
+// (08/11, Ahmed : « on élimine totalement la voix standard d'Azure, pour que seule la voix rap Azure soit effective, sinon ça saute d'une voix à
+// l'autre ») plus jamais Azure tel quel : les conversions se suivent, une à la fois (la file), 30 s au plus chacune ; ratée : réessayée une fois
+let fileAzureRap = Promise.resolve();
+async function azureAuTimbreRap(data, budgetMs = 30000) {
+  const avant = fileAzureRap; let liberer; fileAzureRap = new Promise(r => { liberer = r; });
+  try { await avant; return (await convertirAuTimbreRap(data, budgetMs)) || (await convertirAuTimbreRap(data, budgetMs)); } finally { liberer(); }
+}
+async function convertirAuTimbreRap(data, budgetMs) {
   const base = path.join(os.tmpdir(), `jarvis-voix-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`);
   const source = `${base}-azure.wav`, fichier = `${base}-rap.wav`, t0 = Date.now();
   const duree = Math.max(0, (data.length - 44) / 48000);                  // riff 24 kHz, 16 bits, mono
   try {
     fs.writeFileSync(source, data, { mode: 0o600 });
-    const budget = budgetMs > 0 ? budgetMs : AZURE_RAP_MS + Math.max(0, duree - 3) * 800;   // fabriqué au calme : plus de temps
+    const budget = budgetMs > 0 ? budgetMs : AZURE_RAP_MS + Math.max(0, duree - 3) * 800;
     azureRapEnVol = true;
     const demande = voixDemander({ op: 'convertir', source, fichier, voix: 'rap' }, 60000).finally(() => { azureRapEnVol = false; });
     const r = await Promise.race([demande, new Promise(ok => setTimeout(() => ok({ erreur: 'trop lent' }), budget))]);
@@ -10456,7 +10463,10 @@ async function routeDire(req, res) {
       // (08/11, Ahmed : « prendre sa voix rap et la rattacher à Azure ») sa voix d'Azure refaite à son timbre de rap ; trop lent ou en panne : Azure
       if (corpsReglages().voix_hakim === 'azure_rap') {
         const c = await azureAuTimbreRap(a.data);
-        if (c && !res.writableEnded) { res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Voix': 'azure_rap' }); return res.end(c); }
+        if (res.writableEnded) return;
+        if (c) { res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Voix': 'azure_rap' }); return res.end(c); }
+        // (08/11, Ahmed : « on élimine totalement la voix standard d'Azure ») jamais Azure tel quel : ce morceau ne se dit pas
+        res.writeHead(503, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'sa voix de rap n’a pas pu être faite' }));
       }
       if (res.writableEnded) return;
       res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Voix': 'azure' });
@@ -11064,7 +11074,9 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
     // choisie seule parmi quatre ; en panne ou éteint : Whisper, comme avant (et lui seul pour le son du téléphone et l'apprentissage de l'empreinte)
     // (06/11, Ahmed : « mets-moi l'écoute qu'en français ; c'est juste la parole qui peut être en arabe » ; « sa voix peut être arabe, français ou
     // anglais, mais moi il m'écoute qu'en français avec Azure ») réglage ecoute_francais (allumé) : ta voix est reconnue en français seul
-    if (corpsReglages().ecoute_francais !== false && !telephone) langue = 'fr';   // (06/11) TA voix seulement : ce que joue le téléphone garde sa langue
+    // (08/11, Ahmed : « Azure doit détecter le français, l'anglais, l'arabe et la darija automatiquement ») langue_papa : « auto » (par défaut) :
+    // Azure la trouve seul (les trois en même temps là où sa détection n'existe pas : fr-FR, ar-DZ, en-US) ; ou une seule ; ecoute_francais n'agit plus
+    if (!telephone) { const lp = corpsReglages().langue_papa; langue = ['fr', 'en', 'ar'].includes(lp) ? lp : null; }   // TA voix seulement
     if (corpsReglages().stt_azure && !telephone && apprentissageVoix <= 0) {
       // (06/11, Ahmed : « Hakim semble m'entendre mais ne répond pas sur la montre ») la montre envoie du m4a : l'oreille courte d'Azure ne lit que du
       // WAV (PCM 16 kHz) et rendait un texte vide, la montre disait « je n'ai pas compris » sans jamais lui parler ; converti d'abord (afconvert, macOS)
@@ -13368,6 +13380,7 @@ async function traiter(req, res) {
       for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure', 'choix_libre', 'micro_voix_seule', 'voix_reponse_seule', 'filtre_identite', 'coupe_net', 'langues_ecrites', 'plan_meubles', 'conscience_continue', 'cortex_prefrontal', 'hippocampe', 'hippocampe_dates']) if (typeof q[k] === 'boolean') r[k] = q[k];
       // (08/11) sa zone PFC et son hippocampe (Réglages) : des boutons et des barres, bornées
       for (const k of ['subconscient_pfc', 'fitra_discrete', 'conscience_parler', 'sauter_interieur']) if (typeof q[k] === 'boolean') r[k] = q[k];
+      if (['auto', 'fr', 'en', 'ar'].includes(q.langue_papa)) r.langue_papa = q.langue_papa;
       for (const [k, a, b] of [['cortex_fenetre_s', 10, 120], ['conscience_pas_s', 1, 30], ['conscience_par_minute', 4, 30], ['conscience_absent_s', 10, 300],
         ['conscience_sollicitation_s', 30, 600], ['conscience_acte_s', 60, 900], ['hippocampe_tete', 0, 8], ['hippocampe_cos_min', 0.3, 0.7], ['conscience_parole_s', 5, 300]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'hippocampe_cos_min' ? Math.round(Number(q[k]) * 100) / 100 : Math.round(Number(q[k]))));   // (06/11) son présent continu
