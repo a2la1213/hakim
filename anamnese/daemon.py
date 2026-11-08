@@ -1099,6 +1099,40 @@ def _index_fichiers_pass(mem, now=None):
         print("[daemon] index des fichiers en échec :", e)
 
 
+def _lancer_hippocampe(etape):
+    racine = Path(__file__).resolve().parent
+    journal = open(config.DATA_DIR / "hippocampe.log", "a")
+    subprocess.Popen([sys.executable, "-B", str(racine / "hippocampe.py"), etape], cwd=str(racine), stdin=subprocess.DEVNULL,
+                     stdout=journal, stderr=subprocess.STDOUT, start_new_session=True)
+
+
+def _hippocampe_pass(mem, now=None, lancer=None, verrou=None):
+    """(08/11, Ahmed : « l'hippocampe sert à la mémoire nouvelle, à la consolidation et au rappel rapide, le tout filtré par le
+    subconscient ») Mini Hakim écrit la trace des échanges neufs (hippocampe.py passe) : au plus une fois par heure, jamais pendant que
+    Claude (la conscience) travaille ; la nuit, une fois, la consolidation (hippocampe.py nuit : le rattrapage borné des anciens, du plus
+    récent au plus ancien, puis la trace de chaque jour). Détaché, un seul à la fois (data/hippocampe.pid) ; la passe s'arrête d'elle-même
+    avant l'appel suivant si la conscience se réveille."""
+    now = time.time() if now is None else now
+    if interieur.conscience_active():
+        return
+    if now - float(mem.kv_get("hippocampe_mini_ts", "0") or 0) < 3600:
+        return
+    try:
+        os.kill(int(Path(verrou or config.DATA_DIR / "hippocampe.pid").read_text()), 0)
+        return                                                 # une passe tourne encore
+    except (OSError, ValueError):
+        pass
+    jour = time.strftime("%Y-%m-%d", time.localtime(now))
+    etape = "nuit" if interieur.nuit(now) and mem.kv_get("hippocampe_nuit_jour") != jour else "passe"
+    mem.kv_set("hippocampe_mini_ts", str(now))
+    if etape == "nuit":
+        mem.kv_set("hippocampe_nuit_jour", jour)
+    try:
+        (lancer or _lancer_hippocampe)(etape)
+    except Exception as e:
+        print("[daemon] hippocampe en échec :", e)
+
+
 def hormones_en_direct(arret=None, pas_s=1.0):
     """(26/10, Ahmed) ses hormones chaque seconde pour le cockpit (interieur.ligne_directe), dans SON fil, avec SA
     connexion : rien ne s'y décide, il ne fait que lire et noter."""
@@ -1397,6 +1431,7 @@ def main():
                 _backup_pass(mem)                  # backup quotidien WAL-safe (rotation)
                 last_backup_check = time.time()
             _index_fichiers_pass(mem)              # l'index par le sens des fichiers d'Ahmed (la nuit)
+            _hippocampe_pass(mem)                  # Mini Hakim écrit les traces neuves, la nuit consolide (08/11, Ahmed)
             _rappels_rates_pass(mem)               # les souvenirs ratés deviennent des alias (la nuit)
             _sagesse_pass(mem)                     # le juge de la sagesse (la nuit)
             _boucle_pass(mem)                      # la boucle de retour, niveau 1 : elle note seulement (la nuit)

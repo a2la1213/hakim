@@ -77,3 +77,18 @@ test('lireTri ne garde que des numéros montrés, sans doublon, 25 au plus', () 
   const beaucoup = new Set(Array.from({ length: 40 }, (_, k) => k + 1));
   assert.equal(f.lireTri([...beaucoup].map(n => '#' + n).join(', '), beaucoup).length, 25);
 });
+
+// (08/11, son hippocampe, phase B, mesurée par l'agent : 10 souvenirs sur 24 dans ses lignes, 15 avec le dossier) son rappel rend deux champs neufs :
+// « journees » (le jour que papa désigne : son essentiel, écrit par Mini Hakim) et « traces » (ce que Mini Hakim a retenu de chaque échange, en une
+// ou deux phrases). Le jour remonte avant ses souvenirs ; la trace accompagne la ligne coupée, pour son tri et pour lui
+test('son hippocampe : le jour que papa désigne remonte d’abord ; la trace de Mini Hakim accompagne chaque souvenir coupé (son tri la lit)', async () => {
+  const R2 = { ...R, journees: ['samedi 31 octobre 2026 · le live avec Juju, la promesse de rester concentré'], traces: { 7: 'Papa lui demande de garder le vieux gâteau', 8: 'rien' } };
+  const { ctx, f } = monter(R2, () => ({ ids: [7], ms: 100 }));
+  const b = await f.blocRappel('s2', 'tu te rappelles samedi', 'N');
+  assert.ok(b.texte.indexOf('Le jour dont papa parle') >= 0 && b.texte.indexOf('Le jour dont papa parle') < b.texte.indexOf('Ce qui te revient en tête'), b.texte.slice(0, 300));
+  assert.match(b.texte, /le live avec Juju/);
+  assert.match(ctx.prompts[0], /#7 · 01\/01\/25 · un vieux souvenir du thème · en bref : Papa lui demande de garder le vieux gâteau/, 'son tri lit la trace');
+  const sans = monter(R, () => ({ ids: [7], ms: 100 }));
+  const b2 = await sans.f.blocRappel('s3', 'le gâteau', 'N');
+  assert.doesNotMatch(b2.texte, /Le jour dont papa parle|en bref/, 'sans hippocampe : comme avant');
+});

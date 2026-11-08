@@ -40,6 +40,7 @@ ALIAS_CLE, ALIAS_VERSION, SEP_ALIAS = "rappel_alias", "rappel_alias_v", "\n⟦al
 PORTE_MOTS = 6.5
 PORTE_SENS = 0.70
 JOUR_MAX = 3
+JOURNEE_MAX = 3         # (08/11, phase B) l'essentiel du jour qu'une question désigne (« hier », « le 29 ») : ses 3 premiers en tête des lignes
 MOT_RARE = 0.45         # le mot le plus rare en commun doit l’être un peu (IDF ≥ 0,45 × son maximum ; 0,6 coûtait 23 points de rappel)
 MOIS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
 
@@ -224,16 +225,18 @@ def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=
     rangs_mots = {eid: i for i, eid in enumerate(mots)}
     # (08/11, Ahmed : « rajoute-lui un hippocampe ») un troisième balayage : la TRACE courte de chaque échange (le jour, le genre, les
     # paroles, sans le vécu qui noyait leur sens), par le sens, et tout ce que la date désigne (« hier », « le 29 », « samedi »)
-    hip, dates_hip = {}, set()
+    hip, dates_hip, essentiels = {}, set(), []
     hip_actif, hip_dates, hip_tete, hip_cos = _hip(hip_reglages)
     try:
         import hippocampe
         rang = 0
         for eid, s_h, special in (hippocampe.chercher(mem, texte, now=now, embed=embed, exclus=exclus, avant_ts=avant_ts, limite=limite)
                                   if hip_actif else ()):
-            if special == "date":
+            if special in ("date", "journee"):
                 if hip_dates:
                     dates_hip.add(eid)
+                    if special == "journee":              # (phase B) l'essentiel du jour désigné, nommé par la trace de sa journée
+                        essentiels.append(eid)
                 continue
             hip[eid] = (rang, s_h)
             rang += 1
@@ -251,6 +254,9 @@ def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=
         fusion[eid] = s
     for eid in dates_hip:
         fusion[eid] = fusion.get(eid, 0.0) + 1.0 / (K_RRF + 10)
+    for k, eid in enumerate(essentiels):                    # devant les autres échanges de ce jour-là, dans l'ordre de la journée
+        fusion[eid] += 1.0 / (K_RRF + k)
+    essentiels = set(essentiels)
     rares = getattr(_par_mots, "rares", {})
     # (2026-10-21, vu au premier essai d'Ahmed : « j'ai un anniversaire » ne retrouvait pas celui de sa fille, noté
     # « fait 6 ans le 21 octobre ») : ce qui porte la DATE DU JOUR remonte (anniversaires, échéances, promesses) ;
@@ -275,7 +281,8 @@ def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=
     porteur = len(mots_cles(texte)) >= 2
     tete_hip = {eid for eid, (r_h, c_h) in hip.items() if r_h < hip_tete and c_h >= hip_cos} if porteur else set()
     out = [(eid, s, max(sem.get(eid, (None, 0.0))[1], hip.get(eid, (None, 0.0))[1]), mots.get(eid, 0.0),
-            "jour" if eid in du_jour else ("voix" if eid in avec_nom else ("date" if eid in dates_hip else ("trace" if eid in tete_hip else ""))),
+            "jour" if eid in du_jour else ("voix" if eid in avec_nom else ("journee" if eid in essentiels else ("date" if eid in dates_hip else
+                                                                                                                 ("trace" if eid in tete_hip else "")))),
             rares.get(eid, 0.0))
            for eid, s in fusion.items()]
     ordre = sorted(out, key=lambda x: -x[1])
@@ -395,16 +402,25 @@ def rappel(mem, texte, now=None, exclus=(), seuil=SEUIL, lignes_max=LIGNES_MAX, 
         taille = 0
     prof = {"niveau": niveau, "raison": raison}
     tous = [x for x in larges if x[1] >= seuil and passe(x)]
-    # ce qui porte la date du jour : 3 au plus (une fois par conversation), le reste de la place au message
+    # ce qui porte la date du jour : 3 au plus (une fois par conversation), le reste de la place au message ; (phase B) puis l'essentiel
+    # du jour que la question désigne (« hier », « le 29 »), 3 au plus ; puis les premières traces de son hippocampe (« tete » de ses
+    # réglages : elles passent d'office). Mesuré le 08/11 sur une copie : banc des 24 souvenirs 9 → 10 dans les lignes ; les 35
+    # requêtes-vérité 0,518 → 0,505 (un souvenir de moins) ; le bruit des messages banals inchangé (1,8 ligne). Avec tete = 1 : 8 sur 24,
+    # mais 0,588 aux requêtes-vérité ; tete = 2 : 9 et 0,530.
     jour = [x for x in tous if len(x) > 4 and x[4] == "jour"][:JOUR_MAX]
-    c = (jour + [x for x in tous if not (len(x) > 4 and x[4] == "jour")])[:lignes_max]
+    journee = [x for x in tous if len(x) > 4 and x[4] == "journee"][:JOURNEE_MAX]
+    pris = {x[0] for x in jour + journee}
+    tete = [x for x in tous if len(x) > 4 and x[4] == "trace" and x[0] not in pris][:_hip(hip_reglages)[2]]
+    pris |= {x[0] for x in tete}
+    c = (jour + journee + tete + [x for x in tous if x[0] not in pris])[:lignes_max]
+    journees = _journees(mem, texte, now, hip_reglages)
     if not c:
         if len(mots_cles(texte)) >= 3 and taille:            # rien au-dessus de la porte, mais un vrai message : le dossier
             theme = [x[0] for x in larges][:taille]
             return {"lignes": [], "ids": [], "scores": [], "theme": lignes_courtes(mem, theme, 160), "theme_ids": theme,
-                    "details": _lignes(mem, theme, DETAIL, marquer=True), "profondeur": prof,
-                    "ms": round(1000 * (time.time() - t0))}
-        return {"lignes": [], "ids": [], "scores": [], "profondeur": prof, "ms": round(1000 * (time.time() - t0))}
+                    "details": _lignes(mem, theme, DETAIL, marquer=True), "profondeur": prof, "journees": journees,
+                    "traces": _traces(mem, theme, hip_reglages), "ms": round(1000 * (time.time() - t0))}
+        return {"lignes": [], "ids": [], "scores": [], "profondeur": prof, "journees": journees, "ms": round(1000 * (time.time() - t0))}
     import provenance
     ids = [x[0] for x in c]
     jour = {x[0] for x in c if len(x) > 4 and x[4] == "jour"}
@@ -424,8 +440,33 @@ def rappel(mem, texte, now=None, exclus=(), seuil=SEUIL, lignes_max=LIGNES_MAX, 
     pris = set(ids)
     theme = [x[0] for x in larges if x[0] not in pris][:taille]
     return {"lignes": lignes, "ids": ids, "scores": [round(x[1], 4) for x in c], "theme": lignes_courtes(mem, theme, 160),
-            "theme_ids": theme, "details": _lignes(mem, ids + theme, DETAIL, marquer=True), "profondeur": prof,
-            "ms": round(1000 * (time.time() - t0))}
+            "theme_ids": theme, "details": _lignes(mem, ids + theme, DETAIL, marquer=True), "profondeur": prof, "journees": journees,
+            "traces": _traces(mem, ids + theme, hip_reglages), "ms": round(1000 * (time.time() - t0))}
+
+
+def _traces(mem, ids, hip_reglages):
+    """(phase B) {id: la trace de Mini Hakim} des souvenirs proposés (les lignes et le dossier) : ce qui s'est passé, en une ou deux phrases,
+    là où l'extrait coupe ; pour sa conscience et le tri du dossier. Rien si son hippocampe est éteint."""
+    if not _hip(hip_reglages)[0] or mem is None:
+        return {}
+    try:
+        import hippocampe
+        return hippocampe.traces_de(mem, ids)
+    except Exception:
+        return {}
+
+
+def _journees(mem, texte, now, hip_reglages):
+    """(phase B) le résumé des journées que la question désigne (« hier », « le 29 », « samedi »), écrit la nuit par son hippocampe :
+    pour sa conscience, à côté des lignes. Rien si son hippocampe est éteint ou sans les dates."""
+    actif, dates, _t, _c = _hip(hip_reglages)
+    if not (actif and dates) or mem is None:
+        return []
+    try:
+        import hippocampe
+        return hippocampe.journees_pour(mem, texte, now)
+    except Exception:
+        return []
 
 
 # (25/10, Ahmed : « balayer aussi le carnet d'erreurs avant chaque réponse, TOUTES les erreurs pertinentes, pas 2-3 ») le

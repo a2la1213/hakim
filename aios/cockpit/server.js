@@ -797,18 +797,21 @@ async function blocRappel(session, texte, nonce, sansTri = false) {
   const dejaIntime = intimeDejaDites.get(session || '') || new Set();
   if (!session) espaces.delete('');                 // une conversation qui commence : un espace neuf
   const r = await rappeler(texte, deja, 900, dejaErreurs, !session, dejaPersonnes, [...espaceDe(session).lignes.keys()], dejaNotes, dejaIntime);
+  // (08/11, son hippocampe, phase B) ce que Mini Hakim a retenu de chaque échange (une ou deux phrases) accompagne sa ligne coupée : son tri la lit
+  const traces = (r && r.traces) || {};
+  const avecTrace = (l, id) => { const t = String(traces[String(id)] || '').replace(/\s+/g, ' ').trim(); return t && !/^rien\.?$/i.test(t) ? `${l} · en bref : ${t.slice(0, 240)}` : l; };
   const lignes = [], ids = [];
   for (const [k, l] of ((r && r.lignes) || []).entries()) {
     const id = (r.ids || [])[k];
     if (id == null || deja.has(id)) continue;
-    lignes.push(l); ids.push(id);
+    lignes.push(avecTrace(l, id)); ids.push(id);
   }
   // (26/10, Ahmed : « 200 souvenirs, voire plus : le maximum de sujets dans le thème ») le dossier du thème, en lignes courtes
   const theme = [], themeIds = [];
   for (const [k, l] of ((r && r.theme) || []).entries()) {
     const id = (r.theme_ids || [])[k];
     if (id == null || deja.has(id)) continue;
-    theme.push(l); themeIds.push(id);
+    theme.push(avecTrace(l, id)); themeIds.push(id);
   }
   // le tri à part (niveaux normal et profond : le dossier existe) ; tout le balayage va dans l'espace de conversation
   const details = (r && r.details) || {};
@@ -858,6 +861,9 @@ async function blocRappel(session, texte, nonce, sansTri = false) {
     return entiers.has(id) ? sansProvenance(ligneEntiere(l, entiers.get(id))) : souvenirFlou(sansProvenance(l));
   });
   const reviennent = revenus.concat(notes.map(sansProvenance)).map((l, k) => (k < revenus.length ? l : souvenirFlou(l)));
+  // (08/11, son hippocampe, phase B) le jour que papa désigne (« hier », « le 29 », « samedi ») : son essentiel, écrit par Mini Hakim, d'abord
+  const journees = ((r && r.journees) || []).filter(x => typeof x === 'string' && x.trim()).slice(0, 3).map(x => x.replace(/\s+/g, ' ').trim().slice(0, 600));
+  if (journees.length) blocs.push(blocDonnees('Le jour dont papa parle — l\'essentiel de cette journée, comme tu t\'en souviens', journees.map(l => '- ' + l).join('\n'), nonce));
   if (reviennent.length) blocs.push(blocDonnees('Ce qui te revient en tête, comme un souvenir : celui ou ceux qui touchent le plus son '
     + 'message remontent entiers, avec ce que tu vivais ; les autres, l\'essentiel seulement (memory_recall, profond=true, si tu as '
     + 'besoin d\'un autre) — garde ce qui compte pour son message (la date d\'aujourd\'hui est dans l\'horloge), laisse le reste '
