@@ -9858,7 +9858,8 @@ async function voixAzure(texte, tempo, emotion = null) {
       // (08/11, Ahmed : « mega chaud pour Ismael et la darija ») ses passages en lettres arabes (darija, arabe) : la voix algérienne d'Azure (ar-DZ-IsmaelNeural) ;
       // le reste : sa voix d'avant ; refaits ensuite à son timbre de rap, tout sonne d'une seule voix
       body: `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="fr-FR">${(VoixHakim.segmenterLangues(texte).length ? VoixHakim.segmenterLangues(texte) : [{ langue: 'fr', texte }])
-        .map(m => `<voice name="${m.langue === 'ar' ? 'ar-DZ-IsmaelNeural' : voix}"><prosody rate="${pr.rate}" pitch="${pr.pitch}" volume="${pr.volume}">${esc(m.texte)}</prosody></voice>`).join('')}</speak>` });
+        // (08/11, 15:55, Ahmed : « pour la darija on teste la marocaine, Ismael est nul en algérien ») la voix marocaine d'Azure (ar-MA-JamalNeural)
+        .map(m => `<voice name="${m.langue === 'ar' ? 'ar-MA-JamalNeural' : voix}"><prosody rate="${pr.rate}" pitch="${pr.pitch}" volume="${pr.volume}">${esc(m.texte)}</prosody></voice>`).join('')}</speak>` });
     if (!r.ok) return null;
     const data = Buffer.from(await r.arrayBuffer());
     // (06/11) tout ce que sa voix Azure dit est noté (son écho, par le texte) et lui apprend sa voix (son écho, par le timbre)
