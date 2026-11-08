@@ -79,7 +79,9 @@ function simulateur({ fixe, parSec, cps, appris, conversation = true, prets = []
       m.fn();
     }
   }
-  return { lecteur: cx.lecteur, sons, demandes, natifs, avancer, cx, get maintenant() { return maintenant; } };
+  // (08/11) le fil de la page occupé (un calcul sur sa voix) : l'horloge avance pendant que le code tourne
+  const bloquer = (sec) => { maintenant += sec; };
+  return { lecteur: cx.lecteur, sons, demandes, natifs, avancer, bloquer, cx, get maintenant() { return maintenant; } };
 }
 
 // Une réponse de Jarvis : la 1re phrase est complète à t = 0, la suite s'écrit à 60 caractères/s.
@@ -818,4 +820,44 @@ test('l’heure de chaque bout dit : celle où son son part vraiment, pas celle 
   assert.match(SRC, /debut: Number\(debutMs\) > 0 \? Math\.round\(Number\(debutMs\)\) : Date\.now\(\)/, 'voix-dite.jsonl et le présent vécu prennent cette heure-là');
   assert.match(SRC, /lecteurNeuronal\.surSegment = \(t, duree, debutMs\) => \{/);
   assert.match(SRC, /noterMorceau\(t, duree, debutMs\)/);
+});
+
+// (08/11, Ahmed : « encore, quand il parle, les morceaux se chevauchent toujours, surtout quand le Mac est chargé ») mesuré dans son journal
+// (voix-dite, depuis la veille 18 h) : 52 chevauchements de 0,3 à 5 s entre deux morceaux, 27 % juste après un de ses meubles (1 % pour les
+// enchaînements propres). Après un meuble, sa voix repart au ralenti (adoucirDebut) : un calcul de 0,6 à 1,8 s sur le Mac pour 2 à 7 s de
+// voix, fait APRÈS avoir choisi l'heure de départ ; parti en retard, le morceau sonnait encore quand le suivant partait à l'heure prévue.
+test('un calcul lent avant le départ d’un morceau : il part en retard, et le suivant attend sa vraie fin (jamais par-dessus)', async () => {
+  const sim = simulateur({ fixe: 0.05, parSec: 0.02, cps: 22, appris: { fixe: 0.05, parSec: 0.02, cps: 22 } });   // sa voix arrive vite : la suite est déjà là
+  sim.cx.actx.decodeAudioData = (ab) => Promise.resolve({ duration: ab.n / 22, texte: ab.texte, getChannelData: () => new Float32Array(0) });
+  let n = 0;
+  sim.lecteur.rogner = (b) => { if (n++ === 0) sim.bloquer(0.8); return b; };   // le premier morceau : 0,8 s de calcul
+  sim.lecteur.dire(REPONSE[0]); sim.lecteur.dire(REPONSE[1]); sim.lecteur.dire(REPONSE[2]);
+  await sim.avancer(1); sim.lecteur.finFlux(); await sim.avancer(60);
+  assert.ok(sim.sons.length >= 2 && n >= 2, `${sim.sons.length} sons`);
+  for (let i = 1; i < sim.sons.length; i++)
+    assert.ok(sim.sons[i].debut >= sim.sons[i - 1].fin - 1e-6, `le morceau ${i + 1} part à ${sim.sons[i].debut.toFixed(2)} s, le ${i} sonne jusqu’à ${sim.sons[i - 1].fin.toFixed(2)} s`);
+});
+
+test('sa voix qui repart au ralenti : seul son début est calculé (le reste, copié tel quel) ; sans chercher sa hauteur', () => {
+  const prendre = (nom) => { const i = SRC.indexOf(`function ${nom}(`); let p = 0, k = SRC.indexOf('{', i); for (; k < SRC.length; k++) { if (SRC[k] === '{') p++; else if (SRC[k] === '}' && --p === 0) break; } return SRC.slice(i, k + 1); };
+  const cx = { Math, Float32Array };
+  cx.actx = { createBuffer: (c, n, sr) => { const d = new Float32Array(n); return { sampleRate: sr, length: n, duration: n / sr, numberOfChannels: 1, getChannelData: () => d }; } };
+  vm.createContext(cx);
+  vm.runInContext(prendre('analyserMeuble') + '\n' + prendre('ralentirMeuble') + '\nthis.R = ralentirMeuble; this.analyserMeuble = analyserMeuble;', cx);
+  const sr = 48000, n = sr * 4, d = new Float32Array(n);
+  for (let i = 0; i < n; i++) d[i] = 0.3 * Math.sin(2 * Math.PI * 180 * i / sr) * (0.6 + 0.4 * Math.sin(2 * Math.PI * 3 * i / sr)) + 0.05 * Math.sin(i * 0.37);
+  const t0 = Date.now(), r = cx.R({ sampleRate: sr, length: n, duration: n / sr, numberOfChannels: 1, getChannelData: () => d }, 0, 0.55), ms = Date.now() - t0;
+  // le temps dépend de la charge de la machine (la suite entière en parallèle) : ce qui compte, c'est qu'il ne cherche plus sa hauteur
+  // (rien ne s'en servait) et qu'il recopie sa voix à vitesse normale (vérifié plus bas) ; seul, mesuré : 1,1 s avant, 75 ms après
+  assert.equal(cx.analyserMeuble ? 'meilleur' in cx.analyserMeuble(d, sr) : false, false);
+  assert.ok(ms < 1500, `${ms} ms`);
+  const o = r.tampon.getChannelData(0), dec = o.length - n;
+  assert.ok(r.tampon.duration > 4 && r.tampon.duration < 4.1, 'le début ralenti l’allonge un peu');
+  // au milieu, sa voix est la même, au décalage près du début ralenti (cherché dans ±0,1 s)
+  let meilleur = Infinity;
+  for (let k = dec - 4800; k <= dec + 4800; k++) {
+    let e = 0; for (let i = sr; i < 2 * sr; i += 7) { e = Math.max(e, Math.abs(o[i + k] - d[i])); if (e >= meilleur) break; }
+    meilleur = Math.min(meilleur, e);
+  }
+  assert.ok(meilleur < 1e-3, `écart ${meilleur}`);
 });

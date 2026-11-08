@@ -379,7 +379,10 @@ function ralentirMeuble(buf, duree, vDebut = 0.35) {
   let x = 0, prec = 0, w = 0;
   while (w < total && x < D - N) {
     let c = Math.min(D - N - 1, Math.round(x));
-    if (w > 0) {                                                   // la tranche qui prolonge le mieux la précédente
+    // (08/11) à sa vitesse normale, la tranche qui prolonge la précédente est la suivante, telle quelle (les fenêtres se recouvrent à moitié :
+    // la voix est recopiée à l'identique) ; chercher n'a de sens que là où il ralentit ou accélère. Mesuré : 4 s de voix, 1,1 s → quelques ms
+    if (w > 0 && vitesse(x, vFin) === 1) c = Math.min(D - N - 1, prec + Hs);
+    else if (w > 0) {                                              // la tranche qui prolonge le mieux la précédente
       const nat = prec + Hs, lo2 = Math.max(0, c - tol), hi2 = Math.min(D - N - 1, c + tol);
       let best = c, score = -Infinity;
       for (let k = lo2; k <= hi2; k++) {
@@ -405,24 +408,9 @@ function analyserMeuble(d, sr) {
   let a = 0, b = d.length - 1;
   while (a < b && Math.abs(d[a]) < max * 0.05) a++;
   while (b > a && Math.abs(d[b]) < max * 0.05) b--;
-  const voix = d.subarray(a, b + 1), n = voix.length;
-  const fen = Math.round(0.04 * sr), saut = Math.round(0.01 * sr), lagMin = Math.floor(sr / 400), lagMax = Math.ceil(sr / 70);
-  let meilleur = null;
-  for (let p0 = 0; p0 + fen + lagMax < n; p0 += saut) {
-    let e = 0;
-    for (let i = p0; i < p0 + fen; i++) e += voix[i] * voix[i];
-    if (e < fen * (max * 0.1) ** 2) continue;                   // trop faible pour être sa voyelle
-    let r = 0, lag = 0;
-    for (let L = lagMin; L <= lagMax; L++) {
-      let s = 0, e2 = 0;
-      for (let i = p0; i < p0 + fen; i++) { s += voix[i] * voix[i + L]; e2 += voix[i + L] * voix[i + L]; }
-      const c = s / Math.sqrt(e * e2 || 1);
-      if (c > r) { r = c; lag = L; }
-    }
-    const place = p0 / n, score = r * Math.sqrt(e / fen) * (place > 0.25 && place < 0.85 ? 1 : 0.7);
-    if (r > 0.8 && (!meilleur || score > meilleur.score)) meilleur = { p0, lag, score };
-  }
-  return { max, a, b, meilleur };
+  // (08/11) plus de recherche de sa hauteur (sa période de voyelle) : personne ne s'en servait, et elle coûtait l'essentiel du calcul
+  // (mesuré : 4 s de voix, 1,1 s sur le Mac) ; il reste le volume et où sa voix commence et finit
+  return { max, a, b };
 }
 // (13:30) un meuble qu'il choisit lui-même : [[meuble: nom]] dans sa réponse
 function meubleNomme(nom) { return meublesPrets.get(String(nom || '').trim()) || [...meublesPrets.values()].find(m => sansAccent(m.nom) === sansAccent(nom)) || null; }
@@ -787,6 +775,14 @@ function creerLecteurNeuronal() {
     }
     // (07/11, Ahmed : « un petit décalage entre chaque bloc ») le blanc entre deux bouts de sa voix, mesuré (au-delà de 80 ms, sous 5 s)
     if (!x.hesitation && !x.auto && L.finVoixA && fluide()) { const blanc = (t - L.finVoixA) * 1000; if (blanc > 80 && blanc < 5000 && typeof journalVoix === 'function') journalVoix('blanc_entre_blocs', { ms: Math.round(blanc), ou: 'mac' }); }
+    // (08/11, Ahmed : « les morceaux se chevauchent toujours, surtout quand le Mac est chargé ») l'heure de départ se décide avant les calculs
+    // sur sa voix (rognée, adoucie) : mesuré, 0,6 à 1,8 s pour sa voix qui repart au ralenti après un meuble. Partie en retard, elle sonnait
+    // encore quand le morceau suivant partait à l'heure prévue. Son heure se recale ici, juste avant qu'elle parte : la suite attend sa vraie fin.
+    if (fluide() && t < actx.currentTime + 0.005) {
+      const retard = actx.currentTime + 0.005 - t;
+      if (retard > 0.03 && typeof journalVoix === 'function') journalVoix('depart_recale', { ms: Math.round(retard * 1000), apres_meuble: !!x.apresMeuble });
+      t = actx.currentTime + 0.005;
+    }
     const vitesse = x.son || x.brut ? 1 : vitesseVoix();             // (01:27) un son garde sa vitesse ; (13:30) un souffle aussi
     const src = actx.createBufferSource();
     src.buffer = x.pret;
