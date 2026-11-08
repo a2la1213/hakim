@@ -139,6 +139,17 @@ def traiter(req):
         duree = voix.dire(str(req["texte"]), req.get("langue") or "fr", req["fichier"], req.get("exaggeration"), req.get("tempo"), **extra)
         apprendre_ma_voix(req["fichier"], "rap" if req.get("voix") == "rap" else None)
         return {"fichier": req["fichier"], "ms": int((time.time() - t0) * 1000), "duree_s": duree}
+    if op == "convertir":                # (08/11, Ahmed) ce qu'Azure a dit, refait à son timbre de rap (tts_neuronale.Voix.convertir)
+        if not sortie_permise(req.get("fichier")) or not sortie_permise(req.get("source")):
+            return {"erreur": "fichiers refusés (seulement des jarvis-voix-….wav du dossier temporaire)"}
+        voix = _charger_tts()
+        if voix is None:
+            return {"erreur": "synthèse neuronale indisponible"}
+        t0 = time.time()
+        timbre = "rap" if req.get("voix") in (None, "", "rap") else str(req.get("voix"))
+        duree = voix.convertir(req["source"], req["fichier"], timbre)
+        apprendre_ma_voix(req["fichier"], "rap" if timbre == "rap" else None)
+        return {"fichier": req["fichier"], "ms": int((time.time() - t0) * 1000), "duree_s": duree}
     return {"erreur": f"opération inconnue : {op}"}
 
 

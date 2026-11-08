@@ -7502,7 +7502,7 @@ function corpsReglages() {
     fenetre_partagee: r.fenetre_partagee === true, tournesol: r.tournesol === true,
     un_par_un: r.un_par_un !== false, meubles_entre: r.meubles_entre !== false,   // (05/11, 21:20) ses morceaux un à un, et ses « euh » entre eux
     voix_azure: r.voix_azure === true,
-    voix_hakim: r.voix_hakim === 'rap' ? 'rap' : 'azure',   // (06/11, Ahmed : « sa voix de rap ») 'azure' (rapide, en ligne) ou 'rap' (ses chansons, Chatterbox au Mac)
+    voix_hakim: ['rap', 'azure_rap'].includes(r.voix_hakim) ? r.voix_hakim : 'azure',   // (08/11) 'azure_rap' : Azure refait à son timbre de rap   // (06/11, Ahmed : « sa voix de rap ») 'azure' (rapide, en ligne) ou 'rap' (ses chansons, Chatterbox au Mac)
     stt_azure: r.stt_azure === true, reponse_directe: r.reponse_directe === true,
     tunnel: r.tunnel === true,
     parole_libre: r.parole_libre === true,   // (05/11, Ahmed : « on lève toutes tes contraintes de parole ») plus de plafond ; stop, parasites et sécurité restent
@@ -9806,6 +9806,30 @@ async function oreilleAzure(fichier, langueDemandee) {
     return { texte: String(((o.combinedPhrases || [])[0] || {}).text || '').trim(), langue: p.locale || null, ms: Date.now() - t0 };
   } finally { clearTimeout(m); }
 }
+/* (08/11, Ahmed : « prendre juste la voix rap de Hakim et la rattacher à Azure : il garde fr, ar, en et dz, on continue de solliciter Azure, avec
+   sa voix sur mesure, celle de Chatterbox, qui tourne en local ») ce qu'Azure a dit (ses langues, son élan) refait à son timbre de rap par le
+   processus parole (tts_neuronale.Voix.convertir : ses jetons de parole rendus par S3Gen ; 2 à 2,4 s pour 2,5 à 3,5 s, 6 s la première fois) ;
+   au-delà de son budget (2,5 s, plus 0,8 s par seconde de voix au-delà de 3 s) ou en panne : null, et Azure part tel quel. */
+const AZURE_RAP_MS = 2500;
+let azureRapEnVol = false;                                   // une conversion à la fois : une en retard ne fait pas attendre les suivantes
+async function azureAuTimbreRap(data) {
+  if (azureRapEnVol) return null;
+  const base = path.join(os.tmpdir(), `jarvis-voix-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`);
+  const source = `${base}-azure.wav`, fichier = `${base}-rap.wav`, t0 = Date.now();
+  const duree = Math.max(0, (data.length - 44) / 48000);                  // riff 24 kHz, 16 bits, mono
+  try {
+    fs.writeFileSync(source, data, { mode: 0o600 });
+    const budget = AZURE_RAP_MS + Math.max(0, duree - 3) * 800;
+    azureRapEnVol = true;
+    const demande = voixDemander({ op: 'convertir', source, fichier, voix: 'rap' }, 60000).finally(() => { azureRapEnVol = false; });
+    const r = await Promise.race([demande, new Promise(ok => setTimeout(() => ok({ erreur: 'trop lent' }), budget))]);
+    const bon = r && !r.erreur && fs.existsSync(fichier);
+    try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'azure_rap', ms: Date.now() - t0, audio_s: Math.round(duree * 100) / 100, ...(bon ? {} : { erreur: String((r && r.erreur) || 'rien').slice(0, 60) }) }) + '\n', { mode: 0o600 }); } catch (_) {}
+    if (!bon) { setTimeout(() => fs.unlink(fichier, () => {}), 60000).unref(); return null; }   // la conversion tardive s'efface aussi
+    return fs.readFileSync(fichier);
+  } catch (_) { return null; }
+  finally { if (!azureRapEnVol) fs.unlink(source, () => {}); else setTimeout(() => fs.unlink(source, () => {}), 60000).unref(); if (fs.existsSync(fichier)) fs.unlink(fichier, () => {}); }
+}
 async function voixAzure(texte, tempo, emotion = null) {
   const cle = cleAzure(), c = lireJson(AZURE, {}) || {};
   if (!cle || !/^[a-z0-9]+$/.test(c.region || '')) return null;
@@ -9998,7 +10022,7 @@ let voixSuivant = 1;
 // s'attendaient l'une l'autre (« synthese_en_cours », jusqu'à 44 s de file). Deux processus désormais, en parallèle sur le GPU :
 // l'oreille (Whisper : transcrire) et la voix (Chatterbox : dire) ; chacun ne charge que son modèle (la mémoire ne double pas)
 const voixProcs = { ecoute: null, parole: null };
-const voieVoix = (req) => (req && req.op === 'dire' ? 'parole' : 'ecoute');
+const voieVoix = (req) => (req && (req.op === 'dire' || req.op === 'convertir') ? 'parole' : 'ecoute');   // (08/11) convertir : au timbre de rap
 
 function voixDemarrer(voie = 'ecoute') {
   const q = voixProcs[voie];
@@ -10404,10 +10428,15 @@ async function routeDire(req, res) {
     }
   }
   // (05/11, Ahmed : « ajoute Microsoft Azure à sa voix ») une seule voix multilingue, en ligne ; en panne : Chatterbox comme avant
-  if (!rap && corpsReglages().voix_azure) {
+  if (!rap && (corpsReglages().voix_azure || corpsReglages().voix_hakim === 'azure_rap')) {   // (08/11) son timbre de rap sur Azure : Azure d'abord
     const a = await voixAzure(texte, tempo, emotion).catch(() => null);
     if (a) {
       try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'synthese_azure', ms: a.ms, caracteres: texte.length }) + '\n', { mode: 0o600 }); } catch (_) {}
+      // (08/11, Ahmed : « prendre sa voix rap et la rattacher à Azure ») sa voix d'Azure refaite à son timbre de rap ; trop lent ou en panne : Azure
+      if (corpsReglages().voix_hakim === 'azure_rap') {
+        const c = await azureAuTimbreRap(a.data);
+        if (c && !res.writableEnded) { res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Voix': 'azure_rap' }); return res.end(c); }
+      }
       if (res.writableEnded) return;
       res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Voix': 'azure' });
       return res.end(a.data);

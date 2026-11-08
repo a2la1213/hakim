@@ -60,3 +60,29 @@ def test_le_processus_voix_transmet_le_timbre_et_les_morceaux(monkeypatch):
     V.traiter({"op": "dire", "texte": "Salut", "fichier": fichier})              # comme avant : ni timbre ni morceaux
     assert vu["voix"] is None and vu["segments"] is None
     assert appris == ["rap", None], "sa voix de rap apprend son registre ; celle d'avant, le sien"
+
+
+def test_convertir_azure_au_timbre_de_rap(monkeypatch, tmp_path):
+    """(08/11, Ahmed : « prendre juste la voix rap de Hakim et la rattacher à Azure : il garde fr, ar, en et dz, on continue de solliciter Azure,
+    avec sa voix sur mesure, celle de Chatterbox, qui tourne en local ») ce qu'Azure a dit (ses langues, son élan) devient sa voix de rap : ses
+    jetons de parole (S3Tokenizer) refaits au timbre de rap (S3Gen). Le processus parole ne lit et n'écrit qu'un « jarvis-voix-….wav » temporaire."""
+    import voix_serveur as S
+    vus = {}
+
+    class FausseVoix:
+        def convertir(self, source, fichier, voix="rap"):
+            vus.update(source=source, fichier=fichier, voix=voix)
+            return 2.5
+
+    monkeypatch.setattr(S, "_charger_tts", lambda: FausseVoix())
+    monkeypatch.setattr(S, "apprendre_ma_voix", lambda f, v=None: vus.update(appris=v))
+    tmp = Path(tempfile.gettempdir())
+    src, out = str(tmp / "jarvis-voix-essai-azure.wav"), str(tmp / "jarvis-voix-essai-rap.wav")
+    r = S.traiter({"op": "convertir", "source": src, "fichier": out, "voix": "rap"})
+    assert r["fichier"] == out and r["duree_s"] == 2.5 and "ms" in r
+    assert vus == {"source": src, "fichier": out, "voix": "rap", "appris": "rap"}, "son écho apprend sa voix de rap"
+    assert "erreur" in S.traiter({"op": "convertir", "source": "/etc/passwd", "fichier": out}), "jamais un fichier venu de dehors"
+    assert "erreur" in S.traiter({"op": "convertir", "source": src, "fichier": "/tmp/x.wav"})
+    src_tts = (Path(__file__).resolve().parents[1] / "jarvis" / "tts_neuronale.py").read_text(encoding="utf-8")   # (mlx : seulement dans le venv de la voix)
+    assert "def convertir(self, source, fichier, voix=\"rap\"):" in src_tts
+    assert "self.modele.s3gen(speech_tokens=jetons[:, :int(n[0])], ref_dict=conds.gen, finalize=True)" in src_tts

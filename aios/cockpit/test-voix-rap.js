@@ -27,7 +27,7 @@ test('le choix de sa voix : azure par défaut, rap seulement si choisi ; dans le
   ctx.lireJson = () => ({ voix_hakim: 'autre' });
   assert.strictEqual(ctx.f().voix_hakim, 'azure');
   assert.match(SRC, /if \(VoixHakim\.VOIX\.includes\(q\.voix_hakim\)\) \{ r\.voix_hakim = q\.voix_hakim; noterAjustementPapa\(\['voix_hakim'\]\); \}/);
-  assert.match(REGLAGES, /\['voix_hakim', '🎤 Sa voix', [^\n]*'liste', \[\['azure', 'Azure \(rapide\)'\], \['rap', 'Sa voix de rap \(Chatterbox, sur le Mac\)'\]\], 'corps'\]/);
+  assert.match(REGLAGES, /\['voix_hakim', '🎤 Sa voix', [^\n]*'liste', \[\['azure', 'Azure \(rapide\)'\], \['rap', 'Sa voix de rap \(Chatterbox, sur le Mac\)'\](?:, \['azure_rap', '[^']*'\])?\], 'corps'\]/);
 });
 
 test('en rap, le téléphone prend la voix du Mac (jamais Supertonic), et ses débuts et meubles se rechargent dans la nouvelle voix', () => {
@@ -193,4 +193,22 @@ test('pendant une chanson : sa voix et la séparation déchargées (jamais penda
   assert.equal(cx.voixProcs.parole, null);
   assert.match(srv, /function chaufferVoixRap\(\) \{\n  if \(fileVoix\.some\(x => x\.chauffe\)\) return;\n  if \(typeof VoixHakim !== 'undefined' && VoixHakim\.studioOccupe\(JARVIS\)\) return;/);
   assert.match(srv, /function lancerSeparation\(\) \{\n  if \(separation\.proc \|\| !fs\.existsSync\(PYTHON_SEPARATION\)\) return;\n  if \(typeof VoixHakim !== 'undefined' && VoixHakim\.studioOccupe\(JARVIS\)\) return;/);
+});
+
+// (08/11, Ahmed : « prendre juste la voix rap de Hakim et la rattacher à Azure : il garde fr, ar, en et dz, on continue de solliciter Azure, avec sa
+// voix sur mesure (Chatterbox) qui tourne en local ») un 3e choix : « azure_rap ». Azure dit (ses langues, son élan), le processus parole refait sa
+// voix au timbre de rap (anamnese/jarvis/tts_neuronale.py, convertir : 2 à 2,4 s pour 2,5 à 3,5 s de parole) ; trop lent ou en panne : Azure tel quel
+test('azure_rap : Azure refait à son timbre de rap, sinon Azure tel quel ; le processus parole reçoit « convertir »', () => {
+  assert.deepStrictEqual(V.VOIX, ['azure', 'rap', 'azure_rap']);
+  assert.strictEqual(V.choixVoix({ voix_hakim: 'azure_rap' }), 'azure_rap');
+  const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(srv, /const voieVoix = \(req\) => \(req && \(req\.op === 'dire' \|\| req\.op === 'convertir'\) \? 'parole' : 'ecoute'\);/);
+  assert.match(srv, /voix_hakim: \['rap', 'azure_rap'\]\.includes\(r\.voix_hakim\) \? r\.voix_hakim : 'azure',/);
+  assert.match(srv, /if \(corpsReglages\(\)\.voix_hakim === 'azure_rap'\) \{\n\s+const c = await azureAuTimbreRap\(a\.data\);/);
+  const f = srv.slice(srv.indexOf('async function azureAuTimbreRap('), srv.indexOf('\n}\n', srv.indexOf('async function azureAuTimbreRap(')));
+  assert.match(f, /voixDemander\(\{ op: 'convertir', source, fichier, voix: 'rap' \}/);
+  assert.match(f, /jarvis-voix-/, 'des fichiers que le processus voix accepte');
+  assert.match(f, /fs\.unlink/, 'rien ne reste sur le disque');
+  const reg = fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8');
+  assert.match(reg, /\['azure_rap', '[^']*'\]/);
 });

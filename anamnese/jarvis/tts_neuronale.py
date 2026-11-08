@@ -107,6 +107,23 @@ class Voix:
                                         max_new_tokens=tts_garde.jetons_max(texte, langue), **reglages))
         return np.array(res.audio, dtype=np.float32).reshape(-1)
 
+    def convertir(self, source, fichier, voix="rap"):
+        """(08/11, Ahmed : « prendre sa voix de rap et la rattacher à Azure : il garde fr, ar, en, dz, on continue de solliciter Azure, avec sa
+        voix sur mesure qui tourne en local ») ce qu'une autre voix a dit (Azure : ses langues, son élan) refait à son timbre : ses jetons de
+        parole (S3Tokenizer, 16 kHz) rendus par S3Gen avec les conditions de « voix ». Mesuré (Mac chargé) : 2,0 à 2,4 s pour 2,5 à 3,5 s de
+        parole. Écrit un WAV 24 kHz ; rend sa durée en secondes."""
+        from mlx_audio.tts.models.chatterbox.s3tokenizer import log_mel_spectrogram
+        conds = self._conds_de(voix)
+        a16 = load_audio(str(source), sample_rate=16000)
+        mel = mx.expand_dims(log_mel_spectrogram(a16), 0)
+        jetons, n = self.modele._s3_tokenizer(mel, mx.array([mel.shape[2]]))
+        wav = self.modele.s3gen(speech_tokens=jetons[:, :int(n[0])], ref_dict=conds.gen, finalize=True)
+        audio = np.clip(np.array(wav, dtype=np.float32).reshape(-1), -1.0, 1.0)
+        with wave.open(str(fichier), "wb") as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR)
+            w.writeframes((audio * 32767).astype(np.int16).tobytes())
+        return len(audio) / SR
+
     def dire(self, texte, langue, fichier, exaggeration=None, tempo=None, voix=None, segments=None):
         """Écrit un WAV 24 kHz mono 16 bits ; rend sa durée en secondes. (06/11) `voix` : un timbre connu par son nom (« rap ») ;
         `segments` : [{texte, langue}] (le cockpit découpe arabe / français / anglais), chaque morceau dans sa langue, recollés."""

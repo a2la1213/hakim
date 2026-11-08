@@ -8,8 +8,9 @@ const fs = require('fs');
 const path = require('path');
 const Voix = require('./public/voix.js');
 
-const VOIX = ['azure', 'rap'];
-const choixVoix = (r) => (r && r.voix_hakim === 'rap' ? 'rap' : 'azure');
+// (08/11, Ahmed : « prendre sa voix rap et la rattacher à Azure ») « azure_rap » : Azure dit, sa voix est refaite au timbre de rap, au Mac
+const VOIX = ['azure', 'rap', 'azure_rap'];
+const choixVoix = (r) => (r && (r.voix_hakim === 'rap' || r.voix_hakim === 'azure_rap') ? r.voix_hakim : 'azure');
 
 // les mots qui disent l'anglais ou le français (les mêmes que langueDePensee, parler.js)
 const MOTS_ANGLAIS = new Set(['the', 'and', 'you', 'your', 'is', 'are', 'am', 'i', "i'm", 'to', 'of', 'what', 'how', 'my', 'it', "it's", 'this', 'that',
