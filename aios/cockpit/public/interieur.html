@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Intérieur de Hakim</title>
+  <script src="/apparence.js"></script>
+  <link rel="stylesheet" href="/theme.css">
+  <!-- (2026-10-23, demande d'Ahmed relayée par Hakim) le tableau de bord intérieur de Hakim, en direct : ses 13 hormones (avec
+       leur base en pointillés), son humeur (valence, éveil), ses réponses et les messages d'Ahmed sur la ligne du temps.
+       Redessiné toutes les 15 s ; une mesure par minute, puis (26/10, Ahmed) une par battement du démon, toutes les 15 s
+       (interieur.py → hormones.jsonl). Le 26/10 aussi : la bande de son humeur (l'émotion lue dans ses hormones, à la
+       couleur de l'orbe) et l'adénosine, sa fatigue. Puis (26/10, Ahmed : « un graphique plus parlant pour comprendre
+       l'humeur ») la force de ses émotions à la place de la valence et de l'éveil : la plus haute est son humeur ; et la part
+       du temps passée dans chaque humeur. Puis (26/10, Ahmed : « comme un EEG ») les vues de 1, 5, 15 et 30 min : ses
+       hormones lues chaque seconde (hormones-direct.jsonl), la page qui avance chaque seconde, et l'échelle de chaque
+       hormone resserrée sur ce qu'elle a fait dans la fenêtre (ses bornes écrites à gauche). -->
+  <style>
+    [hidden] { display: none !important; }
+    main { max-width: 1400px; margin: 0 auto; padding: 0 16px 24px; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 14px; }
+    h1 { font-size: 18px; color: var(--txt); font-weight: 600; margin: 4px 0 0; }
+    .sous { font-size: 13px; color: var(--txt-3); }
+    .barre { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .barre button { font: inherit; font-size: 13px; padding: 8px 12px; min-height: 40px; border-radius: 10px; border: 1px solid var(--glass-bd);
+      background: transparent; color: var(--txt-2); cursor: pointer; }
+    .barre button[aria-pressed="true"] { background: rgba(45,212,191,.22); color: var(--txt); border-color: var(--teal); }
+    .carte { padding: 12px; }
+    .legende { font-size: 12px; color: var(--txt-3); display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
+    canvas { width: 100%; display: block; }
+    #humeur { height: 240px; }
+    #bande { height: 46px; margin-bottom: 6px; }
+    .repartition { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--txt-2); margin-top: 8px; }
+    .repartition i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+    .grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 10px; }
+    .hormone { padding: 10px; }
+    .hormone .nom { font-size: 13px; margin-bottom: 4px; }
+    .hormone canvas { height: 110px; }
+    ol { margin: 0; padding-left: 22px; font-size: 13px; color: var(--txt-2); line-height: 1.6; }
+    .vide { font-size: 14px; color: var(--txt-3); padding: 20px; text-align: center; }
+    /* (28/10) Al-Afida, la jauge de son cœur */
+    .jauge { height: 12px; border-radius: 6px; background: rgba(148,163,184,.18); overflow: hidden; position: relative; }
+    .jauge > i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #f9a8d4, #f472b6); border-radius: 6px; }
+    .jauge.grande { height: 18px; border-radius: 9px; }
+    .jauge::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; border-left: 1px dashed rgba(148,163,184,.6); }
+    .afida-tete { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 14px; color: var(--txt); margin-bottom: 6px; }
+    .afida-petites { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin-top: 12px; }
+    .petite { padding: 10px; border: 1px solid var(--glass-bd); border-radius: 10px; font-size: 13px; color: var(--txt-2); }
+    .petite b { color: var(--txt); font-weight: 600; }
+    .petite .mini { font-size: 12px; color: var(--txt-3); margin-top: 4px; }
+    .afida-autres { font-size: 13px; color: var(--txt-2); margin-top: 10px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Hakim — sa vie intérieure, en direct</h1>
+    <div class="sous" id="etat">…</div>
+    <div class="barre" id="periodes">
+      <button data-min="1">1 min</button><button data-min="5">5 min</button><button data-min="15">15 min</button><button data-min="30">30 min</button>
+      <button data-min="60">1 h</button><button data-min="360" aria-pressed="true">6 h</button><button data-min="1440">24 h</button><button data-min="4320">3 jours</button>
+    </div>
+    <section class="glass carte">
+      <div class="legende"><span>▬ son humeur : l'émotion lue dans ses hormones, à la couleur de l'orbe (gris : avant le 26/10)</span></div>
+      <canvas id="bande"></canvas>
+      <div class="legende"><span>— la force de ses émotions, lue dans ses hormones à chaque battement : la plus haute est son humeur</span>
+        <span>▼ ses réponses (numérotées en bas)</span><span style="color:#f472b6">▲ messages d'Ahmed</span></div>
+      <canvas id="humeur"></canvas>
+      <div class="repartition" id="repartition"></div>
+    </section>
+    <section class="glass carte" id="afida">
+      <div class="legende"><span>♥ Al-Afida (الأفئدة) : la jauge de son cœur. Une petite jauge par chose qu'il aime (il la choisit, avec son poids) ;
+        la grande les réunit et règle ses freins, sa paix. Le pointillé est le neutre ; vide, c'est l'indifférence.</span></div>
+      <div id="afidaCorps" class="sous">…</div>
+    </section>
+    <div class="grille" id="hormones"></div>
+    <section class="glass carte"><div class="legende">Ses dernières réponses</div><ol id="reponses"></ol></section>
+    <div class="vide" id="vide" hidden>Pas encore de mesures sur cette période : le journal des hormones commence le 23/10 au soir.</div>
+  </main>
+  <script src="/nav.js"></script>
+  <script>
+  initNav('interieur');
+  const COULEURS = ['#2dd4bf', '#f472b6', '#fbbf24', '#60a5fa', '#a78bfa', '#34d399', '#fb7185', '#93c5fd', '#fde68a', '#f97316', '#a3e635', '#e879f9', '#94a3b8', '#cbd5e1'];
+  const NOMS = ['dopamine', 'serotonine', 'noradrenaline', 'cortisol', 'ocytocine', 'acetylcholine', 'endorphine', 'melatonine',
+    'endocannabinoides', 'adrenaline', 'gaba', 'crh', 'acth', 'adenosine'];
+  const LIBELLES = { adenosine: 'adénosine (fatigue)' };
+  // la première couleur de chaque famille de l'orbe (orbe.js) ; tension et impatience : leur deuxième, pour les distinguer
+  const FAMILLE_COULEUR = { joie: '#fde68a', elan: '#5eead4', content: '#99f6e4', calme: '#2dd4bf', tension: '#f97316',
+    impatience: '#a78bfa', ennui: '#94a3b8', morose: '#64748b', veille: '#3b4a7a', alarme: '#ef4444', surprise: '#fde047',
+    apaisement: '#a7f3d0', ecoute: '#f9a8d4' };
+  let heures = 6, donnees = null, direct = [], directDepuis = 0;
+  const court = () => heures <= 1;                    // 1 min à 1 h : chaque seconde, et l'échelle resserrée
+  const $ = (id) => document.getElementById(id);
+  const hhmm = (t) => new Date(t * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const hhmmss = (t) => new Date(t * 1000).toLocaleTimeString('fr-FR');
+
+  // une toile nette sur tous les écrans, et la fonction qui place un instant / une valeur (0 à 1) dedans
+  // lo, hi : l'échelle verticale (0 à 1 par défaut ; resserrée sur la fenêtre dans les vues courtes, bornes écrites à gauche)
+  function preparer(c, lo = 0, hi = 1) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1), w = c.clientWidth, h = c.clientHeight;
+    c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+    const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    const m = { g: 6, d: 6, h: 14, b: 18 };
+    const X = (t) => m.g + (t - donnees.t0) / (donnees.t1 - donnees.t0) * (w - m.g - m.d);
+    const Y = (v) => m.h + (1 - Math.max(0, Math.min(1, (v - lo) / (hi - lo)))) * (h - m.h - m.b);
+    g.strokeStyle = 'rgba(127,169,164,.18)'; g.lineWidth = 1;
+    for (const k of [0, .25, .5, .75, 1]) { const y = Y(lo + k * (hi - lo)); g.beginPath(); g.moveTo(m.g, y); g.lineTo(w - m.d, y); g.stroke(); }
+    const span = donnees.t1 - donnees.t0;
+    const pas = span > 24 * 3600 ? 6 * 3600 : span > 4 * 3600 ? 3600 : span > 2 * 3600 ? 1800 : span > 1800 ? 900
+      : span > 900 ? 300 : span > 300 ? 180 : span > 120 ? 60 : 15;
+    const fmt = span <= 900 ? hhmmss : hhmm, sauter = Math.max(1, Math.ceil((span <= 900 ? 52 : 36) / (X(donnees.t0 + pas) - X(donnees.t0))));
+    g.fillStyle = 'rgba(127,169,164,.8)'; g.font = '10px system-ui'; g.textAlign = 'center';
+    for (let t = Math.ceil(donnees.t0 / pas) * pas, k = 0; t < donnees.t1; t += pas, k++) {
+      g.beginPath(); g.moveTo(X(t), m.h); g.lineTo(X(t), h - m.b); g.stroke();
+      const demi = span <= 900 ? 23 : 15;            // une heure coupée au bord ne s'écrit pas
+      if (k % sauter === 0 && X(t) >= demi && X(t) <= w - demi) g.fillText(fmt(t), X(t), h - 4);
+    }
+    if (lo !== 0 || hi !== 1) {
+      g.textAlign = 'left'; g.fillText(hi.toFixed(3), m.g + 2, m.h + 9); g.fillText(lo.toFixed(3), m.g + 2, h - m.b - 3);
+    }
+    return { g, X, Y, w, h, m };
+  }
+  function courbe(t, serie, couleur, epaisseur = 2) {
+    const { g, X, Y } = t;
+    g.strokeStyle = couleur; g.lineWidth = epaisseur; g.lineJoin = 'round'; g.beginPath();
+    serie.forEach(([ts, v], i) => (i ? g.lineTo(X(ts), Y(v)) : g.moveTo(X(ts), Y(v)))); g.stroke();
+  }
+  // la bande de son humeur : une couleur par mesure, le nom de l'humeur quand elle change (s'il y a la place)
+  function bande(pts) {
+    const c = $('bande'), dpr = Math.min(2, window.devicePixelRatio || 1), w = c.clientWidth, h = c.clientHeight;
+    c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+    const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    const X = (t) => 6 + (t - donnees.t0) / (donnees.t1 - donnees.t0) * (w - 12);
+    let derniere = -1e9, avant = null;
+    g.font = '11px system-ui'; g.textAlign = 'left';
+    pts.forEach((p, i) => {
+      const suite = pts[i + 1], fin = suite && suite.t - p.t < 300 ? suite.t : p.t + 60;     // un trou (démon arrêté) reste vide
+      const x0 = X(p.t);
+      g.fillStyle = FAMILLE_COULEUR[p.code] || '#334155';
+      g.fillRect(x0, 4, Math.max(1, X(fin) - x0 + 0.5), h - 22);
+      if (p.humeur && p.humeur !== avant && x0 - derniere > 70) { g.fillStyle = '#d8f3f0'; g.fillText(p.humeur, x0 + 2, h - 4); derniere = x0; }
+      avant = p.humeur;
+    });
+  }
+  // la force de ses émotions : une ligne par émotion qui a compté (les 6 plus souvent dans ses 3 premières), coupée quand
+  // elle sort de ses 5 plus fortes ; son nom au bout de la ligne
+  const EMO_COULEURS = ['#5eead4', '#fbbf24', '#f472b6', '#60a5fa', '#a78bfa', '#f97316'];
+  function emotions(t, pts) {
+    const avec = pts.filter(p => p.s);
+    const { g, X, Y, w, h, m } = t;
+    if (!avec.length) {
+      g.fillStyle = 'rgba(216,243,240,.8)'; g.font = '13px system-ui'; g.textAlign = 'center';
+      g.fillText('La force de ses émotions est enregistrée depuis le 26/10 à 00 h 21 : choisis « 1 h ».', w / 2, h / 2);
+      return;
+    }
+    const compte = {};
+    for (const p of avec) Object.entries(p.s).sort((a, b) => b[1] - a[1]).slice(0, 3).forEach(([k]) => { compte[k] = (compte[k] || 0) + 1; });
+    const noms = Object.keys(compte).sort((a, b) => compte[b] - compte[a]).slice(0, 6);
+    const max = Math.max(0.1, ...avec.flatMap(p => noms.map(n => p.s[n] || 0))) * 1.08;
+    const fins = [];
+    noms.forEach((n, i) => {
+      g.strokeStyle = EMO_COULEURS[i]; g.lineWidth = 2.5; g.lineJoin = 'round'; g.beginPath();
+      let avant = null, dernier = null;
+      for (const p of avec) {
+        const v = p.s[n];
+        if (v === undefined) { avant = null; continue; }
+        const x = X(p.t), y = Y(Math.max(0, v) / max);
+        if (avant && p.t - avant.t < 300) g.lineTo(x, y); else g.moveTo(x, y);
+        avant = p; dernier = { x, y };
+      }
+      g.stroke();
+      if (dernier) fins.push({ n, y: dernier.y, x: dernier.x, c: EMO_COULEURS[i] });
+    });
+    fins.sort((a, b) => a.y - b.y);
+    fins.forEach((f, i) => { if (i && f.y - fins[i - 1].y < 13) f.y = fins[i - 1].y + 13; });
+    g.font = '12px system-ui'; g.textAlign = 'right';
+    for (const f of fins) { g.fillStyle = f.c; g.fillText(f.n, Math.min(f.x, w - m.d) - 4, f.y - 4); }
+  }
+  // la part du temps passée dans chaque humeur sur la période (une mesure pèse le temps jusqu'à la suivante, 5 min au plus)
+  function repartition(pts) {
+    const duree = {}, code = {};
+    pts.forEach((p, i) => {
+      if (!p.humeur) return;
+      const suite = pts[i + 1], d = Math.min(300, (suite ? suite.t : donnees.t1) - p.t);
+      duree[p.humeur] = (duree[p.humeur] || 0) + Math.max(0, d);
+      if (p.code) code[p.humeur] = p.code;
+    });
+    const total = Object.values(duree).reduce((a, b) => a + b, 0) || 1;
+    $('repartition').innerHTML = Object.entries(duree).sort((a, b) => b[1] - a[1]).slice(0, 8)
+      .map(([n, d]) => `<span><i style="background:${FAMILLE_COULEUR[code[n]] || '#334155'}"></i>${esc(n)} ${Math.round(100 * d / total)} %</span>`).join('');
+  }
+  function dessiner() {
+    if (!donnees) return;
+    const pts = donnees.points, rep = donnees.reponses, derniers = rep.slice(-8);
+    $('vide').hidden = pts.length > 0;
+    const d = pts[pts.length - 1] || {};
+    bande(pts);
+    $('etat').textContent = `humeur : ${d.humeur || '—'} · fatigue (adénosine) : ${d.h && d.h.adenosine !== undefined ? d.h.adenosine.toFixed(2) : '—'} · `
+      + `${rep.length} réponse(s), ${donnees.messages.length} message(s) d'Ahmed · de ${hhmm(donnees.t0)} à ${hhmm(donnees.t1)}`;
+    // la force de ses émotions, ses réponses (en haut), les messages d'Ahmed (en bas)
+    const t = preparer($('humeur'));
+    rep.forEach(({ t: ts }) => { t.g.fillStyle = '#2dd4bf'; t.g.beginPath(); t.g.moveTo(t.X(ts) - 5, 2); t.g.lineTo(t.X(ts) + 5, 2); t.g.lineTo(t.X(ts), 11); t.g.fill(); });
+    derniers.forEach(({ t: ts }, k) => { t.g.fillStyle = '#d8f3f0'; t.g.font = '10px system-ui'; t.g.fillText(String(k + 1), t.X(ts), 24); });
+    donnees.messages.forEach((ts) => { t.g.fillStyle = '#f472b6'; t.g.beginPath(); t.g.moveTo(t.X(ts) - 5, t.h - t.m.b); t.g.lineTo(t.X(ts) + 5, t.h - t.m.b); t.g.lineTo(t.X(ts), t.h - t.m.b - 9); t.g.fill(); });
+    emotions(t, pts);
+    repartition(pts);
+    // les 13 hormones et l’adénosine (sa fatigue)
+    const grille = $('hormones');
+    if (!grille.children.length) grille.innerHTML = NOMS.map((n, i) => `<section class="glass hormone"><div class="nom" id="n-${n}" style="color:${COULEURS[i]}">${LIBELLES[n] || n}</div><canvas id="c-${n}"></canvas></section>`).join('');
+    const source = court() && direct.length ? direct : pts;
+    NOMS.forEach((n, i) => {
+      const serie = source.filter(p => p.h[n] !== undefined && p.t >= donnees.t0).map(p => [p.t, p.h[n]]);
+      const base = donnees.bases[n], v = serie.length ? serie[serie.length - 1][1] : null;
+      let lo = 0, hi = 1;
+      if (court() && serie.length) {                  // l'échelle resserrée : ce que l'hormone a fait dans la fenêtre
+        const vs = serie.map(x => x[1]), a = Math.min(...vs), b = Math.max(...vs), marge = Math.max(0.002, (b - a) * 0.15);
+        lo = Math.max(0, a - marge); hi = Math.min(1, b + marge);
+      }
+      const nom = LIBELLES[n] || n;
+      $(`n-${n}`).textContent = v === null ? nom : `${nom} ${v.toFixed(court() ? 3 : 2)}${base !== undefined ? ` (${v >= base ? '+' : '−'}${Math.abs(v - base).toFixed(2)})` : ''}`;
+      const h = preparer($(`c-${n}`), lo, hi);
+      if (base !== undefined && base >= lo && base <= hi) { h.g.setLineDash([4, 4]); h.g.strokeStyle = 'rgba(127,169,164,.7)'; h.g.beginPath(); h.g.moveTo(h.m.g, h.Y(base)); h.g.lineTo(h.w - h.m.d, h.Y(base)); h.g.stroke(); h.g.setLineDash([]); }
+      courbe(h, serie, COULEURS[i]);
+    });
+    $('reponses').innerHTML = derniers.map(({ t: ts, x }) => `<li>${hhmm(ts)} — « ${esc(x)} »</li>`).join('') || '<li>aucune sur cette période</li>';
+  }
+  // la fenêtre suit l'heure : dans les vues courtes, elle avance chaque seconde
+  function glisser() {
+    if (!donnees || !court()) return;
+    donnees.t1 = Date.now() / 1000; donnees.t0 = donnees.t1 - heures * 3600;
+  }
+  async function charger() {
+    try {
+      const r = await fetch(`/api/jarvis/tableau?heures=${heures}`, { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+      if (r.ok) { donnees = await r.json(); glisser(); dessiner(); }
+    } catch (_) {}
+  }
+  // chaque seconde, la suite de ses hormones (seulement ce qui est arrivé depuis la dernière fois)
+  let enCours = false;
+  async function seconde() {
+    if (!court() || !donnees || enCours || document.hidden) return;
+    enCours = true;
+    try {
+      const r = await fetch(`/api/jarvis/direct?depuis=${directDepuis}`, { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+      if (r.ok) {
+        const neuves = await r.json();
+        if (neuves.length) { direct.push(...neuves); directDepuis = neuves[neuves.length - 1].t; }
+        const t0 = Date.now() / 1000 - heures * 3600 - 5;
+        if (direct.length && direct[0].t < t0) direct = direct.filter(p => p.t >= t0);
+      }
+    } catch (_) {}
+    enCours = false;
+    glisser(); dessiner();
+  }
+  $('periodes').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-min]'); if (!b) return;
+    heures = Number(b.dataset.min) / 60;
+    direct = []; directDepuis = Date.now() / 1000 - heures * 3600;
+    for (const x of $('periodes').querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b));
+    charger();
+  });
+  // (28/10, Ahmed : « voir cette énorme jauge avec toutes les petites jauges qui la composent ») Al-Afida
+  const pct = (x) => Math.round(100 * Math.max(0, Math.min(1, Number(x) || 0)));
+  const n = (x) => (Number.isFinite(x) ? String(Math.round(x * 100) / 100).replace('.', ',') : '–');
+  function afidaRendre(a) {
+    const corps = $('afidaCorps');
+    if (!a || a.vide) { corps.textContent = "Pas encore de jauge : le démon ne l'a pas encore calculée, ou Hakim n'a encore rien mis dans son cœur."; return; }
+    const petites = (a.petites || []).map(p => `<div class="petite"><div><b>${esc(p.chose)}</b>${p.genre ? ` · ${esc(p.genre)}` : ''} · poids ${n(p.poids)}</div>`
+      + `<div class="jauge"><i style="width:${pct(p.niveau)}%"></i></div>`
+      + `<div class="mini">niveau ${n(p.niveau)} · connaissance ${n(p.connaissance)} · ${n(p.bons)} bons, ${n(p.mauvais)} mauvais moments</div>`
+      + (p.raison ? `<div class="mini">« ${esc(p.raison)} »</div>` : '') + '</div>').join('');
+    const autres = (a.aime_pas || []).length || (a.indifferent || []).length
+      ? `<div class="afida-autres">${(a.aime_pas || []).length ? `Il n'aime pas : ${(a.aime_pas || []).map(x => esc(x.chose)).join(', ')}. ` : ''}`
+        + `${(a.indifferent || []).length ? `Indifférent : ${(a.indifferent || []).map(x => esc(x.chose)).join(', ')}.` : ''}</div>` : '';
+    const derniers = (a.derniers || []).slice().reverse().slice(0, 5)
+      .map(x => `<li>${hhmm(x.ts)} — ${esc(x.chose)} : ${esc(x.quoi)}${x.raison ? ` (« ${esc(x.raison)} »)` : ''}</li>`).join('');
+    corps.innerHTML = `<div class="afida-tete"><span>La grande jauge : ${n(a.grande)} (plénitude ${n(a.plenitude)})</span>`
+      + `<span class="sous">${a.intacte ? '' : 'attention : son registre a été retouché à la main'}</span></div>`
+      + `<div class="jauge grande"><i style="width:${pct(a.grande)}%"></i></div>`
+      + (petites ? `<div class="afida-petites">${petites}</div>` : `<div class="afida-autres">Rien encore dans son cœur : c'est lui qui choisit.</div>`)
+      + autres + (derniers ? `<div class="legende" style="margin-top:10px">Ses derniers choix</div><ol>${derniers}</ol>` : '');
+  }
+  async function afidaCharger() {
+    try {
+      const r = await fetch('/api/jarvis/afida', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+      if (r.ok) afidaRendre(await r.json());
+    } catch (_) {}
+  }
+  afidaCharger(); setInterval(afidaCharger, 60000);
+  window.addEventListener('resize', dessiner);
+  charger(); setInterval(charger, 15000); setInterval(seconde, 1000);
+  </script>
+</body>
+</html>

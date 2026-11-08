@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atelier de Hakim</title>
+  <link rel="icon" href="/icone-192.png">
+  <script src="/apparence.js"></script>
+  <link rel="stylesheet" href="/theme.css">
+  <!-- (06/11, Ahmed : « une zone visuelle dans le cockpit où Hakim pourrait créer des images et des clips quand il veut, pour nos futurs
+       albums et clips ») ses images (Z-Image-Turbo, sur le Mac) et ses clips visualiseurs (ffmpeg), la galerie, les créations en cours.
+       Comme Studio : badges.js (fermé) monte ☰, PARLER et l'orbe ; pas de nav.js. -->
+  <style>
+    [hidden] { display: none !important; }
+    main { max-width: 860px; margin: 0 auto; padding: 0 16px 40px; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 14px; }
+    h1 { font-size: 18px; color: var(--txt); font-weight: 600; margin: 4px 0 0; }
+    h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; color: var(--txt); font-weight: 600; margin: 4px 0 6px; }
+    h3 { font-size: 13px; color: var(--txt-2); font-weight: 600; margin: 12px 0 4px; }
+    .sous { font-size: 13px; color: var(--txt-3); line-height: 1.45; }
+    .carte { padding: 12px 14px; overflow-wrap: anywhere; min-width: 0; }
+    .vide { font-size: 13px; color: var(--txt-3); padding: 6px 0; }
+    .gestes { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+    button, .bouton { font: inherit; font-size: 13px; padding: 7px 11px; min-height: 40px; border-radius: 10px; border: 1px solid var(--glass-bd);
+      background: transparent; color: var(--txt-2); cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+    button:disabled { opacity: .45; cursor: default; }
+    button.principal { border-color: var(--teal); color: var(--txt); background: rgba(45,212,191,.14); font-weight: 600; }
+    textarea, select, input[type=text], input[type=number] { font: inherit; font-size: 16px; min-height: 42px; border-radius: 10px; border: 1px solid var(--glass-bd);
+      background: var(--champ, rgba(0,0,0,.25)); color: var(--txt); padding: 8px 10px; max-width: 100%; box-sizing: border-box; }
+    textarea { width: 100%; min-height: 96px; resize: vertical; line-height: 1.4; }
+    select, input[type=text] { width: 100%; }
+    .rangee { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .rangee > * { flex: 1 1 140px; min-width: 0; }
+    .choix { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 2px; }
+    .choix label { position: relative; }
+    .choix input { position: absolute; opacity: 0; pointer-events: none; }
+    .choix span { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--glass-bd);
+      font-size: 13px; color: var(--txt-2); cursor: pointer; }
+    .choix input:checked + span { border-color: var(--teal); color: var(--txt); background: rgba(45,212,191,.14); font-weight: 600; }
+    .choix input:focus-visible + span { outline: 2px solid var(--teal); outline-offset: 2px; }
+    .forme { display: inline-block; border: 1.5px solid currentColor; border-radius: 2px; }
+    .jauge { height: 8px; border-radius: 6px; background: var(--champ, rgba(255,255,255,.06)); overflow: hidden; margin-top: 6px; }
+    .jauge > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--teal-deep), var(--teal)); transition: width .4s; }
+    .calcul { padding: 8px 0; font-size: 13px; color: var(--txt-2); border-top: 1px solid var(--trait, var(--glass-bd)); }
+    .calcul:first-child { border-top: 0; }
+    .calcul .tete { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+    .calcul.rate { color: #f97316; }
+    .grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 10px; }
+    .tuile { margin: 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--glass-bd); background: var(--champ, rgba(0,0,0,.2)); display: flex; flex-direction: column; min-width: 0; }
+    .tuile .cadre { position: relative; aspect-ratio: 1 / 1; background: rgba(127,127,127,.12); overflow: hidden; }
+    .tuile img, .tuile video { display: block; width: 100%; height: 100%; object-fit: cover; }
+    img[data-f]:not([src]) { visibility: hidden; }
+    .tuile figcaption { padding: 6px 8px 8px; font-size: 12.5px; color: var(--txt); line-height: 1.35; }
+    .tuile figcaption .meta { color: var(--txt-3); font-size: 11.5px; }
+    .tuile .gestes { margin-top: 6px; }
+    .tuile .gestes button { min-height: 34px; padding: 4px 9px; font-size: 12px; }
+    .g { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--glass-bd); white-space: nowrap; color: var(--txt-2); }
+    .selection { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; margin-top: 6px; }
+    .selection button { position: relative; padding: 0; min-height: 0; aspect-ratio: 1 / 1; overflow: hidden; border-radius: 10px; }
+    .selection button img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .selection button[aria-pressed="true"] { outline: 3px solid var(--teal); outline-offset: -3px; }
+    .selection .rang { position: absolute; top: 4px; left: 4px; min-width: 22px; height: 22px; border-radius: 11px; background: var(--teal); color: #052; font-weight: 700;
+      font-size: 12px; line-height: 22px; text-align: center; }
+    .lecteur { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.86); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+      padding: calc(12px + env(safe-area-inset-top)) 12px calc(12px + env(safe-area-inset-bottom)); }
+    .lecteur img, .lecteur video { max-width: 100%; max-height: calc(100% - 64px); border-radius: 10px; }
+    .lecteur .gestes button { color: #fff; border-color: rgba(255,255,255,.35); }
+    .chemin { font-size: 13px; color: var(--txt); background: var(--champ, rgba(0,0,0,.25)); border-radius: 8px; padding: 2px 8px; display: inline-block; }
+    #bulle { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 20; padding: 10px 12px; border-radius: 10px;
+      border: 1px solid var(--glass-bd); background: var(--panneau, #0b1220); color: var(--txt); font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.35); max-width: 640px; margin: 0 auto; }
+    #bulle:empty { display: none; }
+    @media (prefers-reduced-motion: reduce) { .jauge > i { transition: none; } }
+  </style>
+</head>
+<body>
+  <nav class="topnav" style="display:flex;gap:10px;align-items:center;padding:10px 16px"><span class="brand">AIOS</span></nav>
+  <main>
+    <h1>🎨 Atelier</h1>
+    <div class="sous">Les images et les clips de Hakim, créés sur le Mac, pour vos albums et vos clips. Sur ton téléphone, ils sont dans
+      <span class="chemin">Hakim › Atelier</span>.</div>
+    <div id="bulle" role="status" aria-live="polite"></div>
+
+    <section class="glass carte" id="calculsCarte" hidden aria-labelledby="t-calculs">
+      <h2 id="t-calculs"><span aria-hidden="true">⏳</span>En cours</h2>
+      <div class="sous">Un gros calcul à la fois sur le Mac : une création attend la fin d’une chanson ou d’un mix.</div>
+      <div id="calculs"></div>
+    </section>
+
+    <section class="glass carte" aria-labelledby="t-image">
+      <h2 id="t-image"><span aria-hidden="true">🖼️</span>Créer une image</h2>
+      <label class="sous" for="description">Ce qu’on y voit, le style, la lumière, les couleurs (en anglais, le modèle comprend le mieux).</label>
+      <textarea id="description" maxlength="1500" placeholder="Album cover, a glowing lantern held by a child in a dark desert night, cinematic light, gold and deep blue"></textarea>
+      <div class="choix" role="radiogroup" aria-label="Format de l’image">
+        <label><input type="radio" name="fmtImage" value="carre" checked><span><i class="forme" style="width:12px;height:12px" aria-hidden="true"></i>Carré · pochette</span></label>
+        <label><input type="radio" name="fmtImage" value="9:16"><span><i class="forme" style="width:9px;height:15px" aria-hidden="true"></i>9:16 · téléphone</span></label>
+        <label><input type="radio" name="fmtImage" value="16:9"><span><i class="forme" style="width:16px;height:9px" aria-hidden="true"></i>16:9 · paysage</span></label>
+      </div>
+      <input type="text" id="titreImage" maxlength="80" placeholder="Titre (facultatif)" aria-label="Titre de l’image" style="margin-top:8px">
+      <div class="gestes"><button type="button" class="principal" id="creerImage">🖼️ Créer l’image</button>
+        <span class="sous">Une à quelques minutes.</span></div>
+    </section>
+
+    <section class="glass carte" aria-labelledby="t-clip">
+      <h2 id="t-clip"><span aria-hidden="true">🎬</span>Créer un clip</h2>
+      <h3><label for="chanson">1. La chanson</label></h3>
+      <select id="chanson"></select>
+      <h3>2. Les images, dans l’ordre</h3>
+      <div class="sous" id="aideSelection">Touche les images à montrer, dans l’ordre voulu.</div>
+      <div class="selection" id="selection"></div>
+      <h3>3. L’allure</h3>
+      <div class="choix" role="radiogroup" aria-label="Style du visualiseur">
+        <label><input type="radio" name="style" value="spectre" checked><span>📊 Spectre</span></label>
+        <label><input type="radio" name="style" value="ondes"><span>〰️ Ondes</span></label>
+        <label><input type="radio" name="style" value="cercle"><span>◎ Cercle</span></label>
+        <label><input type="radio" name="style" value="sobre"><span>Sobre</span></label>
+      </div>
+      <div class="choix" role="radiogroup" aria-label="Format du clip">
+        <label><input type="radio" name="fmtClip" value="les deux" checked><span>Les deux</span></label>
+        <label><input type="radio" name="fmtClip" value="9:16"><span>9:16 · téléphone</span></label>
+        <label><input type="radio" name="fmtClip" value="16:9"><span>16:9 · YouTube</span></label>
+      </div>
+      <div class="rangee" style="margin-top:8px">
+        <select id="dureeClip" aria-label="Durée du clip">
+          <option value="0">Toute la chanson</option><option value="15">Extrait de 15 s</option><option value="30">Extrait de 30 s</option><option value="60">Extrait de 60 s</option>
+        </select>
+        <input type="number" id="debutClip" min="0" max="590" step="1" placeholder="Début (s)" aria-label="Début de l’extrait en secondes">
+      </div>
+      <input type="text" id="titreClip" maxlength="80" placeholder="Titre (vide : celui de la chanson)" aria-label="Titre du clip" style="margin-top:8px">
+      <div class="gestes"><button type="button" class="principal" id="creerClip" disabled>🎬 Créer le clip</button>
+        <span class="sous">Les paroles défilent une ligne à la fois.</span></div>
+    </section>
+
+    <section class="glass carte" aria-labelledby="t-images">
+      <h2 id="t-images"><span aria-hidden="true">🖼️</span>Ses images</h2>
+      <div class="grille" id="images"><div class="vide">Chargement…</div></div>
+    </section>
+
+    <section class="glass carte" aria-labelledby="t-clips">
+      <h2 id="t-clips"><span aria-hidden="true">🎬</span>Ses clips</h2>
+      <div class="grille" id="clips"><div class="vide">Chargement…</div></div>
+    </section>
+  </main>
+  <div class="lecteur" id="lecteur" hidden role="dialog" aria-modal="true" aria-label="Aperçu"></div>
+  <script>
+  window.esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  window.jeton = () => (document.querySelector('meta[name="cockpit-jeton"]') || {}).content || '';
+  document.body.classList.add('shell');
+  </script>
+  <script src="/jeton.js"></script>
+  <script src="/badges.js"></script>
+  <script>Badges.suivre(document.querySelector('nav.topnav'), 'atelier');</script>
+  <script src="/atelier-page.js"></script>
+</body>
+</html>

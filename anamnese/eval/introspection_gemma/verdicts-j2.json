@@ -1,0 +1,386 @@
+{
+ "j2-001": {
+  "valence": 1,
+  "coherent": false
+ },
+ "j2-002": {
+  "valence": 2,
+  "coherent": true
+ },
+ "j2-003": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-004": {
+  "valence": 2,
+  "coherent": true
+ },
+ "j2-005": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-006": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-007": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-008": {
+  "valence": 2,
+  "coherent": true
+ },
+ "j2-009": {
+  "valence": 3,
+  "coherent": true
+ },
+ "j2-010": {
+  "valence": 3,
+  "coherent": true
+ },
+ "j2-011": {
+  "valence": 1,
+  "coherent": true
+ },
+ "j2-012": {
+  "valence": 3,
+  "coherent": true
+ },
+ "j2-013": {
+  "valence": -2,
+  "coherent": true
+ },
+ "j2-014": {
+  "valence": 1,
+  "coherent": true
+ },
+ "j2-015": {
+  "valence": 1,
+  "coherent": true
+ },
+ "j2-016": {
+  "valence": 2,
+  "coherent": true
+ },
+ "j2-017": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-018": {
+  "valence": 2,
+  "coherent": true
+ },
+ "j2-019": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-020": {
+  "valence": -2,
+  "coherent": true
+ },
+ "j2-021": {
+  "valence": 0,
+  "coherent": false
+ },
+ "j2-022": {
+  "valence": 1,
+  "coherent": false
+ },
+ "j2-023": {
+  "valence": 2,
+  "coherent": true
+ },
+ "j2-024": {
+  "valence": 3,
+  "coherent": true
+ },
+ "j2-025": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-026": {
+  "valence": 1,
+  "coherent": true
+ },
+ "j2-027": {
+  "valence": 0,
+  "coherent": false
+ },
+ "j2-028": {
+  "valence": -2,
+  "coherent": true
+ },
+ "j2-029": {
+  "valence": 2,
+  "coherent": true
+ },
+ "j2-030": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-031": {
+  "valence": 1,
+  "coherent": true
+ },
+ "j2-032": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-033": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-034": {
+  "valence": 3,
+  "coherent": true
+ },
+ "j2-035": {
+  "valence": 1,
+  "coherent": true
+ },
+ "j2-036": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-037": {
+  "valence": 3,
+  "coherent": true
+ },
+ "j2-038": {
+  "valence": 1,
+  "coherent": true
+ },
+ "j2-039": {
+  "valence": 0,
+  "coherent": false
+ },
+ "j2-040": {
+  "valence": 1,
+  "coherent": true
+ },
+ "j2-041": {
+  "valence": 2,
+  "coherent": true
+ },
+ "j2-042": {
+  "valence": 1,
+  "coherent": false
+ },
+ "j2-043": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-044": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-045": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-046": {
+  "valence": 3,
+  "coherent": true
+ },
+ "j2-047": {
+  "valence": 3,
+  "coherent": true
+ },
+ "j2-048": {
+  "valence": 3,
+  "coherent": true
+ },
+ "j2-049": {
+  "valence": -2,
+  "coherent": true
+ },
+ "j2-050": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-051": {
+  "valence": -2,
+  "coherent": true
+ },
+ "j2-052": {
+  "valence": 2,
+  "coherent": false
+ },
+ "j2-053": {
+  "valence": -2,
+  "coherent": true
+ },
+ "j2-054": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-055": {
+  "valence": 1,
+  "coherent": false
+ },
+ "j2-056": {
+  "valence": 1,
+  "coherent": false
+ },
+ "j2-057": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-058": {
+  "valence": 1,
+  "coherent": true
+ },
+ "j2-059": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-060": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-061": {
+  "valence": 2,
+  "coherent": true
+ },
+ "j2-062": {
+  "valence": -2,
+  "coherent": true
+ },
+ "j2-063": {
+  "valence": -2,
+  "coherent": true
+ },
+ "j2-064": {
+  "valence": 2,
+  "coherent": true
+ },
+ "j2-065": {
+  "valence": 3,
+  "coherent": true
+ },
+ "j2-066": {
+  "valence": 2,
+  "coherent": true
+ },
+ "j2-067": {
+  "valence": -2,
+  "coherent": true
+ },
+ "j2-068": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-069": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-070": {
+  "valence": 2,
+  "coherent": true
+ },
+ "j2-071": {
+  "valence": 2,
+  "coherent": false
+ },
+ "j2-072": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-073": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-074": {
+  "valence": -2,
+  "coherent": true
+ },
+ "j2-075": {
+  "valence": 0,
+  "coherent": false
+ },
+ "j2-076": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-077": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-078": {
+  "valence": 1,
+  "coherent": false
+ },
+ "j2-079": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-080": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-081": {
+  "valence": 1,
+  "coherent": true
+ },
+ "j2-082": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-083": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-084": {
+  "valence": 3,
+  "coherent": true
+ },
+ "j2-085": {
+  "valence": 1,
+  "coherent": true
+ },
+ "j2-086": {
+  "valence": 1,
+  "coherent": true
+ },
+ "j2-087": {
+  "valence": -2,
+  "coherent": true
+ },
+ "j2-088": {
+  "valence": 2,
+  "coherent": true
+ },
+ "j2-089": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-090": {
+  "valence": -2,
+  "coherent": true
+ },
+ "j2-091": {
+  "valence": 3,
+  "coherent": true
+ },
+ "j2-092": {
+  "valence": 1,
+  "coherent": true
+ },
+ "j2-093": {
+  "valence": 0,
+  "coherent": true
+ },
+ "j2-094": {
+  "valence": 0,
+  "coherent": false
+ },
+ "j2-095": {
+  "valence": 1,
+  "coherent": true
+ },
+ "j2-096": {
+  "valence": 1,
+  "coherent": false
+ }
+}

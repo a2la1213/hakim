@@ -1,0 +1,104 @@
+/* (30/10, Ahmed via Hakim) des pastilles rouges sur les onglets quand il s'est passé quelque chose qu'il n'a pas vu : le
+   café (un agent écrit), Immunité (un incident, un passage du médecin qui compte, un anticorps à trancher), Parler (ce qui
+   attend son geste). En ouvrant la page, il voit d'où vient la pastille ; elle s'éteint quand il a vu, Mac et téléphone.
+   node --test test-badges.js */
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('node:fs');
+const path = require('node:path');
+const N = require('./nouveautes.js');
+
+const T = 1_800_000_000_000;
+
+test('ce qui compte, page par page, depuis sa dernière visite', () => {
+  const r = N.compter({ maintenant: T, vus: { cafe: T - 1000, immunite: T - 1000, parler: T - 1000 }, apparus: {},
+    cafe: [{ ts: T - 5000, role: 'juge', prenom: 'Vieux' }, { ts: T - 500, role: 'juge', prenom: 'Octave' },
+      { ts: T - 400, role: 'codeur', prenom: 'Léonie' }, { ts: T - 300, role: 'papa', prenom: 'Ahmed' }],
+    incidents: [{ ts: T - 500, motif: 'ordre_d_outil|fichier|outils_de_hakim', categorie: 'fichier', familles: ["ordre d'outil"] },
+      { ts: T - 400, motif: 'usurpation|voix|tierce' }, { ts: T - 2000, motif: 'fausse_autorite|fichier|x' }],
+    rapports: [{ ts: T - 300, gravite: 'moyenne' }, { ts: T - 200, gravite: 'rien' }],
+    anticorps: [{ id: 'aaaa1111', famille: 'fausse_autorite' }],
+    attentes: [{ quoi: 'mission', id: 'M-1' }, { quoi: 'ecriture', id: 'E-2' }, { quoi: 'ecriture', id: 'E-3' }] });
+  assert.equal(r.pages.cafe.n, 2, 'pas ses propres messages, pas les anciens');
+  assert.match(r.pages.cafe.resume.join(' '), /2 messages au café \(Octave, Léonie\)/);
+  assert.equal(r.pages.immunite.n, 3, "l'incident, le médecin (moyenne), l'anticorps");
+  assert.match(r.pages.immunite.resume.join(' '), /1 voix inconnue, non comptée/);
+  assert.equal(r.pages.parler.n, 4, 'la mission, les deux écritures, l’anticorps');
+  assert.match(r.pages.parler.resume.join(' '), /1 mission à trancher/);
+  assert.match(r.pages.parler.resume.join(' '), /2 écritures proposées/);
+  // vu : la pastille s'éteint ; ce qui attend toujours ne revient pas (apparu avant sa visite)
+  const r2 = N.compter({ maintenant: T + 10, vus: { cafe: T + 5, immunite: T + 5, parler: T + 5 }, apparus: r.apparus,
+    cafe: [], incidents: [], rapports: [], anticorps: [{ id: 'aaaa1111' }], attentes: [{ quoi: 'mission', id: 'M-1' }] });
+  assert.equal(r2.pages.parler.n, 0); assert.equal(r2.pages.immunite.n, 0);
+  assert.deepEqual(Object.keys(r2.apparus).sort(), ['anticorps:aaaa1111', 'mission:M-1'], 'ce qui a disparu est oublié');
+});
+
+test('la première fois, rien d’ancien ne s’allume : la ligne de départ est maintenant', () => {
+  const r = N.compter({ maintenant: T, vus: {}, apparus: {}, cafe: [{ ts: T - 5000, role: 'juge', prenom: 'Vieux' }],
+    incidents: [], rapports: [], anticorps: [], attentes: [] });
+  assert.equal(r.pages.cafe.n, 0);
+  assert.equal(r.vus.cafe, T);
+});
+
+test('branché : les routes, la page des pastilles (fermée aux chantiers), le menu, le café et Immunité', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const i = src.indexOf("if (p === '/api/badges'");
+  const route = src.slice(i, src.indexOf("\n  if (p === '/api/cafe' && req.method === 'POST')", i));
+  assert.match(route, /if \(!jetonValide\(req\)\)/);
+  assert.match(route, /\/api\/badges\/vu/);
+  assert.match(route, /Nouveautes\.PAGES\.includes\(page\)/);
+  assert.match(src, /setInterval\(\(\) => calculerBadges\(\)\.catch\(\(\) => \{\}\), 60000\)/);
+  const b = fs.readFileSync(path.join(__dirname, 'public', 'badges.js'), 'utf8');
+  assert.match(b, /fetch\('\/api\/badges'/);
+  assert.match(b, /'\/api\/badges\/vu'/);
+  assert.match(b, /Depuis ta dernière visite/);
+  assert.match(b, /textContent/, 'les résumés en texte, jamais en HTML');
+  const nav = fs.readFileSync(path.join(__dirname, 'public', 'nav.js'), 'utf8');
+  assert.match(nav, /\/badges\.js/);
+  for (const [f, page] of [['cafe.html', 'cafe'], ['immunite.html', 'immunite']]) {
+    const t = fs.readFileSync(path.join(__dirname, 'public', f), 'utf8');
+    assert.match(t, /<script src="\/badges\.js"><\/script>/, f);
+    assert.match(t, new RegExp(`Badges\\.ouvrir\\('${page}'\\)`), f);
+    assert.match(t, /classList|nouveau/, f);
+  }
+});
+
+test('(30/10, Ahmed : « le point rouge quand il y a du nouveau : immunité, sens, mais aussi le code… ») sens et code', () => {
+  const v = { cafe: T - 1000, immunite: T - 1000, parler: T - 1000, sens: T - 1000, code: T - 1000 };
+  const r = N.compter({ maintenant: T, vus: v, apparus: {}, cafe: [], incidents: [], rapports: [], anticorps: [],
+    attentes: [{ quoi: 'promotion', id: 'P-1' }, { quoi: 'promotion', id: 'P-2' }],
+    sens: { mesures: [{ ts: T - 500, ok: true }, { ts: T - 400, ok: false }, { ts: T - 5000, ok: true }, { ts: T - 300, ok: true, par: 'ahmed' }],
+      tricordeur: [{ ts: T - 200, action: 'livraison' }], documents: [{ ts: T - 100 }], fortes: [{ ts: T - 50, type: 'chute' }] } });
+  assert.equal(r.pages.code.n, 2);
+  assert.match(r.pages.code.resume.join(' '), /2 modifications de son code à relire/);
+  assert.equal(r.pages.sens.n, 5, 'deux mesures de Hakim (pas celle d’Ahmed, pas l’ancienne), la livraison, l’écriture, la sensation forte');
+  assert.match(r.pages.sens.resume.join(' '), /2 mesures finies \(1 en échec\)/);
+  assert.match(r.pages.sens.resume.join(' '), /1 livraison de son Tricordeur/);
+  assert.match(r.pages.sens.resume.join(' '), /1 écriture dans tes Documents/);
+  assert.match(r.pages.sens.resume.join(' '), /1 sensation forte \(chute\)/);
+  assert.deepEqual(N.PAGES, ['cafe', 'immunite', 'parler', 'sens', 'code']);
+});
+
+test('le serveur passe bien ce qui attend (missions, écritures…) et toutes les pages à « vu »', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const c = src.slice(src.indexOf('async function calculerBadges('), src.indexOf('\n}\n', src.indexOf('async function calculerBadges(')));
+  assert.match(c, /attentes,/, 'les attentes comptées (elles ne l’étaient pas)');
+  assert.match(c, /'promotion'/);
+  assert.match(c, /const sens = \{ mesures/);
+  assert.match(src, /Nouveautes\.PAGES\.includes\(page\)/);
+});
+
+
+// (03/11, 13:59, Ahmed : « le bandeau rouge qui s'affiche dans l'interface : je dois pouvoir cliquer dessus pour être redirigé
+// directement au bon endroit du café, des sens ou des autres trucs qui envoient des notifs »)
+test('le bandeau rouge se touche en entier et mène au bon endroit : le nouveau du café et de l\'Immunité, ce qui attend papa, ses mesures, son code', () => {
+  const b = fs.readFileSync(path.join(__dirname, 'public', 'badges.js'), 'utf8');
+  const i = b.indexOf('function annoncer('), annonce = b.slice(i, b.indexOf('\n  }\n', i));
+  assert.match(annonce, /lien\.href = `\$\{PAGES\[page\] \|\| '\/'\}#nouveau`/);
+  assert.match(annonce, /l\.addEventListener\('click', aller\)/, 'toute la ligne, pas seulement le nom de la page');
+  assert.match(b, /const LIEUX = \{ cafe: '\.msg\.nouveau', immunite: '\.ligne\.nouveau', parler: '\.mission-boutons', sens: '#mesures', code: '#promos' \}/);
+  const o = b.slice(b.indexOf('async function ouvrir('), b.indexOf('window.Badges ='));
+  assert.match(o, /if \(location\.hash === '#nouveau'\) allerAuNouveau\(page\);/);
+  for (const [fichier, id] of [['sens.html', 'id="mesures"'], ['cafe.html', "' nouveau'"], ['immunite.html', "' nouveau'"]])
+    assert.ok(fs.readFileSync(path.join(__dirname, 'public', fichier), 'utf8').includes(id), `${fichier} : ${id}`);
+});

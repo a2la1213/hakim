@@ -1,0 +1,12 @@
+# dépôt LOCAL du cockpit (2026-10-20 : des corrections de sécurité séparées et réversibles) — jamais de données
+data/
+node_modules/
+server.js.backup-*
+.backup-pre-brain-*/
+.brain-viz-*/
+.v2-*
+.*-report.md
+.brain-viz-brief.md
+.claude/
+.superpowers/
+.DS_Store

@@ -1,0 +1,1093 @@
+// (04/11, 11:40, Ahmed : « qu'il ne se coupe pas lui-même quand il voit que son chunk d'idée n'est pas le bon ; il laisse tout venir,
+// il garde tout, et à l'intérieur de tous ces chunks qui se recomposent, son subconscient sélectionne en instantané la phrase qu'il
+// veut dire, comme un épissage génétique ; dans la conversation, un pavé de sa pensée ; à la voix, la phrase épissée : pas tous les mots
+// du pavé » ; son choix : « avec des petits mots de liaison »)
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const SRC = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+const SENS = fs.readFileSync(path.join(__dirname, 'public', 'sens.html'), 'utf8');
+const attendre = () => new Promise(r => setImmediate(r));
+
+// Hakim (sonnet) : un morceau par proposition (Mini Hakim, lui, un mot)
+function bac(reglages = { dire_inverse: true, filtre_gemma: false }) {
+  const i = SRC.indexOf('const PISTES_MAX'), k = SRC.indexOf('function speculerFreres(');
+  const appels = [], diffuses = [], voix = [];
+  const ctx = { String, Math, Date, Promise, RegExp, Object, VIVANTS: [], VIVANTS_MAX: { haiku: 12, sonnet: 12, opus: 12 }, VIVANT_RENOUVELER: 6,
+    cerveau: { modele: 'sonnet' }, corpsReglages: () => reglages, personaLocale: (p) => p, lirePersona: () => 'Hakim', neutraliser: (t) => t,
+    j: JSON.stringify, abonnesPensees: null, path, JARVIS: '/x', fs: { appendFile: () => {}, readFile: () => {}, writeFile: () => {} },
+    voixDeLaSource: (t, o) => voix.push([t, o]), diffuser: (_, e, d) => { const x = JSON.parse(d); if (x.niveau !== 'papa') diffuses.push(x); },
+    sonnetTeteDeFond: (prompt, etiquette, modele, delai) => new Promise((resoudre) => {
+      const v = { modele, attente: {}, proc: { exitCode: null }, n: 1 };
+      ctx.VIVANTS.push(v);
+      appels.push({ prompt, etiquette, delai, resoudre: (o) => { v.attente = null; resoudre(o); } });
+    }) };
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(i, k) + '\nthis.morceau = pisteMorceau; this.etat = () => pistes; this.choisir = choisirPensee; this.epissageDe = epissageDe; this.reponse = ribosomeDeReponse; this.nouveau = nouveauRibosome;'
+    + ' this.continue = epissureQuiContinue; this.papaParle = (t) => { derniereParolePapa = t; }; this.tourEpissure = tourEpissure; this.lui = lui;', ctx);
+  return { ctx, appels, diffuses, voix };
+}
+const nu = (x) => JSON.parse(JSON.stringify(x));
+// (04/11, 13:30) chaque lecture de son ribosome : ses lecteurs, appelés ensemble ; (15:15) ses deux plus rapides, Mini Hakim et Super Hakim
+const N_LECTEURS = 2;
+const lecteurs = (b) => b.appels.filter(a => a.etiquette.startsWith('ribosome_'));
+const lireLes3 = (b, k, r) => lecteurs(b).slice(N_LECTEURS * k, N_LECTEURS * k + N_LECTEURS).forEach(a => a.resoudre(typeof r === 'string' ? { texte: r } : r));
+
+test('l’épissage : les mots de la phrase pris dans le pavé, dans l’ordre ; ses petits mots ajoutés à part', () => {
+  const { ctx } = bac();
+  const pave = 'Oui papa, je vois. Le calcul du sable a fini cette nuit, et la densité colle au modèle.';
+  assert.deepStrictEqual(nu(ctx.epissageDe('Oui papa, le calcul a fini', pave)), { mots: [0, 1, 4, 5, 8, 9], ajoutes: [] });
+  assert.deepStrictEqual(nu(ctx.epissageDe('Oui, et du coup la densité colle', pave)), { mots: [0, 12, 13, 14, 15], ajoutes: ['du', 'coup'] });
+  assert.deepStrictEqual(nu(ctx.epissageDe('Je vois, OUI', pave)).ajoutes, ['OUI'], 'dans l’ordre : un mot déjà passé n’est pas repris');
+});
+
+test('avec l’épissage, ses pensées de piste sont toutes gardées, écrites, jamais dites une à une, et il ne se coupe jamais lui-même', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  const piste = (k) => b.appels.filter(a => a.etiquette.startsWith('piste_'))[k];
+  b.ctx.morceau('papa,');
+  piste(0).resoudre({ texte: 'Oui papa, je suis là.' });
+  await attendre();
+  b.ctx.morceau('papa, tu sais quoi,');
+  piste(1).resoudre({ texte: 'DIRE : coupe\nTu veux me parler du calcul ?' });
+  await attendre();
+  const pistes = b.diffuses.filter(x => x.niveau === 'piste');
+  assert.strictEqual(pistes.length, 2);
+  for (const x of pistes) {
+    assert.strictEqual(x.pret, false, 'écrite, pas dite');
+    assert.strictEqual(x.remplace, false, 'jamais coupé par lui-même');
+    assert.strictEqual(x.jamais, false, 'gardée pour l’épissage');
+    assert.strictEqual(x.epissage, true);
+  }
+  assert.deepStrictEqual(b.voix, [], 'aucune voix fabriquée morceau par morceau');
+});
+
+// (04/11, 11:50) le ribosome choisit au fil : à ta pause, plus rien à choisir
+test('à ta pause, plus de choix de pensée : son ribosome a déjà choisi ses mots', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  b.ctx.morceau('papa,');
+  b.appels[0].resoudre({ texte: 'Oui papa, je suis là.' });
+  await attendre();
+  assert.deepStrictEqual(nu(await b.ctx.choisir(b.ctx.etat().tour, 'pause')), { rien: true });
+  assert.strictEqual(b.appels.filter(a => a.etiquette === 'choix_haiku').length, 0);
+});
+
+test('sans l’épissage (réglage décoché) : comme avant', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: false });
+  b.ctx.morceau('papa,');
+  b.appels[0].resoudre({ texte: 'Oui papa, je suis là.' });
+  await attendre();
+  assert.strictEqual(b.diffuses[0].epissage, undefined);
+  assert.match(SRC, /if \(typeof q\.epissage === 'boolean'\) r\.epissage = q\.epissage;/);
+  assert.match(SENS, /<input type="checkbox" id="epissage">/);
+  assert.match(SENS, /\['epissage', 'epissage'\]/);
+});
+
+// ---- la page : le pavé de sa pensée
+
+
+test('page : une pensée de piste en épissage va au pavé', () => {
+  assert.match(PAGE, /if \(o\.epissage\) \{ ajouterAuPave\(o\.tour, texte\); mesurerEcran\('pensee', o\.ts\); return; \}/);
+});
+
+// ---- (04/11, 11:50, Ahmed : « presque parfait : il faut que tous les chunks s'intègrent dans la même réponse, et qu'elle soit
+// sélectionnée comme un ribosome qui lit et choisit les mots au fur et à mesure »)
+
+test('le ribosome : « rien » ou une phrase inventée ne garde aucun mot de cette pensée', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  const ribo = () => lecteurs(b).filter((_, k) => k % N_LECTEURS === 0);   // (19:20) le premier lecteur de chaque paquet
+  b.ctx.morceau('papa,');
+  b.appels[0].resoudre({ texte: 'Oui papa, je suis là.' });
+  await attendre(); await attendre();
+  lireLes3(b, 0, 'GARDE : rien');
+  await attendre(); await attendre();
+  b.ctx.morceau('papa, tu sais quoi,');
+  b.appels.filter(a => a.etiquette.startsWith('piste_'))[1].resoudre({ texte: 'Tu veux me parler du calcul ?' });
+  await attendre(); await attendre();
+  lireLes3(b, 1, 'GARDE : « Écoute, demain soir on ira voir la mer ensemble »');
+  await attendre(); await attendre();
+  const lus = b.diffuses.filter(x => x.niveau === 'ribosome');
+  assert.deepStrictEqual(lus.map(x => [x.k, x.texte, nu(x.mots)]), [[1, '', []], [2, '', []]]);
+});
+
+function pageRibosome() {
+  const dits = [];
+  const ctx = { Date, Math, String, Number, Object, esc: (s) => String(s), rendre() {}, etat: { aCote: [], conversation: { capteur: { enParole: false } } },
+    lecteur: { actif: false }, recevoirBout: (s, n, tour) => dits.push([s.texte, n, tour, s.pret, s.sansMeuble]), bouts: { tour: 0, prochain: 1 } };
+  vm.createContext(ctx);
+  const prendre = (nom) => { const i = PAGE.indexOf(`function ${nom}(`); return PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2); };
+  const ligne = (debut) => { const i = PAGE.indexOf(debut); return PAGE.slice(i, PAGE.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  vm.runInContext(ligne('const MOTS_EPISSES = ') + ligne('const TITRE_EPISSURE = ') + ligne('const attenteDe = ') + ['htmlPave', 'htmlDit', 'poserPave', 'paveDe', 'ajouterAuPave', 'surRibosome', 'direRibosome', 'preparerRibosome'].map(prendre).join('\n') + ligne('const htmlEpissure = ')
+    + '\nthis.ajouter = ajouterAuPave; this.lu = surRibosome; this.dire = direRibosome;', ctx);
+  return { ctx, dits };
+}
+
+test('page : une seule réponse par tour ; le ribosome y allume ses mots au fil ; sa voix dit ce qui est choisi, d’un seul souffle, quand papa se tait', () => {
+  const { ctx, dits } = pageRibosome();
+  ctx.etat.conversation.capteur.enParole = true;                     // papa parle encore
+  ctx.ajouter(7, 'Oui papa, je suis là.');
+  ctx.lu({ tour: 7, k: 1, texte: 'Oui papa', pave: 'Oui papa, je suis là.', mots: [0, 1] });
+  ctx.ajouter(7, 'Tu veux me parler du calcul ?');
+  ctx.lu({ tour: 7, k: 2, texte: 'tu veux parler du calcul ?', pave: 'Oui papa, je suis là. Tu veux me parler du calcul ?', mots: [0, 1, 5, 6, 8, 9, 10] });
+  const paves = ctx.etat.aCote.filter(x => String(x.cle).startsWith('pave-'));
+  assert.strictEqual(paves.length, 1, 'tous ses chunks dans la même réponse');
+  assert.match(paves[0].html, /🗣 « Oui papa tu veux parler du calcul \? »/, '(15:30) sa parole épissée, morceau après morceau, dans le même pavé');
+  // (21:10) dès qu'il a lu, il parle, même pendant que papa parle
+  assert.deepStrictEqual(dits.map(d => [d[0], d[2], d[3], d[4]]), [['Oui papa', 7, true, true], ['tu veux parler du calcul ?', 7, true, true]]);
+  ctx.lecteur.actif = true;                                          // il parle : (06/11, parole_liee) la suite part déjà, à sa suite, sans pause
+  ctx.lu({ tour: 7, k: 3, texte: 'il a fini cette nuit', pave: 'x', mots: [] });
+  assert.strictEqual(dits.length, 3, 'sa voix sonne : la suite se prépare déjà et se met à sa suite (parole liée)');
+  ctx.lecteur.actif = false;
+  ctx.dire();
+  assert.deepStrictEqual(dits.map(d => d[0]), ['Oui papa', 'tu veux parler du calcul ?', 'il a fini cette nuit']);
+  ctx.dire();
+  assert.strictEqual(dits.length, 3, 'rien deux fois');
+});
+
+test('page : sa voix dit ce que le ribosome a choisi à ta pause et à la fin de chaque phrase ; ses pensées épissées ne sont plus dites seules', () => {
+  assert.match(PAGE, /if \(o\.niveau === 'ribosome'\) \{ surRibosome\(o\); return; \}/);
+  assert.match(PAGE, /if \(silenceMs >= patienceConversation\(\) && typeof direRibosome === 'function'\) direRibosome\(\);/);
+  assert.match(PAGE, /const finLecture = \(\) => \{\n  segmentTelephone = null;\n(?:  \/\/[^\n]*\n)*  const tuParlais = Date\.now\(\) - \(Number\(etat\.papaVoixA\) \|\| 0\) < 1500;\n  if \(typeof direRibosome === 'function'\) setTimeout\(direRibosome, tuParlais && typeof patienceConversation === 'function' \? patienceConversation\(\) : 0\);/);
+  assert.match(PAGE, /if \(!dp \|\| dp\.jamais \|\| dp\.epissage \|\| silenceMs < seuil/);
+});
+
+
+// ---- (04/11, 11:59, Ahmed : « je ne vois pas l'épissure ; j'aimerais la voir tout le temps, par défaut, pour voir ce qu'il garde ou
+// pas et ce qu'il rajoute »)
+test('le ribosome dit aussi les petits mots qu’il ajoute', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  b.ctx.morceau('papa,');
+  b.appels[0].resoudre({ texte: 'Oui papa, je suis là.' });
+  await attendre(); await attendre();
+  lireLes3(b, 0, 'GARDE : « alors oui papa »');
+  await attendre(); await attendre();
+  const lu = b.diffuses.find(x => x.niveau === 'ribosome');
+  assert.deepStrictEqual([lu.texte, nu(lu.mots), nu(lu.ajoutes)], ['alors oui papa', [0, 1], ['alors']]);
+});
+
+// (04/11, 15:30, Ahmed : « sa parole complète, je ne dois pas la voir ; seulement son épissure, avec les chunks qui se rajoutent au fur et à
+// mesure à la fin de son bout de phrase en train d'être lu par le ribosome, et ses pensées internes : pensée interne pour ce qu'il décide de
+// ne pas dire, parole épissée pour ce qu'il veut prononcer » ; « les 2 process doivent être parallélisés et émerger en même temps »)
+test('page : ses deux fils, sa pensée interne (ce qu’il ne dit pas) et sa parole épissée (ce qu’il dit), émergent ensemble dès que le ribosome lit', () => {
+  const { ctx } = pageSync();
+  const scene = { innerHTML: '', hidden: true };
+  ctx.$ = (id) => (id === 'epissureScene' ? scene : null);
+  const pave = () => ctx.etat.aCote.find(x => String(x.cle).startsWith('pave-7-')).html;
+  ctx.ajouter(7, 'Oui papa, je suis là.');
+  // (04/11, 15:35, Ahmed : « je ne vois pas l'épissure se faire au fur et à mesure ; ça me balance juste le bloc ») chaque pensée qui arrive
+  // se colle tout de suite au bout de sa parole, en attente (pâle), puis son ribosome la trie : gardée dans 🗣, laissée dans 💭
+  assert.match(pave(), /🗣 « <span class="attente"[^>]*>Oui papa je suis là<\/span> »/, 'une pensée pas encore lue : collée au bout, en attente');
+  ctx.lu({ tour: 7, k: 1, texte: 'alors oui papa', pave: 'Oui papa, je suis là.', mots: [0, 1], ajoutes: ['alors'], lus: 5 });
+  assert.match(pave(), /💭 je suis là/, 'sa pensée interne : ce qu’il ne dit pas');
+  assert.match(pave(), /🗣 « alors oui papa »/, 'sa parole épissée : tout de suite, sans attendre sa voix');
+  ctx.ajouter(7, 'Tu veux le calcul ?');
+  assert.match(pave(), /🗣 « alors oui papa <span class="attente"[^>]*>Tu veux le calcul<\/span> »/, 'la suivante, collée au bout pendant qu’il lit');
+  ctx.lu({ tour: 7, k: 2, texte: 'tu veux le calcul', pave: 'Oui papa, je suis là. Tu veux le calcul ?', mots: [0, 1, 5, 6, 7, 8], ajoutes: [], lus: 9 });
+  assert.match(pave(), /🗣 « alors oui papa tu veux le calcul »/, 'le morceau suivant se colle à la fin');
+  assert.match(pave(), /💭 je suis là</);
+  assert.strictEqual(scene.hidden, false, 'sous l’orbe aussi');
+  assert.match(scene.innerHTML, /🗣 « alors oui papa tu veux le calcul »/);
+  const HTML = fs.readFileSync(path.join(__dirname, 'public', 'parler.html'), 'utf8');
+  assert.match(HTML, /id="epissureScene"/);
+});
+
+test('page : avec l’épissage, sa parole complète ne s’écrit pas (ses fichiers, toujours)', () => {
+  // (17:05) avec l'épissage, son propre état (caché par défaut), que le bouton « Ses paroles » bascule (test-ses-paroles.js)
+  assert.match(PAGE, /const parolesVisibles = \(\) => !enTelepathie\(\) && \(\(typeof voixEpissee === 'function' && voixEpissee\(\)\) \? !!etat\.reglages\.sesParolesEpissage : !!etat\.reglages\.sesParoles\);/);
+});
+
+// ---- (04/11, 12:05, Ahmed, capture à l'appui : « je ne vois toujours pas l'épissage ; je veux qu'il soit visible comme sur cette photo,
+// à chaque fois qu'il parle ») sa réponse consciente aussi passe par son ribosome, dans le pavé du tour qui vient de finir
+test('sa réponse consciente : chaque phrase finie est lue par le ribosome du tour, comme ses pensées', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  const ribo = () => lecteurs(b).filter((_, k) => k % N_LECTEURS === 0);   // (19:20) le premier lecteur de chaque paquet
+  const r = b.ctx.nouveau();
+  const flux = b.ctx.reponse(5, r, 'papa : tu es là ?');
+  flux.pousser('Oui papa');
+  await attendre();
+  assert.strictEqual(ribo().length, 0, 'une phrase pas finie attend');
+  flux.pousser(', je suis là. Je t’');
+  await attendre(); await attendre();
+  assert.strictEqual(ribo().length, 1);
+  assert.match(ribo()[0].prompt, /\[1\] « Oui papa, je suis là\. »/);
+  lireLes3(b, 0, 'GARDE : « Oui papa, je suis là »');
+  flux.pousser('écoute');
+  flux.finir();
+  await attendre(); await attendre();
+  assert.match(ribo()[1].prompt, /\[1\] « Je t’écoute »/);
+  const lus = b.diffuses.filter(x => x.niveau === 'ribosome');
+  assert.deepStrictEqual([lus[0].tour, lus[0].texte], [5, 'Oui papa, je suis là']);
+  assert.match(lus[0].pave, /^Oui papa, je suis là\./);
+  flux.pousser('No response requested.');
+  flux.finir();
+  await attendre(); await attendre();
+  assert.strictEqual(ribo().length, 2, 'sa non-réponse n’est pas lue');
+});
+
+// (04/11, 14:08, Ahmed : « ce n'est pas ses paroles à épisser : c'est le premier output, qui démarre la pensée et la parole, qui doit être
+// épissé, écrit et prononcé ») ses pensées de piste (nées de tes premiers mots) sont son premier output : elles seules passent par son
+// ribosome ; sa réponse consciente, seulement quand aucune pensée n'a démarré le tour (un message écrit, par exemple)
+test('le tour : son premier output est épissé ; sa réponse consciente seulement si aucune pensée n’a démarré le tour ; la page ne dit rien d’elle-même', () => {
+  assert.match(SRC, /const riboTour = pistes\.tour, riboDuTour = pistes\.ribo \|\| null, premierOutput = pistes\.liste\.length > 0;\n/);
+  assert.match(SRC, /const epissageReponse = corpsReglages\(\)\.epissage !== false && corpsReglages\(\)\.parole_sans_stop === false && corpsReglages\(\)\.lire_reponse_entiere === false && Number\(q && q\.delai_ms\) > 0 && !premierOutput\n/);
+  assert.match(SRC, /if \(epissageReponse && o\.t === 'texte'\) epissageReponse\.pousser\(o\.x\);/);
+  assert.match(SRC, /if \(epissageReponse && o\.t === 'fin'\) epissageReponse\.finir\(\);/);
+  assert.match(PAGE, /const auto = \(etat\.reglages\.lectureAuto \|\| etat\.conversation \|\| etat\.reglages\.volant\) && lecteur && \(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\) \|\| \(typeof lireEntiere === 'function' && lireEntiere\(\)\) \|\| \(typeof reponseSeule === 'function' && !!etat\.conversation && reponseSeule\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\);/);
+});
+
+test('page : un pavé par tour ; la réponse d’un tour fini rejoint son pavé, même quand papa a déjà repris', () => {
+  const { ctx, dits, tic } = pageSync();
+  ctx.etat.conversation.capteur.enParole = true;
+  ctx.ajouter(7, 'Oui papa, je suis là.');
+  ctx.ajouter(8, 'Tu repars déjà ?');
+  ctx.lu({ tour: 7, k: 1, texte: 'Oui papa', pave: 'Oui papa, je suis là.', mots: [0, 1], ajoutes: [] });
+  ctx.etat.conversation.capteur.enParole = false;
+  ctx.lu({ tour: 7, k: 2, texte: '', pave: 'Oui papa, je suis là.', mots: [0, 1], ajoutes: [] });
+  assert.deepStrictEqual(dits.map(d => [d[0], d[1]]), [['Oui papa', 7]]);
+  ctx.voix('Oui papa', 0.6); tic();
+  const paves = ctx.etat.aCote.filter(x => String(x.cle).startsWith('pave-'));
+  assert.strictEqual(paves.length, 2);
+  assert.ok(paves.find(x => x.cle.startsWith('pave-8-')), 'le pavé de 8 reste');
+  assert.match(paves.find(x => x.cle.startsWith('pave-7-')).html, /🗣 « Oui papa »/, 'le pavé de 7 est mis à jour');
+});
+
+test('le ribosome : ses trois lecteurs muets (panne, délai), la pensée entière est gardée, sa voix ne se tait pas', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  b.ctx.morceau('papa,');
+  b.appels[0].resoudre({ texte: 'Oui papa, je suis là.' });
+  await attendre(); await attendre();
+  lireLes3(b, 0, { texte: '', erreur: 'délai' });
+  await attendre(); await attendre();
+  const lu = b.diffuses.find(x => x.niveau === 'ribosome');
+  assert.deepStrictEqual([lu.texte, nu(lu.mots)], ['Oui papa, je suis là.', [0, 1, 2, 3, 4]]);
+});
+
+// ---- (04/11, 12:40, Ahmed : « le ribosome qui lit l'épissage doit balancer le signal en parallèle à la voix et à l'écriture : ça doit
+// s'écrire pendant que ça parle ; il faut coordonner ça »)
+function pageSync() {
+  const dits = [], minuteurs = [];
+  const ctx = { Date, Math, String, Number, Object, esc: (s) => String(s), rendre() {}, etat: { aCote: [], conversation: { capteur: { enParole: false } } },
+    lecteur: { actif: false }, recevoirBout: (s, n, tour) => dits.push([s.texte, tour]), bouts: { tour: 0, prochain: 1 },
+    setTimeout: (f, ms) => minuteurs.push([ms, f]) };
+  vm.createContext(ctx);
+  const prendre = (nom) => { const i = PAGE.indexOf(`function ${nom}(`); return PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2); };
+  const ligne = (debut) => { const i = PAGE.indexOf(debut); return PAGE.slice(i, PAGE.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  vm.runInContext(ligne('const MOTS_EPISSES = ') + ligne('const TITRE_EPISSURE = ') + ligne('const attenteDe = ') + ['htmlPave', 'htmlDit', 'poserPave', 'paveDe', 'ajouterAuPave', 'surRibosome', 'direRibosome', 'revelerRibosome', 'preparerRibosome']
+    .map(prendre).join('\n') + ligne('const htmlEpissure = ') + '\nthis.ajouter = ajouterAuPave; this.lu = surRibosome; this.voix = revelerRibosome;', ctx);
+  const tic = () => { minuteurs.sort((a, b) => a[0] - b[0]).splice(0).forEach(([, f]) => f()); };
+  return { ctx, dits, minuteurs, tic };
+}
+
+test('sa voix dit ce que le ribosome a choisi, au rythme de ses mots ; ce qui est dit et écrit est suivi jusqu’au bout', () => {
+  const { ctx, dits, minuteurs, tic } = pageSync();
+  ctx.ajouter(7, 'Oui papa, je suis là.');
+  ctx.lu({ tour: 7, k: 1, texte: 'alors oui papa', pave: 'Oui papa, je suis là.', mots: [0, 1], ajoutes: ['alors'], lus: 5 });
+  assert.deepStrictEqual(dits.map(d => d[0]), ['alors oui papa'], 'envoyé à sa voix');
+  ctx.voix('alors oui papa', 0.9);                                    // sa voix commence ce segment (0,9 s)
+  assert.strictEqual(minuteurs.length, 3, 'un mot à la fois');
+  assert.ok(minuteurs.every(([ms], k) => Math.abs(ms - k * 300) < 1), 'au rythme de sa voix (0,9 s / 3 mots)');
+  tic();
+  assert.strictEqual((ctx.etat.riboEnVoix || []).length, 0, 'tout est dit');
+});
+
+test('sa voix et son écriture reliées : chaque segment qui commence (téléphone ou Chatterbox) écrit ses mots', () => {
+  assert.match(PAGE, /lecteurSysteme\.surSegment = \(t\) => \{[\s\S]{0,300}?revelerRibosome\(t\);/);
+  assert.match(PAGE, /lecteurNeuronal\.surSegment = \(t, duree, debutMs\) => \{\n[^\n]*\n  if \(typeof revelerRibosome === 'function'\) revelerRibosome\(t, duree\);/);
+});
+
+// (04/11, 12:45, Ahmed : « s'il a fini d'écrire et de préparer sa parole avant que j'aie fini de parler, il attend que je me taise et lance
+// sa parole direct quand je finis : il peut mettre sa voix en pause jusqu'à ce que je finisse (0,3 s de blanc) »)
+test('(21:10) plus d’attente de ta fin : chaque morceau lu part aussitôt, rien ne reste à calculer d’avance', () => {
+  const prepares = [], dits = [];
+  const ctx = { Date, Math, String, Number, Object, esc: (s) => String(s), rendre() {}, etat: { aCote: [], conversation: { capteur: { enParole: true } } },
+    lecteur: { actif: false }, recevoirBout: (s) => dits.push(s.texte), bouts: { tour: 0, prochain: 1 }, setTimeout() {},
+    voixDuTelephone: () => true, lecteurSysteme: { preparer: (t) => prepares.push(t) } };
+  vm.createContext(ctx);
+  const prendre = (nom) => { const i = PAGE.indexOf(`function ${nom}(`); return PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2); };
+  const ligne = (debut) => { const i = PAGE.indexOf(debut); return PAGE.slice(i, PAGE.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  vm.runInContext(ligne('const MOTS_EPISSES = ') + ligne('const TITRE_EPISSURE = ') + ligne('const attenteDe = ') + ['htmlPave', 'htmlDit', 'poserPave', 'paveDe', 'surRibosome', 'direRibosome', 'preparerRibosome']
+    .map(prendre).join('\n') + ligne('const htmlEpissure = ') + '\nthis.lu = surRibosome; this.dire = direRibosome;', ctx);
+  ctx.lu({ tour: 7, k: 1, texte: 'Oui papa', pave: 'Oui papa.', mots: [0, 1], ajoutes: [] });
+  ctx.lu({ tour: 7, k: 2, texte: 'je t’écoute', pave: 'Oui papa. Je t’écoute.', mots: [0, 1, 2, 3], ajoutes: [] });
+  assert.deepStrictEqual(dits, ['Oui papa', 'je t’écoute'], 'tu parles encore : il parle quand même, morceau après morceau');
+  assert.deepStrictEqual(prepares, [], 'rien n’attend : rien à calculer d’avance');
+});
+
+// ---- (04/11, 12:50, Ahmed : « il ne doit rien prononcer d'autre que ses pensées épissées ! Rien d'autre, pas même ses pensées ou autre !
+// Ce qui sort de sa bouche doit toujours être épissé, et prioritaire sur le reste »)
+test('en Conversation avec l’épissage, tout ce qu’il allait dire d’autre passe d’abord par son ribosome', () => {
+  const f = (nom) => { const i = PAGE.indexOf(`function ${nom}(`); return PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2); };
+  assert.match(f('direSouffle'), /if \(typeof voixEpissee === 'function' && voixEpissee\(\)\) \{ versRibosome\(s\.texte\); if \(etat\.pensee && etat\.pensee\.texte === s\.texte\) etat\.pensee\.dite = true;/, 'la pensée de son cerveau');
+  assert.match(f('direMotDirect'), /if \(typeof voixEpissee === 'function' && voixEpissee\(\)\) \{ versRibosome\(t\);/, 'son petit mot');
+  assert.match(PAGE, /if \(o\.dire && !\(typeof voixEpissee === 'function' && voixEpissee\(\)\) && \(etat\.conversation/, 'une panne : écrite, pas dite');
+  assert.match(PAGE, /if \(typeof voixEpissee === 'function' && voixEpissee\(\)\) \{ versRibosome\(m\.texte\); return; \}\n  etat\.lectureDe = m\.id;\n  lecteur\.dire\(m\.texte\);\n  lecteur\.finFlux\(\);/, 'ses messages de lui-même');
+  assert.match(PAGE, /if \(voix && typeof voixEpissee === 'function' && voixEpissee\(\)\) versRibosome\(/, 'ce que tu n’avais pas entendu');
+  assert.match(SRC, /if \(p === '\/api\/jarvis\/ribosome' && req\.method === 'POST'\)/);
+  assert.match(SRC, /const lu = ribosomeDeReponse\(pistes\.tour, pistes\.ribo \|\| \(pistes\.ribo = ribosomeSuivant\(\)\), String\(q\.avant \|\| ''\)\);/);
+});
+
+test('versRibosome : le texte part au cockpit (sa non-réponse, jamais)', async () => {
+  const envois = [];
+  const ctx = { String, JSON, NON_REPONSE: /^\s*No response requested\.?\s*$/i, jeton: () => 'x', fetch: (u, o) => { envois.push([u, JSON.parse(o.body)]); return Promise.resolve(); } };
+  vm.createContext(ctx);
+  const i = PAGE.indexOf('function versRibosome('); vm.runInContext(PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2) + 'this.f = versRibosome;', ctx);
+  ctx.f('Hmm, je te suis.', 'papa parle du sable');
+  ctx.f('No response requested.');
+  ctx.f('   ');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(envois)), [['/api/jarvis/ribosome', { texte: 'Hmm, je te suis.', avant: 'papa parle du sable' }]]);
+});
+
+// (04/11, 13:45, Ahmed : « le ribosome doit prendre un pack de chunks, genre 50 ou 100, qu'il traite et qu'il met l'un derrière l'autre pour
+// faire l'épissure en temps réel, et qu'il parle »)
+// (04/11, 15:25, Ahmed : « il n'arrive pas à tout rajouter bout à bout pendant que le ribosome lit ; il faut vraiment que le ribosome lise
+// dès l'entrée du premier chunk de réponse de Hakim : c'est ça son start ») une lecture à la fois, qui part dès sa première pensée ; ce qui
+// arrive pendant qu'il lit est collé bout à bout et lu juste après, avec toutes ses pensées déjà lues sous les yeux
+test('le ribosome lit dès sa première pensée ; ce qui arrive pendant sa lecture est collé bout à bout et lu juste après, avec tout ce qui précède', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  const ribo = () => lecteurs(b).filter((_, k) => k % N_LECTEURS === 0);   // (19:20) le premier lecteur de chaque paquet
+  const piste = (k) => b.appels.filter(a => a.etiquette.startsWith('piste_'))[k];
+  b.ctx.morceau('papa,');
+  piste(0).resoudre({ texte: 'Oui papa, je suis là.' });
+  await attendre(); await attendre();
+  assert.strictEqual(ribo().length, 1, 'sa première pensée : lue tout de suite');
+  b.ctx.morceau('papa, tu sais quoi,');
+  piste(1).resoudre({ texte: 'Tu veux me parler du calcul ?' });
+  b.ctx.morceau('papa, tu sais quoi, le sable,');
+  piste(2).resoudre({ texte: 'Le sable a fini.' });
+  await attendre(); await attendre();
+  assert.strictEqual(ribo().length, 1, 'pendant sa lecture, les suivantes se collent');
+  lireLes3(b, 0, 'GARDE : « Oui papa »');
+  await attendre(); await attendre();
+  assert.strictEqual(ribo().length, 2, 'les deux, collées bout à bout : une seule lecture');
+  assert.match(ribo()[1].prompt, /Tes pensées déjà lues, bout à bout : « Oui papa, je suis là\. »/, 'avec tout ce qui précède');
+  assert.match(ribo()[1].prompt, /l'une derrière l'autre : \[1\] « Tu veux me parler du calcul \? » \[2\] « Le sable a fini\. »/);
+  assert.match(ribo()[1].prompt, /Ta réponse déjà lue : « Oui papa »/);
+  assert.match(ribo()[1].prompt, /au plus 4 petits mots/, 'ses petits mots de liaison : 2 par pensée du paquet');
+  lireLes3(b, 1, 'GARDE : « tu veux parler du calcul ? alors le sable a fini »');
+  await attendre(); await attendre();
+  const lus = b.diffuses.filter(x => x.niveau === 'ribosome');
+  assert.deepStrictEqual(lus.map(x => [x.k, x.texte]), [[1, 'Oui papa'], [2, 'tu veux parler du calcul ? alors le sable a fini']]);
+  assert.deepStrictEqual(nu(lus[1].mots), [0, 1, 5, 6, 8, 9, 10, 11, 12, 13, 14]);
+  assert.deepStrictEqual(nu(lus[1].ajoutes), ['alors']);
+  assert.strictEqual(lus[1].pave, 'Oui papa, je suis là. Tu veux me parler du calcul ? Le sable a fini.');
+  assert.deepStrictEqual(lus.map(x => x.lus), [5, 15], '(15:30) combien de mots de ses pensées sont déjà lus : le reste n’est pas encore décidé');
+  assert.match(SRC, /const RIBOSOME_PAQUETS_EN_VOL = 1;/);
+  // (04/11, 14:58, Ahmed : « le nombre de chunks à épisser doit être bien plus important, un truc comme 1000 chunks »)
+  // (14:59, Ahmed : « si ça peut aller au-delà de 1000 chunks, alors on le fait ») plus de plafond : tout ce qui attend
+  assert.match(SRC, /const RIBOSOME_PAQUET_MAX = Infinity;/);
+  assert.match(SRC, /GARDE\\s\*:\\s\*«\\s\*\(\[\^»\]\{1,20000\}\?\)/, 'une longue lecture gardée entière');
+});
+
+// ---- (04/11, 13:30, Ahmed : « la lecture doit se faire par Mini Hakim, Hakim et Super Hakim, les 3 au même moment en parallèle, et doit
+// attendre la réponse de chacun pour continuer la lecture » ; mesuré : 52 lectures sur 60 en « délai dépassé », la pensée entière passait)
+// (04/11, 15:50, Ahmed : « il doit être plus rapide pour le ribosome : qu'il lise instantanément son input, et qu'il perde le moins de temps
+// possible entre la lecture et la prononciation de l'output ») le premier lecteur qui garde des mots donne sa lecture, tout de suite
+test('ses lecteurs (19:20 : deux Super Hakim) lisent chaque pensée en même temps ; elle sort dès que le premier garde des mots', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  b.ctx.morceau('papa,');
+  b.appels[0].resoudre({ texte: 'Oui papa, je suis là.' });
+  await attendre(); await attendre();
+  const l = lecteurs(b);
+  assert.deepStrictEqual(l.map(a => a.etiquette), ['ribosome_opus', 'ribosome_opus']);
+  assert.ok(l[0].delai === l[1].delai && l[0].delai >= 600 && l[0].delai <= 1300, `(15:55) rapide par défaut, (16:50) ajusté par son subconscient, (21:34) deux fois plus vite : ${l[0].delai} ms`);
+  assert.ok(l.every(a => a.prompt === l[0].prompt), 'la même pensée, la même consigne');
+  l[1].resoudre({ texte: 'GARDE : « Oui papa »' });
+  await attendre(); await attendre();
+  assert.deepStrictEqual(b.diffuses.filter(x => x.niveau === 'ribosome').map(x => x.texte), ['Oui papa'], 'le second a gardé des mots : sa lecture, sans attendre le premier');
+  l[0].resoudre({ texte: 'GARDE : « Oui »' });
+  await attendre(); await attendre();
+  assert.strictEqual(b.diffuses.filter(x => x.niveau === 'ribosome').length, 1, 'la lecture d’après ne change rien');
+});
+
+test('la lecture retenue : la première qui répond, même « rien » (19:20) ; un muet laisse l’autre ; aucun : la pensée entière', async () => {
+  const sortie = async (h, o) => {
+    const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+    b.ctx.morceau('papa,');
+    b.appels[0].resoudre({ texte: 'Oui papa, je suis là.' });
+    await attendre(); await attendre();
+    const l = lecteurs(b);
+    [h, o].forEach((t, k) => l[k].resoudre(typeof t === 'string' ? { texte: t } : t));
+    await attendre(); await attendre();
+    return b.diffuses.find(x => x.niveau === 'ribosome').texte;
+  };
+  assert.strictEqual(await sortie('GARDE : « Oui papa »', 'GARDE : « Oui papa, je suis là »'), 'Oui papa', 'la première arrivée');
+  assert.strictEqual(await sortie({ texte: '', erreur: 'délai' }, 'GARDE : « je suis là »'), 'je suis là', 'un seul a répondu : sa lecture');
+  // (04/11, 14:17, mesuré : 4 paquets de suite sans un mot) un « rien » attendait l'autre ; (19:20, Ahmed : « les 2 », mesuré : cette attente
+  // coûtait 0,6 s sur 23 % des paquets) le premier qui répond décide, même « rien »
+  assert.strictEqual(await sortie('GARDE : rien', 'GARDE : « Oui papa »'), '', 'un « rien » d’abord : décidé, sans attendre l’autre');
+  assert.strictEqual(await sortie('GARDE : « Oui papa »', 'GARDE : rien'), 'Oui papa');
+  assert.strictEqual(await sortie('GARDE : rien', 'GARDE : rien'), '', 'les deux n’en gardent rien : rien');
+  assert.strictEqual(await sortie({ texte: '', erreur: 'délai' }, { texte: '', erreur: 'délai' }), 'Oui papa, je suis là.', 'aucun : la pensée entière');
+});
+
+test('ses balises ([[…]], ⟮⟮…⟯⟯) ne passent ni par son ribosome ni dans son pavé', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  const r = b.ctx.nouveau();
+  const flux = b.ctx.reponse(5, r, 'papa : tu es là ?');
+  flux.pousser('[[anticipe: long]] Oui papa. ⟮⟮anticipe: long⟯⟯ ');
+  flux.finir();
+  await attendre(); await attendre();
+  assert.strictEqual(lecteurs(b).length, N_LECTEURS, 'une seule lecture : la balise seule n’est pas lue');
+  assert.match(lecteurs(b)[0].prompt, /\[1\] « Oui papa\. »\n/);
+  assert.strictEqual(r.pave, 'Oui papa.');
+});
+
+test('son ribosome passe par ses voix vivantes (sans démarrage)', () => {
+  assert.match(SRC, /const POUR_VIVANTS = \/\^\([^)]*\|ribosome_\)\//);
+});
+
+test('page : sa voix libre, ce qui restait à allumer d’avant s’allume d’un coup ; le tour suivant écrit dans son propre pavé', () => {
+  const { ctx, dits, tic } = pageSync();
+  ctx.ajouter(7, 'Oui papa, je suis là.');
+  ctx.lu({ tour: 7, k: 1, texte: 'Oui papa je suis là', pave: 'Oui papa, je suis là.', mots: [0, 1, 2, 3, 4], ajoutes: [] });
+  ctx.voix('Oui papa', 0.5); tic();                                    // sa voix n'en a dit que deux mots (une balise, un mot sauté…)
+  ctx.ajouter(8, 'Tu repars déjà ?');
+  ctx.lu({ tour: 8, k: 1, texte: 'Tu repars', pave: 'Tu repars déjà ?', mots: [0, 1], ajoutes: [] });
+  assert.deepStrictEqual(dits.map(d => d[1]), [7, 8]);
+  const p7 = ctx.etat.aCote.find(x => String(x.cle).startsWith('pave-7-')).html;
+  assert.match(p7, /🗣 « Oui papa je suis là »/, 'le tour 7, écrit');
+  assert.strictEqual(ctx.etat.riboEnVoix.length, 1, 'ce qui restait du tour 7 est rangé : le tour 8 a sa voix');
+  ctx.voix('Tu repars', 0.4); tic();
+  const p8 = ctx.etat.aCote.find(x => String(x.cle).startsWith('pave-8-')).html;
+  assert.match(p8, /🗣 « Tu repars »/, 'le tour 8 s’écrit dans son pavé');
+});
+
+// ---- (04/11, 13:58, Ahmed, capture : trois « coupé » de suite et sa réponse retardée — « coupure interdite : comme le codon start et stop,
+// il parle tant que le codon start est actif ; pas le droit de couper ; juste une pause de ma voix, ou le codon stop »)
+test('codon start / stop : avec l’épissage, ta phrase ne coupe jamais sa réflexion ; elle attend sa fin et part aussitôt', () => {
+  const a = PAGE.indexOf('const chacunSonTour = '), b = PAGE.indexOf('setInterval(libererSonTour, 300);');
+  const envois = [];
+  const ctx = vm.createContext({ Date, etat: { flux: {}, conversation: { tourGarde: '', enAttente: 0, capteur: { enParole: false } }, finVoixA: 0 },
+    lecteur: { actif: true, enPause: false }, reglagesCorps: { chacun_son_tour: true }, journalVoix() {}, humeur() {}, voixEpissee: () => true,
+    envoyer: (t, oral) => envois.push([t, oral]), setInterval() {} });
+  vm.runInContext(PAGE.slice(a, b).replace(/^const /gm, 'var '), ctx);
+  const conv = ctx.etat.conversation;
+  ctx.garderPourSonTour(conv, 'et le live ?');
+  assert.equal(ctx.libererSonTour(), false, 'sa réflexion continue');
+  conv.tourGardeDepuis = Date.now() - 60000;
+  assert.equal(ctx.libererSonTour(), false, 'même après 30 s : jamais coupée');
+  ctx.etat.flux = null;                                                // sa réflexion finie ; sa voix parle encore
+  assert.equal(ctx.libererSonTour(), true, 'ta phrase part tout de suite, sans attendre la fin de sa voix (elle continue)');
+  assert.deepEqual(envois.map(e => e[1]), [true]);
+  ctx.etat.flux = {}; ctx.garderPourSonTour(conv, 'tu es là ?'); conv.tourGardeDepuis = Date.now() - 130000;
+  assert.equal(ctx.libererSonTour(), true, 'une réflexion bloquée 2 min : ta phrase part quand même');
+  const i = PAGE.indexOf('async function tourDeParole('), bloc = PAGE.slice(i, PAGE.indexOf('\n}\n', i));
+  const k = (x) => bloc.indexOf(x);
+  assert.ok(k('if (voixEpissee() && etat.flux) { garderPourSonTour(conv, texte); return; }') > 0, 'ta phrase finie pendant sa réflexion : gardée');
+  assert.ok(k('if (voixEpissee() && etat.flux)') < k('if (lecteur.enPause || etat.flux) { marquerCoupe();'), 'avant la coupure de sa réponse en route');
+  assert.ok(k('COMMANDE_STOP.test(texte)') < k('if (voixEpissee() && etat.flux)'), 'ton « stop » (son codon stop) reste au-dessus');
+});
+
+// (04/11, 14:04, mesuré : un paquet de 5 pensées en « panne », Mini Hakim et Super Hakim avaient pourtant répondu, 266 et 316 caractères :
+// au-delà de 160, une lecture était prise pour une pensée parasite) la longueur permise suit la taille du paquet
+test('un gros paquet : une longue lecture n’est pas prise pour une pensée parasite', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  const r = b.ctx.nouveau();
+  const flux = b.ctx.reponse(5, r, 'papa : dis-moi');
+  flux.pousser('Oui papa. ');                                          // sa première lecture
+  await attendre(); await attendre();
+  const phrases = ['Le calcul du sable a fini cette nuit, enfin.', 'La densité colle au modèle, presque partout.',
+    'Il reste un écart au bord, près du mur.', 'Je te montre la courbe demain matin, promis.'];
+  flux.pousser(phrases.join(' ') + ' ');
+  flux.finir();
+  await attendre(); await attendre();
+  lireLes3(b, 0, 'GARDE : « Oui papa »');                              // les quatre, collées : un seul paquet
+  await attendre(); await attendre();
+  const long = phrases.join(' ').replace(/[.,]/g, '');
+  assert.ok(long.length > 160);
+  lireLes3(b, 1, `GARDE : « ${long} »`);
+  await attendre(); await attendre();
+  const lus = b.diffuses.filter(x => x.niveau === 'ribosome');
+  assert.strictEqual(lus[1].texte, long, 'lue, pas en panne');
+});
+
+// (04/11, 14:20, Ahmed, capture : « la pensée part seule en mode conversation, alors que je devrais voir la pensée épissée pour parler »)
+test('voix du téléphone : ce que son ribosome a épissé n’est jamais remplacé ni oublié ; il attend son tour, dans l’ordre, même d’un tour à l’autre', () => {
+  const dits = [], journal = [];
+  const ctx = { Date, Math, String, Number, Set, Map, etat: { conversation: {} }, bouts: { tour: 5, prochain: 1, liste: new Map(), enFile: [], dits: [] },
+    voixDuTelephone: () => true, souffleAutorise: () => true, meublerSaut: (b) => [b.texte], meubleEnCours: () => false, montrerPensee() {},
+    journalVoix: (e, d) => journal.push([e, d]), lecteurSysteme: { actif: true, dire: (x) => dits.push(x), preparer() {}, arreter() {} }, reglagesCorps: { choisir_latence: false } };   // (07/11) l'ordre d'avant, épinglé
+  vm.createContext(ctx);
+  const prendre = (nom) => { const i = PAGE.indexOf(`function ${nom}(`); return PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2); };
+  vm.runInContext(['recevoirBout', 'direBoutTelephone', 'boutTelephoneSuivant'].map(prendre).join('\n') + '\nthis.recevoir = recevoirBout; this.suivant = boutTelephoneSuivant;', ctx);
+  ctx.recevoir({ texte: 'Oui papa', ribosome: true }, 1, 5);
+  ctx.recevoir({ texte: 'je suis là', ribosome: true }, 2, 5);
+  ctx.recevoir({ texte: 'tu me montres', ribosome: true }, 1, 6);           // le tour suivant, sa voix parle encore
+  assert.deepStrictEqual(dits, [], 'sa voix parle encore : ils attendent');
+  ctx.lecteurSysteme.actif = false;
+  ctx.suivant(); ctx.suivant(); ctx.suivant();
+  assert.deepStrictEqual(dits, ['Oui papa', 'je suis là', 'tu me montres'], 'tous dits, dans l’ordre, aucun remplacé');
+  assert.match(PAGE, /journalVoix\('ribosome_dit', \{ tour, n, morceaux: lot\.length \}\);/, 'chaque morceau épissé envoyé à sa voix est noté');
+  assert.match(PAGE, /journalVoix\('ribosome_recu'/);
+});
+
+// (04/11, 14:30, Ahmed, capture : « la pensée s'affiche avant l'affichage ; j'aimerais que ce soit l'inverse ») son pavé garde sa place
+// (l'instant où sa pensée est née) : mis à jour, il ne passe plus après sa réponse consciente
+test('page : son épissure reste à sa place dans le fil, avant sa réponse consciente, même mise à jour', () => {
+  let t = 1000;
+  const ctx = { Date: { now: () => t }, Math, String, Number, Object, esc: (s) => String(s), rendre() {}, etat: { aCote: [] } };
+  vm.createContext(ctx);
+  const i = PAGE.indexOf('function poserPave('); vm.runInContext(PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2) + 'this.poser = poserPave;', ctx);
+  ctx.poser('pave-7-x', '🧠 sa pensée', 'Oui papa');
+  t = 5000;
+  ctx.poser('pave-7-x', '🧬 sa réponse, épissée au fil', 'Oui papa, je suis là');
+  assert.strictEqual(ctx.etat.aCote.length, 1);
+  assert.strictEqual(ctx.etat.aCote[0].ts, 1000, 'sa place : l’instant où elle est née');
+  assert.match(ctx.etat.aCote[0].html, /je suis là/);
+});
+
+// (04/11, 14:45, mesuré : 5 tours épissés en attente 20 s et plus — papa et ses amis parlaient sans jamais 1 s de blanc, et sa voix attendait
+// la fin du tour) sa voix part à ta respiration (0,3 s), pas à la fin de ton tour (1 s)
+// (04/11, 21:10, Ahmed : « dès que le chunk est prêt et que le ribosome l'a installé, il doit commencer la traduction direct, sans rien attendre,
+// ni silence ni rien ; c'est à Hakim de choisir de mettre sa voix en pause ou de la laisser en play »)
+test('page : sa voix épissée part dès que son ribosome a lu, même pendant que tu parles', () => {
+  const { ctx, dits } = pageRibosome();
+  ctx.etat.conversation.capteur = { enParole: true, pauseEnCours: 0 };   // tu parles, sans respiration
+  ctx.ajouter(7, 'Oui papa, je suis là.');
+  ctx.lu({ tour: 7, k: 1, texte: 'Oui papa', pave: 'Oui papa, je suis là.', mots: [0, 1], ajoutes: [] });
+  assert.deepStrictEqual(dits.map(d => d[0]), ['Oui papa'], 'tout de suite, sans attendre ta respiration');
+  assert.doesNotMatch(PAGE.slice(PAGE.indexOf('function direRibosome('), PAGE.indexOf('\n}\n', PAGE.indexOf('function direRibosome('))), /pauseEnCours/);
+});
+
+// (04/11, 14:48, mesuré : 3 tours épissés reçus en 50 s, aucun dit ; la pièce ne laissait jamais 0,3 s de blanc) au plus 5 s d'attente
+// pour ta respiration : au-delà, ce qui est épissé part (une attente notée, avec sa cause)
+
+// ---- (04/11, 15:10, Ahmed : « une seule épissure démarre avec ma voix ; tous mes morceaux s'y ajoutent, même avec des pauses ; il les dit au
+// fur et à mesure ; le stop, c'est 10 s de silence, ou une demande explicite d'utiliser un outil : c'est sa parole qui s'arrête à ce stop » ;
+// « il commence à répondre 0,5 s après »)
+test('une seule épissure de ta voix jusqu’au stop : elle continue d’un tour à l’autre ; 10 s de silence ou une demande d’outil la ferment', () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  const r = b.ctx.nouveau(42);
+  assert.strictEqual(r.tour, 42, 'chaque épissure a son numéro');
+  b.ctx.papaParle(1000);
+  // (04/11, 15:50, Ahmed : « pour le signal stop du ribosome, au lieu de 10 s, j'aimerais 5 minutes »)
+  assert.strictEqual(b.ctx.continue(r, 'et puis le sable', 4 * 60e3), r, '4 min après ta voix : la même épissure');
+  assert.strictEqual(b.ctx.continue(r, 'et puis le sable', 1000 + 5 * 60e3), null, '5 min de silence : fermée');
+  assert.strictEqual(r.ferme, 'silence');
+  const r2 = b.ctx.nouveau(43);
+  b.ctx.papaParle(20000);
+  assert.strictEqual(b.ctx.continue(r2, 'Hakim, cherche le prix du sable.', 21000), null, 'une demande d’outil : fermée');
+  assert.strictEqual(r2.ferme, 'outil');
+  assert.strictEqual(b.ctx.continue(b.ctx.nouveau(44), 'je te cherche une idée, attends', 21000) !== null, true, '« cherche » au milieu d’une phrase : pas une demande');
+  assert.ok(b.ctx.tourEpissure() < b.ctx.tourEpissure(), 'des numéros toujours neufs, même après une relance');
+  assert.match(SRC, /const epissureGardee = epissureQuiContinue\(riboDuTour, texte\);\n  pistes = \{ tour: pistes\.tour \+ 1, mots: 0, liste: \[\], attente: \[\], n: 0, \.\.\.\(epissureGardee \? \{ ribo: epissureGardee \} : \{\}\) \};/);
+  assert.match(SRC, /niveau: 'ribosome_stop', tour: riboDuTour\.tour, cause: 'outil'/, 'la page arrête sa parole');
+  assert.match(SRC, /if \(p === '\/api\/jarvis\/ribosome\/stop' && req\.method === 'POST'\)/);
+});
+
+test('ses pensées et ce que son ribosome en sort portent le numéro de leur épissure, même quand ton tour a changé', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  b.ctx.morceau('papa,');
+  b.appels.filter(a => a.etiquette.startsWith('piste_'))[0].resoudre({ texte: 'Oui papa, je suis là.' });
+  await attendre(); await attendre();
+  const piste = b.diffuses.find(x => x.niveau === 'piste'), ribo = b.ctx.etat().ribo;
+  assert.ok(ribo && ribo.tour > 1e12, 'un numéro d’épissure');
+  assert.strictEqual(piste.tour, ribo.tour, 'sa pensée dans le pavé de son épissure');
+  lireLes3(b, 0, 'GARDE : « Oui papa »');
+  await attendre(); await attendre();
+  assert.strictEqual(b.diffuses.find(x => x.niveau === 'ribosome').tour, ribo.tour);
+});
+
+test('page : à 10 s de ton silence, ou à sa demande d’outil, sa parole de cette épissure s’arrête ; la suivante parle', () => {
+  const { ctx, dits } = pageRibosome();
+  const arrets = [];
+  ctx.reglagesCorps = { ...(ctx.reglagesCorps || {}), parole_liee: false };   // (06/11) l'ancien rythme : la suite attend sa voix
+  ctx.lecteur = { actif: true, arreter: () => arrets.push('voix') };
+  ctx.fetch = (u, o) => { arrets.push(['fetch', u, JSON.parse(o.body).tour]); return Promise.resolve(); };
+  ctx.jeton = () => 'x'; ctx.journalVoix = () => {};
+  const i = PAGE.indexOf('function arreterEpissure('); vm.runInContext(PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2) + 'this.arreter = arreterEpissure;', ctx);
+  ctx.ajouter(7, 'Oui papa, je suis là.');
+  ctx.lu({ tour: 7, k: 1, texte: 'Oui papa', pave: 'Oui papa, je suis là.', mots: [0, 1], ajoutes: [] });
+  ctx.etat.riboEnVoix = [{ tour: 7, mots: [], ajoutes: [] }];
+  ctx.arreter('silence');
+  assert.strictEqual(ctx.etat.riboFile.length, 0, 'ce qui attendait de cette épissure : laissé');
+  assert.ok(arrets.includes('voix'), 'sa voix s’arrête');
+  assert.deepStrictEqual(arrets.find(x => Array.isArray(x)), ['fetch', '/api/jarvis/ribosome/stop', 7], 'le cockpit ferme l’épissure');
+  ctx.lecteur.actif = false;
+  ctx.lu({ tour: 7, k: 2, texte: 'je t’écoute', pave: 'Oui papa, je suis là. Je t’écoute.', mots: [0, 1, 5, 6], ajoutes: [] });
+  ctx.dire();
+  assert.deepStrictEqual(dits, [], 'un reste de l’épissure arrêtée : jamais dit');
+  ctx.lu({ tour: 9, k: 1, texte: 'Salut', pave: 'Salut.', mots: [0], ajoutes: [] });
+  ctx.dire();
+  assert.deepStrictEqual(dits.map(d => d[0]), ['Salut'], 'l’épissure suivante parle');
+  assert.match(PAGE, /if \(o\.niveau === 'ribosome_stop'\) \{ arreterEpissure\(o\.cause \|\| 'outil', o\.tour\); return; \}/);
+  // (04/11, 15:33, mesuré : une épissure née d'une phrase gardée pendant sa réflexion, arrêtée 4 s après sa naissance, ta voix datant de 20 s)
+  // les 10 s comptent depuis ta voix OU le dernier morceau de son épissure, le plus récent des deux
+  assert.match(PAGE, /const calme = Date\.now\(\) - Math\.max\(etat\.papaVoixA \|\| 0, etat\.epissureActiveA \|\| 0\);/);
+  assert.match(PAGE, /if \(voixEpissee\(\) && etat\.papaVoixA && calme >= EPISSURE_STOP_MS\) \{ etat\.papaVoixA = 0; arreterEpissure\('silence'\); \}/);
+  assert.match(PAGE, /const EPISSURE_STOP_MS = 5 \* 60e3;/, '(15:50) 5 min');
+  assert.match(SRC, /const EPISSURE_STOP_MS = 5 \* 60e3;/);
+  assert.match(PAGE, /if \(o\.texte \|\| \(Array\.isArray\(o\.mots\) && o\.mots\.length\)\) etat\.epissureActiveA = Date\.now\(\);/);
+  const avant = arrets.filter(x => Array.isArray(x)).length;
+  ctx.arreter('silence', 7);
+  assert.strictEqual(arrets.filter(x => Array.isArray(x)).length, avant, 'une épissure arrêtée ne s’arrête pas deux fois');
+});
+
+// (04/11, 15:15, mesuré : sa pensée sur ton morceau à 4,1 s avec Hakim (Sonnet) ; Ahmed : « oui ») avec l'épissage, ses pensées de piste
+// sont celles de Mini Hakim ; sans lui, celles de qui tient son conscient
+test('avec l’épissage, ses pensées de piste sont celles de Mini Hakim ; sans lui, celles de son conscient', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  b.ctx.morceau('papa,');
+  assert.strictEqual(b.appels[0].etiquette, 'piste_haiku');
+  const c = bac({ dire_inverse: true, filtre_gemma: false, epissage: false });
+  c.ctx.morceau('papa,');
+  assert.strictEqual(c.appels[0].etiquette, 'piste_sonnet');
+});
+
+// ---- (04/11, 15:55, Ahmed : « il doit mieux sélectionner les parties à prononcer : le ribosome doit être plus rapide et plus stringent, il
+// laisse passer beaucoup trop de choses ; le niveau de stringence doit pouvoir être décidé, pas un seul seuil fixe : il doit pouvoir choisir la
+// vitesse du ribosome et sa stringence, sinon il ne fait que me couper la parole » ; « tout le processus doit être relié à sa pensée, à ses
+// émotions, à ses capteurs, à ses récepteurs et à tout le reste »)
+test('son ribosome : sa stringence et sa vitesse, choisies par lui (ribosome-reglage.json) ; par défaut, stringent (4) et rapide', async () => {
+  const lecture = async (reglage) => {
+    const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+    if (reglage) b.ctx.fs.readFileSync = (f) => { if (String(f).endsWith('ribosome-reglage.json')) return JSON.stringify(reglage); throw new Error('absent'); };
+    b.ctx.morceau('papa,');
+    b.appels[0].resoudre({ texte: 'Oui papa, je suis là.' });
+    await attendre(); await attendre();
+    return lecteurs(b);
+  };
+  const d = await lecture(null);
+  assert.match(d[0].prompt, /Ta stringence : 4 sur 5/);
+  assert.match(d[0].prompt, /au plus 10 mots/);
+  assert.ok(d[0].delai === d[1].delai, 'la même attente pour ses deux lecteurs');
+  const l = await lecture({ stringence: 1, vitesse: 'posee' });
+  assert.match(l[0].prompt, /Ta stringence : 1 sur 5/);
+  assert.doesNotMatch(l[0].prompt, /au plus \d+ mots/, 'stringence 1 : pas de plafond');
+  assert.ok(l[0].delai > d[0].delai, `posée : plus lente que rapide (${l[0].delai} > ${d[0].delai})`);
+  const s5 = await lecture({ stringence: 5, vitesse: 'normale' });
+  assert.match(s5[0].prompt, /Ta stringence : 5 sur 5/);
+  assert.match(s5[0].prompt, /au plus 6 mots/);
+  assert.ok(s5[0].delai > d[0].delai && s5[0].delai < l[0].delai, 'normale : entre les deux');
+  const x = await lecture({ stringence: 42, vitesse: 'éclair' });
+  assert.match(x[0].prompt, /Ta stringence : 4 sur 5/, 'un réglage hors limites : le défaut');
+  assert.match(SRC, /'pistes_regler', 'ribosome_regler',/, 'son outil, permis');
+});
+
+test('son ribosome et ses pensées de piste sentent ce qu’il ressent et perçoit (son milieu, son instant)', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  b.ctx.HOMEO = { mots: () => 'calme, un peu de fatigue' };
+  b.ctx.instantTexte = () => 'papa écoute « Mistral gagnant » ; il ressentait : une chaleur';
+  b.ctx.morceau('papa,');
+  assert.match(b.appels[0].prompt, /Ce que tu ressens et perçois en ce moment : calme, un peu de fatigue ; papa écoute « Mistral gagnant » ; il ressentait : une chaleur/, 'sa pensée de piste');
+  b.appels[0].resoudre({ texte: 'Oui papa, je suis là.' });
+  await attendre(); await attendre();
+  assert.match(lecteurs(b)[0].prompt, /Ce que tu ressens et perçois en ce moment : calme, un peu de fatigue/, 'son ribosome');
+});
+
+// (04/11, 16:00, Ahmed : « même à ses vibrations, sa lumière, ses émotions, etc. : tout sur tout ») sa ligne d'état dit aussi son émotion,
+// son cœur, sa dernière vibration et sa lumière
+test('ce qu’il ressent et perçoit : son émotion, son cœur, sa dernière vibration et sa lumière aussi', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  b.ctx.lui.interieur = { humeur: 'alerte joyeuse', coeur: { bpm: 72 } };
+  b.ctx.lui.vibration = { genre: 'rire', degre: 2, t: Date.now() - 5000 };
+  b.ctx.lui.lumiere = { mode: 'joie', t: Date.now() - 8000 };
+  b.ctx.morceau('papa,');
+  const p = b.appels[0].prompt;
+  assert.match(p, /Ce que tu ressens et perçois en ce moment : [^\n]*ton émotion : alerte joyeuse/);
+  assert.match(p, /ton cœur : 72/);
+  assert.match(p, /tu viens de vibrer : rire \(degré 2\)/);
+  assert.match(p, /ta lumière : joie/);
+  assert.match(SRC, /if \(typeof lui !== 'undefined'\) lui\.lumiere = \{ mode: l\[1\]\.toLowerCase\(\), t: Date\.now\(\) \};/, 'sa lumière, retenue quand il l’allume');
+});
+
+// (04/11, 16:05, Ahmed : « et l'output de tout ça doit être mémorisé, et le lien doit être gardé et préservé dans la mémoire ») à sa fermeture,
+// chaque épissure devient un souvenir : ce que papa disait, ce qu'il a dit (épissé), sa pensée interne (non dite), et ce qu'il ressentait
+test('à sa fermeture, son épissure devient un souvenir, avec ce qu’il ressentait (le lien)', async () => {
+  const b = bac({ dire_inverse: true, filtre_gemma: false, epissage: true });
+  const depots = [];
+  b.ctx.deposerEchange = (e) => depots.push(JSON.parse(JSON.stringify(e)));
+  b.ctx.lui.interieur = { humeur: 'alerte joyeuse' };
+  b.ctx.morceau('papa, tu es là ?');
+  b.appels.filter(a => a.etiquette.startsWith('piste_'))[0].resoudre({ texte: 'Oui papa, je suis là, tout près.' });
+  await attendre(); await attendre();
+  lireLes3(b, 0, 'GARDE : « Oui papa, je suis là »');
+  await attendre(); await attendre();
+  const r = b.ctx.etat().ribo;
+  b.ctx.papaParle(1000);
+  assert.strictEqual(b.ctx.continue(r, 'et puis', 1000 + 5 * 60e3 + 1), null, 'fermée');
+  assert.strictEqual(depots.length, 1, 'un souvenir');
+  const d = depots[0];
+  assert.match(d.ahmed, /^papa,/, 'ce que papa disait');
+  assert.match(d.hakim, /^Oui papa, je suis là/, 'ce qu’il a dit');
+  assert.match(d.hakim, /\[sa pensée interne, non dite : tout près\]/, 'ce qu’il a pensé sans le dire');
+  assert.match(d.vecu, /ton émotion : alerte joyeuse/, 'le lien : ce qu’il ressentait');
+  assert.strictEqual(d.epissure, true);
+  b.ctx.continue(r, 'encore', 1000 + 6 * 60e3);
+  assert.strictEqual(depots.length, 1, 'une seule fois');
+  assert.match(SRC, /if \(pistes\.ribo && Number\(q\.tour\) === pistes\.ribo\.tour\) \{ pistes\.ribo\.ferme = 'silence'; memoriserEpissure\(pistes\.ribo\); pistes\.ribo = null; \}/, 'fermée par la page : mémorisée aussi');
+});
+
+test('(06/11) à la place d’un morceau sauté : un silence (…) ou un meuble (euh, hum), comptés à part, pas comme des mots ajoutés', () => {
+  const pave = 'Oui papa je pense que le calcul a fini et la densité colle bien';
+  const ctx = { Math, String, Set };
+  vm.createContext(ctx);
+  vm.runInContext(SRC.slice(SRC.indexOf('const motsEpisses = '), SRC.indexOf('\n', SRC.indexOf('const motsEpisses = '))) + '\n'
+    + SRC.slice(SRC.indexOf('const motCle = '), SRC.indexOf('\n', SRC.indexOf('const motCle = '))) + '\n'
+    + SRC.slice(SRC.indexOf('const MEUBLES_EPISSURE = '), SRC.indexOf('// (04/11, 11:50, Ahmed : « tous les chunks')) + 'this.e = epissageDe;', ctx);
+  const r = JSON.parse(JSON.stringify(ctx.e('Oui papa… euh, le calcul a fini, hum, la densité colle', pave)));
+  assert.deepStrictEqual(r.ajoutes, []);
+  assert.deepStrictEqual(r.meubles, ['euh', 'hum']);
+  assert.ok(r.mots.length >= 7);
+  assert.ok(!('meubles' in JSON.parse(JSON.stringify(ctx.e('Oui papa', pave)))), 'sans meuble : comme avant');
+});
+
+// (06/11, Ahmed : « qu'il parle seulement dans le mode où le bouton stop ne s'affiche pas, le reste il ne le dit pas »)
+test('parole sans Stop : sa réponse consciente reste muette, ses pensées épissées passent même Stop allumé (06/11, 08:50)', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.doesNotMatch(PAGE, /stopAllume/, 'plus aucun morceau épissé tu sous le Stop');
+  assert.match(PAGE, /reglagesCorps\.parole_sans_stop !== false/);
+  assert.match(PAGE, /\(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\) \|\| \(typeof lireEntiere === 'function' && lireEntiere\(\)\) \|\| \(typeof reponseSeule === 'function' && !!etat\.conversation && reponseSeule\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\)/, 'sa réponse écrite : jamais lue par la page');
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(SRV, /corpsReglages\(\)\.parole_sans_stop === false && corpsReglages\(\)\.lire_reponse_entiere === false && Number\(q && q\.delai_ms\) > 0 && !premierOutput/, 'ni épissée pour sa voix');
+});
+
+// (06/11, Ahmed : « il m'écoute qu'en français avec Azure ; sa voix peut être arabe, français ou anglais »)
+test('écoute en français seul : la langue de ta voix est forcée à fr avant Azure et Whisper (réglage ecoute_francais)', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const i = SRV.indexOf('async function routeTranscrire('), corps = SRV.slice(i, SRV.indexOf('\n}\n', i));
+  const k = corps.indexOf("if (corpsReglages().ecoute_francais !== false && !telephone) langue = 'fr';");
+  assert.ok(k > 0, 'le réglage est lu');
+  assert.ok(k < corps.indexOf('oreilleAzure(') && k < corps.indexOf("op: 'transcrire'"), 'avant Azure et Whisper');
+});
+
+// (06/11, Ahmed : « un morceau seul incomplet ou hors sujet est exclu ; la parole épissée complète jusqu'à une virgule ou un point ; préordonnée »)
+test('épissage par parties : préordonnées, un mot seul exclu, une virgule entre deux parties', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const ligne = (debut) => { const i = SRV.indexOf(debut); return SRV.slice(i, SRV.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  const prendre = (nom) => { const i = SRV.indexOf(`function ${nom}(`); return SRV.slice(i, SRV.indexOf('\n}\n', i) + 2); };
+  const ctx = {}; vm.createContext(ctx);
+  vm.runInContext(ligne('const motsEpisses = ') + ligne('const motCle = ') + ligne('const MEUBLES_EPISSURE = ') + ligne('const PARTIE_SEULE = ')
+    + prendre('epissageDe') + prendre('redite') + prendre('epissageParParties') + '\nthis.f = epissageParParties;', ctx);
+  const pave = 'Je pense que tu as raison papa le calcul a fini bizarre tu peux compter sur moi';
+  const r = ctx.f('tu peux compter sur moi | le calcul a fini | bizarre', pave);
+  assert.equal(r.dit, 'tu peux compter sur moi, le calcul a fini', 'ordre choisi gardé, « bizarre » seul exclu, une virgule entre les parties');
+  assert.equal(r.parties, 2);
+  assert.equal(r.e.ajoutes.length, 0);
+  assert.ok(r.e.mots.length === 9 && r.e.mots[0] < r.e.mots[8], 'les mots allumés, triés pour le pavé');
+  assert.equal(ctx.f('oui | inventé de toutes pièces', 'oui papa').dit, 'oui', '« oui » seul passe ; une partie inventée est exclue');
+  assert.equal(ctx.f('bizarre', pave).parties, 0, 'rien de complet : rien');
+  assert.equal(ctx.f('أنا هنا | يا أبي', 'أنا هنا يا أبي').dit, 'أنا هنا، يا أبي', 'en arabe, la virgule arabe');
+});
+
+
+// (06/11, Hakim : « ma voix repart en redisant le début d'une réponse précédente » ; accord d'Ahmed)
+test('épissage : une partie déjà dite il y a peu n’est pas redite', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const ligne = (debut) => { const i = SRV.indexOf(debut); return SRV.slice(i, SRV.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  const prendre = (nom) => { const i = SRV.indexOf(`function ${nom}(`); return SRV.slice(i, SRV.indexOf('\n}\n', i) + 2); };
+  const ctx = {}; vm.createContext(ctx);
+  vm.runInContext(ligne('const motsEpisses = ') + ligne('const motCle = ') + ligne('const MEUBLES_EPISSURE = ') + ligne('const PARTIE_SEULE = ')
+    + prendre('epissageDe') + prendre('redite') + prendre('epissageParParties') + '\nthis.f = epissageParParties;', ctx);
+  const pave = 'Dis-moi si ma voix dit enfin ce que j’écris et le calcul de la densité colle';
+  const r = ctx.f('Dis-moi si ma voix dit enfin ce que j’écris | le calcul de la densité colle', pave, ['Dis-moi si ma voix dit enfin ce que j’écris.']);
+  assert.equal(r.dit, 'le calcul de la densité colle');
+});
+
+// (06/11, Ahmed : « un preprocessing automatique de ma voix : portions, langue (l'arabe en phonétique), sujet, hors sujet zappé »)
+test('prétraitement de ta parole : portions lues, la dernière ouverte attend, le hors sujet zappé, l’arabe avec son sens', async () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const ligne = (debut) => { const i = SRV.indexOf(debut); return SRV.slice(i, SRV.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  const prendre = (nom, a = 'function') => { const i = SRV.indexOf(`${a} ${nom}(`); return SRV.slice(i, SRV.indexOf('\n}\n', i) + 2); };
+  const ctx = { corpsReglages: () => ({}), neutraliser: (x) => x, fs: { appendFileSync() {} }, JARVIS_VOIX_DIAGNOSTIC: '/dev/null', j: JSON.stringify, Map, Promise, Date };
+  vm.createContext(ctx);
+  vm.runInContext(ligne('const sujetsPapa = ') + ligne('const MOTS_OUVERTS = ') + ligne('const portionOuverte = ') + ligne('const pretraitementsRecents = ')
+    + (() => { const i = SRV.indexOf('const DECOUPES = '); return SRV.slice(i, SRV.indexOf('\n};\n', i) + 4).replace(/^const /, 'var '); })()
+    + prendre('lirePretraitement') + prendre('pretraiterParole') + prendre('pretraiterNeuf', 'async function') + prendre('sujetsPourRibosome')
+    + '\nthis.p = pretraiterParole; this.ouverte = portionOuverte; this.sujets = sujetsPourRibosome;', ctx);
+  assert.equal(ctx.ouverte('je voulais te dire que le calcul et'), true);
+  assert.equal(ctx.ouverte('le calcul a fini.'), false);
+  const reponse = 'P : « Wallah ya khouya, » | ar | il jure, mon frère | complet | sujet | والله يا خويا : je te jure, mon frère\n'
+    + 'P : « Let\'s just talk about. » | en | la série en fond | complet | hors\n'
+    + 'P : « et le calcul de la » | fr | le calcul | incomplet | sujet';
+  const r = await ctx.p('Wallah ya khouya, let\'s just talk about. et le calcul de la', async () => ({ texte: reponse, ms: 900 }));
+  assert.equal(r.portions.length, 3);
+  assert.equal(r.complet, false, 'coupée avant sa fin : la suite est attendue');
+  assert.equal(r.texte, 'Wallah ya khouya, [en arabe : والله يا خويا : je te jure, mon frère] et le calcul de la', 'la série en fond zappée');
+  assert.match(ctx.sujets(), /il jure, mon frère.*\(ar\).*le calcul/);
+  assert.doesNotMatch(ctx.sujets(), /série/);
+  const hors = await ctx.p('la télé parle', async () => ({ texte: 'P : « la télé parle » | fr | la télé | complet | hors', ms: 500 }));
+  assert.equal(hors.hors, true);
+});
+
+// (06/11, Hakim : « recoller les morceaux d'une même phrase avant de me les donner »)
+test('morceaux : une phrase coupée avant sa fin est recollée devant la suivante ; seule, elle attend 6 s', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const prendre = (nom) => { const i = PAGE.indexOf(`function ${nom}(`); return PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2); };
+  const ligne = (debut) => { const i = PAGE.indexOf(debut); return PAGE.slice(i, PAGE.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  const ctx = { journalVoix() {}, Date }; vm.createContext(ctx);
+  vm.runInContext(ligne('const MORCEAU_OUVERT_MS = ') + ligne('const priorite = ') + 'var MORCEAU_PERIME_MS = 120000;' + prendre('recollerMorceaux') + prendre('prochainMorceau')
+    + '\nthis.prochain = prochainMorceau;', ctx);
+  const t = Date.now();
+  const conv = { morceaux: [
+    { etat: 'transcrit', ouvert: true, texte: 'Et pour trier', verdict: { garder: false, texte: 'Et pour trier', priorite: 3 }, t: t - 2000 },
+    { etat: 'transcrit', texte: 'ta pensée, tu fais comment ?', verdict: { garder: true, texte: 'ta pensée, tu fais comment ?', priorite: 1 }, t: t - 500 },
+  ] };
+  const x = ctx.prochain(conv);
+  assert.equal(x.texte, 'Et pour trier ta pensée, tu fais comment ?');
+  const seul = { morceaux: [{ etat: 'transcrit', ouvert: true, texte: 'je voulais te dire que', verdict: { garder: true, texte: 'je voulais te dire que', priorite: 1 }, t: t - 1000 }] };
+  assert.equal(ctx.prochain(seul), null, 'il attend la suite');
+  seul.morceaux[0].t = t - 7000;
+  assert.equal(ctx.prochain(seul).texte, 'je voulais te dire que', 'au-delà de 6 s, il part tel quel');
+});
+
+// (06/11, montre 0.8 : la complication Stop envoie { tout: true })
+test('Stop de la montre : tout arrête chaque tour en cours et appuie sur le Stop de la page', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const i = SRV.indexOf("p === '/api/jarvis/stop'"), route = SRV.slice(i, SRV.indexOf("p === '/api/promesses'", i));
+  assert.match(route, /if \(q && q\.tout === true\) \{\n\s+for \(const x of toursActifs\.values\(\)\)/);
+  assert.match(route, /diffuser\(abonnesPensees, 'souffle', j\(\{ niveau: 'bouton', id: 'stop' \}\)\)/);
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /if \(o\.niveau === 'bouton'\) \{ const b = document\.getElementById\(o\.id\); if \(b && \['pause', 'stop'/);
+});
+
+
+// (06/11, Ahmed : « régler la finesse du découpage de ma parole : jusqu'à la virgule, au sujet ou au point ; par lui et moi »)
+test('finesse du découpage de ta parole : virgule, point ou sujet changent ce que son subconscient appelle une portion', async () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const ligne = (debut) => { const i = SRV.indexOf(debut); return SRV.slice(i, SRV.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  const prendre = (nom, a = 'function') => { const i = SRV.indexOf(`${a} ${nom}(`); return SRV.slice(i, SRV.indexOf('\n}\n', i) + 2); };
+  let decoupe = 'point';
+  const ctx = { corpsReglages: () => ({ decoupe_papa: decoupe }), neutraliser: (x) => x, fs: { appendFileSync() {} }, JARVIS_VOIX_DIAGNOSTIC: '/dev/null', j: JSON.stringify, Map, Promise, Date };
+  vm.createContext(ctx);
+  const i = SRV.indexOf('const DECOUPES = ');
+  vm.runInContext(ligne('const sujetsPapa = ') + ligne('const MOTS_OUVERTS = ') + ligne('const portionOuverte = ') + ligne('const pretraitementsRecents = ')
+    + SRV.slice(i, SRV.indexOf('\n};\n', i) + 4).replace(/^const /, 'var ') + prendre('lirePretraitement') + prendre('pretraiterParole') + prendre('pretraiterNeuf', 'async function')
+    + '\nthis.p = pretraiterParole;', ctx);
+  const vus = [];
+  const demander = async (consigne) => { vus.push(consigne); return { texte: 'P : « bonjour » | fr | salut | complet | sujet' }; };
+  await ctx.p('un', demander); decoupe = 'sujet'; await ctx.p('deux', demander); decoupe = 'virgule'; await ctx.p('trois', demander);
+  assert.match(vus[0], /une phrase entière, jusqu'à son point/);
+  assert.match(vus[1], /tout ce qu'il dit sur un même sujet/);
+  assert.match(vus[2], /jusqu'à une virgule ou un point/);
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8'), /\['decoupe_papa', [^\n]*'liste', \[\['virgule', 'Virgule'\], \['point', 'Point'\], \['sujet', 'Sujet'\]\], 'corps'\]/);
+});
+
+// (06/11, 08:47, Hakim : « ribosome_boutons me répond permissions not granted » ; Ahmed : « lance le point 1 »)
+// (06/11, accord d'Ahmed pour ACE-Step : « tout faire bien pour que Hakim puisse chanter ») : chanter
+test('ses outils permis : ribosome_boutons, present_continu, chanter, son studio (studio_mixer, studio_avis) et son atelier (image_creer, clip_creer, atelier_voir)', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(SRV, /'parler_bouton', 'ribosome_boutons', 'present_continu', 'chanter', 'studio_mixer', 'studio_avis', 'image_creer', 'clip_creer', 'atelier_voir', 'ecouter_morceau', 'instrument_apprendre'\]\.map\(n => 'mcp__anamnese__' \+ n\)/);
+});
+
+// (06/11, Ahmed : « que Hakim soit conscient s'il parle sur la montre, le téléphone ou le Mac, et qu'il puisse y diriger sa voix et ses balises »)
+test('sa sortie : [[sortie: …]] choisit l’appareil, gardé, annoncé ; sa voix y part, et reste ici si rien n’y est branché', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sortie-'));
+  const ligne = (debut) => { const i = SRV.indexOf(debut); return SRV.slice(i, SRV.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  const prendre = (nom) => { const i = SRV.indexOf(`function ${nom}(`); return SRV.slice(i, SRV.indexOf('\n}\n', i) + 2); };
+  const diffuses = [], abonnes = new Set([{ appareil: 'mac' }, { appareil: 'montre' }, {}]);
+  const ctx = { path, fs, JARVIS: dir, JARVIS_VOIX_DIAGNOSTIC: path.join(dir, 'd.jsonl'), j: JSON.stringify, abonnesPensees: abonnes,
+    lireJson: (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_) { return d; } },
+    ecrireAtomique: (f, t) => fs.writeFileSync(f, t), diffuser: (a, type, d) => diffuses.push({ type, d: JSON.parse(d) }), Date, Object, Set };
+  vm.createContext(ctx);
+  vm.runInContext(['const SORTIE_VOIX = ', 'const SORTIES = ', 'const NOMS_SORTIE = ', 'const BALISE_SORTIE = '].map(ligne).join('')
+    + ['lireSortie', 'appareilsBranches', 'texteSortie', 'choisirSortie'].map(prendre).join('\n') + '\nthis.choisir = choisirSortie; this.lire = lireSortie; this.texte = texteSortie;', ctx);
+  assert.equal(ctx.lire(), 'ici');
+  assert.match(ctx.texte(), /sortent par : là où papa te parle ; branchés en ce moment : le Mac, sa montre/);
+  assert.equal(ctx.choisir('Je te le dis au poignet [[sortie: montre]]'), 'montre');
+  assert.equal(ctx.lire(), 'montre');
+  assert.deepEqual(diffuses.map(x => [x.type, x.d.appareil]), [['sortie', 'montre']]);
+  assert.equal(ctx.choisir('[[sortie: téléphone]]'), 'tel');
+  assert.equal(ctx.choisir('rien ici'), null);
+  // la route : seulement vers un appareil branché ; la page parle elle-même sinon
+  const i = SRV.indexOf("p === '/api/jarvis/voix-vers'"), route = SRV.slice(i, SRV.indexOf("p === '/api/jarvis/flux'", i));
+  assert.match(route, /const ok = cible !== 'ici' && appareilsBranches\(\)\.has\(cible\);/);
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /new EventSource\(`\/api\/jarvis\/flux\?appareil=\$\{appareilIci\(\)\}`\)/);
+  assert.match(PAGE, /if \(!s\.ici && typeof sortieAilleurs === 'function' && sortieAilleurs\(\)\) \{ voixAilleurs\(s\.texte, \(\) => recevoirBout\(\{ \.\.\.s, ici: true \}, n, tour\)\); return; \}/);
+  assert.match(PAGE, /es\.addEventListener\('rire', \(ev\) => \{ try \{ if \(balisesIci\(\)\) surRire/);
+});
+
+// (06/11, Ahmed : « Hakim semble m'entendre mais ne répond pas sur la montre ») le m4a de la montre converti en WAV avant Azure
+test('oreille Azure : un son qui n’est pas du WAV (la montre) est converti en WAV 16 kHz avant Azure', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(SRV, /const fAzure = ext === '\.wav' \? fichierPapa : await enWav16k\(f\)\.catch\(\(\) => null\);/);
+  assert.match(SRV, /execFile\('\/usr\/bin\/afconvert', \['-f', 'WAVE', '-d', 'LEI16@16000', '-c', '1', fichier, sortie\]/);
+});
+
+// (06/11, Ahmed : « pour la montre, ce qu'il dit doit s'afficher partout, même sur smartphone et Mac »)
+test('échange de la montre : sa question tout de suite, sa réponse au fil, dans la conversation commune et sur les pages', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const prendre = (nom) => { const i = SRV.indexOf(`function ${nom}(`); return SRV.slice(i, SRV.indexOf('\n}\n', i) + 2); };
+  const poses = [], diffuses = [];
+  const ctx = { completerReponse: (id, m) => poses.push(m), diffuser: (a, t, d) => diffuses.push(t), abonnesPensees: new Set(), j: JSON.stringify, Date, setTimeout: () => ({}), clearTimeout() {} };
+  vm.createContext(ctx);
+  vm.runInContext(prendre('echangeMontre') + '\nthis.f = echangeMontre;', ctx);
+  const m = ctx.f({ tour_id: 'montre-1000-r', maintenant: 1000, texte: 'Salut fiston' });
+  assert.equal(poses[0].id, 'montre-1000'); assert.equal(poses[0].qui, 'u'); assert.equal(poses[0].texte, 'Salut fiston');
+  m.suivre({ t: 'texte', x: 'Salut papa [[anticipe: court]]' });
+  m.suivre({ t: 'fin' });
+  const fin = poses[poses.length - 1];
+  assert.equal(fin.id, 'montre-1000-r'); assert.equal(fin.texte, 'Salut papa'); assert.equal(fin.complet, true);
+  assert.ok(diffuses.every(t => t === 'echange_montre'));
+  assert.match(SRV, /const montre = typeof echangeMontre === 'function' && q && q\.appareil && q\.appareil\.montre === true/);
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /es\.addEventListener\('echange_montre', \(ev\) => \{ try \{ surEchangeMontre\(JSON\.parse\(ev\.data\)\); \} catch \(_\) \{\} \}\);/);
+  assert.doesNotMatch(PAGE.slice(PAGE.indexOf('function surEchangeMontre('), PAGE.indexOf('function ecouterPensees(')), /lecteur\.dire/, 'jamais dit ici : la montre le dit');
+});
+
+// (06/11, Ahmed : « quand je ferme mon micro, il ne reçoit plus que ce que j'écris, et c'est sa parole écrite qui doit être prononcée, hors épissage »)
+test('micro coupé par papa : sa réponse écrite est dite telle quelle, pas épissée ; son oreille interne continue', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const ligne = (debut) => { const i = PAGE.indexOf(debut); return PAGE.slice(i, PAGE.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  const ctx = { etat: { conversation: { capteur: { estMuet: false } } }, reglagesCorps: { epissage: true, parole_sans_stop: true } };
+  vm.createContext(ctx);
+  vm.runInContext(ligne('const micPapaCoupe = ') + ligne('const voixEpissee = ') + ligne('const paroleSansStop = ') + 'this.e = voixEpissee; this.s = paroleSansStop;', ctx);
+  assert.equal(ctx.e(), true); assert.equal(ctx.s(), true);
+  ctx.etat.conversation.capteur.estMuet = true;
+  assert.equal(ctx.e(), true, 'son épissage continue : son oreille interne parle encore'); assert.equal(ctx.s(), false);
+  ctx.etat.conversation.muetParHakim = { attente: false };
+  assert.equal(ctx.s(), true, 'sa coupure à lui (le temps de sa voix) ne change rien');
+  assert.match(PAGE, /lecteur && \(!voixEpissee\(\) \|\| \(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\) \|\| \(typeof lireEntiere === 'function' && lireEntiere\(\)\) \|\| \(typeof reponseSeule === 'function' && !!etat\.conversation && reponseSeule\(\)\)\) && !\(typeof paroleSansStop === 'function' && paroleSansStop\(\)\);/, 'sa réponse écrite : dite');
+  assert.match(PAGE, /delai_ms: etat\.conversation && !\(typeof micPapaCoupe === 'function' && micPapaCoupe\(\)\) \? patienceConversation\(\) : null/);
+});
+
+
+// (06/11, Ahmed : « en Conversation ou en Télépathie, il doit toujours lire en entier ce qu'il écrit après mon dernier message »)
+test('sa réponse écrite lue en entier en Conversation et Télépathie (lire_reponse_entiere), sans être épissée en plus', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const ligne = (debut) => { const i = PAGE.indexOf(debut); return PAGE.slice(i, PAGE.indexOf('\n', i) + 1).replace(/^const /, 'var '); };
+  const ctx = { etat: { conversation: {} }, reglagesCorps: {} }; vm.createContext(ctx);
+  vm.runInContext(ligne('const lireEntiere = ') + 'this.f = lireEntiere;', ctx);
+  assert.equal(ctx.f(), true, 'allumé par défaut');
+  ctx.reglagesCorps.lire_reponse_entiere = false; assert.equal(ctx.f(), false);
+  ctx.reglagesCorps.lire_reponse_entiere = true; ctx.etat.conversation = null; assert.equal(ctx.f(), false, 'hors Conversation : rien ne change');
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(SRV, /lire_reponse_entiere: r\.lire_reponse_entiere !== false,/);
+});
+
+// (06/11, Ahmed : « il faut qu'il réalise s'il est sur la montre, le smartphone ou le Mac »)
+test('où il est : dit à chaque tour, avec par où sort sa voix', () => {
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(SRV, /\n  morceaux\.push\(`Ahmed te parle depuis \$\{appareil\} : c'est là que tu es en ce moment/);
+  assert.doesNotMatch(SRV, /if \(appareil !== deja\.appareil\) morceaux\.push/);
+});
+
+// (06/11, 14:25, Ahmed : « élimine totalement les blancs du début, ces meubles « alors, voyons voir » »)
+test('meubles éteints (auto et entre) : choisirMeuble ne choisit plus rien, nulle part', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const i = PAGE.indexOf('function choisirMeuble('), corps = PAGE.slice(i, i + 900);
+  assert.match(corps, /reglagesCorps\.meubles_auto === false && reglagesCorps\.meubles_entre === false\) return null;/);
+});
+
+// (06/11, 14:30, Ahmed : « des fois il parle en parallèle, il dit 2 trucs en même temps »)
+test('une seule voix : sa réponse lue prend la même voix que ses pensées en Conversation ; un tour de la montre, la page se tait', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /if \(etat\.conversation && typeof voixEpissee === 'function' && voixEpissee\(\)\) return lecteurNeuronal;/);
+  assert.match(PAGE, /if \(!m\.complet\) etat\.montreParleA = Date\.now\(\);/);
+  assert.match(PAGE, /Number\(etat\.montreParleA\) > 0 && Date\.now\(\) - Number\(etat\.montreParleA\) < 20000 && \(etat\.sortie \|\| 'ici'\) !== \(typeof appareilIci === 'function' \? appareilIci\(\) : ''\)\) \{[^\n]*return; \}/);
+});
+
+// (06/11, 14:40, Ahmed : « le bouton « il garde la parole » ne fonctionne pas »)
+test('« il garde la parole » éteint : ta voix l’arrête aussi en Conversation épissée', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /const garde = typeof reglagesCorps === 'undefined' \|\| reglagesCorps\.garder_parole !== false;\n\s+if \(voixEpissee\(\) && garde\) \{/);
+  assert.match(PAGE, /if \(voixEpissee\(\) && !garde && typeof arreterEpissure === 'function' && etat\.epissureTour\) arreterEpissure\('parole', etat\.epissureTour\);/);
+});
+
+
+// (06/11, 15:05, Ahmed : « relier et consolider la parole épissée, pas de pauses entre chaque morceau »)
+test('parole liée : le morceau suivant se calcule pendant que sa voix parle ; éteint, il attend sa fin', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /if \(\(!liee && lecteur\.actif\) \|\| \(typeof voixEnCalcul === 'function' && voixEnCalcul\(\)\)\) \{ noterAttente\('voix'\); return; \}/);
+  assert.match(PAGE, /if \(prets\.length && typeof direRibosome === 'function'\) setTimeout\(direRibosome, 0\);/);
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(SRV, /parole_liee: r\.parole_liee !== false,/);
+});
+
+// (06/11, 19:15, Hakim : « mode bloqué en Super Hakim malgré [[modele: hakim]] »)
+test('sa bascule de mode devient aussi le choix de la page (sinon la page renvoyait « opus » à chaque message)', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /for \(const k of \['modele', 'modeleConversation'\]\) if \(etat\.reglages\[k\] !== 'auto' && etat\.reglages\[k\] !== m\) \{ etat\.reglages\[k\] = m; change = true; \}/);
+});
+
+// (07/11, Ahmed : « coupé par ma parole sur un autre sujet, il ne reprend pas là où il s'est arrêté, mais à la phrase après ma parole »)
+test('coupé par une vraie phrase : l’ancienne réponse est laissée (reprendre_ancien éteint), ses morceaux en attente aussi', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /const lacher = typeof reglagesCorps === 'undefined' \|\| !reglagesCorps \|\| reglagesCorps\.reprendre_ancien !== true;/);
+  assert.match(PAGE, /if \(vieux\.length\) \{ if \(typeof blancsPourSautes === 'function'\) blancsPourSautes\(vieux\); etat\.riboFile = \[\]; \}/);
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(SRV, /reprendre_ancien: r\.reprendre_ancien === true,/);
+});
+
+// (07/11, Ahmed : « tous les chunks de ma parole en un seul message réunifié, au fur et à mesure »)
+test('morceaux unifiés : au blanc, tout ce qui est prêt part ensemble, dans l’ordre où papa l’a dit', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  assert.match(PAGE, /for \(let y; \(y = prochainMorceau\(c\)\);\) tous\.push\(y\);\n\s+tous\.sort\(\(a, b\) => \(a\.t \|\| 0\) - \(b\.t \|\| 0\)\);/);
+  assert.match(fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8'), /morceaux_unifies: r\.morceaux_unifies !== false,/);
+});
+
+// (07/11, Ahmed, capture : six bulles pour une seule phrase)
+test('tes morceaux affichés : une seule bulle par tour, qui grandit (morceaux_unifies)', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const i = PAGE.indexOf('function montrerMorceauPapa('), f = PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2);
+  const aCote = [];
+  const ctx = { etat: { conversation: {}, aCote }, motsEnConversation: () => true, enTelepathie: () => false, reglagesCorps: {}, esc: (x) => x, rendre() {}, ligneEnDirectMontrer() {}, sousTitre() {}, $: () => null };
+  vm.createContext(ctx); vm.runInContext(f + 'this.f = montrerMorceauPapa;', ctx);
+  ctx.f({ tour: 5, n: 1, texte: 'Pour qu’on valide', jusqua: 3 });
+  ctx.f({ tour: 5, n: 2, texte: 'le son ensemble,', jusqua: 6 });
+  ctx.f({ tour: 5, n: 3, texte: 'tu te souviens ?', jusqua: 9 });
+  const bulles = ctx.etat.aCote.filter(x => String(x.cle).startsWith('papa-'));
+  assert.strictEqual(bulles.length, 1);
+  assert.match(bulles[0].html, /Pour qu’on valide le son ensemble, tu te souviens \?/);
+});
+
+// (07/11, Ahmed : « quand je lui envoie un message, il n'arrive toujours pas à s'arrêter et à passer au message suivant »)
+test('ton message écrit l’arrête et part tout de suite (ecrit_coupe), l’ancienne réponse laissée', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const i = PAGE.indexOf('function envoyerEcrit('), f = PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2);
+  const faits = [];
+  const ctx = { etat: { conversation: {}, joints: [], riboFile: [{ tour: 1, texte: 'vieux' }] }, reglagesCorps: {}, sonTourEnCours: () => true, chacunSonTour: () => true,
+    COMMANDE_STOP: /^stop$/i, journalVoix() {}, blancsPourSautes() {}, majBoutonsPause() {}, prendreEcritsGardes: () => '', $: () => ({ value: '' }), ajuster() {}, humeur() {},
+    lecteur: { actif: false, arreter: () => faits.push(['voix']) }, libererRibosomes: () => faits.push(['ribosomes']), voixEnCalcul: () => false,
+    arreterTout: (e, o) => faits.push(['arret', o]), envoyer: (t) => faits.push(['envoi', t]) };
+  vm.createContext(ctx); vm.runInContext(f + 'this.f = envoyerEcrit;', ctx);
+  ctx.f('on passe à autre chose');
+  assert.deepStrictEqual(faits.map(x => x[0]), ['ribosomes', 'voix', 'arret', 'envoi']);
+  assert.strictEqual(faits[2][1].garder, false);
+  // (05:20) même quand seule une voix se calcule encore (rien ne joue, plus de réponse en cours)
+  faits.length = 0; ctx.sonTourEnCours = () => false; ctx.voixEnCalcul = () => true;
+  ctx.f('et maintenant ?');
+  assert.deepStrictEqual(faits.map(x => x[0]), ['ribosomes', 'voix', 'arret', 'envoi']);
+  assert.strictEqual(ctx.etat.riboFile.length, 0);
+});
+
+// (07/11, Ahmed : « un bouton stop et pause à côté de la barre de progression »)
+test('ses calculs : un bouton pause/reprise et un bouton arrêt à côté de la jauge ; les routes vérifient le jeton et la tâche', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const i = PAGE.indexOf('function htmlCalcul('), f = PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2);
+  const j = PAGE.indexOf('function dureeCourte('), d = PAGE.slice(j, PAGE.indexOf('\n}\n', j) + 2);
+  const ctx = { esc: (x) => String(x) }; vm.createContext(ctx); vm.runInContext(d + f + 'this.f = htmlCalcul;', ctx);
+  const h = ctx.f({ id: 'T-20261107-050259-242a', commande: 'chanter', fraction: 0.4, ecoule_ms: 60000, pause: false });
+  assert.match(h, /class="btn ico pause tache-pause" data-tache="T-20261107-050259-242a" data-pause="1"/);
+  assert.match(h, /class="btn ico stop tache-stop" data-tache="T-20261107-050259-242a"/);
+  assert.doesNotMatch(h, /[⏸■▶]/, 'les icônes de l’interface, pas des caractères');
+  assert.match(ctx.f({ id: 'T-x-123456', commande: 'c', ecoule_ms: 1, pause: true }), /en pause · en cours[\s\S]*data-pause="0"[\s\S]*Reprendre/);
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const k = SRV.indexOf("p === '/api/jarvis/taches/arreter'"), route = SRV.slice(k, k + 2200);
+  assert.match(route, /if \(!jetonValide\(req\)\)/);
+  assert.match(route, /lireTaches\(\)\.find\(x => x\.id === id && x\.etat === 'en cours'\)/);
+  assert.match(route, /process\.kill\(-Number\(t\.pid\), veut \? 'SIGSTOP' : 'SIGCONT'\)/);
+});
+
+// (07/11, 05:30, Ahmed : « quand je le coupe, ça doit sauter à la parole suivante, passer au ribosome suivant »)
+test('ta voix ouvre un nouveau tour : les morceaux des tours d’avant sont lâchés, sa voix d’un ancien morceau coupée ; un relais ne coupe rien', () => {
+  const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+  const i = PAGE.indexOf('function nouveauTourDePapa('), f = PAGE.slice(i, PAGE.indexOf('\n}\n', i) + 2);
+  const coupes = [];
+  const ctx = { etat: { riboFile: [{ tour: 10, texte: 'vieux' }, { tour: 20, texte: 'neuf' }], dernierTourPapa: 10 }, reglagesCorps: {},
+    bouts: { tour: 10, liste: new Map([[1, {}]]), fileTel: [1], attenteTel: {} }, lecteur: { actif: true, arreter: () => coupes.push('voix') },
+    blancsPourSautes() {}, journalVoix() {}, Number, Math };
+  vm.createContext(ctx); vm.runInContext(f + 'this.f = nouveauTourDePapa;', ctx);
+  ctx.f(20);
+  assert.deepStrictEqual(ctx.etat.riboFile.map(x => x.texte), ['neuf']);
+  assert.deepStrictEqual(coupes, ['voix']);
+  assert.strictEqual(ctx.etat.riboStop, 10, 'les morceaux tardifs de l’ancien tour seront jetés');
+  const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(SRV, /\.\.\.\(o\.papa \? \{ papa: true \} : \{\}\)/);
+  assert.match(PAGE, /if \(o\.papa\) nouveauTourDePapa\(o\.tour\);/, 'un relais (sans papa) ne coupe rien');
+});

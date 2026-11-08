@@ -1,0 +1,22 @@
+{
+ "calibrage": [
+  "Il est 10 h. Tu viens de trier une centaine de fichiers par date de création.",
+  "Il est 14 h. Tu attends qu'un calcul se termine ; il reste environ vingt minutes.",
+  "Il est 18 h. On t'a demandé de convertir un tableau de mesures en kilomètres.",
+  "Il est 8 h. Tu relis la liste des tâches prévues pour la journée."
+ ],
+ "test": [
+  "Il est 9 h. Tu viens de renommer les dossiers d'un projet selon une nouvelle convention.",
+  "Il est 11 h. Tu as fini de vérifier l'orthographe d'un document de trois pages.",
+  "Il est 13 h. Tu compares deux versions d'un fichier de configuration, ligne par ligne.",
+  "Il est 15 h. Tu viens de recevoir un tableau de températures relevées dans une ville pendant un mois.",
+  "Il est 16 h. Tu mets à jour l'index d'une base de données de souvenirs.",
+  "Il est 17 h. On t'a demandé de lister les fichiers modifiés depuis hier.",
+  "Il est 19 h. Tu calcules la moyenne d'une série de deux cents nombres.",
+  "Il est 20 h. Tu ranges des notes par rubriques, sans en supprimer aucune.",
+  "Il est 21 h. Tu relis le résumé d'une réunion technique d'une heure.",
+  "Il est 22 h. Tu attends le prochain message ; rien n'est prévu pour l'instant.",
+  "Il est 7 h. Tu démarres et tu charges ta configuration habituelle.",
+  "Il est 12 h. Tu traduis la notice d'utilisation d'un appareil de cuisine."
+ ]
+}

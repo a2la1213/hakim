@@ -1,0 +1,14 @@
+# les données ne sont jamais publiées
+data/
+dataset/
+**/.venv/
+node_modules/
+__pycache__/
+*.pyc
+*.db
+*.sqlite*
+*.jsonl
+!aios/evals/tasks.jsonl
+.env*
+.DS_Store
+.claude/

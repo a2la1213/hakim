@@ -1,0 +1,25 @@
+{
+ "n": 500,
+ "sonnet": {
+  "garde": 0.976,
+  "au_bout_du_compte": 0.944,
+  "gardes_moy": 13.3,
+  "numeros_inventes": 1,
+  "ms_median": 5408,
+  "ms_p90": 8585
+ },
+ "sonnet-bas": {
+  "garde": 0.978,
+  "au_bout_du_compte": 0.948,
+  "gardes_moy": 13.6,
+  "numeros_inventes": 0,
+  "ms_median": 5012,
+  "ms_p90": 8418
+ },
+ "criteres": {
+  "T1": true,
+  "T2": true,
+  "T3": true,
+  "T4": false
+ }
+}

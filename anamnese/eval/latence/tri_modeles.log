@@ -1,0 +1,4 @@
+Fetching 30 files:   0%|          | 0/30 [00:00<?, ?it/s]Fetching 30 files: 100%|██████████| 30/30 [00:00<00:00, 16999.34it/s]
+sonnet {"garde": 0.981, "au_bout_du_compte": 0.949, "gardes_moy": 13.6, "numeros_inventes": 0, "ms_median": 5408, "ms_p90": 9038}
+haiku {"garde": 0.904, "au_bout_du_compte": 0.874, "gardes_moy": 16.9, "numeros_inventes": 18, "ms_median": 4846, "ms_p90": 7805}
+{"T1": false, "T2": false, "T3": false, "T4": false} écrit : /Users/admin/Desktop/anamnese/eval/latence/tri-modeles-20261028-1054.json

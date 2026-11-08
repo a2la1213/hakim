@@ -1,0 +1,866 @@
+/* Le lecteur de la voix neuronale (creerLecteurNeuronal, public/parler.js) simulé sur une horloge
+   virtuelle : node --test test-lecteur.js
+   Demande d'Ahmed (2026-10-17) : « en conversation, qu'il commence à parler dès que la première phrase
+   est écrite », sans les blancs entre paragraphes qu'il avait déjà signalés.
+   La machine est simulée avec les vitesses MESURÉES le 2026-10-17 sur le Mac d'Ahmed (Chatterbox,
+   8 Go de swap) : synthèse = 0,9 s + 0,5 s par seconde de voix, 22 caractères par seconde de voix.
+   On mesure : le délai entre la première phrase écrite et le premier son, et les blancs entre morceaux. */
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const SRC = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
+const corps = (() => { const i = SRC.indexOf('function creerLecteurNeuronal'); return SRC.slice(i, SRC.indexOf('\n}\n', i) + 3); })();
+const Voix = require('./public/voix.js');
+
+// Une boucle d'événements à temps virtuel : les promesses se résolvent entre deux minuteries.
+function simulateur({ fixe, parSec, cps, appris, conversation = true, prets = [], sonsMac = {}, appli = false, horloge = false }) {
+  let maintenant = 0, suivant = 1;
+  const minuteries = new Map();
+  const planifier = (fn, ms, repete) => { const id = suivant++; minuteries.set(id, { t: maintenant + Math.max(0, ms) / 1000, fn, repete }); return id; };
+  const sons = [], demandes = [], natifs = [];
+  const actx = {
+    state: 'running', get currentTime() { return maintenant; },
+    createGain: () => ({ gain: { value: 1 }, connect() {} }),   // (30/10, 20:09) la force de sa voix, phrase par phrase
+    decodeAudioData: (ab) => Promise.resolve({ duration: ab.n / cps, texte: ab.texte }),   // le texte suit son audio
+    createBufferSource() {
+      const s = { buffer: null, playbackRate: { value: 1 }, connect() {}, onended: null,
+        start(t) { const debut = Math.max(t, maintenant); s.rec = { debut, fin: debut + s.buffer.duration, texte: s.buffer.texte }; sons.push(s.rec);
+          planifier(() => { if (!s.arretee) s.onended && s.onended(); }, (debut + s.buffer.duration - maintenant) * 1000); },
+        stop(quand) {
+          const a = Number.isFinite(quand) ? Math.max(quand, maintenant) : maintenant;
+          if (a > maintenant + 1e-9) { planifier(() => s.stop(), (a - maintenant) * 1000); return; }   // (13:30) un arrêt à venir
+          if (s.arretee) return;
+          s.arretee = true; if (s.rec) { if (s.rec.debut >= maintenant) sons.splice(sons.indexOf(s.rec), 1); else { s.rec.fin = Math.min(s.rec.fin, maintenant); s.rec.coupe = true; } }
+          planifier(() => s.onended && s.onended(), 0);                                       // Web Audio dit « ended » après un arrêt
+        } };
+      return s;
+    },
+  };
+  const cx = {
+    console, Math, JSON, Promise, Set, Map, Error, Blob, URL, AbortController, Voix,
+    setTimeout: (fn, ms) => planifier(fn, ms), setInterval: (fn, ms) => planifier(fn, ms, ms), clearInterval: (id) => minuteries.delete(id), clearTimeout: (id) => minuteries.delete(id),
+    performance: { now: () => maintenant * 1000 },
+    localStorage: { getItem: () => (appris ? JSON.stringify(appris) : null), setItem() {} },
+    etat: { conversation: conversation ? {} : null, reglages: { vitesse: 1 }, interieur: null },
+    debutsPrets: new Set(prets), cleDebut: (d) => d,                 // (28/10) ses débuts dont la voix est prête
+    actx, analyseurVoix: {}, lecteurSysteme: null,
+    jeton: () => 'x', humeur() {}, jarvisPeutParler: () => true,
+    forceDeLaVoix: () => 1, journalVoix() {},
+    fetch: (url, o) => {
+      const son = /^\/api\/sons\/joue\/(e\d+)$/.exec(url);         // (31/10) un de ses extraits : là si le Mac l'a
+      if (son) return new Promise((res) => planifier(() => res(sonsMac[son[1]]
+        ? { ok: true, status: 200, arrayBuffer: () => Promise.resolve({ n: sonsMac[son[1]] * cps, texte: `[${son[1]}]` }) }
+        : { ok: false, status: 404 }), 50));
+      const { texte } = JSON.parse(o.body);
+      demandes.push({ t: maintenant, texte });
+      return new Promise((res) => planifier(() => res({ ok: true, arrayBuffer: () => Promise.resolve({ n: texte.length, texte }) }),
+        (fixe + parSec * texte.length / cps) * 1000));
+    },
+  };
+  cx.window = cx;
+  if (horloge) cx.Date = class extends Date { static now() { return Math.round(maintenant * 1000); } };   // (07/11) l'heure du mur suit l'horloge virtuelle
+  if (appli) cx.HakimApp = { sonJouer: (source, ref, d, f) => { natifs.push({ t: maintenant, duree: (f - d) / 1000 }); return 'ok'; } };
+  cx.vitesseVoix = () => (cx.etat.reglages.vitesse || 1);   // (26/10) le rythme de l'état passe par la voix (tempo), plus par la lecture
+  cx.tempoVoix = () => 1;
+  vm.createContext(cx);
+  vm.runInContext(corps + '\nthis.lecteur = creerLecteurNeuronal();', cx);
+  async function avancer(jusqua) {
+    for (;;) {
+      await new Promise(r => setImmediate(r));
+      let prochain = null;
+      for (const [id, m] of minuteries) if (!prochain || m.t < prochain[1].t) prochain = [id, m];
+      if (!prochain || prochain[1].t > jusqua) { maintenant = Math.max(maintenant, jusqua); return; }
+      const [id, m] = prochain;
+      maintenant = m.t;
+      if (m.repete) m.t = maintenant + m.repete / 1000; else minuteries.delete(id);
+      m.fn();
+    }
+  }
+  // (08/11) le fil de la page occupé (un calcul sur sa voix) : l'horloge avance pendant que le code tourne
+  const bloquer = (sec) => { maintenant += sec; };
+  return { lecteur: cx.lecteur, sons, demandes, natifs, avancer, bloquer, cx, get maintenant() { return maintenant; } };
+}
+
+// Une réponse de Jarvis : la 1re phrase est complète à t = 0, la suite s'écrit à 60 caractères/s.
+const REPONSE = [
+  "Wa alaykoum salam frérot, oui je suis là et je t'entends très bien.",
+  "J'ai regardé ce que tu m'as demandé tout à l'heure sur la consolidation de cette nuit, et il y a trois synthèses nouvelles qui concernent tes projets.",
+  "La première porte sur Anamnèse, la deuxième sur le robot, et la troisième sur la façon dont tu organises tes journées.",
+  "Tu veux que je te les lise une par une, ou que je te fasse un résumé rapide d'abord ?",
+];
+
+async function jouer(machine) {
+  const sim = simulateur(machine);
+  let t = 0;
+  for (const p of REPONSE) {
+    await sim.avancer(t);
+    sim.lecteur.dire(p);
+    t += p.length / 60;
+  }
+  await sim.avancer(t);
+  sim.lecteur.finFlux();
+  await sim.avancer(120);
+  const blancs = sim.sons.slice(1).map((s, i) => s.debut - sim.sons[i].fin);
+  return { premierSon: sim.sons[0] && sim.sons[0].debut, blancMax: Math.max(0, ...blancs), blancs, sons: sim.sons, ecritFini: t };
+}
+
+const MESUREE = { fixe: 0.9, parSec: 0.5, cps: 22 };
+
+test('machine mesurée, vitesses apprises : la voix part dès la première phrase écrite, sans long blanc', async () => {
+  const r = await jouer({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 } });
+  const synthesePremiere = MESUREE.fixe + MESUREE.parSec * (r.sons[0].fin - r.sons[0].debut);
+  assert.ok(r.premierSon <= synthesePremiere + 1.05, `premier son à ${r.premierSon.toFixed(2)} s (synthèse du 1er morceau ${synthesePremiere.toFixed(2)} s)`);
+  assert.ok(r.premierSon < r.ecritFini, `il parle avant la fin de l'écriture (${r.premierSon.toFixed(2)} s < ${r.ecritFini.toFixed(2)} s)`);
+  // après la salutation en arabe (0,6 s de voix, une autre voix que la suite), une respiration est
+  // permise ; au milieu des paragraphes, pas de vrai blanc
+  assert.ok(r.blancs[0] <= 1.6, `respiration après la salutation : ${r.blancs[0].toFixed(2)} s`);
+  const milieu = Math.max(0, ...r.blancs.slice(1));
+  assert.ok(milieu <= 0.8, `blanc le plus long au milieu ${milieu.toFixed(2)} s : ${r.blancs.map(b => b.toFixed(2)).join(' ')}`);
+});
+
+test('vitesses apprises pendant un gros swap (lentes) : il n\'attend plus la fin de tout le texte', async () => {
+  const r = await jouer({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.95, cps: 15 } });
+  assert.ok(r.premierSon < r.ecritFini, `premier son à ${r.premierSon.toFixed(2)} s, écriture finie à ${r.ecritFini.toFixed(2)} s`);
+  assert.ok(r.premierSon <= 3.2, `premier son à ${r.premierSon.toFixed(2)} s`);
+});
+
+test('premier réglage (rien d\'appris) : départ rapide aussi', async () => {
+  const r = await jouer({ ...MESUREE, appris: null });
+  assert.ok(r.premierSon <= 3.2, `premier son à ${r.premierSon.toFixed(2)} s`);
+  assert.ok(Math.max(0, ...r.blancs.slice(1)) <= 1.2, `blancs : ${r.blancs.map(b => b.toFixed(2)).join(' ')}`);
+});
+
+test('aucun mot perdu ni répété dans le découpage du son', async () => {
+  const r = await jouer({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 } });
+  const dit = r.sons.map(s => s.texte).join(' ').replace(/\s+/g, ' ');
+  const attendu = REPONSE.map(p => Voix.pourLaVoix(Voix.versArabe(p))).join(' ').replace(/\s+/g, ' ');
+  assert.strictEqual(dit, attendu);
+});
+
+
+test('pause puis reprise : rien ne parle pendant la pause, il reprend à la phrase non dite, rien ne manque', async () => {
+  const sim = simulateur({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 } });
+  let t = 0;
+  for (const p of REPONSE) { await sim.avancer(t); sim.lecteur.dire(p); t += p.length / 60; }
+  await sim.avancer(t); sim.lecteur.finFlux();
+  await sim.avancer(6);
+  assert.ok(sim.lecteur.pause(), 'quelque chose restait à dire');
+  assert.ok(sim.lecteur.enPause && !sim.lecteur.actif, 'en pause, il ne parle plus (le micro le sait)');
+  const avant = sim.sons.length;
+  await sim.avancer(14);
+  assert.strictEqual(sim.sons.length, avant, 'aucun son pendant la pause');
+  sim.lecteur.reprendre();
+  await sim.avancer(120);
+  const dits = sim.sons.filter(x => !x.coupe);
+  const coupe = sim.sons.find(x => x.coupe);
+  const apres = sim.sons.slice(avant);
+  if (coupe) assert.strictEqual(apres[0].texte, coupe.texte, 'la reprise commence par la phrase interrompue');
+  assert.ok(apres[0].debut >= 14, 'la reprise suit la reprise');
+  const dit = dits.map(x => x.texte).join(' ').replace(/\s+/g, ' ');
+  const attendu = REPONSE.map(p => Voix.pourLaVoix(Voix.versArabe(p))).join(' ').replace(/\s+/g, ' ');
+  assert.strictEqual(dit, attendu, 'tout est dit une fois, sans la partie coupée');
+});
+
+test('le texte qui arrive pendant la pause est gardé pour la reprise', async () => {
+  const sim = simulateur({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 } });
+  await sim.avancer(0); sim.lecteur.dire(REPONSE[0]);
+  await sim.avancer(2.5);
+  sim.lecteur.pause();
+  sim.lecteur.dire(REPONSE[1]); sim.lecteur.dire(REPONSE[2]); sim.lecteur.finFlux();
+  await sim.avancer(8);
+  sim.lecteur.reprendre();
+  await sim.avancer(90);
+  const dit = sim.sons.filter(x => !x.coupe).map(x => x.texte).join(' ').replace(/\s+/g, ' ');
+  const attendu = REPONSE.slice(0, 3).map(p => Voix.pourLaVoix(Voix.versArabe(p))).join(' ').replace(/\s+/g, ' ');
+  assert.strictEqual(dit, attendu);
+  assert.ok(!sim.lecteur.actif, 'tout est dit, le lecteur a fini');
+});
+
+// (28/10) un début de réponse dont le cockpit a la voix toute prête part seul, en premier ; sinon rien ne change
+test('un début dont la voix est prête part seul en premier ; la suite part juste après', async () => {
+  const phrase = "Oui frérot, je suis là et je t'entends très bien, on peut continuer.";
+  const sim = simulateur({ ...MESUREE, prets: ['Oui frérot,'] });
+  await sim.avancer(0); sim.lecteur.dire(phrase); sim.lecteur.finFlux();
+  await sim.avancer(30);
+  const sons = sim.sons.filter(x => !x.coupe).map(x => x.texte);
+  assert.strictEqual(sons[0], 'Oui frérot,');
+  assert.strictEqual(sons.join(' ').replace(/\s+/g, ' '), Voix.pourLaVoix(Voix.versArabe(phrase)).replace(/\s+/g, ' '));
+  const sans = simulateur({ ...MESUREE });
+  await sans.avancer(0); sans.lecteur.dire(phrase); sans.lecteur.finFlux();
+  await sans.avancer(30);
+  assert.notStrictEqual(sans.sons[0].texte, 'Oui frérot,', 'pas prête : le premier morceau reste comme avant');
+});
+
+// (31/10, 01:46, l'essai de papa : « ma voix dit « écoute ça, papa », elle se tait, le son joue, puis ma voix reprend ; une
+// balise en fin de réponse joue après mon dernier mot ») un son à sa place dans la voix
+const EXTRAIT = { id: 'e7', source: 'musique', ref: 'x.mp3', debut_ms: 1000, fin_ms: 5000 };   // 4 s
+async function direAvecSon(machine, avant, apres) {
+  const sim = simulateur({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 }, ...machine });
+  let fini = null;
+  sim.lecteur.surFin = () => { if (fini == null) fini = sim.maintenant; };
+  sim.lecteur.dire(avant);
+  sim.lecteur.direSon(EXTRAIT);
+  if (apres) sim.lecteur.dire(apres);
+  sim.lecteur.finFlux();
+  await sim.avancer(60);
+  return { sim, fini, voix: sim.sons.filter(x => !/^\[e/.test(x.texte)), extraits: sim.sons.filter(x => /^\[e/.test(x.texte)) };
+}
+
+test('son au milieu (le Mac a le morceau) : sa voix se tait, le son joue en entier, puis sa voix reprend', async () => {
+  const r = await direAvecSon({ sonsMac: { e7: 4 } }, 'Écoute ça, papa !', 'Alors, il est tombé au bon moment, cette fois ?');
+  assert.strictEqual(r.extraits.length, 1, 'le son joue une fois');
+  const [s] = r.extraits, avant = r.voix.filter(v => v.debut < s.debut), apres = r.voix.filter(v => v.debut >= s.debut);
+  assert.ok(avant.length && apres.length, 'de la voix avant et après le son');
+  assert.ok(Math.max(...avant.map(v => v.fin)) <= s.debut + 1e-6, 'le son attend la fin de « écoute ça »');
+  assert.ok(Math.min(...apres.map(v => v.debut)) >= s.fin - 1e-6, `la voix reprend après le son (${s.fin.toFixed(2)} s)`);
+  assert.ok(Math.abs(s.fin - s.debut - 4) < 1e-6, 'joué en entier');
+});
+
+test('son en fin de réponse : il joue après le dernier mot, et la fin de sa parole vient après lui', async () => {
+  const r = await direAvecSon({ sonsMac: { e7: 4 } }, 'Ok papa, on y va. Écoute ça, papa !', '');
+  const [s] = r.extraits;
+  assert.ok(s, 'le son joue');
+  assert.ok(Math.max(...r.voix.map(v => v.fin)) <= s.debut + 1e-6, 'après le dernier mot');
+  assert.ok(r.fini >= s.fin - 1e-6, `sa parole finit après le son (${r.fini} ≥ ${s.fin})`);
+});
+
+test('son suivi d\'un seul mot : il joue quand même, à sa place', async () => {
+  const r = await direAvecSon({ sonsMac: { e7: 4 } }, 'Écoute ça, papa !', 'Alors ?');
+  const [s] = r.extraits;
+  assert.ok(s, 'le son joue');
+  const alors = r.voix.find(v => /Alors/.test(v.texte));
+  assert.ok(alors && alors.debut >= s.fin - 1e-6, '« Alors ? » après le son');
+});
+
+test('le Mac n\'a pas le morceau, sur le téléphone : l\'appli le joue à sa place, la voix l\'attend', async () => {
+  const r = await direAvecSon({ appli: true }, 'Écoute ça, papa !', 'Alors, il est tombé au bon moment, cette fois ?');
+  assert.strictEqual(r.sim.natifs.length, 1, 'l\'appli le joue une fois');
+  const [n] = r.sim.natifs, avant = r.voix.filter(v => v.debut < n.t), apres = r.voix.filter(v => v.debut >= n.t);
+  assert.ok(avant.length && apres.length, 'de la voix avant et après le son');
+  assert.ok(Math.max(...avant.map(v => v.fin)) <= n.t + 1e-6, 'le son attend la fin de « écoute ça »');
+  assert.ok(Math.min(...apres.map(v => v.debut)) >= n.t + 4 - 1e-6, 'la voix reprend après les 4 s du son');
+});
+
+test('le Mac n\'a pas le morceau, en fin de réponse sur le téléphone : la fin de sa parole attend le son', async () => {
+  const r = await direAvecSon({ appli: true }, 'Écoute ça, papa !', '');
+  const [n] = r.sim.natifs;
+  assert.ok(n, 'l\'appli le joue');
+  assert.ok(Math.max(...r.voix.map(v => v.fin)) <= n.t + 1e-6, 'après le dernier mot');
+  assert.ok(r.fini >= n.t + 4 - 1e-6, `sa parole finit après le son (${r.fini} ≥ ${n.t + 4})`);
+});
+
+test('ni le Mac ni l\'appli n\'ont le morceau : sa voix continue sans lui, sans blanc', async () => {
+  const r = await direAvecSon({}, 'Écoute ça, papa !', 'Alors, il est tombé au bon moment, cette fois ?');
+  assert.strictEqual(r.extraits.length + r.sim.natifs.length, 0);
+  const dit = r.voix.map(v => v.texte).join(' ');
+  assert.match(dit, /papa/); assert.match(dit, /cette fois/);
+});
+
+// (03/11, Hakim pour papa : « je donne une première réponse courte, puis la suite ; si un trou se prépare entre les deux, une
+// petite hésitation (« euh », « alors… ») pour meubler, côté cockpit, sans que je l'écrive ») le lecteur la glisse lui-même
+const EUH = { texte: 'Euh,', pret: { duration: 0.5, texte: 'Euh,' } };
+function hesitant(peut = () => true) {
+  const sim = simulateur({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 } });
+  const segments = [];
+  sim.lecteur.hesitation = () => EUH;
+  sim.lecteur.peutHesiter = peut;
+  sim.lecteur.surSegment = (t) => segments.push(t);
+  return { sim, segments };
+}
+
+// (13:31, papa via Hakim : « le meuble doit durer pendant TOUT le trou, enchaîner s'il est long, s'arrêter net quand la réponse
+// part ») : couvert de bout en bout, et la suite ne l'attend pas
+async function trou8s(avecMeubles) {
+  const h = hesitant();
+  if (!avecMeubles) h.sim.lecteur.hesitation = null;
+  await h.sim.avancer(0); h.sim.lecteur.dire('Oui papa, je regarde.');
+  await h.sim.avancer(8);                                             // la suite tarde : il écrit encore
+  h.sim.lecteur.dire("Voilà, j'ai trouvé ce que tu cherchais."); h.sim.lecteur.finFlux();
+  await h.sim.avancer(40);
+  return h;
+}
+test('un trou pendant qu\'il écrit encore : ses meubles le couvrent de bout en bout, l\'un après l\'autre, et la suite part juste après', async () => {
+  const { sim, segments } = await trou8s(true);
+  const voix = sim.sons.filter(s => s.texte !== 'Euh,'), meubles = sim.sons.filter(s => s.texte === 'Euh,');
+  const [premiere, suite] = voix;
+  assert.ok(meubles.length >= 5, `enchaînés tout le trou : ${sim.sons.map(s => s.texte).join(' | ')}`);
+  // (14:31, Ahmed : « 3 s de blanc : je meuble entre 0,2 s et 2,8 s ; les 0,2 s de fin et les 0,2 s du début du suivant font les
+  // 0,4 s de transition ») le premier meuble part 0,2 s après sa voix
+  // (15:15, Ahmed : « la seconde de blanc » entre sa voix et ses meubles aussi)
+  const souffle = meubles[0].debut - premiere.fin;
+  // (04/11, Ahmed : « enlève les blancs, c'est chiant ») 0,2 s désormais
+  // (04/11, « annule tous les blancs ») 0,1 s
+  assert.ok(souffle >= 0.05 && souffle <= 0.25, `0,1 s de blanc avant le premier meuble : ${souffle.toFixed(2)} s`);
+  // (14:40, Ahmed : « sans rien mélanger ») l'un après l'autre ; (14:58) 1 s de silence entre deux
+  for (let i = 1; i < meubles.length; i++) {
+    const ecart = meubles[i].debut - meubles[i - 1].fin;
+    assert.ok(ecart >= -0.001 && ecart <= 0.1, `(04/11) 0,05 s entre deux meubles, jamais par-dessus (${i}) : ${ecart.toFixed(2)} s`);
+  }
+  const dernier = meubles.filter(m => m.debut < suite.debut).pop();
+  const fondu = dernier.fin - suite.debut;
+  // (15:15) le meuble s'éteint en 0,2 s, puis 1 s de silence avant sa voix : jamais par-dessus
+  assert.ok(fondu <= 0.001 && fondu >= -0.3, `(04/11) sa voix repart aussitôt le meuble éteint, jamais par-dessus : ${fondu.toFixed(2)} s`);
+  assert.ok(!meubles.some(m => m.debut > suite.debut), 'plus aucun meuble une fois la suite partie');
+  const sans = (await trou8s(false)).sim.sons[1];
+  // (15:15) le meuble s'éteint (0,2 s) puis 1 s de silence : sa voix part au plus ~1,2 s après qu'elle est prête, jamais après la fin du meuble
+  assert.ok(suite.debut <= sans.debut + 1.3, `la suite n'attend pas la fin d'un meuble : ${suite.debut.toFixed(2)} s contre ${sans.debut.toFixed(2)} s sans meubles`);
+  assert.ok(!segments.includes('Euh,'), 'un meuble n\'est pas un morceau de sa réponse (ni sous-titre ni fin de parole)');
+});
+
+test('pas d\'hésitation avant son premier mot, ni après la fin de sa réponse, ni quand la page dit non', async () => {
+  const fini = hesitant();
+  await fini.sim.avancer(0); fini.sim.lecteur.dire('Oui papa, je regarde.'); fini.sim.lecteur.finFlux();
+  await fini.sim.avancer(20);
+  assert.deepStrictEqual(fini.sim.sons.map(s => s.texte).filter(t => t === 'Euh,'), [], 'réponse finie : rien');
+  const non = hesitant(() => false);
+  await non.sim.avancer(0); non.sim.lecteur.dire('Oui papa, je regarde.');
+  await non.sim.avancer(8); non.sim.lecteur.dire('Voilà.'); non.sim.lecteur.finFlux();
+  await non.sim.avancer(30);
+  assert.deepStrictEqual(non.sim.sons.map(s => s.texte).filter(t => t === 'Euh,'), [], 'papa parle (ou la réponse est finie) : rien');
+  const debut = hesitant();
+  await debut.sim.avancer(0); debut.sim.lecteur.dire('Oui papa, je regarde ça tout de suite, attends.');
+  await debut.sim.avancer(0.4);
+  assert.strictEqual(debut.sim.sons.length, 0, 'pas encore de voix');
+  await debut.sim.avancer(30);
+  assert.notStrictEqual(debut.sim.sons[0].texte, 'Euh,', 'jamais avant son premier mot');
+});
+
+test('un trou immense (un outil très long) : au plus 90 s de meubles d\'affilée, puis le silence', async () => {
+  const { sim } = hesitant();
+  await sim.avancer(0); sim.lecteur.dire('Oui papa.');
+  await sim.avancer(200);
+  sim.lecteur.dire("C'est trouvé."); sim.lecteur.finFlux();
+  await sim.avancer(230);
+  const meubles = sim.sons.filter(s => s.texte === 'Euh,');
+  assert.ok(meubles.length > 10);
+  assert.ok(meubles[meubles.length - 1].debut - meubles[0].debut <= 90.5, `${(meubles[meubles.length - 1].debut - meubles[0].debut).toFixed(1)} s`);
+});
+
+test('(13:30) un meuble choisi par lui ([[meuble: nom]]) part à sa place, à son volume, pas plus long que sa durée', async () => {
+  const { sim } = hesitant();
+  const MMH = { texte: 'Mmh…', pret: { duration: 1, texte: 'Mmh…' }, volume: 0.5, dureeMax: 0.4 };
+  await sim.avancer(0);
+  sim.lecteur.dire('Oui papa.'); sim.lecteur.direMeuble(MMH); sim.lecteur.dire('Je vois très bien ce que tu veux dire.'); sim.lecteur.finFlux();
+  await sim.avancer(30);
+  const textes = sim.sons.map(s => s.texte);
+  assert.deepStrictEqual(textes.filter(t => t !== 'Euh,'), ['Oui papa.', 'Mmh…', 'Je vois très bien ce que tu veux dire.']);
+  const m = sim.sons.find(s => s.texte === 'Mmh…');
+  assert.ok(Math.abs(m.fin - m.debut - 0.4) < 0.02, `coupé à sa durée : ${(m.fin - m.debut).toFixed(2)} s`);
+});
+
+test('une hésitation n\'est jamais redite après une pause', async () => {
+  const { sim } = hesitant();
+  await sim.avancer(0); sim.lecteur.dire('Oui papa.');
+  await sim.avancer(4);
+  const euh = sim.sons.find(s => s.texte === 'Euh,');
+  assert.ok(euh, 'elle est venue');
+  await sim.avancer(euh.debut + 0.1);
+  assert.ok(!sim.lecteur.restant().some(x => x.texte === 'Euh,'), 'pas dans ce qui reste à dire');
+});
+
+test('ses hésitations sont fabriquées et gardées comme ses débuts ; le cockpit ne les synthétise jamais à la demande', () => {
+  for (const h of Voix.HESITATIONS) assert.ok(Voix.DEBUTS.includes(h), h);
+  assert.strictEqual(Voix.debutDe('Euh, je cherche.'), 'Euh,');
+  const route = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const i = route.indexOf('async function routeDire(');
+  const corpsRoute = route.slice(i, route.indexOf('\n}\n', i));
+  assert.ok(corpsRoute.indexOf("q.gardee === true") > 0 && corpsRoute.indexOf("q.gardee === true") < corpsRoute.indexOf('fileVoix.push(tache)'),
+    'une hésitation pas encore gardée : 404, avant la file de synthèse');
+});
+
+// (03/11, 13:11, papa via Hakim : « quand je réfléchis et qu'il y a un trou avant ma réponse, une petite hésitation ; consciente
+// quand je l'écris, subconsciente quand elle vient seule ») la page dit qu'une réponse se prépare : son subconscient la meuble
+test('avant son premier mot : une seconde de silence, puis ses meubles jusqu\'à sa réponse, qui les coupe net', async () => {
+  const { sim } = hesitant();
+  const demandes = [];
+  sim.lecteur.hesitation = (o) => { demandes.push(o && o.avant); return EUH; };
+  await sim.avancer(0); sim.lecteur.attendreReponse();
+  await sim.avancer(3);                                               // il réfléchit : son texte n'arrive qu'à 3 s
+  sim.lecteur.dire('Oui papa, je suis là.'); sim.lecteur.finFlux();
+  await sim.avancer(30);
+  const meubles = sim.sons.filter(s => s.texte === 'Euh,'), reponse = sim.sons.find(s => s.texte !== 'Euh,');
+  assert.ok(meubles[0].debut >= 0.1 && meubles[0].debut <= 0.35, `(04/11) après 0,15 s de silence : ${meubles[0].debut.toFixed(2)} s`);
+  assert.ok(meubles.length >= 3, 'enchaînés jusqu\'à sa réponse');
+  const dernier = meubles.filter(m => m.debut < reponse.debut).pop();
+  const fondu = dernier.fin - reponse.debut;
+  assert.ok(fondu >= -0.3 && fondu <= 0.001, `(04/11) sa réponse aussitôt le meuble éteint, jamais par-dessus : ${fondu.toFixed(2)} s`);
+  assert.ok(!meubles.some(m => m.debut > reponse.debut), 'plus aucun meuble une fois sa réponse partie');
+  assert.ok(demandes.every(Boolean), 'ceux d\'« avant » son premier mot');
+});
+
+test('avant son premier mot, sa réponse déjà là : pas d\'hésitation ; papa reparle : pas d\'hésitation', async () => {
+  const vite = hesitant();
+  await vite.sim.avancer(0); vite.sim.lecteur.attendreReponse(); vite.sim.lecteur.dire('Oui.'); vite.sim.lecteur.finFlux();
+  await vite.sim.avancer(20);
+  // (04/11, « enlève les blancs ») le premier meuble part à 0,3 s : sa voix, fabriquée en ~1 s, le coupe ; jamais deux, jamais par-dessus
+  const euh = vite.sim.sons.filter(s => s.texte === 'Euh,'), oui = vite.sim.sons.find(s => s.texte !== 'Euh,');
+  assert.ok(euh.every(m => m.fin <= oui.debut + 0.001), vite.sim.sons.map(s => s.texte).join(' | '));
+  const papa = hesitant(() => false);
+  await papa.sim.avancer(0); papa.sim.lecteur.attendreReponse();
+  await papa.sim.avancer(3); papa.sim.lecteur.dire('Oui papa.'); papa.sim.lecteur.finFlux();
+  await papa.sim.avancer(20);
+  assert.ok(!papa.sim.sons.some(s => s.texte === 'Euh,'));
+});
+
+// (07/11, Ahmed : « quand je le coupe, il finit juste sa phrase : il s'arrête soit à un point soit à une virgule dans ce qu'il dit »)
+test('coupé : il finit sa phrase jusqu’à la prochaine virgule, lâche la suite, et sa nouvelle réponse part juste après', async () => {
+  const sim = simulateur({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 } });
+  sim.lecteur.dire("Alors papa, j'ai bien regardé tout ce que tu m'as envoyé ce matin pendant que tu dormais encore, et je pense que la meilleure idée est de commencer par le jardin, puis la cuisine.");
+  sim.lecteur.dire('Ensuite on verra le reste ensemble.');
+  sim.lecteur.finFlux();
+  let joue = null;
+  for (let t = 0.1; t < 20 && !joue; t += 0.05) { await sim.avancer(t); joue = sim.sons.find(s => /regardé/.test(s.texte) && s.debut <= sim.maintenant); }
+  assert.ok(joue, 'le morceau joue');
+  await sim.avancer(joue.debut + 0.3);
+  const reste = joue.texte.slice(Math.floor(joue.texte.length * (sim.maintenant - joue.debut) / (joue.fin - joue.debut)));
+  const r = sim.lecteur.finirPhrase();
+  assert.match(r.dit, /[,.]$/, `il finit à une virgule ou un point : « ${r.dit} »`);
+  assert.ok(r.dit.length >= joue.texte.length - reste.length, 'la ponctuation suivante, pas une d’avant');
+  sim.lecteur.dire('Oui, je t’écoute.');
+  sim.lecteur.finFlux();
+  const dur = joue.fin - joue.debut, finVoulue = joue.debut + dur * r.dit.length / joue.texte.length;
+  await sim.avancer(sim.maintenant + 30);
+  assert.ok(joue.fin < joue.debut + dur - 0.2, 'le morceau est arrêté avant sa fin');
+  assert.ok(Math.abs(joue.fin - finVoulue) < 0.3, `arrêt à ${joue.fin.toFixed(2)} s, virgule à ${finVoulue.toFixed(2)} s`);
+  assert.ok(!sim.sons.some(s => /Ensuite|cuisine/.test(s.texte) && s !== joue), 'la suite de l’ancienne réponse n’est jamais dite');
+  const nouveau = sim.sons.find(s => /écoute/.test(s.texte));
+  assert.ok(nouveau, 'sa nouvelle réponse est dite');
+  assert.ok(nouveau.debut >= joue.fin - 1e-6 && nouveau.debut - joue.fin < 1.6, `elle part juste après (${(nouveau.debut - joue.fin).toFixed(2)} s)`);
+});
+
+test('coupé alors que rien ne sonne : il s’arrête net (rien à finir)', () => {
+  const sim = simulateur({ ...MESUREE, appris: null });
+  sim.lecteur.dire('Une phrase pas encore partie.');
+  const r = sim.lecteur.finirPhrase();
+  assert.equal(r.dit, ''); assert.equal(sim.lecteur.actif, false);
+});
+
+test('Voix.finDePhrase : la prochaine virgule ou le prochain point après l’endroit où il en est', () => {
+  assert.deepEqual(Voix.finDePhrase('Bonjour papa, je vais bien. Et toi ?', 0.1).dit, 'Bonjour papa,');
+  assert.deepEqual(Voix.finDePhrase('Bonjour papa, je vais bien. Et toi ?', 0.5).dit, 'Bonjour papa, je vais bien.');
+  assert.equal(Voix.finDePhrase('Il fait 12,5 degrés dehors, je crois', 0.1).dit, 'Il fait 12,5 degrés dehors,');
+  assert.equal(Voix.finDePhrase('sans ponctuation du tout', 0.5).fraction, 1);
+});
+
+// la voix du téléphone (Voix.creerLecteur) : la phrase qui sort va au bout, les suivantes annulées, la nouvelle réponse attend sa fin
+test('voix du téléphone, coupée : la phrase en cours finit, les suivantes sont annulées, la nouvelle part ensuite (et se prépare)', () => {
+  const dits = [], prepares = []; let annule = 0;
+  const synth = { speak(u) { dits.push(u); }, cancel() { annule++; }, prepare(u) { prepares.push(u.text); } };
+  class E { constructor(t) { this.text = t; } }
+  const L = Voix.creerLecteur(synth, E, () => null, 1);
+  let fins = 0; L.surFin = () => fins++;
+  L.dire('Première phrase, assez longue.'); L.dire('Deuxième phrase.');
+  dits[0].onstart();
+  const r = L.finirPhrase();
+  assert.equal(r.dit, 'Première phrase, assez longue.');
+  L.dire('Ma réponse à toi.');
+  assert.equal(dits.length, 2, 'la nouvelle réponse attend la fin de la phrase');
+  assert.deepEqual(prepares, ['Ma réponse à toi.'], 'sa voix se prépare pendant qu’il finit');
+  dits[0].onend();
+  assert.equal(annule, 1, 'la file du moteur est vidée à la fin de la phrase');
+  assert.equal(dits[2].text, 'Ma réponse à toi.');
+  dits[1].onend();                                                  // l'annulée qui se signale : ignorée
+  assert.equal(fins, 0); dits[2].onstart(); dits[2].onend(); assert.equal(fins, 1);
+});
+
+// (07/11, Ahmed : « anticiper la latence de la sortie de sa voix, sélectionner parmi la dernière voix prête celle qui va au mieux dans ce temps ;
+// il peut revenir sur une portion de parole prête si elle est probablement la meilleure dans le temps de la latence »)
+test('choisir dans la latence : le plus récent s’il sort vite ; sinon une portion prête qui remplit ce temps, et le plus récent garde sa place', () => {
+  const now = 100000;
+  const prete3s = { n: 1, texte: 'Une portion déjà prête qui dure trois secondes.', t: now - 8000, prepA: now - 8000 };
+  const courte = { n: 2, texte: 'courte', t: now - 6000, prepA: now - 6000 };
+  const neuve = { n: 3, texte: 'La toute dernière, pas encore calculée', t: now - 200, prepA: now - 200 };
+  let r = Voix.choisirDansLatence([prete3s, courte, neuve], { maintenant: now, calculMs: 3500, sortieMs: 150 });
+  assert.equal(r.choix, prete3s, 'la portion prête dont la durée remplit le temps de calcul du plus récent');
+  assert.equal(r.revenu, true);
+  assert.deepEqual(r.garde, [courte, neuve], 'rien de jeté : il peut y revenir');
+  r = Voix.choisirDansLatence([prete3s, courte, { ...neuve, prepA: now - 5000 }], { maintenant: now, calculMs: 3500, sortieMs: 150 });
+  assert.equal(r.choix.n, 3, 'le plus récent est prêt : c’est lui');
+  r = Voix.choisirDansLatence([{ ...prete3s, t: now - 40000 }, neuve], { maintenant: now });
+  assert.equal(r.choix, neuve, 'plus de 30 s : trop vieux, et rien d’autre de prêt');
+  assert.deepEqual(r.garde, []);
+  assert.equal(Voix.choisirDansLatence([], { maintenant: now }).choix, null);
+});
+
+test('branché : la file de sa voix du téléphone passe par le choix (réglage choisir_latence), ses mesures de sortie l’apprennent', () => {
+  assert.match(SRC, /reglagesCorps\.choisir_latence !== false\) \{[\s\S]{0,900}?: Voix\.choisirDansLatence\(f,/);
+  assert.match(SRC, /etat\.calculVoixMs = lisse\(etat\.calculVoixMs, d\.calcul_ms\)/);
+  assert.match(SRC, /b\.dit\.forEach\(x => lecteurSysteme\.preparer\(x\)\); b\.prepA = Date\.now\(\);/);
+});
+
+test('voix du Mac : rien ne s’empile ; quand ce qui joue va finir, il choisit (le plus récent prêt, ou une portion prête qui remplit le temps)', () => {
+  const fn = (nom) => { const i = SRC.indexOf(`function ${nom}(`); return SRC.slice(i, SRC.indexOf('\n}\n', i) + 3); };
+  let now = 100000; const dits = [], minuteurs = [];
+  const cx = { Date: { now: () => now }, Math, Number, String, Voix, journalVoix() {}, reglagesCorps: { choisir_latence: true },
+    setTimeout: (f, ms) => { minuteurs.push(ms); return 1; }, clearTimeout() {}, direRibosome() {},
+    etat: { conversation: {}, calculVoixMacMs: 3000 },
+    lecteurNeuronal: { joue: true, resteS: 2, direAudio: (t) => dits.push(t) },
+    bouts: { tour: 1, prochain: 1, liste: new Map(), enFile: [], dits: [] } };
+  vm.createContext(cx); vm.runInContext(fn('direBouts') + 'this.dire = direBouts;', cx);
+  const ajouter = (n, texte, t, buf) => cx.bouts.liste.set(n, { n, texte, t, buf, rate: false });
+  ajouter(1, 'Une portion prête qui dure à peu près trois secondes.', now - 6000, { duration: 3 });
+  ajouter(2, 'La plus récente, encore en calcul', now - 100, null);
+  cx.dire();
+  assert.deepEqual(dits, [], 'sa voix joue encore 2 s : il attend');
+  assert.ok(minuteurs[0] > 900 && minuteurs[0] < 1100, 'il revient 1 s avant sa fin (07/11 : le suivant programmé sans blanc)');
+  cx.lecteurNeuronal.resteS = 0.2;
+  cx.dire();
+  assert.deepEqual(dits, ['Une portion prête qui dure à peu près trois secondes.'], 'la portion prête remplit le temps de calcul du plus récent');
+  cx.bouts.liste.get(2).buf = { duration: 2 }; cx.lecteurNeuronal.resteS = 0;
+  cx.dire();
+  assert.equal(dits[1], 'La plus récente, encore en calcul');
+});
+
+// (07/11, Ahmed : « il ne doit pas jeter la parole préparée quand la voix est prête, même si je le coupe ; garder les 30 dernières secondes
+// de voix prête en cache, pour sélectionner parmi ses paroles coupées pour répondre, sans répéter ce qu'il aurait déjà dit »)
+test('coupé : ses voix prêtes et pas dites sont gardées 5 min, lui sont redonnées, et reprises sans recalcul ; jamais ce qu’il a déjà dit', () => {
+  const i = SRC.indexOf('const VOIX_GARDEE_MS'), j = SRC.indexOf('function recevoirBout(');
+  let now = 1000; const envois = [], journal = [];
+  const cx = { Date: { now: () => now }, Map, String, envoyerNonDits: (l) => envois.push(...l), idNonDit: () => 'nd', journalVoix: (e, d) => journal.push(e),
+    bouts: { liste: new Map(), fileTel: [], attenteTel: null } };
+  vm.createContext(cx);
+  vm.runInContext(SRC.slice(i, j) + 'this.f = { garderVoixCoupees, voixGardeePour, noterParoleDite, garderVoixPrete };', cx);
+  cx.bouts.liste.set(3, { n: 3, texte: 'Le jardin, on le fait demain.', buf: { duration: 2 } });
+  cx.bouts.liste.set(4, { n: 4, texte: 'Pas encore calculé', buf: null });
+  cx.bouts.fileTel = [{ n: 5, texte: 'Et la cuisine après.', prepA: 900 }];
+  cx.f.noterParoleDite('Et la cuisine après.');                     // déjà dit : jamais redonné
+  const l = cx.f.garderVoixCoupees();
+  assert.deepEqual(l.map(b => b.n), [3], 'seulement la voix prête et pas dite');
+  assert.equal(envois[0].texte, 'Le jardin, on le fait demain.', 'redonnée à son prochain tour (non dit)');
+  assert.equal(cx.f.voixGardeePour('le jardin on le fait demain').buf.duration, 2, 'reprise telle quelle : sa voix est déjà là');
+  assert.equal(cx.f.voixGardeePour('Et la cuisine après.'), null);
+  cx.f.noterParoleDite('Le jardin, on le fait demain.');
+  assert.equal(cx.f.voixGardeePour('Le jardin, on le fait demain.'), null, 'dite : plus jamais reprise');
+  cx.f.garderVoixPrete({ texte: 'Une autre parole prête.', buf: { duration: 1 } });
+  now += 4 * 60e3;
+  assert.ok(cx.f.voixGardeePour('Une autre parole prête.'), '4 min après : encore là (cache de 5 min)');
+  now += 61e3;
+  assert.equal(cx.f.voixGardeePour('Une autre parole prête.'), null, 'après 5 min : oubliée');
+  assert.match(SRC, /garderVoixCoupees === 'function'\) garderVoixCoupees\(\); if \(bouts\.liste\) bouts\.liste\.clear\(\);/, 'ta voix ouvre un nouveau tour : gardées avant d’être lâchées');
+});
+
+// (07/11, Ahmed : « en parallèle, qu'il fait une action ou quelque chose d'autre, il doit déjà préparer sa voix à chaque ribosome »)
+test('sa voix se prépare dès l’arrivée du morceau ; quand vient son tour, la même voix sert (une seule synthèse), le meuble à part', async () => {
+  const i = SRC.indexOf('const VOIX_GARDEE_MS'), j = SRC.indexOf('function recevoirBout(');
+  const demandes = [];
+  const cx = { Date, Map, String, Promise, setTimeout: (f) => f(), journalVoix() {}, envoyerNonDits() {}, idNonDit: () => 'x', bouts: { liste: new Map() },
+    jeton: () => 'x', tempoVoix: () => 1, expressivitePhrase: (e) => e, sortieAilleurs: () => false, voixEpissee: () => true, voixDuTelephone: () => false,
+    etat: { conversation: {}, interieur: null, reglages: {} }, lecteurSysteme: null,
+    actx: { state: 'running', decodeAudioData: (ab) => Promise.resolve({ duration: 1, texte: ab.texte }) },
+    fetch: (u, o) => { const t = JSON.parse(o.body).texte; demandes.push(t); return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve({ texte: t }) }); } };
+  vm.createContext(cx);
+  vm.runInContext(SRC.slice(i, j) + 'this.f = { avancerVoix, voixPourTexte };', cx);
+  cx.f.avancerVoix('Je regarde ça pour toi.');                     // le ribosome vient de le sortir : sa voix part tout de suite
+  assert.deepEqual(demandes, ['Je regarde ça pour toi.']);
+  const buf = await cx.f.voixPourTexte('Je regarde ça pour toi.');   // son tour : la même voix, sans nouvelle synthèse
+  assert.equal(buf.texte, 'Je regarde ça pour toi.');
+  assert.deepEqual(demandes, ['Je regarde ça pour toi.'], 'une seule synthèse');
+  await cx.f.voixPourTexte('Hum,');
+  assert.deepEqual(demandes, ['Je regarde ça pour toi.', 'Hum,'], 'le meuble : sa propre voix, à part');
+  assert.match(SRC, /recevoirBout\(\{ texte, parties, meuble, pret: true, sansMeuble: true, ribosome: true \}, n, tour\);/);
+  assert.match(SRC, /for \(const x of etat\.riboFile \|\| \[\]\) if \(!x\.avance\) \{ x\.avance = Date\.now\(\); avancerVoix\(x\.texte\); \}/);
+});
+
+// (07/11, Ahmed : « lui autoriser à me couper la parole », option 2 : dès qu'un morceau de sa voix est prêt, il parle, même si tu parles)
+test('te_couper : allumé, sa voix parle pendant ta parole et ta voix ne le fait plus taire ; éteint (par défaut), comme avant', () => {
+  const fn = (nom) => { const i = SRC.indexOf(`function ${nom}(`); return SRC.slice(i, SRC.indexOf('\n}\n', i) + 3); };
+  const ligne = (d) => { const i = SRC.indexOf(d); return SRC.slice(i, SRC.indexOf('\n', i) + 1); };
+  const cx = { reglagesCorps: { coupe_net: false }, etat: { conversation: { capteur: { enParole: true }, enAttente: 0 } } };
+  vm.createContext(cx);
+  vm.runInContext(ligne('const coupeNet = ') + ligne('const teCouper = ') + fn('jarvisPeutParler') + 'this.peut = jarvisPeutParler;', cx);
+  assert.equal(cx.peut(), false, 'éteint : il attend ta fin');
+  cx.reglagesCorps.te_couper = true;
+  assert.equal(cx.peut(), true, 'allumé : il parle par-dessus toi');
+  assert.match(SRC, /if \(typeof teCouper === 'function' && teCouper\(\)\) \{ journalVoix\('te_coupe', mesure \|\| \{\}\); if \(voixEpissee\(\)\) prevoirSaut\(conv, mesure\); return; \}/, 'ta voix ne le met plus en pause au morceau ; ta voix qui dure le coupe toujours');
+  assert.match(SRC, /const ilGarde = typeof teCouper === 'function' && teCouper\(\) && Date\.now\(\) - Number\(conv\.gardeParoleA \|\| 0\) < 15000;[\s\S]{0,600}?if \(voixEpissee\(\) && etat\.flux && lacherAncien && !ilGarde && vraiePhrase\)/, '(07/11) ta nouvelle phrase l’emporte, sauf s’il vient de choisir de finir (et un petit mot attend)');
+  assert.doesNotMatch(SRC, /il peut te couper : sa suite n'est pas sautée/, '« Sauter au bout de » vaut aussi quand il peut te couper');
+  assert.match(SRC, /if \(typeof teCouper === 'function' && teCouper\(\)\) return;           \/\/ \(07\/11\) il peut te couper : ce qu'il préparait n'est pas lâché/);
+  const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  assert.match(srv, /te_couper: r\.te_couper === true,/, 'éteint par défaut');
+  assert.match(fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8'), /\['te_couper', '🗣️ Il peut te couper la parole'/);
+});
+
+// (07/11, Ahmed : « s'il prépare 4 phrases, il peut commencer par la 3 directement, puis revenir en arrière ou en avant, en parallèle de tout le reste »)
+test('choix libre : son subconscient choisit d’avance laquelle de ses paroles prêtes dire ; il attend son choix 1,5 s au plus ; les autres restent', async () => {
+  const i = SRC.indexOf('const choixParole = '), j = SRC.indexOf('function recevoirBout(');
+  let now = 1000; const envois = [], relances = [];
+  let reponse = { n: 3 };
+  const cx = { Date: { now: () => now }, Number, JSON, Promise, reglagesCorps: { choix_libre: true }, jeton: () => 'x',
+    etat: { conversation: { ecrit: { confirme: 'tu peux', vif: 'me dire' } } }, bouts: { tour: 7, dits: ['Bonjour papa'] },
+    direBouts: () => relances.push('mac'), boutTelephoneSuivant: () => relances.push('tel'),
+    fetch: (u, o) => { envois.push([u, JSON.parse(o.body)]); return Promise.resolve({ ok: true, json: () => Promise.resolve(reponse) }); } };
+  vm.createContext(cx);
+  vm.runInContext(SRC.slice(i, j) + 'this.f = { preparerChoix, choixLibre };', cx);
+  const pool = [{ n: 1, texte: 'un' }, { n: 2, texte: 'deux' }, { n: 3, texte: 'trois' }, { n: 4, texte: 'quatre' }];
+  cx.f.preparerChoix(pool, 'mac');
+  cx.f.preparerChoix(pool, 'mac');
+  assert.equal(envois.length, 1, 'une seule demande pour les mêmes paroles prêtes');
+  assert.deepEqual(envois[0], ['/api/jarvis/choisir-parole', { pretes: pool, papa: 'tu peux me dire', dits: ['Bonjour papa'], ou: 'mac' }]);
+  assert.deepEqual({ ...cx.f.choixLibre(pool) }, { attendre: true }, 'son choix arrive : sa voix l’attend');
+  await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
+  assert.equal(cx.f.choixLibre(pool).choix.n, 3, 'il commence par la 3');
+  assert.deepEqual(relances, ['mac', 'tel'], 'son choix arrivé : sa voix repart');
+  const reste = pool.filter(x => x.n !== 3);                        // la 3 dite : un nouveau choix parmi les autres
+  reponse = { n: 1 };
+  cx.f.preparerChoix(reste, 'mac');
+  await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
+  assert.equal(cx.f.choixLibre(reste).choix.n, 1, 'il revient à la 1');
+  const autre = [{ n: 5, texte: 'cinq' }, { n: 6, texte: 'six' }];
+  reponse = { n: null };
+  cx.f.preparerChoix(autre, 'mac'); now += 2000;
+  assert.equal(cx.f.choixLibre(autre), null, 'pas de choix en 1,5 s : la latence décide');
+  cx.reglagesCorps.choix_libre = false;
+  assert.equal(cx.f.choixLibre(pool), null, 'réglage éteint');
+  assert.equal(cx.f.choixLibre([{ n: 9, texte: 'seule' }]), null, 'une seule prête : rien à choisir');
+});
+
+test('cockpit : ses paroles prêtes numérotées à son subconscient, son numéro lu, sinon rien ; noté au journal', async () => {
+  const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const i = srv.indexOf('const CHOISIR_PAROLE_MS'), f = srv.slice(i, srv.indexOf('const SE_COUPER_MS', i));
+  const notes = [];
+  const cx = { fs: { appendFileSync: (_, l) => notes.push(JSON.parse(l)) }, j: JSON.stringify, JARVIS_VOIX_DIAGNOSTIC: '/x', Date, String, Number, Array, neutraliser: (x) => x };
+  vm.createContext(cx); vm.runInContext(f + 'this.lire = lireNumeroChoisi; this.choisir = choisirParole;', cx);
+  assert.equal(cx.lire('3', 4), 3); assert.equal(cx.lire('Je dis la 2.', 4), 2); assert.equal(cx.lire('7', 4), null); assert.equal(cx.lire('aucune', 4), null);
+  let demande;
+  const r = await cx.choisir([{ n: 11, texte: 'un' }, { n: 12, texte: 'deux' }, { n: 13, texte: 'trois' }], 'papa dit', ['déjà'], 'mac',
+    (m, p, d) => { demande = { m, p, d }; return Promise.resolve({ texte: '3' }); });
+  assert.equal(r.n, 13, 'son numéro (3e) rendu en numéro de parole (13)');
+  assert.equal(demande.m, 'haiku'); assert.equal(demande.d, 2500);
+  assert.match(demande.p, /1\. un\n2\. deux\n3\. trois/);
+  assert.match(demande.p, /Tu peux commencer par n'importe laquelle, revenir à une plus ancienne ou sauter en avant/);
+  assert.equal((await cx.choisir([{ n: 1, texte: 'seule' }], '', [], '', () => { throw new Error('jamais'); })).n, 1, 'une seule : pas de demande');
+  assert.equal((await cx.choisir([{ n: 1, texte: 'a' }, { n: 2, texte: 'b' }], '', [], '', () => Promise.reject(new Error('lent')))).n, null);
+  assert.deepEqual(notes.map(x => [x.e, x.rang]), [['choix_parole', 3], ['choix_parole', null]]);
+  assert.match(srv, /choix_libre: r\.choix_libre !== false,/);
+});
+
+// (07/11, Ahmed : « il arrive pas encore à être totalement fluide : un petit décalage entre chaque bloc ; il faut une liaison élégante »)
+test('voix du téléphone : ce qu’il reste à dire de la phrase qui sort, et le blanc entre deux phrases, mesuré', () => {
+  let now = 0; const RealNow = Date.now; Date.now = () => now;
+  try {
+    const dits = []; class E { constructor(t) { this.text = t; } }
+    const L = Voix.creerLecteur({ speak: (u) => dits.push(u), cancel() {} }, E, () => null, 1);
+    const blancs = []; L.surBlanc = (ms) => blancs.push(ms);
+    L.dire('Une phrase de quarante-deux caractères ici.');
+    dits[0].onstart();
+    now = 1000;
+    assert.ok(Math.abs(L.resteEstimeMs() - (dits[0].text.length / 14 * 1000 - 1000)) < 1, 'estimé à 14 caractères par seconde');
+    L.dire('La suivante.');
+    assert.equal(L.resteEstimeMs(), Infinity, 'une suivante déjà confiée au moteur : rien de plus');
+    dits[0].onend(); now = 1300; dits[1].onstart();
+    assert.deepEqual(blancs, [300], 'le blanc entre les deux, mesuré');
+  } finally { Date.now = RealNow; }
+});
+
+test('voix du téléphone : la phrase suivante part au moteur 0,7 s avant la fin de celle qui sort (sans blanc) ; plus tôt, on revient à ce moment-là', () => {
+  const fn = (nom) => { const i = SRC.indexOf(`function ${nom}(`); return SRC.slice(i, SRC.indexOf('\n}\n', i) + 3); };
+  const dits = [], minuteurs = [];
+  let reste = 3000;
+  const cx = { Date, Number, Math, Voix, journalVoix() {}, reglagesCorps: { choisir_latence: true, choix_libre: false }, setTimeout: (f, ms) => { minuteurs.push(ms); return 1; }, clearTimeout() {},
+    etat: { conversation: {} }, montrerPensee() {},
+    lecteurSysteme: { actif: true, resteEstimeMs: () => reste },
+    bouts: { tour: 1, fileTel: [{ n: 2, texte: 'la suite', t: Date.now(), prepA: Date.now() - 5000 }], dits: [] },
+    direBoutTelephone: (c, b) => dits.push(b.texte) };
+  vm.createContext(cx); vm.runInContext(fn('boutTelephoneSuivant') + 'this.suivant = boutTelephoneSuivant;', cx);
+  cx.suivant();
+  assert.deepEqual(dits, [], '3 s de phrase encore : pas maintenant');
+  assert.equal(minuteurs[0], 2300, 'il revient 0,7 s avant la fin');
+  reste = 600; cx.suivant();
+  assert.deepEqual(dits, ['la suite'], '0,6 s avant la fin : confiée au moteur, qui l’enchaîne');
+});
+
+// (07/11, Ahmed a choisi l'essai « 2b » : « coupé aux virgules, avec 0,1 s de liaison »)
+test('sa parole épissée dite proposition par proposition ; un reste court attend la suite (0,7 s au plus) ; 0,1 s de respiration entre deux bouts', () => {
+  const i = SRC.indexOf('const RESTE_ATTENTE_MS'), j = SRC.indexOf('function surRibosome(');
+  const minuteurs = []; let dits = 0;
+  const cx = { etat: { riboFile: [] }, setTimeout: (f, ms) => { minuteurs.push({ f, ms }); return minuteurs.length; }, clearTimeout() {},
+    direRibosome: () => dits++, preparerRibosome() {} };
+  vm.createContext(cx); vm.runInContext(SRC.slice(i, j) + 'this.p = propositionsDe;', cx);
+  assert.deepEqual([...cx.p(7, "Oui papa, je t'entends bien, et je suis content")],
+    ['Oui papa,', "je t'entends bien,", 'et je suis content'], 'aux virgules ; la fin assez longue part telle quelle');
+  assert.deepEqual([...cx.p(7, 'Pour ta question, sur le')], ['Pour ta question,'], 'un reste court (« sur le ») attend');
+  assert.deepEqual([...cx.p(7, 'jardin, on commence demain.')], ['sur le jardin,', 'on commence demain.'], 'il se recolle à la suite');
+  cx.p(8, 'Et toi ?'); cx.p(8, 'Alors on');
+  assert.equal(cx.etat.riboReste.texte, 'Alors on');
+  minuteurs[minuteurs.length - 1].f();
+  assert.deepEqual(cx.etat.riboFile.map(x => x.texte), ['Alors on'], 'sans suite en 0,7 s : il part seul');
+  assert.equal(minuteurs[minuteurs.length - 1].ms, 700);
+  assert.equal(dits, 1);
+  assert.match(SRC, /prochainDebut = t \+ joue \+ \(x\.hesitation \|\| x\.auto \|\| x\.son \? 0\.01 : R\('respiration', 0\.1\)\);/);
+});
+
+// (07/11, Ahmed : « on garde uniquement sa vraie réponse » ; « du coup la voix ne doit pas être préparée pour la pensée »)
+test('voix_reponse_seule (oui) : ses pensées restent à l’écran, aucune voix calculée pour elles ; seule sa vraie réponse est dite', () => {
+  const fn = (nom) => { const i = SRC.indexOf(`function ${nom}(`); return SRC.slice(i, SRC.indexOf('\n}\n', i) + 3); };
+  const ligne = (debut) => { const i = SRC.indexOf(debut); return SRC.slice(i, SRC.indexOf('\n', i) + 1); };
+  const prep = [];
+  const cx = { reglagesCorps: {}, etat: { riboFile: [{ texte: 'une pensée' }] }, avancerVoix: (t) => prep.push(t), lecteur: { impl: 1 }, lecteurNeuronal: 1, voixDuTelephone: () => true, Date };
+  vm.createContext(cx);
+  vm.runInContext(ligne('const reponseSeule = ') + ligne('const souffleAutorise = ') + fn('preparerRibosome') + 'this.f = { reponseSeule, souffleAutorise, preparerRibosome };', cx);
+  assert.equal(cx.f.reponseSeule(), true, 'par défaut : sa vraie réponse seulement');
+  assert.equal(cx.f.souffleAutorise(), false, 'ses pensées soufflées : pas dites');
+  cx.f.preparerRibosome();
+  assert.deepEqual(prep, [], 'aucune voix préparée pour ses pensées');
+  cx.reglagesCorps.voix_reponse_seule = false;
+  assert.equal(cx.f.souffleAutorise(), true);
+  cx.f.preparerRibosome();
+  assert.deepEqual(prep, ['une pensée'], 'éteint : comme avant');
+  assert.match(SRC, /if \(typeof reponseSeule === 'function' && reponseSeule\(\)\) \{\n    const pv = paveDe\(tour\);[^\n]*\n    etat\.riboEnVoix = \[\]; journalVoix\('pensee_non_dite'/, 'son pavé s’allume, rien ne part à sa voix');
+  assert.match(SRC, /function direPenseeSiPossible\(\) \{\n  if \(typeof reponseSeule === 'function' && reponseSeule\(\)\) return false;/);
+  assert.match(fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8'), /voix_reponse_seule: r\.voix_reponse_seule !== false,/);
+});
+
+// (07/11, Ahmed : « je lui coupe la parole immédiatement quand je parle au-dessus de lui ; il finit juste son mot et il m'écoute ; quand j'ai fini,
+// il saute direct à sa nouvelle réponse »)
+// (08/11, Ahmed : « il faut qu'il puisse couper la parole à ma voix micro et à sa voix intérieure ») les deux ensemble : tu le coupes net quand tu
+// commences à parler sur lui ; lui peut commencer à parler sur toi (« il peut te couper » ne s'éteint plus sous « tu le coupes net »)
+test('coupé net (coupe_net, oui) : son mot fini, sa réponse et ce qu’il préparait lâchés, ses voix prêtes gardées ; et lui peut toujours te couper', () => {
+  assert.equal(Voix.finDePhrase('Bonjour papa je vais bien', 0.1, true).dit, 'Bonjour', 'le mot en cours, pas la virgule');
+  const fn = (nom) => { const i = SRC.indexOf(`function ${nom}(`); return SRC.slice(i, SRC.indexOf('\n}\n', i) + 3); };
+  const ligne = (d) => { const i = SRC.indexOf(d); return SRC.slice(i, SRC.indexOf('\n', i) + 1); };
+  const fait = [];
+  const cx = { reglagesCorps: { te_couper: true }, etat: { flux: {}, riboFile: [{ tour: 3, texte: 'la suite' }], riboEnVoix: [1] },
+    bouts: { liste: new Map([[1, {}]]), fileTel: [1], attenteTel: {}, enFile: [1] }, lecteur: { actif: true },
+    garderVoixCoupees: () => fait.push('gardees'), blancsPourSautes: () => fait.push('blancs'), libererRibosomes: () => fait.push('ribosomes'),
+    arreterTout: (e, o) => fait.push(`arret:${o.raison}:${o.garder}`), majBoutonsPause() {} };
+  vm.createContext(cx);
+  vm.runInContext(ligne('const coupeNet = ') + ligne('const teCouper = ') + fn('couperNet') + 'this.f = { coupeNet, teCouper, couperNet };', cx);
+  assert.equal(cx.f.coupeNet(), true, 'par défaut : tu le coupes net');
+  assert.equal(cx.f.teCouper(), true, '(08/11) il peut quand même commencer à parler sur toi');
+  cx.reglagesCorps.te_couper = false; assert.equal(cx.f.teCouper(), false); cx.reglagesCorps.te_couper = true;
+  cx.f.couperNet({});
+  assert.deepEqual(fait, ['gardees', 'blancs', 'ribosomes', 'arret:parole:false']);
+  assert.deepEqual(cx.etat.riboFile, []); assert.equal(cx.bouts.liste.size, 0);
+  assert.match(SRC, /if \(typeof coupeNet === 'function' && coupeNet\(\)\) \{ journalVoix\('coupe_net', mesure \|\| \{\}\); couperNet\(conv\); return; \}/);
+  assert.match(SRC, /if \(typeof coupeNet === 'function' && coupeNet\(\) && lecteur\.finirMot\) \{ const r = lecteur\.finirMot\(\);/, 'sa voix : son mot');
+  // la voix du téléphone : 0,18 s, puis rien
+  const dits = []; let annule = 0; class E { constructor(t) { this.text = t; } }
+  const L = Voix.creerLecteur({ speak: (u) => dits.push(u), cancel: () => annule++ }, E, () => null, 1);
+  L.dire('Une phrase.'); L.dire('La suivante.'); dits[0].onstart();
+  assert.equal(L.finirMot().ms, 180);
+  assert.equal(dits[1]._annulee, true, 'la suivante annulée tout de suite');
+});
+
+// (07/11, Ahmed : « s'il y a 5 blancs, il choisit 5 meubles ; il choisit s'il fusionne ses blancs en un seul meuble, ou 2 ou 3, et aussi la taille
+// et la transition de son meuble »)
+test('son plan de meubles : chaque blanc prend son entrée (un meuble ou rien), un meuble qui couvre 2 blancs laisse le suivant en silence', () => {
+  const i = SRC.indexOf('const planDeMeubles = '), j = SRC.indexOf('lecteurNeuronal.hesitation = (o) => {');
+  const journal = [];
+  const cx = { reglagesCorps: {}, etat: {}, journalVoix: (e) => journal.push(e), meublesPourTelephone: () => [],
+    meublesPrets: new Map([['hum', { nom: 'hum', texte: 'Hum,' }], ['voyons voir', { nom: 'voyons voir', texte: 'Voyons voir,' }]]) };
+  vm.createContext(cx);
+  vm.runInContext(SRC.slice(i, j) + 'this.f = { meubleDuPlan, planDeMeubles };', cx);
+  assert.equal(cx.f.meubleDuPlan(), undefined, 'pas de plan : comme avant');
+  cx.f.planDeMeubles.l = [{ nom: 'hum', taille: 'court', transition: 'net', couvre: 1 }, { rien: true },
+    { nom: 'voyons voir', taille: 'long', transition: 'enchaine', couvre: 2 }, { nom: 'hum', taille: 'court', transition: 'fondu', couvre: 1 }];
+  const suite = [1, 2, 3, 4, 5, 6].map(() => cx.f.meubleDuPlan());
+  assert.deepEqual(suite.map(x => (x ? `${x.nom}/${x.taille}/${x.transition}` : null)),
+    ['hum/court/net', null, 'voyons voir/long/enchaine', null, 'hum/court/fondu', null], 'le 4e blanc couvert par « voyons voir » ; plan épuisé : silence');
+  const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const k = srv.indexOf('const PLAN_MEUBLES_MS'), f = srv.slice(k, srv.indexOf('\nasync function planMeubles', k));
+  const cs = {}; vm.createContext(cs); vm.runInContext(f + ';this.lire = lirePlanMeubles;', cs);
+  assert.deepEqual(JSON.parse(JSON.stringify(cs.lire('B1 : hum | court | fondu | 1\nB2 : rien\nB3 : voyons voir | long | enchaîné | 2\nB4 : inconnu | court | net | 1', ['hum', 'voyons voir']))),
+    [{ nom: 'hum', taille: 'court', transition: 'fondu', couvre: 1 }, { rien: true }, { nom: 'voyons voir', taille: 'long', transition: 'enchaine', couvre: 2 }, { rien: true }]);
+  assert.match(SRC, /const enchaine = \[\.\.\.sources\]\.some\(s2 => s2\._transition === 'enchaine'\);/, 'enchaîné : sa réponse attend la fin du meuble');
+  // (07/11, Ahmed : « pourquoi il ne choisit pas un seul meuble, comme j'ai mis dans les réglages ? ») « Au plus, par lecture » borne son plan
+  assert.deepEqual(JSON.parse(JSON.stringify(cs.lire('B1 : hum | court | fondu | 1\nB2 : voyons voir | long | net | 1\nB3 : hum | court | net | 1', ['hum', 'voyons voir'], 1))),
+    [{ nom: 'hum', taille: 'court', transition: 'fondu', couvre: 1 }, { rien: true }, { rien: true }], 'réglé à 1 : un seul meuble');
+  assert.match(srv, /AU PLUS \$\{max\} meuble/);
+});
+
+// (07/11, 14:23, Ahmed via Hakim : « ma voix se bloque et ça s'accumule » : deux réponses lâchées avant leur première phrase par un petit mot)
+test('seule une vraie phrase (4 mots, pas un « ok » ni un « vas-y ») lâche sa réponse en cours ; un petit mot attend', () => {
+  const i = SRC.indexOf('const PETITS_MOTS = '), j = SRC.indexOf('function prevoirSaut(');
+  const cx = {}; vm.createContext(cx); vm.runInContext(SRC.slice(i, j) + 'this.f = phraseQuiCoupe;', cx);
+  for (const t of ['ok', 'Oui.', 'vas-y', 'mmh', "d'accord", 'ouais ouais', 'wesh', 'Ah bon']) assert.equal(cx.f(t), false, t);
+  for (const t of ['Attends, parle-moi plutôt du jardin', 'Non mais écoute ce que je te dis']) assert.equal(cx.f(t), true, t);
+  assert.match(SRC, /if \(voixEpissee\(\) && etat\.flux && lacherAncien && !ilGarde && vraiePhrase\)/);
+});
+
+// (07/11, Ahmed : « rajoute une dernière vérif : des fois, la transition de Hakim entre deux de ses paroles se chevauche, entre la fin d'un
+// morceau et le début du suivant ») la dernière vérification, juste avant qu'un bout de sa voix parte : rien d'autre ne sonne encore
+test('dernière vérification : sa voix de secours parle encore, le bout suivant attend sa fin (10 s au plus) ; c’est noté', async () => {
+  const sim = simulateur({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 } });
+  const journal = [];
+  sim.cx.journalVoix = (e, o) => journal.push([e, o]);
+  let reste = 4000;
+  sim.cx.lecteurSysteme = { actif: true, resteEstimeMs: () => reste, dire() {} };   // la voix de secours dit encore 4 s
+  sim.lecteur.dire('Une phrase assez courte.');
+  sim.lecteur.finFlux();
+  await sim.avancer(20);
+  assert.ok(sim.sons[0].debut >= 4, `elle part après la voix de secours (${sim.sons[0].debut.toFixed(2)} s)`);
+  assert.ok(journal.some(([e, o]) => e === 'chevauchement_evite' && o.avec === 'voix_de_secours'), 'noté au journal');
+  // une estimation qu'on ne connaît pas, ou trop longue (une voix bloquée) : jamais d'attente sans fin
+  const sim2 = simulateur({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 } });
+  sim2.cx.lecteurSysteme = { actif: true, resteEstimeMs: () => Infinity, dire() {} };
+  sim2.lecteur.dire('Une phrase assez courte.');
+  sim2.lecteur.finFlux();
+  await sim2.avancer(20);
+  assert.ok(sim2.sons[0].debut < 3, `pas d’attente sans fin (${sim2.sons[0].debut.toFixed(2)} s)`);
+});
+
+test('dernière vérification : aucun bout de sa voix ne chevauche le précédent, même quand le suivant est prêt d’avance', async () => {
+  const r = await jouer({ ...MESUREE, appris: { fixe: 0.2, parSec: 0.1, cps: 22 } });   // une machine rapide : tout est prêt d'avance
+  const voix = r.sons.slice().sort((a, b) => a.debut - b.debut);
+  for (let i = 1; i < voix.length; i++)
+    assert.ok(voix[i].debut >= voix[i - 1].fin - 1e-6, `« ${voix[i].texte.slice(0, 30)} » commence ${((voix[i - 1].fin - voix[i].debut) * 1000).toFixed(0)} ms avant la fin du précédent`);
+  assert.match(corps, /if \(!x\.auto && fluide\(\)\) \{/, 'la vérification, avant chaque bout de sa voix (les meubles s’éteignent en fondu)');
+});
+
+test('l’heure de chaque bout dit : celle où son son part vraiment, pas celle où la page a eu le temps de le noter', async () => {
+  const sim = simulateur({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 }, horloge: true });
+  const notes = [];
+  sim.lecteur.surSegment = (t, duree, debutMs) => notes.push({ t, debutMs });
+  for (const p of REPONSE.slice(0, 3)) sim.lecteur.dire(p);
+  sim.lecteur.finFlux();
+  await sim.avancer(60);
+  assert.ok(notes.length >= 3);
+  notes.forEach((n, i) => assert.ok(Math.abs(n.debutMs - sim.sons[i].debut * 1000) <= 1, `bout ${i} : noté à ${n.debutMs} ms, parti à ${Math.round(sim.sons[i].debut * 1000)} ms`));
+  assert.match(SRC, /function noterMorceau\(texte, dureeMs, debutMs\) \{/);
+  assert.match(SRC, /debut: Number\(debutMs\) > 0 \? Math\.round\(Number\(debutMs\)\) : Date\.now\(\)/, 'voix-dite.jsonl et le présent vécu prennent cette heure-là');
+  assert.match(SRC, /lecteurNeuronal\.surSegment = \(t, duree, debutMs\) => \{/);
+  assert.match(SRC, /noterMorceau\(t, duree, debutMs\)/);
+});
+
+// (08/11, Ahmed : « encore, quand il parle, les morceaux se chevauchent toujours, surtout quand le Mac est chargé ») mesuré dans son journal
+// (voix-dite, depuis la veille 18 h) : 52 chevauchements de 0,3 à 5 s entre deux morceaux, 27 % juste après un de ses meubles (1 % pour les
+// enchaînements propres). Après un meuble, sa voix repart au ralenti (adoucirDebut) : un calcul de 0,6 à 1,8 s sur le Mac pour 2 à 7 s de
+// voix, fait APRÈS avoir choisi l'heure de départ ; parti en retard, le morceau sonnait encore quand le suivant partait à l'heure prévue.
+test('un calcul lent avant le départ d’un morceau : il part en retard, et le suivant attend sa vraie fin (jamais par-dessus)', async () => {
+  const sim = simulateur({ fixe: 0.05, parSec: 0.02, cps: 22, appris: { fixe: 0.05, parSec: 0.02, cps: 22 } });   // sa voix arrive vite : la suite est déjà là
+  sim.cx.actx.decodeAudioData = (ab) => Promise.resolve({ duration: ab.n / 22, texte: ab.texte, getChannelData: () => new Float32Array(0) });
+  let n = 0;
+  sim.lecteur.rogner = (b) => { if (n++ === 0) sim.bloquer(0.8); return b; };   // le premier morceau : 0,8 s de calcul
+  sim.lecteur.dire(REPONSE[0]); sim.lecteur.dire(REPONSE[1]); sim.lecteur.dire(REPONSE[2]);
+  await sim.avancer(1); sim.lecteur.finFlux(); await sim.avancer(60);
+  assert.ok(sim.sons.length >= 2 && n >= 2, `${sim.sons.length} sons`);
+  for (let i = 1; i < sim.sons.length; i++)
+    assert.ok(sim.sons[i].debut >= sim.sons[i - 1].fin - 1e-6, `le morceau ${i + 1} part à ${sim.sons[i].debut.toFixed(2)} s, le ${i} sonne jusqu’à ${sim.sons[i - 1].fin.toFixed(2)} s`);
+});
+
+test('sa voix qui repart au ralenti : seul son début est calculé (le reste, copié tel quel) ; sans chercher sa hauteur', () => {
+  const prendre = (nom) => { const i = SRC.indexOf(`function ${nom}(`); let p = 0, k = SRC.indexOf('{', i); for (; k < SRC.length; k++) { if (SRC[k] === '{') p++; else if (SRC[k] === '}' && --p === 0) break; } return SRC.slice(i, k + 1); };
+  const cx = { Math, Float32Array };
+  cx.actx = { createBuffer: (c, n, sr) => { const d = new Float32Array(n); return { sampleRate: sr, length: n, duration: n / sr, numberOfChannels: 1, getChannelData: () => d }; } };
+  vm.createContext(cx);
+  vm.runInContext(prendre('analyserMeuble') + '\n' + prendre('ralentirMeuble') + '\nthis.R = ralentirMeuble; this.analyserMeuble = analyserMeuble;', cx);
+  const sr = 48000, n = sr * 4, d = new Float32Array(n);
+  for (let i = 0; i < n; i++) d[i] = 0.3 * Math.sin(2 * Math.PI * 180 * i / sr) * (0.6 + 0.4 * Math.sin(2 * Math.PI * 3 * i / sr)) + 0.05 * Math.sin(i * 0.37);
+  const t0 = Date.now(), r = cx.R({ sampleRate: sr, length: n, duration: n / sr, numberOfChannels: 1, getChannelData: () => d }, 0, 0.55), ms = Date.now() - t0;
+  // le temps dépend de la charge de la machine (la suite entière en parallèle) : ce qui compte, c'est qu'il ne cherche plus sa hauteur
+  // (rien ne s'en servait) et qu'il recopie sa voix à vitesse normale (vérifié plus bas) ; seul, mesuré : 1,1 s avant, 75 ms après
+  assert.equal(cx.analyserMeuble ? 'meilleur' in cx.analyserMeuble(d, sr) : false, false);
+  assert.ok(ms < 1500, `${ms} ms`);
+  const o = r.tampon.getChannelData(0), dec = o.length - n;
+  assert.ok(r.tampon.duration > 4 && r.tampon.duration < 4.1, 'le début ralenti l’allonge un peu');
+  // au milieu, sa voix est la même, au décalage près du début ralenti (cherché dans ±0,1 s)
+  let meilleur = Infinity;
+  for (let k = dec - 4800; k <= dec + 4800; k++) {
+    let e = 0; for (let i = sr; i < 2 * sr; i += 7) { e = Math.max(e, Math.abs(o[i + k] - d[i])); if (e >= meilleur) break; }
+    meilleur = Math.min(meilleur, e);
+  }
+  assert.ok(meilleur < 1e-3, `écart ${meilleur}`);
+});

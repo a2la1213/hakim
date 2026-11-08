@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Studio de Hakim</title>
+  <link rel="icon" href="/icone-192.png">
+  <script src="/apparence.js"></script>
+  <link rel="stylesheet" href="/theme.css">
+  <!-- (06/11, Ahmed : « que moi aussi je puisse m'enregistrer et me faire mixer et masteriser par Hakim, comme ça on peut faire des vrais
+       sons depuis le phone » ; « il faut absolument un truc Studio dans le cockpit » ; « lui faire écouter des sons, comme lui, sans lui
+       envoyer ») ses sons, lui faire écouter, t'enregistrer sur une instru (latence compensée), le mix et le mastering par Hakim.
+       Comme Réglages : badges.js (fermé) monte ☰, PARLER et l'orbe ; pas de nav.js. -->
+  <style>
+    [hidden] { display: none !important; }
+    main { max-width: 860px; margin: 0 auto; padding: 0 16px 40px; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 14px; }
+    h1 { font-size: 18px; color: var(--txt); font-weight: 600; margin: 4px 0 0; }
+    h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; color: var(--txt); font-weight: 600; margin: 4px 0 6px; }
+    h3 { font-size: 13px; color: var(--txt-2); font-weight: 600; margin: 12px 0 4px; }
+    .sous { font-size: 13px; color: var(--txt-3); line-height: 1.45; }
+    .carte { padding: 12px 14px; overflow-wrap: anywhere; }
+    .vide { font-size: 13px; color: var(--txt-3); padding: 6px 0; }
+    .son { padding: 10px 0; border-top: 1px solid var(--trait, var(--glass-bd)); }
+    .son:first-child { border-top: 0; }
+    .son .tete { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; color: var(--txt); font-size: 14.5px; }
+    .son .meta { font-size: 12px; color: var(--txt-3); }
+    .son audio { width: 100%; margin-top: 8px; height: 40px; }
+    .gestes { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+    button, .bouton { font: inherit; font-size: 13px; padding: 7px 11px; min-height: 40px; border-radius: 10px; border: 1px solid var(--glass-bd);
+      background: transparent; color: var(--txt-2); cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+    button:disabled { opacity: .45; cursor: default; }
+    button.principal { border-color: var(--teal); color: var(--txt); background: rgba(45,212,191,.14); font-weight: 600; }
+    button.rec { border-color: #ef4444; background: rgba(239,68,68,.18); color: var(--txt); font-weight: 700; font-size: 15px; min-height: 52px; padding: 0 22px; }
+    button.rec.actif { background: #ef4444; color: #fff; }
+    .g { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--glass-bd); white-space: nowrap; color: var(--txt-2); }
+    .g.ok { border-color: var(--teal); color: var(--teal); }
+    .g.choisie { border-color: #facc15; color: #facc15; }
+    .jauge { height: 8px; border-radius: 6px; background: var(--champ, rgba(255,255,255,.06)); overflow: hidden; margin-top: 6px; }
+    .jauge > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--teal-deep), var(--teal)); transition: width .4s; }
+    .calcul { padding: 8px 0; font-size: 13px; color: var(--txt-2); border-top: 1px solid var(--trait, var(--glass-bd)); }
+    .calcul:first-child { border-top: 0; }
+    .calcul.rate { color: #f97316; }
+    label.ligne { display: flex; gap: 10px; align-items: center; font-size: 14px; color: var(--txt); padding: 6px 0; cursor: pointer; }
+    label.ligne > span { flex: 1; min-width: 0; }
+    label.ligne input[type=checkbox] { width: 22px; height: 22px; accent-color: #2dd4bf; flex: none; }
+    .curseur { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; padding: 6px 0; font-size: 14px; color: var(--txt); }
+    .curseur output { color: var(--teal); font-variant-numeric: tabular-nums; font-weight: 600; }
+    .curseur input { grid-column: 1 / -1; width: 100%; accent-color: var(--teal); min-height: 28px; }
+    select, input[type=text], input[type=number] { font: inherit; font-size: 16px; min-height: 42px; border-radius: 10px; border: 1px solid var(--glass-bd);
+      background: var(--champ, rgba(0,0,0,.25)); color: var(--txt); padding: 6px 10px; max-width: 100%; }
+    select { width: 100%; }
+    .rangee { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .rangee > * { flex: 1 1 140px; min-width: 0; }
+    .scene { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 0 6px; }
+    .decompte:empty { min-height: 0; height: 0; }
+    .decompte { font-size: 54px; font-weight: 700; color: var(--txt); font-variant-numeric: tabular-nums; min-height: 64px; line-height: 64px; }
+    .niveau { width: 100%; height: 10px; border-radius: 6px; background: var(--champ, rgba(255,255,255,.06)); overflow: hidden; }
+    .niveau > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #22c55e, #facc15 70%, #ef4444); }
+    .temps { font-size: 13px; color: var(--txt-3); font-variant-numeric: tabular-nums; }
+    .conseils { margin: 6px 0 0 18px; padding: 0; font-size: 13px; color: var(--txt-2); line-height: 1.5; }
+    .chemin { font-size: 13px; color: var(--txt); background: var(--champ, rgba(0,0,0,.25)); border-radius: 8px; padding: 6px 10px; display: inline-block; }
+    details > summary { cursor: pointer; font-size: 13px; color: var(--teal); padding: 6px 0; min-height: 32px; }
+    #bulle { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 20; padding: 10px 12px; border-radius: 10px;
+      border: 1px solid var(--glass-bd); background: var(--panneau, #0b1220); color: var(--txt); font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.35); max-width: 640px; margin: 0 auto; }
+    #bulle:empty { display: none; }
+  </style>
+</head>
+<body>
+  <nav class="topnav" style="display:flex;gap:10px;align-items:center;padding:10px 16px"><span class="brand">AIOS</span></nav>
+  <main>
+    <h1>🎙️ Studio</h1>
+    <div class="sous">Tes voix sur ses instrus, mixées et masterisées par Hakim, sur le Mac. Sur ton téléphone, ses chansons et vos morceaux
+      sont dans <span class="chemin">Hakim › Chansons</span>.</div>
+    <div id="bulle" role="status" aria-live="polite"></div>
+
+    <section class="glass carte" id="calculsCarte" hidden aria-labelledby="t-calculs">
+      <h2 id="t-calculs"><span aria-hidden="true">⏳</span>Calculs en cours</h2>
+      <div class="sous">Un gros calcul à la fois sur le Mac (16 Go) : les autres attendent leur tour.</div>
+      <div id="calculs"></div>
+    </section>
+
+    <section class="glass carte" aria-labelledby="t-enreg">
+      <h2 id="t-enreg"><span aria-hidden="true">🎤</span>T’enregistrer</h2>
+      <h3>1. L’instru</h3>
+      <select id="instru" aria-label="Choisir l’instru"></select>
+      <div class="gestes">
+        <label class="bouton" for="importInstru">📂 Importer une instru</label>
+        <input type="file" id="importInstru" accept="audio/*" hidden>
+        <button type="button" id="ecouterInstru">▶︎ Écouter l’instru</button>
+      </div>
+      <details id="demande">
+        <summary>🎹 Demander une instru à Hakim</summary>
+        <div class="rangee">
+          <input type="text" id="dStyle" list="styles" placeholder="Style (trap, raï, drill…)" aria-label="Style">
+          <input type="number" id="dBpm" min="0" max="300" placeholder="BPM (vide : au choix)" aria-label="Tempo en BPM">
+          <input type="number" id="dDuree" min="10" max="240" value="60" aria-label="Durée en secondes">
+        </div>
+        <datalist id="styles"><option value="trap"><option value="drill"><option value="rap"><option value="rai"><option value="chaabi"><option value="rnb"><option value="afro"><option value="pop"><option value="gnawa"><option value="reggae"><option value="electro"></datalist>
+        <div class="gestes"><button type="button" class="principal" id="dEnvoyer">Demander</button>
+          <span class="sous">Quelques minutes sur le Mac ; elle arrive dans la liste.</span></div>
+      </details>
+
+      <h3>2. Le calage (latence)</h3>
+      <div class="sous">Le casque ajoute un retard (le Bluetooth surtout). Mesure-le une fois par casque : la prise sera recalée sur le temps.</div>
+      <div class="curseur"><span>Latence retirée de tes prises</span><output id="latenceVal">— ms</output>
+        <input type="range" id="latence" min="0" max="600" step="5" value="0" aria-label="Latence en millisecondes"></div>
+      <div class="gestes">
+        <button type="button" id="calibClic" title="Le haut-parleur (ou l’écouteur) près du micro">🔊 Mesurer au clic</button>
+        <button type="button" id="calibTaper">👆 Taper en rythme (Bluetooth)</button>
+        <button type="button" id="taper" hidden class="principal">TAPE ICI</button>
+      </div>
+      <div class="sous" id="calibEtat"></div>
+
+      <h3>3. La prise</h3>
+      <div class="sous">Mets ton casque. Un décompte de 3, puis l’instru part et ta voix s’enregistre.</div>
+      <div class="scene">
+        <div class="decompte" id="decompte" aria-live="assertive"></div>
+        <button type="button" class="rec" id="rec">● Enregistrer</button>
+        <div class="niveau" aria-hidden="true"><i id="niveau"></i></div>
+        <div class="temps" id="temps"></div>
+      </div>
+
+      <h3>Tes prises</h3>
+      <div id="prises"><div class="vide">Aucune prise.</div></div>
+    </section>
+
+    <section class="glass carte" aria-labelledby="t-mix">
+      <h2 id="t-mix"><span aria-hidden="true">🎚️</span>Le mix par Hakim</h2>
+      <div class="sous" id="mixPrise">Choisis une prise (★) au-dessus.</div>
+      <label class="ligne"><input type="checkbox" id="autotune"><span>Autotune (recalée sur la gamme de l’instru)</span></label>
+      <label class="ligne"><input type="checkbox" id="debruitage" checked><span>Débruitage léger</span></label>
+      <div class="curseur"><span>Ta voix</span><output id="voixVal">0 dB</output><input type="range" id="voix" min="-6" max="6" step="0.5" value="0" aria-label="Volume de ta voix"></div>
+      <div class="curseur"><span>Réverb</span><output id="reverbVal">30 %</output><input type="range" id="reverb" min="0" max="100" step="5" value="30" aria-label="Réverb"></div>
+      <div class="curseur"><span>Écho</span><output id="echoVal">0 %</output><input type="range" id="echo" min="0" max="100" step="5" value="0" aria-label="Écho"></div>
+      <input type="text" id="mixTitre" placeholder="Titre du morceau" aria-label="Titre du morceau" style="width:100%">
+      <div class="gestes"><button type="button" class="principal" id="mixer" disabled>🎚️ Mixer et masteriser</button>
+        <span class="sous">Nettoyage, égaliseur, compression, mastering à −14 LUFS : MP3 et WAV.</span></div>
+      <h3>Vos morceaux</h3>
+      <div id="mixes"><div class="vide">Aucun morceau mixé pour l’instant.</div></div>
+    </section>
+
+    <section class="glass carte" aria-labelledby="t-ecoute">
+      <h2 id="t-ecoute"><span aria-hidden="true">👂</span>Lui faire écouter</h2>
+      <div class="sous">Il l’entend comme ce que joue ton téléphone (ses oreilles : la voix et la musique séparées, ses trois pistes), au rythme du
+        morceau. Pas de message, pas de pièce jointe : demande-lui ensuite ce qu’il en pense.</div>
+      <div class="gestes"><label class="bouton" for="fichierEcoute">📂 Choisir un son à lui faire écouter</label>
+        <input type="file" id="fichierEcoute" accept="audio/*,video/*" hidden></div>
+      <div id="ecoute" class="sous"></div>
+    </section>
+
+    <section class="glass carte" aria-labelledby="t-sons">
+      <h2 id="t-sons"><span aria-hidden="true">🎵</span>Ses sons</h2>
+      <div id="chansons"><div class="vide">Chargement…</div></div>
+    </section>
+  </main>
+  <script>
+  window.esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  window.jeton = () => (document.querySelector('meta[name="cockpit-jeton"]') || {}).content || '';
+  document.body.classList.add('shell');
+  </script>
+  <script src="/jeton.js"></script>
+  <script src="/badges.js"></script>
+  <script>Badges.suivre(document.querySelector('nav.topnav'), 'studio');</script>
+  <script src="/studio-page.js"></script>
+</body>
+</html>

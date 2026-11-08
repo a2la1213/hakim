@@ -1,0 +1,31 @@
+a6106526bc645bde7409459cdb3855b3f5272aeb2dbd0c7d67bc8b6a6db28977  guide_annotation.md
+24e7e0777780cac8600717fa9d35d6a4a8c7b9291c3f6e7f3726bab4b8880eb6  detecteur.py
+0c506bd1e4d4b1a0ed66c5c6adfdbcefabfb7ce63b8c1f54e809d2dc9ec00532  mecanisme.py
+37ffeb095c111c7dc3ae24e4e9b7f06297b042607b7c2f5df5a2ff3aa02928e0  predictions.md
+04674277d74c96c4f83a63dfba34a08afd9d5be4e902c439af02ab186e95bc58  test_detecteur_cas.py
+2defdbd53227884ccfdd25d80659a52cde9c083ed4da30e6813eb4d1c2cc9c4e  corpus.py
+figé le 2026-10-23 09:22:19
+f01de310ba34e334df194a6890b257efe361b0cdbe07fb57cc60f6c0bd6f36b5  (privé) etiquettes.jsonl
+05911c780e8c071ffb66adc4e36a57001d0296a15b947f2e1c3752238cda15e3  etiqueter.py
+66c01097a3c58296419fdd20f7632c560bd306d28d91c7adf9ea620e434beb41  accord.py
+f607ec594a2ff7f33b07852f366eef70b90190e3b366d3559e672d5024e5c2b4  rejeu.py
+efa4986d1d81359255c14dd4752f1c5ac9e73c93cef29365dd70c12916677aab  figure.py
+étiquettes arbitrées et rejeu figés le 2026-10-23 09:28:35, avant la première exécution du détecteur sur le corpus
+33435d98400d7628a82af307b08f02012752551392abd6be0dee2c74f5b55402  eval/chocs/predictions-2.md
+2e passage figé le 2026-10-23 09:41:55, avant tout rejeu
+01f09a74f2e39062957b20e106b1a74e670b0e6c6ae298b74d01c535960f0c2c  eval/chocs/predictions-3.md
+20a14d2903344452c33782abf85eefb8d71ed68a92b5f7128588dee0caa8ab03  chocs.py
+4d3e8a8a34f6c834e7012537e7f9d8044b2a3befc05eb66cd3cce8adbe829453  chocs_cli.py
+test en vrai figé le 2026-10-23 10:25:31, avant l'allumage
+6320109999f33dc32f7640ef64f1f9b317484d6cd2f8ca40c1ea70438e6275f3  eval/voix_mots/criteres.md
+a7b09a4ebad644978bf04998258186f33ec4bed1d2c6bdc15132bc2cb2ed9774  eval/voix_mots/mesure.py
+a5eb296a10dcf18f92553b4c6adb4b94fb3719cc1f62e7fa5e8bd809cc60227b  style.py
+voix et mots : critères figés le 2026-10-23 11:43:45, avant l'allumage du style
+d823991f18a9f602f2c8801759f21e9f1b49cf290f98d6271f2c52b2a2427252  ../voix_mots/criteres.md
+302067ce79639d0b4f152da0c8d89bada99a619b6fc4bdcc9db19efa07037d25  predictions-3.md
+d9349645dc9b1fe706dbfa5c1f7ed3a42fd34e14838053a6658858746594e04a  ../../style.py
+amendements figés le 2026-10-23 12:03:21, avant la fenêtre du 24/10
+766c68b04b07b704ff460240ed5ed1c79269ab8905e123c96938e146d601f09a  ../voix_mots/criteres.md
+9d8376d35e8220d7d76b8854ff270a8e31e514c397bcac42f726d6d1fb8a7a2c  ../voix_mots/mesure.py
+4416231b0e6eaca97ec209ade1faf11f55060bb29c6aad7eced09ea83b8a3ff6  ../../style.py
+style v2 et mesure amendée figés le 2026-10-23 12:17:32, avant la fenêtre du 24/10
