@@ -666,12 +666,16 @@ function rappelServeur() {
   p.stdin.on('error', () => {});
   return p;
 }
+// (08/11, Ahmed : « l'hippocampe pour la mémorisation, avec des boutons et des barres ») ses réglages partent avec chaque question à son rappel
+function hippocampeReglages() {
+  try { const r = corpsReglages(); return { actif: r.hippocampe, dates: r.hippocampe_dates, tete: r.hippocampe_tete, cos_min: r.hippocampe_cos_min }; } catch (_) { return null; }
+}
 function rappeler(texte, exclus, delaiMs = 900, exclusErreurs = [], demarrage = false, exclusPersonnes = [], espace = [], exclusNotes = [], exclusIntime = []) {
   return new Promise((resolve) => {
     if (!RAPPEL_ACTIF) return resolve(null);
     let fini = false;
     const cb = (r) => { if (!fini) { fini = true; resolve(r); } };
-    try { const p = rappelServeur(); rappelFile.push(cb); p.stdin.write(j({ texte, exclus: [...exclus].slice(-3000), exclus_erreurs: [...exclusErreurs].slice(-500), demarrage, exclus_personnes: [...exclusPersonnes], espace: [...espace].slice(-5000), exclus_notes: [...exclusNotes].slice(-3000), exclus_intime: [...exclusIntime].slice(-500) }) + '\n'); }
+    try { const p = rappelServeur(); rappelFile.push(cb); p.stdin.write(j({ texte, exclus: [...exclus].slice(-3000), exclus_erreurs: [...exclusErreurs].slice(-500), demarrage, exclus_personnes: [...exclusPersonnes], espace: [...espace].slice(-5000), exclus_notes: [...exclusNotes].slice(-3000), exclus_intime: [...exclusIntime].slice(-500), hippocampe: hippocampeReglages() }) + '\n'); }
     catch (_) { return resolve(null); }
     setTimeout(() => cb(null), delaiMs);           // trop lent : rien ce tour-ci (la réponse tardive est jetée, dans l'ordre)
   });
@@ -4236,10 +4240,12 @@ function penseeQuiTaraude(texte, source, insiste = false, maintenant = Date.now(
    20 min : une décision par minute au plus. Ses parasites (prémisses, résidus) sont jetés comme partout. Réglage : conscience_continue. */
 const CONSCIENCE_DELAI_MS = 8000, CONSCIENCE_JOURNAL = path.join(JARVIS, 'conscience-continue.jsonl');
 function battementConscience() {
-  if (corpsReglages().conscience_continue === false || typeof FLUX === 'undefined' || !FLUX.length) return;
+  const r = corpsReglages();
+  if (r.conscience_continue === false || typeof FLUX === 'undefined' || !FLUX.length) return;
   const maintenant = Date.now(), signature = Number(FLUX[FLUX.length - 1].t) || 0;
   const papaLa = maintenant - dernierMessageAhmedMs() < 20 * 60e3 || FLUX.some(o => o.s === 'papa' && maintenant - o.t < 20 * 60e3);
-  if (!CC.doitDecider(conscience, signature, maintenant, papaLa ? CC.PAS_MS : 60_000)) return;
+  // (08/11) ses barres (Réglages, Son cortex préfrontal) : son pas, son pas quand papa est absent, ses décisions par minute
+  if (!CC.doitDecider(conscience, signature, maintenant, papaLa ? r.conscience_pas_s * 1000 : r.conscience_absent_s * 1000, r.conscience_par_minute)) return;
   CC.commencer(conscience, signature, maintenant);
   const qui = typeof quiParlait === 'function' ? quiParlait(maintenant) : null;
   const papaParle = qui === 'voix_ahmed' || qui === 'les_deux', tuParles = qui === 'ma_voix' || qui === 'les_deux';
@@ -4258,7 +4264,7 @@ function battementConscience() {
   demanderVivant('haiku', prompt, CONSCIENCE_DELAI_MS).then((o) => {
     const d = CC.lireDecision(o && o.texte);
     if (d.texte && (parasiteReconnue(d.texte) || residuParasite(d.texte, ''))) { avertirParasite(d.texte, residuParasite(d.texte, '') || signeParasite(d.texte)); return; }
-    const action = CC.permis(conscience, d, Date.now(), { papaParle, occupe: occupeTete });
+    const action = CC.permis(conscience, d, Date.now(), { papaParle, occupe: occupeTete, entreSollicitationsMs: r.conscience_sollicitation_s * 1000, entreActesMs: r.conscience_acte_s * 1000 });
     try { fs.appendFile(CONSCIENCE_JOURNAL, j({ t: Date.now(), genre: d.genre, action, ms: Date.now() - t0, texte: d.texte.slice(0, 200) }) + '\n', { mode: 0o600 }, () => {}); } catch (_) {}
     if (action !== 'rien') diffuser(abonnesPensees, 'conscience', j({ genre: d.genre, action, texte: d.texte, ts: Date.now() }));
     if (action === 'solliciter') solliciterPensee(d.texte, 'conscience', 'taraude');
@@ -5789,7 +5795,7 @@ async function routeJarvis(req, res, distantReq = false) {
   // (07/11, Ahmed : « que mon conscient ne reçoive que l'output du cortex » ; « le cortex ») phase 1 : son cortex préfrontal en tête du tour (son
   // fil des 30 dernières secondes intégré : qui a parlé, ce qui est écarté, ce que sa conscience vient de décider) ; le brut suit, une journée
   let cortexTexte = '';
-  try { if (corpsReglages().cortex_prefrontal !== false) cortexTexte = X.blocCortex({ flux: typeof FLUX !== 'undefined' ? FLUX : [], maintenant, papaAEcrit: true, pensees: conscience.pensees }); } catch (_) {}
+  try { const cr = corpsReglages(); if (cr.cortex_prefrontal !== false) cortexTexte = X.blocCortex({ flux: typeof FLUX !== 'undefined' ? FLUX : [], maintenant, papaAEcrit: true, pensees: conscience.pensees, fenetreMs: cr.cortex_fenetre_s * 1000 }); } catch (_) {}
   let prompt = `${horlogeTexte}${cortexTexte ? '\n' + cortexTexte : ''}${situation.texte ? '\n' + situation.texte : ''}${interieurTexte ? '\n' + (sentir ? enMatiere(interieurTexte) : interieurTexte) : ''}`
     + `${tachesTexte ? '\n' + tachesTexte : ''}${presentTexte ? '\n' + presentTexte : ''}${arretsTexte ? '\n' + arretsTexte : ''}${rappelBloc.texte ? '\n' + rappelBloc.texte : ''}${leconsTexte}${pairsTexte ? '\n' + pairsTexte : ''}`
     + `\n${qui} : ${texte.replace(/\[\[\s*(affect|souvenirs|modele)/gi, '⟮⟮$1')}${pj}${cameraTexte}${freresTexte}`
@@ -7388,6 +7394,7 @@ function noterProcesseurs(appareil, p) {
 }
 function corpsReglages() {
   const r = lireJson(CORPS_REGLAGES, {}) || {};
+  const nb = (v, a, b, d, dec = 0) => (v != null && v !== '' && Number.isFinite(Number(v)) ? Math.max(a, Math.min(b, Math.round(Number(v) * 10 ** dec) / 10 ** dec)) : d);
   return { actif: r.actif !== false, intervalle_s: CORPS_INTERVALLES.includes(Number(r.intervalle_s)) ? Number(r.intervalle_s) : 120,
     ronron: r.ronron !== false, sons: r.sons !== false, oreille: r.oreille === true, je_te_suis: r.je_te_suis !== false,
     alerte: r.alerte !== false, ecran: r.ecran !== false, reflexes: r.reflexes !== false, nuits: r.nuits !== false,
@@ -7459,6 +7466,13 @@ function corpsReglages() {
     langues_ecrites: r.langues_ecrites !== false,
     cortex_prefrontal: r.cortex_prefrontal !== false,   // (07/11, Ahmed : « le cortex ») son cortex en tête de chaque tour
     conscience_continue: r.conscience_continue !== false,   // (07/11, Ahmed) sa conscience continue : chaque seconde, Mini Hakim décide
+    // (08/11, Ahmed : « dans le cockpit, une zone PFC pour l'intégration et l'hippocampe pour la mémorisation, avec des boutons et des barres
+    // paramétrables ») les défauts : exactement ce qu'il faisait avant
+    cortex_fenetre_s: nb(r.cortex_fenetre_s, 10, 120, 30), conscience_pas_s: nb(r.conscience_pas_s, 1, 30, 2),
+    conscience_par_minute: nb(r.conscience_par_minute, 4, 30, 20), conscience_absent_s: nb(r.conscience_absent_s, 10, 300, 60),
+    conscience_sollicitation_s: nb(r.conscience_sollicitation_s, 30, 600, 90), conscience_acte_s: nb(r.conscience_acte_s, 60, 900, 180),
+    hippocampe: r.hippocampe !== false, hippocampe_dates: r.hippocampe_dates !== false,
+    hippocampe_tete: nb(r.hippocampe_tete, 0, 8, 3), hippocampe_cos_min: nb(r.hippocampe_cos_min, 0.3, 0.7, 0.45, 2),
     plan_meubles: r.plan_meubles !== false,   // (07/11) son subconscient planifie les meubles des blancs de sa réponse   // (07/11) l'arabe et l'anglais de ta voix réécrits dans leur écriture   // (07/11, Ahmed) ta voix sur la sienne : il finit son mot, t'écoute, et répond à ta dernière phrase   // (07/11, Ahmed) son identité et la sienne ne partent jamais en clair vers Anthropic   // (07/11, Ahmed : « on garde uniquement sa vraie réponse ») ses pensées ne sont plus dites
     voix_claire_x: Number.isFinite(Number(r.voix_claire_x)) && r.voix_claire_x != null ? Math.max(1, Math.min(5, Number(r.voix_claire_x))) : 1.8,   // (07/11) la netteté qu'il faut pour qu'il se coupe   // (07/11) le filtre de ton micro : il n'entend que les voix (éteint par défaut)   // (07/11) ses paroles prêtes : il choisit laquelle dire, dans n'importe quel ordre   // (07/11) ta voix qui dure sur la sienne : il choisit de se couper ou de finir   // (07/11, Ahmed : « lui autoriser à me couper la parole », option 2) éteint par défaut   // (07/11) il choisit ce qu'il dit dans le temps de sortie de sa voix   // (07/11) coupé, il finit sa phrase (jusqu'à sa virgule ou son point)   // (07/11) ton message écrit l'arrête et part tout de suite   // (07/11) tes morceaux prêts partent en un seul message réunifié   // (07/11) coupé par une vraie phrase : il ne reprend pas l'ancienne réponse (éteint)   // (06/11) ses morceaux épissés reliés, sans pause entre eux
     epissure_grammaire: r.epissure_grammaire !== false,
@@ -13122,7 +13136,11 @@ async function traiter(req, res) {
       if (typeof q.tunnel === 'boolean') r.tunnel = q.tunnel;
       if (typeof q.parole_libre === 'boolean') r.parole_libre = q.parole_libre;
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
-      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure', 'choix_libre', 'micro_voix_seule', 'voix_reponse_seule', 'filtre_identite', 'coupe_net', 'langues_ecrites', 'plan_meubles', 'conscience_continue', 'cortex_prefrontal']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (06/11) son présent continu
+      for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'ecoute_francais', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure', 'choix_libre', 'micro_voix_seule', 'voix_reponse_seule', 'filtre_identite', 'coupe_net', 'langues_ecrites', 'plan_meubles', 'conscience_continue', 'cortex_prefrontal', 'hippocampe', 'hippocampe_dates']) if (typeof q[k] === 'boolean') r[k] = q[k];
+      // (08/11) sa zone PFC et son hippocampe (Réglages) : des barres, bornées
+      for (const [k, a, b] of [['cortex_fenetre_s', 10, 120], ['conscience_pas_s', 1, 30], ['conscience_par_minute', 4, 30], ['conscience_absent_s', 10, 300],
+        ['conscience_sollicitation_s', 30, 600], ['conscience_acte_s', 60, 900], ['hippocampe_tete', 0, 8], ['hippocampe_cos_min', 0.3, 0.7]])
+        if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'hippocampe_cos_min' ? Math.round(Number(q[k]) * 100) / 100 : Math.round(Number(q[k]))));   // (06/11) son présent continu
       for (const [k, a, b] of [['epissure_meubles_max', 1, 6], ['present_pouls_s', 10, 600], ['present_seuil', 0.2, 5], ['present_ecart_s', 2, 120], ['present_longueur', 3, 40], ['present_mots', 6, 40]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, k === 'present_seuil' ? Math.round(Number(q[k]) * 10) / 10 : Math.round(Number(q[k]))));
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;

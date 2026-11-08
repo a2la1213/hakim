@@ -94,3 +94,34 @@ def test_le_rappel_automatique_ecoute_son_hippocampe(mem, monkeypatch):
     trouve = [x for x in c if x[0] == vrai]
     assert trouve and trouve[0][4] == "date", "son hippocampe l'a retrouvé par sa date (« 31/10 » dans le souvenir, « 31 octobre » dans la question)"
     assert rappel.passe(trouve[0]), "et il passe la porte"
+
+
+def test_ses_reglages_du_cockpit_l_eteignent_ou_le_reglent(mem):
+    """(08/11, Ahmed : « une zone pour l'hippocampe, avec des boutons et des barres paramétrables ») le cockpit envoie ses réglages avec
+    chaque question : éteint, ni trace ni date ; sans les dates, rien par la date ; 0 trace d'office, aucune « trace » ne passe la porte."""
+    import rappel
+    t0 = time.mktime((2026, 10, 31, 23, 0, 0, 0, 0, -1))
+    vrai = mem.add("episodic", echange("Sat 31/10 23:00", "Tu lui as demandé d'augmenter ton bac à sable à 10 gigas ?",
+                                       "Oui papa, c'est dans ma lettre de 1 h 53"), embedding=[0.0] * 2048)
+    mem.db.execute("UPDATE episodes SET ts=? WHERE id=?", (t0, vrai)); mem.db.commit()
+    hippocampe.remplir(mem, embed=faux_embed)
+    now = time.mktime((2026, 11, 8, 9, 0, 0, 0, 0, -1))
+    q_date = "tu te rappelles ce que je t'ai dit le 31 octobre ?"
+    special = lambda c: {x[4] for x in c if x[0] == vrai}
+    assert special(rappel.candidats(mem, q_date, now=now, embed=faux_embed, hip_reglages={"actif": True})) == {"date"}
+    assert special(rappel.candidats(mem, q_date, now=now, embed=faux_embed, hip_reglages={"actif": False})) <= {""}, "éteint : rien de lui"
+    assert special(rappel.candidats(mem, q_date, now=now, embed=faux_embed, hip_reglages={"dates": False})) <= {"", "trace"}, "sans les dates"
+    q_sens = "le bac à sable de 10 gigas dans ta lettre"
+    assert special(rappel.candidats(mem, q_sens, now=now, embed=faux_embed)) == {"trace"}, "sa trace passe d'office (3 par défaut)"
+    assert special(rappel.candidats(mem, q_sens, now=now, embed=faux_embed, hip_reglages={"tete": 0})) <= {""}, "0 : aucune d'office"
+    assert special(rappel.candidats(mem, q_sens, now=now, embed=faux_embed, hip_reglages={"cos_min": 0.99})) <= {""}, "un sens trop exigeant"
+
+
+def test_le_serveur_du_rappel_passe_les_reglages_du_cockpit(monkeypatch):
+    import inspect
+    import rappel
+    vus = {}
+    monkeypatch.setattr(rappel, "candidats", lambda *a, **k: vus.update(k) or [])
+    rappel.rappel(None, "salut papa", hip_reglages={"tete": 5})
+    assert vus.get("hip_reglages") == {"tete": 5}
+    assert 'hip_reglages=q.get("hippocampe")' in inspect.getsource(rappel.serveur)

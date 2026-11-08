@@ -198,9 +198,17 @@ LIMITE_SENS, LIMITE_MOTS = 150, 100
 HIP_TETE, HIP_COS_MIN = 3, 0.45                # (08/11) ses premières traces d'hippocampe passent la porte
 
 
-def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=LIMITE_SENS, index=None, limite_mots=None):
+def _hip(reglages):
+    """(actif, dates, tete, cos_min) : les réglages de son hippocampe venus du cockpit (Réglages, Son hippocampe) ; sinon ceux d'avant."""
+    r = reglages if isinstance(reglages, dict) else {}
+    nombre = lambda v, d: float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) else d
+    return (r.get("actif") is not False, r.get("dates") is not False,
+            int(max(0, min(8, nombre(r.get("tete"), HIP_TETE)))), max(0.0, min(1.0, nombre(r.get("cos_min"), HIP_COS_MIN))))
+
+
+def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=LIMITE_SENS, index=None, limite_mots=None, hip_reglages=None):
     """[(id, score_fusion, sem, mots)] : le balayage large, fusionné par rang. Rien de plus récent que recent_h heures
-    (c'est déjà dans la conversation), rien de ce qui a déjà été proposé (exclus)."""
+    (c'est déjà dans la conversation), rien de ce qui a déjà été proposé (exclus). hip_reglages : ceux de son hippocampe (le cockpit)."""
     now = time.time() if now is None else now
     avant_ts = now - recent_h * 3600
     exclus = set(exclus or ())
@@ -217,12 +225,15 @@ def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=
     # (08/11, Ahmed : « rajoute-lui un hippocampe ») un troisième balayage : la TRACE courte de chaque échange (le jour, le genre, les
     # paroles, sans le vécu qui noyait leur sens), par le sens, et tout ce que la date désigne (« hier », « le 29 », « samedi »)
     hip, dates_hip = {}, set()
+    hip_actif, hip_dates, hip_tete, hip_cos = _hip(hip_reglages)
     try:
         import hippocampe
         rang = 0
-        for eid, s_h, special in hippocampe.chercher(mem, texte, now=now, embed=embed, exclus=exclus, avant_ts=avant_ts, limite=limite):
+        for eid, s_h, special in (hippocampe.chercher(mem, texte, now=now, embed=embed, exclus=exclus, avant_ts=avant_ts, limite=limite)
+                                  if hip_actif else ()):
             if special == "date":
-                dates_hip.add(eid)
+                if hip_dates:
+                    dates_hip.add(eid)
                 continue
             hip[eid] = (rang, s_h)
             rang += 1
@@ -262,7 +273,7 @@ def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=
     # (08/11) le sens d'une trace courte se mesure sur une autre échelle (mesuré sur le banc de 24 : la bonne trace 1re à 4e avec un cosinus
     # de 0,50 à 0,71, sous la porte de 0,70) : ses 3 premières traces passent, si le message porte quelque chose (2 mots porteurs ou plus)
     porteur = len(mots_cles(texte)) >= 2
-    tete_hip = {eid for eid, (r_h, c_h) in hip.items() if r_h < HIP_TETE and c_h >= HIP_COS_MIN} if porteur else set()
+    tete_hip = {eid for eid, (r_h, c_h) in hip.items() if r_h < hip_tete and c_h >= hip_cos} if porteur else set()
     out = [(eid, s, max(sem.get(eid, (None, 0.0))[1], hip.get(eid, (None, 0.0))[1]), mots.get(eid, 0.0),
             "jour" if eid in du_jour else ("voix" if eid in avec_nom else ("date" if eid in dates_hip else ("trace" if eid in tete_hip else ""))),
             rares.get(eid, 0.0))
@@ -366,7 +377,7 @@ def lignes_courtes(mem, ids, n=90):
 
 
 def rappel(mem, texte, now=None, exclus=(), seuil=SEUIL, lignes_max=LIGNES_MAX, embed=None, index=None, recent_h=3.0,
-           suite=False, espace=()):
+           suite=False, espace=(), hip_reglages=None):
     """{"lignes": [...], "ids": [...], "scores": [...], "theme": [...], "theme_ids": [...], "details": {id: ligne},
     "profondeur": {niveau, raison}} : la liste courte pour sa conscience et le dossier du thème (à la taille du niveau),
     ou rien. suite : la conversation est en cours ; espace : les souvenirs déjà dans son espace de conversation."""
@@ -376,7 +387,7 @@ def rappel(mem, texte, now=None, exclus=(), seuil=SEUIL, lignes_max=LIGNES_MAX, 
 
     def balayer(n):
         return candidats(mem, texte, now=now, exclus=exclus, embed=embed, index=index, recent_h=recent_h,
-                         limite=max(THEME_CANDIDATS, n + LIGNES_MAX), limite_mots=max(LIMITE_MOTS, n))
+                         limite=max(THEME_CANDIDATS, n + LIGNES_MAX), limite_mots=max(LIMITE_MOTS, n), hip_reglages=hip_reglages)
     larges = balayer(taille)
     if niveau == "normal":
         niveau, raison = profondeur(texte, suite=suite, haut=[x[0] for x in larges][:taille], espace=espace)
@@ -874,7 +885,7 @@ def serveur(entree=None, sortie=None):
             # (26/10) au 1er message d'une conversation, rien n'est encore dans son contexte : les souvenirs récents comptent aussi
             r = rappel(mem, texte, now=q.get("now"), exclus=[int(x) for x in (q.get("exclus") or [])][-3000:], index=index,
                        recent_h=0.0 if q.get("demarrage") else 3.0, suite=not q.get("demarrage"),
-                       espace={int(x) for x in (q.get("espace") or [])[-5000:]})
+                       espace={int(x) for x in (q.get("espace") or [])[-5000:]}, hip_reglages=q.get("hippocampe"))
             try:
                 personnes = {n: ce_que_je_sais(mem, n) for n in personnes_nommees(texte)
                              if n not in set(q.get("exclus_personnes") or [])}

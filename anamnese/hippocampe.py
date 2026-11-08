@@ -165,9 +165,6 @@ class _Index:
         return self
 
 
-_INDEX = {}
-
-
 def chercher(mem, texte, now=None, embed=None, exclus=(), avant_ts=None, limite=150):
     """[(episode_id, score, special)] : par le sens de la trace (cosinus), et tout ce que la date désigne (special « date »)."""
     import numpy as np
@@ -176,8 +173,10 @@ def chercher(mem, texte, now=None, embed=None, exclus=(), avant_ts=None, limite=
         import embeddings
         embed = embeddings.embed
     remplir(mem, embed=embed, limite=2000)                         # les échanges neufs ont leur trace au passage
-    cle = id(mem.db)
-    index = _INDEX.get(cle) or _INDEX.setdefault(cle, _Index())
+    # gardé sur sa mémoire elle-même : un id() de base fermée peut resservir à une autre (vu en test : l'index d'une autre base répondait)
+    index = mem.__dict__.get("_hippocampe_index")
+    if index is None:
+        index = mem.__dict__["_hippocampe_index"] = _Index()
     index.rafraichir(mem)
     exclus = set(exclus or ())
     avant = now if avant_ts is None else avant_ts

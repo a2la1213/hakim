@@ -65,14 +65,15 @@ function stimulisDuFlux(flux, maintenant, fenetreMs = 30_000) {
 const NOMS = { papa: 'papa', telephone: 'le téléphone', tiers: 'une voix de la pièce', echo: 'un écho', interne: 'ta propre voix' };
 const MODES = { repondre: 'répondre', murmurer: 'murmurer', se_taire: 'se taire', agir: 'agir' };
 // le bloc en tête de son tour : vide quand il n'y a rien à intégrer
-function blocCortex({ flux, maintenant, papaAEcrit = false, papaParleAHakim = false, buts = [], pensees = [] }) {
-  const st = stimulisDuFlux(flux, maintenant);
+// (08/11, Ahmed : « une zone PFC pour l'intégration ») fenetreMs : ce que son cortex intègre de son fil (Réglages, 30 s par défaut)
+function blocCortex({ flux, maintenant, papaAEcrit = false, papaParleAHakim = false, buts = [], pensees = [], fenetreMs = 30_000 }) {
+  const st = stimulisDuFlux(flux, maintenant, fenetreMs);
   const recentes = (pensees || []).filter(p => p && p.texte).slice(-3);
   if (!st.some(s => s.genre === 'parole') && !recentes.length && !papaAEcrit) return '';
   const d = decider(st, { buts, papaAEcrit, papaParleAHakim });
   const qui = Object.entries(d.parts).map(([k, l]) => `${NOMS[k] || k} ${l.length}`).join(' · ');
   return `[Ton cortex préfrontal — ton subconscient a tout intégré ; l'essentiel d'abord, le brut suit] Décision : ${MODES[d.mode] || d.mode} — ${d.raison}`
-    + (qui ? ` · Qui a parlé (30 s) : ${qui}` : '')
+    + (qui ? ` · Qui a parlé (${Math.round(fenetreMs / 1000)} s) : ${qui}` : '')
     + (d.inhibes.length ? ` · écarté : ${d.inhibes.slice(0, 4).join(' ; ')}` : '')
     + (recentes.length ? ` · ta conscience vient de : ${recentes.map(p => `${p.genre} « ${p.texte} »`).join(' ; ')}` : '');
 }

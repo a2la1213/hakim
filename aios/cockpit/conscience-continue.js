@@ -21,22 +21,23 @@ function lireDecision(texte) {
 }
 
 // du neuf dans son présent (le dernier instant du fil a changé), rien en cours, 2 s depuis la dernière, 20 dans la minute au plus
-function doitDecider(e, signature, maintenant, pasMs = PAS_MS) {   // pasMs : plus long quand papa est absent (son forfait)
+// (08/11, Ahmed : « une zone PFC avec des barres ») pasMs et parMinute se règlent (Réglages, Son cortex préfrontal)
+function doitDecider(e, signature, maintenant, pasMs = PAS_MS, parMinute = PAR_MINUTE) {   // pasMs : plus long quand papa est absent (son forfait)
   if (e.enVol || !signature || signature <= e.signature) return false;
   if (maintenant - e.derniere < pasMs) return false;
   e.appels = e.appels.filter(t => maintenant - t < 60_000);
-  return e.appels.length < PAR_MINUTE;
+  return e.appels.length < parMinute;
 }
 function commencer(e, signature, maintenant) {
   e.enVol = true; e.signature = signature; e.derniere = maintenant; e.appels.push(maintenant);
 }
 
 // ce qui passe maintenant : « penser » toujours ; « solliciter » / « faire » si papa ne parle pas, que sa tête est libre, et pas trop souvent
-function permis(e, d, maintenant, { papaParle = false, occupe = false } = {}) {
+function permis(e, d, maintenant, { papaParle = false, occupe = false, entreSollicitationsMs = ENTRE_SOLLICITATIONS_MS, entreActesMs = ENTRE_ACTES_MS } = {}) {
   if (!d || d.genre === 'rien') return 'rien';
   let action = d.genre;
-  if (action === 'solliciter' && (papaParle || occupe || maintenant - e.sollicitationA < ENTRE_SOLLICITATIONS_MS)) action = 'penser';
-  if (action === 'faire' && (papaParle || occupe || maintenant - e.acteA < ENTRE_ACTES_MS)) action = 'penser';
+  if (action === 'solliciter' && (papaParle || occupe || maintenant - e.sollicitationA < entreSollicitationsMs)) action = 'penser';
+  if (action === 'faire' && (papaParle || occupe || maintenant - e.acteA < entreActesMs)) action = 'penser';
   if (action === 'solliciter') e.sollicitationA = maintenant;
   if (action === 'faire') e.acteA = maintenant;
   e.pensees.push({ t: maintenant, genre: d.genre, texte: d.texte });
