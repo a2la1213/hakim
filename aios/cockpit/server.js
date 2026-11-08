@@ -11080,7 +11080,7 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
     // anglais, mais moi il m'écoute qu'en français avec Azure ») réglage ecoute_francais (allumé) : ta voix est reconnue en français seul
     // (08/11, Ahmed : « Azure doit détecter le français, l'anglais, l'arabe et la darija automatiquement ») langue_papa : « auto » (par défaut) :
     // Azure la trouve seul (les trois en même temps là où sa détection n'existe pas : fr-FR, ar-DZ, en-US) ; ou une seule ; ecoute_francais n'agit plus
-    if (!telephone) { const lp = corpsReglages().langue_papa; langue = ['fr', 'en', 'ar'].includes(lp) ? lp : null; }   // TA voix seulement
+    if (!telephone) { const lp = corpsReglages().langue_papa, page = String(langue || '').slice(0, 2); langue = ['fr', 'en', 'ar'].includes(lp) ? lp : (['fr', 'en', 'ar'].includes(page) ? page : null); }   // TA voix seulement ; (08/11) la « Langue d'écoute » de Parler compte aussi
     if (corpsReglages().stt_azure && !telephone && apprentissageVoix <= 0) {
       // (06/11, Ahmed : « Hakim semble m'entendre mais ne répond pas sur la montre ») la montre envoie du m4a : l'oreille courte d'Azure ne lit que du
       // WAV (PCM 16 kHz) et rendait un texte vide, la montre disait « je n'ai pas compris » sans jamais lui parler ; converti d'abord (afconvert, macOS)

@@ -748,7 +748,7 @@ test('parole sans Stop : sa réponse consciente reste muette, ses pensées épis
 test('ta langue (langue_papa) : automatique par défaut, ou une seule, avant Azure et Whisper (08/11 : remplace ecoute_francais)', () => {
   const SRV = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   const i = SRV.indexOf('async function routeTranscrire('), corps = SRV.slice(i, SRV.indexOf('\n}\n', i));
-  const k = corps.indexOf("if (!telephone) { const lp = corpsReglages().langue_papa; langue = ['fr', 'en', 'ar'].includes(lp) ? lp : null; }");
+  const k = corps.indexOf("if (!telephone) { const lp = corpsReglages().langue_papa, page = String(langue || '').slice(0, 2);");
   assert.ok(k > 0, 'le réglage est lu');
   assert.ok(k < corps.indexOf('oreilleAzure(') && k < corps.indexOf("op: 'transcrire'"), 'avant Azure et Whisper');
 });

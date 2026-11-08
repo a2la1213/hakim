@@ -74,7 +74,11 @@
     .scene canvas#avatarScene { width: min(56vmin, 360px, 52vw); height: auto; aspect-ratio: 4 / 5; border-radius: 28px; box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 18px 60px rgba(0,0,0,.45); }
     .avatar-reglages { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
     .avatar-reglages canvas { width: 96px; height: 120px; border-radius: 14px; flex: none; }
-    .avatar-reglages canvas.placement { width: min(320px, 80vw); height: auto; aspect-ratio: 4 / 5; cursor: crosshair; outline: 2px solid var(--accent, #6cf); }
+    /* (08/11, Ahmed : « quand je place les yeux, la bouche, ça décale les cases et je n'arrive plus à cliquer sur l'œil droit ») en grand, fixe, au milieu */
+    .avatar-reglages canvas.placement { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(460px, 88vw); height: auto; aspect-ratio: 4 / 5;
+      z-index: 1000; cursor: crosshair; outline: 2px solid var(--accent, #6cf); box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .75); }
+    body.placement-avatar #avatarEtat { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 1001; font-size: 1.1rem; color: #fff; white-space: nowrap; }
+    body.placement-avatar #avatarPlacer { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 1001; }
     .avatar-outils { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
     .emotion-scene { font-size: 14px; color: var(--txt-2); min-height: 1.2em; margin: 0; }
     /* (31/10, 01:00) le signe « oreille fermée », qui saute aux yeux */
@@ -482,7 +486,7 @@
       </label>
       <label>Langue d'écoute
         <select id="langue">
-          <option value="auto">automatique : français, arabe ou anglais (Whisper)</option>
+          <option value="auto">automatique : français, anglais, arabe, darija</option>
           <option value="fr-FR">français (mélangé d'arabe)</option>
           <option value="ar-MA">arabe (Maroc)</option>
           <option value="ar-DZ">arabe (Algérie)</option>
@@ -518,14 +522,6 @@
           <option value="telephone">téléphone · sa voix locale, instantanée, avec ses émotions (appli)</option>
           <option value="neuronale">neuronale · Chatterbox, au Mac (sa voix à lui, plus lente)</option>
           <option value="systeme">système · voix du Mac</option>
-        </select>
-      </label>
-      <label>Ta langue (ta voix, reconnue par Azure)
-        <select id="languePapa">
-          <option value="auto">automatique · français, anglais, arabe, darija</option>
-          <option value="fr">français</option>
-          <option value="en">anglais</option>
-          <option value="ar">arabe / darija</option>
         </select>
       </label>
       <label>Voix française (système) <select id="voixFr"></select></label>

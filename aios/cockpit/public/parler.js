@@ -7894,13 +7894,13 @@ function envoyerGabarit(g) {
 function commencerPlacement() {
   if (!avatarEtat.image || !avatarEtat.gabarit) return;
   placement = { touches: [] };
-  $('avatarApercu').classList.add('placement');
+  $('avatarApercu').classList.add('placement'); document.body.classList.add('placement-avatar');
   afficherEtatAvatar();
 }
 async function finirPlacement() {
   const t = placement ? placement.touches : [];
   placement = null;
-  $('avatarApercu').classList.remove('placement');
+  $('avatarApercu').classList.remove('placement'); document.body.classList.remove('placement-avatar');
   if (t.length >= 3) {
     const g = Avatar.gabaritDepuisTouches(t);
     try { await envoyerGabarit(g); construireAvatar(avatarEtat.image, null, avatarEtat.maj, avatarEtat.cadrage, g); journalVoix('avatar_gabarit', { oreilles: g.oreilles.length }); }

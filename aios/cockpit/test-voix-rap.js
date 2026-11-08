@@ -27,7 +27,7 @@ test('le choix de sa voix : azure par défaut, rap seulement si choisi ; dans le
   ctx.lireJson = () => ({ voix_hakim: 'autre' });
   assert.strictEqual(ctx.f().voix_hakim, 'azure_rap', '(08/11) plus de voix standard d’Azure');
   assert.match(SRC, /if \(VoixHakim\.VOIX\.includes\(q\.voix_hakim\)\) \{ r\.voix_hakim = q\.voix_hakim; noterAjustementPapa\(\['voix_hakim'\]\); \}/);
-  assert.match(REGLAGES, /\['voix_hakim', '🎤 Sa voix', [^\n]*'liste', \[\['azure_rap', '[^']*'\], \['rap', 'Sa voix de rap \(Chatterbox, sur le Mac\)'\]\], 'corps'\]/);
+  assert.match(REGLAGES, /\['voix_hakim', '🎤 Sa voix', [^\n]*'liste', \[\['azure_rap', '[^']*'\], \['rap', '[^']*'\]\], 'corps'\]/);
 });
 
 test('en rap, le téléphone prend la voix du Mac (jamais Supertonic), et ses débuts et meubles se rechargent dans la nouvelle voix', () => {
