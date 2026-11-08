@@ -226,7 +226,6 @@
     for (const [motif, dit] of prononciations) t = t.replace(motif, dit);
     t = t
       .replace(FORMULE, (_t, _f, d1, d2, i1, i2, dit) => ' ' + formuleParlee(d1 ?? d2 ?? i1 ?? i2, dit) + ' ')
-      .replace(/(?:^|(?<=[.!?\n]\s))[^.!?\n\[⟮]*[.!?]?\s*(?=(?:\[\[|⟮⟮)voix:\s*[؀-ۿ])/g, '')   // (08/11) darija : la voix dit l'arabe seul, sans la phonétique latine juste avant
       .replace(VOIX_SEULE, ' $1 ')
       .replace(/```[\s\S]*?```/g, ' (bloc de code) ')
       .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '$1')        // [site](adresse) → site
