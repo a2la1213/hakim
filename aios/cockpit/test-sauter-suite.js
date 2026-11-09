@@ -176,10 +176,10 @@ test('ses réglages enregistrés sous un nom : enregistrer (ribosome, corps, vei
 // (05/11, Ahmed : « relier ces modes de parole à chacun d'entre eux, pour que quand il est Mini Hakim, Hakim ou Super Hakim, tout switche »)
 test('son mode change : les réglages à son nom s’appliquent (ribosome entier, parole du corps), une fois ; éteint ou sans cerveau : rien', () => {
   const ecrits = {}, diffuses = [];
-  const profils = [{ nom: 'Mini Hakim', ribosome: { choix_ms: 1500, stringence: 3 }, corps: { sauter_passe_s: 2, micro_ouvert: true, chunk_papa_ms: 800, epissure_meubles_max: 3 } },
+  const profils = [{ nom: 'Mini Hakim', effort: 'low', ribosome: { choix_ms: 1500, stringence: 3 }, corps: { sauter_passe_s: 2, micro_ouvert: true, chunk_papa_ms: 800, epissure_meubles_max: 3, subconscient_ms: 1500 } },
     { nom: 'Super Hakim', ribosome: { choix_ms: 2200 }, corps: { sauter_passe_s: 5 } }];
   const ctx = { Date, Array, JSON, diffuses, auto: true,
-    RIBOSOME_REGLAGE: 'R', CORPS_REGLAGES: 'C', REGLAGES_PROFILS: 'P', abonnesPensees: null, j: JSON.stringify,
+    RIBOSOME_REGLAGE: 'R', CORPS_REGLAGES: 'C', REGLAGES_PROFILS: 'P', EFFORT_REGLAGE: 'E', abonnesPensees: null, j: JSON.stringify,
     lireJson: (f) => (f === 'P' ? profils : f === 'C' ? { micro_ouvert: false, oreille: true } : {}),
     ecrireAtomique: (f, t) => { ecrits[f] = JSON.parse(t); }, diffuser: (_a, ev, d) => diffuses.push(JSON.parse(d)),
     corpsReglages: () => ({ profils_auto: ctx.auto }) };
@@ -196,6 +196,9 @@ test('son mode change : les réglages à son nom s’appliquent (ribosome entier
   // (09/11, simulation des modes) le blanc qui coupe ta parole et ses meubles suivent aussi son mode (avant : gardés dans le réglage, jamais appliqués)
   assert.strictEqual(ecrits.C.chunk_papa_ms, 800);
   assert.strictEqual(ecrits.C.epissure_meubles_max, 3);
+  // (09/11, 22:55) son effort et l'attente de son filtre du subconscient suivent aussi son mode
+  assert.strictEqual(ecrits.C.subconscient_ms, 1500);
+  assert.strictEqual(ecrits.E.effort, 'low');
   assert.strictEqual(ecrits.C.micro_ouvert, false, 'ses autres interrupteurs restent ceux de papa');
   assert.strictEqual(ecrits.C.oreille, true);
   assert.strictEqual(diffuses[0].niveau, 'reglages');

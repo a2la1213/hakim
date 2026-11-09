@@ -10396,8 +10396,9 @@ function noterAjustementPapa(cles) {
 }
 // (09/11, simulation des modes) le blanc qui coupe ta parole (chunk_papa_ms) et ses meubles (epissure_meubles_max) : gardés dans chaque réglage
 // de mode, mais jamais appliqués au changement de mode
-const CLES_PAROLE = ['sauter_suite', 'sauter_suite_ms', 'sauter_passe', 'sauter_passe_s', 'lire_apres_silence_ms', 'chunk_papa_ms', 'epissure_meubles_max'];
+const CLES_PAROLE = ['sauter_suite', 'sauter_suite_ms', 'sauter_passe', 'sauter_passe_s', 'lire_apres_silence_ms', 'chunk_papa_ms', 'epissure_meubles_max', 'subconscient_ms', 'subconscient_modele'];
 const REGLAGES_PROFILS = path.join(JARVIS, 'reglages-profils.json');
+const EFFORT_REGLAGE = path.join(JARVIS, 'effort-reglage.json');   // (09/11, Ahmed : « du tac au tac ») son effort suit aussi son mode
 let modeDesReglages = null;
 function reglagesDuMode(m = typeof cerveau !== 'undefined' && cerveau ? cerveau.modele : null) {
   if (!PROFIL_DU_MODE[m] || m === modeDesReglages) return null;
@@ -10413,6 +10414,8 @@ function reglagesDuMode(m = typeof cerveau !== 'undefined' && cerveau ? cerveau.
     const c = lireJson(CORPS_REGLAGES, {}) || {};
     for (const k of CLES_PAROLE) if (x.corps && x.corps[k] != null) c[k] = x.corps[k];
     ecrireAtomique(CORPS_REGLAGES, j(c));
+    // (09/11, 22:55, Ahmed : « les réglages optimaux pour Mini, Super et Hakim ») son effort de réflexion suit son mode (low = tac au tac)
+    if (['low', 'medium', 'high', 'xhigh', 'max'].includes(x.effort)) ecrireAtomique(EFFORT_REGLAGE, j({ effort: x.effort, ts: Date.now() / 1000, par: `son mode (${x.nom})` }));
   } catch (_) { return null; }
   diffuser(abonnesPensees, 'souffle', j({ niveau: 'reglages', mode: x.nom, ts: Date.now() }));   // la page relit ses réglages
   return x.nom;
