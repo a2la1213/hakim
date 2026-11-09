@@ -80,7 +80,7 @@ test('les mêmes règles que ton micro : « tu le coupes net » allumé, une voi
   await b.cx.sur('telephone', 'Hakim attends écoute ça', 10_500, 400, 11_000);
   assert.deepEqual(b.demandes, [], 'sans choix, comme ta voix');
   assert.deepEqual(b.diffuses.map(([e, o]) => [e, o.net]), [['couper_interieur', true]]);
-  assert.match(PAGE, /if \(o\.net\) \{ couperNet\(etat\.conversation\); return; \}/);
+  assert.match(PAGE, /if \(o\.net\) \{ couperNet\(etat\.conversation, \{ lacher: true \}\); return; \}/);   // (09/11) tout lâché, comme avant
   assert.match(SRC, /const coupe = corpsReglages\(\)\.te_couper === true;\n\s+if \(!r\.aDire\.length \|\| \(!coupe && \(!pauseDuSon\(c, maintenant\) \|\| papaParle\(maintenant\)\)\)\) return false;/,
     '« il peut te couper » : il n’attend plus la pause du son pour dire ce qu’il pense de ce que joue le téléphone');
   assert.match(PAGE, /const teCouper = \(\) => typeof reglagesCorps !== 'undefined' && !!reglagesCorps && reglagesCorps\.te_couper === true;/);

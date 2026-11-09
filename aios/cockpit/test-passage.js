@@ -17,7 +17,7 @@ const entre = (source, debut, fin) => { const i = source.indexOf(debut); assert.
 const fonction = (source, debut) => { const i = source.indexOf(debut); assert.ok(i >= 0, debut); return source.slice(i, source.indexOf('\n}\n', i) + 3); };
 
 // la page, avec juste ce qu'il faut autour : sa voix, sa réponse en cours, ce qu'il a déjà dit
-function page({ reglages = {}, flux = null, enParole = false, entendu = '', juge = { passage: false, lu: true } } = {}) {
+function page({ reglages = {}, flux = null, enParole = false, entendu = '', juge = { passage: false, lu: true }, choix = { couper: true, lu: true } } = {}) {
   const vu = { journal: [], arrete: 0, reprises: 0, pauses: [], lachees: 0, coupures: [], stops: [], aborts: 0, juges: [] };
   const lecteurNeuronal = {
     actif: true, enPause: false, aDuVieux: true,
@@ -41,15 +41,19 @@ function page({ reglages = {}, flux = null, enParole = false, entendu = '', juge
         if (juge === 'lent') return new Promise((_, ko) => o.signal.addEventListener('abort', () => ko(new Error('trop tard'))));
         return Promise.resolve({ ok: true, json: () => Promise.resolve(juge) });
       }
+      if (url === '/api/jarvis/se-couper') { vu.choix = JSON.parse(o.body); return Promise.resolve({ ok: true, json: () => Promise.resolve(choix) }); }
       vu.stops.push([url, JSON.parse(o.body)]); return Promise.resolve({ ok: true });
     },
     coupeNet: () => ctx.reglagesCorps.coupe_net !== false, teCouper: () => ctx.reglagesCorps.te_couper === true,
+    echoDeSaVoix: () => false, montrerPensee() {}, voixEpissee: () => true, bouts: { dits: [] },
   };
   ctx.coupureEnCours = null;
-  ctx.lecteur = { get impl() { return lecteurNeuronal; }, get enPause() { return lecteurNeuronal.enPause; }, get actif() { return lecteurNeuronal.actif; } };
+  ctx.lecteur = { arreter() { vu.arrete++; }, get impl() { return lecteurNeuronal; }, get enPause() { return lecteurNeuronal.enPause; }, get actif() { return lecteurNeuronal.actif; } };
   if (flux) ctx.etat.flux = { abort() { vu.aborts++; } };
   vm.createContext(ctx);
-  vm.runInContext([fonction(PAGE, 'function couperNet(conv) {'), entre(PAGE, 'const reprendrePassage = ', '// sa voix retenue sans réponse')].join('\n'), ctx);
+  vm.runInContext([fonction(PAGE, 'function couperNet(conv, { lacher = false } = {}) {'), entre(PAGE, 'const reprendrePassage = ', '// sa voix retenue sans réponse'),
+    fonction(PAGE, 'function motsEntendusDepuis(conv, n0) {'), entre(PAGE, 'const motsEcrits = ', '\n'), fonction(PAGE, 'function prevoirSaut(conv, mesure) {'),
+    fonction(PAGE, 'function sauterLaSuite(ms, net = false) {')].join('\n'), ctx);
   const conv = { capteur: { enParole }, enAttente: 0 };
   ctx.etat.conversation = conv;
   return { ctx, vu, conv, lecteurNeuronal };
@@ -235,4 +239,64 @@ test('le cockpit : son subconscient (le modèle de son filtre, Mini Hakim en rep
   assert.strictEqual(r.modele, 'haiku'); assert.strictEqual(s.vus.length, 1, 'sans réglage : Mini Hakim seul');
   assert.ok(notes.every(n => n.e === 'passage_choix') && notes.length === 4, 'chaque choix est noté');
   assert.match(SRC, /if \(p === '\/api\/jarvis\/passage' && req\.method === 'POST'\) \{/);
+});
+
+// ---- (09/11, 23:15, Ahmed : « tout doit marcher ensemble ») « Tu le coupes net » ne masque plus « Sauter la suite » ni « Il choisit de se couper » ----
+const attendre = (ms) => new Promise(r => setTimeout(r, ms));
+// papa parle sur sa voix et continue (ses mots vifs arrivent) : la coupure nette, puis ce que sauter la suite / son choix en font
+async function papaParleLongtemps(p, ms = 900) {
+  const { ctx, conv } = p;
+  conv.ecrit = { confirme: '', vif: '' };
+  ctx.couperNet(conv);
+  ctx.prevoirSaut(conv, { clarte: 4 });
+  await attendre(100); conv.ecrit.vif = 'attends je voulais te dire';  // il continue de parler
+  ctx.etat.papaVoixA = Date.now();
+  await attendre(ms);
+}
+
+test('coupé net + « Sauter la suite » : ta voix qui dure « Sauter au bout de » saute la suite tout de suite, sans attendre ta phrase finie', async () => {
+  const p = page({ reglages: { sauter_suite: true, sauter_suite_ms: 300, choix_coupure: false }, enParole: true });
+  await papaParleLongtemps(p);
+  assert.strictEqual(p.vu.lachees, 1, 'la suite est lâchée');
+  assert.strictEqual(p.vu.detail, 'ta voix a duré « Sauter au bout de »');
+  assert.strictEqual(p.ctx.etat.retenue, null, 'plus rien n’attend le tri');
+  assert.strictEqual(p.vu.reprises, 0);
+  // ta phrase finie, ensuite, part comme d'habitude (plus rien à reprendre)
+  p.lecteurNeuronal.actif = false; p.lecteurNeuronal.aDuVieux = false;
+  assert.strictEqual(await p.ctx.passageOuRelance(p.conv, 'ouais'), false);
+  // branché : la coupure nette prévoit le saut
+  assert.match(PAGE, /couperNet\(conv\); if \(etat\.retenue && lecteur\.enPause\) prevoirSaut\(conv, mesure\); return; \}/);
+});
+
+test('coupé net + « Sauter la suite », un simple « ouais » plus court que « Sauter au bout de » : rien n’est sauté, le tri le fait reprendre', async () => {
+  const p = page({ reglages: { sauter_suite: true, sauter_suite_ms: 300, choix_coupure: false } });
+  p.conv.ecrit = { confirme: '', vif: '' };
+  p.ctx.couperNet(p.conv);
+  p.ctx.prevoirSaut(p.conv, {});
+  await attendre(600);                                                // papa s'est tu (enParole faux, sa voix vieille)
+  assert.strictEqual(p.vu.lachees, 0, 'rien de sauté');
+  assert.strictEqual(await p.ctx.passageOuRelance(p.conv, 'ouais'), true);
+  assert.strictEqual(p.vu.reprises, 1, 'sa voix reprend');
+});
+
+test('coupé net + « Il choisit de se couper » : son subconscient peut lâcher la suite plus tôt ; s’il la garde, elle attend ta phrase (jamais par-dessus toi)', async () => {
+  const a = page({ reglages: { sauter_suite: true, sauter_suite_ms: 300, choix_coupure: true }, enParole: true, choix: { couper: true, lu: true, pourquoi: 'papa change de sujet' } });
+  await papaParleLongtemps(a);
+  assert.ok(a.vu.choix, 'son subconscient a été consulté');
+  assert.strictEqual(a.vu.lachees, 1, 'COUPER : la suite est lâchée tout de suite');
+  assert.strictEqual(a.vu.detail, 'il a choisi de lâcher sa suite pour t’écouter');
+  const b = page({ reglages: { sauter_suite: true, sauter_suite_ms: 300, choix_coupure: true }, enParole: true, choix: { couper: false, lu: true, pourquoi: 'presque fini' } });
+  await papaParleLongtemps(b);
+  assert.strictEqual(b.vu.lachees + b.vu.reprises, 0, 'CONTINUER : ni lâchée ni reprise par-dessus toi');
+  assert.ok(b.ctx.etat.retenue, 'sa suite attend, en réserve');
+  assert.ok(b.vu.journal.some(([e]) => e === 'suite_en_reserve'));
+  assert.ok(!b.conv.gardeParoleA, 'il ne « garde pas la parole » par-dessus toi');
+});
+
+test('une voix du téléphone (un live) qui le coupe net : tout est lâché comme avant (aucune phrase de papa ne dira passage ou relance)', () => {
+  const p = page();
+  p.ctx.couperNet(p.conv, { lacher: true });
+  assert.strictEqual(p.vu.pauses.length, 0);
+  assert.strictEqual(p.vu.arrete, 1);
+  assert.match(PAGE, /if \(o\.net\) \{ couperNet\(etat\.conversation, \{ lacher: true \}\); return; \}/);
 });

@@ -4222,7 +4222,7 @@ function motsEntendusDepuis(conv, n0) {
 }
 const motsEcrits = (conv) => (conv && conv.ecrit ? `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}` : '').split(/\s+/).filter(w => /\p{L}/u.test(w)).length;
 // coupé net par ta voix : son mot fini, tout le reste lâché (sa réponse, ses ribosomes, ce qui attendait) ; ses voix prêtes gardées 5 min
-function couperNet(conv) {
+function couperNet(conv, { lacher = false } = {}) {
   if (typeof garderVoixCoupees === 'function') garderVoixCoupees();
   if (typeof bouts !== 'undefined') { if (bouts.liste) bouts.liste.clear(); bouts.fileTel = []; bouts.attenteTel = null; bouts.enFile = []; }
   const vieux = (etat.riboFile || []).slice();
@@ -4230,7 +4230,7 @@ function couperNet(conv) {
   etat.riboFile = []; etat.riboEnVoix = [];
   if (typeof libererRibosomes === 'function') libererRibosomes();
   // (09/11) sa voix s'arrête à son mot et se met en pause, sa voix déjà faite gardée ; ta phrase finie dira : un passage (il reprend) ou une relance
-  if (typeof retenirSaVoix === 'function' && retenirSaVoix(conv)) { if (typeof majBoutonsPause === 'function') majBoutonsPause(); return; }
+  if (!lacher && typeof retenirSaVoix === 'function' && retenirSaVoix(conv)) { if (typeof majBoutonsPause === 'function') majBoutonsPause(); return; }
   if (etat.flux || (lecteur && lecteur.actif)) arreterTout(true, { garder: false, raison: 'parole' });   // sa voix : son mot (couperSaVoix)
   if (typeof majBoutonsPause === 'function') majBoutonsPause();
 }
@@ -4432,7 +4432,8 @@ function prevoirSaut(conv, mesure) {
     // (07/11, Ahmed : « faut aussi lui laisser le choix de se couper ou pas quand il reçoit ce signal ») choix_coupure (oui) : son subconscient
     // choisit, en 1,5 s au plus, de se couper ou de finir ce qu'il dit ; sans réponse, il se coupe (08/11 : si de vrais mots, pas les siens, sont là)
     if (typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.choix_coupure === false) { sauterLaSuite(Date.now() - t0); return; }
-    const dit = ((typeof bouts !== 'undefined' && bouts.dits) || []).slice(-2).join(' ');
+    const retenue = !!(etat.retenue && lecteur.enPause);             // (09/11) coupé net : sa voix attend déjà
+    const dit = retenue && typeof paroleEntendue === 'function' ? paroleEntendue().slice(-400) : ((typeof bouts !== 'undefined' && bouts.dits) || []).slice(-2).join(' ');
     const papa = conv.ecrit ? `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}`.trim() : '';
     const ecoute = Date.now() - t0;
     fetch('/api/jarvis/se-couper', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ dit, papa, ms: ecoute, clarte: mesure && Number(mesure.clarte) > 0 ? Number(mesure.clarte) : null }) })
@@ -4441,6 +4442,8 @@ function prevoirSaut(conv, mesure) {
         if (etat.conversation !== conv) return;
         // (08/11, mesuré : 2 choix sur 4 sans réponse à temps, le Mac chargé, qui le coupaient d'office) sans réponse : de vrais mots (2 et plus), ou il continue
         if (c && c.couper !== false && c.lu === false && entendu !== null && entendu.split(/\s+/).filter(w => /\p{L}/u.test(w)).length < 2) { journalVoix('sans_reponse_continue', { ms: ecoute }); return; }
+        // (09/11) sa voix en pause (coupé net) : il ne reparle pas par-dessus toi ; il garde sa suite en réserve, ta phrase finie dira passage ou relance
+        if (c && c.couper === false && etat.retenue && lecteur.enPause) { journalVoix('suite_en_reserve', { ms: ecoute }); if (c.pourquoi) montrerPensee('🤔 il garde sa suite', c.pourquoi, true); return; }
         if (c && c.couper === false) { conv.gardeParoleA = Date.now(); journalVoix('garde_la_parole', { ms: ecoute }); if (c.pourquoi) montrerPensee('🗣 il finit ce qu’il dit', c.pourquoi, true); return; }
         sauterLaSuite(Date.now() - t0, true);                          // (07/11) il a décidé de se taire : tout de suite
       });
@@ -4451,6 +4454,12 @@ function prevoirSaut(conv, mesure) {
 // net : (07/11, Ahmed : « quand je lui coupe la parole et qu'il décide de se taire, il doit finir immédiatement, sans attendre la fin du morceau
 // qu'il prononce ») sa voix s'arrête tout de suite ; ce qui était prêt et pas dit est gardé (5 min) pour après
 function sauterLaSuite(ms, net = false) {
+  // (09/11) sa voix en pause (coupé net) : la suite qui attendait est lâchée tout de suite, comme une relance (son texte part avec la coupure)
+  if (etat.retenue && lecteur.enPause && etat.retenue.conv && typeof lacherAncienne === 'function') {
+    journalVoix('suite_sautee', { ms, retenue: true });
+    lacherAncienne(etat.retenue.conv, net ? 'choix_coupure' : 'sauter_suite', net ? 'il a choisi de lâcher sa suite pour t’écouter' : 'ta voix a duré « Sauter au bout de »');
+    return;
+  }
   const t = Number(etat.epissureTour) || 0;
   if (typeof journalVoix === 'function') journalVoix('suite_sautee', { tour: t, ms, ...(net ? { net: true } : {}) });
   arreterEpissure('sautee', t, { laisserFinir: !net });
@@ -5158,7 +5167,9 @@ async function basculerConversation() {
         // (07/11, Ahmed : « si c'est un background et pas une parole, il ne se coupe pas ; des paroles en fond pas assez fortes non plus ; il faut
         // une voix claire qui lui parle ») sous la clarté voulue (voix_claire_x, 1,8 par défaut) : un fond, ignoré ; il continue
         if (typeof voixClaire === 'function' && !voixClaire(mesure)) { journalVoix('fond_ignore', mesure || {}); return; }
-        if (typeof coupeNet === 'function' && coupeNet()) { journalVoix('coupe_net', mesure || {}); couperNet(conv); return; }
+        // (09/11, 23:15, Ahmed : « tout doit marcher ensemble ») coupé net : sa voix finit son mot et attend ; si ta voix dure « Sauter au bout de »,
+        // la suite est sautée (ou son subconscient choisit, « Il choisit de se couper ») sans attendre le tri passage/relance de ta phrase finie
+        if (typeof coupeNet === 'function' && coupeNet()) { journalVoix('coupe_net', mesure || {}); couperNet(conv); if (etat.retenue && lecteur.enPause) prevoirSaut(conv, mesure); return; }
         // (30/10, 19:08, Ahmed : « qu'il puisse répondre même quand je le coupe ou que je parle en même temps ; c'est
         // important ») il garde la parole : sa voix continue, ta phrase est quand même écoutée ; « stop » et le bouton l'arrêtent
         // (04/11, Ahmed : « il parle quand il veut, mais s'il entend ma voix lui couper la parole sur 2 secondes, il se tait ») il garde
@@ -6334,7 +6345,8 @@ function ecouterPensees() {
   // (08/11, 11:45, Ahmed : « son intérieur doit répondre aux mêmes règles que le micro, simplement ») « tu le coupes net » : comme ta voix
   es.addEventListener('couper_interieur', (ev) => { try { const o = JSON.parse(ev.data); if (!etat.conversation || !(lecteur && lecteur.actif)) return;
     if (typeof journalVoix === 'function') journalVoix('coupe_interieur', { source: String(o.source || ''), ms: Number(o.ms) || 0, net: !!o.net });
-    if (o.net) { couperNet(etat.conversation); return; }
+    // (09/11) une voix du téléphone (un live) : coupé net comme avant, tout est lâché (aucune phrase de papa ne dira passage ou relance)
+    if (o.net) { couperNet(etat.conversation, { lacher: true }); return; }
     if (o.pourquoi) montrerPensee('🤫 il se tait pour écouter', String(o.pourquoi), true);
     sauterLaSuite(Number(o.ms) || 0, true); } catch (_) {} });
   es.addEventListener('conscience', (ev) => { try { const o = JSON.parse(ev.data); if (!o.texte || (etat.reglages && etat.reglages.masquerEpissure)) return;

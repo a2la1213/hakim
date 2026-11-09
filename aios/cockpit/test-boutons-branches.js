@@ -75,12 +75,18 @@ function masques() {
   return ctx;
 }
 
-test('Réglages : « Tu le coupes net » allumé, « Sauter la suite », son délai et « Il choisit de se couper » disent qu\'ils sont sans effet', () => {
+// (09/11, 23:15, Ahmed : « tout doit marcher ensemble ») « Tu le coupes net » ne les masque plus quand sa voix attend (il garde la parole) ;
+// restent les vrais cas : coupé net sans « Il garde la parole » ou sans « Il reprend après un « ouais » », et « Sauter la suite » éteint
+test('Réglages : « Sauter la suite », son délai et « Il choisit de se couper » agissent avec « Tu le coupes net » ; les vrais cas sans effet sont dits', () => {
   const { masquesDe } = masques();
+  const tout = { coupe_net: true, garder_parole: true, reprendre_passage: true, sauter_suite: true };
   for (const k of ['sauter_suite', 'sauter_suite_ms', 'choix_coupure']) {
-    assert.match(masquesDe(k, { corps: { coupe_net: true } }).join(' '), /Tu le coupes net/, k);
-    assert.deepEqual(masquesDe(k, { corps: { coupe_net: false } }), [], `${k} : coupe_net éteint, il agit`);
+    assert.deepEqual(masquesDe(k, { corps: tout }), [], `${k} : coupé net, sa voix attend : il agit`);
+    assert.deepEqual(masquesDe(k, { corps: { ...tout, coupe_net: false } }), [], `${k} : coupe_net éteint, il agit`);
+    assert.match(masquesDe(k, { corps: { ...tout, garder_parole: false } }).join(' '), /Tu le coupes net.*Il garde la parole/, `${k} : coupé net sans « Il garde la parole » : tout est lâché`);
+    assert.match(masquesDe(k, { corps: { ...tout, reprendre_passage: false } }).join(' '), /Il reprend après un/, k);
   }
+  for (const k of ['sauter_suite_ms', 'choix_coupure']) assert.match(masquesDe(k, { corps: { ...tout, sauter_suite: false } }).join(' '), /Sauter la suite quand tu réponds » est éteint/, k);
   assert.match(masquesDe('je_te_suis', { corps: { oreille: true } }).join(' '), /Son oreille/);
   assert.match(masquesDe('micro_hakim', { corps: { micro_ouvert: true } }).join(' '), /Micro toujours ouvert/);
   assert.match(masquesDe('plafond_mots', { corps: { parole_libre: true }, ribosome: {} }).join(' '), /Parole libre/);
@@ -89,9 +95,10 @@ test('Réglages : « Tu le coupes net » allumé, « Sauter la suite », son dé
 
 test('les masques de la page disent vrai : ce que le code fait vraiment', () => {
   const parler = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
-  // « Tu le coupes net » passe avant le saut de la suite (et donc son délai et son choix) quand ta voix le coupe
-  const net = parler.indexOf("journalVoix('coupe_net'"), saut = parler.indexOf('prevoirSaut(conv, mesure)', net - 2000);
-  assert.ok(net > 0 && saut > net, 'coupe_net est vérifié avant prevoirSaut dans surInterruption');
+  // « Tu le coupes net » : sa voix attend (il garde la parole), et le saut de la suite (son délai, son choix) est prévu aussitôt
+  assert.match(parler, /journalVoix\('coupe_net', mesure \|\| \{\}\); couperNet\(conv\); if \(etat\.retenue && lecteur\.enPause\) prevoirSaut\(conv, mesure\); return; \}/);
+  assert.match(parler, /if \(!conv \|\| !reprendrePassage\(\) \|\| !garderParole\(\) \|\|/, 'sans « Il garde la parole » (ou sans la reprise) : rien n’attend, tout est lâché');
+  assert.match(parler, /if \(typeof reglagesCorps === 'undefined' \|\| reglagesCorps\.sauter_suite === false \|\| conv\.sautPrevu\) return;/, 'sans « Sauter la suite » : ni délai ni choix');
   assert.match(src, /const choix = net \|\| r\.choix_coupure === false \?/, 'son intérieur : coupé net, sans choix');
   assert.match(src, /chevauche >= \(net \? 300 :/, 'son intérieur : coupé net, sans « Sauter au bout de »');
   // « Parole libre » : aucun plafond

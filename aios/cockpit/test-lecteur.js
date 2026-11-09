@@ -735,7 +735,8 @@ test('coupé net (coupe_net, oui) : son mot fini, sa réponse et ce qu’il pré
   cx.f.couperNet({});
   assert.deepEqual(fait, ['gardees', 'blancs', 'ribosomes', 'arret:parole:false']);
   assert.deepEqual(cx.etat.riboFile, []); assert.equal(cx.bouts.liste.size, 0);
-  assert.match(SRC, /if \(typeof coupeNet === 'function' && coupeNet\(\)\) \{ journalVoix\('coupe_net', mesure \|\| \{\}\); couperNet\(conv\); return; \}/);
+  // (09/11, 23:15) puis, sa voix en attente, le saut de la suite reste prévu (« tout doit marcher ensemble »)
+  assert.match(SRC, /if \(typeof coupeNet === 'function' && coupeNet\(\)\) \{ journalVoix\('coupe_net', mesure \|\| \{\}\); couperNet\(conv\); if \(etat\.retenue && lecteur\.enPause\) prevoirSaut\(conv, mesure\); return; \}/);
   assert.match(SRC, /if \(typeof coupeNet === 'function' && coupeNet\(\) && lecteur\.finirMot\) \{ const r = lecteur\.finirMot\(\);/, 'sa voix : son mot');
   // la voix du téléphone : 0,18 s, puis rien
   const dits = []; let annule = 0; class E { constructor(t) { this.text = t; } }
