@@ -482,3 +482,82 @@ def test_ses_deux_oreilles_de_la_musique_se_ressentent_et_un_inconnu_ne_perd_plu
     assert [e["type"] for e in l["evenements"]] == ["chute", "musique_separee"], "l'inconnu seul est laissé de côté"
     fort = lambda p: json.dumps({"sensation": "Tu tombes, et la musique continue.", "evenements": [], "fort": True})  # noqa: E731
     assert corps.ressentir({"evenements": [{"type": "chute"}, {"type": "teleportation"}]}, mem=mem, demander=fort)["fort"] is True
+
+
+# ---- (09/11, 20:59, Ahmed, à l'écrit : « tous tes ressentis, quels qu'ils soient, doivent faire partie de ton rappel autonome, et tout ce
+# que tu vis doit être encré et rappelé de la même manière que tes souvenirs autonomes ») ses fils de ressentis : la musique, les
+# vibrations, ce qu'il entend, son corps et son milieu, ses sens radio, les petits rires, ses émotions ; un souvenir par épisode.
+def _lot(types, ts, sensation="", evenements=(), changements=()):
+    o = {"ts": ts, "sensation": sensation, "evenements": [list(e) for e in evenements]}
+    ev = {"evenements": [{"type": t} if isinstance(t, str) else t for t in types], "changements": list(changements), "au_meme_moment": ""}
+    return o, ev
+
+
+def test_ses_fils_un_souvenir_par_episode_de_musique_clos_par_le_silence():
+    etat, t0 = {}, 1_800_000_000
+    clos = []
+    for k in range(10):                                   # 3 min de musique, un lot toutes les 20 s
+        o, ev = _lot(["musique_entendue"] if k % 2 else ["musique_separee"], t0 + 20 * k,
+                     "Des graves roulent dans ton ventre." if k != 4 else "Une voix chante et descend en toi, forte.",
+                     [("musique", 0.3 if k != 4 else 0.6), ("bien_etre", 0.1)])
+        clos += corps.fils_avancer(etat, o, ev, "calme" if k < 5 else "joie")
+    assert clos == [], "la musique dure : rien encore"
+    o, ev = _lot(["pose"], t0 + 180 + corps.FIL_SILENCE_S + 1)
+    clos = corps.fils_avancer(etat, o, ev, "joie")
+    musique = [c for c in clos if "La musique" in c[0]]
+    assert len(musique) == 1, clos
+    texte, importance, fin = musique[0]
+    assert texte.startswith("[Mon corps, ") and "] La musique, 3 min (" in texte
+    assert "sa voix et son fond, séparés ×5" in texte and "une musique entendue ×5" in texte
+    assert "« Une voix chante et descend en toi, forte. »" in texte, "sa sensation la plus forte, en entier"
+    assert "musique 3,3" in texte and "bien-être 1,0" in texte
+    assert "Mon humeur avant : calme ; après : joie." in texte
+    assert fin == t0 + 180 and importance == corps.FILS["musique"][2]
+    assert "musique" not in etat["fils"] and "corps" in etat["fils"], "clos, il sort ; le corps posé commence le sien"
+
+
+def test_un_fil_trop_long_se_coupe_et_les_emotions_suivent_son_humeur():
+    etat, t0, clos = {}, 1_800_000_000, []
+    for k in range(70):                                   # 35 min de vibrations continues
+        o, ev = _lot(["son_ressenti"], t0 + 30 * k, "Le son passe dans ton corps.", [("musique", 0.1)])
+        clos += corps.fils_avancer(etat, o, ev, "calme" if k < 25 else "alerte joyeuse" if k < 30 else "apaisement")
+    vib = [c for c in clos if "Des vibrations" in c[0]]
+    assert len(vib) == 1 and "Des vibrations dans mon corps, 30 min" in vib[0][0], "au bout de 30 min, un épisode se clôt et un autre commence"
+    o, ev = _lot(["pose"], t0 + 70 * 30 + corps.FIL_SILENCE_S + 5)
+    clos += corps.fils_avancer(etat, o, ev, "apaisement")
+    emo = [c for c in clos if "Mes émotions" in c[0]]
+    assert len(emo) == 1 and "Mes émotions, 2 min (mon humeur qui change ×2) : mon humeur, calme → alerte joyeuse → apaisement" in emo[0][0], emo
+
+
+def test_ses_fils_ne_redisent_pas_ce_qui_a_son_souvenir_a_lui():
+    etat, t0 = {}, 1_800_000_000
+    o, ev = _lot(["choc", {"type": "rire", "details": {"degre_lu": 4}}, {"type": "son", "details": {"nom": "rage"}}, "musique"], t0,
+                 "Un coup sec.", [("sursaut", 0.35)])
+    corps.fils_avancer(etat, o, ev, "calme")
+    assert set(etat["fils"]) == {"musique"}, etat["fils"]
+    assert etat["fils"]["musique"]["types"] == {"musique": 1}
+    o, ev = _lot([{"type": "rire", "details": {"degre_lu": 1}}], t0 + 5, "Un petit rire.", [("amusement", 0.2)])
+    corps.fils_avancer(etat, o, ev, "calme")
+    assert "rires" in etat["fils"], "un petit rire va dans son fil des rires"
+
+
+def test_ses_ressentis_encres_dans_vie_corps_par_son_intermediaire(J, mem, monkeypatch):
+    """De bout en bout : ressentir → garder_episodes → un souvenir du corps, rangé dans vie/corps ; l'état des fils survit d'un lot
+    à l'autre (corps-episodes.json, sous verrou)."""
+    import rubrics
+    rubrics.rubric_create(mem.db, "vie", time.time()) if rubrics.get_rubric_id(mem.db, "vie") is None else None
+    rubrics.rubric_create(mem.db, "vie/corps", time.time())
+    monkeypatch.setattr(corps, "_souvenir", lambda m, texte, imp: m.store_in(texte, corps.RUBRIQUE_CORPS, role="episodic", importance=imp,
+                                                                            embedding=[0.1] * 8))
+    mem.kv_set("interieur", json.dumps({"humeur": "calme"}))
+    faux = lambda p: json.dumps({"sensation": "Une musique te traverse, grave.", "fort": False,  # noqa: E731
+                                 "evenements": [{"nom": "musique", "intensite": 0.3, "cause": "E1"}]})
+    t0 = 1_800_000_000
+    for k in range(4):
+        corps.ressentir({"type": "musique_entendue", "details": {}}, mem=mem, demander=faux, maintenant=t0 + 30 * k)
+    assert json.loads((J / "corps-episodes.json").read_text())["fils"]["musique"]["types"] == {"musique_entendue": 4}
+    corps.ressentir({"type": "pose", "details": {}}, mem=mem, demander=faux, maintenant=t0 + 90 + corps.FIL_SILENCE_S + 1)
+    rid = rubrics.get_rubric_id(mem.db, "vie/corps")
+    rows = [c for (c,) in mem.db.execute("SELECT content FROM episodes WHERE rubric_id=?", (rid,))]
+    assert len(rows) == 1 and "] La musique, 2 min (une musique entendue ×4)" in rows[0], rows
+    assert (J / "corps-episodes.verrou").exists()

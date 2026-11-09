@@ -91,7 +91,8 @@ test('provenance (relecture, 2) : ce que dit son système immunitaire vient de c
 // ---- lot 2 (29/10) : ses recherches web et l'outil Read passent par la sentinelle, par un crochet PostToolUse
 function monterReglages() {
   const ctx = { JSON, path, ANAMNESE: '/anamnese', j: JSON.stringify, aideCle: () => '/x/aide-cle', JARVIS: '/j', AGENTS_PARALLELE_MAX: 10,
-    NODE_STABLE: '/bin/node', __dirname: '/cockpit' };
+    NODE_STABLE: '/bin/node', __dirname: '/cockpit',
+    espaceApiEtiquete: () => ({}), envEspaceApi: () => ({}) };   // (09/11) l'espace de la clé API, sans objet ici
   vm.createContext(ctx);
   vm.runInContext([ligne('const CROCHET_IMMUNITE ='), ligne('const GARDE_MESSAGE ='), 'var CLES_MASQUEES = [];', prendre('reglagesCerveau'), 'this.f = { reglagesCerveau };'].join('\n'), ctx);
   return ctx.f;

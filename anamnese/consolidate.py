@@ -13,6 +13,7 @@ Lancé par launchd (nuit) ou à la main : .venv/bin/python consolidate.py
 import json
 import os
 import re
+import shlex
 import sqlite3
 import subprocess
 import datetime
@@ -178,6 +179,42 @@ MODELE = os.environ.get("ANAMNESE_CONSOLIDATE_MODEL", "sonnet")
 MODELE_SECOURS = os.environ.get("ANAMNESE_CONSOLIDATE_FALLBACK_MODEL", "claude-opus-5-5")
 SERVICE_CLE = "anamnese-anthropic-api"  # security add-generic-password -s anamnese-anthropic-api -a "$USER" -w
 APIKEY_HELPER = f"/usr/bin/security find-generic-password -s {SERVICE_CLE} -w"
+# (09/11, Ahmed le 08/11 21:11 : « passe la 2e clé API en priorité et la 1re en backup ») le même ordre que le cockpit
+# (cockpit 2f3bcfb) : la clé collée dans Parler (~/.config/jarvis/cle-api-anthropic, la 2e) d'abord, le trousseau (la 1re,
+# au crédit vide le 18/10) seulement sans elle ; l'espace de travail (anthropic-workspace-id) ne part qu'avec la clé de la
+# page, jamais avec celle du trousseau. La clé n'est lue ici que pour vérifier sa forme : jamais journalisée, jamais mise
+# dans l'environnement ni dans la commande (la CLI la lit elle-même par apiKeyHelper).
+CLE_API = Path(os.environ.get("ANAMNESE_CLE_API", str(Path(HOME) / ".config" / "jarvis" / "cle-api-anthropic")))
+ESPACE_API = Path(os.environ.get("ANAMNESE_ESPACE_API", str(Path(HOME) / ".config" / "jarvis" / "espace-api-anthropic")))
+FORME_CLE = re.compile(r"^sk-ant-[A-Za-z0-9_-]{20,300}$")
+FORME_ESPACE = re.compile(r"^[A-Za-z0-9_-]{4,100}$")
+
+
+def cle_de_page():
+    """La clé de la page est-elle là, et bien formée ? (sa valeur ne sort jamais d'ici)"""
+    try:
+        return bool(FORME_CLE.match(CLE_API.read_text(encoding="utf-8").strip()))
+    except Exception:
+        return False
+
+
+def reglages_secours():
+    """Le --settings du secours : la clé de la page (et son espace) d'abord, sinon le trousseau, sans espace."""
+    if not cle_de_page():
+        return {"apiKeyHelper": APIKEY_HELPER}
+    r = {"apiKeyHelper": "/bin/cat " + shlex.quote(str(CLE_API))}
+    try:
+        w = ESPACE_API.read_text(encoding="utf-8").strip()
+        if FORME_ESPACE.match(w):
+            r["env"] = {"ANTHROPIC_CUSTOM_HEADERS": f"anthropic-workspace-id: {w}"}
+    except Exception:
+        pass
+    return r
+
+
+def source_cle():
+    """Pour le journal : d'où vient la clé (jamais la clé)."""
+    return f"clé de la page ({CLE_API})" if cle_de_page() else f"trousseau (service {SERVICE_CLE})"
 MAX_TURNS = "40"
 MIN_NOUVEAUX = 3
 # File d'attente (2026-10-15) : chaque passe reçoit les LOT_MAX plus anciens vrais souvenirs
@@ -243,7 +280,7 @@ def _run(prompt, modele, secours=False, registre_id=None):
     cmd = [CLAUDE_BIN, "-p", prompt, "--allowedTools", TOOLS, "--model", modele, "--effort", os.environ.get("ANAMNESE_EFFORT_HAKIM", "low"),
            "--max-turns", MAX_TURNS, "--output-format", "json"]
     if secours:
-        cmd += ["--settings", json.dumps({"apiKeyHelper": APIKEY_HELPER})]
+        cmd += ["--settings", json.dumps(reglages_secours())]
     try:
         env = dict(ENV)
         if registre_id:
@@ -288,11 +325,14 @@ def verdict(res):
 
 def secours_disponible():
     """Secours payant (clé API) : DÉSACTIVÉ par défaut — décision d'Ahmed (2026-10-16) : tout
-    gratuit. Il ne s'active qu'avec ANAMNESE_SECOURS_API=1 ET une clé rangée dans le trousseau
-    (sa valeur n'est jamais lue ici). Sans secours, une nuit où l'abonnement est épuisé est
+    gratuit. Il ne s'active qu'avec ANAMNESE_SECOURS_API=1 ET une clé : celle de la page
+    (~/.config/jarvis/cle-api-anthropic, prioritaire, 09/11) ou, sans elle, celle du trousseau (sa
+    valeur n'est jamais lue ici). Sans secours, une nuit où l'abonnement est épuisé est
     simplement non marquée et reprise par la file la nuit suivante."""
     if os.environ.get("ANAMNESE_SECOURS_API") != "1":
         return False
+    if cle_de_page():
+        return True
     try:
         r = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", SERVICE_CLE],
                            capture_output=True, text=True, timeout=10)
@@ -587,12 +627,12 @@ def _une_passe(prompt, registre_id=None, externes=None):
             tours = res.get("num_turns") or 0
             prompt_secours = (NOTE_REPRISE.format(tours=tours) + "\n\n" + prompt) if tours >= SEUIL_REPRISE else prompt
             modele, secours = MODELE_SECOURS, True
-            log(f"[secours] abonnement indisponible → API Anthropic ({modele}, CLI {version_cli()})")
+            log(f"[secours] abonnement indisponible → API Anthropic ({modele}, CLI {version_cli()}, {source_cle()})")
             res = _run(prompt_secours, modele, secours=True, registre_id=registre_id)
             v = verdict(res)
             _log_resultat(res, modele, v)
         else:
-            log(f"[secours] impossible : aucune clé dans le trousseau (service {SERVICE_CLE})")
+            log(f"[secours] impossible : ni clé de la page ({CLE_API}), ni clé dans le trousseau (service {SERVICE_CLE}), ou secours éteint (ANAMNESE_SECOURS_API)")
     if v == "ok":  # preuve de travail : des tours ET la trace écrite par ce run
         tours = res.get("num_turns") or 0
         preuve = trace_depuis(run_start)

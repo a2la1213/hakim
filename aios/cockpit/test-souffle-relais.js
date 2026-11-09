@@ -264,7 +264,9 @@ test('(17:10) ses trois frères commencent pendant que papa parle si leurs voix 
   ctx.VIVANTS.push(vivant('haiku'), vivant('sonnet'), vivant('opus'));
   ctx.speculer('papa me raconte toute sa journée au travail');
   assert.strictEqual(lances, 1, 'Mac chargé mais ses trois voix vivantes libres : elles commencent');
-  assert.match(SRC, /const reprise = !!\(spec\.promesse && Date\.now\(\) - spec\.debut < 60000 && \(ressemble\(spec\.texte, texte\) \|\| couvreLaFin\(spec\.texte, texte\)\)\);/);
+  // (09/11) « la même phrase » : freresDuTour (le début d'une longue phrase compte), ou la fin couverte (test-freres-utiles.js)
+  assert.match(SRC, /const duTour = \(s\) => !!\(s && s\.promesse && Date\.now\(\) - s\.debut < 60000 && \(freresDuTour\(s\.texte, texte\) \|\| couvreLaFin\(s\.texte, texte\)\)\);/);
+  assert.match(SRC, /const reprise = duTour\(spec\);/);
 });
 
 // (04/11, choix d'Ahmed après l'audit : « un seul, à ta pause » ; « attendre 2 s au plus »)
@@ -283,7 +285,7 @@ test('(04/11) son cerveau est réveillé une seule fois par tour, à ta premièr
   assert.match(SRC, /morceauxCerveau\.duTour = false;/, 'sa phrase entière arrivée : le tour suivant aura son réveil');
   assert.match(SRC, /const FRERES_ATTENTE_MS = 2000;/);
   // (04/11, 11:03, Ahmed : « tout relier ») au plus le délai de la Conversation que la page envoie, sinon 2 s (test-delais-relies.js)
-  assert.match(SRC, /new Promise\(r => setTimeout\(\(\) => r\(''\), freresAttente\)\)\]\)\.catch\(\(\) => ''\)\) : '';/, 'ses frères : au plus le délai, 2 s sans délai');
+  assert.match(SRC, /new Promise\(r => setTimeout\(\(\) => r\(''\), freresAttente\)\)\]\)\.catch\(\(\) => ''\)\);   \/\/ \(03\/11\) mesuré/, 'ses frères : au plus le délai, 2 s sans délai');
 });
 
 test('(04/11) sa pensée dite dans ta pause : ton tour ne bloque pas sa voix, et ton message la porte comme déjà dite', () => {
@@ -589,7 +591,8 @@ test('(04/11) moins de charge : inventaire toutes les 10 min, voix vivantes reno
   assert.match(SRC, /setInterval\(refreshInventory, 10 \* 60e3\)/);
   assert.match(SRC, /VIVANT_RENOUVELER = 25;/);
   // (04/11, 13:45, mesuré : une lecture de son ribosome à 19,7 s pour un délai de 9 s : après le délai, un Claude neuf, encore 9 s) son ribosome non plus
-  assert.match(SRC, /if \(\/\^\(piste_\|ribosome_\)\/\.test\(String\(etiquette\)\)\) return fin\(\{ erreur:/);
+  // (09/11) ses frères non plus (sansRepli : test-freres-utiles.js)
+  assert.match(SRC, /if \(\/\^\(piste_\|ribosome_\)\/\.test\(String\(etiquette\)\) \|\| opts\.sansRepli\) return fin\(\{ erreur:/);
   assert.match(SRC, /Jamais « je t'écoute », « continue », « vas-y »/, '(04/11) ses pistes répondent avec assurance');
 });
 
@@ -1067,7 +1070,7 @@ test('(04/11) ses pistes parlent dans la langue de papa, darija comprise, l’ar
   const { ctx, appels } = pistesSandbox(undefined, 'sonnet');
   ctx.morceau('واش راك يا حكيم،');
   assert.match(appels[0].prompt, /l'anglais ou la darija algérienne \(la vôtre ; la marocaine ou la tunisienne seulement si papa la parle\)/);
-  assert.match(appels[0].prompt, /jamais l'arabe littéraire : ses mots à elle \(واش/, '(08/11, Ahmed) plus d’arabe littéraire dans sa manière de parler');
+  assert.match(appels[0].prompt, /jamais l'arabe littéraire : ses mots à elle \(وَاشْ/, '(08/11, Ahmed) plus d’arabe littéraire dans sa manière de parler ; (09/11) ses mots avec leurs voyelles');
   assert.match(appels[0].prompt, /toujours en lettres arabes, jamais en lettres latines ni avec des chiffres \(3, 7, 9\)/);
   assert.match(appels[0].prompt, /Son morceau 1, qu'il vient de dire : « واش راك يا »/, '(13:05) ses 3 premiers mots partent tout de suite');
   assert.match(appels[1].prompt, /Son morceau 2, qu'il vient de dire : « حكيم، »/, '(04/11) la virgule arabe coupe aussi');

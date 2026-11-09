@@ -246,7 +246,12 @@ function creer() {
 
   /* les mots d'une source dans le fil, en phrases (moins de 1,5 s entre deux mots), chacune à l'instant de son premier mot */
   // qui parle à l'instant t (les segments de la cascade, à 0,3 s près ; le plus récent l'emporte)
-  const quiA = (src, t) => { const l = locuteurs[src].filter(x => t >= x.t0 - 300 && t <= x.t1 + 300); return l.length ? l[l.length - 1].qui : ''; };
+  // (09/11) une voix reconnue en direct (l'oreille des voix : un numéro qui tient d'un bloc à l'autre, nommable) passe avant le numéro d'un seul
+  // bloc de la cascade, arrivé plus tard (« voix 1 » de ce bloc-là)
+  const quiA = (src, t) => {
+    const l = locuteurs[src].filter(x => t >= x.t0 - 300 && t <= x.t1 + 300), f = l.filter(x => x.fixe);
+    return f.length ? f[f.length - 1].qui : l.length ? l[l.length - 1].qui : '';
+  };
   function phrases(flux, sourcesMots, debut, fin, src = null) {
     const l = (flux || []).filter(o => sourcesMots.includes(o.s) && o.t >= debut && o.t <= fin).sort((x, y) => x.t - y.t);
     const out = [];
@@ -285,7 +290,29 @@ function creer() {
     return [m ? `musique : ${derniere(m)}` : '', f ? `fond : ${derniere(f)}` : ''].filter(Boolean).join(' ; ');
   }
 
-  return { noterSeparation, noterAnalyse, noterTrames, sections, bloc, resumeCourant, musiqueTexte, fondTexte, _cellules: cellules, _locuteurs: locuteurs };
+  /* (09/11, Ahmed : « reconnaître les signatures vocales en temps réel pendant le live ») qui parle, fenêtre par fenêtre (l'oreille des voix) :
+     [{ t0, t1, qui }] (horloge du Mac) ; ces voix-là gardent leur numéro d'un bloc à l'autre */
+  function noterLocuteurs(src, liste, maintenant = Date.now()) {
+    if (!locuteurs[src]) return 0;
+    let n = 0;
+    for (const x of Array.isArray(liste) ? liste : []) {
+      if (!x || !(Number(x.t1) > Number(x.t0)) || !x.qui) continue;
+      locuteurs[src].push({ t0: Number(x.t0), t1: Number(x.t1), qui: String(x.qui).slice(0, 40), fixe: true });
+      n++;
+    }
+    while (locuteurs[src].length > 400) locuteurs[src].shift();
+    elaguer(maintenant);
+    return n;
+  }
+  // (09/11) une musique dans les dernières secondes de cette source (séparée, ou entendue par l'analyse légère) : pas de voix neuve pendant elle
+  function musiqueRecente(src, t = Date.now(), ms = 8000) {
+    const m = cellules[src];
+    if (!m) return false;
+    for (let s = Math.floor((t - ms) / 1000); s <= Math.floor(t / 1000); s++) { const c = m.get(s); if (c && quoiDe(c) === 'musique') return true; }
+    return false;
+  }
+
+  return { noterSeparation, noterAnalyse, noterTrames, noterLocuteurs, musiqueRecente, sections, bloc, resumeCourant, musiqueTexte, fondTexte, _cellules: cellules, _locuteurs: locuteurs };
 }
 
 /* les notes de la voix résumées en éléments musicaux : leur étendue, leur registre, combien de tenues ; jamais la liste des notes */

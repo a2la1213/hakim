@@ -34,9 +34,11 @@ function dictionnaire(d = {}) {
 }
 
 // les vrais noms, des plus longs aux plus courts (« Hakimou » avant « Hakim »), en mot entier, sans tenir compte de la casse
+// (09/11) compilés une fois par dictionnaire, plus à chaque texte (une demande du cerveau en a des centaines)
 function versAlias(D) {
+  if (D._versAlias) return D._versAlias;
   const l = [...D.paires].sort((a, b) => b[0].length - a[0].length);
-  return l.map(([v, a]) => [new RegExp(`(?<![\\p{L}\\p{N}_])${echapper(v)}(?![\\p{L}\\p{N}_])`, 'giu'), a, v]);
+  return (D._versAlias = l.map(([v, a]) => [new RegExp(`(?<![\\p{L}\\p{N}_])${echapper(v)}(?![\\p{L}\\p{N}_])`, 'giu'), a, v]));
 }
 
 // garde la casse du mot remplacé : « HAKIM » → « ZORVAN », « hakim » → « zorvan »
@@ -46,8 +48,24 @@ function casse(modele, mot) {
   return mot;
 }
 
+/* (09/11, Ahmed : « une requête préconstruite ») LA DEMANDE PRÉCONSTRUITE : chaque demande du cerveau renvoie toute sa conversation (130 k jetons
+   et plus) ; seuls ses derniers messages sont neufs. Chaque texte déjà masqué est gardé (D._memo, ~4 M caractères au plus, les plus anciens
+   oubliés d'abord) : au départ, seul le neuf est masqué, le reste est déjà prêt. Sûr : un alias ne change jamais (une valeur vue garde le sien,
+   un nouveau nom recharge le dictionnaire, donc vide la mémoire). */
+const MEMO_MIN = 160, MEMO_MAX = 4e6;
 function masquerTexte(t, D) {
   if (typeof t !== 'string' || !t) return t;
+  if (t.length < MEMO_MIN || D.memo === false) return masquerNeuf(t, D);
+  const m = D._memo || (D._memo = { textes: new Map(), taille: 0, trouves: 0, neufs: 0 });
+  const deja = m.textes.get(t);
+  if (deja !== undefined) { m.textes.delete(t); m.textes.set(t, deja); m.trouves++; return deja; }
+  const s = masquerNeuf(t, D);
+  m.neufs++;
+  m.textes.set(t, s); m.taille += t.length + s.length;
+  for (const [k, v] of m.textes) { if (m.taille <= MEMO_MAX) break; m.textes.delete(k); m.taille -= k.length + v.length; }
+  return s;
+}
+function masquerNeuf(t, D) {
   let s = t;
   for (const [nom, re, alias] of MOTIFS) {
     s = s.replace(re, (m) => {
@@ -60,20 +78,26 @@ function masquerTexte(t, D) {
   return s;
 }
 
+// (09/11) les retours (alias → vrai) et leurs motifs : refaits seulement quand une valeur s'ajoute (plus à chaque morceau du flux)
 function retours(D) {
+  const n = Object.keys(D.valeurs).length;
+  if (D._retours && D._retours.n === n) return D._retours.l;
   const l = D.paires.map(([v, a]) => [a, v]);
   for (const [cle, a] of Object.entries(D.valeurs)) l.push([a, cle.slice(cle.indexOf('|') + 1)]);
-  return l.sort((x, y) => y[0].length - x[0].length);
+  l.sort((x, y) => y[0].length - x[0].length);
+  const re = l.map(([a, v]) => {
+    const mot = /^[\p{L}\p{N}_]/u.test(a) && /[\p{L}\p{N}_]$/u.test(a);
+    return [new RegExp(mot ? `(?<![\\p{L}\\p{N}_])${echapper(a)}(?![\\p{L}\\p{N}_])` : echapper(a), mot ? 'giu' : 'g'), v, a.toLowerCase()];
+  });
+  D._retours = { n, l, re };
+  return l;
 }
 
 function demasquerTexte(t, D) {
   if (typeof t !== 'string' || !t) return t;
+  retours(D);
   let s = t;
-  for (const [a, v] of retours(D)) {
-    const mot = /^[\p{L}\p{N}_]/u.test(a) && /[\p{L}\p{N}_]$/u.test(a);
-    const re = new RegExp(mot ? `(?<![\\p{L}\\p{N}_])${echapper(a)}(?![\\p{L}\\p{N}_])` : echapper(a), mot ? 'giu' : 'g');
-    s = s.replace(re, (m) => casse(m, v));
-  }
+  for (const [re, v] of D._retours.re) s = s.replace(re, (m) => casse(m, v));
   return s;
 }
 
@@ -119,9 +143,10 @@ function demasquerReponse(o, D) {
 
 // la plus longue fin de `t` qui pourrait être le début d'un alias (à retenir jusqu'au morceau suivant)
 function finAmbigue(t, D) {
+  retours(D);
   let n = 0;
-  for (const [a] of retours(D)) {
-    for (let k = Math.min(a.length - 1, t.length); k > n; k--) if (t.slice(-k).toLowerCase() === a.slice(0, k).toLowerCase()) { n = k; break; }
+  for (const [, , a] of D._retours.re) {
+    for (let k = Math.min(a.length - 1, t.length); k > n; k--) if (t.slice(-k).toLowerCase() === a.slice(0, k)) { n = k; break; }
   }
   return n;
 }
@@ -193,21 +218,87 @@ function creerDictionnaire(groupes) {
   return { paires, valeurs: {} };
 }
 
+// (09/11) le dictionnaire gardé en mémoire tant que son fichier ne change pas (papa qui ajoute un nom le recharge, avec des mémoires neuves)
+const dictionnairesLus = new Map();                     // fichier → { cle (date + taille), D }
+function signature(fichier) { try { const st = fs.statSync(fichier); return `${st.mtimeMs}|${st.size}`; } catch (_) { return null; } }
 function lireDictionnaire(fichier) {
-  try { return dictionnaire(JSON.parse(fs.readFileSync(fichier, 'utf8'))); } catch (_) { return dictionnaire({}); }
+  const cle = signature(fichier), deja = dictionnairesLus.get(fichier);
+  if (cle && deja && deja.cle === cle) return deja.D;
+  let D;
+  try { D = dictionnaire(JSON.parse(fs.readFileSync(fichier, 'utf8'))); } catch (_) { return dictionnaire({}); }
+  if (cle) dictionnairesLus.set(fichier, { cle, D });
+  return D;
 }
 function garderDictionnaire(fichier, D) {
   if (!D.change) return;
   D.change = false;
-  try { fs.writeFileSync(`${fichier}.tmp`, JSON.stringify({ paires: D.paires, valeurs: D.valeurs }, null, 1), { mode: 0o600 }); fs.renameSync(`${fichier}.tmp`, fichier); } catch (_) {}
+  try {
+    fs.writeFileSync(`${fichier}.tmp`, JSON.stringify({ paires: D.paires, valeurs: D.valeurs }, null, 1), { mode: 0o600 }); fs.renameSync(`${fichier}.tmp`, fichier);
+    const deja = dictionnairesLus.get(fichier);
+    if (deja && deja.D === D) deja.cle = signature(fichier);   // notre propre écriture : le même dictionnaire, ses mémoires restent
+  } catch (_) {}
+}
+
+/* (09/11, Ahmed : « les requêtes qui sortent de notre filtre : une seule et même requête, pas plusieurs avant le départ » ; Nour : d'abord
+   MESURER) le registre du relais : une ligne par requête qui part chez Anthropic (jarvis/relais-requetes.jsonl, en ajout seul, écrit après
+   coup sans jamais retenir le flux). Rien du contenu : le chemin, le modèle, les tailles, les temps (premier octet d'Anthropic, premier mot,
+   premier morceau rendu à claude, fin), le statut, l'usage du cache, la connexion réutilisée ou neuve, le n° du tour de papa en cours
+   (contexte()) et qui l'a lancée (l'en-tête x-hakim-etiquette, retiré avant le départ : il ne sort jamais du Mac). */
+const ETIQUETTE = 'x-hakim-etiquette';
+// ce que la demande dit d'elle-même, sans son texte : modèle, flux, nombre de messages et d'outils, taille du système, points de cache
+function resumeDemande(o) {
+  if (!o || typeof o !== 'object') return {};
+  const sys = typeof o.system === 'string' ? o.system.length : Array.isArray(o.system) ? o.system.reduce((n, b) => n + String((b && b.text) || '').length, 0) : 0;
+  let cache = 0;
+  const compter = (b) => { if (b && typeof b === 'object' && b.cache_control) cache++; };
+  if (Array.isArray(o.system)) o.system.forEach(compter);
+  if (Array.isArray(o.tools)) o.tools.forEach(compter);
+  if (Array.isArray(o.messages)) for (const m of o.messages) if (Array.isArray(m && m.content)) m.content.forEach(compter);
+  return { modele: typeof o.model === 'string' ? o.model.slice(0, 60) : null, flux: !!o.stream, max_tokens: Number(o.max_tokens) || null,
+    messages: Array.isArray(o.messages) ? o.messages.length : 0, outils: Array.isArray(o.tools) ? o.tools.length : 0, systeme_car: sys, points_cache: cache,
+    reflexion: !!(o.thinking && o.thinking.type && o.thinking.type !== 'disabled') };
+}
+// l'usage rendu par Anthropic (message_start, message_delta, ou la réponse entière) : entrée, cache lu, cache écrit, sortie
+function noterUsage(l, u) {
+  if (!u || typeof u !== 'object') return;
+  if (Number.isFinite(u.input_tokens)) l.entree = u.input_tokens;
+  if (Number.isFinite(u.cache_read_input_tokens)) l.cache_lu = u.cache_read_input_tokens;
+  if (Number.isFinite(u.cache_creation_input_tokens)) l.cache_ecrit = u.cache_creation_input_tokens;
+  if (Number.isFinite(u.output_tokens)) l.sortie = u.output_tokens;
+}
+function ecrireRegistre(registre, l) {
+  if (!registre) return;
+  if (typeof registre === 'function') { try { registre(l); } catch (_) {} return; }
+  fs.appendFile(registre, JSON.stringify(l) + '\n', { mode: 0o600 }, () => {});
 }
 
 // le relais : rend { url, serveur, stats } quand il écoute ; cible : https://api.anthropic.com
-function demarrer(fichier, { cible = 'https://api.anthropic.com', port = 0, journal = null } = {}) {
+// registre : un fichier (ou une fonction) qui reçoit une ligne par requête ; contexte() : ce que le cockpit sait du moment (n° de tour…)
+/* (09/11, « une requête préconstruite, qui part d'un coup ») la connexion à Anthropic reste ouverte entre deux tours (60 s au lieu des 5 s de
+   Node : papa parle toutes les 20 à 40 s) ; une connexion qu'Anthropic aurait fermée entre-temps est refaite une fois, sans que claude le voie
+   (le corps est encore là, rien n'est parti). Et ses motifs (noms, mails, téléphones…) sont compilés dès le démarrage, pas à la première demande. */
+const GARDE_CONNEXION_MS = 60000;
+function demarrer(fichier, { cible = 'https://api.anthropic.com', port = 0, journal = null, registre = null, contexte = null, garde = GARDE_CONNEXION_MS } = {}) {
   const u = new URL(cible);
-  const stats = { demandes: 0, remplaces: 0, erreurs: 0 };
+  const stats = { demandes: 0, remplaces: 0, erreurs: 0, requetes: 0, reessais: 0 };
+  const mod = u.protocol === 'https:' ? https : http;
+  const agent = new mod.Agent({ keepAlive: true, keepAliveMsecs: 15000, timeout: garde, maxFreeSockets: 16 });
+  try { const D = lireDictionnaire(fichier); demasquerTexte(masquerNeuf('Échauffement : a@b.ch, +41 79 000 00 00, 46.2000, 6.1000.', D), D); finAmbigue('x', D); } catch (_) {}
   return new Promise((ok, ko) => {
     const serveur = http.createServer((req, res) => {
+      const t0 = Date.now();
+      const l = { ts: t0, chemin: String(req.url || '').split('?')[0].slice(0, 80), methode: req.method,
+        etiquette: req.headers[ETIQUETTE] ? String(req.headers[ETIQUETTE]).slice(0, 60) : null };
+      try { if (contexte) Object.assign(l, contexte() || {}); } catch (_) {}
+      stats.requetes++;
+      let fini = false;
+      const finir = (statut) => {
+        if (fini) return;
+        fini = true;
+        l.statut = statut != null ? statut : l.statut;
+        l.ms = Date.now() - t0;
+        ecrireRegistre(registre, l);
+      };
       const morceaux = [];
       req.on('data', d => morceaux.push(d));
       req.on('end', () => {
@@ -218,6 +309,7 @@ function demarrer(fichier, { cible = 'https://api.anthropic.com', port = 0, jour
         if (messages) {
           try {
             const o = JSON.parse(corps.toString('utf8'));
+            Object.assign(l, resumeDemande(o));
             flux = !!o.stream;
             const avant = corps.length;
             corps = Buffer.from(JSON.stringify(masquerDemande(o, D)));
@@ -225,41 +317,67 @@ function demarrer(fichier, { cible = 'https://api.anthropic.com', port = 0, jour
             garderDictionnaire(fichier, D);
           } catch (e) { stats.erreurs++; if (journal) journal('filtre_erreur', { quoi: 'demande', erreur: String(e.message || e).slice(0, 80) }); }
         }
+        l.octets_aller = corps.length;
+        l.filtre_ms = Date.now() - t0;                                      // le temps du relais à l'aller (lecture + masque)
         const entetes = { ...req.headers, host: u.host, 'content-length': String(corps.length) };
         delete entetes['transfer-encoding']; delete entetes['accept-encoding'];   // le retour en clair (non compressé) pour le relire
-        const mod = u.protocol === 'https:' ? https : http;
-        const amont = mod.request({ hostname: u.hostname, port: u.port || (u.protocol === 'https:' ? 443 : 80), path: req.url, method: req.method, headers: entetes }, (r) => {
+        delete entetes[ETIQUETTE];                                          // l'étiquette reste sur le Mac
+        const partir = (essai) => {
+        const amont = mod.request({ hostname: u.hostname, port: u.port || (u.protocol === 'https:' ? 443 : 80), path: req.url, method: req.method, headers: entetes, agent }, (r) => {
+          l.statut = r.statusCode;
+          l.entetes_ms = Date.now() - t0;                                   // les en-têtes d'Anthropic reçus
+          let retour = 0;
+          r.on('data', (d) => { if (!retour) l.amont_ms = Date.now() - t0; retour += d.length; l.octets_retour = retour; });
+          r.on('error', () => finir(l.statut));
+          res.on('close', () => finir(l.statut));
           const h = { ...r.headers };
-          if (!messages) { res.writeHead(r.statusCode, h); r.pipe(res); return; }
+          if (!messages) { res.writeHead(r.statusCode, h); r.pipe(res); r.on('end', () => finir(r.statusCode)); return; }
           delete h['content-length'];
           res.writeHead(r.statusCode, h);
           if (flux && /event-stream/.test(String(r.headers['content-type'] || ''))) {
             const traduire = traducteurFlux(D);
-            let tampon = '';
+            let tampon = '', traduction = 0;
             r.setEncoding('utf8');
             r.on('data', (d) => {
               tampon += d;
               let i;
-              while ((i = tampon.indexOf('\n\n')) >= 0) { const ev = tampon.slice(0, i); tampon = tampon.slice(i + 2); const x = traduire(ev); if (x) res.write(x); }
+              while ((i = tampon.indexOf('\n\n')) >= 0) {
+                const ev = tampon.slice(0, i); tampon = tampon.slice(i + 2);
+                const a = Date.now();
+                if (!l.premier_mot_ms && /"(text_delta|input_json_delta)"/.test(ev)) l.premier_mot_ms = a - t0;
+                if (/"(message_start|message_delta|error)"/.test(ev)) { try { const o = JSON.parse(ev.split('\n').find(x => x.startsWith('data:')).slice(5)); noterUsage(l, (o.message && o.message.usage) || o.usage); if (o.type === 'error' && o.error) l.erreur = String(o.error.type || o.error.message || '').slice(0, 80); } catch (_) {} }
+                const x = traduire(ev);
+                traduction += Date.now() - a;
+                if (x) { if (!l.rendu_ms && /"(text_delta|input_json_delta)"/.test(x)) l.rendu_ms = Date.now() - t0; res.write(x); }
+              }
             });
-            r.on('end', () => { if (tampon.trim()) res.write(traduire(tampon)); res.end(); });
+            r.on('end', () => { if (tampon.trim()) res.write(traduire(tampon)); res.end(); l.traduction_ms = traduction; finir(r.statusCode); });
             return;
           }
           const b = [];
           r.on('data', d => b.push(d));
           r.on('end', () => {
             let t = Buffer.concat(b).toString('utf8');
-            try { t = JSON.stringify(demasquerReponse(JSON.parse(t), D)); } catch (_) {}
+            try { const o = JSON.parse(t); noterUsage(l, o.usage); if (o.error) l.erreur = String(o.error.type || o.error.message || '').slice(0, 80); t = JSON.stringify(demasquerReponse(o, D)); } catch (_) {}
             res.end(t);
+            finir(r.statusCode);
           });
         });
-        amont.on('error', (e) => { stats.erreurs++; if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ type: 'error', error: { type: 'api_error', message: `relais : ${e.message}` } })); });
+        amont.on('socket', (s) => { l.connexion = amont.reusedSocket ? 'reutilisee' : 'neuve'; void s; });
+        amont.on('error', (e) => {
+          // une connexion gardée qu'Anthropic avait fermée : refaite une fois, sur une neuve (rien n'avait été reçu)
+          if (!essai && amont.reusedSocket && !res.headersSent && /^(ECONNRESET|EPIPE|ECONNABORTED)$/.test(String(e.code))) { stats.reessais++; l.reessai = true; return partir(1); }
+          stats.erreurs++; l.erreur = `relais : ${String(e.message || e).slice(0, 80)}`; if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ type: 'error', error: { type: 'api_error', message: `relais : ${e.message}` } })); finir(502);
+        });
         amont.end(corps);
+        };
+        partir(0);
       });
     });
     serveur.on('error', ko);
-    serveur.listen(port, '127.0.0.1', () => ok({ url: `http://127.0.0.1:${serveur.address().port}`, serveur, stats }));
+    serveur.on('close', () => agent.destroy());
+    serveur.listen(port, '127.0.0.1', () => ok({ url: `http://127.0.0.1:${serveur.address().port}`, serveur, stats, agent }));
   });
 }
 
-module.exports = { MOTIFS, creerDictionnaire, dictionnaire, masquerTexte, demasquerTexte, masquerDemande, demasquerReponse, finAmbigue, traducteurFlux, lireDictionnaire, demarrer };
+module.exports = { ETIQUETTE, resumeDemande, masquerNeuf, MOTIFS, creerDictionnaire, dictionnaire, masquerTexte, demasquerTexte, masquerDemande, demasquerReponse, finAmbigue, traducteurFlux, lireDictionnaire, demarrer };

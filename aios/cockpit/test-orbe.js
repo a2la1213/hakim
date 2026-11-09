@@ -95,3 +95,55 @@ test('(05/11) l’orbe bouge avec le plus fort des deux, même quand ils se chev
   const P = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
   assert.match(P, /return \[v, m, tel\]\.filter\(Boolean\)\.sort\(\(a, b\) => b\.niveau - a\.niveau\)\[0\] \|\| null;/);
 });
+
+test('(09/11) invisible, elle ne demande plus une image à chaque rafraîchissement de l’écran ; elle repart dès que la page revient', () => {
+  let rafs = 0, rappel = null, minuterie = null, surVisibilite = null, peintes = 0;
+  const degrade = () => ({ addColorStop() {} });
+  const ctx = new Proxy({ createRadialGradient: degrade, createLinearGradient: degrade, createConicGradient: degrade,
+    clearRect: () => { peintes++; } }, { get: (o, k) => (k in o ? o[k] : () => {}) });
+  const canvas = { getContext: () => ctx, clientWidth: 100, clientHeight: 100, width: 0, height: 0, isConnected: true, offsetParent: {} };
+  const document = { hidden: false, addEventListener: (n, f) => { if (n === 'visibilitychange') surVisibilite = f; } };
+  const fen = { devicePixelRatio: 1 };
+  const c = { window: fen, Math, performance: { now: () => 0 }, document,
+    requestAnimationFrame: (f) => { rafs++; rappel = f; return rafs; }, cancelAnimationFrame() { rappel = null; },
+    setTimeout: (f) => { minuterie = f; return 7; }, clearTimeout: () => { minuterie = null; } };
+  vm.createContext(c); vm.runInContext(src, c);
+  const o = fen.Orbe.creer(canvas, {});
+  const tour = (t) => { const f = rappel; rappel = null; if (f) f(t); };
+  tour(16); tour(32);
+  assert.equal(peintes, 2, 'visible : elle peint');
+  document.hidden = true;                                     // l'appli la cache (fenêtre de 2 px)
+  const avant = rafs;
+  tour(48);
+  assert.equal(rafs, avant, 'cachée : plus aucune image demandée');
+  assert.equal(rappel, null);
+  assert.equal(typeof minuterie, 'function', 'un coup d’œil plus tard');
+  minuterie(); tour(64);                                      // toujours cachée : elle se rendort
+  assert.equal(peintes, 2, 'rien peint cachée');
+  document.hidden = false; surVisibilite();                   // la page revient
+  tour(80);
+  assert.equal(peintes, 3, 'elle repart tout de suite');
+  o.arreter();
+  document.hidden = true; tour(96); assert.equal(rappel, null);
+});
+
+test('(09/11) le cercle de la caméra ne suit l’orbe image par image que tant qu’il est dans l’orbe ; son avatar se repose page cachée', () => {
+  const i = page.indexOf('let suiviOrbe = 0;'), f = page.slice(i, page.indexOf('function cameraDansOrbe()', i));
+  const classes = new Set(); let rafs = 0, rappel = null, places = 0;
+  const c = vm.createContext({ etat: { vision: null }, $: () => ({ classList: { contains: (k) => classes.has(k) } }),
+    placerDansOrbe: () => { places++; }, requestAnimationFrame: (fn) => { rafs++; rappel = fn; return rafs; } });
+  vm.runInContext(`${f}\nfunction cameraDansOrbe() { if (!suiviOrbe) suivreOrbe(); }`, c);
+  c.cameraDansOrbe();
+  assert.equal(rafs, 0, 'caméra éteinte : aucune boucle');
+  c.etat.vision = {}; classes.add('dans-orbe');
+  c.cameraDansOrbe(); c.cameraDansOrbe();
+  assert.equal(rafs, 1, 'une seule boucle');
+  rappel(); rappel();
+  assert.equal(rafs, 3, 'elle suit l’orbe');
+  classes.delete('dans-orbe'); rappel();
+  assert.equal(rafs, 3, 'sortie de l’orbe : la boucle s’arrête');
+  assert.match(page, /classList\.add\('dans-orbe'\);\n  cameraDansOrbe\(\);/);
+  assert.doesNotMatch(page, /function suivreOrbe\(\) \{ placerDansOrbe\(\); requestAnimationFrame\(suivreOrbe\); \}/);
+  const av = fs.readFileSync(path.join(__dirname, 'public', 'avatar.js'), 'utf8');
+  assert.equal((av.match(/document\.hidden\) \{ boucle = -1; attente = setTimeout\(tour, 250\); return; \}/g) || []).length, 2, 'les deux avatars');
+});

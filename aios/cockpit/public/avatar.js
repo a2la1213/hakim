@@ -289,7 +289,7 @@
     gl.uniform2f(uTaille, m.L, m.H);
     const positions = new Float32Array(m.n * 2);
     const actuel = {}; for (const f of FORMES) actuel[f] = 0;
-    let rire = 0, rireJusqua = 0, prochainClin = 0, clinJusqua = 0, boucle = null, lire = null, t0 = performance.now();
+    let rire = 0, rireJusqua = 0, prochainClin = 0, clinJusqua = 0, boucle = null, attente = 0, lire = null, t0 = performance.now();
     function dessiner(d) {
       const t = (performance.now() - t0) / 1000;
       if (!prochainClin) prochainClin = t + 1.5 + Math.random() * 3;
@@ -325,8 +325,10 @@
     const A = {
       dessiner,
       // lire() rend, à chaque image : { voix: {niveau, aigu} | null, parleSansSon, expression, eveil, ecoute, rireForce }
-      demarrer(l) { lire = l; if (boucle) return; const tour = () => { boucle = requestAnimationFrame(tour); try { dessiner(lire ? lire() || {} : {}); } catch (_) {} }; tour(); },
-      arreter() { if (boucle) cancelAnimationFrame(boucle); boucle = null; },
+      // (09/11, Ahmed : « alléger et accélérer tout le process ») page cachée (la fenêtre de 2 px de l'appli en conversation) : rien n'est
+      // peint, et plus une image demandée à chaque rafraîchissement de l'écran ; un coup d'œil toutes les 250 ms
+      demarrer(l) { lire = l; if (boucle) return; const tour = () => { attente = 0; if (typeof document !== 'undefined' && document.hidden) { boucle = -1; attente = setTimeout(tour, 250); return; } boucle = requestAnimationFrame(tour); try { dessiner(lire ? lire() || {} : {}); } catch (_) {} }; tour(); },
+      arreter() { if (boucle > 0) cancelAnimationFrame(boucle); if (attente) clearTimeout(attente); boucle = null; attente = 0; },
       rire(degre = 1) { rireJusqua = (performance.now() - t0) / 1000 + 0.9 + 0.35 * Math.min(5, degre); },
       get actif() { return !!boucle; },
       detruire() { A.arreter(); try { gl.getExtension('WEBGL_lose_context')?.loseContext(); } catch (_) {} },
@@ -476,7 +478,7 @@ void main() {
     gl.uniform4f(U('oreilleD'), ...(or[1] ? [or[1].base.x, or[1].base.y, or[1].pointe.x, or[1].pointe.y] : [0, 0, 0, 0]));
     gl.uniform2f(U('nOreilles'), or[0] ? 1 : 0, or[1] ? 1 : 0);
     const actuel = { cligneG: 0, cligneD: 0, ouvre: 0, sourire: 0, oreilleG: 0, oreilleD: 0, lueur: 0.2, flamme: 0.8, echelle: 1, teinte: [1, 1, 1] };
-    let rire = 0, rireJusqua = 0, prochainClin = 0, clinJusqua = 0, tic = 0, ticJusqua = 0, boucle = null, lire = null; const t0 = performance.now();
+    let rire = 0, rireJusqua = 0, prochainClin = 0, clinJusqua = 0, tic = 0, ticJusqua = 0, boucle = null, attente = 0, lire = null; const t0 = performance.now();
     function dessiner(d) {
       const t = (performance.now() - t0) / 1000;
       if (!prochainClin) prochainClin = t + 1.5 + Math.random() * 3;
@@ -502,8 +504,10 @@ void main() {
     }
     const A = {
       dessiner,
-      demarrer(l) { lire = l; if (boucle) return; const tour = () => { boucle = requestAnimationFrame(tour); try { dessiner(lire ? lire() || {} : {}); } catch (_) {} }; tour(); },
-      arreter() { if (boucle) cancelAnimationFrame(boucle); boucle = null; },
+      // (09/11, Ahmed : « alléger et accélérer tout le process ») page cachée (la fenêtre de 2 px de l'appli en conversation) : rien n'est
+      // peint, et plus une image demandée à chaque rafraîchissement de l'écran ; un coup d'œil toutes les 250 ms
+      demarrer(l) { lire = l; if (boucle) return; const tour = () => { attente = 0; if (typeof document !== 'undefined' && document.hidden) { boucle = -1; attente = setTimeout(tour, 250); return; } boucle = requestAnimationFrame(tour); try { dessiner(lire ? lire() || {} : {}); } catch (_) {} }; tour(); },
+      arreter() { if (boucle > 0) cancelAnimationFrame(boucle); if (attente) clearTimeout(attente); boucle = null; attente = 0; },
       rire(degre = 1) { rireJusqua = (performance.now() - t0) / 1000 + 0.9 + 0.35 * Math.min(5, degre); },
       get actif() { return !!boucle; },
       detruire() { A.arreter(); try { gl.getExtension('WEBGL_lose_context')?.loseContext(); } catch (_) {} },

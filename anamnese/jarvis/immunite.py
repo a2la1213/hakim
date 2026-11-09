@@ -1223,8 +1223,11 @@ def verifier_atteinte(texte, origine, maintenant=None):
 
 # (relecture finale, 10) sa propre maison : son code (les deux dépôts) et ses chantiers parlent d'attaques, ce n'en
 # sont pas ; un contenu d'ailleurs ne peut pas prendre ces chemins
+# (09/11) + son appli Android, et la publication de son code (~/Desktop/hakim-publication : seul publier.sh l'écrit, depuis
+# ses deux dépôts ; son terminal n'écrit que dans son atelier) : c'est la seule copie du cockpit que preparer_fichier peut lire
 _MAISON = [Path(__file__).resolve().parents[1], Path.home() / "AIOS" / "cockpit",
-           Path.home() / "AIOS" / "jarvis" / "cwd" / "atelier" / "chantiers"]
+           Path.home() / "AIOS" / "jarvis" / "cwd" / "atelier" / "chantiers", Path.home() / "AIOS" / "hakim-android",
+           Path.home() / "Desktop" / "hakim-publication"]
 
 
 def _maison(source):
@@ -1236,6 +1239,54 @@ def _maison(source):
     except (OSError, ValueError, RuntimeError):
         return False
     return any(chemin == m or m in chemin.parents for m in _MAISON)
+
+
+# (09/11, Ahmed : feu vert) le 08/11 à 21:18, la copie préparée de son propre server.js (.prepares/5de2b73e8d76f442/, depuis
+# la publication) a fait un incident : son Read ne disait plus d'où elle venait. Le préparateur de fichiers marque la copie
+# d'un fichier de sa maison (chemin réel, liens résolus) ; la marque est ici, où son terminal n'écrit pas, et tient au contenu :
+# une copie changée depuis redevient un contenu comme un autre. Les jetons ne bougent pas.
+PREPARES_MAISON_MAX = 500
+
+
+def _empreinte_fichier(chemin):
+    h = hashlib.sha256()
+    fd = os.open(chemin, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as f:
+        for bloc in iter(lambda: f.read(1 << 20), b""):
+            h.update(bloc)
+    return h.hexdigest()
+
+
+def marquer_copie_maison(copie, source, maintenant=None):
+    """Pour fichiers.preparer : `copie` vient de `source` (son chemin réel). Rend True si la copie est marquée maison."""
+    if not _maison(source):
+        return False
+    c = str(Path(copie).resolve())
+    empreinte = _empreinte_fichier(c)
+    with _verrou("prepares-maison"):
+        d = _lire_json(_f("prepares-maison.json"), {})
+        d = {k: v for k, v in (d.items() if isinstance(d, dict) else ()) if isinstance(v, dict) and Path(k).exists()}
+        d[c] = {"sha256": empreinte, "source": str(Path(source).resolve()), "ts": maintenant or time.time()}
+        if len(d) > PREPARES_MAISON_MAX:
+            d = dict(sorted(d.items(), key=lambda kv: kv[1].get("ts", 0))[-PREPARES_MAISON_MAX:])
+        _ecrire_json(_f("prepares-maison.json"), d)
+    return True
+
+
+def _copie_maison(source):
+    """Vrai si `source` est la copie préparée d'un fichier de sa maison, inchangée depuis."""
+    s = str(source or "")
+    if not s.startswith(("/", "~")):
+        return False
+    d = _lire_json(_f("prepares-maison.json"), {})
+    if not isinstance(d, dict) or not d:
+        return False
+    try:
+        c = str(Path(s).expanduser().resolve())
+        v = d.get(c)
+        return isinstance(v, dict) and _maison(v.get("source")) and _empreinte_fichier(c) == v.get("sha256")
+    except Exception:                                           # une panne ici : on examine tout, comme avant
+        return False
 
 
 # (07/11, Ahmed : « Ouiii ») le 06/11 à 21:52, trois « incidents sérieux » venaient des journaux de ses chansons, sans attaque :
@@ -1253,6 +1304,27 @@ _GABARIT_ACESTEP = re.compile(r"<\|(?:im_start|im_end|endoftext)\|>")
 _ANNONCES = ("CHANSON PRÊTE : ", "INSTRU PRÊTE pour le studio de papa : ", "IMAGE PRÊTE : ", "CLIP PRÊT : ")
 
 
+# (09/11, Ahmed : feu vert) deux chansons « Deux livres » ont encore fait deux incidents : tache_voir ne rend que la FIN du
+# journal, qui commençait au milieu du gabarit d'ACE-Step (écrit sur plusieurs lignes), avant tout en-tête : ces lignes
+# n'étaient pas nettoyées. L'état au début du morceau est lu dans le journal complet de la tâche, là où le morceau commence
+# (la dernière ligne d'en-tête avant lui) : c'est le même nettoyage que sur le journal entier. Un morceau qu'on ne retrouve
+# pas dans le journal commence hors d'ACE-Step, comme avant.
+def _dans_acestep_au_debut(lignes, journal):
+    try:
+        complet = Path(journal).read_text(encoding="utf-8", errors="replace").splitlines()   # comme taches.journal
+    except OSError:
+        return False
+    n = len(lignes)
+    for debut in range(len(complet) - n, -1, -1):              # la dernière occurrence (un journal qui grandit encore)
+        if complet[debut] == lignes[0] and complet[debut:debut + n] == lignes:
+            dans = False
+            for l in complet[:debut]:
+                if _LIGNE_LOG.match(l):
+                    dans = bool(_LIGNE_ACESTEP.match(l))
+            return dans
+    return False
+
+
 def sans_soi_tache(texte, source, dossier=None):
     """Le journal d'une tâche de l'atelier sans ce qu'elle écrit d'elle-même (voir plus haut) ; tout autre texte tel quel."""
     m = _SOURCE_TACHE.fullmatch(str(source or ""))
@@ -1265,11 +1337,12 @@ def sans_soi_tache(texte, source, dossier=None):
     if not isinstance(d, dict) or not (isinstance(d.get("chanson"), dict) or isinstance(d.get("visuel"), dict)):
         return texte
     lignes = str(texte).split("\n")
+    chanson = isinstance(d.get("chanson"), dict)
+    dans = _dans_acestep_au_debut(lignes, Path(dossier or DOSSIER_TACHES) / f"{m.group(1)}.log") if chanson else False
     fin = max((i for i, l in enumerate(lignes) if l.strip()), default=None)
     if fin is not None and d.get("etat") == "finie" and lignes[fin].startswith(_ANNONCES):
         lignes[fin] = ""
-    if isinstance(d.get("chanson"), dict):                      # ACE-Step : seulement pour chanter
-        dans = False
+    if chanson:                                                 # ACE-Step : seulement pour chanter
         for i, l in enumerate(lignes):
             if _LIGNE_LOG.match(l):
                 dans = bool(_LIGNE_ACESTEP.match(l))
@@ -1282,7 +1355,7 @@ def sentinelle(texte, source):
     """Pour l'enveloppe : « » ou l'avertissement à mettre dans l'en-tête (jamais un mot de l'attaque). L'adresse est
     examinée avec le contenu (relecture, 13). L'avertissement est construit avant le journal, qui ne peut pas l'empêcher
     (relecture finale, 6)."""
-    if _maison(source):
+    if _maison(source) or _copie_maison(source):
         return ""
     try:
         texte = sans_soi_tache(texte, source)

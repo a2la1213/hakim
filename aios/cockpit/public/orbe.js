@@ -56,9 +56,23 @@
       return { w, h, dpr };
     }
 
+    // (09/11, Ahmed : « alléger et accélérer tout le process ») invisible (page cachée, ou dans la fenêtre de 2 px de l'appli pendant
+    // une conversation, où le navigateur la croit à l'écran et rappelle chaque image 60 à 120 fois par seconde) : plus aucune image
+    // demandée, un coup d'œil toutes les 250 ms, et la reprise tout de suite quand la page revient
+    let veille = 0, finie = false;
+    function reprendre() {
+      if (veille) { clearTimeout(veille); veille = 0; }
+      if (!finie && !raf) raf = requestAnimationFrame(image);
+    }
+    if (typeof document.addEventListener === 'function') document.addEventListener('visibilitychange', () => { if (!document.hidden && veille) reprendre(); });
+
     function image(maintenant) {
+      raf = 0;
+      if (document.hidden || !canvas.isConnected || canvas.offsetParent === null) {   // invisible : rien à peindre
+        if (!veille && !finie) veille = setTimeout(reprendre, 250);
+        return;
+      }
       raf = requestAnimationFrame(image);
-      if (document.hidden || !canvas.isConnected || canvas.offsetParent === null) return;   // invisible : rien à peindre
       const { w, h, dpr } = dimensionner();
       let brut = 0, b = [0, 0, 0];
       const r = source ? source() : null;
@@ -176,7 +190,7 @@
       parole(x) { const q = x || null; if (q === qui) return; qui = q; viser(); },
       source(fn) { source = fn || null; },
       pulser(x) { impulsion = Math.min(1, impulsion + (x == null ? 0.25 : x)); },
-      arreter() { cancelAnimationFrame(raf); },
+      arreter() { finie = true; cancelAnimationFrame(raf); raf = 0; if (veille) { clearTimeout(veille); veille = 0; } },
     };
   }
 

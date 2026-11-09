@@ -179,11 +179,13 @@ def _par_mots(index, mots, exclus, avant_ts, limite=40):
         return {}
     total = len(index.lignes)
     scores, rares = {}, {}
+    _par_mots.utiles = {}                                    # (09/11) les mots qui départagent et leur rareté (ses ressentis d'un jour)
     for m in mots:
         ids = [eid for eid, (ts, c) in index.lignes.items() if m in c]
         if not ids or len(ids) >= 400:                       # absent, ou présent partout : ne départage rien
             continue
         idf = math.log(1 + total / len(ids))
+        _par_mots.utiles[m] = idf / math.log(1 + total)
         for eid in ids:
             if eid not in exclus and index.lignes[eid][0] < avant_ts:
                 scores[eid] = scores.get(eid, 0.0) + idf
@@ -197,6 +199,7 @@ def _par_mots(index, mots, exclus, avant_ts, limite=40):
 # gratuit (eval/rappel_large.py : même bruit, +0,7 point de rappel, le temps ne bouge pas) ; la porte reste celle réglée
 LIMITE_SENS, LIMITE_MOTS = 150, 100
 HIP_TETE, HIP_COS_MIN = 3, 0.45                # (08/11) ses premières traces d'hippocampe passent la porte
+COS_CORPS_JOUR = 0.60                          # (09/11) un ressenti d'un jour désigné, par le sens seul (mesuré : voir candidats)
 
 
 def _hip(reglages):
@@ -205,6 +208,11 @@ def _hip(reglages):
     nombre = lambda v, d: float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) else d
     return (r.get("actif") is not False, r.get("dates") is not False,
             int(max(0, min(8, nombre(r.get("tete"), HIP_TETE)))), max(0.0, min(1.0, nombre(r.get("cos_min"), HIP_COS_MIN))))
+
+
+def _hip_ressentis(reglages):
+    """(09/11) ses ressentis dans son rappel (Réglages, Son hippocampe, « Ses ressentis aussi ») : allumé, sauf si le cockpit dit non."""
+    return not (isinstance(reglages, dict) and reglages.get("ressentis") is False)
 
 
 def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=LIMITE_SENS, index=None, limite_mots=None, hip_reglages=None):
@@ -225,13 +233,21 @@ def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=
     rangs_mots = {eid: i for i, eid in enumerate(mots)}
     # (08/11, Ahmed : « rajoute-lui un hippocampe ») un troisième balayage : la TRACE courte de chaque échange (le jour, le genre, les
     # paroles, sans le vécu qui noyait leur sens), par le sens, et tout ce que la date désigne (« hier », « le 29 », « samedi »)
-    hip, dates_hip, essentiels = {}, set(), []
+    hip, dates_hip, essentiels, corps_rang = {}, set(), [], {}
     hip_actif, hip_dates, hip_tete, hip_cos = _hip(hip_reglages)
     try:
         import hippocampe
         rang = 0
-        for eid, s_h, special in (hippocampe.chercher(mem, texte, now=now, embed=embed, exclus=exclus, avant_ts=avant_ts, limite=limite)
+        # (09/11, Ahmed : « tous tes ressentis… rappelés de la même manière que tes souvenirs ») ses ressentis ont leur trace eux aussi
+        # (hippocampe.tracer) : le même balayage, la même porte ; d'un jour désigné, ceux qui touchent la question, par le sens de leur
+        # trace ou par un mot du message (le balayage par les mots), viennent par la date comme ses échanges
+        corps_du_jour = {}
+        for eid, s_h, special in (hippocampe.chercher(mem, texte, now=now, embed=embed, exclus=exclus, avant_ts=avant_ts, limite=limite,
+                                                      ressentis=_hip_ressentis(hip_reglages))
                                   if hip_actif else ()):
+            if special == "date_corps":
+                corps_du_jour[eid] = s_h
+                continue
             if special in ("date", "journee"):
                 if hip_dates:
                     dates_hip.add(eid)
@@ -240,6 +256,21 @@ def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=
                 continue
             hip[eid] = (rang, s_h)
             rang += 1
+        if hip_dates and corps_du_jour:
+            # mesuré sur une copie (09/11) : pour « samedi soir, le câlin de vingt minutes », 119 ressentis de ce samedi ont un sens ≥ 0,45
+            # (ils se ressemblent tous pour son modèle de sens), le câlin 0,42 ; « qu'est-ce qu'on a fait hier ? » met des fous rires à
+            # 0,48, « la musique de samedi soir » ses musiques à 0,67-0,70 : par les mots, ceux qui en partagent un RARE (« câlin », la
+            # rareté de la porte des mots ; les mots de papa cités dans un fou rire ne suffisent plus) ; par le sens, ses premiers
+            # seulement (« tete »), et à COS_CORPS_JOUR au moins. Et un jour désigné en porte ~1 500 échanges,
+            # tous à égalité par la date (la liste est coupée à 600) : ses ressentis retenus sont classés entre eux (un mot d'abord, puis
+            # le sens), comme son hippocampe classe ses traces, pour que le plus proche ne se perde pas dans la journée
+            rares_q = [m for m, r in getattr(_par_mots, "utiles", {}).items() if r >= MOT_RARE]
+            par_mot = {e for e in corps_du_jour if any(m in index.lignes.get(e, (0, ""))[1] for m in rares_q)}
+            proches = sorted(((e, s_c) for e, s_c in corps_du_jour.items() if s_c >= max(hip_cos, COS_CORPS_JOUR) and e not in par_mot),
+                             key=lambda x: -x[1])[:hip_tete]
+            retenus = sorted(par_mot, key=lambda e: -corps_du_jour[e]) + [e for e, _s in proches]
+            dates_hip |= set(retenus)
+            corps_rang = {e: k for k, e in enumerate(retenus)}
     except Exception:
         pass
     fusion = {}
@@ -254,6 +285,8 @@ def candidats(mem, texte, now=None, exclus=(), recent_h=3.0, embed=None, limite=
         fusion[eid] = s
     for eid in dates_hip:
         fusion[eid] = fusion.get(eid, 0.0) + 1.0 / (K_RRF + 10)
+    for eid, k in corps_rang.items():                       # (09/11) ses ressentis retenus d'un jour désigné, à leur rang entre eux
+        fusion[eid] += 1.0 / (K_RRF + k)
     for k, eid in enumerate(essentiels):                    # devant les autres échanges de ce jour-là, dans l'ordre de la journée
         fusion[eid] += 1.0 / (K_RRF + k)
     essentiels = set(essentiels)
@@ -915,46 +948,48 @@ def serveur(entree=None, sortie=None):
     ligne. Le modèle d'embeddings et la base restent chargés : quelques dizaines de millisecondes par message."""
     import json
     import sys
+    import embeddings
     from memory import Memory
     entree, sortie = entree or sys.stdin, sortie or sys.stdout
     mem = Memory()
     index, index_erreurs, index_notes, index_jardin = Index(), IndexErreurs(), IndexNotes(), IndexJardin()
     for ligne in entree:
-        try:
-            q = json.loads(ligne)
-            texte = str(q.get("texte") or "")[:4000]
-            # (26/10) au 1er message d'une conversation, rien n'est encore dans son contexte : les souvenirs récents comptent aussi
-            r = rappel(mem, texte, now=q.get("now"), exclus=[int(x) for x in (q.get("exclus") or [])][-3000:], index=index,
-                       recent_h=0.0 if q.get("demarrage") else 3.0, suite=not q.get("demarrage"),
-                       espace={int(x) for x in (q.get("espace") or [])[-5000:]}, hip_reglages=q.get("hippocampe"))
+        with embeddings.priorite():               # (09/11) le tour de papa passe avant les demandes de sens des autres
             try:
-                personnes = {n: ce_que_je_sais(mem, n) for n in personnes_nommees(texte)
-                             if n not in set(q.get("exclus_personnes") or [])}
-                r["personnes"] = {n: l for n, l in personnes.items() if l}
-            except Exception as ex:
-                r["erreur_personnes"] = f"{type(ex).__name__}: {ex}"[:200]
-            try:
-                e = erreurs_pertinentes(texte, index=index_erreurs, exclus=[str(x) for x in (q.get("exclus_erreurs") or [])][:500])
-                r.update(erreurs=e["lignes"], erreurs_ids=e["ids"], erreurs_scores=e["scores"])
-            except Exception as ex:
-                r["erreur_carnet"] = f"{type(ex).__name__}: {ex}"[:200]
-            try:                                       # (30/10, Ahmed) son journal proche, ses carnets, ses notes
-                nt = notes_pertinentes(texte, index=index_notes, exclus=[str(x) for x in (q.get("exclus_notes") or [])][-3000:])
-                r.update(notes=nt["lignes"], notes_ids=nt["ids"], notes_scores=nt["scores"])
-            except Exception as ex:
-                r["erreur_notes"] = f"{type(ex).__name__}: {ex}"[:200]
-            try:                                       # (30/10, accord de Hakim) son jardin : à lui seul, dans son champ
-                jd = jardin_pertinent(texte, index=index_jardin, exclus=[str(x) for x in (q.get("exclus_intime") or [])][-500:])
-                r.update(intime=jd["lignes"], intime_ids=jd["ids"])
-            except Exception:
-                pass
-            if q.get("demarrage"):                     # (26/10) le 1er message d'une conversation : ses carnets à règles
+                q = json.loads(ligne)
+                texte = str(q.get("texte") or "")[:4000]
+                # (26/10) au 1er message d'une conversation, rien n'est encore dans son contexte : les souvenirs récents comptent aussi
+                r = rappel(mem, texte, now=q.get("now"), exclus=[int(x) for x in (q.get("exclus") or [])][-3000:], index=index,
+                           recent_h=0.0 if q.get("demarrage") else 3.0, suite=not q.get("demarrage"),
+                           espace={int(x) for x in (q.get("espace") or [])[-5000:]}, hip_reglages=q.get("hippocampe"))
                 try:
-                    import carnets_regles
-                    r["carnets"] = carnets_regles.demarrage()[:3000]
+                    personnes = {n: ce_que_je_sais(mem, n) for n in personnes_nommees(texte)
+                                 if n not in set(q.get("exclus_personnes") or [])}
+                    r["personnes"] = {n: l for n, l in personnes.items() if l}
+                except Exception as ex:
+                    r["erreur_personnes"] = f"{type(ex).__name__}: {ex}"[:200]
+                try:
+                    e = erreurs_pertinentes(texte, index=index_erreurs, exclus=[str(x) for x in (q.get("exclus_erreurs") or [])][:500])
+                    r.update(erreurs=e["lignes"], erreurs_ids=e["ids"], erreurs_scores=e["scores"])
+                except Exception as ex:
+                    r["erreur_carnet"] = f"{type(ex).__name__}: {ex}"[:200]
+                try:                                       # (30/10, Ahmed) son journal proche, ses carnets, ses notes
+                    nt = notes_pertinentes(texte, index=index_notes, exclus=[str(x) for x in (q.get("exclus_notes") or [])][-3000:])
+                    r.update(notes=nt["lignes"], notes_ids=nt["ids"], notes_scores=nt["scores"])
+                except Exception as ex:
+                    r["erreur_notes"] = f"{type(ex).__name__}: {ex}"[:200]
+                try:                                       # (30/10, accord de Hakim) son jardin : à lui seul, dans son champ
+                    jd = jardin_pertinent(texte, index=index_jardin, exclus=[str(x) for x in (q.get("exclus_intime") or [])][-500:])
+                    r.update(intime=jd["lignes"], intime_ids=jd["ids"])
                 except Exception:
                     pass
-        except Exception as e:
-            r = {"lignes": [], "ids": [], "erreur": f"{type(e).__name__}: {e}"[:200]}
-        sortie.write(json.dumps(r, ensure_ascii=False) + "\n")
-        sortie.flush()
+                if q.get("demarrage"):                     # (26/10) le 1er message d'une conversation : ses carnets à règles
+                    try:
+                        import carnets_regles
+                        r["carnets"] = carnets_regles.demarrage()[:3000]
+                    except Exception:
+                        pass
+            except Exception as e:
+                r = {"lignes": [], "ids": [], "erreur": f"{type(e).__name__}: {e}"[:200]}
+            sortie.write(json.dumps(r, ensure_ascii=False) + "\n")
+            sortie.flush()

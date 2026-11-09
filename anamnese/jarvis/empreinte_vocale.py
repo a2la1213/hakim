@@ -174,29 +174,54 @@ def _ecrire(f, d):
     os.replace(tmp, f)
 
 
-def _charger_salle(t, salle=None):
-    if _salle["voix"] or _salle["ts"]:
-        return
-    _salle["candidates"] = []                            # (04/11) la salle se relit en entier du fichier, candidates comprises
+def _mtime(f):
     try:
-        d = json.loads(Path(salle or SALLE).read_text(encoding="utf-8"))
+        return os.stat(f).st_mtime_ns
+    except OSError:
+        return None
+
+
+def _charger_salle(t, salle=None):
+    # (09/11, Ahmed : « reconnaître les signatures vocales en temps réel pendant le live et pouvoir les enregistrer à la volée ») la salle
+    # est tenue par PLUSIEURS processus (l'oreille des voix, le serveur de voix, l'outil voix_nommer) : relue dès que son fichier a
+    # changé sous lui (avant : lue une fois, puis écrasée par la copie en mémoire d'un autre processus ; un nom donné se perdait)
+    f = salle or SALLE
+    m = _mtime(f)
+    if (_salle["voix"] or _salle["ts"]) and (m is None or _salle.get("_fichier") != str(f) or _salle.get("_mtime") in (None, m)):
+        return                                           # rien de neuf dans SON fichier : la mémoire tient (comme avant)
+    _salle.update(voix=[], ts=0.0, candidates=[])        # (04/11) la salle se relit en entier du fichier, candidates comprises
+    _salle["_fichier"], _salle["_mtime"] = str(f), _mtime(f)
+    try:
+        d = json.loads(Path(f).read_text(encoding="utf-8"))
         if t - d.get("ts", 0) <= SALLE_DUREE_S:
             _salle.update(ts=d["ts"], dernier=d.get("dernier"),
                           voix=[{"nom": x["nom"], "c": np.array(x["c"]), "n": x["n"], "m": x.get("m", 0)} for x in d.get("voix", [])],
                           # un fichier d'avant le 04/11 n'a pas de clé « candidates » : aucune candidate
+                          # (09/11) une candidate peut porter son numéro temporaire (« nom »)
                           candidates=[{"c": np.array(x["c"]), "n": x.get("n", 1), "m": x.get("m", 0),
-                                       "parole": [[float(u), float(s)] for u, s in x.get("parole", [])]}
+                                       "parole": [[float(u), float(s)] for u, s in x.get("parole", [])],
+                                       **({"nom": str(x["nom"])} if x.get("nom") else {})}
                                       for x in d.get("candidates", [])])
     except (OSError, ValueError, KeyError, TypeError):
         pass
 
 
 def _sauver_salle(salle=None):
-    _ecrire(salle or SALLE, {"ts": _salle["ts"], "dernier": _salle["dernier"],
-                             "voix": [{"nom": x["nom"], "c": np.round(x["c"], 5).tolist(), "n": x["n"], "m": x.get("m", 0)}
-                                      for x in _salle["voix"]],
-                             "candidates": [{"c": np.round(x["c"], 5).tolist(), "n": x["n"], "m": x.get("m", 0), "parole": x["parole"]}
-                                            for x in _salle.get("candidates", [])]})
+    f = salle or SALLE
+    _ecrire(f, {"ts": _salle["ts"], "dernier": _salle["dernier"],
+                "voix": [{"nom": x["nom"], "c": np.round(x["c"], 5).tolist(), "n": x["n"], "m": x.get("m", 0)}
+                         for x in _salle["voix"]],
+                "candidates": [{"c": np.round(x["c"], 5).tolist(), "n": x["n"], "m": x.get("m", 0), "parole": x["parole"],
+                                **({"nom": x["nom"]} if x.get("nom") else {})}
+                               for x in _salle.get("candidates", [])]})
+    _salle["_fichier"], _salle["_mtime"] = str(f), _mtime(f)
+
+
+def _prochain_numero(moyenne_papa=True):
+    """Le numéro qui suit le plus grand de la salle, candidates à numéro temporaire comprises (09/11) ; une voix rattachée à papa ne
+    laisse pas son numéro à une autre."""
+    nums = [int(m.group(1)) for x in _salle["voix"] + _salle.get("candidates", []) for m in [re.fullmatch(r"voix (\d+)", str(x.get("nom") or ""))] if m]
+    return f"voix {max(nums) + 1 if nums else (2 if moyenne_papa else 1)}"
 
 
 def _parole(x, t):
@@ -234,8 +259,15 @@ def nommer(numero, nom, salle=None, fichier=None, maintenant=None):
     m = re.fullmatch(r"(?:voix|v)?\s*(?:n[°o]\.?\s*)?(\d+)", brut)
     cherche = f"voix {m.group(1)}" if m else brut
     x = next((v for v in _salle["voix"] if v["nom"].lower() == cherche), None)
+    # (09/11, Ahmed : « pouvoir les enregistrer à la volée ») une voix encore candidate (son numéro temporaire, dès sa première phrase) :
+    # nommée tout de suite, sans attendre ses 4 s de parole ; elle entre dans la salle
+    k = next((c for c in _salle.get("candidates", []) if str(c.get("nom") or "").lower() == cherche), None) if x is None else None
+    if k is not None:
+        _salle["candidates"] = [c for c in _salle["candidates"] if c is not k]   # (09/11) par identité : comparer deux candidates (leurs tableaux) levait une erreur
+        x = {"nom": k["nom"], "c": k["c"], "n": k["n"], "m": k.get("m", 0)}
+        _salle["voix"].append(x)
     if x is None:
-        presentes = ", ".join(v["nom"] for v in _salle["voix"][-8:]) or "aucune"
+        presentes = ", ".join(v["nom"] for v in _salle["voix"][-8:] + [c for c in _salle.get("candidates", []) if c.get("nom")][-4:]) or "aucune"
         raise ValueError(f"aucune « {numero} » dans la conversation des 3 dernières heures (voix présentes : {presentes})")
     numero = x["nom"]
     k = [v for v in connues(fichier) if v["nom"].lower() != nom.lower()]
@@ -369,10 +401,13 @@ def qui_parle(audio, fichier=None, moi=None):
     return {"moi": round(meilleur[0], 2), "registre": meilleur[1], "ahmed": round(max(sa), 2), "part_moi": round(part, 2), "verdict": verdict}
 
 
-def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None, moi=None, musique=False):
+def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None, moi=None, musique=False, numeroter=False):
     """segments : [{start, end, text[, words]}] (gardés par stt). Rend (texte étiqueté, résumé) ; résumé = {"voix": [...],
     "plusieurs": bool, "ahmed": bool, "autres": [...], "moi": ce qu'il a entendu de SA voix ou ""}. Le texte rendu peut
-    être vide (tout était sa voix). Sans voix reconnaissable : (None, None)."""
+    être vide (tout était sa voix). Sans voix reconnaissable : (None, None).
+    numeroter (09/11, Ahmed : « qu'il ne prenne jamais les paroles des autres pour les miennes » ; « mesure la latence d'attribution d'une
+    voix inconnue (numéro temporaire) ») : une voix inconnue reçoit tout de suite son NUMÉRO TEMPORAIRE (celui qu'elle gardera si elle
+    se confirme, et que voix_nommer accepte déjà) au lieu de prêter ses mots à la voix d'avant ou à papa."""
     t = time.time() if maintenant is None else maintenant
     _charger_salle(t)
     if t - _salle["ts"] > SALLE_DUREE_S:
@@ -422,7 +457,7 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
             return x["nom"], x
         return None, None
 
-    def ajouter(v, x=None, n=1, sous_musique=None):
+    def ajouter(v, x=None, n=1, sous_musique=None, nom_temporaire=None):
         # (03/11) « m » : combien de fois cette voix a été entendue pendant que le téléphone jouait de la musique
         if x is not None:
             x["c"] = (x["c"] * x["n"] + v) / (x["n"] + 1)
@@ -430,9 +465,9 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
             x["n"] += 1
             x["m"] = x.get("m", 0) + (1 if musique else 0)
             return x["nom"]
-        # le numéro qui suit le plus grand de la salle (une voix rattachée à papa ne laisse pas son numéro à une autre)
-        nums = [int(m.group(1)) for x in _salle["voix"] for m in [re.fullmatch(r"voix (\d+)", x["nom"])] if m]
-        nom = f"voix {max(nums) + 1 if nums else (2 if moyenne is not None else 1)}"
+        # le numéro qui suit le plus grand de la salle (une voix rattachée à papa ne laisse pas son numéro à une autre) ; (09/11) une
+        # candidate confirmée garde son numéro temporaire
+        nom = nom_temporaire or _prochain_numero(moyenne is not None)
         _salle["voix"].append({"nom": nom, "c": v / (np.linalg.norm(v) or 1.0), "n": n,
                                "m": (1 if musique else 0) if sous_musique is None else sous_musique})
         return nom
@@ -453,9 +488,12 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
         k["m"] += len(vs) if musique else 0
         k["parole"].append([t, round(float(secondes), 3)])
         if _parole(k, t) < CONFIRMER_S:
+            if numeroter:                                 # (09/11) son numéro temporaire, dès sa première fenêtre
+                k["nom"] = k.get("nom") or _prochain_numero(moyenne is not None)
+                return k["nom"]
             return None
-        _salle["candidates"].remove(k)
-        return ajouter(k["c"], n=k["n"], sous_musique=k["m"])
+        _salle["candidates"] = [c for c in _salle["candidates"] if c is not k]   # (09/11) par identité : comparer deux candidates (leurs tableaux) levait une erreur
+        return ajouter(k["c"], n=k["n"], sous_musique=k["m"], nom_temporaire=k.get("nom"))
 
     def qui_segment(brut):
         repli = _salle["dernier"] or ("Ahmed" if moyenne is not None else "voix 1")
@@ -557,6 +595,60 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
     if moyenne is None and len(vus) < 2:                    # sans empreinte, une seule voix : rien à dire
         return None, None
     return " ".join(morceaux), resume
+
+
+def _zone_parlee(a, trame=480):
+    """(début, fin) en secondes de ce qui sonne dans un morceau : les trames de 30 ms au-dessus de max(0,003 ; 10 % du 95e centile)."""
+    n = len(a) // trame
+    if n < 1:
+        return 0.0, len(a) / TAUX
+    rms = np.sqrt(np.mean(np.square(a[:n * trame].reshape(n, trame)), axis=1))
+    idx = np.nonzero(rms >= max(0.003, 0.1 * float(np.percentile(rms, 95))))[0]
+    if not len(idx):
+        return 0.0, len(a) / TAUX
+    return idx[0] * trame / TAUX, (idx[-1] + 1) * trame / TAUX
+
+
+def etiqueter_bloc(audio, texte, fichier=None, maintenant=None, moi=None, musique=False, nouveau_tour=True):
+    """(09/11, Ahmed, 19:29-19:32 : « il faut que tu dissocies ce que disent les autres de mes paroles » ; « la reconnaissance vocale aussi,
+    optimisée ») un morceau du micro de papa transcrit par Azure, qui ne dit ni qui parle ni le temps des mots. Avant : rien ne vérifiait
+    sa voix sur ce chemin (seule SA propre voix était cherchée, et seulement quand l'oreille vive était libre) ; une citation du live, une
+    chanson, une voix de la pièce passaient pour papa. Ici, la même reconnaissance que le chemin Whisper : l'empreinte du morceau entier
+    (reconnaitre) et ses voix fenêtre par fenêtre (etiqueter), les mots répartis également sur ce qui sonne ; une voix inconnue reçoit son
+    numéro temporaire tout de suite (numeroter). Rend ce que rendait stt.transcrire : {texte (étiqueté « [voix 3] … » s'il le faut),
+    voix: {score, verdict, locuteurs…}, moi}."""
+    a = np.asarray(audio, dtype=np.float32)
+    texte = " ".join(str(texte or "").split())
+    v = reconnaitre(a, fichier)
+    pas_apprise = etat(fichier)["echantillons"] < 2
+    sortie = {"texte": texte, "voix": {**(v or {"raison": "pas_apprise" if pas_apprise else "court"}), "duree_s": round(len(a) / TAUX, 1)}}
+    mots = texte.split()
+    if not mots or pas_apprise:
+        return sortie
+    d0, d1 = _zone_parlee(a)
+    pas = (d1 - d0) / len(mots)
+    seg = {"start": d0, "end": d1, "text": texte,
+           "words": [{"word": w, "start": d0 + i * pas, "end": d0 + (i + 1) * pas} for i, w in enumerate(mots)]}
+    etiquete, resume = etiqueter(a, [seg], nouveau_tour=nouveau_tour, fichier=fichier, maintenant=maintenant, moi=moi,
+                                 musique=musique, numeroter=True)
+    if resume and resume.get("moi"):                        # sa propre voix entendue : mise de côté (son écho)
+        sortie["moi"] = resume["moi"]
+    # (09/11, mesuré sur les voix du Mac : une citation arabe d'une autre voix à 0,41 de l'empreinte de papa passait pour lui par la règle
+    # du « registre inhabituel ») le morceau entier ne ressemble pas assez à papa (moins de 0,55) : ce qui lui était prêté est marqué
+    # « [papa ?] » ; jamais affirmé, jamais retiré (ses propres mots restent, Hakim sait qu'il doit douter)
+    if etiquete and resume and resume["ahmed"] and v and v.get("verdict") in ("doute", "autre"):
+        douteux = etiquete.replace(f"[{NOM_PAPA}] ", f"[{NOM_PAPA} ?] ")
+        etiquete = douteux if douteux.startswith("[") else f"[{NOM_PAPA} ?] {douteux}"
+        resume = {**resume, "voix": [("papa ?" if q == "Ahmed" else q) for q in resume["voix"]], "autres": resume["autres"] or ["papa ?"]}
+    if etiquete is not None and resume and (resume["autres"] or resume["plusieurs"] or resume.get("moi")):
+        sortie["texte"] = etiquete
+        sortie["voix"] = {**sortie["voix"], "locuteurs": resume["voix"],
+                          "verdict": "moi" if not resume["voix"]
+                          else "plusieurs" if resume["plusieurs"] and resume["ahmed"]
+                          else ("autre" if not resume["ahmed"] else sortie["voix"].get("verdict", "ahmed"))}
+    elif resume:
+        sortie["voix"]["locuteurs"] = resume["voix"]
+    return sortie
 
 
 def _enrichir_connue(nom, v, fichier=None):

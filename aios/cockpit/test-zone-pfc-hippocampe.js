@@ -91,3 +91,22 @@ test('la page Réglages : une zone « Son cortex préfrontal » et une zone « S
   const ribo = PAGE.slice(PAGE.indexOf("{ id: 'ribosome'"), PAGE.indexOf("{ id: 'pfc'"));
   assert.doesNotMatch(ribo, /'cortex_prefrontal'|'conscience_continue'/, 'ils ont quitté le ribosome pour leur zone');
 });
+
+// (09/11, 20:59, Ahmed, à l'écrit : « tous tes ressentis, quels qu'ils soient, doivent faire partie de ton rappel autonome, et tout ce que
+// tu vis doit être encré et rappelé de la même manière que tes souvenirs autonomes ») un interrupteur dans la zone de son hippocampe :
+// allumé par défaut ; la question à son rappel le porte (anamnese/rappel.py : hippocampe.ressentis) ; enregistré depuis la page.
+test('ses ressentis dans son rappel : allumés par défaut, éteints sur ta demande, portés par chaque question, et un bouton', () => {
+  const ctx = { lireJson: () => ({}), CORPS_REGLAGES: 'x', CORPS_INTERVALLES: [30, 60, 120, 300, 900] };
+  vm.createContext(ctx);
+  vm.runInContext(extraire('function corpsReglages(') + '\nthis.f = corpsReglages;', ctx);
+  assert.equal(ctx.f().hippocampe_ressentis, true);
+  ctx.lireJson = () => ({ hippocampe_ressentis: false });
+  assert.equal(ctx.f().hippocampe_ressentis, false);
+  const h = vm.createContext({ corpsReglages: () => ({ hippocampe: true, hippocampe_ressentis: false }) });
+  vm.runInContext(extraire('function hippocampeReglages(') + '\nthis.r = hippocampeReglages();', h);
+  assert.equal(h.r.ressentis, false, 'la question à son rappel porte l’interrupteur');
+  const post = SRV.slice(SRV.indexOf("'conscience_continue', 'cortex_prefrontal'"), SRV.indexOf("'conscience_continue', 'cortex_prefrontal'") + 3000);
+  assert.match(post, /if \(typeof q\.hippocampe_ressentis === 'boolean'\) r\.hippocampe_ressentis = q\.hippocampe_ressentis;/);
+  const hip = PAGE.slice(PAGE.indexOf("{ id: 'hippocampe'"), PAGE.indexOf("{ id: 'demandes'"));
+  assert.match(hip, /\['hippocampe_ressentis', [^\n]*'oui'\]/);
+});

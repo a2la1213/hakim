@@ -537,6 +537,87 @@ def instru_hakim(style, bpm=0, duree_s=60, titre=""):
         raise Refus(str(e))
 
 
+# ------------------------------------------------------------------------------------------------ son instru, pour la voix de papa
+# (09/11, Ahmed : « qu'il sache extraire SON instru d'une de ses chansons, “Deux livres” par exemple, pour que je pose ma voix
+# dessus ») le même Demucs que la page du Studio (extraire_instru, en file) ; Hakim nomme sa chanson par son titre.
+
+def _cle(t):
+    t = unicodedata.normalize("NFD", str(t or "").lower())
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", "".join(c for c in t if unicodedata.category(c) != "Mn")).split())
+
+
+def _meme_fichier(a, b):
+    try:
+        return bool(a) and bool(b) and Path(a).resolve() == Path(b).resolve()
+    except OSError:
+        return False
+
+
+def ses_chansons(chansons=None):
+    """Ses chansons finies (fiche « prête » et son MP3 là ; jamais la prise « sans correction »), la plus récente d'abord."""
+    l = []
+    for f in Path(chansons or CHANSONS).glob("*.json"):
+        d = _lire(f, {}) or {}
+        mp3 = str(d.get("mp3") or "")
+        if d.get("etat") == "prête" and d.get("nom") and mp3 and not mp3.endswith("-sans-correction.mp3") and Path(mp3).is_file():
+            l.append(d)
+    return sorted(l, key=lambda d: d.get("fin") or d.get("debut") or 0, reverse=True)
+
+
+def trouver_chanson(demande, chansons=None):
+    """« Deux livres » → sa chanson : son nom exact (20261109-171743-deux-livres) ou son MP3, sinon son titre sans accents ni
+    casse (le titre exact d'abord, puis un titre qui le contient), la version la plus récente. Rend (fiche, les autres versions)."""
+    q = " ".join(str(demande or "").split())
+    if not q:
+        raise Refus("dis de quelle chanson (son titre, ou son nom)")
+    toutes = ses_chansons(chansons)
+    for d in toutes:
+        if q in (d["nom"], Path(d["mp3"]).name, Path(d["mp3"]).stem) or _meme_fichier(Path(q).expanduser(), d["mp3"]):
+            return d, []
+    k = _cle(q)
+    trouves = [d for d in toutes if _cle(d.get("titre")) == k] + [d for d in toutes if k and k in _cle(d.get("titre")) and _cle(d.get("titre")) != k]
+    if not trouves:
+        recentes = ", ".join(f"« {d.get('titre')} »" for d in toutes[:6]) or "aucune"
+        raise Refus(f"aucune de tes chansons finies ne s'appelle « {q} » (les dernières : {recentes})")
+    return trouves[0], trouves[1:]
+
+
+def instru_du_studio(demande, studio=None):
+    """Une instru du Studio par son identifiant (studio_avis les liste) ou son titre, ou un chemin de son. Rend le chemin, ou ''."""
+    q = " ".join(str(demande or "").split())
+    if not q:
+        return ""
+    if Path(q).expanduser().is_file():
+        return str(Path(q).expanduser())
+    l = sorted((x for x in (_lire(f, {}) or {} for f in (Path(studio or STUDIO) / "instrus").glob("*.json"))
+                if x.get("mp3") and Path(x["mp3"]).is_file()), key=lambda x: x.get("fin") or 0, reverse=True)
+    x = next((x for x in l if x.get("id") == q), None) or next((x for x in l if _cle(x.get("titre")) == _cle(q)), None)
+    return x["mp3"] if x else ""
+
+
+def instru_de_chanson(demande, titre="", refaire=False, chansons=None, studio=None, demarrer=None):
+    """Sa chanson → son instru seule (Demucs retire sa voix), dans les instrus du Studio : papa y pose sa prise, puis Hakim la
+    mixe (studio_mixer). Ni deux fois la même (déjà faite, ou déjà en file), sauf refaire. Rend {etat, chanson, autres, instru|travail}."""
+    c, autres = trouver_chanson(demande, chansons)
+    if c.get("instrumental"):
+        raise Refus(f"« {c.get('titre')} » est déjà une instru (pas de voix à retirer) : papa peut poser sa prise directement dessus "
+                    "dans le Studio")
+    st = Path(studio or STUDIO)
+    r = {"chanson": c, "autres": autres}
+    if not refaire:
+        faites = sorted((x for x in (_lire(f, {}) or {} for f in (st / "instrus").glob("*.json"))
+                         if x.get("origine") == "demucs" and _meme_fichier(x.get("source"), c["mp3"]) and x.get("mp3") and Path(x["mp3"]).is_file()),
+                        key=lambda x: x.get("fin") or 0, reverse=True)
+        if faites:
+            return {**r, "etat": "déjà", "instru": faites[0]}
+    for x in (_lire(f, {}) or {} for f in _travaux(st).glob("J-*.json")):
+        if x.get("type") == "instru" and x.get("etat") in ("en attente", "en cours") and _meme_fichier((x.get("params") or {}).get("source"), c["mp3"]):
+            return {**r, "etat": "en file", "travail": x}
+    titre = " ".join(str(titre or "").split())[:80] or c.get("titre") or c["nom"]
+    j = lancer("instru", {"source": str(Path(c["mp3"]).resolve()), "titre": titre, "chanson": c["nom"], "par": "hakim"}, st, demarrer)
+    return {**r, "etat": "lancé", "travail": j}
+
+
 if __name__ == "__main__":
     if len(sys.argv) >= 3 and sys.argv[1] == "travailleur":
         travailleur(sys.argv[2])

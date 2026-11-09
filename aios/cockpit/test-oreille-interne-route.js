@@ -15,7 +15,8 @@ const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8'
 const SENS = fs.readFileSync(path.join(__dirname, 'public', 'sens.html'), 'utf8');
 const attendre = () => new Promise(r => setImmediate(r));
 const FIN_BLOC = '// ---- fin de la route du micro pour son oreille interne';
-const REGLAGES = { epissage: true, filtre_gemma: false, oreille_interne_route: true, dire_inverse: true };
+// (09/11) les tests d'avant gardent le découpage « virgule » (leurs morceaux) ; « point », le défaut du 09/11, a son test plus bas
+const REGLAGES = { epissage: true, filtre_gemma: false, oreille_interne_route: true, dire_inverse: true, decoupe_entendu: 'virgule' };
 
 // les pistes et le ribosome (la même tranche que test-epissage.js), plus la route de son oreille interne
 function bac(reglages = REGLAGES, o = {}) {
@@ -377,4 +378,18 @@ test('Parler : 20 s sans place, c’est resté une pensée ; ses pavés à part,
   const bloc = PAGE.slice(PAGE.indexOf('const ENTENDU_ATTENTE_MS'), PAGE.indexOf('// ---- fin de son oreille interne par la route du micro'));
   assert.doesNotMatch(bloc, /epissureTour|riboStop|riboEnVoix|epissureActiveA/, 'l’épissure de papa n’est jamais touchée');
   assert.match(PAGE, /es\.addEventListener\('entendu', \(ev\) => \{ try \{ surEntendu\(JSON\.parse\(ev\.data\)\); \} catch \(_\) \{\} \}\);/);
+});
+
+test("(09/11, Ahmed : « il entend en bribes » ; « parole après parole ») par défaut, phrase par phrase : jamais un mot seul", () => {
+  const b = bac({ ...REGLAGES, decoupe_entendu: 'point' });
+  assert.strictEqual(b.ctx.entendre('Kaim, je', { source: 'telephone', cle: '1' }).morceaux, 0, 'une phrase pas finie attend');
+  assert.strictEqual(b.ctx.entendre('Kaim, je ne sais pas. Ooh.', { source: 'telephone', cle: '1' }).morceaux, 1, 'sa phrase finie part');
+  assert.strictEqual(b.ctx.entendre('Kaim, je ne sais pas. Ooh. Il est dans sa phase, tu vois,', { source: 'telephone', cle: '1', fin: true }).morceaux, 1,
+    '« Ooh. » (trop court) attend la suite ; à la fin du bloc, le reste part');
+  const p = pistesDe(b).map(x => /Ce qu'il vient de jouer : « ([^»]*) »/.exec(x.prompt)[1]);
+  assert.deepStrictEqual(p, ['Kaim, je ne sais pas.', 'Ooh. Il est dans sa phase, tu vois,']);
+  // le témoin : le découpage d'avant (« virgule ») rend les bribes de papa
+  const t = bac({ ...REGLAGES, decoupe_entendu: 'virgule' });
+  t.ctx.entendre('Kaim, je ne sais pas. Ooh.', { source: 'telephone', cle: '1', fin: true });
+  assert.ok(pistesDe(t).map(x => /Ce qu'il vient de jouer : « ([^»]*) »/.exec(x.prompt)[1]).includes('Kaim,'), 'avec « virgule », « Kaim, » seul');
 });

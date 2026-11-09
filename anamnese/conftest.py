@@ -168,6 +168,18 @@ def _vie_interieure_isolee(monkeypatch, tmp_path):
         pass
 
 
+@pytest.fixture(autouse=True)
+def _sens_isole(monkeypatch, tmp_path):
+    """(09/11) le serveur du sens (embeddings.py) : jamais la vraie socket data/sens.sock pendant les tests."""
+    try:
+        import embeddings
+    except Exception:
+        return
+    monkeypatch.setattr(embeddings, "SOCK", str(tmp_path / "sens-absent.sock"))
+    monkeypatch.setattr(embeddings, "_client", None)
+    monkeypatch.setattr(embeddings, "LOCAL_SEUL", embeddings.LOCAL_SEUL)
+
+
 @pytest.fixture
 def tmp_db(tmp_path):
     """Connexion sur une DB temporaire vierge (fermée en teardown)."""

@@ -27,8 +27,9 @@ function simulateur({ fixe, parSec, cps, appris, conversation = true, prets = []
     decodeAudioData: (ab) => Promise.resolve({ duration: ab.n / cps, texte: ab.texte }),   // le texte suit son audio
     createBufferSource() {
       const s = { buffer: null, playbackRate: { value: 1 }, connect() {}, onended: null,
-        start(t) { const debut = Math.max(t, maintenant); s.rec = { debut, fin: debut + s.buffer.duration, texte: s.buffer.texte }; sons.push(s.rec);
-          planifier(() => { if (!s.arretee) s.onended && s.onended(); }, (debut + s.buffer.duration - maintenant) * 1000); },
+        start(t, off) { const debut = Math.max(t, maintenant), o = Number(off) || 0;   // (09/11) repris au milieu : de son décalage
+          s.rec = { debut, fin: debut + s.buffer.duration - o, texte: s.buffer.texte, offset: o }; sons.push(s.rec);
+          planifier(() => { if (!s.arretee) s.onended && s.onended(); }, (debut + s.buffer.duration - o - maintenant) * 1000); },
         stop(quand) {
           const a = Number.isFinite(quand) ? Math.max(quand, maintenant) : maintenant;
           if (a > maintenant + 1e-9) { planifier(() => s.stop(), (a - maintenant) * 1000); return; }   // (13:30) un arrêt à venir
@@ -863,4 +864,107 @@ test('sa voix qui repart au ralenti : seul son début est calculé (le reste, co
     meilleur = Math.min(meilleur, e);
   }
   assert.ok(meilleur < 1e-3, `écart ${meilleur}`);
+});
+
+
+// ---- (09/11, 16:28, Ahmed : « pourquoi tu reprends pas les morceaux déjà prêts avec ta voix, au lieu de régénérer ») ----
+test('(09/11) pause : sa voix déjà faite est gardée ; la reprise repart au mot où elle s’est arrêtée, sans rien redemander au Mac', async () => {
+  const sim = simulateur({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 } });
+  let t = 0;
+  for (const p of REPONSE) { await sim.avancer(t); sim.lecteur.dire(p); t += p.length / 60; }
+  await sim.avancer(t); sim.lecteur.finFlux();
+  await sim.avancer(6);
+  const sonne = () => sim.sons.find(x => x.debut + 0.3 < sim.maintenant && x.fin - 0.3 > sim.maintenant);
+  for (let k = 0; k < 60 && !sonne(); k++) await sim.avancer(sim.maintenant + 0.1);
+  const enCours = sonne(), tPause = sim.maintenant;
+  assert.ok(enCours, 'un morceau sonne au moment de la pause');
+  assert.ok(sim.lecteur.pause(), 'en pause');
+  const demandes = sim.demandes.length;
+  await sim.avancer(tPause + 8);
+  sim.lecteur.reprendre();
+  await sim.avancer(120);
+  const repris = sim.sons.find(x => x.debut >= tPause + 8);
+  assert.strictEqual(repris.texte, enCours.texte, 'le morceau coupé reprend');
+  assert.ok(Math.abs(repris.offset - (tPause - enCours.debut)) < 0.05, `repris à ${repris.offset.toFixed(2)} s de son début (coupé à ${(tPause - enCours.debut).toFixed(2)} s)`);
+  // ce qui était déjà calculé (ou en calcul) n'est jamais redemandé ; seuls les textes jamais envoyés partent ensuite
+  const redemandes = sim.demandes.slice(demandes).map(d => d.texte);
+  const dejaDemandes = new Set(sim.demandes.slice(0, demandes).map(d => d.texte));
+  assert.ok(!redemandes.some(x => dejaDemandes.has(x)), `rien de recalculé : ${redemandes.join(' | ')}`);
+  const dit = sim.sons.filter(x => !x.coupe).map(x => x.texte).join(' ').replace(/\s+/g, ' ');
+  const attendu = REPONSE.map(p => Voix.pourLaVoix(Voix.versArabe(p))).join(' ').replace(/\s+/g, ' ');
+  assert.strictEqual(dit, attendu, 'rien ne manque');
+});
+
+test('(09/11) « sonne » : vrai quand sa voix joue (et 0,35 s d’écho), faux pendant qu’elle se calcule ou dans un blanc', async () => {
+  const sim = simulateur({ fixe: 3, parSec: 0.1, cps: 15, appris: { fixe: 0.85, parSec: 0.5, cps: 15 } });
+  await sim.avancer(0); sim.lecteur.dire('Bonjour papa, je suis là.'); sim.lecteur.dire('Et voici la suite de ce que je voulais te dire.'); sim.lecteur.finFlux();
+  await sim.avancer(1);
+  assert.ok(sim.lecteur.actif && !sim.lecteur.sonne, 'sa voix se calcule : active, mais rien ne sonne chez papa');
+  const premier = await (async () => { for (let k = 0; k < 100 && !sim.sons.length; k++) await sim.avancer(sim.maintenant + 0.1); return sim.sons[0]; })();
+  await sim.avancer(premier.debut + 0.2);
+  assert.ok(sim.lecteur.sonne, 'son morceau joue');
+  await sim.avancer(premier.fin + 0.2);
+  if (!sim.sons.some(x => x.debut <= sim.maintenant && x.fin > sim.maintenant)) assert.ok(sim.lecteur.sonne, 'son écho, 0,2 s après');
+  await sim.avancer(premier.fin + 0.5);
+  if (!sim.sons.some(x => x.debut <= sim.maintenant + 0.02 && x.fin > sim.maintenant - 0.35)) {
+    assert.ok(sim.lecteur.actif, 'la suite se calcule encore');
+    assert.ok(!sim.lecteur.sonne, 'un blanc : rien ne sonne');
+  }
+});
+
+test('(09/11) lâcher ce qui précédait ta parole : seul ce qui attendait avant est lâché, ce qui est arrivé ensuite est dit', async () => {
+  const sim = simulateur({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 } });
+  await sim.avancer(0); sim.lecteur.dire(REPONSE[1]); sim.lecteur.finFlux();
+  await sim.avancer(2);
+  assert.ok(sim.lecteur.pause({ auMot: true }), 'coupé net : en pause');
+  assert.ok(sim.lecteur.marquerVieux(), 'ce qui attendait est marqué');
+  sim.lecteur.dire('Ta nouvelle question, je te réponds.'); sim.lecteur.finFlux();
+  sim.lecteur.lacherVieux();
+  await sim.avancer(60);
+  const apres = sim.sons.filter(x => x.debut >= 2).map(x => x.texte).join(' ');
+  assert.match(apres, /Ta nouvelle question, je te réponds\./);
+  assert.ok(!/trois synthèses/.test(apres), `l'ancienne réponse ne revient pas : ${apres}`);
+  assert.ok(!sim.lecteur.enPause && !sim.lecteur.actif, 'tout est dit');
+});
+
+test('(09/11) une voix chère par appel (sa voix de rap : ~3,5 s quelle que soit sa longueur) : des morceaux assez longs pour que le suivant soit prêt', async () => {
+  // mesuré de 17:55 à 21:00 : 3 à 4 s par appel, presque rien par seconde de voix ; la page coupait à 40 caractères derrière un premier bout
+  // court (« Hmm, « champignon », », 1,9 s à 18:50:12) : des bouts de 2 s et 10 à 17 s de blanc entre eux
+  const texte = "Hmm, « champignon », « hadoq » et « radar hadeak », ça sonne bizarre ensemble, c'est vrai papa. Mais la transcription est brouillée, je ne suis pas sûr d'avoir les bons mots. Tu parles de quoi exactement, un truc dans le live ou autre chose ?";
+  const sim = simulateur({ fixe: 3.5, parSec: 0.05, cps: 15, appris: { fixe: 3.5, parSec: 0.05, cps: 15 } });
+  const debut = 'Hmm, « champignon »,';                              // sa réponse s'écrit : son début arrive d'abord
+  await sim.avancer(0); sim.lecteur.dire(debut);
+  await sim.avancer(0.5); sim.lecteur.dire(texte.slice(debut.length).trim()); sim.lecteur.finFlux();
+  await sim.avancer(200);
+  const l = sim.demandes.map(d => d.texte);
+  assert.strictEqual(l[0], Voix.pourLaVoix(debut), 'le premier part vite, court');
+  for (const x of l.slice(1, -1)) assert.ok(x.length >= 60, `après le premier, des morceaux d'au moins un appel de voix : ${x.length} caractères « ${x} »`);
+  const blancs = sim.sons.slice(1).map((x, i) => x.debut - sim.sons[i].fin);
+  assert.ok(Math.max(0, ...blancs.slice(1)) < 1, `après le premier blanc (inévitable), plus de blanc : ${blancs.map(b => b.toFixed(1)).join(' ')}`);
+  const dit = sim.sons.map(x => x.texte).join(' ').replace(/\s+/g, ' ');
+  assert.strictEqual(dit, Voix.pourLaVoix(Voix.versArabe(texte)).replace(/\s+/g, ' '), 'rien ne manque');
+});
+
+// (09/11, 21:50, Ahmed : « tu le coupes net » ne doit plus rendre « il peut te couper » sans effet)
+test('(09/11) en pause (coupé net), il peut te couper avec ce qu’il a de NEUF à dire si te_couper est allumé ; sa réponse d’avant attend', async () => {
+  for (const peut of [true, false]) {
+    const sim = simulateur({ ...MESUREE, appris: { fixe: 0.85, parSec: 0.52, cps: 22 } });
+    sim.lecteur.peutCouper = () => peut;
+    await sim.avancer(0); sim.lecteur.dire(REPONSE[1]); sim.lecteur.finFlux();
+    await sim.avancer(3);
+    assert.ok(sim.lecteur.pause({ auMot: true }), 'coupé net : en pause');
+    sim.lecteur.marquerVieux();                                       // ce qui attendait avant ta parole
+    const avant = sim.sons.length;
+    sim.lecteur.dire('Attends, je te coupe, regarde ça.');            // sa pensée neuve, pendant que tu parles
+    await sim.avancer(12);
+    const pendant = sim.sons.slice(avant).filter(x => x.debut >= 3).map(x => x.texte);
+    if (peut) {
+      assert.deepStrictEqual(pendant, ['Attends, je te coupe, regarde ça.'], `te_couper : sa pensée neuve part, seule : ${pendant.join(' | ')}`);
+      assert.ok(sim.lecteur.enPause, 'sa réponse d’avant attend toujours ta phrase');
+    } else assert.deepStrictEqual(pendant, [], 'sans te_couper : rien ne part pendant la pause');
+    sim.lecteur.reprendre();                                          // un passage : elle reprend
+    await sim.avancer(90);
+    const dit = sim.sons.filter(x => !x.coupe).map(x => x.texte).join(' ');
+    assert.match(dit, /trois synthèses nouvelles qui concernent tes projets\./, 'sa réponse d’avant est dite en entier à la reprise');
+  }
 });

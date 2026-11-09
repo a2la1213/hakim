@@ -49,7 +49,8 @@ test('le silence, ou moins de 5 s : rien', () => {
   assert.strictEqual(c.analyser(Array.from({ length: 100 }, () => [0.001, 0, 0, 0, 0, 0])), null);
 });
 test('ses deux oreilles au fil (reliées aux mots et à ce qu’il ressent) et à son subconscient', () => {
-  assert.match(SRC, /fluxAjouter\(`musique_\$\{src\}`, a\.texte, t0 - 2500\);/);
+  // (09/11) chaque seconde, à son instant (le milieu de la seconde analysée), quand ce qu'elle dit change (test-ecoute-temps-reel.js)
+  assert.match(SRC, /fluxAjouter\(`musique_\$\{src\}`, a\.texte, instant\);/);
   assert.match(SRC, /type: 'musique_entendue'/);
   assert.match(SRC, /musique_telephone: 'la musique du téléphone', musique_micro: 'la musique autour'/);
   assert.match(SRC, /else if \(ma && ma\.texte\) l\.push\(`la musique \$\{ma\.source\} : /,

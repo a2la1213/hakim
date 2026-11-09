@@ -162,8 +162,9 @@ def _commande(monkeypatch, **kw):
     return vu
 
 
-def test_commande_secours_par_apikeyhelper(monkeypatch):
+def test_commande_secours_par_apikeyhelper(monkeypatch, tmp_path):
     import json
+    monkeypatch.setattr(consolidate, "CLE_API", tmp_path / "absente")      # sans clé de page : le trousseau
     vu = _commande(monkeypatch, modele="claude-opus-5-5", secours=True)
     cmd = vu["cmd"]
     assert cmd[0] == consolidate.CLAUDE_BIN
@@ -282,3 +283,60 @@ def test_entree_fermee_meme_si_la_passe_plante(nuit):
     with pytest.raises(RuntimeError):
         consolidate.main()
     assert nuit["fermes"] == ["reg_test"]
+
+
+# --- (09/11, Ahmed le 08/11 : « la 2e clé en priorité, la 1re en backup ») même ordre que le cockpit (2f3bcfb) ---
+
+CLE_PAGE = "sk-ant-usr-" + "p" * 80 + "PAGE"
+
+
+def _cles(monkeypatch, tmp_path, cle=None, espace=None):
+    c, e = tmp_path / "cle-api-anthropic", tmp_path / "espace-api-anthropic"
+    if cle is not None:
+        c.write_text(cle + "\n", encoding="utf-8")
+    if espace is not None:
+        e.write_text(espace + "\n", encoding="utf-8")
+    monkeypatch.setattr(consolidate, "CLE_API", c)
+    monkeypatch.setattr(consolidate, "ESPACE_API", e)
+
+
+def test_secours_la_cle_de_la_page_d_abord_avec_son_espace(monkeypatch, tmp_path):
+    import json
+    _cles(monkeypatch, tmp_path, CLE_PAGE, "wrkspc_01ABC")
+    vu = _commande(monkeypatch, modele="claude-opus-5-5", secours=True)
+    reglages = json.loads(vu["cmd"][vu["cmd"].index("--settings") + 1])
+    assert reglages["apiKeyHelper"] == f"/bin/cat {tmp_path / 'cle-api-anthropic'}"
+    assert consolidate.SERVICE_CLE not in reglages["apiKeyHelper"], "l'ancienne clé du trousseau n'est plus prioritaire"
+    assert reglages["env"] == {"ANTHROPIC_CUSTOM_HEADERS": "anthropic-workspace-id: wrkspc_01ABC"}
+    assert CLE_PAGE not in " ".join(vu["cmd"]) and CLE_PAGE not in " ".join(map(str, vu["env"].values())), "la clé ne passe jamais en clair"
+    assert "ANTHROPIC_API_KEY" not in vu["env"]
+
+
+def test_secours_sans_cle_de_page_le_trousseau_et_jamais_l_espace(monkeypatch, tmp_path):
+    import json
+    for cle in (None, "pas une clé"):
+        d = tmp_path / ("abimee" if cle else "absente"); d.mkdir()
+        _cles(monkeypatch, d, cle, "wrkspc_01ABC")
+        vu = _commande(monkeypatch, modele="claude-opus-5-5", secours=True)
+        reglages = json.loads(vu["cmd"][vu["cmd"].index("--settings") + 1])
+        assert reglages == {"apiKeyHelper": consolidate.APIKEY_HELPER}, "le trousseau, sans l'espace de la clé de la page"
+
+
+def test_secours_disponible_avec_la_seule_cle_de_la_page(monkeypatch, tmp_path):
+    _cles(monkeypatch, tmp_path, CLE_PAGE)
+    monkeypatch.setenv("ANAMNESE_SECOURS_API", "1")
+    def interdit(*a, **k):
+        raise AssertionError("le trousseau n'est pas consulté quand la clé de la page est là")
+    monkeypatch.setattr(consolidate.subprocess, "run", interdit)
+    assert consolidate.secours_disponible() is True
+    monkeypatch.delenv("ANAMNESE_SECOURS_API")
+    assert consolidate.secours_disponible() is False, "toujours éteint par défaut (décision du 16/10)"
+
+
+def test_le_journal_dit_d_ou_vient_la_cle_jamais_la_cle(nuit, monkeypatch, tmp_path):
+    _cles(monkeypatch, tmp_path, CLE_PAGE)
+    _sequence_trace(nuit, False, True)
+    nuit["reponses"] += [_res("success", True, 429, "usage limit reached", 1), _res()]
+    consolidate.main()
+    tout = "\n".join(nuit["journal"])
+    assert "clé de la page" in tout and CLE_PAGE not in tout and CLE_PAGE[-12:] not in tout

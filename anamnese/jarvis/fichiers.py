@@ -405,6 +405,11 @@ def preparer(chemin, racines=None, sortie=None, transcrire=None, accueil=None):
                 os.replace(source, copie)
         res["lire"] = [str(copie)]
         res["note"] = "copié dans le dossier de Jarvis pour être lu" + (" (secrets masqués)" if ext in TEXTES_A_MASQUER else "")
+        try:                                               # (09/11) la copie de son propre code reste « maison » (immunite.py)
+            import immunite
+            immunite.marquer_copie_maison(copie, reel)
+        except Exception:
+            pass
         if ext == ".pdf" and copie.suffix == ".pdf":       # (29/10, système immunitaire) lu tel quel : son texte examiné
             try:
                 import immunite

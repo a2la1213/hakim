@@ -215,3 +215,13 @@ def test_voix_hakim(tmp_path):
     assert r["fait"]["voix_hakim"] == [None, "rap"]
     assert _j.loads((tmp_path / "corps-reglages.json").read_text(encoding="utf-8"))["voix_hakim"] == "rap"
     assert "voix_hakim" in ri.ajuster(tmp_path, {"voix_hakim": "/tmp/autre.wav"}, "", maintenant=10**13)["refuse"]
+
+
+def test_ecoute_francais_n_est_plus_un_de_ses_boutons():
+    """(09/11, audit des boutons) le cockpit ne lit plus « ecoute_francais » depuis le 08/11 (langue_papa l'a remplacé) : Hakim ne peut plus
+    le changer pour rien, et l'outil ribosome_boutons ne le lui propose plus."""
+    from jarvis import ribosome_intelligent as ri
+    src = (Path(__file__).resolve().parents[1] / "mcp_server.py").read_text(encoding="utf-8")   # sans l'importer (il ouvre sa mémoire)
+    outil = src[src.index("def ribosome_boutons("):src.index("from jarvis import ribosome_intelligent as ri", src.index("def ribosome_boutons("))]
+    assert "ecoute_francais" not in ri.BOUTONS
+    assert "ecoute_francais" not in outil and "pretraitement_parole" in outil

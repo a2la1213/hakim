@@ -220,7 +220,7 @@ test('les émojis s’affichent mais ne se disent pas (drapeaux, teintes et fami
   assert.strictEqual(Voix.pourLaVoix('Bravo 👍🏽 et 👨‍👩‍👧 ensemble'), 'Bravo et ensemble');
   const src = require('node:fs').readFileSync(require('node:path').join(__dirname, 'server.js'), 'utf8');
   const f = src.slice(src.indexOf('function prononcer('), src.indexOf('\n}\n', src.indexOf('function prononcer(')) + 3);
-  const ctx = { lirePrononciations() {}, prononciationsCache: { liste: [] } };
+  const ctx = { lirePrononciations() {}, prononciationsCache: { liste: [] }, VoixPage: Voix };   // (09/11) prononcer passe par Voix.pourLaVoix
   require('node:vm').createContext(ctx);
   require('node:vm').runInContext(f + '\nthis.p = prononcer;', ctx);
   assert.strictEqual(ctx.p('Salut 🇩🇿😘 frérot'), 'Salut frérot', 'la montre passe par le cockpit');

@@ -441,6 +441,31 @@ def main():
         except Exception as e:  # noqa: BLE001  (une demande ratée ne tue pas ses oreilles)
             sortie = {"erreur": str(e)[:200]}
         print(json.dumps({"id": d.get("id"), **sortie}, ensure_ascii=False, default=_json), flush=True)
+        vider_caches(torch)
+
+
+def vider_caches(torch, entree=sys.stdin):
+    """(09/11, mesuré à 21:15 : 3,4 Go d'« IOAccelerator » sur 4,3 Go, et 3,8 → 4,5 Go en six minutes) les blocs que le GPU (MPS) de torch
+    GARDE en cache après chaque séparation : rendus au Mac dès qu'aucune demande n'attend, après la réponse (elle ne l'attend pas).
+    Les modèles chargés restent. MLX aussi s'il est chargé (l'empreinte)."""
+    try:
+        import select
+        if select.select([entree], [], [], 0)[0]:
+            return False
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+    except Exception:  # noqa: BLE001
+        pass
+    mx = sys.modules.get("mlx.core")
+    if mx is not None:
+        try:
+            mx.clear_cache()
+        except Exception:  # noqa: BLE001
+            pass
+    return True
 
 
 def _json(o):

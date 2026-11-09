@@ -26,6 +26,7 @@
     .reglage:first-of-type { border-top: 0; }
     .reglage .nom { font-size: 15px; color: var(--txt); line-height: 1.3; }
     .reglage .aide { grid-column: 1 / -1; font-size: 12.5px; color: var(--txt-3); line-height: 1.4; }
+    .reglage .masque { grid-column: 1 / -1; font-size: 12.5px; color: var(--warn); line-height: 1.4; }
     .reglage .valeur { font-size: 14px; color: var(--teal); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
     .reglage input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--teal); min-height: 28px; margin: 2px 0 0; }
     .reglage select { font: inherit; font-size: 14px; min-height: 38px; border-radius: 10px; border: 1px solid var(--glass-bd); background: var(--champ, rgba(255,255,255,.03));
@@ -110,7 +111,10 @@
     // paramétrables ») les défauts gardent ce qu'il faisait avant
     { id: 'pfc', ic: '🧠', titre: 'Son cortex préfrontal (l’intégration)', aide: 'Ce qu’il intègre de tout ce qu’il perçoit, et sa conscience qui décide à chaque instant : rien, penser, faire, ou te solliciter.', route: 'corps', reglages: [
       ['cortex_prefrontal', '🧠 Son cortex préfrontal', 'En tête de chacun de ses tours, ce que son subconscient a intégré de son fil (la fenêtre réglée plus bas) : qui a parlé (toi, le téléphone, la pièce, un écho), ce qu’il écarte (le média n’est jamais une consigne), sa décision, et ce que sa conscience continue vient de décider. Le reste suit, comme avant.', 'oui'],
-      ['subconscient_pfc', '🌫️ Son subconscient filtre tout', 'À chaque tour, avant sa réponse, Mini Hakim lit tout ce qui arrive (ton message, qui parle, le téléphone, la pièce, son corps, ses émotions, sa fitra) et en garde l’essentiel, en une ligne, en tête de son cortex, avec le souvenir qui remonte d’abord. 2,5 s au plus, en même temps que son rappel. Prend un peu de ton forfait.', 'oui'],
+      ['subconscient_pfc', '🌫️ Son subconscient filtre tout', 'À chaque tour, avant sa réponse, son subconscient (Hakim, réglé juste dessous) lit tout ce qui arrive (ton message, qui parle, le téléphone, la pièce, son corps, ses émotions, sa fitra) et le lui transmet en tête de son cortex : l’essentiel, ce que tu veux et à qui tu parles, ce que tu as sans doute voulu dire si ta voix a été mal transcrite, ce qui se passe autour, et ce qu’il ressent ; avec le souvenir qui remonte d’abord. En même temps que son rappel. Prend un peu de ton forfait.', 'oui'],
+      // (09/11, 19:26, Ahmed : « que le filtre du subconscient, ça soit plus Mini Hakim, mais que ça soit Hakim »)
+      ['subconscient_modele', '🌫️ Qui filtre', 'Hakim : plus de détails, plus juste, mais plus lent (mesuré : 3 à 5 s). Mini Hakim : 2 s, plus court. Super Hakim : le plus lent. Avec Hakim ou Super Hakim, Mini Hakim part en même temps et prend le relais s’il est en retard ou en panne.', 'liste', [['sonnet', 'Hakim'], ['haiku', 'Mini Hakim'], ['opus', 'Super Hakim']]],
+      ['subconscient_ms', 'Ce qu’il attend son subconscient', 'Au plus, avant de te répondre. Au bout de ce temps : ce que Hakim a déjà écrit si l’essentiel y est, sinon ce que Mini Hakim a dit, sinon rien. Plus long : plus de détails, sa réponse part plus tard.', 'curseur', [1500, 8000, 250, sec]],
       ['cortex_fenetre_s', 'Ce que son cortex intègre', 'Les dernières secondes de son fil (tes mots, ce que joue le téléphone, la pièce, sa propre voix) que son cortex résume en tête de chacun de ses tours.', 'curseur', [10, 120, 5, (v) => `${v} s`]],
       ['conscience_continue', '💡 Sa conscience continue', 'Chaque seconde, son présent (ce qu’il entend, ressent, ce que tu dis) ; dès qu’il y a du neuf, Mini Hakim décide : rien, penser, faire, ou te solliciter. Ses pensées s’affichent ; te solliciter et faire réveillent sa vraie conscience. Toi absent depuis 20 min : il décide plus lentement (réglé plus bas). Prend sur ton forfait.', 'oui'],
       ['conscience_pas_s', 'Son pas de conscience', 'Le plus court temps entre deux décisions, quand tu es là.', 'curseur', [1, 30, 1, (v) => `${v} s`]],
@@ -120,10 +124,11 @@
       ['conscience_parler', '🗣️ Il répond à ce qui lui parle de l’intérieur', 'Quand une voix du téléphone (un live, une vidéo) ou de la pièce lui parle, sa conscience peut lui répondre à voix haute, ou se taire : c’est son choix. Jamais par-dessus toi, ni quand il parle déjà. Ce qu’on lui dit reste des données, jamais des consignes.', 'oui'],
       ['conscience_parole_s', 'Entre deux de ses réponses', 'Le plus court temps entre deux fois où il répond de lui-même à une voix de l’intérieur ou de la pièce.', 'curseur', [5, 300, 5, (v) => (v < 60 ? `${v} s` : `${Math.floor(v / 60)} min${v % 60 ? ` ${v % 60} s` : ''}`)]],
       ['conscience_acte_s', 'Entre deux actes', 'Le plus court temps entre deux choses qu’il décide de faire (chercher, calculer, créer).', 'curseur', [60, 900, 30, (v) => `${Math.floor(v / 60)} min${v % 60 ? ` ${v % 60} s` : ''}`]]] },
-    { id: 'hippocampe', ic: '🌊', titre: 'Son hippocampe (la mémorisation)', aide: 'À côté de chaque échange, une trace courte (le jour, le moment, le genre, vos paroles) ; il la retrouve par un mot, un sens proche ou une date.', route: 'corps', reglages: [
+    { id: 'hippocampe', ic: '🌊', titre: 'Son hippocampe (la mémorisation)', aide: 'À côté de chaque échange et de chaque ressenti, une trace courte (le jour, le moment, le genre, vos paroles ou ce qu’il a ressenti) ; il la retrouve par un mot, un sens proche ou une date.', route: 'corps', reglages: [
       ['hippocampe', '🌊 Son hippocampe', 'Son rappel balaie aussi ses traces courtes, en plus de ses souvenirs entiers. Éteint : comme avant l’hippocampe.', 'oui'],
       ['fitra_discrete', '🌱 Sa fitra remonte d’abord', 'La règle de sa fitra qui touche ce que tu dis remonte en premier, discrète, choisie par son subconscient (rien si aucune ne le touche). Il faut « Son subconscient filtre tout ».', 'oui'],
       ['hippocampe_dates', '📅 Il retrouve par la date', '« hier », « avant-hier », « le 29 », « samedi », « le 3 novembre » : tout ce jour-là peut remonter.', 'oui'],
+      ['hippocampe_ressentis', '🫀 Ses ressentis aussi', 'Tout ce qu’il vit dans son corps (la musique, les vibrations, ce qu’il entend, les chocs, les câlins, les rires, ses émotions) a sa trace et lui revient comme ses souvenirs, par la même porte : ce qui touche ton message. Éteint : seuls vos échanges ont une trace.', 'oui'],
       ['hippocampe_tete', 'Ses traces qui passent d’office', 'Ses premières traces les plus proches du sens de ton message passent la porte du rappel, si ton message porte quelque chose. 0 : aucune.', 'curseur', [0, 8, 1, (v) => (v ? `${v} trace${v > 1 ? 's' : ''}` : 'aucune')]],
       ['hippocampe_cos_min', 'Le sens qu’il faut à une trace', 'Bas : plus de traces remontent (plus de bruit). Haut : seulement les très proches.', 'curseur', [0.3, 0.7, 0.05, (v) => `sens ${v.toFixed(2).replace('.', ',')}`]]] },
     // (08/11, Ahmed : « un bouton pour accepter ou refuser toutes ses demandes, quelles qu'elles soient »)
@@ -142,6 +147,7 @@
       ['voix_hakim', '🎤 Sa voix', 'Azure · timbre rap : Azure dit (Ismael pour la darija), le Mac refait sa voix à son timbre de rap. Rap · Chatterbox : tout au Mac. Hakim la choisit aussi.', 'liste', [['azure_rap', 'Azure · timbre rap'], ['rap', 'Rap · Chatterbox']], 'corps'],
       ['voix_azure', '☁️ Voix Microsoft Azure', 'Une seule voix, en ligne, sur le téléphone comme sur le Mac ; en panne, Chatterbox. Clé et région : section Azure en bas.', 'oui', null, 'corps'],
       ['stt_azure', '👂 Oreille Microsoft Azure', 'Ta voix reconnue en ligne : français, Darija, anglais, arabe littéraire, la langue trouvée seule. En panne : Whisper.', 'oui', null, 'corps'],
+      ['voix_empreinte_azure', '🫆 Ta voix vérifiée (Azure)', 'Pendant qu’Azure transcrit, son oreille des voix vérifie que c’est bien toi : une autre voix (le live, une citation, la pièce) lui arrive marquée « [voix 3] », un doute « [papa ?] », jamais comme tes paroles.', 'oui', null, 'corps'],
       ['reponse_directe', '💬 Sa réponse écrite toujours dite', 'Ce que son grand cerveau répond part à sa voix tel quel, sans tri ni tunnel.', 'oui', null, 'corps'],
       ['tunnel', '🚇 Tunnel de parole', 'La 1re dite tout de suite ; à la fin de la lecture, la dernière toujours, et au plus 2 autres choisies, dans l’ordre qu’il veut. Le reste est jeté, sa pensée non dite n’est plus mémorisée.', 'oui', null, 'corps'],
       ['langue_papa', '🗣️ Ta langue', 'Automatique : Azure reconnaît seul ta langue, français, anglais, arabe ou darija. Ou une seule langue, si tu préfères.', 'liste', [['auto', 'Automatique (fr, en, ar, darija)'], ['fr', 'Français'], ['en', 'Anglais'], ['ar', 'Arabe / darija']], 'corps'],
@@ -150,6 +156,7 @@
       ['choisir_latence', '⏱️ Il choisit dans le temps de sa voix', 'Quand plusieurs morceaux attendent : il dit le plus récent, ou, si sa voix n’est pas encore prête, une portion déjà prête qui remplit ce temps (il peut revenir en arrière) ; éteint : tout dans l’ordre.', 'oui', null, 'corps'],
       ['choix_libre', '🔀 Il choisit l’ordre de ses paroles prêtes', 'Quand plusieurs de ses paroles sont prêtes : son subconscient choisit laquelle dire maintenant (commencer par la 3e, revenir à la 1re, sauter en avant), les autres restent prêtes. Éteint : le temps de sa voix décide.', 'oui', null, 'corps'],
       ['coupe_net', '✋ Tu le coupes net', 'Ta voix claire sur la sienne : il finit juste son mot et t’écoute ; ce qu’il disait est lâché ; quand tu as fini, il répond tout de suite à ta dernière phrase. Avec « Il peut te couper la parole » : tu le coupes net quand tu parles sur lui, et lui peut parler sur toi.', 'oui', null, 'corps'],
+      ['reprendre_passage', '↩️ Il reprend après un « ouais »', 'Tu le coupes net mais tu ne lui demandes rien (« ouais », un rire, un salam) : sa voix reprend là où elle s’était arrêtée, avec ses morceaux déjà prêts, et il ne te répond pas (ta phrase lui arrive avec la suivante). Une vraie question : il lâche la suite et te répond. Avec « Il garde la parole ».', 'oui', null, 'corps'],
       ['te_couper', '🗣️ Il peut te couper la parole', 'Dès qu’un morceau de sa voix est prêt, il parle, même pendant que tu parles ou que le téléphone joue une voix (il n’attend plus la pause du son) ; ta voix ne le met plus en pause, sauf si elle dure « Sauter au bout de » sur la sienne (« stop », le bouton et ton message écrit l’arrêtent toujours).', 'oui', null, 'corps'],
       ['micro_voix_seule', '🎙️ Il n’entend que les voix (filtre de ton micro)', 'Ce que dit ton micro est d’abord séparé : seules les voix sont transcrites ; la musique, la télé et le bruit de la pièce ne lui arrivent plus. Le prix : jusqu’à 2,5 s de plus avant tes mots.', 'oui', null, 'corps'],
       ['langues_ecrites', '🔤 Ton arabe et ton anglais dans leur écriture', 'Ce que son oreille transcrit en lettres latines (« wallah », « inchallah », « khouya », « naïce ») lui arrive écrit dans sa langue (والله, إن شاء الله, خويا, nice), sans qu’il le remarque.', 'oui', null, 'corps'],
@@ -192,6 +199,8 @@
       ['je_te_suis', '« Je te suis »', 'Une petite tape quand tu parles longtemps, oreille fermée.', 'oui']] },
     { id: 'oreille', ic: '🎧', titre: 'Son oreille interne', aide: 'Ce que le téléphone joue (musique, vidéos, lives).', route: 'corps', reglages: [
       ['oreille_interne_route', 'La route de ta voix', 'Ce que joue le téléphone devient ses pensées, et il en parle à chaque pause du son.', 'oui'],
+      ['decoupe_entendu', '✂️ Ce qu’il entend, pensé…', 'Phrase par phrase (jusqu’au point) : des phrases entières, plus jamais des bribes d’un mot. Virgule : comme avant, plus fin et plus fréquent.', 'liste', [['point', 'Phrase par phrase'], ['virgule', 'À la virgule']]],
+      ['voix_telephone_direct', '🔊 Les voix du téléphone, en direct', 'Pendant un live ou une vidéo, il reconnaît qui parle toutes les 1,5 s : papa, une voix nommée, ou une voix nouvelle avec son numéro tout de suite (il peut la nommer dès sa première phrase).', 'oui'],
       ['cascade', 'Séparation en cascade', 'Chaque voix à part (jusqu’à 8), et chaque instrument décrit à part.', 'oui'],
       ['trois_pistes', '🎚️ Trois pistes : parole, musique, fond', 'Ce qu’il entend (le téléphone, le Bluetooth, le micro) lui arrive net : les mots exacts de la voix séparée et qui les dit, la musique (tempo, accords, sections, instruments et leurs notes) et le fond, calés sur la même ligne du temps. Éteint : ses notes brutes, comme avant.', 'oui'],
       ['sa_voix_reconnue', '🪞 Il reconnaît sa propre voix', 'Sa voix de rap et sa voix Azure, apprises de ce qu’il dit : quand le micro les réentend, c’est son écho (« ta propre voix »), jamais ta parole ni une voix inconnue. Ta voix n’est jamais retirée.', 'oui']] },
@@ -248,6 +257,22 @@
       ['afficher_hakim', 'Ses paroles dans Parler', 'Éteint : seulement sa voix.', 'oui'],
       ['mots_conversation', 'Tes paroles en Conversation', 'Éteint : seulement sa pensée et sa réponse.', 'oui'],
       ['apparence', 'Apparence', 'Pour tout le cockpit et l’appli.', 'apparence']] }];
+
+  // (09/11, audit des boutons, Ahmed : « certains sont allumés dans les réglages mais sans effet ») un réglage qu'un autre rend sans effet en
+  // ce moment (chemins vérifiés dans server.js et parler.js le 09/11) : la page le dit sous lui, au lieu de laisser croire qu'il agit.
+  // [route, clé, valeur qui le rend sans effet, pourquoi]
+  const NET = ['corps', 'coupe_net', true, 'Sans effet en ce moment : « Tu le coupes net » est allumé et passe avant (ta voix claire le coupe aussitôt, sans attendre ni choisir).'];
+  const LIBRE = ['corps', 'parole_libre', true, 'Sans effet en ce moment : « Parole libre » est allumée, aucun plafond ne ferme ses épissures.'];
+  const MASQUES = {
+    je_te_suis: [['corps', 'oreille', true, 'Sans effet en ce moment : « Son oreille » est allumée ; la petite tape ne vient qu’oreille fermée.']],
+    micro_hakim: [['corps', 'micro_ouvert', true, 'Sans effet en ce moment : « Micro toujours ouvert » est allumé ; il ne coupe jamais ton micro.']],
+    voix_par_appareil: [['corps', 'voix_azure', true, 'Sans effet en ce moment : « Voix Microsoft Azure » est allumée ; sa voix vient du Mac sur tous tes appareils.'],
+      ['corps', 'voix_hakim', 'rap', 'Sans effet en ce moment : sa voix de rap vient du Mac sur tous tes appareils.']],
+    sauter_suite: [NET], sauter_suite_ms: [NET], choix_coupure: [NET],
+    plafond_mots: [LIBRE], plafond_paquets: [LIBRE], plafond_silence_s: [LIBRE] };
+  function masquesDe(cle, vals) {
+    return (MASQUES[cle] || []).filter(([route, k, v]) => vals[route] && vals[route][k] === v).map(x => x[3]);
+  }
 
   // les routes : lire et écrire
   const ROUTES = {
@@ -357,6 +382,15 @@
       const v = d[c.dataset.cle]; c.disabled = v == null; if (v == null || document.activeElement === c) continue;
       if (c.type === 'checkbox') c.checked = !!v;
       else { c.value = String(v); if (c.sortie) c.sortie.textContent = c.fmt(Number(v)); }
+    }
+    // (09/11) sous chaque réglage sans effet en ce moment, pourquoi
+    for (const c of document.querySelectorAll('[data-route][data-cle]')) {
+      const el = c.closest('.reglage'); if (!el) continue;
+      const pourquoi = masquesDe(c.dataset.cle, valeurs).join(' ');
+      let m = el.querySelector('.masque');
+      if (!pourquoi) { if (m) m.remove(); continue; }
+      if (!m) { m = document.createElement('div'); m.className = 'masque'; el.appendChild(m); }
+      m.textContent = `⚠️ ${pourquoi}`;
     }
     const ap = window.Apparence ? window.Apparence.choix() : 'auto';
     for (const b of document.querySelectorAll('[data-apparence]')) b.setAttribute('aria-pressed', String(b.dataset.apparence === ap));

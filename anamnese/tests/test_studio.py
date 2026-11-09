@@ -177,3 +177,119 @@ def test_outils_de_hakim(monkeypatch, tmp_path, sons):
     studio.travailleur(studio.STUDIO / "travaux")
     texte = avis()
     assert "LUFS intégrés" in texte and "Ce que tu entends" in texte and "latence retirée 150" in texte
+
+
+# ---------------------------------------------------------------------------------------------- son instru, pour la voix de papa
+# (09/11, Ahmed : « qu'il sache extraire SON instru d'une de ses chansons, “Deux livres” par exemple, pour que je pose ma voix dessus »)
+
+def _chanson(dossier, nom, titre, fin, mp3=True, etat="prête", instrumental=False, depuis=None):
+    dossier.mkdir(parents=True, exist_ok=True)
+    f = dossier / f"{nom}.mp3"
+    if mp3:
+        if depuis:
+            subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-i", str(depuis), "-c:a", "libmp3lame", str(f)], check=True)
+        else:
+            f.write_bytes(b"ID3 " + nom.encode())
+    (dossier / f"{nom}.json").write_text(json.dumps({"nom": nom, "titre": titre, "etat": etat, "fin": fin, "instrumental": instrumental,
+                                                     **({"mp3": str(f)} if mp3 else {})}))
+    return f
+
+
+@pytest.fixture
+def separateur(tmp_path, monkeypatch):
+    """Un faux Demucs (le vrai pèse trop pour la suite) : il reçoit « -B chant.py separer mélange voix reste », note le mélange
+    reçu, rend la voix et le reste (une copie du mélange). Ce qu'on teste : la bonne chanson y entre, son reste devient l'instru."""
+    vus = tmp_path / "separes.txt"
+    s = tmp_path / "faux-demucs"
+    s.write_text(f'#!/bin/sh\necho "$3 $4" >> "{vus}"\ncp "$4" "$5"\ncp "$4" "$6"\n')
+    s.chmod(0o755)
+    monkeypatch.setattr(studio, "PYTHON_SEPARATION", s)
+    return vus
+
+
+def test_trouver_sa_chanson_par_son_titre(tmp_path):
+    c = studio.CHANSONS
+    _chanson(c, "20261109-165302-deux-livres", "Deux livres", 100)
+    _chanson(c, "20261109-171743-deux-livres", "Deux livres", 200)
+    _chanson(c, "20261109-172807-deux-livres-voix-naturelle", "Deux livres (voix naturelle)", 300)
+    _chanson(c, "20261109-180000-deux-livres", "Deux livres", 400, mp3=False, etat="ratée")
+    (c / "20261109-171743-deux-livres-sans-correction.mp3").write_bytes(b"ID3 brut")
+    d, autres = studio.trouver_chanson("  deux LIVRES ")
+    assert d["nom"] == "20261109-171743-deux-livres"          # le titre exact, la plus récente finie (pas la ratée)
+    assert [x["nom"] for x in autres] == ["20261109-165302-deux-livres", "20261109-172807-deux-livres-voix-naturelle"]
+    assert studio.trouver_chanson("20261109-165302-deux-livres")[0]["nom"] == "20261109-165302-deux-livres"
+    assert studio.trouver_chanson("Voix naturelle")[0]["nom"] == "20261109-172807-deux-livres-voix-naturelle"
+    with pytest.raises(studio.Refus, match="Lanterne.*Deux livres"):
+        studio.trouver_chanson("Lanterne")
+    with pytest.raises(studio.Refus):
+        studio.trouver_chanson("")
+
+
+def test_son_instru_entre_dans_les_instrus_du_studio(sons, tmp_path, separateur):
+    voix, instru = sons
+    melange = tmp_path / "melange.wav"
+    subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-i", str(instru), "-i", str(voix), "-filter_complex",
+                    "amix=inputs=2:normalize=0", str(melange)], check=True)
+    mp3 = _chanson(studio.CHANSONS, "20261109-171743-deux-livres", "Deux livres", 200, depuis=melange)
+    _chanson(studio.CHANSONS, "20261109-100000-beat", "Beat", 100, instrumental=True)
+    avant = mp3.read_bytes()
+    lances = []
+    r = studio.instru_de_chanson("Deux livres", demarrer=lances.append)
+    assert r["etat"] == "lancé" and len(lances) == 1 and r["travail"]["params"]["source"] == str(mp3.resolve())
+    assert studio.instru_de_chanson("deux livres", demarrer=lances.append)["etat"] == "en file" and len(lances) == 1
+    assert studio.travailleur(studio.STUDIO / "travaux") == 1
+    assert separateur.read_text().split()[0] == "separer"     # Demucs a bien reçu sa chanson
+    i = json.loads(next((studio.STUDIO / "instrus").glob("*.json")).read_text())
+    assert i["origine"] == "demucs" and i["source"] == str(mp3.resolve()) and i["titre"] == "Deux livres (instru)"
+    assert Path(i["mp3"]).is_file() and abs(i["duree_s"] - 10) < 0.5
+    assert mp3.read_bytes() == avant                          # sa chanson n'est pas touchée
+    d = studio.instru_de_chanson("Deux livres", demarrer=lances.append)
+    assert d["etat"] == "déjà" and d["instru"]["id"] == i["id"] and len(lances) == 1       # pas deux fois le même calcul
+    assert studio.instru_de_chanson("Deux livres", refaire=True, demarrer=lances.append)["etat"] == "lancé" and len(lances) == 2
+    assert studio.instru_du_studio(i["id"]) == i["mp3"] and studio.instru_du_studio("deux livres (INSTRU)") == i["mp3"]
+    assert studio.instru_du_studio("inconnue") == ""
+    with pytest.raises(studio.Refus, match="déjà une instru"):
+        studio.instru_de_chanson("Beat", demarrer=lances.append)
+
+
+def test_outil_studio_instru_puis_la_prise_de_papa_mixee_dessus(monkeypatch, tmp_path, sons, separateur):
+    """Le chemin entier de Hakim : studio_instru → l'instru dans le Studio → papa y pose sa prise → studio_mixer la mixe DESSUS."""
+    import memory
+    mem = memory.Memory(db_path=tmp_path / "m.db")
+    monkeypatch.setattr(memory, "Memory", lambda *a, **k: mem)
+    import mcp_server
+    outil = mcp_server.mcp._tool_manager.get_tool("studio_instru").fn
+    mixer = mcp_server.mcp._tool_manager.get_tool("studio_mixer").fn
+    avis = mcp_server.mcp._tool_manager.get_tool("studio_avis").fn
+    monkeypatch.setenv("ANAMNESE_SOURCE", "claude-code")
+    assert outil("Deux livres") == "Seul Hakim tire une instru de ses chansons."
+    monkeypatch.setenv("ANAMNESE_SOURCE", "hakim")
+    voix, instru = sons
+    mp3 = _chanson(studio.CHANSONS, "20261109-171743-deux-livres", "Deux livres", 200, depuis=instru)
+    _chanson(studio.CHANSONS, "20261109-172807-deux-livres-voix-naturelle", "Deux livres (voix naturelle)", 300, depuis=instru)
+    assert "« Deux livres (voix naturelle) » (20261109-172807" in outil()
+    assert outil("Lanterne").startswith("Refusé : aucune de tes chansons")
+    vus = []
+    monkeypatch.setattr(studio, "_demarrer_travailleur", vus.append)
+    r = outil("Deux livres")
+    assert r.startswith("Instru lancée") and "20261109-171743-deux-livres" in r and "Autres versions" in r and len(vus) == 1
+    assert "En cours : instru" in avis()
+    studio.travailleur(studio.STUDIO / "travaux")
+    i = json.loads(next((studio.STUDIO / "instrus").glob("*.json")).read_text())
+    texte = avis()
+    assert f"Instru prête" in texte and i["id"] in texte and "Instrus du Studio" in texte
+    assert outil("Deux livres").startswith("Déjà dans le Studio") and len(vus) == 1
+    # papa enregistre sa prise sur cette instru (la page du Studio écrit cette fiche)
+    p = studio.STUDIO / "prises"
+    p.mkdir(parents=True)
+    (p / "P-1.json").write_text(json.dumps({"id": "P-1", "fichier": str(voix), "instru_chemin": i["mp3"], "ts": 1, "latence_ms": 150,
+                                            "titre": "Papa sur Deux livres", "instru_titre": i["titre"]}))
+    assert mixer(instru="inconnue").startswith("Refusé : instru inconnue")
+    assert mixer(reverb=0.2).startswith("Mix lancé") and len(vus) == 2
+    studio.travailleur(studio.STUDIO / "travaux")
+    m = max(studio.STUDIO.glob("*.json"), key=lambda f: f.stat().st_mtime)
+    fiche = json.loads(m.read_text())
+    assert fiche["instru"] == i["mp3"] and fiche["prise"] == str(voix) and abs(fiche["mesure"]["lufs"] - studio.CIBLE_LUFS) <= 1.0
+    assert mixer(instru=i["id"]).startswith("Mix lancé")       # ou son identifiant, donné par Hakim
+    j = max((studio.STUDIO / "travaux").glob("J-*.json"), key=lambda f: f.stat().st_mtime)
+    assert json.loads(j.read_text())["params"]["instru"] == i["mp3"]

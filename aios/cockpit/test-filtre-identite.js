@@ -107,3 +107,174 @@ test('ses alias : tirés au hasard, jamais écrits dans le code public ; un grou
   const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   assert.doesNotMatch(srv, /Zorvan|Talmir/, 'aucun alias dans le code');
 });
+
+/* (09/11, Ahmed : « les requêtes qui sortent de notre filtre : une seule et même requête » ; d'abord mesurer) le registre du relais : une ligne
+   par requête, sans rien de son contenu ; l'étiquette de qui l'a lancée reste sur le Mac */
+test('le registre : une ligne par requête (tour, étiquette, modèle, tailles, temps, usage du cache), rien du contenu ; l’étiquette ne part pas', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'filtre-'));
+  const dict = path.join(dir, 'filtre.json'), registre = path.join(dir, 'relais-requetes.jsonl');
+  fs.writeFileSync(dict, JSON.stringify({ paires: [['Hakim', 'Zorvan'], ['Ahmed', 'Talmir']] }));
+  const vus = [];
+  const faux = http.createServer((req, res) => {
+    vus.push(req.headers);
+    const b = []; req.on('data', d => b.push(d)); req.on('end', () => {
+      const o = JSON.parse(Buffer.concat(b).toString() || '{}');
+      if (req.url.startsWith('/v1/messages/count_tokens')) { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ input_tokens: 42 })); }
+      if (!o.stream) { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ content: [{ type: 'text', text: 'Oui Talmir' }], usage: { input_tokens: 3, cache_read_input_tokens: 900, cache_creation_input_tokens: 10, output_tokens: 2 } })); }
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      const e = (x) => res.write(`event: ${x.type}\ndata: ${JSON.stringify(x)}\n\n`);
+      e({ type: 'message_start', message: { id: 'm', usage: { input_tokens: 4, cache_read_input_tokens: 129000, cache_creation_input_tokens: 700, output_tokens: 1 } } });
+      e({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } });
+      setTimeout(() => {
+        e({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Salut Talmir' } });
+        e({ type: 'content_block_stop', index: 0 });
+        e({ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 7 } });
+        e({ type: 'message_stop' });
+        res.end();
+      }, 30);
+    });
+  });
+  await new Promise(ok => faux.listen(0, '127.0.0.1', ok));
+  let tour = 7;
+  const relais = await F.demarrer(dict, { cible: `http://127.0.0.1:${faux.address().port}`, registre, contexte: () => ({ tour, depuis_papa_ms: 1200 }) });
+  const fermer = () => { for (const x of [relais.serveur, faux]) { x.closeAllConnections(); x.close(); } };
+  try {
+  const envoyer = (chemin, corps, entetes = {}) => fetch(`${relais.url}${chemin}`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer x', ...entetes }, body: JSON.stringify(corps) }).then(r => r.text());
+  const lu = await envoyer('/v1/messages?beta=true', { model: 'claude-sonnet-5-5', stream: true, max_tokens: 100, system: [{ type: 'text', text: 'Tu es Hakim.', cache_control: { type: 'ephemeral' } }],
+    tools: [{ name: 'a', description: 'x' }], messages: [{ role: 'user', content: [{ type: 'text', text: 'Ahmed : salut', cache_control: { type: 'ephemeral' } }] }] }, { 'x-hakim-etiquette': 'cerveau' });
+  assert.match(lu, /Salut Ahmed/, 'la réponse passe toujours en flux, remise en clair');
+  tour = 8;
+  await envoyer('/v1/messages', { model: 'claude-haiku-5-5', messages: [{ role: 'user', content: 'Hakim ?' }] });
+  await envoyer('/v1/messages/count_tokens', { model: 'claude-haiku-5-5', messages: [{ role: 'user', content: 'Hakim' }] });
+  const lu3 = () => { try { return fs.readFileSync(registre, 'utf8').trim().split('\n').filter(Boolean); } catch (_) { return []; } };
+  for (let k = 0; k < 100 && lu3().length < 3; k++) await new Promise(r => setTimeout(r, 30));   // écrit après coup, sans bloquer (Mac chargé)
+  const lignes = lu3().map(l => JSON.parse(l));
+  assert.equal(lignes.length, 3, 'une ligne par requête');
+  const [a, b, c] = lignes;
+  assert.equal(a.tour, 7); assert.equal(a.depuis_papa_ms, 1200); assert.equal(a.etiquette, 'cerveau');
+  assert.equal(a.chemin, '/v1/messages'); assert.equal(a.modele, 'claude-sonnet-5-5'); assert.equal(a.flux, true); assert.equal(a.statut, 200);
+  assert.equal(a.messages, 1); assert.equal(a.outils, 1); assert.equal(a.points_cache, 2);
+  assert.equal(a.cache_lu, 129000); assert.equal(a.cache_ecrit, 700); assert.equal(a.entree, 4); assert.equal(a.sortie, 7, 'la sortie : la dernière (message_delta)');
+  assert.ok(a.premier_mot_ms >= 25 && a.rendu_ms >= a.premier_mot_ms && a.ms >= a.rendu_ms, `temps : ${a.premier_mot_ms} ${a.rendu_ms} ${a.ms}`);
+  assert.ok(a.octets_aller > 0 && a.octets_retour > 0 && Number.isFinite(a.filtre_ms) && Number.isFinite(a.traduction_ms));
+  assert.equal(b.tour, 8); assert.equal(b.etiquette, null); assert.equal(b.flux, false); assert.equal(b.cache_lu, 900);
+  assert.equal(c.chemin, '/v1/messages/count_tokens');
+  assert.ok(!/Hakim|Ahmed|Zorvan|Talmir|salut/i.test(fs.readFileSync(registre, 'utf8')), 'rien du contenu au registre');
+  assert.ok(vus.every(h => !('x-hakim-etiquette' in h)), 'l’étiquette ne sort jamais du Mac');
+  assert.equal(relais.stats.requetes, 3);
+  } finally { fermer(); }
+});
+
+test('le registre note aussi une panne d’Anthropic (502 du relais)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'filtre-'));
+  const dict = path.join(dir, 'filtre.json'), lignes = [];
+  fs.writeFileSync(dict, '{}');
+  const relais = await F.demarrer(dict, { cible: 'http://127.0.0.1:1', registre: (l) => lignes.push(l) });
+  try {
+    const r = await fetch(`${relais.url}/v1/messages`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"model":"m","messages":[]}' });
+    assert.equal(r.status, 502);
+    await r.text();
+    assert.equal(lignes.length, 1); assert.equal(lignes[0].statut, 502); assert.match(lignes[0].erreur, /^relais : /);
+  } finally { relais.serveur.closeAllConnections(); relais.serveur.close(); }
+});
+
+/* (09/11, Ahmed : « une requête préconstruite ») chaque demande du cerveau renvoie toute sa conversation : ce qui a déjà été masqué est repris
+   tel quel, seul le neuf est masqué au départ ; le résultat est exactement le même */
+test('la demande préconstruite : un texte déjà masqué est repris (même résultat), seul le neuf est masqué', () => {
+  const D = D0(), sans = { ...D0(), memo: false };
+  const long = (k) => `Message ${k} : Hakim répond à Ahmed ahmed, écris à alla.eke@gmail.com ou au +41 79 123 45 6${k % 10}. `.repeat(4);
+  const conversation = (n) => ({ system: [{ type: 'text', text: `Tu es Hakim. ${'Persona. '.repeat(40)}` }], messages: Array.from({ length: n }, (_, k) => ({ role: k % 2 ? 'assistant' : 'user', content: [{ type: 'text', text: long(k) }] })) });
+  const t1 = JSON.stringify(F.masquerDemande(conversation(6), D));
+  const neufs1 = D._memo.neufs;
+  assert.equal(neufs1, 7, 'le système et 6 messages, masqués une fois');
+  const t2 = JSON.stringify(F.masquerDemande(conversation(8), D));   // le tour suivant : la même conversation + 2 messages
+  assert.equal(D._memo.neufs - neufs1, 2, 'au tour suivant, seuls les 2 messages neufs sont masqués');
+  assert.ok(D._memo.trouves >= 7, 'le reste est repris, déjà prêt');
+  assert.equal(t2, JSON.stringify(F.masquerDemande(conversation(8), sans)), 'exactement la même demande que sans la mémoire');
+  assert.ok(t2.startsWith(t1.slice(0, t1.indexOf('"messages"'))), 'le préfixe (système) identique : son cache chez Anthropic reste valable');
+  assert.ok(!/Hakim|Ahmed|ahmed|alla\.eke|79 123/.test(t2));
+  assert.equal(F.demasquerTexte(F.masquerTexte(long(3), D), D), long(3));
+});
+
+test('le dictionnaire est gardé tant que son fichier ne change pas ; un nom ajouté par papa le recharge (mémoire neuve)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'filtre-'));
+  const f = path.join(dir, 'filtre.json');
+  fs.writeFileSync(f, JSON.stringify({ paires: [['Hakim', 'Zorvan']] }));
+  const D1 = F.lireDictionnaire(f);
+  assert.equal(F.lireDictionnaire(f), D1, 'le même, tant que le fichier ne bouge pas');
+  const texte = 'Hakim parle avec Karim depuis longtemps, très longtemps, vraiment très longtemps, encore et encore, au-delà de cent soixante caractères, oui, au-delà.';
+  assert.ok(F.masquerTexte(texte, D1).includes('Karim'));
+  fs.writeFileSync(f, JSON.stringify({ paires: [['Hakim', 'Zorvan'], ['Karim', 'Belmor']] }));
+  const t = new Date(Date.now() + 2000); fs.utimesSync(f, t, t);
+  const D2 = F.lireDictionnaire(f);
+  assert.notEqual(D2, D1);
+  assert.ok(!F.masquerTexte(texte, D2).includes('Karim'), 'le nouveau nom est masqué tout de suite (pas une réponse d’avant)');
+});
+
+test('le retour suit une valeur ajoutée en cours de route (les motifs de retour refaits seulement quand le dictionnaire grandit)', () => {
+  const D = D0();
+  assert.equal(F.demasquerTexte('Zorvan', D), 'Hakim');
+  const m = F.masquerTexte('écris à nouveau@mail.ch', D);
+  assert.ok(!m.includes('nouveau@mail.ch'));
+  assert.equal(F.demasquerTexte(m, D), 'écris à nouveau@mail.ch', 'la valeur neuve revient en clair');
+  const tr = F.traducteurFlux(D);
+  const alias = D.valeurs['mail|nouveau@mail.ch'];
+  const ev = (o) => `event: ${o.type}\ndata: ${JSON.stringify(o)}`;
+  const out = tr(ev({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: `mail ${alias.slice(0, 5)}` } }))
+    + tr(ev({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: alias.slice(5) } })) + tr(ev({ type: 'content_block_stop', index: 0 }));
+  const texte = out.split('\n\n').filter(x => x.includes('text_delta')).map(x => JSON.parse(x.split('\n').find(l => l.startsWith('data:')).slice(5)).delta.text).join('');
+  assert.equal(texte, 'mail nouveau@mail.ch');
+});
+
+/* (09/11) mesuré avec un relais d'essai : un claude sans CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC part trois requêtes (HEAD /api/hello, un titre
+   de session écrit par Haiku, la vraie) ; avec, une seule. Le cockpit le pose pour tous ses claude, et range chaque requête dans le tour de papa */
+test('le cockpit : un seul envoi par claude (trafic accessoire coupé pour tous), le registre et le tour de papa pour le relais, les étiquettes', () => {
+  const vm = require('node:vm');
+  const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+  const prendre = (nom) => { const i = srv.indexOf(`function ${nom}(`); return srv.slice(i, srv.indexOf('\n}\n', i) + 2); };
+  assert.match(srv, /if \(process\.env\.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC === undefined\) process\.env\.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';/);
+  assert.ok(srv.indexOf("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';") < srv.indexOf('setTimeout(suivreFiltreIdentite, 0);'), 'posé avant le premier claude');
+  assert.match(prendre('suivreFiltreIdentite'), /registre: JARVIS_RELAIS_REQUETES, contexte: \(\) => contexteRelais\(\)/);
+  assert.match(srv, /const JARVIS_RELAIS_REQUETES = path\.join\(JARVIS, 'relais-requetes\.jsonl'\);/);
+  assert.match(prendre('routeJarvis'), /tourRelais\.n\+\+; tourRelais\.depuis = recuMs;/);
+  assert.match(prendre('cerveauLancer'), /env\.ANTHROPIC_CUSTOM_HEADERS = avecEtiquette\(env\.ANTHROPIC_CUSTOM_HEADERS, 'cerveau'\);/);
+  assert.match(prendre('vivantLibre'), /avecEtiquette\(env\.ANTHROPIC_CUSTOM_HEADERS, `vivant-\$\{m\}`\)/);
+  assert.match(prendre('reglagesCerveau'), /espaceApiEtiquete\('cerveau'\)/);
+  // l'étiquette s'ajoute à l'espace de travail de l'API (une ligne par en-tête), sans le remplacer
+  const ctx = vm.createContext({ envEspaceApi: () => ({ env: { ANTHROPIC_CUSTOM_HEADERS: 'anthropic-workspace-id: wrkspc_x' } }), Date });
+  vm.runInContext(`${prendre('avecEtiquette')}\n${prendre('espaceApiEtiquete')}\n${prendre('contexteRelais')}\nconst tourRelais = { n: 3, depuis: 1000 };\nthis.a = avecEtiquette; this.e = espaceApiEtiquete; this.c = contexteRelais;`, ctx);
+  assert.equal(ctx.e('cerveau').env.ANTHROPIC_CUSTOM_HEADERS, 'anthropic-workspace-id: wrkspc_x\nx-hakim-etiquette: cerveau');
+  assert.equal(ctx.a(undefined, 'vivant-haiku'), 'x-hakim-etiquette: vivant-haiku');
+  assert.equal(ctx.a('', 'a b\nc'), 'x-hakim-etiquette: abc', 'jamais un saut de ligne ou un en-tête glissé dans le nom');
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.c(1500))), { tour: 3, depuis_papa_ms: 500 });
+  // (09/11, 7,2 s de médiane pour un délai de 6 s) son prétraitement de la parole passe par une voix vivante chaude
+  const pour = new RegExp(srv.match(/const POUR_VIVANTS = \/(.*)\/;/)[1]);
+  assert.ok(pour.test('pretraitement_parole') && pour.test('ribosome_haiku') && !pour.test('deja_recu'));
+});
+
+// (09/11) la connexion gardée ouverte entre deux tours : si Anthropic l'a fermée entre-temps, la demande repart une fois sur une neuve
+test('une connexion gardée mais fermée par Anthropic : la demande repart une fois, sans erreur pour claude', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'filtre-'));
+  const dict = path.join(dir, 'filtre.json'), lignes = [];
+  fs.writeFileSync(dict, '{}');
+  const deja = new Set();
+  let coupees = 0;
+  const faux = http.createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      if (deja.has(req.socket) && !coupees) { coupees++; return req.socket.destroy(); }   // la 2e demande sur la même connexion : coupée net
+      deja.add(req.socket);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ content: [{ type: 'text', text: 'ok' }], usage: { input_tokens: 1, output_tokens: 1 } }));
+    });
+  });
+  await new Promise(ok => faux.listen(0, '127.0.0.1', ok));
+  const relais = await F.demarrer(dict, { cible: `http://127.0.0.1:${faux.address().port}`, registre: (l) => lignes.push(l) });
+  try {
+    const envoyer = () => fetch(`${relais.url}/v1/messages`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"model":"m","messages":[{"role":"user","content":"x"}]}' });
+    const r1 = await envoyer(); assert.equal(r1.status, 200); await r1.text();
+    const r2 = await envoyer(); assert.equal(r2.status, 200, 'claude ne voit pas la connexion fermée'); assert.match(await r2.text(), /ok/);
+    assert.equal(coupees, 1); assert.equal(relais.stats.reessais, 1);
+    assert.equal(lignes[0].connexion, 'neuve'); assert.equal(lignes[1].reessai, true);
+  } finally { for (const x of [relais.serveur, faux]) { x.closeAllConnections(); x.close(); } }
+});

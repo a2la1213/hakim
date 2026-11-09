@@ -19,6 +19,34 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stt  # noqa: E402  (l'amorce et le filtre des inventions, les mêmes que la grande oreille)
 
 MODELE = os.environ.get("JARVIS_WHISPER_VIF", "mlx-community/whisper-small-mlx")
+# (09/11, mesuré à 21:15 : 7,1 Go d'« IOAccelerator » sur 7,4 Go, 4 918 régions, pour un Whisper small de ~0,5 Go ; le Mac swappait à
+# 16,8/17,4 Go) les tampons Metal que MLX GARDE en cache après chaque demande, comme voix_serveur le 24/10 : le cache est borné, et
+# vidé dès qu'aucune demande n'attend (jamais entre deux morceaux de papa qui se suivent). Le modèle chargé reste.
+CACHE_MAX_OCTETS = int(os.environ.get("JARVIS_VIF_CACHE_MO", "256")) * 1024 * 1024
+
+
+def borner_cache():
+    try:
+        import mlx.core as mx
+        mx.set_cache_limit(CACHE_MAX_OCTETS)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def vider_cache_si_libre(entree=sys.stdin):
+    """Vide le cache Metal quand rien n'attend sur l'entrée (le vider entre deux demandes collées les ralentirait)."""
+    try:
+        import select
+        if select.select([entree], [], [], 0)[0]:
+            return False
+    except Exception:  # noqa: BLE001  (une entrée sans descripteur : on vide)
+        pass
+    try:
+        import mlx.core as mx
+        mx.clear_cache()
+        return True
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def transcrire(mlx_whisper, fichier, langue=None, contexte="", avec_temps=False):
@@ -63,7 +91,9 @@ def famille(fichier, parole=None, voix=0):
 def main():
     import mlx_whisper
     import numpy as np
+    borner_cache()
     mlx_whisper.transcribe(np.zeros(16000, dtype=np.float32), path_or_hf_repo=MODELE, language="fr")   # chargé d'avance
+    vider_cache_si_libre()
     print(json.dumps({"pret": True, "modele": MODELE}), flush=True)
     for ligne in sys.stdin:
         try:
@@ -88,6 +118,7 @@ def main():
         except Exception as e:  # noqa: BLE001  (une demande ratée ne tue pas l'oreille)
             sortie = {"erreur": str(e)[:200]}
         print(json.dumps({"id": d.get("id"), **sortie}, ensure_ascii=False), flush=True)
+        vider_cache_si_libre()
 
 
 if __name__ == "__main__":

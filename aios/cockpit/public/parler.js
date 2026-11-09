@@ -460,7 +460,10 @@ function creerLecteurNeuronal() {
   let prochainDebut = 0, generation = 0, element = null, veille = null;
   // Pause (lot C, point 26, 2026-10-19) : ce qui n'a pas encore été dit, la phrase en cours comprise, est
   // gardé ; la reprise repart de cette phrase. Le texte qui arrive pendant la pause s'y ajoute.
-  let pause = null, elementTexte = null;
+  // (09/11, 16:28, Ahmed : « pourquoi tu reprends pas les morceaux déjà prêts avec ta voix, au lieu de régénérer ») la pause garde sa VOIX : le
+  // morceau qui sonnait (repris au mot où il s'est arrêté), ceux déjà calculés et ceux encore en calcul (qui finissent) ; rien n'est refait à la reprise.
+  // Pendant la pause, rien ne part ; ce qui arrive se met à la suite.
+  let pause = null, elementTexte = null, finSonA = -1;
   // (03/11, Hakim pour papa : « je donne une première réponse courte, puis la suite ; si un trou se prépare entre les deux, une
   // petite hésitation pour meubler, côté cockpit, sans que je l'écrive ») sa voix a fini, la suite n'est pas prête et sa réponse
   // s'écrit encore : après un souffle, une hésitation toute prête (L.hesitation, fournie par la page). Une par trou, deux par
@@ -505,8 +508,7 @@ function creerLecteurNeuronal() {
     appliquerSon() { if (element) element.muted = !!etat.sonCoupe; },
     dire(phrase) {
       if (typeof noterSaVoix === 'function') noterSaVoix(phrase);     // (04/11, 12:25) pour reconnaître son écho
-      if (pause) { pause.textes.push(...Voix.prononcable(phrase)); pause.fluxFini = false; return; }
-      if (L.fluxFini && !attendre) { aParle = false; dejaParle = false; }   // (03/11) une nouvelle réponse
+      if (L.fluxFini && !attendre && !pause) { aParle = false; dejaParle = false; }   // (03/11) une nouvelle réponse
       L.fluxFini = false;
       for (const seg of Voix.prononcable(phrase)) {
         // les phrases très longues sont coupées aux virgules : un morceau peut alors rester petit
@@ -517,7 +519,7 @@ function creerLecteurNeuronal() {
       }
       pomper();
     },
-    finFlux() { if (pause) { pause.fluxFini = true; return; } L.fluxFini = true; pomper(); },
+    finFlux() { L.fluxFini = true; pomper(); },
     attendreReponse() {
       clearTimeout(avant);
       attendre = true; aParle = false; dejaParle = false; couvre = 0;
@@ -527,8 +529,7 @@ function creerLecteurNeuronal() {
     direAudio(texte, buf) {
       if (!buf || !buf.duration) { L.dire(texte); return; }
       if (typeof noterSaVoix === 'function') noterSaVoix(texte);
-      if (pause) { pause.textes.push({ langue: 'fr', texte }); pause.fluxFini = false; return; }
-      if (L.fluxFini && !attendre) { aParle = false; dejaParle = false; }
+      if (L.fluxFini && !attendre && !pause) { aParle = false; dejaParle = false; }
       L.fluxFini = false;
       unites.push({ audio: { texte, pret: buf } });
       pomper();
@@ -536,46 +537,97 @@ function creerLecteurNeuronal() {
     // (13:30) un meuble choisi par lui (conscient, [[meuble: nom]]) : à sa place, entre ce qui précède et la suite
     direMeuble(h) {
       if (!h || !h.pret) return;
-      if (pause) { pause.textes.push({ meuble: h }); return; }
       unites.push({ meuble: h });
       pomper();
     },
     // (31/10, 01:27, Ahmed via Hakim) un de ses sons, à sa place : après ce qui précède, avant la suite, joué en entier
     direSon(extrait) {
       if (!extrait || !/^e\d{1,6}$/.test(String(extrait.id))) return;
-      if (pause) { pause.textes.push({ son: extrait }); return; }
       unites.push({ son: extrait });
       pomper();
     },
     // ce qui n'a pas encore été dit, la phrase en cours comprise (reprise du début), sans rien arrêter
     restant() {
-      if (pause) return pause.textes.slice();
       const maintenant = fluide() ? actx.currentTime : 0;
       const restants = [];
       if (element && elementTexte) restants.push({ langue: 'fr', texte: elementTexte });
       for (const src of [...sources].sort((a, b) => a._debut - b._debut))     // en cours (repris du début) et à venir
-        if (src._texte && src._fin > maintenant + 0.05) restants.push({ langue: src._langue, texte: src._texte });
+        if (src._texte && !src._retenu && src._fin > maintenant + 0.05) restants.push({ langue: src._langue, texte: src._texte });
       for (const x of lots) restants.push(x.son ? { son: x.son } : (x.meuble ? { meuble: x.meuble } : { langue: x.langue, texte: x.texte }));
-      for (const u of unites) restants.push(u);
+      for (const u of unites) restants.push(u.audio ? { langue: 'fr', texte: u.audio.texte } : u);
       return restants;
     },
-    // met en pause ; rend vrai si quelque chose restait à dire
-    pause() {
-      if (pause || !L.actif) return false;
-      const restants = L.restant();
-      const fluxFini = L.fluxFini;
-      L.arreter();
-      pause = { textes: restants, fluxFini };
+    // met en pause ; rend vrai si quelque chose restait à dire. (09/11) auMot : le morceau qui sonne finit son mot (« tu le coupes net ») et
+    // reprendra juste après ce mot ; sans auMot, il s'arrête tout de suite et reprendra là. Sa voix déjà faite est gardée, rien n'est recalculé.
+    // Déjà en pause (il te coupait, te_couper) : ce qu'il disait de nouveau se met en pause à son tour, en tête.
+    pause({ auMot = false, vide = false } = {}) {
+      const deja = !!pause;
+      if (!deja && !L.actif && !vide) return false;
+      const now = fluide() ? actx.currentTime : 0;
+      const repris = [];
+      for (const src of [...sources].sort((a, b) => a._debut - b._debut)) {
+        if (src._retenu) continue;                                  // il finit déjà son mot
+        const voix = src._texte && !src._hesitation && !src._auto && src.buffer && Number(src.buffer.duration) > 0;
+        if (voix && src._fin > now + 0.05) {
+          const v = (src.playbackRate && Number(src.playbackRate.value)) || 1, dejaJoue = src._offset || 0;   // ce morceau peut être lui-même une reprise
+          let fin = now;
+          if (auMot && src._debut <= now && typeof Voix !== 'undefined' && Voix.finDePhrase) {
+            const duree = Math.max(0.01, src._fin - src._debut);
+            const f = Voix.finDePhrase(src._texte, (now - src._debut) / duree, true);
+            fin = Math.min(src._fin, Math.max(now, src._debut + f.fraction * duree + 0.04));
+          }
+          const offset = src._debut < fin ? Math.min(src.buffer.duration - 0.02, dejaJoue + (fin - src._debut) * v) : dejaJoue;
+          if (offset < src.buffer.duration - 0.05) repris.push({ pret: src.buffer, texte: src._texte, langue: src._langue, offset, reprise: true });
+          if (fin > now + 0.005) {                                   // il finit son mot, en 60 ms de fondu
+            try { const gg = src._gain && src._gain.gain; if (gg && gg.setValueAtTime && gg.linearRampToValueAtTime) { gg.setValueAtTime(gg.value, fin); gg.linearRampToValueAtTime(0, fin + 0.06); } } catch (_) {}
+            try { src.stop(fin + 0.06); } catch (_) {}
+            src._fin = fin + 0.06; src._retenu = true;
+            continue;
+          }
+        }
+        src._annule = true;
+        try { src.stop(); } catch (_) {}
+        sources.delete(src);
+      }
+      if (element) { if (elementTexte) unites.unshift({ langue: 'fr', texte: elementTexte }); element.pause(); URL.revokeObjectURL(element.src); element = null; }
+      lots.unshift(...repris);
+      prochainDebut = 0;
+      clearInterval(veille); veille = null;
+      clearTimeout(trou); trou = null; clearTimeout(avant); avant = null; couvre = 0;
+      pause = pause || { depuis: Date.now() };
       return true;
     },
     reprendre() {
       if (!pause) return false;
-      const p = pause; pause = null;
-      L.fluxFini = false;
-      unites.push(...p.textes);
-      if (p.fluxFini) L.fluxFini = true;
+      pause = null;
       pomper();
       return true;
+    },
+    // (09/11) ce qui attendait avant que papa parle (sa réponse d'avant) : marqué ; papa lui demande autre chose, seul cela est lâché (lacherVieux),
+    // pas ce qui est arrivé depuis (sa réponse à papa qui commence)
+    marquerVieux() {
+      for (const x of lots) x._vieux = true;
+      for (const u of unites) u._vieux = true;
+      for (const s of sources) s._vieux = true;
+      return lots.length + unites.length + sources.size > 0;
+    },
+    get aDuVieux() { return lots.some(x => x._vieux) || unites.some(u => u._vieux) || [...sources].some(s => s._vieux && !s._retenu); },
+    lacherVieux() {
+      pause = null;
+      for (let i = lots.length - 1; i >= 0; i--) if (lots[i]._vieux) { if (lots[i].ctl) lots[i].ctl.abort(); lots.splice(i, 1); }
+      for (let i = unites.length - 1; i >= 0; i--) if (unites[i]._vieux) unites.splice(i, 1);
+      const now = fluide() ? actx.currentTime : 0;
+      for (const s of [...sources]) if (s._vieux && !s._retenu) {
+        if (s._debut <= now && s._fin > now && s.buffer && s._texte && typeof Voix !== 'undefined' && Voix.finDePhrase) {   // il finit son mot
+          const duree = Math.max(0.01, s._fin - s._debut), f = Voix.finDePhrase(s._texte, (now - s._debut) / duree, true);
+          const fin = Math.min(s._fin, Math.max(now, s._debut + f.fraction * duree + 0.04));
+          try { const gg = s._gain && s._gain.gain; if (gg && gg.setValueAtTime && gg.linearRampToValueAtTime) { gg.setValueAtTime(gg.value, fin); gg.linearRampToValueAtTime(0, fin + 0.06); } } catch (_) {}
+          try { s.stop(fin + 0.06); } catch (_) {}
+          s._fin = fin + 0.06; s._retenu = true;
+        } else { s._annule = true; try { s.stop(); } catch (_) {} sources.delete(s); }
+      }
+      prochainDebut = Math.max(0, ...[...sources].map(s => s._fin || 0));
+      pomper();
     },
     get enPause() { return !!pause; },
     arreter() {
@@ -620,11 +672,21 @@ function creerLecteurNeuronal() {
       clearTimeout(trou); trou = null; clearTimeout(avant); avant = null; couvre = 0; attendre = false; finDernierMeuble = 0;
       return { dit: f.dit, ms: Math.round((enCours._fin - now) * 1000) };
     },
-    get actif() { return unites.length > 0 || lots.length > 0 || sources.size > 0 || !!element; },
+    // (09/11) en pause, il ne parle pas (comme avant : le micro et la page le savent), même si sa voix attend, prête, sa reprise
+    get actif() { return !pause && (unites.length > 0 || lots.length > 0 || sources.size > 0 || !!element); },
     get joue() { return sources.size > 0 || !!element; },
+    // (09/11, 18:09, Ahmed : « si je l'ai pas entendu, je peux pas t'avoir coupé ») sa voix SONNE à l'instant chez papa : un morceau qui joue
+    // (pas un morceau qui se calcule encore, ni un blanc entre deux), plus 0,35 s après sa fin (son écho dans la pièce)
+    get sonne() {
+      if (element) return true;
+      if (!fluide()) return sources.size > 0;
+      const now = actx.currentTime;
+      for (const s of sources) if (s._debut <= now + 0.02 && s._fin > now) return true;
+      return finSonA >= 0 && now - finSonA < 0.35;
+    },
     get resteS() { return avance(); },                              // (07/11) le temps de voix déjà programmé devant lui
     // (16:00) sa vraie voix (une réponse dite, à dire, ou en cours) : ses meubles n'en sont pas
-    get parle() { return lots.length > 0 || vraiesSources() || !!element || unites.some(u => !u.meuble); },
+    get parle() { return !pause && (lots.length > 0 || vraiesSources() || !!element || unites.some(u => !u.meuble)); },
     // (04/11) retirer des paroles déjà fabriquées qui n'ont pas encore commencé (ses bouts devenus inutiles : sa vraie réponse arrive)
     retirerAudio(textes) {
       const garde = (t) => !textes.includes(t);
@@ -685,6 +747,22 @@ function creerLecteurNeuronal() {
     // l'avance en secondes RÉELLES : ce qui est programmé (déjà à la vitesse) + ce qui est prêt (à diviser)
     const enAvance = avance() + lots.reduce((t, x) => t + (x.pret && x.pret.duration ? x.pret.duration : 0), 0) / vitesse;
     const budget = premier ? 0 : Math.min(plafond, est.cps * Math.max(0, (enAvance - est.fixe - 0.3) / est.parSec));
+    // (09/11, mesuré de 17:55 à 21:00 : sa voix de rap coûte ~3,5 s par appel QUELLE QUE SOIT sa longueur — 2,6 fois le temps de parole pour un
+    // morceau de moins de 2 s, 0,6 fois de 4 à 8 s, 0,36 au-delà ; en retard, la page coupait de plus en plus court (40 caractères) : 10 à 17 s
+    // de blanc entre deux bouts de 2 s, et papa parlait dans ces blancs) quand le coût fixe d'un appel dépasse l'avance, un blanc est inévitable :
+    // le morceau est alors assez long pour que le SUIVANT soit prêt à sa fin (fixe / (1 − parSec) secondes de voix, × 1,2), au plafond près
+    if (!premier && enAvance < est.fixe + 0.3 && est.parSec < 0.9) {
+      const minimum = Math.min(plafond, est.cps * 1.2 * est.fixe / (1 - est.parSec));
+      if (minimum > Math.max(40, budget)) {
+        const c2 = couper(unites[0].texte, plafond, 25);
+        if (c2) unites.splice(0, 1, { langue: unites[0].langue, texte: c2[0] }, { langue: unites[0].langue, texte: c2[1] });
+        const v0 = unites[0];
+        let t2 = v0.texte, k = 1;
+        while (t2.length < minimum && k < unites.length && unites[k].langue === v0.langue && t2.length + unites[k].texte.length + 1 <= plafond) { t2 += ' ' + unites[k].texte; k++; }
+        unites.splice(0, k);
+        return { langue: v0.langue, texte: t2 };
+      }
+    }
     const c = couper(unites[0].texte, premier ? 90 : Math.max(40, budget), premier ? 35 : 25);
     if (c) unites.splice(0, 1, { langue: unites[0].langue, texte: c[0] }, { langue: unites[0].langue, texte: c[1] });
     const u0 = unites[0];
@@ -733,6 +811,17 @@ function creerLecteurNeuronal() {
           const G = (performance.now() - x.t0) / 1000;
           est.cps = 0.7 * est.cps + 0.3 * Math.min(25, Math.max(8, x.texte.length / res.duration));
           est.parSec = 0.7 * est.parSec + 0.3 * Math.min(1.5, Math.max(0.25, (G - est.fixe) / res.duration));
+          // (09/11) son coût fixe aussi est appris (il restait à 0,85 s : 3 à 4 s par appel passaient pour une voix lente à la seconde) : la droite
+          // des 12 derniers appels (pas une voix gardée), quand leurs durées sont assez variées
+          if (G >= 0.4) {
+            est.obs = (Array.isArray(est.obs) ? est.obs : []).concat([[Math.round(G * 100) / 100, Math.round(res.duration * 100) / 100]]).slice(-12);
+            const n = est.obs.length, mg = est.obs.reduce((a, o) => a + o[0], 0) / n, md = est.obs.reduce((a, o) => a + o[1], 0) / n;
+            const vd = est.obs.reduce((a, o) => a + (o[1] - md) ** 2, 0) / n;
+            if (n >= 4 && vd > 0.25) {
+              const p = Math.min(1.5, Math.max(0.02, est.obs.reduce((a, o) => a + (o[1] - md) * (o[0] - mg), 0) / n / vd));
+              est.parSec = p; est.fixe = Math.min(15, Math.max(0.1, mg - p * md));
+            }
+          }
           garder();
         }
         pomper();
@@ -769,9 +858,10 @@ function creerLecteurNeuronal() {
     }
     // (04/11, Ahmed : « enlève tous les blancs, même entre les mots qu'il dit ») le silence que la synthèse laisse au début et à la fin
     // de chaque bout de sa voix est rogné : les bouts s'enchaînent sans trou
-    if (!x.hesitation && !x.son && x.pret && x.pret.getChannelData && L.rogner) x.pret = L.rogner(x.pret);
+    // (09/11) un morceau repris après une pause est déjà rogné et adouci : il repart tel quel, de là où il s'était arrêté
+    if (!x.hesitation && !x.son && !x.reprise && x.pret && x.pret.getChannelData && L.rogner) x.pret = L.rogner(x.pret);
     // (15:15) sa voix après un meuble repart au ralenti en accélérant ; sa dernière parole avant un trou ralentit sur sa fin
-    if (!x.hesitation && !x.son && x.pret && x.pret.getChannelData) {
+    if (!x.hesitation && !x.son && !x.reprise && x.pret && x.pret.getChannelData) {
       if (x.apresMeuble && L.adoucirDebut) x.pret = L.adoucirDebut(x.pret);
       if (!unites.length && !lots.length && !L.fluxFini && L.adoucirFin) x.pret = L.adoucirFin(x.pret);
     }
@@ -793,9 +883,10 @@ function creerLecteurNeuronal() {
     const force = actx.createGain();
     force.gain.value = x.son ? 0.6 : forceDeLaVoix() * (Number.isFinite(x.volume) ? x.volume : 1);   // (13:30) le volume du meuble
     src.connect(force); force.connect(analyseurVoix);
-    src.start(t);
-    const joue = Math.min(x.pret.duration / vitesse, x.dureeMax > 0 ? x.dureeMax : Infinity);   // (13:30) sa durée au plus
-    if (joue < x.pret.duration / vitesse) { try { src.stop(t + joue); } catch (_) {} }
+    const offset = x.reprise && Number(x.offset) > 0 ? Math.min(Number(x.offset), x.pret.duration - 0.02) : 0;   // (09/11) repris au mot où il s'était arrêté
+    src.start(t, offset);
+    const joue = Math.min((x.pret.duration - offset) / vitesse, x.dureeMax > 0 ? x.dureeMax : Infinity);   // (13:30) sa durée au plus
+    if (joue < (x.pret.duration - offset) / vitesse) { try { src.stop(t + joue); } catch (_) {} }
     // (1.66, 04/11, 19:35, Ahmed : « … soit depuis la voie de ses haut-parleurs ») l'appli sait d'avance jusqu'à quand sa voix (ou son
     // son) joue : son oreille par l'air, le micro du téléphone, jette tout ce qu'il capte pendant ce temps (jamais sa propre voix)
     try { if (window.HakimApp && window.HakimApp.saVoixPendant) window.HakimApp.saVoixPendant(Math.max(0, (t + joue - actx.currentTime) * 1000)); } catch (_) {}
@@ -803,6 +894,7 @@ function creerLecteurNeuronal() {
     prochainDebut = t + joue + (x.hesitation || x.auto || x.son ? 0.01 : R('respiration', 0.1));
     src._texte = x.hesitation ? '' : x.texte; src._hesitation = !!x.hesitation; src._auto = !!x.auto; src._gain = force;
     src._langue = x.langue; src._debut = t; src._fin = t + joue; src._transition = x.transition || null;   // (07/11) celle de son plan
+    src._offset = offset; if (x._vieux) src._vieux = true;
     if (!x.hesitation && !x.auto) L.finVoixA = t + joue;
     sources.add(src);
     if (!x.auto) { aParle = true; couvre = 0; }                      // un meuble choisi par lui compte comme sa parole
@@ -811,11 +903,14 @@ function creerLecteurNeuronal() {
     const duree = joue * 1000;                                 // (30/10) sa durée : où il en est quand on le coupe
     // (07/11) l'heure où son son part vraiment (la minuterie de la page peut arriver en retard, téléphone chargé ou en poche)
     const debutMs = Date.now() + Math.max(0, (t - actx.currentTime) * 1000);
-    if (!x.son && !x.hesitation) setTimeout(() => { if (g === generation && L.surSegment) L.surSegment(x.texte, duree, debutMs); }, Math.max(0, (t - actx.currentTime) * 1000));
-    src.onended = () => { sources.delete(src); if (src._auto && fluide()) finDernierMeuble = actx.currentTime; if (g === generation) pomper(); };
+    // (09/11) un morceau retiré avant d'avoir sonné (pause, réponse lâchée) n'est pas noté dit
+    if (!x.son && !x.hesitation) setTimeout(() => { if (g === generation && !src._annule && L.surSegment) L.surSegment(x.texte, duree, debutMs); }, Math.max(0, (t - actx.currentTime) * 1000));
+    src.onended = () => { sources.delete(src); if (fluide()) finSonA = actx.currentTime; if (src._auto && fluide()) finDernierMeuble = actx.currentTime; if (g === generation) pomper(); };
   }
 
   function pomper() {
+    // (09/11) en pause : rien ne part et rien ne se lance (ce qui se calculait finit et attend, prêt) ; ni fin, ni meuble
+    if (pause) { if (L.peutCouper && L.peutCouper() && fluide()) pomperNeuf(); else { clearInterval(veille); veille = null; } return; }
     // 1. le processus voix ne reste jamais inactif quand du texte attend (une demande à la fois : on
     //    taille le lot en connaissant l'avance exacte du moment)
     if (unites.length && !lots.some(x => !x.pret && !x.erreur)) {
@@ -888,6 +983,28 @@ function creerLecteurNeuronal() {
       trou = setTimeout(hesiter, (couvre ? ENTRE_MEUBLES : R('blanc_avant_meuble', 0.1)) * 1000);
     if (L.actif && !veille) veille = setInterval(pomper, 250);
     if (!L.actif) { clearInterval(veille); veille = null; if (L.surFin) L.surFin(); }
+  }
+
+  // (09/11, Ahmed : « tu le coupes net » ne doit plus rendre « il peut te couper » sans effet) en pause, s'il peut te couper (te_couper) : ce qu'il a
+  // de NOUVEAU à dire (arrivé depuis que tu parles, pas marqué « d'avant ») part, par-dessus toi ; sa réponse d'avant, elle, attend ta phrase
+  function pomperNeuf() {
+    if (unites.some(u => !u._vieux) && !lots.some(x => !x._vieux && !x.pret && !x.erreur)) {
+      const vieuxU = unites.filter(u => u._vieux), neufs = unites.filter(u => !u._vieux);
+      unites.length = 0; unites.push(...neufs);
+      const x = prochainLot();
+      unites.unshift(...vieuxU);
+      lots.push(x);
+      if (!x.pret) lancer(x);
+    }
+    for (let k = lots.findIndex(x => !x._vieux); k >= 0 && (lots[k].pret || lots[k].erreur); k = lots.findIndex(x => !x._vieux)) {
+      const x = lots[k];
+      if (!x.erreur && (x.pret instanceof Blob || (x.pret && x.pret.natif))) break;   // un son de l'appli, une voix sans Web Audio : à la reprise
+      lots.splice(k, 1);
+      if (x.erreur) continue;
+      programmer(x, Math.max(actx.currentTime + 0.03, prochainDebut));
+    }
+    if (unites.some(u => !u._vieux) || lots.some(x => !x._vieux)) { if (!veille) veille = setInterval(pomper, 250); }
+    else { clearInterval(veille); veille = null; }
   }
 
   function hesiter() {
@@ -1030,6 +1147,8 @@ function niveauVoix() {
   return { niveau: etire(0.5 * g + 0.3 * m + 0.2 * a, 0.25, 0.55), bandes: [etire(g, 0.3, 0.65), etire(m, 0.2, 0.6), etire(a, 0.2, 0.55)] };
 }
 const lecteurNeuronal = creerLecteurNeuronal();
+// (09/11) en pause (tu l'as coupé net), il peut quand même te couper avec ce qu'il a de neuf à dire, si « il peut te couper » est allumé
+lecteurNeuronal.peutCouper = () => typeof teCouper === 'function' && teCouper();
 // Un seul lecteur pour le reste de la page : la voix neuronale si elle est là, sinon celle du Mac.
 const lecteur = {
   // (06/11, 14:30, Ahmed : « des fois il parle en parallèle, il dit 2 trucs en même temps, c'est du cafouillage ») en Conversation, ses pensées épissées
@@ -1053,7 +1172,7 @@ const lecteur = {
   },
   get actif() { return lecteurNeuronal.actif || !!(lecteurSysteme && lecteurSysteme.actif); },
   // la voix du Mac ne sait pas reprendre : en pause, elle s'arrête
-  pause() { if (this.impl === lecteurNeuronal) return lecteurNeuronal.pause(); this.arreter(); return false; },
+  pause(o) { if (this.impl === lecteurNeuronal) return lecteurNeuronal.pause(o); this.arreter(); return false; },
   reprendre() { return lecteurNeuronal.reprendre(); },
   get enPause() { return lecteurNeuronal.enPause; },
 };
@@ -1596,6 +1715,8 @@ function finirParole(cause, detail = '', cible = null) {
   }
   if (etat.finitSaPhrase && c.mode === 'oral' && c.cause !== 'fin') { c.finie = true; marquerNonDit(c); }   // (07/11) il a fini sa phrase
   if (etat.parleDepuis) etat.finParole = c;
+  // (09/11, idée de Hakim : « que je voie le TEXTE des morceaux non dits, pas seulement mes derniers mots ») coupé : ce qu'il n'a pas dit part avec la coupure
+  if (c.mode === 'oral' && c.cause !== 'fin' && !c.trou) { const nd = texteNonDit(c.tour, c.dits); if (nd) c.non_dit = nd; }
   Object.assign(parole, { id: null, morceaux: [], panne: '', panneReponse: null, rejoue: false });
   try { localStorage.removeItem('jarvis.paroleEnCours'); } catch (_) {}
   if (c.cause !== 'fin') envoyerCoupure(c);
@@ -1624,6 +1745,20 @@ function partsDites(texte, n) {
   let m, k = 0, fin = 0;
   while (k < n && (m = re.exec(t))) { k++; fin = m.index + m[0].length; }
   return [t.slice(0, fin), t.slice(fin)];
+}
+// (09/11) le texte de sa réponse après ses `dits` premiers mots dits (sa voix les a dits, papa les a entendus) : ce qui n'a pas été dit
+function texteNonDit(id, dits) {
+  try {
+    const m = messageDe(id);
+    if (!m || m.qui !== 'j' || !m.texte || !Number.isFinite(Number(dits))) return '';
+    const t = Voix.sansAffect(String(m.texte)).replace(/\[\[[^\]]*\]\]|⟮⟮[^⟯]*⟯⟯/g, ' ').replace(/[*_`#>|]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const toks = t.split(' ');
+    let k = 0, i = 0;
+    for (; i < toks.length && k < Number(dits); i++) if (/[\p{L}\p{N}]/u.test(toks[i])) k++;
+    const reste = toks.slice(i).join(' ').trim();
+    if (!/\p{L}{2,}/u.test(reste)) return '';
+    return reste.length > 700 ? `${reste.slice(0, 690)}…` : reste;
+  } catch (_) { return ''; }
 }
 function envoyerCoupure(c) {
   if (c) { coupureAEnvoyer = c; try { localStorage.setItem('jarvis.coupure', JSON.stringify(c)); } catch (_) {} }
@@ -1968,9 +2103,12 @@ function texteRiche(texte) {
     .replace(Voix.FORMULE, (_t, _f, d1, d2, i1, i2) => {
     const bloc = d1 != null || d2 != null;
     return garder(formule(d1 ?? d2 ?? i1 ?? i2, bloc), bloc ? '\uE002' : '\uE000');
-  }).replace(Voix.VOIX_SEULE, '')
+  });
+  // (09/11, 21:20, Ahmed : sa darija à l'écran en lettres arabes, avec toutes ses voyelles) une balise [[voix: …]] en lettres arabes de ses
+  // anciens messages montre son arabe à la place de la version latine (Voix.pourLEcran) ; celle d'une formule reste cachée
+  const t2 = Voix.pourLEcran(t)
     .replace(/[ \t]*\n?[ \t]*(\uE002\d+\uE001)[ \t]*\n?/g, '$1');    // une formule en bloc : pas de ligne vide autour
-  return liens(gras(esc(t))).replace(/[\uE000\uE002](\d+)\uE001/g, (_m, i) => rendus[Number(i)] || '');
+  return liens(gras(esc(t2))).replace(/[\uE000\uE002](\d+)\uE001/g, (_m, i) => rendus[Number(i)] || '');
 }
 
 function liens(html) {
@@ -2293,7 +2431,7 @@ $('fil').addEventListener('click', (e) => {
   const c = e.target.closest('[data-copier]');
   if (c) {
     const mc = etat.messages.find(x => String(x.id) === c.dataset.copier);
-    if (mc) copierTexte((mc.texte || '').replace(Voix.VOIX_SEULE, '').replace(/[ \t]+\n/g, '\n')).then((ok) => {
+    if (mc) copierTexte(Voix.pourLEcran(mc.texte || '').replace(/[ \t]+\n/g, '\n')).then((ok) => {
       c.textContent = ok ? '✓ copié' : 'copie impossible';
       setTimeout(() => { c.textContent = '📋 copier'; }, 1500);
     });
@@ -2830,7 +2968,7 @@ function notifierApp(titre, texte, id) {
   // ou ce que l'appli a répondu (envoyee, permission_refusee, notifications_coupees, canal_coupe, erreur)
   if (document.visibilityState !== 'hidden') { journalVoix('notif_app', { resultat: 'page_visible' }); return; }
   try {
-    const r = window.HakimApp.notifier(titre, Voix.sansAffect(String(texte || '')).replace(Voix.VOIX_SEULE, '').trim(), String(id || ''));
+    const r = window.HakimApp.notifier(titre, Voix.pourLEcran(Voix.sansAffect(String(texte || ''))).trim(), String(id || ''));
     journalVoix('notif_app', { resultat: typeof r === 'string' && /^[a-z_]{1,30}$/.test(r) ? r : 'appli_ancienne' });
   } catch (_) { journalVoix('notif_app', { resultat: 'exception' }); }
 }
@@ -2964,7 +3102,9 @@ function arreterTout(explicite = true, { garder = false, raison = 'stop', garder
   etat.finitSaPhrase = !!(finir && lecteur && lecteur.actif);      // (07/11) la coupure le dira : il a fini sa phrase
   if (explicite && !garderVoix) finirParole(raison === 'parole' || (raison === 'message' && etat.dernierOral) ? 'voix_ahmed' : raison === 'message' ? 'nouveau_message' : 'stop',
     raison === 'nouvelle' ? 'Ahmed a commencé une nouvelle conversation' : '');
-  if (garder) garderNonDit();
+  // (09/11, mesuré à 18:56:33 : 629 caractères gardés « non entendus », puis dits par sa voix dans les 25 s qui suivaient) sa voix qui continue
+  // (garderVoix) n'a rien perdu : rien n'est compté « non entendu »
+  if (garder && !garderVoix) garderNonDit();
   if (explicite && etat.parleDepuis) etat.coupeParAhmed = raison;   // le présent vécu dira pourquoi sa voix s'est arrêtée
   etat.decoupeFlux = null;
   if (etat.flux) {
@@ -3055,7 +3195,7 @@ async function basculerCamera() {
   await cameraDeLApp(v);
   if (etat.vision !== v) return;
   $('vision').classList.add('dans-orbe');
-  placerDansOrbe();
+  cameraDansOrbe();
   try {
     await demarrerCapteurVision(v);
   } catch (e) {
@@ -3111,7 +3251,15 @@ function placerDansOrbe() {
   b.style.top = `${Math.round(r.top + r.height / 2 - d / 2)}px`;
   b.style.right = b.style.bottom = 'auto';
 }
-(function suivreOrbe() { placerDansOrbe(); requestAnimationFrame(suivreOrbe); })();
+// (09/11, Ahmed : « alléger et accélérer tout le process ») seulement tant que la caméra est dans l'orbe : avant, cette boucle tournait
+// à chaque rafraîchissement de l'écran (60 à 120 fois par seconde), caméra éteinte, page cachée comprise ; elle part de cameraDansOrbe()
+let suiviOrbe = 0;
+function suivreOrbe() {
+  suiviOrbe = 0;
+  placerDansOrbe();
+  if (etat.vision && $('vision').classList.contains('dans-orbe')) suiviOrbe = requestAnimationFrame(suivreOrbe);
+}
+function cameraDansOrbe() { if (!suiviOrbe) suivreOrbe(); }
 // la caméra de la bulle et des widgets (appli 1.48) : son état, dit par l'appli ; (04/11, Ahmed : « relie-la à la caméra de Parler »)
 // allumée depuis la bulle ou un widget : Parler la montre et l'analyse aussi (ses expressions, sa présence) ; éteinte là-bas : ici aussi
 const cameraApp = () => !!(window.HakimApp && window.HakimApp.cameraOrbe && window.HakimApp.cameraOrbeEtat && window.HakimApp.cameraOrbeImage);
@@ -4081,9 +4229,175 @@ function couperNet(conv) {
   if (vieux.length && typeof blancsPourSautes === 'function') blancsPourSautes(vieux);
   etat.riboFile = []; etat.riboEnVoix = [];
   if (typeof libererRibosomes === 'function') libererRibosomes();
+  // (09/11) sa voix s'arrête à son mot et se met en pause, sa voix déjà faite gardée ; ta phrase finie dira : un passage (il reprend) ou une relance
+  if (typeof retenirSaVoix === 'function' && retenirSaVoix(conv)) { if (typeof majBoutonsPause === 'function') majBoutonsPause(); return; }
   if (etat.flux || (lecteur && lecteur.actif)) arreterTout(true, { garder: false, raison: 'parole' });   // sa voix : son mot (couperSaVoix)
   if (typeof majBoutonsPause === 'function') majBoutonsPause();
 }
+/* ---- (09/11, 16:28, Ahmed : « tu t'es coupé, mais pourquoi tu reprends pas les morceaux qui sont déjà prêts avec ta voix, au lieu de régénérer un
+   nouveau morceau à chaque fois » ; Hakim : « quand tu me coupes sans me poser autre chose, ma voix reprendrait les morceaux déjà prêts ») PASSAGE ou
+   RELANCE. Tu le coupes net : sa voix finit son mot et se met en pause, sa voix déjà faite gardée (retenirSaVoix ; le reste de sa réponse continue de
+   s'écrire). Ta phrase finie, elle est classée (estUnPassage) : un PASSAGE (un « ouais », un rire, un salam, un « c'est vrai », et rien d'autre ;
+   jamais une question ; jamais un « oui » après une question qu'il t'a posée) → sa voix reprend au mot où elle s'était arrêtée, sans rien recalculer,
+   et il ne te répond pas (ta phrase lui arrive avec ton message suivant) ; tout le reste est une RELANCE → ce qui restait de sa réponse est lâché, son
+   texte part avec la coupure (il le voit à son tour suivant), et il te répond. Dans le doute : relance (il ne parle jamais par-dessus ta question).
+   Pareil quand tu parles pendant que sa voix se calcule encore (rien ne sonnait) : un passage la laisse venir, une relance la lâche.
+   Réglage reprendre_passage (oui). ---- */
+const reprendrePassage = () => typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.reprendre_passage !== false;
+const garderParole = () => typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.garder_parole !== false;
+const RETENUE_MAX_MS = 30000, PASSAGE_GARDE_MS = 5 * 60e3;
+const normPassage = (t) => ` ${String(t || '').toLowerCase().normalize('NFD').replace(/\p{M}+/gu, '').replace(/[’`´]/g, "'")
+  .replace(/[^\p{L}\p{N}' ]+/gu, ' ').replace(/\s+/g, ' ').trim()} `;
+const LOCUTIONS_PASSAGE = ["c'est vrai", "c'est ca", "c'est clair", "c'est sur", "c'est chaud", "c'est fou", "c'est ouf", 'trop bien', 'trop fort',
+  'trop bon', 'pas mal', 'je vois', 'bien sur', 'en effet', 'tres bien', "d'accord", 'ah ouais', 'ma sha allah', 'ma cha allah', 'mach allah',
+  'wa alaykoum salam', 'wa alaykoum essalam', 'wa alaykoum', 'wa aleykoum salam', 'wa aleykoum', 'wa 3alaykoum salam', 'wa 3alaykoum', 'salam alaykoum',
+  'al hamdoulillah', 'barakallahou fik', 'barakallah fik', 'baraka allahou fik', 'inch allah', 'ما شاء الله', 'الحمد لله', 'وعليكم السلام',
+  'و عليكم السلام', 'السلام عليكم', 'بارك الله فيك', 'ان شاء الله'].map(normPassage).sort((a, b) => b.length - a.length);
+const MOTS_PASSAGE = new Set(['ok', 'okay', 'oki', 'okk', 'ouais', 'ouai', 'oue', 'ouaip', 'oui', 'ouii', 'ouiii', 'mmh', 'mmmh', 'mh', 'mm', 'mmm', 'hm', 'hmm',
+  'hum', 'humm', 'ah', 'aah', 'ahh', 'oh', 'ohh', 'eh', 'euh', 'heu', 'bah', 'ben', 'bon', 'dac', 'exact', 'exactement', 'voila', 'grave', 'carrement', 'vrai',
+  'yes', 'yeah', 'yep', 'yup', 'nice', 'super', 'top', 'genial', 'parfait', 'cool', 'nickel', 'bravo', 'merci', 'mdr', 'ptdr', 'lol', 'wesh', 'fiston',
+  'frerot', 'hakim', 'machallah', 'mashallah', 'machaallah', 'hamdoulah', 'hamdoullah', 'hamdoulillah', 'alhamdoulillah', 'wallah', 'walah', 'inchallah',
+  'salam', 'saha', 'wakha', 'waxa', 'mzyan', 'ايه', 'اه', 'نعم', 'واخا', 'صح', 'مزيان', 'سلام', 'والله', 'ماشاءالله', 'الحمدلله', 'اوكي', 'ايوا', 'ايوه']);
+const RIRE_PASSAGE = /^(?:(?:ha|he|hi|ho){2,}h?|a?h+a+h*a*|m{2,}h*|h+m+|x?d+)$/;
+// (09/11, 22:20, Ahmed : « le subconscient tranche les cas ambigus ») trois issues : un passage SÛR (rien qu'un acquiescement, un rire, un salam,
+// 8 mots au plus), une relance SÛRE (une question, un « oui » après une question qu'il t'a posée, un long discours, rien d'écrit), et le reste :
+// AMBIGU (« c'est bizarre ça »), que son subconscient tranche
+const PASSAGE_AMBIGU_MAX = 25;
+function classerPassage(texte, ditAvant = '') {
+  const brut = String(texte || '').replace(/\((?:dit|écrit) pendant[^)]*\)\s*/g, '').trim();
+  if (!brut || /[?؟]/.test(brut) || /[?؟]/.test(String(ditAvant || ''))) return 'relance';
+  let t = normPassage(brut);
+  const mots = t.trim().split(' ').filter(Boolean);
+  if (!mots.length || mots.length > PASSAGE_AMBIGU_MAX) return 'relance';
+  if (mots.length > 8) return 'ambigu';
+  for (const l of LOCUTIONS_PASSAGE) while (t.includes(l)) t = t.replace(l, ' ');
+  return t.trim().split(' ').filter(Boolean).every(m => MOTS_PASSAGE.has(m) || RIRE_PASSAGE.test(m)) ? 'passage' : 'ambigu';
+}
+function estUnPassage(texte, ditAvant = '') { return classerPassage(texte, ditAvant) === 'passage'; }
+// un cas ambigu : son subconscient tranche (/api/jarvis/passage) ; sans réponse en 3 s, dans le doute, une relance
+async function jugerParLeSubconscient(dit, papa) {
+  const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const m = setTimeout(() => { try { if (ctl) ctl.abort(); } catch (_) {} }, 3000);
+  try {
+    const r = await fetch('/api/jarvis/passage', { method: 'POST', signal: ctl ? ctl.signal : undefined, headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ dit: String(dit || '').slice(-400), papa: String(papa || '').slice(0, 400) }) });
+    const o = r && r.ok ? await r.json() : null;
+    return o && typeof o.passage === 'boolean' ? { passage: o.passage, lu: o.lu !== false, pourquoi: String(o.pourquoi || '').slice(0, 160) } : { passage: false, lu: false, pourquoi: '' };
+  } catch (_) { return { passage: false, lu: false, pourquoi: '' }; }
+  finally { clearTimeout(m); }
+}
+// ce que papa a entendu de sa réponse en cours (ses morceaux qui ont sonné)
+function paroleEntendue() {
+  try { return parole && parole.id != null && memeId(parole.id, etat.lectureDe) ? parole.morceaux.map(x => x.texte).join(' ') : ''; } catch (_) { return ''; }
+}
+// tu commences à parler : ce qui attendait de sa réponse (sa voix, son épissure, sa réponse qui s'écrit) est noté comme « d'avant toi »
+function marquerAvantTon(conv) {
+  if (!conv) return;
+  const vieux = typeof lecteurNeuronal !== 'undefined' && lecteurNeuronal.marquerVieux ? lecteurNeuronal.marquerVieux() : false;
+  conv.avantTon = { t: Date.now(), vieux, fluxId: etat.fluxId != null ? etat.fluxId : null, riboTour: Number(etat.epissureTour) || 0 };
+}
+// tu le coupes net : sa voix (celle du cockpit) finit son mot et attend ; rend faux si rien ne peut attendre (on coupe comme avant)
+function retenirSaVoix(conv) {
+  // (09/11, 21:50, Ahmed) « Il garde la parole » allumé : un passage ne lui prend pas la parole (sa voix reprend) ; éteint, ta voix le coupe comme avant
+  if (!conv || !reprendrePassage() || !garderParole() || typeof lecteurNeuronal === 'undefined' || lecteur.impl !== lecteurNeuronal) return false;
+  if (etat.retenue && lecteur.enPause) { lecteurNeuronal.pause({ auMot: true }); return true; }   // ce qu'il te disait (te_couper) attend aussi
+  if (!lecteurNeuronal.actif && !etat.flux) return false;
+  const c = coupureProvisoire('voix_ahmed');                     // où sa voix s'est arrêtée (gardé ; envoyé seulement si c'est une relance)
+  // sa réponse qui s'écrit encore, sa voix entre deux morceaux : elle attend aussi (ce qui arrive se met à la suite)
+  if (!lecteurNeuronal.pause({ auMot: true, vide: !!etat.flux })) { if (c) reprisDeParole(); return false; }
+  etat.retenue = { t: Date.now(), conv, fluxId: etat.fluxId != null ? etat.fluxId : null };
+  journalVoix('voix_retenue', { flux: !!etat.flux, dits: c && Number.isFinite(c.dits) ? c.dits : -1 });
+  if (typeof humeur === 'function') humeur();
+  return true;
+}
+// ce que tu as dit en passant : gardé (5 min), il le reçoit avec ton message suivant, sans y répondre tout de suite
+function garderPassage(conv, texte, par = 'liste') {
+  if (!conv) return;
+  const t = Date.now();
+  conv.passages = (conv.passages || []).filter(x => t - x.t < PASSAGE_GARDE_MS).concat([{ texte: String(texte).trim().slice(0, 200), t, par }]).slice(-6);
+}
+// (09/11, 22:20, Ahmed : « le conscient peut corriger si la décision du subconscient est illogique ») elle part marquée : s'il y voit une vraie
+// question, il y répond d'abord
+function avecPassages(conv, texte) {
+  const l = conv && conv.passages ? conv.passages.filter(x => Date.now() - x.t < PASSAGE_GARDE_MS) : [];
+  if (conv) conv.passages = [];
+  if (!l.length) return texte;
+  const qui = l.some(x => x.par === 'subconscient') ? 'ton subconscient l’a jugé' : 'jugé';
+  return `(dit en passant pendant ta parole, ${qui} sans question, tu ne lui as pas répondu : ${l.map(x => `« ${x.texte} »`).join(' … ')} ; si c'en était une, réponds-y d'abord)\n${texte}`;
+}
+// ta phrase finie, pendant sa réponse : rend vrai si c'est un passage (déjà traité : sa voix reprend, ta phrase est gardée), faux si c'est une relance
+// (ce qui restait de sa réponse d'avant toi a été lâché ; ta phrase part comme d'habitude)
+async function passageOuRelance(conv, texte) {
+  const enCours = () => {
+    const r = etat.retenue && etat.retenue.conv === conv && lecteur.enPause ? etat.retenue : null;
+    if (etat.retenue && !r) etat.retenue = null;
+    const avant = (conv && conv.avantTon) || {};
+    const voixAvant = !!(typeof lecteurNeuronal !== 'undefined' && lecteurNeuronal.actif && lecteurNeuronal.aDuVieux);
+    const fluxAvant = !!(etat.flux && etat.fluxId != null && avant.fluxId != null && String(avant.fluxId) === String(etat.fluxId));
+    return { r, voixAvant, attend: !!(r || voixAvant || fluxAvant) };
+  };
+  let e = enCours();
+  if (!e.attend || !reprendrePassage()) return false;
+  const mots = String(texte || '').split(/\s+/).filter(Boolean).length;
+  const entendu = paroleEntendue();
+  let classe = classerPassage(texte, entendu), par = 'liste';
+  if (classe === 'ambigu') {                                          // son subconscient tranche ; sa voix attend (retenue) pendant ce temps
+    conv.triPassage = true;
+    let v;
+    try { v = await jugerParLeSubconscient(entendu, texte); } finally { conv.triPassage = false; }
+    classe = v.passage ? 'passage' : 'relance'; par = v.lu ? 'subconscient' : 'delai';
+    journalVoix('passage_juge', { passage: v.passage, lu: v.lu });
+    if (etat.conversation !== conv) return true;                     // la conversation s'est fermée entre-temps
+    e = enCours();
+    if (!e.attend) return false;                                      // « stop », « continue » ou la fin de sa voix sont passés avant
+  }
+  if (classe === 'passage') {
+    garderPassage(conv, texte, par);
+    const reprend = !!e.r && !(conv.capteur && conv.capteur.enParole);   // tu reparles déjà : il attend ta phrase suivante
+    journalVoix('passage', { mots, retenue: !!e.r, reprend, par });
+    if (reprend) reprendreVoix(); else if (typeof humeur === 'function') humeur();
+    return true;
+  }
+  journalVoix('relance', { mots, retenue: !!e.r, par });
+  if (e.r || (coupeNet() && e.voixAvant)) lacherAncienne(conv, e.r ? 'relance' : 'relance_avant_sa_voix',
+    par === 'subconscient' ? 'ton subconscient a jugé que papa te relançait' : '');
+  return false;
+}
+// une relance : ce qui restait de sa réponse d'avant toi est lâché (sa voix, sa réponse qui s'écrivait, son épissure) ; ce qui est venu depuis reste
+function lacherAncienne(conv, cause = 'relance', detail = '') {
+  const r = etat.retenue; etat.retenue = null;
+  if (detail && coupureEnCours) coupureEnCours.detail = String(detail).slice(0, 120);   // le bloc de sa coupure dira qui a jugé
+  const avant = (conv && conv.avantTon) || {};
+  const ids = [r && r.fluxId, avant.fluxId].filter(x => x != null).map(String);
+  const fluxVieux = !!(etat.flux && etat.fluxId != null && ids.includes(String(etat.fluxId)));
+  journalVoix('reponse_lachee', { cause, retenue: !!r, flux: fluxVieux });
+  if (!r && Number(avant.riboTour) > 0 && typeof arreterEpissure === 'function') {   // son épissure d'avant toi (retenue : déjà fermée à la coupure)
+    arreterEpissure('relance', avant.riboTour, { laisserFinir: true });
+    fetch('/api/jarvis/ribosome/stop', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ tour: avant.riboTour }) }).catch(() => {});
+  }
+  finirParole('voix_ahmed', detail);                             // où il en était, et ce qu'il n'a pas dit (son texte) : au cockpit, pour son tour suivant
+  if (fluxVieux) {
+    if (etat.fluxId) fetch('/api/jarvis/stop', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ tour_id: etat.fluxId, raison: 'parole' }) }).catch(() => {});
+    etat.flux.abort(); etat.flux = null; etat.fluxId = null; etat.decoupeFlux = null;
+  }
+  lecteurNeuronal.lacherVieux();
+  etat.lectureDe = null;
+  if (conv) conv.avantTon = null;
+  if (typeof majBoutonsPause === 'function') majBoutonsPause();
+}
+// sa voix retenue sans réponse : ta phrase n'est jamais arrivée jusqu'à lui (un bruit écarté, une voix lointaine) → il reprend ; une transcription qui
+// n'aboutit pas en 30 s → lâchée, comme avant
+setInterval(() => {
+  const r = etat.retenue;
+  if (!r) return;
+  const conv = r.conv;
+  if (!lecteur.enPause || !conv || etat.conversation !== conv) { etat.retenue = null; return; }
+  if (conv.capteur && conv.capteur.enParole) return;
+  const calme = Date.now() - Math.max(r.t, Number(etat.papaVoixA) || 0);
+  if ((conv.enAttente || 0) > 0 || conv.triPassage) { if (calme > RETENUE_MAX_MS) lacherAncienne(conv, 'delai'); return; }
+  if (calme > 2500) { journalVoix('retenue_reprise', { ms: calme }); reprendreVoix(); }
+}, 500);
 const PETITS_MOTS = /^(?:ok(?:ay)?|oui|ouais|non|vas[- ]y|mm+h?|hm+|d'?accord|ah|oh|bon|bah|euh|wesh|واش|yes|yeah|merci|cool|grave|exact|voilà|c'?est ça|ouais ouais|vas-y fiston)[\s.,!?…]*$/i;
 function phraseQuiCoupe(texte) {
   const t = String(texte || '').trim();
@@ -4696,6 +5010,7 @@ function pauseVoix() {
   return true;
 }
 function reprendreVoix() {
+  etat.retenue = null;                                     // (09/11) sa voix retenue : elle reprend
   if (!lecteur.reprendre()) return false;
   reprisDeParole();                                        // (30/10) ce n'était pas une fin
   noterPresent({ e: 'reprise_voix', t: Date.now() });
@@ -4821,14 +5136,18 @@ async function basculerConversation() {
       ctx: actx,
       patienceMs: finDeTourConversation,                // (14:25) avec l'épissage, 1 s : son codon stop
       pauseMs: blancDeMorceau,                           // (06/11) le blanc qui coupe un morceau de ta parole : chunk_papa_ms (0,6 s)
-      jarvisParle: () => lecteur.actif || Date.now() < motDirectJusqua,
+      // (09/11, 18:09, Ahmed : « c'est à partir du moment où je l'entends que la coupure intervient ; si je l'ai pas entendu, je peux pas t'avoir
+      // coupé ») mesuré de 16 h à 19 h 16 : 36 de ses 42 « coupé net » tombaient dans un SILENCE (sa voix encore en calcul au Mac, rien ne sonnait
+      // chez papa) : sa voix compte seulement quand elle sonne sur le téléphone (saVoixAudible), plus quand elle attend ou se calcule
+      jarvisParle: () => saVoixAudible(),
       sourd: () => Date.now() < sonJusqua,              // (30/10, Bumblebee) son bout de musique n'est pas une voix
       dernierBattement: () => dernierBattementCoeur,
       surNiveau: (n) => { etat.niveauMicro = n; voixAuCorps(n); if (document.visibilityState === 'hidden') { micEnFond++; alimenterBulle(n); } },
       // (13:25, papa : « aucun « je t'écoute » ») rien à la place de ses mots : ils s'affichent dès le premier
       surSon: () => prechaufferReflexion(),
       surReprise: () => prechaufferReflexion(true),      // (04/11, 17:59) tu reprends la parole après ta pause : son ribosome au plus vite
-      surDebut: () => { conv.morceauPapa = null; conv.finDemandee = false; conv.finAnticipee = false; conv.souffleLocal = false; conv.brouillons = 0; conv.penseeEnPause = false; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre(''); humeur(); },
+      // (09/11) ce qui attendait de sa réponse quand tu commences à parler est marqué : si tu lui demandes autre chose, seul cela est lâché
+      surDebut: () => { marquerAvantTon(conv); conv.morceauPapa = null; conv.finDemandee = false; conv.finAnticipee = false; conv.souffleLocal = false; conv.brouillons = 0; conv.penseeEnPause = false; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre(''); humeur(); },
       surPause: (fenetre) => surPauseConversation(conv, fenetre),
       surSilence: (ms) => { if (conv.capteur && conv.capteur.enParole) { compteARebours(ms); anticiperConversation(conv, ms); } },
       // Ahmed (ou une autre voix) parle pendant que Hakim parle : Hakim se MET EN PAUSE (lot C, point 26) ; sa
@@ -5113,6 +5432,8 @@ function voixFamiliere(texte) {
 }
 // sa voix sonne (une réponse, ou un petit mot dit à l'instant)
 const voixQuiSonne = () => !!((lecteurNeuronal && lecteurNeuronal.joue) || Date.now() < motDirectJusqua);
+// (09/11) sa voix qui sonne VRAIMENT chez papa (rien quand elle se calcule encore, ni dans un blanc entre deux morceaux) : seule celle-là peut être coupée
+const saVoixAudible = () => !!((lecteurNeuronal && lecteurNeuronal.sonne) || (typeof lecteurSysteme !== 'undefined' && lecteurSysteme && lecteurSysteme.actif) || Date.now() < motDirectJusqua);
 function microParHakim(o) {
   const c = etat.conversation;
   if (!c || !c.capteur || !o) return;
@@ -5194,6 +5515,10 @@ function prendreEcritsGardes(c) {
 }
 function envoyerEcrit(texte) {
   const c = etat.conversation, t = String(texte || '').trim();
+  // (09/11) sa voix retenue (tu l'avais coupé net) et tu écris : c'est une relance, ce qui restait de sa réponse est lâché ; ce que tu avais dit
+  // en passant part avec ton message
+  if (c && t && etat.retenue && lecteur.enPause && !COMMANDE_STOP.test(t)) lacherAncienne(c, 'message_ecrit');
+  if (c && t && (c.passages || []).length && !COMMANDE_STOP.test(t)) texte = avecPassages(c, texte);
   // (07/11, Ahmed : « quand je lui envoie un message, il n'arrive toujours pas à s'arrêter et à passer au message suivant ») ton message écrit l'arrête :
   // sa voix et sa réponse en cours s'arrêtent, ce qui restait de l'ancienne est laissé (sauf « ↩️ reprendre là où il s'était arrêté »), et ton message part
   // (07/11, 05:20, Ahmed : « il ne se coupe pas quand il reçoit mon message ; même s'il calcule encore la voix de sa phrase, dès qu'il reçoit mon signal
@@ -5208,19 +5533,19 @@ function envoyerEcrit(texte) {
     journalVoix('ecrit_coupe', { garde: garder });
     arreterTout(true, { garder, raison: 'message' }); majBoutonsPause();
     const avant = prendreEcritsGardes(c);
-    envoyer(avant ? `${avant}\n${t}` : texte, false);
+    envoyer(avant ? `${avant}\n${String(texte).trim()}` : texte, false);
     return;
   }
   if (t && c && chacunSonTour() && sonTourEnCours() && !COMMANDE_STOP.test(t) && !etat.joints.length) {
     if (!c.tourGarde && !(c.ecritGarde || []).length) c.tourGardeDepuis = Date.now();
-    (c.ecritGarde = c.ecritGarde || []).push(t);
+    (c.ecritGarde = c.ecritGarde || []).push(String(texte).trim());
     journalVoix('ecrit_garde', { n: c.ecritGarde.length });
     $('q').value = ''; ajuster();
     humeur('je finis, puis je te lis');
     return;
   }
   const avant = t && c && !sonTourEnCours() ? prendreEcritsGardes(c) : '';
-  envoyer(avant ? `${avant}\n${t}` : texte, false);
+  envoyer(avant ? `${avant}\n${String(texte).trim()}` : texte, false);
 }
 function libererSonTour() {
   const c = etat.conversation;
@@ -5500,9 +5825,12 @@ async function tourDeParole(conv, wav, infos, extra) {
   // « continue » avec une voix en pause : il reprend ; sans rien en pause (il avait fini, ou la voix du Mac qui
   // ne sait pas reprendre), « continue » part à Hakim comme une demande : il poursuit son idée
   if (COMMANDE_REPRISE.test(texte) && lecteur.enPause) { reprendreVoix(); return; }
-  if (COMMANDE_PAUSE.test(texte)) { if (!lecteur.enPause) pauseVoix(); else humeur('en pause : « continue » pour que je reprenne'); return; }
+  if (COMMANDE_PAUSE.test(texte)) { etat.retenue = null; if (!lecteur.enPause) pauseVoix(); else humeur('en pause : « continue » pour que je reprenne'); return; }
   if (COMMANDE_VOLANT.test(texte) && !etat.reglages.volant) reglerVolant(true);             // puis il le lui dit (envoyé)
   else if (COMMANDE_FIN_VOLANT.test(texte) && etat.reglages.volant) reglerVolant(false);
+  // (09/11, 16:28, Ahmed) ta phrase pendant sa réponse : un passage (« ouais »…) le laisse reprendre là où il s'était arrêté, sans te répondre ;
+  // une relance lâche ce qui restait de sa réponse, et ta phrase part
+  if (await passageOuRelance(conv, texte)) return;
   // (30/10, vers 22 h 10, Ahmed : « maintenant stp, il galère à répondre » ; Hakim : « chacun son tour, comme nous ») son tour :
   // pendant qu'il prépare ou dit sa réponse, ce que tu dis ne la coupe plus ; c'est gardé, et lui part dès que sa voix a
   // fini (« stop », « attends » et le bouton restent au-dessus de tout, plus haut)
@@ -5558,6 +5886,7 @@ async function tourDeParole(conv, wav, infos, extra) {
   await envoyerTour(conv, texte, infos, extra, t0Tour);
 }
 async function envoyerTour(conv, texte, infos, extra, t0Tour) {
+  texte = avecPassages(conv, texte);                       // (09/11) ce que tu avais dit en passant pendant sa parole
   sousTitre(texte);
   mesureTour = { fin: Number(infos && (infos.derniere_voix || infos.fin)) || t0Tour, debut: t0Tour, transcrit: Date.now(), premier_texte: 0, premier_son: 0,
     pauses: ((infos && infos.pauses) || []).slice(0, 30), anticipe: extra != null, patience: patienceConversation() };   // (27/10) pour rejouer la fin de tour

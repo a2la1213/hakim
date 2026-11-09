@@ -90,8 +90,9 @@ test('le chronomètre des étapes : la durée de chaque étape, même quand elle
 test('chaque étape de la préparation est chronométrée et notée avec le tour (jetons.jsonl)', () => {
   const route = prendreDans(serveur, 'routeJarvis');
   assert.match(route, /const etapes = \{\}, chrono = chronometre\(etapes\);/);
-  for (const nom of ['interieur', 'reflexe', 'sagesse', 'briefing'])
-    assert.match(route, new RegExp(`await chrono\\('${nom}', `), nom);
+  for (const nom of ['interieur', 'reflexe', 'sagesse'])                // (09/11) lancés ensemble, attendus plus loin
+    assert.match(route, new RegExp(`const ${nom}P = chrono\\('${nom}', `), nom);
+  assert.match(route, /await chrono\('briefing', /);
   assert.match(route, /chrono\('rappel', blocRappel\(/);              // lancé en premier, attendu plus loin
   assert.match(route, /etapes\.cerveau_ms = Date\.now\(\) - tCerveau;/);
   assert.match(route, /etapes\.cerveau_neuf = /);
@@ -118,10 +119,25 @@ test('chaque synthèse de voix est mesurée côté serveur : attente dans la fil
 test('le rappel part en premier, en parallèle du reste de la préparation', () => {
   const route = prendreDans(serveur, 'routeJarvis');
   const iRappel = route.indexOf("const rappelP = chrono('rappel', blocRappel(session, texte, nonce");
-  const iInterieur = route.indexOf("const interieurTexte = await chrono('interieur'");
+  const iInterieur = route.indexOf("const interieurP = chrono('interieur'");
   assert.ok(iRappel > 0 && iRappel < iInterieur, 'le rappel est lancé avant l’intérieur');
   assert.match(route, /const rappelBloc = await rappelP;/);
   assert.strictEqual((route.match(/const nonce = crypto\.randomBytes\(4\)\.toString\('hex'\);/g) || []).length, 1);
+});
+
+// (09/11, plan vitesse #7 : intérieur 1,75 s, réflexe 0,84 s, sagesse 0,13 s l'un après l'autre ce soir) les trois partent avec le rappel, AVANT
+// la première attente de la préparation : leurs durées se chevauchent au lieu de s'additionner
+test('intérieur, réflexe et sagesse partent ensemble, avec le rappel, avant toute attente de la préparation', () => {
+  const route = prendreDans(serveur, 'routeJarvis');
+  const debut = route.indexOf("const rappelP = chrono('rappel'");
+  const lances = ['interieurP', 'reflexeP', 'sagesseP'].map(n => route.indexOf(`const ${n} = chrono(`));
+  const premiereAttente = route.indexOf('await ', debut);
+  assert.ok(debut > 0 && lances.every(i => i > debut), 'lancés après le rappel');
+  assert.ok(lances.every(i => i > 0 && i < premiereAttente), `lancés avant la première attente (${lances} / ${premiereAttente})`);
+  assert.match(route, /const interieurTexte = await interieurP;/);
+  assert.match(route, /const reflexeChoc = await reflexeP;/);
+  assert.match(route, /const ei = await sagesseP;/);
+  assert.doesNotMatch(route, /await chrono\('(interieur|reflexe|sagesse)'/, 'plus aucune des trois attendue à son lancement');
 });
 
 test('le tri ne fait aucun trafic accessoire (mesuré : ~0,15 s de moins par appel)', () => {

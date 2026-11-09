@@ -77,7 +77,8 @@ test('par l’air et les écouteurs : gardés, dits dans son fil (l’appli 1.66
 test('par l’air : la page dit d’avance combien de temps sa voix joue (jamais sa propre voix au micro) ; le réglage sur SENS, dans l’appli', () => {
   const lecteur = PARLER.slice(PARLER.indexOf('function creerLecteurNeuronal('), PARLER.indexOf('const lecteurNeuronal = creerLecteurNeuronal();'));
   assert.ok(lecteur.length > 1000, 'le lecteur de sa voix');
-  const debut = lecteur.indexOf('src.start(t);'), dit = lecteur.indexOf('window.HakimApp.saVoixPendant(Math.max(0, (t + joue - actx.currentTime) * 1000))');
+  // (09/11) src.start(t, offset) : un morceau repris part au mot où il s'était arrêté
+  const debut = lecteur.indexOf('src.start(t, offset);'), dit = lecteur.indexOf('window.HakimApp.saVoixPendant(Math.max(0, (t + joue - actx.currentTime) * 1000))');
   assert.ok(debut > 0 && dit > debut, 'chaque morceau de sa voix, dès qu’il est programmé');
   assert.match(lecteur, /el\.onplaying = \(\) => \{ try \{ if \(window\.HakimApp && window\.HakimApp\.saVoixPendant\)/, 'le lecteur de secours aussi');
   assert.match(SENS, /<label class="interrupteur" id="groupeOreilleAir" hidden><input type="checkbox" id="oreilleAir">/);

@@ -48,6 +48,7 @@ function monter(o = {}) {
     neutraliser: (t) => String(t), filRecent: (n, m) => `FIL(${n}|${m})`, lirePersona: () => 'PERSONA',
     briefingFrais: () => (o.briefing ? o.briefing(ctx) : Promise.resolve('BRIEFING ANAMNÈSE')),
     dernierMessageAhmedMs: () => ctx.maintenant - (o.ahmedIlYaMs ?? 30 * 60e3), enConversationAvecPapa: () => !!o.enConversation,
+    enLive: () => !!o.enLive, basculerSurSuivante: () => null, suivante: null,   // (09/11) la rotation hors live : test-rotation-hors-live.js
     tachesDe: (c) => new Map([...(c.taches || [])]), reposer: (c) => reposes.push(c), setTimeout: () => ({ unref() {} }),
     noterModele: (s, m) => ctx.modeleDeSession.set(s, m),
     cerveauLancer: (modele, session, persona, source) => {
@@ -173,7 +174,7 @@ test('Ahmed revient : son message et ses réveils continuent la conversation neu
   assert.strictEqual(ctx.successeurDe(null), null);
   // routeJarvis : la session de la page suit la neuve AVANT le test du poids ; le seuil est le même pour les deux
   const route = entre('async function routeJarvis(', '\n}\n');
-  assert.match(route, /session = successeurDe\(session\);\n  if \(tropLourde\(session\)\) \{/);
+  assert.match(route, /session = successeurDe\(session\);\n[^]{0,200}const tourne = tropLourde\(session\)/);
   // ses réveils, cerveau éteint, le relancent sur la conversation de la page : la neuve
   const pre = prendre('cerveauPrechauffer');
   assert.match(pre, /session = successeurDe\(session\);/);

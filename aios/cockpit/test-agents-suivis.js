@@ -14,7 +14,7 @@ function cockpit() {
     process: { kill: (pid, sig) => tues.push([pid, sig]) }, setTimeout: () => ({ unref() {} }), console: { error() {} },
     marquerAgent: () => {} };
   vm.createContext(ctx);
-  vm.runInContext(`const AGENT_OUBLI_MS = 3 * 3600 * 1000; const AGENTS_PARALLELE_MAX = 10; const hmsCerveau = () => '00:00:00';`
+  vm.runInContext(`const AGENT_OUBLI_MS = 3 * 3600 * 1000; const AGENTS_PARALLELE_MAX = 10; const hmsCerveau = () => '00:00:00'; let arretCockpit = false; const INTERRUPTION_MAX_MS = 5000;`
     + prendre('tachesDe') + prendre('suivreAgents') + prendre('tuer') + prendre('cerveauVivant') + prendre('interrompre') + prendre('lacher')
     + 'this.tachesDe = tachesDe; this.suivre = suivreAgents; this.lacher = lacher;', ctx);
   const enfant = { pid: 42, exitCode: null, signalCode: null, stdin: { write: (l) => ecrits.push(JSON.parse(l)) } };
@@ -64,11 +64,12 @@ test('Ahmed coupe la parole pendant qu’un agent tourne : AUCUN « interrupt »
   r.ctx.suivre(r.c, { type: 'system', subtype: 'task_started', task_id: 'a7514e29068e49980', task_type: 'local_agent', description: 'Théo' });
   r.ctx.lacher(r.enfant, null);
   assert.deepEqual(r.ecrits, []); assert.deepEqual(r.tues, []);
-  // sans agent : arrêté, avec sa raison (datée dans le journal à la fermeture)
+  // sans agent : (09/11) un « interrupt » arrête son tour, le cerveau reste chaud (test-stop-chaud.js) ; avant, il était tué
   const d = cockpit();
   d.ctx.lacher(d.enfant, null);
-  assert.deepEqual(d.tues[0], [-42, 'SIGTERM']);
-  assert.match(d.enfant.raisonArret, /a lâché le tour/);
+  assert.deepEqual(d.tues, []);
+  assert.deepEqual(d.ecrits.map(e => e.request && e.request.subtype), ['interrupt']);
+  assert.equal(d.c.enCours.interrompu, true);
 });
 
 test('(25/10) au-delà de 10 agents en parallèle, le dernier lancé est arrêté aussitôt', () => {

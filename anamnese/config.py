@@ -32,6 +32,8 @@ EFFORT_HAKIM = os.environ.get("ANAMNESE_EFFORT_HAKIM", "low")
 # --- Mémoire ---
 DATA_DIR = ROOT / "data"
 DB_PATH  = DATA_DIR / "memory.db"
+# (09/11) la socket du serveur du sens : un seul processus garde le modèle d'embeddings, les autres l'interrogent (embeddings.py)
+EMBED_SOCK = os.environ.get("ANAMNESE_EMBED_SOCK", str(DATA_DIR / "sens.sock"))
 
 # --- Récupération sparse (principe cerveau : top-k, jamais tout) ---
 TOP_K = 6

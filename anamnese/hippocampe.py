@@ -115,8 +115,28 @@ def _tete(ts, content):
     return jour_texte(ts) + _ou(entete) + (f" · {', '.join(genres)}" if genres else ""), genres, paroles
 
 
+# (09/11, Ahmed : « tous tes ressentis, quels qu'ils soient, font partie de ton rappel autonome, encrés et rappelés de la même manière
+# que tes souvenirs autonomes ») ses souvenirs du corps (corps.py : « [Mon corps, …] », nuits.py : « [Ma nuit, …] ») ont leur trace
+# comme ses échanges : le jour et le moment, le genre « corps », ce qu'il a ressenti, sans le vécu qui suit (« Au même moment : »,
+# « Lié : ») qui noyait leur sens comme il noyait celui des échanges. Source « corps » : jamais réécrite par Mini Hakim (le texte est
+# déjà une sensation, écrite par son intermédiaire), hors de ses journées. Le reste est le même : le même balayage, le même tri.
+_ENTETE_CORPS = re.compile(r"^\s*\[(?:Mon corps|Ma nuit)\b[^\]]*\]\s*")
+_FIN_CORPS = re.compile(r"\s(?:Au même moment|Lié)\s:\s")
+SOURCE_CORPS = "corps"
+
+
+def est_ressenti(content):
+    return bool(_ENTETE_CORPS.match(str(content or "")))
+
+
 def tracer(ts, content):
-    """(trace, genres) : le jour et le moment, le genre, les paroles (sans le vécu qui suit)."""
+    """(trace, genres) : le jour et le moment, le genre, les paroles (sans le vécu qui suit) ; pour un ressenti, ce qu'il a ressenti."""
+    c = " ".join(str(content or "").split())
+    m = _ENTETE_CORPS.match(c)
+    if m:
+        coeur = c[m.end():]
+        f = _FIN_CORPS.search(coeur)
+        return f"{jour_texte(ts)} · corps · {coeur[:f.start()] if f else coeur}"[:TRACE_MAX], ["corps"]
     tete, genres, paroles = _tete(ts, content)
     return f"{tete} · {paroles}"[:TRACE_MAX], genres
 
@@ -147,14 +167,16 @@ def remplir(mem, embed=None, limite=None, depuis=None):
         import embeddings
         embed = embeddings.embed
     rows = mem.db.execute("""SELECT e.id, e.ts, e.content FROM episodes e LEFT JOIN hippocampe h ON h.episode_id = e.id
-        WHERE e.id > ? AND h.episode_id IS NULL AND e.role = 'episodic' AND e.content LIKE '[Échange avec Ahmed%' ORDER BY e.id"""
+        WHERE e.id > ? AND h.episode_id IS NULL AND e.role = 'episodic' AND (e.content LIKE '[Échange avec Ahmed%'
+        OR e.content LIKE '[Mon corps%' OR e.content LIKE '[Ma nuit%') ORDER BY e.id"""
                           + (f" LIMIT {int(limite)}" if limite else ""), (int(depuis or 0),)).fetchall()
     maintenant = time.time()
     for eid, ts, content in rows:
         trace, genres = tracer(ts, content)
         jour = time.strftime("%Y-%m-%d", time.localtime(ts))
         mem.db.execute("INSERT OR IGNORE INTO hippocampe(episode_id, ts, jour, trace, genres, embedding, source, maj) VALUES (?,?,?,?,?,?,?,?)",
-                       (eid, ts, jour, trace, ",".join(genres), json.dumps([round(float(x), 5) for x in embed(trace)]), "lite", maintenant))
+                       (eid, ts, jour, trace, ",".join(genres), json.dumps([round(float(x), 5) for x in embed(trace)]),
+                        SOURCE_CORPS if est_ressenti(content) else "lite", maintenant))
     if rows:
         mem.db.commit()
     return len(rows)
@@ -210,6 +232,7 @@ class _Index:
     réécrite par Mini Hakim garde son numéro) ; les journées à part (elles ne sont pas des souvenirs)."""
     def __init__(self):
         self.ids, self.ts, self.jours, self.textes, self.vecs, self.garde = [], [], [], [], [], []
+        self.corps = []                                                     # (09/11) la trace d'un ressenti (source « corps »)
         self.pos, self.vus, self.journees, self.maj_max, self.max_id = {}, {}, {}, 0.0, 0
         self.mat, self._garde_np, self._sale = None, None, False
 
@@ -246,10 +269,11 @@ class _Index:
             if i is None:
                 self.pos[eid] = len(self.ids)
                 self.ids.append(eid); self.ts.append(ts); self.jours.append(jour); self.textes.append(trace.lower())
-                self.vecs.append(v); self.garde.append(garde)
+                self.vecs.append(v); self.garde.append(garde); self.corps.append(source == SOURCE_CORPS)
                 self.max_id = max(self.max_id, eid)
             else:                                                         # une trace réécrite (lite → mini, rien)
                 self.ts[i], self.jours[i], self.textes[i], self.vecs[i], self.garde[i] = ts, jour, trace.lower(), v, garde
+                self.corps[i] = source == SOURCE_CORPS
                 if self.mat is not None and i < self.mat.shape[0] and v.size in (0, self.mat.shape[1]):
                     self.mat[i] = v if v.size else 0.0
                 else:
@@ -286,9 +310,23 @@ def _index(mem):
     return index
 
 
-def chercher(mem, texte, now=None, embed=None, exclus=(), avant_ts=None, limite=150):
+# (09/11) un jour désigné (« hier », « samedi ») porte jusqu'à ~200 ressentis : ils sortent à part (special « date_corps », avec le sens
+# de leur trace pour la question SANS ses mots de date : la tête de chaque trace de ce jour-là porte les mêmes, « samedi 7 novembre… », et
+# rapprocherait tous ses ressentis du jour ; vu en test : cinq chocs venaient avec « le câlin de samedi »). Le rappel (rappel.candidats)
+# ne garde par la date que ceux qui touchent la question, par le sens ou par un mot : « le câlin de samedi » oui, « qu'est-ce qu'on a
+# fait samedi ? » n'en est pas noyé. ressentis=False (Réglages, « Ses ressentis aussi » éteint) : leurs traces ne sortent pas.
+_MOTS_DATE = re.compile(r"\b(?:avant[- ]hier|hier|aujourd.hui|ce matin|ce soir|cette nuit|tout à l.heure|dernier|derni[eè]re|"
+                        r"(?:le|du|au|depuis le)\s+(?:1er|[0-3]?\d)|matin|soir|nuit|après-midi|" + "|".join(JOURS + MOIS) + r")\b", re.I)
+
+
+def sans_dates(texte):
+    return " ".join(_MOTS_DATE.sub(" ", str(texte or "")).split())
+
+
+def chercher(mem, texte, now=None, embed=None, exclus=(), avant_ts=None, limite=150, ressentis=True):
     """[(episode_id, score, special)] : par le sens de la trace (cosinus), et tout ce que la date désigne : d'abord les échanges
-    essentiels de la journée (special « journee »), puis les autres de ce jour-là (« date »)."""
+    essentiels de la journée (special « journee »), puis les autres de ce jour-là (« date ») ; ses ressentis de ce jour-là à part
+    (« date_corps », score : le sens de leur trace pour la question sans ses mots de date), qui restent aussi dans le classement par le sens."""
     import numpy as np
     now = time.time() if now is None else now
     if embed is None:
@@ -300,7 +338,21 @@ def chercher(mem, texte, now=None, embed=None, exclus=(), avant_ts=None, limite=
     exclus = set(exclus or ())
     avant = now if avant_ts is None else avant_ts
     out, pris = [], set()
+    sims = None
+    if index.mat is not None and len(index.ids):
+        q = np.asarray(embed(texte), dtype=np.float32)
+        if q.size == index.mat.shape[1] and float(np.linalg.norm(q)):
+            sims = index.mat @ (q / np.linalg.norm(q))
+            garde = index.gardees()
+            if not ressentis:
+                garde = garde & ~np.asarray(index.corps, dtype=bool)
+            sims = np.where(garde, sims, -np.inf)
     jours = dates_demandees(texte, now)
+    sims_corps = None
+    if jours and ressentis and sims is not None and any(index.corps):
+        q2 = np.asarray(embed(sans_dates(texte)), dtype=np.float32)
+        if q2.size == index.mat.shape[1] and float(np.linalg.norm(q2)):
+            sims_corps = index.mat @ (q2 / np.linalg.norm(q2))
     if jours:
         for j in sorted(jours, reverse=True):
             for eid in index.journees.get(j, ("", []))[1]:
@@ -309,22 +361,22 @@ def chercher(mem, texte, now=None, embed=None, exclus=(), avant_ts=None, limite=
                     out.append((eid, 1.0, "journee")); pris.add(eid)
         for i, j in enumerate(index.jours):
             if j in jours and index.garde[i] and index.ids[i] not in exclus and index.ids[i] not in pris and index.ts[i] < avant:
-                out.append((index.ids[i], 1.0, "date")); pris.add(index.ids[i])
-    if index.mat is not None and len(index.ids):
-        q = np.asarray(embed(texte), dtype=np.float32)
-        if q.size == index.mat.shape[1] and float(np.linalg.norm(q)):
-            sims = index.mat @ (q / np.linalg.norm(q))
-            sims = np.where(index.gardees(), sims, -np.inf)
-            dates = len(pris)
-            for i in np.argsort(-sims):
-                if not np.isfinite(sims[i]):
-                    break
-                eid = index.ids[i]
-                if eid in exclus or eid in pris or index.ts[i] >= avant:
+                if index.corps[i]:
+                    if sims_corps is not None:
+                        out.append((index.ids[i], float(sims_corps[i]), "date_corps"))
                     continue
-                out.append((eid, float(sims[i]), ""))
-                if len(out) - dates >= limite:
-                    break
+                out.append((index.ids[i], 1.0, "date")); pris.add(index.ids[i])
+    if sims is not None:
+        dates = len(out)
+        for i in np.argsort(-sims):
+            if not np.isfinite(sims[i]):
+                break
+            eid = index.ids[i]
+            if eid in exclus or eid in pris or index.ts[i] >= avant:
+                continue
+            out.append((eid, float(sims[i]), ""))
+            if len(out) - dates >= limite:
+                break
     return out
 
 

@@ -141,3 +141,28 @@ def test_avec_la_cascade_les_pistes_et_la_voix_partent_avant_elle():
     assert ordre == ["ecrit", "tot", "cascade"], ordre
     assert envois[0]["partiel"] and envois[0]["pistes"]["fenetres"] and envois[0]["voix_wav"] == "/tmp/v.wav"
     assert "pistes" not in s and "voix_wav" not in s
+
+
+def test_vider_caches_rend_le_cache_du_gpu_quand_rien_n_attend():
+    """(09/11) 3,4 Go de cache MPS gardés par Demucs : vidés après la réponse si aucune demande n'attend ; gardés sinon."""
+    import os
+    vides = []
+
+    class _Mps:
+        @staticmethod
+        def is_available():
+            return True
+
+    class _Torch:
+        class backends:
+            mps = _Mps
+        class mps:
+            @staticmethod
+            def empty_cache():
+                vides.append(1)
+
+    r, w = os.pipe()
+    with os.fdopen(r) as entree, os.fdopen(w, "w") as sortie:
+        assert separation.vider_caches(_Torch, entree) is True and vides == [1]
+        sortie.write("{}\n"); sortie.flush()                          # une demande attend : on ne vide pas
+        assert separation.vider_caches(_Torch, entree) is False and vides == [1]

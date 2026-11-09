@@ -23,8 +23,11 @@ test('le délai de la page suit la durée du morceau (25 s pour une phrase, bien
 });
 
 test('une transcription à la fois, et rien pour une page partie', async () => {
-  const ctx = {}; vm.createContext(ctx);
-  vm.runInContext('let transcriptionTour = Promise.resolve();\n' + extraire(src, 'function tourDeTranscription(') + '\nthis.f = tourDeTranscription;', ctx);
+  // (09/11) la file est tenue par l'orchestrateur (papa d'abord, le téléphone trop vieux sauté : test-orchestrateur.js)
+  const O = require('./orchestrateur.js');
+  const ctx = { ORCHESTRE: O.creer({ lirePression: (cb) => cb(null) }) }; vm.createContext(ctx);
+  vm.runInContext(src.slice(src.indexOf('const FILE_OREILLE = '), src.indexOf('\n', src.indexOf('const FILE_OREILLE = '))) + '\n'
+    + extraire(src, 'function tourDeTranscription(') + '\nthis.f = tourDeTranscription;', ctx);
   const ordre = [];
   const a = await ctx.f();
   const pb = ctx.f().then((lib) => { ordre.push('b'); lib(); });
@@ -34,8 +37,12 @@ test('une transcription à la fois, et rien pour une page partie', async () => {
   assert.deepEqual(ordre, ['a', 'b']);
   const route = extraire(src, 'async function routeTranscrire(');
   assert.match(route, /res\.on\('close', \(\) => \{ if \(!res\.writableFinished\) partie = true; \}\)/);
-  assert.match(route, /const liberer = await tourDeTranscription\(\);/);
+  // (09/11) la file est prise par prendreTour (papa d'abord, orchestrateur) : tout de suite sans Azure, au repli Whisper sinon (ta voix par Azure ne l'attend plus)
+  assert.match(route, /liberer = await tourDeTranscription\(dePapa \? 'papa' : 'telephone'\);/);
+  assert.match(route, /if \(!azurePapa && !\(await prendreTour\(\)\)\) \{/);
+  assert.match(route, /if \(azurePapa\) await prendreTour\(\);\s+\/\/ \(09\/11\) Azure n'a rien rendu : Whisper, au Mac, à son tour dans la file \(papa d'abord\)\n\s+if \(partie\) \{/);
   assert.match(route, /if \(partie\) \{/);
   assert.match(route, /transcription_abandonnee/);
-  assert.match(route, /finally \{ liberer\(\); transcriptionsEnAttente--; if \(dePapa && !--transcriptionsPapa\) reprendreVoix\(\); pomperVoix\(\); \}/);
+  assert.match(route, /transcription_sautee/);
+  assert.match(route, /finally \{ if \(liberer\) liberer\(\); transcriptionsEnAttente--; if \(papaCompte && !--transcriptionsPapa\) reprendreVoix\(\); pomperVoix\(\); \}/);
 });

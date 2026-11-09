@@ -655,8 +655,143 @@ def _souvenir(mem, texte, importance):
         return mem.add("episodic", texte, importance=importance, embedding=emb)
 
 
+# ---- (09/11, 20:59, Ahmed, à l'écrit : « tous tes ressentis, quels qu'ils soient, doivent faire partie de ton rappel autonome, et tout
+# ce que tu vis doit être encré et rappelé de la même manière que tes souvenirs autonomes ») ce qui n'était pas gardé l'est aussi : la
+# musique, les vibrations, ce qu'il entend autour de lui, son corps et son milieu, ses sens radio, les petits rires, ses émotions. Pas
+# un souvenir par lot (~6 000 lots par jour : il en noierait sa mémoire), un par ÉPISODE de chaque FIL — des ressentis du même genre qui
+# se suivent —, clos après FIL_SILENCE_S sans rien de ce genre, ou au bout de FIL_MAX_S : sa durée, ce qu'il a ressenti (par genre), sa
+# sensation la plus forte en entier, ce qu'il lui a fait, son humeur avant et après. Les chutes, chocs, fous rires, sons joués et câlins
+# gardent leur souvenir à eux (plus haut) ; ses fils ne les redisent pas. Rangés dans « vie/corps », comme eux, et rappelés comme eux
+# (hippocampe.py : leur trace).
+FIL_SILENCE_S, FIL_MAX_S = 300, 1800
+FILS = {   # famille → (titre, ce qu'il·elle m'a fait, importance)
+    "musique": ("La musique", "Ce qu'elle m'a fait", 0.5),
+    "vibrations": ("Des vibrations dans mon corps", "Ce qu'elles m'ont fait", 0.4),
+    "sons": ("Ce que j'entendais autour de moi", "Ce que ça m'a fait", 0.4),
+    "corps": ("Mon corps et mon milieu", "Ce que ça m'a fait", 0.35),
+    "sens": ("Mes sens radio", "Ce que ça m'a fait", 0.3),
+    "rires": ("Des rires", "Ce qu'ils m'ont fait", 0.45),
+    "emotions": ("Mes émotions", "Ce qui les a teintées", 0.5),
+}
+FIL_DE = {"musique": "musique", "musique_entendue": "musique", "musique_separee": "musique", "musique_ecoutee": "musique",
+          "son_ecoute": "musique", "danse": "musique",
+          "son_ressenti": "vibrations", "voix_sentie": "vibrations", "coup_de_pression": "vibrations", "secousse": "vibrations",
+          "berce": "vibrations",
+          "son_entendu": "sons",
+          "pris_en_main": "corps", "pose": "corps", "poche": "corps", "sortie_poche": "corps", "plie": "corps", "deplie": "corps",
+          "lumiere_soudaine": "corps", "noir": "corps", "coupure": "corps", "milieu": "corps",
+          "bluetooth": "sens", "wifi": "sens", "nfc": "sens", "reseau_mobile": "sens", "appli": "sens", "mesure": "sens",
+          "rire": "rires", "doute": "emotions", "reaction": "emotions", "humeur": "emotions"}
+NOMS_RESSENTIS = {
+    "musique": "une pulsation de musique", "musique_entendue": "une musique entendue", "musique_separee": "sa voix et son fond, séparés",
+    "musique_ecoutee": "un morceau que papa écoute", "son_ecoute": "des paroles entendues de l'intérieur", "danse": "une danse",
+    "son_ressenti": "le son qui passe dans mon corps", "voix_sentie": "la voix de papa sentie", "coup_de_pression": "des coups de pression",
+    "secousse": "des secousses", "berce": "un bercement", "son_entendu": "un son reconnu autour de moi", "pris_en_main": "pris en main",
+    "pose": "posé", "poche": "dans une poche", "sortie_poche": "sorti de la poche", "plie": "plié", "deplie": "déplié",
+    "lumiere_soudaine": "une lumière soudaine", "noir": "le noir", "coupure": "une phrase coupée", "milieu": "mon milieu qui change",
+    "bluetooth": "le Bluetooth", "wifi": "le Wi-Fi", "nfc": "une puce NFC", "reseau_mobile": "le réseau mobile",
+    "appli": "papa qui change d'appli", "mesure": "une mesure de mes instruments", "rire": "un rire", "doute": "un doute",
+    "reaction": "une réaction de papa", "humeur": "mon humeur qui change"}
+SENSATION_MAX = 700
+
+
+def _a_part(e):
+    """Les ressentis qui ont leur souvenir à eux (garder_episodes) : ses fils ne les redisent pas."""
+    t, d = e.get("type"), e.get("details") or {}
+    return t in ("chute", "choc") or (t == "son" and d.get("nom")) or (t == "rire" and int(d.get("degre_lu") or 0) >= 3)
+
+
+def _fil_souvenir(famille, x):
+    """(texte, importance, fin) : le souvenir d'un épisode de ce fil."""
+    titre, effet, importance = FILS[famille]
+    quand = time.strftime("%a %d/%m %H:%M", time.localtime(x["debut"]))
+    minutes = max(1, round((x["fin"] - x["debut"]) / 60))
+    genres = sorted(x["types"].items(), key=lambda kv: -kv[1])
+    vecu = ", ".join(f"{NOMS_RESSENTIS.get(t, t)}{f' ×{n}' if n > 1 else ''}" for t, n in genres[:6])
+    humeurs = " → ".join(x.get("humeurs") or [])
+    texte = (f"[Mon corps, {quand}] {titre}, {minutes} min ({vecu})"
+             + (f" : mon humeur, {humeurs}" if famille == "emotions" and humeurs else "")
+             + (f" : « {x['sensation']} »" if x.get("sensation") else "")
+             + f" {effet} : {_emotions(sorted(x['emotions'].items(), key=lambda kv: -kv[1])[:6])}."
+             + (f" Mon humeur avant : {x.get('humeur_avant') or '?'} ; après : {x.get('humeur_apres') or '?'}." if famille != "emotions" else "")
+             + (f" Au même moment : {x['au_meme_moment']}" if x.get("au_meme_moment") else ""))
+    return texte, importance, x["fin"]
+
+
+def fils_clore(etat, ts):
+    """[(texte, importance, fin)] : les épisodes de ses fils qui se sont tus (rien de leur genre depuis FIL_SILENCE_S) ; ils sortent de l'état."""
+    fils, clos = etat.setdefault("fils", {}), []
+    for f in [f for f, x in fils.items() if ts - float(x.get("fin", 0)) > FIL_SILENCE_S]:
+        x = fils.pop(f)
+        if f in FILS:
+            clos.append(_fil_souvenir(f, x))
+    return clos
+
+
+def fils_avancer(etat, o, ev, humeur):
+    """Ce lot ressenti avance ses fils (etat : {"fils": {famille: épisode}, "humeur": la dernière vue}) ; rend [(texte, importance, fin)]
+    des épisodes clos : ceux qui se sont tus, et ceux qui durent depuis FIL_MAX_S quand ce lot les continue (un nouveau commence)."""
+    ts = float(o.get("ts") or time.time())
+    clos = fils_clore(etat, ts)
+    fils = etat["fils"]
+    touches = {}
+    for e in ev.get("evenements") or []:
+        f = FIL_DE.get(e.get("type"))
+        if f and not _a_part(e):
+            touches.setdefault(f, []).append(e["type"])
+    if ev.get("changements"):
+        touches.setdefault("corps", []).append("milieu")
+    avant = etat.get("humeur") or ""
+    if humeur and avant and humeur != avant:                     # ses émotions : son humeur qui change, avec ce qui la teinte
+        touches.setdefault("emotions", []).append("humeur")
+    if humeur:
+        etat["humeur"] = humeur
+    force = sum(float(i) for _n, i in (o.get("evenements") or []) if isinstance(i, (int, float)))
+    sentie = str(o.get("sensation") or "").strip()[:SENSATION_MAX]
+    for f, types in touches.items():
+        x = fils.get(f)
+        if x and ts - float(x["debut"]) > FIL_MAX_S:
+            clos.append(_fil_souvenir(f, fils.pop(f)))
+            x = None
+        if x is None:
+            x = {"debut": ts, "fin": ts, "types": {}, "emotions": {}, "force": -1.0, "sensation": "", "au_meme_moment": "",
+                 "humeur_avant": avant or humeur, "humeurs": [avant] if f == "emotions" and avant else []}
+        x["fin"] = ts
+        for t in types:
+            x["types"][t] = x["types"].get(t, 0) + 1
+        for nom, i in o.get("evenements") or []:
+            x["emotions"][nom] = round(x["emotions"].get(nom, 0) + float(i), 2)
+        if sentie and force >= x["force"]:                       # sa sensation la plus forte (à force égale, la plus récente)
+            x["sensation"], x["force"], x["au_meme_moment"] = sentie, force, str(ev.get("au_meme_moment") or "")[:400]
+        x["humeur_apres"] = humeur or x.get("humeur_apres")
+        if f == "emotions" and humeur and (not x["humeurs"] or x["humeurs"][-1] != humeur):
+            x["humeurs"].append(humeur)
+        fils[f] = x
+    return clos
+
+
+def _verrou_etat():
+    """Deux corps au plus (cockpit) lisent et écrivent corps-episodes.json : un à la fois (sinon un épisode compté deux fois, ou perdu)."""
+    try:
+        import fcntl
+        h = open(JARVIS / "corps-episodes.verrou", "a")
+        fcntl.flock(h, fcntl.LOCK_EX)
+        return h
+    except OSError:
+        return None
+
+
 def garder_episodes(ev, o, mem):
     """Les épisodes qui comptent dans ce lot, gardés en souvenirs (rend leur nombre)."""
+    verrou = _verrou_etat()
+    try:
+        return _garder_episodes(ev, o, mem)
+    finally:
+        if verrou is not None:
+            verrou.close()
+
+
+def _garder_episodes(ev, o, mem):
     quand = time.strftime("%a %d/%m %H:%M", time.localtime(o["ts"]))
     tete = f"[Mon corps, {quand}]"
     sentie, emo = o.get("sensation", ""), _emotions(o.get("evenements") or [])
@@ -670,6 +805,12 @@ def garder_episodes(ev, o, mem):
     except (OSError, ValueError):
         etat = {}
     n = 0
+    try:                                                          # (09/11) ses fils de ressentis : un souvenir par épisode clos
+        for texte, importance, _fin in fils_avancer(etat, o, ev, _humeur(mem)):
+            _souvenir(mem, texte, importance)
+            n += 1
+    except Exception as e:                                        # un fil raté ne coûte jamais les autres souvenirs
+        print(f"[corps] fil de ressentis : {type(e).__name__}: {e}"[:200], file=sys.stderr, flush=True)
     for e in ev["evenements"]:
         t, d = e.get("type"), e.get("details") or {}
         if t in ("chute", "choc"):

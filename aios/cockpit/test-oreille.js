@@ -64,7 +64,9 @@ test('(19:08) son petit mot se dit à l’instant, hors de la file de ses répon
   assert.match(bloc, /accuserReception\(\);/, 'plus « non vu par Ahmed »');
   assert.match(bloc, /direMotDirect\(m\.texte, Number\(m\.max_ms\) \|\| 0, afficher\)/, 'à la voix, tout de suite, avec sa jauge, et le texte avec elle');
   assert.ok(!/lecteur\.dire\(m\.texte\)/.test(bloc), 'pas derrière une réponse en pause');
-  assert.match(page, /jarvisParle: \(\) => lecteur\.actif \|\| Date\.now\(\) < motDirectJusqua,/, 'le micro sait que c’est sa voix');
+  // (09/11) le micro sait que c'est sa voix quand elle SONNE chez papa (son petit mot compris), plus quand elle se calcule encore
+  assert.match(page, /jarvisParle: \(\) => saVoixAudible\(\),/, 'le micro sait que c’est sa voix');
+  assert.match(page, /const saVoixAudible = \(\) => !!\(\(lecteurNeuronal && lecteurNeuronal\.sonne\) \|\| .*Date\.now\(\) < motDirectJusqua\);/, 'son petit mot compte');
   assert.match(page, /if \(typeof reglagesCorps !== 'undefined' && reglagesCorps\.garder_parole\) \{ journalVoix\('coupure_ignoree'/);
   assert.match(src, /garder_parole: r\.garder_parole !== false/);
 });
@@ -759,7 +761,7 @@ test('(01:10) les orbes de l’appli suivent celle de Parler ; « Hakim parle »
   const and = (f2) => fs.readFileSync(path.join(process.env.HOME, 'AIOS', 'hakim-android', 'app', 'src', 'main', 'java', 'app', 'hakim', 'parler', f2), 'utf8');
   for (const f2 of ['WidgetHakim.java', 'Bulle.java', 'OrbeVerrou.java', 'ConversationService.java']) assert.match(and(f2), /hakim_parle/, f2);
   assert.match(and('OrbeVue.java'), /PALETTES\.put\("coupe"/);
-  assert.ok(fs.existsSync(path.join(process.env.HOME, 'AIOS', 'hakim-android', 'app', 'src', 'main', 'res', 'drawable-nodpi', 'orbe_repos_coupe_35.webp')), 'le widget a ses images vertes');
+  assert.ok(fs.existsSync(path.join(process.env.HOME, 'AIOS', 'hakim-android', 'app', 'src', 'main', 'res', 'drawable-nodpi', 'orbe_repos_coupe_27.webp')), 'le widget a ses images vertes (09/11 : _28 à _35 sont les mêmes, en miroir)');
 });
 
 test('(01:27-01:30) [[son: nom]] n’importe où : sa voix, puis le son en entier, puis la suite ; « | mac », « | tel », « | les deux » ; ses sons à lui', () => {

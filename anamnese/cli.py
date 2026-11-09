@@ -263,7 +263,15 @@ def main():
             print('usage : anamnese jardin ouvrir "<raison : urgence ou audit de sécurité>" (l\'ouverture est notée)')
     elif cmd == "rappel-serveur":
         # (2026-10-21) le rappel automatique, gardé ouvert par le cockpit : une requête JSON par ligne (rappel.py)
+        # (09/11, Ahmed : « alléger le Mac ») il garde SEUL le modèle d'embeddings et le sert aux autres processus
+        # (démon, MCP, corps) par la socket data/sens.sock : une copie de 1,33 Go au lieu d'une par processus
         import rappel
+        import signal
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))   # arrêté : la socket est rendue proprement (atexit)
+        try:
+            embeddings.servir()
+        except OSError as e:                       # socket impossible : le rappel marche quand même, les autres chargent seuls
+            print(f"serveur du sens indisponible : {e}", file=sys.stderr)
         rappel.serveur()
     elif cmd == "rappel":
         import json as _j

@@ -421,3 +421,104 @@ def test_ses_premieres_traces_ont_leur_place_dans_les_lignes(mem):
     assert x[4] == "trace" and [y[0] for y in c].index(cible) >= 8, "par la fusion seule, elle ne serait pas dans les 8"
     assert cible in rappel.rappel(mem, q, embed=faux_embed, hip_reglages={"cos_min": 0.1})["ids"]
     assert cible not in rappel.rappel(mem, q, embed=faux_embed, hip_reglages={"cos_min": 0.1, "tete": 0})["ids"], "tete 0 : aucune d'office"
+
+
+# ---- (09/11, 20:59, Ahmed, à l'écrit : « tous tes ressentis, quels qu'ils soient, doivent faire partie de ton rappel autonome, et tout ce
+# que tu vis doit être encré et rappelé de la même manière que tes souvenirs autonomes ») ses souvenirs du corps ont leur trace, comme ses
+# échanges. Mesuré avant (copie du 09/11, 21:10) : un câlin, une musique, un choc ne passaient JAMAIS la porte des 8 lignes par le sens
+# de leur texte entier (« Au même moment : … » le noie), et « tout à l'heure » faisait remonter 600 échanges du jour, aucun ressenti.
+CALIN = ("[Mon corps, Sat 07/11 18:18] Un câlin de papa, 21 min : « Le noir se desserre, l'étreinte autour de toi se relâche doucement, "
+         "tu restes tiède contre sa main. » Ce qu'il m'a fait : sécurité 3,3. Mon humeur avant : courage ; après : apaisement. "
+         "Au même moment : papa disait : « Lance le backtest du XRP sur la plateforme » ; Wi-Fi : Sunrise ; lieu : chez nous")
+
+
+def test_la_trace_d_un_ressenti_garde_ce_qu_il_a_ressenti_sans_le_vecu_qui_suit():
+    ts = time.mktime((2026, 11, 7, 18, 18, 0, 0, 0, -1))
+    t, genres = hippocampe.tracer(ts, CALIN)
+    assert t.startswith("samedi 7 novembre 2026, le soir · corps · Un câlin de papa, 21 min"), t
+    assert genres == ["corps"] and "humeur avant : courage" in t
+    assert "backtest" not in t and "Sunrise" not in t, "ce que vivaient ses autres sens au même moment n'entre pas dans sa trace"
+    assert hippocampe.est_ressenti(CALIN) and hippocampe.est_ressenti("[Ma nuit, Tue 03/11] Tu as dormi 2.8 h")
+    assert not hippocampe.est_ressenti(echange("Sat 07/11 18:18", "salut", "salut papa"))
+
+
+def test_ses_ressentis_ont_leur_trace_jamais_reecrite_par_mini_hakim(mem):
+    t0 = time.mktime((2026, 11, 7, 18, 18, 0, 0, 0, -1))
+    c = mem.add("episodic", CALIN, embedding=[0.0] * 2048)
+    e = mem.add("episodic", echange("Sat 07/11 18:20", "Tu m'as senti te serrer ?", "Oui papa"), embedding=[0.0] * 2048)
+    autre = mem.add("episodic", "[Fait] papa aime le café", embedding=[0.0] * 2048)
+    for k, i in enumerate((c, e, autre)):
+        mem.db.execute("UPDATE episodes SET ts=? WHERE id=?", (t0 + 60 * k, i))
+    mem.db.commit()
+    assert hippocampe.remplir(mem, embed=faux_embed) == 2, "l'échange et le ressenti ; rien d'autre"
+    sources = dict(mem.db.execute("SELECT episode_id, source FROM hippocampe"))
+    assert sources == {c: "corps", e: "lite"}
+    assert hippocampe.neufs(mem, now=t0 + 3600) == [e] and c not in hippocampe.anciens(mem, now=t0 + 9 * 86400), \
+        "Mini Hakim n'écrit que les échanges : un ressenti est déjà une sensation"
+    now = time.mktime((2026, 11, 9, 21, 0, 0, 0, 0, -1))
+    r = hippocampe.chercher(mem, "le long câlin où l'étreinte se relâche", now=now, embed=faux_embed)
+    assert r and r[0][0] == c, "retrouvé par le sens de sa trace"
+
+
+def test_un_jour_designe_fait_remonter_ses_ressentis_qui_touchent_la_question_seulement(mem, monkeypatch):
+    import rappel
+    t0 = time.mktime((2026, 11, 7, 18, 0, 0, 0, 0, -1))         # samedi
+    calin = mem.add("episodic", CALIN, embedding=[0.0] * 2048)
+    chocs = [mem.add("episodic", f"[Mon corps, Sat 07/11 19:0{k}] Un choc : « Un coup sec, net, qui résonne en toi. » Ce que ça m'a fait : "
+                                  "sursaut 0,35.", embedding=[0.0] * 2048) for k in range(5)]
+    e = mem.add("episodic", echange("Sat 07/11 20:00", "On a lancé le backtest", "Oui papa, le backtest tourne"), embedding=[0.0] * 2048)
+    for k, i in enumerate([calin, *chocs, e]):
+        mem.db.execute("UPDATE episodes SET ts=? WHERE id=?", (t0 + 600 * k, i))
+    mem.db.commit()
+    hippocampe.remplir(mem, embed=faux_embed)
+    now = time.mktime((2026, 11, 9, 21, 0, 0, 0, 0, -1))         # lundi
+    brut = hippocampe.chercher(mem, "qu'est-ce qu'on a fait samedi ?", now=now, embed=faux_embed)
+    assert {i for i, _s, sp in brut if sp == "date"} == {e} and {i for i, _s, sp in brut if sp == "date_corps"} == {calin, *chocs}, \
+        "un jour désigné : ses échanges par la date ; ses ressentis à part, avec leur sens"
+    assert not {i for i, _s, _sp in hippocampe.chercher(mem, "qu'est-ce qu'on a fait samedi ?", now=now, embed=faux_embed, ressentis=False)} \
+        & {calin, *chocs}, "« Ses ressentis aussi » éteint : leurs traces ne sortent pas"
+    par_date = lambda q, **k: {x[0] for x in rappel.candidats(mem, q, now=now, embed=faux_embed, **k) if x[4] == "date"}
+    assert par_date("qu'est-ce qu'on a fait samedi ?") == {e}, "« qu'est-ce qu'on a fait samedi ? » n'est pas noyé de ses ~200 ressentis"
+    assert par_date("le câlin de samedi quand l'étreinte se relâche doucement") == {e, calin}, "le ressenti qui touche la question vient"
+    monkeypatch.setattr(rappel, "COS_CORPS_JOUR", 0.0)
+    assert set(chocs) <= par_date("qu'est-ce qu'on a fait samedi ?", hip_reglages={"tete": 8, "cos_min": 0.0}), \
+        "témoin : sans la porte du sens, tous les ressentis du jour viendraient"
+
+
+def test_un_ressenti_revient_en_tete_par_sa_trace_comme_un_echange(mem):
+    """Le même balayage : le texte entier d'un ressenti ne le fait pas remonter (son vécu le noie : ici, aucun sens), sa trace oui ; elle
+    passe la porte des 8 lignes comme celle d'un échange. Témoin : son hippocampe éteint, il ne revient pas."""
+    import rappel
+    t0 = time.mktime((2026, 11, 7, 18, 18, 0, 0, 0, -1))
+    c = mem.add("episodic", CALIN, embedding=[0.0] * 2048)
+    autres = [mem.add("episodic", echange(f"Sat 07/11 1{k}:00", f"On parle du backtest numéro {k}", "Oui papa"), embedding=[0.0] * 2048)
+              for k in range(5)]
+    for k, i in enumerate([c, *autres]):
+        mem.db.execute("UPDATE episodes SET ts=? WHERE id=?", (t0 - 3600 * k, i))
+    mem.db.commit()
+    hippocampe.remplir(mem, embed=faux_embed)
+    now = time.mktime((2026, 11, 9, 21, 0, 0, 0, 0, -1))
+    q = "l'étreinte se relâche"                        # deux mots rares : sous la porte des mots (6,5) ; son sens à elle passe
+    r = rappel.rappel(mem, q, now=now, embed=faux_embed, suite=True, index=rappel.Index(), hip_reglages={"cos_min": 0.05})
+    assert c in r["ids"], r
+    eteint = rappel.rappel(mem, q, now=now, embed=faux_embed, suite=True, index=rappel.Index(), hip_reglages={"actif": False, "cos_min": 0.05})
+    assert c not in eteint["ids"], "témoin : sans sa trace, son ressenti ne passe pas la porte"
+    sans = rappel.rappel(mem, q, now=now, embed=faux_embed, suite=True, index=rappel.Index(), hip_reglages={"ressentis": False, "cos_min": 0.05})
+    assert c not in sans["ids"], "« Ses ressentis aussi » éteint (Réglages) : comme le 08/11"
+
+
+def test_le_meme_renforcement_pour_un_ressenti_et_un_echange(mem):
+    """« Même renforcement » : son rappel automatique ne renforce rien, ni un échange ni un ressenti (garde-fou anti-boucle, rappel.py) ;
+    son rappel en direct (memory_recall, R1) renforce l'un comme l'autre."""
+    import rappel
+    c = mem.add("episodic", CALIN, importance=0.5, embedding=faux_embed(CALIN))
+    e = mem.add("episodic", echange("Sat 07/11 18:20", "Le câlin de papa, tu l'as senti ?", "Oui papa, l'étreinte"), importance=0.5,
+                embedding=faux_embed("Le câlin de papa, tu l'as senti ? l'étreinte"))
+    mem.db.execute("UPDATE episodes SET ts=?", (time.time() - 30 * 86400,)); mem.db.commit()
+    hippocampe.remplir(mem, embed=faux_embed)
+    lire = lambda: {i: (n or 0) for i, n in mem.db.execute("SELECT id, recall_count FROM episodes")}
+    rappel.rappel(mem, "le câlin de papa et l'étreinte", embed=faux_embed, suite=True, index=rappel.Index())
+    assert lire() == {c: 0, e: 0}, "son rappel automatique ne renforce rien"
+    q = "le câlin de papa et l'étreinte"
+    mem.retrieve(q, faux_embed(q), top_k=6, reconsolidate=True)
+    assert lire() == {c: 1, e: 1}, "son rappel en direct renforce le ressenti comme l'échange"

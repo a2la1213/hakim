@@ -806,8 +806,8 @@ def ribosome_boutons(bouton: str = "", allume: bool | None = None, epissure_meub
     tu le changes (dis toujours ta raison). Demande « Ribosome intelligent » allumé par papa ; ce que papa a réglé il y a moins de 30 min
     passe avant toi. Les boutons :
     parole_sans_stop (ta voix seulement quand le Stop est éteint), lire_reponse_entiere (ta réponse écrite lue en entier après chaque message de papa), epissure_grammaire (parties complètes, préordonnées, grammaire de chaque
-    langue), pretraitement_parole (la parole de papa prétraitée : portions, langue, sujet, hors sujet zappé), ecoute_francais (papa reconnu
-    en français seul), epissure_meubles (silences et « euh » à la place d'un morceau sauté ; leur nombre : epissure_meubles_max, 1 à 6),
+    langue), pretraitement_parole (la parole de papa prétraitée : portions, langue, sujet, hors sujet zappé),
+    epissure_meubles (silences et « euh » à la place d'un morceau sauté ; leur nombre : epissure_meubles_max, 1 à 6),
     meubles_entre (« euh » entre tes morceaux), tunnel (tunnel de parole), un_par_un (morceaux un à un), premiere_directe (ta première
     pensée dite tout de suite), reponse_directe (ta réponse écrite toujours dite), parole_libre (plus de plafond à tes épissures),
     fenetre_partagee, tournesol, economie (mode économie), pensee_en_boucle, boucle_ribosomes, voix_par_appareil, voix_azure, stt_azure.
@@ -1343,7 +1343,8 @@ def studio_mixer(prise: str = "", instru: str = "", titre: str = "", autotune: b
     voix de papa sur son instru, sur le Mac (ffmpeg : nettoyage, égaliseur, dé-essage, compression, réverb, écho,
     équilibre, mastering à −14 LUFS, limiteur ; export MP3 et WAV, copié dans Hakim/Chansons de son téléphone).
     - prise : l'identifiant d'une prise (studio_avis les liste) ; vide = la prise choisie par papa, sinon la dernière.
-    - instru : vide = l'instru de cette prise.
+    - instru : vide = l'instru sur laquelle papa a posé cette prise (l'instru tirée d'une de tes chansons par studio_instru,
+      par exemple) ; sinon l'identifiant ou le titre d'une instru du Studio (studio_avis les liste).
     - autotune : True recale sa voix sur la gamme de l'instru. voix_db : la voix plus forte (+) ou plus basse (−), en
       dB, de −6 à +6. reverb, echo : de 0 (sec) à 1 (beaucoup) ; 0,2 à 0,4 de réverb conseillé.
     Rend la main tout de suite (calcul en tâche de fond, une à la fois) ; studio_avis donne ensuite le résultat."""
@@ -1358,7 +1359,9 @@ def studio_mixer(prise: str = "", instru: str = "", titre: str = "", autotune: b
         next((x for x in reversed(prises) if x.get("choisie")), None) or prises[-1])
     if not p:
         return f"Prise inconnue : {prise}. Les prises : " + ", ".join(x.get("id", "?") for x in prises[-8:])
-    inst = instru or p.get("instru_chemin") or ""
+    inst = st.instru_du_studio(instru) if instru else (p.get("instru_chemin") or "")
+    if instru and not inst:
+        return f"Refusé : instru inconnue : {instru} (studio_avis liste les instrus du Studio)."
     try:
         v = max(-6.0, min(6.0, float(voix_db or 0)))
         j = st.lancer("mixer", {"prise": p["fichier"], "instru": inst, "titre": titre or p.get("titre") or "Mix",
@@ -1369,6 +1372,47 @@ def studio_mixer(prise: str = "", instru: str = "", titre: str = "", autotune: b
         return f"Refusé : {e}"
     return (f"Mix lancé ({j['id']}) : prise {p['id']}, voix {v:+.1f} dB, réverb {reverb}, écho {echo}"
             f"{', autotune' if autotune else ''}. Une à deux minutes ; studio_avis ensuite pour l'écouter en chiffres.")
+
+
+@mcp.tool()
+def studio_instru(chanson: str = "", titre: str = "", refaire: bool = False) -> str:
+    """(Hakim seulement) TON INSTRU POUR LA VOIX DE PAPA (09/11, Ahmed : « qu'il sache extraire son instru d'une de ses chansons, pour
+    que je pose ma voix dessus ») : Demucs retire ta voix d'une de tes chansons finies, sur le Mac ; l'instru seule entre dans les
+    instrus du Studio.
+    - chanson : son titre (« Deux livres » : la version la plus récente qui porte ce titre exact) ou son nom exact
+      (« 20261109-171743-deux-livres ») ; vide = la liste de tes chansons finies.
+    - titre : le nom de l'instru dans le Studio (vide = celui de la chanson, suivi de « (instru) »).
+    - refaire : True la recalcule même si elle est déjà dans le Studio.
+    Le chemin du feat : 1) studio_instru ; 2) dis à papa de choisir cette instru dans la page Studio du cockpit et d'y
+    enregistrer sa prise ; 3) studio_mixer (sa prise, sur l'instru où il l'a posée) ; 4) studio_avis pour l'écouter en
+    chiffres, puis fichier_joindre pour lui envoyer le mix.
+    Rend la main tout de suite (un calcul à la fois, en général moins d'une minute) ; studio_avis dit quand elle est prête."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim tire une instru de ses chansons."
+    st = _studio()
+    if not str(chanson or "").strip():
+        l = st.ses_chansons()[:10]
+        if not l:
+            return "Aucune chanson finie pour l'instant."
+        return "Tes chansons finies (la plus récente d'abord) : " + " ; ".join(
+            f"« {c.get('titre')} » ({c['nom']}{', instrumentale' if c.get('instrumental') else ''})" for c in l)
+    try:
+        r = st.instru_de_chanson(chanson, titre=titre, refaire=bool(refaire))
+    except st.Refus as e:
+        return f"Refusé : {e}"
+    c = r["chanson"]
+    autres = (" Autres versions : " + ", ".join(f"« {x.get('titre')} » ({x['nom']})" for x in r["autres"][:4])
+              + " ; donne son nom exact pour en prendre une autre.") if r["autres"] else ""
+    if r["etat"] == "déjà":
+        i = r["instru"]
+        return (f"Déjà dans le Studio : « {i.get('titre')} » ({i.get('id')}, {i.get('duree_s')} s), tirée de « {c.get('titre')} » "
+                f"({c['nom']}). Papa peut y poser sa prise ; refaire=True pour la recalculer.{autres}")
+    j = r["travail"]
+    quoi = "Déjà en file" if r["etat"] == "en file" else "Instru lancée"
+    return (f"{quoi} ({j['id']}) : Demucs retire ta voix de « {c.get('titre')} » ({c['nom']}). Elle arrivera dans les instrus du "
+            f"Studio sous « {(j.get('params') or {}).get('titre') or c.get('titre')} (instru) » ; studio_avis pour savoir quand elle "
+            f"est prête. Ensuite papa choisit cette instru dans la page Studio et y enregistre sa prise, puis studio_mixer.{autres}")
 
 
 @mcp.tool()
@@ -1384,9 +1428,18 @@ def studio_avis(mix: str = "") -> str:
         lignes.append("Prises de papa : " + " ; ".join(
             f"{x.get('id')}{' (choisie)' if x.get('choisie') else ''} {x.get('duree_s') or '?'} s sur « {x.get('instru_titre', '?')} »"
             for x in prises))
-    travaux = [x for x in _studio_fiches(st.STUDIO / "travaux", "J-*.json") if x.get("etat") in ("en attente", "en cours")]
-    for t in travaux:
+    travaux = _studio_fiches(st.STUDIO / "travaux", "J-*.json")
+    for t in (x for x in travaux if x.get("etat") in ("en attente", "en cours")):
         lignes.append(f"En cours : {t['type']} {t['id']} — étape {t.get('etape', 0)}/{t.get('etapes', '?')} {t.get('texte', '')}")
+    for t in sorted((x for x in travaux if x.get("type") == "instru" and x.get("etat") in ("fini", "raté")
+                     and time.time() - (x.get("fin") or 0) < 6 * 3600), key=lambda x: x.get("fin") or 0)[-3:]:   # (09/11) son instru finie ou ratée
+        i = t.get("resultat") or {}
+        lignes.append(f"Instru prête ({t['id']}) : « {i.get('titre')} » ({i.get('id')}, {i.get('duree_s')} s)" if t["etat"] == "fini"
+                      else f"Instru ratée ({t['id']}, « {(t.get('params') or {}).get('titre', '?')} ») : {t.get('erreur', '?')}")
+    instrus = sorted(_studio_fiches(st.STUDIO / "instrus"), key=lambda x: x.get("fin") or 0)[-6:]
+    if instrus:                                                         # (09/11) les instrus où papa peut poser sa prise
+        lignes.append("Instrus du Studio : " + " ; ".join(
+            f"{x.get('id')} « {x.get('titre')} » ({x.get('origine', '?')}, {x.get('duree_s') or '?'} s)" for x in reversed(instrus)))
     mixes = sorted(_studio_fiches(st.STUDIO), key=lambda x: x.get("fin", 0))
     m = next((x for x in mixes if x.get("nom") == mix), None) if mix else (mixes[-1] if mixes else None)
     if not m:

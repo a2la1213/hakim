@@ -34,8 +34,10 @@ test('papa (ou un doute) : jamais retiré', () => {
 
 test('branchée : l’oreille Azure écoute qui parle en même temps ; le fil dit « ta propre voix » ; tout ce qu’il dit est noté', () => {
   const route = extraire('async function routeTranscrire(');
-  assert.match(route, /const quiP = SA_VOIX_RECONNUE\(\) \? oreilleDemander\(\{ op: 'qui', fichier: f \}, false\)/, 'en parallèle, jamais devant papa');
-  assert.match(route, /if \(a\) r = saVoixEntendue\(\{ texte: a\.texte, langue: a\.langue, azure: true \}, qui\);/);
+  // (09/11) sans l'oreille des voix (réglage voix_empreinte_azure éteint, ou en panne) : l'oreille vive, comme avant ; avec elle, sa voix est
+  // reconnue par l'oreille des voix (bloc : « moi »), voir test-ecoute-temps-reel.js
+  assert.match(route, /const quiP = !empreinte && SA_VOIX_RECONNUE\(\) \? oreilleDemander\(\{ op: 'qui', fichier: f \}, false\)/, 'en parallèle, jamais devant papa');
+  assert.match(route, /if \(a\) r = bloc && !bloc\.erreur && !bloc\.occupee && bloc\.voix \? voixDuBloc\(a, bloc\) : saVoixEntendue\(\{ texte: a\.texte, langue: a\.langue, azure: true \}, qui\);/);
   assert.match(route, /fluxAjouter\('ta_voix', String\(r\.moi\)/);
   assert.match(SRC, /ta_voix: 'ta propre voix \(son écho, pas papa\)'/);
   assert.match(extraire('async function voixAzure('), /noterDit\(texte\);[\s\S]*apprendreSaVoixAzure\(data, voix\);/, 'sa voix Azure : notée et apprise');

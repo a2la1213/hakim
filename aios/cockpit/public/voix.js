@@ -61,6 +61,99 @@
     return segs.map(s => ({ langue: s.langue, texte: s.texte.trim() })).filter(s => s.texte);
   }
 
+  /* ---- (09/11, Ahmed : « sur un passage arabe, la voix dit l'arabe SEUL, jamais aussi sa version en lettres latines » ; « chaque passage
+     arabe part toujours vers la voix arabe » ; 21:20 : sa darija s'écrit à l'écran en lettres arabes, avec toutes ses voyelles, et sa voix lit
+     ce même arabe) mesuré dans voix-dite.jsonl le 09/11 à 16:34 : « Allah ybarek fik [[voix: اللّٰه يْبَارَكْ فِيكْ]] » est sorti « الله »
+     (voix arabe), « ybarek fik » (voix française), puis « اللّٰه يْبَارَكْ فِيكْ » ; « Hamdoullah [[voix: الحَمْدُ لِلَّه]] » : « الحمد لله
+     الحَمْدُ لِلَّه », deux fois. pourLaVoix gardait le texte écrit avant la balise ET son contenu, et versArabe passait une partie de ce latin
+     en lettres arabes, sans voyelles. Ici, un passage en lettres arabes (le contenu d'une balise [[voix: …]] de ses anciens messages, ou un
+     passage écrit tel quel) garde sa place, et sa transcription en lettres latines collée contre lui (avant, sinon après, dans la même
+     phrase) est retirée. Elle se reconnaît à son squelette de consonnes : wesh rak khouya ↔ وَاشْ رَاكْ خُويَا, « C r k K » des deux côtés. ---- */
+  const CONSONNES = { 'ب': 'b', 'پ': 'b', 'ت': 't', 'ث': 't', 'ط': 't', 'ج': 'j', 'ژ': 'j', 'چ': 'C', 'ح': 'h', 'ه': 'h', 'خ': 'K', 'د': 'd',
+    'ذ': 'd', 'ض': 'd', 'ظ': 'd', 'ر': 'r', 'ز': 'z', 'س': 's', 'ص': 's', 'ش': 'C', 'غ': 'G', 'ف': 'f', 'ڤ': 'f', 'ق': 'k', 'ك': 'k', 'گ': 'k',
+    'ڨ': 'k', 'ل': 'l', 'م': 'm', 'ن': 'n',
+    b: 'b', p: 'b', c: 'k', d: 'd', f: 'f', v: 'f', g: 'k', q: 'k', k: 'k', h: 'h', j: 'j', l: 'l', m: 'm', n: 'n', r: 'r', s: 's', t: 't',
+    x: 'ks', z: 'z', K: 'K', C: 'C', G: 'G', 7: 'h', 9: 'k', 5: 'K' };
+  // les consonnes d'un passage (lettres arabes ou latines, chiffres de l'arabizi), sans voyelles ni semi-voyelles, les doubles fondues
+  function squelette(s) {
+    const t = String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/tch/g, 'C').replace(/dj/g, 'j').replace(/kh/g, 'K').replace(/[cs]h/g, 'C').replace(/gh/g, 'G').replace(/([td])h/g, '$1').replace(/ph/g, 'f');
+    let out = '';
+    for (const c of t) if (CONSONNES[c]) out += CONSONNES[c];
+    return out.replace(/(.)\1+/g, '$1');
+  }
+  // la distance d'édition de a à b ; dedans : a peut n'être qu'un morceau de b (les bords de b ne coûtent rien)
+  function ecart(a, b, dedans = false) {
+    let p = Array.from({ length: b.length + 1 }, (_, j) => (dedans ? 0 : j));
+    for (let i = 1; i <= a.length; i++) {
+      const q = [i];
+      for (let j = 1; j <= b.length; j++) q[j] = Math.min(p[j] + 1, q[j - 1] + 1, p[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      p = q;
+    }
+    return dedans ? Math.min(...p) : p[b.length];
+  }
+  const LETTRES_AR = ARABE.source.slice(1, -1);
+  const PASSAGE_AR = new RegExp(`\\uE010[^\\uE011]*\\uE011|[${LETTRES_AR}](?:[${LETTRES_AR}\\s\\d,;:'’"«»()\\-–—]*[${LETTRES_AR}])?`, 'gu');
+  const MOT_LATIN = /[\p{Script=Latin}\d'’-]*\p{Script=Latin}[\p{Script=Latin}\d'’-]*/gu;
+  const BORNE = /[.!?…؟\n\uE000-\uE00F]/;
+  /* dans zone (le texte latin collé au passage, du côté `avant` ou après), les mots qui le transcrivent : l'indice où couper, ou -1.
+     La transcription entière (≤ 34 % d'écart ; exacte pour un passage de 1 ou 2 consonnes), sinon un morceau d'au moins 4 consonnes et
+     40 % du passage (≤ 20 % d'écart) : le 08/11 à 20:56, il avait écrit la balise d'abord, puis le début seulement en lettres latines. */
+  function coupeJumeau(zone, sAr, motsAr, avant) {
+    const mots = [...zone.matchAll(MOT_LATIN)];
+    if (!mots.length || !sAr) return -1;
+    let entier = null, morceau = null;
+    for (let k = 1; k <= Math.min(mots.length, 2 * motsAr + 3); k++) {
+      const pris = avant ? mots.slice(-k) : mots.slice(0, k);
+      const s = squelette(pris.map(m => m[0]).join(' '));
+      if (!s) continue;
+      const g = ecart(s, sAr) / Math.max(s.length, sAr.length);
+      if (g <= (sAr.length <= 2 ? 0 : 0.34) && (!entier || g < entier.r)) entier = { r: g, k };
+      if (s.length >= 4 && s.length >= 0.4 * sAr.length) {
+        const r = ecart(s, sAr, true) / s.length;
+        if (r <= 0.2 && (!morceau || r < morceau.r - 0.02 || (Math.abs(r - morceau.r) <= 0.02 && k > morceau.k))) morceau = { r, k };
+      }
+    }
+    const choix = entier || morceau;
+    if (!choix) return -1;
+    const pris = avant ? mots.slice(-choix.k) : mots.slice(0, choix.k);
+    return avant ? pris[0].index : pris[pris.length - 1].index + pris[pris.length - 1][0].length;
+  }
+  /* Le texte où chaque passage arabe est seul : les balises [[voix: …]] en lettres arabes (pas celle d'une formule, qui reste à FORMULE)
+     remplacées par leur contenu, et la transcription latine collée contre elles retirée ; tous (la voix) : aussi contre un passage arabe
+     écrit tel quel (« inchallah إِنْ شَاءَ اللَّه », ou la montre, qui envoie le contenu de la balise sans ses crochets), s'il a au moins
+     3 consonnes. L'écran le montre ainsi (lettres arabes) ; la voix ne reçoit jamais la version latine. */
+  function sansJumeaux(texte, { tous = false } = {}) {
+    let t = String(texte == null ? '' : texte);
+    if (!ARABE.test(t)) return t;
+    t = t.replace(VOIX_SEULE, (m, dit, pos, tout) => (ARABE.test(dit) && !/(?:\$|\\\]|\\\))\s*$/.test(tout.slice(0, pos)) ? `\uE010${dit}\uE011` : m));
+    const passages = [...t.matchAll(PASSAGE_AR)].map(m => ({ a: m.index, b: m.index + m[0].length, balise: m[0][0] === '\uE010', texte: m[0] }));
+    const couper = [];
+    passages.forEach((p, i) => {
+      const sAr = squelette(p.texte), motsAr = p.texte.split(/\s+/).filter(Boolean).length;
+      if (!p.balise && (!tous || sAr.length < 3)) return;
+      const debut = i ? passages[i - 1].b : 0, fin = i + 1 < passages.length ? passages[i + 1].a : t.length;
+      let gauche = t.slice(debut, p.a);
+      for (let k = gauche.length - 1; k >= 0; k--) if (BORNE.test(gauche[k])) { gauche = gauche.slice(k + 1); break; }
+      const g0 = p.a - gauche.length;
+      const c = coupeJumeau(gauche, sAr, motsAr, true);
+      if (c >= 0) { couper.push([g0 + c, p.a]); return; }
+      let droite = t.slice(p.b, fin);
+      const k = droite.search(BORNE);
+      if (k >= 0) droite = droite.slice(0, k);
+      const d = coupeJumeau(droite, sAr, motsAr, false);
+      if (d >= 0) couper.push([p.b, p.b + d]);
+    });
+    // la coupe ne laisse qu'un blanc à la jointure ; le reste du texte (sa ponctuation, ses espaces) ne bouge pas
+    for (const [a, b] of couper.sort((x, y) => y[0] - x[0])) {
+      const g = t.slice(0, a), d = t.slice(b);
+      t = !g || /\s$/.test(g) ? g + d.replace(/^[ \t]+/, '') : g + d;
+    }
+    return t.replace(/[\uE010\uE011]/g, '');
+  }
+  // ce que l'écran montre (aussi copié, ou mis en notification) : la darija en lettres arabes, la version parlée d'une formule cachée
+  const pourLEcran = (texte) => sansJumeaux(texte).replace(VOIX_SEULE, '');
+
   /* ---- formules de maths (2026-10-21, demande d'Ahmed relayée par Hakim) ----
      L'écran les dessine (KaTeX, parler.js) ; la voix ne lit JAMAIS le LaTeX : elle dit la version parlée que Hakim
      écrit juste après la formule, [[voix: …]] (cachée à l'écran), sinon « voir la formule à l'écran ».
@@ -222,7 +315,7 @@
       new RegExp([...m].map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\\u064B-\\u0652\\u0670]*').join(''), 'g'), d]);
   }
   function pourLaVoix(texte) {
-    let t = sansAffect(texte);
+    let t = sansJumeaux(sansAffect(texte), { tous: true });      // (09/11) un passage arabe seul, jamais sa version latine
     for (const [motif, dit] of prononciations) t = t.replace(motif, dit);
     t = t
       .replace(FORMULE, (_t, _f, d1, d2, i1, i2, dit) => ' ' + formuleParlee(d1 ?? d2 ?? i1 ?? i2, dit) + ' ')
@@ -399,8 +492,9 @@
 
   /* Ce que la voix prononce, morceau par morceau : le texte nettoyé, dit en toutes lettres, découpé par écriture.
      Un morceau sans aucune lettre (ponctuation seule) n'est jamais envoyé. */
+  // (09/11) versArabe APRÈS pourLaVoix : la version latine d'un passage arabe est retirée avant d'être à moitié passée en lettres arabes
   function prononcable(phrase) {
-    return segmenter(diction(pourLaVoix(versArabe(phrase)))).filter(s => /\p{L}/u.test(s.texte));
+    return segmenter(diction(versArabe(pourLaVoix(phrase)))).filter(s => /\p{L}/u.test(s.texte));
   }
 
   /* ---- phrases complètes au fil du flux (pour parler pendant que le texte arrive) ---- */
@@ -460,7 +554,7 @@
   const HESITATIONS = ['euh,', 'hum,', 'alors,', 'voyons voir,'];
   const DEBUTS = [...HESITATIONS, 'frérot,', 'oui frérot,', 'oui,', 'ok frérot,', 'tu as raison,', "d'accord frérot,", 'ha,', "d'accord,", 'ah,',
     'pas de souci,', 'bonne question,', 'merci,', 'merci frérot,', 'pardon frérot,', 'avec plaisir,', 'non,', 'bonne idée,',
-    'honnêtement,', 'non frérot,', 'compris,', 'je comprends,', 'ok,', 'ça marche,', "c'est noté,", 'bismillah,', 'bien reçu,',
+    'honnêtement,', 'non frérot,', 'compris,', 'je comprends,', 'ok,', 'ça marche,', "c'est noté,", 'bien reçu,',
     "t'as raison,", "c'est fait,", 'pardon,', 'pas de souci frérot,', 'merci frérot.', 'si,', "c'est envoyé,", 'pas tout à fait,',
     'parfait frérot,'];
   // (déplacé de parler.js le 28/10 : le cockpit fabrique d'avance ses débuts au même niveau de voix) une exclamation un peu
@@ -630,7 +724,7 @@
     return { choix, garde: vivants.filter(b => b !== choix), latenceMs: latence(choix), revenu: choix !== dernier };
   }
 
-  const Voix = { versArabe, segmenter, pourLaVoix, decoupeur, choisirVoix, creerLecteur, FORMULE, VOIX_SEULE, AFFECT, sansAffect, latexParle,
+  const Voix = { versArabe, segmenter, sansJumeaux, pourLEcran, squelette, pourLaVoix, decoupeur, choisirVoix, creerLecteur, FORMULE, VOIX_SEULE, AFFECT, sansAffect, latexParle,
     definirPrononciations,
     diction, prononcable, enLettres, DEBUTS, HESITATIONS, debutDe, expressivitePhrase, sansDejaLivre, finDePhrase, choisirDansLatence };
   racine.Voix = Voix;
