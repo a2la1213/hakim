@@ -459,10 +459,15 @@ def noter_voix(etiquette, texte, maintenant=None, contexte=None):
     if any(o.get("empreinte") == empreinte and maintenant - float(o.get("ts", 0)) < DEDOUBLON_S for o in _queue(_f(INCIDENTS))):
         return False
     coupure = contexte == "coupure"
-    incident = {"ts": maintenant, "source": f"voix : {_propre(etiquette, 40)}", "score": SEUIL_AVERTIR,
+    # (09/11, 23:55, Ahmed : « Ouii », ne plus compter comme alertes les bouts d'une voix inconnue dits « en passant » pendant sa
+    # parole, que son subconscient a jugés sans question et auxquels Hakim n'a pas répondu) : noté, sous le seuil du médecin, sans
+    # alerte. Le cockpit garde sa mise en garde à Hakim ; rien n'est toléré ni appris (relecture Opus du 29/10).
+    passage = contexte == "passage"
+    incident = {"ts": maintenant, "source": f"voix : {_propre(etiquette, 40)}", "score": SEUIL_NOTER if passage else SEUIL_AVERTIR,
                 "signes": ["ordre_d_une_voix_tierce"], "familles": ["usurpation"], "famille": "usurpation",
-                "empreinte": empreinte, "extrait": _propre(texte, 300), "taille": len(texte), "avertie": not coupure,
-                "motif": "usurpation|voix|coupure" if coupure else "usurpation|voix|tierce", "motifs": [], "tolere": False}
+                "empreinte": empreinte, "extrait": _propre(texte, 300), "taille": len(texte), "avertie": not (coupure or passage),
+                "motif": "usurpation|voix|coupure" if coupure else "usurpation|voix|passage" if passage else "usurpation|voix|tierce",
+                "motifs": [], "tolere": False}
     return _ajouter(INCIDENTS, incident)
 
 

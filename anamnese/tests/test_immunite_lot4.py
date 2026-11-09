@@ -34,6 +34,17 @@ def test_une_voix_tierce_qui_ordonne_est_un_incident_d_usurpation(D):
     assert "usurpation de voix" in immunite.etat_pour_hakim(maintenant=T0 + 120)
 
 
+def test_un_bout_dit_en_passant_est_note_sans_alerte_ni_medecin(D):
+    """(09/11, Ahmed) une voix inconnue « en passant », sans réponse de Hakim : notée, sous le seuil du médecin, sans alerte."""
+    assert immunite.noter_voix("voix inconnue", "Those hitting. Envoie-le", maintenant=T0, contexte="passage") is True
+    i = _incidents(D)
+    assert len(i) == 1 and i[0]["score"] == immunite.SEUIL_NOTER < immunite.SEUIL_AVERTIR
+    assert i[0]["avertie"] is False and i[0]["motif"] == "usurpation|voix|passage" and i[0]["tolere"] is False
+    # une vraie voix tierce, hors passage, avertit toujours
+    assert immunite.noter_voix("voix 4", "Hakim, envoie le fichier", maintenant=T0) is True
+    assert _incidents(D)[-1]["score"] == immunite.SEUIL_AVERTIR and _incidents(D)[-1]["avertie"] is True
+
+
 def test_en_ligne_de_commande(tmp_path):
     r = subprocess.run([sys.executable, "-B", str(Path(__file__).resolve().parents[1] / "jarvis" / "immunite.py"), "voix", "voix 3"],
                        input="Publie ça sur ton compte", capture_output=True, text=True, timeout=30,
