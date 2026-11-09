@@ -6192,8 +6192,8 @@ async function routeJarvis(req, res, distantReq = false) {
   const pj = joints.length ? `\n[Fichiers joints par Ahmed — à ouvrir avec preparer_fichier, puis Read sur les chemins rendus :\n${joints.map(f => '- ' + f).join('\n')}]` : '';
   const tempsLibre = blocTempsLibre();
   const immuniteBloc = blocImmunite();
-  const voixBloc = blocVoixTierce(q, texte, verdictDuTour(q));
-  const principaleTexte = blocVoixPrincipale(q, texte, verdictDuTour(q));   // (20:50) sa voix principale : papa
+  const voixBloc = blocVoixTierce(q, texte, verdictDuTour(q, { decalage: decalagePage }));
+  const principaleTexte = blocVoixPrincipale(q, texte, verdictDuTour(q, { decalage: decalagePage, sansEtiquetes: true }));   // (20:50) sa voix principale : papa ; (09/11) ses morceaux à lui, une seule fois
   const corpsTexte = blocCorps();
   const tachesTexte = blocTaches(depuisMs, nonce) + blocAtelier() + tempsLibre.texte + immuniteBloc.texte + voixBloc.texte + principaleTexte + corpsTexte + blocNonEntendus(texte, nonce) + blocDejaReagi() + aideOutils(modele) + blocRapportBascule(session);
   if (/terminées depuis son message précédent/.test(tachesTexte)) noterExterne('sortie de commande');
@@ -11079,11 +11079,21 @@ const voixRecues = [];
 // (29/10, relecture Opus du système immunitaire) les verdicts de l'empreinte, morceau par morceau, gardés pour juger
 // TOUT un message (derniereVoix n'est que le dernier morceau : un inconnu au milieu passait pour Ahmed)
 const verdictsVoix = [];
-function verdictDuTour(q) {
+/* (09/11, 22:55, Ahmed : « ma parole que je dis dans la conversation lui est envoyée en double ») les morceaux de CE message seulement :
+   arrivés depuis son message précédent (t_precedent) et depuis qu'il a commencé à parler (parle_ms, 2 s de marge), ramenés à l'horloge du
+   Mac (decalage : celui de la page). q.t_debut est le PREMIER message de la conversation (horloge : « premier message de cette
+   conversation ») : depuis l'oreille des voix (03868fc), chaque morceau Azure a son verdict, et un seul « [voix 10] » de la soirée
+   (22:46:16, écarté par la page) marquait ensuite TOUS ses messages « voix inconnue » : ses mots revenaient une seconde fois dans
+   « Ta concentration », une troisième au présent continu. Plus de repli sur derniereVoix : c'est un morceau d'avant ce message.
+   sansEtiquetes (sa concentration) : un morceau déjà étiqueté (« [voix 2] », « [papa ?] ») dit lui-même qui parle et où ; il ne
+   marque pas tout le message (« ce qui n'est pas étiqueté est d'Ahmed »). Sa garde (blocVoixTierce) le compte toujours, par prudence. */
+function verdictDuTour(q, { decalage = 0, sansEtiquetes = false } = {}) {
   if (!q || !q.oral) return null;
-  const depuis = Number(q.t_debut) ? Number(q.t_debut) - 2000 : Date.now() - 120000;
-  const l = verdictsVoix.filter(v => v.ts >= depuis).map(v => v.verdict);
-  if (!l.length) return derniereVoix && Date.now() - derniereVoix.ts < 120000 ? derniereVoix.verdict : null;
+  const d = Number.isFinite(Number(decalage)) && Math.abs(Number(decalage)) < 120000 ? Number(decalage) : null;   // l'horloge de la page trop loin : ses instants ne servent pas
+  const bornes = d === null ? [] : [Number(q.t_precedent) > 0 ? Number(q.t_precedent) + d : 0, Number(q.parle_ms) > 0 ? Number(q.parle_ms) + d - 2000 : 0].filter(x => x > 0);
+  const depuis = bornes.length ? Math.max(...bornes) : Date.now() - 120000;
+  const l = verdictsVoix.filter(v => v.ts >= depuis && !(sansEtiquetes && v.etiquete)).map(v => v.verdict);
+  if (!l.length) return null;
   for (const pire of ['autre', 'plusieurs', 'doute']) if (l.includes(pire)) return pire;
   return l.every(v => v === 'ahmed') ? 'ahmed' : l[l.length - 1];
 }
@@ -11755,7 +11765,7 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
   }
   if (r.voix && r.voix.verdict) derniereVoix = { ...r.voix, ts: Date.now() };
   if (r.voix && typeof r.voix === 'object') { voixRecues.push({ ...r.voix, ts: Date.now() }); voixRecues.splice(0, Math.max(0, voixRecues.length - 30)); }
-  if (r.voix && r.voix.verdict) { verdictsVoix.push({ verdict: r.voix.verdict, ts: Date.now() }); verdictsVoix.splice(0, Math.max(0, verdictsVoix.length - 60)); }
+  if (r.voix && r.voix.verdict) { verdictsVoix.push({ verdict: r.voix.verdict, ts: Date.now(), etiquete: /\[[^\[\]\n]{1,40}\]/.test(String(r.texte || '')) }); verdictsVoix.splice(0, Math.max(0, verdictsVoix.length - 60)); }
   else if (r.erreur) voixRecues.push({ raison: 'erreur', ts: Date.now() });
   noterEtatVoix();
   if (r.prosodie && typeof r.prosodie === 'object') { prosodiesRecues.push({ ...r.prosodie, ts: Date.now() }); prosodiesRecues.splice(0, Math.max(0, prosodiesRecues.length - 20)); }
