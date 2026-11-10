@@ -96,6 +96,61 @@
     ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
     : { echoCancellation: true, noiseSuppression: true, autoGainControl: true });
 
+  /* (10/11, 07:05, Ahmed : « quand il parle dans des haut-parleurs Bluetooth, il entend son écho, qui le coupe ») le CHEMIN de sa voix jusqu'au
+     micro, appris en mesurant quand il parle seul : son retard (le Bluetooth ajoute 150 à 300 ms, la sortie d'Android encore plus) et sa force.
+     Mesuré au banc (le vrai détecteur, sa voix et son seul écho, papa muet) : l'écho attendu suivait sa voix à l'instant (enveloppe de ~0,3 s) ;
+     retardé de 250 à 500 ms, il coupait 4 à 7 de ses phrases sur 10 (gain 0,6), et sa traîne, après sa voix, ouvrait un « tour de papa » 7 à 10
+     fois sur 10 ; un écho aussi fort que sa voix (une enceinte sans annulation d'écho : avec une sortie Bluetooth, le micro s'ouvre sans effets)
+     les coupait toutes, même sans retard (son gain n'apprenait que sous le seuil). Toutes les 0,5 s, la corrélation entre ce que le micro
+     entend (2 s) et sa voix décalée de 0 à 1 s : le décalage qui colle le mieux est son retard ; la médiane micro / voix à ce retard, sa force.
+     Sans écho mesuré (des écouteurs, le Mac et son annulation d'écho), rien ne change. */
+  function creerEcho() {
+    const H = 160, LAG_MAX = 50, TOL = 4, N = 100, N_MIN = 50;               // fenêtres de 20 ms : 3,2 s gardées, 1 s de retard au plus
+    const S = new Float32Array(H), M = new Float32Array(H);
+    let n = 0, lag = -1, confiance = 0, gain = 0, vuA = 0, prochain = 0;
+    const s = (k) => S[((n - 1 - k) % H + H) % H], m = (k) => M[((n - 1 - k) % H + H) % H];   // k fenêtres en arrière
+    const ref = (k) => { let x = 0; for (let d = Math.max(0, lag - TOL); d <= lag + TOL; d++) x = Math.max(x, s(k + d)); return x; };
+    function correlation(l, len, p) {                    // sur les logarithmes : ce que le micro a entendu, et sa voix l fenêtres plus tôt
+      let sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+      for (let k = 0; k < len; k++) { const x = Math.log(s(k + l) + 1e-3), y = Math.log(m(k) + p); sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y; }
+      const vx = sxx - sx * sx / len, vy = syy - sy * sy / len;
+      return vx > 1e-3 && vy > 1e-3 ? (sxy - sx * sy / len) / Math.sqrt(vx * vy) : 0;
+    }
+    function meilleur(de, a, len, p) { let c = -1, l = de; for (let x = Math.max(0, de); x <= Math.min(LAG_MAX, a); x++) { const v = correlation(x, len, p); if (v > c) { c = v; l = x; } } return { c, l }; }
+    const saVoixDans = (len, l) => { let v = 0; for (let k = 0; k < len; k++) if (s(k + l) > 0.01) v++; return v / len; };
+    const actif = (maintenant) => lag >= 0 && confiance >= 0.5 && maintenant - vuA < 180000;
+    return {
+      noter(sortie, rms) { S[n % H] = sortie; M[n % H] = rms; n++; },
+      // il parle seul (pas de tour de papa) : mesurer
+      apprendre(maintenant, plancher) {
+        if (n < prochain || n < N_MIN + LAG_MAX + TOL) return;
+        prochain = n + (lag < 0 ? 10 : 25);
+        const len = Math.min(N, n - LAG_MAX - TOL), p = Math.max(1e-3, plancher);
+        if (saVoixDans(len, 0) < 0.3) return;                                // pas assez de sa voix pour mesurer
+        const b = meilleur(0, LAG_MAX, len, p);
+        if (b.c >= 0.55) {
+          lag = lag < 0 || Math.abs(b.l - lag) > 5 ? b.l : Math.round(lag * 0.7 + b.l * 0.3);
+          confiance = confiance ? confiance * 0.7 + b.c * 0.3 : b.c; vuA = maintenant;
+          const r = []; for (let k = 0; k < len; k++) { const x = ref(k); if (x > 0.02) r.push(m(k) / x); }
+          if (r.length >= 10) { r.sort((a, c) => a - c); const g = r[r.length >> 1]; gain = gain ? gain * 0.7 + g * 0.3 : g; }
+        } else {
+          let fortes = 0; for (let k = 0; k < len; k++) if (m(k) > p * 2) fortes++;
+          if (fortes / len < 0.2) confiance *= 0.7;                          // il parle et le micro n'entend rien : plus d'enceinte
+        }
+      },
+      chemin: (maintenant) => ({ actif: actif(maintenant), retardMs: Math.max(0, lag) * 20, confiance, gain }),
+      reference: () => ref(0),                                               // sa voix au retard appris (±80 ms)
+      // ce que le micro entend en ce moment (0,4 s) suit-il sa voix retardée ? (sans retard appris : le meilleur décalage, sur 0,6 s)
+      ressemblance(maintenant, plancher) {
+        const p = Math.max(1e-3, plancher);
+        if (n < 30 + LAG_MAX + TOL) return { r: 0, libre: true };
+        if (actif(maintenant)) return { r: saVoixDans(20, lag) < 0.2 ? 0 : meilleur(lag - TOL, lag + TOL, 20, p).c, libre: false };
+        return { r: meilleur(0, LAG_MAX, 30, p).c, libre: true };
+      },
+    };
+  }
+  const TRAINE_MS = 300;                                    // la pièce résonne encore après son dernier son
+
   async function demarrer(o) {
     const flux = await navigator.mediaDevices.getUserMedia({ audio: contraintesMicro(!!o.sansEcho) });
     const ctx = o.ctx;
@@ -141,6 +196,7 @@
     let ambianceN = 0;
     let fenetre = new Float32Array(parFenetre), remplis = 0;
     let bruit = 0.01, initFenetres = 0, echo = 0, jarvisDepuis = 0, enveloppe = 0, gainEcho = 0.2;
+    const echoA = creerEcho(); let jarvisFin = 0;              // (10/11) le chemin de sa voix jusqu'au micro, et sa dernière fenêtre
     let etatV = 'attente', tenue = 0, tour = [], debut = 0, derniereVoix = 0, voixMs = 0, pauseEnCours = 0, pauses = [];
     let energies = [], hauteurs = [];                       // le ton du tour (indices)
     // la voix en cours pendant un tour : sa longueur forte, ses creux, la pause qui la précédait, son ton en attente
@@ -209,7 +265,13 @@
       if (o.sourd && o.sourd()) { if (o.surNiveau) o.surNiveau(0); return; }   // (30/10) son bout de musique joue : pas une voix
       let s = 0; for (let i = 0; i < f.length; i++) s += f[i] * f[i];
       const rms = Math.sqrt(s / f.length), maintenant = Date.now();
-      const jarvis = !!o.jarvisParle();
+      // (10/11) dans une enceinte (son chemin mesuré), son écho arrive avec son retard et dure encore après sa voix : sa traîne compte
+      // comme sa voix (seuil au-dessus de son écho), sans jamais passer pour une coupure (seule sa voix qui sonne vraiment en fait une)
+      const jarvisVrai = !!o.jarvisParle(), sortie = o.niveauSortie ? o.niveauSortie() : 0;
+      echoA.noter(sortie, rms);
+      if (jarvisVrai) jarvisFin = maintenant;
+      const chemin = echoA.chemin(maintenant);
+      const jarvis = jarvisVrai || (chemin.actif && jarvisFin > 0 && maintenant - jarvisFin < chemin.retardMs + TRAINE_MS);
       // pendant la vibration de son cœur : ce n'est pas une voix (ni début de tour, ni voix qui prolonge le tour)
       const battement = o.dernierBattement ? o.dernierBattement() : 0;
       if (battement && battement !== avisVu) { avisVu = battement; if (avis.length < 120) avis.push(battement); }
@@ -221,14 +283,15 @@
       // (2026-10-21, Ahmed : « la pause s'active toute seule ») l'écho suit SA voix à l'instant : l'enveloppe de ce
       // qu'il dit (descente ~250 ms, le temps que l'écho de la pièce s'éteigne) × le gain du chemin haut-parleur → micro,
       // appris quand il parle seul. Une syllabe forte de sa voix ne passe plus pour toi qui le coupes.
-      const sortie = o.niveauSortie ? o.niveauSortie() : 0;
-      enveloppe = Math.max(sortie, enveloppe * 0.93);
-      const echoInstant = gainEcho * enveloppe;
+      // (10/11) dans une enceinte : sa voix au retard appris, et sa force mesurée (même plus forte que le seuil d'avant)
+      enveloppe = Math.max(chemin.actif ? echoA.reference() : sortie, enveloppe * 0.93);
+      const echoInstant = (chemin.actif ? Math.max(gainEcho, Math.min(2, chemin.gain)) : gainEcho) * enveloppe;
       // pendant que Jarvis parle : au-dessus de l'écho résiduel, et jamais dans ses 400 premières ms
       const seuilBarge = Math.max(seuil * 2.5, echo * 2.4, echoInstant * 3);
       if (jarvis && etatV === 'attente' && enveloppe > 0.02 && rms < seuilBarge)
         gainEcho = Math.min(1, Math.max(0.005, gainEcho * 0.98 + 0.02 * (rms / enveloppe)));
       if (o.surNiveau) o.surNiveau(Math.min(1, rms * 7));
+      if (jarvisVrai && etatV === 'attente' && !vibre) echoA.apprendre(maintenant, bruit);   // (10/11) il parle seul : son chemin se mesure
       if (etatV === 'attente') {
         if (jarvis) { if (rms < seuilBarge) echo = echo * 0.97 + rms * 0.03; }   // l'écho appris hors des moments forts
         else if (!vibre) bruit = Math.max(0.002, bruit * 0.985 + Math.min(rms, seuil) * 0.015);
@@ -244,10 +307,13 @@
         if (!fort && tenue) noterEclat(tenueDebut, tenue);       // trop court pour commencer un tour : un éclat
         tenue = fort ? tenue + FENETRE_MS : 0;
         preecoute.push(f.slice(0)); if (preecoute.length > PREECOUTE_MS / FENETRE_MS) preecoute.shift();
-        if (jarvis ? nFortes >= 12 : tenue >= 120) {
-          if (jarvis && o.surInterruption) o.surInterruption({ rms: +rms.toFixed(4), seuil: +seuilBarge.toFixed(4),
+        if (jarvisVrai ? nFortes >= 12 : tenue >= 120) {
+          // (10/11) et ce que le micro entend suit-il sa voix retardée (ressemblance, 0 à 1) : la page met en doute ce qui ressemble à son écho
+          const r = jarvisVrai && o.surInterruption ? echoA.ressemblance(maintenant, bruit) : null;
+          if (jarvisVrai && o.surInterruption) o.surInterruption({ rms: +rms.toFixed(4), seuil: +seuilBarge.toFixed(4),
             echo: +echo.toFixed(4), echo_instant: +echoInstant.toFixed(4), gain: +gainEcho.toFixed(3),
-            clarte: +(niveauxBarge.reduce((a, x) => a + x, 0) / Math.max(1, niveauxBarge.length)).toFixed(2) });
+            clarte: +(niveauxBarge.reduce((a, x) => a + x, 0) / Math.max(1, niveauxBarge.length)).toFixed(2),
+            enceinte: chemin.actif, retard_ms: chemin.retardMs, gain_appris: +chemin.gain.toFixed(3), ressemblance: +r.r.toFixed(2), libre: r.libre });
           niveauxBarge.length = 0;
           etatV = 'parole'; debut = maintenant - PREECOUTE_MS; derniereVoix = maintenant; voixMs = Math.max(tenue, nFortes * FENETRE_MS);
           pauses = []; pauseEnCours = 0; fortes.length = 0; energies = []; hauteurs = [];
@@ -311,6 +377,9 @@
       // « j'ai fini » : clôt le tour en cours tout de suite (clic sur la scène, ou fin anticipée avec
       // le texte déjà transcrit dans extra)
       finirTour(extra) { if (etatV === 'parole') finTour(extra); },
+      // (10/11) le tour en cours n'était que son écho (la page l'a reconnu) : laissé, jamais transcrit ni envoyé
+      annulerTour() { if (etatV !== 'parole') return false; tour = []; etatV = 'attente'; tenue = 0; course = 0; creux = 0; tenueVoix = false; tonCourse = []; fortes.length = 0; return true; },
+      get echo() { return echoA.chemin(Date.now()); },           // (10/11) son chemin appris : retard, force, confiance
       get derniereVoix() { return derniereVoix; },
       get debutTour() { return debut; },                      // (03/11) l'instant (horloge de la page) où le tour a commencé
       // un morceau du tour en cours (fenêtres de 20 ms [de, a[) : transcrit pendant que tu parles ;
@@ -354,5 +423,5 @@
     return t.replace(/[^\p{L}]/gu, '').length >= 2 && !HALLUCINATIONS.test(t);
   }
 
-  racine.Conversation = { demarrer, encoderWav, reechantillonner, utile, hauteur, enVibration, contraintesMicro };
+  racine.Conversation = { demarrer, encoderWav, reechantillonner, utile, hauteur, enVibration, contraintesMicro, creerEcho };
 })(window);

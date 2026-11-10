@@ -448,6 +448,7 @@ const teCouper = () => typeof reglagesCorps !== 'undefined' && !!reglagesCorps &
 function jarvisPeutParler() {
   const c = etat.conversation;
   if (typeof teCouper === 'function' && teCouper()) return true;
+  if (c && c.doute) return true;                     // (10/11) un signal mis en doute (son écho dans l'enceinte) ne lui prend pas la parole
   // (14:55) sa réponse soufflée parle pendant que la grande oreille confirme ta phrase (tu t'es tu)
   // (04/11) sa pensée dite dans ta pause, ton tour encore ouvert (direPenseeSiPossible)
   return !(c && ((c.capteur && c.capteur.enParole && !c.penseeEnPause) || (c.enAttente > 0 && !c.souffleParle)));
@@ -3502,6 +3503,8 @@ async function transcrireVite(audio, type, contexte, temps = '') {
     horsLigne.panne = 'serveur';                                    // le Mac a répondu : si ça échoue, c'est la transcription
     if (!r.ok || !o || o.erreur) { journalVoix('transcription_echec', { statut: r.status, ms: Date.now() - t0 }); return null; }
     if (Date.now() - t0 > 8000) journalVoix('transcription_lente', { ms: Date.now() - t0 });
+    // (10/11) qui parlait dans ce morceau (l'oreille des voix) : son écho mis en doute s'en sert (« moi » : sa voix ; « ahmed » : papa)
+    if (o.voix && o.voix.verdict) etat.voixVerdict = { verdict: o.moi && !String(o.texte || '').trim() ? 'moi' : String(o.voix.verdict), t: Date.now() };
     return (o.texte || '').trim();
   } catch (e) {
     // 25 s sans réponse : le Mac est joignable mais débordé (vu le 23/10 : Gemma chargée, mémoire pleine) ; sinon, le réseau
@@ -3544,8 +3547,9 @@ function surPauseConversation(conv, fenetre) {
     entendreEnCours(conv);                                               // (30/10) son oreille, si papa l'a ouverte
     // (20:38, Ahmed : « arrête », « tais-toi », « coupe-toi » doivent le couper tout de suite) : quand il garde la parole,
     // ces mots entendus pendant qu'il parle l'arrêtent aussitôt, comme le bouton Stop (sa suite est abandonnée)
+    // (10/11) jamais son propre « arrête » ou « stop » revenu par l'enceinte (ses mots qui viennent de sonner)
     if (typeof reglagesCorps !== 'undefined' && reglagesCorps.garder_parole && lecteur && (lecteur.actif || lecteur.enPause)
-        && ARRETE_MOI.test(String(texte || ''))) { journalVoix('arret_par_la_voix', {}); arreterTout(true, { raison: 'stop' }); majBoutonsPause(); rendre(); humeur(); }
+        && ARRETE_MOI.test(String(texte || '')) && !(typeof jugerEcho === 'function' && jugerEcho(texte, sesMotsSonnes(Date.now())).v === 'echo')) { journalVoix('arret_par_la_voix', {}); arreterTout(true, { raison: 'stop' }); majBoutonsPause(); rendre(); humeur(); }
   }).finally(() => { e.partiel = null; });
 }
 // (03/11, Ahmed : « la transcription de ma voix, mot à mot ; il prend le premier mot, puis en parallèle le deuxième ; ça doit
@@ -4290,6 +4294,84 @@ function couperNet(conv, { lacher = false } = {}) {
   if (etat.flux || (lecteur && lecteur.actif)) arreterTout(true, { garder: false, raison: 'parole' });   // sa voix : son mot (couperSaVoix)
   if (typeof majBoutonsPause === 'function') majBoutonsPause();
 }
+/* ---- (10/11, 07:05, Ahmed : « quand il parle dans des haut-parleurs Bluetooth, il entend son écho, qui le coupe ») SON ÉCHO DANS UNE ENCEINTE.
+   Le micro (conversation.js) apprend le chemin de sa voix jusqu'à lui (son retard, sa force) et dit, à chaque signal, si ce qu'il entend suit sa
+   voix retardée (ressemblance). Mesuré au banc (le vrai détecteur) : son seul écho ressemble à 0,8 et plus (38 signaux sur 39) ; papa qui parle
+   vraiment sur sa voix, 0,47 en médiane (3 sur 64 à 0,75 et plus). Un signal qui ressemble à sa voix ne le coupe pas : il est mis en doute, sa voix
+   continue, et il ne le coupe que si c'est vraiment papa : l'oreille des voix l'a reconnu (« ahmed »), ou ses mots ne sont pas les siens (3 mots,
+   au plus 40 % des siens) ; ses propres mots revenus (60 % et plus de ce qui vient de sonner) ne le coupent jamais, et ce tour-là est laissé : il
+   n'entre jamais comme ta parole. Un signal qui ne ressemble pas à sa voix : tu le coupes net, comme avant. ---- */
+const ECHO_DOUTE_MAX_MS = 4000, RESSEMBLE_APPRIS = 0.75, RESSEMBLE_LIBRE = 0.8;
+function ressembleASonEcho(m) {
+  if (!m || m.verifie) return false;
+  const r = Number(m.ressemblance);
+  return Number.isFinite(r) && r >= (m.enceinte ? RESSEMBLE_APPRIS : RESSEMBLE_LIBRE);
+}
+const motsDEcho = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\[[^\]]*\]/g, ' ')
+  .split(/[^\p{L}\p{N}]+/u).filter(m => m.length >= 3);
+// ce qui a sonné de sa voix autour de ce tour (ses morceaux commencés jusqu'à 20 s avant : leur écho arrive avec le retard de l'enceinte)
+function sesMotsSonnes(depuis) {
+  const t0 = (Number(depuis) || Date.now()) - 20000;
+  return paroleRecente.filter(x => x.t >= t0).map(x => x.suite.join(' ')).concat((etat.saVoix || []).filter(x => x.t >= t0).map(x => x.texte)).join(' ');
+}
+// 'echo' (ses mots), 'papa' (d'autres mots), 'attendre' (trop peu pour savoir) ; nouveaux : les mots qui ne sont pas les siens
+function jugerEcho(entendu, siens) {
+  const m = motsDEcho(entendu), s = new Set(motsDEcho(siens));
+  const nouveaux = m.filter(w => !s.has(w)).length, part = m.length ? (m.length - nouveaux) / m.length : 0;
+  return { v: m.length >= 2 && part >= 0.6 ? 'echo' : m.length >= 3 && part <= 0.4 ? 'papa' : 'attendre', nouveaux };
+}
+// le signal ressemble à son écho : mis en doute (rend vrai : ni coupé net, ni « il te coupe », ni sauté)
+function echoEnDoute(conv, mesure) {
+  if (!conv || !ressembleASonEcho(mesure)) return false;
+  // le tour qui commence avec ce signal : conversation.js le date de 0,5 s avant (sa pré-écoute)
+  if (!conv.doute) conv.doute = { t: Date.now(), tour: Date.now() - 500, mesure };
+  journalVoix('echo_en_doute', { ressemblance: mesure.ressemblance, retard_ms: mesure.retard_ms, enceinte: !!mesure.enceinte, clarte: mesure.clarte });
+  return true;
+}
+function trancherDoute(conv, maintenant = Date.now()) {
+  const d = conv && conv.doute;
+  if (!d) return null;
+  const cap = conv.capteur, enCours = !!(cap && cap.enParole && Math.abs(Number(cap.debutTour) - d.tour) < 1500);
+  const j = jugerEcho(typeof motsEntendusDepuis === 'function' ? motsEntendusDepuis(conv, 0) : '', sesMotsSonnes(d.tour));
+  let v = j.v;
+  const qui = etat.voixVerdict && etat.voixVerdict.t > d.t ? etat.voixVerdict.verdict : '';   // l'oreille des voix, sur un morceau de ce tour
+  if (qui === 'moi') v = 'echo';
+  else if (qui === 'ahmed' && v !== 'echo' && j.nouveaux >= 1) v = 'papa';
+  if (v === 'attendre' && enCours && maintenant - d.t < ECHO_DOUTE_MAX_MS) return null;
+  conv.doute = null;
+  if (v === 'papa') {
+    journalVoix('echo_doute_papa', { ms: maintenant - d.t, par: qui === 'ahmed' ? 'voix' : 'mots' });
+    // sa voix sonne encore : la coupure se fait maintenant, par le même chemin (coupé net, « il te coupe », la suite sautée, son choix)
+    if (conv.optionsCapteur && conv.optionsCapteur.surInterruption && (saVoixAudible() || (lecteur && lecteur.actif)))
+      conv.optionsCapteur.surInterruption({ ...d.mesure, verifie: true });
+    return 'papa';
+  }
+  // son écho (ou rien de sûr) : il n'a pas été coupé ; ce tour-là est laissé (en cours : il s'arrête là, jamais transcrit)
+  const annule = v === 'echo' && enCours && cap.annulerTour && cap.annulerTour();
+  if (!annule) conv.tourEcho = d.tour;
+  journalVoix(v === 'echo' ? 'echo_pas_coupe' : 'doute_sans_suite', { enceinte: true, ms: maintenant - d.t, annule: !!annule });
+  return v;
+}
+// ta phrase finie : le tour mis en doute (ou reconnu comme son écho) n'entre comme ta parole que s'il porte d'autres mots que les siens
+function tourDEcho(conv, infos, texte) {
+  const debut = Number(infos && infos.debut) || 0, meme = (t) => Math.abs(Number(t) - debut) < 1500;
+  const d = conv && conv.doute, marque = conv && conv.tourEcho != null && meme(conv.tourEcho), enDoute = !!(d && meme(d.tour));
+  if (!marque && !enDoute) return false;
+  if (marque) conv.tourEcho = null;
+  if (enDoute) conv.doute = null;
+  return jugerEcho(texte, sesMotsSonnes(debut)).v !== 'papa';
+}
+// son chemin appris (retard, force) : au journal quand il change, pour le mesurer en vrai
+function noterCheminEcho(conv) {
+  const e = conv && conv.capteur && conv.capteur.echo;
+  if (!e) return;
+  const n = conv.cheminNote || { actif: false, retardMs: -1, t: 0 };
+  if (e.actif === n.actif && (!e.actif || Math.abs(e.retardMs - n.retardMs) < 60 || Date.now() - n.t < 10000)) return;
+  conv.cheminNote = { actif: e.actif, retardMs: e.retardMs, t: Date.now() };
+  journalVoix('echo_chemin', { actif: e.actif, retard_ms: e.retardMs, gain: +Number(e.gain).toFixed(3), confiance: +Number(e.confiance).toFixed(2) });
+}
+setInterval(() => { const c = etat.conversation; if (!c) return; if (c.doute) trancherDoute(c); noterCheminEcho(c); }, 150);
+// fin de « son écho dans une enceinte »
 /* ---- (09/11, 16:28, Ahmed : « tu t'es coupé, mais pourquoi tu reprends pas les morceaux qui sont déjà prêts avec ta voix, au lieu de régénérer un
    nouveau morceau à chaque fois » ; Hakim : « quand tu me coupes sans me poser autre chose, ma voix reprendrait les morceaux déjà prêts ») PASSAGE ou
    RELANCE. Tu le coupes net : sa voix finit son mot et se met en pause, sa voix déjà faite gardée (retenirSaVoix ; le reste de sa réponse continue de
@@ -5261,6 +5343,8 @@ async function basculerConversation() {
         // (07/11, Ahmed : « si c'est un background et pas une parole, il ne se coupe pas ; des paroles en fond pas assez fortes non plus ; il faut
         // une voix claire qui lui parle ») sous la clarté voulue (voix_claire_x, 1,8 par défaut) : un fond, ignoré ; il continue
         if (typeof voixClaire === 'function' && !voixClaire(mesure)) { journalVoix('fond_ignore', mesure || {}); return; }
+        // (10/11) son écho dans une enceinte : ce qui suit sa voix retardée est mis en doute ; il ne le coupe que si c'est vraiment papa
+        if (typeof echoEnDoute === 'function' && echoEnDoute(conv, mesure)) return;
         // (09/11, 23:15, Ahmed : « tout doit marcher ensemble ») coupé net : sa voix finit son mot et attend ; si ta voix dure « Sauter au bout de »,
         // la suite est sautée (ou son subconscient choisit, « Il choisit de se couper ») sans attendre le tri passage/relance de ta phrase finie
         if (typeof coupeNet === 'function' && coupeNet()) { journalVoix('coupe_net', mesure || {}); couperNet(conv); if (etat.retenue && lecteur.enPause) prevoirSaut(conv, mesure); return; }
@@ -5899,6 +5983,8 @@ async function tourDeParole(conv, wav, infos, extra) {
   texte = texte || '';
   if (!vivante()) return;
   conv.fermeture = false;                                                   // ce dernier tour, une seule fois
+  // (10/11) le tour mis en doute dans l'enceinte : son écho n'entre jamais comme ta parole
+  if (typeof tourDEcho === 'function' && tourDEcho(conv, infos, texte)) { journalVoix('echo_tour_ecarte', { mots: texte.split(/\s+/).filter(Boolean).length }); if (!reprendreVoix()) humeur(); return; }
   if (!Conversation.utile(texte)) { journalVoix('tour_bruit', { coupure: !!etat.coupeParAhmed }); if (!reprendreVoix()) humeur(); return; }      // bruit, une autre voix : il reprend
   // (2026-10-22) ses phrases revenues par le haut-parleur, collées à la tienne : retirées ; s'il ne reste presque rien,
   // c'était son écho

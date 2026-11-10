@@ -10719,23 +10719,26 @@ const PAROLES_LANGUES = ['fr-FR', 'ar-DZ', 'en-US'], PAROLES_PAUSE_MS = 10 * 60e
 const parolesAzure = { pauseJusqua: 0, raison: '' };
 const Paroles = require('./paroles.js'), PAROLES = Paroles.creer();
 const parolesParAzure = (maintenant = Date.now()) => corpsReglages().paroles_azure !== false && maintenant >= parolesAzure.pauseJusqua && !!cleAzure();
-// les trois langues, l'une après l'autre (Azure les sert une à la fois de toute façon), chacune après ta voix ; null : aucune n'a répondu
+// (10/11, Ahmed : « j'ai mis S0 ») les trois langues EN MÊME TEMPS, comme pour ta voix (la clé payante en sert bien plus d'une à la fois),
+// après ta voix (3 s d'attente au plus) ; null : aucune n'a répondu. Chaque langue garde son temps (ms_l) pour le mesurer en vrai.
 async function azureParoles(fichier, cle, region, o = {}) {
-  const audio = fs.readFileSync(fichier), t0 = Date.now(), l = [], statuts = [];
-  for (const langue of PAROLES_LANGUES) {
-    for (const d = Date.now(); azureEnVol.papa > 0 && Date.now() - d < PAROLES_PAPA_MAX_MS;) await new Promise(r => setTimeout(r, 40));
-    const ctl = new AbortController(), m = setTimeout(() => ctl.abort(), PAROLES_LANGUE_MS);
+  const audio = fs.readFileSync(fichier), t0 = Date.now(), statuts = [], ms_l = {};
+  for (const d = Date.now(); azureEnVol.papa > 0 && Date.now() - d < PAROLES_PAPA_MAX_MS;) await new Promise(r => setTimeout(r, 40));
+  const une = async (langue) => {
+    const ctl = new AbortController(), m = setTimeout(() => ctl.abort(), PAROLES_LANGUE_MS), t = Date.now();
     try {
       const q = await fetch(`https://${region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=${langue}&format=detailed&wordLevelTimestamps=true&profanity=raw`,
         { method: 'POST', body: audio, signal: ctl.signal, headers: { 'Ocp-Apim-Subscription-Key': cle, 'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000' } });
       statuts.push(q.status);
-      if (!q.ok) { await q.text().catch(() => ''); if (!l.length && [401, 403, 429].includes(q.status)) break; continue; }   // refusé : les suivantes aussi
+      if (!q.ok) { await q.text().catch(() => ''); return null; }
       const r = await q.json(), b = (r.NBest || [])[0];
       // NoMatch, un silence : rien entendu, c'est une réponse (pas une panne)
-      l.push(r.RecognitionStatus === 'Success' && b ? { texte: String(b.Display || '').trim(), langue, sur: Number(b.Confidence) || 0, words: b.Words, offset: r.Offset, duree: r.Duration }
-        : { texte: '', langue, sur: 0 });
-    } catch (_) { statuts.push(0); if (!l.length) break; } finally { clearTimeout(m); }   // sans réseau dès la première : Whisper, sans attendre les autres
-  }
+      return r.RecognitionStatus === 'Success' && b ? { texte: String(b.Display || '').trim(), langue, sur: Number(b.Confidence) || 0, words: b.Words, offset: r.Offset, duree: r.Duration }
+        : { texte: '', langue, sur: 0 };
+    } catch (_) { statuts.push(0); return null; } finally { clearTimeout(m); ms_l[langue] = Date.now() - t; }
+  };
+  const l = (await Promise.all(PAROLES_LANGUES.map(x => une(x).catch(() => null)))).filter(Boolean);
+  o.ms_l = ms_l;
   if (Array.isArray(o.statuts)) o.statuts.push(...statuts);
   if (!l.length) return null;
   // la règle de ta voix, sans ses inventions sur une voix qui chante (mesuré sur trois chansons : les 8 textes anglais rendus étaient tous inventés,
@@ -10752,11 +10755,11 @@ async function azureParoles(fichier, cle, region, o = {}) {
 async function transcrireParolesAzure(fichier, o = {}) {
   if (azureEnVol.tel >= 2) return { sautee: true };
   azureEnVol.tel++;
-  const t = Date.now(), statuts = [];
+  const t = Date.now(), statuts = [], pa = { paroles: true, statuts };
   let f16 = null, a = null;
   try {
     f16 = o.separee ? await enWav16k(fichier).catch(() => null) : fichier;
-    a = f16 ? await oreilleAzure(f16, null, { paroles: true, statuts }).catch(() => null) : null;
+    a = f16 ? await oreilleAzure(f16, null, pa).catch(() => null) : null;
   } finally { azureEnVol.tel--; if (f16 && f16 !== fichier) fs.unlink(f16, () => {}); }
   const refus = !a && statuts.some(x => [401, 403, 429].includes(x));
   if (refus) { parolesAzure.pauseJusqua = Date.now() + PAROLES_PAUSE_MS; parolesAzure.raison = `refus ${statuts.join(',')}`; }
@@ -10764,7 +10767,7 @@ async function transcrireParolesAzure(fichier, o = {}) {
   try {
     fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'paroles_azure', ms: Date.now() - t, azure_ms: a ? a.ms : null, langue: a ? a.langue : null,
       sur: a ? Math.round(a.sur * 100) / 100 : null, mots: a && a.texte ? a.texte.split(/\s+/).length : 0, separee: !!o.separee, attente_voix_ms: Number(o.attente) || 0,
-      musique: !!o.musique, repli: secours, ...(a ? { l: a.langues, facture_s: Math.round(a.audio_s * a.appels * 10) / 10 } : { statuts }), ...(refus ? { pause_min: PAROLES_PAUSE_MS / 60000 } : {}) }) + '\n', { mode: 0o600 });
+      musique: !!o.musique, repli: secours, ...(pa.ms_l ? { ms_l: pa.ms_l } : {}), ...(a ? { l: a.langues, facture_s: Math.round(a.audio_s * a.appels * 10) / 10 } : { statuts }), ...(refus ? { pause_min: PAROLES_PAUSE_MS / 60000 } : {}) }) + '\n', { mode: 0o600 });
   } catch (_) {}
   if (secours) return null;
   return { texte: a.texte, langue: a.langue, azure: true, ...(a.mots ? { mots: a.mots } : {}) };

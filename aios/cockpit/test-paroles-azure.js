@@ -181,11 +181,11 @@ function bacAzure(reponses, o = {}) {
 }
 const succes = (texte, sur, extra = {}) => ({ RecognitionStatus: 'Success', Offset: 10000000, Duration: 20000000, NBest: [{ Display: texte, Confidence: sur, ...extra }] });
 
-test('Azure : trois langues l\'une après l\'autre (jamais deux en même temps), profanité brute, le temps des mots ; la règle de choix de ta voix', async () => {
+test('Azure (10/11, S0) : trois langues EN MÊME TEMPS, comme pour ta voix, profanité brute, le temps des mots ; la règle de choix de ta voix', async () => {
   const b = bacAzure({ 'fr-FR': succes('Le monde court après l\'or.', 0.7, { Words: [{ Offset: 10000000, Duration: 2000000 }, { Offset: 12000000, Duration: 2000000 }, { Offset: 14000000, Duration: 2000000 }, { Offset: 16000000, Duration: 2000000 }, { Offset: 18000000, Duration: 2000000 }] }),
     'ar-DZ': succes('الحمد لله.', 0.5), 'en-US': succes('The world runs after gold.', 0.8) });
   const r = await b.ctx.f('/tmp/x.wav', 'cle', 'switzerlandwest', {});
-  assert.strictEqual(b.max(), 1, 'une à la fois');
+  assert.strictEqual(b.max(), 3, 'les trois en même temps (la clé est en S0)');
   assert.deepStrictEqual(b.requetes.map(x => new URL(x.url).searchParams.get('language')), ['fr-FR', 'ar-DZ', 'en-US']);
   for (const q of b.requetes) {
     const u = new URL(q.url);
@@ -229,19 +229,19 @@ test('Azure : chaque langue attend que ta demande Azure soit rendue (3 s au plus
   assert.strictEqual(r.texte, 'Oui.');
   const vide = await bacAzure({ 'fr-FR': { RecognitionStatus: 'NoMatch' }, 'ar-DZ': { RecognitionStatus: 'NoMatch' }, 'en-US': { RecognitionStatus: 'NoMatch' } }).ctx.f('/tmp/x.wav', 'c', 'r', {});
   assert.strictEqual(vide.texte, ''); assert.notStrictEqual(vide, null, 'rien entendu : une réponse');
-  // refusé (429, 401, 403) ou sans réseau dès la première langue : il n'attend pas les deux autres (Whisper prend le relais)
-  for (const [premiere, attendu] of [[429, [429]], [403, [403]], [new Error('réseau'), [0]]]) {
+  // refusé (429, 401, 403) ou sans réseau pour les trois : null (Whisper prend le relais), chaque statut gardé
+  for (const [refus, attendu] of [[429, [429, 429, 429]], [403, [403, 403, 403]], [new Error('réseau'), [0, 0, 0]]]) {
     const statuts = [];
-    const z = bacAzure({ 'fr-FR': premiere, 'ar-DZ': succes('نعم', 0.5), 'en-US': succes('Yes.', 0.9) });
+    const z = bacAzure({ 'fr-FR': refus, 'ar-DZ': refus, 'en-US': refus });
     assert.strictEqual(await z.ctx.f('/tmp/x.wav', 'c', 'r', { statuts }), null);
     assert.deepStrictEqual(statuts, attendu);
-    assert.strictEqual(z.requetes.length, 1);
+    assert.strictEqual(z.requetes.length, 3);
   }
   // une langue refusée après une réponse : les autres continuent (un refus passager)
   const statuts = [];
   const y = await bacAzure({ 'fr-FR': succes('Oui papa.', 0.8), 'ar-DZ': 429, 'en-US': new Error('réseau') }).ctx.f('/tmp/x.wav', 'c', 'r', { statuts });
   assert.strictEqual(y.texte, 'Oui papa.');
-  assert.deepStrictEqual(statuts, [200, 429, 0]);
+  assert.deepStrictEqual([...statuts].sort(), [0, 200, 429]);
   // ta voix trop longue : il n'attend pas plus de PAROLES_PAPA_MAX_MS
   const c = bacAzure({ 'fr-FR': succes('Oui.', 0.9), 'ar-DZ': succes('نعم', 0.5), 'en-US': succes('Yes.', 0.5) }, { papa: 1, papaMax: 60 });
   const t2 = Date.now(); await c.ctx.f('/tmp/x.wav', 'c', 'r', {});
