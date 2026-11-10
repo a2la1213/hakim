@@ -7,6 +7,7 @@
    - (30/10, Ahmed : « le point rouge quand il y a du nouveau : immunité, sens, mais aussi le code… ») SENS : les
      mesures de Hakim finies (pas celles d'Ahmed), ses livraisons et signatures du Tricordeur, ses écritures dans les Documents,
      une sensation forte de son corps ; Code : les modifications de son code à relire.
+   (10/11, lettre de Hakim, à la demande de papa) le FIL D'ACTUALITÉ : ce que Hakim y a publié (actualite.js) depuis sa dernière visite.
    Ce qui attend n'a pas toujours de date : on retient quand on l'a vu apparaître (apparus), oublié quand il disparaît.
    Une page jamais vue part de maintenant (rien d'ancien ne s'allume). Les dates sont en millisecondes. */
 'use strict';
@@ -23,11 +24,11 @@ const ATTENTES = {
   anticorps: ['anticorps à trancher', 'anticorps à trancher'],
   promotion: ['modification de son code à relire', 'modifications de son code à relire'],
 };
-const PAGES = ['cafe', 'immunite', 'parler', 'sens', 'code'];
+const PAGES = ['cafe', 'immunite', 'parler', 'sens', 'code', 'actualite'];
 const dire = (n, [un, plusieurs]) => `${n} ${n > 1 ? plusieurs : un}`;
 
 function compter({ vus = {}, apparus = {}, maintenant = Date.now(), cafe = [], incidents = [], rapports = [], anticorps = [], attentes = [],
-  sens = {}, blocages = [] }) {
+  sens = {}, blocages = [], actualite = [] }) {
   const v = { ...vus };
   for (const p of PAGES) if (!Number.isFinite(Number(v[p])) || !v[p]) v[p] = maintenant;
   const neuf = {};
@@ -47,6 +48,7 @@ function compter({ vus = {}, apparus = {}, maintenant = Date.now(), cafe = [], i
   const apres = (l) => (Array.isArray(l) ? l : []).filter(x => x && Number(x.ts) > v.sens);
   const mes = apres(sens.mesures).filter(m => m.par !== 'ahmed'), echecs = mes.filter(m => !m.ok).length;
   const liv = apres(sens.tricordeur), docs = apres(sens.documents), fortes = apres(sens.fortes);
+  const pub = (Array.isArray(actualite) ? actualite : []).filter(x => x && Number(x.ts) > v.actualite);
   const parQuoi = {};
   for (const a of [...attP, ...antiP]) parQuoi[a.quoi] = (parQuoi[a.quoi] || 0) + 1;
 
@@ -67,6 +69,7 @@ function compter({ vus = {}, apparus = {}, maintenant = Date.now(), cafe = [], i
         ...(docs.length ? [dire(docs.length, ['écriture dans tes Documents', 'écritures dans tes Documents'])] : []),
         ...(fortes.length ? [`${dire(fortes.length, ['sensation forte', 'sensations fortes'])} (${[...new Set(fortes.map(f => f.type))].slice(0, 3).join(', ')})`] : [])] },
       code: { n: promo.length, resume: promo.length ? [dire(promo.length, ATTENTES.promotion)] : [] },
+      actualite: { n: pub.length, resume: pub.length ? [dire(pub.length, ['publication de Hakim', 'publications de Hakim'])] : [] },
     },
   };
 }

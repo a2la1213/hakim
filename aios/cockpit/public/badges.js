@@ -6,17 +6,18 @@
    le point rouge dans le menu quand il y a du nouveau, et une petite notification sur mon interface ») suivre() fait de la
    barre du haut un menu : ☰ (le point rouge s'il y a du nouveau ailleurs), AIOS, PARLER ; le menu ouvert liste toutes les
    pages avec leurs pastilles ; une nouveauté qui arrive s'annonce par une petite notification en haut de l'écran (une fois ;
-   le téléphone, lui, a sa notification à lui, par l'appli). */
+   le téléphone, lui, a sa notification à lui, par l'appli).
+   (10/11, lettre de Hakim, à la demande de papa) le Fil d'actualité : ce que Hakim y publie (actualite_publier). */
 (() => {
-  const PAGES = { cafe: '/cafe', immunite: '/immunite', parler: '/parler', sens: '/sens', code: '/code' };
-  const MENU = [['dashboard', '/', 'Dashboard'], ['parler', '/parler', 'Parler'], ['reglages', '/reglages', 'Réglages'], ['sens', '/sens', 'Sens'], ['telephone', '/telephone', 'Téléphone'], ['studio', '/studio', 'Studio'], ['atelier', '/atelier', 'Atelier'], ['immunite', '/immunite', 'Immunité'], ['synapses', '/synapses', 'Synapses'],
+  const PAGES = { cafe: '/cafe', immunite: '/immunite', parler: '/parler', sens: '/sens', code: '/code', actualite: '/actualite' };
+  const MENU = [['dashboard', '/', 'Dashboard'], ['parler', '/parler', 'Parler'], ['actualite', '/actualite', 'Fil d’actualité'], ['reglages', '/reglages', 'Réglages'], ['sens', '/sens', 'Sens'], ['telephone', '/telephone', 'Téléphone'], ['studio', '/studio', 'Studio'], ['atelier', '/atelier', 'Atelier'], ['immunite', '/immunite', 'Immunité'], ['synapses', '/synapses', 'Synapses'],
     ['cafe', '/cafe', 'Café'], ['code', '/code', 'Code'], ['interieur', '/interieur', 'Intérieur'], ['memory', '/memory', 'Mémoire'],
     ['brain', '/brain', 'Cerveau 3D'], ['dreams', '/dreams', 'Labo des rêves'], ['chat', '/chat', 'Chat']];
   const NOMS = Object.fromEntries(MENU.map(([k, , l]) => [k, l]));
   // (03/11, 13:59, Ahmed : « le bandeau rouge : je dois pouvoir cliquer dessus pour être redirigé au bon endroit du café, des sens ou
   // des autres trucs qui envoient des notifs ») où aller sur chaque page : le premier nouveau (café, Immunité), le dernier geste qui
   // attend papa (Parler), ses mesures (SENS), les modifications à relire (Code)
-  const LIEUX = { cafe: '.msg.nouveau', immunite: '.ligne.nouveau', parler: '.mission-boutons', sens: '#mesures', code: '#promos' };
+  const LIEUX = { cafe: '.msg.nouveau', immunite: '.ligne.nouveau', parler: '.mission-boutons', sens: '#mesures', code: '#promos', actualite: '.pub.nouveau' };
   const jet = () => (typeof window.jeton === 'function' ? window.jeton() : (document.querySelector('meta[name="cockpit-jeton"]') || {}).content || '');
   const style = document.createElement('style');
   style.textContent = '.pastille{display:inline-block;min-width:16px;height:16px;padding:0 4px;margin-left:5px;border-radius:8px;'

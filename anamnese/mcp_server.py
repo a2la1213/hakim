@@ -1224,6 +1224,32 @@ def fichier_joindre(chemin: str, titre: str = "") -> str:
 
 
 @mcp.tool()
+def actualite_publier(message: str = "", chemin: str = "", titre: str = "") -> str:
+    """(Hakim seulement) PUBLIER DANS LE FIL D'ACTUALITÉ DE PAPA (10/11, Ahmed : « que toi aussi tu puisses m'envoyer directement
+    dans mes documents et dans le fil de l'actualité ») : un message et/ou un fichier (un son, une image, un PDF) qui apparaît chez
+    papa, hors de la conversation : la page « Fil d'actualité » du cockpit (Mac et téléphone), le point rouge du menu, et une
+    notification de son téléphone quand l'appli est cachée.
+    - message : ce que tu lui dis (2 000 caractères au plus) ; chemin : un fichier de ton atelier (atelier/…) ou des fichiers
+      d'Ahmed (fichiers/…), 25 Mo au plus — tes instrus et tes mixes sont déjà dans ses Documents (studio_instru et studio_avis
+      te donnent leur chemin), tes chansons dans atelier/chansons/ ; titre : le nom affiché du fichier. L'un des deux au moins.
+    - Jamais de secret ; 30 publications par 24 heures au plus ; ce que tu publies passe par les mêmes filtres que ta parole.
+    Pour un fichier qui accompagne ta réponse dans la conversation, fichier_joindre reste le bon outil."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim publie dans le fil d'actualité de papa."
+    import actualite
+    import pieces
+    try:
+        a = actualite.publier(message, chemin, titre)
+    except actualite.Refus as e:
+        return f"Refusé : {e}"
+    p = a.get("piece")
+    avec = f" avec {p['nom']} ({pieces.lisible(p['taille'])})" if p else ""
+    return (f"Publié dans le fil d'actualité de papa ({a['id']}){avec}. Il le voit dans la page « Fil d'actualité » du cockpit (le "
+            "point rouge du menu ☰), et son téléphone le lui annonce si l'appli est cachée : inutile de le recopier dans ta réponse.")
+
+
+@mcp.tool()
 def chanter(paroles: str, style: str, duree_s: int = 60, titre: str = "", langue: str = "",
             autotune: bool = False, bpm: int = 0, reference: str = "", inspiration: str = "", base: str = "") -> str:
     """(Hakim seulement) COMPOSER ET CHANTER une chanson (accord d'Ahmed, 06/11) : tes paroles (ou celles de papa), un
@@ -1386,6 +1412,9 @@ def studio_instru(chanson: str = "", titre: str = "", refaire: bool = False) -> 
     Le chemin du feat : 1) studio_instru ; 2) dis à papa de choisir cette instru dans la page Studio du cockpit et d'y
     enregistrer sa prise ; 3) studio_mixer (sa prise, sur l'instru où il l'a posée) ; 4) studio_avis pour l'écouter en
     chiffres, puis fichier_joindre pour lui envoyer le mix.
+    (10/11) Finie, l'instru est déposée aussi dans les Documents de papa (son dossier Hakim, sous son nom lisible :
+    « Deux livres (instru).mp3 », sans rien écraser) ; l'outil (déjà faite) ou studio_avis (prête) te donne son chemin
+    (fichiers/…), que fichier_joindre et actualite_publier acceptent.
     Rend la main tout de suite (un calcul à la fois, en général moins d'une minute) ; studio_avis dit quand elle est prête."""
     import courrier
     if courrier.moi() != "hakim":
@@ -1406,13 +1435,16 @@ def studio_instru(chanson: str = "", titre: str = "", refaire: bool = False) -> 
               + " ; donne son nom exact pour en prendre une autre.") if r["autres"] else ""
     if r["etat"] == "déjà":
         i = r["instru"]
+        doc = (f" Elle est dans les Documents de papa (dossier Hakim) : {r['joindre']} — fichier_joindre(\"{r['joindre']}\") pour la lui "
+               "envoyer ici, ou actualite_publier pour son fil d'actualité." if r.get("joindre") else "")
         return (f"Déjà dans le Studio : « {i.get('titre')} » ({i.get('id')}, {i.get('duree_s')} s), tirée de « {c.get('titre')} » "
-                f"({c['nom']}). Papa peut y poser sa prise ; refaire=True pour la recalculer.{autres}")
+                f"({c['nom']}). Papa peut y poser sa prise ; refaire=True pour la recalculer.{doc}{autres}")
     j = r["travail"]
     quoi = "Déjà en file" if r["etat"] == "en file" else "Instru lancée"
     return (f"{quoi} ({j['id']}) : Demucs retire ta voix de « {c.get('titre')} » ({c['nom']}). Elle arrivera dans les instrus du "
-            f"Studio sous « {(j.get('params') or {}).get('titre') or c.get('titre')} (instru) » ; studio_avis pour savoir quand elle "
-            f"est prête. Ensuite papa choisit cette instru dans la page Studio et y enregistre sa prise, puis studio_mixer.{autres}")
+            f"Studio sous « {(j.get('params') or {}).get('titre') or c.get('titre')} (instru) », et aussi dans les Documents de papa "
+            f"(dossier Hakim) ; studio_avis pour savoir quand elle est prête et son chemin à joindre. Ensuite papa choisit cette instru "
+            f"dans la page Studio et y enregistre sa prise, puis studio_mixer.{autres}")
 
 
 @mcp.tool()
@@ -1434,7 +1466,10 @@ def studio_avis(mix: str = "") -> str:
     for t in sorted((x for x in travaux if x.get("type") == "instru" and x.get("etat") in ("fini", "raté")
                      and time.time() - (x.get("fin") or 0) < 6 * 3600), key=lambda x: x.get("fin") or 0)[-3:]:   # (09/11) son instru finie ou ratée
         i = t.get("resultat") or {}
-        lignes.append(f"Instru prête ({t['id']}) : « {i.get('titre')} » ({i.get('id')}, {i.get('duree_s')} s)" if t["etat"] == "fini"
+        doc = st.instru_aux_documents(i, deposer=False) if t["etat"] == "fini" else ""   # (10/11) sa copie dans les Documents de papa
+        lignes.append(f"Instru prête ({t['id']}) : « {i.get('titre')} » ({i.get('id')}, {i.get('duree_s')} s)"
+                      + (f" ; dans les Documents de papa : {doc} (fichier_joindre ou actualite_publier pour la lui envoyer)" if doc else "")
+                      if t["etat"] == "fini"
                       else f"Instru ratée ({t['id']}, « {(t.get('params') or {}).get('titre', '?')} ») : {t.get('erreur', '?')}")
     instrus = sorted(_studio_fiches(st.STUDIO / "instrus"), key=lambda x: x.get("fin") or 0)[-6:]
     if instrus:                                                         # (09/11) les instrus où papa peut poser sa prise
@@ -1454,6 +1489,8 @@ def studio_avis(mix: str = "") -> str:
                   f"réverb {r.get('reverb')}, écho {r.get('echo')}, autotune {'oui' if r.get('autotune') else 'non'}, "
                   f"latence retirée {r.get('latence_ms')} ms.")
     lignes.append("Ce que tu entends : " + " ; ".join((m.get("avis") or {}).get("conseils", [])))
+    if m.get("telephone") and Path(m["telephone"]).is_file():   # (10/11) le mix est déjà dans ses Documents (Hakim/Chansons)
+        lignes.append(f"Dans les Documents de papa : {st.chemin_a_joindre(m['telephone'])} (fichier_joindre ou actualite_publier pour le lui envoyer).")
     return "\n".join(lignes)
 
 

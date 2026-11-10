@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fil d’actualité</title>
+  <link rel="icon" href="/icone-192.png">
+  <script src="/apparence.js"></script>
+  <link rel="stylesheet" href="/theme.css">
+  <!-- (10/11, lettre de Hakim de 18:14 écrite à la demande de papa : « que toi aussi tu puisses m'envoyer directement dans mes documents et
+       dans le fil de l'actualité ») ce que Hakim publie pour papa (son outil actualite_publier) : un message, un son, une image, un PDF.
+       Comme Studio et Atelier : badges.js (fermé) monte ☰, PARLER et l'orbe ; les fichiers sont des pièces, chargées derrière le jeton. -->
+  <style>
+    [hidden] { display: none !important; }
+    main { max-width: 720px; margin: 0 auto; padding: 0 16px 40px; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 12px; }
+    h1 { font-size: 18px; color: var(--txt); font-weight: 600; margin: 4px 0 0; }
+    .sous { font-size: 13px; color: var(--txt-3); line-height: 1.45; margin: 0; }
+    .pub { padding: 12px 14px; overflow-wrap: anywhere; min-width: 0; }
+    .pub .quand { font-size: 12px; color: var(--txt-3); letter-spacing: .3px; }
+    .pub .texte { font-size: 15px; color: var(--txt); line-height: 1.5; white-space: pre-wrap; margin-top: 6px; }
+    .pub .fichier { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+    .pub .fichier .nom { font-size: 13px; color: var(--txt-2); }
+    .pub img { max-width: 100%; max-height: 70vh; border-radius: 10px; display: block; }
+    .pub img:not([src]) { display: none; }
+    .pub audio { width: 100%; }
+    .gestes { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    button { font: inherit; font-size: 13px; padding: 7px 11px; min-height: 40px; border-radius: 10px; border: 1px solid var(--glass-bd);
+      background: transparent; color: var(--txt-2); cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+    button:disabled { opacity: .45; cursor: default; }
+    button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+    .vide { font-size: 14px; color: var(--txt-3); padding: 14px; text-align: center; }
+    #bulle { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 20; padding: 10px 12px; border-radius: 10px;
+      border: 1px solid var(--glass-bd); background: var(--panneau, #0b1220); color: var(--txt); font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.35); max-width: 640px; margin: 0 auto; }
+    #bulle:empty { display: none; }
+  </style>
+</head>
+<body>
+  <nav class="topnav" style="display:flex;gap:10px;align-items:center;padding:10px 16px"><span class="brand">AIOS</span></nav>
+  <main>
+    <h1>Fil d’actualité</h1>
+    <p class="sous">Ce que Hakim publie pour toi : un mot, un son, une image, un PDF. Ses instrus finies sont aussi dans le dossier Hakim de tes Documents.</p>
+    <div id="fil" aria-live="polite"><div class="vide">Chargement…</div></div>
+  </main>
+  <div id="bulle" role="status"></div>
+  <script>
+  window.esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  window.jeton = () => (document.querySelector('meta[name="cockpit-jeton"]') || {}).content || '';
+  document.body.classList.add('shell');
+  </script>
+  <script src="/jeton.js"></script>
+  <script src="/badges.js"></script>
+  <script>Badges.suivre(document.querySelector('nav.topnav'), 'actualite');</script>
+  <script src="/actualite-page.js"></script>
+</body>
+</html>

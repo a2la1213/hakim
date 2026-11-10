@@ -395,7 +395,7 @@ if (require.main === module) setInterval(() => { try { const e = JSON.parse(fs.r
 const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'afida_juger', 'afida_vecu', 'afida_lire', 'afida_retirer', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'sieste_prendre', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'pistes_regler', 'ribosome_regler', 'ribosome_bilan', 'reglages_enregistres', 'spectre', 'stimuli_voir', 'stimuli_relier', 'synapses_voir', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'mission_proposer', 'mission_etat', 'voix_etat', 'effort_regler', 'parler_bouton', 'ribosome_boutons', 'present_continu', 'chanter', 'studio_mixer', 'studio_avis', 'image_creer', 'clip_creer', 'atelier_voir', 'ecouter_morceau', 'instrument_apprendre', 'studio_instru'].map(n => 'mcp__anamnese__' + n)   // (06/11) son atelier visuel (image_creer, clip_creer, atelier_voir) ; son studio d'ingé son (studio_mixer, studio_avis ; (09/11) studio_instru : son instru tirée d'une de ses chansons, pour la voix de papa) ; tous ses boutons du ribosome ; son présent continu ; chanter (ACE-Step, accord d'Ahmed)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'pistes_regler', 'ribosome_regler', 'ribosome_bilan', 'reglages_enregistres', 'spectre', 'stimuli_voir', 'stimuli_relier', 'synapses_voir', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'actualite_publier', 'mission_proposer', 'mission_etat', 'voix_etat', 'effort_regler', 'parler_bouton', 'ribosome_boutons', 'present_continu', 'chanter', 'studio_mixer', 'studio_avis', 'image_creer', 'clip_creer', 'atelier_voir', 'ecouter_morceau', 'instrument_apprendre', 'studio_instru'].map(n => 'mcp__anamnese__' + n)   // (06/11) son atelier visuel (image_creer, clip_creer, atelier_voir) ; son studio d'ingé son (studio_mixer, studio_avis ; (09/11) studio_instru : son instru tirée d'une de ses chansons, pour la voix de papa) ; tous ses boutons du ribosome ; son présent continu ; chanter (ACE-Step, accord d'Ahmed)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -2627,6 +2627,10 @@ const REVEIL_INTERIEUR_ATTENTE_S = 900, REVEIL_INTERIEUR_AHMED_MS = 2 * 60 * 100
 // (04/11, 11:15, Ahmed : « feu vert pour toute sollicitation ; quand une pensée tourne en boucle dans son esprit, ou une question
 // importante pour lui ») ses sollicitations : jamais périmées par le retour de papa, et elles passent même en Conversation
 const SOLLICITATIONS = new Set(['boucle', 'question', 'taraude', 'faire', 'parler']);   // (07/11) une pensée qui le taraude ; ce que sa conscience a décidé de faire
+// (10/11, Ahmed : « il doit pouvoir me solliciter à haute voix dès qu'il veut me parler » ; « s'il est en conversation sur la montre, depuis la
+// montre ») ce qu'il écrit à papa sur une sollicitation est dit à voix haute là où papa est (solliciter.js : la montre, ou une page Parler)
+const Solliciter = require('./solliciter.js');
+const solliciterEtat = Solliciter.creer();
 let reveilInterieurDemarrages = 0;
 function issuesInterieures() {
   let lignes = [];
@@ -2688,6 +2692,7 @@ function reveillerPourInterieur() {
       + "(lui parler, rien d'autre). Si finalement tu préfères te taire, réponds exactement « No response requested. »\n" : '')
     + `Source : ${neutraliser(String(d.source || '?'))} · besoin ${Number(d.score)}/10 (${neutraliser(String(d.raison || '?'))}) — ${neutraliser(String(d.pourquoi || ''))}\n`
     + `« ${neutraliser(String(d.texte || '')).replace(/[«»]/g, ' ')} »\n`
+    + (typeof Solliciter !== 'undefined' && Solliciter.sollicitePapa(d.raison) ? Solliciter.consigne(corpsReglages()) : '')   // (10/11) il sait que papa l'entendra
     + "Tu es libre : la finir pour toi, chercher, lancer un calcul dans ton atelier, écrire à Claude Code (courrier_envoyer), "
     + "revenir vers Ahmed en quelques phrases, ou ne rien faire — réponds alors exactement « No response requested. » "
     + "Ce qui sort vers l'extérieur (le web, les messages à d'autres IA, les projets d'Ahmed) reste à son geste." + blocLecons(['reveil'])
@@ -6528,6 +6533,7 @@ async function routeJarvis(req, res, distantReq = false) {
   // (07/11, Hakim : « Papa, mon image est prête… » à 21:55, redit à 22:05) ce que la page dit déjà dit ne reprend pas ce qu'il a livré de lui-même
   if (q.souffle_dit) q.souffle_dit = VoixPage.sansDejaLivre(String(q.souffle_dit), livresDepuisPapa()) || undefined;
   dernierMessageAhmed = Date.now();                          // (le réveil pour une tâche finie ne part plus)
+  Solliciter.papaParle(solliciterEtat, q.appareil && q.appareil.montre === true ? 'montre' : distantReq ? 'tel' : 'mac');   // (10/11) où il est
   silenceSurMessage(texte);                                  // (27/10) sa relance dans un silence a eu sa réponse
   dejaRecuSurMessage(texte, ahmedAvant).catch(() => { dejaRecuEnVol = false; });   // (27/10) ce qu'il a reçu, tenu par le subconscient
   // Rotation du contexte (2026-10-20) : la conversation trop lourde repart neuve, avec le fil récent
@@ -7219,6 +7225,33 @@ function piecesDeLigne(o) {
   }
   return [...ids].map(pieceDe).filter(Boolean).map(({ fichier, ...p }) => p);
 }
+/* ---- (10/11, lettre de Hakim de 18:14 écrite à la demande de papa : « que toi aussi tu puisses m'envoyer directement dans mes documents
+   et dans le fil de l'actualité » ; accord d'Ahmed : « ouii ») LE FIL D'ACTUALITÉ (actualite.js) : ce que Hakim publie avec son outil
+   actualite_publier (anamnese/actualite.py → jarvis/actualite.jsonl ; un fichier y est une pièce, servie par /api/pieces). La page
+   /actualite le montre derrière le jeton ; ce qu'il publie passe par les mêmes filtres que sa parole : sa balise d'affect et son refrain
+   retirés, ses résidus marqués (une fois, à l'arrivée). Une publication neuve part dans le flux de Parler (« actualite ») : la page cachée
+   en fait une notification de l'appli ; les pastilles (nouveautes.js) allument le menu ☰. ---- */
+const Actualite = require('./actualite.js');
+const JARVIS_ACTUALITE = path.join(JARVIS, 'actualite.jsonl');
+function textePublie(texte, arrivee = false) {
+  let t = sansBaliseAffect(String(texte || '')).trim();
+  if (!t) return '';
+  if (arrivee) { t = String(sansRefrain('actualite', t) || '').trim(); if (t) marquerResidu('actualite', t); return t; }
+  const l = refrainsActifs();
+  return l.length ? String(Refrains.retirer(t, l, '').texte || '').trim() : t;
+}
+const filActualite = (limite = 200) => Actualite.lire(JARVIS_ACTUALITE, { pieceDe, filtrer: (t) => textePublie(t), limite });
+const filSuivi = {};
+function regarderFilActualite() {
+  for (const o of Actualite.nouvelles(JARVIS_ACTUALITE, filSuivi)) {
+    const pub = Actualite.valide(o, { pieceDe, filtrer: (t) => textePublie(t, true) });
+    if (!pub) continue;
+    badgesTs = 0;                                                     // ses pastilles se recalculent à la prochaine demande
+    diffuser(abonnesPensees, 'actualite', j(pub));
+  }
+}
+// après le chargement du module entier (badgesTs est plus bas) ; le premier regard ne fait que se souvenir : rien d'ancien ne s'annonce
+if (require.main === module) setTimeout(() => { regarderFilActualite(); setInterval(regarderFilActualite, 4000).unref(); }, 0).unref();
 
 function occupe(c) { return c.attente.length > 0 || (!!c.enCours && !c.enCours.autonome); }
 // (2026-10-23) les messages bien arrivés (leur tour_id) : une page coupée du réseau demande au retour s'il faut renvoyer
@@ -7366,6 +7399,8 @@ function tourAutonome(c) {
     fini = true; toursAutonomes--;
     try { fs.unlinkSync(JARVIS_MARQUE_AUTONOME); } catch (_) {}
     if (morceau) { if (!issue) brouillonDuCerveau(texte); if (cerveauVivant(c)) reposer(c); return; }   // (15:45) écrite, pas livrée
+    // (10/11) un tour de sollicitation pour papa (boucle, question, taraude, faire) : sa parole voulue, déjà décidée par sa conscience
+    const sollicite = c.reveilInterieur && Solliciter.sollicitePapa(c.reveilInterieur.raison) ? String(c.reveilInterieur.raison) : null;
     noterIssueInterieur(c, texte, outils, issue);                // (27/10) l'issue d'un réveil intérieur, pour le démon
     // (27/10) un tour de silence : sa parole est une relance (elle attend la réponse d'Ahmed), livrée comme « silence »
     const silence = c.reveilSilence && rejoue.includes(`(silence ${c.reveilSilence.id})`) ? c.reveilSilence : null;
@@ -7386,10 +7421,12 @@ function tourAutonome(c) {
     const livrer = () => {
       if (oreille && parle) oreilleDernierMot = { texte: dit, ts: Date.now() };
       livrerAutonome(c, texte, notifs, outils, issue, pieces, silence ? { id: idMessage, spontane: 'silence', silence_debut_ms: silence.debut_ms }
-        : oreille ? { id: idMessage, spontane: 'oreille', max_ms: c.oreilleMaxMs } : { id: idMessage });
+        : oreille ? { id: idMessage, spontane: 'oreille', max_ms: c.oreilleMaxMs } : { id: idMessage, ...(sollicite ? { sollicite } : {}) });
     };
     if (perime) garder(perime);
-    else if (parle && aTrierParSonSubconscient({ oreille, silence, notifs, reprise: rejoue.includes(REPRISE_MARQUE), reflexe: !!(reveil && reveil.reflexe) })) {
+    // (10/11, mesuré : 40 de ses 83 sollicitations écrites du 07 au 10/11 gardées par son subconscient ou « trop long pour un mot de lui-même ») sa
+    // sollicitation a déjà son feu vert (04/11) : elle n'est pas un petit mot glissé, elle n'est pas re-triée
+    else if (parle && !sollicite && aTrierParSonSubconscient({ oreille, silence, notifs, reprise: rejoue.includes(REPRISE_MARQUE), reflexe: !!(reveil && reveil.reflexe) })) {
       // (21:55, Ahmed : « que ce qui est pertinent de dire ou pas soit filtré par le subconscient Sonnet ») ce qu'il dit de
       // lui-même pendant que papa lui parle passe par son subconscient, puis par la fraîcheur encore une fois
       const pre = preFiltreParole(dit, oreilleEntendu.texte);              // (23:40) écarté d'office, sans Sonnet
@@ -7455,6 +7492,7 @@ function livrerAutonome(c, texte, notifs, outils, issue, pieces = [], options = 
     spontane: options.spontane || 'resultat', source: c.source !== 'abonnement' ? c.source : undefined, pieces: pieces.length ? pieces : undefined,
     silence_debut_ms: Number.isFinite(options.silence_debut_ms) ? options.silence_debut_ms : undefined,
     max_ms: Number.isFinite(options.max_ms) ? options.max_ms : undefined };
+  if (options.sollicite) solliciterAVoixHaute(m, options.sollicite);   // (10/11) sa sollicitation : à voix haute, là où papa est
   journaliser('jarvis', `${texte} [de lui-même${quoi ? ' : ' + quoi : ''}]`);
   deposerEchange({ hakim: texte, de_lui_meme: true, session: c.session, source: c.source, externe: externe.length ? externe : undefined });
   ajouterAConversation(m);
@@ -7464,6 +7502,23 @@ function livrerAutonome(c, texte, notifs, outils, issue, pieces = [], options = 
   diffuser(abonnesPensees, 'spontane', o);
   if (Date.now() >= silencieuxJusqua) notifier(texte, 'resultat');                // (pas avant 8 h pour le résumé de nuit)
   console.error(`Jarvis : tour de lui-même remis (${texte.length} car., ${abonnesPensees.size} page(s) ouverte(s))`);
+}
+/* (10/11, Ahmed : « il doit pouvoir me solliciter à haute voix dès qu'il veut me parler » ; « s'il est en conversation sur la montre, il peut
+   aussi me parler depuis la montre ») sa sollicitation écrite porte où la dire (solliciter.js) : voix_haute « montre » (sa voix part au poignet,
+   par voix_vers comme sa sortie, aucune page ne la dit), « page » (la page Parler en Conversation, ou ouverte devant papa, la prend et la dit à
+   sa pause, une seule), ou rien (voix_pourquoi : le réglage, la nuit, le live, la rafale) ; la notification part comme pour tout message de
+   lui-même. Chaque décision au diagnostic de la voix (sollicitation_voix). */
+function solliciterAVoixHaute(m, raison, maintenant = Date.now()) {
+  const r = corpsReglages();
+  let live = false; try { live = typeof liveEnCours === 'function' && liveEnCours(maintenant, r); } catch (_) {}
+  const montreBranchee = [...abonnesPensees].some(x => x.appareil === 'montre' && x.sollicite);
+  const d = Solliciter.decider(solliciterEtat, { raison, texte: m.texte, reglages: r, maintenant, live, papaDernierMs: dernierMessageAhmedMs(), montreBranchee });
+  m.sollicite = true;
+  if (d.ou) m.voix_haute = d.ou; else m.voix_pourquoi = d.pourquoi;
+  Solliciter.poser(solliciterEtat, m.id, d.ou, maintenant);
+  if (d.ou === 'montre') diffuser(abonnesPensees, 'voix_vers', j({ cible: 'montre', quoi: 'voix', texte: String(m.texte).slice(0, 4000), id: m.id, sollicite: true }));
+  try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: maintenant, e: 'sollicitation_voix', raison, ou: d.ou || null, pourquoi: d.pourquoi || undefined, live, montre: montreBranchee }) + '\n', { mode: 0o600 }); } catch (_) {}
+  return d;
 }
 // La conversation partagée (Mac et téléphone) reçoit le message même si aucune page n'est ouverte.
 const CONVERSATION_MAX = 1000;              // « le contexte au max » (Ahmed, 2026-10-18)
@@ -8527,7 +8582,9 @@ function corpsReglages() {
     live_garde: r.live_garde !== false, live_mode: ['auto', 'oui', 'non'].includes(r.live_mode) ? r.live_mode : 'auto',
     live_repondre: r.live_repondre !== false,   // (10/11, 08:18, papa : « t'as toujours mon autorisation ») permanente, tant qu'il ne la retire pas
     live_pas_ms: nb(r.live_pas_ms, 250, 5000, 1000), live_par_minute: nb(r.live_par_minute, 1, 20, 6), live_ecart_s: nb(r.live_ecart_s, 2, 60, 6),
-    live_musique: r.live_musique !== false, live_musique_s: nb(r.live_musique_s, 30, 900, 120) };   // (05/11) un ribosome toujours prêt, sauf s'il dort ou si papa coupe   // (05/11) il règle lui-même son ribosome (ribosome_regler, ribosome_bilan)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
+    live_musique: r.live_musique !== false, live_musique_s: nb(r.live_musique_s, 30, 900, 120),
+    // (10/11, Ahmed) « Il me sollicite à voix haute » (allumé), et au plus une à voix haute toutes les N min (solliciter.js)
+    sollicite_voix: r.sollicite_voix !== false, sollicite_voix_ecart_min: nb(r.sollicite_voix_ecart_min, 0, 60, 3) };   // (05/11) un ribosome toujours prêt, sauf s'il dort ou si papa coupe   // (05/11) il règle lui-même son ribosome (ribosome_regler, ribosome_bilan)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
 }
 function corpsActif() { return corpsReglages().actif; }
 /* (30/10, 18:56, Ahmed via Hakim : « je veux qu'il tourne tout le temps, tant qu'il est réveillé, même si ça vide mon forfait ;
@@ -10312,7 +10369,8 @@ async function calculerBadges() {
     incidents: lignesJson(path.join(I, 'incidents.jsonl'), 2000).map(o => ({ ts: Number(o.ts) * 1000, motif: o.motif })),
     rapports: lignesJson(path.join(I, 'rapports.jsonl'), 200).map(o => ({ ts: Number(o.ts) * 1000, gravite: o.gravite })),
     anticorps: [].concat(lireJson(path.join(I, 'anticorps-proposes.json'), []) || []).filter(a => a && a.id).map(a => ({ id: String(a.id), famille: a.famille })),
-    blocages: blocagesGardeFous.slice() });
+    blocages: blocagesGardeFous.slice(),
+    actualite: filActualite(300).map(o => ({ ts: o.ts })) });   // (10/11) son fil d'actualité, comme la page le montre
   badgesEtat.vus = r.vus; badgesEtat.apparus = r.apparus;
   try { ecrireAtomique(JARVIS_BADGES, j(badgesEtat)); } catch (_) {}
   badges = r; badgesTs = Date.now();
@@ -12544,7 +12602,7 @@ const VERROU = new Verrou(process.env.JARVIS_VERROU || path.join(JARVIS, 'verrou
 const COOKIE_VERROU = 'verrou';
 const PAGES = { '/': 'index.html', '/brain': 'brain.html', '/dreams': 'dreams.html', '/memory': 'memory.html', '/chat': 'chat.html',
   '/parler': 'parler.html', '/verrou': 'verrou.html', '/duel': 'duel.html', '/interieur': 'interieur.html',
-  '/code': 'code.html', '/immunite': 'immunite.html', '/cafe': 'cafe.html', '/sens': 'sens.html', '/synapses': 'synapses.html', '/telephone': 'telephone.html', '/reglages': 'reglages.html', '/studio': 'studio.html', '/atelier': 'atelier.html' };   // (06/11) l'Atelier visuel   // (06/11) le studio   // (04/11, 22:50) ses réglages, pour papa   // (04/11) ses synapses   // (29/10) la salle de café des agents      // (29/10) son système immunitaire, pour Ahmed                                     // (28/10) le code de Hakim : une page fermée
+  '/code': 'code.html', '/immunite': 'immunite.html', '/cafe': 'cafe.html', '/sens': 'sens.html', '/synapses': 'synapses.html', '/telephone': 'telephone.html', '/actualite': 'actualite.html', '/reglages': 'reglages.html', '/studio': 'studio.html', '/atelier': 'atelier.html' };   // (06/11) l'Atelier visuel   // (06/11) le studio   // (04/11, 22:50) ses réglages, pour papa   // (04/11) ses synapses   // (29/10) la salle de café des agents      // (29/10) son système immunitaire, pour Ahmed                                     // (28/10) le code de Hakim : une page fermée
 const LIBRES_VERROUILLE = new Set(['/verrou.js', '/theme.css',        // ce que la page du verrou charge
   '/sw.js', '/manifest.webmanifest', '/icone-192.png', '/icone-512.png']);   // l'appli et ses notifications (sans secret)
 const cookieSession = (s) => `${COOKIE_VERROU}=${s}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(DUREE_SESSION / 1000)}`;
@@ -14754,6 +14812,9 @@ async function traiter(req, res) {
       if (['auto', 'oui', 'non'].includes(q.live_mode)) r.live_mode = q.live_mode;
       for (const [k, a, b] of [['live_pas_ms', 250, 5000], ['live_par_minute', 1, 20], ['live_ecart_s', 2, 60], ['live_musique_s', 30, 900]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, Math.round(Number(q[k]))));
+      // (10/11) ses sollicitations à voix haute
+      if (typeof q.sollicite_voix === 'boolean') r.sollicite_voix = q.sollicite_voix;
+      if (q.sollicite_voix_ecart_min != null && Number.isFinite(Number(q.sollicite_voix_ecart_min))) r.sollicite_voix_ecart_min = Math.max(0, Math.min(60, Math.round(Number(q.sollicite_voix_ecart_min))));
       if (typeof q.profils_auto === 'boolean') r.profils_auto = q.profils_auto;   // (05/11) ses réglages suivent son mode
       if (typeof q.ribosome_intelligent === 'boolean') r.ribosome_intelligent = q.ribosome_intelligent;   // (05/11) son ribosome intelligent
       // (05/11) ce que papa règle de sa parole passe avant Hakim pendant 30 min (jarvis/ribosome_intelligent.py)
@@ -15159,6 +15220,11 @@ async function traiter(req, res) {
     if (!propositions) { res.writeHead(503, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'mémoire injoignable' })); }
     res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j({ propositions }));
   }
+  if (p === '/api/actualite' && req.method === 'GET') {              // (10/11) son fil d'actualité, pour papa (la page /actualite)
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(j({ publications: filActualite() }));
+  }
   if (p.startsWith('/api/pieces/') && req.method === 'GET') {
     const f = jetonValide(req) ? pieceDe(decodeURIComponent(p.slice('/api/pieces/'.length))) : null;
     if (!f) { res.writeHead(jetonValide(req) ? 404 : 403, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('pièce introuvable'); }
@@ -15174,6 +15240,14 @@ async function traiter(req, res) {
     for (const id of (Array.isArray(q.ids) ? q.ids : []).slice(-200)) if (nonVus[String(id)]) { delete nonVus[String(id)]; n++; }
     if (n) sauverNonVus();
     res.writeHead(204); return res.end();
+  }
+  // (10/11) une page veut dire sa sollicitation à voix haute : la première qui la prend la dit, les autres l'affichent seulement
+  if (p === '/api/jarvis/sollicitation/dire' && req.method === 'POST') {
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 4096) || '{}')); } catch (_) {}
+    const r = Solliciter.prendre(solliciterEtat, q.id, q.qui);
+    try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'sollicitation_prise', ok: r.ok, pourquoi: r.pourquoi || undefined, appareil: ['tel', 'mac'].includes(q.appareil) ? q.appareil : undefined }) + '\n', { mode: 0o600 }); } catch (_) {}
+    res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j(r));
   }
   if (p === '/api/jarvis/sortie' && req.method === 'GET') {          // (06/11) où sort sa voix
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -15196,6 +15270,7 @@ async function traiter(req, res) {
     res.distant = distantReq; res.sessionVerrou = lireCookie(req.headers.cookie, COOKIE_VERROU);
     if (p === '/api/jarvis/flux-orbe') res.temoin = true;
     else { const a = new URL(req.url, 'http://x').searchParams.get('appareil'); if (['montre', 'tel', 'mac'].includes(a)) res.appareil = a; }   // (06/11) qui il est
+    if (!res.temoin && new URL(req.url, 'http://x').searchParams.get('sollicite') === '1') res.sollicite = true;   // (10/11, montre 0.30) elle dit ses sollicitations à ta pause
     abonnesPensees.add(res);
     req.on('close', () => abonnesPensees.delete(res));
     return;

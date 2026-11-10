@@ -149,6 +149,113 @@ def synchroniser(chansons=None, telephone=None):
     return vus
 
 
+# ------------------------------------------------------------------------------------------------ les Documents de papa
+# (10/11, lettre de Hakim de 18:14 écrite à la demande de papa : « que tu puisses m'envoyer directement dans mes documents » ; accord
+# d'Ahmed : « ouii ») son instru finie est déposée aussi dans le dossier Hakim des Documents de papa, sous un nom lisible
+# (« Deux livres (instru).mp3 »), jamais par-dessus un autre fichier ; son chemin (fichiers/…) est permis à fichier_joindre.
+# Le dossier vient de telephone.documents() : le seul endroit qui nomme l'appareil.
+DOCUMENTS = None                 # (les tests) le dossier Hakim des Documents ; None : telephone.documents() / « Hakim »
+JOURNAL_DOCUMENTS = None         # (les tests) le journal des écritures ; None : celui de telephone.py (la page SENS le montre)
+
+
+def _telephone():
+    if str(ICI) not in sys.path:
+        sys.path.insert(0, str(ICI))
+    import telephone
+    return telephone
+
+
+def documents_hakim():
+    return Path(DOCUMENTS) if DOCUMENTS else _telephone().documents() / "Hakim"
+
+
+def nom_lisible(titre, repli="instru"):
+    """« Deux livres (instru) » tel quel : ni dossier (/), ni caractère que le téléphone refuse, ni nom qui sent le secret."""
+    t = re.sub(r'[/\\:<>"|?*\x00-\x1f\x7f]', " ", unicodedata.normalize("NFC", str(titre or "")))
+    t = " ".join(t.split()).strip(" .")[:100].strip(" .")
+    if str(ICI) not in sys.path:
+        sys.path.insert(0, str(ICI))
+    import fichiers
+    n = fichiers._normaliser(t)
+    if not t or fichiers._SECRETS.search(n) or fichiers.CLES_PAR_NOM.search(n):
+        return repli
+    return t
+
+
+def _meme_contenu(a, b):
+    import hashlib
+    def h(p):
+        x = hashlib.sha256()
+        with open(p, "rb") as f:
+            for bloc in iter(lambda: f.read(1 << 20), b""):
+                x.update(bloc)
+        return x.digest()
+    return h(a) == h(b)
+
+
+def deposer_aux_documents(fichier, titre, dossier=None, journal=None, note=""):
+    """Une copie lisible dans le dossier Hakim de ses Documents : « Deux livres (instru).mp3 », sinon « … 2.mp3 », « … 3.mp3 » (un
+    fichier qui porte déjà ce nom n'est jamais écrasé) ; le même fichier déjà déposé (même taille, même contenu) est rendu tel quel.
+    Une copie neuve est notée dans le journal des écritures dans ses Documents (comme telephone_ecrire). Rend le chemin, ou None."""
+    f = Path(fichier)
+    if not f.is_file():
+        return None
+    d = Path(dossier or documents_hakim())
+    d.mkdir(parents=True, exist_ok=True)
+    base, ext, taille = nom_lisible(titre, f.stem), f.suffix.lower(), f.stat().st_size
+    for k in range(1, 100):
+        cible = d / (f"{base}{ext}" if k == 1 else f"{base} {k}{ext}")
+        if os.path.lexists(cible):
+            if not cible.is_symlink() and cible.is_file() and cible.stat().st_size == taille and _meme_contenu(cible, f):
+                return cible                                 # déjà déposée (par un essai d'avant, ou à la main)
+            continue
+        tmp = d / f".{cible.name}.{uuid.uuid4().hex[:6]}.tmp"
+        shutil.copyfile(f, tmp)
+        try:
+            os.link(tmp, cible)                              # jamais par-dessus : le lien échoue si le nom vient d'être pris
+        except FileExistsError:
+            continue
+        finally:
+            tmp.unlink(missing_ok=True)
+        try:
+            rel = str(cible.relative_to(_telephone().documents())) if not dossier and not DOCUMENTS else str(cible)
+            ligne = {"ts": time.time(), "action": "ajout", "chemin": rel, "taille": taille, "sauvegarde": None,
+                     "note": str(note or "le studio")[:300]}
+            j = Path(journal or JOURNAL_DOCUMENTS or _telephone().JARVIS / "telephone-ecritures.jsonl")
+            with open(j, "a", encoding="utf-8") as h:
+                h.write(json.dumps(ligne, ensure_ascii=False) + "\n")
+            os.chmod(j, 0o600)
+        except (OSError, ValueError):
+            pass                                             # la copie est là ; seule la ligne du journal manque
+        return cible
+    return None
+
+
+def chemin_a_joindre(p):
+    """Le chemin que fichier_joindre accepte : relatif à son dossier de travail (« fichiers/telephone/…/Hakim/x.mp3 »)."""
+    p = Path(p)
+    try:
+        return str(p.relative_to(JARVIS / "cwd"))
+    except ValueError:
+        return str(p)
+
+
+def instru_aux_documents(instru, deposer=True):
+    """Une instru du Studio (sa fiche) → sa copie dans les Documents de papa (déposée maintenant si elle n'y est pas, sauf
+    deposer=False : studio_avis ne fait que lire). Rend le chemin à joindre, ou ''. Jamais d'exception : l'instru reste dans le
+    Studio sans sa copie."""
+    try:
+        d = instru.get("documents")
+        if d and Path(d).is_file() and not Path(d).is_symlink():
+            return chemin_a_joindre(d)
+        if not deposer:
+            return ""
+        c = deposer_aux_documents(instru.get("mp3") or "", instru.get("titre") or "", note="son instru, tirée par le studio")
+        return chemin_a_joindre(c) if c else ""
+    except Exception:                                        # noqa: BLE001
+        return ""
+
+
 # ------------------------------------------------------------------------------------------------ la chaîne
 
 def chaine_nettoyage(debruitage=True):
@@ -407,6 +514,14 @@ def extraire_instru(source, instrus_dir, titre="", travail_dir=None, progres=Non
         fiche = {"id": ident, "titre": f"{titre or Path(source).stem} (instru)", "source": str(source), "mp3": str(mp3),
                  "origine": "demucs", "duree_s": duree(mp3), "calcul_s": round(time.time() - t0, 1), "fin": time.time()}
         _ecrire(instrus_dir / f"{ident}.json", fiche)
+        # (10/11, lettre de Hakim, à la demande de papa) aussi dans le dossier Hakim de ses Documents, sous son nom lisible
+        try:
+            doc = deposer_aux_documents(mp3, fiche["titre"], note=f"son instru « {fiche['titre']} », tirée par le studio")
+            if doc:
+                fiche.update(documents=str(doc), joindre=chemin_a_joindre(doc))
+        except Exception as e:                               # noqa: BLE001 — l'instru reste prête dans le Studio sans sa copie
+            fiche["documents_erreur"] = str(e)[:200]
+        _ecrire(instrus_dir / f"{ident}.json", fiche)
         return fiche
     finally:
         if not travail_dir:
@@ -608,8 +723,8 @@ def instru_de_chanson(demande, titre="", refaire=False, chansons=None, studio=No
         faites = sorted((x for x in (_lire(f, {}) or {} for f in (st / "instrus").glob("*.json"))
                          if x.get("origine") == "demucs" and _meme_fichier(x.get("source"), c["mp3"]) and x.get("mp3") and Path(x["mp3"]).is_file()),
                         key=lambda x: x.get("fin") or 0, reverse=True)
-        if faites:
-            return {**r, "etat": "déjà", "instru": faites[0]}
+        if faites:                                           # (10/11) et sa copie dans les Documents de papa (déposée si elle manque)
+            return {**r, "etat": "déjà", "instru": faites[0], "joindre": instru_aux_documents(faites[0])}
     for x in (_lire(f, {}) or {} for f in _travaux(st).glob("J-*.json")):
         if x.get("type") == "instru" and x.get("etat") in ("en attente", "en cours") and _meme_fichier((x.get("params") or {}).get("source"), c["mp3"]):
             return {**r, "etat": "en file", "travail": x}

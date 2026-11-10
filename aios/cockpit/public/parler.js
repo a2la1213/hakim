@@ -2296,7 +2296,7 @@ function htmlMessage(m) {
   if (m.source === 'local') pied.push('<span title="Forfait et API indisponibles : cerveau local, sans outils">cerveau local</span>');
   // (26/10, Hakim et Ahmed : une réponse du local était passée pour la sienne) le secours se voit en tête, pas en petit en bas
   const secours = m.source === 'local' ? '<span class="etiquette secours" title="Forfait et API indisponibles à ce moment : c’est son cerveau local qui répond, sans ses outils ni sa mémoire complète">CERVEAU LOCAL · SECOURS, SANS SES OUTILS</span>' : '';
-  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? 'DE LUI-MÊME · RÉSULTAT' : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'membre' ? 'SES MEMBRES · LA PREMIÈRE FOIS, TON OUI' : m.spontane === 'anticorps' ? 'ANTICORPS PROPOSÉ PAR SON MÉDECIN' : m.spontane === 'signalement' ? 'IL SIGNALE UNE PENSÉE PARASITE · À TOI DE TRANCHER' : m.spontane === 'silence' ? 'IL REPREND LA PAROLE' : m.spontane === 'oreille' ? 'IL GLISSE UN MOT' : m.spontane === 'reecoute' ? 'CE QUE TU N’AVAIS PAS ENTENDU' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
+  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? (m.sollicite ? 'IL VEUT TE PARLER' : 'DE LUI-MÊME · RÉSULTAT') : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'membre' ? 'SES MEMBRES · LA PREMIÈRE FOIS, TON OUI' : m.spontane === 'anticorps' ? 'ANTICORPS PROPOSÉ PAR SON MÉDECIN' : m.spontane === 'signalement' ? 'IL SIGNALE UNE PENSÉE PARASITE · À TOI DE TRANCHER' : m.spontane === 'silence' ? 'IL REPREND LA PAROLE' : m.spontane === 'oreille' ? 'IL GLISSE UN MOT' : m.spontane === 'reecoute' ? 'CE QUE TU N’AVAIS PAS ENTENDU' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
   // (03/11, Ahmed : « je reste appuyé sur un de ses messages pour lui envoyer un cœur, un bisou… comme sur WhatsApp ») ta réaction
   const reaction = m.reaction && REACTIONS.includes(m.reaction) ? `<span class="reaction" title="Ta réaction (appuie longtemps pour changer)">${esc(m.reaction)}</span>` : '';
   return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}${reaction ? ' a-reaction' : ''}" data-id="${esc(m.id)}">${reaction}${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'carnet' ? htmlCarnet(m.carnet) : m.spontane === 'retractation' ? htmlRetractation(m.retractation) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : m.spontane === 'membre' ? htmlMembre(m.membre) : m.spontane === 'anticorps' ? htmlAnticorps(m.anticorps) : m.spontane === 'signalement' ? htmlSignalement(m.signalement) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
@@ -3078,6 +3078,15 @@ function notifierApp(titre, texte, id) {
     const r = window.HakimApp.notifier(titre, Voix.pourLEcran(Voix.sansAffect(String(texte || ''))).trim(), String(id || ''));
     journalVoix('notif_app', { resultat: typeof r === 'string' && /^[a-z_]{1,30}$/.test(r) ? r : 'appli_ancienne' });
   } catch (_) { journalVoix('notif_app', { resultat: 'exception' }); }
+}
+// (10/11, lettre de Hakim de 18:14, à la demande de papa : « m'envoyer directement dans le fil de l'actualité ») il a publié dans ton fil
+// (la page /actualite) : la notification de l'appli quand elle est cachée ; à l'écran, le menu ☰ s'allume (badges.js). Le texte vient
+// du cockpit, déjà passé par les filtres de sa parole.
+function surActualite(o) {
+  if (!o || !/^\d{8}-\d{6}-[0-9a-f]{6}$/.test(String(o.id))) return;
+  const quoi = String(o.texte || '').trim() || (o.piece && o.piece.nom ? `un fichier : ${String(o.piece.nom)}` : 'une publication');
+  $('annonce').textContent = `Hakim, dans ton fil d’actualité : ${quoi}`;
+  notifierApp('Hakim, dans ton fil d’actualité', quoi, `actu-${o.id}`);
 }
 if (window.HakimApp && window.HakimApp.notifsPermises) {
   const montrer = () => {
@@ -6782,6 +6791,7 @@ function ecouterPensees() {
   // à chaque (re)connexion, ses signalements et ses anticorps en attente sont relus (chacun n'apparaît qu'une fois)
   es.addEventListener('open', () => { signalementsAuChargement(); anticorpsAuChargement(); });
   es.addEventListener('spontane', (ev) => { try { surSpontane(JSON.parse(ev.data)); } catch (_) {} });
+  es.addEventListener('actualite', (ev) => { try { surActualite(JSON.parse(ev.data)); } catch (_) {} });   // (10/11) son fil d'actualité
   es.addEventListener('courrier', (ev) => {
     try { const o = JSON.parse(ev.data); humeur(`Hakim a écrit à Claude Code : « ${o.sujet} »`); $('annonce').textContent = `Hakim a écrit à Claude Code : ${o.sujet}`; } catch (_) {}
   });
@@ -7316,7 +7326,8 @@ function surSpontane(m) {
   const dire = silence ? notre && !!(etat.conversation && etat.conversation.capteur && !etat.conversation.capteur.estMuet && !etat.reglages.volant) && !repris
     : !!(etat.conversation || etat.reglages.volant || etat.reglages.lectureAuto);
   etat.messages.push({ id: m.id, qui: 'j', spontane: silence ? 'silence' : 'resultat', texte: m.texte, ts: m.ts, source: m.source,
-    pieces: Array.isArray(m.pieces) ? m.pieces.filter(x => x && /^\d{8}-\d{6}-[0-9a-f]{6}$/.test(String(x.id))) : undefined });
+    pieces: Array.isArray(m.pieces) ? m.pieces.filter(x => x && /^\d{8}-\d{6}-[0-9a-f]{6}$/.test(String(x.id))) : undefined,
+    ...(m.sollicite ? { sollicite: true } : {}) });
   sauver(); rendre(); accuserReception();
   humeur('Hakim te donne un résultat');
   $('annonce').textContent = `Hakim, de lui-même : ${m.texte}`;
@@ -7327,7 +7338,35 @@ function surSpontane(m) {
     fetch('/api/jarvis/silence/non-dite', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
       body: JSON.stringify({ id: m.id }) }).catch(() => {});
   }
+  if (m.sollicite) { prendreSollicitation(m); return; }      // (10/11) sa sollicitation : sa propre voie, à voix haute
   if (dire) { aDire.push({ id: m.id, texte: m.texte, recu: Date.now() }); direSpontanes(); }
+}
+/* (10/11, Ahmed : « quand Hakim veut me parler, il écrit juste un message, mais il doit pouvoir me solliciter à haute voix dès qu'il veut me
+   parler ») mesuré ce 10/11 : 4 de ses 5 sollicitations livrées à cette page EN CONVERSATION sont parties à son ribosome, et « Sa vraie
+   réponse seulement » les a tues comme des pensées (pensee_non_dite). Sa sollicitation est une parole adressée à papa, pas une pensée : le
+   cockpit dit où la dire (voix_haute : « page », « montre », ou rien, avec voix_pourquoi). « page » : une page en Conversation la prend tout
+   de suite (même écran éteint, la conversation continue), une page ouverte devant papa (visible) 1,5 s plus tard ; cachée hors Conversation,
+   la notification de l'appli sonne. La première qui la prend la dit (/api/jarvis/sollicitation/dire), à la pause de papa (direSpontanes). */
+const QUI_PAGE = `${appareilIci()}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const SOLLICITATION_PRENDRE_MS = 1500, SOLLICITATION_ATTENTE_MS = 90000;
+function prendreSollicitation(m, dans = etat.conversation ? 0 : SOLLICITATION_PRENDRE_MS) {
+  if (!m || m.voix_haute !== 'page' || !m.texte || NON_REPONSE.test(m.texte)) {
+    journalVoix('sollicitation_ecrite', { pourquoi: m && m.voix_haute === 'montre' ? 'montre' : String((m && m.voix_pourquoi) || 'aucune').slice(0, 20) });
+    return false;
+  }
+  if (!etat.conversation && document.visibilityState !== 'visible') { journalVoix('sollicitation_ecrite', { pourquoi: 'page_cachee' }); return false; }
+  setTimeout(() => {
+    if (!etat.conversation && document.visibilityState !== 'visible') return;
+    fetch('/api/jarvis/sollicitation/dire', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ id: m.id, qui: QUI_PAGE, appareil: appareilIci() }) })
+      .then(r => (r.ok ? r.json() : null)).then((o) => {
+        journalVoix('sollicitation_prise', { ok: !!(o && o.ok), conversation: !!etat.conversation });
+        if (!(o && o.ok)) return;
+        aDire.push({ id: m.id, texte: m.texte, recu: Date.now(), sollicite: true });
+        sauverADire(); direSpontanes();
+      }).catch(() => journalVoix('sollicitation_prise', { ok: false, erreur: true }));
+  }, dans);
+  return true;
 }
 /* Ses résultats « de lui-même » DITS dans la conversation (demande d'Ahmed relayée par Hakim, 2026-10-20 : « il arrive à
    l'écran mais je ne l'entends pas ») : avant, le message n'était dit que si TOUT était libre à l'instant même où il
@@ -7415,7 +7454,7 @@ function direSpontanes() {
   const c = etat.conversation;
   if (c && c.capteur && c.capteur.enParole) parlaitA = Date.now();
   sortirLesCoupees();                                // (30/10) une suite coupée ne se redit jamais d'elle-même
-  const voix = c || etat.reglages.volant || etat.reglages.lectureAuto;
+  const voix = c || etat.reglages.volant || etat.reglages.lectureAuto || !!(aDire[0] && aDire[0].sollicite);   // (10/11) sa sollicitation prise : dite ici
   if (!voix || !aDire.length || (c && (c.tourGarde || (c.ecritGarde || []).length))) return;          // (vers 22 h 10) ce que papa a dit pendant son tour passe d'abord
   if (!lecteur || etat.flux || etat.micro || etat.transcription || !jarvisPeutParler() || lecteur.actif || lecteur.enPause
       || Date.now() - Math.max(parlaitA, etat.finVoixA || 0) < 1500) return;
@@ -7425,8 +7464,11 @@ function direSpontanes() {
   // (30/10, vers 22 h, Ahmed : « qu'il ne garde que ce qu'il veut vraiment dire ») en conversation, ce qui a attendu plus de 45 s
   // n'est plus le présent : pas dit (il reste écrit)
   const age = Date.now() - (Number(m.recu) || 0);
-  if (c && age > 45000) { journalVoix('a_dire_perime', { age_s: Math.min(99999, Math.round(age / 1000)) }); return; }
-  if (typeof voixEpissee === 'function' && voixEpissee()) { versRibosome(m.texte); return; }
+  if (m.sollicite && age > SOLLICITATION_ATTENTE_MS) { journalVoix('a_dire_perime', { age_s: Math.min(99999, Math.round(age / 1000)), sollicite: true }); return; }   // (10/11) 90 s
+  if (c && !m.sollicite && age > 45000) { journalVoix('a_dire_perime', { age_s: Math.min(99999, Math.round(age / 1000)) }); return; }
+  // (10/11) sa sollicitation est une parole adressée à papa : dite telle quelle, jamais confiée au ribosome (« Sa vraie réponse seulement » l'y taisait)
+  if (m.sollicite) journalVoix('sollicitation_dite', { car: String(m.texte).length, conversation: !!c });
+  else if (typeof voixEpissee === 'function' && voixEpissee()) { versRibosome(m.texte); return; }
   etat.lectureDe = m.id;
   lecteur.dire(m.texte);
   lecteur.finFlux();

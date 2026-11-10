@@ -76,7 +76,7 @@ test('(30/10, Ahmed : « le point rouge quand il y a du nouveau : immunité, sen
   assert.match(r.pages.sens.resume.join(' '), /1 livraison de son Tricordeur/);
   assert.match(r.pages.sens.resume.join(' '), /1 écriture dans tes Documents/);
   assert.match(r.pages.sens.resume.join(' '), /1 sensation forte \(chute\)/);
-  assert.deepEqual(N.PAGES, ['cafe', 'immunite', 'parler', 'sens', 'code']);
+  assert.deepEqual(N.PAGES, ['cafe', 'immunite', 'parler', 'sens', 'code', 'actualite']);   // (10/11) son fil d'actualité
 });
 
 test('le serveur passe bien ce qui attend (missions, écritures…) et toutes les pages à « vu »', () => {
@@ -96,7 +96,7 @@ test('le bandeau rouge se touche en entier et mène au bon endroit : le nouveau 
   const i = b.indexOf('function annoncer('), annonce = b.slice(i, b.indexOf('\n  }\n', i));
   assert.match(annonce, /lien\.href = `\$\{PAGES\[page\] \|\| '\/'\}#nouveau`/);
   assert.match(annonce, /l\.addEventListener\('click', aller\)/, 'toute la ligne, pas seulement le nom de la page');
-  assert.match(b, /const LIEUX = \{ cafe: '\.msg\.nouveau', immunite: '\.ligne\.nouveau', parler: '\.mission-boutons', sens: '#mesures', code: '#promos' \}/);
+  assert.match(b, /const LIEUX = \{ cafe: '\.msg\.nouveau', immunite: '\.ligne\.nouveau', parler: '\.mission-boutons', sens: '#mesures', code: '#promos', actualite: '\.pub\.nouveau' \}/);   // (10/11) son fil d'actualité
   const o = b.slice(b.indexOf('async function ouvrir('), b.indexOf('window.Badges ='));
   assert.match(o, /if \(location\.hash === '#nouveau'\) allerAuNouveau\(page\);/);
   for (const [fichier, id] of [['sens.html', 'id="mesures"'], ['cafe.html', "' nouveau'"], ['immunite.html', "' nouveau'"]])

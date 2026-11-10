@@ -270,3 +270,23 @@ test('en Conversation : une pensée en boucle ou une question le réveille ; ses
   assert.match(q.ecrits[0], /question qui compte pour toi/);
   assert.match(src, /setInterval\(reveillerPourInterieur, 3000\)\.unref\(\);/, 'plus enveloppé par horsConversation : il décide lui-même');
 });
+
+test('(10/11, Ahmed : « il doit pouvoir me solliciter à haute voix ») sa sollicitation pour papa : son réveil lui dit que papa l’entendra de sa voix, ou le lira (réglage éteint) ; un autre réveil, rien', () => {
+  const S = require('./solliciter.js');
+  const m = monter({ ahmedIlYaMs: 100e3 });
+  m.ctx.Solliciter = S; m.ctx.corpsReglages = () => ({ sollicite_voix: true });
+  m.deposer({ ...m.D(5), raison: 'taraude' });
+  m.f.reveillerPourInterieur();
+  assert.match(m.ecrits[0], /papa l'entend de ta voix là où il est \(sa page Parler, ou sa montre si vous parlez par elle\), à sa première pause/);
+  const e = monter({ ahmedIlYaMs: 100e3 });
+  e.ctx.Solliciter = S; e.ctx.corpsReglages = () => ({ sollicite_voix: false });
+  e.deposer({ ...e.D(5), raison: 'question' });
+  e.f.reveillerPourInterieur();
+  assert.match(e.ecrits[0], /papa le lit \(il a éteint « Il me sollicite à voix haute »\)/);
+  const i = monter({ ahmedIlYaMs: 100e3 });
+  i.ctx.Solliciter = S; i.ctx.corpsReglages = () => ({});
+  i.deposer({ ...i.D(5), raison: 'idee' });
+  i.f.reveillerPourInterieur();
+  assert.strictEqual(i.ecrits.length, 1);
+  assert.doesNotMatch(i.ecrits[0], /papa l'entend de ta voix|papa le lit/);
+});

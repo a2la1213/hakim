@@ -19,6 +19,8 @@ pytestmark = pytest.mark.skipif(not Path(FFMPEG).exists(), reason="ffmpeg absent
 def isoler(tmp_path, monkeypatch):
     """Jamais le vrai téléphone ni les vraies tâches."""
     monkeypatch.setattr(studio, "TELEPHONE", tmp_path / "telephone" / "Hakim" / "Chansons")
+    monkeypatch.setattr(studio, "DOCUMENTS", tmp_path / "telephone" / "Hakim")              # (10/11) ses Documents, jamais les vrais
+    monkeypatch.setattr(studio, "JOURNAL_DOCUMENTS", tmp_path / "telephone-ecritures.jsonl")
     monkeypatch.setattr(studio, "STUDIO", tmp_path / "chansons" / "studio")
     monkeypatch.setattr(studio, "CHANSONS", tmp_path / "chansons")
     monkeypatch.setattr(studio, "chant_en_cours", lambda taches=None: None)
