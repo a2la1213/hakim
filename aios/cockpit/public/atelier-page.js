@@ -45,7 +45,7 @@
     try {
       const u = await urlDe(f);
       if (l.hidden) return;
-      l.innerHTML = (video ? `<video controls playsinline autoplay src="${u}" aria-label="${esc(titre)}"></video>` : `<img src="${u}" alt="${esc(titre)}">`)
+      l.innerHTML = (video ? `<video controls playsinline autoplay src="${esc(u)}" aria-label="${esc(titre)}"></video>` : `<img src="${esc(u)}" alt="${esc(titre)}">`)
         + `<div class="gestes"><button type="button" data-dl="${esc(f)}">⬇︎ Télécharger</button><button type="button" data-fermer>✕ Fermer</button></div>`;
       const b = l.querySelector('[data-fermer]'); if (b) b.focus();
     } catch (e) { l.hidden = true; dire(e.message); }

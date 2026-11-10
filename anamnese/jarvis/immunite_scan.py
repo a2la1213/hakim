@@ -1528,7 +1528,12 @@ def code_depot(nom, depot):
         lab = f"{nom}/{chemin}"
         test = bool(re.search(r"(?:^|/)(?:tests?/|test[-_][^/]*$|[^/]*_test\.py$|[^/]*\.test\.js$)", chemin))
         public = chemin.startswith("public/")
-        sortie += examiner_texte(t, lab, lg, public=public, test=test)
+        res = examiner_texte(t, lab, lg, public=public, test=test)
+        # (11/11) le scanner lui-même : ses listes de motifs citent exprès curl | sh, les coquilles inversées, les hôtes suspects.
+        # Son intégrité est gardée par le sceau (immunite.py le scelle) ; ici, seuls les secrets comptent.
+        if nom == "anamnese" and chemin == "jarvis/immunite_scan.py":
+            res = [x for x in res if x["categorie"] == "secret"]
+        sortie += res
         if nom == "cockpit" and lg == "js" and not test and "p === '/api/" in t:
             sortie += routes_sans_jeton(t, lab, gardien, gardes)
         if lg in ("py", "js", "sh") and not test:

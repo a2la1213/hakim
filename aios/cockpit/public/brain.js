@@ -306,7 +306,7 @@ function openDetail(idx) {
   pinnedIdx = idx;
   detailIdEl.textContent = `#${n.id}`;
   detailEl.hidden = false;
-  detailBody.innerHTML = `<div class="d-loading">chargement du souvenir #${n.id}…</div>`;
+  detailBody.innerHTML = `<div class="d-loading">chargement du souvenir #${esc(n.id)}…</div>`;
   fetch(`/api/memory?id=${n.id}`)
     .then(r => r.json().then(m => ({ ok: r.ok, m })))
     .then(({ ok, m }) => {

@@ -160,7 +160,7 @@
     }
     for (const c of COLONNES) for (const id of Object.keys(fam[c] || {})) if (!noeuds[c].has(id)) noeuds[c].set(id, 0);   // un chemin sans pensée récente
     if (!COLONNES.some(c => noeuds[c].size)) { $('reseau').innerHTML = '<div class="vide">Pas encore de pensée jugée : ses connexions apparaîtront avec tes réactions.</div>'; return; }
-    const L = 900, X = [16, 330, 644], W = 14, GAP = 10, TOP = 30;
+    const largeur = 900, X = [16, 330, 644], W = 14, GAP = 10, TOP = 30;
     const pos = {}; let H = TOP;
     for (const [k, c] of COLONNES.entries()) {
       let y = TOP;
@@ -172,7 +172,7 @@
       H = Math.max(H, y);
     }
     const max = Math.max(1, ...[...liens.values()].map(l => l.n));
-    const traits = [...liens.values()].map((l) => {
+    const traitsSvg = [...liens.values()].map((l) => {
       const p = pos[`${l.a[0]}|${l.a[1]}`], q = pos[`${l.b[0]}|${l.b[1]}`];
       if (!p || !q) return '';
       const x1 = p.x + W, y1 = p.y + p.h / 2, x2 = q.x, y2 = q.y + q.h / 2, m = (x1 + x2) / 2;
@@ -181,7 +181,7 @@
         + (moyenne == null ? '<br>pas encore de réaction' : `<br>ta réaction moyenne : ${virgule(moyenne)} (${l.notes} jugée(s))`);
       return `<path class="lien" data-info="${esc(html)}" d="M${x1},${y1} C${m},${y1} ${m},${y2} ${x2},${y2}" stroke="${couleurScore(moyenne)}" stroke-width="${ep.toFixed(1)}"/>`;
     }).join('');
-    const rectangles = Object.values(pos).map((p) => {
+    const rectanglesSvg = Object.values(pos).map((p) => {
       const s = (fam[p.c] || {})[p.id] || null, el = s && s.elaguee, epi = s && s.epingle;
       const html = `<b>${esc(lisible(p.c, p.id))}</b> (${esc(FAMILLES[p.c])})<br>${p.n} pensée(s) récente(s)`
         + (s ? `<br>poids ${virgule(s.poids)} · ${s.n} mesure(s)${el ? '<br>✂️ élagué' : ''}${epi ? '<br>📌 épinglé' : ''}` : '<br>pas encore mesuré');
@@ -190,8 +190,8 @@
         + `${el ? ' stroke="#9ca3af" stroke-dasharray="3 2" stroke-width="1.5"' : ' stroke="#04141a" stroke-width="2"'}/>`
         + `<text x="${p.x + W + 6}" y="${p.y + p.h / 2 + 4}">${epi ? '📌 ' : ''}${esc(lisible(p.c, p.id))}${el ? ' · élagué' : ''}</text></g>`;
     }).join('');
-    const entetes = COLONNES.map((c, k) => `<text class="entete" x="${X[k]}" y="16">${esc(FAMILLES[c].toUpperCase())}</text>`).join('');
-    $('reseau').innerHTML = `<svg class="reseau" viewBox="0 0 ${L} ${H + 4}" role="img" aria-label="Les connexions entre ses chemins">${entetes}${traits}${rectangles}</svg>`;
+    const entetesSvg = COLONNES.map((c, k) => `<text class="entete" x="${X[k]}" y="16">${esc(FAMILLES[c].toUpperCase())}</text>`).join('');
+    $('reseau').innerHTML = `<svg class="reseau" viewBox="0 0 ${largeur} ${H + 4}" role="img" aria-label="Les connexions entre ses chemins">${entetesSvg}${traitsSvg}${rectanglesSvg}</svg>`;
     $('reseau').querySelectorAll('[data-info]').forEach((n) => {
       const voir = (e) => { $('reseau').querySelectorAll('.vu').forEach(x => x.classList.remove('vu')); if (n.classList.contains('lien')) n.classList.add('vu'); montrerInfo(e, n.dataset.info); };
       n.addEventListener('pointerenter', voir); n.addEventListener('pointerdown', voir);

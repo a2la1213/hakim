@@ -2385,7 +2385,7 @@ function ouvrirReactions(id, x, y) {
   if (!m || m.enCours) return;
   reactionPour = m;
   const b = $('reactions');
-  b.innerHTML = REACTIONS.map(r => `<button type="button" data-reaction="${r}" class="${m.reaction === r ? 'choisie' : ''}">${r}</button>`).join('');
+  b.innerHTML = REACTIONS.map(r => `<button type="button" data-reaction="${esc(r)}" class="${m.reaction === r ? 'choisie' : ''}">${esc(r)}</button>`).join('');
   b.hidden = false;
   const l = Math.min(window.innerWidth - b.offsetWidth - 8, Math.max(8, x - b.offsetWidth / 2));
   b.style.left = `${l}px`;
@@ -2510,7 +2510,7 @@ function rendre() {
   let k = 0;
   const avant = (t) => { let h = ''; while (t && k < aCote.length && aCote[k].ts <= t) h += aCote[k++].html; return h; };
   let jourPrecedent = '';
-  fil.innerHTML = (caches ? `<button class="btn plus" data-plus="1">messages précédents (${caches})</button>` : '')
+  fil.innerHTML = (caches ? `<button class="btn plus" data-plus="1">messages précédents (${esc(caches)})</button>` : '')
     + vus.map((m) => {
       const t = quandMessage(m), jour = t ? jourMessage(t) : '';
       const separation = jour && jour !== jourPrecedent ? `<div class="jour">${esc(jour)}</div>` : '';
@@ -4207,12 +4207,12 @@ function htmlDit(dits) {
 function poserPave(cle, titre, html) {
   // (04/11, 11:59) sous l'orbe aussi : en Conversation, c'est là que papa regarde
   const scene = typeof $ === 'function' ? $('epissureScene') : null;
-  if (scene) { scene.innerHTML = `<span class="quand">${titre}</span> ${html}`; scene.hidden = !!(etat.reglages && etat.reglages.masquerEpissure); }
+  if (scene) { scene.innerHTML = `<span class="quand">${esc(titre)}</span> ${html}`; scene.hidden = !!(etat.reglages && etat.reglages.masquerEpissure); }
   // (04/11, 14:30, Ahmed, capture : « la pensée s'affiche avant l'affichage ; j'aimerais l'inverse ») mis à jour, il garde sa place :
   // l'instant où sa pensée est née, avant sa réponse consciente
   const avant = (etat.aCote || []).find(x => x.cle === cle);
   etat.aCote = (etat.aCote || []).filter(x => x.cle !== cle);
-  etat.aCote.push({ ts: avant ? avant.ts : Date.now(), cle, html: `<div class="m j brouillon" style="opacity:.85;font-style:italic"><span class="quand">${titre}</span><div>${html}</div></div>` });
+  etat.aCote.push({ ts: avant ? avant.ts : Date.now(), cle, html: `<div class="m j brouillon" style="opacity:.85;font-style:italic"><span class="quand">${esc(titre)}</span><div>${html}</div></div>` });
   const paves = etat.aCote.filter(x => String(x.cle).startsWith('pave-'));
   if (paves.length > 6) { const vieux = new Set(paves.slice(0, paves.length - 6)); etat.aCote = etat.aCote.filter(x => !vieux.has(x)); }
   rendre();
@@ -5181,7 +5181,7 @@ function montrerPensee(titre, texte, nouvelle = false) {
   const cle = nouvelle ? `pensee-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` : 'souffle';
   etat.aCote = (etat.aCote || []).filter(x => x.cle !== cle && !(nouvelle && x.cle === 'souffle'));
   etat.aCote.push({ ts: Date.now(), cle, html: `<div class="m j brouillon" style="opacity:.75;font-style:italic">`
-    + `<span class="quand">${titre}</span><div>${esc(texte)}</div></div>` });
+    + `<span class="quand">${esc(titre)}</span><div>${esc(texte)}</div></div>` });
   const pensees = etat.aCote.filter(x => String(x.cle).startsWith('pensee-'));
   if (pensees.length > 6) { const vieilles = new Set(pensees.slice(0, pensees.length - 6)); etat.aCote = etat.aCote.filter(x => !vieilles.has(x)); }
   rendre();

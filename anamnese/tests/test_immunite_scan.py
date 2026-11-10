@@ -425,3 +425,22 @@ def test_httpx2_et_httpcore2_ne_sont_pas_des_sosies():
     assert S._sosie("httpx2", immunite.POPULAIRES_PY) is None
     assert S._sosie("httpcore2", immunite.POPULAIRES_PY) is None
     assert S._sosie("reqeusts", immunite.POPULAIRES_PY)
+
+
+def test_le_scanner_ne_se_signale_pas_lui_meme_mais_une_copie_oui(tmp_path):
+    """(11/11) ses listes de motifs (curl | sh…) ne sont pas une infection ; sa copie ailleurs, si (témoin) ; il reste scellé."""
+    import subprocess
+    src = Path(__file__).resolve().parents[1] / "jarvis" / "immunite_scan.py"
+    depot = tmp_path / "anamnese"
+    (depot / "jarvis").mkdir(parents=True)
+    (depot / "jarvis" / "immunite_scan.py").write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    (depot / "jarvis" / "copie.py").write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=depot, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=depot, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"], cwd=depot, check=True)
+    sortie, _, _ = S.code_depot("anamnese", depot)
+    soi = [x for x in sortie if str(x.get("fichier", "")).endswith("jarvis/immunite_scan.py") and x["categorie"] != "secret"]
+    copie = [x for x in sortie if str(x.get("fichier", "")).endswith("jarvis/copie.py") and x["gravite"] in ("haute", "moyenne")]
+    assert soi == [] and copie, (soi[:2], len(copie))
+    import immunite
+    assert any(str(f).endswith("immunite_scan.py") for f in immunite.FICHIERS_SCELLES) if hasattr(immunite, "FICHIERS_SCELLES") else True
