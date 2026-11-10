@@ -35,7 +35,8 @@ function bac(src = SRC) {
   vm.createContext(ctx);
   const o = src.indexOf('const ORDRES_SENSIBLES =');
   vm.runInContext([src.slice(o, src.indexOf("'iu');", o) + 6), prendre(src, 'segmentsTiers'), 'const ditRecemment = [];', prendre(src, 'estSonEcho'),
-    prendre(src, 'blocVoixPrincipale'), prendre(src, 'blocVoixTierce'), 'const verdictsVoix = [];', prendre(src, 'verdictDuTour'),
+    prendre(src, 'blocVoixPrincipale'), prendre(src, 'dansUnPassage'), prendre(src, 'blocVoixTierce'),   // (10/11) dansUnPassage : absent du bac à sable depuis 542d06f (le test tombait sur main)
+    'const verdictsVoix = [];', prendre(src, 'verdictDuTour'),
     // un morceau transcrit (routeTranscrire) : son verdict gardé, exactement comme la route le garde
     `function recu(r) {\n  if (r.voix && r.voix.verdict) derniereVoix = { ...r.voix, ts: Date.now() };\n  ${ligne(src, 'if (r.voix && r.voix.verdict) { verdictsVoix.push(')}}`,
     // le tour de papa (routeJarvis) : les deux blocs de sa voix, avec les appels écrits dans server.js

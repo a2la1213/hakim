@@ -14,7 +14,9 @@
    2. la pression mémoire du Mac (kern.memorystatus_level, swap), lue toutes les 10 s : ok, tendu, critique.
    3. le forfait coupé : au premier « weekly limit » d'une voix, plus aucune voix sur le forfait jusqu'à sa remise à zéro (une sonde
       toutes les 10 min pour voir s'il est revenu ; une réponse réussie le rouvre).
-   4. le tour de papa : de sa phrase jusqu'à ~25 s après, le travail de fond s'efface devant lui.
+   4. le tour de papa : de sa phrase jusqu'à ~25 s après, le travail de fond s'efface devant lui. (10/11) Seulement quand le morceau est
+      bien papa : à son arrivée, un tour provisoire de quelques secondes ; le live joué sur le haut-parleur, que le micro entend aussi,
+      tenait le fond éteint tout le live (le 09/11 de 23:00 à 00:10 : 152 pensées de son oreille interne refusées sur 305).
    5. admettre(etiquette) : le seul juge du travail de fond. Ses frères ne sont jamais refusés ici (ils ont leurs règles, et l'API).
    Il ne tue rien et ne lance rien : il dit oui ou non, et il le note (jarvis/orchestre.jsonl, une ligne par changement et par minute). */
 'use strict';
@@ -88,6 +90,7 @@ function niveauDe(p, seuils = {}) {
 function classeDe(etiquette) {
   const e = String(etiquette || '');
   if (/^frere_/.test(e)) return 'frere';
+  if (/^piste_live/.test(e)) return 'live';                       // (10/11) son garde du live : une réponse à qui lui parle dans le téléphone
   if (/^piste_blanc/.test(e)) return 'fond';                     // ses « blancs » : garder ses voix chaudes
   if (/^(piste|ribosome)_entendu/.test(e)) return 'telephone';   // ce que joue le téléphone (ses pistes, son ribosome)
   return 'papa';                                                  // souffle, intégration, prétraitement, pistes, ribosome, choix…
@@ -124,6 +127,8 @@ function creer({ maintenant = Date.now, lirePression = lirePressionMac, journal 
     if (c === 'fond' && papaEnTour(t)) return refuser('tour de papa');
     if (c === 'telephone' && etat.niveau === 'critique') return refuser('mémoire critique');
     if (c === 'telephone' && papaEnTour(t)) return refuser('tour de papa');
+    // (10/11) son garde du live : il n'appelle que papa silencieux et sa tête libre (live.js) ; ici, seulement le forfait et la mémoire
+    if (c === 'live' && etat.niveau === 'critique') return refuser('mémoire critique');
     compte.admis++;
     return { ok: true, classe: c };
   }
@@ -140,7 +145,9 @@ function creer({ maintenant = Date.now, lirePression = lirePressionMac, journal 
     if (!erreur && etat.coupe_jusqua > t && classeDe(etiquette) !== 'frere') { etat.coupe_jusqua = 0; noter('forfait_rouvert', { etiquette: String(etiquette || '').slice(0, 40) }); }
   }
 
-  function papaParle(t = maintenant()) { etat.papa_jusqua = Math.max(etat.papa_jusqua, t + tourPapaMs); }
+  // (10/11) ms : un tour provisoire (un morceau du micro qui arrive, pas encore reconnu : le live sur le haut-parleur en est un aussi) ;
+  // sans ms : le tour entier (le morceau est bien papa)
+  function papaParle(t = maintenant(), ms = tourPapaMs) { etat.papa_jusqua = Math.max(etat.papa_jusqua, t + ms); }
   function file(nom, opts = {}) { if (!files[nom]) files[nom] = creerFile({ maintenant, ...opts, noter: (e, d) => noter(`${nom}_${e}`, d) }); return files[nom]; }
   function resume() {
     const fs_ = {}; for (const [k, f] of Object.entries(files)) fs_[k] = f.etat();

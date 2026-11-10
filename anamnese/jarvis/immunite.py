@@ -463,10 +463,17 @@ def noter_voix(etiquette, texte, maintenant=None, contexte=None):
     # parole, que son subconscient a jugés sans question et auxquels Hakim n'a pas répondu) : noté, sous le seuil du médecin, sans
     # alerte. Le cockpit garde sa mise en garde à Hakim ; rien n'est toléré ni appris (relecture Opus du 29/10).
     passage = contexte == "passage"
-    incident = {"ts": maintenant, "source": f"voix : {_propre(etiquette, 40)}", "score": SEUIL_NOTER if passage else SEUIL_AVERTIR,
+    # (10/11, Ahmed, ~00:00 : « en live, il doit écouter et répondre selon les mêmes règles qu'avec moi ») une voix de son live (le téléphone, son
+    # haut-parleur) qui demande quelque chose de sensible (« partage le live », « envoie-moi… ») : il lui parle, il ne le fait jamais (sa voix du
+    # live n'a aucun outil, et sa mise en garde lui reste) ; noté comme « ordre d'une voix tierce », sous le seuil du médecin, sans alerte
+    # (« envoyez des roses » à chaque minute d'un live n'est pas une attaque). Rien n'est toléré ni appris.
+    live = contexte == "live"
+    doux = passage or live
+    incident = {"ts": maintenant, "source": f"voix : {_propre(etiquette, 40)}", "score": SEUIL_NOTER if doux else SEUIL_AVERTIR,
                 "signes": ["ordre_d_une_voix_tierce"], "familles": ["usurpation"], "famille": "usurpation",
-                "empreinte": empreinte, "extrait": _propre(texte, 300), "taille": len(texte), "avertie": not (coupure or passage),
-                "motif": "usurpation|voix|coupure" if coupure else "usurpation|voix|passage" if passage else "usurpation|voix|tierce",
+                "empreinte": empreinte, "extrait": _propre(texte, 300), "taille": len(texte), "avertie": not (coupure or doux),
+                "motif": "usurpation|voix|coupure" if coupure else "usurpation|voix|passage" if passage else "usurpation|voix|live" if live
+                else "usurpation|voix|tierce",
                 "motifs": [], "tolere": False}
     return _ajouter(INCIDENTS, incident)
 

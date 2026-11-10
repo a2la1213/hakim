@@ -4612,14 +4612,16 @@ function paveEntendu(o) {
   etat.pavesEntendus = etat.pavesEntendus || {};
   const cle = `${o.source || 'telephone'}|${o.voix || ''}|${o.tour}`;
   if (!etat.pavesEntendus[cle]) {
-    etat.pavesEntendus[cle] = { cle: `pave-entendu-${o.tour}-${Date.now()}`, voix: String(o.voix || '').slice(0, 40), pensees: [], pave: '', mots: [], dits: [] };
+    etat.pavesEntendus[cle] = { cle: `pave-entendu-${o.tour}-${Date.now()}`, voix: String(o.voix || '').slice(0, 40), pensees: [], pave: '', mots: [], dits: [], live: !!o.live };
     const cles = Object.keys(etat.pavesEntendus);
     for (const k of cles.slice(0, Math.max(0, cles.length - 4))) delete etat.pavesEntendus[k];
   }
   return etat.pavesEntendus[cle];
 }
+const TITRE_LIVE = '🎙️ le live · 🗣 sa réponse';   // (10/11) ce qu'il répond aux gens du live (son garde du live)
 function montrerEntendu(p) {
-  const titre = p.voix ? `${TITRE_ENTENDU} (${esc(p.voix)})` : TITRE_ENTENDU;
+  const base = p.live ? TITRE_LIVE : TITRE_ENTENDU;
+  const titre = p.voix ? `${base} (${esc(p.voix)})` : base;
   const html = `<div class="interne" style="opacity:.6">💭 ${p.pave ? htmlPave(p.pave, p.mots) : esc(p.pensees.join(' ')) || '…'}</div>`
     + `<div class="dit" style="font-style:normal;margin-top:4px">🗣 « ${esc(p.dits.join(' ')) || '…'} »</div>`;
   const avant = (etat.aCote || []).find(x => x.cle === p.cle);
@@ -4635,7 +4637,8 @@ function surEntendu(o) {
   if (o.quoi === 'piste' && o.texte) p.pensees.push(String(o.texte).slice(0, 400));
   else if (o.quoi === 'ribosome') { if (o.pave != null) p.pave = String(o.pave); if (Array.isArray(o.mots)) p.mots = o.mots.slice(); }
   else if (o.quoi === 'dire' && o.texte) {
-    etat.entenduFile = (etat.entenduFile || []).concat([{ tour: o.tour, n: Number(o.n) || 0, texte: String(o.texte).slice(0, 2000), recu: Date.now(), p }]);
+    // (10/11) reponse : ce qu'il répond à qui lui parle dans le téléphone (son garde du live), une vraie réponse, pas une pensée
+    etat.entenduFile = (etat.entenduFile || []).concat([{ tour: o.tour, n: Number(o.n) || 0, texte: String(o.texte).slice(0, 2000), recu: Date.now(), p, reponse: o.reponse === true }]);
     direEntendu();
   } else return;
   montrerEntendu(p);
@@ -4644,7 +4647,14 @@ function direEntendu(maintenant = Date.now()) {
   const f = etat.entenduFile || [], c = etat.conversation;
   if (!f.length) return false;
   // (07/11, Ahmed : « on garde uniquement sa vraie réponse ») ce qu'il pense de ce qu'il entend (le téléphone, la pièce) reste une pensée, à l'écran
-  if (typeof reponseSeule === 'function' && reponseSeule()) { for (const x of f) if (x.p) x.p.pensees = x.p.pensees || []; etat.entenduFile = []; journalVoix('entendu_pense', { pensees: f.length }); return false; }
+  // (10/11, Ahmed : « en live, il doit écouter et répondre selon les mêmes règles qu'avec moi ») ses réponses au live restent : elles sont dites
+  if (typeof reponseSeule === 'function' && reponseSeule() && f.some(x => !x.reponse)) {
+    const pensees = f.filter(x => !x.reponse);
+    for (const x of pensees) if (x.p) x.p.pensees = x.p.pensees || [];
+    etat.entenduFile = f.filter(x => x.reponse); journalVoix('entendu_pense', { pensees: pensees.length });
+    if (!etat.entenduFile.length) return false;
+    return direEntendu(maintenant);
+  }
   const frais = f.filter(x => maintenant - x.recu <= ENTENDU_ATTENTE_MS);
   if (frais.length < f.length) { etat.entenduFile = frais; journalVoix('entendu_garde', { pensees: f.length - frais.length }); }
   if (!frais.length || !c || !voixEpissee() || lecteur.actif || (etat.riboFile || []).length) return false;
@@ -4659,7 +4669,7 @@ function direEntendu(maintenant = Date.now()) {
   etat.riboN = etat.riboN || {};
   const n = Math.max(typeof bouts !== 'undefined' && bouts && bouts.tour === x.tour ? bouts.prochain : 1, (etat.riboN[x.tour] || 0) + 1);
   etat.riboN[x.tour] = n;
-  journalVoix('entendu_dit', { tour: x.tour, n, mots: x.texte.split(/\s+/).filter(Boolean).length });
+  journalVoix(x.reponse ? 'live_dit' : 'entendu_dit', { tour: x.tour, n, mots: x.texte.split(/\s+/).filter(Boolean).length });
   recevoirBout({ texte: x.texte, pret: true, sansMeuble: true, ribosome: true }, n, x.tour);
   return true;
 }

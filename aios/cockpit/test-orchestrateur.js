@@ -141,5 +141,39 @@ test('le cockpit le branche : admission du fond, limite du forfait, second corps
   assert.match(src, /const FILE_OREILLE = ORCHESTRE\.file\('oreille', \{ vieuxMs: 15000, garder: \{ telephone: 2 \} \}\);/);
   assert.match(src, /const azurePapa = dePapa && !!corpsReglages\(\)\.stt_azure && apprentissageVoix <= 0;/);
   assert.match(src, /if \(azurePapa\) await prendreTour\(\);/);
-  assert.match(src, /if \(dePapa\) ORCHESTRE\.papaParle\(\);/);
+  // (10/11) à l'arrivée d'un morceau du micro : un tour provisoire ; le tour entier quand le morceau est bien papa (papaVerifie)
+  assert.match(src, /if \(dePapa\) ORCHESTRE\.papaParle\(undefined, typeof TOUR_PAPA_PROVISOIRE_MS === 'number' \? TOUR_PAPA_PROVISOIRE_MS : undefined\);/);
+  assert.match(src, /if \(dePapa && typeof papaVerifie === 'function'\) \{ try \{ papaVerifie\(r\); \} catch \(_\) \{\} \}/);
+});
+
+test('(10/11) le tour provisoire : un morceau du micro pas encore reconnu (le live sur le haut-parleur) n\'éteint le fond que quelques secondes', () => {
+  const h = horloge();
+  const o = O.creer({ maintenant: h.f, lirePression: (cb) => cb({ libre_pct: 60 }) });
+  o.mesurer();
+  o.papaParle(undefined, 5000);
+  assert.strictEqual(o.admettre('piste_entendu_haiku').raison, 'tour de papa');
+  h.t += 6000;
+  assert.ok(o.admettre('piste_entendu_haiku').ok, 'le provisoire est passé');
+  o.papaParle();                                                     // le morceau était bien papa : son tour entier
+  h.t += 20000;
+  assert.strictEqual(o.admettre('piste_entendu_haiku').raison, 'tour de papa');
+  // (témoin) sans le provisoire, chaque morceau du live tenait le fond 25 s
+  const o2 = O.creer({ maintenant: h.f, lirePression: (cb) => cb({ libre_pct: 60 }) });
+  o2.mesurer(); o2.papaParle(); h.t += 6000;
+  assert.strictEqual(o2.admettre('piste_entendu_haiku').ok, false);
+});
+
+test('(10/11) son garde du live (« piste_live ») : admis pendant le tour de papa (il n\'appelle que papa silencieux), refusé forfait coupé ou mémoire critique', () => {
+  const h = horloge();
+  let p = { libre_pct: 60 };
+  const o = O.creer({ maintenant: h.f, lirePression: (cb) => cb(p) });
+  o.mesurer();
+  assert.strictEqual(O.classeDe('piste_live'), 'live');
+  o.papaParle();
+  assert.ok(o.admettre('piste_live').ok);
+  p = { libre_pct: 10 }; o.mesurer();
+  assert.strictEqual(o.admettre('piste_live').raison, 'mémoire critique');
+  p = { libre_pct: 60 }; o.mesurer();
+  o.noterAppel('piste_live', "You've hit your weekly limit · resets 9pm");
+  assert.strictEqual(o.admettre('piste_live').raison, 'forfait coupé');
 });
