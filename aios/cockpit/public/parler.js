@@ -504,6 +504,36 @@ function creerLecteurNeuronal() {
   const fluide = () => actx && actx.state === 'running';
   const avance = () => (fluide() ? Math.max(0, prochainDebut - actx.currentTime) : 0);
   const prevoir = (n) => est.fixe + est.parSec * (n / est.cps);   // temps de synthèse prévu pour n caractères
+  /* (10/11, Ahmed, 09:50 : « pourquoi il y a toujours un délai entre chaque morceau ? ») mesuré de 09:15 à 09:56 (voix-dite + voix-diagnostic) :
+     la page ne demandait le morceau suivant qu'à l'arrivée du précédent (une demande à la fois) ; son Azure partait 0,93 s après le début du
+     précédent (médiane), puis sa conversion au timbre de rap (4 à 11 s, une à la fois au Mac) : 72 % des blancs, et 12 à 24 % pour sa livraison.
+     Sa voix est maintenant demandée d'avance (réglage voix_en_avance, oui) : jusqu'à EN_VOL_MAX morceaux en route, dans l'ordre (le cockpit
+     garde leur place dès leur arrivée). Un morceau d'après part quand il a assez de texte pour un long morceau (son plafond : chaque
+     conversion coûte ~3 s fixes, un court la paie autant), quand tout est écrit, ou quand le morceau d'avant est à DEMANDE_AVANT_S de sa
+     voix ; il est taillé sur la voix déjà prête ET sur celle encore en route. Les vitesses ne s'apprennent que sur une demande partie
+     seule (une demande d'avance attend son tour au Mac). */
+  const EN_VOL_MAX = 3, DEMANDE_AVANT_S = 3;
+  const enAvanceActive = () => typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.voix_en_avance !== false;
+  const plafondLot = () => (etat.conversation ? 160 : 400);
+  const enRoute = () => lots.filter(x => !x.pret && !x.erreur);
+  function peutLancer() {
+    if (!unites.length) return false;
+    const vol = enRoute();
+    if (!vol.length) return true;                                     // rien en route : comme avant
+    if (!enAvanceActive() || vol.length >= EN_VOL_MAX) return false;
+    const u0 = unites[0];
+    if (u0.audio || u0.meuble || u0.son) return true;                 // déjà faite (ou en route ailleurs) : sa place, tout de suite
+    let n = 0;
+    for (const u of unites) {
+      if (u.audio || u.meuble || u.son || u.langue !== u0.langue) { n = Infinity; break; }   // le morceau ne grandira plus
+      n += u.texte.length + 1;
+      if (n >= plafondLot()) break;
+    }
+    if (n >= plafondLot() || L.fluxFini) return true;
+    const der = vol[vol.length - 1];                                  // la suite s'écrit encore : il l'attend tant que celui d'avant calcule
+    const pretDans = Number.isFinite(der.t0) ? (der.t0 + prevoir((der.texte || '').length) * 1000 - performance.now()) / 1000 : 0;
+    return pretDans <= DEMANDE_AVANT_S;
+  }
   const L = {
     surFin: null, surSegment: null, fluxFini: true, hesitation: null, peutHesiter: null, rythme: null,
     appliquerSon() { if (element) element.muted = !!etat.sonCoupe; },
@@ -795,10 +825,13 @@ function creerLecteurNeuronal() {
       unites.splice(0, 1, { langue, texte: reste });
       return { langue, texte: debut };
     }
-    const plafond = etat.conversation ? 160 : 400;
+    const plafond = plafondLot();
     const vitesse = vitesseVoix();
     // l'avance en secondes RÉELLES : ce qui est programmé (déjà à la vitesse) + ce qui est prêt (à diviser)
-    const enAvance = avance() + lots.reduce((t, x) => t + (x.pret && x.pret.duration ? x.pret.duration : 0), 0) / vitesse;
+    // (10/11) demandé d'avance : la voix des morceaux encore en route devant lui compte aussi (il se calcule pendant qu'ils se disent)
+    const dAvance = !premier && enAvanceActive() && enRoute().length > 0;
+    const enAvance = avance() + (lots.reduce((t, x) => t + (x.pret && x.pret.duration ? x.pret.duration : 0), 0)
+      + (dAvance ? enRoute().reduce((t, x) => t + String(x.texte || '').length / est.cps, 0) : 0)) / vitesse;
     const budget = premier ? 0 : Math.min(plafond, est.cps * Math.max(0, (enAvance - est.fixe - 0.3) / est.parSec));
     // (09/11, mesuré de 17:55 à 21:00 : sa voix de rap coûte ~3,5 s par appel QUELLE QUE SOIT sa longueur — 2,6 fois le temps de parole pour un
     // morceau de moins de 2 s, 0,6 fois de 4 à 8 s, 0,36 au-delà ; en retard, la page coupait de plus en plus court (40 caractères) : 10 à 17 s
@@ -871,7 +904,7 @@ function creerLecteurNeuronal() {
       .then(res => {
         if (g !== generation) return;
         x.pret = res;
-        if (res.duration) {                                        // apprendre la vitesse réelle de la machine
+        if (res.duration && x.seul !== false) {                    // apprendre la vitesse réelle de la machine (10/11 : une demande partie seule)
           const G = (performance.now() - x.t0) / 1000;
           est.cps = 0.7 * est.cps + 0.3 * Math.min(25, Math.max(8, x.texte.length / res.duration));
           est.parSec = 0.7 * est.parSec + 0.3 * Math.min(1.5, Math.max(0.25, (G - est.fixe) / res.duration));
@@ -977,10 +1010,12 @@ function creerLecteurNeuronal() {
     if (pause) { if (L.peutCouper && L.peutCouper() && fluide()) pomperNeuf(); else { clearInterval(veille); veille = null; } return; }
     // 1. le processus voix ne reste jamais inactif quand du texte attend (une demande à la fois : on
     //    taille le lot en connaissant l'avance exacte du moment)
-    if (unites.length && !lots.some(x => !x.pret && !x.erreur)) {
+    // (10/11, 09:50) et, sa voix demandée d'avance, jusqu'à EN_VOL_MAX en route (peutLancer)
+    for (let k = 0; k < EN_VOL_MAX && peutLancer(); k++) {
       const premier = !vraiesSources() && !lots.length;             // (03/11) le premier bout part sans attendre l'intonation préparée
+      const seul = !lots.some(x => !x.pret && !x.erreur && !x.attente);   // (10/11) rien d'autre en route : sa vitesse s'apprend
       const x = prochainLot();
-      x.premier = premier;
+      x.premier = premier; x.seul = seul;
       lots.push(x);
       if (!x.pret) { if (x.attente) attendreVoix(x); else lancer(x); }
     }

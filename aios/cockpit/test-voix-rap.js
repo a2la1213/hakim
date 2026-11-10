@@ -204,7 +204,7 @@ test('azure_rap : Azure refait à son timbre de rap, jamais Azure tel quel ; le 
   const srv = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
   assert.match(srv, /const voieVoix = \(req\) => \(req && \(req\.op === 'dire' \|\| req\.op === 'convertir'\) \? 'parole' : 'ecoute'\);/);
   assert.match(srv, /voix_hakim: r\.voix_hakim === 'rap' \? 'rap' : 'azure_rap',/);
-  assert.match(srv, /if \(corpsReglages\(\)\.voix_hakim === 'azure_rap'\) \{\n(?:\s+\/\/.*\n)?\s+const c = await azureAuTimbreRap\(a\.data, 30000, \{ prio: q && q\.fond === true \? 1 : 0, abandonne: \(\) => lachee \}\);/);
+  assert.match(srv, /if \(corpsReglages\(\)\.voix_hakim === 'azure_rap'\) \{\n(?:\s+\/\/.*\n)?\s+const c = await azureAuTimbreRap\(a\.data, 30000, \{ prio: q && q\.fond === true \? 1 : 0, abandonne: \(\) => lachee, place, car: texte\.length \}\);/);
   const f = srv.slice(srv.indexOf('async function convertirAuTimbreRap('), srv.indexOf('\n}\n', srv.indexOf('async function convertirAuTimbreRap(')));
   assert.match(srv, /jamais Azure tel quel : ce morceau ne se dit pas/, '(08/11, Ahmed) plus jamais sa voix standard d’Azure');
   assert.match(f, /voixDemander\(\{ op: 'convertir', source, fichier, voix: 'rap' \}/);

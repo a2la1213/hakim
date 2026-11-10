@@ -141,27 +141,76 @@ function dureeWav(buf) { const w = lireWav(buf); return w && w.bits === 16 && w.
    n'ont jamais sonné (112 s de calcul : ses pensées préparées d'avance, puis lâchées) et passaient devant sa vraie réponse, dans l'ordre
    d'arrivée (jusqu'à 14 s d'attente). Comme pour Chatterbox (03/11 : « sa réponse ne l'attend jamais »), ce qu'il dit vraiment passe d'abord
    (prio 0), puis ce qui est préparé d'avance (prio 1, « fond »), puis ses débuts et meubles fabriqués au calme (prio 2) ; à priorité égale,
-   l'ordre d'arrivée. Une demande que plus personne n'attend (la page a fermé la requête) n'est pas calculée. */
-function creerFilePrioritaire() {
+   l'ordre d'arrivée. Une demande que plus personne n'attend (la page a fermé la requête) n'est pas calculée.
+   (10/11, Ahmed, 09:50 : « pourquoi il y a toujours un délai entre chaque morceau ? ») la page demande maintenant plusieurs morceaux de sa réponse
+   d'avance : chacun passe d'abord par Azure (0,3 à 2,5 s, en parallèle), et le plus court arrivait le premier dans la file, devant celui qu'il
+   suit. Une demande RÉSERVE sa place dès son arrivée (reserver : l'ordre d'arrivée), et la remplit quand Azure a parlé (remplir) ; tant
+   qu'une place mieux placée attend sa voix d'Azure (attenteMaxMs au plus depuis sa réservation), rien d'autre ne part : sa conversion
+   ne se ferait pas passer devant par la suivante. Au-delà, ce qui est prêt part, et la place attend son tour. prioritaire() : sa vraie
+   réponse (prio 0) se convertit ou va se convertir ; quandLibre : appelé quand il n'en reste plus. */
+function creerFilePrioritaire({ attenteMaxMs = 5000, maintenant = () => Date.now(), minuterie = setTimeout, annuler = clearTimeout, quandLibre = null } = {}) {
   const attente = [];
-  let enCours = false, seq = 0;
-  const suivant = () => {
-    if (enCours) return;
-    for (;;) {
-      if (!attente.length) return;
-      attente.sort((x, y) => x.prio - y.prio || x.seq - y.seq);
-      const t = attente.shift();
-      if (t.abandonne && t.abandonne()) { t.resoudre(null); continue; }
-      enCours = true;
-      const fin = (v) => { enCours = false; t.resoudre(v); suivant(); };
-      Promise.resolve().then(t.travail).then(fin, () => fin(null));
-      return;
-    }
+  let enCours = null, seq = 0, reveil = null, etaitPrio = false;
+  const prioRestante = () => !!(enCours && enCours.prio <= 0) || attente.some(t => t.prio <= 0);
+  const libre = () => {
+    const p = prioRestante();
+    if (etaitPrio && !p && quandLibre) { try { quandLibre(); } catch (_) {} }
+    etaitPrio = p;
   };
+  const suivant = () => {
+    if (reveil) { annuler(reveil); reveil = null; }
+    if (enCours) return libre();
+    attente.sort((x, y) => x.prio - y.prio || x.seq - y.seq);
+    for (let i = attente.length - 1; i >= 0; i--) {             // ce que plus personne n'attend : ni calculé, ni attendu
+      const t = attente[i];
+      if (t.abandonne && t.abandonne()) { attente.splice(i, 1); t.resoudre(null); }
+    }
+    let k = -1, garde = null;
+    for (let i = 0; i < attente.length; i++) {
+      const t = attente[i];
+      if (t.travail) { k = i; break; }
+      const reste = t.depuis + attenteMaxMs - maintenant();     // une place réservée : sa voix d'Azure arrive, ce qui suit l'attend un peu
+      if (reste > 0) { garde = reste; break; }
+    }
+    if (k < 0) {
+      if (garde != null) reveil = minuterie(suivant, garde + 5);
+      return libre();
+    }
+    const t = attente.splice(k, 1)[0];
+    enCours = t;
+    const fin = (v) => { enCours = null; t.resoudre(v); suivant(); };
+    Promise.resolve().then(t.travail).then(fin, () => fin(null));
+    libre();
+  };
+  const entree = (o) => { const t = { seq: seq++, depuis: maintenant(), resoudre: null, ...o }; return t; };
   return {
     ajouter(travail, { prio = 0, abandonne = null } = {}) {
-      return new Promise((resoudre) => { attente.push({ travail, prio, abandonne, resoudre, seq: seq++ }); suivant(); });
+      return new Promise((resoudre) => { attente.push(entree({ travail, prio, abandonne, resoudre })); suivant(); });
     },
+    // sa place dans l'ordre d'arrivée, avant que sa voix d'Azure soit là ; remplir(travail) rend son résultat (null : lâchée, en panne)
+    reserver({ prio = 0, abandonne = null } = {}) {
+      let fait = false, resoudre = null;
+      const promesse = new Promise((r) => { resoudre = r; });
+      const t = entree({ travail: null, prio, abandonne, resoudre });
+      attente.push(t); suivant();
+      return {
+        remplir(travail) {
+          if (fait) return Promise.resolve(null);
+          fait = true;
+          if (!attente.includes(t)) return Promise.resolve(null);   // déjà lâchée (la page a fermé)
+          t.travail = travail; suivant();
+          return promesse;
+        },
+        lacher() {
+          if (fait) return;
+          fait = true;
+          const i = attente.indexOf(t);
+          if (i >= 0) { attente.splice(i, 1); t.resoudre(null); }
+          suivant();
+        },
+      };
+    },
+    prioritaire() { return prioRestante(); },
     get longueur() { return attente.length + (enCours ? 1 : 0); },
   };
 }

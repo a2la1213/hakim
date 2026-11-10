@@ -100,11 +100,11 @@ test('le cockpit : le silence d’Azure n’est pas converti, le rendu est rogn�
   assert.match(c, /data = VoixHakim\.rognerWav\(data, \{ tete: 0\.1, queue: 0\.25 \}\);/, 'avant la conversion : marges larges');
   assert.match(c, /VoixHakim\.rognerWav\(fs\.readFileSync\(fichier\), \{ tete: 0\.02, queue: 0\.08 \}\)/, 'après : le rendu sans son clic');
   assert.match(c, /azure_s: .*rendu_s: /, 'noté au journal : avant et après');
-  assert.match(SRV, /const fileAzureRap = VoixHakim\.creerFilePrioritaire\(\);/);
+  assert.match(SRV, /const fileAzureRap = VoixHakim\.creerFilePrioritaire\(\{ quandLibre: /);
   assert.doesNotMatch(SRV, /let fileAzureRap = Promise\.resolve\(\)/, 'plus de file dans l’ordre d’arrivée');
   const d = fonction(SRV, 'routeDire');
-  assert.match(d, /azureAuTimbreRap\(a\.data, 30000, \{ prio: q && q\.fond === true \? 1 : 0, abandonne: \(\) => lachee \}\)/);
-  assert.match(d, /res\.on\('close', \(\) => \{ if \(!res\.writableFinished\) lachee = true; \}\);/);
+  assert.match(d, /azureAuTimbreRap\(a\.data, 30000, \{ prio: q && q\.fond === true \? 1 : 0, abandonne: \(\) => lachee, place, car: texte\.length \}\)/);
+  assert.match(d, /res\.on\('close', \(\) => \{ if \(!res\.writableFinished\) lachee = true; if \(place\) place\.lacher\(\); \}\);/);
   assert.match(d, /const g = VoixHakim\.rognerWav\(garde\.data\);/, 'ses débuts gardés avant le 10/11 : rognés aussi');
   assert.match(d, /const dr = VoixHakim\.rognerWav\(data\);/, 'sa voix de Chatterbox');
   assert.match(d, /const vd = VoixHakim\.rognerWav\(v\.data\);/, 'la voix de sa pensée');
