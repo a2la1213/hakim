@@ -8350,7 +8350,7 @@ function corpsReglages() {
     un_par_un: r.un_par_un !== false, meubles_entre: r.meubles_entre !== false,   // (05/11, 21:20) ses morceaux un à un, et ses « euh » entre eux
     voix_azure: r.voix_azure === true,
     // (08/11, Ahmed : « on élimine totalement la voix standard d'Azure ») 'azure_rap' (Azure refait à son timbre de rap) ou 'rap' (Chatterbox) : rien d'autre
-    voix_hakim: r.voix_hakim === 'rap' ? 'rap' : 'azure_rap',   // (06/11, Ahmed : « sa voix de rap ») 'azure' (rapide, en ligne) ou 'rap' (ses chansons, Chatterbox au Mac)
+    voix_hakim: ['rap', 'azure'].includes(r.voix_hakim) ? r.voix_hakim : 'azure_rap',   // (10/11, Ahmed : « et si on met la voix azure normal ? » « ouiii ») 'azure' : Azure tel quel, sans conversion   // (06/11, Ahmed : « sa voix de rap ») 'azure' (rapide, en ligne) ou 'rap' (ses chansons, Chatterbox au Mac)
     stt_azure: r.stt_azure === true, reponse_directe: r.reponse_directe === true,
     tunnel: r.tunnel === true,
     parole_libre: r.parole_libre === true,   // (05/11, Ahmed : « on lève toutes tes contraintes de parole ») plus de plafond ; stop, parasites et sécurité restent
@@ -11541,7 +11541,7 @@ async function routeDire(req, res) {
     }
   }
   // (05/11, Ahmed : « ajoute Microsoft Azure à sa voix ») une seule voix multilingue, en ligne ; en panne : Chatterbox comme avant
-  if (!rap && (corpsReglages().voix_azure || corpsReglages().voix_hakim === 'azure_rap')) {   // (08/11) son timbre de rap sur Azure : Azure d'abord
+  if (!rap && (corpsReglages().voix_azure || corpsReglages().voix_hakim === 'azure_rap' || corpsReglages().voix_hakim === 'azure')) {   // (08/11) son timbre de rap sur Azure : Azure d'abord
     const a = await voixAzure(texte, tempo, emotion).catch(() => null);
     if (a) {
       try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'synthese_azure', ms: a.ms, caracteres: texte.length, recu_ms: Date.now() - recu - a.ms, ...(q && q.fond === true ? { fond: true } : {}) }) + '\n', { mode: 0o600 }); } catch (_) {}

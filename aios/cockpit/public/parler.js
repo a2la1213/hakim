@@ -2009,7 +2009,7 @@ async function lireReglagesCorps() {
   if (reglagesCorps.stt_azure && etat.reglages.reconnaissance === 'navigateur') etat.reglages.reconnaissance = 'locale';
   try { if (reglagesCorps.voix_azure) $('voix').value = 'azure'; if (reglagesCorps.stt_azure) $('reconnaissance').value = 'azure'; } catch (_) {}
   // (06/11, Ahmed : « sa voix de rap, sur le Mac, le téléphone et la montre ») en rap aussi, sa voix vient du Mac (jamais Supertonic)
-  if (reglagesCorps.voix_azure || reglagesCorps.voix_hakim === 'rap') etat.reglages.voix = 'neuronale';   // (05/11) Azure : par le Mac, sur les deux appareils
+  if (reglagesCorps.voix_azure || reglagesCorps.voix_hakim === 'rap' || reglagesCorps.voix_hakim === 'azure') etat.reglages.voix = 'neuronale';   // (05/11) Azure : par le Mac, sur les deux appareils
   else if (reglagesCorps.voix_par_appareil !== false) etat.reglages.voix = window.HakimApp && window.HakimApp.voixTelephone ? 'telephone' : 'neuronale';
   // (06/11) sa voix a changé : ses débuts et ses meubles déjà décodés étaient dans l'autre voix ; ils se rechargent dans la nouvelle
   if (lireReglagesCorps.voix !== undefined && lireReglagesCorps.voix !== reglagesCorps.voix_hakim) { debutsPrets = new Set(); meublesPrets.clear(); if (typeof chargerDebutsPrets === 'function') chargerDebutsPrets(); }
