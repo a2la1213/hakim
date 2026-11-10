@@ -142,7 +142,7 @@ test('ce qui est sauté devient « … » dans son pavé ; après une suite saut
   ctx.b([{ tour: 4, texte: 'deux' }, { tour: 4, texte: 'trois' }]);
   assert.strictEqual(ctx.etat.paves[4].episse, 'Oui papa. … le dernier', 'deux morceaux sautés : un seul « … »');
   ctx.b([{ tour: 9, texte: 'inconnu' }].filter(() => false));
-  assert.match(PAGE, /if \(typeof blancsPourSautes === 'function'\) blancsPourSautes\(f\.slice\(0, -1\)\);/);
+  assert.match(PAGE, /if \(typeof blancsPourSautes === 'function'\) blancsPourSautes\(sautes\);/);   // (10/11) la dernière pensée gardée entière
   assert.match(PAGE, /if \(cause === 'sautee' && typeof blancsPourSautes === 'function'\) blancsPourSautes\(/);
   assert.match(SRC, /const tour = dernierRibosome \? dernierRibosome\.tour : null;\n[^\n]*\n[^\n]*\n      if \(corpsReglages\(\)\.epissage !== false\) relayer\(\);/);
 });
@@ -265,7 +265,8 @@ test('sa voix du Mac : un morceau à la fois, ce qui attend vieillit et le derni
   vm.runInContext(prendre(PAGE, 'voixEnCalcul') + src.slice(0, src.indexOf('  const tour = f[0].tour, lot')) + '  this.lot = f.map(x => x.texte);\n}\nthis.f = direRibosome; this.v = voixEnCalcul;', ctx);
   ctx.f();
   assert.strictEqual(ctx.lot, undefined, 'sa voix se calcule encore : le suivant attend, rien ne part');
-  assert.strictEqual(ctx.etat.riboFile.length, 2);
+  // (10/11, Ahmed : « sans passer à la dernière quand il faut ») le passé est sauté pendant que sa voix calcule (avant : seulement sa voix libre)
+  assert.deepStrictEqual(ctx.etat.riboFile.map(x => x.texte), ['le dernier']);
   assert.strictEqual(ctx.v(t + 40000), false, 'bloqué depuis plus de 30 s : il ne retient plus');
   ctx.bouts.liste.clear();
   ctx.f();

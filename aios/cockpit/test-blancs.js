@@ -198,7 +198,7 @@ test('les morceaux d’un bout partent chacun dès que sa voix est prête, dans 
 test('l’épissure : son bout part au premier morceau prêt (plus de Promise.all), les autres suivent dans sa voix', () => {
   const r = fonction(PAGE, 'recevoirBout');
   assert.doesNotMatch(r, /Promise\.all\(textes\.map/);
-  assert.match(r, /b\.morceaux = textes\.map\(\(t, k\) => \(\{ texte: t, buf: k \? voix\[k\] : buf \}\)\);/);
+  assert.match(r, /b\.morceaux = textes\.map\(\(t, k\) => \(\{ texte: t, buf: k \? voix\[k\] : buf, marque: b\.marques \? b\.marques\[k\] \|\| null : null \}\)\);/);   // (10/11) et sa pensée
   assert.match(PAGE, /if \(buf && typeof buf\.then === 'function'\) \{/, 'direAudio accepte une voix en route');
   assert.match(fonction(PAGE, 'garderVoixPrete'), /b\.morceaux\.length > 1/, 'gardés chacun sous son texte');
 });

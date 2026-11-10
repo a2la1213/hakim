@@ -18,7 +18,7 @@
      ne ferment plus rien quand parole_libre est allumé (ribosomeAuPlafond).
    - stringence : la consigne de ses lecteurs ; sans lecture aboutie, sans effet.
    - lire_apres_silence_ms : sans effet quand te_couper est allumé (direRibosome) ; sauter_suite_ms : sans effet quand coupe_net est
-     allumé (surInterruption) ou sauter_suite éteint ; sauter_passe_s : sans effet quand parole_liee est allumé (direRibosome).
+     allumé (surInterruption) ou sauter_suite éteint ; sauter_passe_s : agit aussi en parole liée depuis le 10/11 (direRibosome, sauterAuDernier).
 
    Usage : node simulation-modes.js [--reps 12] [--json] */
 const fs = require('fs'), os = require('os'), path = require('path');

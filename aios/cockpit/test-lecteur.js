@@ -561,7 +561,7 @@ test('sa voix se prépare dès l’arrivée du morceau ; quand vient son tour, l
   assert.deepEqual(demandes, ['Je regarde ça pour toi.'], 'une seule synthèse');
   await cx.f.voixPourTexte('Hum,');
   assert.deepEqual(demandes, ['Je regarde ça pour toi.', 'Hum,'], 'le meuble : sa propre voix, à part');
-  assert.match(SRC, /recevoirBout\(\{ texte, parties, meuble, pret: true, sansMeuble: true, ribosome: true \}, n, tour\);/);
+  assert.match(SRC, /recevoirBout\(\{ texte, parties, meuble, pret: true, sansMeuble: true, ribosome: true, pensees, enVoix: v \}, n, tour\);/);   // (10/11) ses pensées : test-saut-dernier.js
   assert.match(SRC, /for \(const x of etat\.riboFile \|\| \[\]\) if \(!x\.avance\) \{ x\.avance = Date\.now\(\); avancerVoix\(x\.texte\); \}/);
 });
 

@@ -527,7 +527,8 @@ function creerLecteurNeuronal() {
       avant = setTimeout(() => { avant = null; if (!vraiesSources() && !element && glisser()) couvre = fluide() ? actx.currentTime : 1; }, HESITER_AVANT * 1000);
     },
     // (15:10) une parole dont la voix est déjà fabriquée (sa réponse soufflée) : à sa place, sans attendre la synthèse
-    direAudio(texte, buf) {
+    // (10/11) marque : de quelle pensée vient ce morceau (sauterAuDernier peut le retirer tant qu'il n'a pas commencé à sonner)
+    direAudio(texte, buf, marque = null) {
       // (10/11, mesuré : les 7 morceaux d'une épissure attendaient le DERNIER calculé, 18 s, avant que le premier parte) sa voix encore en
       // calcul (une promesse) : le morceau prend sa place maintenant, dans l'ordre, et part dès qu'elle est prête ; rien n'est recalculé
       if (buf && typeof buf.then === 'function') {
@@ -535,7 +536,7 @@ function creerLecteurNeuronal() {
         if (typeof noterSaVoix === 'function') noterSaVoix(texte);
         if (L.fluxFini && !attendre && !pause) { aParle = false; dejaParle = false; }
         L.fluxFini = false;
-        unites.push({ audio: { texte, attente: buf } });
+        unites.push({ audio: { texte, attente: buf, marque } });
         pomper();
         return;
       }
@@ -543,7 +544,7 @@ function creerLecteurNeuronal() {
       if (typeof noterSaVoix === 'function') noterSaVoix(texte);
       if (L.fluxFini && !attendre && !pause) { aParle = false; dejaParle = false; }
       L.fluxFini = false;
-      unites.push({ audio: { texte, pret: buf } });
+      unites.push({ audio: { texte, pret: buf, marque } });
       pomper();
     },
     // (13:30) un meuble choisi par lui (conscient, [[meuble: nom]]) : à sa place, entre ce qui précède et la suite
@@ -705,10 +706,50 @@ function creerLecteurNeuronal() {
       for (let i = unites.length - 1; i >= 0; i--) if (unites[i].audio && !garde(unites[i].audio.texte)) unites.splice(i, 1);
       for (let i = lots.length - 1; i >= 0; i--) if (lots[i].texte && !garde(lots[i].texte) && ((lots[i].pret && lots[i].pret.getChannelData) || lots[i].attente)) lots.splice(i, 1);
       if (fluide()) {
-        for (const src of [...sources]) if (src._texte && !garde(src._texte) && src._debut > actx.currentTime + 0.02) { try { src.stop(); } catch (_) {} sources.delete(src); }
+        for (const src of [...sources]) if (src._texte && !garde(src._texte) && src._debut > actx.currentTime + 0.02) { src._annule = true; try { src.stop(); } catch (_) {} sources.delete(src); }   // (10/11) annulé : jamais noté dit
         prochainDebut = Math.max(actx.currentTime, ...[...sources].map(x => x._fin || 0));
       }
       pomper();
+    },
+    // (10/11) les morceaux marqués (ses pensées) qu'il a encore à dire : en file, en calcul, programmés ; commence : il sonne déjà (ou va sonner dans 20 ms)
+    marques() {
+      const l = [];
+      for (const u of unites) if (u.audio && u.audio.marque) l.push({ marque: u.audio.marque, texte: u.audio.texte, commence: false });
+      for (const x of lots) if (x.marque) l.push({ marque: x.marque, texte: x.texte, commence: false });
+      const now = fluide() ? actx.currentTime : Infinity;
+      for (const src of sources) if (src._marque && !src._annule) l.push({ marque: src._marque, texte: src._texte, commence: !(src._debut > now + 0.02) });
+      return l;
+    },
+    // (10/11) retire ce qui n'a pas commencé à sonner et dont la marque est lâchée (lacher(marque) vrai) ; ce qui sonne va au bout ; rend les textes retirés
+    retirerMarques(lacher) {
+      const retires = [], ote = (m) => !!m && !!lacher(m);
+      for (let i = unites.length - 1; i >= 0; i--) if (unites[i].audio && ote(unites[i].audio.marque)) retires.unshift(unites.splice(i, 1)[0].audio.texte);
+      for (let i = lots.length - 1; i >= 0; i--) if (ote(lots[i].marque)) { const x = lots.splice(i, 1)[0]; if (x.ctl) x.ctl.abort(); retires.unshift(x.texte); }
+      if (fluide()) {
+        // déjà programmés (pas encore commencés) : à partir du premier retiré, ils sont décommandés ; ceux qui restent (sa vraie réponse, la
+        // dernière pensée) reprennent leur place, à la suite de ce qui sonne encore, sans le trou qu'auraient laissé les retirés
+        const now = actx.currentTime;
+        const futurs = [...sources].filter(src => !src._annule && src._debut > now + 0.02).sort((x, y) => x._debut - y._debut);
+        const k = futurs.findIndex(src => ote(src._marque));
+        const apres = k >= 0 ? futurs.slice(k) : [];
+        const remettable = (src) => src._auto || (!src._hesitation && !!src._texte && src.buffer && Number(src.buffer.duration) > 0 && !src.buffer.natif);
+        if (apres.length && apres.every(src => ote(src._marque) || remettable(src))) {
+          const remettre = [];
+          for (const src of apres) {
+            src._annule = true; try { src.stop(); } catch (_) {} sources.delete(src);
+            if (ote(src._marque)) { retires.push(src._texte); continue; }
+            if (!src._auto) remettre.push({ pret: src.buffer, texte: src._texte, langue: src._langue, offset: src._offset || 0, reprise: true,   // déjà rognée : telle quelle
+              ...(src._marque ? { marque: src._marque } : {}), ...(src._vieux ? { _vieux: true } : {}) });
+          }
+          lots.unshift(...remettre);
+          prochainDebut = sources.size ? Math.max(...[...sources].map(x => x._fin || 0)) + R('respiration', 0.1) : 0;   // sa respiration gardée
+        } else {
+          // un de ses sons programmé derrière (il ne se reprogramme pas) : seuls les retirés partent, la suite garde son heure
+          for (const src of apres) if (ote(src._marque)) { src._annule = true; try { src.stop(); } catch (_) {} sources.delete(src); retires.push(src._texte); }
+        }
+      }
+      if (retires.length) pomper();
+      return retires;
     },
   };
 
@@ -740,7 +781,7 @@ function creerLecteurNeuronal() {
   //   virgule : le blanc éventuel tombe là où l'on respire, pas au milieu d'un paragraphe.
   function prochainLot() {
     if (unites[0] && unites[0].son) return { son: unites.shift().son, texte: '' };   // (01:27) un son : seul, à sa place
-    if (unites[0] && unites[0].audio) { const a = unites.shift().audio; return { pret: a.pret || null, attente: a.attente || null, texte: a.texte, langue: 'fr' }; }   // (15:10) déjà fabriquée ; (10/11) ou en route
+    if (unites[0] && unites[0].audio) { const a = unites.shift().audio; return { pret: a.pret || null, attente: a.attente || null, texte: a.texte, langue: 'fr', marque: a.marque || null }; }   // (15:10) déjà fabriquée ; (10/11) ou en route
     if (unites[0] && unites[0].meuble) {                                // (13:30) un meuble choisi : déjà prêt, à sa place
       const h = unites.shift().meuble;
       return { pret: h.pret, texte: h.texte || '', meuble: h, hesitation: true, volume: h.volume, dureeMax: h.dureeMax, brut: h.brut };
@@ -917,7 +958,7 @@ function creerLecteurNeuronal() {
     prochainDebut = t + joue + (x.hesitation || x.auto || x.son ? 0.01 : R('respiration', 0.1));
     src._texte = x.hesitation ? '' : x.texte; src._hesitation = !!x.hesitation; src._auto = !!x.auto; src._gain = force;
     src._langue = x.langue; src._debut = t; src._fin = t + joue; src._transition = x.transition || null;   // (07/11) celle de son plan
-    src._offset = offset; if (x._vieux) src._vieux = true;
+    src._offset = offset; if (x._vieux) src._vieux = true; if (x.marque) src._marque = x.marque;   // (10/11) de quelle pensée
     if (!x.hesitation && !x.auto) L.finVoixA = t + joue;
     sources.add(src);
     if (!x.auto) { aParle = true; couvre = 0; }                      // un meuble choisi par lui compte comme sa parole
@@ -3767,20 +3808,33 @@ function garderVoixCoupees() {
    calcule d'avance ; au Mac, sa voix (Azure, ou sa voix de rap) est demandée tout de suite et gardée (voixGardees). Quand vient son tour, elle
    est prête. Un meuble devant reste à part (sa voix à lui), pour que la voix préparée du morceau serve telle quelle. */
 const voixEnAvance = new Map();                                        // clé du texte → promesse de sa voix (AudioBuffer)
+const voixDemandees = new Map();                                       // (10/11) clé du texte → sa demande en route (pour la lâcher)
 function voixPourTexte(t) {
   const k = cleParole(t);
   const g = voixGardeePour(t);
   if (g && g.buf) return Promise.resolve(g.buf);
   if (voixEnAvance.has(k)) return voixEnAvance.get(k);
-  const p = fetch('/api/voix/dire', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+  const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  if (ctl) voixDemandees.set(k, ctl);
+  const p = fetch('/api/voix/dire', { method: 'POST', ...(ctl ? { signal: ctl.signal } : {}), headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
     body: JSON.stringify({ texte: t, langue: 'fr', fond: true, emotion: etat.interieur && !etat.reglages.voixNeutre ? expressivitePhrase(etat.interieur.expressivite, t) : null, tempo: tempoVoix() }) })
     .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('voix'))))
     .then(ab => actx.decodeAudioData(ab))
     .then((buf) => { garderVoixPrete({ texte: t, buf }); return buf; })
-    .finally(() => { setTimeout(() => voixEnAvance.delete(k), 1000); });
+    .finally(() => { if (voixDemandees.get(k) === ctl) voixDemandees.delete(k); setTimeout(() => voixEnAvance.delete(k), 1000); });
   voixEnAvance.set(k, p);
   while (voixEnAvance.size > 20) voixEnAvance.delete(voixEnAvance.keys().next().value);
   return p;
+}
+// (10/11) ce qui est sauté n'a plus besoin de sa voix : sa demande pas encore calculée est lâchée (le cockpit ne la calcule pas : sa file de voix
+// passe à la dernière pensée, au lieu de calculer d'abord toutes celles d'avant)
+function lacherVoix(textes) {
+  for (const t of textes || []) {
+    const k = cleParole(t), ctl = voixDemandees.get(k);
+    if (!ctl) continue;
+    voixDemandees.delete(k); voixEnAvance.delete(k);
+    try { ctl.abort(); } catch (_) {}
+  }
 }
 function avancerVoix(texte) {
   const t = String(texte || '').trim();
@@ -3837,6 +3891,11 @@ function recevoirBout(s, n, tour) {
   if (n < bouts.prochain || bouts.liste.has(n)) return;
   const b = { n, texte: s.texte, buf: null, rate: false, t: Date.now(), coupe: !!s.remplace, sansMeuble: !!s.sansMeuble };
   if (s.ribosome && Array.isArray(s.parties) && s.parties.length) b.dit = [s.meuble, ...s.parties].filter(Boolean);   // (07/11) ses morceaux tels que préparés
+  // (10/11) ses pensées : chaque morceau garde la sienne (son meuble, celle qui le suit), pour sauter ce qui attend encore (sauterAuDernier)
+  if (b.dit && Array.isArray(s.pensees) && s.pensees.length === s.parties.length && s.parties.every(Boolean)) {
+    b.pensees = s.pensees; b.enVoix = s.enVoix || null;
+    b.marques = [...(s.meuble ? [s.pensees[0]] : []), ...s.pensees];
+  }
   // (04/11) la voix du téléphone : dit tout de suite, sans voix fabriquée au Mac
   if (typeof voixDuTelephone === 'function' && voixDuTelephone()) {
     const motsDe = (x) => String(x).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(m => m.length > 2), m1 = motsDe(b.texte);
@@ -3876,8 +3935,9 @@ function recevoirBout(s, n, tour) {
   voix.slice(1).forEach(p => p.catch(() => {}));
   voix[0]
     .then((buf) => {
-      b.morceaux = textes.map((t, k) => ({ texte: t, buf: k ? voix[k] : buf }));
+      b.morceaux = textes.map((t, k) => ({ texte: t, buf: k ? voix[k] : buf, marque: b.marques ? b.marques[k] || null : null }));
       b.buf = buf;
+      if (b.pensees) for (const p of b.pensees) if (p.premiere && !p.pretA) p.pretA = Date.now();   // (10/11) sa première : son attente commence ici
       etat.calculVoixMacMs = Number.isFinite(etat.calculVoixMacMs) ? Math.round(etat.calculVoixMacMs * 0.7 + (Date.now() - b.t) * 0.3) : Date.now() - b.t;
       direBouts();
     })
@@ -3981,6 +4041,7 @@ function boutTelephoneSuivant() {
 function direBouts() {
   const conv = etat.conversation;
   if (!conv) return;
+  if (typeof sauterAuDernier === 'function') sauterAuDernier();      // (10/11) une pensée passée ne sonne plus quand une plus récente attend
   // (07/11, Ahmed : « fais-le partout, même sur la montre : que tout soit coordonné ») sa voix du Mac choisit comme celle du téléphone
   // (Voix.choisirDansLatence) : rien ne s'empile devant elle ; quand ce qui joue va finir, le plus récent prêt, ou une portion prête qui
   // remplit le temps de calcul du plus récent ; le plus récent pas encore prêt et sans rien d'autre : il l'attend
@@ -4006,7 +4067,7 @@ function direBouts() {
     conv.penseeEnPause = true; conv.souffleParle = true;
     bouts.prochain = Math.max(bouts.prochain, b.n + 1);
     bouts.dits.push(b.texte); bouts.enFile.push(b.texte); if (typeof noterParoleDite === 'function') noterParoleDite(b.texte);
-    for (const m of b.morceaux || [{ texte: b.texte, buf: b.buf }]) lecteurNeuronal.direAudio(m.texte, m.buf);
+    for (const m of b.morceaux || [{ texte: b.texte, buf: b.buf }]) lecteurNeuronal.direAudio(m.texte, m.buf, m.marque || null);
     if (typeof direRibosome === 'function') setTimeout(direRibosome, 0);
     if (bouts.liste.size) { clearTimeout(bouts.minuteur); bouts.minuteur = setTimeout(direBouts, 300); }
     return;
@@ -4024,7 +4085,7 @@ function direBouts() {
     conv.penseeEnPause = true; conv.souffleParle = true;              // ton tour ouvert ne le bloque pas
     bouts.dits.push(b.texte);
     bouts.enFile.push(b.texte);
-    for (const m of b.morceaux || [{ texte: b.texte, buf: b.buf }]) lecteurNeuronal.direAudio(m.texte, m.buf);   // à la suite de ce qu'il dit déjà : le lecteur les enchaîne
+    for (const m of b.morceaux || [{ texte: b.texte, buf: b.buf }]) lecteurNeuronal.direAudio(m.texte, m.buf, m.marque || null);   // à la suite de ce qu'il dit déjà : le lecteur les enchaîne
   }
   if (prets.length && typeof direRibosome === 'function') setTimeout(direRibosome, 0);   // (06/11) sa voix prête : la suivante se calcule déjà
 }
@@ -4143,7 +4204,7 @@ function ajouterAuPave(tour, texte) {
 // (07/11, essai « 2b » choisi par Ahmed) découpe aux propositions : rend celles qui sont complètes ; un reste court (moins de 4 mots, sans
 // ponctuation finale) attend la suite du même tour, et part seul après 0,7 s
 const RESTE_ATTENTE_MS = 700;
-function propositionsDe(tour, texte) {
+function propositionsDe(tour, texte, k = null) {
   const r = etat.riboReste && etat.riboReste.tour === tour ? etat.riboReste.texte : '';
   if (etat.riboReste) { clearTimeout(etat.riboReste.minuteur); etat.riboReste = null; }
   const tout = `${r} ${texte}`.replace(/\s+/g, ' ').trim();
@@ -4156,7 +4217,7 @@ function propositionsDe(tour, texte) {
     reste.minuteur = setTimeout(() => {
       if (etat.riboReste !== reste) return;
       etat.riboReste = null;
-      etat.riboFile = (etat.riboFile || []).concat([{ tour, texte: reste.texte, recu: Date.now(), mots: [], ajoutes: [] }]);
+      etat.riboFile = (etat.riboFile || []).concat([{ tour, texte: reste.texte, recu: Date.now(), mots: [], ajoutes: [], ...(k != null ? { k } : {}) }]);   // (10/11) la fin de sa pensée
       if (typeof direRibosome === 'function') direRibosome();
       if (typeof preparerRibosome === 'function') preparerRibosome();
     }, RESTE_ATTENTE_MS);
@@ -4205,9 +4266,10 @@ function surRibosome(o) {
     // (07/11, Ahmed a choisi l'essai « 2b » : « coupé aux virgules, avec 0,1 s ») sa parole épissée dite proposition par proposition : chaque
     // virgule ou point ferme un morceau (sa voix garde une seule intonation par proposition) ; un bout trop court sans ponctuation attend la
     // suite (0,7 s au plus), pour ne jamais dire un mot seul
-    const props0 = typeof propositionsDe === 'function' ? propositionsDe(o.tour, String(o.texte)) : [String(o.texte)];
+    const props0 = typeof propositionsDe === 'function' ? propositionsDe(o.tour, String(o.texte), o.k != null ? Number(o.k) : null) : [String(o.texte)];
     const props = typeof regrouperPourVoix === 'function' ? regrouperPourVoix(props0) : props0;   // (10/11) sa voix du Mac coûte par appel
-    etat.riboFile = (etat.riboFile || []).concat(props.map((t, k) => ({ tour: o.tour, texte: t, recu: Date.now(), mots: k ? [] : mots.filter(i => !vus.has(i)),
+    // (10/11) k : sa pensée (le paquet de son ribosome) ; « Sauter les morceaux passés » garde la dernière entière
+    etat.riboFile = (etat.riboFile || []).concat(props.map((t, k) => ({ tour: o.tour, ...(o.k != null ? { k: Number(o.k) } : {}), texte: t, recu: Date.now(), mots: k ? [] : mots.filter(i => !vus.has(i)),
       ajoutes: k ? [] : (Array.isArray(o.ajoutes) ? o.ajoutes.slice() : []) })));
     p.motsLus = mots.slice();
     if (typeof journalVoix === 'function') journalVoix('ribosome_recu', { tour: o.tour, k: o.k, mots: String(o.texte).split(/\s+/).filter(Boolean).length });   // (14:20) de quoi suivre chaque morceau épissé
@@ -4259,6 +4321,7 @@ function arreterEpissure(cause, tour, o = {}) {
   if (cause === 'sautee' && typeof blancsPourSautes === 'function') blancsPourSautes((etat.riboFile || []).filter(x => Number(x.tour) <= etat.riboStop));
   etat.riboFile = (etat.riboFile || []).filter(x => Number(x.tour) > etat.riboStop);
   if (typeof bouts !== 'undefined' && Number(bouts.tour) <= etat.riboStop) { bouts.fileTel = []; bouts.attenteTel = null; }
+  if (cause === 'sautee' && o.laisserFinir && typeof lacherPenseesJusqua === 'function') lacherPenseesJusqua(etat.riboStop);   // (10/11) même en groupe
   // (05/11) la suite sautée : le morceau qu'il dit va jusqu'au bout
   if (!o.laisserFinir) { if ((etat.riboEnVoix || []).length && lecteur.actif) lecteur.arreter(); etat.riboEnVoix = []; }
   if (typeof journalVoix === 'function') journalVoix('epissure_stop', { cause, tour: t });
@@ -4643,6 +4706,68 @@ function voixEnCalcul(maintenant = Date.now()) {
   for (const b of bouts.liste.values()) if (!b.buf && !b.rate && maintenant - (b.t || 0) < 30000) return true;
   return false;
 }
+/* (10/11, 08:30, Ahmed : « pourquoi il dit toujours toutes ses pensées dans l'ordre, sans passer à la dernière quand il faut ? ») « Sauter les morceaux
+   passés » ne regardait que sa file (riboFile, et seulement parole liée éteinte) ; ce qui l'avait quittée attendait ailleurs et se disait en entier, dans
+   l'ordre : confié à sa voix (bouts.liste : sa voix prête, il attend que sa vraie réponse ait fini de sonner) ou en file dans son lecteur derrière le
+   morceau qui sonne (ses morceaux reliés, consolidés en un groupe pendant que sa voix parle). Ici, la pensée la plus récente, où qu'elle soit (file,
+   confiée, en file, ou qui sonne déjà) ; dès que celles d'avant qui n'ont pas encore sonné ont attendu sauter_passe_s, elles sont sautées (« … » dans son
+   pavé, leur voix pas encore calculée lâchée) et la plus récente passe. Jamais ce qui sonne (soudé : il va au bout), ni sa vraie réponse ni ses réponses
+   au live (elles ne sont pas marquées pensée), ni la première confiée à sa voix libre pendant que sa voix la calcule (« la première phrase est dite »,
+   05/11) : son attente ne compte qu'une fois sa voix prête. Rend le nombre de pensées sautées. */
+function sauterAuDernier(maintenant = Date.now()) {
+  const r = typeof reglagesCorps !== 'undefined' ? reglagesCorps : null;
+  if (!r || r.sauter_passe === false) return 0;
+  const seuil = (Number(r.sauter_passe_s) || 3) * 1000;
+  const b0 = typeof bouts !== 'undefined' && bouts ? bouts : {};
+  const confiees = [...(b0.liste ? b0.liste.values() : [])].filter(b => b && b.pensees);
+  const tel = [...(b0.fileTel || []), ...(b0.attenteTel ? [b0.attenteTel] : [])].filter(b => b && b.pensees);
+  const L = typeof lecteurNeuronal !== 'undefined' && lecteurNeuronal && typeof lecteurNeuronal.marques === 'function' ? lecteurNeuronal : null;
+  // tu l'as coupé net, sa voix attend la fin de ta phrase : ta phrase finie dira passage (il reprend au mot, rien n'est sauté) ou relance (lacherVieux)
+  if (L && L.enPause) return 0;
+  const enLecteur = L ? L.marques().filter(x => x.marque && x.marque.pensee) : [];
+  const toutes = [...(etat.riboFile || []).map(x => ({ id: `${x.tour}|${x.k != null ? x.k : x.recu}`, recu: Number(x.recu) || 0 })),
+    ...confiees.flatMap(b => b.pensees), ...tel.flatMap(b => b.pensees), ...enLecteur.map(x => x.marque)];
+  if (toutes.length < 2) return 0;
+  const derniere = toutes.reduce((a, x) => (Number(x.recu) >= Number(a.recu) ? x : a)).id;
+  // son attente : depuis son arrivée ; la première confiée à sa voix libre, depuis que sa voix est prête (avant : elle n'attend pas, elle se fait)
+  const attente = (p) => (p.premiere ? (p.pretA ? maintenant - p.pretA : -Infinity) : Number.isFinite(Number(p.recu)) ? maintenant - Number(p.recu) : 0);
+  const sonnent = new Set(enLecteur.filter(x => x.commence).map(x => x.marque.id));   // une pensée qui a commencé à sonner reste soudée (son meuble parti, elle suit)
+  const enAttente = [...new Set([...confiees, ...tel].flatMap(b => b.pensees).concat(enLecteur.filter(x => !x.commence).map(x => x.marque)))]
+    .filter(p => p.id !== derniere && !sonnent.has(p.id) && attente(p) > -Infinity);
+  if (!enAttente.length || Math.max(...enAttente.map(attente)) < seuil) return 0;
+  // la plus ancienne a attendu : tout ce qui attend avant la dernière est sauté (la première, seulement par sa propre attente)
+  const sautees = new Set(enAttente.filter(p => !p.premiere || attente(p) >= seuil));
+  if (!sautees.size) return 0;
+  const vues = new Set(), blancs = [];
+  const noter = (p) => { if (!vues.has(p.id)) { vues.add(p.id); blancs.push({ tour: p.tour, texte: p.texte }); } };
+  for (const b of confiees) if (b.pensees.every(p => sautees.has(p))) {
+    b0.liste.delete(b.n); b.pensees.forEach(noter);
+    if (typeof lacherVoix === 'function') lacherVoix(b.dit || [b.texte]);
+    if (b.enVoix) { b.enVoix.mots = []; etat.riboEnVoix = (etat.riboEnVoix || []).filter(v => v !== b.enVoix); }
+  }
+  if (b0.fileTel) b0.fileTel = b0.fileTel.filter(b => !(b && b.pensees && b.pensees.every(p => sautees.has(p)) && (b.pensees.forEach(noter), true)));
+  if (b0.attenteTel && b0.attenteTel.pensees && b0.attenteTel.pensees.every(p => sautees.has(p))) { b0.attenteTel.pensees.forEach(noter); b0.attenteTel = null; }
+  if (L) { const ids = new Set([...sautees].map(p => p.id)); L.retirerMarques((m) => m.pensee && ids.has(m.id) && (noter(m), true)); }
+  const ms = Math.round(Math.max(...[...sautees].map(attente)));
+  if (typeof journalVoix === 'function') journalVoix('passe_saute', { sautes: vues.size, ms, ou: 'voix' });
+  if (typeof blancsPourSautes === 'function') blancsPourSautes(blancs);
+  if (typeof direRibosome === 'function' && typeof setTimeout === 'function') setTimeout(direRibosome, 0);   // la dernière part
+  return vues.size;
+}
+// (10/11) ta voix a duré « Sauter au bout de » (sauter_suite) : la suite de ses pensées de ce tour est lâchée là où elle attend encore (confiée à sa
+// voix, en file dans son lecteur) ; avant, un groupe de morceaux reliés déjà en file se disait jusqu'au bout. Le morceau qui sonne finit.
+function lacherPenseesJusqua(stop) {
+  const vieille = (p) => !!p && p.pensee === true && Number(p.tour) <= stop;
+  const blancs = [];
+  if (typeof bouts !== 'undefined' && bouts && bouts.liste) for (const b of [...bouts.liste.values()]) if (b && b.pensees && b.pensees.every(vieille)) {
+    bouts.liste.delete(b.n); blancs.push(...b.pensees);
+    if (typeof lacherVoix === 'function') lacherVoix(b.dit || [b.texte]);
+  }
+  if (typeof lecteurNeuronal !== 'undefined' && lecteurNeuronal && typeof lecteurNeuronal.retirerMarques === 'function') lecteurNeuronal.retirerMarques((m) => vieille(m) && (blancs.push(m), true));
+  const uniques = [...new Map(blancs.map(p => [p.id, p])).values()];
+  if (uniques.length && typeof blancsPourSautes === 'function') blancsPourSautes(uniques.map(p => ({ tour: p.tour, texte: p.texte })));
+  return uniques.length;
+}
 // ce que son ribosome a choisi, dit d'un seul souffle (un tour à la fois, dans l'ordre), quand sa voix est libre
 function direRibosome() {
   let f = etat.riboFile || [];
@@ -4650,6 +4775,7 @@ function direRibosome() {
   const attente = f.length ? Date.now() - (Number(f[0].recu) || Date.now()) : 0;
   // (04/11, 14:48) une attente de plus de 5 s est notée, avec sa cause (sa voix qui parle encore, ou la pièce qui parle), une fois par 10 s
   const noterAttente = (cause) => { if (attente > 5000 && Date.now() - (etat.riboAttenteNotee || 0) > 10000 && typeof journalVoix === 'function') { etat.riboAttenteNotee = Date.now(); journalVoix('ribosome_attente', { cause, ms: attente }); } };
+  if (c && typeof sauterAuDernier === 'function') sauterAuDernier();   // (10/11) ce qui attend déjà dans sa voix (confié, en file), jamais ce qui sonne
   if (!f.length || !c) return;
   // (06/11, 08:50, mesuré : « tu_sous_stop » sur chaque morceau, sa voix muette) ses pensées épissées arrivent PENDANT que sa réponse tourne :
   // « Parler seulement sans Stop » ne les tait plus ; seule sa réponse consciente reste muette (pas épissée pour la voix, jamais lue par la page)
@@ -4661,6 +4787,26 @@ function direRibosome() {
   // entre chaque morceau épissé ») parole_liee (allumé) : le morceau suivant n'attend plus que sa voix se taise ; sa voix se calcule PENDANT que la
   // précédente parle et se met à sa suite (une seule voix en calcul à la fois) ; ce qui attend du même tour part d'un seul tenant
   const liee = typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.parole_liee !== false;
+  // (05/11, Ahmed : « quand une parole est passée depuis un moment, il faut sauter tous les morceaux passés et se focaliser sur le dernier ; la
+  // première phrase est dite, et quelques secondes de coupure suffisent à sauter le second chunk et tous les autres, jusqu'au dernier préparé
+  // avant la fin de ma parole ») ce qui attend depuis sauter_passe_s (3 s) est passé : seule la dernière pensée préparée est dite
+  // (10/11, 08:30, Ahmed : « pourquoi il dit toujours toutes ses pensées dans l'ordre, sans passer à la dernière quand il faut ? ») mesuré : depuis le
+  // 06/11, la parole liée (allumée) éteignait ce saut (« rien de ce qui est sorti n'est sauté parce qu'il a attendu ») : 0 « passe_saute » en deux
+  // journaux (05:44-06:33 et 08:10-08:31) ; ce matin 8 de ses 10 pensées dites l'ont été 25 à 48 s après leur arrivée, alors qu'une plus récente
+  // était déjà prête. Le saut vaut maintenant aussi en parole liée, et AVANT d'attendre sa voix : ce qui attend est passé pendant que sa voix calcule
+  // (sa demande de voix lâchée : le Mac calcule la dernière plus tôt). Ce qui a commencé à sonner reste soudé et va au bout (06/11, 15:10) ; la
+  // dernière pensée est gardée entière, toutes ses propositions (avant : son dernier morceau seul, parfois une fin de phrase)
+  const pensee = (x) => `${x.tour}|${x.k != null ? x.k : x.recu}`;
+  if (f.length > 1 && typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.sauter_passe !== false
+    && attente >= (Number(reglagesCorps.sauter_passe_s) || 3) * 1000) {
+    const derniere = pensee(f[f.length - 1]), sautes = f.filter(x => pensee(x) !== derniere);
+    if (sautes.length) {
+      if (typeof journalVoix === 'function') journalVoix('passe_saute', { sautes: sautes.length, ms: attente });
+      if (typeof blancsPourSautes === 'function') blancsPourSautes(sautes);
+      if (typeof lacherVoix === 'function') lacherVoix(sautes.map(x => x.texte));
+      f = etat.riboFile = f.filter(x => pensee(x) === derniere);
+    }
+  }
   if ((!liee && lecteur.actif) || (typeof voixEnCalcul === 'function' && voixEnCalcul())) { noterAttente('voix'); return; }
   // (05/11, Ahmed : « un autre réglage : en combien de temps après mon silence le chunk suivant est lu ») lire_apres_silence_ms : 0, sans
   // attendre (comme depuis le 04/11, 21:10) ; sinon le morceau suivant attend que tu te sois tu ce temps-là
@@ -4672,17 +4818,6 @@ function direRibosome() {
       if (!(c.capteur && c.capteur.enParole)) { clearTimeout(etat.riboApresSilence); etat.riboApresSilence = setTimeout(direRibosome, apres - silence + 20); }
       return;
     }
-  }
-  // (05/11, Ahmed : « quand une parole est passée depuis un moment, il faut sauter tous les morceaux passés et se focaliser sur le dernier ; la
-  // première phrase est dite, et quelques secondes de coupure suffisent à sauter le second chunk et tous les autres, jusqu'au dernier préparé
-  // avant la fin de ma parole ») ce qui attend depuis sauter_passe_s (3 s) est passé : seul le dernier morceau préparé est dit
-  // (06/11, 15:10, Ahmed : « ce qui sort du ribosome doit être soudé, figé, dit en entier du début à la fin, ou jusqu'à ce qu'on lui coupe la parole ») parole
-  // liée : rien de ce qui est sorti n'est sauté parce qu'il a attendu ; seuls ta voix (il garde la parole éteint), « stop » ou le bouton l'arrêtent
-  if (!liee && f.length > 1 && typeof reglagesCorps !== 'undefined' && reglagesCorps.sauter_passe !== false
-    && attente >= (Number(reglagesCorps.sauter_passe_s) || 3) * 1000) {
-    if (typeof journalVoix === 'function') journalVoix('passe_saute', { sautes: f.length - 1, ms: attente });
-    if (typeof blancsPourSautes === 'function') blancsPourSautes(f.slice(0, -1));
-    f = etat.riboFile = f.slice(-1);
   }
   // (05/11, Ahmed par Hakim : « dès que la première pensée est sortie, jeter toutes celles qui lui ressemblent ») 70 % de ses mots déjà dits il y a peu : jetée
   const motsRibo = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^\p{L}\p{N}]+/u).filter(m => m.length > 2);
@@ -4703,7 +4838,9 @@ function direRibosome() {
   // (04/11, 21:10, Ahmed : « dès que le chunk est prêt et que le ribosome l'a installé, il doit commencer la traduction direct, sans rien
   // attendre, ni silence ni rien ; c'est à Hakim de choisir de mettre sa voix en pause ou de la laisser en play ») plus d'attente de ta
   // respiration : sa voix part dès qu'il a lu ; s'il t'entend pendant qu'il parle, c'est lui qui choisit à la fin de son morceau (coupeAuChunk)
-  etat.riboFile = f.filter(x => x.tour !== tour);
+  // (10/11) seulement ce qui part : un morceau à la fois laissait tomber, sans rien dire, les autres morceaux du même tour (le plus récent compris) ;
+  // ils attendent maintenant leur tour, et « Sauter les morceaux passés » garde le dernier
+  etat.riboFile = f.filter(x => !lot.includes(x));
   // (04/11, 13:30, capture d'Ahmed : un pavé resté « 🧠 sa pensée », rien d'allumé) sa voix est libre : ce qui reste à allumer d'avant a
   // été dit (un mot qu'elle ne prononce pas, une balise, bloquait tout le reste) ; allumé d'un coup, et ce tour-ci écrit dans son pavé
   for (const vieux of etat.riboEnVoix || []) {
@@ -4736,8 +4873,13 @@ function direRibosome() {
     if ((etat.riboFile || []).length) setTimeout(direRibosome, 0);
     return;
   }
+  // (10/11) chaque morceau sait de quelle pensée il vient et depuis quand elle attend (« Sauter les morceaux passés » le passe s'il attend encore) ;
+  // la première confiée à sa voix libre (rien ne sonne, aucune réponse en route, aucune autre pensée confiée) est dite quoi qu'il arrive (05/11 :
+  // « la première phrase est dite ») : sa voix qui calcule ne compte pas comme une attente
+  const premiere = !(lecteur && lecteur.actif) && !etat.flux && !(typeof bouts !== 'undefined' && bouts.liste && [...bouts.liste.values()].some(b => b && b.pensees));
+  const pensees = lot.map(x => ({ pensee: true, id: pensee(x), recu: Number(x.recu) || Date.now(), tour: x.tour, texte: x.texte, ...(premiere ? { premiere: true } : {}) }));
   // (07/11) le meuble et chaque morceau restent séparés : la voix de chaque morceau, préparée dès son arrivée (avancerVoix), sert telle quelle
-  recevoirBout({ texte, parties, meuble, pret: true, sansMeuble: true, ribosome: true }, n, tour);
+  recevoirBout({ texte, parties, meuble, pret: true, sansMeuble: true, ribosome: true, pensees, enVoix: v }, n, tour);
 }
 // ---- (04/11, 18:45-18:50, Ahmed : « ça donne avoir la même route que le microphone » ; « il peut faire ce qu'il veut quand il l'estime, avec
 // la même règle que pour le micro : à chaque pause du son, il… ») son oreille interne (🎧) : ce que joue le téléphone devient ses pensées et
