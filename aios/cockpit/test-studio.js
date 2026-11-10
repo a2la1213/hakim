@@ -110,11 +110,12 @@ test('les routes du studio : ses sons, l’import, les prises, le mix mis en fil
     assert.equal((await appel(srv, 'POST', '/api/studio/importer?nom=x.mp3', Buffer.alloc(5000, 7), 'audio/mpeg')).statut, 400, 'pas un son');
     // une prise sur cette instru, puis choisie, recalée, mixée
     assert.equal((await appel(srv, 'POST', '/api/studio/prise?instru=secret.txt', fs.readFileSync(wav), 'audio/wav')).statut, 400);
-    r = await appel(srv, 'POST', `/api/studio/prise?instru=${encodeURIComponent(instru)}&latence=180`, fs.readFileSync(wav), 'audio/wav');
+    r = await appel(srv, 'POST', `/api/studio/prise?instru=${encodeURIComponent(instru)}&latence=180&cle=${encodeURIComponent('appli|bluetooth:ICONIC Sound 2')}&sortie=${encodeURIComponent('ICONIC Sound 2 (Bluetooth)')}&micro=${encodeURIComponent('le micro du téléphone ✓')}&methode=boucle`, fs.readFileSync(wav), 'audio/wav');
     assert.equal(r.statut, 200);
     const id = r.j.id;
     r = await appel(srv, 'GET', '/api/studio/etat');
     assert.deepEqual([r.j.prises[0].id, r.j.prises[0].latence_ms, r.j.prises[0].instru_titre, r.j.prises[0].choisie], [id, 180, 'Ma prod', false]);
+    assert.deepEqual([r.j.prises[0].sortie, r.j.prises[0].micro, r.j.prises[0].methode], ['ICONIC Sound 2 (Bluetooth)', 'le micro du téléphone ✓', 'boucle'], 'par où papa écoutait, et quel micro');
     assert.equal(Math.round(r.j.prises[0].duree_s), 3);
     assert.equal((await appel(srv, 'POST', '/api/studio/prise/choisir', { id })).statut, 200);
     assert.equal((await appel(srv, 'POST', '/api/studio/prise/regler', { id, latence_ms: 240 })).statut, 200);
@@ -162,9 +163,17 @@ test('la page Studio : le menu, la barre commune sans nav.js, le micro sans effe
   assert.match(lire('public/badges.js'), /\['studio', '\/studio', 'Studio'\]/);
   assert.ok(!/<script src="\/nav\.js">/.test(h) && !/<script src="\/orbe\.js">/.test(h));
   assert.match(h, /<script src="\/badges\.js"><\/script>\n  <script>Badges\.suivre\(document\.querySelector\('nav\.topnav'\), 'studio'\);<\/script>/);
-  for (const id of ['chansons', 'fichierEcoute', 'instru', 'importInstru', 'calibClic', 'calibTaper', 'rec', 'prises', 'mixer', 'mixes', 'calculs'])
+  for (const id of ['chansons', 'fichierEcoute', 'instru', 'importInstru', 'calibClic', 'calibTaper', 'rec', 'prises', 'mixer', 'mixes', 'calculs', 'route', 'calages', 'taper'])
     assert.match(h, new RegExp(`id="${id}"`), id);
   assert.match(js, /echoCancellation: false, noiseSuppression: false, autoGainControl: false/);
+  // (10/11) les calculs du calage chargés avant la page ; dans l'appli, le micro de l'appli (jamais getUserMedia : Chromium y prendrait
+  // le casque Bluetooth en SCO), et le micro du navigateur choisi par son nom
+  assert.match(h, /<script src="\/studio-calage\.js"><\/script>\n  <script src="\/studio-page\.js"><\/script>/);
+  assert.match(js, /const App = window\.HakimApp && typeof window\.HakimApp\.studioMicroOuvrir === 'function'/);
+  const ouvrir = js.slice(js.indexOf('  async function ouvrirMicro() {'), js.indexOf('  // l\'écart des horloges'));
+  assert.match(ouvrir, /if \(!App\) return microWeb\(\);/);
+  assert.ok(!/getUserMedia/.test(ouvrir.slice(ouvrir.indexOf('if (!App) return microWeb();') + 30)), 'dans l’appli : jamais getUserMedia');
+  assert.match(js, /deviceId: \{ exact: id \}/);
   assert.match(js, /'X-Jeton': window\.jeton\(\)/);
   const rendu = js.slice(js.indexOf('  function rendre() {'), js.indexOf('  let minuteur = 0;'));
   const html = rendu.split('\n').filter(l => /innerHTML|^\s*\+ `/.test(l)).join('\n');
@@ -175,7 +184,8 @@ test('la page Studio : le menu, la barre commune sans nav.js, le micro sans effe
 test('l’enregistreur garde ce qui suit le départ de l’instru, au bon échantillon', () => {
   const js = lire('public/studio-page.js');
   const src = js.slice(js.indexOf('  function enregistreur('), js.indexOf('  function clic('));
-  const f = new Function(`const TAMPON = 2048; ${src}; return enregistreur;`)();
+  const crete = js.slice(js.indexOf('  const crete = '), js.indexOf('\n', js.indexOf('  const crete = ')));
+  const f = new Function(`const TAMPON = 2048; ${crete}; ${src}; return enregistreur;`)();
   let proc = null;
   const c = { sampleRate: 1000, createMediaStreamSource: () => ({ connect() {}, disconnect() {} }), createGain: () => ({ gain: {}, connect() {} }),
     destination: {}, createScriptProcessor: () => (proc = { connect() {}, disconnect() {} }) };
@@ -185,4 +195,163 @@ test('l’enregistreur garde ce qui suit le départ de l’instru, au bon échan
   const x = r.arreter();
   assert.equal(x.length, 1500, 'la moitié du 2e morceau, tout le 3e');
   assert.ok(Math.abs(x[0] - (0.2 + 500 / 1e4)) < 1e-6, 'le premier échantillon gardé est celui de T0');
+});
+
+/* ---------- (10/11, Ahmed : « toujours le micro du smartphone, même s'il est en écouteurs Bluetooth, et calculer le décalage de
+   l'écoute et de la voix ») le micro, le temps, la mesure, le calage par sortie ---------- */
+const K = require('./public/studio-calage.js');
+
+test('le micro du navigateur : l’intégré, jamais celui d’un casque', () => {
+  const e = (deviceId, label) => ({ kind: 'audioinput', deviceId, label });
+  // Chrome sur Android (les noms de Chromium) : « Speakerphone » est le micro du téléphone, jamais « Bluetooth headset »
+  assert.equal(K.choisirMicroWeb([e('default', 'Default'), e('a', 'Bluetooth headset'), e('b', 'Headset earpiece'), e('c', 'Speakerphone')]).deviceId, 'c');
+  // un Mac avec des AirPods : le micro du MacBook, même si les AirPods sont le micro par défaut
+  assert.equal(K.choisirMicroWeb([e('default', 'Par défaut - AirPods Pro (Bluetooth)'), e('x', 'AirPods Pro (Bluetooth)'), e('y', 'MacBook Air Microphone (Built-in)')]).deviceId, 'y');
+  // Windows : le micro de la machine, pas le « Hands-Free » des écouteurs
+  assert.equal(K.choisirMicroWeb([e('communications', 'Communications - Headset'), e('h', 'Casque (WH-1000XM4 Hands-Free)'), e('r', 'Microphone (Realtek(R) Audio)')]).deviceId, 'r');
+  assert.equal(K.choisirMicroWeb([e('', ''), e('', '')]), null, 'pas de noms (pas encore autorisé) : rien de sûr');
+  assert.equal(K.choisirMicroWeb([e('default', 'Default - Galaxy Buds'), e('z', 'Galaxy Buds3 Pro')]), null, 'seulement un casque : rien');
+  assert.equal(K.choisirMicroWeb([{ kind: 'audiooutput', deviceId: 'o', label: 'Speakers' }]), null, 'une sortie n’est pas un micro');
+});
+
+test('le temps : la prise de l’appli recalée sur l’instant où l’instru sort au casque', () => {
+  const sr = 48000, off = 987654.321;             // horloge d'Android moins horloge de la page (ms)
+  const latSortie = 183, latEntree = 37;          // ce que le téléphone annonce : sortie (Bluetooth) et entrée (le micro)
+  const perfDe = (T) => 5000 + T * 1000 + latSortie;   // l'instant où le temps T de l'AudioContext sort au casque
+  const debutMono = perfDe(0) - latSortie + off - 2000; // le micro démarre 2 s avant le temps 0 de l'instru (horloge d'Android)
+  const monoDe = (f) => debutMono + f / sr * 1000;      // l'instant où l'échantillon f est entré dans le micro
+  const T0 = 3.2, voix = Math.round((perfDe(T0) + off - debutMono) * sr / 1000);   // papa chante pile quand il entend T0
+  const tout = new Float32Array(sr * 8); tout[voix] = 0.9;
+  const morceaux = [];
+  for (let p = 0; p < tout.length; p += 3840) morceaux.push({ premier: p, x: tout.slice(p, p + 3840) });
+  // Android horodate en retard sur la lecture (latEntree), le navigateur donne ses getOutputTimestamp avec un peu de bruit
+  const stamps = [1, 2, 3, 4, 5, 6].map(k => { const f = k * sr; return { f, ns: Math.round(monoDe(f) * 1e6), micro: true }; });
+  stamps.push({ f: 2.5 * sr, ns: Math.round((monoDe(2.5 * sr) + latEntree + 400) * 1e6), micro: false });   // un repli faux : jamais choisi
+  const sorties = [2.9, 3.0, 3.1, 3.3, 3.5, 9].map((ctx, i) => ({ ctx, perf: perfDe(ctx) + [0.4, -0.3, 0.1, 0.2, -0.2, 50][i] }));
+  // l'écart (ms) entre le départ gardé et la voix chantée sur T0 : 0, c'est la voix posée sur le temps ; négatif, elle arrive en retard
+  const ecart = (r) => (r.f0 - voix) / sr * 1000;
+  const r = K.aligner({ morceaux, stamps, sorties, repli: null, off, T0, sr });
+  assert.equal(r.sortie, 'navigateur'); assert.equal(r.horodatage, 'micro');
+  assert.ok(Math.abs(ecart(r)) <= 0.5, `la voix chantée sur T0 tombe sur le départ de la prise (écart ${ecart(r)} ms)`);
+  assert.ok(r.x[voix - r.f0] > 0.5 || r.x[voix - r.f0 + 1] > 0.5 || voix < r.f0, 'la prise gardée est bien le son du micro à partir de f0');
+  // sans les getOutputTimestamp : l'estimation (heure de la page + retard annoncé)
+  const r2 = K.aligner({ morceaux, stamps, sorties: [], repli: { ctx: 0, perf: 5000, sortie_ms: latSortie }, off, T0, sr });
+  assert.equal(r2.sortie, 'estimation'); assert.ok(Math.abs(ecart(r2)) <= 0.05, `estimation : ${ecart(r2)}`);
+  assert.equal(r2.x[0], 0.8999999761581421, 'sans bruit, la voix est le premier échantillon gardé');
+  // les témoins : sans le retard de sortie (le temps de rendu pris pour celui du casque), la voix arrive 183 ms trop tard ; une horloge
+  // fausse de 50 ms : 50 ms trop tard ; une horloge perdue : pas de prise du tout
+  const sansSortie = K.aligner({ morceaux, stamps, sorties: [], repli: { ctx: 0, perf: 5000, sortie_ms: 0 }, off, T0, sr });
+  assert.ok(Math.abs(ecart(sansSortie) + latSortie) <= 0.05, `sans le retard de sortie : ${ecart(sansSortie)}`);
+  const horlogeFausse = K.aligner({ morceaux, stamps, sorties, repli: null, off: off - 50, T0, sr });
+  assert.ok(Math.abs(ecart(horlogeFausse) + 50) <= 0.5, `horloge fausse : ${ecart(horlogeFausse)}`);
+  assert.equal(K.aligner({ morceaux, stamps, sorties, repli: null, off: 0, T0, sr }), null, 'une horloge perdue : rien, jamais une prise fausse');
+  // le repli de l'horodatage (l'instant de la lecture) ne sert que si Android n'en donne aucun
+  const lecture = K.aligner({ morceaux, stamps: stamps.filter(x => !x.micro), sorties, repli: null, off, T0, sr });
+  assert.equal(lecture.horodatage, 'lecture');
+  // des échantillons perdus : du silence à leur place, la suite reste à son numéro
+  const trou = K.assembler([{ premier: 0, x: Float32Array.of(1, 2) }, { premier: 5, x: Float32Array.of(6) }]);
+  assert.deepEqual([...trou], [1, 2, 0, 0, 0, 6]);
+  // rien pour caler : null (la page le dit, elle ne garde pas une prise fausse)
+  assert.equal(K.aligner({ morceaux, stamps: [], sorties, off, T0, sr }), null);
+  // les deux horloges : l'aller-retour le plus court
+  const h = K.decalageHorloge([{ avant: 10, horloge: 1015, apres: 14 }, { avant: 20, horloge: 1020.5, apres: 20.6 }, { avant: 30, horloge: 1031, apres: 31.2 }]);
+  assert.ok(Math.abs(h.off - 1000.2) < 1e-9 && Math.abs(h.incertitude - 0.3) < 1e-9);
+  // le son de l'appli : 16 bits little-endian en base64
+  const pcm = Int16Array.of(0, 16384, -32768, 32767);
+  const x = K.pcmDe(Buffer.from(pcm.buffer).toString('base64'));
+  assert.deepEqual([...x], [0, 0.5, -1, 32767 / 32768]);
+});
+
+// un enregistrement de mesure : `debut` s de bruit, puis un son à chaque clic, en retard de `retards[k]` ms (null : rien d'entendu)
+function mesureSimulee(sr, retards, pas, o = {}) {
+  const debut = 0.5, x = new Float32Array(Math.round((debut + retards.length * pas + 0.5) * sr));
+  let g = 12345;
+  const bruit = () => { g = (g * 1103515245 + 12345) & 0x7fffffff; return (g / 0x7fffffff - 0.5) * 2 * (o.bruit || 0.002); };
+  for (let i = 0; i < x.length; i++) x[i] = bruit();
+  retards.forEach((r, k) => {
+    if (r === null) return;
+    const a = Math.round((debut + k * pas + r / 1000) * sr);
+    // le clic (1 500 Hz) ; une frappe du doigt sur le téléphone : un choc grave (150 Hz), amorti
+    const hz = o.frappe ? 150 : 1500, amorti = o.frappe ? 0.012 : 0.006;
+    for (let i = 0; i < sr * 0.04 && a + i < x.length; i++) x[a + i] += (o.fort || 0.4) * Math.exp(-i / (sr * amorti)) * Math.sin(2 * Math.PI * hz * i / sr);
+    // le clic lui-même revenu au micro (la fuite d'un écouteur, ou le haut-parleur) à o.fuite ms, de force o.forceFuite
+    if (o.fuite) { const b = Math.round((debut + k * pas + o.fuite / 1000) * sr); for (let i = 0; i < sr * 0.03; i++) x[b + i] += (o.forceFuite || 0.02) * Math.exp(-i / (sr * 0.006)) * Math.sin(2 * Math.PI * 1500 * i / sr); }
+  });
+  return x;
+}
+
+test('la mesure : les clics retrouvés dans le micro, l’écouteur contre le micro et en tapant', () => {
+  const sr = 48000;
+  // l'écouteur collé au micro : 8 clics revenus avec 213 ms de retard, à la milliseconde
+  let r = K.analyserClics(mesureSimulee(sr, Array(8).fill(213), 0.6), sr, { debut: 0.5, pas: 0.6, n: 8 });
+  assert.ok(Math.abs(r.ms - 213) <= 1 && r.ecart_ms <= 1 && r.n === 8 && r.total === 8, JSON.stringify(r));
+  assert.ok(K.jugerMesure(r, 'boucle').ok);
+  // un retard négatif (le téléphone annonce un peu trop) se mesure aussi
+  r = K.analyserClics(mesureSimulee(sr, Array(8).fill(-35), 0.6), sr, { debut: 0.5, pas: 0.6, n: 8 });
+  assert.ok(Math.abs(r.ms + 35) <= 1, `−35 ms : ${r.ms}`);
+  // trop peu entendu : refusé, et dit combien
+  r = K.analyserClics(mesureSimulee(sr, [213, null, null, 213, null, null, 213, null], 0.6), sr, { debut: 0.5, pas: 0.6, n: 8 });
+  const j = K.jugerMesure(r, 'boucle');
+  assert.equal(j.ok, false); assert.match(j.raison, /que 3 clics sur 8/);
+  assert.equal(K.analyserClics(mesureSimulee(sr, Array(8).fill(null), 0.6), sr, { debut: 0.5, pas: 0.6, n: 8 }).n, 0, 'le silence : rien');
+  // en tapant : 16 clics, les 4 premiers pour se caler (n'importe quoi), un humain à ±12 ms, une frappe ratée, un écart énorme écarté ;
+  // l'écouteur qui fuit faiblement dans le micro (à 180 ms) : quand papa ne tape pas, cette fuite est écartée (loin des frappes)
+  const humain = [400, -150, 0, 90, 251, 238, 262, 244, 249, 233, null, 255, 246, 520, 240, 257];
+  const taper = { debut: 0.5, pas: 0.8, n: 16, ignorer: 4, passeBas: 500 };
+  r = K.analyserClics(mesureSimulee(sr, humain, 0.8, { fort: 0.5, frappe: true, fuite: 180 }), sr, taper);
+  assert.ok(Math.abs(r.ms - 249) <= 4, `en tapant : ${r.ms}`);
+  assert.equal(r.total, 12); assert.equal(r.n, 10, 'la frappe ratée et l’écart de 520 ms ne comptent pas');
+  assert.ok(r.ecart_ms < 20 && K.jugerMesure(r, 'taper').ok, JSON.stringify(r));
+  assert.equal(K.jugerMesure({ ...r, ecart_ms: 80 }, 'taper').ok, false, 'trop irrégulier : refusé');
+  // au haut-parleur : le clic revient au micro, six fois plus fort que la frappe, à 40 ms ; papa tape 25 ms en avance sur ce qu'il
+  // entend (à 15 ms) : le filtre garde la frappe ; sans lui, on mesurerait le clic (le témoin : l'avance de papa serait perdue)
+  const hp = mesureSimulee(sr, Array(16).fill(15), 0.8, { fort: 0.1, frappe: true, fuite: 40, forceFuite: 0.6 });
+  r = K.analyserClics(hp, sr, taper);
+  assert.ok(Math.abs(r.ms - 15) <= 4 && r.n === 12, `la frappe, pas le clic : ${JSON.stringify(r)}`);
+  const sansFiltre = K.analyserClics(hp, sr, { ...taper, passeBas: 0 });
+  assert.ok(Math.abs(sansFiltre.ms - 15) > 10, `sans le filtre, le clic l’emporte : ${sansFiltre.ms}`);
+});
+
+test('le calage par sortie : gardé, la dernière mesure s’applique, l’avance de papa apprise et retirée', async () => {
+  // les fonctions
+  const avance = { ms: -22 };
+  assert.deepEqual(S.calageDe({ nom: 'X', dernier: 'taper', mesures: { taper: { ms: 230, ecart_ms: 9, n: 11, total: 12, date: 5 } } }, avance),
+    { ms: 252, methode: 'taper', ecart_ms: 9, n: 11, total: 12, annonce_ms: null, avance_ms: -22, date: 5, nom: 'X', micro: '' });
+  assert.equal(S.calageDe({ dernier: 'boucle', mesures: { boucle: { ms: 210 } } }, avance).ms, 210, 'l’écouteur contre le micro : rien d’humain à retirer');
+  assert.equal(S.calageDe({ mesures: {} }, null), null);
+  assert.deepEqual(S.avanceDe({ mesures: { boucle: { ms: 40, date: 0 }, taper: { ms: 18, date: 1000 } } }, 7), { ms: -22, date: 7 });
+  assert.equal(S.avanceDe({ mesures: { boucle: { ms: 40, date: 0 }, taper: { ms: 18, date: 8 * 86400e3 } } }), null, 'trop loin dans le temps');
+  assert.equal(S.avanceDe({ mesures: { boucle: { ms: 40, date: 0 }, taper: { ms: 400, date: 1 } } }), null, '360 ms : pas une avance');
+  // les routes, sur un dossier jetable
+  const racine = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-calage-'));
+  const jarvis = path.join(racine, 'jarvis');
+  fs.mkdirSync(path.join(jarvis, 'chansons', 'studio'), { recursive: true });
+  const studio = S.creer({ jarvis, lireCorps, appeler: () => ({ ok: true }) });
+  const srv = await serveurDe(studio);
+  try {
+    const hp = 'appli|haut_parleur', bt = 'appli|bluetooth:ICONIC Sound 2';
+    for (const mauvais of [{ cle: 'x', methode: 'boucle', ms: 1 }, { cle: hp, methode: 'deviner', ms: 1 }, { cle: hp, methode: 'boucle', ms: 'abc' }, { cle: hp, methode: 'boucle' }])
+      assert.equal((await appel(srv, 'POST', '/api/studio/calage', mauvais)).statut, 400, JSON.stringify(mauvais));
+    // au haut-parleur : la boucle (le clic revient au micro), puis en tapant : l'avance de papa apprise (−21 ms)
+    let r = await appel(srv, 'POST', '/api/studio/calage', { cle: hp, nom: 'le haut-parleur du téléphone', methode: 'boucle', ms: 41.2, ecart_ms: 0.6, n: 8, total: 8, annonce_ms: 30 });
+    assert.equal(r.statut, 200); assert.equal(r.j.calage.ms, 41); assert.equal(r.j.avance, null);
+    r = await appel(srv, 'POST', '/api/studio/calage', { cle: hp, methode: 'taper', ms: 20.2, ecart_ms: 11, n: 11, total: 12 });
+    assert.equal(r.j.avance.ms, -21); assert.equal(r.j.calage.methode, 'taper'); assert.equal(r.j.calage.ms, 41, 'en tapant, corrigé de l’avance : la boucle');
+    // les écouteurs Bluetooth : seulement en tapant, l'avance retirée ; 9999 ms ramenés à 1500
+    r = await appel(srv, 'POST', '/api/studio/calage', { cle: bt, nom: 'ICONIC Sound 2 (Bluetooth)', methode: 'taper', ms: 228, ecart_ms: 14, n: 10, total: 12, micro: 'le micro du téléphone ✓' });
+    assert.equal(r.j.calage.ms, 249); assert.equal(r.j.calage.avance_ms, -21);
+    // l'état : les deux sorties gardées, par leur nom
+    let e = (await appel(srv, 'GET', '/api/studio/etat')).j;
+    assert.deepEqual(Object.keys(e.calages).sort(), [bt, hp].sort());
+    assert.deepEqual([e.calages[bt].nom, e.calages[bt].ms, e.calages[bt].micro, e.calages[hp].ms, e.avance.ms], ['ICONIC Sound 2 (Bluetooth)', 249, 'le micro du téléphone ✓', 41, -21]);
+    // le curseur : réglé à la main, il s'applique tel quel (la dernière action) ; une nouvelle mesure reprend la main
+    await appel(srv, 'POST', '/api/studio/calage', { cle: bt, methode: 'main', ms: 9999 });
+    e = (await appel(srv, 'GET', '/api/studio/etat')).j;
+    assert.deepEqual([e.calages[bt].methode, e.calages[bt].ms, e.calages[bt].nom], ['main', 1500, 'ICONIC Sound 2 (Bluetooth)']);
+    r = await appel(srv, 'POST', '/api/studio/calage', { cle: bt, methode: 'boucle', ms: 236, ecart_ms: 0.8, n: 8, total: 8 });
+    assert.deepEqual([r.j.calage.methode, r.j.calage.ms], ['boucle', 236]);
+    assert.equal(r.j.avance.cle, bt, 'l’avance apprise aussi sur les écouteurs (taper 228 − boucle 236)');
+    assert.equal(r.j.avance.ms, -8);
+    assert.ok(fs.existsSync(path.join(jarvis, 'chansons', 'studio', 'calages.json')), 'gardé sur le disque du studio');
+  } finally { srv.close(); studio.arreter(); fs.rmSync(racine, { recursive: true, force: true }); }
 });

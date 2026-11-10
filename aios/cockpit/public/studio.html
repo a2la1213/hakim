@@ -57,6 +57,8 @@
     .niveau { width: 100%; height: 10px; border-radius: 6px; background: var(--champ, rgba(255,255,255,.06)); overflow: hidden; }
     .niveau > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #22c55e, #facc15 70%, #ef4444); }
     .temps { font-size: 13px; color: var(--txt-3); font-variant-numeric: tabular-nums; }
+    .pad { margin-top: 8px; min-height: 96px; border-radius: 14px; border: 2px dashed var(--teal); display: flex; align-items: center; justify-content: center;
+      font-size: 22px; font-weight: 700; color: var(--txt); background: rgba(45,212,191,.08); user-select: none; -webkit-user-select: none; }
     .conseils { margin: 6px 0 0 18px; padding: 0; font-size: 13px; color: var(--txt-2); line-height: 1.5; }
     .chemin { font-size: 13px; color: var(--txt); background: var(--champ, rgba(0,0,0,.25)); border-radius: 8px; padding: 6px 10px; display: inline-block; }
     details > summary { cursor: pointer; font-size: 13px; color: var(--teal); padding: 6px 0; min-height: 32px; }
@@ -100,16 +102,27 @@
           <span class="sous">Quelques minutes sur le Mac ; elle arrive dans la liste.</span></div>
       </details>
 
-      <h3>2. Le calage (latence)</h3>
-      <div class="sous">Le casque ajoute un retard (le Bluetooth surtout). Mesure-le une fois par casque : la prise sera recalée sur le temps.</div>
-      <div class="curseur"><span>Latence retirée de tes prises</span><output id="latenceVal">— ms</output>
-        <input type="range" id="latence" min="0" max="600" step="5" value="0" aria-label="Latence en millisecondes"></div>
-      <div class="gestes">
-        <button type="button" id="calibClic" title="Le haut-parleur (ou l’écouteur) près du micro">🔊 Mesurer au clic</button>
-        <button type="button" id="calibTaper">👆 Taper en rythme (Bluetooth)</button>
-        <button type="button" id="taper" hidden class="principal">TAPE ICI</button>
-      </div>
+      <h3>2. Le décalage (ton écoute et ta voix)</h3>
+      <div class="sous" id="route"></div>
+      <div class="sous">Les écouteurs font entendre l’instru en retard (le Bluetooth surtout), et le micro a son propre retard : ta voix
+        est recalée sur le temps. Une mesure par sortie (tes écouteurs, le haut-parleur…), gardée.</div>
+      <div class="curseur"><span>Décalage retiré de tes prises</span><output id="latenceVal">— ms</output>
+        <input type="range" id="latence" min="-200" max="600" step="1" value="0" aria-label="Décalage en millisecondes"></div>
       <div class="sous" id="calibEtat"></div>
+      <div class="gestes">
+        <button type="button" id="calibClic" class="principal" title="Le clic revient au micro tel quel : le plus juste">🎧→🎤 Écouteur contre le micro (le plus juste)</button>
+        <button type="button" id="calibTaper" title="Tu tapes du doigt sur le téléphone en même temps que chaque clic">👆 Taper sur les clics</button>
+      </div>
+      <div class="pad" id="taper" hidden aria-live="polite"></div>
+      <div class="sous" id="calages"></div>
+      <details>
+        <summary>Comment c’est mesuré</summary>
+        <div class="sous">Des clics partent par le même chemin que l’instru, et le micro du téléphone les enregistre par le même chemin
+          que ta voix. <b>Écouteur contre le micro</b> : le clic lui-même revient au micro, rien d’humain entre les deux, à la
+          milliseconde. <b>Taper</b> : toujours possible, à 1 ou 2 centièmes près ; on tape un peu en avance sur un métronome : fais une
+          fois les deux mesures sur la même sortie, et cette avance est apprise et retirée. Dans l’appli, la prise est déjà recalée sur
+          ce que le téléphone annonce ; la mesure retire ce qui reste.</div>
+      </details>
 
       <h3>3. La prise</h3>
       <div class="sous">Mets ton casque. Un décompte de 3, puis l’instru part et ta voix s’enregistre.</div>
@@ -161,6 +174,7 @@
   <script src="/jeton.js"></script>
   <script src="/badges.js"></script>
   <script>Badges.suivre(document.querySelector('nav.topnav'), 'studio');</script>
+  <script src="/studio-calage.js"></script>
   <script src="/studio-page.js"></script>
 </body>
 </html>

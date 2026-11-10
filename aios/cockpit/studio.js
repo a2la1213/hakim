@@ -122,6 +122,29 @@ class Ecoute {
   }
 }
 
+/* ---------- le calage par sortie (10/11, Ahmed : « calculer le décalage de l'écoute et de la voix ») ----------
+   Une fiche par sortie (« appli|bluetooth:ICONIC Sound 2 », « web|… ») : ses mesures (boucle : l'écouteur collé au micro, le plus
+   juste ; taper : papa tape sur les clics ; main : le curseur), la dernière faite s'applique. Taper garde l'avance d'un humain sur un
+   métronome : apprise quand les deux mesures existent sur la même sortie (à 7 jours au plus l'une de l'autre), elle est retirée des
+   mesures en tapant. Voir public/studio-calage.js. */
+const METHODES_CALAGE = ['boucle', 'taper', 'main'];
+function calageDe(fiche, avance) {
+  if (!fiche || !fiche.mesures) return null;
+  const m = fiche.mesures[fiche.dernier] ? fiche.dernier : METHODES_CALAGE.find(k => fiche.mesures[k]);
+  if (!m) return null;
+  const x = fiche.mesures[m], corr = m === 'taper' && avance && Number.isFinite(avance.ms) ? avance.ms : 0;
+  const v = (k) => (Number.isFinite(x[k]) ? x[k] : null);
+  return { ms: Math.round(x.ms - corr), methode: m, ecart_ms: v('ecart_ms'), n: v('n'), total: v('total'), annonce_ms: v('annonce_ms'),
+    avance_ms: corr ? Math.round(corr) : null, date: x.date || null, nom: fiche.nom || '', micro: x.micro || '' };
+}
+// l'avance de papa en tapant : les deux mesures sur une même sortie, proches dans le temps ; plus de 150 ms : pas une avance, une erreur
+function avanceDe(fiche, maintenant = Date.now()) {
+  const b = fiche && fiche.mesures && fiche.mesures.boucle, t = fiche && fiche.mesures && fiche.mesures.taper;
+  if (!b || !t || Math.abs((b.date || 0) - (t.date || 0)) > 7 * 86400e3) return null;
+  const ms = t.ms - b.ms;
+  return Math.abs(ms) <= 150 ? { ms: Math.round(ms * 10) / 10, date: maintenant } : null;
+}
+
 /* ---------- le studio ---------- */
 function creer(o = {}) {
   const JARVIS = o.jarvis || path.join(os.homedir(), 'AIOS', 'jarvis');
@@ -166,7 +189,8 @@ function creer(o = {}) {
     const instrus = fiches(path.join(STUDIO, 'instrus')).map(x => ({ id: x.id, f: rel(x.mp3), titre: x.titre, duree_s: x.duree_s, origine: x.origine, date: x.fin }))
       .filter(x => x.f).sort((a, b) => (b.date || 0) - (a.date || 0));
     const prises = fiches(path.join(STUDIO, 'prises')).map(x => ({ id: x.id, f: rel(x.fichier), titre: x.titre, duree_s: x.duree_s, ts: x.ts,
-      instru_f: x.instru_f, instru_titre: x.instru_titre, latence_ms: x.latence_ms, choisie: !!x.choisie })).filter(x => x.f).sort((a, b) => b.ts - a.ts);
+      instru_f: x.instru_f, instru_titre: x.instru_titre, latence_ms: x.latence_ms, choisie: !!x.choisie,
+      sortie: x.sortie_nom || '', micro: x.micro || '', methode: x.calage_methode || '' })).filter(x => x.f).sort((a, b) => b.ts - a.ts);
     const mixes = fiches(STUDIO).filter(x => x.nom && x.mp3).map(x => ({ nom: x.nom, f: rel(x.mp3), f_wav: rel(x.wav), titre: x.titre, duree_s: x.duree_s,
       date: x.fin, mesure: x.mesure, conseils: (x.avis && x.avis.conseils) || [], reglages: x.reglages, calcul_s: x.calcul_s, telephone: !!x.telephone }))
       .filter(x => x.f).sort((a, b) => (b.date || 0) - (a.date || 0));
@@ -175,7 +199,8 @@ function creer(o = {}) {
       .map(x => ({ id: x.id, type: x.type, etat: x.etat, etape: x.etape, etapes: x.etapes, texte: x.texte, erreur: x.erreur, debut: x.debut, fin: x.fin,
         titre: (x.params && (x.params.titre || path.basename(String(x.params.source || '')))) || '' }))
       .sort((a, b) => (b.debut || 0) - (a.debut || 0)).slice(0, 8);
-    return { chansons, instrus, prises, mixes, travaux, ecoute: s.ecoute ? s.ecoute.etat() : (s.derniere || null),
+    const cal = lireCalages();
+    return { chansons, instrus, prises, mixes, travaux, ecoute: s.ecoute ? s.ecoute.etat() : (s.derniere || null), calages: calagesVus(cal), avance: cal.avance || null,
       telephone: 'Hakim › Chansons (le dossier « Hakim » de ton téléphone)' };
   }
   // le cockpit → studio.py (une ligne JSON) : mettre un calcul en file, demander une instru à Hakim
@@ -217,6 +242,11 @@ function creer(o = {}) {
   const idDe = (p) => `${p}-${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}-${Math.random().toString(16).slice(2, 6)}`;
   const ecrire = (f, d) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f + '.tmp', JSON.stringify(d, null, 1)); fs.renameSync(f + '.tmp', f); };
   const corpsJson = async (req) => { try { return JSON.parse(String(await lireCorps(req, 16384) || '{}')) || {}; } catch (_) { return {}; } };
+  // (10/11) les calages gardés, par sortie : studio/calages.json
+  const CALAGES = path.join(STUDIO, 'calages.json');
+  const lireCalages = () => { const c = lireJson(CALAGES, null); return c && typeof c === 'object' && c.sorties ? c : { sorties: {}, avance: null }; };
+  const calagesVus = (c = lireCalages()) => Object.fromEntries(Object.entries(c.sorties).map(([k, f]) => [k, calageDe(f, c.avance)]).filter(([, v]) => v));
+  const mot = (v, n) => String(v ?? '').replace(/[\x00-\x1f<>]/g, ' ').trim().slice(0, n);
 
   function servir(req, res, f, telecharger) {
     const taille = fs.statSync(f).size, type = TYPES_SON[path.extname(f).toLowerCase()] || 'application/octet-stream';
@@ -273,9 +303,27 @@ function creer(o = {}) {
       const lat = Math.max(-500, Math.min(1500, Math.round(Number(q.get('latence')) || 0)));
       const fi = etat().instrus.find(x => x.f === rel(instru)) || etat().chansons.find(x => x.f === rel(instru)) || etat().mixes.find(x => x.f === rel(instru));
       const fiche = { id, fichier: f, titre: titreDe(q.get('titre')) || `Prise sur ${fi ? fi.titre : path.basename(instru)}`, ts: Date.now(), duree_s: await dureeDe(f),
-        instru_chemin: instru, instru_f: rel(instru), instru_titre: fi ? fi.titre : path.basename(instru), latence_ms: lat, choisie: false };
+        instru_chemin: instru, instru_f: rel(instru), instru_titre: fi ? fi.titre : path.basename(instru), latence_ms: lat, choisie: false,
+        // (10/11) par où papa écoutait, quel micro l'a enregistré, et d'où vient le calage
+        sortie_cle: mot(q.get('cle'), 140), sortie_nom: mot(q.get('sortie'), 80), micro: mot(q.get('micro'), 80), calage_methode: mot(q.get('methode'), 12) };
       ecrire(path.join(dir, id + '.json'), fiche);
       return repondre(res, 200, { ok: true, id, f: rel(f) });
+    }
+    // (10/11) un calage mesuré (ou réglé à la main) pour la sortie où papa écoute : gardé, et l'avance de papa apprise
+    if (p === '/api/studio/calage') {
+      const x = await corpsJson(req), cle = mot(x.cle, 140), methode = String(x.methode || '');
+      if (!/^(appli|web)\|./.test(cle) || !METHODES_CALAGE.includes(methode) || !Number.isFinite(Number(x.ms)) || x.ms === null || x.ms === '')
+        return repondre(res, 400, { erreur: 'calage illisible' });
+      const n = (v, a, b) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? undefined : Math.max(a, Math.min(b, Math.round(Number(v) * 10) / 10)));
+      const c = lireCalages(), fiche = c.sorties[cle] || { mesures: {} };
+      fiche.nom = mot(x.nom, 80) || fiche.nom || '';
+      fiche.mesures[methode] = { ms: n(x.ms, -500, 1500), ecart_ms: n(x.ecart_ms, 0, 1000), n: n(x.n, 0, 100), total: n(x.total, 0, 100),
+        annonce_ms: n(x.annonce_ms, -1000, 3000), micro: mot(x.micro, 80), date: Date.now() };
+      fiche.dernier = methode;
+      c.sorties[cle] = fiche;
+      if (methode !== 'main') { const a = avanceDe(fiche); if (a) c.avance = { ...a, cle }; }
+      ecrire(CALAGES, c);
+      return repondre(res, 200, { ok: true, calage: calageDe(fiche, c.avance), calages: calagesVus(c), avance: c.avance || null });
     }
     if (p === '/api/studio/prise/choisir' || p === '/api/studio/prise/effacer' || p === '/api/studio/prise/regler') {
       const x = await corpsJson(req), id = String(x.id || '');
@@ -322,4 +370,4 @@ function creer(o = {}) {
   return { route, etat, chemin, ecouter, decoder, arreter: () => { if (s.ecoute) s.ecoute.arreter('arrêt du cockpit'); }, _s: s };
 }
 
-module.exports = { creer, trames, hauteur, wav16, Ecoute, HZ };
+module.exports = { creer, trames, hauteur, wav16, Ecoute, HZ, calageDe, avanceDe };
