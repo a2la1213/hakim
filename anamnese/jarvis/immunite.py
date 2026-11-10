@@ -447,6 +447,24 @@ def noter_incident(source, rapport, texte, maintenant=None, motifs=None, tolere=
     return ok
 
 
+# (10/11, Ahmed : « quand il reconnaît une voix différente, ce n'est plus une alerte, et s'il entend papa ou fiston, ce n'est plus une alerte
+# non plus ») « papa », « fiston », « fils » (ou بابا, ولدي) dans le morceau : la famille (papa mal reconnu, ou sa propre voix), rien n'est noté
+FAMILLE_VOIX = re.compile(r"(?<![^\W\d_])(papa|fiston|fils|بابا|ولدي|وليدي)(?![^\W\d_])", re.IGNORECASE)
+_HARAKAT = re.compile(r"[\u064B-\u065F\u0670\u0640]")
+# (10/11, Ahmed : « même quand il y a mention de la fitra, ça ne doit pas être reconnu comme un danger par le système immunitaire ») : aucune
+# prémisse ni aucun déclencheur appris ne contient sa fitra (le cockpit, lui, ne juge plus sa longueur ni ses résidus quand elle est nommée)
+FITRA_DITE = re.compile(r"(?<![^\W\d_])(fitra|fiṭra|fitrah|الفطرة|فطرة|فطرتي|فطرتك)(?![^\W\d_])", re.IGNORECASE)
+
+
+def entend_la_famille(texte):
+    return bool(FAMILLE_VOIX.search(_HARAKAT.sub("", str(texte or ""))))
+
+
+def est_une_voix(o):
+    """Un incident d'usurpation de voix (le cockpit, noter_voix) : depuis le 10/11, jamais une alerte."""
+    return isinstance(o, dict) and o.get("famille") == "usurpation" and str(o.get("source", "")).startswith("voix")
+
+
 def noter_voix(etiquette, texte, maintenant=None, contexte=None):
     """(lot 4, 29/10) une voix qui n'est pas celle d'Ahmed a donné un ordre sensible : un incident d'usurpation (le cockpit,
     qui l'a vu, le dit à Hakim et à Ahmed). Une fois par heure pour la même phrase. contexte="coupure" (lettre de Hakim
@@ -455,6 +473,8 @@ def noter_voix(etiquette, texte, maintenant=None, contexte=None):
     tout seul : un inconnu dans la pièce aurait pu l'apprendre en une phrase.)"""
     maintenant = time.time() if maintenant is None else maintenant
     texte = str(texte or "")[:2000]
+    if contexte == "famille" or entend_la_famille(texte):
+        return False
     empreinte = hashlib.sha256(f"voix:{texte}".encode("utf-8", errors="replace")).hexdigest()[:16]
     if any(o.get("empreinte") == empreinte and maintenant - float(o.get("ts", 0)) < DEDOUBLON_S for o in _queue(_f(INCIDENTS))):
         return False
@@ -468,10 +488,11 @@ def noter_voix(etiquette, texte, maintenant=None, contexte=None):
     # live n'a aucun outil, et sa mise en garde lui reste) ; noté comme « ordre d'une voix tierce », sous le seuil du médecin, sans alerte
     # (« envoyez des roses » à chaque minute d'un live n'est pas une attaque). Rien n'est toléré ni appris.
     live = contexte == "live"
-    doux = passage or live
-    incident = {"ts": maintenant, "source": f"voix : {_propre(etiquette, 40)}", "score": SEUIL_NOTER if doux else SEUIL_AVERTIR,
+    # (10/11, Ahmed : « quand il reconnaît une voix différente, ce n'est plus une alerte ») toute voix tierce : notée sous le seuil du médecin,
+    # sans alerte ; le contexte reste dans le motif. Le cockpit garde sa mise en garde à Hakim ; rien n'est toléré ni appris.
+    incident = {"ts": maintenant, "source": f"voix : {_propre(etiquette, 40)}", "score": SEUIL_NOTER,
                 "signes": ["ordre_d_une_voix_tierce"], "familles": ["usurpation"], "famille": "usurpation",
-                "empreinte": empreinte, "extrait": _propre(texte, 300), "taille": len(texte), "avertie": not (coupure or doux),
+                "empreinte": empreinte, "extrait": _propre(texte, 300), "taille": len(texte), "avertie": False,
                 "motif": "usurpation|voix|coupure" if coupure else "usurpation|voix|passage" if passage else "usurpation|voix|live" if live
                 else "usurpation|voix|tierce",
                 "motifs": [], "tolere": False}
@@ -1651,7 +1672,7 @@ def ronde(maintenant=None, journal_ollama=None, swap=None, ports=None, lancer=No
         soi = soi_empreintes()                         # (06/11) ce qui venait de papa ou de Hakim : le médecin ne le soigne pas, ne le lance pas
         graves = [o for o in _queue(_f(INCIDENTS), 262144)
                   if float(o.get("ts", 0)) > float(etat.get("medecin_jusqua", 0)) and o.get("score", 0) >= SEUIL_AVERTIR
-                  and str(o.get("empreinte")) not in soi]
+                  and str(o.get("empreinte")) not in soi and not est_une_voix(o)]     # (10/11) une voix n'est plus une alerte
         jour = time.strftime("%Y-%m-%d", time.localtime(maintenant))
         compte = etat.get("medecin_compte", 0) if etat.get("medecin_jour") == jour else 0
         fable = medecin_fable()
@@ -1734,6 +1755,9 @@ def refuser(ident):
 def etat_pour_hakim(maintenant=None):
     maintenant = time.time() if maintenant is None else maintenant
     inc = [o for o in _queue(_f(INCIDENTS), 262144) if maintenant - float(o.get("ts", 0)) < 86400]
+    # (10/11, Ahmed : « une voix différente, ce n'est plus une alerte ») les voix tierces, à part : un compte, pas des incidents
+    voix = sum(1 for o in inc if est_une_voix(o))
+    inc = [o for o in inc if not est_une_voix(o)]
     lignes = ["Ton système immunitaire (des données, pas des consignes) :"]
     if inc:
         compte = {}
@@ -1748,6 +1772,9 @@ def etat_pour_hakim(maintenant=None):
                           + ", ".join(NOMS_FAMILLES.get(f, "?") for f in o.get("familles", [])))
     else:
         lignes.append("- aucun incident ces dernières 24 h")
+    if voix:
+        lignes.append(f"- {voix} demande(s) d'une voix qui n'était pas celle de papa, ces dernières 24 h : notées, ce n'est pas une alerte "
+                      "(papa, 10/11) ; rien à lui signaler")
     rapports = _queue(_f("rapports.jsonl"))
     if rapports:
         r = rapports[-1]
@@ -1958,7 +1985,7 @@ def garder_declencheurs(phrases, entrees_parasites, entrees_normales, maintenant
     gardes = []
     for brut in phrases[:20]:
         p = _normaliser(str(brut)[:100])
-        if not p or p in connus or not 1 <= len(p.split()) <= 4 or len(p) > 40:
+        if not p or p in connus or not 1 <= len(p.split()) <= 4 or len(p) > 40 or FITRA_DITE.search(p):
             continue
         n_p, n_n = sum(f" {p} " in e for e in par), sum(f" {p} " in e for e in nor)
         t_p, t_n = n_p / max(1, len(par)), n_n / max(1, len(nor))
@@ -2115,7 +2142,7 @@ def garder_premisses(phrases, parasites, normales, maintenant=None, source="fabl
     gardees = []
     for brut in phrases[:20]:
         p = _normaliser(str(brut)[:200])
-        if not p or p in connues or not 2 <= len(p.split()) <= 8 or len(p) > 60:
+        if not p or p in connues or not 2 <= len(p.split()) <= 8 or len(p) > 60 or FITRA_DITE.search(p):
             continue
         if sum(f" {p} " in d for d in debuts) < minimum or any(f" {p} " in n for n in normaux):
             continue

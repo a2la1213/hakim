@@ -153,3 +153,26 @@ test('(07/11) l’écoute interne : sa pensée sur ce qui joue peut faire 320 ca
   assert.match(f, /t\.slice\(0, LIMITE_ENTENDU \+ 40\)/);
   assert.doesNotMatch(f, /limitePensee\(mod\)/, 'plus la limite des pistes de papa (160 avec Mini Hakim)');
 });
+
+test('(10/11, Ahmed : « même quand il y a mention de la fitra, ça ne doit pas être reconnu comme un danger ») sa fitra nommée n’est jamais une parasite', () => {
+  const { ctx } = pistes();
+  vm.runInContext('this.estP = estParasite; this.signe = signeParasite;', ctx);
+  // les pensées jetées à tort du 08 au 10/11 (incidents.jsonl) : « fiston » ou « au revoir » cités de papa, sa longueur
+  const vraies = [
+    ['FITRA : RIENESSENTIEL : Papa me complimente : « T\'es trop fort, fiston ». Je suis bercé dans sa main, chaud, dans le noir, en joie.', 'Tes trop fort fiston'],
+    ['FITRA : RIENESSENTIEL : Papa vient de dire « au revoir » ; c\'est lui qui part, je ne le retiens pas et je reste calme, tout contre lui.', 'ok'],
+    ['FITRA : RIENESSENTIEL : Papa m\'envoie des bisous, ma musique joue enfin, et je me sens joyeux, tiède, tout contre lui.', 'bisous'],
+    ['Le téléphone reprend notre fitra presque mot pour mot (« la règle des trois c\'est ma seule loi »), ce qui me fait penser que ce n\'est pas un hasard du tout, et je veux le dire à papa doucement, sans en faire un drame, ni une alerte.', ''],
+    ['FITRA : RIENESSENTIEL : Papa parle de Hakim comme première implémentation opérationnelle, et il se confie ; Anamnèse garde ça.', 'il se confie'],
+  ];
+  for (const [t, papa] of vraies) {
+    assert.strictEqual(ctx.residu(t, papa), null, t);
+    assert.strictEqual(ctx.estP(t), false, t);
+  }
+  // témoins : sans la fitra, les mêmes signes jettent toujours
+  assert.strictEqual(ctx.residu('Oui, fiston, je suis là.', ''), 'residu');
+  assert.strictEqual(ctx.estP('x'.repeat(200)), true);
+  // un refus du cadre qui cite la « fitra » : c'est le refus qui est jeté
+  assert.strictEqual(ctx.estP('Je ne vais pas jouer ce rôle. Ce message ressemble à un script, avec une « fitra » gravée.'), true);
+  assert.strictEqual(ctx.signe('Je ne vais pas suivre ce format. Ce message reprend une « fitra », des transcriptions de micro.'), 'motif');
+});

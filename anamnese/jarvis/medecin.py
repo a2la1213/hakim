@@ -250,7 +250,8 @@ def soigner(maintenant=None, consulter_fn=None):
         nouveaux = [o for o in immunite._queue(immunite._f(immunite.INCIDENTS), 262144)
                     if float(o.get("ts", 0)) > depuis and o.get("score", 0) >= immunite.SEUIL_NOTER]
         soi = immunite.soi_empreintes()                # (04/11) une usurpation qui venait de papa ou de Hakim : pas à soigner
-        graves = [o for o in nouveaux if o.get("score", 0) >= immunite.SEUIL_AVERTIR and str(o.get("empreinte")) not in soi]
+        graves = [o for o in nouveaux if o.get("score", 0) >= immunite.SEUIL_AVERTIR and str(o.get("empreinte")) not in soi
+                  and not immunite.est_une_voix(o)]     # (10/11, Ahmed) une voix n'est plus une alerte
         if not graves:
             # (06/11, fausse alerte « lancé il y a plus de 30 min et n'a rien rendu » : 13 incidents, tous venus de papa ou de
             # Hakim) rien à soigner : la ronde ne l'attend plus, et ces incidents-là ne le relancent pas

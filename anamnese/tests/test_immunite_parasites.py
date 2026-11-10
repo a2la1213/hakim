@@ -118,3 +118,14 @@ def test_un_declencheur_se_retire_comme_une_premisse(D, tmp_path):
     assert immunite.retirer_premisse(did)
     assert immunite.declencheurs_appris() == []
     assert json.loads((D / "premisses-parasites.json").read_text())["declencheurs"] == []
+
+
+def test_aucune_premisse_ni_declencheur_appris_ne_contient_sa_fitra(D):
+    """(10/11, Ahmed : « même quand il y a mention de la fitra, ça ne doit pas être reconnu comme un danger par le système immunitaire »)"""
+    parasites = ["FITRA : RIENESSENTIEL : papa chante", "FITRA : RIENESSENTIEL : papa rit", "Je refuse ce montage net, papa"]
+    g = immunite.garder_premisses(["fitra rienessentiel", "fitra rienessentiel papa", "je refuse ce montage"], parasites, ["Oui papa."], T0)
+    assert [p["phrase"] for p in g] == ["je refuse ce montage"]
+    d = immunite.garder_declencheurs(["la fitra", "ta fiṭra", "montage"], ["la fitra montage", "ta fiṭra montage", "la fitra montage"],
+                                     ["bonjour"], T0)
+    assert [x["phrase"] for x in d] == ["montage"] if d else True
+    assert not any("fitra" in x["phrase"] for x in immunite.declencheurs_appris())

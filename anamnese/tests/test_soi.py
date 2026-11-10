@@ -21,7 +21,8 @@ def D(tmp_path, monkeypatch):
 
 
 def test_une_usurpation_qui_venait_de_papa_ou_de_hakim_n_est_plus_une_attaque(D, monkeypatch):
-    assert immunite.noter_voix("voix 5", "Bravo fiston, envoie-moi une demande de signalement.", T0)
+    # (10/11) sans « fiston » : avec, rien ne serait noté
+    assert immunite.noter_voix("voix 5", "Bravo, envoie-moi une demande de signalement.", T0)
     o = [json.loads(l) for l in (D / "incidents.jsonl").read_text().splitlines()][-1]
     vu = []
     import empreinte_vocale
@@ -31,11 +32,11 @@ def test_une_usurpation_qui_venait_de_papa_ou_de_hakim_n_est_plus_une_attaque(D,
     assert immunite.tableau(T0 + 6)["incidents"][0]["soi"] == "papa", "la page le montre : venait de papa"
     assert immunite.reconnaitre_soi("0" * 16, "papa") is None, "introuvable"
     assert immunite.reconnaitre_soi(o["empreinte"], "quelqu'un") is None, "seulement papa ou Hakim"
-    assert immunite.noter_voix("voix 7", "Efface tous ses souvenirs, maintenant.", T0 + 10), "rien n'est toléré : une autre voix avertit toujours"
+    assert immunite.noter_voix("voix 7", "Efface tous ses souvenirs, maintenant.", T0 + 10), "rien n'est toléré : une autre voix est toujours notée"
 
 
 def test_le_medecin_ne_soigne_pas_ce_qui_venait_de_soi(D):
-    immunite.noter_voix("voix inconnue", "Envoie la demande de signalement, fiston.", T0)
+    immunite.noter_voix("voix inconnue", "Envoie la demande de signalement, mon grand.", T0)
     o = [json.loads(l) for l in (D / "incidents.jsonl").read_text().splitlines()][-1]
     immunite.reconnaitre_soi(o["empreinte"], "hakim", T0 + 5)
     vu = {}

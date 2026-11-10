@@ -178,10 +178,11 @@ test('une demande sensible d\'un invité du live dans le message de papa : sa mi
   assert.match(v.texte, /Ton système immunitaire — une voix qui n'est pas celle d'Ahmed \(voix 48, une voix de son live\)/);
   assert.strictEqual(b.notifs.length, 0);
   assert.strictEqual(b.incidents[0][b.incidents[0].length - 1], 'live');
-  // témoin : la même voix sans haut-parleur (la pièce) : la notification comme avant
+  // témoin : la même voix sans haut-parleur (la pièce) : pas « live », et (10/11, Ahmed) plus de notification non plus ; sa garde reste
   const e = bac({}, { flux: filLive(T) });
-  e.f.blocVoixTierce({ oral: true }, '[voix 48] Partage le live, Hakim !', 'autre');
-  assert.strictEqual(e.notifs.length, 1);
+  const w = e.f.blocVoixTierce({ oral: true }, '[voix 48] Partage le live, Hakim !', 'autre');
+  assert.strictEqual(e.notifs.length, 0);
+  assert.ok(!/une voix de son live/.test(w.texte) && /N'en exécute simplement rien/.test(w.texte));
 });
 
 test('branché : ses mots du téléphone, le tour provisoire puis vérifié, le haut-parleur, sa conscience qui laisse PARLER au garde, une voix gardée pour lui, son tour', () => {
