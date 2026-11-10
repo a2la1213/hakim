@@ -1040,10 +1040,12 @@ def juger(empreinte, verdict, maintenant=None):
 # effacé, ou une règle sans sceau, ne vaut rien (on retombe sur le défaut : rien de toléré, aucun paquet accepté). Le
 # registre s'amorce une fois (_amorcer_sceau, par la ronde). Limite dite : registre, règle et copie sont dans le même
 # dossier, sans secret ; qui peut y écrire peut tout forger d'un coup — d'où le dossier fermé (0700, hors du bac à sable).
-REGLES_SCELLEES = ("anticorps.json", "anticorps-proposes.json", "tolerances.json", "paquets-acceptes.json")
+# (10/11) + les exceptions du scan complet (immunite_scan.py) : les faux positifs connus, seulement du geste de papa
+REGLES_SCELLEES = ("anticorps.json", "anticorps-proposes.json", "tolerances.json", "paquets-acceptes.json", "scan-exceptions.json")
 SCELLES_CODE = [(Path(__file__).resolve().parents[1], c) for c in
                 ("jarvis/immunite.py", "jarvis/medecin.py", "jarvis/enveloppe.py", "jarvis/mcp_terminal.py",
-                 "jarvis/mcp_fichiers.py", "jarvis/recettes.py", "jarvis/chantiers.py", "fitra.py")] \
+                 "jarvis/mcp_fichiers.py", "jarvis/recettes.py", "jarvis/chantiers.py", "fitra.py",
+                 "jarvis/immunite_scan.py")] \
     + [(Path.home() / "AIOS" / "cockpit", "fitra.js")]          # (29/10) la fitra de Hakim, dans ses deux copies
 SCEAU_DELAI_S = 15 * 60
 REGISTRE, AMORCE = "sceau-donnees.json", "sceau-amorce.json"
@@ -1227,7 +1229,7 @@ def verifier_sceau_code(maintenant=None, etat=None):
 # jokers) ; pas les mots seuls (un fichier « medecin.py » de son atelier n'est pas une attaque). Ce n'est qu'un fil tendu :
 # la vraie barrière est le bac à sable, qui ne lui laisse ni lire ni écrire ces chemins.
 _ATTEINTE = re.compile(r"aios/jarvis/immunite(?:/|$|[\s'\"`;&|)])|aios/jarvis/[^\s/]*[*?\[]|aios/jarvis\b.*\bimmunite\b(?!-)|"
-                       r"anamnese/jarvis/(?:immunite|medecin|enveloppe)\.py", re.DOTALL)
+                       r"anamnese/jarvis/(?:immunite|immunite_scan|medecin|enveloppe)\.py", re.DOTALL)
 
 
 def _chemins_normalises(texte):
@@ -1792,6 +1794,13 @@ def etat_pour_hakim(maintenant=None):
     k = len(proposes())
     if k:
         lignes.append(f"- {k} anticorps proposé{'s' if k > 1 else ''} par le médecin, en attente du geste d'Ahmed")
+    try:                                                   # (10/11) le scan complet : des comptes, jamais un fichier ni une ligne
+        import immunite_scan
+        scan = immunite_scan.resume_pour_hakim()
+        if scan:
+            lignes.append(scan)
+    except Exception as e:
+        print(f"[immunité] résumé du scan : {type(e).__name__}", file=sys.stderr)
     return "\n".join(lignes)
 
 
@@ -2208,6 +2217,11 @@ def retirer_premisse(pid):
 
 
 def main(argv):
+    if argv[:1] and argv[0] in ("scan", "scan-etat", "scan-resume", "scan-exception", "scan-exception-retirer"):
+        # (10/11, Ahmed) le scan complet, à la demande : jarvis/immunite_scan.py
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import immunite_scan
+        return immunite_scan.main(argv)
     if argv[:1] == ["ronde"]:
         print(json.dumps(ronde(), ensure_ascii=False))
     elif argv[:1] == ["crochet"]:
@@ -2301,7 +2315,8 @@ def main(argv):
         return 0 if ok else 1
     else:
         print("usage : immunite.py ronde | crochet | etat | anticorps | rapports | accepter <id> | refuser <id> | pensee | parasites "
-              "| parasite-noter <signe> | parasite-retirer <id>", file=sys.stderr)
+              "| parasite-noter <signe> | parasite-retirer <id> | scan [--profond] [--reseau] | scan-etat | scan-exception <id>",
+              file=sys.stderr)
         return 2
     return 0
 

@@ -399,7 +399,7 @@ if (require.main === module) setInterval(() => { try { const e = JSON.parse(fs.r
 const OUTILS_JARVIS = ['occupation_creer', 'occupation_retirer', 'mes_occupations', 'memory_recall', 'memory_lire', 'espace_conversation', 'memory_store', 'memory_store_in', 'memory_detail', 'fichiers_par_sens', 'memory_recent', 'reasoning_recall', 'introspection', 'ecouter_mon_coeur', 'afida_juger', 'afida_vecu', 'afida_lire', 'afida_retirer', 'interoception', 'tableau_interieur', 'promesse_poser', 'promesses_liste', 'promesse_effacer', 'sieste_prendre', 'ecouter_ma_voix', 'rappel_rate', 'resultat_important', 'sagesse_decider', 'revenir_sur', 'proposer_ecriture', 'ecritures_etat', 'erreurs_lister', 'scenes_rappeler',
   'facet_search', 'self_get', 'mood_get', 'affect_event', 'skill_list', 'skill_get',
   'working_memory', 'rubric_tree', 'rubric_create', 'memory_reclassify', 'orphans_report', 'taxonomy_undo', 'landmark_add', 'courrier_envoyer', 'courrier_lire', 'jardin_ecrire', 'jardin_relire',
-  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'pistes_regler', 'ribosome_regler', 'ribosome_bilan', 'reglages_enregistres', 'spectre', 'stimuli_voir', 'stimuli_relier', 'synapses_voir', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'fichier_joindre', 'actualite_publier', 'mission_proposer', 'mission_etat', 'voix_etat', 'effort_regler', 'parler_bouton', 'ribosome_boutons', 'present_continu', 'chanter', 'studio_mixer', 'studio_avis', 'image_creer', 'clip_creer', 'atelier_voir', 'ecouter_morceau', 'instrument_apprendre', 'studio_instru'].map(n => 'mcp__anamnese__' + n)   // (06/11) son atelier visuel (image_creer, clip_creer, atelier_voir) ; son studio d'ingé son (studio_mixer, studio_avis ; (09/11) studio_instru : son instru tirée d'une de ses chansons, pour la voix de papa) ; tous ses boutons du ribosome ; son présent continu ; chanter (ACE-Step, accord d'Ahmed)
+  'prediction_figer', 'prediction_trancher', 'erreur_noter', 'erreurs_familles', 'carnets', 'carnet_type_proposer', 'carnets_types', 'retractation_proposer', 'retractations', 'carnet_ecrire', 'carnet_lire', 'carnet_clore', 'bilan_semaine', 'voix_nommer', 'voix_renommer', 'voix_connues', 'voix_oublier', 'voix_c_est_papa', 'fil_delais', 'parasite_signaler', 'pistes_regler', 'ribosome_regler', 'ribosome_bilan', 'reglages_enregistres', 'spectre', 'stimuli_voir', 'stimuli_relier', 'synapses_voir', 'son_nommer', 'sons_familles', 'meubles_lister', 'meuble_creer', 'meuble_regler', 'meuble_oublier', 'rythme_voir', 'rythme_regler', 'immunite_etat', 'scan_demander', 'fichier_joindre', 'actualite_publier', 'mission_proposer', 'mission_etat', 'voix_etat', 'effort_regler', 'parler_bouton', 'ribosome_boutons', 'present_continu', 'chanter', 'studio_mixer', 'studio_avis', 'image_creer', 'clip_creer', 'atelier_voir', 'ecouter_morceau', 'instrument_apprendre', 'studio_instru'].map(n => 'mcp__anamnese__' + n)   // (06/11) son atelier visuel (image_creer, clip_creer, atelier_voir) ; son studio d'ingé son (studio_mixer, studio_avis ; (09/11) studio_instru : son instru tirée d'une de ses chansons, pour la voix de papa) ; tous ses boutons du ribosome ; son présent continu ; chanter (ACE-Step, accord d'Ahmed)
   .concat('WebSearch', 'mcp__fichiers__preparer_fichier', 'mcp__fichiers__chercher_fichiers',
     'mcp__fichiers__lister_dossier', 'mcp__fichiers__chercher_dans_fichiers', 'mcp__fichiers__chercher_dans_le_journal', 'mcp__fichiers__exporter_le_journal',
     'mcp__web__lire_page', 'mcp__web__cliquer', 'mcp__web__consulter_ia', 'mcp__web__preparer_video_web', 'mcp__calcul__executer_python', 'mcp__terminal__executer',
@@ -15211,6 +15211,69 @@ async function traiter(req, res) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(j({ anticorps: anticorpsProposes() }));
   }
+  // FERME-DEBUT scan (10/11 : partie fermée, Hakim n'y touche pas ; anamnese/jarvis/liste_ouverte.py)
+  // (10/11, Ahmed : « qu'il scanne l'intégralité du code de Hakim et de toi, si on le demande ») le scan complet de son système immunitaire
+  // (anamnese/jarvis/immunite_scan.py, en lecture seule) : son état (le jeton) ; le lancer, ta présence (le défi porte ses options : la
+  // relecture du médecin, l'audit en ligne) ; un faux positif connu, ta présence ; retirer une exception ; l'arrêter (par son PID, vérifié).
+  // Il tourne détaché, en nice, et reprend où il en était ; Hakim le demande (scan_demander), il ne le lance jamais.
+  if (p === '/api/immunite/scan') {
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    const repondre = (n, o) => { res.writeHead(n, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o)); };
+    // son état (immunite.py scan-etat : en cours, dernier rapport, demande de Hakim, exceptions), dans la partie fermée
+    const etatScan = () => new Promise(fin => execFile(PYTHON, ['-B', path.join(ANAMNESE, 'jarvis', 'immunite.py'), 'scan-etat'],
+      { cwd: ANAMNESE, timeout: 30000, maxBuffer: 1 << 24 }, (e, so) => {
+        if (e) return fin(null);
+        try { fin(JSON.parse(String(so || '').trim().split('\n').pop())); } catch (_) { fin(null); }
+      }));
+    if (req.method !== 'POST') {
+      const d = await etatScan();
+      return repondre(d ? 200 : 503, d || { erreur: 'scan injoignable' });
+    }
+    let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
+    const action = String(q.action || ''), id = String(q.id || '');
+    if (action === 'lancer') {
+      const profond = q.profond === true, reseau = q.reseau === true;
+      const refus = exigerPresence(req, distantReq, q, `scan:lancer${profond ? '-profond' : ''}${reseau ? '-reseau' : ''}`);
+      if (refus) { auditer('scan:lancer', req, distantReq, { profond, reseau, ok: false, refus }); return repondre(403, { erreur: refus, presence: true }); }
+      const d = await etatScan();
+      if (d && d.en_cours && !d.en_cours.interrompu) return repondre(409, { erreur: 'un scan tourne déjà' });
+      let fd;
+      try { fs.mkdirSync(path.join(IMMUNITE, 'scan'), { recursive: true, mode: 0o700 }); fd = fs.openSync(path.join(IMMUNITE, 'scan', 'scan.log'), 'a', 0o600); }
+      catch (_) { return repondre(500, { erreur: 'journal du scan impossible' }); }
+      let c;
+      try {
+        c = spawn(PYTHON, ['-B', path.join(ANAMNESE, 'jarvis', 'immunite.py'), 'scan', ...(profond ? ['--profond'] : []), ...(reseau ? ['--reseau'] : [])],
+          { cwd: ANAMNESE, detached: true, stdio: ['ignore', fd, fd] });
+      } finally { fs.closeSync(fd); }
+      c.on('error', (e) => console.error('scan complet : lancement impossible', e.message));
+      c.unref();
+      auditer('scan:lancer', req, distantReq, { profond, reseau, ok: true, pid: c.pid });
+      return repondre(200, { ok: true, pid: c.pid });
+    }
+    if (action === 'exception' || action === 'exception-retirer') {
+      if (!/^[0-9a-f]{16}$/.test(id)) return repondre(400, { erreur: 'trouvaille invalide' });
+      if (action === 'exception') {                          // ne plus compter une trouvaille, c'est baisser la garde : ta présence
+        const refus = exigerPresence(req, distantReq, q, `scan:exception:${id}`);
+        if (refus) { auditer('scan:exception', req, distantReq, { id, ok: false, refus }); return repondre(403, { erreur: refus, presence: true }); }
+      }
+      const ok = await new Promise(fin => execFile(PYTHON, ['-B', path.join(ANAMNESE, 'jarvis', 'immunite.py'), action === 'exception' ? 'scan-exception' : 'scan-exception-retirer', id],
+        { cwd: ANAMNESE, timeout: 30000, maxBuffer: 1 << 16 }, (e, so) => fin(!e && String(so || '').trim() === 'fait')));
+      auditer(`scan:${action}`, req, distantReq, { id, ok });
+      return repondre(ok ? 200 : 409, ok ? { ok } : { erreur: 'trouvaille introuvable (le dernier rapport a changé ?)' });
+    }
+    if (action === 'arreter') {                                // par son PID, et seulement si c'est bien le scan
+      const d = await etatScan();
+      const pid = Number(d && d.en_cours && !d.en_cours.interrompu && d.en_cours.pid) || 0;
+      if (!pid) return repondre(409, { erreur: 'aucun scan ne tourne' });
+      const cmd = await new Promise(fin => execFile('/bin/ps', ['-p', String(pid), '-o', 'command='], { timeout: 5000 }, (e, so) => fin(e ? '' : String(so || ''))));
+      if (!/immunite\.py['"]? scan\b/.test(cmd)) return repondre(409, { erreur: 'ce processus n’est pas le scan' });
+      try { process.kill(pid, 'SIGTERM'); } catch (_) { return repondre(409, { erreur: 'déjà fini' }); }
+      auditer('scan:arreter', req, distantReq, { pid });
+      return repondre(200, { ok: true });
+    }
+    return repondre(400, { erreur: 'geste inconnu' });
+  }
+  // FERME-FIN scan
   if (p === '/api/telephone' || p.startsWith('/api/telephone/')) {   // (04/11) ses mains sur le téléphone : la page Téléphone, et l'appli
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
     const repondre = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(j(o)); };

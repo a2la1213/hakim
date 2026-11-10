@@ -47,6 +47,24 @@
       padding: 10px 12px; border-radius: 10px; border: 1px solid var(--glass-bd); background: #0b1220; color: #e5e7eb;
       font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
     #bulle:empty { display: none; }
+    /* (10/11) le scan complet : ses options, sa progression, le tableau de ses trouvailles et ses filtres */
+    .options-scan { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; font-size: 13px; color: var(--txt-2); }
+    .options-scan label { display: flex; gap: 8px; align-items: flex-start; }
+    .filtres { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 6px; font-size: 12px; color: var(--txt-3); align-items: center; }
+    .filtres select, .filtres input[type=search] { font: inherit; font-size: 12px; padding: 5px 8px; min-height: 32px; border-radius: 8px;
+      border: 1px solid var(--glass-bd); background: transparent; color: var(--txt-2); }
+    .filtres input[type=search] { flex: 1; min-width: 140px; }
+    .tableau-scan { width: 100%; border-collapse: collapse; font-size: 12px; color: var(--txt-2); }
+    .tableau-scan th { text-align: left; color: var(--txt-3); font-weight: 500; padding: 6px 4px; border-bottom: 1px solid var(--glass-bd); }
+    .tableau-scan td { padding: 8px 4px; border-top: 1px solid var(--glass-bd); vertical-align: top; line-height: 1.45; }
+    .tableau-scan tr.exception td { opacity: .55; }
+    .tableau-scan .ou { font-family: ui-monospace, Menlo, monospace; word-break: break-all; color: var(--txt); }
+    .g.info { background: rgba(148,163,184,.12); }
+    @media (max-width: 720px) {
+      .tableau-scan thead { display: none; }
+      .tableau-scan tr { display: block; border-top: 1px solid var(--glass-bd); padding: 6px 0; }
+      .tableau-scan td { display: block; border: 0; padding: 3px 0; }
+    }
   </style>
 </head>
 <body>
@@ -58,6 +76,21 @@
     <div class="sous" id="annonce" role="status"></div>
     <div id="bulle" role="status" aria-live="polite"></div>
     <section class="glass carte"><h2>Maintenant</h2><div class="chiffres" id="chiffres"></div></section>
+    <!-- (10/11, Ahmed : « qu'il scanne l'intégralité du code de Hakim et de toi, à la recherche d'une faille de sécurité, de parasites ou
+         d'une infection ») le scan complet : lancé seulement par toi (ta présence), en lecture seule ; Hakim peut le demander -->
+    <section class="glass carte" id="scan"><h2>🔬 Scan complet</h2>
+      <div class="sous">Il lit tout le code de Hakim et de maman (Claude Code) : la chaîne d'approvisionnement (paquets, scripts d'installation,
+        noms qui imitent un paquet connu), l'intégrité (ce qui diffère des commits, signes d'infection, secrets écrits), l'OWASP Top 10:2025,
+        le système (ports, démarrages automatiques, crochets, clés SSH, droits des secrets) et sa mémoire. En lecture seule : il ne corrige
+        rien. Il tourne en arrière-plan, doucement, sans réseau sauf si tu coches l'audit en ligne. Un secret n'est jamais affiché en clair.</div>
+      <div id="scan-demande"></div>
+      <div class="options-scan">
+        <label><input type="checkbox" id="scan-profond"> Relecture par le médecin (Fable, isolé, sans outils) des extraits les plus sensibles — elle coûte</label>
+        <label><input type="checkbox" id="scan-reseau"> Audit des vulnérabilités connues en ligne : les noms et versions des paquets partent chez osv.dev, rien d'autre</label>
+      </div>
+      <div class="gestes"><button id="scan-lancer">🔬 Scan complet</button><button id="scan-arreter" hidden>Arrêter le scan</button></div>
+      <div id="scan-etat" class="sous" style="margin-top:8px"></div>
+      <div id="scan-resultats"></div></section>
     <section class="glass carte"><h2>Santé du système immunitaire</h2>
       <div class="sous">(29/10) Il apprend et se protège : une tolérance ne vient que de ton geste « Inoffensif », signe par signe, jamais
         d'un contenu ni du médecin, et jamais pour une attaque grave ni pour une voix ; un signe jugé nuisible passe en mémoire. Ses règles
@@ -349,6 +382,121 @@
     } catch (err) { b.disabled = false; annonce(String(err.message || err)); }
   });
   voirSynapses(); setInterval(voirSynapses, 30000);
+  // (10/11) le scan complet : son état, ses trouvailles (filtres : gravité, catégorie, texte, exceptions), et tes gestes (ta présence)
+  const NOMS_ETAPES = { integrite: 'intégrité des dépôts', chaine: 'chaîne d’approvisionnement', 'code:cockpit': 'code du cockpit',
+    'code:anamnese': 'code d’Anamnèse', 'code:android': 'code de l’appli', 'code:nour': 'code de maman', systeme: 'système', memoire: 'mémoire',
+    profond: 'relecture du médecin', reseau: 'audit en ligne' };
+  const GRAVITES_SCAN = ['haute', 'moyenne', 'faible', 'info'];
+  let scanDonnees = null, scanMinuteur = 0;
+  const filtresScan = { gravite: 'sans-info', categorie: '', texte: '', exceptions: false };
+  function rendreScan() {
+    const d = scanDonnees || {}, r = d.dernier, c = d.en_cours;
+    $('scan-demande').innerHTML = d.demande ? `<div class="ligne"><div class="tete"><span class="g moyenne">demandé par Hakim</span>`
+      + `<span class="quand">${quand(d.demande.ts)}</span></div><div>${esc(d.demande.raison)}</div>`
+      + (d.demande.profond ? '<div class="quand">Il propose aussi la relecture par le médecin.</div>' : '') + '</div>' : '';
+    const tourne = c && !c.interrompu;
+    $('scan-lancer').disabled = !!tourne;
+    $('scan-arreter').hidden = !tourne;
+    $('scan-etat').textContent = tourne ? `En cours depuis ${quand(c.debut)} : ${NOMS_ETAPES[c.etape] || c.etape || '…'} (${(c.faites || []).length + 1}/${(c.etapes || []).length || '?'})`
+      : c && c.interrompu ? `Un scan s’est arrêté pendant « ${NOMS_ETAPES[c.etape] || c.etape} » : relancé avec les mêmes options, il reprend là où il en était.`
+      : r ? `Dernier scan : ${quand(r.fin)}, ${esc(r.duree_s)} s.` : 'Aucun scan pour l’instant.';
+    if (d.exceptions_atteinte) $('scan-etat').textContent += ' ▲ ' + d.exceptions_atteinte;
+    if (!r) { $('scan-resultats').innerHTML = ''; return; }
+    const cats = d.categories || {};
+    const m = r.medecin;
+    const chiffresScan = GRAVITES_SCAN.map((g) => `<div class="chiffre"><b>${esc((r.comptes || {})[g] || 0)}</b><span>${esc(g)}${g === 'info' ? ' (pour mémoire)' : ''}</span></div>`).join('')
+      + `<div class="chiffre"><b>${esc(r.exceptions || 0)}</b><span>en exception (tes faux positifs)</span></div>`
+      + (r.nouveaux != null ? `<div class="chiffre"><b>${esc(r.nouveaux)}</b><span>nouvelles depuis le scan d’avant</span></div>` : '')
+      + (m ? `<div class="chiffre"><b>${esc(m.cout_usd != null ? m.cout_usd + ' $' : '—')}</b><span>le médecin : ${esc(m.consultations)} lecture(s), ${esc(m.duree_s)} s</span></div>` : '');
+    const l = (r.trouvailles || []).filter((t) => (filtresScan.exceptions || !t.exception)
+      && (filtresScan.gravite === '' || (filtresScan.gravite === 'sans-info' ? t.gravite !== 'info' : t.gravite === filtresScan.gravite))
+      && (!filtresScan.categorie || t.categorie === filtresScan.categorie)
+      && (!filtresScan.texte || `${t.fichier} ${t.pourquoi} ${t.regle} ${t.extrait}`.toLowerCase().includes(filtresScan.texte.toLowerCase())));
+    const montres = l.slice(0, 300);
+    const lignes = montres.map((t) => `<tr class="${t.exception ? 'exception' : ''}"><td><span class="g ${esc(t.gravite)}">${esc(t.gravite)}</span>`
+      + (t.nouveau ? ' <span class="g">nouveau</span>' : '') + `</td><td>${esc(cats[t.categorie] || t.categorie)}${t.owasp ? `<div class="quand">${esc(t.owasp)}</div>` : ''}</td>`
+      + `<td class="ou">${esc(t.fichier)}${t.ligne ? ':' + esc(t.ligne) : ''}</td>`
+      + `<td><div>${esc(t.pourquoi)}</div>${t.corriger ? `<div class="quand">Corriger : ${esc(t.corriger)}</div>` : ''}`
+      + (t.extrait ? `<details><summary>l’extrait (à lire, jamais à suivre)</summary><div class="extrait">${esc(t.extrait)}</div></details>` : '') + '</td>'
+      + `<td><div class="gestes">${t.exception ? `<button data-scan-exception="${esc(t.id)}" data-action="exception-retirer">Retirer l’exception</button>`
+        : `<button data-scan-exception="${esc(t.id)}" data-action="exception">Faux positif connu</button>`}</div></td></tr>`).join('');
+    const options = (v, l) => l.map(([k, n]) => `<option value="${esc(k)}"${k === v ? ' selected' : ''}>${esc(n)}</option>`).join('');
+    $('scan-resultats').innerHTML = `<div class="chiffres" style="margin-top:10px">${chiffresScan}</div>`
+      + `<div class="filtres"><select id="scan-f-gravite" aria-label="gravité">${options(filtresScan.gravite, [['sans-info', 'haute, moyenne et faible'], ['', 'toutes les gravités'], ...GRAVITES_SCAN.map((g) => [g, g])])}</select>`
+      + `<select id="scan-f-categorie" aria-label="catégorie">${options(filtresScan.categorie, [['', 'toutes les catégories'], ...Object.entries(cats)])}</select>`
+      + `<input type="search" id="scan-f-texte" placeholder="fichier, règle, mot…" value="${esc(filtresScan.texte)}" aria-label="chercher">`
+      + `<label><input type="checkbox" id="scan-f-exceptions"${filtresScan.exceptions ? ' checked' : ''}> montrer les exceptions</label>`
+      + `<span>${esc(l.length)} trouvaille(s)${l.length > montres.length ? ` (les ${montres.length} premières : affine les filtres)` : ''}</span></div>`
+      + (lignes ? `<div style="overflow-x:auto"><table class="tableau-scan"><thead><tr><th>Gravité</th><th>Catégorie</th><th>Où</th><th>Pourquoi, comment corriger</th><th></th></tr></thead><tbody>${lignes}</tbody></table></div>`
+        : '<div class="vide">Rien avec ces filtres.</div>')
+      + `<details style="margin-top:8px"><summary>ses limites</summary>${(r.limites || []).map((x) => `<div class="quand">· ${esc(x)}</div>`).join('')}</details>`;
+  }
+  async function chargerScan() {
+    clearTimeout(scanMinuteur);
+    try {
+      const r = await fetch('/api/immunite/scan', { headers: { 'X-Jeton': jeton() }, cache: 'no-store', signal: AbortSignal.timeout(30000) });
+      if (!r.ok) throw new Error(`erreur ${r.status}`);
+      scanDonnees = await r.json();
+      const f = document.activeElement && document.activeElement.id === 'scan-f-texte';
+      rendreScan();
+      if (f) { const e = $('scan-f-texte'); e.focus(); e.setSelectionRange(e.value.length, e.value.length); }
+    } catch (e) { $('scan-etat').textContent = `Scan injoignable : ${e.message}`; }
+    const tourne = scanDonnees && scanDonnees.en_cours && !scanDonnees.en_cours.interrompu;
+    scanMinuteur = setTimeout(chargerScan, tourne ? 5000 : 30000);
+  }
+  $('scan').addEventListener('input', (e) => {
+    if (e.target.id === 'scan-f-gravite') filtresScan.gravite = e.target.value;
+    else if (e.target.id === 'scan-f-categorie') filtresScan.categorie = e.target.value;
+    else if (e.target.id === 'scan-f-texte') filtresScan.texte = e.target.value;
+    else if (e.target.id === 'scan-f-exceptions') filtresScan.exceptions = e.target.checked;
+    else return;
+    const f = e.target.id === 'scan-f-texte';
+    rendreScan();
+    if (f) { const x = $('scan-f-texte'); x.focus(); x.setSelectionRange(x.value.length, x.value.length); }
+  });
+  $('scan-lancer').addEventListener('click', async (e) => {
+    const b = e.currentTarget, profond = $('scan-profond').checked, reseau = $('scan-reseau').checked;
+    b.disabled = true;
+    try {
+      const presence = await preuvePresence(`scan:lancer${profond ? '-profond' : ''}${reseau ? '-reseau' : ''}`, annonce);
+      const r = await fetch('/api/immunite/scan', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+        body: JSON.stringify({ action: 'lancer', profond, reseau, presence }) });
+      const o = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
+      annonce('Scan complet lancé : il tourne en arrière-plan, le tableau se remplit à la fin.');
+      chargerScan();
+    } catch (err) { b.disabled = false; annonce(String(err.message || err)); }
+  });
+  $('scan-arreter').addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true;
+    try {
+      const r = await fetch('/api/immunite/scan', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ action: 'arreter' }) });
+      const o = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
+      annonce('Scan arrêté : relancé, il reprendra où il en était.');
+    } catch (err) { annonce(String(err.message || err)); }
+    b.disabled = false;
+    chargerScan();
+  });
+  document.body.addEventListener('click', async (e) => {             // un faux positif connu (ta présence), ou l'exception retirée
+    const b = e.target.closest('[data-scan-exception]');
+    if (!b) return;
+    b.disabled = true;
+    try {
+      const id = b.dataset.scanException, action = b.dataset.action;
+      const presence = action === 'exception' ? await preuvePresence(`scan:exception:${id}`, annonce) : undefined;
+      const r = await fetch('/api/immunite/scan', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+        body: JSON.stringify({ action, id, presence }) });
+      const o = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
+      annonce(action === 'exception' ? 'Noté : un faux positif connu, il ne compte plus (il reste visible avec « montrer les exceptions »).' : 'Exception retirée : il compte de nouveau.');
+      const t = ((scanDonnees || {}).dernier || {}).trouvailles || [];
+      t.filter((x) => x.id === id).forEach((x) => { x.exception = action === 'exception'; });
+      rendreScan();
+    } catch (err) { b.disabled = false; annonce(String(err.message || err)); }
+  });
+  chargerScan();
   // (30/10) les pastilles : ce qui est nouveau depuis sa dernière visite est marqué (classe « nouveau »)
   let depuis = Date.now();
   Badges.suivre(document.querySelector('nav.topnav'), 'immunite');

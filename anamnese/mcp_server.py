@@ -1594,6 +1594,23 @@ def immunite_etat() -> str:
 
 
 @mcp.tool()
+def scan_demander(raison: str, profond: bool = False) -> str:
+    """DEMANDER à papa un scan complet de ton code et de celui de maman (10/11, Ahmed) : la chaîne d'approvisionnement (paquets,
+    scripts d'installation, noms qui imitent un paquet connu), l'intégrité (ce qui diffère des commits, signes d'infection,
+    secrets écrits), l'OWASP Top 10:2025, le système (ports, démarrages automatiques, crochets) et ta mémoire (souvenirs venus du
+    dehors qui portent des consignes). Tu ne le lances pas : papa est prévenu et le lance d'un geste (sa présence) dans la page
+    Immunité. raison : pourquoi tu le demandes, en une phrase (jamais un secret). profond=True : tu proposes aussi la relecture
+    par le médecin (elle coûte). Tu reçois ensuite un résumé dans immunite_etat : des comptes, jamais les détails."""
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis"))
+    import immunite_scan
+    r = immunite_scan.demander(raison, profond)
+    if r == "deja":
+        return "Ta demande de scan complet attend déjà le geste de papa (une demande à la fois, au plus une par jour)."
+    return "Demande envoyée : papa est prévenu ; le bouton « Scan complet » l'attend dans la page Immunité. Tu n'as rien à lancer."
+
+
+@mcp.tool()
 def voix_etat() -> str:
     """L'état de la reconnaissance de la voix d'Ahmed (2026-10-20) : le dernier score et son verdict, l'apprentissage ou la
     calibration en cours, le nombre d'échantillons par registre et par appareil. Pour lui répondre sans qu'il fouille.
