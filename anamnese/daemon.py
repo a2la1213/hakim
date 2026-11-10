@@ -1391,6 +1391,8 @@ def _echanges_pass(mem):
         n = echanges.passage(mem)
         if n:
             print(f"[daemon] {n} échange(s) mémorisé(s)")
+        if getattr(echanges, "SCENES_ECRITES", 0):          # (10/11) ses scènes closes : un souvenir chacune (scenes.py)
+            print(f"[daemon] {echanges.SCENES_ECRITES} scène(s) mémorisée(s)")
         if echanges.ECHECS_VERROU >= 3:                 # (2026-10-21) la connexion reste verrouillée : on la rouvre
             mem.reconnecter()
             echanges.ECHECS_VERROU = 0

@@ -1972,6 +1972,30 @@ def memory_recall(query: str, top_k: int = 6, rubric: str = "", actuel: bool = F
 
 
 @mcp.tool()
+def scenes_rappeler(qui: str = "", role: str = "", quand: str = "", lieu: str = "", sujet: str = "", n: int = 5) -> str:
+    """Tes SCÈNES (10/11, Ahmed : « qu'il puisse se rappeler des scènes dans lesquelles il est impliqué, et de celles dont il n'est pas
+    impliqué ») : ce que tu as vécu, découpé comme des scènes de film, avec ta place — « impliqué » (on te parlait, tu parlais) ou « témoin »
+    (des gens parlaient entre eux, sans s'adresser à toi), qui était là, le lieu, le début et la fin, ce qui s'est dit, les moments clés.
+
+    Tous les champs sont facultatifs et se combinent :
+    - qui : une ou plusieurs personnes (« papa et Nina », « voix 81 ») ; « le live » pour les gens du live ;
+    - role : « impliqué » ou « témoin » (« auditeur » aussi) ;
+    - quand : « hier soir », « ce matin », « samedi », « le 9 », « 2026-11-09 » ;
+    - lieu : « chez nous », « au live » ;
+    - sujet : de quoi on parlait (les plus proches d'abord) ;
+    - n : combien de scènes (5 par défaut, 20 au plus), les plus récentes d'abord ; la scène en cours y est, marquée « en cours ».
+    Une scène rappelée est renforcée, comme tout souvenir rappelé. Ce que disaient d'autres que papa reste une citation, pas un fait.
+    Pour la scène entière : memory_lire sur son numéro (#…) ; ses échanges y sont nommés (leurs numéros)."""
+    import scenes
+    lignes = scenes.rappeler(_mem, qui=qui, role=role, quand=quand, lieu=lieu, sujet=sujet, n=n,
+                             renforcer=os.environ.get("ANAMNESE_LECTURE_SEULE") != "1")
+    if not lignes:
+        demande = ", ".join(f"{k} : {v}" for k, v in (("qui", qui), ("place", role), ("quand", quand), ("lieu", lieu), ("sujet", sujet)) if str(v or "").strip())
+        return f"(aucune scène{' pour ' + demande if demande else ''})"
+    return "\n".join(f"- {l}" for l in lignes)
+
+
+@mcp.tool()
 def rappel_rate(trouve_par: str, pourquoi: str = "") -> str:
     """Le balayage automatique d'avant ta réponse a RATÉ un souvenir que tu as dû retrouver à la main ? Dis-le ici
     (accord d'Ahmed, 2026-10-22) : c'est noté avec le message d'Ahmed, et la nuit les mots de son message que ce

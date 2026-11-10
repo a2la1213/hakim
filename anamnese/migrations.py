@@ -27,6 +27,7 @@ EPISODE_COLUMNS = [
     ("recall_count", "INTEGER DEFAULT 0"),
     ("provenance", "TEXT"),             # 'externe' : contenu de tiers ou dérivé d'un tel contenu (provenance.py)
     ("enc_affect", "TEXT"),             # la trace émotionnelle d'encodage (affect.trace, 2026-10-21)
+    ("scene", "TEXT"),                  # la fiche d'une scène (scenes.py, 10/11) : sa place, qui, le lieu, le début, la fin, ses moments clés
 ]
 
 # Colonnes à ajouter à `rubrics` si la table préexiste sans elles (rattrapage

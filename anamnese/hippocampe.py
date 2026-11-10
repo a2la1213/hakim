@@ -167,8 +167,9 @@ def remplir(mem, embed=None, limite=None, depuis=None):
         import embeddings
         embed = embeddings.embed
     rows = mem.db.execute("""SELECT e.id, e.ts, e.content FROM episodes e LEFT JOIN hippocampe h ON h.episode_id = e.id
-        WHERE e.id > ? AND h.episode_id IS NULL AND e.role = 'episodic' AND (e.content LIKE '[Échange avec Ahmed%'
-        OR e.content LIKE '[Mon corps%' OR e.content LIKE '[Ma nuit%') ORDER BY e.id"""
+        WHERE e.id > ? AND h.episode_id IS NULL AND e.role = 'episodic' AND (e.content LIKE '[Échange avec %'
+        OR e.content LIKE '[Mon corps%' OR e.content LIKE '[Ma nuit%' OR e.content LIKE '[Entendu, témoin%' OR e.content LIKE '[Scène —%')
+        ORDER BY e.id"""
                           + (f" LIMIT {int(limite)}" if limite else ""), (int(depuis or 0),)).fetchall()
     maintenant = time.time()
     for eid, ts, content in rows:

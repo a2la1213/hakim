@@ -30,7 +30,7 @@ EXTERNES = {"WebSearch", "WebFetch", "mcp__web__lire_page", "mcp__web__cliquer",
             "Task", "Agent", "mcp__terminal__suivre_tache", "mcp__anamnese__courrier_lire", "mcp__anamnese__mission_etat",
             "mcp__anamnese__fichiers_par_sens"}
 RESEAU = re.compile(r"https?://|\bcurl\b|\bwget\b|\bgit\s+(clone|pull|fetch)\b|\bpip\b|\buv\b|yt-dlp|huggingface|hf_hub|\bnpm\b|\bbrew\b")
-EN_TETE = re.compile(r"^\[(?:Échange(?: avec Ahmed)?|Hakim, de lui-même) — \w+\.? (\d\d)/(\d\d) (\d\d):(\d\d)")
+EN_TETE = re.compile(r"^\[(?:Échange(?: avec [^—\]]{1,80}?)?|Entendu, témoin|Hakim, de lui-même) — \w+\.? (\d\d)/(\d\d) (\d\d):(\d\d)")   # (10/11) « Échange avec voix 3 », « Entendu, témoin »
 
 
 def _ts(o):
@@ -88,7 +88,7 @@ def candidats(conn, tours, evenements=None):
     res = {}
     # les échanges mémorisés : la minute de leur en-tête
     for eid, ts, content in conn.execute("SELECT id, ts, content FROM episodes WHERE role='episodic' AND provenance IS NULL "
-                                         "AND (content LIKE '[Échange%' OR content LIKE '[Hakim, de lui-même%')"):
+                                         "AND (content LIKE '[Échange%' OR content LIKE '[Hakim, de lui-même%' OR content LIKE '[Entendu, témoin%')"):
         m = EN_TETE.match(content or "")
         if not m:
             continue

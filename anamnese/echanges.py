@@ -190,6 +190,24 @@ def _texte_souvenir(e):
                 + (f" · Ce qu'il vivait : {vecu}" if vecu else ""))
     if e.get("de_lui_meme"):
         return f"[Hakim, de lui-même — {', '.join(cadre)}] {_court(_masquer(e.get('hakim', '')))}"
+    # (10/11, ~19:45, Ahmed : « reconnaître si c'est une discussion entre lui et des gens, ou entre des gens qui ne s'adressent pas à lui ») sa
+    # place (le cockpit la décide, scenes.py la relit pour une ligne d'avant) : témoin, le souvenir dit ce qu'il a ENTENDU, voix par voix ; on
+    # lui parlait sans que papa dise un mot, c'est un échange avec cette voix ; jamais plus « Échange avec Ahmed » quand papa ne parlait pas
+    vu = _vu_par_lui(e)
+    if vu is not None:
+        place, segs = vu
+        paroles = " · ".join(f"{q} : « {_court(_masquer(x))} »" for q, x in segs)
+        lui = str(e.get("hakim") or "").strip()
+        vecu = " ".join(_masquer(str(e.get("vecu") or "")).split())[:1500]
+        suite = (f" · Ce qu'il vivait : {vecu}" if vecu else "")
+        if place == "temoin":
+            qui = sorted({q for q, _x in segs}, key=[q for q, _x in segs].index)
+            entre = f"{' et '.join(qui)} parlaient entre eux" if len(qui) > 1 else f"{qui[0]} parlait" if qui else "on parlait"
+            return (f"[Entendu, témoin — {', '.join(cadre)}, {entre}, pas à lui] {paroles}"
+                    + (f" · Hakim (il a réagi) : « {_court(_masquer(lui))} »" if lui and not _SANS_PAROLE.match(lui) else " · Hakim n'a rien dit")
+                    + suite)
+        avec = " et ".join(dict.fromkeys(q for q, _x in segs)) or "quelqu'un"
+        return (f"[Échange avec {avec} — {', '.join(cadre)}, papa ne disait rien] {paroles} · Hakim : « {_court(_masquer(lui))} »" + suite)
     if e.get("voix") == "autre":                 # l'empreinte vocale : probablement pas Ahmed (un invité, la télé)
         return (f"[Échange — {', '.join(cadre)}, voix qui n'est probablement pas celle d'Ahmed] Quelqu'un : "
                 f"« {_court(_masquer(e.get('ahmed', '')))} » · Hakim : « {_court(_masquer(e.get('hakim', '')))} »")
@@ -197,6 +215,43 @@ def _texte_souvenir(e):
     vecu = " ".join(_masquer(str(e.get("vecu") or "")).split())[:1500]
     return (f"[Échange avec Ahmed — {', '.join(cadre)}] Ahmed : « {_court(_masquer(e.get('ahmed', '')))} » · "
             f"Hakim : « {_court(_masquer(e.get('hakim', '')))} »" + (f" · Ce qu'il vivait : {vecu}" if vecu else ""))
+
+
+_SANS_PAROLE = re.compile(r"^\s*(?:No response requested\.?|\(rien de dit\))\s*(?:\[\[[^\]]*\]\]\s*)*$", re.I)
+
+
+def _vu_par_lui(e):
+    """(place, [(qui, texte)]) quand ce tour n'est pas un échange avec papa : il était témoin, ou une autre voix lui parlait sans que papa dise
+    un mot ; None sinon (l'en-tête habituel). Seulement à l'oral (un écrit vient toujours de papa)."""
+    if not e.get("oral") or e.get("telephone") or e.get("de_lui_meme"):
+        return None
+    try:
+        import scenes
+        segs = [(q, x) for q, x in scenes.segments(e.get("ahmed"), e.get("voix") != "autre") if re.search(r"\w", x)]
+        if not segs:
+            return None
+        explicite = scenes._place(e.get("role"))
+        if not explicite and all(q == "quelqu'un" for q, _x in segs):
+            return None                                    # sans sa place : l'en-tête d'une voix « autre », comme avant
+        place = explicite or scenes.place_inferee(e)
+    except Exception:
+        return None
+    if place == "temoin":
+        return place, segs
+    if not any(q == "papa" for q, _x in segs):
+        return "implique", segs
+    return None
+
+
+def _paroles_de_papa(e):
+    """Ce que papa a dit lui-même dans ce tour (sans les autres voix) ; tout le texte quand rien n'est étiqueté."""
+    if not e.get("oral"):
+        return str(e.get("ahmed") or "")
+    try:
+        import scenes
+        return " ".join(x for q, x in scenes.segments(e.get("ahmed"), e.get("voix") != "autre") if q == "papa")
+    except Exception:
+        return str(e.get("ahmed") or "")
 
 
 def _nom_outil(o):
@@ -220,6 +275,10 @@ def memoriser(mem, e, embed=None):
     # le même échange déposé deux fois (renvoi du même message) : gardé une fois
     if mem.db.execute("SELECT 1 FROM episodes WHERE role='episodic' AND content=? LIMIT 1", (texte,)).fetchone():
         return None
+    # (10/11) l'attention et l'émotion viennent des mots de papa seulement : ce qu'il a entendu d'autres voix n'est jamais papa
+    vu = _vu_par_lui(e)
+    if vu is not None:
+        ahmed = _paroles_de_papa(e).strip()
     imp, raisons = attention(ahmed if e.get("voix") != "autre" else "", hakim, _nouveaute(mem, emb))
     if e.get("de_lui_meme"):
         imp = round(max(0.2, imp - 0.1), 2)
@@ -316,11 +375,41 @@ def _emotion(mem, e, ahmed, texte, emb, imp, raisons):
 
 
 ECHECS_VERROU = 0                                         # passages de suite bloqués par « database is locked »
+SCENES_ECRITES = 0                                        # (10/11) les scènes closes au dernier passage (le démon le dit)
+
+
+def _sens(embed):
+    if embed is not None:
+        return embed
+    import embeddings
+    return embeddings.embed
+
+
+def _scene(mem, e, eid, embed):
+    """(10/11, Ahmed : « que ça se mémorise comme des scènes de cinéma ») ce moment avance sa scène (scenes.py) ; jamais bloquant."""
+    global SCENES_ECRITES
+    try:
+        import scenes
+        SCENES_ECRITES += len(scenes.avancer(mem, e, eid, embed=_sens(embed)))
+    except Exception as err:
+        print(f"[echanges] scène : {type(err).__name__}: {err}"[:300], file=sys.stderr)
+
+
+def _scene_silence(mem, embed):
+    global SCENES_ECRITES
+    try:
+        import scenes
+        if scenes.clore_si_silence(mem, embed=_sens(embed)):
+            SCENES_ECRITES += 1
+    except Exception as err:
+        print(f"[echanges] scène : {type(err).__name__}: {err}"[:300], file=sys.stderr)
 
 
 def passage(mem, fichier=None, embed=None, maximum=PAR_PASSAGE):
-    """Lit la file depuis le curseur (kv), mémorise chaque échange neuf. Rend le nombre de souvenirs écrits."""
-    global ECHECS_VERROU
+    """Lit la file depuis le curseur (kv), mémorise chaque échange neuf. Rend le nombre de souvenirs écrits (les échanges ; ses scènes
+    closes, à part : SCENES_ECRITES)."""
+    global ECHECS_VERROU, SCENES_ECRITES
+    SCENES_ECRITES = 0
     f = Path(fichier or FILE)
     try:
         taille = f.stat().st_size
@@ -333,6 +422,7 @@ def passage(mem, fichier=None, embed=None, maximum=PAR_PASSAGE):
     if curseur > taille:                                   # la file a été remplacée : on repart du début
         curseur = 0
     if curseur == taille:
+        _scene_silence(mem, embed)                         # (10/11) rien de neuf : sa scène, close après son silence
         return 0
     n = 0
     with open(f, "rb") as h:
@@ -344,8 +434,13 @@ def passage(mem, fichier=None, embed=None, maximum=PAR_PASSAGE):
             curseur += len(ligne)
             try:
                 e = json.loads(ligne.decode("utf-8"))
-                if isinstance(e, dict) and memoriser(mem, e, embed=embed):
-                    n += 1
+                if isinstance(e, dict) and e.get("moment"):      # (10/11) ce qu'il a entendu sans qu'on lui parle : seulement sa scène
+                    _scene(mem, e, None, embed)
+                elif isinstance(e, dict):
+                    eid = memoriser(mem, e, embed=embed)
+                    if eid:
+                        n += 1
+                        _scene(mem, e, eid, embed)
             except sqlite3.OperationalError as err:        # (2026-10-21) la base verrouillée n'est pas la faute de la
                 import traceback                           # ligne : pas de quarantaine, on réessaie au prochain passage
                 ECHECS_VERROU += 1
@@ -366,4 +461,5 @@ def passage(mem, fichier=None, embed=None, maximum=PAR_PASSAGE):
                 print(f"[echanges] ligne mise en quarantaine : {type(err).__name__}: {err}", file=sys.stderr)
             mem.kv_set(CLE_CURSEUR, str(curseur))         # le curseur avance ligne par ligne
             ECHECS_VERROU = 0
+    _scene_silence(mem, embed)
     return n

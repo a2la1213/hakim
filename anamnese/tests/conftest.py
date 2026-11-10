@@ -10,3 +10,11 @@ def _jauge_fatigue_isolee(tmp_path, monkeypatch):
     monkeypatch.setattr(jauge_fatigue, "CORPS", tmp_path / "corps-echantillons.jsonl")
     monkeypatch.setattr(jauge_fatigue, "_sondes", lambda: {"charge": 0.2, "memoire_libre": 60.0, "swap": (5000.0, 2500.0),
                                                            "chaleur": "aucun avertissement"})
+
+
+@pytest.fixture(autouse=True)
+def _scenes_eteintes(monkeypatch):
+    """(10/11) Ses scènes (scenes.py) se font au passage des échanges : éteintes par défaut dans les tests (une scène close au silence
+    ajouterait un souvenir que les autres tests ne comptent pas) ; ses tests à elles les allument (tests/test_scenes.py)."""
+    import scenes
+    monkeypatch.setattr(scenes, "ACTIF", False)

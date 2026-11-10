@@ -47,7 +47,7 @@ const FIN_PHRASE = /[.!?…؟]["»”)]*$/;
 const PAS_SA_VOIX = /^(papa\b|ta propre voix|moi$)/i;
 
 const DEFAUTS = { pas_ms: 1000, par_minute: 6, ecart_s: 6, attente_s: 20, engage_s: 90, papa_s: 120, musique: true, musique_s: 120,
-  musique_apres_s: 20, calme_s: 8, autorise: true, attente_nom_s: 45, pause_max_s: 3, sans_pause_s: 10 };
+  musique_apres_s: 20, calme_s: 8, autorise: true, attente_nom_s: 45, pause_max_s: 3, sans_pause_s: 10, entre_eux_s: 15, entre_eux_silence_s: 30 };
 
 function creer() {
   return { blocs: new Map(), tampon: [], phrases: [], dernierMot: 0, enVol: null, aDire: [], appels: [], appelsPrio: [], dernierAppel: -Infinity,
@@ -98,6 +98,11 @@ function motifDe(e, p, maintenant, r) {
   if (autorise && NOM.test(p.texte)) return 'nom';
   const engage = e.engages.get(p.qui || '?');
   if (autorise && engage != null && maintenant - engage < r.engage_s * 1000 && QUESTION.test(p.texte)) return 'engage';
+  // (10/11, ~19:45, Ahmed : « reconnaître si c'est une discussion entre lui et des gens, ou entre des gens qui ne s'adressent pas à lui et dont il
+  // est juste l'auditeur ») deux voix du live qui se répondent (une autre voix, nommée, juste avant), sans son nom, lui silencieux au live depuis
+  // un moment et pas en conversation avec elle : il est AUDITEUR (« entre_eux »), même si l'une dit « tu » à l'autre ; il écoute, il peut s'y
+  // joindre (son garde l'appelle comme pour « ecoute » : leur pause, papa d'abord, sa voix et sa tête libres, son budget), jamais en priorité
+  if (autorise && !A_PAPA.test(p.texte) && entreEux(e, p, maintenant, r) && (engage == null || maintenant - engage >= r.engage_s * 1000)) return 'entre_eux';   // à papa : « ecoute »
   if (autorise && QUESTION.test(p.texte) && A_LUI.test(p.texte) && !A_PAPA.test(p.texte)) return 'question';   // (10/11) son autorisation : une question qui lui parle
   const mots = p.texte.split(/\s+/).filter(Boolean).length;
   if (maintenant - e.papaA < r.papa_s * 1000 && mots >= 3) return 'papa';
@@ -107,6 +112,15 @@ function motifDe(e, p, maintenant, r) {
   if (autorise && mots >= 3) return 'ecoute';
   return null;
 }
+// une autre voix nommée du live a parlé juste avant (entre_eux_s), et lui ne leur a rien dit depuis entre_eux_silence_s : ils se parlent entre eux
+function entreEux(e, p, maintenant, r) {
+  if (!p.qui || PAS_SA_VOIX.test(p.qui)) return false;
+  const dit = e.dits.length ? e.dits[e.dits.length - 1].t : -Infinity;
+  if (maintenant - dit < r.entre_eux_silence_s * 1000) return false;
+  return e.phrases.some(x => x !== p && x.t <= p.t && p.t - x.t <= r.entre_eux_s * 1000 && x.qui && x.qui !== p.qui && !PAS_SA_VOIX.test(x.qui));
+}
+// les autres voix du live qui ont parlé ces dernières secondes (pour lui dire qui se parle)
+const voixAutour = (e, p, maintenant, ms = 30_000) => [...new Set(e.phrases.filter(x => maintenant - x.t <= ms && x.qui && x.qui !== (p && p.qui) && !PAS_SA_VOIX.test(x.qui)).map(x => x.qui))];
 const attenteDe = (x, r) => (PRIORITAIRES.has(x.motif) ? r.attente_nom_s : r.attente_s) * 1000;
 // la musique joue seule depuis un moment (personne ne parle), une réaction par morceau au plus, et pas plus d'une toutes les musique_s
 function motifMusique(e, ctx, maintenant, r) {
@@ -227,5 +241,5 @@ function minute(e, maintenant = Date.now()) {
   return { ...s, appels_total: appels, duree_s: Math.round((maintenant - s.debut) / 1000) };
 }
 
-module.exports = { creer, recevoir, papaDit, autorisationDe, evaluer, lireReponse, repondu, echoue, dit, ditsRecents, minute, motifDe, NOM, QUESTION,
+module.exports = { creer, recevoir, papaDit, autorisationDe, evaluer, lireReponse, repondu, echoue, dit, ditsRecents, minute, motifDe, entreEux, voixAutour, NOM, QUESTION,
   PAPA_DEMANDE, AUTORISE, RETIRE, A_LUI, A_PAPA, PRIORITAIRES, DEFAUTS };
