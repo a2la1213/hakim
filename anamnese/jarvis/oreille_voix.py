@@ -11,6 +11,8 @@ Point d'entrée unique (prêt pour un orchestrateur) : une ligne JSON par demand
   (empreinte_vocale.etiqueter_bloc : les voix inconnues reçoivent leur numéro temporaire tout de suite) ;
 - {id, op: "prevoir", fichier} : calcule les empreintes du morceau pendant qu'Azure le transcrit (le « bloc » qui suit les retrouve) ;
 - {id, op: "qui", fichier} : est-ce SA propre voix ? (empreinte_vocale.qui_parle, comme l'oreille vive) ;
+- {id, op: "signature", action, personne, voix, proposition, presence} (10/11) : les signatures vocales (voir, ajouter, retirer, valider ou refuser
+  une proposition de Hakim ; empreinte_vocale.signature_geste) ;
 - {id, op: "fenetres", fichier, cle, musique} : le son du téléphone en cours (un live) : qui parle, fenêtre par fenêtre (1,5 s, pas de
   0,75 s), seulement les fenêtres neuves d'un même bloc (cle) → {fenetres: [[début s, fin s, qui]], voix: [qui…], nouvelles: [qui…]} ;
   pendant une musique (musique: true), seulement les voix déjà connues (papa, les nommées, celles de la salle) : jamais de numéro neuf
@@ -92,7 +94,11 @@ def fenetres(audio, cle="", musique=False, maintenant=None):
     d = E._lire(None)
     papa = (lambda v: E.score_ahmed(v, d)) if d and d.get("moyenne") and len(d.get("vecteurs", [])) >= 2 else (lambda v: -1.0)
     mes = E.moyennes_moi()
-    nommees = [(x["nom"], np.array(x["moyenne"])) for x in E.connues()]
+    try:
+        nommees = E.registre_voix()                       # (10/11) les signatures (papa, les personnes nommées, les voix partagées)
+    except (OSError, ValueError):
+        nommees = E.S.minimal()                           # illisible : papa par son empreinte, comme avant
+    compte = {}
     avant = {x["nom"] for x in E._salle["voix"]} | {str(c.get("nom")) for c in E._salle.get("candidates", []) if c.get("nom")}
     i = debut
 
@@ -106,7 +112,7 @@ def fenetres(audio, cle="", musique=False, maintenant=None):
     while i + n <= len(a):
         v = E.embedding(a[i:i + n], min_s=1.0)
         if v is not None and float(np.sqrt(np.mean(np.square(a[i:i + n])))) >= 0.003:
-            q = _qui(v, papa, mes, nommees, musique, t, neuve=False)
+            q = _qui(v, papa, mes, nommees, musique, t, neuve=False, compte=compte)
             if q:
                 noter(i / E.TAUX, (i + n) / E.TAUX, q)
                 b.pop("seule", None)
@@ -116,7 +122,7 @@ def fenetres(audio, cle="", musique=False, maintenant=None):
                 seule = b.get("seule")
                 if seule is not None and abs(seule[1] - i / E.TAUX) <= E.PAS_S + 1e-6 and float(np.dot(v, seule[0])) >= E.SEUIL_MEME_VOIX:
                     m = seule[0] + v
-                    q = _qui(m / (np.linalg.norm(m) or 1.0), papa, mes, nommees, musique, t, neuve=True)
+                    q = _qui(m / (np.linalg.norm(m) or 1.0), papa, mes, nommees, musique, t, neuve=True, compte=compte)
                     if q:
                         noter(seule[1], seule[1] + E.FENETRE_S, q)
                         noter(i / E.TAUX, (i + n) / E.TAUX, q)
@@ -129,24 +135,27 @@ def fenetres(audio, cle="", musique=False, maintenant=None):
         E._sauver_salle()
     except OSError:
         pass
+    E._noter_entendues(compte, {}, t, musique)            # (10/11) les voix des signatures entendues : leur compte
     return {"fenetres": sortie, "voix": vus, "nouvelles": nouvelles}
 
 
-def _qui(v, papa, mes, nommees, musique, t, neuve=True):
-    """Les règles d'empreinte_vocale (etiqueter.connu) : soi, papa, une nommée, une voix de la salle, une candidate déjà née, sinon (neuve)
-    une nouvelle candidate numérotée ; None : personne de connu (et neuve=False)."""
+def _qui(v, papa, mes, nommees, musique, t, neuve=True, compte=None):
+    """Les règles d'empreinte_vocale (etiqueter.connu) : soi, une signature (papa, une nommée, ou le doute « papa ou Ali ? » d'une voix
+    partagée, 10/11), une voix de la salle, une candidate déjà née, sinon (neuve) une nouvelle candidate numérotée ; None : personne de
+    connu (et neuve=False). nommees : le registre des signatures (E.registre_voix())."""
     sm = E.score_moi(v, mes)[0]
     sa = papa(v)
     proches = [(float(np.dot(v, x["c"])), x) for x in E._salle["voix"]]
     s, x = max(proches, key=lambda p: p[0]) if proches else (-1.0, None)
-    noms = sorted(((float(np.dot(v, c)), nom) for nom, c in nommees), reverse=True)
-    sn = noms[0][0] if noms else -1.0
-    if sm >= E.SEUIL_MOI and sm > max(sa, s, sn) + 0.05:
+    r = E.S.reconnaitre(v, nommees, papa if sa > -1.0 else None) if nommees else None
+    sr = r["score"] if r else -1.0
+    if sm >= E.SEUIL_MOI and sm > max(sa, s, sr) + 0.05:
         return "ta propre voix"
-    if sa >= E.SEUIL_AHMED and sa >= sn:
-        return E.NOM_PAPA
-    if noms and sn >= E.SEUIL_AHMED:
-        return noms[0][1]
+    if r:
+        if compte is not None:
+            compte[r["voix"]] = compte.get(r["voix"], 0) + 1
+        q = E.qui_de(r)
+        return E.NOM_PAPA if q == "Ahmed" else q
     # pas de « registre inhabituel » ici (le doute rattaché à papa) : au téléphone, papa est rare (un vocal) ; mesuré le 09/11 sur les voix
     # du Mac, une citation arabe d'une autre voix à 0,41 de son empreinte passait pour lui
     if x is not None and s >= E.SEUIL_MEME_VOIX:
@@ -187,6 +196,8 @@ def repondre(d):
         r = E.qui_parle(_audio(str(d["fichier"])))
     elif op == "fenetres":
         r = fenetres(_audio(str(d["fichier"])), str(d.get("cle") or ""), bool(d.get("musique")))
+    elif op == "signature":                               # (10/11) les gestes de papa sur les signatures (la page Voix)
+        r = E.signature_geste(d)
     else:
         r = {"erreur": f"op inconnue : {str(op)[:20]}"}
     return {**r, "ms": int((time.time() - t0) * 1000)}
@@ -194,6 +205,10 @@ def repondre(d):
 
 def main():
     E.embedding = _embedding_memo                         # les empreintes déjà calculées par « prevoir » sont retrouvées
+    try:                                                  # (10/11) au démarrage : le registre des signatures (migré la première fois)
+        E.registre_voix()
+    except Exception as e:  # noqa: BLE001  (sans registre, l'oreille reconnaît comme avant : papa par son empreinte)
+        print(f"[oreille des voix] signatures : {type(e).__name__}: {str(e)[:200]}", file=sys.stderr)
     try:
         E.embedding(np.zeros(16000 * 2, dtype=np.float32) + 1e-3, min_s=1.0)   # le modèle chargé d'avance
     except Exception:  # noqa: BLE001  (sans modèle, chaque demande le dira)

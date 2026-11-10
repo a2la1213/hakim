@@ -191,10 +191,10 @@ def transcrire(fichier, langue=None, contexte="", voix=None, avec_temps=False, m
                     sortie["texte"] = etiquete
                     sortie["voix"] = {**(sortie.get("voix") or {}), "locuteurs": resume["voix"],
                                       # (06/11, Ahmed : « il entend sa propre voix et ça le perturbe ») rien que SA voix : « moi », son écho,
-                                      # jamais une voix inconnue
-                                      "verdict": "moi" if not resume["voix"]
-                                      else "plusieurs" if resume["plusieurs"] and resume["ahmed"]
-                                      else ("autre" if not resume["ahmed"] else (sortie.get("voix") or {}).get("verdict", "ahmed"))}
+                                      # jamais une voix inconnue ; (10/11) seulement « papa ou Ali ? » : un doute, jamais papa vérifié
+                                      "verdict": empreinte_vocale.verdict_du_morceau(resume, (sortie.get("voix") or {}).get("verdict", "ahmed"))}
+                if isinstance(sortie.get("voix"), dict):
+                    empreinte_vocale.partager(sortie["voix"], resume)   # (10/11) les voix partagées entendues, pour son tour
         except Exception as e:                                           # jamais bloquant pour la transcription
             print(f"[voix] empreinte indisponible : {type(e).__name__}: {e}", file=sys.stderr)
     return sortie

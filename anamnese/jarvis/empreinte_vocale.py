@@ -17,7 +17,9 @@ from pathlib import Path
 
 import numpy as np
 
-MODELE = Path(os.environ.get("JARVIS_EMPREINTE_MODELE", Path.home() / "AIOS" / "jarvis" / "modeles" / "voxceleb_resnet34_LM.onnx"))
+import signature_vocale as S
+
+MODELE =Path(os.environ.get("JARVIS_EMPREINTE_MODELE", Path.home() / "AIOS" / "jarvis" / "modeles" / "voxceleb_resnet34_LM.onnx"))
 FICHIER = Path.home() / "AIOS" / "jarvis" / "empreinte-vocale.json"
 TAUX = 16000
 PAROLE_MIN_S = 1.5
@@ -139,7 +141,29 @@ def reconnaitre(audio, fichier=None):
     if v is None:
         return None
     s = score_ahmed(v, d)
-    return {"score": round(s, 2), "verdict": "ahmed" if s >= SEUIL_AHMED else "doute" if s >= SEUIL_DOUTE else "autre"}
+    out = {"score": round(s, 2), "verdict": "ahmed" if s >= SEUIL_AHMED else "doute" if s >= SEUIL_DOUTE else "autre"}
+    return {**out, **verdict_signature(v, lambda x: score_ahmed(x, d))}
+
+
+def verdict_signature(v, papa, reg=None):
+    """(10/11) ce que les signatures changent au verdict d'un morceau entier (rien quand aucune voix d'une signature n'est à 0,55) :
+    - une voix PARTAGÉE avec papa, ou une voix d'une autre personne à moins de 0,08 de la sienne : « doute » (jamais papa vérifié), avec
+      "partagee" (les personnes, papa d'abord) et "voix_n" ;
+    - une voix à papa seul : « ahmed » seulement avec une force sûre (FORCE_SURE), sinon « doute » ;
+    - la voix d'une autre personne nettement devant : « autre », avec "qui"."""
+    try:
+        reg = reg or registre_voix()
+    except (OSError, ValueError):
+        return {}
+    r = S.reconnaitre(v, reg, papa)
+    if not r:
+        return {}
+    if r["papa"] and r["partagee"]:
+        return {"verdict": "doute", "partagee": r["personnes"], "voix_n": r["voix"]}
+    if r["papa"]:
+        return {"verdict": "ahmed" if r["verifie"] else "doute", **({"voix_n": r["voix"]} if r["voix"] != S.VOIX_PAPA else {}),
+                **({} if r["verifie"] else {"a_reconfirmer": True})}
+    return {"verdict": "autre", "qui": r["personnes"], "voix_n": r["voix"]}
 
 
 # ---- Plusieurs voix dans un même message (Ahmed, 2026-10-20 : « je lui dis un truc et mon pote me coupe… qu'il
@@ -217,11 +241,103 @@ def _sauver_salle(salle=None):
     _salle["_fichier"], _salle["_mtime"] = str(f), _mtime(f)
 
 
+def _numeros_salle():
+    return [int(m.group(1)) for x in _salle["voix"] + _salle.get("candidates", []) for m in [re.fullmatch(r"voix (\d+)", str(x.get("nom") or ""))] if m]
+
+
 def _prochain_numero(moyenne_papa=True):
     """Le numéro qui suit le plus grand de la salle, candidates à numéro temporaire comprises (09/11) ; une voix rattachée à papa ne
-    laisse pas son numéro à une autre."""
-    nums = [int(m.group(1)) for x in _salle["voix"] + _salle.get("candidates", []) for m in [re.fullmatch(r"voix (\d+)", str(x.get("nom") or ""))] if m]
+    laisse pas son numéro à une autre. (10/11) ni une voix d'une signature, ni une voix proposée : leurs numéros sont pour toujours."""
+    nums = _numeros_salle()
+    try:
+        base = S.numero_max(registre_voix())
+    except (OSError, ValueError):
+        base = S.VOIX_PAPA
+    if base > S.VOIX_PAPA:
+        return f"voix {max(nums + [base]) + 1}"
     return f"voix {max(nums) + 1 if nums else (2 if moyenne_papa else 1)}"
+
+
+# ---- (10/11, ~23:00, Ahmed : « ma voix est reconnue sous 19 voix différentes, qui sont ma signature vocale… papa et tonton Ali partagent
+# tous les deux la voix 127 ») la signature vocale de chaque personne (signature_vocale.py) : le registre vit à côté de voix-connues.json,
+# migré au premier chargement (une sauvegarde avant ; l'empreinte de papa et la salle ne sont jamais réécrites par la migration).
+
+def _sig(connues_f=None):
+    c = Path(connues_f or CONNUES)
+    return c.with_name("voix-signatures.json"), c
+
+
+def registre_voix(connues_f=None):
+    f, c = _sig(connues_f)
+    return S.charger(f, c, FICHIER, SALLE)
+
+
+def _modifier(fn, papa_present=False, demander_presence=False, connues_f=None):
+    registre_voix(connues_f)                              # migré d'abord s'il le faut
+    f, c = _sig(connues_f)
+    return S.modifier(fn, f, c, papa_present=papa_present, demander_presence=demander_presence)
+
+
+def qui_de(r):
+    """Le nom que rend etiqueter pour une reconnaissance du registre : « Ahmed » (papa vérifié), « papa ? » (une voix à papa seul, mais à
+    reconfirmer), « papa ou Ali ? » (une voix partagée, ou deux trop proches), « Ali »."""
+    if r["partagee"]:
+        return r["etiquette"]
+    if r["papa"]:
+        return "Ahmed" if r["verifie"] else f"{NOM_PAPA} ?"
+    return r["etiquette"]
+
+
+def doute_de_papa(qui):
+    """« papa ? », « papa ou Ali ? » : un doute qui comprend papa (jamais papa vérifié, peut-être papa)."""
+    q = str(qui or "").strip()
+    return q.endswith("?") and NOM_PAPA in [n.strip() for n in q[:-1].split(" ou ")]
+
+
+def verdict_du_morceau(resume, verdict_bloc):
+    """Le verdict d'un morceau étiqueté (le chemin Whisper, stt.py, et le chemin Azure, etiqueter_bloc) : « moi » (rien que sa voix),
+    « plusieurs » (papa et d'autres), « doute » (seulement des doutes qui comprennent papa : « papa ou Ali ? », 10/11), « autre », ou celui
+    du morceau entier."""
+    if not resume["voix"]:
+        return "moi"
+    if resume["plusieurs"] and resume["ahmed"]:
+        return "plusieurs"
+    if not resume["ahmed"]:
+        return "doute" if all(doute_de_papa(q) for q in resume["voix"]) else "autre"
+    return verdict_bloc or "ahmed"
+
+
+_a_compter, _compte_ts = {}, [0.0]
+COMPTER_S = 30
+
+
+def _noter_entendues(compte, surs, t, musique=False):
+    """Les voix des signatures entendues : leur compte (écrit au plus toutes les 30 s), et un vecteur SÛR qui enrichit leur timbre (une
+    fois toutes les 2 min au plus par voix, jamais pendant la musique du téléphone, jamais une voix de papa : rien ne s'apprend tout seul
+    sur sa voix ; son empreinte, la voix 1, garde son propre apprentissage « appris seul »)."""
+    for k, n in compte.items():
+        _a_compter[k] = _a_compter.get(k, 0) + n
+    enrichir = {}
+    if not musique:
+        for k, v in surs.items():
+            if t - _appris.get(("voix", k), 0) >= APPRENDRE_S:
+                _appris[("voix", k)] = t
+                enrichir[k] = v
+    if not _a_compter and not enrichir:
+        return
+    if not enrichir and t - _compte_ts[0] < COMPTER_S:
+        return
+    a = dict(_a_compter)
+    _a_compter.clear()
+    _compte_ts[0] = t
+
+    def fn(d):
+        for k in set(a) | set(enrichir):
+            S.entendre(d, k, a.get(k, 0), v=enrichir.get(k), t=t)
+    try:
+        _modifier(fn)
+    except (OSError, ValueError):
+        pass
 
 
 def _parole(x, t):
@@ -230,8 +346,15 @@ def _parole(x, t):
 
 
 def connues(fichier=None):
+    """Les personnes nommées (papa à part) : [{nom, moyenne (leur voix la plus entendue), n, cree, voix: [N…]}], la vue de leurs signatures
+    (10/11). Un fichier donné (une copie, un banc) se lit tel quel, sans registre."""
+    if fichier is not None:
+        try:
+            return [x for x in json.loads(Path(fichier).read_text(encoding="utf-8")) if x.get("moyenne")]
+        except (OSError, ValueError):
+            return []
     try:
-        return [x for x in json.loads(Path(fichier or CONNUES).read_text(encoding="utf-8")) if x.get("moyenne")]
+        return S.vue_connues(registre_voix())
     except (OSError, ValueError):
         return []
 
@@ -247,8 +370,19 @@ def _prenom(nom):
 
 
 def nommer(numero, nom, salle=None, fichier=None, maintenant=None):
-    """« voix 2 » → « Karim » : la voix de la conversation devient une voix connue, pour toujours."""
+    """« voix 2 » → « Karim » : la voix de la conversation devient une voix connue, pour toujours (nommer_detail : proposée, si Karim
+    a déjà sa signature)."""
+    return nommer_detail(numero, nom, salle=salle, fichier=fichier, maintenant=maintenant)["nom"]
+
+
+def nommer_detail(numero, nom, salle=None, fichier=None, maintenant=None, par="hakim"):
+    """(10/11) « voix 2 » → « Karim » : {"nom", "voix": N, "propose": bool, "id"}.
+    - Karim est NOUVEAU : sa signature naît tout de suite avec cette voix (force FORCE_HAKIM, pas encore validée par papa ; à la volée,
+      comme le 09/11), et la voix quitte la salle (le registre la reconnaît désormais) ;
+    - Karim a DÉJÀ sa signature : la voix lui est PROPOSÉE (papa valide, page Voix) ; elle garde son numéro dans la salle d'ici là, et
+      son vecteur dans la proposition. Jamais papa : _prenom refuse « papa » et « Ahmed »."""
     nom = _prenom(nom)
+    t = time.time() if maintenant is None else maintenant
     # la salle est tenue par le serveur de voix (un AUTRE processus) : relue du fichier à chaque fois, sinon le serveur de
     # mémoire de Hakim nommait d'après la salle qu'il avait lue la première fois (relecture du 2026-10-20)
     _salle.update(voix=[], ts=0.0, dernier=None)
@@ -270,36 +404,38 @@ def nommer(numero, nom, salle=None, fichier=None, maintenant=None):
         presentes = ", ".join(v["nom"] for v in _salle["voix"][-8:] + [c for c in _salle.get("candidates", []) if c.get("nom")][-4:]) or "aucune"
         raise ValueError(f"aucune « {numero} » dans la conversation des 3 dernières heures (voix présentes : {presentes})")
     numero = x["nom"]
-    k = [v for v in connues(fichier) if v["nom"].lower() != nom.lower()]
-    k.append({"nom": nom, "moyenne": np.round(x["c"], 5).tolist(), "n": x["n"], "cree": time.time()})
-    _ecrire(fichier or CONNUES, k)
-    x["nom"] = nom                                       # la suite de la conversation l'appelle déjà par son nom
+    m = re.fullmatch(r"voix (\d+)", str(numero))
+    reg = registre_voix(fichier)
+    num = int(m.group(1)) if m else None
+    if num is None or str(num) in reg["voix"]:            # une voix de la salle déjà nommée à l'ancienne, ou un numéro déjà pris
+        num = max(S.numero_max(reg), *(_numeros_salle() or [0])) + 1
+    deja = S.trouver(reg, nom)
+    if deja is not None:
+        # (10/11) une personne qui a déjà sa signature : Hakim propose, papa valide ; la voix reste « voix N » dans la conversation
+        if k is not None:
+            _sauver_salle(salle)                              # la candidate nommée est entrée dans la salle : gardée
+        p = _modifier(lambda d: S.proposer(d, "ajouter", deja, num, par=par, raison=f"« {numero} », c'est {deja}",
+                                           c=x["c"], n=x["n"], m=x.get("m", 0), t=t), connues_f=fichier)
+        return {"nom": deja, "voix": num, "propose": True, "id": p["id"]}
+    _modifier(lambda d: S.lier(d, nom, num, S.FORCE_HAKIM, par, c=x["c"], n=x["n"], m=x.get("m", 0), t=t), connues_f=fichier)
+    _salle["voix"] = [v for v in _salle["voix"] if v is not x]   # le registre la reconnaît désormais (par son nom)
     if _salle["dernier"] == numero:
         _salle["dernier"] = nom
     _sauver_salle(salle)
-    return nom
+    return {"nom": nom, "voix": num, "propose": False, "id": None}
 
 
 def renommer(ancien, nouveau, fichier=None):
     """« Machine à café » → « Inconnu » : une voix connue change de nom et garde son empreinte (29/10 : sans cet outil,
-    Hakim a dû oublier la voix pour la renommer)."""
+    Hakim a dû oublier la voix pour la renommer). (10/11) toute sa signature la suit ; papa garde son nom."""
     nouveau = _prenom(nouveau)
-    k = connues(fichier)
-    x = next((v for v in k if v["nom"].lower() == str(ancien).strip().lower()), None)
-    if x is None:
-        raise ValueError(f"aucune voix « {ancien} » (voix connues : {', '.join(v['nom'] for v in k) or 'aucune'})")
-    if any(v is not x and v["nom"].lower() == nouveau.lower() for v in k):
-        raise ValueError(f"une voix « {nouveau} » existe déjà")
-    x["nom"] = nouveau
-    _ecrire(fichier or CONNUES, k)
-    return nouveau
+    return _modifier(lambda d: S.renommer(d, str(ancien).strip(), nouveau), connues_f=fichier)
 
 
 def oublier(nom, fichier=None):
-    k = connues(fichier)
-    reste = [v for v in k if v["nom"].lower() != str(nom).strip().lower()]
-    _ecrire(fichier or CONNUES, reste)
-    return len(k) - len(reste)
+    """(10/11) toute la signature d'une personne ; ses voix partagées restent aux autres (une voix de papa qui ne devient « à lui seul »
+    que par cet oubli garde une force basse : elle ne vaut papa vérifié qu'après son geste). Jamais papa (ValueError)."""
+    return _modifier(lambda d: S.oublier(d, str(nom).strip()), connues_f=fichier)
 
 
 # ---- (03/11, Ahmed : « micro ouvert, jamais fermé ; il doit apprendre de lui-même à écouter et focaliser son attention ; si
@@ -423,32 +559,35 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
     moyenne = np.array(d["moyenne"]) if d and d.get("moyenne") and len(d.get("vecteurs", [])) >= 2 else None
     ahmed = (lambda v: score_ahmed(v, d)) if moyenne is not None else None
     mes_voix = moyennes_moi(moi)                          # (06/11) toutes ses voix (rap, Azure, celle d'avant)
-    nommees = [(x["nom"], np.array(x["moyenne"])) for x in connues()]
+    try:
+        reg = registre_voix()                             # (10/11) les signatures : papa (sa voix 1 et ses autres voix), les personnes nommées
+    except (OSError, ValueError):
+        reg = S.minimal()                                 # illisible : papa par son empreinte, comme avant
     a = np.asarray(audio, dtype=np.float32)
 
     def connu(v):
-        """La voix d'un vecteur parmi celles qu'il connaît (lui, Ahmed, les nommées, celles de la salle) ; None : inconnue."""
+        """La voix d'un vecteur parmi celles qu'il connaît (lui, les signatures, celles de la salle) ; None : inconnue.
+        (10/11) une voix d'une signature donne le nom de sa personne ; une voix partagée (« papa et Ali ont la voix 127 »), ou deux voix
+        de personnes différentes trop proches (moins de 0,08), donnent le doute : « papa ou Ali ? »."""
         sm = score_moi(v, mes_voix)[0]
         sa = ahmed(v) if ahmed else -1.0
         proches = [(float(np.dot(v, x["c"])), x) for x in _salle["voix"]]
         s, x = max(proches, key=lambda p: p[0]) if proches else (-1.0, None)
-        noms = sorted(((float(np.dot(v, c)), n) for n, c in nommees), reverse=True)
-        sn = noms[0][0] if noms else -1.0
-        if sm >= SEUIL_MOI and sm > max(sa, s, sn) + 0.05:
+        r = S.reconnaitre(v, reg, ahmed) if reg else None
+        sn = S.score_autres(v, reg) if reg else -1.0
+        if sm >= SEUIL_MOI and sm > max(sa, s, sn, r["score"] if r else -1.0) + 0.05:
             return "moi", None
-        # (03/11) le doute entre deux personnes connues : les deux noms
-        cands = sorted(([(sa, "Ahmed")] if ahmed else []) + noms, reverse=True)
-        if len(cands) >= 2 and cands[0][0] >= SEUIL_AHMED and cands[1][0] >= SEUIL_DOUTE_ENTRE and cands[0][0] - cands[1][0] < ECART_DOUTE:
-            a, b = (NOM_PAPA if n == "Ahmed" else n for _, n in cands[:2])
-            return f"{a} ou {b} ?", None
-        if sa >= SEUIL_AHMED:
-            if sa >= SUR and sa - max(s, sn, sm) >= MARGE_SURE:
-                surs["Ahmed"] = v
-            return "Ahmed", None
-        if nommees and sn >= SEUIL_AHMED:
-            if sn >= SUR and sn - max(s, sa, sm) >= MARGE_SURE:
-                surs[noms[0][1]] = v
-            return noms[0][1], None          # une voix connue, par son nom
+        if r:
+            entendues[r["voix"]] = entendues.get(r["voix"], 0) + 1
+            qui = qui_de(r)
+            if r["partagee"]:
+                partagees.setdefault(qui, {"etiquette": qui, "voix": r["voix"], "personnes": r["personnes"]})
+            elif r["score"] >= SUR and min(r["marge"], r["score"] - max(s, sm)) >= MARGE_SURE:
+                if r["voix"] == S.VOIX_PAPA and r["verifie"]:
+                    surs["Ahmed"] = v                     # son empreinte s'enrichit seule, comme avant (registre « appris seul »)
+                elif not r["papa"]:
+                    surs[r["voix"]] = v                   # une voix d'une personne nommée
+            return qui, None
         if sa >= SEUIL_DOUTE and sa > max(s, sn) + 0.1:
             # (2026-10-20) une phrase d'Ahmed dans un registre inhabituel : plus proche de lui que de toute autre voix
             # entendue — c'est lui, pas une « voix 3 »
@@ -548,6 +687,7 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
 
     morceaux, vus, de_moi = [], [], []
     surs = {}                                             # (03/11) qui → un vecteur sûr de ce morceau, pour l'enrichir seul
+    entendues, partagees = {}, {}                         # (10/11) les voix des signatures entendues ; les voix partagées (le doute)
     for sg in segments:
         texte = str(sg.get("text") or "").strip()
         if not texte:
@@ -573,21 +713,18 @@ def etiqueter(audio, segments, nouveau_tour=True, fichier=None, maintenant=None,
         _sauver_salle()
     except OSError:
         pass
-    if not musique:                                       # (03/11) son subconscient enrichit seul les empreintes sûres
-        for qui, v in surs.items():
-            if t - _appris.get(qui, 0) < APPRENDRE_S:
-                continue
-            _appris[qui] = t
-            try:
-                if qui == "Ahmed":
-                    apprendre_vecteur(v, fichier, registre="appris seul")
-                else:
-                    _enrichir_connue(qui, v)
-            except (OSError, ValueError):
-                pass
+    if not musique and "Ahmed" in surs and t - _appris.get("Ahmed", 0) >= APPRENDRE_S:   # (03/11) son empreinte enrichie seule
+        _appris["Ahmed"] = t
+        try:
+            apprendre_vecteur(surs["Ahmed"], fichier, registre="appris seul")
+        except (OSError, ValueError):
+            pass
+    # (10/11) les voix des signatures : leur compte, et les timbres sûrs des personnes nommées (jamais une voix de papa)
+    _noter_entendues(entendues, {k: v for k, v in surs.items() if isinstance(k, int)}, t, musique)
     autres = [q for q in vus if q != "Ahmed"]
     resume = {"voix": vus, "plusieurs": len(vus) >= 2, "ahmed": "Ahmed" in vus, "autres": autres, "moi": " ".join(de_moi),
-              "doute": [q for q in vus if q.endswith(" ?")]}
+              "doute": [q for q in vus if q.endswith(" ?")],
+              "partagees": [x for q, x in partagees.items() if q in vus]}
     if de_moi:
         return " ".join(morceaux), resume
     if not morceaux:
@@ -642,52 +779,100 @@ def etiqueter_bloc(audio, texte, fichier=None, maintenant=None, moi=None, musiqu
         resume = {**resume, "voix": [("papa ?" if q == "Ahmed" else q) for q in resume["voix"]], "autres": resume["autres"] or ["papa ?"]}
     if etiquete is not None and resume and (resume["autres"] or resume["plusieurs"] or resume.get("moi")):
         sortie["texte"] = etiquete
-        sortie["voix"] = {**sortie["voix"], "locuteurs": resume["voix"],
-                          "verdict": "moi" if not resume["voix"]
-                          else "plusieurs" if resume["plusieurs"] and resume["ahmed"]
-                          else ("autre" if not resume["ahmed"] else sortie["voix"].get("verdict", "ahmed"))}
+        sortie["voix"] = {**sortie["voix"], "locuteurs": resume["voix"], "verdict": verdict_du_morceau(resume, sortie["voix"].get("verdict", "ahmed"))}
     elif resume:
         sortie["voix"]["locuteurs"] = resume["voix"]
+    partager(sortie["voix"], resume)
     return sortie
 
 
+def partager(voix, resume):
+    """(10/11) les voix partagées entendues dans le morceau (« papa ou Ali ? ») : [{etiquette, voix, personnes}], pour son tour."""
+    l = list((resume or {}).get("partagees") or [])
+    if voix.get("partagee") and not any(x["voix"] == voix.get("voix_n") for x in l):
+        l.append({"etiquette": S.etiquette(voix["partagee"]), "voix": voix.get("voix_n"), "personnes": voix["partagee"]})
+    if l:
+        voix["partagees"] = l[:4]
+    return voix
+
+
 def _enrichir_connue(nom, v, fichier=None):
-    """(03/11) une voix nommée, reconnue sûrement : son empreinte suit doucement (la moyenne de ses 200 dernières fois au plus)."""
-    k = connues(fichier)
-    for x in k:
-        if x["nom"] == nom:
-            n = min(int(x.get("n") or 1), 200)
-            m = (np.array(x["moyenne"]) * n + np.asarray(v)) / (n + 1)
-            x["moyenne"] = (m / (np.linalg.norm(m) or 1.0)).round(5).tolist()
-            x["n"] = int(x.get("n") or 1) + 1
-            _ecrire(fichier or CONNUES, k)
-            return x["n"]
-    return None
+    """(03/11) une voix nommée, reconnue sûrement : son empreinte suit doucement (la moyenne de ses 200 dernières fois au plus).
+    (10/11) la voix de sa signature la plus proche de v (jamais papa) ; rend son nombre de fois, ou None."""
+    reg = registre_voix(fichier)
+    p = S.trouver(reg, nom)
+    if p is None or p == S.PAPA:
+        return None
+    siennes = [(float(np.dot(np.asarray(v), np.asarray(reg["voix"][k]["c"]))), k) for k in reg["personnes"][p]["voix"]
+               if reg["voix"].get(k, {}).get("c") is not None and len(reg["voix"][k]["c"]) == len(v)]
+    if not siennes:
+        return None
+    k = max(siennes)[1]
+    _modifier(lambda d: S.entendre(d, k, 1, v=v), connues_f=fichier)
+    return int(registre_voix(fichier)["voix"][k]["n"])
 
 
 def rattacher_a_papa(qui="toutes", registre="chant", fichier=None, maintenant=None):
     """(03/11, Ahmed via Hakim : « toutes ces voix temporaires (voix 56, 63, 64…), c'est moi, surtout quand je chante ou que la
     musique brouille : un seul registre, papa ») les voix sans nom de la salle (« toutes », ou « voix 56, voix 63 ») rejoignent
-    son empreinte, dans un registre (« chant » par défaut) ; celles nées surtout pendant la musique du téléphone sont écartées
-    (la musique ne doit pas fausser sa voix). La confirmation (sa voix reconnue, ou un écrit de lui) est vérifiée avant, par
-    l'outil. Rend {"rattachees", "ecartees_musique", "inconnues"}."""
+    papa, dans un registre (« chant » par défaut) ; celles nées surtout pendant la musique du téléphone sont écartées
+    (la musique ne doit pas fausser sa voix). La confirmation (sa voix reconnue, ou un écrit de lui ; ou sa présence, le geste « soi »
+    de son système immunitaire) est vérifiée avant, par l'appelant : c'est papa lui-même.
+    (10/11, Ahmed : « ma voix est reconnue sous 19 voix différentes, qui sont ma signature vocale ») chacune devient une voix de SA
+    SIGNATURE (son numéro gardé, force FORCE_PAPA, le registre noté), au lieu de se fondre dans son empreinte où elle se perdait : ses
+    60 échantillons s'emplissaient de « appris seul » (mesuré le 10/11 : les 15 voix N rattachées par « soi » depuis le 04/11 n'y étaient
+    plus). Une voix d'une autre signature nommée par son numéro (« voix 127 ») devient PARTAGÉE : « papa ou Ali ? ».
+    Rend {"rattachees", "ecartees_musique", "inconnues", "partagees"}."""
     t = time.time() if maintenant is None else maintenant
     _charger_salle(t)
     voulues = None if str(qui or "toutes").strip().lower() in ("toutes", "tout", "") else \
         {f"voix {n}" for n in re.findall(r"\d+", str(qui))}
-    r = {"rattachees": [], "ecartees_musique": [], "inconnues": sorted(voulues - {x["nom"] for x in _salle["voix"]}) if voulues else []}
-    garde = []
+    reg = registre_voix()
+    r = {"rattachees": [], "ecartees_musique": [], "inconnues": [], "partagees": [], "ecartees_autres": []}
+    garde, liens = [], []
+    e = _lire(fichier)
+    papa = (lambda v: score_ahmed(v, e)) if e and e.get("moyenne") and len(e.get("vecteurs", [])) >= 2 else (lambda v: -1.0)
     for x in _salle["voix"]:
-        if not re.fullmatch(r"voix \d+", x["nom"]) or (voulues is not None and x["nom"] not in voulues):
+        m = re.fullmatch(r"voix (\d+)", x["nom"])
+        if not m or (voulues is not None and x["nom"] not in voulues):
             garde.append(x)
             continue
         if x.get("m", 0) > x["n"] / 2:
             r["ecartees_musique"].append(x["nom"])
             garde.append(x)
             continue
-        apprendre_vecteur(np.asarray(x["c"], dtype=np.float64), fichier, registre=str(registre or "chant")[:40], guide=True)
+        c = np.asarray(x["c"], dtype=np.float64)
+        if voulues is None and S.score_autres(c, reg) >= SEUIL_DOUTE_ENTRE and S.score_autres(c, reg) > papa(c):
+            # (10/11) « toutes » : une voix plus proche de la signature d'une autre personne que de lui reste à part (une voix du live, de la
+            # pièce : devenue sa voix vérifiée, elle donnerait des ordres en son nom) ; nommée par son numéro, elle le rejoint quand même
+            r["ecartees_autres"].append(x["nom"])
+            garde.append(x)
+            continue
+        num = int(m.group(1))
+        if str(num) in reg["voix"]:                       # un numéro déjà pris au registre (jamais en principe) : un neuf
+            num = max(S.numero_max(reg), *(_numeros_salle() or [0])) + 1
+        liens.append((num, x))
         r["rattachees"].append(x["nom"])
-    _salle["voix"] = garde
+    for nom in sorted(voulues - {x["nom"] for x in _salle["voix"]}, key=lambda n: int(n.split()[1])) if voulues else []:
+        num = int(nom.split()[1])
+        if str(num) in reg["voix"] and num != S.VOIX_PAPA:
+            liens.append((num, None))
+            r["rattachees"].append(nom)
+            autres = [n for n, _ in S.proprietaires(reg, num) if n != S.PAPA]
+            if autres:
+                r["partagees"].append({"voix": num, "personnes": [S.PAPA] + autres})
+        elif num != S.VOIX_PAPA:
+            r["inconnues"].append(nom)
+    if liens:
+        reg_txt = str(registre or "chant")[:40]
+
+        def fn(d):
+            for num, x in liens:
+                S.lier(d, S.PAPA, num, S.FORCE_PAPA, "papa", c=None if x is None else x["c"], n=1 if x is None else x["n"],
+                       m=0 if x is None else x.get("m", 0), registre=reg_txt, t=t)
+        _modifier(fn, papa_present=True)
+    pris = {id(x) for _, x in liens if x is not None}
+    _salle["voix"] = [x for x in garde if id(x) not in pris]
     if _salle.get("dernier") in r["rattachees"]:
         _salle["dernier"] = "Ahmed"
     try:
@@ -695,6 +880,93 @@ def rattacher_a_papa(qui="toutes", registre="chant", fichier=None, maintenant=No
     except OSError:
         pass
     return r
+
+
+def _voix_de_la_salle(numero, t=None):
+    """(10/11) une voix sans nom de la conversation, par son numéro : (N, son entrée) ou (N, None)."""
+    _charger_salle(time.time() if t is None else t)
+    n = S._num(numero)
+    x = next((v for v in _salle["voix"] + [c for c in _salle.get("candidates", []) if c.get("nom")] if v.get("nom") == f"voix {n}"), None)
+    return n, x
+
+
+def _retirer_de_la_salle(n):
+    avant = len(_salle["voix"]) + len(_salle.get("candidates", []))
+    _salle["voix"] = [v for v in _salle["voix"] if v.get("nom") != f"voix {n}"]
+    _salle["candidates"] = [c for c in _salle.get("candidates", []) if c.get("nom") != f"voix {n}"]
+    if len(_salle["voix"]) + len(_salle["candidates"]) != avant:
+        try:
+            _sauver_salle()
+        except OSError:
+            pass
+
+
+def proposer_signature(geste, personne, numero, raison="", par="hakim", maintenant=None):
+    """(10/11) Hakim propose, papa valide (page Voix) : ajouter ou retirer une voix de la signature d'une personne (papa compris : il
+    valide de sa présence). Une voix de la conversation garde son vecteur dans la proposition. Rend la proposition."""
+    t = time.time() if maintenant is None else maintenant
+    reg = registre_voix()
+    nom = S.trouver(reg, personne)
+    if nom is None:
+        if geste == "retirer":
+            raise ValueError(f"aucune signature « {personne} »")
+        nom = _prenom(personne)
+    n, x = _voix_de_la_salle(numero, t)
+    if geste == "ajouter" and x is None and str(n) not in reg["voix"]:
+        raise ValueError(f"aucune voix {n} dans la conversation des 3 dernières heures ni dans les signatures")
+    if geste == "retirer" and str(n) not in reg["personnes"][nom]["voix"]:
+        raise ValueError(f"la voix {n} n'est pas dans la signature de {nom}")
+    if n == S.VOIX_PAPA and nom != S.PAPA:
+        raise ValueError("la voix 1 est l'empreinte de papa : elle n'est qu'à lui")
+    return _modifier(lambda d: S.proposer(d, geste, nom, n, par=par, raison=raison, c=None if x is None else x["c"],
+                                          n=1 if x is None else x["n"], m=0 if x is None else x.get("m", 0), t=t))
+
+
+def signature_geste(q, maintenant=None):
+    """(10/11) les gestes de papa sur les signatures (la page Voix, par l'oreille des voix) : q = {action : « voir » | « ajouter » |
+    « retirer » | « valider » | « refuser », personne, voix, proposition, presence}. presence : le cockpit a vérifié sa présence (son empreinte
+    digitale) ; sans elle, un geste qui rendrait une voix « papa vérifié » rend {"erreur", "presence": True} (la page la redemande).
+    Rend le résumé des signatures, avec les voix sans nom de la conversation."""
+    t = time.time() if maintenant is None else maintenant
+    action = str(q.get("action") or "voir")
+    presence = q.get("presence") is True
+    try:
+        if action in ("ajouter", "retirer"):
+            reg = registre_voix()
+            nom = S.trouver(reg, q.get("personne"))
+            if nom is None:
+                if action == "retirer":
+                    raise ValueError(f"aucune signature « {q.get('personne')} »")
+                nom = _prenom(q.get("personne"))
+            n, x = _voix_de_la_salle(q.get("voix"), t)
+            if action == "ajouter":
+                if nom == S.PAPA and not presence:
+                    raise S.PresenceRequise(f"ajouter la voix {n} à ta signature : il faut ta présence")
+                _modifier(lambda d: S.lier(d, nom, n, S.FORCE_PAPA, "papa", c=None if x is None else x["c"], n=1 if x is None else x["n"],
+                                           m=0 if x is None else x.get("m", 0), t=t), papa_present=presence, demander_presence=True)
+                if x is not None:
+                    _retirer_de_la_salle(n)
+            else:
+                _modifier(lambda d: S.delier(d, nom, n), papa_present=presence, demander_presence=True)
+        elif action in ("valider", "refuser"):
+            ident = str(q.get("proposition") or "")       # (pas « id » : l'oreille des voix s'en sert pour ses demandes)
+            reg = registre_voix()
+            x = next((p for p in reg.get("propositions", []) if p["id"] == ident), None)
+            if action == "valider" and x and x["geste"] == "ajouter" and x["personne"] == S.PAPA and not presence:
+                raise S.PresenceRequise(f"ajouter la voix {x['voix']} à ta signature : il faut ta présence")
+            _modifier(lambda d: S.appliquer_proposition(d, ident, action == "valider", t=t), papa_present=presence, demander_presence=True)
+            if x and action == "valider" and x["geste"] == "ajouter":
+                _retirer_de_la_salle(int(x["voix"]))
+        elif action != "voir":
+            return {"erreur": "geste inconnu"}
+    except S.PresenceRequise as e:
+        return {"erreur": str(e), "presence": True}
+    except (ValueError, OSError) as e:
+        return {"erreur": str(e)[:200]}
+    _charger_salle(t)
+    salle = [{"voix": int(x["nom"].split()[1]), "n": int(x.get("n") or 0), "musique": int(x.get("m") or 0)}
+             for x in _salle["voix"] if re.fullmatch(r"voix \d+", str(x.get("nom") or ""))]
+    return {"ok": True, **S.resume(registre_voix()), "salle": sorted(salle, key=lambda x: -x["voix"])[:40]}
 
 
 def reinitialiser(portee="tout", fichier=None):

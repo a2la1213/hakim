@@ -484,10 +484,13 @@ def voix_nommer(numero: str, prenom: str) -> str:
     qui c'est : elle sera reconnue par son nom pour toujours. Sans nom, une voix n'est gardée que 3 h.
     numero : l'étiquette telle qu'elle apparaît (« voix 10 ») ou le numéro seul (« 10 »)."""
     try:
-        n = _empreintes().nommer(numero, prenom)
+        r = _empreintes().nommer_detail(numero, prenom)
     except (ValueError, OSError) as e:
         return f"Refusé : {e}"
-    return f"C'est noté : cette voix est désormais « {n} »."
+    if r.get("propose"):                                  # (10/11) une personne qui a déjà sa signature : papa valide
+        return (f"Proposé : « {r['nom']} » a déjà sa signature vocale ; la voix {r['voix']} lui est proposée, papa la valide dans sa page "
+                f"Voix. D'ici là, elle reste « voix {r['voix']} » dans la conversation.")
+    return f"C'est noté : cette voix (voix {r['voix']}) est désormais « {r['nom']} », le début de sa signature vocale."
 
 
 @mcp.tool()
@@ -497,26 +500,105 @@ def voix_c_est_papa(voix: str = "toutes", registre: str = "chant") -> str:
     registre (« chant » par défaut ; « rap », « fatigue »…). Seulement quand papa te dit que c'est lui, ET que son dernier
     message est écrit, ou dit avec SA voix reconnue (sinon quelqu'un d'autre pourrait fausser son empreinte). Les voix nées
     surtout pendant la musique du téléphone sont écartées."""
+    refus = _papa_confirme()
+    if refus:
+        return "Pas rattaché : " + refus
+    e = _empreintes()
+    r = e.rattacher_a_papa(voix, registre=registre)
+    morceaux = []
+    if r["rattachees"]:
+        morceaux.append(f"rattachées à papa, dans sa signature vocale (registre « {registre} ») : {', '.join(r['rattachees'])}")
+    if r.get("partagees"):                                # (10/11) une voix d'une autre signature : désormais partagée
+        morceaux.append("désormais partagées (« papa ou … ? », jamais sa voix vérifiée) : "
+                        + ", ".join(f"voix {x['voix']} ({' et '.join(x['personnes'])})" for x in r["partagees"]))
+    if r["ecartees_musique"]:
+        morceaux.append(f"écartées, nées pendant la musique : {', '.join(r['ecartees_musique'])}")
+    if r.get("ecartees_autres"):
+        morceaux.append(f"écartées, plus proches de la signature d'une autre personne (nomme-les une à une si c'est bien lui) : {', '.join(r['ecartees_autres'])}")
+    if r["inconnues"]:
+        morceaux.append(f"inconnues dans cette conversation : {', '.join(r['inconnues'])}")
+    return ("C'est fait. " + " ; ".join(morceaux) + ".") if morceaux else "Aucune voix sans nom à rattacher dans cette conversation."
+
+
+def _papa_confirme():
+    """(03/11) « c'est moi » ne vient que de papa lui-même : son dernier message (5 min au plus) écrit, ou dit de SA voix reconnue
+    (« ahmed » : depuis le 10/11, jamais une voix qu'il partage avec quelqu'un). Rend None, ou la raison du refus."""
     import time as _t
     try:
         c = json.loads((Path.home() / "AIOS" / "jarvis" / "papa-confirme.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         c = {}
     if _t.time() - float(c.get("ts") or 0) > 300:
-        return "Pas rattaché : je n'ai pas de message de papa depuis 5 minutes ; demande-lui de te le dire (ou de l'écrire)."
+        return "je n'ai pas de message de papa depuis 5 minutes ; demande-lui de te le dire (ou de l'écrire)."
     if c.get("oral") and c.get("verdict") != "ahmed":
-        return ("Pas rattaché : son dernier message était à l'oral mais sa voix n'a pas été reconnue "
+        return ("son dernier message était à l'oral mais sa voix n'a pas été reconnue "
                 f"(« {c.get('verdict') or 'pas de score'} ») ; demande-lui de le confirmer par écrit, ou de le redire de sa voix parlée.")
+    return None
+
+
+def _signature_texte(e, nom=""):
+    reg = e.registre_voix()
+    noms = [e.S.trouver(reg, nom)] if nom else sorted(reg["personnes"], key=lambda n: (n != "papa", n.casefold()))
+    if nom and noms[0] is None:
+        return f"Je ne connais pas de signature « {nom} » (signatures : {', '.join(reg['personnes'])})."
+    lignes = []
+    for n in noms:
+        sig = e.S.signature(reg, n)
+        lignes.append(f"- {n} : " + ", ".join(
+            f"voix {x['voix']}" + (" (son empreinte)" if x["empreinte"] else "") + f" force {str(x['force']).replace('.', ',')}, {x['fois']} fois"
+            + (f", registre « {x['registre']} »" if x.get("registre") else "")
+            + (f", partagée avec {' et '.join(x['partagee_avec'])}" if x["partagee_avec"] else "") for x in sig))
+    props = [p for p in reg.get("propositions", []) if not nom or p["personne"] in noms]
+    if props:
+        lignes.append("En attente de papa : " + " ; ".join(f"{p['geste']} la voix {p['voix']} {'à' if p['geste'] == 'ajouter' else 'de'} {p['personne']}"
+                                                           for p in props[-8:]))
+    return "\n".join(lignes)
+
+
+@mcp.tool()
+def voix_signature(personne: str = "") -> str:
+    """(10/11, Ahmed : « ma voix est reconnue sous plusieurs voix, qui sont ma signature vocale ; papa et tonton Ali partagent la voix
+    127 ») La SIGNATURE VOCALE d'une personne (ou de toutes) : ses voix N, avec pour chacune sa force (la confiance du lien, 0 à 1) et le
+    nombre de fois entendue, et avec qui elle est partagée. Une voix partagée te donne « papa ou Ali ? » : le contexte peut trancher qui
+    parle ; jamais la vérification de papa (une voix partagée n'est jamais papa vérifié)."""
+    try:
+        return _signature_texte(_empreintes(), personne)
+    except (ValueError, OSError) as e:
+        return f"Signatures illisibles : {e}"
+
+
+@mcp.tool()
+def voix_signature_ajouter(personne: str, voix: str, raison: str = "") -> str:
+    """(10/11) Ajouter une voix N (« voix 127 », d'une signature ou de la conversation) à la signature d'une personne.
+    - PAPA : seulement quand papa te dit que c'est lui (« c'est moi »), son dernier message écrit ou dit de sa voix reconnue ; jamais de
+      toi-même (rien ne s'apprend tout seul sur sa voix). Une voix d'une autre personne devient alors partagée (« papa ou Ali ? »).
+    - Une autre personne : tu PROPOSES, papa valide (sa page Voix). raison : pourquoi tu le penses (ce qu'elle a dit, qui était là)."""
     e = _empreintes()
-    r = e.rattacher_a_papa(voix, registre=registre)
-    morceaux = []
-    if r["rattachees"]:
-        morceaux.append(f"rattachées à papa (registre « {registre} ») : {', '.join(r['rattachees'])}")
-    if r["ecartees_musique"]:
-        morceaux.append(f"écartées, nées pendant la musique : {', '.join(r['ecartees_musique'])}")
-    if r["inconnues"]:
-        morceaux.append(f"inconnues dans cette conversation : {', '.join(r['inconnues'])}")
-    return ("C'est fait. " + " ; ".join(morceaux) + ".") if morceaux else "Aucune voix sans nom à rattacher dans cette conversation."
+    try:
+        if e.S.trouver(e.registre_voix(), personne) == "papa":
+            refus = _papa_confirme()
+            if refus:
+                return "Pas ajoutée : " + refus
+            r = e.rattacher_a_papa(voix, registre="c'est moi")
+            if not r["rattachees"]:
+                return "Pas ajoutée : " + ("née pendant la musique." if r["ecartees_musique"] else f"aucune {voix} dans la conversation ni dans les signatures.")
+            part = "".join(f" ; elle est désormais partagée avec {' et '.join(x['personnes'][1:])} (« papa ou … ? »)" for x in r.get("partagees", []))
+            return f"C'est fait : {', '.join(r['rattachees'])} dans la signature de papa{part}."
+        p = e.proposer_signature("ajouter", personne, voix, raison=raison)
+    except (ValueError, OSError) as err:
+        return f"Refusé : {err}"
+    return f"Proposé à papa : la voix {p['voix']} dans la signature de {p['personne']}. Il la valide (ou non) dans sa page Voix."
+
+
+@mcp.tool()
+def voix_signature_retirer(personne: str, voix: str, raison: str = "") -> str:
+    """(10/11) Retirer une voix N de la signature d'une personne (papa compris) : tu PROPOSES, papa valide (sa page Voix). Une voix de papa
+    qui ne serait plus qu'à lui reste à reconfirmer par lui avant de valoir sa voix vérifiée."""
+    try:
+        p = _empreintes().proposer_signature("retirer", personne, voix, raison=raison)
+    except (ValueError, OSError) as e:
+        return f"Refusé : {e}"
+    return f"Proposé à papa : retirer la voix {p['voix']} de la signature de {p['personne']}. Il tranche dans sa page Voix."
 
 
 @mcp.tool()
@@ -1151,9 +1233,10 @@ def sons_familles() -> str:
 
 @mcp.tool()
 def voix_connues() -> str:
-    """Les voix que tu reconnais par leur nom (en plus de celle d'Ahmed)."""
+    """Les voix que tu reconnais par leur nom (en plus de celle d'Ahmed), avec les numéros de leur signature vocale (10/11)."""
     k = _empreintes().connues()
-    return ("Voix connues : " + ", ".join(x["nom"] for x in k)) if k else "Aucune voix nommée pour l'instant (à part celle d'Ahmed)."
+    return ("Voix connues : " + ", ".join(f"{x['nom']} (voix {', '.join(str(n) for n in x.get('voix') or [])})" if x.get("voix") else x["nom"]
+                                          for x in k)) if k else "Aucune voix nommée pour l'instant (à part celle d'Ahmed)."
 
 
 @mcp.tool()
@@ -1169,8 +1252,11 @@ def voix_renommer(ancien: str, nouveau: str) -> str:
 
 @mcp.tool()
 def voix_oublier(prenom: str) -> str:
-    """Oublier la voix d'une personne (si elle le demande, ou Ahmed)."""
-    n = _empreintes().oublier(prenom)
+    """Oublier la voix d'une personne (si elle le demande, ou Ahmed) : toute sa signature vocale ; ses voix partagées restent aux autres."""
+    try:
+        n = _empreintes().oublier(prenom)
+    except (ValueError, OSError) as e:
+        return f"Refusé : {e}"
     return f"Voix « {prenom} » oubliée." if n else f"Je ne connaissais pas de voix « {prenom} »."
 
 

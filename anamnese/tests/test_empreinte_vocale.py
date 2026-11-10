@@ -227,7 +227,10 @@ def test_ses_voix_temporaires_rattachees_a_papa_sauf_la_musique(tmp_path, monkey
     r = E.rattacher_a_papa("toutes", registre="chant", fichier=f, maintenant=1002.0)
     assert r["rattachees"] == ["voix 2"] and r["ecartees_musique"] == ["voix 3"]
     assert [x["nom"] for x in E._salle["voix"]] == ["voix 3"]
-    assert E.etat(f)["registres"] == {"chant": 1}
+    # (10/11) elle devient une voix de SA SIGNATURE (son numéro gardé), au lieu de se fondre dans son empreinte (60 échantillons,
+    # où elle se perdait sous les « appris seul ») ; son empreinte n'est pas touchée
+    sig = {x["voix"]: x for x in E.S.signature(E.registre_voix(), "papa")}
+    assert sig[2]["registre"] == "chant" and sig[2]["force"] == 1.0 and E.etat(f)["registres"] == {}
     monkeypatch.setattr(E, "embedding", lambda a, *x: vec("chant"))
     texte, _ = E.etiqueter(np.zeros(32000, dtype=np.float32), [{"start": 0, "end": 2, "text": "encore"}], fichier=f, maintenant=1003.0)
     assert texte in ("encore", "[papa] encore"), "sa voix chantée est maintenant la sienne"

@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Les voix — signatures</title>
+  <script src="/apparence.js"></script>
+  <link rel="stylesheet" href="/theme.css">
+  <!-- (10/11, ~23:00, Ahmed : « ma voix est reconnue sous 19 voix différentes, qui sont ma signature vocale, et chaque voix appartient à une
+       personne enregistrée dans son propre registre des voix… papa et tonton Ali partagent tous les deux la voix 127 ») les SIGNATURES
+       VOCALES, pour papa : la signature de chaque personne (ses voix N, leur force, combien de fois entendues), les voix partagées
+       (« papa ou Ali ? », jamais ta voix vérifiée), ce que Hakim propose (tu valides), et les voix sans nom de la conversation.
+       Ajouter une voix à TA signature (ou rendre une voix à toi seul) demande ta présence (ton empreinte). Comme la page Immunité, elle ne
+       charge pas nav.js (ouvert aux chantiers de Hakim). -->
+  <style>
+    [hidden] { display: none !important; }
+    main { max-width: 1000px; margin: 0 auto; padding: 0 16px 24px; position: relative; z-index: 1; display: flex; flex-direction: column; gap: 14px; }
+    h1 { font-size: 18px; color: var(--txt); font-weight: 600; margin: 4px 0 0; }
+    h2 { font-size: 15px; color: var(--txt); font-weight: 600; margin: 0 0 8px; }
+    .sous { font-size: 13px; color: var(--txt-3); line-height: 1.5; }
+    .carte { padding: 12px; }
+    .ligne { padding: 10px 0; border-top: 1px solid var(--glass-bd); font-size: 13px; color: var(--txt-2); line-height: 1.5; }
+    .ligne:first-of-type { border-top: 0; }
+    .tete { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; color: var(--txt); }
+    .nom { font-weight: 600; }
+    .voix { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .puce { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; padding: 4px 6px 4px 10px; border-radius: 999px;
+      border: 1px solid var(--glass-bd); color: var(--txt-2); }
+    .puce.verifiee { border-color: var(--teal); }
+    .puce.partagee { border-color: #f97316; }
+    .puce.basse { border-style: dashed; }
+    .puce button, .gestes button, form button { font: inherit; font-size: 12px; padding: 4px 10px; min-height: 30px; border-radius: 8px;
+      border: 1px solid var(--glass-bd); background: transparent; color: var(--txt-2); cursor: pointer; }
+    .puce button { min-height: 24px; padding: 2px 8px; }
+    button:disabled { opacity: .5; cursor: default; }
+    .gestes { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+    form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 13px; color: var(--txt-2); }
+    input, select { font: inherit; font-size: 13px; padding: 6px 8px; min-height: 34px; border-radius: 8px; border: 1px solid var(--glass-bd);
+      background: transparent; color: var(--txt); }
+    input[type="number"] { width: 7em; }
+    .vide { font-size: 13px; color: var(--txt-3); }
+    a { color: var(--teal); }
+    #bulle { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 20;
+      padding: 10px 12px; border-radius: 10px; border: 1px solid var(--glass-bd); background: #0b1220; color: #e5e7eb;
+      font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+    #bulle:empty { display: none; }
+  </style>
+</head>
+<body>
+  <nav class="topnav" style="display:flex;gap:10px;align-items:center;padding:10px 16px"><span class="brand">AIOS</span></nav>
+  <main>
+    <h1>Les voix — leurs signatures</h1>
+    <div class="sous">Chaque personne a sa signature : ses voix (selon le micro, la distance, la fatigue, le chant, le téléphone…), avec leur
+      force et combien de fois Hakim les a entendues. Une voix peut appartenir à plusieurs personnes : il entend alors « papa ou Ali ? », le
+      contexte peut l'aider à savoir qui parle, mais une voix partagée n'est <b>jamais ta voix vérifiée</b> (le sensible attend ta confirmation).
+      Ta voix 1, c'est ton empreinte (apprise dans <a href="/parler">Parler</a>). Hakim ne met jamais une voix dans ta signature tout seul :
+      toi seul (ton empreinte ici, ou « c'est moi »). Pour les autres, il propose, tu valides.</div>
+    <div class="sous" id="annonce" role="status"></div>
+    <div id="bulle" role="status" aria-live="polite"></div>
+    <section class="glass carte"><h2>Ce que Hakim propose</h2><div id="propositions"></div></section>
+    <section class="glass carte"><h2>Les signatures</h2><div id="signatures"></div></section>
+    <section class="glass carte"><h2>Ajouter une voix à une signature</h2>
+      <form id="ajouter">
+        <label>la voix <input type="number" id="ajVoix" min="1" max="999999" required placeholder="127"></label>
+        <label>à <input id="ajPersonne" list="personnes" required placeholder="papa, Ali…" maxlength="40" autocomplete="off"></label>
+        <datalist id="personnes"></datalist>
+        <button type="submit">Ajouter</button>
+      </form>
+      <div class="sous" style="margin-top:6px">Une voix d'une autre signature devient partagée. À toi : ton empreinte est demandée.</div>
+    </section>
+    <section class="glass carte"><h2>Les voix sans nom de la conversation (3 h)</h2>
+      <div class="sous">Un numéro temporaire : sans nom, il s'oublie après 3 h de silence. « C'est moi » le met dans ta signature.</div>
+      <div id="salle"></div></section>
+  </main>
+  <script>
+  window.esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  window.jeton = () => (document.querySelector('meta[name="cockpit-jeton"]') || {}).content || '';
+  document.body.classList.add('shell');
+  </script>
+  <script src="/jeton.js"></script>
+  <script src="/presence.js"></script>
+  <script src="/badges.js"></script>
+  <script>
+  const $ = (id) => document.getElementById(id);
+  const virgule = (n) => String(n).replace('.', ',');
+  let bulleT = null;
+  function annonce(t, ok = true) {
+    $('annonce').textContent = t; $('annonce').className = `sous ${ok ? 'ok' : 'ko'}`;
+    $('bulle').textContent = t; clearTimeout(bulleT); bulleT = setTimeout(() => { $('bulle').textContent = ''; }, 6000);
+  }
+  async function geste(corps) {
+    const envoyer = (c) => fetch('/api/voix/signatures', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify(c) });
+    let r = await envoyer(corps), o = await r.json().catch(() => ({}));
+    if (r.status === 403 && o.presence && o.action) {           // ce geste rend une voix à toi : ton empreinte
+      const presence = await preuvePresence(o.action, annonce);
+      r = await envoyer({ ...corps, presence }); o = await r.json().catch(() => ({}));
+    }
+    if (!r.ok || o.erreur) throw new Error(o.erreur || `erreur ${r.status}`);
+    return o;
+  }
+  const puce = (p, x, verifiees) => {
+    const classe = [verifiees.has(x.voix) && p === 'papa' ? 'verifiee' : '', x.partagee_avec.length ? 'partagee' : '', x.force < 0.8 ? 'basse' : ''].join(' ');
+    const dit = [`voix ${x.voix}`, x.empreinte ? 'ton empreinte' : '', `force ${virgule(x.force)}`, `${x.fois} fois`, x.registre ? `« ${x.registre} »` : '',
+      x.partagee_avec.length ? `partagée avec ${x.partagee_avec.join(', ')}` : '', verifiees.has(x.voix) && p === 'papa' ? 'ta voix vérifiée' : '',
+      p === 'papa' && !verifiees.has(x.voix) && !x.partagee_avec.length && !x.empreinte ? 'à reconfirmer' : ''].filter(Boolean).join(' · ');
+    const reconfirmer = p === 'papa' && !x.empreinte && !x.partagee_avec.length && !verifiees.has(x.voix)
+      ? `<button type="button" data-ajouter="${esc(x.voix)}" data-personne="papa">Reconfirmer</button>` : '';
+    const retirer = x.empreinte ? '' : `<button type="button" data-retirer="${esc(x.voix)}" data-personne="${esc(p)}" aria-label="Retirer la voix ${esc(x.voix)} de ${esc(p)}">Retirer</button>`;
+    return `<span class="puce ${classe}">${esc(dit)}${reconfirmer}${retirer}</span>`;
+  };
+  function afficher(d) {
+    const verifiees = new Set(d.verifiees || []);
+    const props = d.propositions || [];
+    $('propositions').innerHTML = props.length ? props.slice().reverse().map((p) => `<div class="ligne"><div class="tete"><span>${esc(p.geste === 'ajouter'
+      ? `ajouter la voix ${p.voix} à ${p.personne}` : `retirer la voix ${p.voix} de ${p.personne}`)}</span>`
+      + `<span class="sous">${esc(new Date(p.ts * 1000).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</span></div>`
+      + (p.raison ? `<div>${esc(p.raison)}</div>` : '')
+      + `<div class="gestes"><button type="button" data-valider="${esc(p.id)}">Valider</button><button type="button" data-refuser="${esc(p.id)}">Refuser</button></div></div>`).join('')
+      : '<div class="vide">Rien en attente.</div>';
+    const pers = d.personnes || [];
+    $('signatures').innerHTML = pers.length ? pers.map((p) => `<div class="ligne"><div class="tete"><span class="nom">${esc(p.nom)}</span>`
+      + `<span class="sous">${esc(p.voix.length)} voix</span></div><div class="voix">${p.voix.map((x) => puce(p.nom, x, verifiees)).join('')}</div></div>`).join('')
+      : '<div class="vide">Aucune signature encore.</div>';
+    $('personnes').innerHTML = pers.map((p) => `<option value="${esc(p.nom)}"></option>`).join('');
+    const salle = d.salle || [];
+    $('salle').innerHTML = salle.length ? `<div class="voix">${salle.map((x) => `<span class="puce">${esc(`voix ${x.voix} · ${x.n} fois${x.musique > x.n / 2 ? ' · surtout sous la musique' : ''}`)}`
+      + `<button type="button" data-ajouter="${esc(x.voix)}" data-personne="papa">C'est moi</button>`
+      + `<button type="button" data-nommer="${esc(x.voix)}">C'est…</button></span>`).join('')}</div>` : '<div class="vide">Aucune voix sans nom en ce moment.</div>';
+  }
+  async function charger() {
+    try {
+      const r = await fetch('/api/voix/signatures', { cache: 'no-store' });
+      const o = await r.json();
+      if (!r.ok || o.erreur) throw new Error(o.erreur || `erreur ${r.status}`);
+      afficher(o);
+    } catch (e) { annonce(`les signatures sont injoignables : ${e.message || e}`, false); }
+  }
+  async function faire(b, corps, dit) {
+    b.disabled = true;
+    try { afficher(await geste(corps)); annonce(dit); } catch (e) { annonce(`pas fait : ${e.message || e}`, false); }
+    b.disabled = false;
+  }
+  document.addEventListener('click', (ev) => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    if (b.dataset.valider) return faire(b, { action: 'valider', id: b.dataset.valider }, 'validé');
+    if (b.dataset.refuser) return faire(b, { action: 'refuser', id: b.dataset.refuser }, 'refusé');
+    if (b.dataset.retirer) {
+      if (!confirm(`Retirer la voix ${b.dataset.retirer} de la signature de ${b.dataset.personne} ?`)) return;
+      return faire(b, { action: 'retirer', personne: b.dataset.personne, voix: b.dataset.retirer }, `voix ${b.dataset.retirer} retirée`);
+    }
+    if (b.dataset.ajouter) return faire(b, { action: 'ajouter', personne: b.dataset.personne, voix: b.dataset.ajouter }, `voix ${b.dataset.ajouter} : dans la signature de ${b.dataset.personne}`);
+    if (b.dataset.nommer) {
+      const nom = (prompt(`La voix ${b.dataset.nommer}, c'est qui ?`) || '').trim();
+      if (nom) return faire(b, { action: 'ajouter', personne: nom, voix: b.dataset.nommer }, `voix ${b.dataset.nommer} : dans la signature de ${nom}`);
+    }
+  });
+  $('ajouter').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const voix = $('ajVoix').value.trim(), personne = $('ajPersonne').value.trim();
+    if (voix && personne) faire(ev.submitter || $('ajouter').querySelector('button'), { action: 'ajouter', personne, voix }, `voix ${voix} : dans la signature de ${personne}`);
+  });
+  Badges.suivre(document.querySelector('nav.topnav'), 'voix');   // le menu ☰, PARLER et l'orbe, comme les autres pages
+  charger(); setInterval(charger, 30000);
+  </script>
+</body>
+</html>

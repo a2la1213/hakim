@@ -317,8 +317,20 @@ def references(fichier_ahmed=None, fichier_connues=None, fichier_moi=None):
     d = ev._lire(fichier_ahmed)
     if d and d.get("moyenne") and len(d.get("vecteurs", [])) >= 2:
         refs.append({"nom": ev.NOM_PAPA, "genre": "papa", "d": d})
-    for x in ev.connues(fichier_connues):
-        refs.append({"nom": x["nom"], "genre": "connue", "v": np.array(x["moyenne"], float)})
+    if fichier_connues is not None:
+        for x in ev.connues(fichier_connues):
+            refs.append({"nom": x["nom"], "genre": "connue", "v": np.array(x["moyenne"], float)})
+    else:
+        # (10/11) chaque voix d'une signature (sauf la voix 1, l'empreinte de papa, déjà là) : le nom de sa personne, ou le doute d'une voix
+        # partagée (« papa ou Ali ? ») ; lu, jamais écrit
+        try:
+            reg = ev.registre_voix()
+        except (OSError, ValueError):
+            reg = None
+        for k, x in sorted((reg or {}).get("voix", {}).items(), key=lambda kx: int(kx[0])):
+            o = [n for n, _ in ev.S.proprietaires(reg, k)]
+            if o and x.get("c") is not None:
+                refs.append({"nom": ev.S.etiquette(o), "genre": "connue", "v": np.array(x["c"], float)})
     for m in ev.moyennes_moi(fichier_moi).values():                 # (06/11) chacune de ses voix : rap, Azure, celle d'avant
         refs.append({"nom": "moi", "genre": "moi", "v": np.asarray(m, float)})
     return refs
