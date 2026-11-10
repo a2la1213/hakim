@@ -527,6 +527,17 @@ function creerLecteurNeuronal() {
     },
     // (15:10) une parole dont la voix est déjà fabriquée (sa réponse soufflée) : à sa place, sans attendre la synthèse
     direAudio(texte, buf) {
+      // (10/11, mesuré : les 7 morceaux d'une épissure attendaient le DERNIER calculé, 18 s, avant que le premier parte) sa voix encore en
+      // calcul (une promesse) : le morceau prend sa place maintenant, dans l'ordre, et part dès qu'elle est prête ; rien n'est recalculé
+      if (buf && typeof buf.then === 'function') {
+        Promise.resolve(buf).catch(() => {});                            // une voix qui ne vient pas : passée à son tour (attendreVoix)
+        if (typeof noterSaVoix === 'function') noterSaVoix(texte);
+        if (L.fluxFini && !attendre && !pause) { aParle = false; dejaParle = false; }
+        L.fluxFini = false;
+        unites.push({ audio: { texte, attente: buf } });
+        pomper();
+        return;
+      }
       if (!buf || !buf.duration) { L.dire(texte); return; }
       if (typeof noterSaVoix === 'function') noterSaVoix(texte);
       if (L.fluxFini && !attendre && !pause) { aParle = false; dejaParle = false; }
@@ -691,7 +702,7 @@ function creerLecteurNeuronal() {
     retirerAudio(textes) {
       const garde = (t) => !textes.includes(t);
       for (let i = unites.length - 1; i >= 0; i--) if (unites[i].audio && !garde(unites[i].audio.texte)) unites.splice(i, 1);
-      for (let i = lots.length - 1; i >= 0; i--) if (lots[i].texte && !garde(lots[i].texte) && lots[i].pret && lots[i].pret.getChannelData) lots.splice(i, 1);
+      for (let i = lots.length - 1; i >= 0; i--) if (lots[i].texte && !garde(lots[i].texte) && ((lots[i].pret && lots[i].pret.getChannelData) || lots[i].attente)) lots.splice(i, 1);
       if (fluide()) {
         for (const src of [...sources]) if (src._texte && !garde(src._texte) && src._debut > actx.currentTime + 0.02) { try { src.stop(); } catch (_) {} sources.delete(src); }
         prochainDebut = Math.max(actx.currentTime, ...[...sources].map(x => x._fin || 0));
@@ -728,7 +739,7 @@ function creerLecteurNeuronal() {
   //   virgule : le blanc éventuel tombe là où l'on respire, pas au milieu d'un paragraphe.
   function prochainLot() {
     if (unites[0] && unites[0].son) return { son: unites.shift().son, texte: '' };   // (01:27) un son : seul, à sa place
-    if (unites[0] && unites[0].audio) { const a = unites.shift().audio; return { pret: a.pret, texte: a.texte, langue: 'fr' }; }   // (15:10) déjà fabriquée
+    if (unites[0] && unites[0].audio) { const a = unites.shift().audio; return { pret: a.pret || null, attente: a.attente || null, texte: a.texte, langue: 'fr' }; }   // (15:10) déjà fabriquée ; (10/11) ou en route
     if (unites[0] && unites[0].meuble) {                                // (13:30) un meuble choisi : déjà prêt, à sa place
       const h = unites.shift().meuble;
       return { pret: h.pret, texte: h.texte || '', meuble: h, hesitation: true, volume: h.volume, dureeMax: h.dureeMax, brut: h.brut };
@@ -777,6 +788,17 @@ function creerLecteurNeuronal() {
     return { langue: u0.langue, texte };
   }
 
+  // (10/11) un morceau dont la voix se calcule déjà (direAudio d'une promesse) : il attend sa voix, à sa place ; sans voix, il est passé (jamais
+  // une autre voix à la place de la sienne)
+  function attendreVoix(x) {
+    const g = generation;
+    x.t0 = performance.now();
+    Promise.resolve(x.attente).then((buf) => {
+      if (g !== generation) return;
+      if (buf && Number(buf.duration) > 0) x.pret = buf; else { x.erreur = new Error('voix absente'); x.muet = true; }
+      pomper();
+    }, () => { if (g !== generation) return; x.erreur = new Error('voix absente'); x.muet = true; pomper(); });
+  }
   function lancer(x) {
     x.ctl = new AbortController();
     x.t0 = performance.now();
@@ -918,12 +940,13 @@ function creerLecteurNeuronal() {
       const x = prochainLot();
       x.premier = premier;
       lots.push(x);
-      if (!x.pret) lancer(x);
+      if (!x.pret) { if (x.attente) attendreVoix(x); else lancer(x); }
     }
     // 2. programmer, dans l'ordre, ce qui est prêt
     while (lots.length && (lots[0].pret || lots[0].erreur) && !element) {
       const x = lots[0];
       if (x.son && x.erreur) { lots.shift(); continue; }           // (01:27) le son manque : sa voix continue, sans lui
+      if (x.muet) { lots.shift(); if (typeof journalVoix === 'function') journalVoix('morceau_sans_voix', {}); continue; }   // (10/11) sa voix n'est pas venue : passé
       if (x.erreur) {
         lots.shift();
         humeur(`voix neuronale : ${x.erreur.message || x.erreur} — voix du Mac en secours`);
@@ -965,9 +988,12 @@ function creerLecteurNeuronal() {
       if (!sources.size && avance() === 0) {
         // départ : si la suite (déjà lancée à l'étape 1) ne sera pas prête quand cette phrase finit,
         // retarder le départ juste assez — une attente au début plutôt qu'une coupure au milieu
-        const y = lots.find(l => l !== x && !l.pret && !l.erreur);
+        // (10/11) une voix déjà faite ou déjà en calcul (direAudio) ne se prévoit pas comme une synthèse à lancer : elle ne retarde rien
+        // (mesuré dans le simulateur : 0,25 s de silence ajoutées avant chaque bout d'une épissure)
+        const y = lots.find(l => l !== x && !l.pret && !l.erreur && !l.attente);
+        const u0 = unites[0];
         const pretDans = y ? (y.t0 + prevoir(y.texte.length) * 1000 - performance.now()) / 1000
-          : (unites.length ? prevoir(unites[0].texte.length) : 0);
+          : (u0 && !u0.audio && !u0.meuble && !u0.son ? prevoir(u0.texte.length) : 0);
         const attente = pretDans - x.pret.duration / vitesseVoix() + 0.15;
         if (attente > 0) t += Math.min(0.5, attente);                 // au plus une demi-seconde : il parle tôt
       }
@@ -994,7 +1020,7 @@ function creerLecteurNeuronal() {
       const x = prochainLot();
       unites.unshift(...vieuxU);
       lots.push(x);
-      if (!x.pret) lancer(x);
+      if (!x.pret) { if (x.attente) attendreVoix(x); else lancer(x); }
     }
     for (let k = lots.findIndex(x => !x._vieux); k >= 0 && (lots[k].pret || lots[k].erreur); k = lots.findIndex(x => !x._vieux)) {
       const x = lots[k];
@@ -1267,15 +1293,15 @@ lecteurNeuronal.peutHesiter = () => typeof reglagesCorps !== 'undefined' && (reg
 // et sa dernière parole avant un trou ralentit sur sa fin (+0,3 s)
 const rythmeVoix = (k, d) => { const v = lecteurNeuronal.rythme && Number(lecteurNeuronal.rythme[k]); return Number.isFinite(v) ? v : d; };   // (15:24)
 // (04/11, Ahmed : « annule tous les blancs ») le silence de début et de fin d'un bout de sa voix, rogné (15 ms de marge, jamais sous 50 ms)
+// (10/11, Ahmed : « faut enlever tous ses blancs inutiles automatiques ») mesuré : 0,89 s de silence restaient à la fin de chaque bout de sa voix de
+// rap, le petit clic de fin du rendu arrêtait le rognage (un seul échantillon au-dessus de 0,008) ; il se fait maintenant à l'énergie, sans ce clic
+// (Voix.bornesParole : 20 ms gardées devant, 80 ms derrière, pour ne jamais manger la fin d'un mot)
 function rognerSilences(buf) {
   if (!buf || !buf.getChannelData || !actx) return buf;
-  const d = buf.getChannelData(0), n = d.length, seuil = 0.008, marge = Math.round(buf.sampleRate * 0.015);
-  let a = 0; while (a < n && Math.abs(d[a]) < seuil) a++;
-  let b = n - 1; while (b > a && Math.abs(d[b]) < seuil) b--;
-  a = Math.max(0, a - marge); b = Math.min(n - 1, b + marge);
-  if ((a === 0 && b === n - 1) || b - a < buf.sampleRate * 0.05) return buf;
-  const out = actx.createBuffer(buf.numberOfChannels, b - a + 1, buf.sampleRate);
-  for (let c = 0; c < buf.numberOfChannels; c++) out.copyToChannel(buf.getChannelData(c).subarray(a, b + 1), c);
+  const r = Voix.bornesParole(buf.getChannelData(0), buf.sampleRate);
+  if (!r) return buf;
+  const out = actx.createBuffer(buf.numberOfChannels, r.b - r.a, buf.sampleRate);
+  for (let c = 0; c < buf.numberOfChannels; c++) out.copyToChannel(buf.getChannelData(c).subarray(r.a, r.b), c);
   return out;
 }
 lecteurNeuronal.rogner = (buf) => { try { return rognerSilences(buf); } catch (_) { return buf; } };
@@ -3706,6 +3732,8 @@ function purgerVoixGardees(maintenant = Date.now()) {
 }
 function noterParoleDite(texte) { const k = cleParole(texte); if (k) { ditsRecents.set(k, Date.now()); voixGardees.delete(k); } }
 function garderVoixPrete(b) {
+  // (10/11) un bout de plusieurs morceaux : chacun sous son texte, s'il est prêt (b.buf n'est que le premier)
+  if (b && Array.isArray(b.morceaux) && b.morceaux.length > 1) { for (const m of b.morceaux) if (m && m.buf && m.buf.getChannelData) garderVoixPrete({ texte: m.texte, buf: m.buf }); return; }
   if (!b || !b.texte || !(b.buf || b.prepA)) return;
   const k = cleParole(b.texte);
   if (!k || ditsRecents.has(k)) return;
@@ -3836,10 +3864,15 @@ function recevoirBout(s, n, tour) {
   if (gardee && gardee.buf && !b.dit) { b.buf = gardee.buf; if (typeof journalVoix === 'function') journalVoix('voix_reprise_gardee', { ou: 'mac' }); return direBouts(); }
   // (07/11) chaque morceau (et son meuble à part) : sa voix préparée dès l'arrivée, ou demandée maintenant
   const textes = b.dit || [s.texte];
-  Promise.all(textes.map(t => voixPourTexte(t)))
-    .then((bufs) => {
-      b.morceaux = textes.map((t, k) => ({ texte: t, buf: bufs[k] }));
-      b.buf = bufs[bufs.length - 1];
+  // (10/11, mesuré le 10/11 : « Promise.all » faisait attendre le premier morceau jusqu'à ce que le DERNIER soit calculé, jusqu'à 18 s pour 7
+  // morceaux, en silence) le bout part dès que son premier morceau est prêt ; les suivants prennent leur place dans sa voix et partent chacun
+  // dès que le sien est prêt, dans l'ordre (lecteurNeuronal.direAudio d'une promesse)
+  const voix = textes.map(t => voixPourTexte(t));
+  voix.slice(1).forEach(p => p.catch(() => {}));
+  voix[0]
+    .then((buf) => {
+      b.morceaux = textes.map((t, k) => ({ texte: t, buf: k ? voix[k] : buf }));
+      b.buf = buf;
       etat.calculVoixMacMs = Number.isFinite(etat.calculVoixMacMs) ? Math.round(etat.calculVoixMacMs * 0.7 + (Date.now() - b.t) * 0.3) : Date.now() - b.t;
       direBouts();
     })
@@ -4126,6 +4159,27 @@ function propositionsDe(tour, texte) {
   }
   return out;
 }
+/* (10/11, Ahmed : « faut enlever tous ses blancs inutiles automatiques, ça rallonge grave la réponse ») sa voix du Mac (Azure refait au timbre de
+   rap) coûte 2,6 s de calcul PAR APPEL, plus 0,2 s par seconde de voix (mesuré le 10/11 de 05:44 à 06:35, 66 conversions) : une proposition de
+   2 s coupée à chaque virgule se calcule plus lentement qu'elle ne se dit, et le blanc grandit à chaque bout. Pour elle, les propositions qui
+   se suivent sont dites d'un seul tenant, jusqu'à une fin de phrase d'au moins 60 caractères (200 au plus) : Azure donne lui-même la pause
+   d'une virgule. La voix du téléphone (aucun coût par appel) garde une proposition par bout. Éteint : regrouper_bouts (non). */
+const REGROUPER_MIN = 60, REGROUPER_MAX = 200;
+const voixACoutFixe = () => !(typeof voixDuTelephone === 'function' && voixDuTelephone())
+  && !(typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.regrouper_bouts === false);
+function regrouperPourVoix(props, coutFixe = voixACoutFixe()) {
+  const l = (props || []).map(x => String(x || '').trim()).filter(Boolean);
+  if (!coutFixe || l.length < 2) return l;
+  const out = [];
+  let cur = '';
+  for (const p of l) {
+    if (cur && cur.length + 1 + p.length > REGROUPER_MAX) { out.push(cur); cur = ''; }
+    cur = cur ? `${cur} ${p}` : p;
+    if (cur.length >= REGROUPER_MIN && /[.!?…؟]["»”)]*$/.test(cur)) { out.push(cur); cur = ''; }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
 function surRibosome(o) {
   const p = paveDe(o.tour);
   if (String(o.pave || '').length > p.textes.join(' ').length) p.textes = [String(o.pave)];   // le cockpit fait foi
@@ -4146,7 +4200,8 @@ function surRibosome(o) {
     // (07/11, Ahmed a choisi l'essai « 2b » : « coupé aux virgules, avec 0,1 s ») sa parole épissée dite proposition par proposition : chaque
     // virgule ou point ferme un morceau (sa voix garde une seule intonation par proposition) ; un bout trop court sans ponctuation attend la
     // suite (0,7 s au plus), pour ne jamais dire un mot seul
-    const props = typeof propositionsDe === 'function' ? propositionsDe(o.tour, String(o.texte)) : [String(o.texte)];
+    const props0 = typeof propositionsDe === 'function' ? propositionsDe(o.tour, String(o.texte)) : [String(o.texte)];
+    const props = typeof regrouperPourVoix === 'function' ? regrouperPourVoix(props0) : props0;   // (10/11) sa voix du Mac coûte par appel
     etat.riboFile = (etat.riboFile || []).concat(props.map((t, k) => ({ tour: o.tour, texte: t, recu: Date.now(), mots: k ? [] : mots.filter(i => !vus.has(i)),
       ajoutes: k ? [] : (Array.isArray(o.ajoutes) ? o.ajoutes.slice() : []) })));
     p.motsLus = mots.slice();

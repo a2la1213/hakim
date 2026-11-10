@@ -100,4 +100,70 @@ function prosodieAzure(emotion) {
   const pc = (v) => `${v >= 0 ? '+' : ''}${Math.round(v)}%`;
   return { pitch: pc(x * 16), volume: pc(x * 20), rate: pc(Math.max(0, x) * 12) };
 }
-module.exports = { prosodieAzure, VOIX, choixVoix, langueLatine, segmenterLangues, SEUIL_FILE_S, dureeParlee, budgetMs, attenteFile, raisonSecours, studioOccupe };
+/* (10/11, Ahmed : « faut enlever tous ses blancs inutiles automatiques ») un WAV PCM 16 bits mono sans son silence de tête et de queue (ni le clic
+   de fin du rendu) : Voix.bornesParole. Rend un nouveau WAV (en-tête de 44 octets) ; tout autre format, ou rien de net : le même tampon. */
+function lireWav(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 44 || buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') return null;
+  let i = 12, fmt = null;
+  while (i + 8 <= buf.length) {
+    const id = buf.toString('ascii', i, i + 4), taille = buf.readUInt32LE(i + 4), corps = i + 8;
+    if (id === 'fmt ' && taille >= 16) fmt = { format: buf.readUInt16LE(corps), canaux: buf.readUInt16LE(corps + 2), sr: buf.readUInt32LE(corps + 4), bits: buf.readUInt16LE(corps + 14) };
+    // Azure en flux peut annoncer une taille de données nulle ou trop grande : on prend ce qui est là
+    if (id === 'data') return fmt ? { ...fmt, debut: corps, fin: Math.min(buf.length, taille > 0 ? corps + taille : buf.length) } : null;
+    i = corps + taille + (taille % 2);
+  }
+  return null;
+}
+function ecrireWav(pcm, sr) {
+  const h = Buffer.alloc(44);
+  h.write('RIFF', 0, 'ascii'); h.writeUInt32LE(36 + pcm.length, 4); h.write('WAVE', 8, 'ascii');
+  h.write('fmt ', 12, 'ascii'); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22);
+  h.writeUInt32LE(sr, 24); h.writeUInt32LE(sr * 2, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34);
+  h.write('data', 36, 'ascii'); h.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([h, pcm]);
+}
+function rognerWav(buf, opts = {}) {
+  try {
+    const w = lireWav(buf);
+    if (!w || w.format !== 1 || w.canaux !== 1 || w.bits !== 16) return buf;
+    const n = Math.floor((w.fin - w.debut) / 2);
+    const d = new Int16Array(n);
+    for (let k = 0; k < n; k++) d[k] = buf.readInt16LE(w.debut + 2 * k);
+    const b = Voix.bornesParole(d, w.sr, { ...opts, plein: 32768 });
+    if (!b) return buf;
+    return ecrireWav(buf.subarray(w.debut + 2 * b.a, w.debut + 2 * b.b), w.sr);
+  } catch (_) { return buf; }
+}
+// la durée d'un WAV PCM 16 bits mono, en secondes (null : autre format)
+function dureeWav(buf) { const w = lireWav(buf); return w && w.bits === 16 && w.canaux === 1 && w.sr > 0 ? (w.fin - w.debut) / 2 / w.sr : null; }
+
+/* (10/11) la file de ses conversions au timbre de rap (une à la fois : le GPU) : mesuré le 10/11 de 05:44 à 06:35, 34 de ses 121 conversions
+   n'ont jamais sonné (112 s de calcul : ses pensées préparées d'avance, puis lâchées) et passaient devant sa vraie réponse, dans l'ordre
+   d'arrivée (jusqu'à 14 s d'attente). Comme pour Chatterbox (03/11 : « sa réponse ne l'attend jamais »), ce qu'il dit vraiment passe d'abord
+   (prio 0), puis ce qui est préparé d'avance (prio 1, « fond »), puis ses débuts et meubles fabriqués au calme (prio 2) ; à priorité égale,
+   l'ordre d'arrivée. Une demande que plus personne n'attend (la page a fermé la requête) n'est pas calculée. */
+function creerFilePrioritaire() {
+  const attente = [];
+  let enCours = false, seq = 0;
+  const suivant = () => {
+    if (enCours) return;
+    for (;;) {
+      if (!attente.length) return;
+      attente.sort((x, y) => x.prio - y.prio || x.seq - y.seq);
+      const t = attente.shift();
+      if (t.abandonne && t.abandonne()) { t.resoudre(null); continue; }
+      enCours = true;
+      const fin = (v) => { enCours = false; t.resoudre(v); suivant(); };
+      Promise.resolve().then(t.travail).then(fin, () => fin(null));
+      return;
+    }
+  };
+  return {
+    ajouter(travail, { prio = 0, abandonne = null } = {}) {
+      return new Promise((resoudre) => { attente.push({ travail, prio, abandonne, resoudre, seq: seq++ }); suivant(); });
+    },
+    get longueur() { return attente.length + (enCours ? 1 : 0); },
+  };
+}
+module.exports = { prosodieAzure, VOIX, choixVoix, langueLatine, segmenterLangues, SEUIL_FILE_S, dureeParlee, budgetMs, attenteFile, raisonSecours, studioOccupe,
+  lireWav, ecrireWav, rognerWav, dureeWav, creerFilePrioritaire };

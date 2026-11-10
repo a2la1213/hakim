@@ -724,9 +724,53 @@
     return { choix, garde: vivants.filter(b => b !== choix), latenceMs: latence(choix), revenu: choix !== dernier };
   }
 
+  /* (10/11, Ahmed : « faut enlever tous ses blancs inutiles automatiques, ça rallonge grave la réponse ») mesuré sur ses 44 bouts gardés de sa
+     voix de rap (Azure refait au timbre de rap) : après le rognage d'avant (un seul échantillon au-dessus de 0,008 l'arrêtait), il restait
+     0,89 s de silence en médiane à la fin de CHAQUE bout (p90 1,08 s), parce que le rendu laisse un petit clic dans ses 80 dernières ms (30 sur
+     44) ; et Azure rend 1,82 s pour un « Oui papa. » (32 de ses 121 appels du 10/11 au matin). Ici, où sa voix commence et finit : à l'énergie
+     (trames de 10 ms, au-dessus de -45 dB du plus fort du bout, et de -65 dB dans l'absolu), un éclat final isolé (au plus 100 ms, dans les
+     100 dernières ms, après au moins 200 ms de silence, ou 80 ms s'il est faible) n'est pas sa voix ; une marge reste de chaque côté pour ne jamais manger un mot (la
+     chute d'un « s », un souffle). d : échantillons (-1..1, ou entiers avec plein), sr : la fréquence. Rend { a, b } (b exclus) ou null
+     (rien de net : le bout reste tel quel). */
+  function bornesParole(d, sr, { tete = 0.02, queue = 0.08, plein = 1, relatifDb = -45, plancherDb = -65 } = {}) {
+    const n = d ? d.length : 0, fr = Math.max(1, Math.round((sr || 24000) * 0.01));
+    const m = Math.floor(n / fr);
+    if (m < 5) return null;
+    const rms = new Float64Array(m);
+    let max = 0;
+    for (let k = 0; k < m; k++) {
+      let s = 0;
+      for (let i = k * fr; i < (k + 1) * fr; i++) { const x = d[i] / plein; s += x * x; }
+      rms[k] = Math.sqrt(s / fr);
+      if (rms[k] > max) max = rms[k];
+    }
+    if (!(max > 0)) return null;
+    const seuil = Math.max(max * 10 ** (relatifDb / 20), 10 ** (plancherDb / 20));
+    const actives = [];
+    for (let k = 0; k < m; k++) if (rms[k] >= seuil) actives.push(k);
+    if (!actives.length) return null;
+    const segs = [];
+    let s0 = actives[0], p = actives[0];
+    for (const k of actives.slice(1)) { if (k - p > 1) { segs.push([s0, p]); s0 = k; } p = k; }
+    segs.push([s0, p]);
+    // le clic de fin du rendu : un éclat court (au plus 100 ms), tout au bout (dans les 100 dernières ms), séparé de sa voix par au moins
+    // 200 ms de silence, ou 80 ms s'il est faible (25 dB sous le plus fort du bout : le clic mesuré est 32 à 37 dB dessous, un vrai mot non)
+    const faible = max * 10 ** (-25 / 20);
+    while (segs.length > 1) {
+      const [x, y] = segs[segs.length - 1], avant = segs[segs.length - 2][1], ecart = x - avant - 1;
+      let fort = 0;
+      for (let k = x; k <= y; k++) if (rms[k] > fort) fort = rms[k];
+      if (y - x + 1 <= 10 && y >= m - 10 && (ecart >= 20 || (ecart >= 8 && fort <= faible))) segs.pop(); else break;
+    }
+    const a = Math.max(0, segs[0][0] * fr - Math.round(tete * sr));
+    const b = Math.min(n, (segs[segs.length - 1][1] + 1) * fr + Math.round(queue * sr));
+    if (b - a < 0.05 * sr || (a === 0 && b === n)) return null;
+    return { a, b };
+  }
+
   const Voix = { versArabe, segmenter, sansJumeaux, pourLEcran, squelette, pourLaVoix, decoupeur, choisirVoix, creerLecteur, FORMULE, VOIX_SEULE, AFFECT, sansAffect, latexParle,
     definirPrononciations,
-    diction, prononcable, enLettres, DEBUTS, HESITATIONS, debutDe, expressivitePhrase, sansDejaLivre, finDePhrase, choisirDansLatence };
+    diction, prononcable, enLettres, DEBUTS, HESITATIONS, debutDe, expressivitePhrase, sansDejaLivre, finDePhrase, choisirDansLatence, bornesParole };
   racine.Voix = Voix;
   if (typeof module !== 'undefined' && module.exports) module.exports = Voix;
 })(typeof window !== 'undefined' ? window : globalThis);

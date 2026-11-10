@@ -371,13 +371,16 @@ test('(04/11) une parasite reconnue dans son subconscient : ni écrite ni dite, 
 test('(04/11) le silence autour de chaque bout de sa voix est rogné ; ses meubles automatiques éteints par défaut', () => {
   const faireTampon = (donnees, sr = 1000) => ({ numberOfChannels: 1, sampleRate: sr, length: donnees.length, duration: donnees.length / sr,
     getChannelData: () => donnees, copyToChannel(src) { this.copie = Array.from(src); } });
-  const ctx = { Math, actx: { createBuffer: (c, n, sr) => ({ ...faireTampon(new Float32Array(n), sr), numberOfChannels: c }) } };
+  const ctx = { Math, Voix: require('./public/voix.js'), actx: { createBuffer: (c, n, sr) => ({ ...faireTampon(new Float32Array(n), sr), numberOfChannels: c }) } };
   vm.createContext(ctx);
   vm.runInContext(extraire('function rognerSilences') + '\nthis.rogner = rognerSilences;', ctx);
   const d = new Float32Array(1000);                               // 1 s à 1 000 Hz : 300 ms de silence, 400 ms de voix, 300 ms de silence
   for (let i = 300; i < 700; i++) d[i] = 0.2;
   const r = ctx.rogner(faireTampon(d));
-  assert.strictEqual(r.length, 400 + 2 * 15, 'sa voix, plus 15 ms de marge de chaque côté');
+  // (10/11) à l'énergie (Voix.bornesParole) : 20 ms gardées devant, 80 ms derrière (la chute d'un mot)
+  assert.strictEqual(r.length, 400 + 20 + 80, 'sa voix, plus 20 ms de marge devant et 80 ms derrière');
+  d[995] = 0.05;                                                   // (10/11) le petit clic de fin du rendu
+  assert.strictEqual(ctx.rogner(faireTampon(d)).length, 400 + 20 + 80, 'le clic de fin ne retient plus son silence');
   const tout = new Float32Array(1000).fill(0.2);
   const t = faireTampon(tout);
   assert.strictEqual(ctx.rogner(t), t, 'rien à rogner : le même');

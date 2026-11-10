@@ -278,3 +278,11 @@ test('une connexion gardée mais fermée par Anthropic : la demande repart une f
     assert.equal(lignes[0].connexion, 'neuve'); assert.equal(lignes[1].reessai, true);
   } finally { for (const x of [relais.serveur, faux]) { x.closeAllConnections(); x.close(); } }
 });
+
+test('(10/11) deux personnes ne reçoivent jamais le même nom d’emprunt latin (« Vobel » pour Hakim et Ahmed, vu une fois)', () => {
+  for (let essai = 0; essai < 200; essai++) {
+    const groupes = Array.from({ length: 40 }, (_, k) => [`Personne${k}`]);
+    const noms = F.creerDictionnaire(groupes).paires.map(p => p[1].toLowerCase());
+    assert.strictEqual(new Set(noms).size, noms.length, `essai ${essai} : ${noms.join(', ')}`);
+  }
+});

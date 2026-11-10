@@ -203,9 +203,10 @@ function nomLatin() {
 }
 const arabe = (t) => /[\u0600-\u06FF]/.test(t);
 function creerDictionnaire(groupes) {
-  const paires = [], arabesPris = new Set();
+  const paires = [], arabesPris = new Set(), latinsPris = new Set();
   for (const g of groupes) {
-    const base = nomLatin();
+    // (10/11) deux personnes ne reçoivent jamais le même nom d'emprunt (« Vobel » tiré pour Hakim et pour Ahmed : le test l'a vu)
+    let base; do { base = nomLatin(); } while (latinsPris.has(base.toLowerCase())); latinsPris.add(base.toLowerCase());
     let ar = null;
     for (const v of g) {
       if (arabe(v)) {

@@ -8254,6 +8254,7 @@ function corpsReglages() {
     filtre_identite: r.filtre_identite !== false,
     coupe_net: r.coupe_net !== false,
     reprendre_passage: r.reprendre_passage !== false,   // (09/11, Ahmed) coupé net sur un « ouais » : sa voix reprend ses morceaux prêts
+    regrouper_bouts: r.regrouper_bouts !== false,   // (10/11, Ahmed : « enlever tous ses blancs inutiles ») sa voix du Mac : ses propositions d'un seul tenant
     langues_ecrites: r.langues_ecrites !== false,
     cortex_prefrontal: r.cortex_prefrontal !== false,   // (07/11, Ahmed : « le cortex ») son cortex en tête de chaque tour
     conscience_continue: r.conscience_continue !== false,   // (07/11, Ahmed) sa conscience continue : chaque seconde, Mini Hakim décide
@@ -10612,15 +10613,21 @@ const AZURE_RAP_MS = 2500;
 let azureRapEnVol = false;
 // (08/11, Ahmed : « on élimine totalement la voix standard d'Azure, pour que seule la voix rap Azure soit effective, sinon ça saute d'une voix à
 // l'autre ») plus jamais Azure tel quel : les conversions se suivent, une à la fois (la file), 30 s au plus chacune ; ratée : réessayée une fois
-let fileAzureRap = Promise.resolve();
-async function azureAuTimbreRap(data, budgetMs = 30000) {
-  const avant = fileAzureRap; let liberer; fileAzureRap = new Promise(r => { liberer = r; });
-  try { await avant; return (await convertirAuTimbreRap(data, budgetMs)) || (await convertirAuTimbreRap(data, budgetMs)); } finally { liberer(); }
+// (10/11) une file à priorités (VoixHakim.creerFilePrioritaire) : sa vraie réponse (prio 0) passe devant ce qui est préparé d'avance (1) et ses
+// débuts fabriqués au calme (2) ; ce que plus personne n'attend n'est pas calculé
+const fileAzureRap = VoixHakim.creerFilePrioritaire();
+function azureAuTimbreRap(data, budgetMs = 30000, { prio = 0, abandonne = null } = {}) {
+  return fileAzureRap.ajouter(async () => (await convertirAuTimbreRap(data, budgetMs)) || ((abandonne && abandonne()) ? null : await convertirAuTimbreRap(data, budgetMs)),
+    { prio, abandonne });
 }
 async function convertirAuTimbreRap(data, budgetMs) {
   const base = path.join(os.tmpdir(), `jarvis-voix-${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`);
   const source = `${base}-azure.wav`, fichier = `${base}-rap.wav`, t0 = Date.now();
-  const duree = Math.max(0, (data.length - 44) / 48000);                  // riff 24 kHz, 16 bits, mono
+  // (10/11) le silence qu'Azure met autour de sa phrase (1,82 s rendues pour un « Oui papa. ») n'est pas converti : une marge large reste
+  // (0,1 s devant, 0,25 s derrière) pour que la conversion ait son attaque et sa chute, et que son petit clic de fin reste à l'écart de sa voix
+  const avantRogne = VoixHakim.dureeWav(data);
+  data = VoixHakim.rognerWav(data, { tete: 0.1, queue: 0.25 });
+  const duree = VoixHakim.dureeWav(data) ?? Math.max(0, (data.length - 44) / 48000);   // riff 24 kHz, 16 bits, mono
   try {
     fs.writeFileSync(source, data, { mode: 0o600 });
     const budget = budgetMs > 0 ? budgetMs : AZURE_RAP_MS + Math.max(0, duree - 3) * 800;
@@ -10628,9 +10635,14 @@ async function convertirAuTimbreRap(data, budgetMs) {
     const demande = voixDemander({ op: 'convertir', source, fichier, voix: 'rap' }, 60000).finally(() => { azureRapEnVol = false; });
     const r = await Promise.race([demande, new Promise(ok => setTimeout(() => ok({ erreur: 'trop lent' }), budget))]);
     const bon = r && !r.erreur && fs.existsSync(fichier);
-    try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'azure_rap', ms: Date.now() - t0, audio_s: Math.round(duree * 100) / 100, ...(bon ? {} : { erreur: String((r && r.erreur) || 'rien').slice(0, 60) }) }) + '\n', { mode: 0o600 }); } catch (_) {}
+    // (10/11) rendue : sans son silence ni le petit clic de fin du rendu (0,89 s de silence restaient à la fin de chaque bout)
+    const sortie = bon ? VoixHakim.rognerWav(fs.readFileSync(fichier), { tete: 0.02, queue: 0.08 }) : null;
+    const sortie_s = sortie ? VoixHakim.dureeWav(sortie) : null;
+    try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'azure_rap', ms: Date.now() - t0, audio_s: Math.round(duree * 100) / 100,
+      ...(Number.isFinite(avantRogne) ? { azure_s: Math.round(avantRogne * 100) / 100 } : {}), ...(Number.isFinite(sortie_s) ? { rendu_s: Math.round(sortie_s * 100) / 100 } : {}),
+      ...(bon ? {} : { erreur: String((r && r.erreur) || 'rien').slice(0, 60) }) }) + '\n', { mode: 0o600 }); } catch (_) {}
     if (!bon) { setTimeout(() => fs.unlink(fichier, () => {}), 60000).unref(); return null; }   // la conversion tardive s'efface aussi
-    return fs.readFileSync(fichier);
+    return sortie;
   } catch (_) { return null; }
   finally { if (!azureRapEnVol) fs.unlink(source, () => {}); else setTimeout(() => fs.unlink(source, () => {}), 60000).unref(); if (fs.existsSync(fichier)) fs.unlink(fichier, () => {}); }
 }
@@ -11033,7 +11045,7 @@ async function fabriquerDebutsAzureRap(liste) {
     for (const { t, c, e, tempo } of liste) {
       if (toursActifs.size || D.lire(c)) continue;
       const a = await voixAzure(prononcer(t), tempo, e).catch(() => null);
-      const rap = a && a.data ? await azureAuTimbreRap(a.data, 30000) : null;
+      const rap = a && a.data ? await azureAuTimbreRap(a.data, 30000, { prio: 2 }) : null;   // (10/11) après tout ce qu'il dit
       const duree = rap ? Math.max(0, (rap.length - 44) / 48000) : 0;
       if (rap && D.plausible(t, duree)) D.garder(c, rap, duree);
     }
@@ -11221,6 +11233,9 @@ async function routeDire(req, res) {
   }
   // (28/10) un de ses débuts de réponse : sa voix gardée part tout de suite (debuts.js) ; sinon fabriquée, gardée si plausible
   const langueVoix = /^[a-z]{2}$/.test((q && q.langue) || '') ? q.langue : 'fr';
+  // (10/11) la page a lâché la requête (sa voix arrêtée, sa réponse coupée) : sa conversion n'est plus faite pour rien
+  let lachee = false;
+  res.on('close', () => { if (!res.writableFinished) lachee = true; });
   const debut = VoixPage.debutDe(texte + ' x') === texte || estMeuble(texte);   // (13:30) un de ses meubles aussi
   const rap = voixRap();                                       // (06/11, Ahmed) sa voix de rap : ses débuts à elle, jamais ceux d'une autre voix
   const cleVoix = debut ? D.cle(texte, langueVoix, emotion, tempo, typeof voixCleDebuts === 'function' ? voixCleDebuts() : null) : null;   // (08/11) azure_rap : les siens
@@ -11229,8 +11244,9 @@ async function routeDire(req, res) {
   if (!garde && q && q.gardee === true) return repondre(404, { erreur: 'pas encore gardée' });
   if (garde) {
     try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'voix_gardee', caracteres: texte.length }) + '\n', { mode: 0o600 }); } catch (_) {}
-    res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Duree': String(garde.duree || '') });
-    return res.end(garde.data);
+    const g = VoixHakim.rognerWav(garde.data);                        // (10/11) gardée avant le rognage : sans son silence ni son clic
+    res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Duree': String(VoixHakim.dureeWav(g) || garde.duree || '') });
+    return res.end(g);
   }
   /* (06/11, Ahmed : « sa voix de rap ; Azure en secours si Chatterbox est occupé ou trop lent ») en rap, Azure répond tout de suite quand
      Chatterbox ne peut pas suivre (voix-hakim.js : pas encore chaud, une chanson ou le Studio en calcul, une file trop longue) ; plus
@@ -11240,7 +11256,7 @@ async function routeDire(req, res) {
     try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'secours_azure', raison, ok: !!a, ms: a ? a.ms : null, caracteres: texte.length, ...extra }) + '\n', { mode: 0o600 }); } catch (_) {}
     if (!a || res.writableEnded) return !!a;
     res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Voix': 'azure', 'X-Secours': encodeURIComponent(raison).slice(0, 80) });
-    res.end(a.data);
+    res.end(VoixHakim.rognerWav(a.data));                             // (10/11) sans son silence de tête et de queue
     return true;
   };
   if (rap) {
@@ -11261,8 +11277,9 @@ async function routeDire(req, res) {
       // seulement ce qui est pensé ») servie une fois, effacée
       voixALaSource.delete(texte.replace(/\s+/g, ' ').trim());
       if (res.writableEnded) return;
-      res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Duree': String(v.duree || ''), 'X-Source': '1' });
-      return res.end(v.data);
+      const vd = VoixHakim.rognerWav(v.data);                         // (10/11) sans son silence de tête et de queue
+      res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Duree': String(VoixHakim.dureeWav(vd) || v.duree || ''), 'X-Source': '1' });
+      return res.end(vd);
     }
   }
   // (05/11, Ahmed : « ajoute Microsoft Azure à sa voix ») une seule voix multilingue, en ligne ; en panne : Chatterbox comme avant
@@ -11272,7 +11289,8 @@ async function routeDire(req, res) {
       try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'synthese_azure', ms: a.ms, caracteres: texte.length }) + '\n', { mode: 0o600 }); } catch (_) {}
       // (08/11, Ahmed : « prendre sa voix rap et la rattacher à Azure ») sa voix d'Azure refaite à son timbre de rap ; trop lent ou en panne : Azure
       if (corpsReglages().voix_hakim === 'azure_rap') {
-        const c = await azureAuTimbreRap(a.data);
+        // (10/11) préparée d'avance (fond) : après ce qu'il dit vraiment ; la page a lâché la requête : pas calculée
+        const c = await azureAuTimbreRap(a.data, 30000, { prio: q && q.fond === true ? 1 : 0, abandonne: () => lachee });
         if (res.writableEnded) return;
         if (c) { res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Voix': 'azure_rap' }); return res.end(c); }
         // (08/11, Ahmed : « on élimine totalement la voix standard d'Azure ») jamais Azure tel quel : ce morceau ne se dit pas
@@ -11280,7 +11298,7 @@ async function routeDire(req, res) {
       }
       if (res.writableEnded) return;
       res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Voix': 'azure' });
-      return res.end(a.data);
+      return res.end(VoixHakim.rognerWav(a.data));                    // (10/11) sans son silence de tête et de queue
     }
   }
   const tache = { texte, langue: /^[a-z]{2}$/.test((q && q.langue) || '') ? q.langue : 'fr', annulee: false, emotion, tempo,
@@ -11320,8 +11338,9 @@ async function routeDire(req, res) {
     // pour la réécoute : le fichier s'efface dès qu'il est envoyé
     fs.unlink(tache.fichier, () => {});
     if (res.writableEnded) return;
-    res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Duree': String(r.duree_s || '') });
-    res.end(data);
+    const dr = VoixHakim.rognerWav(data);                             // (10/11) sans son silence de tête et de queue, ni le clic du rendu
+    res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-Duree': String(VoixHakim.dureeWav(dr) || r.duree_s || '') });
+    res.end(dr);
   });
 }
 
@@ -14302,6 +14321,7 @@ async function traiter(req, res) {
       if (typeof q.pensee_en_boucle === 'boolean') r.pensee_en_boucle = q.pensee_en_boucle;
       for (const k of ['present_continu', 'present_dans_tours', 'present_peut_dire', 'present_la_nuit', 'present_appeler', 'medecin_fable', 'epissure_meubles', 'parole_sans_stop', 'lire_reponse_entiere', 'epissure_grammaire', 'pretraitement_parole', 'trois_pistes', 'parole_liee', 'sa_voix_reconnue', 'reprendre_ancien', 'morceaux_unifies', 'ecrit_coupe', 'finir_phrase', 'choisir_latence', 'te_couper', 'choix_coupure', 'choix_libre', 'micro_voix_seule', 'voix_reponse_seule', 'filtre_identite', 'coupe_net', 'langues_ecrites', 'plan_meubles', 'conscience_continue', 'cortex_prefrontal', 'hippocampe', 'hippocampe_dates']) if (typeof q[k] === 'boolean') r[k] = q[k];
       if (typeof q.reprendre_passage === 'boolean') r.reprendre_passage = q.reprendre_passage;   // (09/11) il reprend après un « ouais »
+      if (typeof q.regrouper_bouts === 'boolean') r.regrouper_bouts = q.regrouper_bouts;   // (10/11) sa voix du Mac d'un seul tenant
       if (typeof q.hippocampe_ressentis === 'boolean') r.hippocampe_ressentis = q.hippocampe_ressentis;   // (09/11) ses ressentis dans son rappel
       // (08/11) sa zone PFC et son hippocampe (Réglages) : des boutons et des barres, bornées
       for (const k of ['subconscient_pfc', 'fitra_discrete', 'conscience_parler', 'sauter_interieur']) if (typeof q[k] === 'boolean') r[k] = q[k];
