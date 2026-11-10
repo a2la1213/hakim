@@ -192,7 +192,13 @@ test('ce qui ne ressemble pas à sa voix n’est pas mis en doute : tu le coupes
   assert.equal(f.echoEnDoute(conv, { enceinte: false, libre: true, ressemblance: 0.75 }), false, 'sans chemin appris, il faut plus de ressemblance');
   assert.equal(f.echoEnDoute(conv, { rms: 0.2, seuil: 0.03, clarte: 6 }), false, 'sans mesure de ressemblance (le Mac, des écouteurs) : comme avant');
   assert.equal(conv.doute, undefined);
-  assert.equal(f.echoEnDoute(conv, { enceinte: false, libre: true, ressemblance: 0.9 }), true);
+  // (10/11, 18:43) sans chemin appris, sa ressemblance (le meilleur retard cherché au hasard) ne prouve rien : 17 doutes le matin, papa le plus
+  // souvent ; sa voix ne peut pas reprendre au mot : coupé net, comme avant, sans doute
+  assert.equal(f.echoEnDoute(conv, { enceinte: false, libre: true, ressemblance: 0.9 }), false);
+  assert.equal(conv.doute, undefined);
+  // dans l'enceinte, ce qui ressemble à son écho : le doute attend (sa voix ne peut pas reprendre)
+  assert.equal(f.echoEnDoute(conv, { enceinte: true, ressemblance: 0.9 }), true);
+  assert.equal(conv.doute.coupe, false);
 });
 
 test('rien de sûr en 4 s : il n’est pas coupé ; ta phrase finie n’entre que si elle porte d’autres mots que les siens', () => {
@@ -226,7 +232,7 @@ test('branché : le doute vient après la voix claire et avant coupé net / il t
   assert.ok(corps.indexOf('teCouper()') > doute && corps.indexOf('garder_parole') > doute);
   const tour = PAGE.slice(PAGE.indexOf('async function tourDeParole('), PAGE.indexOf('async function envoyerTour('));
   assert.ok(tour.indexOf('tourDEcho(conv, infos, texte)') > 0 && tour.indexOf('tourDEcho(conv, infos, texte)') < tour.indexOf('Conversation.utile(texte)'), 'son écho écarté avant tout');
-  assert.match(PAGE.slice(PAGE.indexOf('function jarvisPeutParler('), PAGE.indexOf('function creerLecteurNeuronal(')), /c && c\.doute\) return true/);
+  assert.match(PAGE.slice(PAGE.indexOf('function jarvisPeutParler('), PAGE.indexOf('function creerLecteurNeuronal(')), /c && c\.doute && !c\.doute\.coupe\) return true/);
   assert.match(PAGE.slice(PAGE.indexOf('async function transcrireVite('), PAGE.indexOf('function morceauNeuf(')), /etat\.voixVerdict = /);
   assert.match(CONV, /enceinte: chemin\.actif, retard_ms: chemin\.retardMs/, 'le micro dit sa ressemblance et son chemin');
   // son propre « arrête » revenu par l'enceinte ne l'arrête pas ; celui de papa, si

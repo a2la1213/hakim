@@ -51,7 +51,7 @@ function page({ reglages = {}, flux = null, enParole = false, entendu = '', juge
   ctx.lecteur = { arreter() { vu.arrete++; }, get impl() { return lecteurNeuronal; }, get enPause() { return lecteurNeuronal.enPause; }, get actif() { return lecteurNeuronal.actif; } };
   if (flux) ctx.etat.flux = { abort() { vu.aborts++; } };
   vm.createContext(ctx);
-  vm.runInContext([fonction(PAGE, 'function couperNet(conv, { lacher = false } = {}) {'), entre(PAGE, 'const reprendrePassage = ', '// sa voix retenue sans réponse'),
+  vm.runInContext([fonction(PAGE, 'function couperNet(conv, { lacher = false, provisoire = false } = {}) {'), fonction(PAGE, 'function lacherPourLaCoupure(conv) {'), fonction(PAGE, 'function acheverCoupure(conv) {'), entre(PAGE, 'const reprendrePassage = ', '// sa voix retenue sans réponse'),
     fonction(PAGE, 'function motsEntendusDepuis(conv, n0) {'), entre(PAGE, 'const motsEcrits = ', '\n'), fonction(PAGE, 'function prevoirSaut(conv, mesure) {'),
     fonction(PAGE, 'function sauterLaSuite(ms, net = false) {')].join('\n'), ctx);
   const conv = { capteur: { enParole }, enAttente: 0 };
@@ -265,7 +265,7 @@ test('coupé net + « Sauter la suite » : ta voix qui dure « Sauter au bout de
   p.lecteurNeuronal.actif = false; p.lecteurNeuronal.aDuVieux = false;
   assert.strictEqual(await p.ctx.passageOuRelance(p.conv, 'ouais'), false);
   // branché : la coupure nette prévoit le saut
-  assert.match(PAGE, /couperNet\(conv\); if \(etat\.retenue && lecteur\.enPause\) prevoirSaut\(conv, mesure\); return; \}/);
+  assert.match(PAGE, /couperNet\(conv, \{ provisoire: !!\(conv\.doute && conv\.doute\.coupe\) \}\);\s*if \(etat\.retenue && lecteur\.enPause\) prevoirSaut\(conv, mesure\);\s*return;/);
 });
 
 test('coupé net + « Sauter la suite », un simple « ouais » plus court que « Sauter au bout de » : rien n’est sauté, le tri le fait reprendre', async () => {
@@ -298,5 +298,36 @@ test('une voix du téléphone (un live) qui le coupe net : tout est lâché comm
   p.ctx.couperNet(p.conv, { lacher: true });
   assert.strictEqual(p.vu.pauses.length, 0);
   assert.strictEqual(p.vu.arrete, 1);
-  assert.match(PAGE, /if \(o\.net\) \{ couperNet\(etat\.conversation, \{ lacher: true \}\); return; \}/);
+  assert.match(PAGE, /if \(o\.net\) \{ const cp = [^\n]*coupureProvisoire\('voix_live'\)[^\n]*\n\s*couperNet\(etat\.conversation, \{ lacher: true \}\); return; \}/);   // (10/11, 18:43) sa coupure dit « une voix de son live », jamais papa
+});
+
+/* (10/11, 18:43, Ahmed : « il doit rien perdre et continuer à autoriser qu'on lui coupe la parole de l'intérieur ou de l'extérieur ») en live, une
+   phrase faite seulement des voix du live suit les règles de papa : un passage, il reprend au mot ; une relance, il lui répond — sa coupure dit
+   « une voix de son live », jamais papa. Hors live (la pièce, une vidéo), sa réponse continue, comme avant. */
+test('TÉMOIN : en live, une voix du live qui le coupe et lui pose une question : une relance (il lui répond), sa coupure dit « voix_live », jamais papa', async () => {
+  const p = page();
+  p.ctx.enLive = () => true;
+  p.ctx.couperNet(p.conv);
+  assert.ok(p.ctx.etat.retenue, 'coupé net : sa voix retenue');
+  assert.strictEqual(await p.ctx.passageOuRelance(p.conv, '[voix 214] Hakim, tu fais quoi ce soir ?'), false, 'avant : « autre_voix_passe », sa voix reprenait sans lui répondre');
+  assert.deepStrictEqual(p.vu.coupures, ['voix_live'], 'jamais « voix_ahmed »');
+  assert.match(p.vu.detail, /une voix de son live/);
+  assert.ok(p.vu.journal.some(([e, d]) => e === 'relance' && d.live === true));
+  assert.ok(!p.vu.journal.some(([e]) => e === 'autre_voix_passe'));
+});
+
+test('en live, un « ouais » d\'une voix du live : un passage (il reprend au mot, rien n\'est perdu), gardé avec son étiquette ; hors live, comme avant', async () => {
+  const p = page();
+  p.ctx.enLive = () => true;
+  p.ctx.couperNet(p.conv);
+  assert.strictEqual(await p.ctx.passageOuRelance(p.conv, '[voix 214] Ouais.'), true);
+  assert.strictEqual(p.vu.reprises, 1, 'sa voix reprend au mot');
+  assert.ok(p.vu.journal.some(([e, d]) => e === 'passage' && d.live === true));
+  assert.match(p.conv.passages[0].texte, /^\[voix 214\] Ouais\. \[papa\]$/, 'qui l\'a dit : la voix du live, jamais papa');
+  const h = page();
+  h.ctx.enLive = () => false;
+  h.ctx.couperNet(h.conv);
+  assert.strictEqual(await h.ctx.passageOuRelance(h.conv, '[voix 214] Hakim, tu fais quoi ce soir ?'), true);
+  assert.ok(h.vu.journal.some(([e]) => e === 'autre_voix_passe'), 'hors live : sa réponse continue');
+  assert.deepStrictEqual(h.vu.coupures, []);
 });

@@ -118,7 +118,8 @@
     }
     function meilleur(de, a, len, p) { let c = -1, l = de; for (let x = Math.max(0, de); x <= Math.min(LAG_MAX, a); x++) { const v = correlation(x, len, p); if (v > c) { c = v; l = x; } } return { c, l }; }
     const saVoixDans = (len, l) => { let v = 0; for (let k = 0; k < len; k++) if (s(k + l) > 0.01) v++; return v / len; };
-    const actif = (maintenant) => lag >= 0 && confiance >= 0.5 && maintenant - vuA < 180000;
+    // (10/11, 18:43) sa force apprise aussi : un retard sans force (0) prédisait un écho nul, son écho tenait alors un « tour de papa » ouvert sans fin
+    const actif = (maintenant) => lag >= 0 && confiance >= 0.5 && gain > 0 && maintenant - vuA < 180000;
     return {
       noter(sortie, rms) { S[n % H] = sortie; M[n % H] = rms; n++; },
       // il parle seul (pas de tour de papa) : mesurer
@@ -126,13 +127,17 @@
         if (n < prochain || n < N_MIN + LAG_MAX + TOL) return;
         prochain = n + (lag < 0 ? 10 : 25);
         const len = Math.min(N, n - LAG_MAX - TOL), p = Math.max(1e-3, plancher);
-        if (saVoixDans(len, 0) < 0.3) return;                                // pas assez de sa voix pour mesurer
+        // pas assez de sa voix pour mesurer (10/11, 18:43 : 0,2 au lieu de 0,3 ; une voix hachée, coupée tôt par son écho, n'apprenait jamais son chemin)
+        if (saVoixDans(len, 0) < 0.2) return;
         const b = meilleur(0, LAG_MAX, len, p);
         if (b.c >= 0.55) {
           lag = lag < 0 || Math.abs(b.l - lag) > 5 ? b.l : Math.round(lag * 0.7 + b.l * 0.3);
           confiance = confiance ? confiance * 0.7 + b.c * 0.3 : b.c; vuA = maintenant;
-          const r = []; for (let k = 0; k < len; k++) { const x = ref(k); if (x > 0.02) r.push(m(k) / x); }
-          if (r.length >= 10) { r.sort((a, c) => a - c); const g = r[r.length >> 1]; gain = gain ? gain * 0.7 + g * 0.3 : g; }
+          // sa force : l'énergie du micro rapportée à celle de sa voix au retard appris, là où elle sonnait (10/11, 18:43 : la médiane micro / le
+          // maximum de sa voix sur ±80 ms tombait dans ses creux entre deux syllabes : au banc, 0,24 appris pour une force de 1,3)
+          let em = 0, es = 0, nv = 0;
+          for (let k = 0; k < len; k++) { const x = s(k + lag); if (x > 0.02) { em += m(k) * m(k); es += x * x; nv++; } }
+          if (nv >= 5 && es > 0) { const g = Math.sqrt(em / es); gain = gain ? gain * 0.7 + g * 0.3 : g; }
         } else {
           let fortes = 0; for (let k = 0; k < len; k++) if (m(k) > p * 2) fortes++;
           if (fortes / len < 0.2) confiance *= 0.7;                          // il parle et le micro n'entend rien : plus d'enceinte
@@ -150,6 +155,17 @@
     };
   }
   const TRAINE_MS = 300;                                    // la pièce résonne encore après son dernier son
+  /* (10/11, 18:43, Ahmed : « pourquoi ma voix ne le coupe plus comme avant ? ») mesuré de 10:13 à 18:46 : de 16:49 à 18:27, son chemin appris
+     (gain 0,6 à 1,3 : sa voix jouée par l'appli, le micro l'entend presque aussi fort qu'elle), 0 « coupé net » ; le seuil valait 3 × sa force ×
+     une enveloppe gardée ~0,3 s : il fallait parler 3 à 4 fois plus fort que son écho (au banc, la vraie page : papa au niveau de son écho, ou
+     jusqu'à 1,5 fois plus fort, coupé 0 fois sur 60).
+     Dans une enceinte, son écho est PRÉDIT au plus juste : sa voix au retard appris (±80 ms) × sa force, et la traîne de la pièce (×0,8 par
+     fenêtre de 20 ms) ; ta voix le coupe dès qu'elle dépasse cet écho de ECHO_MARGE ; et ta clarté (une voix claire, pas un fond) se mesure sur
+     ce qui dépasse son écho, comme sans enceinte. S'il se trompe (c'était son écho), la page revient en arrière : sa voix reprend au mot. */
+  // au banc (le vrai détecteur, la vraie page) : ta voix au niveau de son écho (force 0,6 à 1,3) coupée 7 à 9 fois sur 10, en 0,24 à 0,72 s (médianes ;
+  // avant : 0 sur 10) ; son seul écho : 2 coupures sur 40 phrases, chacune revenue en arrière en 1,4 s au plus, ses 40 réponses dites jusqu'au bout.
+  // 10 fenêtres fortes sur 15 suffisent (une voix qui parle sur la sienne a ses creux, et son écho prédit les siens)
+  const ECHO_MARGE = 1.5, TRAINE_PIECE = 0.8, FORTES_ENCEINTE = 10;
 
   async function demarrer(o) {
     const flux = await navigator.mediaDevices.getUserMedia({ audio: contraintesMicro(!!o.sansEcho) });
@@ -195,7 +211,7 @@
     const ambiance = [];                                    // (03/11, micro ouvert) les 3 dernières secondes, quoi qu'il arrive
     let ambianceN = 0;
     let fenetre = new Float32Array(parFenetre), remplis = 0;
-    let bruit = 0.01, initFenetres = 0, echo = 0, jarvisDepuis = 0, enveloppe = 0, gainEcho = 0.2;
+    let bruit = 0.01, initFenetres = 0, echo = 0, jarvisDepuis = 0, enveloppe = 0, gainEcho = 0.2, echoPredit = 0;
     const echoA = creerEcho(); let jarvisFin = 0;              // (10/11) le chemin de sa voix jusqu'au micro, et sa dernière fenêtre
     let etatV = 'attente', tenue = 0, tour = [], debut = 0, derniereVoix = 0, voixMs = 0, pauseEnCours = 0, pauses = [];
     let energies = [], hauteurs = [];                       // le ton du tour (indices)
@@ -286,8 +302,10 @@
       // (10/11) dans une enceinte : sa voix au retard appris, et sa force mesurée (même plus forte que le seuil d'avant)
       enveloppe = Math.max(chemin.actif ? echoA.reference() : sortie, enveloppe * 0.93);
       const echoInstant = (chemin.actif ? Math.max(gainEcho, Math.min(2, chemin.gain)) : gainEcho) * enveloppe;
-      // pendant que Jarvis parle : au-dessus de l'écho résiduel, et jamais dans ses 400 premières ms
-      const seuilBarge = Math.max(seuil * 2.5, echo * 2.4, echoInstant * 3);
+      // (10/11, 18:43) dans une enceinte : son écho prédit (sa voix au retard appris × sa force, et la traîne de la pièce)
+      echoPredit = chemin.actif ? Math.max(Math.min(2, chemin.gain) * echoA.reference(), echoPredit * TRAINE_PIECE) : 0;
+      // pendant que Jarvis parle : au-dessus de l'écho résiduel (dans une enceinte : de son écho prédit), et jamais dans ses 400 premières ms
+      const seuilBarge = chemin.actif ? Math.max(seuil * 2.5, echoPredit * ECHO_MARGE) : Math.max(seuil * 2.5, echo * 2.4, echoInstant * 3);
       if (jarvis && etatV === 'attente' && enveloppe > 0.02 && rms < seuilBarge)
         gainEcho = Math.min(1, Math.max(0.005, gainEcho * 0.98 + 0.02 * (rms / enveloppe)));
       if (o.surNiveau) o.surNiveau(Math.min(1, rms * 7));
@@ -300,14 +318,15 @@
         fortes.push(fort); if (fortes.length > 15) fortes.shift();
         // (07/11, Ahmed : « il faut que ce soit une voix claire qui lui parle pour qu'il se coupe ») sa clarté : le niveau moyen de ces 15 fenêtres
         // rapporté au seuil qui écarte son écho (1 : juste au seuil, un fond lointain ; 3 et plus : une voix claire, tout près)
-        if (jarvis) { niveauxBarge.push(rms / Math.max(1e-6, seuilBarge)); if (niveauxBarge.length > 15) niveauxBarge.shift(); }
+        // (10/11, 18:43) dans une enceinte : ta voix seule (ce qui dépasse son écho prédit), rapportée au seuil sans écho
+        if (jarvis) { niveauxBarge.push(chemin.actif ? Math.sqrt(Math.max(0, rms * rms - echoPredit * echoPredit)) / Math.max(1e-6, seuil * 2.5) : rms / Math.max(1e-6, seuilBarge)); if (niveauxBarge.length > 15) niveauxBarge.shift(); }
         const nFortes = fortes.reduce((n, x) => n + (x ? 1 : 0), 0);
         if (fort && !tenue) tenueDebut = maintenant;
         if (fort && !tenue && o.surSon) o.surSon();               // (04/11, 16:50) le premier son, avant même qu'une voix parle
         if (!fort && tenue) noterEclat(tenueDebut, tenue);       // trop court pour commencer un tour : un éclat
         tenue = fort ? tenue + FENETRE_MS : 0;
         preecoute.push(f.slice(0)); if (preecoute.length > PREECOUTE_MS / FENETRE_MS) preecoute.shift();
-        if (jarvisVrai ? nFortes >= 12 : tenue >= 120) {
+        if (jarvisVrai ? nFortes >= (chemin.actif ? FORTES_ENCEINTE : 12) : tenue >= 120) {
           // (10/11) et ce que le micro entend suit-il sa voix retardée (ressemblance, 0 à 1) : la page met en doute ce qui ressemble à son écho
           const r = jarvisVrai && o.surInterruption ? echoA.ressemblance(maintenant, bruit) : null;
           if (jarvisVrai && o.surInterruption) o.surInterruption({ rms: +rms.toFixed(4), seuil: +seuilBarge.toFixed(4),

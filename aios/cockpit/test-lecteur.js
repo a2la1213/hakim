@@ -728,7 +728,7 @@ test('coupé net (coupe_net, oui) : son mot fini, sa réponse et ce qu’il pré
     garderVoixCoupees: () => fait.push('gardees'), blancsPourSautes: () => fait.push('blancs'), libererRibosomes: () => fait.push('ribosomes'),
     arreterTout: (e, o) => fait.push(`arret:${o.raison}:${o.garder}`), majBoutonsPause() {} };
   vm.createContext(cx);
-  vm.runInContext(ligne('const coupeNet = ') + ligne('const teCouper = ') + fn('couperNet') + 'this.f = { coupeNet, teCouper, couperNet };', cx);
+  vm.runInContext(ligne('const coupeNet = ') + ligne('const teCouper = ') + fn('couperNet') + fn('lacherPourLaCoupure') + 'this.f = { coupeNet, teCouper, couperNet };', cx);
   assert.equal(cx.f.coupeNet(), true, 'par défaut : tu le coupes net');
   assert.equal(cx.f.teCouper(), true, '(08/11) il peut quand même commencer à parler sur toi');
   cx.reglagesCorps.te_couper = false; assert.equal(cx.f.teCouper(), false); cx.reglagesCorps.te_couper = true;
@@ -736,7 +736,7 @@ test('coupé net (coupe_net, oui) : son mot fini, sa réponse et ce qu’il pré
   assert.deepEqual(fait, ['gardees', 'blancs', 'ribosomes', 'arret:parole:false']);
   assert.deepEqual(cx.etat.riboFile, []); assert.equal(cx.bouts.liste.size, 0);
   // (09/11, 23:15) puis, sa voix en attente, le saut de la suite reste prévu (« tout doit marcher ensemble »)
-  assert.match(SRC, /if \(typeof coupeNet === 'function' && coupeNet\(\)\) \{ journalVoix\('coupe_net', mesure \|\| \{\}\); couperNet\(conv\); if \(etat\.retenue && lecteur\.enPause\) prevoirSaut\(conv, mesure\); return; \}/);
+  assert.match(SRC, /if \(typeof coupeNet === 'function' && coupeNet\(\)\) \{\s*journalVoix\('coupe_net', mesure \|\| \{\}\);\s*couperNet\(conv, \{ provisoire: !!\(conv\.doute && conv\.doute\.coupe\) \}\);\s*if \(etat\.retenue && lecteur\.enPause\) prevoirSaut\(conv, mesure\);\s*return;\s*\}/);   // (10/11, 18:43) provisoire quand le signal est peut-être son écho
   assert.match(SRC, /if \(typeof coupeNet === 'function' && coupeNet\(\) && lecteur\.finirMot\) \{ const r = lecteur\.finirMot\(\);/, 'sa voix : son mot');
   // la voix du téléphone : 0,18 s, puis rien
   const dits = []; let annule = 0; class E { constructor(t) { this.text = t; } }

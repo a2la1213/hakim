@@ -83,12 +83,35 @@ test('les orthographes de son nom par les oreilles (Akim, Hakimou, حكيم, ي�
   for (const t of ['Karim est là', 'Je mange une omelette froide.', 'Akimbo']) assert.ok(!L.NOM.test(t), t);
 });
 
-test('une phrase du live qui ne le concerne pas : laissée par le garde, sans aucun appel (son coût)', () => {
+// (10/11, 18:43, Ahmed : « il doit toujours considérer les voix du live qui parlent, même si elles ne s'adressent pas directement à lui »)
+test('TÉMOIN : une phrase du live qui ne s\'adresse pas à lui, avec son autorisation : il l\'écoute (motif « ecoute »), à la pause, papa d\'abord, dans son budget ; retirée : laissée sans appel', () => {
   const e = L.creer();
   dit(e, 'Je suis dans ma cuisine, il fait froid ce soir.', T);
-  dit(e, 'Tu fais quoi demain, frérot ?', T + 2000);          // une question… à papa (« frérot ») : pas pour Hakim
-  for (let k = 1; k <= 10; k++) assert.strictEqual(L.evaluer(e, calme, T + 2000 + k * 1000).action, 'rien');
-  assert.strictEqual(e.cumul.appels, 0);
+  const d = L.evaluer(e, calme, T + 1000);
+  assert.strictEqual(d.action, 'appeler', 'avant : laissée par le garde, sans appel');
+  assert.strictEqual(d.motif, 'ecoute');
+  assert.ok(!L.PRIORITAIRES.has('ecoute'), 'pas une priorité : ses règles de tour, comme la musique');
+  L.repondu(e, 'RIEN', T + 1500);
+  dit(e, 'Tu fais quoi demain, frérot ?', T + 2000);          // une question à papa (« frérot ») : écoutée aussi, jamais « pour lui »
+  assert.strictEqual(L.evaluer(e, { ...calme, papaParle: true }, T + 9000).action, 'rien', 'papa parle : il attend');
+  assert.strictEqual(L.evaluer(e, { ...calme, pause: false }, T + 10000).action, 'rien', 'leur phrase pas finie : il attend');
+  const d2 = L.evaluer(e, calme, T + 11000);
+  assert.strictEqual(d2.motif, 'ecoute');
+  // son autorisation retirée : rien de tout ça, aucun appel (son coût)
+  const e2 = L.creer();
+  dit(e2, 'Je suis dans ma cuisine, il fait froid ce soir.', T);
+  dit(e2, 'Tu fais quoi demain, frérot ?', T + 2000);
+  for (let k = 1; k <= 10; k++) assert.strictEqual(L.evaluer(e2, calme, T + 2000 + k * 1000, { autorise: false }).action, 'rien');
+  assert.strictEqual(e2.cumul.appels, 0);
+});
+
+test('celui qui lui parle passe avant ce qu\'il écoute : son nom, puis une phrase qui ne s\'adresse pas à lui → l\'appel est pour son nom', () => {
+  const e = L.creer();
+  dit(e, 'Hakim, tu nous entends ?', T);
+  dit(e, 'Génération qui t\'a parlé.', T + 200);
+  const d = L.evaluer(e, calme, T + 1000);
+  assert.strictEqual(d.motif, 'nom');
+  assert.strictEqual(d.phrase, 'Hakim, tu nous entends ?');
 });
 
 test('il parle déjà avec cette voix : sa question suivante est pour lui (« engage ») ; d\'une autre voix, non', () => {
@@ -99,8 +122,9 @@ test('il parle déjà avec cette voix : sa question suivante est pour lui (« en
   const x = L.evaluer(e, calme, T + 3000);
   assert.strictEqual(x.action, 'dire');
   L.dit(e, x, T + 3000);
-  dit(e, 'Il a quel âge, le petit ?', T + 10000, 'voix 7');      // une autre voix : une question à papa, sur lui
-  assert.strictEqual(L.evaluer(e, calme, T + 11000).action, 'rien');
+  dit(e, 'Il a quel âge, le petit ?', T + 10000, 'voix 7');      // une autre voix : une question à papa, sur lui : écoutée, pas « engage »
+  assert.strictEqual(L.evaluer(e, calme, T + 11000).motif, 'ecoute');
+  L.repondu(e, 'RIEN', T + 11500);
   dit(e, 'Et tu aimes le rap ?', T + 20000, 'voix 12');
   const d = L.evaluer(e, calme, T + 21000);
   assert.strictEqual(d.action, 'appeler');
@@ -122,8 +146,11 @@ test('papa lui demande de répondre à ses voix (« Réponds à tes voix ») : l
   const d = L.evaluer(e, calme, T + 2000);
   assert.strictEqual(d.motif, 'papa');
   L.repondu(e, 'RIEN', T + 3000);
-  dit(e, 'Il fait beau chez moi.', T + 200000, 'voix 2');       // la fenêtre de papa est passée
-  assert.strictEqual(L.evaluer(e, calme, T + 201000).action, 'rien');
+  dit(e, 'Il fait beau chez moi.', T + 200000, 'voix 2');       // la fenêtre de papa est passée : seulement écoutée (son autorisation)
+  assert.strictEqual(L.evaluer(e, calme, T + 201000).motif, 'ecoute');
+  L.repondu(e, 'RIEN', T + 201500);
+  dit(e, 'Il fait toujours beau chez moi.', T + 210000, 'voix 2');
+  assert.strictEqual(L.evaluer(e, calme, T + 211000, { autorise: false }).action, 'rien', 'retirée : la fenêtre de papa passée, rien');
 });
 
 test('sa propre voix revenue par le téléphone, ou papa dans une vidéo : jamais un motif', () => {
@@ -189,7 +216,8 @@ test('avec son autorisation, une question qui lui parle (« tu », « l\'IA ») 
   assert.strictEqual(L.evaluer(e, calme, T + 1000).motif, 'question');
   L.repondu(e, 'RIEN', T + 1500);
   dit(e, 'Ahmed, tu fais quoi ce soir ?', T + 10000, 'voix 7');
-  assert.strictEqual(L.evaluer(e, calme, T + 11000).action, 'rien');
+  assert.strictEqual(L.evaluer(e, calme, T + 11000).motif, 'ecoute', 'à papa : jamais « pour lui », seulement écoutée');
+  L.repondu(e, 'RIEN', T + 11500);
   // retirée : son nom ne passe plus ; la demande de papa du moment (2 min), oui
   const e2 = L.creer();
   dit(e2, 'Hakim, tu es là ?', T);
@@ -242,8 +270,8 @@ test('la musique seule depuis 20 s, personne ne parle depuis 8 s : une réaction
   for (let k = 1; k < 200; k++) assert.notStrictEqual(L.evaluer(e, m(T), T + 27000 + k * 1000).action, 'appeler', 'le même morceau');
   // un autre morceau, 2 min plus tard, mais le live parle : rien
   dit(e, 'Je suis là les gars.', T + 400000);
-  assert.strictEqual(L.evaluer(e, m(T + 300000), T + 401000).action, 'rien');
-  assert.strictEqual(L.evaluer(e, m(T + 300000), T + 410000).action, 'appeler');
+  assert.strictEqual(L.evaluer(e, m(T + 300000), T + 401000, { autorise: false }).action, 'rien');
+  assert.strictEqual(L.evaluer(e, m(T + 300000), T + 410000, { autorise: false }).action, 'appeler');
   // éteint
   const e2 = L.creer();
   assert.strictEqual(L.evaluer(e2, m(T), T + 25000, { musique: false }).action, 'rien');

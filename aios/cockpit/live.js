@@ -14,7 +14,10 @@
    parle : un appel tout de suite, même si papa parle, s'il parle ou si sa tête répond déjà (seule sa voix attend son tour), sans écart après la
    musique, dans un budget à part ; la fin de la phrase attendue 3 s au plus ; sa réponse gardée 45 s (la musique : 20 s), dite à la pause
    suivante (ou après 10 s sans pause), papa silencieux et sa voix libre. L'autorisation de papa (« réponds toujours », « t'as mon
-   autorisation ») reste tant qu'il ne la retire pas (« ne réponds plus au live ») ; retirée, seule sa demande du moment compte (2 min). */
+   autorisation ») reste tant qu'il ne la retire pas (« ne réponds plus au live ») ; retirée, seule sa demande du moment compte (2 min).
+   (10/11, 18:43, Ahmed : « il doit toujours considérer les voix du live qui parlent, même si elles ne s'adressent pas directement à lui, parce que
+   là il demande toujours l'autorisation, c'est relou ») avec son autorisation, toute phrase du live est écoutée (motif « ecoute ») : il peut y
+   réagir naturellement, sans jamais demander la permission à papa ; le sensible reste à papa. */
 'use strict';
 
 // son nom, tel que les oreilles l'écrivent (« Hakim », « Akim », « Hakimou », « حكيم », « يا كيم »), ou ce qu'on dit de lui (« l'IA », « le robot »)
@@ -98,6 +101,10 @@ function motifDe(e, p, maintenant, r) {
   if (autorise && QUESTION.test(p.texte) && A_LUI.test(p.texte) && !A_PAPA.test(p.texte)) return 'question';   // (10/11) son autorisation : une question qui lui parle
   const mots = p.texte.split(/\s+/).filter(Boolean).length;
   if (maintenant - e.papaA < r.papa_s * 1000 && mots >= 3) return 'papa';
+  // (10/11, 18:43, Ahmed : « il doit toujours considérer les voix du live qui parlent, même si elles ne s'adressent pas directement à lui ») son
+  // autorisation (permanente) : toute phrase d'une voix du live (3 mots au moins) est écoutée ; il peut y réagir, leur répondre, ou se taire ; ses
+  // règles de tour (leur pause, papa d'abord, sa voix et sa tête libres) et son budget, comme la musique
+  if (autorise && mots >= 3) return 'ecoute';
   return null;
 }
 const attenteDe = (x, r) => (PRIORITAIRES.has(x.motif) ? r.attente_nom_s : r.attente_s) * 1000;
@@ -136,13 +143,16 @@ function evaluer(e, ctx = {}, maintenant = Date.now(), reglages = {}) {
   for (const p of e.phrases) if (!p.jugee && maintenant - p.t > r.attente_s * 1000) { p.jugee = true; compter(e.stats.refus, 'trop_vieille'); }
   if (e.enVol) return { action: 'rien', raison: 'en_vol', expirees: vieilles };
   // la dernière phrase qui le concerne (les précédentes sans motif sont laissées : le garde les a jugées, sans appel)
-  let cand = null;
+  // (10/11, 18:43) celui qui lui parle passe avant ce qu'il écoute seulement (« ecoute ») : sa phrase la plus récente qui lui parle, sinon la dernière
+  let cand = null, prioCand = null;
   for (const p of e.phrases) {
     if (p.jugee) continue;
     const m = motifDe(e, p, maintenant, r);
     if (!m) { p.jugee = true; e.stats.rien++; continue; }
     cand = { p, motif: m };
+    if (PRIORITAIRES.has(m)) prioCand = cand;
   }
+  if (prioCand) cand = prioCand;
   let quoi = cand;
   if (!quoi && motifMusique(e, ctx, maintenant, r)) quoi = { p: null, motif: 'musique' };
   if (!quoi) return { action: 'rien', raison: 'rien_pour_lui', expirees: vieilles };

@@ -2,8 +2,9 @@
    longtemps ». Je ne lui ai pas répondu » ; « plusieurs de mes réponses n'ont pas été entendues » ; « ma voix est coupée dès que papa parle »)
    ce que le live du matin a montré, et son témoin pour chaque correctif (coupé, le test tombe) :
    - le micro de papa, page par page : la page Parler du Mac rechargée ne ferme plus la Conversation du téléphone (son garde du live se taisait) ;
-   - en live, une voix du téléphone ne le coupe plus (7 coupures entre 08:11 et 08:25) ;
-   - une phrase faite seulement d'autres voix ([voix 214]) ne lâche plus sa réponse en cours ;
+   - (10/11, 18:43, Ahmed : « continuer à autoriser qu'on lui coupe la parole de l'intérieur ou de l'extérieur ») en live aussi, une voix du
+     téléphone le coupe, comme avant (le 10/11 au matin, elle ne le coupait plus) ;
+   - hors live, une phrase faite seulement d'autres voix ([voix 214]) ne lâche plus sa réponse en cours ; en live, elle suit les règles de papa ;
    - la page dit sa réponse au live avant ses pensées, et la garde 45 s.
    node --test test-live-priorite.js */
 const test = require('node:test');
@@ -80,7 +81,7 @@ test('la page Parler redit l\'état du micro toutes les 20 s, avec son identifia
   assert.ok(envois[0].page && envois.every(x => x.page === envois[0].page), 'son identifiant');
 });
 
-// ---- en live, une voix du téléphone ne le coupe plus
+// ---- en live aussi, une voix du téléphone le coupe (comme avant)
 function banc(live) {
   const diffuses = [];
   const cx = { Date, Math, Number, String, JSON, Promise, X: require('./cortex.js'), j: JSON.stringify, abonnesPensees: null,
@@ -91,14 +92,22 @@ function banc(live) {
     + prendre(SRC, 'noterSaVoixEnCours') + prendre(SRC, 'voixInterieureSurLui') + 'this.noter = noterSaVoixEnCours; this.sur = voixInterieureSurLui;', cx);
   return { cx, diffuses };
 }
-test('TÉMOIN (08:22:49, « Salam Grizzly… content de te voir dans le live » coupé) : en live, une voix du téléphone sur la sienne ne le coupe pas ; hors live, comme avant', async () => {
+test('TÉMOIN (10/11, 18:43, « continuer à autoriser qu\'on lui coupe la parole de l\'intérieur ») : en live, une voix du téléphone sur la sienne le coupe, comme hors live', async () => {
   const l = banc(true);
   l.cx.noter('Salam Grizzly, ça va hamdoullah, content de te voir dans le live', 10_000, 6000);
-  assert.strictEqual(l.cx.sur('telephone', 'Ouais Hakim, comment il va ?', 10_500, 2000, 12_600), null);
-  assert.strictEqual(l.diffuses.length, 0);
-  // une voix de la pièce, en live : elle peut encore le couper (ce n'est pas le live)
-  await l.cx.sur('voix_autour', 'attends attends une seconde', 10_500, 2000, 12_600);
-  assert.deepStrictEqual(l.diffuses.map(([e, o]) => [e, o.source]), [['couper_interieur', 'voix_autour']]);
+  const c = l.cx.sur('telephone', 'Ouais Hakim, comment il va ?', 10_500, 2000, 12_600);
+  assert.ok(c, 'avant (10/11 au matin) : null, les gens du live ne le coupaient plus');
+  await c;
+  assert.deepStrictEqual(l.diffuses.map(([e, o]) => [e, o.source, o.net]), [['couper_interieur', 'telephone', true]]);
+  // sa propre voix revenue par le téléphone ne le coupe jamais
+  const m = banc(true);
+  m.cx.noter('Salam Grizzly, ça va hamdoullah, content de te voir dans le live', 10_000, 6000);
+  assert.strictEqual(m.cx.sur('telephone', 'Salam Grizzly, ça va hamdoullah, content de te voir', 10_500, 2000, 12_600), null);
+  // une voix de la pièce, en live : elle le coupe aussi
+  const a = banc(true);
+  a.cx.noter('je te disais que le jardin', 10_000, 6000);
+  await a.cx.sur('voix_autour', 'attends attends une seconde', 10_500, 2000, 12_600);
+  assert.deepStrictEqual(a.diffuses.map(([e, o]) => [e, o.source]), [['couper_interieur', 'voix_autour']]);
   const h = banc(false);
   h.cx.noter('je te disais que le jardin', 10_000, 6000);
   await h.cx.sur('telephone', 'une vidéo qui parle longtemps', 10_500, 2000, 12_600);
@@ -112,7 +121,7 @@ function seulement() {
   const cx = {}; vm.createContext(cx); vm.runInContext(`${PAGE.slice(i, f)}\nthis.f = seulementAutresVoix;`, cx);
   return cx.f;
 }
-test('TÉMOIN (08:23:43, sa réponse à Wesley lâchée par « [voix 214] C\'est pas le cas du bleu autour de toi ») : seulement d\'autres voix, ce n\'est jamais papa, pas une relance', () => {
+test('seulement d\'autres voix ([voix 214]) : ce n\'est jamais papa ; hors live, pas une relance (sa réponse continue) ; en live, les règles de papa (passage ou relance)', () => {
   const f = seulement();
   for (const t of ["[voix 214] C'est pas le cas du bleu autour de toi je pense grizzly.", "[voix 120] Non, c'est pas un bête, t'es sérieux ?",
     '[voix 3] Hakim ? [voix 9] Il répond pas.']) assert.strictEqual(f(t), true, t);
@@ -120,8 +129,8 @@ test('TÉMOIN (08:23:43, sa réponse à Wesley lâchée par « [voix 214] C\'est
     '[voix 3] Salut [papa] Hakim, réponds-lui.', '[Musique] Hakim viens.', 'Arrête-toi deux secondes.']) assert.strictEqual(f(t), false, t);
   // branché avant le tri passage/relance : sa réponse continue, la phrase arrive avec ton message suivant
   const p = prendre(PAGE, 'passageOuRelance');
-  assert.ok(p.indexOf('seulementAutresVoix(texte)') > 0 && p.indexOf('seulementAutresVoix(texte)') < p.indexOf('classerPassage(texte'));
-  assert.match(p, /if \(seulementAutresVoix\(texte\)\) \{[^}]*garderPassage\(conv, `\$\{texte\} \[papa\]`, 'autre_voix'\)/);
+  assert.ok(p.indexOf('seulementAutresVoix(texte)') > 0 && p.indexOf('seulementAutresVoix(texte)') < p.indexOf('classerPassage(duLive'));
+  assert.match(p, /const autres = seulementAutresVoix\(texte\), duLive = autres && typeof enLive === 'function' && enLive\(\);\s*if \(autres && !duLive\) \{[^}]*garderPassage\(conv, `\$\{texte\} \[papa\]`, 'autre_voix'\)/);
   // la phrase gardée se referme sur « [papa] » : la suite de ton message suivant reste à toi, jamais à cette voix
   const i = SRC.indexOf('function segmentsTiers('), seg = SRC.slice(i, SRC.indexOf('\n}\n', i) + 2);
   const cx = { fs: { readFileSync: () => '[]' }, path, JARVIS: '/x', JSON, String }; vm.createContext(cx); vm.runInContext(`${seg}\nthis.s = segmentsTiers;`, cx);

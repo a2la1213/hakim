@@ -96,7 +96,7 @@ test('Réglages : « Sauter la suite », son délai et « Il choisit de se coupe
 test('les masques de la page disent vrai : ce que le code fait vraiment', () => {
   const parler = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
   // « Tu le coupes net » : sa voix attend (il garde la parole), et le saut de la suite (son délai, son choix) est prévu aussitôt
-  assert.match(parler, /journalVoix\('coupe_net', mesure \|\| \{\}\); couperNet\(conv\); if \(etat\.retenue && lecteur\.enPause\) prevoirSaut\(conv, mesure\); return; \}/);
+  assert.match(parler, /journalVoix\('coupe_net', mesure \|\| \{\}\);\s*couperNet\(conv, \{ provisoire: !!\(conv\.doute && conv\.doute\.coupe\) \}\);\s*if \(etat\.retenue && lecteur\.enPause\) prevoirSaut\(conv, mesure\);\s*return;\s*\}/);
   assert.match(parler, /if \(!conv \|\| !reprendrePassage\(\) \|\| !garderParole\(\) \|\|/, 'sans « Il garde la parole » (ou sans la reprise) : rien n’attend, tout est lâché');
   assert.match(parler, /if \(typeof reglagesCorps === 'undefined' \|\| reglagesCorps\.sauter_suite === false \|\| conv\.sautPrevu\) return;/, 'sans « Sauter la suite » : ni délai ni choix');
   assert.match(src, /const choix = net \|\| r\.choix_coupure === false \?/, 'son intérieur : coupé net, sans choix');

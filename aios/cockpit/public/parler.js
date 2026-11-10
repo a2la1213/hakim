@@ -448,7 +448,8 @@ const teCouper = () => typeof reglagesCorps !== 'undefined' && !!reglagesCorps &
 function jarvisPeutParler() {
   const c = etat.conversation;
   if (typeof teCouper === 'function' && teCouper()) return true;
-  if (c && c.doute) return true;                     // (10/11) un signal mis en doute (son écho dans l'enceinte) ne lui prend pas la parole
+  // (10/11) un signal mis en doute (son écho dans l'enceinte) ne lui prend pas la parole ; (18:43) sauf s'il l'a coupé quand même : la page tranche
+  if (c && c.doute && !c.doute.coupe) return true;
   // (14:55) sa réponse soufflée parle pendant que la grande oreille confirme ta phrase (tu t'es tu)
   // (04/11) sa pensée dite dans ta pause, ton tour encore ouvert (direPenseeSiPossible)
   return !(c && ((c.capteur && c.capteur.enParole && !c.penseeEnPause) || (c.enAttente > 0 && !c.souffleParle)));
@@ -1808,6 +1809,9 @@ function finirParole(cause, detail = '', cible = null) {
   if (c) {
     coupureEnCours = null;
     if (c.cause === 'voix_ahmed' && cause === 'stop') c.cause = 'stop';          // il a coupé pour dire « stop » (ou appuyé)
+    // (10/11, 18:43) une voix de son live l'a coupé : jamais papa (le même geste, une seule cause)
+    else if (cause === 'voix_live' && c.cause === 'voix_ahmed') c.cause = 'voix_live';
+    else if (c.cause === 'voix_live' && cause === 'voix_ahmed') { /* le même geste */ }
     else if (cause !== c.cause && cause !== 'fin') c.puis = cause;
   } else {
     if (cause === 'fin' && !(cible && memeId(parole.id, cible.id))) return null;   // rien de suivi : rien à dire
@@ -4392,84 +4396,165 @@ function motsEntendusDepuis(conv, n0) {
 }
 const motsEcrits = (conv) => (conv && conv.ecrit ? `${conv.ecrit.confirme || ''} ${conv.ecrit.vif || ''}` : '').split(/\s+/).filter(w => /\p{L}/u.test(w)).length;
 // coupé net par ta voix : son mot fini, tout le reste lâché (sa réponse, ses ribosomes, ce qui attendait) ; ses voix prêtes gardées 5 min
-function couperNet(conv, { lacher = false } = {}) {
+// (10/11, 18:43, Ahmed : « il doit rien perdre ») provisoire (le signal est peut-être son écho) : sa voix seulement retenue à son mot, RIEN n'est
+// lâché (ni ses ribosomes, ni sa voix prête, ni ce qui attend) ; vérifié (une vraie voix), la coupure s'achève (acheverCoupure) ; son écho, sa voix reprend
+function couperNet(conv, { lacher = false, provisoire = false } = {}) {
+  if (provisoire && !lacher && typeof retenirSaVoix === 'function' && retenirSaVoix(conv)) {
+    if (conv) conv.coupeAAchever = true;
+    if (typeof majBoutonsPause === 'function') majBoutonsPause();
+    return;
+  }
+  lacherPourLaCoupure(conv);
+  // (09/11) sa voix s'arrête à son mot et se met en pause, sa voix déjà faite gardée ; ta phrase finie dira : un passage (il reprend) ou une relance
+  if (!lacher && typeof retenirSaVoix === 'function' && retenirSaVoix(conv)) { if (typeof majBoutonsPause === 'function') majBoutonsPause(); return; }
+  if (etat.flux || (lecteur && lecteur.actif)) arreterTout(true, { garder: false, raison: 'parole' });   // sa voix : son mot (couperSaVoix)
+  if (typeof majBoutonsPause === 'function') majBoutonsPause();
+}
+// ce que lâche « coupé net » : sa voix prête gardée (elle part avec la coupure, non dite), ce qui attendait, ses ribosomes
+function lacherPourLaCoupure(conv) {
+  if (conv) conv.coupeAAchever = false;
   if (typeof garderVoixCoupees === 'function') garderVoixCoupees();
   if (typeof bouts !== 'undefined') { if (bouts.liste) bouts.liste.clear(); bouts.fileTel = []; bouts.attenteTel = null; bouts.enFile = []; }
   const vieux = (etat.riboFile || []).slice();
   if (vieux.length && typeof blancsPourSautes === 'function') blancsPourSautes(vieux);
   etat.riboFile = []; etat.riboEnVoix = [];
   if (typeof libererRibosomes === 'function') libererRibosomes();
-  // (09/11) sa voix s'arrête à son mot et se met en pause, sa voix déjà faite gardée ; ta phrase finie dira : un passage (il reprend) ou une relance
-  if (!lacher && typeof retenirSaVoix === 'function' && retenirSaVoix(conv)) { if (typeof majBoutonsPause === 'function') majBoutonsPause(); return; }
-  if (etat.flux || (lecteur && lecteur.actif)) arreterTout(true, { garder: false, raison: 'parole' });   // sa voix : son mot (couperSaVoix)
-  if (typeof majBoutonsPause === 'function') majBoutonsPause();
+}
+// la coupure provisoire, vérifiée : elle s'achève comme un « coupé net » (sa voix reste retenue, ta phrase finie dira passage ou relance)
+function acheverCoupure(conv) {
+  if (!conv || !conv.coupeAAchever) return false;
+  lacherPourLaCoupure(conv);
+  return true;
 }
 /* ---- (10/11, 07:05, Ahmed : « quand il parle dans des haut-parleurs Bluetooth, il entend son écho, qui le coupe ») SON ÉCHO DANS UNE ENCEINTE.
    Le micro (conversation.js) apprend le chemin de sa voix jusqu'à lui (son retard, sa force) et dit, à chaque signal, si ce qu'il entend suit sa
    voix retardée (ressemblance). Mesuré au banc (le vrai détecteur) : son seul écho ressemble à 0,8 et plus (38 signaux sur 39) ; papa qui parle
-   vraiment sur sa voix, 0,47 en médiane (3 sur 64 à 0,75 et plus). Un signal qui ressemble à sa voix ne le coupe pas : il est mis en doute, sa voix
-   continue, et il ne le coupe que si c'est vraiment papa : l'oreille des voix l'a reconnu (« ahmed »), ou ses mots ne sont pas les siens (3 mots,
-   au plus 40 % des siens) ; ses propres mots revenus (60 % et plus de ce qui vient de sonner) ne le coupent jamais, et ce tour-là est laissé : il
-   n'entre jamais comme ta parole. Un signal qui ne ressemble pas à sa voix : tu le coupes net, comme avant. ---- */
+   vraiment sur sa voix, 0,47 en médiane (3 sur 64 à 0,75 et plus).
+   (10/11, 18:43, Ahmed : « pourquoi ma voix ne le coupe plus comme avant ? » ; « couper dès que c'est probablement papa, et revenir en arrière si
+   c'était l'écho ») mesuré de 10:13 à 12:25 : 17 signaux mis en doute, tous SANS chemin appris (ressemblance 0,8 à 0,98 avec le meilleur retard
+   cherché au hasard, clarté 2,4 à 9 : papa, le plus souvent) ; 14 restés « sans suite » (pas coupé), 2 coupés après 1,2 et 2,4 s, et 8 de ses
+   tours laissés comme « son écho » (dont 6, 9 et 9 mots) : ses mots « à lui » se comptaient avec « est », « que », « pas », « pour »… Désormais :
+   - un signal qui ressemble à son écho le COUPE QUAND MÊME, tout de suite, quand sa voix peut reprendre au mot (coupé net, sa voix retenue) : le
+     même chemin que « Tu le coupes net » (garder la parole, la suite sautée, son choix) ; puis la page tranche : sa voix s'est tue, son écho
+     s'éteint après son retard et la traîne de la pièce, ta voix, elle, DURE (c'est toi : il reste coupé) ; rien au-delà, ses propres mots, ou sa
+     voix reconnue (« moi ») : c'était son écho, la page revient en arrière (sa voix reprend au mot, la suite qui allait être sautée ne l'est pas) ;
+   - sa voix ne peut pas reprendre (la voix du téléphone, « garder la parole » éteint) : dans une enceinte seulement, le doute attend, comme avant,
+     et tes mots tranchent : deux mots pleins qui ne sont pas les siens, ou l'oreille des voix (« ahmed ») ; sans chemin appris : coupé net, sans doute ;
+   - ses propres mots se comptent sur les mots pleins (ni « est », ni « que », ni « pour »…) ; ta phrase n'est laissée que si elle EST son écho.
+   Un signal qui ne ressemble pas à sa voix : tu le coupes net, comme avant. ---- */
 const ECHO_DOUTE_MAX_MS = 4000, RESSEMBLE_APPRIS = 0.75, RESSEMBLE_LIBRE = 0.8;
+// sa voix tue : son écho dure encore son retard (sans chemin appris : 300 ms au plus, et la traîne de la pièce, 300 ms) et une marge ; une voix
+// qui dure au-delà est une vraie voix ; 400 ms de plus sans rien : c'était son écho
+const ECHO_TRAINE_MS = 300, ECHO_RETARD_LIBRE_MS = 300, ECHO_MARGE_MS = 150, ECHO_ETEINT_MS = 400;
 function ressembleASonEcho(m) {
   if (!m || m.verifie) return false;
   const r = Number(m.ressemblance);
   return Number.isFinite(r) && r >= (m.enceinte ? RESSEMBLE_APPRIS : RESSEMBLE_LIBRE);
 }
+// les mots vides (sans accents) : partagés par toutes les phrases, ils ne disent pas qui parle
+const MOTS_VIDES_ECHO = new Set(('les des une que qui quoi est sont pas plus pour par dans sur avec sans sous chez cet cette ces mon mes ton tes son ses '
+  + 'notre nos votre vos leur leurs elle elles nous vous ils moi toi lui eux oui non bien tout tous toute toutes tres trop comme quand alors aussi '
+  + 'encore deja fait faire etre avoir ete etait avait cela ceci ici mais donc car aux ont the and you are that this for with what').split(' '));
 const motsDEcho = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\[[^\]]*\]/g, ' ')
-  .split(/[^\p{L}\p{N}]+/u).filter(m => m.length >= 3);
+  .split(/[^\p{L}\p{N}]+/u).filter(m => m.length >= 3 && !MOTS_VIDES_ECHO.has(m));
 // ce qui a sonné de sa voix autour de ce tour (ses morceaux commencés jusqu'à 20 s avant : leur écho arrive avec le retard de l'enceinte)
 function sesMotsSonnes(depuis) {
   const t0 = (Number(depuis) || Date.now()) - 20000;
   return paroleRecente.filter(x => x.t >= t0).map(x => x.suite.join(' ')).concat((etat.saVoix || []).filter(x => x.t >= t0).map(x => x.texte)).join(' ');
 }
-// 'echo' (ses mots), 'papa' (d'autres mots), 'attendre' (trop peu pour savoir) ; nouveaux : les mots qui ne sont pas les siens
+// 'echo' (ses mots), 'papa' (d'autres mots : un écho n'a pas de mots nouveaux), 'attendre' (trop peu pour savoir) ; nouveaux : les mots pleins
+// qui ne sont pas les siens
 function jugerEcho(entendu, siens) {
   const m = motsDEcho(entendu), s = new Set(motsDEcho(siens));
   const nouveaux = m.filter(w => !s.has(w)).length, part = m.length ? (m.length - nouveaux) / m.length : 0;
-  return { v: m.length >= 2 && part >= 0.6 ? 'echo' : m.length >= 3 && part <= 0.4 ? 'papa' : 'attendre', nouveaux };
+  return { v: m.length >= 2 && part >= 0.6 ? 'echo' : nouveaux >= 2 && part <= 0.5 ? 'papa' : 'attendre', nouveaux };
 }
-// le signal ressemble à son écho : mis en doute (rend vrai : ni coupé net, ni « il te coupe », ni sauté)
+// sa voix peut-elle reprendre au mot, si l'on se trompe ? (coupé net, sa voix du cockpit retenue : retenirSaVoix)
+function voixReversible() {
+  try { return coupeNet() && reprendrePassage() && garderParole() && lecteur.impl === lecteurNeuronal; } catch (_) { return false; }
+}
+// le signal : à vérifier ? Rend vrai s'il faut attendre (ni coupé net, ni « il te coupe », ni sauté : sa voix ne peut pas reprendre, et il ressemble
+// à son écho dans l'enceinte) ; faux : il est coupé tout de suite, provisoirement quand c'est peut-être son écho (conv.doute.coupe : la page tranche,
+// et revient en arrière si c'était lui), ou pour de bon (ni enceinte, ni ressemblance : comme avant)
 function echoEnDoute(conv, mesure) {
-  if (!conv || !ressembleASonEcho(mesure)) return false;
+  if (!conv || !mesure || mesure.verifie) return false;
+  const ressemble = ressembleASonEcho(mesure);
+  if (!ressemble && !mesure.enceinte) return false;                    // sans chemin appris, sans ressemblance : coupé net, comme avant
+  const coupe = voixReversible();
+  if (!coupe && !(ressemble && mesure.enceinte)) return false;          // sans chemin appris, sa ressemblance ne prouve rien
   // le tour qui commence avec ce signal : conversation.js le date de 0,5 s avant (sa pré-écoute)
-  if (!conv.doute) conv.doute = { t: Date.now(), tour: Date.now() - 500, mesure };
-  journalVoix('echo_en_doute', { ressemblance: mesure.ressemblance, retard_ms: mesure.retard_ms, enceinte: !!mesure.enceinte, clarte: mesure.clarte });
-  return true;
+  if (!conv.doute) conv.doute = { t: Date.now(), tour: Date.now() - 500, mesure, coupe, silence: 0 };
+  journalVoix('echo_en_doute', { ressemblance: mesure.ressemblance, retard_ms: mesure.retard_ms, enceinte: !!mesure.enceinte, clarte: mesure.clarte, coupe, ressemble });
+  return !coupe;
 }
 function trancherDoute(conv, maintenant = Date.now()) {
   const d = conv && conv.doute;
   if (!d) return null;
   const cap = conv.capteur, enCours = !!(cap && cap.enParole && Math.abs(Number(cap.debutTour) - d.tour) < 1500);
   const j = jugerEcho(typeof motsEntendusDepuis === 'function' ? motsEntendusDepuis(conv, 0) : '', sesMotsSonnes(d.tour));
-  let v = j.v;
   const qui = etat.voixVerdict && etat.voixVerdict.t > d.t ? etat.voixVerdict.verdict : '';   // l'oreille des voix, sur un morceau de ce tour
-  if (qui === 'moi') v = 'echo';
-  else if (qui === 'ahmed' && v !== 'echo' && j.nouveaux >= 1) v = 'papa';
-  if (v === 'attendre' && enCours && maintenant - d.t < ECHO_DOUTE_MAX_MS) return null;
+  // coupé : sa voix s'est tue ; la voix entendue dure-t-elle au-delà de son écho (son retard, la traîne de la pièce) ?
+  if (d.coupe && !d.silence && !saVoixAudible()) d.silence = maintenant;
+  // dans une enceinte, le micro compare déjà chaque instant à son écho prédit (sa traîne comprise) : ce qui le dépasse après son retard est une voix ;
+  // sans chemin appris, son écho dure encore 300 ms au plus, et la traîne de la pièce
+  const ch = cap && cap.echo, appris = !!(ch && ch.actif);
+  const finEcho = d.silence ? d.silence + (appris ? Math.max(0, Number(ch.retardMs) || 0) : ECHO_RETARD_LIBRE_MS + ECHO_TRAINE_MS) + ECHO_MARGE_MS : 0;
+  const tient = !!(finEcho && Number(cap && cap.derniereVoix) > finEcho);
+  const eteint = !!(finEcho && !tient && maintenant > finEcho + ECHO_ETEINT_MS);
+  let v = 'attendre', par = 'mots';
+  if (qui === 'moi') { v = 'echo'; par = 'voix'; }
+  else if (tient) { v = 'papa'; par = 'son'; }
+  else if (qui === 'ahmed' && j.v !== 'echo') { v = 'papa'; par = 'voix'; }
+  else if (j.v !== 'attendre') v = j.v;
+  else if (eteint) { v = 'echo'; par = 'silence'; }
+  if (v === 'attendre' && (d.coupe || enCours) && maintenant - d.t < ECHO_DOUTE_MAX_MS) return null;
   conv.doute = null;
+  if (d.coupe) {
+    if (v === 'echo') { revenirDeLEcho(conv, d, par, enCours, maintenant); return 'echo'; }
+    // une vraie voix (ou rien de sûr en 4 s : dans le doute, il reste coupé) : la coupure s'achève, ta phrase finie dira passage ou relance
+    if (typeof acheverCoupure === 'function') acheverCoupure(conv);
+    journalVoix(v === 'papa' ? 'echo_doute_papa' : 'doute_reste_coupe', { ms: maintenant - d.t, par, coupe: true });
+    return v;
+  }
   if (v === 'papa') {
-    journalVoix('echo_doute_papa', { ms: maintenant - d.t, par: qui === 'ahmed' ? 'voix' : 'mots' });
+    journalVoix('echo_doute_papa', { ms: maintenant - d.t, par });
     // sa voix sonne encore : la coupure se fait maintenant, par le même chemin (coupé net, « il te coupe », la suite sautée, son choix)
     if (conv.optionsCapteur && conv.optionsCapteur.surInterruption && (saVoixAudible() || (lecteur && lecteur.actif)))
       conv.optionsCapteur.surInterruption({ ...d.mesure, verifie: true });
     return 'papa';
   }
-  // son écho (ou rien de sûr) : il n'a pas été coupé ; ce tour-là est laissé (en cours : il s'arrête là, jamais transcrit)
+  // son écho (ou rien de sûr) : il n'a pas été coupé ; ce tour-là est laissé s'il est son écho (en cours : il s'arrête là, jamais transcrit)
   const annule = v === 'echo' && enCours && cap.annulerTour && cap.annulerTour();
   if (!annule) conv.tourEcho = d.tour;
   journalVoix(v === 'echo' ? 'echo_pas_coupe' : 'doute_sans_suite', { enceinte: true, ms: maintenant - d.t, annule: !!annule });
   return v;
 }
-// ta phrase finie : le tour mis en doute (ou reconnu comme son écho) n'entre comme ta parole que s'il porte d'autres mots que les siens
+// (10/11, 18:43) coupé à tort par son écho : la page revient en arrière, rien n'est perdu (rien n'avait été lâché). Ses mots ou sa voix reconnue :
+// le tour est laissé ; le silence seul : le tour se clôt (un « ouais » de papa, s'il y en avait un, n'est pas perdu : il entre, ou il est laissé
+// s'il est fait de ses mots) ; la suite qui allait être sautée ne l'est pas ; sa voix reprend au mot
+function revenirDeLEcho(conv, d, par, enCours, maintenant = Date.now()) {
+  const cap = conv.capteur;
+  conv.coupeAAchever = false;
+  conv.echoRevenuA = maintenant;
+  if (conv.sautPrevu) { clearTimeout(conv.sautPrevu); conv.sautPrevu = null; }
+  const annule = par !== 'silence' && enCours && cap && cap.annulerTour && cap.annulerTour();
+  if (!annule) conv.tourEcho = d.tour;
+  // le silence seul : le tour se clôt tout de suite (ce qu'il porte est transcrit, laissé si ce sont ses mots), le micro réapprend son chemin
+  if (!annule && par === 'silence' && enCours && cap && cap.finirTour) cap.finirTour();
+  const repris = !!(lecteur && lecteur.enPause) && typeof reprendreVoix === 'function' && !!reprendreVoix();
+  journalVoix('echo_revenu', { ms: maintenant - d.t, par, annule: !!annule, repris });
+}
+// ta phrase finie : le tour mis en doute (ou reconnu comme son écho) est laissé seulement s'il EST son écho (ses mots pleins) ; une coupure
+// provisoire encore en doute s'achève si c'est une vraie voix
 function tourDEcho(conv, infos, texte) {
   const debut = Number(infos && infos.debut) || 0, meme = (t) => Math.abs(Number(t) - debut) < 1500;
   const d = conv && conv.doute, marque = conv && conv.tourEcho != null && meme(conv.tourEcho), enDoute = !!(d && meme(d.tour));
   if (!marque && !enDoute) return false;
   if (marque) conv.tourEcho = null;
   if (enDoute) conv.doute = null;
-  return jugerEcho(texte, sesMotsSonnes(debut)).v !== 'papa';
+  const echo = jugerEcho(texte, sesMotsSonnes(debut)).v === 'echo';
+  if (enDoute && d.coupe) { if (echo) conv.coupeAAchever = false; else if (typeof acheverCoupure === 'function') acheverCoupure(conv); }
+  return echo;
 }
 // son chemin appris (retard, force) : au journal quand il change, pour le mesurer en vrai
 function noterCheminEcho(conv) {
@@ -4607,7 +4692,11 @@ async function passageOuRelance(conv, texte) {
   let e = enCours();
   if (!e.attend || !reprendrePassage()) return false;
   const mots = String(texte || '').split(/\s+/).filter(Boolean).length;
-  if (seulementAutresVoix(texte)) {                                   // (10/11) jamais papa : sa réponse continue
+  // (10/11, 18:43, Ahmed : « continuer à autoriser qu'on lui coupe la parole de l'intérieur ou de l'extérieur ») en live, une phrase faite seulement
+  // des voix du live suit les mêmes règles que la tienne (un passage, il reprend au mot ; une relance, il lui répond), jamais prise pour toi : sa
+  // coupure dit « une voix de son live », et la phrase garde ses étiquettes ; hors live (la pièce, une vidéo), sa réponse continue, comme avant
+  const autres = seulementAutresVoix(texte), duLive = autres && typeof enLive === 'function' && enLive();
+  if (autres && !duLive) {                                            // (10/11) jamais papa : sa réponse continue
     garderPassage(conv, `${texte} [papa]`, 'autre_voix');             // « [papa] » : la suite de ton message reste à toi (segmentsTiers)
     const reprend = !!e.r && !(conv.capteur && conv.capteur.enParole);
     journalVoix('autre_voix_passe', { mots, retenue: !!e.r, reprend });
@@ -4615,7 +4704,8 @@ async function passageOuRelance(conv, texte) {
     return true;
   }
   const entendu = paroleEntendue();
-  let classe = classerPassage(texte, entendu), par = 'liste';
+  // (10/11, 18:43) une voix du live : jugée sur ses mots, sans ses étiquettes (« [voix 214] Ouais. » est un passage)
+  let classe = classerPassage(duLive ? String(texte).replace(ETIQUETTE_VOIX, ' ') : texte, entendu), par = 'liste';
   if (classe === 'ambigu') {                                          // son subconscient tranche ; sa voix attend (retenue) pendant ce temps
     conv.triPassage = true;
     let v;
@@ -4627,19 +4717,19 @@ async function passageOuRelance(conv, texte) {
     if (!e.attend) return false;                                      // « stop », « continue » ou la fin de sa voix sont passés avant
   }
   if (classe === 'passage') {
-    garderPassage(conv, texte, par);
+    garderPassage(conv, duLive ? `${texte} [papa]` : texte, par);
     const reprend = !!e.r && !(conv.capteur && conv.capteur.enParole);   // tu reparles déjà : il attend ta phrase suivante
-    journalVoix('passage', { mots, retenue: !!e.r, reprend, par });
+    journalVoix('passage', { mots, retenue: !!e.r, reprend, par, ...(duLive ? { live: true } : {}) });
     if (reprend) reprendreVoix(); else if (typeof humeur === 'function') humeur();
     return true;
   }
-  journalVoix('relance', { mots, retenue: !!e.r, par });
+  journalVoix('relance', { mots, retenue: !!e.r, par, ...(duLive ? { live: true } : {}) });
   if (e.r || (coupeNet() && e.voixAvant)) lacherAncienne(conv, e.r ? 'relance' : 'relance_avant_sa_voix',
-    par === 'subconscient' ? 'ton subconscient a jugé que papa te relançait' : '');
+    duLive ? 'une voix de son live t’a relancé (pas papa)' : par === 'subconscient' ? 'ton subconscient a jugé que papa te relançait' : '', duLive ? 'voix_live' : 'voix_ahmed');
   return false;
 }
 // une relance : ce qui restait de sa réponse d'avant toi est lâché (sa voix, sa réponse qui s'écrivait, son épissure) ; ce qui est venu depuis reste
-function lacherAncienne(conv, cause = 'relance', detail = '') {
+function lacherAncienne(conv, cause = 'relance', detail = '', qui = 'voix_ahmed') {
   const r = etat.retenue; etat.retenue = null;
   if (detail && coupureEnCours) coupureEnCours.detail = String(detail).slice(0, 120);   // le bloc de sa coupure dira qui a jugé
   const avant = (conv && conv.avantTon) || {};
@@ -4650,7 +4740,7 @@ function lacherAncienne(conv, cause = 'relance', detail = '') {
     arreterEpissure('relance', avant.riboTour, { laisserFinir: true });
     fetch('/api/jarvis/ribosome/stop', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ tour: avant.riboTour }) }).catch(() => {});
   }
-  finirParole('voix_ahmed', detail);                             // où il en était, et ce qu'il n'a pas dit (son texte) : au cockpit, pour son tour suivant
+  finirParole(qui === 'voix_live' ? 'voix_live' : 'voix_ahmed', detail);   // où il en était, et ce qu'il n'a pas dit (son texte) : au cockpit, pour son tour suivant
   if (fluxVieux) {
     if (etat.fluxId) fetch('/api/jarvis/stop', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
       body: JSON.stringify({ tour_id: etat.fluxId, raison: 'parole' }) }).catch(() => {});
@@ -4690,6 +4780,7 @@ function prevoirSaut(conv, mesure) {
     const nouveaux = () => { const n = motsEcrits(conv); return n >= mots0 ? n - mots0 : n; };
     const decider = (essai = 0) => {
       if (etat.conversation !== conv) return;
+      if (Number(conv.echoRevenuA) >= t0) return;                    // (10/11, 18:43) c'était son écho : la page est revenue en arrière
       if (nouveaux() < 2) {
         if (essai < 8) { setTimeout(() => decider(essai + 1), 200); return; }
         // (07/11, mesuré : 24 « pas de parole » sur 30 coupures, ses mots vifs arrivent trop tard) une voix claire qui TIENT encore
@@ -4714,7 +4805,7 @@ function prevoirSaut(conv, mesure) {
     fetch('/api/jarvis/se-couper', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ dit, papa, ms: ecoute, clarte: mesure && Number(mesure.clarte) > 0 ? Number(mesure.clarte) : null }) })
       .then(r => (r.ok ? r.json() : { couper: true, lu: false })).catch(() => ({ couper: true, lu: false }))
       .then((c) => {
-        if (etat.conversation !== conv) return;
+        if (etat.conversation !== conv || Number(conv.echoRevenuA) >= t0) return;   // (10/11) revenu en arrière : c'était son écho
         // (08/11, mesuré : 2 choix sur 4 sans réponse à temps, le Mac chargé, qui le coupaient d'office) sans réponse : de vrais mots (2 et plus), ou il continue
         if (c && c.couper !== false && c.lu === false && entendu !== null && entendu.split(/\s+/).filter(w => /\p{L}/u.test(w)).length < 2) { journalVoix('sans_reponse_continue', { ms: ecoute }); return; }
         // (09/11) sa voix en pause (coupé net) : il ne reparle pas par-dessus toi ; il garde sa suite en réserve, ta phrase finie dira passage ou relance
@@ -5561,10 +5652,16 @@ async function basculerConversation() {
         // une voix claire qui lui parle ») sous la clarté voulue (voix_claire_x, 1,8 par défaut) : un fond, ignoré ; il continue
         if (typeof voixClaire === 'function' && !voixClaire(mesure)) { journalVoix('fond_ignore', mesure || {}); return; }
         // (10/11) son écho dans une enceinte : ce qui suit sa voix retardée est mis en doute ; il ne le coupe que si c'est vraiment papa
+        // (18:43) dans une enceinte, ou ce qui ressemble à son écho : coupé quand même, provisoirement (rien n'est lâché), la page tranche et revient en arrière si c'était lui
         if (typeof echoEnDoute === 'function' && echoEnDoute(conv, mesure)) return;
         // (09/11, 23:15, Ahmed : « tout doit marcher ensemble ») coupé net : sa voix finit son mot et attend ; si ta voix dure « Sauter au bout de »,
         // la suite est sautée (ou son subconscient choisit, « Il choisit de se couper ») sans attendre le tri passage/relance de ta phrase finie
-        if (typeof coupeNet === 'function' && coupeNet()) { journalVoix('coupe_net', mesure || {}); couperNet(conv); if (etat.retenue && lecteur.enPause) prevoirSaut(conv, mesure); return; }
+        if (typeof coupeNet === 'function' && coupeNet()) {
+          journalVoix('coupe_net', mesure || {});
+          couperNet(conv, { provisoire: !!(conv.doute && conv.doute.coupe) });
+          if (etat.retenue && lecteur.enPause) prevoirSaut(conv, mesure);
+          return;
+        }
         // (30/10, 19:08, Ahmed : « qu'il puisse répondre même quand je le coupe ou que je parle en même temps ; c'est
         // important ») il garde la parole : sa voix continue, ta phrase est quand même écoutée ; « stop » et le bouton l'arrêtent
         // (04/11, Ahmed : « il parle quand il veut, mais s'il entend ma voix lui couper la parole sur 2 secondes, il se tait ») il garde
@@ -5839,6 +5936,8 @@ function voixFamiliere(texte) {
 // sa voix sonne (une réponse, ou un petit mot dit à l'instant)
 const voixQuiSonne = () => !!((lecteurNeuronal && lecteurNeuronal.joue) || Date.now() < motDirectJusqua);
 // (09/11) sa voix qui sonne VRAIMENT chez papa (rien quand elle se calcule encore, ni dans un blanc entre deux morceaux) : seule celle-là peut être coupée
+// (10/11, 18:43) en live (le cockpit le redit toutes les 15 s ; sans nouvelles depuis 40 s : plus en live)
+const enLive = () => !!(etat.live && etat.live.oui && Date.now() - (Number(etat.live.t) || 0) < 40000);
 const saVoixAudible = () => !!((lecteurNeuronal && lecteurNeuronal.sonne) || (typeof lecteurSysteme !== 'undefined' && lecteurSysteme && lecteurSysteme.actif) || Date.now() < motDirectJusqua);
 function microParHakim(o) {
   const c = etat.conversation;
@@ -5903,6 +6002,9 @@ const POUR_LUI_ICI = /\?|(?<!\p{L})t'|(?<!\p{L})(?:tu|toi|ton|ta|tes|hakim\p{L}*
 function filtrerVoixInconnues(texte) {
   const t = String(texte || '');
   if (!/\[voix \d+\]/i.test(t)) return t;
+  // (10/11, 18:43, Ahmed : « il doit toujours considérer les voix du live qui parlent, même si elles ne s'adressent pas directement à lui ») en live :
+  // toutes, avec leurs étiquettes (jamais prises pour papa)
+  if (typeof enLive === 'function' && enLive()) return t;
   return t.split(/(?=\[[^\]]{1,30}\])/).filter(x => !/^\s*\[voix \d+\]/i.test(x) || POUR_LUI_ICI.test(x)).join(' ').replace(/\s+/g, ' ').trim();
 }
 function resumerPourSonAttention(texte) {
@@ -6740,10 +6842,14 @@ function ecouterPensees() {
   // (08/11, Ahmed : « le même bouton que moi pour les voix intérieures, qui le coupent s'il l'accepte ») une voix du téléphone parlait sur la sienne :
   // son subconscient a choisi de se taire pour l'écouter ; la page qui joue sa voix la coupe net (ce qui était prêt est gardé)
   // (08/11, 11:45, Ahmed : « son intérieur doit répondre aux mêmes règles que le micro, simplement ») « tu le coupes net » : comme ta voix
+  // (10/11, 18:43) le cockpit dit s'il est en live (toutes les 15 s) : une voix du live qui le coupe suit les mêmes règles que papa
+  es.addEventListener('live', (ev) => { try { const o = JSON.parse(ev.data); etat.live = { oui: !!o.live, t: Date.now() }; } catch (_) {} });
   es.addEventListener('couper_interieur', (ev) => { try { const o = JSON.parse(ev.data); if (!etat.conversation || !(lecteur && lecteur.actif)) return;
     if (typeof journalVoix === 'function') journalVoix('coupe_interieur', { source: String(o.source || ''), ms: Number(o.ms) || 0, net: !!o.net });
     // (09/11) une voix du téléphone (un live) : coupé net comme avant, tout est lâché (aucune phrase de papa ne dira passage ou relance)
-    if (o.net) { couperNet(etat.conversation, { lacher: true }); return; }
+    // (10/11, 18:43) sa coupure le dit : une voix de son live (ou du téléphone), jamais papa ; ce qu'il n'a pas dit part avec elle
+    if (o.net) { const cp = typeof coupureProvisoire === 'function' ? coupureProvisoire('voix_live') : null; if (cp && cp.cause === 'voix_ahmed') cp.cause = 'voix_live';
+      couperNet(etat.conversation, { lacher: true }); return; }
     if (o.pourquoi) montrerPensee('🤫 il se tait pour écouter', String(o.pourquoi), true);
     sauterLaSuite(Number(o.ms) || 0, true); } catch (_) {} });
   es.addEventListener('conscience', (ev) => { try { const o = JSON.parse(ev.data); if (!o.texte || (etat.reglages && etat.reglages.masquerEpissure)) return;
