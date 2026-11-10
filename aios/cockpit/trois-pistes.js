@@ -22,6 +22,7 @@ function creer() {
   const cellules = { telephone: new Map(), micro: new Map() };   // seconde (ms / 1000, entière) → cellule
   const blocs = { telephone: [], micro: [] };                    // les séparations : { t0, t1, bpm, tonalite }
   const locuteurs = { telephone: [], micro: [] };                // qui parle : { t0, t1, qui }
+  const tues = new Set();                                         // (10/11) son intérieur coupé : une source tue
 
   const cellule = (src, s) => {
     const m = cellules[src];
@@ -42,7 +43,7 @@ function creer() {
   /* une séparation : pistes = { fenetres: [{ t0, t1 (s du fichier), db, voix_db, fond_db, quoi, accord, chocs, nature }], bpm, tonalite,
      duree_s } ; t0 : l'instant (horloge du Mac) du début du fichier */
   function noterSeparation(src, t0, pistes, maintenant = Date.now(), instruments = [], voix = []) {
-    if (!cellules[src] || !pistes || !Array.isArray(pistes.fenetres) || !(Number(t0) > 0)) return 0;
+    if (!cellules[src] || tues.has(src) || !pistes || !Array.isArray(pistes.fenetres) || !(Number(t0) > 0)) return 0;
     let n = 0;
     for (const w of pistes.fenetres) {
       if (!w || !['musique', 'bruit', 'silence'].includes(w.quoi)) continue;
@@ -92,7 +93,7 @@ function creer() {
 
   /* l'analyse légère (analyseMusicale, sur 20 s de trames) : elle vaut pour les 5 s qui précèdent t */
   function noterAnalyse(src, t, a, maintenant = Date.now()) {
-    if (!cellules[src] || !a) return;
+    if (!cellules[src] || tues.has(src) || !a) return;
     for (let s = Math.floor((t - 5000) / 1000); s <= Math.floor(t / 1000); s++)
       cellule(src, s).ana = { bpm: a.bpm || null, tonalite: a.tonalite || null, contour: a.contour || null, voix: a.voix || 'aucune' };
     elaguer(maintenant);
@@ -100,7 +101,7 @@ function creer() {
 
   /* les trames d'une seconde : leur niveau (dB) et leurs coups ; les notes de la voix, gardées pour leur résumé seulement */
   function noterTrames(src, t0, pas, trames, notes = []) {
-    if (!cellules[src] || !Array.isArray(trames) || !trames.length) return;
+    if (!cellules[src] || tues.has(src) || !Array.isArray(trames) || !trames.length) return;
     const parSeconde = new Map();
     trames.forEach((x, i) => {
       const s = Math.floor((t0 + i * pas) / 1000);
@@ -269,6 +270,7 @@ function creer() {
     const debut = a - avant, fin = a + apres;
     const lignes = [];
     for (const src of ['telephone', 'micro']) {
+      if (tues.has(src)) continue;
       const motsSources = src === 'telephone' ? ['telephone'] : ['papa'];
       const ph = phrases(flux, motsSources, debut, fin, src === 'micro' ? null : src);
       const lointaines = src === 'micro' ? phrases(flux, ['voix_autour'], debut, fin, src) : [];
@@ -284,6 +286,7 @@ function creer() {
 
   /* ce qui joue à l'instant a, en une ligne (pour « Au même moment ») */
   function resumeCourant(src, a = Date.now(), fenetre = 8000) {
+    if (tues.has(src)) return '';
     const m = musiqueTexte(src, a, a - fenetre, a + 1000);
     const f = fondTexte(src, a, a - fenetre, a + 1000);
     const derniere = (t) => String(t || '').split(' · ').pop().replace(/^[^:]+: /, '');
@@ -293,7 +296,7 @@ function creer() {
   /* (09/11, Ahmed : « reconnaître les signatures vocales en temps réel pendant le live ») qui parle, fenêtre par fenêtre (l'oreille des voix) :
      [{ t0, t1, qui }] (horloge du Mac) ; ces voix-là gardent leur numéro d'un bloc à l'autre */
   function noterLocuteurs(src, liste, maintenant = Date.now()) {
-    if (!locuteurs[src]) return 0;
+    if (!locuteurs[src] || tues.has(src)) return 0;
     let n = 0;
     for (const x of Array.isArray(liste) ? liste : []) {
       if (!x || !(Number(x.t1) > Number(x.t0)) || !x.qui) continue;
@@ -307,12 +310,22 @@ function creer() {
   // (09/11) une musique dans les dernières secondes de cette source (séparée, ou entendue par l'analyse légère) : pas de voix neuve pendant elle
   function musiqueRecente(src, t = Date.now(), ms = 8000) {
     const m = cellules[src];
-    if (!m) return false;
+    if (!m || tues.has(src)) return false;
     for (let s = Math.floor((t - ms) / 1000); s <= Math.floor(t / 1000); s++) { const c = m.get(s); if (c && quoiDe(c) === 'musique') return true; }
     return false;
   }
 
-  return { noterSeparation, noterAnalyse, noterTrames, noterLocuteurs, musiqueRecente, sections, bloc, resumeCourant, musiqueTexte, fondTexte, _cellules: cellules, _locuteurs: locuteurs };
+  /* (10/11, Ahmed : « il doit pouvoir couper l'arrivée de son entrant depuis son intérieur ») une source tue (son intérieur coupé) : plus rien
+     n'en est noté ni lu, et ce qu'elle avait est oublié ; rouverte, elle repart à neuf */
+  function taire(src, oui = true) {
+    if (!cellules[src]) return false;
+    if (!oui) { tues.delete(src); return true; }
+    tues.add(src); cellules[src].clear(); blocs[src].length = 0; locuteurs[src].length = 0;
+    return true;
+  }
+
+  return { noterSeparation, noterAnalyse, noterTrames, noterLocuteurs, musiqueRecente, sections, bloc, resumeCourant, musiqueTexte, fondTexte, taire,
+    tue: (src) => tues.has(src), _cellules: cellules, _locuteurs: locuteurs };
 }
 
 /* les notes de la voix résumées en éléments musicaux : leur étendue, leur registre, combien de tenues ; jamais la liste des notes */

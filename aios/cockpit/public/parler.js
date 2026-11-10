@@ -1937,7 +1937,8 @@ async function lireReglagesCorps() {
   // (06/11) sa voix a changé : ses débuts et ses meubles déjà décodés étaient dans l'autre voix ; ils se rechargent dans la nouvelle
   if (lireReglagesCorps.voix !== undefined && lireReglagesCorps.voix !== reglagesCorps.voix_hakim) { debutsPrets = new Set(); meublesPrets.clear(); if (typeof chargerDebutsPrets === 'function') chargerDebutsPrets(); }
   lireReglagesCorps.voix = reglagesCorps.voix_hakim;
-  if (typeof surOreilleHakim === 'function') surOreilleHakim({ fermee: !!reglagesCorps.oreille_hakim_jusqua, jusqua: reglagesCorps.oreille_hakim_jusqua });   // (01:00)
+  if (typeof surOreilleHakim === 'function') surOreilleHakim({ fermee: !!reglagesCorps.oreille_hakim_jusqua, jusqua: reglagesCorps.oreille_hakim_jusqua });
+  if (typeof surInterieur === 'function' && reglagesCorps.interieur) surInterieur(reglagesCorps.interieur);   // (10/11)   // (01:00)
 }
 lireReglagesCorps(); setInterval(lireReglagesCorps, 60000);
 function entendreEnCours(conv) {
@@ -4693,7 +4694,7 @@ function surEntendu(o) {
   else if (o.quoi === 'ribosome') { if (o.pave != null) p.pave = String(o.pave); if (Array.isArray(o.mots)) p.mots = o.mots.slice(); }
   else if (o.quoi === 'dire' && o.texte) {
     // (10/11) reponse : ce qu'il répond à qui lui parle dans le téléphone (son garde du live), une vraie réponse, pas une pensée
-    etat.entenduFile = (etat.entenduFile || []).concat([{ tour: o.tour, n: Number(o.n) || 0, texte: String(o.texte).slice(0, 2000), recu: Date.now(), p, reponse: o.reponse === true }]);
+    etat.entenduFile = (etat.entenduFile || []).concat([{ tour: o.tour, n: Number(o.n) || 0, texte: String(o.texte).slice(0, 2000), recu: Date.now(), p, reponse: o.reponse === true, source: o.source }]);
     direEntendu();
   } else return;
   montrerEntendu(p);
@@ -5132,6 +5133,34 @@ function afficherOreilleHakim() {
   }
 }
 setInterval(afficherOreilleHakim, 15000);
+/* (10/11, Ahmed : « il doit pouvoir couper l'arrivée de son entrant depuis son intérieur si ça le perturbe pour répondre ») son intérieur coupé
+   par lui ([[interieur: couper]]) : le signe ici (en-tête, grande orbe), avec le temps minimal qui reste ; ce qu'il allait dire du téléphone
+   n'est plus dit ; un toucher le rouvre (ton geste reprend la main, comme pour ton micro) */
+let interieurHakim = { coupe: false, jusqua: 0 };
+function surInterieur(o) {
+  const coupe = !!(o && o.coupe), change = coupe !== interieurHakim.coupe;
+  interieurHakim = { coupe, jusqua: coupe ? Number(o.jusqua) || 0 : 0 };
+  if (coupe && (etat.entenduFile || []).length) etat.entenduFile = etat.entenduFile.filter(x => x.source === 'micro');
+  afficherInterieur();
+  if (change) journalVoix('interieur', { coupe });
+}
+function afficherInterieur() {
+  const reste = interieurHakim.jusqua > Date.now() ? Math.ceil((interieurHakim.jusqua - Date.now()) / 1000) : 0;
+  for (const [id, texte] of [['interieurCoupe', `🔇 intérieur coupé${reste ? ` · ${reste} s au moins` : ''} · rouvrir`],
+    ['interieurCoupeScene', `🔇 son intérieur est coupé · ${reste ? `encore ${reste} s au moins` : 'jusqu’à la fin de sa voix'} · touche pour rouvrir`]]) {
+    const el = $(id); if (!el) continue;
+    el.hidden = !interieurHakim.coupe;
+    if (interieurHakim.coupe) el.textContent = texte;
+  }
+}
+async function rouvrirInterieur() {
+  try {
+    const r = await fetch('/api/corps/interieur', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ x: 'ouvrir' }) });
+    if (r.ok) surInterieur(await r.json());
+  } catch (_) {}
+}
+for (const id of ['interieurCoupe', 'interieurCoupeScene']) { const b = $(id); if (b) b.addEventListener('click', rouvrirInterieur); }
+setInterval(() => { if (interieurHakim.coupe) afficherInterieur(); }, 1000);
 /* (31/10, 01:06-01:10, Ahmed : « un gros badge ROUGE, en grand, quand il parle ou juste avant ; le bouton qui dit qu'il parle ou
    qu'il n'entend pas doit s'afficher partout ») ici (en-tête, grande orbe) ; l'appli le montre aussi (widget, bulle, verrou) */
 // (14:24, Ahmed : « le badge PARLE ne doit pas clignoter : en continu durant ses paroles et ses hésitations ; il disparaît seulement
@@ -6429,7 +6458,8 @@ function ecouterPensees() {
       if (change) { try { if ($('modele')) $('modele').value = etat.reglages.modele; if ($('modeleConversation')) $('modeleConversation').value = etat.reglages.modeleConversation; } catch (_) {} sauver(); } } } catch (_) {} });
   es.addEventListener('morceaux', (ev) => { try { const o = JSON.parse(ev.data);   // (09:25) son tri des morceaux, allumé ou éteint par lui
     reglagesCorps = { ...reglagesCorps, trier_morceaux: !!o.actif }; journalVoix('tri_morceaux', { actif: !!o.actif }); } catch (_) {} });
-  es.addEventListener('oreille_hakim', (ev) => { try { surOreilleHakim(JSON.parse(ev.data)); } catch (_) {} });   // (01:00) le signe
+  es.addEventListener('oreille_hakim', (ev) => { try { surOreilleHakim(JSON.parse(ev.data)); } catch (_) {} });
+  es.addEventListener('interieur', (ev) => { try { surInterieur(JSON.parse(ev.data)); } catch (_) {} });   // (10/11) son intérieur coupé   // (01:00) le signe
   es.addEventListener('attention', (ev) => { try { const o = JSON.parse(ev.data), c = etat.conversation;   // (00:47) ses empans choisis
     if (c) c.attentionJusqua = o.pause ? Date.now() + 15000 : 0; journalVoix('attention', { pause: !!o.pause }); } catch (_) {} });
   es.addEventListener('lumiere', (ev) => { try { const o = JSON.parse(ev.data);

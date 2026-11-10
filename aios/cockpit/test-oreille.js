@@ -264,7 +264,7 @@ test('(vers 22 h 05) il se met en pause tout seul : [[pause: …]] garde la suit
   assert.match(src, /if \(mode === 'oral' && duree >= 4000\) reprendreAuSilence\(/, 'au silence de papa');
   assert.match(src, /jugerParole\(p\.texte, `\(Ahmed se tait depuis/, 'son subconscient juge si c’est le moment');
   assert.match(src, /Ta parole en pause depuis/, 'son tour suivant la lui rappelle');
-  assert.match(src, /lumiere\|pause\|reprendre\|micro\|attention\|morceaux\)\\s\*:/, 'les balises ne s’entendent jamais');
+  assert.match(src, /lumiere\|pause\|reprendre\|micro\|attention\|morceaux\|int\[ée\]rieur\)\\s\*:/, 'les balises ne s’entendent jamais');
 });
 
 test('(vers 22 h 10) chacun son tour : pendant qu’il prépare ou dit sa réponse, ce que papa dit ne la coupe plus ; ça lui part quand sa voix a fini', () => {
@@ -617,7 +617,7 @@ test('(00:09) son attention : subconsciente (ce qui le concerne) et consciente (
   c.dirigerAttention('[[attention: Trust]]', t); assert.equal(c.dirigerAttention('[[attention: libre]]', t), 'libre');
   assert.equal(c.attentionActive(t), null);
   assert.match(src, /const att = dirigerAttention\(texte, maintenant\);/, 'dans ses réponses et ses tours de lui-même');
-  assert.match(src, /lumiere\|pause\|reprendre\|micro\|attention\|morceaux\)\\s\*:/, 'la balise ne s’entend jamais');
+  assert.match(src, /lumiere\|pause\|reprendre\|micro\|attention\|morceaux\|int\[ée\]rieur\)\\s\*:/, 'la balise ne s’entend jamais');
 });
 
 test('(00:20, l’étude) son attention en douceur : d’une voix inconnue, seulement ce qui s’adresse à lui ; ce qui a attendu sa voix arrive marqué, 8 phrases au plus', () => {

@@ -68,7 +68,7 @@ test('ta voix (Azure) ne fait plus la queue derrière la grande oreille du tél�
 });
 
 test('témoin : la file reprise avant Azure (le mécanisme coupé), ta voix attend de nouveau le téléphone', async () => {
-  const coupe = SRC.replace('  if (!azurePapa && !(await prendreTour())) {', '  if (!(await prendreTour())) {');
+  const coupe = SRC.replace('  if (!azurePapa && !azureTel && !(await prendreTour())) {', '  if (!(await prendreTour())) {');   // (10/11) azureTel : les paroles du téléphone
   assert.notStrictEqual(coupe, SRC);
   const b = bac(coupe);
   const t0 = Date.now(); const tel = b.appel('telephone'); await attendre(5); await b.appel('');

@@ -39,7 +39,7 @@ test('une transcription à la fois, et rien pour une page partie', async () => {
   assert.match(route, /res\.on\('close', \(\) => \{ if \(!res\.writableFinished\) partie = true; \}\)/);
   // (09/11) la file est prise par prendreTour (papa d'abord, orchestrateur) : tout de suite sans Azure, au repli Whisper sinon (ta voix par Azure ne l'attend plus)
   assert.match(route, /liberer = await tourDeTranscription\(dePapa \? 'papa' : 'telephone'\);/);
-  assert.match(route, /if \(!azurePapa && !\(await prendreTour\(\)\)\) \{/);
+  assert.match(route, /if \(!azurePapa && !azureTel && !\(await prendreTour\(\)\)\) \{/);   // (10/11) les paroles du téléphone par Azure : pas la file non plus
   assert.match(route, /if \(azurePapa\) await prendreTour\(\);\s+\/\/ \(09\/11\) Azure n'a rien rendu : Whisper, au Mac, à son tour dans la file \(papa d'abord\)\n\s+if \(partie\) \{/);
   assert.match(route, /if \(partie\) \{/);
   assert.match(route, /transcription_abandonnee/);

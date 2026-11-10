@@ -40,7 +40,7 @@ function bac(src = SRC) {
     // un morceau transcrit (routeTranscrire) : son verdict gardé, exactement comme la route le garde
     `function recu(r) {\n  if (r.voix && r.voix.verdict) derniereVoix = { ...r.voix, ts: Date.now() };\n  ${ligne(src, 'if (r.voix && r.voix.verdict) { verdictsVoix.push(')}}`,
     // le tour de papa (routeJarvis) : les deux blocs de sa voix, avec les appels écrits dans server.js
-    `function tour(q, texte, decalagePage = 0) {\n  const voixBloc = ${appel(src, 'const voixBloc = blocVoixTierce(')};\n`
+    `function tour(q, texte, decalagePage = 0) {\n  const texteRecu = texte;   // (10/11) son immunité lit le message reçu entier\n  const voixBloc = ${appel(src, 'const voixBloc = blocVoixTierce(')};\n`
     + `  const principaleTexte = ${appel(src, 'const principaleTexte = blocVoixPrincipale(')};\n  return { voixBloc, principaleTexte };\n}`,
     'this.f = { recu, tour, verdictDuTour, verdictsVoix };'].join('\n'), ctx);
   const a = (h, m, s) => { horloge.t = H(h, m, s); };

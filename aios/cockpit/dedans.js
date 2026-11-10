@@ -1,6 +1,6 @@
 /* (10/11, ~00:00, Ahmed : « il faut l'aider à dissocier ses voix interne et externe ! ») DEDANS ET DEHORS, la logique pure : dans un message
    de papa (son micro), ce qui vient en fait du TÉLÉPHONE (un live, une vidéo qui joue sur son haut-parleur, que le micro entend aussi) n'est
-   jamais attribué à papa. Trois preuves, de la plus sûre à la plus faible :
+   jamais attribué à papa. Trois preuves, de la plus sûre à la plus faible (et, le 10/11, « paroles » : plus bas) :
    - « mots » : un morceau dont les mots sont ceux que son oreille interne a entendus du téléphone au même moment (75 % au moins de ses mots
      d'au moins 4 lettres, 4 au moins, entendus dans les 40 s avant son tour) ; même sans étiquette, même si l'empreinte a cru papa ;
    - « voix » : son étiquette ([voix 12]) est une voix que l'oreille des voix vient de reconnaître DANS le téléphone ;
@@ -37,10 +37,28 @@ function segments(texte, { etiquetteDebut = null, estVoix = (e) => /^voix \d+$/i
 }
 // un morceau vient-il du téléphone ? ctx : { mots : Set (ses mots entendus du téléphone, plats), voix : Set (les voix reconnues dans le
 // téléphone), hautParleur : le téléphone joue sur son haut-parleur, parleDedans : quelqu'un parlait dans le téléphone à ce moment }
+/* (10/11) « paroles » : le morceau reprend les paroles du morceau que joue le téléphone (paroles.js, ses lignes des 5 dernières minutes) : 75 %
+   au moins de ses mots d'au moins 4 lettres (4 au moins) dans une même suite d'au plus trois lignes, à leur compte près. Un refrain que le
+   micro réentend sur le haut-parleur une minute plus tard n'est plus dans les 40 s de « mots » ; une fenêtre de trois lignes, pas tout le
+   vocabulaire du morceau : tes phrases ordinaires (« c'est », « dans », « pour ») n'y passent pas. */
+function repriseDeParoles(mots, lignes, part = 0.75) {
+  const ls = (Array.isArray(lignes) ? lignes : []).map(l => motsSignifiants(l));
+  for (let i = 0; i < ls.length; i++) {
+    for (let n = 1; n <= 3 && i + n <= ls.length; n++) {
+      const c = new Map();
+      for (const m of ls.slice(i, i + n).flat()) c.set(m, (c.get(m) || 0) + 1);
+      let k = 0;
+      for (const m of mots) { const v = c.get(m); if (v) { k++; c.set(m, v - 1); } }
+      if (k / mots.length >= part) return true;
+    }
+  }
+  return false;
+}
 function duTelephone(seg, ctx = {}) {
   const e = seg && seg.etiquette ? String(seg.etiquette) : '';
   const mots = motsSignifiants(seg && seg.texte);
   if (ctx.mots && mots.length >= 4 && mots.filter(m => ctx.mots.has(m)).length / mots.length >= 0.75) return 'mots';
+  if (ctx.lignes && mots.length >= 4 && repriseDeParoles(mots, ctx.lignes)) return 'paroles';
   if (e && !DOUTE_PAPA.test(e) && ctx.voix && ctx.voix.has(e.toLowerCase())) return 'voix';
   if (e && !DOUTE_PAPA.test(e) && ctx.hautParleur && ctx.parleDedans) return 'haut-parleur';
   return null;
@@ -60,4 +78,4 @@ function trier(texte, ctx = {}, opts = {}) {
 }
 const ensembleMots = (textes) => new Set(textes.flatMap(t => motsSignifiants(t)));
 
-module.exports = { segments, duTelephone, trier, ensembleMots, motsSignifiants, plat };
+module.exports = { segments, duTelephone, trier, ensembleMots, motsSignifiants, plat, repriseDeParoles };

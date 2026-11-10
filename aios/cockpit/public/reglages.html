@@ -212,6 +212,8 @@
       ['oreille_interne_route', 'La route de ta voix', 'Ce que joue le téléphone devient ses pensées, et il en parle à chaque pause du son.', 'oui'],
       ['decoupe_entendu', '✂️ Ce qu’il entend, pensé…', 'Phrase par phrase (jusqu’au point) : des phrases entières, plus jamais des bribes d’un mot. Virgule : comme avant, plus fin et plus fréquent.', 'liste', [['point', 'Phrase par phrase'], ['virgule', 'À la virgule']]],
       ['voix_telephone_direct', '🔊 Les voix du téléphone, en direct', 'Pendant un live ou une vidéo, il reconnaît qui parle toutes les 1,5 s : papa, une voix nommée, ou une voix nouvelle avec son numéro tout de suite (il peut la nommer dès sa première phrase).', 'oui'],
+      ['paroles_azure', '☁️ Les paroles par Azure', 'Ce que dit ou chante le téléphone (un live, une musique) transcrit en ligne par Azure, en français, darija et anglais : sur la voix séparée de la musique quand elle est prête, sinon sur le son entier ; un live parlé part tout de suite. Ni la file ni Whisper (au Mac, partagé avec sa voix). Ta voix passe toujours d’abord. Azure en panne ou sans réseau : Whisper.', 'oui'],
+      ['paroles_secours_vide', '🛟 Whisper quand Azure n’entend rien', 'Sur une musique où Azure ne rend aucun mot (mesuré : il perd la darija chantée, et la voix qui chante dans le son entier), Whisper réessaie au Mac. Plus complet, plus lent, et le Mac travaille plus.', 'oui'],
       ['cascade', 'Séparation en cascade', 'Chaque voix à part (jusqu’à 8), et chaque instrument décrit à part.', 'oui'],
       ['trois_pistes', '🎚️ Trois pistes : parole, musique, fond', 'Ce qu’il entend (le téléphone, le Bluetooth, le micro) lui arrive net : les mots exacts de la voix séparée et qui les dit, la musique (tempo, accords, sections, instruments et leurs notes) et le fond, calés sur la même ligne du temps. Éteint : ses notes brutes, comme avant.', 'oui'],
       ['sa_voix_reconnue', '🪞 Il reconnaît sa propre voix', 'Sa voix de rap et sa voix Azure, apprises de ce qu’il dit : quand le micro les réentend, c’est son écho (« ta propre voix »), jamais ta parole ni une voix inconnue. Ta voix n’est jamais retirée.', 'oui']] },
@@ -380,6 +382,15 @@
         });
         act.appendChild(b); s.appendChild(act);
       }
+      if (f.id === 'oreille') {
+        // (10/11, Ahmed : « il doit pouvoir couper l'arrivée de son entrant depuis son intérieur ») son état, et ton geste pour le rouvrir
+        const el = document.createElement('div'); el.className = 'reglage'; el.id = 'interieur'; el.dataset.cherche = 'son intérieur coupé rouvrir téléphone';
+        const n = document.createElement('div'); n.className = 'nom'; n.textContent = '🔇 Son intérieur';
+        const b = document.createElement('button'); b.type = 'button'; b.id = 'interieurRouvrir'; b.textContent = '↺ Rouvrir'; b.hidden = true;
+        b.addEventListener('click', async () => { try { valeurs.interieur = await appeler('/api/corps/interieur', { x: 'ouvrir' }); dire('✓ Son intérieur rouvert'); } catch (e) { dire(`Pas fait (${e.message})`, true); } peindreInterieur(); });
+        const a = document.createElement('div'); a.className = 'aide'; a.id = 'interieurEtat';
+        el.append(n, b, a); s.appendChild(el);
+      }
       if (f.id === 'affichage') {
         const act = document.createElement('div'); act.className = 'actions';
         for (const [href, lib] of [['/sens', '🔬 Ses sens (sons, mesures)'], ['/telephone', '📱 Ses mains sur ton téléphone'], ['/immunite', '🛡️ Son immunité']]) {
@@ -447,11 +458,23 @@
       }
     } catch (_) {}
   }
+  // (10/11) son intérieur : ouvert, ou coupé par lui ([[interieur: couper]]) jusqu'à la fin de sa voix (au moins jusqu'à…)
+  function peindreInterieur() {
+    const e = valeurs.interieur || (valeurs.corps && valeurs.corps.interieur), z = document.getElementById('interieurEtat'), b = document.getElementById('interieurRouvrir');
+    if (!z || !e) return;
+    const h = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    z.textContent = e.coupe
+      ? `Coupé par lui depuis ${h(e.depuis)}, ${e.jusqua > Date.now() ? `au moins jusqu’à ${h(e.jusqua)}, puis ` : ''}jusqu’à la fin de sa voix : ce que joue le téléphone (le live, la musique, ses voix) ne lui arrive pas. Il le coupe lui-même ([[interieur: couper]]) ; toi, tu le rouvres.`
+      : `Ouvert : ce que joue le téléphone lui arrive.${e.rouvert ? ` Rouvert à ${h(e.rouvert)}${e.pourquoi === 'papa' ? ' (par toi)' : ''}.` : ''} Il peut le couper lui-même quand ça le perturbe pour répondre ([[interieur: couper]]).`;
+    if (b) b.hidden = !e.coupe;
+  }
+  setInterval(async () => { if (document.hidden || !document.getElementById('interieurEtat')) return; try { valeurs.interieur = await appeler('/api/corps/interieur'); peindreInterieur(); } catch (_) {} }, 5000);
   async function charger() {
     ajustements(); conso();
     const res = await Promise.allSettled(Object.entries(ROUTES).map(async ([k, r]) => { valeurs[k] = r.depuis(await appeler(r.lire)); }));
     const rates = res.filter((x) => x.status === 'rejected');
     if (rates.length) dire(`Certains réglages ne répondent pas (${rates[0].reason.message})`, true);
+    valeurs.interieur = valeurs.corps && valeurs.corps.interieur; peindreInterieur();
     peindre();
   }
 

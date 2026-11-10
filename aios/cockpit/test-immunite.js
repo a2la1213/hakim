@@ -248,7 +248,7 @@ test('lot 4 : les demandes sensibles, en français, en anglais, en arabe ; pas l
 });
 
 test('lot 4 : branché dans son tour', () => {
-  assert.match(src, /const voixBloc = blocVoixTierce\(q, texte, verdictDuTour\(q, \{ decalage: decalagePage \}\)\);/);   // (09/11) les morceaux de CE message (test-parole-double.js)
+  assert.match(src, /const voixBloc = blocVoixTierce\(q, texteRecu, verdictDuTour\(q, \{ decalage: decalagePage \}\)\);/);   // (09/11) les morceaux de CE message (test-parole-double.js)
   assert.match(src, /\+ tempsLibre\.texte \+ immuniteBloc\.texte \+ voixBloc\.texte \+ principaleTexte \+ liveTexte \+ corpsTexte \+ blocNonEntendus\(texte, nonce\) \+ blocDejaReagi\(\) \+ aideOutils\(modele\) \+ blocRapportBascule\(session\);/);   // (30/10) + ses réponses non entendues
 });
 
@@ -306,7 +306,7 @@ test('le verdict de la voix pour TOUT le message : un seul morceau d’une autre
   ctx.verdictsVoix.push({ verdict: 'doute', ts: t0 + 9500 });
   assert.strictEqual(ctx.f.verdictDuTour({ oral: true, t_debut: t0 }), 'doute');
   assert.strictEqual(ctx.f.verdictDuTour({ oral: false, t_debut: t0 }), null, 'à l’écrit : pas de verdict de voix');
-  assert.match(src, /const voixBloc = blocVoixTierce\(q, texte, verdictDuTour\(q, \{ decalage: decalagePage \}\)\);/);   // (09/11) les morceaux de CE message (test-parole-double.js)
+  assert.match(src, /const voixBloc = blocVoixTierce\(q, texteRecu, verdictDuTour\(q, \{ decalage: decalagePage \}\)\);/);   // (09/11) les morceaux de CE message (test-parole-double.js)
   assert.match(src, /verdictsVoix\.push\(/);
 });
 
