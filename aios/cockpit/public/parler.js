@@ -2840,13 +2840,16 @@ document.addEventListener('keydown', (e) => { if (e.target && e.target.id === 'q
 setInterval(() => { const v = voixEnCours.clavier; if (v && Date.now() - v.dernier > 1500) suivreVoix('clavier', false); }, 500);
 // (30/10, 15:12, Ahmed : « il doit sentir quand le micro est ouvert ou fermé ») l'état du micro, dit au cockpit à chaque
 // changement : la conversation, une dictée, ou fermé (rien n'est enregistré)
-let microDit = null;
+// (10/11, Hakim : « une voix du live m'a appelé… je ne lui ai pas répondu ») chaque page a sa place au cockpit (son identifiant) et redit son état
+// toutes les 20 s : la page du Mac rechargée ne ferme plus la Conversation du téléphone (micro-pages.js)
+let microDit = null, microDitA = 0;
+const PAGE_MICRO = Math.random().toString(36).slice(2, 12);
 setInterval(() => {
   const m = etat.conversation ? 'conversation' : etat.micro ? 'dictee' : 'ferme';
-  if (m === microDit) return;
-  microDit = m;
+  if (m === microDit && Date.now() - microDitA < 20000) return;
+  microDit = m; microDitA = Date.now();
   fetch('/api/corps/micro', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': window.jeton() },
-    body: JSON.stringify({ ouvert: m !== 'ferme', mode: m }) }).catch(() => { microDit = null; });
+    body: JSON.stringify({ ouvert: m !== 'ferme', mode: m, page: PAGE_MICRO }) }).catch(() => { microDit = null; });
 }, 500);                    // les deux voix se suivent à part (elles peuvent se chevaucher)
 function envoyerTourVoix(v, ouvert) {
   fetch('/api/corps/voix', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': window.jeton() },
@@ -4526,6 +4529,26 @@ function avecPassages(conv, texte) {
   const qui = l.some(x => x.par === 'subconscient') ? 'ton subconscient l’a jugé' : 'jugé';
   return `(dit en passant pendant ta parole, ${qui} sans question, tu ne lui as pas répondu : ${l.map(x => `« ${x.texte} »`).join(' … ')} ; si c'en était une, réponds-y d'abord)\n${texte}`;
 }
+/* (10/11, live du matin : à 08:23:43, « [voix 214] C'est pas le cas du bleu autour de toi je pense grizzly. » a lâché sa réponse à Wesley,
+   « Wesley, si tu m'entends, salam, c'est Hakim ») une phrase faite SEULEMENT d'autres voix ([voix 214] ; ni toi, ni « papa ? » ; une autre
+   parenthèse, « [Musique] », reste du texte) n'est jamais une relance : ce n'est jamais papa ; sa réponse continue (sa voix reprend), et la
+   phrase lui arrive avec ton message suivant */
+const ETIQUETTE_VOIX = /\[([^\[\]\n]{1,40})\]/g;
+function seulementAutresVoix(texte) {
+  const t = String(texte || '').replace(/\((?:dit|écrit)[^)]*\)\s*/g, ' ');
+  let m, debut = 0, courant = null, autres = 0, papa = 0;
+  const compter = (fin) => { const x = t.slice(debut, fin).replace(/[^\p{L}\p{N}]+/gu, ''); if (!x) return; if (courant) autres++; else papa++; };
+  ETIQUETTE_VOIX.lastIndex = 0;
+  while ((m = ETIQUETTE_VOIX.exec(t))) {
+    const e = m[1].trim(), voix = /^voix \d+$/i.test(e), deLui = /^(?:papa|ahmed)\s*\??$/i.test(e);
+    if (!voix && !deLui) continue;                                     // une autre parenthèse : du texte
+    compter(m.index);
+    courant = voix ? e : null;
+    debut = m.index + m[0].length;
+  }
+  compter(t.length);
+  return autres > 0 && papa === 0;
+}
 // ta phrase finie, pendant sa réponse : rend vrai si c'est un passage (déjà traité : sa voix reprend, ta phrase est gardée), faux si c'est une relance
 // (ce qui restait de sa réponse d'avant toi a été lâché ; ta phrase part comme d'habitude)
 async function passageOuRelance(conv, texte) {
@@ -4540,6 +4563,13 @@ async function passageOuRelance(conv, texte) {
   let e = enCours();
   if (!e.attend || !reprendrePassage()) return false;
   const mots = String(texte || '').split(/\s+/).filter(Boolean).length;
+  if (seulementAutresVoix(texte)) {                                   // (10/11) jamais papa : sa réponse continue
+    garderPassage(conv, `${texte} [papa]`, 'autre_voix');             // « [papa] » : la suite de ton message reste à toi (segmentsTiers)
+    const reprend = !!e.r && !(conv.capteur && conv.capteur.enParole);
+    journalVoix('autre_voix_passe', { mots, retenue: !!e.r, reprend });
+    if (reprend) reprendreVoix(); else if (typeof humeur === 'function') humeur();
+    return true;
+  }
   const entendu = paroleEntendue();
   let classe = classerPassage(texte, entendu), par = 'liste';
   if (classe === 'ambigu') {                                          // son subconscient tranche ; sa voix attend (retenue) pendant ce temps
@@ -4886,7 +4916,7 @@ function direRibosome() {
 // son épissure à lui (l'événement « entendu » du cockpit : jamais le pavé ni l'épissure de papa) ; à la pause du son, le cockpit envoie ce
 // qu'il en a gardé ; sa voix le dit quand elle est libre, après l'épissure de papa, jamais pendant que papa parle (ni ses « 5 s au plus » :
 // papa passe toujours d'abord) ; 20 s sans place : c'est resté une pensée
-const ENTENDU_ATTENTE_MS = 20000, ENTENDU_APRES_PAPA_MS = 1500;
+const ENTENDU_ATTENTE_MS = 20000, ENTENDU_APRES_PAPA_MS = 1500, ENTENDU_REPONSE_MS = 45000;
 const TITRE_ENTENDU = '🎧 le téléphone joue · 💭 sa pensée · 🗣 ce qu’il en dit';
 function paveEntendu(o) {
   etat.pavesEntendus = etat.pavesEntendus || {};
@@ -4935,15 +4965,16 @@ function direEntendu(maintenant = Date.now()) {
     if (!etat.entenduFile.length) return false;
     return direEntendu(maintenant);
   }
-  const frais = f.filter(x => maintenant - x.recu <= ENTENDU_ATTENTE_MS);
+  // (10/11) sa réponse à qui lui parle dans le live : gardée 45 s (une pensée : 20 s), et dite avant ses pensées
+  const frais = f.filter(x => maintenant - x.recu <= (x.reponse ? ENTENDU_REPONSE_MS : ENTENDU_ATTENTE_MS));
   if (frais.length < f.length) { etat.entenduFile = frais; journalVoix('entendu_garde', { pensees: f.length - frais.length }); }
   if (!frais.length || !c || !voixEpissee() || lecteur.actif || (etat.riboFile || []).length) return false;
   if (typeof bouts !== 'undefined' && bouts && ((bouts.fileTel || []).length || bouts.attenteTel)) return false;   // sa voix du téléphone a encore à dire
   const cap = c.capteur, patience = typeof patienceConversation === 'function' ? patienceConversation() : 300;
   if (cap && cap.enParole && !(Number(cap.pauseEnCours) >= patience)) return false;   // papa parle : c'est son tour
   if (maintenant - (Number(etat.papaVoixA) || 0) < ENTENDU_APRES_PAPA_MS) return false;   // papa vient de parler : sa réponse à lui d'abord
-  const x = frais[0];
-  etat.entenduFile = frais.slice(1);
+  const x = frais.find(y => y.reponse) || frais[0];
+  etat.entenduFile = frais.filter(y => y !== x);
   x.p.dits.push(x.texte);
   montrerEntendu(x.p);
   etat.riboN = etat.riboN || {};
