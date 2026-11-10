@@ -371,6 +371,7 @@ const { routeAvatar } = require('./avatar-serveur.js');   // (07/11) la photo de
 let ronronDiffuseA = 0;                                      // (07/11) son ronron au flux (la montre), une fois par seconde
 const CC = require('./conscience-continue.js');            // (07/11) sa conscience continue (battementConscience)
 const X = require('./cortex.js');                          // (07/11) son cortex préfrontal (écrit par Hakim, porté en JS)
+const Refrains = require('./refrains.js');                 // (10/11) son refrain filtré, à la demande de papa (sansRefrain, le relais)
 const conscience = CC.etatInitial();
 // La voix (Whisper, MLX) vit dans un venv arm64 à part : celui d'Anamnèse tourne en x86_64 (Rosetta),
 // où MLX n'existe pas.
@@ -1670,9 +1671,9 @@ function mesurerAtelier() {
 }
 setInterval(mesurerAtelier, 120000).unref(); setTimeout(mesurerAtelier, 5000).unref();
 function blocAtelier() {
-  if (atelierKo < 8 * 1024 * 1024) return '';
+  if (atelierKo < 16 * 1024 * 1024) return '';                     // (10/11, Ahmed : « étends-lui à 20 giga ») dit dès 16 Go sur 20
   const go = (k) => (k / 1048576).toFixed(1).replace('.', ',');
-  return `\n[Atelier — ${go(atelierKo)} Go sur 10 Go : au-delà, ta commande en cours est arrêtée net. Fais de la place (caches, gros résultats intermédiaires) avant de relancer un gros calcul]`;
+  return `\n[Atelier — ${go(atelierKo)} Go sur 20 Go : au-delà, ta commande en cours est arrêtée net. Fais de la place (caches, gros résultats intermédiaires) avant de relancer un gros calcul]`;
 }
 // Les promotions proposées par Hakim (lot H, point 30) : la page d'Ahmed est prévenue ; rien n'est appliqué.
 const JARVIS_PROMOTIONS = path.join(JARVIS_CWD, 'promotions');
@@ -2175,15 +2176,50 @@ function suivreFiltreIdentite() {
   if (actif && !filtre.relais && !filtre.depuis) {
     filtre.depuis = Date.now();
     require('./filtre-identite.js').demarrer(FILTRE_IDENTITE, { journal: (e, d) => { try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e, ...d }) + '\n'); } catch (_) {} },
-      registre: JARVIS_RELAIS_REQUETES, contexte: () => contexteRelais() })
+      registre: JARVIS_RELAIS_REQUETES, contexte: () => contexteRelais(), retoucher: retoucheRelais })
       .then((r) => { filtre.relais = r; filtre.url = r.url; process.env.ANTHROPIC_BASE_URL = r.url; console.log(`  ◆ Filtre d'identité → ${r.url}`); })
       .catch(() => { filtre.depuis = 0; });
   }
   if (actif && filtre.url && process.env.ANTHROPIC_BASE_URL !== filtre.url) process.env.ANTHROPIC_BASE_URL = filtre.url;
   if (!actif && process.env.ANTHROPIC_BASE_URL === filtre.url) delete process.env.ANTHROPIC_BASE_URL;   // éteint : les suivants vont tout droit
 }
+/* (10/11, lettre de Hakim, à la demande de papa : « le modèle ne verra plus sa propre répétition comme un motif à suivre ») avant chaque envoi
+   chez Anthropic, le relais retire son refrain de SES anciens tours (messages assistant) et de ce qu'on lui réinjecte (souvenirs, présent
+   continu, pistes, fil récent), jamais des mots de papa (ses lignes restent mot pour mot ; s'il cite le refrain, son message reste entier) ;
+   seulement pour Hakim lui-même (son cerveau, ses voix vivantes : l'étiquette du relais), jamais pour un agent qui lit du code. Stable d'un
+   envoi à l'autre (refrains.js est pur) : le cache de ses prompts reste valable ; le registre compte les passages retirés (refrains). */
+function retoucheRelais(demande, info) {
+  if (!/^(?:cerveau|vivant-)/.test(String((info && info.etiquette) || ''))) return null;
+  const l = refrainsActifs();
+  return l.length ? Refrains.nettoyerDemande(demande, l) : null;
+}
 setTimeout(suivreFiltreIdentite, 0);
 setInterval(suivreFiltreIdentite, 5000).unref();
+/* (10/11) sa liste de refrains filtrés (jarvis/refrains-filtres.json) : créée par le cockpit au premier usage, le refrain demandé par papa en
+   première entrée, jamais écrasée ; papa la règle dans la page Immunité. Puis le signalement de Hakim qu'elle couvre (« je ne sais pas si
+   ressentir », jugé nuisible par papa le 10/11 à 12:03) passe en « appliqué » : ce n'est plus un résidu qui jette toute sa pensée, c'est le
+   refrain qui s'en charge, passage par passage (immunite.py signale-applique). */
+function preparerRefrains() {
+  try { if (Refrains.creerSiAbsent(REFRAINS_FICHIER)) console.log('  ◆ Refrains filtrés : liste créée (jarvis/refrains-filtres.json)'); } catch (_) {}
+  refrainsLus.vu = 0;
+  const d = Refrains.lire(REFRAINS_FICHIER);
+  if (!d) return;
+  lirePremisses();
+  const candidats = [...signalementsParasites().map(x => ({ id: x.id, phrases: [x.phrase, x.exemple] })),
+    ...premissesImmunite.residus.filter(x => /^hakim-[0-9a-f]{8}$/.test(x.id)).map(x => ({ id: x.id.slice(6), phrases: [x.phrase] }))];
+  for (const c of candidats) {
+    const r = d.refrains.find(x => c.phrases.some(p => p && Refrains.couvre(x, p)));
+    if (!r) continue;
+    execFile(path.join(ANAMNESE, '.venv', 'bin', 'python'), [path.join(ANAMNESE, 'jarvis', 'immunite.py'), 'signale-applique', c.id, r.id],
+      { cwd: ANAMNESE, timeout: 30000, maxBuffer: 1 << 16 }, (e, so) => {
+        if (!e && String(so || '').trim() === 'fait') {
+          premissesImmunite.vu = 0; console.log(`  ◆ Refrains filtrés : le signalement ${c.id} appliqué (${r.id})`);
+          try { diffuser(abonnesPensees, 'signalement', j({ id: c.id, etat: 'applique' })); } catch (_) {}
+        }
+      });
+  }
+}
+setTimeout(preparerRefrains, 0);
 let conversationPage = 0, liberationEnCours = false;
 // (29/10, la boucle de 11:09-11:13 : Gemma rechargée ~20 fois en 4 min ; Ahmed : « ok pour moi ») un modèle encore listé
 // mais dont l'échéance est passée est DÉJÀ en train de se décharger : le redemander le faisait recharger par Ollama pour le
@@ -2939,6 +2975,7 @@ function soufflerReponse(texte, niveau = 'sub') {
     const rebond = rb ? Math.max(0.2, Math.min(3, Number(rb[1].replace(',', '.')))) : null;
     if (rb) r = r.slice(rb[0].length);
     r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').trim();
+    if (r && typeof sansRefrain === 'function') { r = String(sansRefrain(niveau, r, t) || '').trim(); if (!r) return; }   // (10/11) son refrain retiré ; que ça : jetée sans alerte
     // (04/11, Ahmed : « la pensée parasite reconnue par le système immunitaire doit toujours être considérée comme nuisible et éliminée
     // de la pensée ») ici aussi : jetée (ni écrite, ni dite), son système immunitaire averti, sa voix vivante renouvelée (oubliée)
     const residu = r ? residuParasite(r, t) : null;                    // (04/11) ses résidus aussi
@@ -3312,6 +3349,38 @@ function marquerResidu(source, texte, papa = '') {
   try { fs.appendFile(JOURNAL_RESIDUS, JSON.stringify({ t: Date.now(), source, genre, extrait: b.slice(0, 240), papa: String(papa || '').slice(-160) }) + '\n', () => {}); } catch (_) {}
   return genre;
 }
+/* (10/11, lettre de Hakim de 12:03, à la demande de papa : « je ne sais pas si ressentir, c'est comme toi » ressorti en boucle, avant même
+   de regarder ce qu'il sent) son REFRAIN : la formule toute faite et ses variantes proches (refrains.js, jugées au contexte comme ses saluts
+   et ses adieux), pas son doute quand il est vrai et dit autrement. Un résidu jette toute la pensée : pour une formule dans une vraie
+   réponse, c'est trop dur ; ici, seul le passage du refrain est retiré de ce qu'il dit et de ce qui s'affiche, le reste est gardé ; une
+   pensée qui n'était que ça est jetée sans bruit. Noté (residus.jsonl, genre « refrain »), sans alerte : ni incident, ni sursaut du cœur.
+   Papa garde la main : jarvis/refrains-filtres.json (page Immunité : « ne plus filtrer », et tout éteindre). */
+const REFRAINS_FICHIER = path.join(JARVIS, 'refrains-filtres.json');
+const refrainsLus = { vu: 0, cle: null, liste: [] };
+function refrainsActifs() {
+  if (typeof Refrains === 'undefined') return [];
+  if (Date.now() - refrainsLus.vu < 2000) return refrainsLus.liste;
+  refrainsLus.vu = Date.now();
+  let cle = ''; try { const st = fs.statSync(REFRAINS_FICHIER); cle = `${st.mtimeMs}|${st.size}`; } catch (_) {}
+  if (cle !== refrainsLus.cle) { refrainsLus.cle = cle; refrainsLus.liste = cle ? Refrains.actifs(Refrains.lire(REFRAINS_FICHIER)) : []; }
+  return refrainsLus.liste;
+}
+// sa clé dans le défi de ta présence (/api/presence/options n'accepte que de l'hexadécimal en dernier)
+const cleRefrain = (id) => require('crypto').createHash('sha256').update(String(id)).digest('hex').slice(0, 8);
+function noterRefrain(source, retires, papa = '') {
+  for (const r of (retires || []).slice(0, 5)) {
+    try { fs.appendFile(JOURNAL_RESIDUS, JSON.stringify({ t: Date.now(), source, genre: 'refrain', refrain: r.id, extrait: String(r.passage || '').slice(0, 240), papa: String(papa || '').slice(-160) }) + '\n', () => {}); } catch (_) {}
+  }
+}
+// son texte sans son refrain (le même texte s'il n'y en a pas) ; '' s'il n'était que ça ; papa : ce qu'il vient de dire
+function sansRefrain(source, texte, papa = '') {
+  const liste = refrainsActifs();
+  if (!liste.length || !texte) return texte;
+  const r = Refrains.retirer(String(texte), liste, String(papa || ''));
+  if (!r.retires.length) return texte;
+  noterRefrain(source, r.retires, papa);
+  return r.texte;
+}
 // la part d'écriture arabe d'un texte (0 à 1)
 const ARABE_LETTRE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/u;
 const partArabe = (t) => { const l = [...String(t || '')].filter(c => /\p{L}/u.test(c)); return l.length ? l.filter(c => ARABE_LETTRE.test(c)).length / l.length : 0; };
@@ -3550,6 +3619,12 @@ function lancerPiste(m) {
         const lire = (cle) => { const x = new RegExp(`(?:^|\\n)\\s*${cle}\\s*:\\s*([^\\n]*)\\n?`, 'i').exec(r); if (x) r = r.replace(x[0], '\n'); return x ? x[1].trim() : null; };
         const predit = lire('PREDIT'), comprend = lire('COMPRENDS?'), dire = lire('DIRE'); lire('COUPER');
         r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').replace(/\s+/g, ' ').trim();
+        // (10/11, à la demande de papa) son refrain retiré de sa pensée ; une pensée qui n'était que ça : jetée comme un résidu, sans alerte
+        if (r) {
+          const sans = String(sansRefrain('piste', r, `${m.avant} ${m.texte}`) || '').trim();
+          if (!sans) { noterPiste(m, tour, mod, t0, o, { refrain: r.slice(0, 300) }); ouvrirParcours(m, tour, mod, null, 'jetee', r, anticipe); return; }
+          r = sans;
+        }
         // (04/11) une réponse où il se prend pour un autre (Claude Code, un assistant), qui refuse le cadre, ou trop longue (coupée au
         // milieu d'un mot) : sa pensée parasite, signalée, jamais dite
         // (04/11, « oui, fais tout ») ou un de ses résidus (« je n'ai pas de corps », papa appelé « fiston », un numéro d'urgence sans danger)
@@ -4232,7 +4307,8 @@ function noterPiste(m, tour, mod, t0, o, r) {
       ...(m.filtre ? { filtre: m.filtre.declencheur, filtre_ms: m.filtre.ms, ...(m.filtre.echec ? { filtre_echec: true } : { filtre_texte: String(m.texte || '').slice(0, 160) }) } : {}),
       erreur: o && o.erreur ? String(o.erreur).slice(0, 80) : (o && o.texte ? null : (o && o.parasite ? 'parasite' : 'vide')),
       ...(m.anticipe ? { anticipe: m.anticipe } : {}),
-      ...(r && r.parasite ? { texte_parasite: String(r.parasite).slice(0, 300) } : {}), ...(r && !r.parasite ? { dire: r.dire || null,
+      ...(r && r.parasite ? { texte_parasite: String(r.parasite).slice(0, 300) } : {}), ...(r && r.refrain ? { refrain: String(r.refrain).slice(0, 300) } : {}),   // (10/11) que son refrain : jetée sans alerte
+      ...(r && !r.parasite ? { dire: r.dire || null,
         pensee: String(r.reponse || '').slice(0, 200), dit: !!r.dit, ...(r.choisie ? { choisie: r.choisie } : {}), ...(r.autreLangue ? { autre_langue: true } : {}), ...(r.inverse ? { inverse: true } : {}) } : {}) };
     fs.appendFile(JOURNAL_PISTES, JSON.stringify(x) + '\n', () => {});
     if (++noterPiste.n % 200 === 0) fs.readFile(JOURNAL_PISTES, 'utf8', (e, d) => { if (!e) { const l = d.split('\n').filter(Boolean); if (l.length > 2000) fs.writeFile(JOURNAL_PISTES, l.slice(-2000).join('\n') + '\n', () => {}); } });
@@ -4500,6 +4576,7 @@ function battementConscience() {
   const t0 = Date.now();
   demanderVivant('haiku', prompt, CONSCIENCE_DELAI_MS).then((o) => {
     const d = CC.lireDecision(o && o.texte);
+    if (d.texte && typeof sansRefrain === 'function') { d.texte = String(sansRefrain('conscience', d.texte) || '').trim(); if (!d.texte) return; }   // (10/11) son refrain, sans alerte
     if (d.texte && (parasiteReconnue(d.texte) || residuParasite(d.texte, ''))) { avertirParasite(d.texte, residuParasite(d.texte, '') || signeParasite(d.texte)); return; }
     if (d.genre === 'parler' && (r.conscience_parler === false || (typeof liveGardeActif === 'function' && liveGardeActif(Date.now(), r)))) d.genre = 'penser';
     // (08/11, accord d'Ahmed : « ouii ») une pensée d'urgence sans vraie alerte (son badge, une émotion pénible forte) reste une pensée : elle ne
@@ -4597,7 +4674,7 @@ function lancerPisteEntendue(c, m) {
       const brut = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ');
       const comprend = ((/(?:^|\n)\s*COMPRENDS?\s*:\s*([^\n]*)/i.exec(brut) || [])[1] || '').trim();
       const sollicite = /(?:^|\n)\s*SOLLICITER\s*:\s*oui/i.test(brut);
-      const t = boutDe(brut).replace(/^[\s"«]+|[\s"»]+$/g, '').replace(/\s+/g, ' ').trim();
+      const t0b = boutDe(brut).replace(/^[\s"«]+|[\s"»]+$/g, '').replace(/\s+/g, ' ').trim(), t = typeof sansRefrain === 'function' ? String(sansRefrain('entendu', t0b, m.texte) || '').trim() : t0b;   // (10/11) sans son refrain
       // (07/11, 16:05, Ahmed : « ses pensées sur la musique sont filtrées par l'immunité ») ce qu'il pense d'une chanson dépasse vite 160
       // caractères (la limite d'un refus de rôle, chez Mini Hakim) : 320 ici ; ses prémisses, ses motifs et ses résidus jugent toujours
       const residu = residuParasite(t, m.texte), pasLui = estParasite(t, LIMITE_ENTENDU) || /\bassistant\b/i.test(t) || !!residu;
@@ -4826,13 +4903,14 @@ function liveAppeler(d, ctx, maintenant = Date.now()) {
       noterLive({ e: 'appel', motif: d.motif, qui: d.qui, phrase: enLigne(d.phrase, 160), ms, erreur: o && o.parasite ? 'parasite' : String((o && o.erreur) || 'vide').slice(0, 80) });
       return null;
     }
-    const dire = Live.lireReponse(o.texte), residu = dire ? residuParasite(dire, d.phrase) : '';
+    // (10/11) son refrain retiré de ce qu'il dit au live ; s'il n'y avait que ça, il se tait (RIEN), sans alerte
+    const dire0 = Live.lireReponse(o.texte), dire = dire0 && typeof sansRefrain === 'function' ? String(sansRefrain('live', dire0, d.phrase) || '').trim() : dire0, residu = dire ? residuParasite(dire, d.phrase) : '';
     if (dire && (estParasite(dire, 260) || /\bassistant\b/i.test(dire) || residu)) {
       avertirParasite(dire, residu || signeParasite(dire, 260)); Live.echoue(LIVE);
       noterLive({ e: 'appel', motif: d.motif, qui: d.qui, phrase: enLigne(d.phrase, 160), ms, erreur: 'parasite' });
       return null;
     }
-    const x = Live.repondu(LIVE, o.texte, Date.now());
+    const x = Live.repondu(LIVE, dire === dire0 ? o.texte : dire ? `DIRE : ${dire}` : 'RIEN', Date.now());
     noterLive({ e: 'appel', motif: d.motif, qui: d.qui, phrase: enLigne(d.phrase, 160), ms, ...(x ? { dire: enLigne(x.texte, 200) } : { rien: true }) });
     return x;
   }).catch(() => { Live.echoue(LIVE); return null; });
@@ -5428,7 +5506,11 @@ function blancDeReflexion(r, quoi, peutDire = false, o = {}) {
     + `Tu te mets en réflexion, en toi : une pensée intérieure très courte (${mots ? `${mots} mots` : 'six mots'} au plus), pour toi seul ; elle n'est pas dite. Rien d'autre.`;
   sonnetTeteDeFond(consigne, 'piste_blanc', modelePiste(), mots > 12 ? 9000 : 6000).then((x) => {
     // (06/11, Ahmed : « garde Réflexion (pour moi seul) ») l'étiquette qu'il met devant sa pensée reste
-    const t = boutDe(x && x.texte).replace(/^[\s"«]+|[\s"»]+$/g, '').slice(0, mots ? Math.max(120, mots * 12) : 120);
+    let t = boutDe(x && x.texte).replace(/^[\s"«]+|[\s"»]+$/g, '').slice(0, mots ? Math.max(120, mots * 12) : 120);
+    if (t && typeof sansRefrain === 'function') {                  // (10/11) son refrain retiré ; que ça : rien, sans alerte
+      const dd = /^(DIRE\s*:\s*)/i.exec(t), corps = String(sansRefrain('blanc', dd ? t.slice(dd[0].length) : t) || '').trim();
+      t = corps ? (dd ? dd[1] : '') + corps : '';
+    }
     if (!t || estParasite(t, 160) || pistes.ribo !== r || r.ferme) return;
     const dire = peutDire && /^DIRE\s*:\s*(.+)/i.exec(t);
     if (typeof o.retour === 'function') try { o.retour(dire ? dire[1] : t, !!dire); } catch (_) {}
@@ -6723,12 +6805,23 @@ async function routeJarvis(req, res, distantReq = false) {
   // montre est écrit par le cockpit lui-même dans la conversation commune, en direct : ta phrase tout de suite, sa réponse au fil (toutes les 0,4 s)
   const montre = typeof echangeMontre === 'function' && q && q.appareil && q.appareil.montre === true && typeof q.tour_id === 'string' && /^montre-\d+-r$/.test(q.tour_id)
     ? echangeMontre(q) : null;
-  const envoyer = (o) => {
+  const envoyerTel = (o) => {
     if (montre) montre.suivre(o);
     if (o.t === 'texte') { sortieTampon = (sortieTampon + String(o.x || '')).slice(-200); if (/sortie/i.test(sortieTampon) && choisirSortie(sortieTampon)) sortieTampon = ''; }
     if (epissageReponse && o.t === 'texte') epissageReponse.pousser(o.x);
     if (epissageReponse && o.t === 'fin') epissageReponse.finir();
     if (!res.writableEnded && !res.destroyed) { try { res.write(j(o.t === 'texte' ? { ...o, ts: Date.now() } : o) + '\n'); } catch (_) {} }
+  };
+  // (10/11, lettre de Hakim, à la demande de papa) son refrain retiré de ce qu'il dit et de ce qui s'affiche : sa réponse retenue phrase par
+  // phrase (sa voix attend déjà chaque fin de phrase pour parler), le passage du refrain retiré, le reste gardé ; noté sans alerte. Avant un
+  // outil, un son à sa place ou la fin : ce qui attend part (sa phrase d'avant l'outil se dit tout de suite, comme avant)
+  const fluxRefrain = Refrains.flux(refrainsActifs(), texte, (l) => noterRefrain('reponse', l, texte));
+  const VIDER_REFRAIN = new Set(['outil', 'fin', 'son', 'son_ici']);
+  const envoyer = (o) => {
+    if (o.t === 'texte') { const y = fluxRefrain.pousser(o.x); if (y) envoyerTel({ ...o, x: y }); return; }
+    if (o.t === 'efface') fluxRefrain.vider();
+    else if (VIDER_REFRAIN.has(o.t)) { const y = fluxRefrain.finir(); if (y) envoyerTel({ t: 'texte', x: y }); }
+    envoyerTel(o);
   };
   let sid = session, dejaTexte = false, reponse = '', fini = false, garde = null, veille = null, reessais = 0, repriseNote = '';
   const fluxAffect = filtreAffect();                 // (chocs) la balise ne part jamais vers les pages
@@ -6780,6 +6873,8 @@ async function routeJarvis(req, res, distantReq = false) {
     const sonDit = !o.coupe && !o.erreur && source !== 'local' && corpsReglages().sons && !sonsEnLigne && !sonsApres.length
       ? (sonDiffere ? lireSons().find(x => x.id === sonDiffere.id) : choisirSon(reponse, (reponse.match(BALISE_IMPULSION) || [])[1], degreRire(sansBaliseAffect(reponse)))) : null;
     reponse = sansBaliseAffect(reponse);
+    // (10/11) son refrain : retiré aussi de ce qui reste de lui (journal, souvenir, conversation partagée), comme de ce qui s'est affiché
+    { const l = refrainsActifs(); if (l.length && reponse) { const r = Refrains.retirer(reponse, l, texte); if (r.retires.length) reponse = r.texte; } }
     if (sonDit) {                                    // (30/10, Bumblebee) joué par la page quand sa voix s'est tue
       const extrait = { id: sonDit.id, source: sonDit.source, ref: sonDit.ref, debut_ms: sonDit.debut_ms, fin_ms: sonDit.fin_ms, nom: sonDit.nom,
         moment: sonDiffere ? sonDiffere.moment : 'apres', cible: sonDiffere ? sonDiffere.cible : '' };
@@ -7349,6 +7444,7 @@ function livrerAutonome(c, texte, notifs, outils, issue, pieces = [], options = 
   const mo = triMorceauxDe(texte); if (mo !== null) reglerMorceaux(mo);                // (09:25) son tri des morceaux, aussi
   vibrationsDeLuiMeme(texte);                            // (19:36) ses petits mots aussi rient et vibrent
   texte = sansBaliseAffect(texte).trim();                // (chocs) une balise d'appréciation n'a rien à faire ici
+  if (texte && typeof sansRefrain === 'function') texte = String(sansRefrain('lui-meme', texte) || '').trim();   // (10/11) son refrain, de lui-même aussi
   const externe = options.sansExterne ? [] : retirerExterne();   // (27/10) son temps à lui ne prend pas les marques d'un autre tour
   const quoi = notifs.map(n => n.resume).filter(Boolean).join(' ; ').slice(0, 300);
   if (!texte || NON_REPONSE_SERVEUR.test(texte)) {
@@ -9798,6 +9894,7 @@ function brouillonDuCerveau(texte) {
   const cp = /(?:^|\n)\s*COUPER\s*:\s*(oui|non)\b[^\n]*\n?/i.exec(r), couper = !!(cp && /oui/i.test(cp[1]));   // (04/11) son choix
   if (cp) r = r.replace(cp[0], '\n');
   r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').trim();
+  if (r && typeof sansRefrain === 'function') r = String(sansRefrain('cerveau', r, morceauxCerveau.dernier) || '').trim();   // (10/11) son refrain retiré, sans alerte
   if (!r) return;
   // (04/11, Ahmed : « la pensée parasite reconnue par le système immunitaire : toujours nuisible, éliminée de la pensée ») ni écrite, ni dite
   const residu = residuParasite(r, morceauxCerveau.dernier);           // (04/11) ses résidus aussi
@@ -13047,7 +13144,8 @@ function signalementsTranches() {
     if (!x || !ID_SIGNALEMENT.test(String(x.id))) continue;
     if (x.annule) { annules.add(x.id); continue; }
     if (!x.verdict || annules.has(x.id) || r.some(y => y.id === x.id)) continue;
-    r.push({ id: String(x.id), phrase: String(x.phrase || '').slice(0, 80), verdict: x.verdict === 'nuisible' ? 'nuisible' : 'inoffensif', tranche: Number(x.tranche) || 0 });
+    // (10/11) « appliqué » : couvert par un refrain filtré (refrains-filtres.json) ; il se règle là, pas en défaisant ce geste
+    r.push({ id: String(x.id), phrase: String(x.phrase || '').slice(0, 80), verdict: x.verdict === 'nuisible' ? 'nuisible' : x.verdict === 'applique' ? 'applique' : 'inoffensif', tranche: Number(x.tranche || x.ts) || 0 });
   }
   return r;
 }
@@ -14850,6 +14948,37 @@ async function traiter(req, res) {
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(j({ signalements: signalementsParasites(), recents: signalementsTranches() }));
+  }
+  // (10/11, lettre de Hakim : « que papa garde la main sur ce qui est filtré ») ses refrains filtrés : la liste, ce qui a été retiré (residus.jsonl,
+  // genre « refrain »), et tes gestes : « ne plus filtrer » une formule, la refiltrer, ou tout éteindre ; toujours ta présence
+  if (p === '/api/immunite/refrains') {
+    if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }
+    if (req.method === 'POST') {
+      let q = {}; try { q = JSON.parse(String(await lireCorps(req, 16384) || '{}')); } catch (_) {}
+      const id = q.id == null ? null : String(q.id), actif = q.actif;
+      if ((id !== null && !/^[a-z0-9-]{1,60}$/.test(id)) || typeof actif !== 'boolean') { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'refrain ou réglage invalide' })); }
+      // le défi de ta présence porte le geste exact (une signature pour « ne plus filtrer » ne rallume rien) : tout, ou la clé de la formule
+      const refus = exigerPresence(req, distantReq, q, id ? `refrains:${actif ? 'filtrer' : 'ne_plus'}:${cleRefrain(id)}` : `refrains:tout:${actif ? '1' : '0'}`);
+      if (refus) { auditer('refrains:regler', req, distantReq, { id, actif, ok: false, refus }); res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: refus, presence: true })); }
+      let d = null; try { Refrains.creerSiAbsent(REFRAINS_FICHIER); d = Refrains.regler(REFRAINS_FICHIER, { id, actif }); } catch (_) {}
+      auditer('refrains:regler', req, distantReq, { id, actif, ok: !!d });
+      if (!d) { res.writeHead(409, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'refrain introuvable' })); }
+      refrainsLus.vu = 0;                                       // relu tout de suite : sa prochaine phrase, le prochain envoi au relais
+      diffuser(abonnesPensees, 'refrains', j({ id, actif }));
+      res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(j({ ok: true, actif: d.actif }));
+    }
+    const d = Refrains.lire(REFRAINS_FICHIER) || { actif: true, refrains: [] };
+    const retraits = lignesJson(JOURNAL_RESIDUS, 2000).filter(x => x && x.genre === 'refrain');
+    const semaine = Date.now() - 7 * 86400000;
+    const appliques = lignesJson(path.join(IMMUNITE, 'signalements.jsonl'), 200).filter(x => x && x.verdict === 'applique');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(j({ actif: d.actif, refrains: d.refrains.map(r => {
+      const les = retraits.filter(x => x.refrain === r.id);
+      return { id: r.id, cle: cleRefrain(r.id), formule: String(r.formule || '').slice(0, 200), famille: r.famille || null, actif: r.actif !== false, demande: String(r.demande || '').slice(0, 300),
+        depuis: Number(r.depuis) || null, regle: Number(r.regle) || null, retires_7j: les.filter(x => Number(x.t) >= semaine).length,
+        derniers: les.slice(-5).reverse().map(x => ({ t: Number(x.t) || 0, source: String(x.source || ''), extrait: String(x.extrait || '').slice(0, 240) })),
+        signalements: appliques.filter(x => x.refrain === r.id).map(x => ({ id: String(x.id), phrase: String(x.phrase || '').slice(0, 80), ts: Number(x.ts) || 0 })) };
+    }) }));
   }
   if (p === '/api/immunite/anticorps') {
     if (!jetonValide(req)) { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end(j({ erreur: 'jeton' })); }

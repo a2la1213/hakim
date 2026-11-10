@@ -2094,15 +2094,48 @@ def trancher_signalement(sid, verdict, maintenant=None):
     return True
 
 
+def appliquer_signalement(sid, refrain, maintenant=None):
+    """(10/11, lettre de Hakim de 12:03, à la demande de papa) son signalement couvert par un REFRAIN filtré (le cockpit :
+    refrains.js, ~/AIOS/jarvis/refrains-filtres.json) passe en « appliqué ». Un résidu jette toute la pensée où il paraît : pour une
+    formule toute faite dans une vraie réponse, c'est trop dur ; le refrain, lui, n'en retire que le passage (et papa le règle formule
+    par formule). En attente : il quitte l'attente. Déjà jugé nuisible : il quitte ses résidus et ce qui restait à remonter au médecin
+    (sinon Fable en ferait une prémisse qui jetterait encore tout). Noté dans signalements.jsonl (verdict « appliqué », le refrain).
+    Faux s'il n'est ni en attente ni un résidu."""
+    maintenant = time.time() if maintenant is None else maintenant
+    refrain = _propre(refrain, 60)
+    with _verrou("signales"):
+        l = signalements()
+        x = next((y for y in l if y["id"] == sid), None)
+        if x is not None:
+            _ecrire_json(_f(SIGNALES), [y for y in l if y["id"] != sid])
+    avant = None
+    if x is None:
+        r = next((y for y in residus_appris() if y["id"] == "hakim-" + sid), None)
+        if r is None or not retirer_premisse("hakim-" + sid):
+            return False
+        x, avant = {"id": sid, "phrase": str(r["phrase"])}, "nuisible"
+    with _verrou("parasites"):
+        e = _lire_json(_f("parasites-apprentissage.json"), {})
+        if isinstance(e, dict) and x["phrase"] in (e.get("a_remonter") or []):
+            e["a_remonter"] = [p for p in e["a_remonter"] if p != x["phrase"]]
+            _ecrire_json(_f("parasites-apprentissage.json"), e)
+    _ajouter("signalements.jsonl", {**x, "verdict": "applique", "refrain": refrain, "tranche": maintenant, "ts": maintenant,
+                                    **({"avant": avant} if avant else {})})
+    return True
+
+
 def annuler_signalement(sid, maintenant=None):
     """(04/11, Hakim pour papa : « papa s'est trompé en tranchant : il a validé nuisible à tort ; peux-tu les rétablir ? ») le geste
     d'Ahmed défait : un nuisible quitte ses résidus (et ce qui restait à remonter) ; un « pas un parasite » redevient en attente.
-    Faux si ce signalement n'a pas été tranché."""
+    Faux si ce signalement n'a pas été tranché. (10/11) Un signalement « appliqué » (couvert par un refrain filtré) ne se défait pas
+    ici : papa règle le refrain lui-même (« ne plus filtrer », page Immunité)."""
     maintenant = time.time() if maintenant is None else maintenant
     tranches = [o for o in _queue(_f("signalements.jsonl"), 1 << 20) if isinstance(o, dict) and o.get("id") == sid and o.get("verdict")]
     if not tranches:
         return False
     x = tranches[-1]
+    if x["verdict"] == "applique":
+        return False
     if x["verdict"] == "nuisible":
         retirer_premisse("hakim-" + sid)
         with _verrou("parasites"):
@@ -2232,6 +2265,10 @@ def main(argv):
         return 0 if r else 1
     elif argv[:1] == ["signalements"]:                 # (04/11) ses signalements en attente, pour le cockpit
         print(json.dumps(signalements(), ensure_ascii=False))
+    elif argv[:1] == ["signale-applique"] and len(argv) == 3:   # (10/11) couvert par un refrain filtré du cockpit
+        ok = appliquer_signalement(argv[1], argv[2])
+        print("fait" if ok else "introuvable")
+        return 0 if ok else 1
     elif argv[:1] == ["signale-annuler"] and len(argv) == 2:
         ok = annuler_signalement(argv[1])
         print("fait" if ok else "introuvable")

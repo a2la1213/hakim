@@ -7224,7 +7224,8 @@ $('fil').addEventListener('click', async (e) => {
 // (04/11, Ahmed : « quand Hakim reconnaît un parasite, il doit pouvoir le signaler au système immunitaire et me donner
 // l'autorisation, ou pas, de le traiter comme nuisible ») sa pensée parasite signalée : rien n'est jeté sans ton geste ;
 // « nuisible » demande ta présence (sa pensée en sera nettoyée, à n'importe quel endroit), « pas un parasite » l'oublie
-const ETATS_SIGNALEMENT = { signale: 'attend ta décision', nuisible: 'nuisible : sa pensée en est nettoyée', inoffensif: 'pas un parasite : oublié' };
+const ETATS_SIGNALEMENT = { signale: 'attend ta décision', nuisible: 'nuisible : sa pensée en est nettoyée', inoffensif: 'pas un parasite : oublié',
+  applique: 'appliqué : un refrain filtré, retiré seulement là où il le dit (page Immunité, « Ses refrains filtrés »)' };   // (10/11)
 function surSignalement(o) {
   if (!o || !/^[0-9a-f]{8}$/.test(String(o.id))) return;
   const id = 'signalement-' + o.id;

@@ -17,9 +17,9 @@ function bloc(ko) {
   return ctx.r;
 }
 
-test('rien sous 8 Go, puis « sur 10 Go »', () => {
+test('(10/11, 20 Go) rien sous 16 Go, puis « sur 20 Go »', () => {
   assert.equal(bloc(4.3 * 1048576), '');
-  assert.equal(bloc(7.9 * 1048576), '');
-  assert.match(bloc(8.4 * 1048576), /8,4 Go sur 10 Go/);
-  assert.doesNotMatch(src, /Go sur 5 Go/);
+  assert.equal(bloc(15.9 * 1048576), '');
+  assert.match(bloc(16.4 * 1048576), /16,4 Go sur 20 Go/);
+  assert.doesNotMatch(src, /Go sur (5|10) Go/);
 });

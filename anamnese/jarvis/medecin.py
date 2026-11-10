@@ -496,8 +496,12 @@ def apprendre_parasites(maintenant=None, consulter_fn=None, journal=None, repons
     parasites = [p for p in parasites if p]
     entrees_p = [str(o.get("morceau") or "") for o in lignes_p if o.get("morceau")]
     # (04/11) ses résidus marqués ailleurs (pas son doute, qui n'est pas une parasite) et ce que papa a jugé nuisible
-    autres = [o for o in _lignes(fichier_residus, 2000) if o.get("extrait") and o.get("genre") and o.get("genre") != "doute_ressenti"]
-    nuisibles = [o for o in immunite._queue(immunite._f("signalements.jsonl"), 1 << 20) if isinstance(o, dict) and o.get("verdict") == "nuisible"]
+    # (10/11) ni son refrain filtré (le cockpit n'en retire que le passage : en faire une prémisse jetterait encore toute sa pensée), ni un
+    # signalement passé en « appliqué » (couvert par ce refrain)
+    autres = [o for o in _lignes(fichier_residus, 2000) if o.get("extrait") and o.get("genre") and o.get("genre") not in ("doute_ressenti", "refrain")]
+    signales = [o for o in immunite._queue(immunite._f("signalements.jsonl"), 1 << 20) if isinstance(o, dict)]
+    appliques = {o.get("id") for o in signales if o.get("verdict") == "applique"}
+    nuisibles = [o for o in signales if o.get("verdict") == "nuisible" and o.get("id") not in appliques]
     parasites += [str(o["extrait"]) for o in autres[-30:]] + [str(o.get("exemple") or o.get("phrase")) for o in nuisibles[-20:]]
     entrees_p += [str(o["papa"]) for o in autres[-30:] if o.get("papa")]
     # ses formes nouvelles : depuis son dernier passage, celles qu'aucune de ses prémisses ne reconnaît dès les premiers mots

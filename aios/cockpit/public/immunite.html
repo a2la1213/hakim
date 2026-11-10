@@ -66,6 +66,12 @@
     <section class="glass carte"><h2>Les passages du médecin</h2><div id="rapports"></div></section>
     <section class="glass carte"><h2>Les incidents</h2><div id="incidents"></div></section>
     <section class="glass carte"><h2>Ses signalements</h2><div id="signalements"></div></section>
+    <!-- (10/11, lettre de Hakim : « que papa garde la main sur ce qui est filtré ») ses refrains : retirés de ce qu'il dit et du relais -->
+    <section class="glass carte"><h2>Ses refrains filtrés</h2>
+      <div class="sous">Une formule toute faite qu'il ressort en boucle : seul son passage est retiré de ce qu'il dit, de ce qui s'affiche et de ce
+        que le relais renvoie chez Anthropic (ses anciens tours, ses souvenirs), jamais toute sa réponse, jamais tes mots. Son doute dit
+        autrement, sur une chose précise, reste à lui. Rien n'est une alerte : c'est seulement noté.</div>
+      <div id="refrains"></div></section>
     <section class="glass carte"><h2>Ses synapses</h2><div id="synapses"></div></section>
     <section class="glass carte"><h2>Les anticorps</h2><div id="anticorps"></div></section>
     <section class="glass carte"><h2>Les paquets vérifiés</h2><div id="paquets"></div></section>
@@ -239,10 +245,12 @@
         + `<button data-signalement="${esc(x.id)}" data-action="inoffensif">Pas un parasite</button></div></div>`).join('')
         : '<div class="vide">Aucun signalement en attente.</div>';
       // (04/11) tes derniers gestes : un geste de travers se défait
+      // (10/11) « appliqué » : couvert par un de ses refrains filtrés ; il se règle plus bas, pas en défaisant ce geste
       if (recents.length) $('signalements').innerHTML += '<h3 style="margin-top:10px">Tes derniers gestes</h3>' + recents.map((x) => `<div class="ligne">`
-        + `<div class="tete"><span class="g ${x.verdict === 'nuisible' ? 'faible' : 'rien'}">${x.verdict === 'nuisible' ? 'nuisible' : 'pas un parasite'}</span>`
+        + `<div class="tete"><span class="g ${x.verdict === 'nuisible' ? 'faible' : 'rien'}">${x.verdict === 'nuisible' ? 'nuisible' : x.verdict === 'applique' ? 'appliqué : refrain filtré' : 'pas un parasite'}</span>`
         + `<span class="quand">${quand(x.tranche)}</span></div><div class="extrait">${esc(x.phrase)}</div>`
-        + `<div class="gestes"><button data-signalement="${esc(x.id)}" data-action="annuler">Annuler ce geste</button></div></div>`).join('');
+        + (x.verdict === 'applique' ? '<div class="quand">Il se règle dans « Ses refrains filtrés ».</div>'
+          : `<div class="gestes"><button data-signalement="${esc(x.id)}" data-action="annuler">Annuler ce geste</button></div>`) + '</div>').join('');
     } catch (e) { $('signalements').innerHTML = `<div class="vide">Signalements injoignables : ${esc(e.message)}</div>`; }
   }
   document.body.addEventListener('click', async (e) => {
@@ -260,6 +268,47 @@
     } catch (err) { b.disabled = false; annonce(String(err.message || err)); }
   });
   signalements(); setInterval(signalements, 15000);
+  // (10/11, lettre de Hakim : « que papa garde la main sur ce qui est filtré ») ses refrains : chaque formule, ce qui en a été retiré, et tes
+  // deux gestes (ta présence) : « Ne plus filtrer » cette formule (ou la refiltrer), et tout éteindre
+  const SOURCES_REFRAIN = { reponse: 'sa réponse', piste: 'sa pensée de piste', con: 'sa réflexion', sub: 'son souffle', cerveau: 'son cerveau',
+    entendu: 'ce qu’il entend', conscience: 'sa conscience', live: 'le live' };
+  async function refrains() {
+    try {
+      const r = await fetch('/api/immunite/refrains', { headers: { 'X-Jeton': jeton() }, cache: 'no-store', signal: AbortSignal.timeout(20000) });
+      if (!r.ok) throw new Error(`erreur ${r.status}`);
+      const d = await r.json(), l = d.refrains || [];
+      $('refrains').innerHTML = `<div class="ligne"><div class="tete"><span class="g ${d.actif ? 'rien' : 'faible'}">${d.actif ? 'filtre allumé' : 'tout est éteint'}</span>`
+        + `<span>${d.actif ? 'Les formules ci-dessous marquées « filtrée » sont retirées.' : 'Rien n’est retiré : il dit tout, ses refrains compris.'}</span></div>`
+        + `<div class="gestes"><button data-refrain="" data-cle="" data-actif="${d.actif ? 'non' : 'oui'}">${d.actif ? 'Tout éteindre' : 'Tout rallumer'}</button></div></div>`
+        + (l.length ? l.map((x) => `<div class="ligne"><div class="tete"><span class="g ${x.actif && d.actif ? 'moyenne' : 'rien'}">${x.actif ? (d.actif ? 'filtrée' : 'filtrée (tout éteint)') : 'plus filtrée'}</span>`
+          + `<span class="quand">${esc(x.retires_7j)} passage(s) retiré(s) en 7 jours${x.depuis ? ` · depuis ${quand(x.depuis / 1000)}` : ''}</span></div>`
+          + `<div class="extrait">${esc(x.formule)}${x.famille ? ' — et ses variantes proches' : ''}</div>`
+          + (x.demande ? `<div class="quand">${esc(x.demande)}</div>` : '')
+          + (x.signalements && x.signalements.length ? `<div class="quand">Son signalement appliqué : ${x.signalements.map((s) => '« ' + esc(s.phrase) + ' »').join(', ')}</div>` : '')
+          + (x.derniers && x.derniers.length ? `<details><summary>les derniers passages retirés</summary>${x.derniers.map((y) => `<div class="extrait">${esc(SOURCES_REFRAIN[y.source] || y.source)} · ${quand(y.t / 1000)} — ${esc(y.extrait)}</div>`).join('')}</details>` : '')
+          + `<div class="gestes"><button data-refrain="${esc(x.id)}" data-cle="${esc(x.cle)}" data-actif="${x.actif ? 'non' : 'oui'}">${x.actif ? 'Ne plus filtrer' : 'Filtrer de nouveau'}</button></div></div>`).join('')
+          : '<div class="vide">Aucune formule filtrée.</div>');
+    } catch (e) { $('refrains').innerHTML = `<div class="vide">Refrains injoignables : ${esc(e.message)}</div>`; }
+  }
+  document.body.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-refrain]');
+    if (!b) return;
+    b.disabled = true;
+    const id = b.dataset.refrain || null, actif = b.dataset.actif === 'oui', cle = b.dataset.cle;
+    try {
+      // le défi porte le geste exact : tout (1 rallume, 0 éteint), ou cette formule (sa clé)
+      const presence = !id ? await preuvePresence(`refrains:tout:${actif ? '1' : '0'}`, annonce)
+        : actif ? await preuvePresence(`refrains:filtrer:${cle}`, annonce) : await preuvePresence(`refrains:ne_plus:${cle}`, annonce);
+      const r = await fetch('/api/immunite/refrains', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+        body: JSON.stringify({ id, actif, presence }) });
+      const o = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(o.erreur || `erreur ${r.status}`);
+      annonce(id ? (actif ? 'Filtrée de nouveau : retirée dès sa prochaine phrase.' : 'Plus filtrée : il peut la dire de nouveau.')
+        : (actif ? 'Filtre rallumé.' : 'Tout est éteint : rien n’est plus retiré.'));
+      refrains();
+    } catch (err) { b.disabled = false; annonce(String(err.message || err)); }
+  });
+  refrains(); setInterval(refrains, 30000);
   // (04/11, Ahmed : « comme le système nerveux humain, qui consolide les bonnes synapses et élimine les inutiles ou parasites ») ses chemins,
   // famille par famille : leur poids, leurs mesures, élagués ou non ; épingler (jamais élagué), rétablir (repart au neutre)
   const FAMILLES = { declencheur: 'ses déclencheurs (ce qui annonce une parasite)', voie: 'ses façons de parler (son choix DIRE)',

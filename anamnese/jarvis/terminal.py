@@ -39,7 +39,7 @@ DELAI_S = 120
 DELAI_MAX_S = 1800
 SORTIE_MAX = 20_000
 MEMOIRE_MAX_KO = 6 * 1024 * 1024         # 6 Go : le Mac en a 16, la voix et Whisper en tiennent déjà ~6
-ATELIER_MAX_KO = 10 * 1024 * 1024        # 10 Go de téléchargements et de résultats au plus (5 Go jusqu'au 21/10, Ahmed)
+ATELIER_MAX_KO = 20 * 1024 * 1024        # 20 Go de téléchargements et de résultats au plus (5 Go jusqu’au 21/10, 10 Go jusqu’au 10/11, Ahmed : « étends-lui à 20 giga »)
 
 _proxy = None
 _verrou = threading.Lock()
@@ -199,7 +199,7 @@ def _taille_ko(chemin):
         return 0
 
 
-ATELIER_ALERTE_KO = 8 * 1024 * 1024       # demande de Hakim (2026-10-20, accord d'Ahmed) : prévenu à 80 % (8 Go sur 10)
+ATELIER_ALERTE_KO = 16 * 1024 * 1024      # (10/11) alerte dès 16 Go sur 20
 
 
 _mesure_atelier = {"t": 0.0, "ko": 0}
@@ -220,7 +220,7 @@ def piege_maison(commande):
 
 
 def alerte_atelier(atelier=None, taille_ko=None):
-    """Une phrase d'alerte si l'atelier dépasse 8 Go (à 10 Go, la commande en cours est tuée net) ; sinon ''.
+    """Une phrase d'alerte si l'atelier dépasse 16 Go (à 20 Go, la commande en cours est tuée net) ; sinon ''.
     La taille est mesurée au plus une fois par minute (du sur 10 Go prend du temps)."""
     if taille_ko is None:
         if time.time() - _mesure_atelier["t"] > 60:

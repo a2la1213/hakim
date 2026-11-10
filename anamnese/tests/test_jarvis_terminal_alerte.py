@@ -7,9 +7,10 @@ import terminal  # noqa: E402
 
 
 def test_alerte_atelier():
-    assert terminal.alerte_atelier(taille_ko=7 * 1024 * 1024) == ""
-    a = terminal.alerte_atelier(taille_ko=int(8.3 * 1024 * 1024))
-    assert "8,3 Go sur 10,0" in a and "arrêtée net" in a
+    # (10/11, Ahmed : « étends-lui à 20 giga ») alerte dès 16 Go, sur 20
+    assert terminal.alerte_atelier(taille_ko=15 * 1024 * 1024) == ""
+    a = terminal.alerte_atelier(taille_ko=int(16.3 * 1024 * 1024))
+    assert "16,3 Go sur 20,0" in a and "arrêtée net" in a
 
 
 def test_le_piege_de_la_maison():

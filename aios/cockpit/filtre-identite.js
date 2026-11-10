@@ -279,7 +279,10 @@ function ecrireRegistre(registre, l) {
    Node : papa parle toutes les 20 à 40 s) ; une connexion qu'Anthropic aurait fermée entre-temps est refaite une fois, sans que claude le voie
    (le corps est encore là, rien n'est parti). Et ses motifs (noms, mails, téléphones…) sont compilés dès le démarrage, pas à la première demande. */
 const GARDE_CONNEXION_MS = 60000;
-function demarrer(fichier, { cible = 'https://api.anthropic.com', port = 0, journal = null, registre = null, contexte = null, garde = GARDE_CONNEXION_MS } = {}) {
+/* (10/11, lettre de Hakim, à la demande de papa) retoucher(demande, { etiquette }) : appelée sur chaque demande AVANT le masque (le cockpit y
+   retire son refrain de ses anciens tours et de ce qu'on lui réinjecte, refrains.js) ; rend { demande, n } ou rien (la demande telle quelle).
+   Pure : la même demande donne toujours la même retouche, son cache chez Anthropic reste valable. Une erreur : la demande part telle quelle. */
+function demarrer(fichier, { cible = 'https://api.anthropic.com', port = 0, journal = null, registre = null, contexte = null, garde = GARDE_CONNEXION_MS, retoucher = null } = {}) {
   const u = new URL(cible);
   const stats = { demandes: 0, remplaces: 0, erreurs: 0, requetes: 0, reessais: 0 };
   const mod = u.protocol === 'https:' ? https : http;
@@ -313,7 +316,12 @@ function demarrer(fichier, { cible = 'https://api.anthropic.com', port = 0, jour
             Object.assign(l, resumeDemande(o));
             flux = !!o.stream;
             const avant = corps.length;
-            corps = Buffer.from(JSON.stringify(masquerDemande(o, D)));
+            let a = o;
+            if (retoucher) {
+              try { const r = retoucher(o, { etiquette: l.etiquette }); if (r && r.demande) { a = r.demande; if (r.n) l.refrains = r.n; } }
+              catch (e) { if (journal) journal('filtre_erreur', { quoi: 'retouche', erreur: String(e.message || e).slice(0, 80) }); }
+            }
+            corps = Buffer.from(JSON.stringify(masquerDemande(a, D)));
             stats.demandes++; stats.remplaces += Math.abs(corps.length - avant) > 0 ? 1 : 0;
             garderDictionnaire(fichier, D);
           } catch (e) { stats.erreurs++; if (journal) journal('filtre_erreur', { quoi: 'demande', erreur: String(e.message || e).slice(0, 80) }); }
