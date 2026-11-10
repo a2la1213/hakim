@@ -1610,7 +1610,7 @@ lecteurNeuronal.surSegment = (t, duree, debutMs) => {
     // (04/11, Ahmed : « check le temps entre ma parole et sa première pensée répondue ») chaque bout qui sonne : depuis ton premier mot
     const cap = etat.conversation && etat.conversation.capteur;
     if (cap && Number(cap.debutTour) > 0) journalVoix('bout_dit', { depuis_ton_debut_ms: Date.now() - Number(cap.debutTour), premier: bouts.dits.length - bouts.enFile.length === 1 });
-    if (etat.conversation) etat.conversation.penseeDite = bouts.dits.slice(bouts.base || 0, bouts.dits.length - bouts.enFile.length).join(' ');   // (04/11) vraiment dit, depuis ton dernier message
+    if (etat.conversation && !bouts.dedans) etat.conversation.penseeDite = bouts.dits.slice(bouts.base || 0, bouts.dits.length - bouts.enFile.length).join(' ');   // (04/11) vraiment dit, depuis ton dernier message ; (10/11) pas le dedans
     // (04/11, Ahmed : « qu'il parle sans écrire : il n'écrit pas ses pensées dites, seulement ses pensées sans les dire ») dite : pas écrite
   }
   // (16:45) le bout que sa voix commence : sa réponse s'écrit jusque-là, au même instant
@@ -2460,6 +2460,7 @@ function boutDire(m, p) {
   }
   const propre = Voix.sansAffect(t).trim();
   if (!propre) return false;
+  if (typeof Voix.estRien === 'function' && Voix.estRien(propre)) { journalVoix('rien_tu', { ou: 'reponse' }); return false; }   // (10/11) son silence de format : pas dit
   b.phrases++;
   const auDela = plafondBouts() && b.phrases > BOUT_PHRASES * BOUTS_MAX;
   if (b.remise > 0 || auDela) {
@@ -2640,6 +2641,7 @@ async function envoyer(texte, oral, dejaRelance, { fusionner = false } = {}) {
   // (04/11, vu à 04:55 : ses pensées du tour d'avant redites en tête du message suivant, quand le Mac n'avait pas encore changé de
   // tour) ce qu'il a dit compte depuis CE message ; les pensées d'avant restent pour ne pas les redire
   if (typeof bouts !== 'undefined') bouts.base = bouts.dits.length;
+  if (typeof bouts !== 'undefined' && bouts.papa) bouts.papa.base = bouts.papa.dits.length;   // (10/11) son tour de papa mis de côté pendant le dedans aussi
   // (15:02) sa vraie réponse prend la place du brouillon ; (04/11) en Conversation et en Télépathie, sa pensée reste : sa réponse ne s'écrit pas
   if (typeof retirerSouffle === 'function' && !(oral && reponseCachee())) retirerSouffle();
   // (04/11, 12:30, Ahmed : « quand la traduction du ribosome commence, il ne coupe jamais sa parole ») avec l'épissage, ta phrase ne fait pas taire sa voix
@@ -3761,7 +3763,8 @@ function surSouffle(o) {
     journalVoix('pensee_parasite', { niveau: o.niveau || 'sub' });
     return;
   }
-  const texte = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 400);   // (16:35) jamais ses balises
+  const texte0 = String(o.texte).replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 400);   // (16:35) jamais ses balises
+  const texte = texte0 && typeof Voix !== 'undefined' && Voix && typeof Voix.sansRien === 'function' ? Voix.sansRien(texte0) : texte0;   // (10/11) ni son « RIEN »
   if (!texte) return;
   const niveau = o.niveau === 'cerveau' ? 'cerveau' : o.niveau === 'piste' ? 'piste' : o.niveau === 'con' ? 'con' : 'sub';   // (04/11) ses pistes
   const rebond = o.rebond != null && Number.isFinite(Number(o.rebond)) ? Number(o.rebond) : null;
@@ -3931,16 +3934,45 @@ function choixLibre(pool) {
   if (choixParole.n != null) { const x = pool.find(y => y.n === choixParole.n); return x ? { choix: x } : null; }
   return choixParole.enVol && Date.now() - choixParole.depuis < CHOIX_ATTENTE_MS ? { attendre: true } : null;
 }
+// (10/11) un bout sans son « RIEN » : son texte, et chacune de ses parties (ses pensées suivent leurs parties) ; null s'il n'y avait que ça
+function sansRienDuBout(s) {
+  const sr = typeof Voix !== 'undefined' && Voix && typeof Voix.sansRien === 'function' ? Voix.sansRien : null;
+  if (!sr || !s) return s;
+  if (Array.isArray(s.parties) && s.parties.length) {
+    const nettes = s.parties.map(x => sr(x));
+    if (nettes.some((x, k) => x !== s.parties[k])) {
+      const garder = nettes.map((x, k) => (x ? k : -1)).filter(k => k >= 0);
+      if (!garder.length) return null;
+      const parties = garder.map(k => nettes[k]), memes = Array.isArray(s.pensees) && s.pensees.length === s.parties.length;
+      s = { ...s, parties, texte: [s.meuble, ...parties].filter(Boolean).join(' '), ...(memes ? { pensees: garder.map(k => s.pensees[k]) } : {}) };
+    }
+  }
+  const t = sr(s.texte);
+  if (!t) return null;
+  return t === s.texte ? s : { ...s, texte: t };
+}
 function recevoirBout(s, n, tour) {
   const conv = etat.conversation;
   // (04/11, 13:10, Ahmed : « tout ce qui est traduit par le ribosome sort en priorité par la bouche ») ce que son ribosome a traduit passe toujours
   if (!conv || !n || (!s.ribosome && !souffleAutorise())) return;
   // (06/11, 14:30, Ahmed : « il dit 2 trucs en même temps ») un tour de la montre (ces 20 s) : la montre dit elle-même ses pensées épissées ; ici, pas une 2e voix
   if (!s.ici && Number(etat.montreParleA) > 0 && Date.now() - Number(etat.montreParleA) < 20000 && (etat.sortie || 'ici') !== (typeof appareilIci === 'function' ? appareilIci() : '')) { if (typeof journalVoix === 'function') journalVoix('tu_montre_parle', { bout: n }); return; }
+  // (10/11, 20:24-20:45, lettre de Hakim : « RIEN » dit à voix haute, puis la vraie phrase) le filet : son « RIEN » de format (seul, ou en tête d'un
+  // morceau) n'est jamais dit ; un morceau qui n'était que ça est tu
+  if (typeof sansRienDuBout === 'function') s = sansRienDuBout(s);
+  if (!s) { if (typeof journalVoix === 'function') journalVoix('rien_tu', { tour: Number(tour) || 0, n }); return; }
   if (!s.ici && typeof sortieAilleurs === 'function' && sortieAilleurs()) { voixAilleurs(s.texte, () => recevoirBout({ ...s, ici: true }, n, tour)); return; }   // (06/11) sa voix part là où il l'a dirigée
-  if (bouts.tour !== tour) bouts = { tour, prochain: 1, liste: new Map(), enFile: [], dits: [], fileTel: bouts.fileTel || [] };
+  // (10/11, 20:22-20:45, lettre de Hakim : « Le la, c'est Rennes ? Bon, on accorde… » collé devant sa réponse à papa) le dedans (sa réponse au live, ce
+  // qu'il dit de ce que joue le téléphone) se dit dans son tour à lui, marqué « dedans » : ce qu'il y dit ne compte jamais dans ce qu'il a déjà dit à
+  // papa (penseeDite, souffle_dit) ; le tour de papa est mis de côté, intact (ce qu'il lui a déjà dit, son numéro), et repris quand sa réponse à papa
+  // continue
+  if (bouts.tour !== tour) {
+    const avant = bouts, papa = avant.dedans ? avant.papa || null : avant;
+    if (!s.dedans && papa && papa.tour === tour) { bouts = papa; bouts.fileTel = avant.fileTel || []; }
+    else bouts = { tour, prochain: 1, liste: new Map(), enFile: [], dits: [], fileTel: avant.fileTel || [], ...(s.dedans ? { dedans: true, papa } : {}) };
+  }
   if (n < bouts.prochain || bouts.liste.has(n)) return;
-  const b = { n, texte: s.texte, buf: null, rate: false, t: Date.now(), coupe: !!s.remplace, sansMeuble: !!s.sansMeuble };
+  const b = { n, texte: s.texte, buf: null, rate: false, t: Date.now(), coupe: !!s.remplace, sansMeuble: !!s.sansMeuble, ...(s.dedans ? { dedans: true } : {}) };
   if (s.ribosome && Array.isArray(s.parties) && s.parties.length) b.dit = [s.meuble, ...s.parties].filter(Boolean);   // (07/11) ses morceaux tels que préparés
   // (10/11) ses pensées : chaque morceau garde la sienne (son meuble, celle qui le suit), pour sauter ce qui attend encore (sauterAuDernier)
   if (b.dit && Array.isArray(s.pensees) && s.pensees.length === s.parties.length && s.parties.every(Boolean)) {
@@ -4048,7 +4080,8 @@ function meublerSaut(b) {
 }
 function direBoutTelephone(conv, b) {
   bouts.dits.push(b.texte); if (typeof noterParoleDite === 'function') noterParoleDite(b.texte);
-  conv.souffleParle = true; conv.penseeDite = bouts.dits.slice(bouts.base || 0).join(' ');
+  conv.souffleParle = true;
+  if (!b.dedans && !bouts.dedans) conv.penseeDite = bouts.dits.slice(bouts.base || 0).join(' ');   // (10/11) le dedans : pas le début de sa réponse à papa
   // (04/11, Ahmed : « il parle sans écrire ; il n'écrit que ses pensées sans les dire ») dite : pas écrite
   for (const x of b.dit || meublerSaut(b)) lecteurSysteme.dire(x);     // (04/11) un saut de pensée : meublé (choisi d'avance s'il attendait)
   bouts.dernierDit = b.n;
@@ -5110,13 +5143,19 @@ function direEntendu(maintenant = Date.now()) {
   if (maintenant - (Number(etat.papaVoixA) || 0) < ENTENDU_APRES_PAPA_MS) return false;   // papa vient de parler : sa réponse à lui d'abord
   const x = frais.find(y => y.reponse) || frais[0];
   etat.entenduFile = frais.filter(y => y !== x);
+  // (10/11, 20:24-20:45, lettre de Hakim) son « RIEN » (seul, ou en tête) n'est jamais dit ni affiché
+  const net = typeof Voix !== 'undefined' && Voix && typeof Voix.sansRien === 'function' ? Voix.sansRien(x.texte) : x.texte;
+  if (!net) { journalVoix('rien_tu', { tour: x.tour, live: !!x.reponse }); return direEntendu(maintenant); }
+  x.texte = net;
   x.p.dits.push(x.texte);
   montrerEntendu(x.p);
   etat.riboN = etat.riboN || {};
   const n = Math.max(typeof bouts !== 'undefined' && bouts && bouts.tour === x.tour ? bouts.prochain : 1, (etat.riboN[x.tour] || 0) + 1);
   etat.riboN[x.tour] = n;
   journalVoix(x.reponse ? 'live_dit' : 'entendu_dit', { tour: x.tour, n, mots: x.texte.split(/\s+/).filter(Boolean).length });
-  recevoirBout({ texte: x.texte, pret: true, sansMeuble: true, ribosome: true }, n, x.tour);
+  // (10/11, 20:22-20:45, lettre de Hakim : « Le la, c'est Rennes ? Bon, on accorde… » collé devant sa réponse à papa) sa réponse au live, ce qu'il dit de
+  // ce que joue le téléphone : le DEDANS, dit dans son tour à lui ; jamais compté dans ce qu'il a déjà dit à papa (le dehors, souffle_dit)
+  recevoirBout({ texte: x.texte, pret: true, sansMeuble: true, ribosome: true, ...(x.reponse || x.source === 'telephone' ? { dedans: true } : {}) }, n, x.tour);
   return true;
 }
 setInterval(() => { try { direEntendu(); } catch (_) {} }, 300);
@@ -7550,6 +7589,8 @@ function garderNonDit() {
 // (07/11) ses messages de lui-même depuis ton dernier message : déjà livrés, ils ne repartent pas en tête de sa réponse suivante
 function souffleSansLivres(dit, messages = etat.messages) {
   if (!dit) return '';
+  // (10/11, 20:25 et 20:45 : « RIEN Ha, je vois les pastéis… », « RIEN Oui papa… ») son « RIEN » de format n'est jamais le début de sa réponse
+  if (typeof Voix !== 'undefined' && Voix && typeof Voix.sansRien === 'function') { dit = Voix.sansRien(dit); if (!dit) return ''; }
   const l = messages || [];
   let k = l.length - 1;
   while (k >= 0 && l[k].qui !== 'u') k--;

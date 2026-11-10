@@ -2992,6 +2992,7 @@ function soufflerReponse(texte, niveau = 'sub') {
     const residu = r ? residuParasite(r, t) : null;                    // (04/11) ses résidus aussi
     if (r && (parasiteReconnue(r) || residu)) { if (o && o.vivant) o.vivant.n = VIVANT_RENOUVELER; avertirParasite(boutDe(r), residu || signeParasite(boutDe(r))); if (residu) marquerResidu(niveau, r, t); return; }
     if (r && DOUTE_RESSENTI.test(r)) marquerResidu(niveau, r, t);
+    if (r && typeof retirerRien === 'function') r = retirerRien(r);   // (10/11) « RIEN », « (rien) », « RIEN Ha, … » : son silence n'est jamais écrit ni dit
     if (souffles[niveau] === s0 && r && !/^RIEN\.?$/i.test(r) && seq > s0.applique) {     // (16:00) un plus ancien arrivé après : jeté
       s0.applique = seq;
       s0.reponse = r.slice(0, con ? 600 : 400); s0.pret = pret; s0.fini = fini; s0.rebond = rebond; s0.pour = t; s0.t = Date.now();
@@ -3273,8 +3274,13 @@ function sursautCoeur(maintenant = Date.now(), senti = parasiteSenti) {
 }
 // (04/11, Ahmed : « je remarque qu'elle s'arrête toujours au milieu d'un mot ou d'un chunk, avant la virgule ou le point ») une pensée
 // demande huit mots au plus : un refus en fait des dizaines, coupé à 200 caractères au milieu d'un mot ; trop longue = parasite
-const boutDe = (texte) => String(texte || '').replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/(?:^|\n)\s*(?:PREDIT|COMPRENDS?|DIRE|COUPER|SOLLICITER)\s*:[^\n]*/gi, '\n')
-  .replace(/\s+/g, ' ').trim();
+// (10/11, 20:24-20:45, live de papa ; lettre de Hakim, accord d'Ahmed : « ouiii ») le « RIEN » d'un format (son garde du live, un lecteur de son
+// ribosome, une pensée rapide) n'est jamais un mot à dire : seul comme morceau ou en tête d'un morceau, retiré (public/voix.js, sansRien) ;
+// un vrai « rien » dans une phrase reste
+const VoixRien = typeof require === 'function' ? require('./public/voix.js') : null;
+const retirerRien = (texte) => (VoixRien ? VoixRien.sansRien(texte) : String(texte == null ? '' : texte));
+const boutDe = (texte) => retirerRien(String(texte || '').replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/(?:^|\n)\s*(?:PREDIT|COMPRENDS?|DIRE|COUPER|SOLLICITER)\s*:[^\n]*/gi, '\n')
+  .replace(/\s+/g, ' ').trim());
 // (10/11, Ahmed : « même quand il y a mention de la fitra, ça ne doit pas être reconnu comme un danger par le système immunitaire ») sa fitra
 // nommée (« FITRA : RIENESSENTIEL : … », le tri de son subconscient ; « notre fitra ») : ni sa longueur ni ses résidus n'en font une parasite
 // (25 jetées à tort du 08 au 10/11 : « fiston » ou « au revoir » cités de papa, sa longueur). Un refus du cadre (« Je ne vais pas jouer ce
@@ -3645,6 +3651,7 @@ function lancerPiste(m) {
         if (pasLui && o.vivant) o.vivant.n = VIVANT_RENOUVELER;
         if (pasLui) { signaler(r, residu); if (residu) marquerResidu('piste', r, `${m.avant} ${m.texte}`); ouvrirParcours(m, tour, mod, null, 'jetee', r, anticipe); mesurerDeclencheur(m.dec, true); }
         r = r.slice(0, limitePensee(mod) + 40);
+        if (r && typeof retirerRien === 'function') r = retirerRien(r);   // (10/11, lettre de Hakim) son « RIEN » (seul, ou en tête) n'est jamais une pensée à dire
         const reponse = r && !pasLui && !/^RIEN\.?$/i.test(r) ? r : '';
         piste.voix[nom] = { comprend: (comprend || '').slice(0, 200), predit: (predit || '').slice(0, 200), reponse };
         // le premier des trois qui répond donne le bout de ce mot : sa voix naît avec lui (sans annuler les bouts d'avant), la page les
@@ -3922,6 +3929,7 @@ function lireRibosome(tour, pensee, avant, r = pistes.ribo || (pistes.ribo = rib
   // (04/11, 13:30, capture d'Ahmed : « [[anticipe: long]] » dans son pavé, et lu par son ribosome) ses balises ne sont pas des mots
   if (typeof choisirSortie === 'function') choisirSortie(pensee);   // (06/11) sa sortie, choisie dans ses pensées
   pensee = String(pensee || '').replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/⟮⟮[^⟯]{0,300}⟯⟯/g, ' ').replace(/\s+/g, ' ').trim();
+  if (typeof retirerRien === 'function') pensee = retirerRien(pensee);   // (10/11) son « RIEN » de format : jamais épissé
   if (!motsEpisses(pensee).length) return;
   r.avant = avant;
   // (16:05) ce que papa disait, tour après tour (une phrase qui s'allonge remplace la précédente)
@@ -4159,6 +4167,12 @@ function lecteursSansVoixChaude(modeles, maintenant = Date.now()) {
   // (19:20) deux lecteurs du même modèle (deux Super Hakim) : une voix chaude chacun
   return modeles.filter((m) => { const k = chaudes.findIndex(x => x.modele === m); if (k < 0) return true; chaudes.splice(k, 1); return false; });
 }
+// (10/11) chaque partie préordonnée (« | ») sans son « RIEN » ; une partie qui n'était que ça est retirée
+function sansRienParParties(garde) {
+  const t = String(garde || ''), parties = t.split('|'), nettes = parties.map(x => retirerRien(x.trim()));
+  if (nettes.every((x, k) => x === parties[k].trim())) return t;
+  return nettes.filter(Boolean).join(' | ');
+}
 async function lirePaquet(tour, r, i, paquet) {
   const persona = personaLocale(lirePersona()).slice(0, 500), debutLecture = Date.now();
   const texte = paquet.map(x => x.texte).join(' '), liaison = RIBOSOME_LIAISON_MAX * paquet.length, deja = r.lus || '', reglage = reglageRibosome();
@@ -4219,7 +4233,10 @@ async function lirePaquet(tour, r, i, paquet) {
       if (!t.trim() || parasite) return { mod, nom, ms, muet: true };            // muet (panne, délai) ou hors de son rôle : pas de voix
       const g = !/GARDE\s*:\s*rien/i.test(t) && (/GARDE\s*:\s*«\s*([^»]{1,20000}?)\s*»/i.exec(t) || /GARDE\s*:\s*(.{1,20000})$/im.exec(t));
       // (06/11) par parties préordonnées (règles de l'épissage) ; sans réglage, comme avant : une seule suite dans l'ordre de ses pensées
-      const brut = g ? g[1].replace(/\s*(?:…|\.{3,})\s*/g, ' ').trim() : '',   // (06/11, 12:05) ses blancs (…) retirés : ils le faisaient bugger
+      const brut0 = g ? g[1].replace(/\s*(?:…|\.{3,})\s*/g, ' ').trim() : '',   // (06/11, 12:05) ses blancs (…) retirés : ils le faisaient bugger
+      // (10/11, lettre de Hakim : « le "rien" d'un lecteur du ribosome pris pour du texte ») « GARDE : « rien » », « GARDE : (rien) », une partie « RIEN | … » :
+      // son silence, jamais gardé pour sa voix
+      brut = typeof sansRienParParties === 'function' ? sansRienParParties(brut0) : brut0,
       pp = brut && cr0.epissure_grammaire !== false ? epissageParParties(brut, texte, (typeof ditRecemment !== 'undefined' ? ditRecemment : []).filter(x => Date.now() - x.t < 120000).map(x => x.texte)) : null;
       const garde = pp ? pp.dit : brut, e = pp ? (pp.parties ? pp.e : null) : (garde ? epissageDe(garde, texte) : null);
       const ok = !!e && e.mots.length >= 1 && e.ajoutes.length <= liaison      // « rien », ou une phrase inventée : rien de gardé
@@ -4719,6 +4736,7 @@ function direEntenduSiPause(c, maintenant = Date.now(), r = c && c.ribo) {
   r.dits++; r.dit = `${r.dit} ${texte}`.trim().slice(-4000);
   diffuser(abonnesPensees, 'entendu', j({ quoi: 'dire', source: c.source, voix: c.voix, tour: r.tour, n: r.dits, texte,
     mots: lot.flatMap(x => x.mots), ajoutes: lot.flatMap(x => x.ajoutes), ts: maintenant }));
+  if (c.source === 'telephone' && typeof noterDitDuDedans === 'function') noterDitDuDedans(texte, maintenant);   // (10/11) le dedans : jamais le début de sa réponse à papa
   noterEntendu(c, { dire: texte.slice(0, 300) });
   return true;
 }
@@ -4953,8 +4971,31 @@ function liveAppeler(d, ctx, maintenant = Date.now()) {
     return x;
   }).catch(() => { Live.echoue(LIVE); return null; });
 }
+// (10/11, 20:22-20:45, lettre de Hakim ; accord d'Ahmed : « ouiii ») ce qu'il a dit au dedans (sa réponse au live, ce qu'il dit de ce que joue le
+// téléphone) n'est jamais le début de sa réponse à papa (le dehors) : mesuré, « Le la, c'est Rennes ? Bon, on accorde… » (à la voix 87, 20:22:28) et
+// « Eh, le verset parle d'humilité… mon frère » (à la voix 143, 20:24:15) dits au live, puis repartis de la page en « souffle_dit » et écrits en tête
+// de sa réponse à papa (20:23:22, 20:24:31), son conscient croyant les avoir dits à papa. La page ne les compte plus (son tour du dedans) ; ici, le
+// filet : 30 min, 20 au plus, retirés de ce que la page dit déjà dit
+const ditsDuDedans = [];
+function noterDitDuDedans(texte, maintenant = Date.now()) {
+  const t = String(texte || '').replace(/\s+/g, ' ').trim();
+  if (!t) return;
+  ditsDuDedans.push({ t: maintenant, texte: t });
+  while (ditsDuDedans.length > 20 || (ditsDuDedans.length && maintenant - ditsDuDedans[0].t > 30 * 60e3)) ditsDuDedans.shift();
+}
+const voixPourLeDedans = () => (typeof require === 'function' ? require('./public/voix.js') : null);
+function sansLeDedans(dit, maintenant = Date.now()) {
+  const V = voixPourLeDedans(), l = ditsDuDedans.filter(x => maintenant - x.t <= 30 * 60e3).map(x => x.texte);
+  if (!V) return String(dit || '');
+  return V.sansRien(l.length ? V.sansDejaLivre(String(dit || ''), l) : String(dit || ''));
+}
 // ce qu'il répond au live, par sa voix (la page le dit quand sa voix est libre, papa d'abord) : à son fil, à sa mémoire, à son écho
 function liveDire(x, maintenant = Date.now()) {
+  // (10/11) le filet : son « RIEN » n'est jamais dit au live (la source : Live.lireReponse)
+  const V = voixPourLeDedans(), net = x ? (V ? V.sansRien(x.texte) : String(x.texte || '')) : '';
+  if (!net) { noterLive({ e: 'rien_tu', motif: x && x.motif, qui: x && x.qui }); return; }
+  if (net !== x.texte) x = { ...x, texte: net };
+  noterDitDuDedans(x.texte, maintenant);
   diffuser(abonnesPensees, 'entendu', j({ quoi: 'dire', source: 'telephone', voix: x.qui || '', tour: tourEpissure(), n: 1, texte: x.texte,
     reponse: true, live: x.motif !== 'musique', motif: x.motif, ts: maintenant }));
   noterDit(x.texte, maintenant);
@@ -6624,6 +6665,8 @@ async function routeJarvis(req, res, distantReq = false) {
   const ahmedAvant = dernierMessageAhmedMs();
   // (07/11, Hakim : « Papa, mon image est prête… » à 21:55, redit à 22:05) ce que la page dit déjà dit ne reprend pas ce qu'il a livré de lui-même
   if (q.souffle_dit) q.souffle_dit = VoixPage.sansDejaLivre(String(q.souffle_dit), livresDepuisPapa()) || undefined;
+  // (10/11, 20:22-20:45, lettre de Hakim) ni ce qu'il a dit au dedans (sa réponse au live), ni son « RIEN » : le début de sa réponse à papa n'est qu'à papa
+  if (q.souffle_dit) q.souffle_dit = sansLeDedans(q.souffle_dit) || undefined;
   dernierMessageAhmed = Date.now();                          // (le réveil pour une tâche finie ne part plus)
   Solliciter.papaParle(solliciterEtat, q.appareil && q.appareil.montre === true ? 'montre' : distantReq ? 'tel' : 'mac');   // (10/11) où il est
   silenceSurMessage(texte);                                  // (27/10) sa relance dans un silence a eu sa réponse
@@ -10052,6 +10095,7 @@ function brouillonDuCerveau(texte) {
   if (cp) r = r.replace(cp[0], '\n');
   r = r.replace(/^[\s"«]+|[\s"»]+$/g, '').trim();
   if (r && typeof sansRefrain === 'function') r = String(sansRefrain('cerveau', r, morceauxCerveau.dernier) || '').trim();   // (10/11) son refrain retiré, sans alerte
+  if (r && typeof retirerRien === 'function') r = retirerRien(r);     // (10/11, lettre de Hakim) ni son « RIEN » de format
   if (!r) return;
   // (04/11, Ahmed : « la pensée parasite reconnue par le système immunitaire : toujours nuisible, éliminée de la pensée ») ni écrite, ni dite
   const residu = residuParasite(r, morceauxCerveau.dernier);           // (04/11) ses résidus aussi

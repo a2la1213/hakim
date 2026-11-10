@@ -664,6 +664,42 @@
     return lecteur;
   }
 
+  // (10/11, live de papa, 20:24 à 20:45 ; lettre de Hakim, accord d'Ahmed : « ouiii ») le « RIEN » d'un format (son garde du live, un lecteur de
+  // son ribosome, une pensée rapide : « réponds… ou RIEN ») n'est jamais un mot à dire : mesuré dans live.jsonl, 44 « RIEN » dits au live le 10/11
+  // (Mini Hakim répondait « DIRE : RIEN »), et deux collés en tête de sa réponse à papa (« RIEN Ha, je vois les pastéis… », « RIEN Oui papa… »).
+  // Seul comme morceau, ou en tête d'un morceau, il est retiré : « RIEN », « RIEN. », « (rien) », « « RIEN » », « Rien. », « néant »,
+  // « RIEN Ha, je vois… » (en capitales devant une phrase), « rien. Ce sont… » ; au milieu d'un texte recollé (« … papa. RIEN Je préfère… »),
+  // seulement en capitales ou entre parenthèses, après une fin de phrase. Un vrai « rien » dans une phrase reste : « rien ne presse »,
+  // « il ne reste rien », « Rien de particulier », « RIEN ne va plus », « Rien, je t'écoute », « Rien ? ».
+  const RIEN_OUVRE = '[\\s«"“„*_]*', RIEN_FERME = '(?:\\s*[»"”*_])*', RIEN_PONCT = '[.!…:;,—–-]';
+  const RIEN_TETE = [
+    // en capitales, sauf devant un mot en minuscules (« RIEN ne va plus »)
+    new RegExp(`^${RIEN_OUVRE}(?:RIEN|NÉANT|NEANT)${RIEN_FERME}(?![\\p{L}\\p{N}])(?!\\s+\\p{Ll})\\s*(?:${RIEN_PONCT}|\\?)*\\s*`, 'u'),
+    // entre parenthèses ou crochets
+    new RegExp(`^${RIEN_OUVRE}[(\\[]\\s*(?:rien|néant|neant)\\s*[.!…]?\\s*[)\\]]${RIEN_FERME}\\s*${RIEN_PONCT}*\\s*`, 'iu'),
+    // seul, ou suivi d'un point (pas d'une virgule ni d'un point d'interrogation : « Rien, je t'écoute », « Rien ? »)
+    new RegExp(`^${RIEN_OUVRE}(?:rien|néant|neant)${RIEN_FERME}\\s*(?:[.!…:;—–-]+\\s*|$)`, 'iu'),
+  ];
+  const RIEN_MILIEU = [
+    new RegExp(`([.!?…؟]\\s+)${RIEN_OUVRE.replace('\\s', '')}(?:RIEN|NÉANT|NEANT)${RIEN_FERME}(?![\\p{L}\\p{N}])(?!\\s+\\p{Ll})\\s*${RIEN_PONCT}*\\s*`, 'gu'),
+    new RegExp(`([.!?…؟]\\s+)[(\\[]\\s*(?:rien|néant|neant)\\s*[.!…]?\\s*[)\\]]\\s*${RIEN_PONCT}*\\s*`, 'giu'),
+  ];
+  function sansRien(texte) {
+    const brut = texte == null ? '' : String(texte);
+    let t = brut;
+    for (let k = 0; k < 4; k++) {                                       // « RIEN (rien) » : chaque marque en tête
+      const re = RIEN_TETE.find(x => x.test(t));
+      if (!re) break;
+      t = t.replace(re, '');
+      // sa raison entre parenthèses, seule après la marque (« RIEN (ils se parlent entre eux) ») : son silence aussi
+      if (/^\s*\([^()]{0,200}\)\s*[.!…]?\s*$/.test(t)) t = '';
+    }
+    for (const re of RIEN_MILIEU) t = t.replace(re, '$1');
+    return t === brut ? brut : t.trim();
+  }
+  // le morceau n'était que ça : son silence
+  const estRien = (texte) => /\S/.test(String(texte == null ? '' : texte)) && !sansRien(texte).trim();
+
   // (07/11, Hakim : « Papa, mon image est prête… » dit à 21:55, puis redit à 22:05 en tête de sa réponse) un message qu'il a déjà
   // donné de lui-même (un avis de fin de tâche, dit par sa voix épissée) restait dans « ce qu'il a déjà dit » jusqu'au message
   // suivant de papa, et repartait comme le début de sa réponse. Ce qu'il a déjà dit, sans ce qui est déjà livré : phrase par phrase,
@@ -770,7 +806,7 @@
 
   const Voix = { versArabe, segmenter, sansJumeaux, pourLEcran, squelette, pourLaVoix, decoupeur, choisirVoix, creerLecteur, FORMULE, VOIX_SEULE, AFFECT, sansAffect, latexParle,
     definirPrononciations,
-    diction, prononcable, enLettres, DEBUTS, HESITATIONS, debutDe, expressivitePhrase, sansDejaLivre, finDePhrase, choisirDansLatence, bornesParole };
+    diction, prononcable, enLettres, DEBUTS, HESITATIONS, debutDe, expressivitePhrase, sansDejaLivre, sansRien, estRien, finDePhrase, choisirDansLatence, bornesParole };
   racine.Voix = Voix;
   if (typeof module !== 'undefined' && module.exports) module.exports = Voix;
 })(typeof window !== 'undefined' ? window : globalThis);

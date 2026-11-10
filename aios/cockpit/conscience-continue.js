@@ -4,6 +4,7 @@
    Une décision à la fois, 2 s au moins entre deux, 20 par minute au plus (son forfait). Penser passe toujours (montré, gardé pour la suite) ;
    solliciter papa attend que papa se taise et que sa tête soit libre, 90 s au moins entre deux ; faire, 3 min. Ce qui attend reste une pensée. */
 'use strict';
+const { sansRien } = require('./public/voix.js');
 
 const PAS_MS = 2000, PAR_MINUTE = 20, ENTRE_SOLLICITATIONS_MS = 90_000, ENTRE_ACTES_MS = 180_000, ENTRE_PAROLES_MS = 20_000;
 
@@ -16,7 +17,8 @@ function lireDecision(texte) {
   const m = /^\s*(RIEN|PENSER|FAIRE|SOLLICITER|PARLER)\b\s*:?\s*([\s\S]*)$/i.exec(t.split('\n').find(l => l.trim()) || '');
   if (!m) return { genre: 'rien', texte: '' };
   const genre = m[1].toLowerCase(), dit = m[2].replace(/\s+/g, ' ').trim().slice(0, 300);
-  if (genre === 'rien' || !dit) return { genre: 'rien', texte: '' };
+  // (10/11, lettre de Hakim) « PARLER : RIEN », « PENSER : (rien) » : son silence, jamais un mot à dire ni à montrer
+  if (genre === 'rien' || !dit || sansRien(dit) !== dit) return { genre: 'rien', texte: '' };
   return { genre, texte: dit };
 }
 

@@ -199,11 +199,16 @@ function evaluer(e, ctx = {}, maintenant = Date.now(), reglages = {}) {
   return { action: 'appeler', motif: quoi.motif, phrase: e.enVol.phrase, qui: e.enVol.qui, expirees: vieilles };
 }
 // la réponse de Mini Hakim : « DIRE : … » (gardée pour la pause suivante) ou « RIEN »
+// (10/11, 20:24-20:45, lettre de Hakim ; accord d'Ahmed : « ouiii ») mesuré dans live.jsonl : 44 « RIEN » dits au live ce jour-là, Mini Hakim répondant
+// « DIRE : RIEN » ; deux « rien. Ce sont les invités de papa qui chantent… » (son silence, et sa raison). Un DIRE qui commence par son silence
+// (« RIEN », « (rien) », « rien. … », « néant ») est son silence : rien n'est dit. Un vrai « rien » dans sa phrase passe (« Rien de particulier… »).
+const { sansRien } = require('./public/voix.js');
 function lireReponse(texte) {
   const l = String(texte || '').replace(/\[\[[^\]]{0,300}\]\]/g, ' ').replace(/[*_`]/g, '').split('\n').map(x => x.trim()).filter(Boolean);
   const m = /^(DIRE|RIEN)\b\s*:?\s*(.*)$/i.exec(l[0] || '');
   if (!m || m[1].toUpperCase() === 'RIEN') return '';
-  return m[2].replace(/^[\s"«]+|[\s"»]+$/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  const dire = m[2].replace(/^[\s"«]+|[\s"»]+$/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  return sansRien(dire) === dire ? dire : '';
 }
 function repondu(e, texte, maintenant = Date.now()) {
   const v = e.enVol;
