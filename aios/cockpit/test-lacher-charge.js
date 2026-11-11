@@ -13,9 +13,19 @@ const Charge = require('./charge.js');
 const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
 const fonction = (src, nom) => { const i = src.indexOf(`function ${nom}(`); assert.ok(i >= 0, nom); return src.slice(i, src.indexOf('\n}\n', i) + 3); };
 const T = 1_800_000_000_000;
-const NOMS = ['partBloquee', 'chargeDe', 'chargeMesuree', 'seuilCharge', 'fileDesParoles', 'voixEnCalcul', 'sauterAuDernier', 'lacherSousCharge'];
+const NOMS = ['partBloquee', 'chargeDe', 'chargeMesuree', 'seuilCharge', 'fileDesParoles', 'voixEnCalcul', 'sauterAuDernier', 'resumeLacher', 'lacherSousCharge'];
 
 const pensee = (id, recu, o = {}) => ({ pensee: true, id, recu, tour: 7, texte: id, ...o });
+// ce que /api/voix/journal garde d'un événement (server.js) : 12 champs (t, e, appareil compris), des noms en lettres et « _ », des nombres, des
+// booléens ou des mots simples ; une note qui n'y entre pas perd ses champs en silence (vu le 11/11 : derive_p50, derive_p90 et la file perdus)
+function assertJournal([e, o]) {
+  const x = { t: 1, e, appareil: 'telephone', ...o };
+  assert.ok(Object.keys(x).length <= 12, `${e} : ${Object.keys(x).length} champs`);
+  for (const [k, v] of Object.entries(x)) {
+    assert.match(k, /^[a-z_]{1,20}$/, `${e}.${k}`);
+    assert.ok((typeof v === 'number' && Number.isFinite(v)) || typeof v === 'boolean' || (typeof v === 'string' && /^[a-z_]{1,30}$/.test(v)), `${e}.${k} = ${JSON.stringify(v)}`);
+  }
+}
 // une page avec ce qui attend partout : sa file, une pensée confiée à sa voix, deux en file dans son lecteur (dont une qui sonne), sa réponse à papa
 // en file, des pensées entendues et une réponse au live ; tout est FRAIS (moins de sauter_passe_s) : sans la charge, rien ne serait sauté
 function page({ src = PAGE, reglages = {}, serveur = null, longues = [], conversation = true } = {}) {
@@ -62,11 +72,13 @@ test('au-delà de 50 % : tout ce qui attend est lâché, sauf ce qui sonne, la d
   const ev = p.journal.find(x => x[0] === 'lacher_charge');
   assert.ok(ev, 'un lacher_charge au journal de la voix');
   assert.strictEqual(ev[1].charge, 80);
-  assert.strictEqual(ev[1].mac_gpu, 80);
+  assert.strictEqual(ev[1].source, 'mac_gpu', 'd’où vient la charge');
+  assert.strictEqual(ev[1].mac, 80);
+  assert.strictEqual(ev[1].tel, 31);
   assert.strictEqual(ev[1].seuil, 50);
-  assert.strictEqual(ev[1].file, 2);
   assert.strictEqual(ev[1].entendu, 1);
-  assert.ok(ev[1].voix >= 2, 'la confiée et celle du lecteur');
+  assert.strictEqual(ev[1].voix, 4, 'deux pensées de sa file, la confiée et celle du lecteur');
+  assertJournal(ev);
   assert.strictEqual(p.journal.filter(x => x[0] === 'passe_saute').length, 0, 'pas un « passe_saute » : c’est la charge');
 });
 
@@ -110,6 +122,21 @@ test('la charge : la plus haute des mesures fraîches ; le téléphone compte sa
   const lp = page({ longues, reglages: {} });
   assert.ok(lp.lacher(T) > 0, 'sa page bloquée 60 % du temps suffit');
   assert.strictEqual(lp.journal.find(x => x[0] === 'lacher_charge')[1].page, 60);
+  assert.strictEqual(lp.journal.find(x => x[0] === 'lacher_charge')[1].source, 'page');
+});
+
+test('ses notes entrent en entier dans le journal de la voix (12 champs, des nombres et des mots simples) ; témoin : l’ancienne note n’y entrait pas', () => {
+  const p = page({ serveur: { t: T - 1000, mac_cpu: 12, mac_gpu: 80, tel_cpu: 27, tel_gpu: 86, tel_thermique: 100, tel_age_ms: 2000 }, longues: [[T - 1000, 3000]] });
+  p.lacher(T);
+  assertJournal(p.journal.find(x => x[0] === 'lacher_charge'));
+  // la note de la première version (fusionnée le 11/11 à 4be1503) : 17 champs, les derniers perdus par le cockpit
+  const ancienne = ['lacher_charge', { lachees: 5, file: 2, voix: 2, entendu: 1, seuil: 50, charge: 100, mac_cpu: 12, mac_gpu: 80, tel_cpu: 27, tel_gpu: 86, tel_thermique: 100, page: 30, max: 100 }];
+  assert.throws(() => assertJournal(ancienne));
+  // la note de toutes les 30 s, telle que la page la fait
+  const src = PAGE.slice(PAGE.indexOf("  journalVoix('page_charge', {"), PAGE.indexOf("  if (attente) journalVoix('paroles_attente', f);"));
+  const champs = [...src.matchAll(/\b([a-z_]+):/g)].map(m => m[1]);
+  assert.ok(champs.length + 3 <= 12, `page_charge : ${champs.length + 3} champs`);
+  for (const k of champs) assert.match(k, /^[a-z_]{1,20}$/);
 });
 
 test('le seuil se lit à chaud dans ses réglages, 50 % par défaut ; la file des paroles se compte pour le diagnostic', () => {

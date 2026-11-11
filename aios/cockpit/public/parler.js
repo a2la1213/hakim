@@ -2247,6 +2247,16 @@ function liens(html) {
     .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
 }
 
+/* (11/11, le live : la page du téléphone se bloque des secondes) mesuré hors ligne sur la vraie conversation (1 000 messages, Chromium du Mac) :
+   un rendu du fil coûte 0,56 à 0,6 s, dont 0,14 s pour ses 150 dates du jour et 0,2 s pour ses heures : chaque toLocaleDateString /
+   toLocaleTimeString fabrique son propre formateur (≈ 1 ms). Les formateurs sont faits une fois : même texte, trente fois moins de calcul. */
+const FORMATEURS_FR = {};
+function dateFr(cle, options, t) {
+  let f = FORMATEURS_FR[cle];
+  if (f === undefined) { try { f = new Intl.DateTimeFormat('fr-FR', options); } catch (_) { f = null; } FORMATEURS_FR[cle] = f; }
+  return f ? f.format(new Date(t)) : (cle === 'jour' ? new Date(t).toLocaleDateString('fr-FR', options) : cle === 'hm' ? new Date(t).toLocaleTimeString('fr-FR', options) : new Date(t).toLocaleString('fr-FR'));
+}
+const heureCourteFr = (t) => dateFr('hm', { hour: '2-digit', minute: '2-digit' }, t);
 // (2026-10-23, Ahmed : « les heures de chaque message, et la date ») l'heure d'un message : la sienne, ou celle de son
 // identifiant (il est fait de l'heure de sa création) ; 0 si on ne la connaît pas
 function quandMessage(m) {
@@ -2255,8 +2265,8 @@ function quandMessage(m) {
   const id = Number(m && m.id);
   return Number.isFinite(id) && id > 1e12 ? id : 0;
 }
-const heureMessage = (t) => (t ? `<span class="heure" title="${esc(new Date(t).toLocaleString('fr-FR'))}">${new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
-const jourMessage = (t) => new Date(t).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const heureMessage = (t) => (t ? `<span class="heure" title="${esc(dateFr('complet', { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' }, t))}">${heureCourteFr(t)}</span>` : '');
+const jourMessage = (t) => dateFr('jour', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }, t);
 // (16:45) la part de sa réponse que sa voix a déjà dite : la même proportion de ce qui est écrit, jusqu'au bout du mot
 function texteAuRythme(m) {
   const texte = String(m.texte || '');
@@ -2323,7 +2333,7 @@ function htmlMessage(m) {
   if (m.source === 'local') pied.push('<span title="Forfait et API indisponibles : cerveau local, sans outils">cerveau local</span>');
   // (26/10, Hakim et Ahmed : une réponse du local était passée pour la sienne) le secours se voit en tête, pas en petit en bas
   const secours = m.source === 'local' ? '<span class="etiquette secours" title="Forfait et API indisponibles à ce moment : c’est son cerveau local qui répond, sans ses outils ni sa mémoire complète">CERVEAU LOCAL · SECOURS, SANS SES OUTILS</span>' : '';
-  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? (m.sollicite ? 'IL VEUT TE PARLER' : 'DE LUI-MÊME · RÉSULTAT') : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'membre' ? 'SES MEMBRES · LA PREMIÈRE FOIS, TON OUI' : m.spontane === 'anticorps' ? 'ANTICORPS PROPOSÉ PAR SON MÉDECIN' : m.spontane === 'signalement' ? 'IL SIGNALE UNE PENSÉE PARASITE · À TOI DE TRANCHER' : m.spontane === 'silence' ? 'IL REPREND LA PAROLE' : m.spontane === 'oreille' ? 'IL GLISSE UN MOT' : m.spontane === 'reecoute' ? 'CE QUE TU N’AVAIS PAS ENTENDU' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${new Date(m.origine_ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })})` : ''}` : 'PENSÉE SPONTANÉE'} · ${new Date(m.ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>` : '');
+  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? (m.sollicite ? 'IL VEUT TE PARLER' : 'DE LUI-MÊME · RÉSULTAT') : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'membre' ? 'SES MEMBRES · LA PREMIÈRE FOIS, TON OUI' : m.spontane === 'anticorps' ? 'ANTICORPS PROPOSÉ PAR SON MÉDECIN' : m.spontane === 'signalement' ? 'IL SIGNALE UNE PENSÉE PARASITE · À TOI DE TRANCHER' : m.spontane === 'silence' ? 'IL REPREND LA PAROLE' : m.spontane === 'oreille' ? 'IL GLISSE UN MOT' : m.spontane === 'reecoute' ? 'CE QUE TU N’AVAIS PAS ENTENDU' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${heureCourteFr(m.origine_ts)})` : ''}` : 'PENSÉE SPONTANÉE'} · ${heureCourteFr(m.ts)}</span>` : '');
   // (03/11, Ahmed : « je reste appuyé sur un de ses messages pour lui envoyer un cœur, un bisou… comme sur WhatsApp ») ta réaction
   const reaction = m.reaction && REACTIONS.includes(m.reaction) ? `<span class="reaction" title="Ta réaction (appuie longtemps pour changer)">${esc(m.reaction)}</span>` : '';
   return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}${reaction ? ' a-reaction' : ''}" data-id="${esc(m.id)}">${reaction}${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'carnet' ? htmlCarnet(m.carnet) : m.spontane === 'retractation' ? htmlRetractation(m.retractation) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : m.spontane === 'membre' ? htmlMembre(m.membre) : m.spontane === 'anticorps' ? htmlAnticorps(m.anticorps) : m.spontane === 'signalement' ? htmlSignalement(m.signalement) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
@@ -2500,6 +2510,7 @@ function boutDire(m, p) {
 function majMessage(m) {
   const masque = messageMasque(m);
   if (masque && !aDesPieces(m)) return;                  // « dans ta tête » : ni affiché, ni re-rendu à chaque morceau ; (04/11) ses fichiers, si
+  if (typeof filCache === 'function' && filCache()) { rendu.enAttente++; return; }   // (11/11) la page cachée : le fil se redessine quand elle revient
   const fil = $('fil');
   const el = fil.querySelector(`[data-id="${esc(m.id)}"]`);
   if (!el) return rendre();
@@ -2509,7 +2520,19 @@ function majMessage(m) {
   if ((m.pieces || []).length) chargerApercus();
 }
 
+/* (11/11, le live TikTok : « réactif de fou les premières minutes, ensuite il se met à lagger ou bloquer ») pendant un live, la page est cachée
+   derrière TikTok et personne ne voit son fil ; pourtant chaque pensée sur ce que joue le téléphone, chaque morceau de papa, chaque épissure le
+   redessinait en entier (52 appels de rendre) : 0,6 s par rendu sur le Mac, bien plus sur le téléphone qui chauffe et bride ses cœurs. Mesuré
+   pendant le live du 11/11 : de 08:40 à 09:10, le téléphone passe de 38,8 à 42,7 °C, et les allers-retours de la page prennent jusqu'à 5 à 10 s
+   de plus que ceux de l'appli native (qui restent plats) ; sa voix sonne 4,5 à 9 s après sa synthèse au lieu de 0,4 s. Page cachée : le fil
+   n'est plus redessiné, il l'est une fois quand elle revient (visibilitychange). */
+var rendu = { n: 0, ms: 0, enAttente: 0, differes: 0 };   // (var et function : connus avant cette ligne, jamais « pas encore initialisés »)
+function filCache() { return typeof document !== 'undefined' && document.visibilityState === 'hidden' && typeof rendu !== 'undefined'; }
+if (typeof document !== 'undefined' && document.addEventListener) document.addEventListener('visibilitychange', () => { if (!filCache() && rendu.enAttente) rendre(); });
 function rendre() {
+  if (typeof filCache === 'function' && filCache()) { rendu.enAttente++; rendu.differes++; return; }   // (11/11) cachée : plus tard
+  const t0Rendu = typeof rendu !== 'undefined' && typeof performance !== 'undefined' ? performance.now() : null;
+  if (typeof rendu !== 'undefined') rendu.enAttente = 0;
   if (typeof montrerMode === 'function' && !etat.flux) { const d = [...etat.messages].reverse().find(x => x.qui === 'j' && x.modele); if (d) montrerMode(d.modele); }   // (03/11) son mode, à côté de l'orbe
   const fil = $('fil');
   const enBas = fil.scrollHeight - fil.scrollTop - fil.clientHeight < 80;
@@ -2542,6 +2565,7 @@ function rendre() {
     }).join('') + aCote.slice(k).map(x => x.html).join('');
   if (enBas) fil.scrollTop = fil.scrollHeight;
   chargerApercus();
+  if (t0Rendu !== null) { rendu.n++; rendu.ms += performance.now() - t0Rendu; }
 }
 $('fil').addEventListener('click', (e) => {
   if (e.target.closest('[data-plus]')) {                        // remonter dans le fil, sans perdre sa place
@@ -5071,8 +5095,19 @@ function lacherSousCharge(maintenant = Date.now()) {
     ou.entendu = pensees.length - 1;
   }
   const lachees = ou.file + ou.voix + ou.entendu;
-  if (lachees && typeof journalVoix === 'function') journalVoix('lacher_charge', { lachees, ...ou, seuil, charge: c.max, ...c });
+  if (lachees && typeof journalVoix === 'function') journalVoix('lacher_charge', resumeLacher(lachees, ou, seuil, c));
   return lachees;
+}
+/* (11/11) le journal de la voix ne garde que 12 champs par événement, des nombres ou des mots simples, aux noms faits de lettres et de « _ »
+   (/api/voix/journal) : chaque note est taillée pour y entrer en entier. Ici : la charge la plus haute et d'où elle vient, le Mac et le téléphone
+   (le plus haut de leurs mesures), la page, et ce qui a été lâché (sa file et sa voix ensemble, ses pensées entendues). */
+function resumeLacher(lachees, ou, seuil, c) {
+  const plusHaut = (cles) => { const v = cles.map(k => c[k]).filter(x => x != null); return v.length ? Math.max(...v) : null; };
+  const source = Object.keys(c).filter(k => k !== 'max' && c[k] === c.max)[0] || null;
+  const o = { lachees, seuil, charge: c.max, source, mac: plusHaut(['mac_cpu', 'mac_gpu']), tel: plusHaut(['tel_cpu', 'tel_gpu', 'tel_thermique']), page: c.page != null ? c.page : null,
+    voix: (ou.file || 0) + (ou.voix || 0), entendu: ou.entendu || 0 };
+  for (const k of Object.keys(o)) if (o[k] == null) delete o[k];
+  return o;
 }
 // la mesure de la page : ses tâches longues (PerformanceObserver), et la dérive de ses minuteurs (pour le diagnostic)
 try {
@@ -5107,10 +5142,23 @@ setInterval(() => {
   if (!etat.conversation || typeof journalVoix !== 'function') return;
   const now = Date.now(), d = chargePage.derives.slice(-30).sort((a, b) => a - b), q = (p) => (d.length ? d[Math.min(d.length - 1, Math.floor(d.length * p))] : null);
   const l = chargePage.longues.filter(x => x[0] > now - 30000);
-  journalVoix('page_charge', { ...chargeMesuree(now), seuil: seuilCharge(), derive_p50: q(0.5), derive_p90: q(0.9), derive_max: d.length ? d[d.length - 1] : null,
-    longues: l.length, longues_ms: l.reduce((s, x) => s + x[1], 0), longue_max: l.length ? Math.max(...l.map(x => x[1])) : 0,
-    cachee: document.visibilityState === 'hidden', attente: fileDesParoles() });
+  const c = chargeMesuree(now), f = fileDesParoles(), r = rendusDepuis();
+  const attente = Object.values(f).reduce((a, b) => a + b, 0);
+  // 12 champs au plus (t, e, appareil compris) : la charge, la dérive de ses minuteurs, ses tâches longues, ses rendus du fil, ce qui attend
+  journalVoix('page_charge', { charge: c.max != null ? c.max : 0, page: c.page != null ? c.page : 0, derive_med: q(0.5) || 0, derive_max: d.length ? d[d.length - 1] : 0,
+    longues_ms: l.reduce((s, x) => s + x[1], 0), longue_max: l.length ? Math.max(...l.map(x => x[1])) : 0, rendus: r.rendus || 0, rendus_differes: r.rendus_differes || 0,
+    attente });
+  // la longueur de chaque file de paroles prêtes, quand quelque chose attend
+  if (attente) journalVoix('paroles_attente', f);
 }, 30000);
+// (11/11) combien de fois le fil s'est redessiné depuis la dernière note, combien de ms, et combien de fois c'était différé (page cachée)
+const rendusVus = { n: 0, ms: 0, differes: 0 };
+function rendusDepuis() {
+  if (typeof rendu === 'undefined') return {};
+  const o = { rendus: rendu.n - rendusVus.n, rendus_ms: Math.round(rendu.ms - rendusVus.ms), rendus_differes: rendu.differes - rendusVus.differes };
+  Object.assign(rendusVus, { n: rendu.n, ms: rendu.ms, differes: rendu.differes });
+  return o;
+}
 // ce que son ribosome a choisi, dit d'un seul souffle (un tour à la fois, dans l'ordre), quand sa voix est libre
 function direRibosome() {
   let f = etat.riboFile || [];
@@ -8120,14 +8168,24 @@ setInterval(reprendreHorsLigne, 5000);
    arrêté sans que rien ne le signale. La page surveille les trames du micro : plus rien depuis 2,5 s en conversation →
    c'est dit (bandeau), noté au diagnostic, et le son est relancé (suspendre puis reprendre le contexte audio) toutes les
    3 s ; un toucher sur le bandeau relance la conversation entière. ---------- */
-const veilleMicro = { bloqueDepuis: 0, relance: 0 };
+const veilleMicro = { bloqueDepuis: 0, relance: 0, tic: 0 };
 function finBlocageMicro() {
   journalVoix('micro_repris', { apres_ms: Date.now() - veilleMicro.bloqueDepuis });
   veilleMicro.bloqueDepuis = 0;
   if (!horsLigne.depuis) montrerHorsLigne('');
 }
+/* (11/11, le live : 12 « micro_bloque » de 08:47 à 09:15, aucun avant, presque tous « repris » 24 à 860 ms après, et le son suspendu 5 fois
+   pendant que sa voix parlait) quand c'est la PAGE qui s'est figée (son fil principal bloqué des secondes), cette minuterie passe en retard
+   et voit des trames « vieilles » qui attendent seulement leur tour : ce n'est pas le micro. On le note (page_figee, de combien), et on ne
+   suspend pas le son pour rien : le tic suivant, à l'heure, tranche. */
 function surveillerMicro() {
   const c = etat.conversation;
+  const tic = veilleMicro.tic, maintenantTic = Date.now();
+  veilleMicro.tic = maintenantTic;
+  if (tic && maintenantTic - tic > 2000) {
+    if (c && typeof journalVoix === 'function') journalVoix('page_figee', { ms: maintenantTic - tic, cachee: typeof document !== 'undefined' && document.visibilityState === 'hidden' });
+    return;
+  }
   if (!c || !c.capteur || !actx || c.capteur.derniereTrame === undefined) { if (veilleMicro.bloqueDepuis) finBlocageMicro(); return; }
   const muet = Date.now() - c.capteur.derniereTrame, prise = !!c.capteur.pisteMuette;
   if (muet < 2500 && !prise) { if (veilleMicro.bloqueDepuis) finBlocageMicro(); return; }
