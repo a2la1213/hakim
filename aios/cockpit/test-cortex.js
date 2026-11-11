@@ -91,7 +91,9 @@ test('branché : son subconscient part avec son rappel, attendu subconscient_ms 
   assert.match(srv, /subconscient: sub, souvenir: rappelBloc\.premier/);
   assert.match(fs.readFileSync(path.join(__dirname, 'cortex.js'), 'utf8'), /FITRA : le plus souvent RIEN\. Une règle de ta fitra ne remonte que si ce moment la met vraiment en jeu/, 'discrète : 45 tours sur 51 avant');
   assert.match(srv, /subconscient_pfc: r\.subconscient_pfc !== false, fitra_discrete: r\.fitra_discrete !== false,/);
-  assert.ok(srv.includes("premier: reviennent.length ? (typeof neutraliser === 'function' ? neutraliser : String)(String(reviennent[0]).replace(/\\s+/g, ' ').trim().slice(0, 240)) : ''"));
+  // (11/11) « && premierPermis » : pendant un doute de voix (« papa ou Ali ? »), son souvenir intime de papa n'est pas le premier
+  assert.ok(srv.includes("premier: reviennent.length && premierPermis ? (typeof neutraliser === 'function' ? neutraliser : String)(String(reviennent[0]).replace(/\\s+/g, ' ').trim().slice(0, 240)) : ''")
+    || srv.includes("premier: reviennent.length ? (typeof neutraliser === 'function' ? neutraliser : String)(String(reviennent[0]).replace(/\\s+/g, ' ').trim().slice(0, 240)) : ''"));
   const page = fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8');
   assert.match(page, /\['subconscient_pfc', [^\n]*'oui'\]/);
   assert.match(page, /\['fitra_discrete', [^\n]*'oui'\]/);

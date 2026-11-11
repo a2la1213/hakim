@@ -394,4 +394,12 @@ function nettoyerDemande(o, liste) {
   return compte.n ? { demande: { ...o, messages }, n: compte.n } : { demande: o, n: 0 };
 }
 
-module.exports = { FAMILLES, DEFAUT, normaliser, lire, creerSiAbsent, actifs, regler, couvre, trouver, retirer, flux, nettoyerDemande, LIGNE_PAPA };
+// (11/11) un texte réinjecté (ses souvenirs qui lui reviennent, côté cockpit) : son refrain retiré hors des lignes et des guillemets de papa ;
+// rend { texte, n }
+function reinjecte(texte, liste) {
+  if (!liste || !liste.length || !texte) return { texte: String(texte || ''), n: 0 };
+  const compte = { n: 0 };
+  return { texte: sansRefrainHorsPapa(String(texte), liste, compte), n: compte.n };
+}
+
+module.exports = { FAMILLES, DEFAUT, normaliser, lire, creerSiAbsent, actifs, regler, couvre, trouver, retirer, flux, nettoyerDemande, reinjecte, LIGNE_PAPA };

@@ -18,7 +18,7 @@ test('ses notes : demandées sans celles déjà dites, mises dans son tour, rete
   assert.match(b, /\.concat\(notes\.map\(sansProvenance\)\)/, '(30/10, Ahmed) ses notes reviennent avec ses souvenirs, sans source');
   assert.match(b, /notes: notesIds/);
   assert.match(extraire('function retenirRappel('), /notesDejaDites/);
-  assert.match(src, /retenirRappel\(sid, rappelBloc\.ids \|\| \[\], rappelBloc\.erreurs \|\| \[\], rappelBloc\.personnes \|\| \[\], rappelBloc\.notes \|\| \[\], rappelBloc\.intime \|\| \[\]\)/);
+  assert.match(src, /retenirRappel\(sid, rappelBloc\.ids \|\| \[\], rappelBloc\.erreurs \|\| \[\], rappelBloc\.personnes \|\| \[\], rappelBloc\.notes \|\| \[\], rappelBloc\.intime \|\| \[\](?:, rappelBloc\.cles \|\| \[\])?\)/);
 });
 
 test('son jardin secret : à part, à lui seul, jamais noté au journal du rappel (ni texte ni numéros)', () => {

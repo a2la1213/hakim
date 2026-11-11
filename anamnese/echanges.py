@@ -385,6 +385,16 @@ def _sens(embed):
     return embeddings.embed
 
 
+def _relacher(mem):
+    """(11/11, mesuré : plus aucun échange mémorisé depuis le 10/11 23:04, le WAL à 890 Mo) une scène qui échoue (« database is
+    locked » sous la contention) laissait sa transaction ouverte : la connexion gardait un instantané figé, chacune de ses écritures
+    suivantes échouait (« database is locked ») et le WAL ne pouvait plus être recopié. On la relâche toujours."""
+    try:
+        mem.db.rollback()
+    except Exception:
+        pass
+
+
 def _scene(mem, e, eid, embed):
     """(10/11, Ahmed : « que ça se mémorise comme des scènes de cinéma ») ce moment avance sa scène (scenes.py) ; jamais bloquant."""
     global SCENES_ECRITES
@@ -393,6 +403,7 @@ def _scene(mem, e, eid, embed):
         SCENES_ECRITES += len(scenes.avancer(mem, e, eid, embed=_sens(embed)))
     except Exception as err:
         print(f"[echanges] scène : {type(err).__name__}: {err}"[:300], file=sys.stderr)
+        _relacher(mem)
 
 
 def _scene_silence(mem, embed):
@@ -403,6 +414,7 @@ def _scene_silence(mem, embed):
             SCENES_ECRITES += 1
     except Exception as err:
         print(f"[echanges] scène : {type(err).__name__}: {err}"[:300], file=sys.stderr)
+        _relacher(mem)
 
 
 def passage(mem, fichier=None, embed=None, maximum=PAR_PASSAGE):

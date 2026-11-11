@@ -679,11 +679,75 @@ def _passages_fichier(f):
 
 class IndexNotes:
     """Ses notes en mémoire : chaque passage vectorisé une seule fois (par sa clé et son texte)."""
+    FICHIERS_S = 30                                      # (11/11) la liste de ses fichiers de notes : refaite toutes les 30 s au plus
+
     def __init__(self, journal=None, carnets=None, config=None):
         self.journal, self.carnets, self.config = journal, carnets, config
         self.vecs, self.items, self.mat, self.mots = {}, [], None, []
+        self._passages, self._liste, self._jour = {}, (0.0, None), None
 
     def _fichiers(self):
+        if self._liste[1] is not None and time.time() - self._liste[0] < self.FICHIERS_S:
+            return self._liste[1]
+        l = self._fichiers_lus()
+        self._liste = (time.time(), l)
+        return l
+
+    def _passages_de(self, f):
+        """(11/11) les passages d'un fichier, relus seulement s'il a changé (taille et date) : mesuré le 11/11, relire ses ~400 fichiers et
+        8 Mo de journal à chaque message coûtait ~130 ms de son rappel."""
+        try:
+            st = f.stat()
+            sig = (st.st_size, st.st_mtime_ns)
+        except OSError:
+            self._passages.pop(f, None)
+            return []
+        deja = self._passages.get(f)
+        if deja and deja[0] == sig:
+            return deja[1]
+        p = _passages_fichier(f)
+        self._passages[f] = (sig, p)
+        return p
+
+    def _journal_items(self, debut):
+        """Les passages du journal (les trois derniers jours) : seulement la fin neuve du fichier est lue quand il grandit."""
+        chemin = Path(self.journal or JOURNAL_DU_JOUR)
+        try:
+            st = chemin.stat()
+        except OSError:
+            self._jour = None
+            return []
+        j = self._jour
+        if j and j["ino"] == st.st_ino and j["taille"] == st.st_size:
+            return [x for x in j["items"] if x[1] >= debut]
+        if j and j["ino"] == st.st_ino and st.st_size > j["taille"]:
+            depart, items = j["taille"], [x for x in j["items"] if x[1] >= debut]
+        else:
+            depart, items = max(0, st.st_size - 8_000_000), []
+        try:
+            with open(chemin, "rb") as h:
+                h.seek(depart)
+                brut = h.read()
+        except OSError:
+            return items
+        fin = brut.rfind(b"\n") + 1                       # une ligne pas encore finie attend le tour suivant
+        lignes = brut[:fin].decode("utf-8", "replace").splitlines()
+        if depart and not (j and depart == j["taille"]):
+            lignes = lignes[1:]                            # la première, coupée au milieu
+        for l in lignes:
+            try:
+                o = json.loads(l)
+            except ValueError:
+                continue
+            t = (o.get("ts") or 0) / 1000
+            x = " ".join(str(o.get("texte") or "").split())
+            if debut <= t and len(x) >= JOURNAL_PASSAGE_MIN:   # les « salam », « bonne nuit » : du bruit pour le balayage
+                qui = "Ahmed" if o.get("qui") == "ahmed" else "toi"
+                items.append((f"journal:{int(o.get('ts') or 0)}", t, f"journal, {qui}", x[:PASSAGE_MAX]))
+        self._jour = {"ino": st.st_ino, "taille": depart + fin, "items": items}
+        return list(items)
+
+    def _fichiers_lus(self):
         import config as C
         import glob
         racines = [Path(self.carnets or C.DATA_DIR / "carnets")]
@@ -727,27 +791,14 @@ class IndexNotes:
 
     def rafraichir(self, embed, now):
         import numpy as np
-        items = []
         debut = now - NOTES_JOURS * 86400
-        try:
-            with open(self.journal or JOURNAL_DU_JOUR, "rb") as h:
-                h.seek(0, 2)
-                h.seek(max(0, h.tell() - 8_000_000))
-                lignes = h.read().decode("utf-8", "replace").splitlines()
-        except OSError:
-            lignes = []
-        for l in lignes:
-            try:
-                o = json.loads(l)
-            except ValueError:
-                continue
-            t = (o.get("ts") or 0) / 1000
-            x = " ".join(str(o.get("texte") or "").split())
-            if debut <= t and len(x) >= JOURNAL_PASSAGE_MIN:   # les « salam », « bonne nuit » : du bruit pour le balayage
-                qui = "Ahmed" if o.get("qui") == "ahmed" else "toi"
-                items.append((f"journal:{int(o.get('ts') or 0)}", t, f"journal, {qui}", x[:PASSAGE_MAX]))
-        for f in self._fichiers():
-            items += _passages_fichier(f)
+        items = self._journal_items(debut)
+        fichiers = self._fichiers()
+        for f in list(self._passages):
+            if f not in fichiers:
+                self._passages.pop(f, None)
+        for f in fichiers:
+            items += self._passages_de(f)
         cles = set()
         for cle, _t, _e, x in items:
             k = (cle, x)
@@ -761,8 +812,14 @@ class IndexNotes:
         return self
 
 
-def notes_pertinentes(texte, embed=None, index=None, now=None, exclus=()):
-    """{"lignes", "ids", "scores"} : les passages de ses notes qui passent la porte, du plus proche au moins proche."""
+TRACES_TELEPHONE = "traces-entendues.jsonl"
+MARQUE_TELEPHONE = "(ce que tu as entendu ou vu sur le téléphone : pas papa)"
+
+
+def notes_pertinentes(texte, embed=None, index=None, now=None, exclus=(), sans_telephone=False):
+    """{"lignes", "ids", "scores"} : les passages de ses notes qui passent la porte, du plus proche au moins proche. (11/11) ses traces du
+    téléphone (traces-entendues.jsonl : ce qu'il a entendu ou vu dedans) sont marquées « pas papa », et sorties quand son intérieur est
+    coupé (sans_telephone)."""
     import numpy as np
     if embed is None:
         import embeddings
@@ -770,7 +827,8 @@ def notes_pertinentes(texte, embed=None, index=None, now=None, exclus=()):
     now = time.time() if now is None else now
     index = (index or IndexNotes()).rafraichir(embed, now)
     exclus = set(exclus or ())
-    vus = [(cle, t, e, x) for cle, t, e, x in index.items if cle not in exclus and not (cle.startswith("journal:") and t > now - NOTES_RECENT_S)]
+    vus = [(cle, t, e, x) for cle, t, e, x in index.items if cle not in exclus and not (cle.startswith("journal:") and t > now - NOTES_RECENT_S)
+           and not (sans_telephone and e.startswith(TRACES_TELEPHONE))]
     if not vus:
         return {"lignes": [], "ids": [], "scores": []}
     q = np.asarray(embed(texte), dtype=np.float32)
@@ -804,6 +862,8 @@ def notes_pertinentes(texte, embed=None, index=None, now=None, exclus=()):
         else:
             titre = e.split(" — ", 1)[1] if " — " in e else ""
             ligne = f"{titre} · {x[:PASSAGE_MAX]}" if titre else x[:PASSAGE_MAX]
+            if e.startswith(TRACES_TELEPHONE):
+                ligne = f"{MARQUE_TELEPHONE} {ligne}"
         if taille + len(ligne) > NOTES_CARACTERES_MAX and lignes:
             break
         lignes.append(ligne); ids.append(c); gardes.append(round(s, 3)); taille += len(ligne)
@@ -913,31 +973,63 @@ def personnes_nommees(texte, voix=None):
     return out[:3]
 
 
-def ce_que_je_sais(mem, nom, now=None, journal=None):
-    """[lignes] : souvenirs (les plus récents d'abord) et passages du journal du jour qui nomment cette personne."""
+_JOURNAL_LU = {}                                   # (11/11) chemin → (taille, mtime, [(t, qui, texte)]) : relu seulement s'il change
+
+
+def _journal(chemin):
+    """[(t, qui, texte)] du journal brut, gardé tant que le fichier ne change pas (mesuré le 11/11 : le relire à chaque nom coûtait
+    jusqu'à 190 ms avec la recherche LIKE)."""
+    try:
+        st = os.stat(chemin)
+    except OSError:
+        return []
+    deja = _JOURNAL_LU.get(str(chemin))
+    if deja and deja[0] == st.st_size and deja[1] == st.st_ino:
+        return deja[2]
+    depart, out = (deja[0], list(deja[2])) if deja and deja[1] == st.st_ino and st.st_size > deja[0] else (0, [])
+    try:
+        with open(chemin, "rb") as f:
+            f.seek(depart)
+            brut = f.read()
+    except OSError:
+        return []
+    fin = brut.rfind(b"\n") + 1                            # une ligne pas encore finie attend le tour suivant
+    for l in brut[:fin].decode("utf-8", "replace").splitlines():
+        try:
+            o = json.loads(l)
+        except ValueError:
+            continue
+        out.append(((o.get("ts") or 0) / 1000, o.get("qui"), " ".join(str(o.get("texte", "")).split())))
+    _JOURNAL_LU.clear()
+    _JOURNAL_LU[str(chemin)] = (depart + fin, st.st_ino, out)
+    return out
+
+
+def ce_que_je_sais(mem, nom, now=None, journal=None, index=None, cache=None):
+    """[lignes] : souvenirs (les plus récents d'abord) et passages du journal du jour qui nomment cette personne. (11/11) index et cache
+    (rappel_moment.CacheIndices) : son nom en mot entier (« Ali » n'est plus dans « réalité »), sans relire toute la base."""
     now = time.time() if now is None else now
     lignes = []
-    try:
-        rows = mem.db.execute("SELECT id, ts, content FROM episodes WHERE content LIKE ? ORDER BY ts DESC LIMIT ?",
-                              (f"%{nom}%", PERSONNE_SOUVENIRS)).fetchall()
-    except Exception:
-        rows = []
+    rows = []
+    if index is not None and cache is not None:
+        try:
+            import rappel_moment
+            ids = cache.ids(index, rappel_moment.cle_de(nom))[:PERSONNE_SOUVENIRS]
+            if ids:
+                par = {r[0]: r for r in mem.db.execute(f"SELECT id, ts, content FROM episodes WHERE id IN ({','.join('?' * len(ids))})", ids)}
+                rows = [par[i] for i in ids if i in par]
+        except Exception:
+            rows = None
+    if index is None or cache is None or rows is None:
+        try:
+            rows = mem.db.execute("SELECT id, ts, content FROM episodes WHERE content LIKE ? ORDER BY ts DESC LIMIT ?",
+                                  (f"%{nom}%", PERSONNE_SOUVENIRS)).fetchall()
+        except Exception:
+            rows = []
     for eid, ts, c in rows:
         lignes.append(f"souvenir #{eid} · {time.strftime('%d/%m %H:%M', time.localtime(ts))} · {' '.join(str(c).split())[:180]}")
     debut_jour = time.mktime(time.localtime(now)[:3] + (0, 0, 0, 0, 0, -1))
-    trouves = []
-    try:
-        with open(journal or JOURNAL_DU_JOUR, encoding="utf-8") as f:
-            for l in f:
-                try:
-                    o = json.loads(l)
-                except ValueError:
-                    continue
-                t = (o.get("ts") or 0) / 1000
-                if debut_jour <= t <= now - 60 and _plat(nom) in _plat(o.get("texte", "")):
-                    trouves.append((t, o.get("qui"), " ".join(str(o.get("texte", "")).split())))
-    except OSError:
-        pass
+    trouves = [(t, qui, x) for t, qui, x in _journal(journal or JOURNAL_DU_JOUR) if debut_jour <= t <= now - 60 and _plat(nom) in _plat(x)]
     for t, qui, x in trouves[-PERSONNE_JOURNAL:][::-1]:
         lignes.append(f"journal · {time.strftime('%H:%M', time.localtime(t))} · {'Ahmed' if qui == 'ahmed' else 'toi'} : « {x[:220]} »")
     return lignes
@@ -951,44 +1043,90 @@ def serveur(entree=None, sortie=None):
     import embeddings
     from memory import Memory
     entree, sortie = entree or sys.stdin, sortie or sys.stdout
+    import rappel_moment
     mem = Memory()
     index, index_erreurs, index_notes, index_jardin = Index(), IndexErreurs(), IndexNotes(), IndexJardin()
+    moment = rappel_moment.Moment()                # (11/11) les caches du rappel du moment
     for ligne in entree:
         with embeddings.priorite():               # (09/11) le tour de papa passe avant les demandes de sens des autres
             try:
+                t0 = time.time()
+                etapes = {}
+
+                def chrono(nom, t):
+                    etapes[nom] = round(1000 * (time.time() - t), 1)
                 q = json.loads(ligne)
                 texte = str(q.get("texte") or "")[:4000]
+                if texte == "préchauffe" and not getattr(moment, "_chaud", False):
+                    moment._chaud = True
+                    moment.prechauffer(mem)
+                # (11/11, Ahmed : « est-ce que son memory recall automatique intègre toutes les nouveautés ? ») ce que le cockpit sait du
+                # moment (son tableau de l'instant, sa voix, son émotion…) : des ENTRÉES de la recherche, jamais une sortie
+                ctx = q.get("contexte") if isinstance(q.get("contexte"), dict) else {}
+                exclus = [int(x) for x in (q.get("exclus") or [])][-3000:]
                 # (26/10) au 1er message d'une conversation, rien n'est encore dans son contexte : les souvenirs récents comptent aussi
-                r = rappel(mem, texte, now=q.get("now"), exclus=[int(x) for x in (q.get("exclus") or [])][-3000:], index=index,
+                t = time.time()
+                r = rappel(mem, texte, now=q.get("now"), exclus=exclus, index=index,
                            recent_h=0.0 if q.get("demarrage") else 3.0, suite=not q.get("demarrage"),
                            espace={int(x) for x in (q.get("espace") or [])[-5000:]}, hip_reglages=q.get("hippocampe"))
+                chrono("rappel", t)
+                t = time.time()
                 try:
-                    personnes = {n: ce_que_je_sais(mem, n) for n in personnes_nommees(texte)
+                    personnes = {n: ce_que_je_sais(mem, n, index=index, cache=moment.indices) for n in personnes_nommees(texte)
                                  if n not in set(q.get("exclus_personnes") or [])}
                     r["personnes"] = {n: l for n, l in personnes.items() if l}
                 except Exception as ex:
                     r["erreur_personnes"] = f"{type(ex).__name__}: {ex}"[:200]
+                chrono("personnes", t)
+                t = time.time()
                 try:
                     e = erreurs_pertinentes(texte, index=index_erreurs, exclus=[str(x) for x in (q.get("exclus_erreurs") or [])][:500])
                     r.update(erreurs=e["lignes"], erreurs_ids=e["ids"], erreurs_scores=e["scores"])
                 except Exception as ex:
                     r["erreur_carnet"] = f"{type(ex).__name__}: {ex}"[:200]
+                chrono("erreurs", t)
+                t = time.time()
                 try:                                       # (30/10, Ahmed) son journal proche, ses carnets, ses notes
-                    nt = notes_pertinentes(texte, index=index_notes, exclus=[str(x) for x in (q.get("exclus_notes") or [])][-3000:])
+                    nt = notes_pertinentes(texte, index=index_notes, exclus=[str(x) for x in (q.get("exclus_notes") or [])][-3000:],
+                                           sans_telephone=bool(ctx.get("coupe")))
                     r.update(notes=nt["lignes"], notes_ids=nt["ids"], notes_scores=nt["scores"])
                 except Exception as ex:
                     r["erreur_notes"] = f"{type(ex).__name__}: {ex}"[:200]
+                chrono("notes", t)
+                t = time.time()
                 try:                                       # (30/10, accord de Hakim) son jardin : à lui seul, dans son champ
                     jd = jardin_pertinent(texte, index=index_jardin, exclus=[str(x) for x in (q.get("exclus_intime") or [])][-500:])
                     r.update(intime=jd["lignes"], intime_ids=jd["ids"])
                 except Exception:
                     pass
+                chrono("jardin", t)
+                t = time.time()
+                try:                                       # (11/11) une scène du balayage ordinaire remonte EN TANT QUE scène : sa ligne de film
+                    films = rappel_moment.lignes_de_film(mem, moment.scenes, list(r.get("ids") or []) + list(r.get("theme_ids") or []), now=q.get("now"))
+                    if films:
+                        r["films"] = {str(k): v for k, v in films.items()}
+                except Exception as ex:
+                    r["erreur_films"] = f"{type(ex).__name__}: {ex}"[:200]
+                chrono("films", t)
+                if ctx:                                    # (11/11) le rappel du moment : ses scènes, ses indices, ses gens, ses fichiers, ses sons
+                    t = time.time()
+                    try:
+                        now_q = q.get("now") or time.time()
+                        r["moment"] = rappel_moment.du_moment(mem, index, moment, texte, ctx, now=now_q, exclus=set(exclus),
+                                                              evite=set(r.get("ids") or []),
+                                                              exclus_personnes=q.get("exclus_personnes") or [],
+                                                              deja_personnes=list((r.get("personnes") or {}).keys()))
+                    except Exception as ex:
+                        r["erreur_moment"] = f"{type(ex).__name__}: {ex}"[:200]
+                    chrono("moment", t)
                 if q.get("demarrage"):                     # (26/10) le 1er message d'une conversation : ses carnets à règles
                     try:
                         import carnets_regles
                         r["carnets"] = carnets_regles.demarrage()[:3000]
                     except Exception:
                         pass
+                etapes["total"] = round(1000 * (time.time() - t0), 1)
+                r["etapes"] = etapes                       # (11/11) où passe son temps de rappel (le cockpit le journalise)
             except Exception as e:
                 r = {"lignes": [], "ids": [], "erreur": f"{type(e).__name__}: {e}"[:200]}
             sortie.write(json.dumps(r, ensure_ascii=False) + "\n")

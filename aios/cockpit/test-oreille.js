@@ -637,9 +637,9 @@ test('(00:20, l’étude) son attention en douceur : d’une voix inconnue, seul
 });
 
 test('(00:30, l’étude) en Conversation à l’oral, ses souvenirs ne passent plus par le tri de Sonnet (5 s gagnées avant sa réponse)', () => {
-  assert.match(src, /async function blocRappel\(session, texte, nonce, sansTri = false\)/);
+  assert.match(src, /async function blocRappel\(session, texte, nonce, sansTri = false(?:, opts = \{\})?\)/);   // (11/11) + le moment
   assert.match(src, /if \(theme\.length && TRI_ACTIF && !sansTri\) tri = await trierSouvenirs\(/);
-  assert.match(src, /blocRappel\(session, texte, nonce, !!\(q\.oral && q\.conversation\)\)/);
+  assert.match(src, /blocRappel\(session, texte, nonce, !!\(q\.oral && q\.conversation\)(?:, \{[^()]*\})?\)/);
 });
 
 test('(00:30) le bouton Télépathie : la Conversation sans aucun texte écrit, avec le réglage de ce soir ; Conversation : avec les textes', async () => {
