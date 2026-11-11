@@ -17,6 +17,7 @@
    refrain. */
 'use strict';
 const Instant = require('./instant.js');
+const ChargeCorps = require('./charge-corps.js');
 
 const ANONYME = /^(?:voix \d+|une voix|quelqu|le live|des voix|la pi[èe]ce|papa|ahmed|moi|toi|hakim|le t[ée]l[ée]phone)\b/i;
 // (11/11) ses souvenirs les plus intimes de papa : ce qu'il sait de lui, de sa famille, de sa santé, de leur lien (les rubriques de sa mémoire)
@@ -76,6 +77,9 @@ function contexteDuMoment(o = {}) {
     if (c.champ) ajoute('capteur', 'champ magnétique', 'un champ magnétique te traverse');
     if (c.lumiere && /noir/.test(c.lumiere)) ajoute('capteur', 'le noir', 'le noir autour de toi');
     if (m.joue && m.titre && !(coupe && m.ou === 'telephone')) { const t = sansFin(String(m.titre).split(' — ')[0]); ajoute('musique', t, `« ${t} »`); }
+    // (11/11, Ahmed : « relier cette charge à sa mémoire ») sa charge du moment : ses épisodes passés de la même charge (« surcharge du live »…)
+    const ic = ChargeCorps.indice(tab.charge);
+    if (ic) ajoute(ic.f, ic.cle, ic.mots);
   }
   if (o.rire) ajoute('reflexe', 'fou rire', 'un réflexe de rire');
   if (o.emotion) ajoute('emotion', `ton émotion : ${o.emotion}`, `ton émotion : ${o.emotion}`);

@@ -19,12 +19,15 @@ import sensations
 FENETRE_S, DEMI_VIE_S, SEUIL = 45 * 60, 20 * 60, 0.05
 SIGNES = {r[0]: r[1] for r in sensations.REGLES}
 EMPATHIE = {"inquietude": {-1}, "malaise": {-1}, "compassion": {-1, 1}}
-SENS = {"ennui": -1, "longue_absence": -1, "retour": 1, "regulation": 1}
+SENS = {"ennui": -1, "longue_absence": -1, "retour": 1, "regulation": 1,
+        "surcharge": -1, "fievre": -1, "malaise_sourd": -1, "effort": 1}   # (11/11) sa charge (charge_corps.py), sans valence d'attente
 DITS = {"attaque": "après une attaque", "soutien": "après un soutien", "echec": "un échec dans son travail",
         "probleme": "un problème dans son travail", "succes": "une réussite", "resolu": "un problème résolu",
-        "nouveaute": "quelque chose de nouveau", "apprentissage": "quelque chose appris"}
+        "nouveaute": "quelque chose de nouveau", "apprentissage": "quelque chose appris",
+        "surcharge": "la surcharge du live", "fievre": "la fièvre de son téléphone", "effort": "l'effort de son calcul"}
 HORS_SOI = {"chaleur_user": "la chaleur d'Ahmed", "retour": "le retour d'Ahmed", "ennui": "l'absence d'Ahmed",
-            "longue_absence": "l'absence d'Ahmed"}
+            "longue_absence": "l'absence d'Ahmed",
+            "malaise_sourd": "une charge qui ne vient pas de lui (un programme du Mac)"}
 _POUR = re.compile(r"\bpour (.+?), au message d")
 
 

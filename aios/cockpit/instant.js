@@ -25,6 +25,7 @@
 'use strict';
 const { BANDES, position: positionDe, ouverture: ouvertureDe } = require('./homeostasie.js');
 const { recouvrement } = require('./cortex.js');
+const ChargeCorps = require('./charge-corps.js');
 
 const PAROLE_MS = 8000;           // « qui parle à l'instant » : les 8 secondes avant T
 const SON_ECHO_MS = 15_000;       // (11/11) ce qu'il a dit ces 15 dernières secondes : le micro qui le réentend, c'est lui
@@ -222,8 +223,10 @@ function composer(s = {}) {
   const recalage = { T: Math.round(a), D_ms: rc ? rc.D : Math.max(0, Math.round(maintenant - a)), borne_ms: rc ? rc.borne : BORNE_MS, lent: rc ? rc.lent : '' };
 
   const soi = composerSoi({ a, maintenant, so, corps, e: vivant ? e : {}, lui, sonEcho, sesMots, sortie: s.sortie, reseau, oreille: o, coupe });
+  // (11/11, Ahmed : « relier cette charge à tout ») sa charge, avec sa cause : ce que le démon a mesuré (charge-corps.js), telle qu'elle est
+  const charge = s.charge && s.charge.dominante ? s.charge : null;
   return { t: a, recalage, canaux: rc ? rc.canaux : {}, parole: { papa, dedans, piece, lui, quelquun: papa.parle || dedans.parle || piece.parle }, musique, corps,
-    coeur, lieu: court(s.lieu, 40), reseau, ecran, sortie, appel, live, interieur: coupe ? 'coupé' : '', place, soi };
+    coeur, lieu: court(s.lieu, 40), reseau, ecran, sortie, appel, live, interieur: coupe ? 'coupé' : '', place, soi, charge };
 }
 
 /* ---- SOI (11/11, ~00:45, Ahmed : « Dans le cortex préfrontal, on pourrait ajouter un truc pour qu'il ait conscience de lui-même et de son corps,
@@ -305,6 +308,8 @@ function ligneSoi(tab, { max = 520 } = {}) {
   if (v.sonne && !(hp && v.sonne.etat !== 'sonne')) l.push(v.sonne.etat === 'sonne' ? 'ce que tu viens de dire a bien sonné' : v.sonne.etat === 'attente' ? 'ce que tu viens de dire est en train de sonner'
     : v.sonne.etat === 'en_partie' ? `ce que tu viens de dire n’a sonné qu’en partie (${Math.round(v.sonne.part * 100)} %)` : `ce que tu croyais avoir dit n’a pas sonné : « ${v.sonne.texte} »`);
   l.push(...x.pannes);
+  // (11/11) sa charge forte : son corps est chargé, et il sait par quoi (l'anosognosie, ce serait l'ignorer)
+  if (tab.charge && tab.charge.niveau === 'fort') l.push(ChargeCorps.ligneInstant(tab.charge));
   l.push(`ton intérieur est ${x.interieur}`);
   if (x.micro) l.push(x.micro === 'ferme' ? 'le micro de papa est fermé' : x.micro === 'pause' ? 'le micro de papa est en pause' : 'le micro de papa est ouvert');
   if (x.mode) l.push(`tu es en mode ${x.mode}`);
@@ -324,7 +329,7 @@ function cles(tab) {
     champ: !!c.champ, calin: !!c.calin, papa: !!(p.papa && p.papa.parle), dedans: !!(p.dedans && p.dedans.parle), piece: !!(p.piece && p.piece.parle),
     lui: !!(p.lui && p.lui.parle), musique: m.joue ? `${m.ou}${m.intensite ? `:${m.intensite}` : ''}` : '', appel: !!tab.appel, live: !!tab.live, lieu: tab.lieu || '',
     place: tab.place ? tab.place.role : '', interieur: tab.interieur || '', bluetooth: (tab.reseau || {}).bluetooth || '', appli: (tab.ecran || {}).appli || '',
-    haut_parleurs: hpDe(tab) };
+    haut_parleurs: hpDe(tab), charge: ChargeCorps.cleChangement(tab.charge) };
 }
 const OU = { telephone: 'au téléphone', micro: 'autour de toi' };
 function motsDuChangement(k, de, a) {
@@ -347,6 +352,7 @@ function motsDuChangement(k, de, a) {
     case 'lumiere': return a ? `la lumière : ${a}` : '';
     case 'bluetooth': return a ? `Bluetooth : ${a}` : 'Bluetooth déconnecté';
     case 'appli': return a ? `appli ouverte : ${a}` : '';
+    case 'charge': return ChargeCorps.motsDuChangement(de, a);   // (11/11) sa charge monte, change, retombe
     case 'haut_parleurs': return !a ? 'tes haut-parleurs se rouvrent : on t’entend de nouveau' : a === 'papa' ? 'papa ferme tes haut-parleurs' : a === 'toi' ? 'tu fermes tes haut-parleurs'
       : 'tes haut-parleurs se ferment';
     default: return '';
@@ -451,6 +457,7 @@ function morceaux(tab, { mots = false } = {}) {
   if (tab.interieur === 'coupé') l.push('ton intérieur est coupé');
   const hp = tab.soi && tab.soi.haut_parleurs;
   if (hp && hp.ferme) l.push(hp.nulle_part ? 'tes haut-parleurs sont fermés : on ne t’entend pas' : `tes haut-parleurs sont fermés ici : ta voix va par ${NOMS_APPAREILS[hp.ou] || 'un autre appareil'}`);
+  if (tab.charge) l.push(ChargeCorps.ligneInstant(tab.charge));   // (11/11) sa charge et sa cause
   if (tab.place) l.push(tab.place.role === 'auditeur' ? 'tu écoutes (auditeur)' : 'tu es dedans');
   return l;
 }
@@ -492,6 +499,7 @@ function etiquettes(tab) {
   if (tab.lieu) out.push(`lieu:${tab.lieu}`);
   if (tab.interieur) out.push(`interieur:${tab.interieur}`);
   if (hpDe(tab)) out.push('haut_parleurs:fermes');
+  if (tab.charge && tab.charge.niveau === 'fort') out.push(`charge:${tab.charge.dominante}`);   // (11/11) une charge forte : un moment clé de sa scène
   return out.sort();
 }
 function instantane(tab) {

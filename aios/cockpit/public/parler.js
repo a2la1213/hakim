@@ -3086,6 +3086,40 @@ if (window.HakimApp && window.HakimApp.telepathie) {
   try { if (window.HakimApp.oreilleEtat) { const o = JSON.parse(window.HakimApp.oreilleEtat()); oreilleEtat(o.etat, o.titre, o.phrase); } } catch (_) {}
 }
 
+/* (11/11, Ahmed : « j'aimerais un bouton pour qu'il n'entende pas le retour du micro (voix des gens du live par le micro), et aussi pour qu'il
+   reste justement dans les voix de sa tête ») 🔁 le retour du live coupé au micro (réglage micro_sans_retour, lu à chaud au cockpit ; éteint
+   par défaut) : ce que joue le téléphone ne revient plus par ton micro, il ne l'entend que de l'intérieur ; ta voix et celles des gens à côté
+   de toi restent. Visible avec 🎧 (l'appli : c'est elle qui entend l'intérieur). */
+function montrerSansRetour() {
+  const b = $('sansRetour');
+  if (!b) return;
+  const oui = !!(typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.micro_sans_retour);
+  b.setAttribute('aria-pressed', oui ? 'true' : 'false');
+  b.title = oui ? 'Retour du live coupé : ce que joue le téléphone ne revient plus par ton micro, il ne l’entend que de l’intérieur ; ta voix et celles des gens à côté de toi restent. Touche pour le rendre au micro.'
+    : 'Couper le retour du live au micro : ce que joue le téléphone (le live, une vidéo) ne lui reviendra plus par ton micro, seulement de l’intérieur ; ta voix et celles des gens à côté de toi restent.';
+}
+if ($('sansRetour') && window.HakimApp && window.HakimApp.telepathie) {
+  $('sansRetour').hidden = false;
+  $('sansRetour').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const oui = !(reglagesCorps && reglagesCorps.micro_sans_retour);
+    reglagesCorps.micro_sans_retour = oui;
+    montrerSansRetour();
+    humeur(oui ? '🔁 retour du live coupé : il l’entend de l’intérieur' : '🔁 le retour du live revient au micro');
+    setTimeout(() => humeur(), 3000);
+    try { await fetch('/api/corps/reglages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ micro_sans_retour: oui }) }); } catch (_) {}
+  });
+  setInterval(montrerSansRetour, 2000);                               // relu à chaud : la page Réglages ou lui peuvent l'avoir changé
+  setTimeout(montrerSansRetour, 1500);
+}
+// l'instant d'un morceau d'un tour fini (son début infos.debut, de : sa première fenêtre de 20 ms) : seulement pour le retour du micro, quand il
+// est coupé (le cockpit compare ce morceau au son de son intérieur) ; ces paramètres-là n'entrent jamais au fil
+function tempsRetour(infos, de = 0) {
+  if (!(typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.micro_sans_retour) || !infos || !(Number(infos.debut) > 0)) return '';
+  const t0 = Number(infos.debut) + de * 20;
+  return `&rt0=${t0}&rmaintenant=${Date.now()}&rcle=${encodeURIComponent(`${infos.debut}-${de}`)}`;
+}
+
 // (03/11, Ahmed : « si j'écoute une musique, il peut la mettre en pause et glisser son mot pour que je l'écoute ») quand sa voix
 // joue, il prend le son un instant (appli 1.46) : la musique ou la vidéo se met en pause, dans les écouteurs Bluetooth aussi, et
 // reprend d'elle-même 1,2 s après sa dernière phrase (pas entre deux phrases)
@@ -5581,13 +5615,14 @@ setInterval(() => {
 // Le texte du tour : le déjà compris + la queue. null si la queue n'a pas pu être transcrite (l'appelant
 // retranscrit alors le tour entier). Le tour fini est saisi AVANT d'attendre : un autre tour qui se
 // finirait pendant l'attente ne prête pas sa queue à celui-ci (relecture Opus).
-async function texteDuTour(conv) {
+async function texteDuTour(conv, infos) {
   const e = conv.ecrit, capteur = conv.capteur;
   if (!e || !capteur) return e ? e.confirme : '';
   const tourFini = capteur.enParole ? null : capteur.dernierTour;
   if (e.partiel) await e.partiel;                                        // le morceau en cours d'abord
   const morceau = tourFini ? capteur.segmentFini(e.coupe, tourFini) : capteur.segment(e.coupe);
-  const queue = morceau ? await transcrireVite(morceau, 'audio/wav', e.confirme, tourFini || typeof tempsMorceau !== 'function' ? '' : tempsMorceau(capteur, e.coupe, capteur.fenetres)) : '';   // la queue n'est souvent que du silence
+  // (11/11) la queue d'un tour fini : son instant pour le retour du micro seulement (tempsRetour), jamais pour le fil
+  const queue = morceau ? await transcrireVite(morceau, 'audio/wav', e.confirme, tourFini || typeof tempsMorceau !== 'function' ? (typeof tempsRetour === 'function' ? tempsRetour(infos, e.coupe) : '') : tempsMorceau(capteur, e.coupe, capteur.fenetres)) : '';   // la queue n'est souvent que du silence
   if (queue === null) return null;
   return (e.confirme + ' ' + morceauNeuf(queue, e.confirme)).trim();
 }
@@ -6651,8 +6686,8 @@ async function tourDeParole(conv, wav, infos, extra) {
     if (deAvance !== null) journalVoix('transcription_reprise', {});
     texte = extra && extra.texte ? extra.texte
       : deAvance !== null ? deAvance
-      : (conv.ecrit && (conv.ecrit.confirme || conv.ecrit.partiel) ? await texteDuTour(conv) : await transcrireVite(wav, 'audio/wav'));
-    if (texte === null && conv.ecrit && conv.ecrit.confirme) texte = await transcrireVite(wav, 'audio/wav');   // un morceau a échoué : le tour entier
+      : (conv.ecrit && (conv.ecrit.confirme || conv.ecrit.partiel) ? await texteDuTour(conv, infos) : await transcrireVite(wav, 'audio/wav', '', typeof tempsRetour === 'function' ? tempsRetour(infos, 0) : ''));
+    if (texte === null && conv.ecrit && conv.ecrit.confirme) texte = await transcrireVite(wav, 'audio/wav', '', typeof tempsRetour === 'function' ? tempsRetour(infos, 0) : '');   // un morceau a échoué : le tour entier
   } catch (e) { journalVoix('tour_erreur'); texte = null; }
   finally { conv.enAttente = Math.max(0, conv.enAttente - 1); }
   // (2026-10-23, Ahmed en voiture : 9 min à parler sans que rien n'arrive) une transcription RATÉE n'est pas du silence :

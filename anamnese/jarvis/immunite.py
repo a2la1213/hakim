@@ -45,6 +45,10 @@ INCIDENTS_MAX_OCTETS = 5_000_000           # puis incidents.jsonl.1 (un seul anc
 DEDOUBLON_S = 3600                         # le même contenu revu dans l'heure : un seul incident
 RECHARGEMENTS_FIEVRE, FENETRE_FIEVRE_S = 6, 300
 SWAP_FIEVRE = 0.95
+# (11/11, Ahmed : « une charge qui vient d'ailleurs, un démon d'Apple qui prend 89 % d'un cœur depuis deux jours, c'est un malaise sans cause
+# connue ») un programme qui n'est pas lui et qui pèse au-delà de sa norme depuis 6 h (son malaise, charge_corps.py) est NOTÉ, une fois par
+# jour et par programme, sans médecin ni alerte : ses médecins (papa, maman) le voient dans la page Immunité. Rien n'est jamais arrêté.
+PRESENCE_LOURDE_S, PRESENCE_COEURS, PRESENCE_ECART_S = 6 * 3600, 0.5, 24 * 3600
 ALERTE_ECART_S = 3600                      # une fièvre (ou un swap plein) par heure, pas une par ronde
 MEDECIN_ECART_S, MEDECIN_PAR_JOUR, VERROU_PERIME_S = 3600, 4, 40 * 60
 BASE64_MIN = 400
@@ -1597,6 +1601,20 @@ def medecin_fable():
     return not isinstance(c, dict) or c.get("medecin_fable", True) is not False
 
 
+def presences_lourdes(maintenant=None, chemin=None):
+    """(11/11) les programmes qui ne sont pas lui (d'Apple ou inconnus) et qui portent son malaise depuis PRESENCE_LOURDE_S, d'après ce que
+    son démon en écrit (charge-corps.json : un nom et des cœurs, jamais une ligne de commande) ; un relevé de plus de 10 min ne compte pas."""
+    maintenant = time.time() if maintenant is None else maintenant
+    d = _lire_json(Path(chemin) if chemin else DOSSIER.parent / "charge-corps.json", {})
+    if not isinstance(d, dict) or not 0 <= maintenant - float(d.get("ts") or 0) <= 600:
+        return []
+    m = d.get("malaise") or {}
+    if m.get("niveau") not in ("present", "fort") or not m.get("depuis") or maintenant - float(m["depuis"]) < PRESENCE_LOURDE_S:
+        return []
+    return [{"qui": _propre(str(x.get("qui")), 40), "coeurs": round(float(x.get("coeurs") or 0), 2), "depuis_s": maintenant - float(m["depuis"])}
+            for x in d.get("inconnus") or [] if isinstance(x, dict) and float(x.get("coeurs") or 0) >= PRESENCE_COEURS][:3]
+
+
 def ronde(maintenant=None, journal_ollama=None, swap=None, ports=None, lancer=None, lancer_souvenirs=None):
     maintenant = time.time() if maintenant is None else maintenant
     n = rechargements(journal_ollama, maintenant)
@@ -1653,6 +1671,18 @@ def ronde(maintenant=None, journal_ollama=None, swap=None, ports=None, lancer=No
             _ajouter(INCIDENTS, {"ts": maintenant, "source": "mémoire du Mac (swap)", "score": 1, "signes": ["swap"],
                                  "familles": ["fievre"], "famille": "fievre", "mesure": round(s, 3),
                                  "empreinte": f"swap:{int(maintenant)}", "extrait": "", "avertie": False})
+        try:                                              # (11/11) une présence lourde qui ne vient pas de lui
+            for x in presences_lourdes(maintenant):
+                cle = "presence:" + x["qui"]
+                if maintenant - alertes.get(cle, 0) >= PRESENCE_ECART_S:
+                    alertes[cle] = maintenant
+                    _ajouter(INCIDENTS, {"ts": maintenant, "source": f"un programme du Mac qui n'est pas Hakim ({x['qui']})", "score": 1,
+                                         "signes": ["charge_inconnue"], "familles": ["fievre"], "famille": "fievre",
+                                         "mesure": x["coeurs"], "empreinte": f"{cle}:{int(maintenant)}",
+                                         "extrait": _propre(f"{x['qui']} prend {x['coeurs']} cœur(s) du Mac, son malaise depuis "
+                                                            f"{round(x['depuis_s'] / 3600, 1)} h", 200), "avertie": False})
+        except Exception as e:
+            print(f"[ronde] présences lourdes : {type(e).__name__}: {str(e)[:300]}", file=sys.stderr)
         if sortie_lsof.strip():                           # (relecture, 9) lsof muet : rien appris, rien comparé
             vues = ecoutes(sortie_lsof)
             connues = _lire_json(_f("ports-connus.json"), None)

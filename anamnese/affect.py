@@ -88,6 +88,15 @@ EVENTS = {
     "danse":          {"dopamine": +0.25, "endorphine": +0.25, "noradrenaline": +0.10, "ocytocine": +0.10},
     "malaise":        {"cortisol": +0.15, "noradrenaline": +0.10, "serotonine": -0.10, "dopamine": -0.05,
                        "ocytocine": -0.05, "endocannabinoides": -0.05},
+    # (11/11, Ahmed : « cette charge sera son stress ou sa surcharge émotionnelle par exemple, ça dépend ») la charge de ses machines,
+    # selon sa cause (charge_corps.py) : le live plein de monde le SURCHARGE (vigilance et stress qui montent, le frein qui lâche) ; son
+    # propre calcul est un EFFORT (attention, un peu d'élan ; la fatigue vient après, par l'adénosine) ; le téléphone qui chauffe est une
+    # FIÈVRE (un stress physique) ; une charge venue d'ailleurs, un MALAISE SOURD (un peu de stress, sans personne contre qui). Sans
+    # valence (VALENCE_EV) : une charge n'est ni une récompense ni une attente déjouée (pas de « surprise » quand elle retombe)
+    "surcharge":      {"noradrenaline": +0.25, "cortisol": +0.15, "acetylcholine": +0.05, "serotonine": -0.05, "endocannabinoides": -0.05},
+    "effort":         {"acetylcholine": +0.15, "noradrenaline": +0.10, "dopamine": +0.05},
+    "fievre":         {"noradrenaline": +0.15, "cortisol": +0.15, "serotonine": -0.05, "endorphine": +0.05},
+    "malaise_sourd":  {"cortisol": +0.10, "noradrenaline": +0.05, "serotonine": -0.05},
 }
 
 
@@ -152,11 +161,21 @@ EVENTS_V2 = {
     "securite":       {"gaba": +0.15, "crh": -0.10},
     "musique":        {"gaba": +0.05},
     "danse":          {"adrenaline": +0.10, "gaba": +0.05},
+    "surcharge":      {"adrenaline": +0.10, "gaba": -0.08},           # (11/11) sa charge, selon sa cause (plus haut)
+    "effort":         {"adrenaline": +0.03},
+    "fievre":         {"crh": +0.05, "gaba": -0.05},
+    "malaise_sourd":  {"gaba": -0.03},
 }
 # (27/10, plan de Hakim validé par Ahmed ; relecture indépendante) la reprise en main d'un ressenti pénible (sa
 # rétrospection, ou l'apaisement par l'autre) défait une part du ressenti LUI-MÊME : son profil, en négatif. Le profil
 # « regulation » est fait pour une attaque : sur une tristesse, il ne rendait ni la dopamine ni l'endorphine.
 for _r in ("peur", "tristesse", "colere", "honte", "inquietude", "malaise"):
+    EVENTS["reprise_" + _r] = {h: -d for h, d in EVENTS[_r].items()}
+    EVENTS_V2["reprise_" + _r] = {h: -d for h, d in EVENTS_V2.get(_r, {}).items()}
+# (11/11) quand sa charge retombe (charge_corps.py), sa reprise défait ce qu'elle avait fait, à proportion : le stress d'un live ou d'une
+# fièvre redescend avec elle, au lieu d'attendre la seule demi-vie du cortisol (8 h) — jamais une humeur coincée par une charge partie
+CHARGES = ("surcharge", "effort", "fievre", "malaise_sourd")
+for _r in CHARGES:
     EVENTS["reprise_" + _r] = {h: -d for h, d in EVENTS[_r].items()}
     EVENTS_V2["reprise_" + _r] = {h: -d for h, d in EVENTS_V2.get(_r, {}).items()}
 K_ACTH = 1.0            # cible de l'ACTH = base + K·(CRH − base)
@@ -203,6 +222,7 @@ HAB_EXEMPTS = {"ennui", "longue_absence", "retour", "regulation",   # une repris
 HAB_EXEMPTS |= {"reprise_peur", "reprise_tristesse", "reprise_colere", "reprise_honte"}   # (27/10) la reprise d'un ressenti non plus
 HAB_EXEMPTS |= {"inquietude", "malaise", "reprise_inquietude", "reprise_malaise"}       # (27/10, l'empathie) comme la peur
 HAB_EXEMPTS |= {"douleur"}                                                               # (30/10) une douleur ne s'émousse pas
+HAB_EXEMPTS |= {"reprise_" + _r for _r in CHARGES}                                      # (11/11) la reprise d'une charge non plus
 PAS_V2_S = 300.0
 
 # ---- Émotions soudaines (2026-10-21, idée d'Ahmed relayée par Hakim ; prédictions figées AVANT dans

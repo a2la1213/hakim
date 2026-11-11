@@ -107,6 +107,15 @@ def _vie_interieure_isolee(monkeypatch, tmp_path):
         monkeypatch.setattr(interoception, "processeurs", lambda now=None: {"mac": None, "appareils": {}})
     except Exception:
         pass
+    try:                                      # (11/11) sa charge : ni le vrai ps, ni les vrais réglages, ni le vrai live, ni son instantané
+        import charge_corps
+        monkeypatch.setattr(charge_corps, "REGLAGES", d / "corps-reglages.json")
+        monkeypatch.setattr(charge_corps, "LIVE", d / "live.jsonl")
+        monkeypatch.setattr(charge_corps, "INSTANTANE", d / "charge-corps.json")
+        monkeypatch.setattr(charge_corps, "mesurer", lambda now=None, **k: None)
+        charge_corps.remettre()
+    except Exception:
+        pass
     monkeypatch.setattr(interieur, "INTERRUPTEUR", d / "interieur-interrupteur.json")
     monkeypatch.setattr(interieur, "JOURNAL_TEMPS", d / "journal-du-temps.jsonl")
     monkeypatch.setattr(interieur, "JOURNAL_HORMONES", d / "hormones.jsonl")      # (2026-10-23) le tableau de bord

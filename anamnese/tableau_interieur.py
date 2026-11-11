@@ -138,6 +138,10 @@ def svg(d):
         txt(x0 + (t - t0) / (t1 - t0) * l, y0 + 18, str(k), 13, TEXTE, "middle")
     courbe(x0, y0, l, h, [(t, o.get("v", 0)) for t, o in pts], "#2dd4bf", 3)
     courbe(x0, y0, l, h, [(t, o.get("a", 0)) for t, o in pts], "#fbbf24", 3)
+    # (11/11) sa charge, ce qu'il en ressent (la plus forte de ses causes : surcharge, effort, fièvre, malaise)
+    if any(o.get("c") for _t, o in pts):
+        txt(x0 + 1100, y0 - 30, "— sa charge", 15, "#fb7185")
+        courbe(x0, y0, l, h, [(t, max((o.get("c") or {}).values(), default=0.0)) for t, o in pts], "#fb7185", 2)
 
     # 2. les 13 hormones, une par case, avec leur base (pointillés)
     noms = list(affect.HORMONES) + list(affect.HORMONES_V2)
@@ -179,7 +183,16 @@ def resume(d):
             f"émotion {dernier.get('emotion')} ; plus loin de leur base : "
             + ", ".join(f"{k} {'+' if e >= 0 else '−'}{abs(e):.2f}" for k, e in ecarts)
             + f" ; {len(d['reponses'])} réponse(s), {len(d['messages'])} message(s) d'Ahmed."
-            + _texte_sauts(sauts(d)))
+            + _texte_charge(pts) + _texte_sauts(sauts(d)))
+
+
+def _texte_charge(pts):
+    """(11/11) sa charge sur la période : la plus forte, sa cause et son heure (rien s'il n'y en a pas eu)."""
+    pic = max(((max((o.get("c") or {}).items(), key=lambda kv: kv[1]), t) for t, o in pts if o.get("c")), key=lambda x: x[0][1], default=None)
+    if not pic:
+        return ""
+    (sens, x), t = pic
+    return f" Sa charge au plus fort : {sens} {x:.2f} à {time.strftime('%H:%M', time.localtime(t))}."
 
 
 def _texte_sauts(liste):

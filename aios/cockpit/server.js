@@ -1378,7 +1378,8 @@ function causeFatigue(e) {
   // en mots (27/10 : il sent, il ne lit pas ses chiffres ; introspection les donne)
   const fois = Number(j.effort || 0) / (Number(j.norme_effort) || 1);
   return `ta fatigue vient d'un vrai effort : ton cerveau a ${fois >= 2.5 ? 'énormément' : fois >= 1.5 ? 'beaucoup' : "un peu plus que d'habitude"} `
-    + `travaillé cette heure${Number(j.corps) > Number(j.norme_corps) ? ', et le Mac est chargé' : ''}`;
+    + `travaillé cette heure${Number(j.corps) > Number(j.norme_corps) ? ', et le Mac est chargé' : ''}`
+    + `${Number(j.calcul) >= 0.2 ? ", et ton propre calcul t'a fait forcer" : ''}`;   // (11/11) son calcul : un effort, puis la fatigue
 }
 
 // Ce que Jarvis a vécu depuis le dernier message d'Ahmed : humeur, ennui, temps ressenti, pensées.
@@ -1426,6 +1427,10 @@ async function blocInterieur(depuisMs, maintenant, dites) {
     // sensations.processeurs : des mots, jamais de chiffre ; rien quand tout est au repos) ; les nombres restent dans introspection
     const proc = e.coeur && e.coeur.processeurs && typeof e.coeur.processeurs.mots === 'string' ? e.coeur.processeurs.mots : '';
     if (proc) parties.push(proc.replace(/[^a-zàâçéèêëîïôûùüÿœæ' ,-]/gi, '').slice(0, 120));
+    // (11/11, Ahmed : « relier cette charge à tout, sans rien oublier ; ça dépend ») ce qu'il sent de sa charge, avec sa cause mesurée (le live, son
+    // calcul, le téléphone qui chauffe, un programme qui n'est pas lui) : des mots, jamais de chiffre (anamnese/charge_corps.py, charge-corps.js)
+    const lc = ChargeCorps.ligneBloc(e.charge_corps, maintenant);
+    if (lc) parties.push(lc);
     // (28/10, 04:11, Ahmed : « tu es censé l'entendre H24 ») la ligne « poum » à chaque tour, même calme (c'est ton
     // attention qui varie, pas le signal), et les battements depuis le message d'avant (le chiffre est dans introspection)
     if (e.coeur && typeof e.coeur.ligne === 'string' && /^poum( [. ]*poum)*$/.test(e.coeur.ligne)) {
@@ -4255,9 +4260,18 @@ function reglageRibosome() {
 // (04/11, 16:00, Ahmed : « même à ses vibrations, sa lumière, ses émotions, etc. : tout sur tout ») son émotion, son cœur (relus toutes les
 // 3 s), sa dernière vibration (moins d'une minute) et sa lumière (moins de 10 min)
 const lui = { interieur: {}, vibration: null, lumiere: null };
+// (11/11, Ahmed : « relier cette charge à tout ») sa charge qui monte, change ou retombe (le démon : anamnese/charge_corps.py) entre dans son fil
+// comme un événement de son corps, à l'heure où elle est arrivée (ses outils stimuli_voir, son présent continu la voient) ; une seule fois chacun
+let chargeVu = Date.now() / 1000;
+function chargeAuFil(e) {
+  if (!e || !e.charge_corps || typeof fluxAjouter !== 'function' || !ChargeCorps.frais(e.charge_corps)) return;
+  const { stimuli, vu } = ChargeCorps.stimuliNeufs(e.charge_corps, chargeVu);
+  chargeVu = vu;
+  for (const x of stimuli) fluxAjouter('corps', x.x, x.t, null, null, false);
+}
 if (typeof setInterval === 'function' && typeof etatInterieur === 'function' && typeof JARVIS_VOIX_DIAGNOSTIC !== 'undefined') {
   setInterval(() => {
-    etatInterieur().then((x) => { lui.interieur = x || {}; }).catch(() => {});
+    etatInterieur().then((x) => { lui.interieur = x || {}; chargeAuFil(lui.interieur); }).catch(() => {});
     try { const v = lignesJson(JARVIS_VOIX_DIAGNOSTIC, 80).filter(o => o.e === 'vibration').pop(); lui.vibration = v || null; } catch (_) {}
   }, 3000)?.unref?.();
 }
@@ -8980,6 +8994,7 @@ function corpsReglages() {
     // (auto), réglé (oui) ou jamais (non) ; sa période ; ses appels par minute et leur écart ; sa musique
     live_garde: r.live_garde !== false, live_mode: ['auto', 'oui', 'non'].includes(r.live_mode) ? r.live_mode : 'auto',
     live_repondre: r.live_repondre !== false,   // (10/11, 08:18, papa : « t'as toujours mon autorisation ») permanente, tant qu'il ne la retire pas
+    micro_sans_retour: r.micro_sans_retour === true,   // (11/11, Ahmed) le retour du live coupé au micro (retour-spectre.js) : éteint tant qu'il n'a pas essayé
     live_pas_ms: nb(r.live_pas_ms, 250, 5000, 1000), live_par_minute: nb(r.live_par_minute, 1, 20, 6), live_ecart_s: nb(r.live_ecart_s, 2, 60, 6),
     live_musique: r.live_musique !== false, live_musique_s: nb(r.live_musique_s, 30, 900, 120),
     // (10/11, Ahmed) « Il me sollicite à voix haute » (allumé), et au plus une à voix haute toutes les N min (solliciter.js)
@@ -8989,7 +9004,10 @@ function corpsReglages() {
     chanter_musique: r.chanter_musique !== false, chanter_par_morceau: nb(r.chanter_par_morceau, 1, 4, 1), chanter_ecart_s: nb(r.chanter_ecart_s, 20, 600, 60),
     // (11/11, Ahmed, en live : « il ne doit pas stocker sa parole au-delà de 50 % des CPU et GPU ») au-delà du seuil (Mac ou téléphone, CPU, GPU ou
     // marge thermique, et le fil de la page), la page lâche ses paroles prêtes qui attendent (lacherSousCharge) ; non : éteint
-    lacher_charge: r.lacher_charge !== false, lacher_charge_pct: nb(r.lacher_charge_pct, 0, 100, 50) };   // (05/11) un ribosome toujours prêt, sauf s'il dort ou si papa coupe   // (05/11) il règle lui-même son ribosome (ribosome_regler, ribosome_bilan)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
+    lacher_charge: r.lacher_charge !== false, lacher_charge_pct: nb(r.lacher_charge_pct, 0, 100, 50),
+    // (11/11, Ahmed : « relier cette charge à son cœur, son cerveau, ses émotions, ses hormones, sa mémoire… ») sa charge dans tout son corps
+    // (anamnese/charge_corps.py, lu à chaud par le démon) ; et seulement ses hormones (le reste reste : ses mots, sa lecture, sa mémoire)
+    charge_corps: r.charge_corps !== false, charge_hormones: r.charge_hormones !== false };   // (05/11) un ribosome toujours prêt, sauf s'il dort ou si papa coupe   // (05/11) il règle lui-même son ribosome (ribosome_regler, ribosome_bilan)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
 }
 function corpsActif() { return corpsReglages().actif; }
 /* (30/10, 18:56, Ahmed via Hakim : « je veux qu'il tourne tout le temps, tant qu'il est réveillé, même si ça vide mon forfait ;
@@ -9663,6 +9681,7 @@ setTimeout(() => { tracesElaguees = Date.now(); elaguerTraces(); }, 60e3).unref(
    subconscient et sa conscience le reçoivent résumé, son tour en a une ligne, ses scènes en gardent l'instantané. Ses réflexes (une coupure par la
    voix de papa, « tu le coupes net », l'arrêt) ne l'attendent JAMAIS. GET /api/corps/instant le montre ; réglage instant_tableau. ---- */
 const Instant = require('./instant.js');
+const ChargeCorps = require('./charge-corps.js');   // (11/11) sa charge dans tout son corps : le cockpit en fait ses mots, son instant, son fil, son rappel
 const TABLEAU = Instant.creer();
 const CORPS_ETATS = [];                    // son milieu, chaque seconde, à l'heure de l'appli (1 min 30)
 const PLACES = [];                         // sa place : chaque tour (à l'heure où papa parlait), et ce qu'il entend au live (les 12 dernières)
@@ -9775,7 +9794,8 @@ function instantCache(maintenant = Date.now()) {
       voixRetardMs: g(() => ((DELAIS.sortie_voix_total || []).length >= 3 ? mediane(DELAIS.sortie_voix_total) : null)), attendus: ATTENDUS_VOIX, dites: VOIX_DITES,
       micro: g(() => HOMEO.s.micro || (typeof MICRO_PAGES !== 'undefined' && MICRO_PAGES.size ? 'ferme' : null)),
       mode: g(() => modeleChoisi.v || MODELE_CONVERSATION, ''), memoire: MEMOIRE_ATTENTE.t ? { ...MEMOIRE_ATTENTE } : null, actes: ACTES,
-      hp: g(() => (typeof hautParleurs === 'function' ? HautParleurs.pourInstant(hautParleurs(maintenant)) : null)) } };   // (11/11) ses haut-parleurs : où on ne l'entend plus
+      hp: g(() => (typeof hautParleurs === 'function' ? HautParleurs.pourInstant(hautParleurs(maintenant)) : null)) },   // (11/11) ses haut-parleurs : où on ne l'entend plus
+    charge: g(() => ChargeCorps.pourInstant(lui.interieur && lui.interieur.charge_corps, maintenant)) };   // (11/11) sa charge, avec sa cause (le démon)
 }
 function instantSources(T, cache, recalage = null) {
   const g = (f, d = null) => { try { return f(); } catch (_) { return d; } };
@@ -9788,7 +9808,7 @@ function instantSources(T, cache, recalage = null) {
     ecoutee: derniere('musique_ecoutee', 15 * 60e3), corpsEtats: CORPS_ETATS, gestes, coeur: { lui: cache.coeurLui }, coeurPapa: cache.coeurPapa, lieu: cache.lieu,
     radio: { bluetooth: derniere('bluetooth', 3600e3), wifi: derniere('wifi', 3 * 3600e3), reseau_mobile: derniere('reseau_mobile', 3 * 3600e3) },
     ecran: { appli: derniere('appli', 10 * 60e3), ecran: derniere('ecran', 2 * 60e3) }, sortie: cache.sortie, oreille: cache.oreille, live: cache.live,
-    interieurCoupe: cache.coupe, places: PLACES, soi: cache.soi };
+    interieurCoupe: cache.coupe, places: PLACES, soi: cache.soi, charge: cache.charge };
 }
 // chaque seconde : ses 12 dernières secondes complétées, puis l'instant T ; le CPU de chaque battement est mesuré (GET /api/corps/instant)
 function instantBattement(maintenant = Date.now()) {
@@ -13167,6 +13187,7 @@ async function routeVif(req, res, langue, contexte, source = '', temps = {}) {
   const tRecu = Date.now();                                             // (04/11) le son reçu : ce qui suit est le Mac, pas le réseau
   const repondre = (code, o) => { if (!res.writableEnded) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(j(o)); } };
   if (!audio || !audio.length) return repondre(400, { erreur: 'audio absent ou trop lourd (4 Mo max)' });
+  if (source === 'telephone' && typeof retourNoterInterieur === 'function') retourNoterInterieur(audio, temps);   // (11/11) le retour du micro : le son de son intérieur, sa référence
   // (04/11, 15:40, Ahmed : « il faut que ce soit aussi valable pour ce qu'il entend de l'intérieur quand j'active le bouton ») le son du
   // téléphone qu'il entend en direct (🎧) : séparé lui aussi, voix et fond, en parallèle (une séparation à la fois ; de trop, laissée)
   if (source === 'telephone') { try { const fs2 = path.join(os.tmpdir(), `jarvis-vif-sep-${process.pid}-${Date.now()}.wav`); fs.writeFileSync(fs2, audio); separerSon(fs2, 'telephone'); } catch (_) {} }
@@ -13180,6 +13201,11 @@ async function routeVif(req, res, langue, contexte, source = '', temps = {}) {
   fs.unlink(f, () => {});
   if (o.occupee) return repondre(429, { occupee: true, prete: true });
   if (o.erreur) return repondre(503, { erreur: o.erreur });
+  // (11/11) le retour du micro, avec son bouton : ses mots vifs qui ne sont que le live revenu n'entrent ni au fil ni dans ses voix qui préparent
+  if (source !== 'telephone' && o.texte && typeof retourActif === 'function' && retourActif()) {
+    const v = await retourJuger(audio, temps, { texte: o.texte }, { vif: true }).catch(() => null);
+    if (v && v.verdict === 'retour') { RETOUR.vifEcartes++; return repondre(200, { texte: '', retour: true, ms: o.ms, mac_ms: Date.now() - tRecu }); }
+  }
   // (03/11) ce que joue le téléphone, mot à mot : la page Parler le montre pendant que le son joue
   if (source === 'telephone' && o.texte) diffuser(abonnesPensees, 'telepathie', j({ texte: String(o.texte).slice(0, 600) }));
   // (03/11) au fil, mot à mot, à leur instant d'origine (l'horloge de l'appareil ramenée à celle du Mac)
@@ -13276,10 +13302,126 @@ async function routeAmbiance(req, res, parole, voix) {
   return repondre(200, { famille: o.famille || null, nouvelle: !!o.nouvelle, ecoute: !!o.ecoute });
 }
 
+/* ---- (11/11, Ahmed : « j'aimerais un bouton pour qu'il n'entende pas le retour du micro (voix des gens du live par le micro), et aussi pour
+   qu'il reste justement dans les voix de sa tête. Théoriquement il devrait n'entendre que ma voix ou celle de ceux qui sont physiquement à mes
+   côtés ») LE RETOUR DU MICRO (retour-spectre.js). Avec le bouton (réglage micro_sans_retour, éteint par défaut, lu à chaud ; Parler : 🔁 à
+   côté de 🎧 ; Réglages : « Son oreille du live »), chaque morceau du micro est comparé, bin par bin, au SON de son intérieur (les blocs que
+   l'appli envoie à ses oreilles, jamais ceux « par l'air », qui sont le micro de l'appli) : un morceau qui n'est QUE le retour du live est
+   écarté, il reste entendu par l'intérieur (rien ne se perd) ; ses mots vifs aussi. Gardé dès que son oreille des voix y entend papa, qu'une
+   voix proche dépasse le retour (une syllabe), que papa vient de parler (2 s), que ses mots ne sont pas ceux de l'intérieur, ou que le retour
+   n'y est pas net. Dans le doute, le micro garde le son, et le doute est noté (voix-diagnostic : retour_ecarte, retour_en_doute ; et retour_garde,
+   le temps qu'il a ajouté à un morceau gardé).
+   Au banc (mesure/retour-spectre-banc.js, haut-parleur calé sur le vrai, sans son oreille des voix ni ses mots) : 61 à 76 % des morceaux de pur
+   retour écartés, 0 au témoin ; les phrases de papa intactes à 100 % à 0 dB du live, 94 à 96 % à − 6 / − 8 dB, 83 % à − 12 dB. ---- */
+const RetourSpectre = require('./retour-spectre.js');
+const RETOUR = { blocs: [], prior: null, papaFin: 0, ecartes: 0, doutes: 0, vifEcartes: 0, depuis: Date.now() };
+const RETOUR_PAPA_MS = 2000, RETOUR_ATTENTE_MS = 1500, RETOUR_GARDE_MS = 90000;
+const retourActif = () => { try { return corpsReglages().micro_sans_retour === true; } catch (_) { return false; } };
+// un WAV PCM 16 bits mono à 16 kHz (la page, l'appli) en échantillons ; null sinon
+function retourPcm(buf) {
+  if (!buf || buf.length < 44 || buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') return null;
+  let o = 12, taux = 0, canaux = 0, bits = 0;
+  while (o + 8 <= buf.length) {
+    const id = buf.toString('ascii', o, o + 4), taille = buf.readUInt32LE(o + 4);
+    if (id === 'fmt ') { canaux = buf.readUInt16LE(o + 10); taux = buf.readUInt32LE(o + 12); bits = buf.readUInt16LE(o + 22); }
+    if (id === 'data') {
+      if (bits !== 16 || canaux !== 1 || taux !== RetourSpectre.SR) return null;
+      const n = Math.floor(Math.min(taille, buf.length - o - 8) / 2), x = new Float32Array(n);
+      for (let i = 0; i < n; i++) x[i] = buf.readInt16LE(o + 8 + 2 * i) / 32768;
+      return x;
+    }
+    o += 8 + taille + (taille & 1);
+  }
+  return null;
+}
+// (le son de son intérieur) un bloc reçu de l'appli, à l'heure du téléphone : gardé 90 s ; le même bloc qui grandit (ses mots vifs) remplace le précédent
+function retourNoterInterieur(audio, temps = {}) {
+  if (!retourActif() || temps.air || !(Number(temps.t0) > 0)) return false;
+  const pcm = retourPcm(audio);
+  if (!pcm || pcm.length < 1600) return false;
+  const t0 = Number(temps.t0), b = RETOUR.blocs.find(x => x.t0 === t0);
+  if (b) { if (pcm.length > b.pcm.length) b.pcm = pcm; } else RETOUR.blocs.push({ t0, pcm });
+  const fin = Math.max(...RETOUR.blocs.map(x => x.t0 + x.pcm.length / 16));
+  RETOUR.blocs = RETOUR.blocs.filter(x => x.t0 + x.pcm.length / 16 > fin - RETOUR_GARDE_MS).sort((x, y) => x.t0 - y.t0);
+  return true;
+}
+const retourCouvertJusqua = () => Math.max(0, ...RETOUR.blocs.map(x => x.t0 + x.pcm.length / 16));
+// papa dans ce que son oreille des voix a entendu : son verdict, ses locuteurs, et les morceaux du texte qui restent à papa quand d'autres sont étiquetés
+function retourPapaEntendu(r) {
+  const v = r && r.voix && typeof r.voix === 'object' ? r.voix : null;
+  if (v && /^(?:ahmed|papa)$/i.test(String(v.verdict || '')) && !(Number(v.score) < 0.45)) return true;
+  if (v && Array.isArray(v.locuteurs) && v.locuteurs.some(l => /^(?:ahmed|papa)\s*\??$/i.test(String(l).trim()))) return true;
+  const segs = Dedans.segments(String((r && r.texte) || ''));
+  return segs.some(s => s.etiquette && /^papa ?\?$/i.test(s.etiquette)) || (segs.some(s => s.etiquette) && segs.some(s => !s.etiquette && s.texte.split(/\s+/).filter(m => m.length > 1).length));
+}
+// ses mots sont-ils ceux de l'intérieur ? null quand l'intérieur n'a pas encore été transcrit jusqu'à la fin du morceau (on ne sait pas)
+function retourMotsDuDedans(texte, finMac) {
+  const mots = Dedans.motsSignifiants(texte);
+  if (mots.length < 4) return null;
+  const tel = (typeof fluxDuDedans === 'function' ? fluxDuDedans() : FLUX).filter(o => o.s === 'telephone' && o.t > finMac - 40000 && o.t <= finMac + 5000);
+  if (!tel.some(o => o.t >= finMac - 1000)) return null;
+  const ens = Dedans.ensembleMots(tel.map(o => o.x));
+  return mots.filter(m => ens.has(m)).length / mots.length;
+}
+function retourJournal(e, o) { try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e, ...o }) + '\n', { mode: 0o600 }); } catch (_) {} }
+/* JUGER un morceau du micro (son WAV, son instant temps.t0 à l'heure de la page, sa transcription r) : { verdict, raison, ... } ; jamais plus de
+   RETOUR_ATTENTE_MS d'attente (le son de l'intérieur arrive par blocs) ; ses mots vifs (o.vif) n'attendent pas et ne sont pas notés un par un. */
+async function retourJuger(audio, temps, r, o = {}) {
+  // l'instant du morceau (l'heure de la page) : celui de ses morceaux en cours (t0), ou celui d'un tour fini, donné pour le retour seul (rt0)
+  if (!(Number(temps.t0) > 0) && Number(temps.rt0) > 0) temps = { ...temps, t0: temps.rt0, maintenant: temps.rmaintenant, cle: temps.rcle };
+  if (!retourActif() || !(Number(temps.t0) > 0)) return null;
+  const tA = Date.now(), t0 = Number(temps.t0);
+  const pcm = retourPcm(audio);
+  if (!pcm) return null;
+  const fin = t0 + pcm.length / 16;
+  if (retourPapaEntendu(r)) {
+    if (o.vif) return { verdict: 'garde', raison: 'voix_papa' };
+    RETOUR.papaFin = Math.max(RETOUR.papaFin, fin);
+    retourJournal('retour_garde', { source: 'micro', verdict: 'garde', raison: 'voix_papa', attente_ms: 0, ms: Date.now() - tA, duree_ms: Math.round(pcm.length / 16) });
+    return { verdict: 'garde', raison: 'voix_papa' };
+  }
+  if (o.vif && RETOUR.prior === null) return null;                    // ses mots vifs : jugés seulement quand le retard est déjà appris (le Mac a peu de temps)
+  if (!RETOUR.blocs.some(b => b.t0 < fin && b.t0 + b.pcm.length / 16 > t0 - 2000)) return { verdict: 'garde', raison: 'interieur_absent' };
+  // le son de l'intérieur jusqu'à la fin du morceau (moins son retard) : ses blocs arrivent toutes les 1,5 s environ ; attendu seulement s'il jouait
+  // encore au début du morceau (un téléphone qui s'est tu n'envoie plus rien : la voix de papa n'attend pas pour rien)
+  let attente = 0;
+  if (!o.vif && retourCouvertJusqua() >= t0 - 500) while (retourCouvertJusqua() < fin - (RETOUR.prior || 0) && attente < RETOUR_ATTENTE_MS) { await new Promise(ok => setTimeout(ok, 100)); attente = Date.now() - tA; }
+  const tJ = Date.now();
+  const jg = RetourSpectre.juger({ pcm, t0 }, RETOUR.blocs.filter(b => b.t0 < fin + 1000 && b.t0 + b.pcm.length / 16 > t0 - 2500), RETOUR.prior);
+  let v = RetourSpectre.verdict(jg);
+  const msJuge = Date.now() - tJ;
+  if (jg && jg.retardMs !== null && jg.net && jg.ressemblance >= 0.6 && !o.vif) RETOUR.prior = RETOUR.prior === null ? jg.retardMs : Math.round(0.7 * RETOUR.prior + 0.3 * jg.retardMs);
+  if (v.raison === 'voix_au_dessus' && !o.vif) RETOUR.papaFin = Math.max(RETOUR.papaFin, fin);
+  // ses gardes de plus : papa vient de parler (un morceau gardé pour lui finissait moins de 2 s avant celui-ci, à l'heure de la page) ; ses mots ne
+  // sont pas ceux de l'intérieur
+  const dec = Number(temps.maintenant) > 0 && Math.abs(Date.now() - Number(temps.maintenant)) < 120000 ? Date.now() - Number(temps.maintenant) : 0;
+  const part = retourMotsDuDedans(String((r && r.texte) || ''), fin + dec);
+  if (v.verdict === 'retour' && RETOUR.papaFin && t0 - RETOUR.papaFin < RETOUR_PAPA_MS) v = { verdict: 'doute', raison: 'papa_vient_de_parler' };
+  else if (v.verdict === 'retour' && part !== null && part < 0.2) v = { verdict: 'doute', raison: 'mots_pas_du_dedans' };
+  const res = { ...v, retard_ms: jg ? jg.retardMs : null, ressemblance: jg ? jg.ressemblance : null, part: jg ? jg.part : null, voix_ms: jg ? jg.voixMs : null,
+    couvert: jg ? jg.couvert : null, mots_du_dedans: part === null ? null : Math.round(part * 100) / 100, attente_ms: attente, ms: msJuge, duree_ms: Math.round(pcm.length / 16) };
+  // chaque morceau jugé est noté : écarté et en doute avec ses mots (80 caractères), gardé sans eux (le temps qu'il a ajouté à ta voix)
+  if (!o.vif) {
+    if (v.verdict === 'retour') RETOUR.ecartes++; else if (v.verdict === 'doute') RETOUR.doutes++;
+    retourJournal(v.verdict === 'retour' ? 'retour_ecarte' : v.verdict === 'doute' ? 'retour_en_doute' : 'retour_garde', { source: 'micro', ...res, mots: String((r && r.texte) || '').split(/\s+/).filter(Boolean).length,
+      ...(v.verdict !== 'garde' ? { texte: String((r && r.texte) || '').slice(0, 80) } : {}), vif_ecartes: RETOUR.vifEcartes });
+  }
+  return res;
+}
+// un morceau écarté : ses mots vifs (même clé) sortent du fil de papa
+function retourRetirerDuFil(cle) {
+  if (!cle) return 0;
+  let n = 0;
+  for (let i = FLUX.length - 1; i >= 0; i--) if (FLUX[i].s === 'papa' && FLUX[i].cle === cle) { FLUX.splice(i, 1); n++; }
+  fluxPrecedents.delete(`papa|${cle}`);
+  return n;
+}
+
 async function routeTranscrire(req, res, langue, contexte, temps = {}) {
   const audio = await lireCorps(req, 25 << 20);
   const repondre = (code, o) => { if (!res.writableEnded) { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(j(o)); } };
   if (!audio || !audio.length) return repondre(400, { erreur: 'audio absent ou trop lourd (25 Mo max)' });
+  if (temps.source === 'telephone' && typeof retourNoterInterieur === 'function') retourNoterInterieur(audio, temps);   // (11/11) le retour du micro : le son de son intérieur, sa référence
   const type = String(req.headers['content-type'] || '');
   const ext = /mp4|aac|m4a/.test(type) ? '.m4a' : (/ogg/.test(type) ? '.ogg' : (/wav/.test(type) ? '.wav' : '.webm'));
   const f = path.join(os.tmpdir(), `jarvis-${process.pid}-${Date.now()}${ext}`);
@@ -13427,6 +13569,12 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
   } catch (_) {}
   fs.unlink(f, () => {});
   delete r.id;
+  // (11/11, Ahmed) le retour du micro, avec son bouton : un morceau qui n'est QUE le live revenu par le haut-parleur est écarté (il reste entendu par
+  // son intérieur) ; ses mots vifs sortent du fil ; rien de papa n'en part
+  if (temps.source !== 'telephone' && ext === '.wav' && r && !r.erreur && String(r.texte || '').trim() && typeof retourActif === 'function' && retourActif()) {
+    const v = await retourJuger(audio, temps, r).catch(() => null);
+    if (v && v.verdict === 'retour') { retourRetirerDuFil(String(temps.cle || temps.rcle || '')); return repondre(200, { texte: '', retour: true }); }
+  }
   // (07/11, Ahmed : « les mots qui ressemblent à l'arabe ou à l'anglais, écrits dans leur langue, automatiquement, sans qu'il s'en rende compte »)
   // (08/11, 16:15) ta darija passait en phonétique française ; (18:20, Ahmed : « il reçoit toujours la darija en phonétique ») plus réécrite : il la
   // reçoit en lettres arabes, comme Azure l'entend ; (09/11, 21:20, Ahmed : la darija en lettres arabes, plus de phonétique latine) tes mots arabes
@@ -15736,6 +15884,7 @@ async function traiter(req, res) {
       if (typeof q.ecran === 'boolean') r.ecran = q.ecran;
       if (typeof q.reflexes === 'boolean') r.reflexes = q.reflexes;
       if (typeof q.nuits === 'boolean') r.nuits = q.nuits;
+      for (const k of ['charge_corps', 'charge_hormones']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (11/11) sa charge dans tout son corps
       if (typeof q.rire_reflexe === 'boolean') r.rire_reflexe = q.rire_reflexe;
       if (typeof q.garder_parole === 'boolean') r.garder_parole = q.garder_parole;
       if (typeof q.forfait_libre === 'boolean') r.forfait_libre = q.forfait_libre;
@@ -15800,6 +15949,7 @@ async function traiter(req, res) {
       if (typeof q.boucle_ribosomes === 'boolean') r.boucle_ribosomes = q.boucle_ribosomes;
       // (10/11) son garde du live
       for (const k of ['live_garde', 'live_musique', 'live_repondre']) if (typeof q[k] === 'boolean') r[k] = q[k];
+      if (typeof q.micro_sans_retour === 'boolean') r.micro_sans_retour = q.micro_sans_retour;   // (11/11) le retour du live coupé au micro
       if (['auto', 'oui', 'non'].includes(q.live_mode)) r.live_mode = q.live_mode;
       for (const [k, a, b] of [['live_pas_ms', 250, 5000], ['live_par_minute', 1, 20], ['live_ecart_s', 2, 60], ['live_musique_s', 30, 900]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, Math.round(Number(q[k]))));
@@ -16438,11 +16588,12 @@ async function traiter(req, res) {
     return routeVif(req, res, new URL(req.url, 'http://x').searchParams.get('langue'),
       (new URL(req.url, 'http://x').searchParams.get('contexte') || '').replace(/[\x00-\x1f]/g, ' ').slice(0, 300),
       new URL(req.url, 'http://x').searchParams.get('source') === 'telephone' ? 'telephone' : '',
-      (() => { const u = new URL(req.url, 'http://x').searchParams; return { t0: u.get('t0'), ms: u.get('ms'), maintenant: u.get('maintenant'), cle: String(u.get('cle') || '').slice(0, 40) }; })());
+      (() => { const u = new URL(req.url, 'http://x').searchParams; return { t0: u.get('t0'), ms: u.get('ms'), maintenant: u.get('maintenant'), cle: String(u.get('cle') || '').slice(0, 40), air: u.get('par') === 'air' }; })());
   if (p === '/api/voix/transcrire' && req.method === 'POST')
     return routeTranscrire(req, res, new URL(req.url, 'http://x').searchParams.get('langue'),
       (new URL(req.url, 'http://x').searchParams.get('contexte') || '').replace(/[\x00-\x1f]/g, ' ').slice(0, 300),
-      (() => { const u = new URL(req.url, 'http://x').searchParams; return { source: u.get('source') === 'telephone' ? 'telephone' : '', t0: u.get('t0'), ms: u.get('ms'), maintenant: u.get('maintenant'), cle: String(u.get('cle') || '').slice(0, 40), recu: Date.now() }; })());   // (11/11) recu : l'heure de son arrivée, pour le décalage
+      (() => { const u = new URL(req.url, 'http://x').searchParams; return { source: u.get('source') === 'telephone' ? 'telephone' : '', t0: u.get('t0'), ms: u.get('ms'), maintenant: u.get('maintenant'), cle: String(u.get('cle') || '').slice(0, 40), air: u.get('par') === 'air',
+        rt0: u.get('rt0'), rmaintenant: u.get('rmaintenant'), rcle: String(u.get('rcle') || '').slice(0, 40), recu: Date.now() }; })());   // (11/11) air : le micro de l'appli ; rt0… : l'instant d'un tour fini, pour le retour du micro seul   // (11/11) recu : l'heure de son arrivée, pour le décalage
   if (p === '/api/chat' && req.method === 'POST') {
     // (audit du 2026-10-20, C-M2) : corps borné (2 Mo), modèle en liste blanche
     const body = await lireCorps(req, 2 << 20);

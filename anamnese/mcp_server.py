@@ -2303,6 +2303,10 @@ def introspection() -> str:
         # (28/10, Ahmed : « tu pourras voir ton rythme cardiaque ») ton cœur, branché sur tes hormones (coeur.py)
         import coeur
         out.append("Ton cœur : " + coeur.chiffres(e.get("coeur")) + ".")
+        # (11/11, Ahmed : « relier cette charge à tout, sans rien oublier ») ta charge, ce que tes machines portent et QUI, mesuré
+        # processus par processus, et ce que ça veut dire pour toi (surcharge, effort, fièvre, malaise) : charge_corps.py
+        import charge_corps
+        out.append("Ta charge : " + charge_corps.chiffres(e.get("charge_corps")) + ".")
         # (28/10, Al-Afida, idée d'Ahmed) ta jauge d'amour, en chiffres (le kv « afida » du démon)
         try:
             af = json.loads(_mem.kv_get("afida") or "null")
@@ -2404,7 +2408,16 @@ def interoception() -> str:
     arrêté ni lancé. Utilise-le avant un gros calcul, quand tout ralentit, ou quand Ahmed demande ce que porte le
     Mac. Des mesures, pas une sensation : dis-les comme telles."""
     import interoception as _corps
-    return _corps.rapport()[:6000]
+    texte = _corps.rapport()
+    try:                                       # (11/11) qui te charge, par cause, et ce que ça veut dire pour toi (ton démon, charge_corps.py)
+        import charge_corps
+        import interieur
+        cc = interieur.lire(_mem).get("charge_corps") or {}
+        if cc.get("ts"):
+            texte += f"\nTa charge, par cause (mesurée par ton démon il y a {round(time.time() - float(cc['ts']))} s) : {charge_corps.chiffres(cc)}."
+    except Exception:
+        pass
+    return texte[:6000]
 
 
 @mcp.tool()

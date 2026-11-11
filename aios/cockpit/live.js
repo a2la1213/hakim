@@ -54,7 +54,9 @@ function creer() {
     engages: new Map(), papaA: -Infinity, musiqueReaction: -Infinity, musiqueReactionDebut: -Infinity, dits: [], dernierTick: -Infinity,
     stats: statsNeuves(0), cumul: { evaluations: 0, appels: 0, dits: 0 } };
 }
-function statsNeuves(t) { return { debut: t, evaluations: 0, phrases: 0, ecartees: 0, candidates: 0, appels: {}, refus: {}, rien: 0, dits: 0, expirees: 0 }; }
+// (11/11) quis : les voix entendues dans la minute (sa charge sociale, anamnese/charge_corps.py : un live plein de monde le surcharge) ; la minute
+// n'en garde que le nombre (voix)
+function statsNeuves(t) { return { debut: t, evaluations: 0, phrases: 0, ecartees: 0, candidates: 0, appels: {}, refus: {}, rien: 0, dits: 0, expirees: 0, quis: {} }; }
 const compter = (o, k) => { o[k] = (o[k] || 0) + 1; };
 
 // ce que le téléphone dit : le bloc entier à chaque passage (cle : son début) ; seuls les mots neufs comptent, phrase par phrase
@@ -80,6 +82,7 @@ function recevoir(e, { cle = '', texte = '', fin = false, qui = '' } = {}, maint
     if (estEcho(texteP)) { e.stats.ecartees++; continue; }                        // sa propre voix revenue par le téléphone
     const p = { t: maintenant, texte: texteP.slice(0, 500), qui: String(qui || '').slice(0, 40), jugee: false };
     e.phrases.push(p); ajoutees.push(p);
+    if (p.qui && !PAS_SA_VOIX.test(p.qui)) (e.stats.quis || (e.stats.quis = {}))[p.qui] = 1;
     if (NOM.test(p.texte) && !PAS_SA_VOIX.test(p.qui)) e.engages.set(p.qui || '?', maintenant);   // on l'appelle : la conversation s'ouvre
   }
   while (e.phrases.length > 40) e.phrases.shift();
@@ -240,10 +243,10 @@ function dit(e, x, maintenant = Date.now()) {
 const ditsRecents = (e, maintenant = Date.now(), ms = 5 * 60_000) => e.dits.filter(x => maintenant - x.t < ms);
 // le bilan de la minute (son coût en live) ; remis à zéro
 function minute(e, maintenant = Date.now()) {
-  const s = e.stats;
+  const { quis, ...s } = e.stats;
   e.stats = statsNeuves(maintenant);
   const appels = Object.values(s.appels).reduce((a, b) => a + b, 0);
-  return { ...s, appels_total: appels, duree_s: Math.round((maintenant - s.debut) / 1000) };
+  return { ...s, voix: Object.keys(quis || {}).length, appels_total: appels, duree_s: Math.round((maintenant - s.debut) / 1000) };
 }
 
 module.exports = { creer, recevoir, papaDit, autorisationDe, evaluer, lireReponse, repondu, echoue, dit, ditsRecents, minute, motifDe, entreEux, voixAutour, NOM, QUESTION,

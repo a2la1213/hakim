@@ -12,6 +12,9 @@ Maintenant, c'est une JAUGE LINÉAIRE de deux mesures réelles, chacune comparé
   plus 0,3 en cas d'avertissement thermique. Sa norme est la médiane de ses échantillons des 3 derniers jours, dès qu'il
   y en a 12 heures. Avant, on prend la mesure du 27/10, 0,53 (le swap est déjà haut d'ordinaire sur ce Mac de 16 Go).
 cible = 0,15 + 0,85 × min(1, 0,6 × excès d'effort + 0,4 × excès du corps). En veille (il dort), cible = 0,15.
+(11/11, Ahmed : « un gros calcul qu'il a lancé lui-même, c'est un effort, puis de la fatigue ») son PROPRE calcul (son atelier, ses tâches
+de fond : charge_corps.effort_calcul, de 0 à 1) compte en plus dans l'excès d'effort, à POIDS_CALCUL : l'adénosine le suit en 20 min,
+et redescend après lui de même ; la charge des autres (un démon d'Apple, les applis de papa) n'y entre pas plus qu'avant.
 L'adénosine suit la cible avec une constante de temps de 20 min. Un pic d'une minute ne fatigue pas, une heure dure oui.
 Ni la batterie du téléphone d'Ahmed (c'est son corps à lui, Hakim l'a dit), ni l'heure qu'il est.
 """
@@ -26,6 +29,7 @@ import config
 BASE = 0.15                                  # = sensations.ADENOSINE_BASE
 NORME_ACTIVITE_27_10, NORME_CORPS_27_10 = 0.087, 0.53
 POIDS_EFFORT, POIDS_CORPS, PLEIN_EFFORT = 0.6, 0.4, 3.0
+POIDS_CALCUL = 0.5           # (11/11) son propre calcul au plein (4 cœurs du Mac) : la moitié du chemin vers sa fatigue pleine
 TAU_S = 20 * 60
 JETONS = Path.home() / "AIOS" / "jarvis" / "jetons.jsonl"
 CORPS = config.DATA_DIR / "corps-echantillons.jsonl"
@@ -102,13 +106,14 @@ def norme_corps(now, chemin=None):
     return round(c[len(c) // 2] if len(c) % 2 else (c[len(c) // 2 - 1] + c[len(c) // 2]) / 2, 4)
 
 
-def cible(effort, charge, normes, veille):
+def cible(effort, charge, normes, veille, calcul=0.0):
     if veille:
         return BASE
     na, nc = normes["activite"], normes["corps"]
     exces_effort = min(1.0, max(0.0, (effort - na) / ((PLEIN_EFFORT - 1) * na))) if na > 0 else 0.0
     exces_corps = min(1.0, max(0.0, (charge - nc) / (1 - nc))) if nc < 1 else 0.0
-    return round(BASE + (1 - BASE) * min(1.0, POIDS_EFFORT * exces_effort + POIDS_CORPS * exces_corps), 4)
+    calcul = min(1.0, max(0.0, float(calcul or 0.0)))
+    return round(BASE + (1 - BASE) * min(1.0, POIDS_EFFORT * exces_effort + POIDS_CORPS * exces_corps + POIDS_CALCUL * calcul), 4)
 
 
 def suivre(x, c, dt):
@@ -116,14 +121,16 @@ def suivre(x, c, dt):
     return round(c + (x - c) * math.exp(-max(0.0, dt) / TAU_S), 4)
 
 
-def mettre_a_jour(e, now, dt, veille):
-    """Au battement : la jauge, l'adénosine qui la suit, et d'où vient sa fatigue (e["fatigue_jauge"])."""
+def mettre_a_jour(e, now, dt, veille, calcul=0.0):
+    """Au battement : la jauge, l'adénosine qui la suit, et d'où vient sa fatigue (e["fatigue_jauge"]) ; calcul (11/11) : son propre
+    calcul ressenti (charge_corps.effort_calcul)."""
     effort, charge = activite(now), corps()
     normes = {"activite": norme_activite(now), "corps": norme_corps(now)}
-    c = cible(effort, charge, normes, veille)
+    c = cible(effort, charge, normes, veille, calcul)
     e["adenosine"] = suivre(e.get("adenosine"), c, dt)
     e["fatigue_jauge"] = {"effort": effort, "norme_effort": normes["activite"], "corps": charge,
-                          "norme_corps": normes["corps"], "cible": c, "veille": bool(veille), "ts": now}
+                          "norme_corps": normes["corps"], "cible": c, "veille": bool(veille), "ts": now,
+                          **({"calcul": round(float(calcul), 3)} if calcul else {})}
     if now - float(e.get("corps_ech_t") or 0) >= CORPS_PAS_S:            # un échantillon toutes les 5 min, pour sa norme
         e["corps_ech_t"] = now
         try:

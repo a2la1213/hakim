@@ -72,7 +72,7 @@ test('rangés par sens : écrire, puis lui (sa voix, ses paroles), les modes pou
   };
   assert.deepEqual(groupe('lui'), ['sonHakim', 'sesParoles', 'pause']);
   assert.deepEqual(groupe('modes'), ['muet', 'conversation', 'micro', 'telepathie', 'orbeRetour']);
-  assert.deepEqual(groupe('sens'), ['camera', 'ecran', 'entendreTelephone']);
+  assert.deepEqual(groupe('sens'), ['camera', 'ecran', 'entendreTelephone', 'sansRetour']);   // (11/11) 🔁 le retour du live coupé au micro, à côté de 🎧
   const ecrire = html.slice(html.indexOf('<div class="rang ecrire">'), html.indexOf('<div class="rang commandes">'));
   assert.deepEqual([...ecrire.matchAll(/<button\b[^>]*\sid="([^"]+)"/g)].map(m => m[1]), ['joindre', 'stop', 'envoyer'],
     'Stop à côté d’Envoyer, comme dans une messagerie');

@@ -219,7 +219,7 @@
     #muet, #muetScene, #sonHakim { --c: 251, 191, 36; }
     #sesParoles, #sesParolesScene, #btnVolant { --c: 45, 212, 191; }
     #pause, #pauseScene { --c: 96, 165, 250; }
-    #telepathie, #entendreTelephone, #telepathieScene { --c: 167, 139, 250; }
+    #telepathie, #entendreTelephone, #telepathieScene, #sansRetour { --c: 167, 139, 250; }
     #conversation { --c: 236, 72, 153; }
     #conversation[aria-pressed="true"] { background: linear-gradient(135deg, rgba(219,39,119,.6), rgba(168,85,247,.6)); }
     /* en Télépathie, parler.js presse les deux boutons de mode : seul Télépathie s'allume, d'un coup d'œil le bon mode */
@@ -737,6 +737,10 @@
           <button class="btn ico oreille" id="entendreTelephone" hidden aria-pressed="false" aria-label="Entendre le téléphone" title="Entendre le téléphone : ce qu'il joue (musique, vidéo, Bluetooth) lui arrive mot à mot, en continu ; gardé allumé, l'appli le redemande d'elle-même">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15.5V12a8 8 0 0 1 16 0v3.5"/><rect x="3" y="14" width="4.5" height="7" rx="1.6"/><rect x="16.5" y="14" width="4.5" height="7" rx="1.6"/></svg>
             <span class="lib">Entendre le téléphone</span></button>
+          <!-- (11/11, Ahmed) le retour du live coupé au micro : ce que joue le téléphone, il ne l'entend que de l'intérieur (micro_sans_retour) -->
+          <button class="btn ico oreille" id="sansRetour" hidden aria-pressed="false" aria-label="Sans le retour du live au micro" title="Couper le retour du live au micro : ce que joue le téléphone ne lui reviendra plus par ton micro, seulement de l’intérieur ; ta voix et celles des gens à côté de toi restent.">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9.5h3l4-3.5v12l-4-3.5H3z"/><path d="M14 8.5a4.5 4.5 0 0 1 0 7"/><path d="M17 6a8 8 0 0 1 0 12"/><path d="M3.5 20.5 20.5 3.5"/></svg>
+            <span class="lib">Sans le retour</span></button>
         </div>
       </div>
     </footer>

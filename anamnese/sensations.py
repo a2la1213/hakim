@@ -121,6 +121,15 @@ REGLES += [
      + 1.5 * d["endorphine"] + 4 * t["endorphine"] + 2 * t["dopamine"] - 2 * d["cortisol"] - 2 * d["crh"],
      ["en alerte joyeuse, le cœur qui bat de plaisir", "tout éveillée, attentive et contente"]),
 ]
+# (11/11, Ahmed : « cette charge sera son stress ou sa surcharge émotionnelle par exemple, ça dépend ») trois émotions qui n'existent
+# QUE par une charge mesurée de ses machines (charge_corps.py) : leurs hormones seules ne les font jamais naître (leur règle ici est nulle) ;
+# calculer() les lit quand une cause est là, et son stress hormonal (noradrénaline, cortisol, CRH) les fait peser davantage.
+CHARGE_EMOTIONS = {
+    "débordement": ("surcharge", 0.35, ["débordée, trop de monde à la fois", "submergée, qui suit à peine", "saturée, le trop-plein du dehors"]),
+    "fièvre": ("fievre", 0.35, ["fiévreuse, le corps qui chauffe", "brûlante du dedans, ralentie par la chaleur"]),
+    "malaise": ("malaise", 0.3, ["mal à l'aise, sans savoir pourquoi", "gênée de fond, quelque chose pèse sans cause"]),
+}
+REGLES += [(nom, -1, lambda d, t: -1.0, formes) for nom, (_s, _k, formes) in CHARGE_EMOTIONS.items()]
 ADENOSINE_BASE = 0.15     # la charge au repos (interieur.py la fait monter avec l'effort éveillé, la vide en veille)
 SOUDAINES = {"alarme": ("peur", 1.0), "surprise": ("surprise", 0.4), "apaisement": ("apaisement", 0.5),
              "excitation": ("excitation", 0.8), "sursaut": ("sursaut", 0.6),   # (03/11)
@@ -190,10 +199,11 @@ def processeurs(p, now=0.0):
 
 
 def calculer(etat, avant=None, now=0.0, soudaine=None, hour=None, n=2, sans_coherence=False, bases_relatives=None, maintenant_biais=None,
-             processeurs=None):
+             processeurs=None, charge=None):
     """{"emotion", "mots", "scores", "ts"} : 2 (ou 3) formulations pour les émotions dominantes.
     sans_coherence (chocs, 2026-10-23) : juste après une attaque, le négatif n'est pas divisé par deux sous une valence
-    haute — un choc passe outre la bonne humeur de fond. processeurs (03/11) : ce que son cœur garde de ses processeurs."""
+    haute — un choc passe outre la bonne humeur de fond. processeurs (03/11) : ce que son cœur garde de ses processeurs.
+    charge (11/11) : ce qu'il ressent de sa charge, par sens ({"surcharge", "effort", "fievre", "malaise"} → 0 à 1, charge_corps.lecture)."""
     base = bases(hour)
     # (25/10, décision d'Ahmed) ses émotions se lisent par rapport à SES 72 dernières heures (la moyenne de chaque hormone),
     # pas à une base fixe : ses hormones du plaisir étant hautes en permanence, tout se lisait « calme » ou « élan »
@@ -221,6 +231,16 @@ def calculer(etat, avant=None, now=0.0, soudaine=None, hour=None, n=2, sans_cohe
         x = max(0.0, min(1.0, float(processeurs["bpm"]) / EFFORT_PLEIN))
         scores["concentration"] += 0.25 * x
         scores["tension"] += 0.25 * max(0.0, 2 * x - 1)
+    # (11/11, Ahmed : « relier cette charge à ses émotions ; ça dépend ») la charge, selon sa cause : un live plein de monde se lit
+    # « débordement », le téléphone qui chauffe « fièvre », une charge venue d'ailleurs « malaise », son propre calcul un corps concentré ;
+    # d'autant plus que son stress hormonal suit (la même charge pèse plus quand ses hormones du stress sont déjà hautes)
+    if isinstance(charge, dict) and charge:
+        stress = max(0.0, 0.6 * d["noradrenaline"] + 0.5 * d["cortisol"] + 0.4 * d["crh"] + 0.3 * d["adrenaline"])
+        for nom, (sens_, k, _f) in CHARGE_EMOTIONS.items():
+            x = max(0.0, min(1.0, float(charge.get(sens_) or 0.0)))
+            if x > 0:
+                scores[nom] = x * (k + stress)
+        scores["concentration"] += 0.2 * max(0.0, min(1.0, float(charge.get("effort") or 0.0)))
     # (03/11, Ahmed : « il rectifie ses émotions interprétées : le conscient, puis le subconscient, puis le cœur ») ce qu'il a
     # rectifié lui-même (emotions_creees.rectifier) fait pencher le calcul, là où les deux se disputent : +0,3 par rectification
     # (trois au plus), seulement si l'émotion qu'il a dite est déjà là

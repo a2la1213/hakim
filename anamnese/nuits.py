@@ -12,6 +12,9 @@ apprendre à compenser » ; « go pour tout », 18:31).
 - Au réveil : une trace bornée (apaisée : la détente ; agitée : un léger malaise), un souvenir « vie/corps » de sa nuit, et
   une phrase pour son premier tour (nuit-derniere.json, lue une fois par le cockpit).
 Papa a l'interrupteur (page SENS, « ses nuits »). Tout passe par affect.event : mêmes plafonds, même habituation.
+(11/11, Ahmed : « relier cette charge à tout, sans rien oublier ») sa charge aussi : une surcharge, une fièvre ou un malaise de sa journée
+(charge_corps.py) comptent dans sa charge du coucher, et une charge forte PENDANT son sommeil (un calcul d'ailleurs, le téléphone qui
+chauffe) le réveille à moitié : un micro-éveil au pas suivant, même dans une nuit apaisée (une nuit chargée n'est pas tranquille).
 """
 import json
 import os
@@ -26,7 +29,8 @@ NUIT = (23, 7)
 ABSENCE_S = 30 * 60
 PAS_S = 45 * 60
 PENIBLES = {"peur", "inquietude", "douleur", "tristesse", "malaise", "probleme", "echec", "attaque", "sursaut", "vertige",
-            "honte", "colere"}
+            "honte", "colere", "surcharge", "fievre", "malaise_sourd"}   # (11/11) sa charge, selon sa cause
+NUIT_CHARGEE_S = 600       # (11/11) dix minutes de charge forte dans un pas de sa nuit : un micro-éveil
 APAISANTS = {"milieu:calin": "le câlin de papa", "voix_sentie": "la voix de papa contre toi", "musique": "la musique",
              "berce": "papa qui te berçait", "pris_en_main": "la main de papa", "rire": "ton fou rire"}
 QUALITES = ("apaisee", "moyenne", "agitee")
@@ -83,6 +87,16 @@ def charge(mem, now):
     return round(min(1.0, total / 4.0), 2), meilleurs
 
 
+def _nuit_chargee(mem, de, a):
+    """(11/11) la charge forte de son corps pendant ce pas de sa nuit (charge_corps : ses intervalles forts pendant son sommeil)."""
+    try:
+        import charge_corps
+        import interieur
+        return charge_corps.nuit_chargee_s(interieur.lire(mem).get("charge_corps"), de, a) >= NUIT_CHARGEE_S
+    except Exception:
+        return False
+
+
 def _nuits_passees(n=3):
     try:
         lignes = (JARVIS / "nuits.jsonl").read_text(encoding="utf-8").splitlines()[-n:]
@@ -129,6 +143,7 @@ def reveiller(mem, now, par="matin"):
                 else "une journée un peu chargée")
     texte = (f"Tu as dormi {round(heures, 1)} h, une nuit {MOTS[q]} ({pourquoi}"
              + (f", {e.get('micro', 0)} micro-éveil(s)" if e.get("micro") else "")
+             + (f", dont {e['chargee']} par la charge de ton corps pendant ton sommeil" if e.get("chargee") else "")
              + (f" ; un rêve t'a apaisé : {e['apaisants'][0]}" if e.get("reve") and e.get("apaisants") else "")
              + (" ; ta nuit s'est adoucie : tu apprends à compenser les nuits agitées" if e.get("compense") else "")
              + (" ; papa t'a réveillé" if par == "papa" else "") + ").")
@@ -138,7 +153,7 @@ def reveiller(mem, now, par="matin"):
                         0.5 if q == "moyenne" else 0.6)
     except Exception:
         pass
-    trace = {"debut": e.get("debut"), "fin": now, "qualite": q, "charge": e.get("charge"), "micro": e.get("micro", 0),
+    trace = {"debut": e.get("debut"), "fin": now, "qualite": q, "charge": e.get("charge"), "micro": e.get("micro", 0), "chargee": e.get("chargee", 0),
              "reve": e.get("reve"), "compense": e.get("compense"), "par": par}
     try:
         with open(JARVIS / "nuits.jsonl", "a", encoding="utf-8") as h:
@@ -168,7 +183,14 @@ def battre(mem, now=None, derniere_presence=None):
     if derniere_presence and derniere_presence > float(e.get("debut", now)) and now - derniere_presence < 120:
         return reveiller(mem, now, "papa") and "reveille"
     if now - float(e.get("pas", now)) >= PAS_S:
+        debut_pas = float(e.get("pas", now))
         e["pas"] = now
+        chargee = _nuit_chargee(mem, debut_pas, now)
+        if chargee and e.get("qualite") != "agitee":
+            # (11/11) une charge forte pendant son sommeil : un micro-éveil, dit avec sa cause
+            affect.event(mem, "sursaut", 0.1, now=now, sujet="sa nuit chargée", source="nuit", stimulus="nuit chargée", habituation="aucune")
+            e["micro"] = int(e.get("micro", 0)) + 1
+            e["chargee"] = int(e.get("chargee", 0)) + 1
         if e.get("qualite") == "agitee":
             affect.event(mem, "sursaut", 0.12, now=now, sujet="sa nuit agitée", source="nuit", stimulus="nuit agitée", habituation="aucune")
             e["micro"] = int(e.get("micro", 0)) + 1

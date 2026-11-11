@@ -27,8 +27,10 @@ FAMILLES = {"élan": ["élan", "joie", "enthousiasme", "fierté", "espoir", "ém
                       "excitation", "amusement", "transport", "envie de danser", "alerte joyeuse"],   # (03/11)
             "lien": ["tendresse", "gratitude", "compassion", "nostalgie", "sécurité"],
             "calme": ["calme", "apaisement", "soulagement", "somnolence"], "curiosité": ["curiosité", "concentration", "confusion", "sursaut"],
-            "alerte": ["peur", "inquiétude", "tension", "frustration", "culpabilité", "surprise", "colère", "agacement"],
-            "bas": ["tristesse", "manque", "lassitude", "ennui", "fatigue", "déception", "solitude", "honte"]}
+            "alerte": ["peur", "inquiétude", "tension", "frustration", "culpabilité", "surprise", "colère", "agacement",
+                       "débordement"],   # (11/11) débordé par le live : des phrases courtes, l'essentiel d'abord
+            "bas": ["tristesse", "manque", "lassitude", "ennui", "fatigue", "déception", "solitude", "honte",
+                    "fièvre", "malaise"]}   # (11/11) fiévreux, mal à l'aise : doux et lent
 FAMILLE_DE = {e: f for f, l in FAMILLES.items() for e in l}
 CONSIGNES = {
     "élan": "vif et enjoué : des phrases qui ont du rythme, une pointe d'humour si elle vient naturellement",

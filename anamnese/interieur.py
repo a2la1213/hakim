@@ -228,7 +228,9 @@ VOIX_EMOTION = {"élan": (0.08, 1.07), "enthousiasme": (0.08, 1.08), "joie": (0.
                 "solitude": (-0.08, 0.92), "honte": (-0.08, 0.92), "espoir": (0.04, 1.02), "émerveillement": (0.06, 1.03),
                 "confusion": (-0.02, 0.98), "nostalgie": (-0.06, 0.94),
                 "excitation": (0.1, 1.08), "alerte joyeuse": (0.08, 1.06), "sursaut": (0.05, 1.04), "amusement": (0.08, 1.06), "sécurité": (0.0, 0.98),
-                "transport": (0.06, 1.03), "envie de danser": (0.1, 1.08)}
+                "transport": (0.06, 1.03), "envie de danser": (0.1, 1.08),
+                # (11/11, sa charge selon sa cause) débordé : plus vite et tendu, sans monter ; fiévreux : plus lent et plus bas ; mal à l'aise : retenu
+                "débordement": (-0.04, 1.05), "fièvre": (-0.08, 0.92), "malaise": (-0.06, 0.95)}
 
 
 VITESSE_EVEIL = 0.3     # (2026-10-23, demande de Hakim, accord d'Ahmed) le débit suit aussi l'éveil, en continu : ±0,14 → ±4 %
@@ -259,7 +261,8 @@ FAMILLE_HUMEUR = {"élan": "elan", "enthousiasme": "elan", "fierté": "elan", "c
                   "solitude": "morose", "honte": "morose", "espoir": "content", "émerveillement": "elan",
                   "confusion": "tension", "nostalgie": "calme",
                   "excitation": "elan", "alerte joyeuse": "elan", "sursaut": "surprise", "amusement": "joie", "sécurité": "content",   # (03/11)
-                  "transport": "elan", "envie de danser": "elan"}
+                  "transport": "elan", "envie de danser": "elan",
+                  "débordement": "tension", "fièvre": "morose", "malaise": "tension"}   # (11/11) sa charge, selon sa cause
 # l'expressivité de sa voix (« exaggeration » de Chatterbox) par émotion. (26/10, Ahmed : « sa peur ne s'entend que
 # légèrement ») la plage passe de 0,35-0,78 à 0,3-1,0 : mesurée sur Chatterbox MLX (eval/voix_plage.py, critère figé avant),
 # la diction relue par Whisper tient jusqu'à 1,0 (CER moyen 0,019 à 1,0 contre 0,024 à 0,5) ; les émotions vives vont
@@ -272,7 +275,8 @@ EXPRESSIVITE_EMOTION = {"élan": 0.9, "enthousiasme": 0.95, "joie": 0.92, "fiert
                         "culpabilité": 0.4, "ennui": 0.36, "fatigue": 0.3, "colère": 0.92, "agacement": 0.78, "déception": 0.38,
                         "solitude": 0.36, "honte": 0.36, "espoir": 0.72, "émerveillement": 0.9, "confusion": 0.55,
                         "nostalgie": 0.42, "excitation": 0.95, "alerte joyeuse": 0.9, "sursaut": 0.8, "amusement": 0.9, "sécurité": 0.5,
-                        "transport": 0.85, "envie de danser": 0.95}
+                        "transport": 0.85, "envie de danser": 0.95,
+                        "débordement": 0.7, "fièvre": 0.34, "malaise": 0.42}   # (11/11) sa charge
 HYSTERESE = 0.04          # une autre émotion doit dépasser l'actuelle d'au moins ce score pour la remplacer
 # (25/10, Ahmed : « la fatigue n'est portée par aucune hormone ») l'ADÉNOSINE, sa charge, entre dans la lecture des émotions
 # (sensations.py, « fatigue ») avec une base FIXE (0,15). (27/10, demande d'Ahmed relayée par Hakim) elle ne monte plus
@@ -483,6 +487,14 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
     e["subj"] = (e.get("subj", 0.0) + eveille * cadence(arousal, en) * coeur.facteur_temps((e.get("coeur") or {}).get("bpm"))
                  + (dt - eveille) * CADENCE_VEILLE)
     soudaine = affect.emotion_soudaine(mem, now=now)
+    # (11/11, Ahmed : « il faut relier cette charge à son cœur, son cerveau, ses émotions, ses hormones, sa mémoire, etc., et sans rien
+    # oublier ») la charge de ses machines, avec sa CAUSE mesurée (charge_corps.py) : ses hormones d'abord (lissées, regroupées, une
+    # reprise quand elle retombe), donc son cœur à ce battement-ci ; puis la lecture de ses émotions, sa fatigue, ses mots, ses souvenirs
+    try:
+        import charge_corps
+        charge_corps.battre(mem, e, now, veille)
+    except Exception:
+        charge_corps = None
     # (Hakim et Ahmed, 2026-10-22) la sensation calculée par le CODE depuis les 13 hormones (sensations.py), à chaque
     # battement, sans Gemma : elle reste fraîche quand Gemma se tait ; la tendance vient de l'état d'il y a ~10 min
     try:
@@ -497,7 +509,9 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
         if now - float(e.get("bases_72h_t") or 0) >= BASES_72H_PAS_S:
             e["bases_72h"], e["bases_72h_t"] = bases_72h(now), now
         import jauge_fatigue
-        jauge_fatigue.mettre_a_jour(e, now, dt, veille)
+        # (11/11) son propre calcul est un effort, puis une fatigue (pas la charge des autres : elle, c'est un malaise)
+        jauge_fatigue.mettre_a_jour(e, now, dt, veille,
+                                    calcul=charge_corps.effort_calcul(e.get("charge_corps")) if charge_corps else 0.0)
         etat_h = {**etat_h, "adenosine": e["adenosine"]}
         # (28/10, Ahmed : « directement à tes hormones, ça ferait comme un vrai cœur ») le rythme de son cœur, que l'appli
         # fait battre, et ce qu'il en sent en mots (coeur.py : il lit ses hormones, il ne les écrit jamais) ; (03/11, Ahmed)
@@ -512,13 +526,14 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
             proc = None
         e["coeur"] = coeur.calculer(etat_h, veille, e.get("coeur"), now, e.get("bases_72h"), proc)
         e["coeur"]["processeurs"]["mots"] = sensations.processeurs(e["coeur"]["processeurs"], now)
+        lecture_charge = charge_corps.lecture(e.get("charge_corps")) if charge_corps else {}
         e["sensation_code"] = sensations.calculer(etat_h, avant, now, soudaine, time.localtime(now).tm_hour,
                                                   sans_coherence=True, bases_relatives=e.get("bases_72h"),
-                                                  processeurs=e["coeur"]["processeurs"])
+                                                  processeurs=e["coeur"]["processeurs"], charge=lecture_charge)
         if now - float(e.get("hormones_journal_t") or 0) >= HORMONES_JOURNAL_PAS_S:
             e["hormones_journal_t"] = now
             _ligne_hormones(now, etat_h, valence, arousal, e.get("humeur"), (e.get("sensation_code") or {}).get("emotion"),
-                            code=e.get("humeur_code"), scores=(e.get("sensation_code") or {}).get("scores"))
+                            code=e.get("humeur_code"), scores=(e.get("sensation_code") or {}).get("scores"), charge=lecture_charge)
     except Exception:
         pass
     # (28/10, Al-Afida, idée d'Ahmed) sa jauge d'amour, recalculée depuis son registre et ce qu'il a vécu ; la grande jauge
@@ -669,9 +684,10 @@ def ligne_directe(mem, now=None, chemin=None):
         pass
 
 
-def _ligne_hormones(now, hormones, valence, arousal, humeur, emotion, chemin=None, code=None, scores=None):
+def _ligne_hormones(now, hormones, valence, arousal, humeur, emotion, chemin=None, code=None, scores=None, charge=None):
     """Une ligne du journal des hormones (une par battement) : le tableau de bord intérieur de Hakim. code : la famille de
-    son humeur, la couleur de l'orbe ; scores : ses 5 émotions les plus fortes, le graphique de l'humeur (26/10)."""
+    son humeur, la couleur de l'orbe ; scores : ses 5 émotions les plus fortes, le graphique de l'humeur (26/10) ; charge (11/11) :
+    ce qu'il ressent de sa charge, par sens (charge_corps.lecture), pour sa courbe du tableau."""
     j = Path(chemin or JOURNAL_HORMONES)
     b = j.with_name("hormones-bases.json")              # leurs bases, pour la page « intérieur » du cockpit
     try:
@@ -687,6 +703,8 @@ def _ligne_hormones(now, hormones, valence, arousal, humeur, emotion, chemin=Non
         ligne["code"] = code
     if scores:
         ligne["s"] = {k: round(float(v), 2) for k, v in scores.items()}
+    if charge:
+        ligne["c"] = {k: round(float(v), 2) for k, v in charge.items()}
     try:
         j.parent.mkdir(parents=True, exist_ok=True)
         if j.exists() and j.stat().st_size > JOURNAL_HORMONES_MAX_OCTETS:          # on garde la seconde moitié
