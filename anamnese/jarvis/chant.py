@@ -249,9 +249,12 @@ def preparer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune
         if "no vocals" not in desc:
             desc += ", instrumental, no vocals"
         desc = desc[:512]
-    if autotune:
+    niveau = "" if instrumental else niveau_autotune(autotune, style)     # sans voix, rien à recaler
+    desc = sans_mots_autotune(desc)                          # (11/11) le niveau se décide ici, pas par les mots de la légende
+    if niveau == "fort":
         desc = (desc + ", " + TAG_AUTOTUNE)[:512]
-    return {"titre": titre, "style": " ".join(str(style or "").split())[:200], "description": desc, "autotune": bool(autotune),
+    return {"titre": titre, "style": " ".join(str(style or "").split())[:200], "description": desc, "autotune": bool(niveau),
+            "autotune_niveau": niveau,
             "paroles": texte, "langue": "unknown" if instrumental else langue_de(texte, langue), "duree_s": d,
             "instrumental": instrumental, "nom": nom_de(titre), "bpm": bpm, "pour_studio": bool(pour_studio), "tonalite": tonalite,
             "reference": morceau_valide(reference, "reference"), "inspiration": morceau_valide(inspiration, "inspiration"),
@@ -259,10 +262,45 @@ def preparer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune
 
 
 # ---------------------------------------------------------------------------------------------------- l'autotune
-# (06/11, Ahmed : « qu'il rappe, et qu'il chante, mon fiston, avec autotune et sans ») avec autotune, deux gestes : le
-# tag « auto-tuned vocals » dans la description (ACE-Step a appris ce son), PUIS une vraie correction de hauteur sur la
-# voix seule (Demucs la sépare, WORLD la recale note par note sur la gamme du morceau, puis on remixe).
+# (06/11, Ahmed : « qu'il rappe, et qu'il chante, mon fiston, avec autotune et sans ») ; (09/11 : « ça fait trop voix métallique, t'as
+# poussé au max, il faut le bon équilibre ») ; (11/11 ~05:20 : « il faut améliorer son autotune : même le léger part en steak »).
+# Mesuré le 11/11 (jarvis/autotune.py, en tête) : il n'y avait PAS de léger — « oui » recalait chaque trame à 100 % par WORLD, qui
+# re-synthétisait toute la voix (consonnes et souffle refabriqués, hauteur cassée par les erreurs de dio), et l'étiquette ci-dessous
+# demandait sans doute à ACE-Step sa voix autotunée apprise, sous la correction (plausible, pas prouvé). Désormais deux niveaux : « leger » (par défaut pour True) : la voix d'ACE-Step naturelle (ni
+# étiquette, ni ses mots d'autotune dans la légende), puis une correction partielle et lente des seules notes tenues sûres (TD-PSOLA,
+# formants gardés) ; « fort » : l'étiquette, puis l'effet assumé (100 % en 15 ms), propre, sur les mêmes notes.
 TAG_AUTOTUNE = "auto-tuned vocals, autotune pitch correction"
+LISIBLE = {"leger": "léger", "fort": "fort"}
+_MOTS_AUTOTUNE = re.compile(
+    r"(?:\b(?:sans|no|without|pas d['’]|zero|z[ée]ro)\s*)?(?:\b(?:avec|with)\s+)?(?:\b(?:un|une|a|an)\s+)?(?:\b(?:tr[eè]s|very)\s+)?"
+    r"(?:\b(?:l[ée]ger|light|subtle|soft|petit|heavy|hard|fort|strong|gros|max|lourd)\s+)?\bauto[\s-]?tun(?:e|ed|es|ing)?\b"
+    r"(?:\s+(?:l[ée]ger|light|subtle|doux|fort|hard|heavy|max|pitch correction))?", re.IGNORECASE)
+
+
+def niveau_autotune(autotune, style=""):
+    """Le niveau voulu : son choix (True ou « léger » → "leger", « fort » → "fort", False → "") ; sans choix, ce que disent ses mots
+    dans le style (« autotune léger », « autotuned voice », « hard autotune »… ; « sans autotune » → "")."""
+    sys.path.insert(0, str(ICI))
+    import autotune as AT
+    n = AT.niveau_de(autotune)
+    if n or (autotune not in (None, False, "", 0) and not isinstance(autotune, bool)):
+        return n
+    t = " ".join(str(style or "").lower().split())
+    m = _MOTS_AUTOTUNE.search(t)
+    if not m:
+        return ""
+    mot = m.group(0)
+    if re.match(r"(sans|no|without|pas d|zero|z[ée]ro)", mot):
+        return ""
+    return "fort" if re.search(r"heavy|hard|fort|strong|gros|max|lourd", mot) else "leger"
+
+
+def sans_mots_autotune(desc):
+    """La légende pour ACE-Step sans ses mots d'autotune (« vocals rap mélodique avec un léger autotune » → « vocals rap mélodique »)."""
+    morceaux = [" ".join(_MOTS_AUTOTUNE.sub(" ", x).split()) for x in str(desc or "").split(",")]
+    return ", ".join(x for x in morceaux if x)[:512]
+
+
 NOTES = {"c": 0, "c#": 1, "db": 1, "d": 2, "d#": 3, "eb": 3, "e": 4, "f": 5, "f#": 6, "gb": 6, "g": 7, "g#": 8,
          "ab": 8, "a": 9, "a#": 10, "bb": 10, "b": 11, "cb": 11, "e#": 5, "fb": 4, "b#": 0}
 MAJEURE, MINEURE = (0, 2, 4, 5, 7, 9, 11), (0, 2, 3, 5, 7, 8, 10)
@@ -280,7 +318,8 @@ def gamme(tonalite):
 
 
 def caler(f0, classes, force=1.0):
-    """La hauteur (Hz par trame, 0 = non voisé) recalée sur la note permise la plus proche. force 1 = autotune dur."""
+    """L'ANCIEN recalage (jusqu'au 11/11), gardé comme témoin du banc et des tests : la hauteur (Hz par trame, 0 = non voisé) recalée sur la
+    note permise la plus proche, trame par trame, sans vitesse de correction. force 1 = autotune dur (des marches, le vibrato effacé)."""
     import math
     sortie = []
     for f in f0:
@@ -313,11 +352,14 @@ def separer_voix(melange, voix, reste):
     sf.write(reste, x - v, sr)
 
 
-def autotuner(melange, sortie, tonalite):
-    """(.venv-chant) sépare (Demucs, dans .venv-separation), recale la voix (WORLD), remixe. Rend la gamme utilisée."""
+def autotuner(melange, sortie, tonalite, niveau="leger"):
+    """(.venv-chant) sépare (Demucs, dans .venv-separation), corrige la voix seule (autotune.corriger : les notes tenues sûres, TD-PSOLA),
+    la remet sur le reste. Hors des notes corrigées, la voix reste celle d'origine : le mélange rendu est alors le mélange d'origine.
+    Rend le rapport de la correction (gamme, notes, part corrigée…)."""
     import numpy as np
-    import pyworld as pw
     import soundfile as sf
+    sys.path.insert(0, str(ICI))
+    import autotune as AT
     d = Path(sortie).parent
     voix, reste = d / "voix.wav", d / "reste.wav"
     melange44 = d / "melange44.wav"
@@ -327,18 +369,11 @@ def autotuner(melange, sortie, tonalite):
                     str(reste)], check=True, timeout=1200)
     v, sr = sf.read(voix, dtype="float64", always_2d=True)
     r, _ = sf.read(reste, dtype="float64", always_2d=True)
-    classes = gamme(tonalite)
-    mono = np.ascontiguousarray(v.mean(axis=1))
-    f0, t = pw.dio(mono, sr, f0_floor=70.0, f0_ceil=900.0, frame_period=5.0)
-    f0 = pw.stonemask(mono, f0, t, sr)
-    sp, ap = pw.cheaptrick(mono, f0, t, sr), pw.d4c(mono, f0, t, sr)
-    y = pw.synthesize(np.array(caler(f0, classes), dtype=np.float64), sp, ap, sr, 5.0)[: len(mono)]
-    y = np.pad(y, (0, len(mono) - len(y)))
-    gain = np.sqrt((mono ** 2).mean() / max(1e-12, (y ** 2).mean()))   # même niveau que la voix d'origine
-    mix = r + (y * gain)[:, None]
+    y, rapport = AT.corriger(v, sr, gamme(tonalite), niveau or "leger", AT.diapason(r, sr))
+    mix = r + y
     mix *= min(1.0, 0.89 / max(1e-9, np.abs(mix).max()))             # crête à -1 dB
     sf.write(sortie, mix.astype(np.float32), sr)
-    return classes
+    return rapport
 
 
 # ---------------------------------------------------------------------------------------------------- la tâche
@@ -416,7 +451,7 @@ def lancer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune=F
         if len(en_cours) >= MAX_TACHES:
             raise Refus(f"déjà {len(en_cours)} tâches de fond en cours : attends qu'une finisse")
         tid = f"T-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:4]}"
-        avec = ", autotune" if demande["autotune"] else ""
+        avec = f", autotune {LISIBLE.get(demande['autotune_niveau'], demande['autotune_niveau'])}" if demande["autotune"] else ""
         d = {"id": tid, "commande": f"chanter « {demande['titre']} » ({demande['style'][:60]}{avec}, {demande['duree_s']} s)",
              "debut": time.time(), "etat": "en cours", "delai_s": DELAI_S, "atelier": str(ATELIER), "chanson": demande}
         _ecrire(dossier / f"{tid}.json", d)
@@ -651,10 +686,13 @@ def generer(tid, dossier=None):
     try:
         wav, tonalite = composer(c, travail)
         if c.get("autotune"):
+            niveau = c.get("autotune_niveau") or "leger"               # une tâche d'avant le 11/11 : léger
             en_mp3(wav, CHANSONS / f"{c['nom']}-sans-correction.mp3")       # la prise brute, pour comparer
-            print("PROGRESSION 3/5 autotune", flush=True)
-            classes = autotuner(wav, travail / "autotune.wav", tonalite)
-            print(f"Autotune sur la gamme {tonalite or 'chromatique'} : classes {list(classes)}", flush=True)
+            print(f"PROGRESSION 3/5 autotune {LISIBLE.get(niveau, niveau)}", flush=True)
+            r = autotuner(wav, travail / "autotune.wav", tonalite, niveau)
+            print(f"Autotune {LISIBLE.get(niveau, niveau)} sur la gamme {tonalite or 'chromatique'} (gamme suivie : {r.get('gamme')}, "
+                  f"couverture {r.get('couverture')}, diapason {r.get('diapason_cents')} cents) : {r.get('notes')} notes tenues sûres, "
+                  f"{int(100 * r.get('part_corrigee', 0))} % de la voix corrigée, {r.get('correction_mediane_cents')} cents en médiane", flush=True)
             wav = travail / "autotune.wav"
         print("PROGRESSION 4/5 encodage", flush=True)
         if c.get("base_coupee"):                                         # (07/11) un feat : sa voix seule, posée sur la VRAIE instru de papa

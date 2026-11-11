@@ -5,8 +5,8 @@ Tout se calcule SUR LE MAC, avec des outils locaux et gratuits :
 - ffmpeg (déjà là) pour la chaîne : coupe-bas, débruitage léger (afftdn), égaliseur, dé-essage, compression, réverb et
   écho (aecho), équilibre voix/instru, mastering (compression de bus, loudnorm en deux passes vers −14 LUFS intégrés,
   limiteur à −1 dBFS), export WAV et MP3 ;
-- l'autotune de chant.py (WORLD, recalage note par note sur la gamme) sur la voix seule : pas besoin de Demucs, la prise
-  est déjà une voix seule ;
+- l'autotune (jarvis/autotune.py, refait le 11/11 : « léger » ou « fort », TD-PSOLA sur les notes tenues sûres, formants
+  gardés) sur la voix seule : pas besoin de Demucs, la prise est déjà une voix seule ;
 - Demucs (chant.separer_voix, son venv) pour faire l'instru d'une chanson de Hakim (la voix retirée).
 
 Les calculs lourds sont des TRAVAUX en file (studio/travaux/J-*.json), faits un à la fois par un seul travailleur
@@ -406,26 +406,28 @@ def tonalite_de(instru):
     return f"{noms.get(note, note)} {'minor' if mode == 'mineur' else 'major'}"
 
 
-def autotuner_voix(entree, sortie, tonalite, force=1.0):
-    """(.venv-chant) l'autotune de chant.py sur une voix seule : WORLD la recale note par note sur la gamme."""
-    import numpy as np
-    import pyworld as pw
+def niveau_autotune(v):
+    """True / « léger » → "leger", « fort » → "fort", False / « non » → "" (sans numpy : le venv d'Anamnèse l'appelle)."""
     sys.path.insert(0, str(ICI))
+    import autotune
+    return autotune.niveau_de(v)
+
+
+def autotuner_voix(entree, sortie, tonalite, niveau="leger", diap=0.0):
+    """(.venv-chant) l'autotune sur une voix seule (autotune.corriger : ses notes tenues sûres rapprochées de la gamme, TD-PSOLA ;
+    le reste de la prise, échantillon pour échantillon). Rend (sortie, rapport)."""
+    import numpy as np
+    sys.path.insert(0, str(ICI))
+    import autotune
     import chant
     x, sr = _pcm(entree, SR)
-    x = x.astype(np.float64)
-    f0, t = pw.dio(x, sr, f0_floor=70.0, f0_ceil=900.0, frame_period=5.0)
-    f0 = pw.stonemask(x, f0, t, sr)
-    sp, ap = pw.cheaptrick(x, f0, t, sr), pw.d4c(x, f0, t, sr)
-    y = pw.synthesize(np.array(chant.caler(f0, chant.gamme(tonalite), force), dtype=np.float64), sp, ap, sr, 5.0)[: len(x)]
-    y = np.pad(y, (0, len(x) - len(y)))
-    y *= np.sqrt((x ** 2).mean() / max(1e-12, (y ** 2).mean()))
+    y, rapport = autotune.corriger(x.astype(np.float64), sr, chant.gamme(tonalite), niveau or "leger", diap)
     y *= min(1.0, 0.95 / max(1e-9, np.abs(y).max()))
     tmp = Path(sortie).with_suffix(".f32")
     y.astype(np.float32).tofile(tmp)
     _ff("-f", "f32le", "-ar", sr, "-ac", 1, "-i", tmp, "-c:a", "pcm_s16le", sortie)
     tmp.unlink()
-    return sortie
+    return sortie, rapport
 
 
 def mixer(prise, instru, sortie_dir, titre="", latence_ms=0, autotune=False, tonalite="", voix_db=0.0, reverb=0.3,
@@ -447,10 +449,14 @@ def mixer(prise, instru, sortie_dir, titre="", latence_ms=0, autotune=False, ton
         dire(2, "nettoyage (coupe-bas, débruitage)")
         _ff("-i", prise, "-af", ",".join([cale, *chaine_nettoyage(debruitage)]), "-ac", 1, "-ar", SR, "-c:a", "pcm_s16le", propre)
         source_voix = propre
-        if autotune:
-            dire(3, "autotune")
+        niveau, rapport = niveau_autotune(autotune), None
+        if niveau:
+            dire(3, f"autotune {'léger' if niveau == 'leger' else niveau}")
             tonalite = tonalite or tonalite_de(instru)
-            source_voix = autotuner_voix(propre, tmp / "voix-autotune.wav", tonalite)
+            sys.path.insert(0, str(ICI))
+            import autotune as AT
+            diap = AT.diapason(*_pcm(instru, SR))                      # le diapason de l'instru (ses pics), 0 si rien de net
+            source_voix, rapport = autotuner_voix(propre, tmp / "voix-autotune.wav", tonalite, niveau, diap)
         dire(4, "égaliseur, dé-essage, compression, réverb")
         voix = tmp / "voix.wav"
         _ff("-i", source_voix, "-af", ",".join(chaine_voix(reverb, echo, bpm)), "-ac", 1, "-ar", SR, "-c:a", "pcm_s16le", voix)
@@ -480,7 +486,8 @@ def mixer(prise, instru, sortie_dir, titre="", latence_ms=0, autotune=False, ton
         tel = copier_au_telephone(mp3, telephone)
         fiche = {"nom": nom, "titre": titre or "Mix", "prise": str(prise), "instru": str(instru), "wav": str(wav),
                  "mp3": str(mp3), "telephone": str(tel) if tel else None, "duree_s": duree(wav),
-                 "reglages": {"latence_ms": lat, "autotune": bool(autotune), "tonalite": tonalite, "voix_db": voix_db,
+                 "reglages": {"latence_ms": lat, "autotune": bool(niveau), "autotune_niveau": niveau, "autotune_rapport": rapport,
+                              "tonalite": tonalite, "voix_db": voix_db,
                               "reverb": reverb, "echo": echo, "debruitage": bool(debruitage)},
                  "mesure": mesure, "avis": avis, "calcul_s": round(time.time() - t0, 1), "fin": time.time()}
         _ecrire(sortie_dir / f"{nom}.json", fiche)

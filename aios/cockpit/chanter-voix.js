@@ -6,10 +6,15 @@
       mots, le blanc les donne à coup sûr) ;
    2. LES SYLLABES : chaque mot coupé en ses k syllabes aux creux les plus profonds de son enveloppe (les voyelles sont les bosses) ;
    3. LA HAUTEUR : sa hauteur trame par trame (YIN, 5 ms), ses marques de période ;
-   4. CHAQUE SYLLABE (TD-PSOLA : des grains de deux périodes, recollés) : sa voyelle étirée ou serrée pour tenir sa place (0,7 à 1,8 fois, les
+   4. CHAQUE SYLLABE (TD-PSOLA : des grains de deux périodes, recollés) : sa voyelle étirée ou serrée pour tenir sa place (0,7 à 4 fois, les
       consonnes gardent leur durée), sa hauteur posée sur la note du morceau (sa propre intonation gardée à 15 %), l'octave choisie une fois
-      pour la phrase (la plus proche de sa voix) ;
-   5. LE RECOLLAGE : l'attaque de chaque syllabe posée sur son instant, fondus de 6 ms, rien ne déborde sur la suivante.
+      pour la phrase (la plus proche de sa voix) ; liée à la précédente (pas de consonne sourde entre elles), sa note part de celle d'avant
+      et la rejoint en 30 ms (au plus le quart de sa voyelle) : pas de marche nette ;
+   5. LE RECOLLAGE : l'attaque de chaque syllabe posée sur son instant ; le fondu de sortie (6 ms) chevauche le fondu d'entrée de la
+      suivante (pas de trou entre deux syllabes liées), rien d'autre ne déborde.
+   (11/11, Ahmed : « même le léger part en steak ») au banc (say, 120 BPM) : 9 syllabes sur 28 laissaient un blanc avant la suivante (jusqu'à
+   196 ms : sa voyelle ne pouvait s'étirer que de 1,8 fois), et deux syllabes liées s'éteignaient puis se rallumaient au même point ;
+   désormais 3 sur 28 (les notes plus longues que 4 fois sa voyelle). Les trous se lisent dans le rendu (syllabes[].trou_ms).
    Pourquoi TD-PSOLA en JavaScript : rien à installer (ni librosa, ni rubberband sur ce Mac), pas de processus à lancer (Python + librosa :
    1 à 3 s de démarrage), quelques dizaines de ms par ligne (mesuré au banc), et la meilleure qualité pour une voix seule et propre à moins
    d'une quinte : les formants restent (pas de voix de canard, contrairement au ré-échantillonnage), et pas le flou de phase du vocodeur de
@@ -23,7 +28,13 @@ const DEFAUTS = {
   seuil_silence: 0.05,      // sous 5 % du plus fort de l'enveloppe : du silence
   fondu_ms: 6,
   marge_ms: 40,             // le zéro de la ligne dans le son rendu (la place du fondu et de la consonne avant la première attaque)
-  etirer_min: 0.7, etirer_max: 1.8,
+  // (11/11, Ahmed : « même le léger part en steak ») mesuré au banc (say, 120 BPM) : 5 syllabes liées sur 6 séparées par un trou (−23 dB en
+  // médiane, jusqu'au silence) : la voyelle ne s’étirait pas assez (1,8 fois au plus) pour tenir sa place, et chaque syllabe s’éteignait
+  // là où la suivante s’allumait. Désormais 4 fois, et les fondus de deux syllabes se chevauchent (la suivante s'allume pendant que la
+  // précédente s'éteint) ; entre deux syllabes liées, la hauteur glisse de l'une à l'autre en glisse_ms (pas de marche nette).
+  etirer_min: 0.7, etirer_max: 4.0,
+  glisse_ms: 30,            // le passage d'une note à la suivante, quand les deux syllabes sont liées (sa voix ne s'arrête pas entre elles)
+  lie_ms: 25,               // une syllabe dont la voix commence à moins de 25 ms de son début est liée à la précédente (pas de consonne sourde)
   force: 0.85,              // la hauteur posée sur la note (1 : plate, 0 : son intonation telle quelle)
   f0_min: 60, f0_max: 500, yin_seuil: 0.15,
   attaque_seuil: 0.3,       // l'attaque d'une syllabe : son enveloppe à 30 % de son plus fort (le début de sa voyelle)
@@ -218,7 +229,7 @@ function attaqueDans(x, a, b, sr, seuil = DEFAUTS.attaque_seuil) {
   const k = e.findIndex(v => v >= seuil * m);
   return k < 0 ? 0 : k * pas;
 }
-function rendreSyllabe(x, sr, H, M, a, b, { duree, cible = 0, force = DEFAUTS.force, o = {} } = {}) {
+function rendreSyllabe(x, sr, H, M, a, b, { duree, cible = 0, force = DEFAUTS.force, depuis = 0, o = {} } = {}) {
   const r = { ...DEFAUTS, ...o };
   // sa partie voisée (la voyelle) : la première et la dernière trame qui ont une hauteur
   let v0 = -1, v1 = -1;
@@ -238,16 +249,20 @@ function rendreSyllabe(x, sr, H, M, a, b, { duree, cible = 0, force = DEFAUTS.fo
   const ms = M.filter(m => m.i >= a - 2 * m.T && m.i < b + m.T);
   if (!ms.length) return { y: new Float32Array(0), attaque: 0, f0_in: 0 };
   const y = new Float32Array(total + 1), w = new Float32Array(total + 1);
-  const rapport = (f) => {   // la hauteur voulue sur sa hauteur : la note, sa propre intonation gardée à (1 − force)
+  // liée à la précédente : sa note part de celle d'avant (à l'octave la plus proche) et la rejoint en glisse_ms, au début de sa voyelle
+  if (depuis > 0 && cible > 0) { while (depuis / cible > 1.5) depuis /= 2; while (cible / depuis > 1.5) depuis *= 2; }
+  const G = Math.max(1, Math.min(sr * (r.glisse_ms || 0) / 1000, 0.25 * lv * alpha));   // au plus le quart de sa voyelle
+  const cibleA = (t) => (depuis > 0 && cible > 0 && t < s0 + G ? depuis * Math.pow(cible / depuis, borne((t - s0) / G, 0, 1)) : cible);
+  const rapport = (f, t) => {   // la hauteur voulue sur sa hauteur : la note, sa propre intonation gardée à (1 − force)
     if (!(cible > 0) || !(f > 0) || !(f0in > 0)) return 1;
-    return (cible * Math.pow(f / f0in, 1 - force)) / f;
+    return (cibleA(t) * Math.pow(f / f0in, 1 - force)) / f;
   };
   let t = 0, k = 0;
   while (t < total) {
     const ti = versEntree(t);
     while (k + 1 < ms.length && Math.abs(ms[k + 1].i - ti) <= Math.abs(ms[k].i - ti)) k++;
     const m = ms[k], T = m.T;
-    const beta = m.voisee ? borne(rapport(f0A(H, m.i) || f0in), 0.5, 2) : 1;
+    const beta = m.voisee ? borne(rapport(f0A(H, m.i) || f0in, t), 0.5, 2) : 1;
     // le grain : deux périodes autour de la marque, fenêtre de Hann, posé à t
     for (let j = -T; j < T; j++) {
       const src = m.i + j, dst = Math.round(t) + j;
@@ -316,15 +331,20 @@ function chanterLigne(wav, mots, syllabes, o = {}) {
     const ici = marge + Math.round(sr * s.t / 1000);
     const suivant = i + 1 < ordre.length ? marge + Math.round(sr * ordre[i + 1].t / 1000) - pres[i + 1] : ici + Math.round(sr * (s.d + r.queue_ms) / 1000);
     const place = Math.max(Math.round(sr * 0.04), suivant - (ici - pres[i]));
-    const R = rendreSyllabe(x, sr, H, M, a, b, { duree: Math.min(place, Math.round(sr * s.d / 1000) + pres[i]), cible: notes[i], o: r });
-    let debut = ici - R.attaque, n = Math.min(R.y.length, place, out.length - Math.max(0, debut));
+    // liée à la précédente (sa voix commence aussitôt, et la précédente a sa note) : sa hauteur part de la note d'avant
+    const lie = i > 0 && pres[i] <= Math.round(sr * r.lie_ms / 1000) && rendu[i - 1] && rendu[i - 1].attaque_ms != null ? rendu[i - 1].cible_hz : 0;
+    const R = rendreSyllabe(x, sr, H, M, a, b, { duree: Math.min(place, Math.round(sr * s.d / 1000) + pres[i]), cible: notes[i], depuis: lie, o: r });
+    // son fondu de sortie chevauche le fondu d'entrée de la suivante (au lieu de s'éteindre tous deux au même point : un trou)
+    const chevauche = i + 1 < ordre.length ? Math.round(sr * r.fondu_ms / 1000) : 0;
+    let debut = ici - R.attaque, n = Math.min(R.y.length, place + chevauche, out.length - Math.max(0, debut));
     let src0 = 0;
     if (debut < 0) { src0 = -debut; n -= src0; debut = 0; }
     if (n <= 0) { rendu.push({ t: s.t, attaque_ms: null, cible_hz: notes[i], f0_in: R.f0_in }); return; }
     const y = R.y.subarray(src0, src0 + n);
     const z = Float32Array.from(y); fondre(z, sr, 0, z.length, r.fondu_ms);
     for (let j = 0; j < z.length; j++) out[debut + j] += z[j];
-    rendu.push({ t: s.t, attaque_ms: Math.round(((debut + R.attaque - src0) - marge) / sr * 1000), cible_hz: Math.round((R.cible || notes[i]) * 10) / 10, f0_in: Math.round(R.f0_in), alpha: Math.round((R.alpha || 1) * 100) / 100 });
+    rendu.push({ t: s.t, attaque_ms: Math.round(((debut + R.attaque - src0) - marge) / sr * 1000), cible_hz: Math.round((R.cible || notes[i]) * 10) / 10, f0_in: Math.round(R.f0_in), alpha: Math.round((R.alpha || 1) * 100) / 100,
+      trou_ms: Math.max(0, Math.round((place - n) / sr * 1000)) });   // ce qui manque à sa place (sa voix ne la remplit pas : un blanc jusqu'à la suivante)
   });
   let m = 0; for (const v of out) m = Math.max(m, Math.abs(v));
   if (m > 0.98) for (let i = 0; i < out.length; i++) out[i] *= 0.98 / m;

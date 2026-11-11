@@ -114,10 +114,15 @@ def test_outil_chanter(monkeypatch, tmp_path):
 
 
 def test_autotune_dans_la_description_et_la_tache(lieux):
+    # (11/11) True = léger : la voix d'ACE-Step reste naturelle (pas d'étiquette), la correction douce vient après ; « fort » : l'étiquette
     c = chant.lancer("la", "rap", 30, "A", autotune=True, demarrer=_faux_demarrage([]), **lieux)
-    assert c["autotune"] is True and chant.TAG_AUTOTUNE in c["description"]
+    assert c["autotune"] is True and c["autotune_niveau"] == "leger" and chant.TAG_AUTOTUNE not in c["description"]
     t = json.loads((lieux["dossier"] / f"{c['tache']}.json").read_text())
-    assert ", autotune, 30 s)" in t["commande"]
+    assert ", autotune léger, 30 s)" in t["commande"]
+    for f in lieux["dossier"].glob("T-*.json"):
+        f.unlink()
+    c = chant.lancer("la", "rap", 30, "B", autotune="fort", demarrer=_faux_demarrage([]), **lieux)
+    assert c["autotune_niveau"] == "fort" and chant.TAG_AUTOTUNE in c["description"]
     assert chant.TAG_AUTOTUNE not in chant.preparer("la", "rap", 30)["description"]
     assert "drill" in chant.description("drill") and "trap" in chant.description("Trap")
 

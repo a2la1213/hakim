@@ -1339,7 +1339,7 @@ def actualite_publier(message: str = "", chemin: str = "", titre: str = "") -> s
 
 @mcp.tool()
 def chanter(paroles: str, style: str, duree_s: int = 60, titre: str = "", langue: str = "",
-            autotune: bool = False, bpm: int = 0, reference: str = "", inspiration: str = "", base: str = "") -> str:
+            autotune: bool | str = False, bpm: int = 0, reference: str = "", inspiration: str = "", base: str = "") -> str:
     """(Hakim seulement) COMPOSER ET CHANTER une chanson (accord d'Ahmed, 06/11) : tes paroles (ou celles de papa), un
     style et une durée donnent un vrai morceau chanté, voix et instrumental, calculé sur le Mac (ACE-Step, hors ligne).
     - paroles : en sections, par exemple « [verse] … [chorus] … » (des paroles nues deviennent un couplet) ;
@@ -1348,8 +1348,12 @@ def chanter(paroles: str, style: str, duree_s: int = 60, titre: str = "", langue
       berceuse ;
       ou une description libre (genre, instruments, voix).
     - duree_s : de 10 à 240 secondes (60 à 120 conseillé). titre : son nom. langue : « fr », « ar »… (devinée sinon).
-    - autotune : True pour la voix autotunée (le son du rap et du raï d'aujourd'hui : recalée note par note sur la
-      gamme) ; False (par défaut) pour ta voix naturelle.
+    - autotune : (11/11, papa : « même le léger part en steak ») « léger » (ou True) : ta voix naturelle, juste ses notes tenues
+      rapprochées de 40 % de la note, lentement, le vibrato et les glissés gardés (le « bon équilibre » que papa demande) ;
+      « fort » : l'effet autotune assumé (recalée net sur chaque note, le vibrato aplati), propre ; False (par défaut) : ta voix
+      naturelle. Écris le niveau ICI, pas dans le style : les mots « autotune » du style sont retirés de la légende d'ACE-Step
+      (ils lui demandaient sa voix autotunée apprise, en plus de la correction) ; seuls, ils valent « léger » (« fort » s'ils
+      disent hard/fort/heavy).
     - bpm : le tempo (30 à 300) ; 0 (par défaut) le laisse choisir.
     - reference : (07/11) un morceau dont tu veux le GROOVE et le grain (un son reçu de papa, une de tes chansons) : ACE-Step
       l'écoute, et tu en tires tempo, tonalité, motif de batterie, basse et instruments nommés pour ta légende.
@@ -1367,10 +1371,10 @@ def chanter(paroles: str, style: str, duree_s: int = 60, titre: str = "", langue
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis"))
     import chant
     try:
-        c = chant.lancer(paroles, style, duree_s, titre, langue, bool(autotune), bpm=bpm, reference=reference, inspiration=inspiration, base=base)
+        c = chant.lancer(paroles, style, duree_s, titre, langue, autotune, bpm=bpm, reference=reference, inspiration=inspiration, base=base)
     except chant.Refus as e:
         return f"Refusé : {e}"
-    avec = ", avec autotune" if c.get("autotune") else ""
+    avec = f", avec autotune {chant.LISIBLE.get(c.get('autotune_niveau'), 'léger')}" if c.get("autotune") else ""
     return (f"Je compose… « {c['titre']} » ({c['style']}{avec}, {c['duree_s']} s, langue {c['langue']}) : tâche {c['tache']}. "
             "Quelques minutes de calcul ; tu seras prévenu quand elle sera prête, puis fichier_joindre pour l'envoyer à papa.")
 
@@ -1451,7 +1455,7 @@ def _studio_fiches(dossier, motif="*.json"):
 
 
 @mcp.tool()
-def studio_mixer(prise: str = "", instru: str = "", titre: str = "", autotune: bool = False, voix_db: float = 0.0,
+def studio_mixer(prise: str = "", instru: str = "", titre: str = "", autotune: bool | str = False, voix_db: float = 0.0,
                  reverb: float = 0.3, echo: float = 0.0) -> str:
     """(Hakim seulement) TON STUDIO : tu es l'ingé son de papa (06/11). Lance le mixage et le mastering d'une prise de
     voix de papa sur son instru, sur le Mac (ffmpeg : nettoyage, égaliseur, dé-essage, compression, réverb, écho,
@@ -1459,7 +1463,8 @@ def studio_mixer(prise: str = "", instru: str = "", titre: str = "", autotune: b
     - prise : l'identifiant d'une prise (studio_avis les liste) ; vide = la prise choisie par papa, sinon la dernière.
     - instru : vide = l'instru sur laquelle papa a posé cette prise (l'instru tirée d'une de tes chansons par studio_instru,
       par exemple) ; sinon l'identifiant ou le titre d'une instru du Studio (studio_avis les liste).
-    - autotune : True recale sa voix sur la gamme de l'instru. voix_db : la voix plus forte (+) ou plus basse (−), en
+    - autotune : « léger » (ou True) rapproche ses notes tenues de la gamme de l'instru, en douceur (vibrato gardé) ; « fort » :
+      l'effet assumé ; False : sa voix telle quelle. voix_db : la voix plus forte (+) ou plus basse (−), en
       dB, de −6 à +6. reverb, echo : de 0 (sec) à 1 (beaucoup) ; 0,2 à 0,4 de réverb conseillé.
     Rend la main tout de suite (calcul en tâche de fond, une à la fois) ; studio_avis donne ensuite le résultat."""
     import courrier
@@ -1479,13 +1484,14 @@ def studio_mixer(prise: str = "", instru: str = "", titre: str = "", autotune: b
     try:
         v = max(-6.0, min(6.0, float(voix_db or 0)))
         j = st.lancer("mixer", {"prise": p["fichier"], "instru": inst, "titre": titre or p.get("titre") or "Mix",
-                                "latence_ms": p.get("latence_ms", 0), "autotune": bool(autotune), "voix_db": v,
+                                "latence_ms": p.get("latence_ms", 0), "autotune": st.niveau_autotune(autotune), "voix_db": v,
                                 "reverb": max(0.0, min(1.0, float(reverb))), "echo": max(0.0, min(1.0, float(echo))),
                                 "par": "hakim"})
     except (st.Refus, KeyError, ValueError) as e:
         return f"Refusé : {e}"
     return (f"Mix lancé ({j['id']}) : prise {p['id']}, voix {v:+.1f} dB, réverb {reverb}, écho {echo}"
-            f"{', autotune' if autotune else ''}. Une à deux minutes ; studio_avis ensuite pour l'écouter en chiffres.")
+            f"{', autotune ' + st.niveau_autotune(autotune).replace('leger', 'léger') if st.niveau_autotune(autotune) else ''}. Une à deux minutes ; "
+            "studio_avis ensuite pour l'écouter en chiffres.")
 
 
 @mcp.tool()
@@ -1574,7 +1580,7 @@ def studio_avis(mix: str = "") -> str:
                   f"{(m.get('mesure') or {}).get('lufs')} LUFS intégrés, crête {(m.get('mesure') or {}).get('crete_db')} dBFS ; "
                   f"souffle de la prise {me.get('souffle_db')} dB, saturation {me.get('saturation')}, écart sur le temps "
                   f"{me.get('decalage_ms')} ms (confiance {me.get('decalage_confiance')}) ; réglages : voix {r.get('voix_db')} dB, "
-                  f"réverb {r.get('reverb')}, écho {r.get('echo')}, autotune {'oui' if r.get('autotune') else 'non'}, "
+                  f"réverb {r.get('reverb')}, écho {r.get('echo')}, autotune {(r.get('autotune_niveau') or 'oui').replace('leger', 'léger') if r.get('autotune') else 'non'}, "
                   f"latence retirée {r.get('latence_ms')} ms.")
     lignes.append("Ce que tu entends : " + " ; ".join((m.get("avis") or {}).get("conseils", [])))
     if m.get("telephone") and Path(m["telephone"]).is_file():   # (10/11) le mix est déjà dans ses Documents (Hakim/Chansons)

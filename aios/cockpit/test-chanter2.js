@@ -181,6 +181,32 @@ test('chanterLigne : les recollages sans clic (fondus de 6 ms) ; témoin : sans 
   assert.ok(sans > avec * 1.3, `sans fondu : ${sans.toFixed(2)} (avec : ${avec.toFixed(2)})`);
 });
 
+test('chanterLigne : une note longue tient jusqu’à la suivante (sa voyelle s’étire jusqu’à 4 fois, pas de trou) ; témoin : étirée à 1,8 fois au plus (avant le 11/11), des trous', () => {
+  // (11/11, Ahmed : « même le léger part en steak ») mesuré au banc (say, 120 BPM) : 9 syllabes sur 28 laissaient un blanc avant la suivante (jusqu'à 196 ms)
+  const v = S.voixSynthetique(K), syl = planSon(800);
+  const trous = (o) => V.chanterLigne(v.wav, mots, syl, o).syllabes.slice(0, -1).map(x => x.trou_ms);
+  const t = trous(), avant = trous({ etirer_max: 1.8 });
+  assert.ok(t.every(x => x <= 15), `trous : ${t.join(' ')}`);
+  assert.ok(avant.filter(x => x > 50).length >= 4, `témoin : ${avant.join(' ')}`);
+});
+test('chanterLigne : deux syllabes liées, la hauteur glisse de l’une à l’autre (pas de marche) ; témoin : sans glissé, la nouvelle note dès le début', () => {
+  // syllabes liées : presque pas de consonne entre elles ; la ligne monte d'une tierce mineure à chaque syllabe liée
+  const v = S.voixSynthetique(K, { consonne_s: 0.002, voyelle_s: 0.2 }), syl = planSon(900, [57, 60, 57, 60, 63, 60, 57, 60, 57]);
+  const debut = (o) => {
+    const r = V.chanterLigne(v.wav, mots, syl, o), p = V.lirePcm(r.wav), H = V.hauteurs(p.x, p.sr, { pas_f0_ms: 5 });
+    // dans les mots de plusieurs syllabes (liées), l'écart à sa note 15 ms après le début de sa voyelle
+    const e = [];
+    r.syllabes.forEach((s, i) => { if (i === 0 || syl[i].m !== syl[i - 1].m || s.attaque_ms == null) return;
+      const k = Math.round(p.sr * (s.attaque_ms + r.zero_ms + 15) / 1000 / H.pas), f = H.f0[k];
+      if (f > 0) e.push(Math.abs(1200 * Math.log2(f / s.cible_hz))); });
+    return e;
+  };
+  const avec = debut({ glisse_ms: 80 }), sans = debut({ glisse_ms: 0 });          // (80 ms : assez lent pour que la mesure le suive)
+  assert.ok(avec.length >= 2 && sans.length >= 2, `${avec.length} / ${sans.length}`);
+  const m = (l) => l.reduce((a, b) => a + b, 0) / l.length;
+  assert.ok(m(avec) > m(sans) + 20, `au début de la voyelle : avec glissé ${m(avec).toFixed(0)} cents de sa note, sans ${m(sans).toFixed(0)}`);
+});
+
 // ---- 5. le cockpit : la route de sa voix chantée, l'SSML d'Azure, la mélodie gardée, le plan v2
 function bac(o = {}) {
   const diffuse = [], journal = [], appels = [], azure = [];

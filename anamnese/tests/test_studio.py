@@ -106,7 +106,8 @@ def test_autotune_dans_le_venv_du_chant(sons, tmp_path):
     r = subprocess.run([str(studio.PYTHON_CHANT), "-B", "-c", code], capture_output=True, text=True, timeout=300)
     assert r.returncode == 0, r.stderr[-500:]
     reg = json.loads(r.stdout.strip().splitlines()[-1])
-    assert reg["autotune"] is True and reg["tonalite"]
+    assert reg["autotune"] is True and reg["autotune_niveau"] == "leger" and reg["tonalite"]
+    assert reg["autotune_rapport"]["niveau"] == "leger"
 
 
 def test_copie_au_telephone_et_synchronisation(tmp_path):
