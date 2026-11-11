@@ -1495,8 +1495,18 @@ class Memory:
         return row[0] if row else default
 
     def kv_set(self, key, value):
-        self.db.execute(
-            "INSERT OR REPLACE INTO kv (key, value, ts) VALUES (?,?,?)",
-            (key, value, time.time()),
-        )
-        self.db.commit()
+        try:
+            self.db.execute(
+                "INSERT OR REPLACE INTO kv (key, value, ts) VALUES (?,?,?)",
+                (key, value, time.time()),
+            )
+            self.db.commit()
+        except sqlite3.OperationalError:
+            # (11/11) une écriture qui échoue (« database is locked ») laisse la transaction ouverte : la lecture suivante y fige
+            # un instantané, et toutes les écritures d'après échouent, alors que la base est libre pour les autres (vu du 10/11
+            # 23:04 au 11/11 06:20 : plus d'échanges mémorisés, WAL à 932 Mo). On la relâche toujours avant de remonter l'erreur.
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+            raise

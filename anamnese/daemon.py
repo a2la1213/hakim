@@ -1401,7 +1401,33 @@ def _echanges_pass(mem):
         print("[daemon] mémorisation des échanges impossible :", e)
 
 
+def _liberer_connexion(mem):
+    """(11/11) À chaque tour de la boucle, aucune transaction ne doit rester ouverte sur la connexion du démon. Une écriture
+    qui échoue sous la contention (« database is locked ») la laisse ouverte : la lecture suivante y fige un instantané, puis
+    chaque écriture échoue, alors que la base est libre pour les autres connexions. Le WAL ne se vide plus non plus. Vu du
+    10/11 23:04 au 11/11 06:20 : plus aucun échange mémorisé, la sauvegarde du jour jamais notée, un WAL de 932 Mo.
+    On valide ce qui attend (rien ne se perd) ; si ça échoue, on annule. Rend True si une transaction était ouverte."""
+    try:
+        if not mem.db.in_transaction:
+            return False
+    except Exception:
+        return False
+    try:
+        mem.db.commit()
+    except Exception:
+        try:
+            mem.db.rollback()
+        except Exception:
+            pass
+    print("[daemon] une transaction restait ouverte sur la connexion : relâchée")
+    return True
+
+
 def main():
+    try:
+        sys.stdout.reconfigure(line_buffering=True)   # (11/11) ses messages arrivent tout de suite dans le journal
+    except Exception:
+        pass
     mem = Memory()
     eng = Engine(chat_model=config.DAEMON_MODEL, secours_model=config.DAEMON_SECOURS)
     mem.kv_set("daemon_started", str(time.time()))
@@ -1421,6 +1447,7 @@ def main():
     last_backup_check = 0.0
     while True:
         try:
+            _liberer_connexion(mem)                # (11/11) jamais de transaction restée ouverte d'un tour à l'autre
             # NREM (faits durables) : délégué à CLAUDE CODE (consolidate.py, launchd) —
             # décision 2026-06-23. REM local RECÂBLÉ le 2026-07-03 (expérience-rêve,
             # spec docs/superpowers/specs/2026-07-03-experience-reve-design.md) :
@@ -1437,6 +1464,7 @@ def main():
             _rappels_rates_pass(mem)               # les souvenirs ratés deviennent des alias (la nuit)
             _sagesse_pass(mem)                     # le juge de la sagesse (la nuit)
             _boucle_pass(mem)                      # la boucle de retour, niveau 1 : elle note seulement (la nuit)
+            _liberer_connexion(mem)
             _echanges_pass(mem)                    # chaque échange avec Ahmed devient un souvenir (2026-10-20)
             _nuits_pass(mem)                       # ses nuits : s'endormir, la vivre, se réveiller (30/10, Ahmed)
             _tests_de_nuit_pass(mem)               # la batterie fixe, rejouée chaque nuit (lot G, 41)
@@ -1453,6 +1481,7 @@ def main():
             break
         except Exception as e:
             print("[daemon] erreur:", e)
+            _liberer_connexion(mem)
             time.sleep(config.DAEMON_TICK)
 
 
