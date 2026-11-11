@@ -42,7 +42,8 @@ test('son tableau de l’instant : un canal charge, dans la ligne, dans « Toi �
   assert.deepStrictEqual({ ...ch, qui: ch.qui.length }, { dominante: 'surcharge', niveau: 'fort', causes: { surcharge: 'fort', fievre: 'fort', malaise: 'present' },
     qui: 2, mac: 82, gpu: 74, tel_chaleur: 100, live: true, cle: 'surcharge du live' });
   const tab = Instant.composer({ t: T, maintenant: T, charge: ch });
-  assert.match(Instant.ligne(tab), /ta charge : une surcharge \(le live\), forte \(ton oreille des voix, Whisper \(ton oreille\)\) ; aussi une fièvre, un malaise ; le Mac à 82 % ; le téléphone bridé par la chaleur/);
+  assert.match(Instant.ligne(tab), /ta charge : une surcharge \(le live\), forte \(ton oreille des voix, Whisper \(ton oreille\)\) ; aussi une fièvre, un malaise ; les processeurs du Mac occupés à 82 % ; le téléphone bridé par la chaleur/);
+  assert.doesNotMatch(Instant.ligne(tab), /le Mac à \d+ %/);   // (11/11) jamais lu comme sa batterie
   assert.match(Instant.ligneSoi(tab), /ta charge : une surcharge \(le live\), forte/);
   assert.ok(Instant.etiquettes(tab).includes('charge:surcharge'));
   // témoins : sans charge, ni ligne ni « Toi » ; une charge légère n'entre pas dans « Toi »

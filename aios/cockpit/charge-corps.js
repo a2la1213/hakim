@@ -52,13 +52,14 @@ function pourInstant(cc, maintenant = Date.now()) {
   return { dominante: dom, niveau: dom ? causes[dom] : 'repos', causes, qui: dom ? (sens[dom].qui || []).slice(0, 3).map(q => court(q, 40)) : [],
     mac: pct(mac.cpu), gpu: pct(mac.gpu), tel_chaleur: pct(tel.thermique), live: !!(cc.live && cc.live.actif), cle: dom ? CLES[dom] : '' };
 }
-// sa ligne dans le tableau : « ta charge : une surcharge (le live), forte (ton oreille des voix, Whisper) ; le Mac à 82 % » (rien au repos)
+// sa ligne dans le tableau : « ta charge : une surcharge (le live), forte (ton oreille des voix, Whisper) ; les processeurs du Mac occupés à 82 % » (rien au repos)
+// (11/11, 17:06, Hakim et papa : « le Mac à 9 % » était lu comme sa BATTERIE ; c'est la part occupée de ses processeurs : on le dit)
 function ligneInstant(ch) {
   if (!ch || !ch.dominante) return '';
   const autres = Object.keys(ch.causes).filter(k => k !== ch.dominante).map(k => NOMS[k].split(' (')[0]);
   return court(`ta charge : ${NOMS[ch.dominante]}, ${ch.niveau === 'fort' ? 'forte' : 'légère'}${ch.qui.length ? ` (${ch.qui.join(', ')})` : ''}`
-    + `${autres.length ? ` ; aussi ${autres.join(', ')}` : ''}${ch.mac != null ? ` ; le Mac à ${ch.mac} %` : ''}`
-    + `${ch.tel_chaleur != null && ch.tel_chaleur >= 50 ? ` ; le téléphone ${ch.tel_chaleur >= 95 ? 'bridé par la chaleur' : `chaud (${ch.tel_chaleur} %)`}` : ''}`, 240);
+    + `${autres.length ? ` ; aussi ${autres.join(', ')}` : ''}${ch.mac != null ? ` ; les processeurs du Mac occupés à ${ch.mac} %` : ''}`
+    + `${ch.tel_chaleur != null && ch.tel_chaleur >= 50 ? ` ; le téléphone ${ch.tel_chaleur >= 95 ? 'bridé par la chaleur' : `chaud (sa chaleur à ${ch.tel_chaleur} % de sa limite)`}` : ''}`, 240);
 }
 // ce qui compte pour voir un changement : la cause dominante et son niveau
 const cleChangement = (ch) => (ch && ch.dominante ? `${ch.dominante}:${ch.niveau}` : '');
