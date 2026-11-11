@@ -51,7 +51,7 @@ test('le flux ne remet pas à l’écran une réponse cachée, sauf ses fichiers
   const f = prendre(page, 'majMessage');
   assert.match(f, /const masque = messageMasque\(m\);\n  if \(masque && !aDesPieces\(m\)\) return;/);
   assert.match(f, /el\.outerHTML = htmlMessage\(masque \? piecesSeules\(m\) : m\);/);
-  assert.match(page, /const reponseCachee = \(\) => !!etat\.conversation && !parolesVisibles\(\);/, 'à la naissance de sa réponse : écrite si « Ses paroles »');
+  assert.match(page, /const reponseCachee = \(\) => !!etat\.conversation && !parolesVisibles\(\)(?: && !\(typeof hautParleursFermes === 'function' && hautParleursFermes\(\)\))?;/, 'à la naissance de sa réponse : écrite si « Ses paroles » (ou ses haut-parleurs fermés)');
 });
 
 test('le bouton « Ses paroles », dans la barre et sur l’orbe, gardé dans ses réglages', () => {

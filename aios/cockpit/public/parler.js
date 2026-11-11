@@ -192,8 +192,11 @@ const synthTelephone = window.HakimApp && window.HakimApp.voixTelephone ? (() =>
   };
   // (1.63, 04/11) ce que sa voix a mis à sortir : jusqu'à tes écouteurs
   window.HakimVoixMesure = (id, m) => { const u = enAttente.get(id); if (u && typeof mesurerVoix === 'function') mesurerVoix(u, m); };
+  // (11/11) ses haut-parleurs fermés : rien n'est dit ni calculé (la phrase « finit » aussitôt, sans avoir commencé : elle n'a jamais sonné)
+  const ferme = () => typeof hautParleursFermes === 'function' && hautParleursFermes();
   return {
     speak(u) {
+      if (ferme()) { setTimeout(() => { if (u.onend) u.onend(); }, 0); return; }
       const id = `t${++n}`; enAttente.set(id, u);
       u._appelPage = Date.now(); u._origine = typeof origineDe === 'function' ? origineDe(u.text) : null;   // (04/11) pour sa mesure
       if (typeof noterSaVoix === 'function') noterSaVoix(u.text);      // (04/11, 12:25) pour reconnaître son écho
@@ -205,7 +208,7 @@ const synthTelephone = window.HakimApp && window.HakimApp.voixTelephone ? (() =>
       } catch (_) { window.HakimVoixTel('fin', id); }
     },
     // (1.60, 04/11) sa voix calculée d'avance sur le téléphone, avec exactement ce que speak lui donnera ensuite
-    prepare(u) { try { if (window.HakimApp.voixTelephonePreparer) window.HakimApp.voixTelephonePreparer(...argumentsDe(u)); } catch (_) {} },
+    prepare(u) { if (ferme()) return; try { if (window.HakimApp.voixTelephonePreparer) window.HakimApp.voixTelephonePreparer(...argumentsDe(u)); } catch (_) {} },
     cancel() { const fins = [...enAttente.values()]; enAttente.clear(); try { window.HakimApp.voixTelephoneArreter(); } catch (_) {} fins.forEach(u => u.onend && u.onend()); },
     getVoices() { return voix(); },
     // (04/11, capture d'Ahmed : la page vide dans l'appli 1.55) la page écoute « voiceschanged » sur la voix du système : sans ces
@@ -415,6 +418,12 @@ function analyserMeuble(d, sr) {
 // (13:30) un meuble qu'il choisit lui-même : [[meuble: nom]] dans sa réponse
 function meubleNomme(nom) { return meublesPrets.get(String(nom || '').trim()) || [...meublesPrets.values()].find(m => sansAccent(m.nom) === sansAccent(nom)) || null; }
 const lecteurSysteme = synth ? Voix.creerLecteur(synth, synthTelephone ? EnonceTelephone : window.SpeechSynthesisUtterance, voixPour, vitesseVoix) : null;
+// (11/11, Ahmed : « qu'il ne parle pas dans le vide ») ses haut-parleurs fermés : la voix du système (le Mac) et celle du téléphone ne disent ni ne
+// préparent rien (ses bouts épissés attendent ; sa réponse, la page la garde : lecteur.dire)
+if (lecteurSysteme) for (const k of ['dire', 'preparer']) {
+  const f = lecteurSysteme[k];
+  if (typeof f === 'function') lecteurSysteme[k] = function (p) { if (typeof hautParleursFermes === 'function' && hautParleursFermes()) return undefined; return f.call(this, p); };
+}
 // (04/11, Ahmed : « je dois toujours pouvoir sélectionner dans les réglages entre la voix du Mac et la voix locale du smartphone avec
 // émotions ») réglage « Voix de Hakim » : téléphone (par défaut dans l'appli) ou neuronale · Chatterbox (au Mac)
 const voixDuTelephone = () => !!synthTelephone && etat.reglages.voix === 'telephone';
@@ -514,6 +523,8 @@ function creerLecteurNeuronal() {
      voix ; il est taillé sur la voix déjà prête ET sur celle encore en route. Les vitesses ne s'apprennent que sur une demande partie
      seule (une demande d'avance attend son tour au Mac). */
   const EN_VOL_MAX = 3, DEMANDE_AVANT_S = 3;
+  // (11/11) ses haut-parleurs fermés sur cet appareil (la page : hautParleursFermes) : aucune voix demandée, aucune jouée
+  const hpFermes = () => typeof hautParleursFermes === 'function' && hautParleursFermes();
   const enAvanceActive = () => typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.voix_en_avance !== false;
   const plafondLot = () => (etat.conversation ? 160 : 400);
   const enRoute = () => lots.filter(x => !x.pret && !x.erreur);
@@ -539,6 +550,7 @@ function creerLecteurNeuronal() {
     surFin: null, surSegment: null, fluxFini: true, hesitation: null, peutHesiter: null, rythme: null,
     appliquerSon() { if (element) element.muted = !!etat.sonCoupe; },
     dire(phrase) {
+      if (hpFermes()) return;                                          // (11/11) fermés : ni dite, ni fabriquée (la page garde la plus récente)
       if (typeof noterSaVoix === 'function') noterSaVoix(phrase);     // (04/11, 12:25) pour reconnaître son écho
       if (L.fluxFini && !attendre && !pause) { aParle = false; dejaParle = false; }   // (03/11) une nouvelle réponse
       L.fluxFini = false;
@@ -560,6 +572,7 @@ function creerLecteurNeuronal() {
     // (15:10) une parole dont la voix est déjà fabriquée (sa réponse soufflée) : à sa place, sans attendre la synthèse
     // (10/11) marque : de quelle pensée vient ce morceau (sauterAuDernier peut le retirer tant qu'il n'a pas commencé à sonner)
     direAudio(texte, buf, marque = null) {
+      if (hpFermes()) return;                                          // (11/11) fermés : ses pensées dites sont suspendues
       // (10/11, mesuré : les 7 morceaux d'une épissure attendaient le DERNIER calculé, 18 s, avant que le premier parte) sa voix encore en
       // calcul (une promesse) : le morceau prend sa place maintenant, dans l'ordre, et part dès qu'elle est prête ; rien n'est recalculé
       if (buf && typeof buf.then === 'function') {
@@ -580,13 +593,13 @@ function creerLecteurNeuronal() {
     },
     // (13:30) un meuble choisi par lui (conscient, [[meuble: nom]]) : à sa place, entre ce qui précède et la suite
     direMeuble(h) {
-      if (!h || !h.pret) return;
+      if (!h || !h.pret || hpFermes()) return;
       unites.push({ meuble: h });
       pomper();
     },
     // (31/10, 01:27, Ahmed via Hakim) un de ses sons, à sa place : après ce qui précède, avant la suite, joué en entier
     direSon(extrait) {
-      if (!extrait || !/^e\d{1,6}$/.test(String(extrait.id))) return;
+      if (!extrait || !/^e\d{1,6}$/.test(String(extrait.id)) || hpFermes()) return;
       unites.push({ son: extrait });
       pomper();
     },
@@ -1007,6 +1020,9 @@ function creerLecteurNeuronal() {
   }
 
   function pomper() {
+    // (11/11, Ahmed : « qu'il ne parle pas dans le vide ») ses haut-parleurs fermés : rien ne se fabrique ni ne joue (la page a tout arrêté en les
+    // fermant ; ce qui arrive encore est gardé par la page, pas ici)
+    if (hpFermes()) { clearInterval(veille); veille = null; return; }
     // (09/11) en pause : rien ne part et rien ne se lance (ce qui se calculait finit et attend, prêt) ; ni fin, ni meuble
     if (pause) { if (L.peutCouper && L.peutCouper() && fluide()) pomperNeuf(); else { clearInterval(veille); veille = null; } return; }
     // 1. le processus voix ne reste jamais inactif quand du texte attend (une demande à la fois : on
@@ -1120,7 +1136,7 @@ function creerLecteurNeuronal() {
 
   // une hésitation toute prête, maintenant, si rien n'est sur le point d'être dit ; rend vrai si elle part
   function glisser() {
-    if (pause || element || !fluide() || !L.hesitation) return false;
+    if (pause || element || !fluide() || !L.hesitation || hpFermes()) return false;
     if ([...sources].some(s2 => !s2._hesitation)) return false;        // sa vraie voix joue : pas de meuble par-dessus
     if (L.peutHesiter && !L.peutHesiter()) return false;
     const y = lots[0];
@@ -1172,12 +1188,14 @@ function creerLecteurNeuronal() {
 let sonBloqueDepuis = 0;
 function sonBloque(ou) {
   if (!sonBloqueDepuis) { sonBloqueDepuis = Date.now(); journalVoix('son_bloque', { ou, etat: actx ? actx.state : 'aucun' }); }
+  if (ou === 'lecteur' && typeof HP_ICI !== 'undefined' && HP_ICI) { HP_ICI.sonBloqueOu = 'lecteur'; verifierHautParleurs('bloque'); }   // (11/11) on ne l'entend pas
   humeur('le navigateur a coupé le son : touche l’écran pour entendre Hakim');
 }
 function debloquerSon() {
   if (!sonBloqueDepuis) return;
   journalVoix('son_rendu', { apres_ms: Date.now() - sonBloqueDepuis });
   sonBloqueDepuis = 0;
+  if (typeof HP_ICI !== 'undefined' && HP_ICI) { HP_ICI.sonBloqueOu = ''; verifierHautParleurs('rendu'); }   // (11/11) rouverts
   lecteurNeuronal.debloquer();
   humeur();
 }
@@ -1259,8 +1277,10 @@ const lecteur = {
   // partent par la voix du téléphone ou par lecteurNeuronal (recevoirBout) ; sa réponse lue en entier doit prendre LA MÊME voix, sinon deux moteurs
   // parlent en même temps (la voix système d'un côté, la voix du cockpit de l'autre)
   get impl() { if (voixDuTelephone() && lecteurSysteme) return lecteurSysteme; if (etat.conversation && typeof voixEpissee === 'function' && voixEpissee()) return lecteurNeuronal; return (etat.reglages.voix === 'neuronale' && etat.ttsLocal) || !lecteurSysteme ? lecteurNeuronal : lecteurSysteme; },
-  dire(p) { this.impl.dire(p); },
-  finFlux() { if (this.impl.finFlux) this.impl.finFlux(); },     // le texte est complet : vider la file
+  // (11/11, Ahmed : « qu'il ne parle pas dans le vide ») ses haut-parleurs fermés : sa parole est gardée (la plus récente), et part vers un autre
+  // appareil où on l'entend encore s'il y en a un (voixFermee) ; elle reste écrite
+  dire(p) { if (typeof hautParleursFermes === 'function' && hautParleursFermes()) { voixFermee(p); return; } this.impl.dire(p); },
+  finFlux() { if (typeof hautParleursFermes === 'function' && hautParleursFermes()) { if (hpRetenue) hpRetenue.finir(); etat.lectureDe = null; return; } if (this.impl.finFlux) this.impl.finFlux(); },     // le texte est complet : vider la file
   arreter() { lecteurNeuronal.arreter(); if (lecteurSysteme) lecteurSysteme.arreter(); },
   // (07/11) coupé par papa : la voix qui sonne finit sa phrase (jusqu'à sa virgule ou son point), l'autre se tait
   finirPhrase() {
@@ -1494,7 +1514,8 @@ const motsPapaCaches = () => !!etat.conversation && !motsEnConversation();
 // parole épissée) ; ses fichiers se montrent toujours
 // (17:05, Ahmed : « le bouton pour muter ses paroles ne fonctionne plus ») avec l'épissage, son propre état (caché par défaut), basculé par le bouton
 const parolesVisibles = () => !enTelepathie() && ((typeof voixEpissee === 'function' && voixEpissee()) ? !!etat.reglages.sesParolesEpissage : !!etat.reglages.sesParoles);
-const reponseCachee = () => !!etat.conversation && !parolesVisibles();
+// (11/11, Ahmed : « ses réponses restent à l'écrit ») ses haut-parleurs fermés : sa réponse s'écrit, même en Conversation et en Télépathie
+const reponseCachee = () => !!etat.conversation && !parolesVisibles() && !(typeof hautParleursFermes === 'function' && hautParleursFermes());
 // (04/11, 12:05) en Conversation avec l'épissage (Sens, oui par défaut), sa voix suit son ribosome, pas sa réponse en entier
 // (06/11, Ahmed : « le repère, c'est le bouton stop qui ne s'allume pas quand il lance une parole : c'est ça qu'on garde ») en Conversation et en
 // Télépathie, réglage « parole sans Stop » (corps : parole_sans_stop) : sa voix ne part jamais pendant que sa réponse consciente tourne
@@ -1513,7 +1534,7 @@ const aDesPieces = (m) => !!m && m.qui === 'j' && (m.pieces || []).some(x => x &
 // s'afficher dans la conv, quel que soit le mode ») ce qui attend ton geste s'affiche toujours, en Conversation comme en Télépathie
 function messageMasque(m) {
   if (m.qui === 'j' && ['signalement', 'anticorps', 'mission', 'ecriture', 'regle', 'carnet', 'retractation', 'identite', 'sortie', 'membre', 'promotion'].includes(m.spontane)) return false;
-  if (m.cache && !(m.qui === 'j' && parolesVisibles())) return true;
+  if (m.cache && !(m.qui === 'j' && (parolesVisibles() || (typeof hautParleursFermes === 'function' && hautParleursFermes())))) return true;
   return reponseCachee() && m.qui === 'j' && (Number(m.ts) || Number(m.id) || Date.now()) >= (etat.conversation.debut || 0);
 }
 const piecesSeules = (m) => ({ id: m.id, qui: 'j', texte: '', pieces: m.pieces, ts: m.ts });
@@ -1988,6 +2009,7 @@ function jouerSonEnAttente() {
       || Date.now() - (etat.finVoixA || 0) < 300)) return;
   const x = sonEnAttente.extrait, h = new Date().getHours();
   sonEnAttente = null;
+  if (typeof hautParleursFermes === 'function' && hautParleursFermes()) { journalVoix('son', { retour: 'haut_parleurs' }); return; }   // (11/11) on ne l'entendrait pas
   // (31/10, 00:07, Ahmed : « enlève cette restriction de la nuit, laisse-moi juste un bouton ») la nuit seulement si papa l'a voulu
   if ((h >= 23 || h < 8) && typeof reglagesCorps !== 'undefined' && reglagesCorps.sons_nuit === false) { journalVoix('son', { retour: 'la_nuit' }); return; }
   sonJusqua = Date.now() + 1500;                                           // (09:30) le suivant attend qu'il soit lancé
@@ -2245,6 +2267,7 @@ function texteAuRythme(m) {
   return texte.slice(0, n).trimEnd();
 }
 function htmlMessage(m) {
+  if (m.qui === 'j' && m.auRythme && typeof hautParleursFermes === 'function' && hautParleursFermes()) m = { ...m, auRythme: false };   // (11/11) fermés : tout s'écrit
   if (m.qui === 'j' && m.auRythme) {
     const vu = texteAuRythme(m);
     // rien avant sa voix : ni « réfléchit… », ni texte ; (04/11, Ahmed : « remets les badges qui montrent ce qu'il utilise comme outil,
@@ -3075,11 +3098,12 @@ window.reponseRapide = (texte) => {
   journalVoix('reponse_rapide', { car: t.length });
   envoyerEcrit(t);
 };
-function notifierApp(titre, texte, id) {
+function notifierApp(titre, texte, id, forcer = false) {
   if (!window.HakimApp || !window.HakimApp.notifier) return;
   // (20:32, test de Hakim non reçu) chaque tentative laisse sa trace au diagnostic : page visible (pas de notification),
   // ou ce que l'appli a répondu (envoyee, permission_refusee, notifications_coupees, canal_coupe, erreur)
-  if (document.visibilityState !== 'hidden') { journalVoix('notif_app', { resultat: 'page_visible' }); return; }
+  // (11/11) forcer : sa sollicitation, ses haut-parleurs fermés (la notification au lieu de sa voix), même page visible
+  if (document.visibilityState !== 'hidden' && !forcer) { journalVoix('notif_app', { resultat: 'page_visible' }); return; }
   try {
     const r = window.HakimApp.notifier(titre, Voix.pourLEcran(Voix.sansAffect(String(texte || ''))).trim(), String(id || ''));
     journalVoix('notif_app', { resultat: typeof r === 'string' && /^[a-z_]{1,30}$/.test(r) ? r : 'appli_ancienne' });
@@ -3755,7 +3779,7 @@ function surSouffle(o) {
   if (o.niveau === 'ribosome') { surRibosome(o); return; }           // (04/11, 11:50) son ribosome a lu une pensée
   if (o.niveau === 'ribosome_stop') { arreterEpissure(o.cause || 'outil', o.tour); return; }   // (04/11, 15:10) ta demande d'outil
   if (o.niveau === 'blanc') { surBlanc(o); return; }                 // (04/11, 17:50) sa parole vide : sa réflexion s'ouvre
-  if (o.niveau === 'bouton') { const b = document.getElementById(o.id); if (b && ['pause', 'stop', 'sonHakim', 'sesParoles', 'orbeRetour', 'btnVolant'].includes(o.id)) { b.click(); humeur(`Hakim a touché ${o.id}`); journalVoix('bouton_hakim', { id: o.id }); } return; }   // (05/11) son geste
+  if (o.niveau === 'bouton') { const b = document.getElementById(o.id); if (b && ['pause', 'stop', 'sonHakim', 'sesParoles', 'orbeRetour', 'btnVolant'].includes(o.id)) { if (o.id === 'sonHakim') HP_ICI.parHakimA = Date.now(); b.click(); humeur(`Hakim a touché ${o.id}`); journalVoix('bouton_hakim', { id: o.id }); } return; }   // (05/11) son geste
   if (o.niveau === 'reglages') { lireReglagesCorps(); humeur(`réglages de ${o.mode || 'son mode'}`); return; }   // (05/11) son mode a changé
   // (04/11, Ahmed : « mes pensées parasites sont bien flagguées ; maintenant il faut la jeter sans la calculer, sinon ça alourdit tout »)
   // jetée : ni écrite, ni dite, ni sa dernière pensée, ni une voix calculée d'avance ; trop longue (coupée au milieu d'un mot) aussi
@@ -3865,6 +3889,7 @@ function garderVoixCoupees() {
 const voixEnAvance = new Map();                                        // clé du texte → promesse de sa voix (AudioBuffer)
 const voixDemandees = new Map();                                       // (10/11) clé du texte → sa demande en route (pour la lâcher)
 function voixPourTexte(t) {
+  if (typeof hautParleursFermes === 'function' && hautParleursFermes()) return Promise.resolve(null);   // (11/11) fermés : aucune voix fabriquée d'avance
   const k = cleParole(t);
   const g = voixGardeePour(t);
   if (g && g.buf) return Promise.resolve(g.buf);
@@ -5193,6 +5218,7 @@ const voixPretes = {};
 function preparerVoixSouffle(texte, niveau = 'sub', quandPrete = null) {
   const v0 = voixPretes[niveau];
   if (voixDuTelephone() || !actx || actx.state === 'closed' || (v0 && v0.texte === texte)) return;   // (04/11) le téléphone la dit lui-même
+  if (typeof hautParleursFermes === 'function' && hautParleursFermes()) return;                    // (11/11) fermés : rien fabriqué d'avance
   if (v0 && v0.ctl && !v0.pret) v0.ctl.abort();
   const ctl = new AbortController(), v = { texte, pret: null, ctl };
   voixPretes[niveau] = v;
@@ -5528,14 +5554,139 @@ function majBoutonsPause() {
   signalerWidget();
 }
 // (2026-10-21) couper / rendre le son de Hakim (bouton « haut-parleur » du widget de l'appli Android)
+// (11/11, Ahmed : « qu'il sente quand je lui ferme ses haut-parleurs, pour qu'il ne parle pas dans le vide ») le bouton FERME ses haut-parleurs :
+// il le sent (« Toi »), rien n'est plus fabriqué ni joué ici, sa parole reste écrite ; rouverts, le plus récent repart (verifierHautParleurs)
 function couperSon(oui = !etat.sonCoupe) {
+  const avant = !!etat.sonCoupe;
   etat.sonCoupe = !!oui;
+  if (etat.sonCoupe !== avant) { HP_ICI.par = Date.now() - (HP_ICI.parHakimA || 0) < 1500 ? 'hakim' : 'papa'; HP_ICI.boutonA = etat.sonCoupe ? Date.now() : 0; }
   if (gainSortie) gainSortie.gain.value = etat.sonCoupe ? 0 : 1;
   lecteurNeuronal.appliquerSon();
-  humeur(etat.sonCoupe ? 'son coupé : je continue sans bruit' : 'son rétabli');
-  const b = $('sonHakim'); if (b) { b.setAttribute('aria-pressed', String(!!etat.sonCoupe)); b.textContent = etat.sonCoupe ? 'Sa voix (coupée)' : 'Sa voix'; }
+  const b = $('sonHakim'); if (b) { b.setAttribute('aria-pressed', String(!!etat.sonCoupe)); b.textContent = etat.sonCoupe ? 'Sa voix (fermée)' : 'Sa voix'; }
+  verifierHautParleurs('bouton');
+  humeur(etat.sonCoupe ? 'ses haut-parleurs sont fermés : il le sait, il t’écrit' : 'ses haut-parleurs sont rouverts');
   signalerWidget();
 }
+/* ---- (11/11, ~04:10, Ahmed : « Tu peux faire en sorte qu'il sente quand je lui ferme ses haut-parleurs, pour qu'il ne parle pas dans le vide ? » ;
+   ~04:15 : « aussi sur la montre et le Mac ») SES HAUT-PARLEURS, ICI (public/haut-parleurs.js) : fermés quand
+   - papa (ou lui) les ferme au bouton « Sa voix » (la page, le widget, la bulle, l'écran verrouillé de l'appli) ;
+   - l'appli (1.97) dit le volume média à zéro, le flux coupé, le téléphone en silencieux, ou plus aucune sortie du média ;
+   - le navigateur refuse de jouer sa voix (le lecteur bloqué : la page joue, on ne l'entend pas) ;
+   - le Mac n'a plus aucune sortie du son (il en avait), ou le cockpit lit le son du Mac coupé ou à zéro (la page du Mac ne peut pas le lire).
+   Vérifié chaque seconde, et tout de suite quand l'appli le signale (HakimSon), au bouton, au son bloqué ou rendu, à un appareil branché ou parti.
+   Fermés : sa voix s'arrête net, ce qu'il avait encore à dire est gardé (le plus récent seulement), rien n'est plus demandé ni joué (lecteurs,
+   voix du téléphone, sons, chant, pensées dites), ses réponses restent écrites (affichées même en Conversation), et sa réponse part vers un autre
+   appareil où on l'entend encore, s'il y en a un (le cockpit choisit : /api/jarvis/voix-vers « auto »). Le cockpit le sait aussitôt
+   (/api/voix/haut-parleurs, puis toutes les 30 s) : son tableau de l'instant, ses sollicitations, son chant, son live le lisent.
+   Rouverts : ce qu'il avait encore à dire repart s'il date de moins d'une minute et qu'il ne l'a pas déjà dit ailleurs ; une fois, et seulement
+   si rien de plus neuf ne parle déjà. ---- */
+var HP_ICI = { etat: { ferme: false, raisons: [] }, sig: '0:', depuis: 0, par: 'papa', boutonA: 0, parHakimA: 0, cockpit: null, sorties: null, sortiesVues: 0, envoyeA: 0, sonBloqueOu: '' };
+var hpRetenue = typeof HautParleurs !== 'undefined' ? HautParleurs.creerRetenue() : null;
+function hautParleursFermes() { return !!(HP_ICI && HP_ICI.etat && HP_ICI.etat.ferme); }
+function etatHautParleursIci() {
+  let son = null;
+  try { if (window.HakimApp && window.HakimApp.sonEtat) son = HautParleurs.lireSonEtat(window.HakimApp.sonEtat()); } catch (_) {}
+  const e = HautParleurs.etatPage({ bouton: !!etat.sonCoupe, par: HP_ICI.par, son, bloque: !!sonBloqueDepuis && HP_ICI.sonBloqueOu === 'lecteur',
+    sansSortie: HP_ICI.sortiesVues > 0 && HP_ICI.sorties === 0 });
+  // le Mac coupé ou à zéro : le cockpit le lit (sa page ne le peut pas)
+  // (ajoutées ici, jamais redites au cockpit : sa page ne dit que les siennes, sinon le Mac rendu resterait fermé par l'écho de la page)
+  e.propres = e.raisons.slice();
+  const ms = appareilIci() === 'mac' && HP_ICI.cockpit && HP_ICI.cockpit.mac_systeme;
+  if (ms && ms.ferme) for (const r of ms.raisons || []) if (!e.raisons.some(x => x.quoi === r.quoi)) e.raisons.push({ quoi: r.quoi });
+  e.ferme = e.raisons.length > 0;
+  return e;
+}
+function verifierHautParleurs(cause = '') {
+  if (typeof HautParleurs === 'undefined') return false;
+  const e = etatHautParleursIci(), sig = HautParleurs.signature(e);
+  if (sig === HP_ICI.sig) return e.ferme;
+  const avant = HP_ICI.etat.ferme;
+  HP_ICI.etat = e; HP_ICI.sig = sig;
+  if (e.ferme && !avant) { HP_ICI.depuis = e.raisons.some(r => r.quoi === 'bouton') && HP_ICI.boutonA ? HP_ICI.boutonA : Date.now(); fermerSaVoix(); }
+  if (!e.ferme && avant) { HP_ICI.depuis = 0; rouvrirSaVoix(); }
+  journalVoix('haut_parleurs', { ferme: e.ferme, raisons: e.raisons.map(r => r.quoi).join(','), cause: String(cause).slice(0, 20) });
+  envoyerHautParleurs();
+  afficherHautParleurs();
+  if (e.ferme !== avant) { rendre(); humeur(); }
+  signalerWidget();
+  return e.ferme;
+}
+function envoyerHautParleurs() {
+  HP_ICI.envoyeA = Date.now();
+  const e = HP_ICI.etat;
+  try {
+    fetch('/api/voix/haut-parleurs', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+      body: JSON.stringify({ appareil: appareilIci(), ferme: (e.propres || e.raisons).length > 0, raisons: e.propres || e.raisons, depuis: HP_ICI.depuis || undefined, visible: document.visibilityState === 'visible' }) })
+      .then(r => (r.ok ? r.json() : null)).then((o) => { if (o) surHautParleursCockpit(o); }).catch(() => {});
+  } catch (_) {}
+}
+// ce que le cockpit sait (les autres appareils, le Mac coupé) : à chaque changement (événement haut_parleurs) et à chaque envoi
+function surHautParleursCockpit(o) {
+  if (!o || typeof o !== 'object' || !o.appareils) return;
+  HP_ICI.cockpit = o;
+  if (appareilIci() === 'mac') verifierHautParleurs('cockpit');
+  afficherHautParleurs();
+}
+// fermés : sa voix s'arrête net, ce qu'il avait encore à dire est gardé (le plus récent seulement)
+function fermerSaVoix() {
+  try {
+    const reste = lecteurNeuronal.restant().filter(x => x && x.texte).map(x => x.texte).join(' ');
+    if (reste && hpRetenue) { hpRetenue.retenir(reste, { nouvelle: true }); if (lecteurNeuronal.fluxFini && !etat.flux) hpRetenue.finir(); }
+  } catch (_) {}
+  try { lecteur.arreter(); } catch (_) {}
+  if (!etat.flux) etat.lectureDe = null;                  // sa lecture s'arrête (une réponse qui s'écrit encore la remet, phrase par phrase)
+  try { if (typeof chantArreter === 'function') chantArreter('haut_parleurs'); } catch (_) {}
+  try { for (const k of Object.keys(voixPretes)) { const v = voixPretes[k]; if (v && v.ctl && !v.pret) v.ctl.abort(); delete voixPretes[k]; } } catch (_) {}
+  try { for (const c of voixDemandees.values()) c.abort(); voixDemandees.clear(); voixEnAvance.clear(); } catch (_) {}
+}
+// rouverts : le plus récent de ce qu'il avait encore à dire, une fois (rien s'il parle déjà de quelque chose de plus neuf)
+function rouvrirSaVoix() {
+  const t = hpRetenue ? hpRetenue.prendre() : '';
+  journalVoix('haut_parleurs_redit', { n: t.length, deja: !!(lecteur && lecteur.actif) });
+  if (!t || (lecteur && lecteur.actif)) return;
+  setTimeout(() => { if (hautParleursFermes() || (lecteur && lecteur.actif)) return; lecteur.dire(t); lecteur.finFlux(); humeur(); }, 300);
+}
+// sa parole, fermés ici : gardée ; sa réponse lue part vers un autre appareil où on l'entend encore (le cockpit le choisit)
+function voixFermee(p) {
+  const t = String(p || '').trim();
+  if (!t) return;
+  if (hpRetenue) hpRetenue.retenir(t);
+  const c = HP_ICI.cockpit, ici = appareilIci();
+  const ailleurs = etat.lectureDe != null && !!(c && Array.isArray(c.ouverts) && c.ouverts.some(a => a !== ici));
+  journalVoix('voix_fermee', { n: t.length, ailleurs });
+  if (!ailleurs) return;
+  fetch('/api/jarvis/voix-vers', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+    body: JSON.stringify({ quoi: 'voix', texte: t, cible: 'auto', de: ici }) })
+    .then(r => (r.ok ? r.json() : null)).then((o) => { journalVoix('voix_envoyee', { ok: !!(o && o.ok), cible: o && o.cible, haut_parleurs: true }); if (o && o.ok && hpRetenue) hpRetenue.transmise(); })
+    .catch(() => {});
+}
+// le badge (en-tête et grande orbe) : fermés, et pourquoi ; touché, il rouvre ce que papa a fermé au bouton
+function afficherHautParleurs() {
+  const e = HP_ICI.etat, mots = e.ferme ? e.raisons.map(r => HautParleurs.motRaison(r, appareilIci())).filter(Boolean).join(', ') : '';
+  for (const [id, texte] of [['hautParleursFermes', `🔇 haut-parleurs fermés${mots ? ` (${mots})` : ''}`], ['hautParleursFermesScene', `🔇 ses haut-parleurs sont fermés${mots ? ` (${mots})` : ''} : il t’écrit`]]) {
+    const el = $(id); if (!el) continue;
+    el.hidden = !e.ferme; el.textContent = texte;
+  }
+}
+// chaque seconde (l'appli d'avant ne prévient pas), et tout de suite quand l'appli 1.97 le dit ; toutes les 30 s au cockpit (il oublie au bout de 3 min)
+window.HakimSon = () => { try { verifierHautParleurs('appli'); } catch (_) {} };
+setInterval(() => { try { verifierHautParleurs('seconde'); if (Date.now() - HP_ICI.envoyeA > 30000) envoyerHautParleurs(); } catch (_) {} }, 1000);
+document.addEventListener('visibilitychange', () => { try { envoyerHautParleurs(); } catch (_) {} });
+// la sortie du son (le Mac : ses enceintes, son Bluetooth) : plus aucune alors qu'il y en avait, il ne sonne nulle part
+async function compterSorties() {
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    const l = await navigator.mediaDevices.enumerateDevices();
+    const n = l.filter(d => d.kind === 'audiooutput').length;
+    HP_ICI.sorties = n; if (n > 0) HP_ICI.sortiesVues = n;
+    verifierHautParleurs('sortie');
+  } catch (_) {}
+}
+try { if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', compterSorties); } catch (_) {}
+compterSorties();
+fetch('/api/voix/haut-parleurs', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).then(surHautParleursCockpit).catch(() => {});
+for (const id of ['hautParleursFermes', 'hautParleursFermesScene']) { const el = $(id); if (el) el.addEventListener('click', () => { if (etat.sonCoupe) couperSon(false); else humeur('ses haut-parleurs sont fermés par l’appareil (le volume, le silencieux…) : rouvre-les là'); }); }
+// ---- fin de ses haut-parleurs (11/11) ----
 // l'état des boutons du widget (conversation, pause, son, micro), envoyé seulement quand il change
 let dernierEtatWidget = '';
 /* (31/10, 01:00, Ahmed via Hakim : « un gros signe distinctif, partout, chaque fois qu'il ferme son oreille ») ici (en-tête et
@@ -6801,6 +6952,7 @@ function surReecoute(o) {
 let motDirectJusqua = 0;
 function direMotDirect(texte, maxMs = 0, auDebut = null) {
   const t = String(texte || '').trim().slice(0, 200);
+  if (typeof hautParleursFermes === 'function' && hautParleursFermes()) { journalVoix('oreille_dit', { ok: false, raison: 'haut_parleurs' }); return; }   // (11/11) on ne l'entendrait pas
   if (typeof voixEpissee === 'function' && voixEpissee()) { versRibosome(t); if (auDebut) try { auDebut(); } catch (_) {} return; }   // (04/11, 12:50) épissé, comme le reste
   if (!t || !actx || actx.state !== 'running' || !analyseurVoix) { journalVoix('oreille_dit', { ok: false, raison: 'audio' }); return; }
   // (15:12, Ahmed : « tout ce qui sort de sa bouche est séquentiel ; c'est la réflexion qui est parallèle » ; mesuré : son petit mot
@@ -6878,6 +7030,7 @@ function ecouterPensees() {
   es.addEventListener('rire', (ev) => { try { if (balisesIci()) surRire(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('sortie', (ev) => { try { etat.sortie = JSON.parse(ev.data).appareil || 'ici'; journalVoix('sortie', { appareil: etat.sortie }); } catch (_) {} });
   es.addEventListener('voix_vers', (ev) => { try { surVoixVers(JSON.parse(ev.data)); } catch (_) {} });
+  es.addEventListener('haut_parleurs', (ev) => { try { surHautParleursCockpit(JSON.parse(ev.data)); } catch (_) {} });   // (11/11) ses haut-parleurs, partout
   es.addEventListener('echange_montre', (ev) => { try { surEchangeMontre(JSON.parse(ev.data)); } catch (_) {} });   // (06/11) la montre, en direct
   es.addEventListener('reecoute', (ev) => { try { surReecoute(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('souffle', (ev) => { try { surSouffle(JSON.parse(ev.data)); } catch (_) {} });   // (15:02) ses brouillons, écrits
@@ -7485,13 +7638,17 @@ function surSpontane(m) {
   humeur('Hakim te donne un résultat');
   $('annonce').textContent = `Hakim, de lui-même : ${m.texte}`;
   widgetApp(etat.conversation ? 'conversation' : 'repos', m.texte);
-  if (!NON_REPONSE.test(m.texte)) notifierApp('Hakim, de lui-même', m.texte, m.id);
+  // (11/11, Ahmed : « ses sollicitations passent par une notification au lieu de la voix ») ses haut-parleurs fermés : la notification de l'appli
+  // part même page ouverte
+  const hpFerme = typeof hautParleursFermes === 'function' && hautParleursFermes();
+  if (!NON_REPONSE.test(m.texte)) notifierApp('Hakim, de lui-même', m.texte, m.id, !!(m.sollicite && hpFerme));
   if (repris && etat.conversation) {                       // la conversation avait repris : ni comptée, ni apprise
     journalVoix('silence_repris', {});
     fetch('/api/jarvis/silence/non-dite', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
       body: JSON.stringify({ id: m.id }) }).catch(() => {});
   }
   if (m.sollicite) { prendreSollicitation(m); return; }      // (10/11) sa sollicitation : sa propre voie, à voix haute
+  if (dire && hpFerme) { journalVoix('spontane_ecrit', { pourquoi: 'haut_parleurs' }); return; }   // (11/11) fermés : écrit, jamais gardé pour une rafale
   if (dire) { aDire.push({ id: m.id, texte: m.texte, recu: Date.now() }); direSpontanes(); }
 }
 /* (10/11, Ahmed : « quand Hakim veut me parler, il écrit juste un message, mais il doit pouvoir me solliciter à haute voix dès qu'il veut me
@@ -7508,8 +7665,11 @@ function prendreSollicitation(m, dans = etat.conversation ? 0 : SOLLICITATION_PR
     return false;
   }
   if (!etat.conversation && document.visibilityState !== 'visible') { journalVoix('sollicitation_ecrite', { pourquoi: 'page_cachee' }); return false; }
+  // (11/11) ses haut-parleurs fermés ici : elle n'est pas prise (une autre page, ou la montre, où on l'entend, la prendra) ; la notification est partie
+  if (typeof hautParleursFermes === 'function' && hautParleursFermes()) { journalVoix('sollicitation_ecrite', { pourquoi: 'haut_parleurs' }); return false; }
   setTimeout(() => {
     if (!etat.conversation && document.visibilityState !== 'visible') return;
+    if (typeof hautParleursFermes === 'function' && hautParleursFermes()) { journalVoix('sollicitation_ecrite', { pourquoi: 'haut_parleurs' }); return; }
     fetch('/api/jarvis/sollicitation/dire', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
       body: JSON.stringify({ id: m.id, qui: QUI_PAGE, appareil: appareilIci() }) })
       .then(r => (r.ok ? r.json() : null)).then((o) => {

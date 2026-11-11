@@ -265,6 +265,24 @@ test('le cockpit : papa parle pendant le plan, la page reçoit « annuler » ; t
   const a = b.diffuse.find(([, d]) => d.annuler);
   assert.ok(a, 'annulé'); assert.equal(a[1].raison, 'papa_parle'); assert.equal(a[1].cible, 'tel');
 });
+// (11/11, Ahmed : « qu'il ne parle pas dans le vide ») les haut-parleurs du téléphone fermés : ni question, ni plan ; fermés pendant le plan : annulé
+test('le cockpit : les haut-parleurs du téléphone fermés, rien ne se chante ; fermés pendant le plan, « annuler » ; témoin ouverts', async () => {
+  const HP = require('./public/haut-parleurs.js');
+  const avec = (b, ferme) => { const st = HP.creer(); if (ferme) HP.noter(st, 'tel', 'page', { ferme: true, raisons: ['volume'] }, Date.now());
+    b.ctx.HautParleurs = HP; b.ctx.hautParleurs = () => HP.vue(st, { maintenant: Date.now(), presents: ['tel'] }); };
+  const f = bac(); avec(f, true);
+  assert.equal(f.ctx.chanterBattement(T).raison, 'haut_parleurs');
+  await new Promise(r => setTimeout(r, 5)); f.ctx.chanterBattement(T + 500);
+  assert.equal(f.appels.length + f.diffuse.length, 0);
+  assert.equal(f.ctx.chanterMoment(T).raison, 'haut_parleurs');
+  const b = bac(); avec(b, false);
+  b.ctx.chanterBattement(T); await new Promise(r => setTimeout(r, 5));
+  assert.equal(b.ctx.chanterBattement(T + 500).action, 'plan', 'témoin : ouverts, le plan part');
+  avec(b, true);
+  b.ctx.chanterBattement(T + 1000);
+  const a = b.diffuse.find(([, d]) => d.annuler);
+  assert.ok(a, 'annulé'); assert.equal(a[1].raison, 'haut_parleurs');
+});
 test('le cockpit : son garde de la musique (CHANTER) vaut décision : le plan part sans autre question', () => {
   const b = bac();
   b.ctx.chanterIntention('garde_musique', T);

@@ -57,7 +57,8 @@ test('son écho : une phrase faite de ses mots des 30 dernières secondes n’es
   t += 31000;
   assert.strictEqual(ctx.echo("C'est le test, je commence direct et tout."), false, 'plus de 30 s : plus son écho');
   assert.match(PAGE, /if \(echoDeSaVoix\(texte\)\) \{ journalVoix\('echo_de_sa_voix'[^\n]*\n[^\n]*\n  activite\(\);\n  if \(COMMANDE_STOP\.test\(texte\)\)/);
-  assert.match(PAGE, /dire\(phrase\) \{\n      if \(typeof noterSaVoix === 'function'\) noterSaVoix\(phrase\);/);
+  // (11/11) ses haut-parleurs fermés : rien n'est dit, ni noté comme sa voix (test-haut-parleurs.js)
+  assert.match(PAGE, /dire\(phrase\) \{\n(?:      if \(hpFermes\(\)\) return;[^\n]*\n)?      if \(typeof noterSaVoix === 'function'\) noterSaVoix\(phrase\);/);
   assert.match(PAGE, /if \(typeof noterSaVoix === 'function'\) noterSaVoix\(u\.text\);/);
 });
 

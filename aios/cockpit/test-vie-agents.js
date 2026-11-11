@@ -125,7 +125,7 @@ test('ses nouveaux outils sont permis ; un arrêt marque l’agent « arrêté �
 });
 
 test('ses agents savent leur vie : sommeil, messages, prénom, départ ; le juge ne juge jamais deux fois ; le témoin vierge reste vierge', () => {
-  const ctx = { JSON, Object, String, Set, AGENTS: {}, LECTURE: [], MEMOIRE_LECTURE: [], lireSansLien: () => '', path, PREAMBULE_MATHS: '/x/y/z',
+  const ctx = { JSON, Object, String, Set, AGENTS: {}, LECTURE: [], MEMOIRE_LECTURE: [], MEMOIRE_D_ABORD: '', lireSansLien: () => '', path, PREAMBULE_MATHS: '/x/y/z',
     REFERENCE_MATHS: '/r', agentsDeHakim: () => ({ moi: { description: 'le mien', prompt: 'Mon agent.', tools: [], model: 'sonnet' } }) };
   vm.createContext(ctx);
   const i = src.indexOf('const AGENTS = {');

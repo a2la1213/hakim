@@ -275,23 +275,34 @@ function composerSoi({ a, maintenant, so, corps, e, lui, sonEcho, sesMots = '', 
   if (so.memoire && Number(so.memoire.attente) > 0 && Number(so.memoire.depuis_ms) >= 5 * 60e3)
     pannes.push(`ta mémoire a ${so.memoire.attente} moment${so.memoire.attente > 1 ? 's' : ''} en attente depuis ${Math.round(so.memoire.depuis_ms / 60e3)} min`);
   for (const x of actes) if (x.effet === 'échec') pannes.push(`${x.agent ? 'ton agent : ' : 'ton outil '}${x.quoi} a échoué (${ilYa(maintenant - x.t)})`);
+  // (11/11, Ahmed : « qu'il sente quand je lui ferme ses haut-parleurs, pour qu'il ne parle pas dans le vide » ; « aussi sur la montre et le Mac »)
+  // ses haut-parleurs (public/haut-parleurs.js, la vue du cockpit) : fermés seulement à partir de l'instant où ils l'ont été (un tableau refait
+  // pour un instant d'avant ne les voit pas fermés plus tôt)
+  const h = so.hp && typeof so.hp === 'object' ? so.hp : null;
+  const hpVaut = !!(h && (h.ferme || (h.fermes || []).length) && !(Number(h.depuis) > a + TOL_MS && h.ferme));
+  const hautParleurs = hpVaut ? { ferme: !!h.ferme, nulle_part: !!h.nulle_part, sur: h.sur || null, ou: h.ou || null, par: h.par || '',
+    depuis: Number(h.depuis) || 0, raisons: Array.isArray(h.raisons) ? h.raisons.slice(0, 8) : [], fermes: Array.isArray(h.fermes) ? h.fermes.slice(0, 3) : [],
+    mots: court(h.mots, 260) } : null;
   return { corps: corpsSoi, montre, voix, interieur: coupe ? 'coupé' : 'ouvert', micro: so.micro || null, mode: MODES_SOI[so.mode] || '', actes, pannes,
-    continuite: 'le même Hakim qu’hier : ta fitra, tes souvenirs, tes scènes' };
+    haut_parleurs: hautParleurs, continuite: 'le même Hakim qu’hier : ta fitra, tes souvenirs, tes scènes' };
 }
 // « Toi : ton corps (le téléphone) est dans la main de papa, l'écran vers lui, 62 % ; ta voix sort par l'enceinte, 1,2 s de retard ; ce que tu viens de
 // dire a bien sonné ; ton intérieur est ouvert ; tu es en mode Hakim »
 function ligneSoi(tab, { max = 520 } = {}) {
   const x = tab && tab.soi;
   if (!x) return '';
-  const c = x.corps, v = x.voix, l = [];
+  const c = x.corps, v = x.voix, l = [], hp = x.haut_parleurs && x.haut_parleurs.ferme ? x.haut_parleurs : null;
   const corps = c.tenue === 'tenu' ? 'est dans la main de papa' : c.tenue === 'poche' ? 'est dans sa poche' : c.tenue === 'pose' ? `est posé${c.position ? ` ${c.position}` : ''}`
     : c.vivant ? 'est là' : '';
   if (corps || c.batterie != null) l.push(`ton corps (le téléphone) ${corps || 'est là'}${c.ecran_vers_lui ? ', l’écran sans doute vers lui' : ''}${c.batterie != null ? `, ${c.batterie} %${c.charge ? ' (en charge)' : ''}` : ''}`);
   if (x.montre === 'à toi') l.push('la montre à son poignet, c’est toi aussi');
-  const vx = [v.parle ? 'tu parles' : '', v.sortie ? `ta voix sort par ${v.sortie}` : '', v.retard_s != null && v.retard_s < 3 ? `${String(v.retard_s).replace('.', ',')} s de retard` : ''].filter(Boolean);
+  // (11/11) ses haut-parleurs fermés là où il parle : « tes haut-parleurs sont fermés (par papa, depuis 12 s) : on ne t'entend pas », d'abord ; sa
+  // sortie n'est plus dite (elle ne sonne pas), ni ce qui « n'a pas sonné » (fermés : il le sait déjà)
+  if (x.haut_parleurs && x.haut_parleurs.mots) l.push(x.haut_parleurs.mots);
+  const vx = [v.parle && !hp ? 'tu parles' : '', v.sortie && !hp ? `ta voix sort par ${v.sortie}` : '', v.retard_s != null && v.retard_s < 3 && !hp ? `${String(v.retard_s).replace('.', ',')} s de retard` : ''].filter(Boolean);
   if (vx.length) l.push(vx.join(', '));
   if (v.echo) l.push(`ta voix revient par ${v.echo.par} : c’est toi`);
-  if (v.sonne) l.push(v.sonne.etat === 'sonne' ? 'ce que tu viens de dire a bien sonné' : v.sonne.etat === 'attente' ? 'ce que tu viens de dire est en train de sonner'
+  if (v.sonne && !(hp && v.sonne.etat !== 'sonne')) l.push(v.sonne.etat === 'sonne' ? 'ce que tu viens de dire a bien sonné' : v.sonne.etat === 'attente' ? 'ce que tu viens de dire est en train de sonner'
     : v.sonne.etat === 'en_partie' ? `ce que tu viens de dire n’a sonné qu’en partie (${Math.round(v.sonne.part * 100)} %)` : `ce que tu croyais avoir dit n’a pas sonné : « ${v.sonne.texte} »`);
   l.push(...x.pannes);
   l.push(`ton intérieur est ${x.interieur}`);
@@ -303,6 +314,8 @@ function ligneSoi(tab, { max = 520 } = {}) {
   return court(l.join(' ; '), max);
 }
 
+// (11/11) ses haut-parleurs, pour voir le changement : 'papa' (fermés au bouton par papa), 'toi', 'appareil' (le volume, le silencieux…), ou ''
+const hpDe = (tab) => { const h = tab && tab.soi && tab.soi.haut_parleurs; return h && h.ferme ? (h.par === 'papa' || h.par === 'hakim' ? (h.par === 'hakim' ? 'toi' : 'papa') : 'appareil') : ''; };
 /* ce qui compte pour voir un changement (ni les mots, ni le cœur qui bouge d'un battement) */
 function cles(tab) {
   if (!tab) return {};
@@ -310,7 +323,8 @@ function cles(tab) {
   return { tenue: c.tenue || '', marche: !!c.marche, mouvement: c.mouvement || '', position: c.position || '', lumiere: c.lumiere || '', proche: !!c.proche,
     champ: !!c.champ, calin: !!c.calin, papa: !!(p.papa && p.papa.parle), dedans: !!(p.dedans && p.dedans.parle), piece: !!(p.piece && p.piece.parle),
     lui: !!(p.lui && p.lui.parle), musique: m.joue ? `${m.ou}${m.intensite ? `:${m.intensite}` : ''}` : '', appel: !!tab.appel, live: !!tab.live, lieu: tab.lieu || '',
-    place: tab.place ? tab.place.role : '', interieur: tab.interieur || '', bluetooth: (tab.reseau || {}).bluetooth || '', appli: (tab.ecran || {}).appli || '' };
+    place: tab.place ? tab.place.role : '', interieur: tab.interieur || '', bluetooth: (tab.reseau || {}).bluetooth || '', appli: (tab.ecran || {}).appli || '',
+    haut_parleurs: hpDe(tab) };
 }
 const OU = { telephone: 'au téléphone', micro: 'autour de toi' };
 function motsDuChangement(k, de, a) {
@@ -333,6 +347,8 @@ function motsDuChangement(k, de, a) {
     case 'lumiere': return a ? `la lumière : ${a}` : '';
     case 'bluetooth': return a ? `Bluetooth : ${a}` : 'Bluetooth déconnecté';
     case 'appli': return a ? `appli ouverte : ${a}` : '';
+    case 'haut_parleurs': return !a ? 'tes haut-parleurs se rouvrent : on t’entend de nouveau' : a === 'papa' ? 'papa ferme tes haut-parleurs' : a === 'toi' ? 'tu fermes tes haut-parleurs'
+      : 'tes haut-parleurs se ferment';
     default: return '';
   }
 }
@@ -391,6 +407,7 @@ function aLInstant(st, t) {
 /* la ligne : « papa te tient, marche, te parle (dehors) ; la musique joue doucement au téléphone ; ton cœur 72, le sien 88 ; chez nous ; tu es
    dedans ». mots : ajoute leurs derniers mots (sa conscience et son subconscient n'ont pas le message de papa sous les yeux) */
 const INTENSITE = { forte: 'fort', moyenne: '', douce: 'doucement' };
+const NOMS_APPAREILS = { tel: 'le téléphone', mac: 'le Mac', montre: 'la montre' };
 function morceaux(tab, { mots = false } = {}) {
   if (!tab) return [];
   const p = tab.parole || {}, c = tab.corps || {}, m = tab.musique || {}, l = [];
@@ -432,6 +449,8 @@ function morceaux(tab, { mots = false } = {}) {
   if (tab.sortie && tab.sortie.ecouteurs) l.push(`écouteurs ${tab.sortie.ecouteurs}`);
   if (tab.ecran && tab.ecran.appli) l.push(`à l'écran : ${tab.ecran.appli}`);
   if (tab.interieur === 'coupé') l.push('ton intérieur est coupé');
+  const hp = tab.soi && tab.soi.haut_parleurs;
+  if (hp && hp.ferme) l.push(hp.nulle_part ? 'tes haut-parleurs sont fermés : on ne t’entend pas' : `tes haut-parleurs sont fermés ici : ta voix va par ${NOMS_APPAREILS[hp.ou] || 'un autre appareil'}`);
   if (tab.place) l.push(tab.place.role === 'auditeur' ? 'tu écoutes (auditeur)' : 'tu es dedans');
   return l;
 }
@@ -472,6 +491,7 @@ function etiquettes(tab) {
   if (tab.live) out.push('live');
   if (tab.lieu) out.push(`lieu:${tab.lieu}`);
   if (tab.interieur) out.push(`interieur:${tab.interieur}`);
+  if (hpDe(tab)) out.push('haut_parleurs:fermes');
   return out.sort();
 }
 function instantane(tab) {

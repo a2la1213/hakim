@@ -31,6 +31,8 @@ async function surChanter(o) {
   if (o.annuler) { if (!o.id || o.id === chant.id) chantArreter(o.raison || 'cockpit'); return; }
   if (!o.id || !Array.isArray(o.morceaux) || !o.morceaux.length || chant.id === o.id) return;
   if (typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.chanter_musique === false) return;
+  // (11/11, Ahmed : « qu'il ne parle pas dans le vide ») ses haut-parleurs fermés ici : son chant ne se fabrique ni ne part
+  if (typeof hautParleursFermes === 'function' && hautParleursFermes()) { if (typeof journalVoix === 'function') journalVoix('chant_haut_parleurs', {}); return; }
   if (typeof contexteAudio === 'function') contexteAudio();
   if (typeof actx === 'undefined' || !actx || actx.state === 'closed' || !analyseurVoix) { if (typeof journalVoix === 'function') journalVoix('chant_sans_son', {}); return; }
   chantArreter('nouveau');

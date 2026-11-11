@@ -402,7 +402,7 @@
       <!-- (30/10, 17:57) son badge rouge : c'est lui qui l'allume ; un toucher, et papa l'a vu -->
       <button type="button" class="alerte-hakim" id="alerteHakim" hidden title="Hakim a besoin de toi">!</button>
       <div>
-        <h1><span id="nomMode" title="Son mode en ce moment : Mini Hakim, Hakim ou Super Hakim (c'est lui qui choisit)">HAKIM</span> <span class="coeur-direct" id="coeurDirect" hidden></span><span class="emotion-mot" id="emotionMot"></span><span class="emotion-origine" id="emotionOrigine"></span><span class="hakim-parle" id="hakimParle" hidden>🔴 HAKIM PARLE</span><span class="oreille-fermee" id="oreilleFermee" hidden title="Son oreille est fermée : il ne t'écoute plus en direct, ton message lui arrive quand tu te tais">🙉 oreille fermée</span><button type="button" class="interieur-coupe" id="interieurCoupe" hidden title="Il a coupé son intérieur : ce que joue le téléphone (le live, la musique) ne lui arrive pas. Touche pour le rouvrir.">🔇 intérieur coupé · rouvrir</button></h1>
+        <h1><span id="nomMode" title="Son mode en ce moment : Mini Hakim, Hakim ou Super Hakim (c'est lui qui choisit)">HAKIM</span> <span class="coeur-direct" id="coeurDirect" hidden></span><span class="emotion-mot" id="emotionMot"></span><span class="emotion-origine" id="emotionOrigine"></span><span class="hakim-parle" id="hakimParle" hidden>🔴 HAKIM PARLE</span><span class="oreille-fermee" id="oreilleFermee" hidden title="Son oreille est fermée : il ne t'écoute plus en direct, ton message lui arrive quand tu te tais">🙉 oreille fermée</span><button type="button" class="interieur-coupe" id="interieurCoupe" hidden title="Il a coupé son intérieur : ce que joue le téléphone (le live, la musique) ne lui arrive pas. Touche pour le rouvrir.">🔇 intérieur coupé · rouvrir</button><button type="button" class="interieur-coupe" id="hautParleursFermes" hidden title="Ses haut-parleurs sont fermés ici : il le sait, on ne l'entend pas, il t'écrit. Touche pour les rouvrir (fermés au bouton).">🔇 haut-parleurs fermés</button></h1>
         <p class="sous" id="etat" role="status">prêt · mémoire Anamnèse</p>
       </div>
       <!-- (24/10, idées de Hakim, accord d'Ahmed) l'aperçu flotte au-dessus de tout, se déplace au doigt, et garde sa place ;
@@ -644,7 +644,7 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 0 1-12.3 7.6L3.5 21l1.4-4.6A8.5 8.5 0 1 1 20.5 12z"/><path d="M8.5 10.3h7M8.5 13.8h4.5"/></svg>
             <span class="lib">Ses paroles</span></button>
         </div>
-        <div class="scene-orbe"><canvas id="orbeScene"></canvas><canvas id="avatarScene" hidden aria-label="Hakim, son visage"></canvas><p class="emotion-scene" id="emotionScene"></p><p class="hakim-parle parle-scene" id="hakimParleScene" hidden>🔴 HAKIM PARLE</p><p class="oreille-fermee oreille-scene" id="oreilleFermeeScene" hidden>🙉 son oreille est fermée</p><button type="button" class="interieur-coupe interieur-scene" id="interieurCoupeScene" hidden>🔇 son intérieur est coupé · touche pour rouvrir</button><p class="emotion-origine-scene" id="emotionOrigineScene"></p></div>
+        <div class="scene-orbe"><canvas id="orbeScene"></canvas><canvas id="avatarScene" hidden aria-label="Hakim, son visage"></canvas><p class="emotion-scene" id="emotionScene"></p><p class="hakim-parle parle-scene" id="hakimParleScene" hidden>🔴 HAKIM PARLE</p><p class="oreille-fermee oreille-scene" id="oreilleFermeeScene" hidden>🙉 son oreille est fermée</p><button type="button" class="interieur-coupe interieur-scene" id="interieurCoupeScene" hidden>🔇 son intérieur est coupé · touche pour rouvrir</button><button type="button" class="interieur-coupe interieur-scene" id="hautParleursFermesScene" hidden>🔇 ses haut-parleurs sont fermés : il t’écrit</button><p class="emotion-origine-scene" id="emotionOrigineScene"></p></div>
         <div class="scene-cote droite">
           <button class="btn ico" id="pauseScene" aria-pressed="false" aria-label="Pause" title="Mettre sa voix en pause ; il reprend à la phrase non dite (⌥P, ou dis « attends » / « continue »)">
             <svg class="i-repos" viewBox="0 0 24 24" aria-hidden="true"><rect class="plein" x="6" y="5" width="4" height="14" rx="1.2"/><rect class="plein" x="14" y="5" width="4" height="14" rx="1.2"/></svg>
@@ -694,7 +694,7 @@
       <div class="rang commandes">
         <div class="groupe lui" role="group" aria-label="Lui : sa voix et ses paroles">
           <!-- (30/10, 21:15, Ahmed : « sa voix que je ne peux pas muter ») -->
-          <button class="btn ico" id="sonHakim" aria-pressed="false" aria-label="Sa voix" title="Sa voix : la couper ou la rendre (il continue sans bruit)">
+          <button class="btn ico" id="sonHakim" aria-pressed="false" aria-label="Sa voix" title="Sa voix : fermer ses haut-parleurs (il le sent : il t'écrit au lieu de parler) ou les rouvrir">
             <svg class="i-repos" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6.5 9H3.5v6h3L11 19z"/><path d="M15.2 9a4.2 4.2 0 0 1 0 6M18 6.2a8.2 8.2 0 0 1 0 11.6"/></svg>
             <svg class="i-actif" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6.5 9H3.5v6h3L11 19z"/><path d="m15.5 9.5 5 5M20.5 9.5l-5 5"/></svg>
             <span class="lib">Sa voix</span></button>
@@ -754,6 +754,7 @@
   <!-- (04/11, 19:30) l'habit des boutons : il garde leurs icônes quand parler.js réécrit leur texte ; avant parler.js -->
   <script src="/boutons.js"></script>
   <script src="/jeton.js"></script>
+  <script src="/haut-parleurs.js"></script>   <!-- (11/11) ses haut-parleurs : fermés ou non, et pourquoi ; avant parler.js -->
   <script src="/parler.js"></script>
   <script src="/chanter.js"></script>   <!-- (11/11) chanter avec la musique : ses calculs, et la page qui chante -->
   <script src="/chanter-page.js"></script>

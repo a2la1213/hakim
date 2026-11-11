@@ -895,7 +895,9 @@ test('sa sortie : [[sortie: …]] choisit l’appareil, gardé, annoncé ; sa vo
   assert.equal(ctx.choisir('rien ici'), null);
   // la route : seulement vers un appareil branché ; la page parle elle-même sinon
   const i = SRV.indexOf("p === '/api/jarvis/voix-vers'"), route = SRV.slice(i, SRV.indexOf("p === '/api/jarvis/flux'", i));
-  assert.match(route, /const ok = cible !== 'ici' && appareilsBranches\(\)\.has\(cible\);/);
+  // (11/11) branché, et ses haut-parleurs ouverts là-bas (test-haut-parleurs.js)
+  assert.match(route, /const branche = cible !== 'ici' && appareilsBranches\(\)\.has\(cible\);/);
+  assert.match(route, /const ok = branche && !\(quoi === 'voix' && vhp && HautParleurs\.fermeSur\(vhp, cible\)\);/);
   const PAGE = fs.readFileSync(path.join(__dirname, 'public', 'parler.js'), 'utf8');
   assert.match(PAGE, /new EventSource\(`\/api\/jarvis\/flux\?appareil=\$\{appareilIci\(\)\}`\)/);
   assert.match(PAGE, /if \(!s\.ici && typeof sortieAilleurs === 'function' && sortieAilleurs\(\)\) \{ voixAilleurs\(s\.texte, \(\) => recevoirBout\(\{ \.\.\.s, ici: true \}, n, tour\)\); return; \}/);

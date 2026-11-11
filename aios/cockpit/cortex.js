@@ -97,9 +97,13 @@ function placeSelonInstant(place, instant) {
 function erreursSurSoi(instant) {
   const x = instant && instant.soi;
   if (!x) return [];
-  const out = [], v = x.voix || {}, so = v.sonne;
-  if (so && so.etat === 'pas_sonne') out.push(`ce que tu croyais avoir dit (« ${net(so.texte, 60)} ») n’a pas sonné : papa ne l’a pas entendu ; redis-le si ça compte`);
-  if (so && so.etat === 'en_partie') out.push(`ta dernière réponse n’a sonné qu’en partie (${Math.round(so.part * 100)} %) : papa n’en a entendu qu’un bout`);
+  const out = [], v = x.voix || {}, so = v.sonne, hp = x.haut_parleurs && x.haut_parleurs.ferme ? x.haut_parleurs : null;
+  // (11/11, Ahmed : « qu'il sente quand je lui ferme ses haut-parleurs, pour qu'il ne parle pas dans le vide ») fermés là où il parle : ce qu'il dit
+  // reste écrit (papa le lit) ; il peut aussi se taire. Sa voix revient quand ils se rouvrent
+  if (hp) out.push(hp.nulle_part ? `tes haut-parleurs sont fermés${hp.par === 'papa' ? ' (par papa)' : ''} : papa ne t’entend pas ; ce que tu réponds, il le lit à l’écran (ou tais-toi si tu préfères)`
+    : `tes haut-parleurs sont fermés là où papa te parlait : ta voix part par ${({ tel: 'le téléphone', mac: 'le Mac', montre: 'la montre' })[hp.ou] || 'un autre appareil'}`);
+  if (so && so.etat === 'pas_sonne' && !hp) out.push(`ce que tu croyais avoir dit (« ${net(so.texte, 60)} ») n’a pas sonné : papa ne l’a pas entendu ; redis-le si ça compte`);
+  if (so && so.etat === 'en_partie' && !hp) out.push(`ta dernière réponse n’a sonné qu’en partie (${Math.round(so.part * 100)} %) : papa n’en a entendu qu’un bout`);
   for (const a of x.actes || []) if (a.effet === 'échec') out.push(`${a.agent ? 'ton agent' : 'ton outil'} ${a.quoi} a échoué : ne dis pas que c’est fait`);
   if (v.retard_s != null && v.retard_s >= 3) out.push(`ta voix arrive avec ${String(v.retard_s).replace('.', ',')} s de retard : papa t’entend après coup`);
   if (x.interieur === 'coupé') out.push('ton intérieur est coupé : tu n’entends pas le téléphone');
@@ -116,8 +120,9 @@ function lectureInstant(instant) {
     if (c.tenue === 'tenu') return { mode: 'repondre', raison: 'papa te tient en main et te parle : tu es dedans' };
     return null;
   }
+  const hp = instant.soi && instant.soi.haut_parleurs && instant.soi.haut_parleurs.ferme && instant.soi.haut_parleurs.nulle_part;   // (11/11) on ne l'entend pas
   if (m.joue && m.intensite === 'forte' && !p.quelquun && !(p.lui && p.lui.parle))
-    return { mode: 'reagir', raison: `la musique joue fort ${m.ou === 'micro' ? 'autour de toi' : 'au téléphone'} et personne ne parle : tu peux y réagir (un mot, un geste), c’est ton choix` };
+    return { mode: 'reagir', raison: `la musique joue fort ${m.ou === 'micro' ? 'autour de toi' : 'au téléphone'} et personne ne parle : tu peux y réagir (${hp ? 'un mot écrit ou un geste : tes haut-parleurs sont fermés' : 'un mot, un geste'}), c’est ton choix` };
   return null;
 }
 // le bloc en tête de son tour : vide quand il n'y a rien à intégrer

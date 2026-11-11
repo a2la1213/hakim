@@ -122,7 +122,7 @@ test('(21:00) deux modes : tes paroles « dans sa tête » (pas affichées, son 
   assert.match(page, /const enTete = !!oral && \(\(typeof reglagesCorps !== 'undefined' && \(reglagesCorps\.afficher_papa === false \|\| motsPapaCaches\(\)\)\)/);
   // (04/11, 10:20) le caché passe par messageMasque : « dans ta tête » d'abord, puis sa réponse en conversation (test-ses-paroles.js)
   assert.match(page, /\.slice\(-etat\.fenetre\)\n    \.filter\(m => !messageMasque\(m\) \|\| aDesPieces\(m\)\);/);
-  assert.match(page, /function messageMasque\(m\) \{\n(?:  if \(m\.qui === 'j' && \[[^\n]*\]\.includes\(m\.spontane\)\) return false;\n)?  if \(m\.cache && !\(m\.qui === 'j' && parolesVisibles\(\)\)\) return true;/);
+  assert.match(page, /function messageMasque\(m\) \{\n(?:  if \(m\.qui === 'j' && \[[^\n]*\]\.includes\(m\.spontane\)\) return false;\n)?  if \(m\.cache && !\(m\.qui === 'j' && \(?parolesVisibles\(\)(?: \|\| \(typeof hautParleursFermes === 'function' && hautParleursFermes\(\)\)\))?\)\) return true;/);   // (11/11) fermés : écrite
   assert.match(page, /reglagesCorps\.afficher_hakim !== false \|\| !auto\) \{ majMessage\(m\);/);
   assert.match(src, /if \(!corpsReglages\(\)\.afficher_papa\) return false;/);
   assert.match(src, /afficher_papa: r\.afficher_papa !== false, afficher_hakim: r\.afficher_hakim !== false/);
@@ -130,7 +130,7 @@ test('(21:00) deux modes : tes paroles « dans sa tête » (pas affichées, son 
 
 test('(21:13-21:15) « dans ta tête » pour lui aussi : ses réponses et ses petits mots dits, pas écrits ; un bouton pour couper sa voix ; une respiration masque l’attente', () => {
   assert.match(page, /\.\.\.\(oral && reponseCachee\(\) \? \{ cache: true \} : \{\}\),/, 'sa réponse orale cachée (04/11 : dans les deux modes)');
-  assert.match(page, /const reponseCachee = \(\) => !!etat\.conversation && !parolesVisibles\(\);/, '(04/11, 10:20) sauf « Ses paroles »');
+  assert.match(page, /const reponseCachee = \(\) => !!etat\.conversation && !parolesVisibles\(\)(?: && !\(typeof hautParleursFermes === 'function' && hautParleursFermes\(\)\))?;/, '(04/11, 10:20) sauf « Ses paroles » ; (11/11) ou ses haut-parleurs fermés');
   const i = page.indexOf("if (m.spontane === 'oreille') {"), bloc = page.slice(i, page.indexOf('\n    return;\n  }', i));
   assert.match(bloc, /\.\.\.\(cache \? \{ cache: true \} : \{\}\)/, 'son petit mot caché');
   assert.match(page, /function majMessage\(m\) \{\n  const masque = messageMasque\(m\);\n  if \(masque && !aDesPieces\(m\)\) return;/, 'jamais remis à l’écran par le flux (sauf ses fichiers)');

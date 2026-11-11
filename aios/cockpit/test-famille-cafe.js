@@ -80,7 +80,7 @@ test('branché : le crochet du café dans son cerveau et chez le messager, les o
 });
 
 test('ses agents (sauf le témoin vierge) ont les deux outils du café', () => {
-  const ctx = { JSON, Object, String, Set, AGENTS: {}, LECTURE: [], MEMOIRE_LECTURE: [], lireSansLien: () => '', path, PREAMBULE_MATHS: '/x/y/z',
+  const ctx = { JSON, Object, String, Set, AGENTS: {}, LECTURE: [], MEMOIRE_LECTURE: [], MEMOIRE_D_ABORD: '', lireSansLien: () => '', path, PREAMBULE_MATHS: '/x/y/z',
     REFERENCE_MATHS: '/r', agentsDeHakim: () => ({ moi: { description: 'le mien', prompt: 'Mon agent.', tools: ['Read'], model: 'sonnet' } }) };
   vm.createContext(ctx);
   const i = src.indexOf('const AGENTS = {');

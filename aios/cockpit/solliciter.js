@@ -35,7 +35,19 @@ function papaSurLaMontre(etat, maintenant, montreBranchee) {
 /* Où la dire à voix haute : { ou: 'montre' | 'page' | null, pourquoi }. Dans l'ordre : une sollicitation pour papa (pas « parler »), le
    réglage « Il me sollicite à voix haute » (sollicite_voix), la nuit (23 h - 8 h : « Ses sons la nuit » éteint, ou papa sans un mot depuis
    10 min, il dort), le live (seulement ce qui s'adresse à papa par son nom), la rafale (au plus une toutes les sollicite_voix_ecart_min). */
+/* (11/11, ~04:10, Ahmed : « qu'il ne parle pas dans le vide » ; ~04:15 : « aussi sur la montre et le Mac ») hp : où on l'entend encore
+   ({ page, montre } : vrai, ses haut-parleurs y sont ouverts ; null : rien n'est fermé nulle part, comme avant). Fermés là où il voulait la dire :
+   elle va là où on l'entend encore (la montre, ou une page Parler) ; nulle part : pourquoi « haut_parleurs » (le cockpit envoie alors une
+   notification, même page ouverte). */
 function decider(etat, { raison, texte, reglages = {}, maintenant = Date.now(), heure = new Date(maintenant).getHours(), live = false,
+  papaDernierMs = 0, montreBranchee = false, hp = null } = {}) {
+  const d = deciderSansHautParleurs(etat, { raison, texte, reglages, maintenant, heure, live, papaDernierMs, montreBranchee });
+  if (!d.ou || !hp) return d;
+  if (d.ou === 'montre' && !hp.montre) return hp.page ? { ou: 'page', pourquoi: '', detour: 'montre_fermee' } : { ou: null, pourquoi: 'haut_parleurs' };
+  if (d.ou === 'page' && !hp.page) return montreBranchee && hp.montre ? { ou: 'montre', pourquoi: '', detour: 'pages_fermees' } : { ou: null, pourquoi: 'haut_parleurs' };
+  return d;
+}
+function deciderSansHautParleurs(etat, { raison, texte, reglages = {}, maintenant = Date.now(), heure = new Date(maintenant).getHours(), live = false,
   papaDernierMs = 0, montreBranchee = false } = {}) {
   if (!sollicitePapa(raison)) return { ou: null, pourquoi: 'pas_pour_papa' };
   if (reglages.sollicite_voix === false) return { ou: null, pourquoi: 'reglage' };
