@@ -6,7 +6,9 @@
    - la fait partir à l'heure (Chanter.depart : par le micro, l'écho de sa voix et le calage de la musique ; sinon le même appareil, moins le
      tampon de la page), le blanc du début de sa voix retiré ; trop tard pour un morceau : il est laissé (jamais à contretemps) ;
    - sa voix passe par son analyseur : son écho reste le sien (jamais pris pour papa), et « couper le son » le coupe aussi ;
-   - papa parle, « stop », son intérieur coupé, le cockpit qui annule : il se tait net. */
+   - papa parle, « stop », son intérieur coupé, le cockpit qui annule : il se tait net.
+   (v2, 11/11 ~03:00) une ligne vient en syllabes (chacune sur la grille et sur sa note) : le cockpit la rend chantée d'un seul son, qui
+   commence X-Zero-Ms avant sa première syllabe ; c'est ce point qui part à l'heure. Pas prête avant de devoir sonner : laissée. */
 const chant = { id: null, sources: [], debut: 0, fin: 0, ctl: null };
 // il chante à l'instant (sa voix sonne, ou va sonner dans la demi-seconde) : pour son écho et pour la coupure par papa
 function chantSonne(m = Date.now()) { return !!chant.id && chant.sources.length > 0 && m >= chant.debut - 500 && m <= chant.fin + 200; }
@@ -35,11 +37,15 @@ async function surChanter(o) {
   const id = o.id, ctl = new AbortController();
   chant.id = id; chant.ctl = ctl;
   const t0 = Date.now();
-  const prets = await Promise.all(o.morceaux.map(m => fetch('/api/chanter/voix', { method: 'POST', signal: ctl.signal,
-    headers: { 'Content-Type': 'application/json', 'X-Jeton': typeof jeton === 'function' ? jeton() : '' },
-    body: JSON.stringify({ texte: String(m.texte || ''), duree_ms: Number(m.d) || 0, langue: 'fr' }) })
-    .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('voix'))))
-    .then(ab => actx.decodeAudioData(ab)).then(buf => ({ m, buf })).catch(() => null)));
+  // (v2, 11/11) une ligne en syllabes (chacune à sa place et sur sa note) : sa voix rendue commence X-Zero-Ms avant sa première syllabe, et
+  // elle doit être prête avant de devoir sonner (limite_ms : le temps qu'il reste, moins la marge du départ) ; sinon elle n'est pas chantée
+  const prets = await Promise.all(o.morceaux.map(m => { let zero = null;
+    return fetch('/api/chanter/voix', { method: 'POST', signal: ctl.signal,
+      headers: { 'Content-Type': 'application/json', 'X-Jeton': typeof jeton === 'function' ? jeton() : '' },
+      body: JSON.stringify({ texte: String(m.texte || ''), duree_ms: Number(m.d) || 0, langue: 'fr',
+        ...(Array.isArray(m.syllabes) && Array.isArray(m.mots) ? { mots: m.mots, syllabes: m.syllabes, limite_ms: Math.max(1, Math.round(Number(m.a) - Date.now() - 400)) } : {}) }) })
+      .then((r) => { if (!r.ok) return Promise.reject(new Error('voix')); const z = r.headers && r.headers.get ? r.headers.get('X-Zero-Ms') : null; if (z != null && z !== '' && Number.isFinite(Number(z))) zero = Number(z); return r.arrayBuffer(); })
+      .then(ab => actx.decodeAudioData(ab)).then(buf => ({ m, buf, zero })).catch(() => null); }));
   if (chant.id !== id) return;                                       // annulé pendant qu'elle se faisait
   if (papaParleIci()) { if (typeof journalVoix === 'function') journalVoix('chant_papa', {}); chantArreter('papa'); return; }
   // les deux chemins jusqu'au micro : sa voix (le chemin de son écho, appris quand il parle) et la musique (le calage du cockpit, ses pics)
@@ -50,7 +56,7 @@ async function surChanter(o) {
   let joues = 0, tard = 0, par = '';
   for (const x of prets) {
     if (!x) continue;
-    const att = Chanter.attaqueDe(x.buf.getChannelData(0), x.buf.sampleRate);
+    const att = x.zero != null ? x.zero : Chanter.attaqueDe(x.buf.getChannelData(0), x.buf.sampleRate);   // (v2) le zéro de la ligne, dit par le cockpit
     const d = Chanter.depart({ cible: x.m.a, calage_ms: calage, echo_ms: echo, base_ms: base, attaque_ms: att });
     if (!d) continue;
     const quand = actx.currentTime + (d.t - Date.now()) / 1000;
@@ -59,7 +65,7 @@ async function surChanter(o) {
     src.buffer = x.buf;
     // un peu plus longue que sa place (au-delà de 4 %) : un rien plus vite, 6 % au plus
     const ratio = (x.buf.duration * 1000) / Math.max(1, Number(x.m.d) || x.buf.duration * 1000);
-    if (ratio > 1.04) src.playbackRate.value = Math.min(1.06, ratio);
+    if (x.zero == null && ratio > 1.04) src.playbackRate.value = Math.min(1.06, ratio);   // (v2) ses syllabes sont déjà à leur place : rien à presser
     src.connect(analyseurVoix);
     src.onended = () => { chant.sources = chant.sources.filter(s => s !== src); if (!chant.sources.length && chant.id === id) { chant.id = null; if (typeof journalVoix === 'function') journalVoix('chant_fini', {}); } };
     src.start(quand);

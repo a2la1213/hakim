@@ -32,6 +32,9 @@
     cadres_micro_ms: 36.5,           // (par le micro) le décalage de leurs fenêtres (calerSons : trames de 100 ms ; l'écho : fenêtres de 20 ms)
     incertitude_micro_ms: 40, incertitude_annonce_ms: 80,
     par_morceau: 1, ecart_s: 60, papa_ms: 3000,
+    // (v2) chaque syllabe sur la grille (le temps, le demi-temps ou la double croche), à moins de 20 % d'un temps (140 ms au plus) de là où
+    // elle tombait quand une place y est ; une syllabe ne s'étale pas sur plus de 420 ms à l'origine (une pause n'est pas une syllabe)
+    tolerance_temps: 0.2, tolerance_max_ms: 140, syllabe_max_ms: 420,
   };
   const DEUX_PI = 2 * Math.PI;
   const fini = (x) => typeof x === 'number' && Number.isFinite(x);
@@ -195,9 +198,11 @@
     const v = p.lignes.filter(x => M.rel.has(x.groupe)).map(x => tl(x) - M.rel.get(x.groupe));
     return v.length ? mediane(v) : null;
   }
+  // (v2) source_tb : l'instant où cette ligne a été entendue (l'heure de l'appli) : la mélodie que la voix du morceau y tenait ; notes : celle
+  // gardée avec un morceau déjà entendu (sa mémoire)
   function candidat(x, t, par, confiance) {
     return { texte: String(x.texte || ''), t: Math.round(t), d: Number(x.d) > 0 ? Math.round(Number(x.d)) : null, mots: Array.isArray(x.mots) ? x.mots : null,
-      groupe: x.groupe, par, confiance };
+      groupe: x.groupe, par, confiance, ...(fini(tl(x)) && par !== 'memoire' ? { source_tb: tl(x) } : {}), ...(x.notes && Array.isArray(x.notes.hz) ? { notes: x.notes } : {}) };
   }
   /* o : { maintenant (l'heure de l'appli), grille, horloge (son historique), memoire: { titre, lignes: [{ pos, texte, d, mots, groupe }] }, titre } ;
      rend les phrases à venir, dans l'ordre : { texte, t (l'instant voulu, heure de l'appli, comme les trames), d, mots, par, confiance, cale } */
@@ -254,13 +259,15 @@
   }
 
   /* ---- la mémoire d'un morceau (par la position du lecteur) : ses lignes, à leur position */
-  function memoriser(lignes, historique, titre) {
+  // (v2) melodies : la mélodie de la voix du morceau (hauteurA) ; chaque ligne garde la sienne, pour la chanter juste la prochaine fois
+  function memoriser(lignes, historique, titre, melodies = null) {
     const out = [];
     for (const x of lignes || []) {
       const t = tl(x), h = horlogeA(historique, t, titre), pos = positionA(h, t);
       if (pos == null || pos < 0) continue;
+      const n = melodies ? notesLigne(melodies, t, Number(x.d) > 0 ? Number(x.d) : 3000, 80) : null;   // (toutes les 80 ms : sa mémoire reste légère)
       out.push({ pos: Math.round(pos), texte: String(x.texte || '').slice(0, 300), d: Number(x.d) > 0 ? Math.round(Number(x.d)) : null,
-        mots: Array.isArray(x.mots) ? x.mots.slice(0, 30) : null, groupe: x.groupe });
+        mots: Array.isArray(x.mots) ? x.mots.slice(0, 30) : null, groupe: x.groupe, ...(n ? { notes: n } : {}) });
     }
     return { titre: titre || '', lignes: out.sort((a, b) => a.pos - b.pos) };
   }
@@ -386,7 +393,200 @@
   }
   function chante(e, maintenant = Date.now(), plan = null) { e.chants++; e.dernier = maintenant; e.plan = plan; }
 
-  const Chanter = { DEFAUTS, mediane, attaques, resultante, periodeDe, grille, caler, choisirCalage, grilleSure, tempsProche, horlogeA, positionA, instantDe, passages, modele,
+  /* ---- 8. (v2, 11/11 ~03:00, Ahmed : « je veux tout » ; « chaque syllabe sur le temps », « suivre la mélodie, le chant juste, au mieux »)
+     CHAQUE SYLLABE SUR LE TEMPS, ET SUR SA NOTE. Le plan d'une ligne : ses syllabes, chacune posée sur la grille du morceau (le temps, le
+     demi-temps ou la double croche) au plus près de là où elle tombait dans le morceau (les heures des mots d'Azure, ses syllabes réparties
+     dans le mot), et la note que la voix du morceau tenait sous cette syllabe la dernière fois (la mélodie de la voix séparée : hauteurA).
+     Le son (couper sa voix Azure en mots et en syllabes, les recoller à leur instant, chacune à sa hauteur) : chanter-voix.js, au cockpit. */
+  const VOY = 'aeiouyàâäéèêëîïôöûùüÿœæ';
+  const RE_VOY = new RegExp(`[${VOY}]+`, 'g');
+  const INSEPARABLES = /^(?:[bcdfgkptv][lr]|ch|ph|th|gn)$/;
+  const nettoyerMot = (m) => String(m || '').replace(/[^\p{L}\p{N}'’-]/gu, '').replace(/^['’-]+|['’-]+$/g, '');
+  /* les syllabes d'un mot (l'écrit, au mieux : les groupes de voyelles, une consonne seule va à la suivante, deux se partagent sauf « bl, tr,
+     ch… », le « e » muet final rejoint la précédente ; en lettres arabes, une pour deux lettres ; un nombre, deux par chiffre). Leur nombre
+     est celui de syllabes(). */
+  function syllabesMot(mot) {
+    const brut = nettoyerMot(mot);
+    if (!brut) return [];
+    if (/\p{Script=Arabic}/u.test(brut)) {
+      const l = [...brut.replace(/[^\p{Script=Arabic}]/gu, '').replace(/[\u064B-\u0652\u0670]/g, '')], k = Math.max(1, Math.round(l.length / 2)), out = [];
+      for (let i = 0; i < k; i++) out.push(l.slice(Math.round(i * l.length / k), Math.round((i + 1) * l.length / k)).join(''));
+      return out;
+    }
+    if (/^\d+$/.test(brut)) return [...brut].flatMap(c => [c, c]);
+    const m = brut.toLowerCase().replace(/[^a-zàâäéèêëîïôöûùüÿœæ]/g, '');
+    if (!m) return [brut];
+    const g = [];
+    let x; RE_VOY.lastIndex = 0;
+    while ((x = RE_VOY.exec(m))) g.push([x.index, x.index + x[0].length]);
+    if (!g.length) return [m];
+    if (g.length > 1 && /(?:[^aeiouy]e|[^aeiouy]es|[^aeiouy]ent)$/.test(m)) g.pop();          // le « e » muet de la fin
+    const coupes = [0];
+    for (let i = 0; i + 1 < g.length; i++) {
+      const c0 = g[i][1], c1 = g[i + 1][0], c = m.slice(c0, c1);
+      coupes.push(c.length <= 1 ? c0 : c.length === 2 ? (INSEPARABLES.test(c) ? c0 : c0 + 1) : (INSEPARABLES.test(c.slice(-2)) ? c1 - 2 : c1 - 1));
+    }
+    coupes.push(m.length);
+    return coupes.slice(0, -1).map((a, i) => m.slice(a, coupes[i + 1]));
+  }
+  /* une ligne (t : son instant voulu, d, mots : [[mot, dt ms]], texte) → ses syllabes sur la grille g : { a (l'instant de la première), d, mots,
+     syllabes: [{ texte, m (son mot), t (ms depuis a), d (sa place), div (1 temps, 2 demi-temps, 4 double croche, 8 serrée), ecart (sa place −
+     là où elle tombait), orig, nat }], cale (la grille était sûre) } ; sans grille sûre : à leur place d'origine */
+  function scander(ligne, g, o = {}) {
+    const r = { ...DEFAUTS, ...o };
+    const t = Number(ligne && ligne.t);
+    if (!fini(t)) return null;
+    const d = Number(ligne.d) > 0 ? Number(ligne.d) : null;
+    let mots = (Array.isArray(ligne.mots) ? ligne.mots : []).filter(m => Array.isArray(m) && syllabesMot(m[0]).length && fini(Number(m[1])))
+      .map(m => ({ w: nettoyerMot(m[0]), dt: Math.max(0, Number(m[1])) })).sort((x, y) => x.dt - y.dt);
+    let sansTemps = false;
+    if (!mots.length) {   // sans les heures des mots : ses syllabes à parts égales dans sa durée
+      const ws = String(ligne.texte || '').split(/\s+/).map(nettoyerMot).filter(w => syllabesMot(w).length);
+      if (!ws.length) return null;
+      const tot = ws.reduce((n, w) => n + syllabesMot(w).length, 0), D = d || tot * 1000 / r.syllabes_s;
+      let acc = 0;
+      mots = ws.map((w) => { const x = { w, dt: Math.round(acc * D / tot) }; acc += syllabesMot(w).length; return x; });
+      sansTemps = true;
+    }
+    const base = mots[0].dt, syl = [];
+    mots.forEach((m, i) => {
+      const p = syllabesMot(m.w), k = p.length;
+      const fin = i + 1 < mots.length ? mots[i + 1].dt : (d != null ? Math.max(base + d, m.dt + 120 * k) : m.dt + k * 1000 / r.syllabes_s);
+      const pas = Math.max(60, Math.min((fin - m.dt) / k, r.syllabe_max_ms));
+      p.forEach((x, j) => syl.push({ texte: x, m: i, orig: m.dt - base + j * pas, nat: pas, dans: m.dt + j * pas }));
+    });
+    const sure = grilleSure(g, r), P = sure ? g.periode_ms : null;
+    let prev = -Infinity;
+    for (const s of syl) {
+      const T = t + s.orig;
+      if (!sure) { s.a = Math.max(T, prev + 60); s.div = 0; prev = s.a; continue; }
+      // les doubles croches autour de là où elle tombait, toujours après la précédente ; la plus proche, une place forte un peu préférée (le
+      // demi-temps coûte 5 % d'un temps de plus que le temps, la double croche 10 %), jamais au-delà de la tolérance si une autre y est
+      const p16 = P / 4, tol = Math.min(r.tolerance_temps * P, r.tolerance_max_ms), q0 = Math.round((T - g.t0) / p16), cands = [];
+      for (let q = q0 - 3; q <= q0 + 3; q++) {
+        const a = g.t0 + q * p16;
+        if (a <= prev + 1) continue;
+        const k4 = ((q % 4) + 4) % 4, div = k4 === 0 ? 1 : k4 === 2 ? 2 : 4;
+        cands.push({ a, div, e: Math.abs(a - T), cout: Math.abs(a - T) + (div === 1 ? 0 : div === 2 ? 0.05 : 0.1) * P });
+      }
+      let c = cands.filter(x => x.e <= tol).sort((x, y) => x.cout - y.cout)[0] || cands.sort((x, y) => x.e - y.e)[0];
+      if (!c) { const p32 = P / 8; c = { a: g.t0 + (Math.floor((prev - g.t0) / p32 + 1e-6) + 1) * p32, div: 8 }; }   // trop serrées : la triple croche suivante
+      s.a = c.a; s.div = c.div; prev = s.a;
+    }
+    for (let i = 0; i < syl.length; i++) {
+      const s = syl[i], n = syl[i + 1];
+      s.d = n ? n.a - s.a : Math.max(P ? P / 4 : 150, Math.min(s.nat * 1.4, P || 600));
+    }
+    const a0 = syl[0].a, der = syl[syl.length - 1];
+    return { a: Math.round(a0), d: Math.round(der.a + der.d - a0), mots: mots.map(m => m.w), cale: sure, sans_temps: sansTemps,
+      // dans : sa place dans la ligne telle qu'elle a été entendue (depuis son début : l'heure de son mot, ses syllabes réparties dans le mot) ;
+      // mesuré au banc : la note suit mieux la syllabe par là que par sa place sur la grille (une syllabe posée une double croche plus loin
+      // y prendrait la note de sa voisine)
+      syllabes: syl.map(s => ({ texte: s.texte, m: s.m, t: Math.round(s.a - a0), d: Math.round(s.d), div: s.div, ecart: Math.round(s.a - (t + s.orig)), orig: Math.round(s.orig), nat: Math.round(s.nat),
+        dans: Math.round(s.dans) })) };
+  }
+
+  /* la mélodie de la voix du morceau. melodies : [{ tb0 (l'heure de l'appli de sa première trame), pas (ms), hz: [], src: 'voix' (la voix
+     séparée, jarvis/separation.py) | 'trames' (la hauteur des trames du téléphone, sur le mélange : moins sûre) }]. La hauteur sous [a, b) :
+     la médiane de ses trames qui en ont une (ses sauts d'octave ramenés), la voix séparée d'abord ; 0 : rien de net */
+  const midiDe = (hz) => 69 + 12 * Math.log2(hz / 440), hzDe = (m) => 440 * Math.pow(2, (m - 69) / 12);
+  function hauteurA(melodies, a, b, min = null) {
+    const l = Array.isArray(melodies) ? melodies : [];
+    for (const src of ['voix', 'trames']) {
+      const v = [];
+      let pas = 40, n = 0;
+      for (const x of l) {
+        if (!x || x.src !== src || !Array.isArray(x.hz) || !(x.pas > 0) || !fini(x.tb0)) continue;
+        if (x.tb0 > b || x.tb0 + x.hz.length * x.pas < a) continue;
+        pas = x.pas;
+        for (let i = Math.max(0, Math.floor((a - x.tb0) / x.pas)); i < x.hz.length && x.tb0 + i * x.pas < b; i++) {
+          const c = x.tb0 + (i + 0.5) * x.pas;
+          if (c < a || c >= b) continue;
+          n++;
+          if (x.hz[i] >= 50 && x.hz[i] <= 1500) v.push(midiDe(x.hz[i]));
+        }
+      }
+      // la hauteur des trames est prise sur le mélange (la basse, la batterie) : seulement quand la moitié au moins de la fenêtre a une hauteur
+      // nette ; sinon rien (sa voix garde sa hauteur, plutôt qu'une fausse note)
+      if (src === 'trames' && v.length < 0.5 * n) continue;
+      if (v.length >= (min != null ? min : pas >= 100 ? 1 : 2)) {
+        const m = mediane(v);
+        return Math.round(hzDe(mediane(v.map(u => u - 12 * Math.round((u - m) / 12)))) * 10) / 10;
+      }
+    }
+    return 0;
+  }
+  // la mélodie d'une ligne entendue à tb (durée d), toutes les 40 ms, pour la garder avec elle (la mémoire d'un morceau) ; null : rien de net
+  function notesLigne(melodies, tb, d, pas = 40) {
+    if (!fini(tb) || !(d > 0)) return null;
+    const D = Math.min(d, 12000) + 200, ici = (Array.isArray(melodies) ? melodies : []).filter(x => x && fini(x.tb0) && x.tb0 <= tb + D && x.tb0 + (x.hz || []).length * x.pas >= tb);
+    if (!ici.length) return null;
+    const hz = [];
+    for (let t = 0; t < D; t += pas) hz.push(Math.round(hauteurA(ici, tb + t, tb + t + pas, 1)));
+    return hz.some(v => v > 0) ? { pas, hz } : null;
+  }
+  // la note sous une syllabe : là où elle tombait quand la ligne a été entendue (le milieu de sa place d'origine, depuis le début de la ligne)
+  function noteSyllabe(ligne, s, melodies) {
+    const w = Math.max(60, s.nat), o = fini(s.dans) ? s.dans : s.orig, a = o + FEN_NOTE[0] * w, b = o + Math.max(FEN_NOTE[1] * w, FEN_NOTE[0] * w + 40);
+    if (ligne && ligne.notes && Array.isArray(ligne.notes.hz) && ligne.notes.pas > 0)
+      return hauteurA([{ tb0: 0, pas: ligne.notes.pas, hz: ligne.notes.hz, src: 'voix' }], a, b);
+    if (ligne && fini(Number(ligne.source_tb))) return hauteurA(melodies, Number(ligne.source_tb) + a, Number(ligne.source_tb) + b);
+    return 0;
+  }
+  // sa fenêtre dans la place d'origine de la syllabe (mesuré au banc, mesure/chanter-syllabes-banc.js : 0,15-0,85 → 516 notes justes sur 570,
+  // 0,1-0,9 → 520, 0,25-0,6 → 417 ; plus large, la médiane résiste mieux à l'erreur d'Azure sur l'heure des mots)
+  const FEN_NOTE = [0.1, 0.9];
+  /* juste : chaque note posée sur le demi-ton le plus proche, dans l'accord du morceau (son écart au La 440, la moyenne de ses écarts sur le
+     cercle : un morceau accordé un peu haut reste juste) ; 0 reste 0 */
+  function justes(hz) {
+    const m = (hz || []).map(v => (v > 0 ? midiDe(v) : null));
+    let c = 0, si = 0;
+    for (const x of m) if (x != null) { const th = 2 * Math.PI * (x - Math.round(x)); c += Math.cos(th); si += Math.sin(th); }
+    const off = c || si ? Math.atan2(si, c) / (2 * Math.PI) : 0;
+    return m.map(x => (x == null ? 0 : Math.round(hzDe(Math.round(x - off) + off) * 10) / 10));
+  }
+  /* le plan v2 : chaque ligne en ses syllabes, sur la grille et sur leurs notes ; deux lignes qui se chevauchent : la première s'arrête où la
+     suivante commence. Rend [{ texte, a, d, mots, syllabes: [{ texte, m, t, d, hz, div }], cale }] ; null : une ligne sans syllabes */
+  function planifierSyllabes(choix, g, melodies, o = {}) {
+    const out = [];
+    for (const l of (choix && choix.lignes) || []) {
+      const sc = scander(l, g, o);
+      if (!sc || !sc.syllabes.length) return null;
+      const hz = justes(sc.syllabes.map(x => noteSyllabe(l, x, melodies)));
+      out.push({ texte: String(l.texte || ''), a: sc.a, d: sc.d, mots: sc.mots, cale: sc.cale,
+        syllabes: sc.syllabes.map((x, i) => ({ texte: x.texte, m: x.m, t: x.t, d: x.d, hz: hz[i], div: x.div, ecart: x.ecart })) });
+    }
+    out.sort((x, y) => x.a - y.a);
+    for (let i = 1; i < out.length; i++) {
+      const p = out[i - 1], fin = out[i].a - p.a;
+      if (p.d <= fin) continue;
+      p.syllabes = p.syllabes.filter(x => x.t < fin - 60);
+      if (!p.syllabes.length) return null;
+      const der = p.syllabes[p.syllabes.length - 1]; der.d = Math.min(der.d, fin - der.t); p.d = fin;
+    }
+    return out;
+  }
+
+  /* ---- 9. (v2) sa conscience peut décider de chanter : le tableau de l'instant dit si c'est le moment (la musique du téléphone joue ; ni
+     papa, ni lui, ni la pièce ne parlent ; pas d'appel ; son intérieur ouvert), ses garde-fous restent ceux de garde (son réglage, une fois
+     par morceau, l'écart, papa il y a moins de 3 s, la page). Rend { ok, raison } ; ok : texte, ce qu'il en lit pour son prompt */
+  function momentDeChanter(tab, e, ctx = {}, o = {}, maintenant = Date.now()) {
+    if (!tab) return { ok: false, raison: 'pas_de_tableau' };
+    if (tab.interieur === 'coupé') return { ok: false, raison: 'interieur_coupe' };
+    if (tab.appel) return { ok: false, raison: 'appel' };
+    const m = tab.musique || {}, p = tab.parole || {};
+    if (!m.joue || m.ou === 'micro') return { ok: false, raison: 'pas_de_musique' };
+    if (p.papa && p.papa.parle) return { ok: false, raison: 'papa_parle' };
+    if (p.lui && p.lui.parle) return { ok: false, raison: 'il_parle' };
+    if (p.piece && p.piece.parle) return { ok: false, raison: 'la_piece_parle' };
+    if (e && (e.demande === 'oui' || e.demande === 'en_vol')) return { ok: false, raison: 'deja_decide' };
+    const g = garde(e, ctx, o, maintenant);
+    if (!g.ok) return g;
+    const place = tab.place && tab.place.role === 'auditeur' ? 'tu écoutes (on ne te parle pas)' : tab.place ? 'tu es dedans' : '';
+    return { ok: true, texte: `la musique joue${m.intensite ? ` (intensité ${m.intensite})` : ''} au téléphone${p.dedans && p.dedans.parle ? ', sa voix chante' : ''}${place ? ` ; ${place}` : ''}` };
+  }
+
+  const Chanter = { DEFAUTS, syllabesMot, scander, hauteurA, notesLigne, noteSyllabe, justes, planifierSyllabes, momentDeChanter, mediane, attaques, resultante, periodeDe, grille, caler, choisirCalage, grilleSure, tempsProche, horlogeA, positionA, instantDe, passages, modele,
     prevoir, choisir, memoriser, decouper, planifier, syllabes, debit, rateSsml, corrigerDebit, depart, attaqueDe, creer, morceau, garde, annuler, chante };
   racine.Chanter = Chanter;
   if (typeof module !== 'undefined' && module.exports) module.exports = Chanter;

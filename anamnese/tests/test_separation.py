@@ -118,6 +118,29 @@ def test_traiter_rend_les_pistes_quand_on_les_demande_et_seulement_alors():
     assert avec["pistes"]["duree_s"] == 3.0 and avec["pistes"]["voix"] is True
 
 
+def test_les_pistes_portent_la_melodie_de_la_voix_separee_a_sa_place_dans_le_bloc():
+    """(11/11, Ahmed : « cale la hauteur de chaque syllabe sur la note du morceau ») Do4, Mi4, Sol4 (0,5 s chacune) puis 0,5 s de silence :
+    chaque trame de 40 ms garde sa hauteur à sa place ; témoin : sans voix, pas de mélodie."""
+    voix = np.concatenate([_note(60, 0.5), _note(64, 0.5), _note(67, 0.5), np.zeros(SR // 2, np.float32)])
+    fond = (0.1 * _accord(57, True, 2.0)).astype(np.float32)
+
+    class O:
+        taux = SR
+        lire = staticmethod(lambda f: (fond + voix, SR))
+        pistes = staticmethod(lambda x: {"vocals": voix, "drums": fond * 0, "bass": fond * 0, "other": fond})
+    m = separation.traiter({"fichier": "x.wav", "pistes": True}, O())["pistes"]["melodie"]
+    assert m["pas_ms"] == 40
+    hz = np.array(m["hz"], float)
+    a_ = lambda t0, t1: np.median(hz[int(t0 / 0.04) + 1:int(t1 / 0.04) - 1])   # noqa: E731
+    for (t0, t1), f in [((0, 0.5), 261.6), ((0.5, 1.0), 329.6), ((1.0, 1.5), 392.0)]:
+        assert abs(1200 * np.log2(a_(t0, t1) / f)) < 30, (t0, a_(t0, t1), f)
+    assert (hz[int(1.55 / 0.04):] == 0).all()
+
+    class Sans(O):
+        pistes = staticmethod(lambda x: {"vocals": voix * 0, "drums": fond * 0, "bass": fond * 0, "other": fond})
+    assert "melodie" not in separation.traiter({"fichier": "x.wav", "pistes": True}, Sans())["pistes"]
+
+
 def test_avec_la_cascade_les_pistes_et_la_voix_partent_avant_elle():
     """(06/11, mesuré : la cascade rajoutait 4 s avant que la grande oreille ait sa voix séparée) une réponse partielle d'abord"""
     fond = _accord(57, True, 3.0)

@@ -12,11 +12,14 @@ function etatInitial() {
   return { enVol: false, signature: 0, derniere: -Infinity, appels: [], sollicitationA: -Infinity, acteA: -Infinity, pensees: [] };
 }
 
+// (11/11, Ahmed : « sa conscience peut aussi dire CHANTER quand une musique joue ») CHANTER : se joindre au refrain de la musique qui joue (rien à
+// ajouter : ce qu'il chante, c'est le refrain) ; ses garde-fous sont ceux de son chant (public/chanter.js : momentDeChanter, garde)
 function lireDecision(texte) {
   const t = String(texte || '').replace(/[*_`]/g, '').trim();
-  const m = /^\s*(RIEN|PENSER|FAIRE|SOLLICITER|PARLER)\b\s*:?\s*([\s\S]*)$/i.exec(t.split('\n').find(l => l.trim()) || '');
+  const m = /^\s*(RIEN|PENSER|FAIRE|SOLLICITER|PARLER|CHANTER)\b\s*:?\s*([\s\S]*)$/i.exec(t.split('\n').find(l => l.trim()) || '');
   if (!m) return { genre: 'rien', texte: '' };
   const genre = m[1].toLowerCase(), dit = m[2].replace(/\s+/g, ' ').trim().slice(0, 300);
+  if (genre === 'chanter') return { genre, texte: sansRien(dit) !== dit ? '' : dit };
   // (10/11, lettre de Hakim) « PARLER : RIEN », « PENSER : (rien) » : son silence, jamais un mot à dire ni à montrer
   if (genre === 'rien' || !dit || sansRien(dit) !== dit) return { genre: 'rien', texte: '' };
   return { genre, texte: dit };
@@ -69,9 +72,16 @@ function dejaServi(e, d, maintenant, fenetreMs = 10 * 60_000) {
   });
 }
 const dejaDites = (e, maintenant, fenetreMs = 10 * 60_000) => (e.actes || []).filter(x => maintenant - x.t < fenetreMs);
-function permis(e, d, maintenant, { papaParle = false, occupe = false, tuParles = false, entreSollicitationsMs = ENTRE_SOLLICITATIONS_MS, entreActesMs = ENTRE_ACTES_MS, entreParolesMs = ENTRE_PAROLES_MS } = {}) {
+// (11/11) chanter : seulement quand le moment lui a été proposé (chanter : la musique joue, ses garde-fous passent), jamais sur papa ni sur sa voix
+function permis(e, d, maintenant, { papaParle = false, occupe = false, tuParles = false, entreSollicitationsMs = ENTRE_SOLLICITATIONS_MS, entreActesMs = ENTRE_ACTES_MS, entreParolesMs = ENTRE_PAROLES_MS, chanter = false } = {}) {
   if (!d || d.genre === 'rien') return 'rien';
   let action = d.genre;
+  if (action === 'chanter') {
+    if (!chanter || papaParle || tuParles) return 'rien';
+    e.chantA = maintenant;
+    e.pensees.push({ t: maintenant, genre: 'chanter', texte: d.texte || 'chanter avec la musique' }); e.pensees = e.pensees.slice(-8);
+    return 'chanter';
+  }
   if (action === 'solliciter' && (papaParle || occupe || maintenant - e.sollicitationA < entreSollicitationsMs)) action = 'penser';
   if (action === 'faire' && (papaParle || occupe || maintenant - e.acteA < entreActesMs)) action = 'penser';
   if (action === 'parler' && (papaParle || occupe || tuParles || maintenant - (e.paroleA ?? -Infinity) < entreParolesMs)) action = 'penser';

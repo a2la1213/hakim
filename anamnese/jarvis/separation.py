@@ -60,9 +60,10 @@ def _f0(x, sr, trame=0.04):
     return np.array(out), trame
 
 
-def analyser_voix(voix, sr):
+def analyser_voix(voix, sr, f0=None):
+    """f0 : (f0, trame) déjà calculés sur cette voix (traiter les garde pour sa mélodie), sinon calculés ici."""
     voix = np.asarray(voix, dtype=np.float32)
-    f0, trame = _f0(voix, sr)
+    f0, trame = f0 if f0 is not None else _f0(voix, sr)
     vo = f0[f0 > 0]
     if len(vo) < 10:
         return {"presente": False, "chante": False, "tonalite": None, "contour": None, "part": 0.0}
@@ -94,6 +95,13 @@ def _spectre(x, sr, n=2048, pas=512):
     fen = np.hanning(n).astype(np.float32)
     trames = np.lib.stride_tricks.sliding_window_view(x, n)[::pas] * fen
     return np.abs(np.fft.rfft(trames, axis=1)), np.fft.rfftfreq(n, 1 / sr), pas / sr
+
+
+def melodie_voix(f0, trame):
+    """(11/11, Ahmed : « cale la hauteur de chaque syllabe de sa voix sur la note du morceau à cet instant ») la mélodie de la voix séparée,
+    trame par trame (40 ms), sur la ligne du temps du bloc : {pas_ms, hz: [hauteur arrondie au Hz, 0 sans hauteur nette]} ; le cockpit la
+    garde à l'heure de l'appli (public/chanter.js : hauteurA), et sa voix chante chaque syllabe sur la note que la voix du morceau tenait là."""
+    return {"pas_ms": int(round(trame * 1000)), "hz": [int(round(float(v))) for v in np.asarray(f0)]}
 
 
 def analyser_fond(fond, sr):
@@ -252,7 +260,8 @@ def traiter(d, outils):
     p = outils.pistes(x)
     voix = p["vocals"]
     fond = sum(v for k, v in p.items() if k != "vocals")
-    av, af = analyser_voix(voix[::2], sr // 2), analyser_fond(fond, sr)
+    f0v = _f0(np.asarray(voix[::2], np.float32), sr // 2)
+    av, af = analyser_voix(voix[::2], sr // 2, f0=f0v), analyser_fond(fond, sr)
     sortie = {"voix": av, "fond": af, "texte": en_mots(av, af)}
     if d.get("voix_wav") and av["presente"]:                         # la voix seule, un instant, pour l'oreille (les mots)
         outils.ecrire(str(d["voix_wav"]), voix, sr)
@@ -261,7 +270,8 @@ def traiter(d, outils):
         import cascade as C
         route = C.aiguiller(x, voix, fond, sr, p)
         sortie["pistes"] = {"fenetres": pistes_du_fond(x, voix, fond, sr, musique=route["musique"]), "musique": route["musique"],
-                            "bpm": af.get("bpm"), "tonalite": af.get("tonalite"), "voix": av["presente"], "duree_s": round(len(x) / sr, 2)}
+                            "bpm": af.get("bpm"), "tonalite": af.get("tonalite"), "voix": av["presente"], "duree_s": round(len(x) / sr, 2),
+                            **({"melodie": melodie_voix(*f0v)} if av["presente"] else {})}
         # (06/11, mesuré : la voix séparée est prête en 0,5 à 2,8 s, la cascade en rajoute 4) avant la cascade, une réponse partielle : ses
         # pistes et sa voix séparée partent tout de suite (la grande oreille n'attend pas les instruments) ; la réponse finale ne les répète pas
         tot = getattr(outils, "tot", None)

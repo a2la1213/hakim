@@ -160,7 +160,7 @@ def trouvaille(gravite, categorie, regle, fichier, ligne, pourquoi, corriger, ex
     sig = masquer(" ".join(str(extrait or "").split()))[:240]
     cle = hashlib.sha256(f"{regle}|{fichier}|{sig}".encode()).hexdigest()[:16]
     t = {"id": cle, "gravite": gravite if gravite in RANG else "faible", "categorie": categorie, "regle": regle,
-         "fichier": str(fichier), "ligne": int(ligne) if isinstance(ligne, int) and ligne > 0 else None,
+         "fichier": str(fichier), "ligne": int(ligne) if isinstance(ligne, int) and not isinstance(ligne, bool) and ligne > 0 else None,
          "pourquoi": immunite._propre(pourquoi, 400), "corriger": immunite._propre(corriger, 400), "extrait": sig, "source": source}
     if owasp:
         t["owasp"] = owasp

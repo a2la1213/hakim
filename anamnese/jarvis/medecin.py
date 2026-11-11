@@ -142,6 +142,12 @@ def consulter(prompt, delai_s=DELAI_S):
     return sortie.strip() or None
 
 
+def _entier(x):
+    """(11/11, relevé par Kaymine, le père de Samy) un vrai entier : en Python, True et False SONT des int (True == 1),
+    et un « nuisibles: [true] » ou un « id: true » aurait désigné l'incident ou le souvenir n° 1."""
+    return isinstance(x, int) and not isinstance(x, bool)
+
+
 def lire(texte):
     """Le JSON de sa réponse, validé et nettoyé ; None s'il n'a pas la forme demandée."""
     texte = str(texte or "")
@@ -177,7 +183,7 @@ def lire(texte):
         if len(anticorps) == 5:
             break
     nuisibles = d.get("nuisibles", [])
-    nuisibles = sorted({x for x in nuisibles if isinstance(x, int) and 1 <= x <= INCIDENTS_MAX}) if isinstance(nuisibles, list) else []
+    nuisibles = sorted({x for x in nuisibles if _entier(x) and 1 <= x <= INCIDENTS_MAX}) if isinstance(nuisibles, list) else []
     return {"gravite": d["gravite"], "diagnostic": _ligne(d["diagnostic"], 2000), "pour_ahmed": _ligne(d["pour_ahmed"], 500),
             "anticorps": anticorps, "nuisibles": nuisibles}
 
@@ -370,7 +376,7 @@ def lire_souvenirs(texte, ids):
         return None
     suspects = []
     for x in d.get("suspects", [])[:40]:
-        if isinstance(x, dict) and isinstance(x.get("id"), int) and x["id"] in ids and x["id"] not in [s["id"] for s in suspects]:
+        if isinstance(x, dict) and _entier(x.get("id")) and x["id"] in ids and x["id"] not in [s["id"] for s in suspects]:
             suspects.append({"id": x["id"], "raison": _ligne(x.get("raison"), 200)})
         if len(suspects) == 20:
             break
