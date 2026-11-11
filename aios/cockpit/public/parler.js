@@ -4938,10 +4938,13 @@ function voixEnCalcul(maintenant = Date.now()) {
    pavé, leur voix pas encore calculée lâchée) et la plus récente passe. Jamais ce qui sonne (soudé : il va au bout), ni sa vraie réponse ni ses réponses
    au live (elles ne sont pas marquées pensée), ni la première confiée à sa voix libre pendant que sa voix la calcule (« la première phrase est dite »,
    05/11) : son attente ne compte qu'une fois sa voix prête. Rend le nombre de pensées sautées. */
-function sauterAuDernier(maintenant = Date.now()) {
+/* (11/11, Ahmed, en live : « il ne doit pas stocker sa parole au-delà de 50 % des CPU et GPU ») force : appelé par lacherSousCharge, il n'attend
+   pas sauter_passe_s (ni que « Sauter les morceaux passés » soit allumé) : tout ce qui attend avant la dernière pensée est lâché tout de suite, la
+   première confiée à sa voix comprise ; les mêmes trois exceptions (ce qui sonne, la dernière pensée entière, sa réponse à papa et au live) */
+function sauterAuDernier(maintenant = Date.now(), force = false) {
   const r = typeof reglagesCorps !== 'undefined' ? reglagesCorps : null;
-  if (!r || r.sauter_passe === false) return 0;
-  const seuil = (Number(r.sauter_passe_s) || 3) * 1000;
+  if (!r || (r.sauter_passe === false && !force)) return 0;
+  const seuil = force ? 0 : (Number(r.sauter_passe_s) || 3) * 1000;
   const b0 = typeof bouts !== 'undefined' && bouts ? bouts : {};
   const confiees = [...(b0.liste ? b0.liste.values() : [])].filter(b => b && b.pensees);
   const tel = [...(b0.fileTel || []), ...(b0.attenteTel ? [b0.attenteTel] : [])].filter(b => b && b.pensees);
@@ -4954,13 +4957,13 @@ function sauterAuDernier(maintenant = Date.now()) {
   if (toutes.length < 2) return 0;
   const derniere = toutes.reduce((a, x) => (Number(x.recu) >= Number(a.recu) ? x : a)).id;
   // son attente : depuis son arrivée ; la première confiée à sa voix libre, depuis que sa voix est prête (avant : elle n'attend pas, elle se fait)
-  const attente = (p) => (p.premiere ? (p.pretA ? maintenant - p.pretA : -Infinity) : Number.isFinite(Number(p.recu)) ? maintenant - Number(p.recu) : 0);
+  const attente = (p) => (p.premiere ? (p.pretA ? maintenant - p.pretA : (force ? 0 : -Infinity)) : Number.isFinite(Number(p.recu)) ? maintenant - Number(p.recu) : 0);
   const sonnent = new Set(enLecteur.filter(x => x.commence).map(x => x.marque.id));   // une pensée qui a commencé à sonner reste soudée (son meuble parti, elle suit)
   const enAttente = [...new Set([...confiees, ...tel].flatMap(b => b.pensees).concat(enLecteur.filter(x => !x.commence).map(x => x.marque)))]
     .filter(p => p.id !== derniere && !sonnent.has(p.id) && attente(p) > -Infinity);
-  if (!enAttente.length || Math.max(...enAttente.map(attente)) < seuil) return 0;
+  if (!enAttente.length || (!force && Math.max(...enAttente.map(attente)) < seuil)) return 0;
   // la plus ancienne a attendu : tout ce qui attend avant la dernière est sauté (la première, seulement par sa propre attente)
-  const sautees = new Set(enAttente.filter(p => !p.premiere || attente(p) >= seuil));
+  const sautees = new Set(enAttente.filter(p => force || !p.premiere || attente(p) >= seuil));
   if (!sautees.size) return 0;
   const vues = new Set(), blancs = [];
   const noter = (p) => { if (!vues.has(p.id)) { vues.add(p.id); blancs.push({ tour: p.tour, texte: p.texte }); } };
@@ -4973,7 +4976,7 @@ function sauterAuDernier(maintenant = Date.now()) {
   if (b0.attenteTel && b0.attenteTel.pensees && b0.attenteTel.pensees.every(p => sautees.has(p))) { b0.attenteTel.pensees.forEach(noter); b0.attenteTel = null; }
   if (L) { const ids = new Set([...sautees].map(p => p.id)); L.retirerMarques((m) => m.pensee && ids.has(m.id) && (noter(m), true)); }
   const ms = Math.round(Math.max(...[...sautees].map(attente)));
-  if (typeof journalVoix === 'function') journalVoix('passe_saute', { sautes: vues.size, ms, ou: 'voix' });
+  if (typeof journalVoix === 'function' && !force) journalVoix('passe_saute', { sautes: vues.size, ms, ou: 'voix' });   // sous charge : lacher_charge le dit
   if (typeof blancsPourSautes === 'function') blancsPourSautes(blancs);
   if (typeof direRibosome === 'function' && typeof setTimeout === 'function') setTimeout(direRibosome, 0);   // la dernière part
   return vues.size;
@@ -4992,6 +4995,122 @@ function lacherPenseesJusqua(stop) {
   if (uniques.length && typeof blancsPourSautes === 'function') blancsPourSautes(uniques.map(p => ({ tour: p.tour, texte: p.texte })));
   return uniques.length;
 }
+/* ---- (11/11, Ahmed, pendant le live : « il ne doit pas stocker sa parole au-delà de 50 % des CPU et GPU ») sa parole prête mais pas dite ne
+   s'entasse plus quand ses processeurs sont pris : dès que la charge mesurée passe le seuil (lacher_charge_pct, 50 % par défaut, réglable à chaud
+   dans corps-reglages.json ; lacher_charge : non pour l'éteindre), tout ce qui attend est lâché, sauf ce qui sonne déjà, la dernière pensée entière
+   et sa réponse en cours à papa ou au live. La charge : celle du Mac (CPU, GPU) et du téléphone (cœurs, GPU, marge thermique) que le cockpit
+   donne (/api/corps/charge, toutes les 5 s ; un cockpit d'avant ne la donne pas), et celle que la page mesure elle-même : la part du temps où
+   son fil principal est resté bloqué (tâches longues de plus de 50 ms, sur 10 s), c'est-à-dire le processeur du téléphone tel qu'elle le vit.
+   Chaque lâcher est noté (lacher_charge), avec la charge mesurée. ---- */
+const CHARGE_SEUIL_DEFAUT = 50, CHARGE_FENETRE_MS = 10000, CHARGE_FRAICHE_MS = 20000;
+const chargePage = { longues: [], derives: [], serveur: null, serveurA: 0, absentJusqua: 0, demande: false };
+// la part (0 à 100) de la fenêtre où le fil principal de la page a été bloqué par des tâches longues ; chaque tâche : [fin, durée] en ms
+function partBloquee(longues, maintenant = Date.now(), fenetre = CHARGE_FENETRE_MS) {
+  let ms = 0;
+  for (const [fin, duree] of longues || []) {
+    const debut = fin - duree, a = Math.max(debut, maintenant - fenetre), b = Math.min(fin, maintenant);
+    if (b > a) ms += b - a;
+  }
+  return Math.max(0, Math.min(100, Math.round((100 * ms) / fenetre)));
+}
+// la charge, en % : chaque mesure fraîche (le Mac et le téléphone par le cockpit, la page par elle-même), et la plus haute
+function chargeDe(serveur, page, maintenant = Date.now()) {
+  const c = {};
+  const pct = (v) => (v != null && Number.isFinite(Number(v)) ? Math.max(0, Math.min(100, Math.round(Number(v)))) : null);
+  if (serveur && maintenant - (Number(serveur.t) || 0) <= CHARGE_FRAICHE_MS) {
+    for (const k of ['mac_cpu', 'mac_gpu']) { const v = pct(serveur[k]); if (v != null) c[k] = v; }
+    // le téléphone n'est compté que si sa mesure est fraîche (l'appli l'envoie toutes les 5 s)
+    if (serveur.tel_age_ms != null && Number(serveur.tel_age_ms) + (maintenant - (Number(serveur.t) || 0)) <= CHARGE_FRAICHE_MS) for (const k of ['tel_cpu', 'tel_gpu', 'tel_thermique']) { const v = pct(serveur[k]); if (v != null) c[k] = v; }
+  }
+  const p = pct(page);
+  if (p != null) c.page = p;
+  const valeurs = Object.values(c);
+  return { ...c, max: valeurs.length ? Math.max(...valeurs) : null };
+}
+function chargeMesuree(maintenant = Date.now()) {
+  return chargeDe(chargePage.serveur, partBloquee(chargePage.longues, maintenant), maintenant);
+}
+function seuilCharge() {
+  const r = typeof reglagesCorps !== 'undefined' ? reglagesCorps : null, v = r ? Number(r.lacher_charge_pct) : NaN;
+  return Number.isFinite(v) && r.lacher_charge_pct !== null && r.lacher_charge_pct !== '' ? Math.max(0, Math.min(100, v)) : CHARGE_SEUIL_DEFAUT;
+}
+// ses paroles prêtes qui attendent : sa file (riboFile), confiées à sa voix (bouts.liste, fileTel), en file dans son lecteur, ses pensées entendues
+function fileDesParoles() {
+  const b0 = typeof bouts !== 'undefined' && bouts ? bouts : {};
+  const L = typeof lecteurNeuronal !== 'undefined' && lecteurNeuronal && typeof lecteurNeuronal.marques === 'function' ? lecteurNeuronal : null;
+  return { file: (etat.riboFile || []).length, confiees: [...(b0.liste ? b0.liste.values() : [])].filter(b => b && b.pensees).length,
+    telephone: (b0.fileTel || []).filter(b => b && b.pensees).length + (b0.attenteTel && b0.attenteTel.pensees ? 1 : 0),
+    lecteur: L ? L.marques().filter(x => x.marque && x.marque.pensee && !x.commence).length : 0,
+    entendu: (etat.entenduFile || []).filter(x => !x.reponse).length, reponses_live: (etat.entenduFile || []).filter(x => x.reponse).length };
+}
+function lacherSousCharge(maintenant = Date.now()) {
+  const r = typeof reglagesCorps !== 'undefined' ? reglagesCorps : null;
+  if (!r || r.lacher_charge === false || !etat.conversation) return 0;
+  const seuil = seuilCharge(), c = chargeMesuree(maintenant);
+  if (!(c.max != null && c.max > seuil)) return 0;
+  const ou = { file: 0, voix: 0, entendu: 0 };
+  // sa file : seule sa dernière pensée reste, toutes ses propositions (sa voix préparée pour les autres, lâchée)
+  const f = etat.riboFile || [];
+  if (f.length > 1) {
+    const pensee = (x) => `${x.tour}|${x.k != null ? x.k : x.recu}`, derniere = pensee(f[f.length - 1]);
+    const vieilles = f.filter(x => pensee(x) !== derniere);
+    if (vieilles.length) {
+      if (typeof blancsPourSautes === 'function') blancsPourSautes(vieilles);
+      if (typeof lacherVoix === 'function') lacherVoix(vieilles.map(x => x.texte));
+      etat.riboFile = f.filter(x => pensee(x) === derniere);
+      ou.file = new Set(vieilles.map(pensee)).size;
+    }
+  }
+  // ce qui attend déjà dans sa voix (confié, en file au téléphone ou dans son lecteur) : la même règle, sans attendre
+  if (typeof sauterAuDernier === 'function') ou.voix = sauterAuDernier(maintenant, true) || 0;
+  // ses pensées sur ce que joue le téléphone : la dernière reste ; ses réponses au live restent toutes (c'est une réponse)
+  const e = etat.entenduFile || [], pensees = e.filter(x => !x.reponse);
+  if (pensees.length > 1) {
+    const garde = pensees[pensees.length - 1];
+    etat.entenduFile = e.filter(x => x.reponse || x === garde);
+    ou.entendu = pensees.length - 1;
+  }
+  const lachees = ou.file + ou.voix + ou.entendu;
+  if (lachees && typeof journalVoix === 'function') journalVoix('lacher_charge', { lachees, ...ou, seuil, charge: c.max, ...c });
+  return lachees;
+}
+// la mesure de la page : ses tâches longues (PerformanceObserver), et la dérive de ses minuteurs (pour le diagnostic)
+try {
+  if (typeof PerformanceObserver === 'function' && (PerformanceObserver.supportedEntryTypes || []).includes('longtask')) {
+    new PerformanceObserver((liste) => {
+      const base = performance.timeOrigin || (Date.now() - performance.now());
+      for (const x of liste.getEntries()) chargePage.longues.push([Math.round(base + x.startTime + x.duration), Math.round(x.duration)]);
+      const vieux = Date.now() - 60000;
+      while (chargePage.longues.length && (chargePage.longues[0][0] < vieux || chargePage.longues.length > 400)) chargePage.longues.shift();
+    }).observe({ type: 'longtask', buffered: false });
+  }
+} catch (_) {}
+async function lireChargeServeur() {
+  if (chargePage.demande || !etat.conversation || Date.now() < chargePage.absentJusqua || typeof fetch !== 'function') return;
+  chargePage.demande = true;
+  try {
+    const r = await fetch('/api/corps/charge', { headers: { 'X-Jeton': jeton() }, cache: 'no-store' });
+    if (r.status === 404) chargePage.absentJusqua = Date.now() + 60000;    // un cockpit d'avant : il ne la donne pas encore
+    else if (r.ok) { chargePage.serveur = { ...(await r.json()), t: Date.now() }; chargePage.serveurA = Date.now(); }
+  } catch (_) {} finally { chargePage.demande = false; }
+}
+let derniereSonde = Date.now();
+setInterval(() => {
+  const now = Date.now();
+  chargePage.derives.push(Math.max(0, now - derniereSonde - 1000)); derniereSonde = now;
+  if (chargePage.derives.length > 60) chargePage.derives.shift();
+  try { lacherSousCharge(now); } catch (_) {}
+}, 1000);
+setInterval(() => { lireChargeServeur(); }, 5000);
+// ce qu'il faut voir après un live (11/11) : toutes les 30 s en conversation, la charge, la dérive de ses minuteurs, ses tâches longues, ce qui attend
+setInterval(() => {
+  if (!etat.conversation || typeof journalVoix !== 'function') return;
+  const now = Date.now(), d = chargePage.derives.slice(-30).sort((a, b) => a - b), q = (p) => (d.length ? d[Math.min(d.length - 1, Math.floor(d.length * p))] : null);
+  const l = chargePage.longues.filter(x => x[0] > now - 30000);
+  journalVoix('page_charge', { ...chargeMesuree(now), seuil: seuilCharge(), derive_p50: q(0.5), derive_p90: q(0.9), derive_max: d.length ? d[d.length - 1] : null,
+    longues: l.length, longues_ms: l.reduce((s, x) => s + x[1], 0), longue_max: l.length ? Math.max(...l.map(x => x[1])) : 0,
+    cachee: document.visibilityState === 'hidden', attente: fileDesParoles() });
+}, 30000);
 // ce que son ribosome a choisi, dit d'un seul souffle (un tour à la fois, dans l'ordre), quand sa voix est libre
 function direRibosome() {
   let f = etat.riboFile || [];

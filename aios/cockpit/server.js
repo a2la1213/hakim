@@ -8852,6 +8852,11 @@ function noterProcesseurs(appareil, p) {
   try { ecrireAtomique(PROCESSEURS_APPAREILS, j(tout)); } catch (_) {}
   return true;
 }
+// (11/11, Ahmed : « il ne doit pas stocker sa parole au-delà de 50 % des CPU et GPU ») la charge en % du Mac et du téléphone, pour la page
+// (lacherSousCharge) : mesurée quand une page la demande (charge.js), jamais en fond
+const Charge = require('./charge.js');
+const CHARGE = Charge.creer({ cpus: () => os.cpus(), lireProcesseurs: () => lireJson(PROCESSEURS_APPAREILS, {}),
+  ioreg: (fini) => execFile('/usr/sbin/ioreg', ['-r', '-d', '1', '-w', '0', '-c', 'IOAccelerator'], { timeout: 3000, maxBuffer: 1 << 20 }, (e, out) => fini(e ? '' : out)) });
 function corpsReglages() {
   const r = lireJson(CORPS_REGLAGES, {}) || {};
   const nb = (v, a, b, d, dec = 0) => (v != null && v !== '' && Number.isFinite(Number(v)) ? Math.max(a, Math.min(b, Math.round(Number(v) * 10 ** dec) / 10 ** dec)) : d);
@@ -8981,7 +8986,10 @@ function corpsReglages() {
     sollicite_voix: r.sollicite_voix !== false, sollicite_voix_ecart_min: nb(r.sollicite_voix_ecart_min, 0, 60, 3),
     // (11/11, Ahmed : « il peut chanter en même temps qu'une musique, s'il le veut ? ») « Il peut chanter avec la musique » (allumé) ; combien de fois
     // par morceau, et l'écart le plus court entre deux (public/chanter.js)
-    chanter_musique: r.chanter_musique !== false, chanter_par_morceau: nb(r.chanter_par_morceau, 1, 4, 1), chanter_ecart_s: nb(r.chanter_ecart_s, 20, 600, 60) };   // (05/11) un ribosome toujours prêt, sauf s'il dort ou si papa coupe   // (05/11) il règle lui-même son ribosome (ribosome_regler, ribosome_bilan)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
+    chanter_musique: r.chanter_musique !== false, chanter_par_morceau: nb(r.chanter_par_morceau, 1, 4, 1), chanter_ecart_s: nb(r.chanter_ecart_s, 20, 600, 60),
+    // (11/11, Ahmed, en live : « il ne doit pas stocker sa parole au-delà de 50 % des CPU et GPU ») au-delà du seuil (Mac ou téléphone, CPU, GPU ou
+    // marge thermique, et le fil de la page), la page lâche ses paroles prêtes qui attendent (lacherSousCharge) ; non : éteint
+    lacher_charge: r.lacher_charge !== false, lacher_charge_pct: nb(r.lacher_charge_pct, 0, 100, 50) };   // (05/11) un ribosome toujours prêt, sauf s'il dort ou si papa coupe   // (05/11) il règle lui-même son ribosome (ribosome_regler, ribosome_bilan)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
 }
 function corpsActif() { return corpsReglages().actif; }
 /* (30/10, 18:56, Ahmed via Hakim : « je veux qu'il tourne tout le temps, tant qu'il est réveillé, même si ça vide mon forfait ;
@@ -15687,6 +15695,7 @@ async function traiter(req, res) {
         toi: Instant.ligneSoi(TABLEAU.courant), resume: Instant.resume(TABLEAU), montre_correction_ms: MONTRE_CORRECTION,
         mesure: { battements: m.n, us_par_battement: m.n ? Math.round(m.us / m.n) : null, max_us: m.max_us, dernier_us: m.dernier_us || null, recompositions: m.recompositions } });
     }
+    if (p === '/api/corps/charge' && req.method === 'GET') return repondre(200, CHARGE.vue());   // (11/11) ses processeurs en %, pour lacherSousCharge
     if (p === '/api/corps/micro' && req.method === 'POST') {          // (30/10, 15:12) le micro de papa : ouvert, dictée, fermé
       const q = await lire();
       // (10/11) page par page (micro-pages.js) : la page du Mac rechargée ne ferme plus la Conversation du téléphone
@@ -15800,6 +15809,9 @@ async function traiter(req, res) {
       if (typeof q.chanter_musique === 'boolean') r.chanter_musique = q.chanter_musique;
       for (const [k, a, b] of [['chanter_par_morceau', 1, 4], ['chanter_ecart_s', 20, 600]])
         if (q[k] != null && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, Math.round(Number(q[k]))));
+      // (11/11) sa parole prête lâchée au-delà d'une charge (lacherSousCharge)
+      if (typeof q.lacher_charge === 'boolean') r.lacher_charge = q.lacher_charge;
+      if (q.lacher_charge_pct != null && Number.isFinite(Number(q.lacher_charge_pct))) r.lacher_charge_pct = Math.max(0, Math.min(100, Math.round(Number(q.lacher_charge_pct))));
       if (q.sollicite_voix_ecart_min != null && Number.isFinite(Number(q.sollicite_voix_ecart_min))) r.sollicite_voix_ecart_min = Math.max(0, Math.min(60, Math.round(Number(q.sollicite_voix_ecart_min))));
       if (typeof q.profils_auto === 'boolean') r.profils_auto = q.profils_auto;   // (05/11) ses réglages suivent son mode
       if (typeof q.ribosome_intelligent === 'boolean') r.ribosome_intelligent = q.ribosome_intelligent;   // (05/11) son ribosome intelligent
