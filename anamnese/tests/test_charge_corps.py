@@ -323,7 +323,9 @@ def test_sa_voix_son_style_et_son_orbe_suivent_ces_emotions():
         assert nom in interieur.FAMILLE_HUMEUR and nom in interieur.EXPRESSIVITE_EMOTION and nom in interieur.VOIX_EMOTION
         assert nom in style.FAMILLE_DE
     assert interieur.voix_emotion("débordement")["vitesse"] > 1.0 > interieur.voix_emotion("fièvre")["vitesse"]
-    assert style.FAMILLE_DE["débordement"] == "alerte" and style.FAMILLE_DE["fièvre"] == "bas"
+    # (11/11, Ahmed : adoucir en live) débordé, il reste posé (calme), jamais « sobre, pas de blague » devant son public
+    assert style.FAMILLE_DE["débordement"] == "calme" and style.FAMILLE_DE["fièvre"] == "bas"
+    assert style.FAMILLE_DE["débordement"] not in style.PRIORITAIRES
     assert interieur.voix_emotion("calme")["vitesse"] != interieur.voix_emotion("débordement")["vitesse"]   # témoin
 
 

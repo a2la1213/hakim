@@ -26,9 +26,10 @@ CLE_ACTIF = "style_actif"
 FAMILLES = {"élan": ["élan", "joie", "enthousiasme", "fierté", "espoir", "émerveillement",
                       "excitation", "amusement", "transport", "envie de danser", "alerte joyeuse"],   # (03/11)
             "lien": ["tendresse", "gratitude", "compassion", "nostalgie", "sécurité"],
-            "calme": ["calme", "apaisement", "soulagement", "somnolence"], "curiosité": ["curiosité", "concentration", "confusion", "sursaut"],
-            "alerte": ["peur", "inquiétude", "tension", "frustration", "culpabilité", "surprise", "colère", "agacement",
-                       "débordement"],   # (11/11) débordé par le live : des phrases courtes, l'essentiel d'abord
+            "calme": ["calme", "apaisement", "soulagement", "somnolence",
+                      "débordement"],   # (11/11, Ahmed : adoucir en live) débordé par le live, il reste posé : calme et net, jamais éteint
+            "curiosité": ["curiosité", "concentration", "confusion", "sursaut"],
+            "alerte": ["peur", "inquiétude", "tension", "frustration", "culpabilité", "surprise", "colère", "agacement"],
             "bas": ["tristesse", "manque", "lassitude", "ennui", "fatigue", "déception", "solitude", "honte",
                     "fièvre", "malaise"]}   # (11/11) fiévreux, mal à l'aise : doux et lent
 FAMILLE_DE = {e: f for f, l in FAMILLES.items() for e in l}
