@@ -34,7 +34,7 @@ function bac(o = {}) {
     SA_VOIX_RECONNUE: () => true, oreilleDemander: async () => ({ occupee: true }), saVoixEntendue: (r) => r,
     oreilleAzure: async (f, langue, opts = {}) => {
       appels.azure.push({ f, paroles: !!opts.paroles });
-      await attendre(20);
+      await attendre(o.lent || 20);                                  // (11/11) o.lent : le temps qu'Azure met à rendre
       if (!opts.paroles) return { texte: 'Wesh fiston', langue: 'fr-FR', ms: 20 };
       if (Array.isArray(opts.statuts) && o.statuts) opts.statuts.push(...o.statuts);
       return o.azure === undefined ? { texte: 'Dans le noir je tiens debout.', langue: 'fr-FR', sur: 0.7, ms: 20, mots: [['Dans', 0.2, 0.4], ['le', 0.4, 0.5], ['noir', 0.5, 0.8], ['je', 0.8, 0.9], ['tiens', 0.9, 1.2], ['debout.', 1.2, 1.6]], langues: [] } : o.azure;
@@ -295,6 +295,53 @@ test('parolesRecevoir : le bloc à son instant (l\'horloge du téléphone ramen�
   ctx.r({ texte: 'Une semaine à tenir.' }, { t0: String(M + 12000), maintenant: String(M + 21000), cle: 'b' }, M + 21000);
   assert.strictEqual(ctx.PAROLES.morceau.n, 2);
   assert.strictEqual(ctx.r({ texte: '' }, {}).length, 0);
+});
+
+/* (11/11, l'agent du chant : le décalage d'horloge se prenait APRÈS la transcription : chaque ligne en retard du temps d'Azure) l'heure d'une
+   ligne : l'heure du son à l'appli (t0 du bloc + l'offset du mot), ramenée au Mac par le décalage mesuré à l'arrivée du bloc */
+test('(11/11) parolesRecevoir : chaque ligne à l\'heure du son (t0 + son mot), le décalage pris à l\'arrivée du bloc, pas après les 4,4 s d\'Azure', () => {
+  const P = require('./paroles.js');
+  const ctx = { Date, Math, Number, String, Array, Paroles: P, PAROLES: P.creer(), TP: { musiqueRecente: () => true }, SON_TRAMES: { telephone: [] } };
+  vm.createContext(ctx);
+  vm.runInContext(`${tranche(SRC, 'function parolesRecevoir(')}\nthis.r = parolesRecevoir;`, ctx);
+  const A = 1_800_000_000_000, horloge = 5000, transport = 40;     // l'appli 5 s en retard sur le Mac ; sa demande, 40 ms en route
+  const envoi = A + 8000, recu = envoi + horloge + transport, azure = 4400;
+  const mots = [['Dans', 0.5, 0.8], ['le', 0.8, 0.9], ['noir', 0.9, 1.4], ['je', 1.5, 1.6], ['tiens', 1.6, 2.0], ['debout.', 2.0, 2.6],
+    ['Une', 4.2, 4.4], ['semaine', 4.4, 4.9], ['à', 4.9, 5.0], ['tenir.', 5.0, 5.6]];
+  const l = ctx.r({ texte: 'Dans le noir je tiens debout. Une semaine à tenir.', azure: true, mots },
+    { t0: String(A), ms: '8000', maintenant: String(envoi), recu, cle: 'k1' }, recu + azure);   // rendu par Azure 4,4 s après son arrivée
+  assert.strictEqual(l.length, 2);
+  assert.deepStrictEqual(l.map(x => x.tb), [A + 500, A + 4200], 'l\'heure de l\'appli : t0 + son premier mot');
+  assert.deepStrictEqual(l.map(x => x.t), [A + 500 + horloge + transport, A + 4200 + horloge + transport], 'l\'heure du Mac : sans le temps d\'Azure');
+  assert.strictEqual(ctx.PAROLES.morceau.debut, A + horloge + transport);
+  // le bloc suivant, rendu en 0,3 s : ses lignes gardent l'écart réel du son (8 s plus loin), pas celui des transcriptions
+  const l2 = ctx.r({ texte: 'Je reviens.', azure: true, mots: [['Je', 0.5, 0.7], ['reviens.', 0.7, 1.2]] },
+    { t0: String(A + 8000), ms: '8000', maintenant: String(envoi + 8000), recu: recu + 8000, cle: 'k2' }, recu + 8000 + 300);
+  assert.strictEqual(l2[0].t - l[0].t, 8000);
+  // sans temps.recu (un appel d'avant) : le décalage à l'instant de l'appel, comme avant
+  const P2 = P.creer(); ctx.PAROLES = P2;
+  ctx.r({ texte: 'Encore une fois.', azure: true }, { t0: String(A), maintenant: String(envoi), cle: 'k3' }, envoi + horloge);
+  assert.strictEqual(P2.morceau.lignes[0].t, A + horloge);
+});
+
+test('(11/11) le bloc du téléphone, de la route au morceau : Azure lent (300 ms) ; ses lignes et ses mots au fil à l\'heure du son, pas à celle de la transcription', async () => {
+  const b = bac({ musique: false, lent: 300 }), P = require('./paroles.js'), mots = [];
+  Object.assign(b.ctx, { Paroles: P, PAROLES: P.creer(), SON_TRAMES: { telephone: [] }, fluxMots: (src, cle, texte, t0) => mots.push({ src, t0 }) });
+  vm.runInContext(`${tranche(SRC, 'function parolesRecevoir(')}\nthis.parolesRecevoir = parolesRecevoir;`, b.ctx);
+  const horloge = -7000;                                            // l'appli 7 s en avance sur le Mac
+  const recu = Date.now(), envoi = recu - horloge - 25, t0 = envoi - 8000;
+  await new Promise((ok) => {
+    const res = Object.assign(new EventEmitter(), { writableEnded: false, writableFinished: false, destroyed: false, writeHead() {}, end() { this.writableEnded = true; ok(); } });
+    b.ctx.route({ headers: { 'content-type': 'audio/wav' } }, res, '', '', { source: 'telephone', t0: String(t0), ms: '8000', maintenant: String(envoi), cle: 'b9', recu });
+  });
+  assert.ok(Date.now() - recu >= 290, 'Azure a bien pris son temps');
+  const l = b.ctx.PAROLES.morceau.lignes[0];
+  assert.strictEqual(l.tb, t0 + 200, 'l\'heure de l\'appli : t0 + son premier mot (0,2 s)');
+  assert.strictEqual(l.t, t0 + 200 + (recu - envoi), 'l\'heure du Mac : le décalage à son arrivée');
+  assert.deepStrictEqual(mots, [{ src: 'telephone', t0: t0 + (recu - envoi) }], 'ses mots au fil : le même décalage');
+  // la route du serveur date l'arrivée de chaque bloc
+  const route = SRC.slice(SRC.indexOf("if (p === '/api/voix/transcrire' && req.method === 'POST')"), SRC.indexOf("if (p === '/api/chat' && req.method === 'POST')"));
+  assert.match(route, /return routeTranscrire\([\s\S]*maintenant: u\.get\('maintenant'\)[\s\S]*recu: Date\.now\(\) \}/);
 });
 
 test('la mesure (mesure/paroles-telephone.py) lit les journaux sans rien écrire : blocs confirmés, sautés, vides, voix séparée, pensées', async (t) => {

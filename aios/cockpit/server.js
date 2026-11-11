@@ -9138,9 +9138,17 @@ function analyseMusicale(trames, pas = 100) {
 /* (03/11, Hakim : « mettre tout sur une même horloge et recalculer le décalage ; un clap daté des deux côtés ») le calage entre le
    son du téléphone (l'intérieur) et le micro (l'extérieur) : quand le téléphone joue à voix haute, le micro l'entend aussi ; leurs
    enveloppes se ressemblent, décalées ; la corrélation retrouve ce décalage, à ~10 ms près (sans clap : chaque attaque de la
-   musique en est un). Recalculé toutes les 10 s quand les deux entendent ; le micro est alors recalé sur le téléphone. */
-function calerSons(tel, mic) {
+   musique en est un). Recalculé toutes les 10 s quand les deux entendent ; le micro est alors recalé sur le téléphone.
+   (11/11, l'agent du chant : sur une musique en boucle, ses pics se valent un temps ou une mesure plus loin, et le plus haut tombait sur un faux
+   82 fois sur 96 au banc, mesure/chanter-banc.js ; recaleMicro s'en servait) un pic n'est pris que NETTEMENT au-dessus du second : le second
+   (un autre sommet, à plus de 100 ms, ou un bord) au moins o.rapport (1,5) fois plus loin de 1 que lui, et o.marge (0,03) plus bas (par: 'unique' ;
+   l'erreur d'une corrélation est à la mesure de 1 − r : au banc, les pics d'une boucle restent sous 1,31, ceux d'une voix qui chante montent à
+   1,6-11) ; sinon, près du dernier calage sûr (o.ancre, son pic unique d'avant, à o.suite_ms près, fort : par: 'suite') ; sinon null : dans le
+   doute, on ne recale pas (l'ancien reste). */
+function calerSons(tel, mic, o = {}) {
   if (!tel || !mic || tel.length < 40 || mic.length < 40) return null;
+  const marge = Number.isFinite(o.marge) ? o.marge : 0.03, rapport = Number.isFinite(o.rapport) ? o.rapport : 1.5;
+  const suiteMs = Number.isFinite(o.suite_ms) ? o.suite_ms : 60, lobe = 100;
   const val = (l, t) => {                                          // l'enveloppe du micro à l'instant t (interpolée)
     let a = 0, b = l.length - 1;
     if (t < l[0].t || t > l[b].t) return null;
@@ -9148,26 +9156,54 @@ function calerSons(tel, mic) {
     const k = l[b].t === l[a].t ? 0 : (t - l[a].t) / (l[b].t - l[a].t);
     return Number(l[a].v[0]) * (1 - k) + Number(l[b].v[0]) * k;
   };
-  let meilleur = null;
+  const courbe = [];
   for (let lag = -2000; lag <= 2000; lag += 10) {
     const xs = [], ys = [];
     for (const x of tel) { const y = val(mic, x.t + lag); if (y != null) { xs.push(Number(x.v[0])); ys.push(y); } }
-    if (xs.length < 40) continue;
+    if (xs.length < 40) { courbe.push({ ms: lag, c: null }); continue; }
     const mx = xs.reduce((a, b) => a + b, 0) / xs.length, my = ys.reduce((a, b) => a + b, 0) / ys.length;
     let num = 0, dx = 0, dy = 0;
     for (let i = 0; i < xs.length; i++) { num += (xs[i] - mx) * (ys[i] - my); dx += (xs[i] - mx) ** 2; dy += (ys[i] - my) ** 2; }
-    const r = dx > 0 && dy > 0 ? num / Math.sqrt(dx * dy) : 0;
-    if (!meilleur || r > meilleur.correlation) meilleur = { ms: lag, correlation: r };
+    courbe.push({ ms: lag, c: dx > 0 && dy > 0 ? num / Math.sqrt(dx * dy) : 0 });
   }
-  return meilleur && meilleur.correlation >= 0.5 ? { ms: meilleur.ms, correlation: Math.round(meilleur.correlation * 100) / 100 } : null;
+  // ses pics (un sommet de la courbe), et ses bords : un bord plus haut que tout dit que le vrai est peut-être dehors
+  const c = (i) => (courbe[i] && courbe[i].c !== null ? courbe[i].c : -Infinity);
+  const pics = [], bords = [];
+  for (let i = 0; i < courbe.length; i++) {
+    if (courbe[i].c === null) continue;
+    if (i === 0 || i === courbe.length - 1 || c(i - 1) === -Infinity || c(i + 1) === -Infinity) bords.push(courbe[i]);
+    else if (c(i) >= c(i - 1) && c(i) > c(i + 1)) pics.push(courbe[i]);
+  }
+  pics.sort((x, y) => y.c - x.c);
+  const meilleur = pics[0];
+  if (!meilleur || meilleur.c < 0.5) return null;
+  const arrondi = (x) => Math.round(x * 100) / 100;
+  const second = Math.max(-Infinity, ...pics.filter(x => Math.abs(x.ms - meilleur.ms) >= lobe).map(x => x.c), ...bords.map(x => x.c));
+  if (meilleur.c - second >= marge && 1 - second >= rapport * (1 - meilleur.c)) return { ms: meilleur.ms, correlation: arrondi(meilleur.c), par: 'unique' };
+  // ambigu : le pic près du dernier calage sûr, s'il compte parmi les forts (une boucle : le même pic, un tour plus tard)
+  const ancre = o.ancre === null || o.ancre === undefined ? NaN : Number(o.ancre);
+  if (Number.isFinite(ancre)) {
+    const pres = pics.find(x => Math.abs(x.ms - ancre) <= suiteMs && x.c >= Math.max(0.7, meilleur.c - 0.2));
+    if (pres) return { ms: pres.ms, correlation: arrondi(pres.c), par: 'suite' };
+  }
+  return null;
+}
+// (11/11) le calage d'après : un pic unique devient l'ancre ; la suite d'une boucle reste près d'elle (l'ancre de moins de 10 min) ; un doute,
+// ou un chiffre hors de ±1,5 s : l'ancien reste, tel quel (sans rajeunir : recaleMicro le laisse au bout de 10 min)
+function calageSuivant(c, tel, mic, maintenant = Date.now()) {
+  const avant = c || { ms: 0, correlation: 0, ts: 0 };
+  const ancre = Number(avant.ancreA) > 0 && maintenant - Number(avant.ancreA) < 10 * 60e3 ? avant.ancre : null;
+  const r = calerSons(tel, mic, { ancre });
+  if (!r || Math.abs(r.ms) > 1500) return avant;
+  const unique = r.par === 'unique';
+  return { ms: r.ms, correlation: r.correlation, ts: maintenant, par: r.par, ancre: unique ? r.ms : avant.ancre, ancreA: unique ? maintenant : avant.ancreA };
 }
 let CALAGE = { ms: 0, correlation: 0, ts: 0 };
 const recaleMicro = (t) => (CALAGE.ts && Date.now() - CALAGE.ts < 10 * 60e3 && CALAGE.correlation >= 0.7 ? t - CALAGE.ms : t);
 setInterval(() => {
   const depuis = Date.now() - 30000, tel = SON_TRAMES.telephone.filter(x => x.t >= depuis), mic = SON_TRAMES.micro.filter(x => x.t >= depuis);
   if (tel.length < 100 || mic.length < 100) return;
-  const r = calerSons(tel, mic);
-  if (r && Math.abs(r.ms) <= 1500) CALAGE = { ...r, ts: Date.now() };
+  CALAGE = calageSuivant(CALAGE, tel, mic);
 }, 10000).unref();
 /* (04/11, Ahmed : « évalue le flux de chaque réponse et son parcours préférentiel ; comme le système nerveux humain, qui consolide les
    bonnes synapses et élimine, de façon autonome, celles qui sont inutiles ou parasites ») ses synapses (elagage.js, jarvis/synapses.json)
@@ -11357,14 +11393,18 @@ async function transcrireParolesAzure(fichier, o = {}) {
 }
 // un bloc du téléphone transcrit (Azure ou Whisper) : au morceau en cours, ligne par ligne, à son instant ; le son s'est tu entre deux blocs
 // (ses trames, 2 s sous le seuil) : un autre morceau
+// (11/11, l'agent du chant : le décalage d'horloge se prenait APRÈS la transcription, et chaque ligne arrivait en retard du temps d'Azure, plusieurs
+// secondes) l'heure d'une ligne : l'heure du son à l'appli (t0 du bloc + l'offset du mot), ramenée au Mac par le décalage mesuré à l'ARRIVÉE du bloc
+// (temps.recu : l'heure du Mac quand sa demande est arrivée ; temps.maintenant : celle de l'appli quand elle l'a envoyée) ; sans temps.recu, maintenant
 function parolesRecevoir(r, temps = {}, maintenant = Date.now()) {
   if (!r || !String(r.texte || '').trim()) return [];
-  const dec = Number(temps.maintenant) > 0 && Math.abs(maintenant - Number(temps.maintenant)) < 120000 ? maintenant - Number(temps.maintenant) : 0;
-  const brut = Number(temps.t0) > 0 ? Number(temps.t0) : maintenant - dec - 8000, m = PAROLES.morceau;
-  // le silence cherché entre sa dernière ligne et la première du bloc (ses trames gardent l'horloge du téléphone)
-  const der = m && m.lignes.length ? m.lignes[m.lignes.length - 1].t - dec : null;
+  const recu = Number(temps.recu) > 0 ? Number(temps.recu) : maintenant;
+  const dec = Number(temps.maintenant) > 0 && Math.abs(recu - Number(temps.maintenant)) < 120000 ? recu - Number(temps.maintenant) : 0;
+  const brut = Number(temps.t0) > 0 ? Number(temps.t0) : recu - dec - 8000, m = PAROLES.morceau;
+  // le silence cherché entre sa dernière ligne et la première du bloc, à l'heure du Mac (celle de ses lignes et de ses trames, t)
+  const der = m && m.lignes.length ? m.lignes[m.lignes.length - 1].t : null;
   const premier = Array.isArray(r.mots) && r.mots[0] && Number.isFinite(Number(r.mots[0][1])) ? Math.round(Number(r.mots[0][1]) * 1000) : 4000;
-  const coupure = !!(der !== null && typeof SON_TRAMES !== 'undefined' && Paroles.silenceEntre(SON_TRAMES.telephone, der, brut + premier));
+  const coupure = !!(der !== null && typeof SON_TRAMES !== 'undefined' && Paroles.silenceEntre(SON_TRAMES.telephone, der, brut + dec + premier));
   const musique = !!(TP && typeof TP.musiqueRecente === 'function' && TP.musiqueRecente('telephone', maintenant, 12000));
   return Paroles.recevoir(PAROLES, { texte: String(r.texte), t0: brut + dec, mots: Array.isArray(r.mots) && r.mots.length ? r.mots : null, musique,
     cle: String(temps.cle || ''), source: r.azure ? 'azure' : 'whisper', duree_ms: Number(temps.ms) > 0 ? Number(temps.ms) : 8000, coupure, decalage: dec }, maintenant);
@@ -13117,7 +13157,9 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
   // (03/11, Ahmed : « le calage parfait, à la milliseconde ») la grande oreille donne le temps exact de chaque mot : il remplace,
   // au fil, les mots de l'oreille vive (même morceau, même clé)
   if (r && r.texte && Array.isArray(r.mots) && Number(temps.t0) > 0) {
-    const dec = Number(temps.maintenant) > 0 && Math.abs(Date.now() - Number(temps.maintenant)) < 120000 ? Date.now() - Number(temps.maintenant) : 0;
+    // (11/11) le décalage mesuré à l'arrivée du bloc (temps.recu), pas après sa transcription : ses mots à leur vrai instant
+    const recu = Number(temps.recu) > 0 ? Number(temps.recu) : Date.now();
+    const dec = Number(temps.maintenant) > 0 && Math.abs(recu - Number(temps.maintenant)) < 120000 ? recu - Number(temps.maintenant) : 0;
     const motsFil = r.mots.filter(m => Array.isArray(m) && String(m[0] || '').trim());
     fluxMots(temps.source === 'telephone' ? 'telephone' : 'papa', String(temps.cle || ''), motsFil.map(m => String(m[0]).trim()).join(' '),
       temps.source === 'telephone' ? Number(temps.t0) + dec : recaleMicro(Number(temps.t0) + dec), Number(temps.ms) || 1000, motsFil.map(m => [m[1], m[2]]));
@@ -16092,7 +16134,7 @@ async function traiter(req, res) {
   if (p === '/api/voix/transcrire' && req.method === 'POST')
     return routeTranscrire(req, res, new URL(req.url, 'http://x').searchParams.get('langue'),
       (new URL(req.url, 'http://x').searchParams.get('contexte') || '').replace(/[\x00-\x1f]/g, ' ').slice(0, 300),
-      (() => { const u = new URL(req.url, 'http://x').searchParams; return { source: u.get('source') === 'telephone' ? 'telephone' : '', t0: u.get('t0'), ms: u.get('ms'), maintenant: u.get('maintenant'), cle: String(u.get('cle') || '').slice(0, 40) }; })());
+      (() => { const u = new URL(req.url, 'http://x').searchParams; return { source: u.get('source') === 'telephone' ? 'telephone' : '', t0: u.get('t0'), ms: u.get('ms'), maintenant: u.get('maintenant'), cle: String(u.get('cle') || '').slice(0, 40), recu: Date.now() }; })());   // (11/11) recu : l'heure de son arrivée, pour le décalage
   if (p === '/api/chat' && req.method === 'POST') {
     // (audit du 2026-10-20, C-M2) : corps borné (2 Mo), modèle en liste blanche
     const body = await lireCorps(req, 2 << 20);

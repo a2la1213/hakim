@@ -119,6 +119,47 @@ test('(03/11) le calage entre le son du téléphone et le micro : le décalage r
   const r = ctx.f(tel, mic);
   assert.ok(r && Math.abs(r.ms - 330) <= 40 && r.correlation > 0.8, JSON.stringify(r));
   assert.equal(ctx.f(tel.slice(0, 20), mic.slice(0, 20)), null, 'trop peu de son : pas de chiffre');
+  assert.equal(r.par, 'unique', 'rien ne s\'y répète : un seul pic, net');
+});
+
+/* (11/11, l'agent du chant : calerSons tombait sur un faux pic 82 fois sur 96 au banc, sur une musique en boucle ; recaleMicro s'en sert)
+   une boucle (le même motif de 700 ms, sans rien d'autre) : un pic par tour, tous pareils ; le micro l'entend 330 ms plus tard */
+function calage() {
+  const tr = (debut) => { const i = src.indexOf(debut); return src.slice(i, src.indexOf('\n}\n', i) + 3); };
+  const ctx = { Math, Number, Array }; vm.createContext(ctx);
+  vm.runInContext(`${tr('function calerSons(')}\n${tr('function calageSuivant(')}\nthis.caler = calerSons; this.suivant = calageSuivant;`, ctx);
+  const T = 1_800_000_000_000, rng = (k) => Math.abs(Math.sin(k * 12.9898) * 43758.5453) % 1;
+  const motif = [0.6, 0.1, 0.3, 0.05, 0.4, 0.1, 0.05];
+  const boucle = (retard) => ({ tel: Array.from({ length: 300 }, (_, k) => ({ t: T + k * 100, v: [motif[k % 7], 0, 0, 0] })),
+    mic: Array.from({ length: 300 }, (_, k) => ({ t: T + k * 100 + retard, v: [0.6 * motif[k % 7] + 0.01 * rng(k + 3), 0, 0, 0] })) });
+  const env = Array.from({ length: 300 }, (_, k) => rng(k) > 0.8 ? 0.5 : 0.05 + 0.02 * rng(k + 7));   // des attaques au hasard
+  const hasard = { tel: env.map((v, k) => ({ t: T + k * 100, v: [v, 0, 0, 0] })), mic: env.map((v, k) => ({ t: T + k * 100 + 330, v: [v * 0.6, 0, 0, 0] })) };
+  return { ...ctx, T, boucle, hasard };
+}
+
+test('(11/11) une musique en boucle : ses pics se valent un tour plus loin ; dans le doute, calerSons ne recale pas (null), plutôt que de recaler faux', () => {
+  const c = calage(), b = c.boucle(330);
+  assert.equal(c.caler(b.tel, b.mic), null, 'aucun pic nettement au-dessus du second');
+  // près du dernier calage sûr (son ancre), le même pic, un tour plus tard : sa suite
+  const s = c.caler(b.tel, b.mic, { ancre: 320 });
+  assert.ok(s && Math.abs(s.ms - 330) <= 10 && s.par === 'suite' && s.correlation >= 0.7, JSON.stringify(s));
+  // l'ancre loin de tout pic (le chemin a changé) : rien
+  assert.equal(c.caler(b.tel, b.mic, { ancre: 100 }), null);
+  // un pic net (rien ne s'y répète) passe, même loin de l'ancre
+  const u = c.caler(c.hasard.tel, c.hasard.mic, { ancre: 1000 });
+  assert.ok(u && Math.abs(u.ms - 330) <= 10 && u.par === 'unique', JSON.stringify(u));
+});
+
+test('(11/11) le calage au fil (toutes les 10 s) : un pic net devient l\'ancre ; la boucle reste près d\'elle ; un doute garde l\'ancien, sans le rajeunir', () => {
+  const c = calage(), T = c.T, vide = { ms: 0, correlation: 0, ts: 0 }, b = c.boucle(330);
+  assert.strictEqual(c.suivant(vide, b.tel, b.mic, T), vide, 'une boucle sans ancre : rien de recalé');
+  const c1 = c.suivant(vide, c.hasard.tel, c.hasard.mic, T);
+  assert.ok(Math.abs(c1.ms - 330) <= 10 && c1.par === 'unique' && c1.ts === T && c1.ancre === c1.ms && c1.ancreA === T, JSON.stringify(c1));
+  const c2 = c.suivant(c1, b.tel, b.mic, T + 10000);
+  assert.ok(Math.abs(c2.ms - 330) <= 10 && c2.par === 'suite' && c2.ts === T + 10000 && c2.ancre === c1.ancre && c2.ancreA === T, JSON.stringify(c2));
+  assert.strictEqual(c.suivant(c2, b.tel, b.mic, T + 11 * 60e3), c2, 'son ancre a plus de 10 min : l\'ancien reste');
+  const ailleurs = c.boucle(560);                                  // le chemin a changé pendant la boucle : aucun pic près de l'ancre
+  assert.strictEqual(c.suivant(c2, ailleurs.tel, ailleurs.mic, T + 20000), c2);
 });
 
 test('(03/11) un mot corrigé ou recalé par la grande oreille ne compte pas deux fois dans le délai', () => {
