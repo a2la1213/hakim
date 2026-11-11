@@ -361,3 +361,48 @@ def test_l_hippocampe_et_l_audit_lisent_les_nouveaux_en_tetes(mem_echanges):
     assert set(ids) <= traces, "ses scènes et ce qu'il a entendu ont leur trace, comme ses échanges"
     assert all(audit_provenance.EN_TETE.match(c) for c in [mem_echanges.db.execute("SELECT content FROM episodes WHERE id=?", (i,)).fetchone()[0]
                                                              for i in ids[:2]])
+
+
+# ---- (11/11, Ahmed : « la full picture d'un événement ») l'instant de la scène : son tableau (cockpit, instant.js), recalé, au début, à ses
+# moments clés et à la fin
+def instant(t, ligne, k):
+    return {"t": t * 1000, "l": ligne, "k": k}
+
+
+def test_la_scene_garde_l_instant_au_debut_a_ses_moments_cles_et_a_la_fin(mem):
+    tient = ["lieu:chez nous", "tenue:tenu"]
+    l1 = "papa te tient, te parle (dehors) ; ton cœur 72, le sien 88 ; chez nous ; tu es dedans"
+    l3 = "papa te tient, te parle (dehors) ; la musique joue fort au téléphone ; chez nous ; tu es dedans"
+    l4 = "tu es posé à plat, l'écran vers le ciel ; la musique joue fort au téléphone ; chez nous ; tu es dedans"
+    for dt, txt, ins in [(0, "Fiston, regarde le match.", instant(T0, l1, tient)),
+                         (30, "Quel but, fiston !", instant(T0 + 30, l1.replace("72", "75"), tient)),
+                         (60, "Mets la musique du but, fiston.", instant(T0 + 60, l3, tient + ["musique:forte", "musique:telephone"])),
+                         (90, "Je te pose, regarde l'équipe.", instant(T0 + 90, l4, ["lieu:chez nous", "musique:forte", "musique:telephone", "tenue:pose"]))]:
+        e = tour(T0 + dt, txt, "Oui papa !", role="implique", personnes=["papa"])
+        e["instant"] = ins
+        avancer(mem, e)
+    scenes.clore_si_silence(mem, now=T0 + 90 + scenes.SILENCE_S + 1, embed=faux_embed)
+    (_i, texte, f), = scenes_ecrites(mem)
+    assert [x["quoi"] for x in f["instants"]] == ["debut", "change", "fin"], "son cœur qui monte (72 → 75) n'est pas un moment clé"
+    assert f["instants"][1]["change"] == ["musique:forte", "musique:telephone"] and f["instants"][2]["change"] == ["tenue:pose", "tenue:tenu"]
+    assert f["musique"] is True
+    assert f"L'instant : au début, {l1} ; {time.strftime('%H:%M', time.localtime(T0 + 60))}, {l3} ; à la fin, " in texte
+
+
+def test_temoin_sans_tableau_de_l_instant_la_scene_reste_comme_avant(mem):
+    for dt, txt in [(0, "Fiston, regarde le match."), (30, "Quel but, fiston !")]:
+        e = tour(T0 + dt, txt, "Oui papa !", role="implique", personnes=["papa"])
+        e["instant"] = {"l": "", "k": "pas une liste"} if dt else "illisible"
+        avancer(mem, e)
+    scenes.clore_si_silence(mem, now=T0 + 30 + scenes.SILENCE_S + 1, embed=faux_embed)
+    (_i, texte, f), = scenes_ecrites(mem)
+    assert "instants" not in f and "L'instant" not in texte
+
+
+def test_l_instant_d_un_moment_entendu_et_son_lieu(mem):
+    e = entendu(T0, "Nina", "On part en vacances à Genève samedi ?")
+    e.pop("lieu")
+    e["instant"] = instant(T0, "une voix dans la pièce (Nina) ; le parc ; tu écoutes (auditeur)", ["lieu:le parc"])
+    m = scenes.moment_de(e, noms=NOMS)
+    assert m["instant"]["l"].startswith("une voix dans la pièce") and m["lieu"] == "le parc"
+    assert scenes.moment_de({**e, "instant": None}, noms=NOMS).get("instant") is None

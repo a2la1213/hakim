@@ -613,7 +613,9 @@ def fil_delais() -> str:
         d = json.loads((Path.home() / "AIOS" / "jarvis" / "delais-fil.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return "Pas encore de mesure : le cockpit l'écrit toutes les 30 s, dès que des flux arrivent."
-    noms = {"papa": "les mots de papa", "telephone": "les mots du téléphone", "corps": "tes capteurs", "ressenti": "ton ressenti",
+    # (11/11) ses capteurs chaque seconde (son tableau de l'instant) et la montre de papa, recalée sur son horloge
+    noms = {"papa": "les mots de papa", "telephone": "les mots du téléphone", "corps": "tes gestes (pris en main, posé…)", "ressenti": "ton ressenti",
+            "capteurs": "tes capteurs, chaque seconde (accéléromètre, lumière, champ)", "montre_coeur": "le cœur de papa (sa montre, son horloge recalée)",
             "instru_telephone": "les sons du téléphone", "instru_micro": "les sons du micro", "voix_telephone": "la voix du téléphone",
             "voix_micro": "la voix au micro", "son": "tes familles de sons", "reaction": "les réactions de papa",
             "sortie_texte_pensee": "ta pensée écrite, du Mac à l'écran de la page", "sortie_texte_message": "ton message, du Mac à l'écran de la page",

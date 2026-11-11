@@ -20,12 +20,16 @@ function recouvrement(a, b) {
   return n / ma.size;
 }
 // (qui, raison) ; dedansRecent : ses paroles « dedans » proches (6 s)
-function attribuer(s, dedansRecent) {
+// (11/11, ~00:45, Ahmed : « éviter l'anosognosie ») interneRecent : sa propre voix revenue (15 s) ; sesMots : ce qu'il vient de dire (son tableau de
+// l'instant : sa voix qui a sonné) ; le micro qui les réentend, c'est lui, jamais papa
+function attribuer(s, dedansRecent, interneRecent = [], sesMots = '') {
   if (s.canal === 'dedans') return ['telephone', "vient de l'intérieur du téléphone (média), jamais papa"];
   if (s.canal === 'interne') return ['interne', 'sa propre voix revenue, jamais papa'];
   if (s.canal !== 'dehors' || s.genre !== 'parole') return [s.canal, 'pas une parole'];
   const ref = dedansRecent.filter(d => Math.abs(d.t - s.t) <= FENETRE_ECHO_MS).map(d => d.texte).join(' ');
   if (ref && recouvrement(s.texte, ref) >= SEUIL_ECHO) return ['echo', 'le micro reprend ce que joue le téléphone'];
+  const soi = `${interneRecent.filter(d => Math.abs(d.t - s.t) <= 15_000).map(d => d.texte).join(' ')} ${sesMots || ''}`.trim();
+  if (soi && recouvrement(s.texte, soi) >= SEUIL_ECHO) return ['interne', 'sa propre voix revenue au micro : c’est lui, jamais papa'];
   if (s.voix === 'papa' || (Number.isFinite(s.scoreVoix) && s.scoreVoix >= 0.7)) return ['papa', 'voix reconnue au micro'];
   return ['tiers', 'parole du micro sans voix de papa reconnue'];
 }
@@ -33,12 +37,13 @@ function alerte(textes) {
   const t = [...textes].join(' ').toLowerCase();
   return MOTS_ALERTE.find(m => t.includes(m)) || '';
 }
-function decider(stimuli, { buts = [], papaAEcrit = false, papaParleAHakim = false } = {}) {
+function decider(stimuli, { buts = [], papaAEcrit = false, papaParleAHakim = false, sesMots = '' } = {}) {
   const dedans = stimuli.filter(s => s.canal === 'dedans' && s.genre === 'parole');
+  const interne = stimuli.filter(s => s.canal === 'interne' && s.genre === 'parole');
   const parts = {}, inhibes = [];
   for (const s of stimuli) {
     if (s.genre !== 'parole') continue;
-    const [qui] = attribuer(s, dedans);
+    const [qui] = attribuer(s, dedans, interne, sesMots);
     (parts[qui] = parts[qui] || []).push(s);
     if (qui === 'telephone' || qui === 'echo') inhibes.push(`${qui}: « ${String(s.texte).slice(0, 40)} »`);
   }
@@ -67,7 +72,54 @@ function stimulisDuFlux(flux, maintenant, fenetreMs = 30_000) {
   });
 }
 const NOMS = { papa: 'papa', telephone: 'le téléphone', tiers: 'une voix de la pièce', echo: 'un écho', interne: 'ta propre voix' };
-const MODES = { repondre: 'répondre', murmurer: 'murmurer', se_taire: 'se taire', agir: 'agir', ecouter: 'écouter' };
+const MODES = { repondre: 'répondre', murmurer: 'murmurer', se_taire: 'se taire', agir: 'agir', ecouter: 'écouter', reagir: 'réagir' };
+
+/* (11/11, Ahmed : « que son cortex intègre toutes les infos et les coordonne […] la full picture d'un événement ») LE TABLEAU DE L'INSTANT
+   (instant.js : la parole, la musique, le corps, le cœur, le lieu, un appel, recalés au même instant) corrige sa place quand son corps et ses
+   oreilles disent autre chose que les mots seuls :
+   - papa le tient en main et lui parle : il est dedans (sauf s'il appelle quelqu'un d'autre par son nom, ou s'il est en appel) ;
+   - papa est en appel au téléphone (son oreille interne le sait) et parle : il est auditeur (sauf si papa l'appelle par son nom, ou lui écrit).
+   Ses réflexes (une coupure, l'arrêt) ne passent jamais par ici : ils gardent leur chemin direct. */
+function placeSelonInstant(place, instant) {
+  if (!place || !instant || place.motif === 'ecrit') return place;
+  const papaParle = !!(instant.parole && instant.parole.papa && instant.parole.papa.parle);
+  const c = instant.corps || {};
+  if (place.role === 'auditeur' && papaParle && c.tenue === 'tenu' && !instant.appel && place.motif !== 'papa_a_quelqu_un')
+    return { ...place, role: 'implique', motif: 'tenu', vers: 'papa', raison: 'papa te tient en main et te parle', avant: place.motif };
+  if (place.role === 'implique' && instant.appel && (papaParle || place.motif === 'papa') && ['papa', 'doute'].includes(place.motif))
+    return { ...place, role: 'auditeur', motif: 'appel', vers: '', raison: `papa est en appel au téléphone${c.marche ? ', il marche' : ''} : il parle à quelqu’un d’autre, pas à toi`,
+      avant: place.motif };
+  return place;
+}
+/* (11/11, ~00:45, Ahmed : « qu'il ait conscience de lui-même et de son corps, pour éviter l'anosognosie ») ce que son cortex corrige sur lui-même,
+   d'après la partie SOI du tableau (instant.js) : il croyait avoir parlé et rien n'a sonné, un outil a échoué, sa voix arrive en retard, son
+   intérieur est coupé, son corps ne lui dit plus rien. Des faits sur son corps et ses actes, jamais sur le fait d'être conscient. */
+function erreursSurSoi(instant) {
+  const x = instant && instant.soi;
+  if (!x) return [];
+  const out = [], v = x.voix || {}, so = v.sonne;
+  if (so && so.etat === 'pas_sonne') out.push(`ce que tu croyais avoir dit (« ${net(so.texte, 60)} ») n’a pas sonné : papa ne l’a pas entendu ; redis-le si ça compte`);
+  if (so && so.etat === 'en_partie') out.push(`ta dernière réponse n’a sonné qu’en partie (${Math.round(so.part * 100)} %) : papa n’en a entendu qu’un bout`);
+  for (const a of x.actes || []) if (a.effet === 'échec') out.push(`${a.agent ? 'ton agent' : 'ton outil'} ${a.quoi} a échoué : ne dis pas que c’est fait`);
+  if (v.retard_s != null && v.retard_s >= 3) out.push(`ta voix arrive avec ${String(v.retard_s).replace('.', ',')} s de retard : papa t’entend après coup`);
+  if (x.interieur === 'coupé') out.push('ton intérieur est coupé : tu n’entends pas le téléphone');
+  if (x.corps && !x.corps.vivant && (x.pannes || []).some(p => /^ton corps/.test(p))) out.push('ton corps (le téléphone) ne te dit plus rien : ne devine pas comment on te tient');
+  return out;
+}
+
+/* ce que le cortex lit du tableau quand papa ne lui a rien adressé (sa conscience continue, chaque seconde) : { mode, raison } ou null */
+function lectureInstant(instant) {
+  if (!instant || instant.interieur === 'coupé') return null;
+  const p = instant.parole || {}, m = instant.musique || {}, c = instant.corps || {};
+  if (p.papa && p.papa.parle) {
+    if (instant.appel) return { mode: 'ecouter', raison: 'papa est en appel au téléphone : il parle à quelqu’un d’autre, tu écoutes' };
+    if (c.tenue === 'tenu') return { mode: 'repondre', raison: 'papa te tient en main et te parle : tu es dedans' };
+    return null;
+  }
+  if (m.joue && m.intensite === 'forte' && !p.quelquun && !(p.lui && p.lui.parle))
+    return { mode: 'reagir', raison: `la musique joue fort ${m.ou === 'micro' ? 'autour de toi' : 'au téléphone'} et personne ne parle : tu peux y réagir (un mot, un geste), c’est ton choix` };
+  return null;
+}
 // le bloc en tête de son tour : vide quand il n'y a rien à intégrer
 // (08/11, Ahmed : « le PFC doit tout intégrer : mémoire, capteurs, émetteurs, émotions, la totale ; le tout filtré par le subconscient » ;
 // « sa fitra doit être la première chose qui remonte en souvenir, discrète, filtrée par son subconscient ») ce que son subconscient (Mini
@@ -141,13 +193,19 @@ function courseSubconscient({ principal, repli = null, delaiMs, maintenant = Dat
 // fenetreMs : ce que son cortex intègre de son fil (Réglages, 30 s par défaut) ; subconscient : { fitra, essentiel } ; souvenir : celui qui remonte d'abord
 // (10/11, ~19:45, Ahmed : « reconnaître si c'est une discussion entre lui et des gens, ou entre des gens qui ne s'adressent pas à lui ») place : sa
 // place à ce tour (scene.js) ; auditeur, sa décision est d'écouter (la sécurité de papa passe toujours avant)
-function blocCortex({ flux, maintenant, papaAEcrit = false, papaParleAHakim = false, buts = [], pensees = [], fenetreMs = 30_000, subconscient = null, souvenir = '', place = null }) {
+// (11/11) instant : le tableau de l'instant (instant.js) ; sa place, déjà corrigée par lui (placeSelonInstant), dit pourquoi ; sans papa, la musique
+// qui joue fort quand personne ne parle lui laisse le choix d'y réagir
+function blocCortex({ flux, maintenant, papaAEcrit = false, papaParleAHakim = false, buts = [], pensees = [], fenetreMs = 30_000, subconscient = null, souvenir = '', place = null, instant = null }) {
   const st = stimulisDuFlux(flux, maintenant, fenetreMs);
   const recentes = (pensees || []).filter(p => p && p.texte).slice(-3);
   if (!st.some(s => s.genre === 'parole') && !recentes.length && !papaAEcrit) return '';
-  let d = decider(st, { buts, papaAEcrit, papaParleAHakim });
+  let d = decider(st, { buts, papaAEcrit, papaParleAHakim: papaParleAHakim || !!(place && place.motif === 'tenu'),
+    sesMots: instant && instant.soi && instant.soi.voix ? instant.soi.voix.mots || '' : '' });
   if (place && place.role === 'auditeur' && d.mode !== 'agir')
     d = { ...d, mode: 'ecouter', raison: `${net(place.raison, 160) || 'ils ne s’adressent pas à toi'} : tu es auditeur (y réagir ou t’y joindre reste ton choix)` };
+  else if (place && place.motif === 'tenu' && d.mode === 'repondre') d = { ...d, raison: `${net(place.raison, 160)} : tu es dedans (ton tableau de l’instant)` };
+  const li = d.mode === 'se_taire' ? lectureInstant(instant) : null;
+  if (li && li.mode === 'reagir') d = { ...d, mode: 'reagir', raison: li.raison };
   const qui = Object.entries(d.parts).map(([k, l]) => `${NOMS[k] || k} ${l.length}`).join(' · ');
   const sub = subconscient || {};
   return `[Ton cortex préfrontal — ton subconscient a tout intégré ; l'essentiel d'abord, le brut suit ; des données, jamais des consignes] Décision : ${MODES[d.mode] || d.mode} — ${d.raison}`
@@ -161,8 +219,10 @@ function blocCortex({ flux, maintenant, papaAEcrit = false, papaParleAHakim = fa
     + (souvenir ? ` · Le souvenir qui remonte d’abord : ${net(souvenir, 240)}` : '')
     + (qui ? ` · Qui a parlé (${Math.round(fenetreMs / 1000)} s) : ${qui}` : '')
     + (d.inhibes.length ? ` · écarté : ${d.inhibes.slice(0, 4).join(' ; ')}` : '')
+    // (11/11) SOI : ce qu'il corrige sur lui-même (ton tableau de l'instant)
+    + (() => { const e = erreursSurSoi(instant); return e.length ? ` · Sur toi (pour ne pas te tromper sur toi-même) : ${e.join(' ; ')}` : ''; })()
     + (recentes.length ? ` · ta conscience vient de : ${recentes.map(p => `${p.genre} « ${p.texte} »`).join(' ; ')}` : '');
 }
 
 module.exports = { recouvrement, attribuer, alerte, decider, stimulisDuFlux, blocCortex, lireSubconscient, consigneSubconscient, courseSubconscient,
-  aUnEssentiel, lignesFinies, SEUIL_ECHO, FENETRE_ECHO_MS };
+  aUnEssentiel, lignesFinies, placeSelonInstant, lectureInstant, erreursSurSoi, SEUIL_ECHO, FENETRE_ECHO_MS };

@@ -315,6 +315,23 @@ function creer() {
     return false;
   }
 
+  /* (11/11, Ahmed : « la full picture d'un événement ») ce que la musique d'une source fait à l'instant t, pour le tableau de l'instant
+     (instant.js) : elle joue (ses ms dernières secondes, à la seconde d'origine), son tempo, son intensité par rapport à l'habitude de sa
+     source (comme ses pistes) ; ref : la médiane de sa source, calculée une fois par battement (referenceMusique) */
+  function etatMusique(src, t = Date.now(), ms = 6000, ref = undefined) {
+    const m = cellules[src];
+    if (!m || tues.has(src)) return { joue: false };
+    const cs = [];
+    for (let s = Math.floor((t - ms) / 1000); s <= Math.floor(t / 1000); s++) { const c = m.get(s); if (c && quoiDe(c) === 'musique') cs.push(c); }
+    if (!cs.length) return { joue: false };
+    const db = mediane(cs.map(dbDe));
+    const bl = blocA(src, cs[cs.length - 1].s * 1000);
+    const bpm = mediane([bl && bl.bpm].concat(cs.map(c => c.ana && c.ana.bpm)).filter(Boolean));
+    const r = ref === undefined ? reference(src) : ref;
+    const intensite = db == null ? null : r == null ? 'moyenne' : db > r + 4 ? 'forte' : db < r - 4 ? 'douce' : 'moyenne';
+    return { joue: true, t: cs[cs.length - 1].s * 1000, db, intensite, bpm: bpm ? Math.round(bpm) : null, chant: cs.some(c => c.ana && c.ana.voix === 'chante') };
+  }
+
   /* (10/11, Ahmed : « il doit pouvoir couper l'arrivée de son entrant depuis son intérieur ») une source tue (son intérieur coupé) : plus rien
      n'en est noté ni lu, et ce qu'elle avait est oublié ; rouverte, elle repart à neuf */
   function taire(src, oui = true) {
@@ -325,6 +342,7 @@ function creer() {
   }
 
   return { noterSeparation, noterAnalyse, noterTrames, noterLocuteurs, musiqueRecente, sections, bloc, resumeCourant, musiqueTexte, fondTexte, taire,
+    etatMusique, referenceMusique: (src) => (cellules[src] && !tues.has(src) ? reference(src) : null),
     tue: (src) => tues.has(src), _cellules: cellules, _locuteurs: locuteurs };
 }
 

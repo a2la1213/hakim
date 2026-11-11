@@ -43,6 +43,8 @@ SENS_RECENTS = 6                   # le sens de la scène : ses 6 derniers momen
 PERSONNES_S = 300                  # les personnes de la scène : celles des 5 dernières minutes
 CLES_MAX = 6
 TEXTE_MAX = 160
+INSTANTS_MAX = 5                   # (11/11) l'instant : au début, ses moments clés, à la fin
+INSTANT_TEXTE = 200
 
 # ---- sa place, pour une ligne sans place (la même règle que scene.js, en plus simple)
 _L = r"[^\W\d_]"
@@ -153,6 +155,19 @@ def _sa_parole(t):
     return "" if _VIDE.match(t) else _court(t)
 
 
+def _instant(x):
+    """(11/11, Ahmed : « la full picture d'un événement ») l'instantané du tableau de l'instant (cockpit, instant.js : tous ses sens recalés au
+    même instant) : {t (s), l (la ligne), k (ses étiquettes d'état)}, ou None s'il est absent ou illisible."""
+    if not isinstance(x, dict) or not isinstance(x.get("l"), str) or not x["l"].strip():
+        return None
+    try:
+        t = float(x.get("t") or 0) / 1000
+    except (TypeError, ValueError):
+        t = 0.0
+    k = sorted({str(v)[:40] for v in (x.get("k") or []) if isinstance(v, str) and v.strip()})[:16] if isinstance(x.get("k"), list) else []
+    return {"t": t, "l": _court(x["l"], INSTANT_TEXTE), "k": k}
+
+
 def moment_de(e, eid=None, depuis_sa_parole_s=None, noms=None):
     """Le moment d'une ligne de la file : {t, place, seul, qui, paroles [(qui, texte)], lui, live, lieu, musique, emotion, id, externe}, ou
     None (ses gestes sur le téléphone de papa : pas une discussion)."""
@@ -165,8 +180,14 @@ def moment_de(e, eid=None, depuis_sa_parole_s=None, noms=None):
     vecu = str(e.get("vecu") or "")
     lieu = str(e.get("lieu") or "").strip() or ((_LIEU.search(vecu) or [None, ""])[1]).strip()
     emo = ((_EMOTION_VECU.search(vecu) or [None, ""])[1]).strip()
+    ins = _instant(e.get("instant"))
+    if ins and not lieu:                                     # le lieu, d'après son tableau de l'instant
+        lieu = next((x[5:] for x in ins["k"] if x.startswith("lieu:")), "")
     m = {"t": t, "place": "implique", "seul": False, "qui": [], "paroles": [], "lui": "", "live": bool(e.get("live")), "lieu": lieu[:40],
-         "musique": bool(e.get("musique")) or bool(_MUSIQUE.search(vecu)), "emotion": emo[:30], "id": eid, "externe": bool(e.get("externe"))}
+         "musique": bool(e.get("musique")) or bool(_MUSIQUE.search(vecu)) or bool(ins and any(x.startswith("musique:") for x in ins["k"])),
+         "emotion": emo[:30], "id": eid, "externe": bool(e.get("externe"))}
+    if ins:
+        m["instant"] = ins
     if e.get("moment") == "entendu":                         # ce qu'il a entendu sans qu'on lui parle (cockpit, scene.js)
         x = _court(_net(e.get("texte")), 240)
         if not x:
@@ -485,6 +506,27 @@ def _extraits(moments, sujet, n=2):
     return l
 
 
+def _instants(moments):
+    """(11/11) l'instant de la scène, sans modèle : son instantané au début, à chaque moment où son état change (tenu, posé, la musique, un appel,
+    le live, le lieu… ses étiquettes ; ni la parole ni le cœur), et à la fin ; INSTANTS_MAX au plus (le début, la fin, les premiers changements)."""
+    l = sorted([m for m in moments if m.get("instant")], key=lambda m: m["instant"].get("t") or m["t"])
+    if not l:
+        return []
+    quand = lambda m: round(m["instant"].get("t") or m["t"], 3)                                                # noqa: E731
+    out = [{"t": quand(l[0]), "quoi": "debut", "texte": l[0]["instant"]["l"]}]
+    avant = set(l[0]["instant"]["k"])
+    for m in l[1:-1]:
+        k = set(m["instant"]["k"])
+        if k != avant:
+            out.append({"t": quand(m), "quoi": "change", "texte": m["instant"]["l"], "change": sorted(k ^ avant)})
+            avant = k
+    if len(l) > 1:
+        out.append({"t": quand(l[-1]), "quoi": "fin", "texte": l[-1]["instant"]["l"], "change": sorted(set(l[-1]["instant"]["k"]) ^ avant)})
+    if len(out) > INSTANTS_MAX:
+        out = out[:INSTANTS_MAX - 1] + out[-1:]
+    return out
+
+
 def fiche(sc):
     """La fiche de la scène (le JSON de sa colonne « scene »), et son texte de film."""
     ms = [m for m in sc["moments"]]
@@ -543,6 +585,9 @@ def fiche(sc):
          "n": len(ms), "echanges": [m["id"] for m in ms if m.get("id")][:60], "externe": any(m.get("externe") for m in ms),
          "fin_raison": sc.get("fin_raison") or "",
          "tiers": any(q != "papa" for m in pleins for q in m.get("qui") or [])}
+    instants = _instants(ms)
+    if instants:
+        f["instants"] = instants
     return f, texte_de(f)
 
 
@@ -560,6 +605,17 @@ def _ce_qui_s_est_dit(f, extraits=2):
     return dit + (" (" + " ; ".join(f"{x['qui']} : « {x['texte']} »" for x in ex) + ")" if ex else "")
 
 
+def _texte_instants(instants):
+    """« L'instant : au début, papa te tient, … ; 22:47, la musique joue … ; à la fin, … » (ce que tous ses sens disaient, recalés au même
+    instant)."""
+    if not instants:
+        return ""
+    if len(instants) == 1:
+        return f" L'instant : {_court(instants[0]['texte'], 140)}."
+    dit = lambda x: ("au début, " if x["quoi"] == "debut" else "à la fin, " if x["quoi"] == "fin" else f"{_hm(x['t'])}, ") + _court(x["texte"], 140)   # noqa: E731
+    return " L'instant : " + " ; ".join(dit(x) for x in instants) + "."
+
+
 def texte_de(f):
     debut, fin = f["debut"], f["fin"]
     quand = time.strftime("%a %d/%m %H:%M", time.localtime(debut)) + (f" → {_hm(fin)}" if fin - debut >= 60 else "")
@@ -574,6 +630,7 @@ def texte_de(f):
             + (f" Qui était là : {qui}." if qui else "")
             + (f" Moments clés : {' ; '.join(_hm(c['t']) + ' ' + c['quoi'] for c in f['moments_cles'])}." if f.get("moments_cles") else "")
             + (f" Ambiance : {' ; '.join(amb + ([hum] if hum else []))}." if amb or hum else "")
+            + _texte_instants(f.get("instants"))
             + (f" ({f['n']} moments ; ses échanges : {', '.join('#' + str(i) for i in f['echanges'][:12])})" if f.get("echanges") else f" ({f['n']} moments)"))
 
 

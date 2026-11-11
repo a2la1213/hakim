@@ -246,4 +246,5 @@ class Homeostasie {
   }
 }
 
-module.exports = { Homeostasie, nettoyer, BANDES };
+// (11/11) sa position et son ouverture, en mots, lues aussi par le tableau de l'instant (instant.js)
+module.exports = { Homeostasie, nettoyer, BANDES, position, ouverture };
