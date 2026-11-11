@@ -58,7 +58,9 @@ function silenceEntre(trames, a, b, o = {}) {
 /* un bloc transcrit : texte, t0 (l'instant du début du bloc, horloge du Mac), mots ([[mot, début s, fin s]] : l'instant de chaque ligne ; sans
    eux, sa place dans le bloc), musique (la musique jouait), cle (le bloc : reçu deux fois, il remplace), source ('azure', 'whisper'), coupure
    (le son s'est tu depuis le bloc d'avant : un autre morceau) */
-function recevoir(e, { texte = '', t0 = 0, mots = null, musique = false, cle = '', source = '', duree_ms = DEFAUTS.bloc_ms, coupure = false } = {}, maintenant = Date.now(), o = {}) {
+/* (11/11, pour qu'il chante avec : chanter.js) decalage : ce qui a été ajouté à l'heure de l'appli pour l'horloge du Mac ; chaque ligne garde aussi
+   tb (l'heure de l'appli, celle de ses trames et de sa page : t − decalage), d (sa durée, ms) et ses mots à leur place ([[mot, dt ms]]) */
+function recevoir(e, { texte = '', t0 = 0, mots = null, musique = false, cle = '', source = '', duree_ms = DEFAUTS.bloc_ms, coupure = false, decalage = 0 } = {}, maintenant = Date.now(), o = {}) {
   const r = { ...DEFAUTS, ...o };
   const ls = lignes(texte, r.mots_ligne);
   const debut = Number(t0) > 0 ? Number(t0) : maintenant - duree_ms;
@@ -80,10 +82,16 @@ function recevoir(e, { texte = '', t0 = 0, mots = null, musique = false, cle = '
   const exacts = Array.isArray(mots) && mots.length ? mots : null;
   let vu = 0;
   const ajoutees = [];
+  const dec = Number.isFinite(Number(decalage)) ? Number(decalage) : 0;
   for (const l of ls) {
     const n = l.split(' ').filter(Boolean).length;
     const tl = exacts && exacts[Math.min(vu, exacts.length - 1)] && Number.isFinite(Number(exacts[Math.min(vu, exacts.length - 1)][1]))
       ? debut + Math.round(Number(exacts[Math.min(vu, exacts.length - 1)][1]) * 1000) : debut + Math.round(duree_ms * vu / tous);
+    // (11/11) ses mots à leur place dans la ligne, et sa durée (le dernier mot fini) ; sans les temps d'Azure : sa part du bloc
+    const sesMots = exacts ? exacts.slice(vu, vu + n).filter(m => Array.isArray(m) && Number.isFinite(Number(m[1]))) : [];
+    const motsL = sesMots.length ? sesMots.map(m => [String(m[0]), Math.max(0, debut + Math.round(Number(m[1]) * 1000) - tl)]) : null;
+    const der = sesMots[sesMots.length - 1];
+    const d = der && Number.isFinite(Number(der[2])) ? Math.max(100, debut + Math.round(Number(der[2]) * 1000) - tl) : Math.round(duree_ms * n / tous);
     vu += n;
     // une ligne déjà entendue plus tôt (au moins ecart_ms avant) : la même famille (un refrain qui revient)
     let meilleure = null, s = 0;
@@ -92,7 +100,7 @@ function recevoir(e, { texte = '', t0 = 0, mots = null, musique = false, cle = '
       const v = similarite(l, x.texte);
       if (v > s) { s = v; meilleure = x; }
     }
-    const ligne = { t: tl, texte: l.slice(0, 300), cle: k, groupe: s >= r.seuil && meilleure ? meilleure.groupe : ++m.groupes };
+    const ligne = { t: tl, tb: tl - dec, d, ...(motsL ? { mots: motsL } : {}), texte: l.slice(0, 300), cle: k, groupe: s >= r.seuil && meilleure ? meilleure.groupe : ++m.groupes };
     ajoutees.push(ligne);
   }
   m.lignes = m.lignes.concat(ajoutees).sort((a, b) => a.t - b.t);

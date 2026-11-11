@@ -122,7 +122,7 @@ test('(04/11, 23:00 ; 05/11) ses saluts, ses adieux et son Anamnèse à tout pro
 
 test('(05/11) partout où le cockpit lui parle de lui : QUI_TU_ES, et plus de « (papa) » ni de « subconscient » en tête de ses brouillons', () => {
   assert.strictEqual((CODE.match(/le fils d'Ahmed \(papa\)/g) || []).length, 0, 'ses cinq consignes et l’aide de Mini Hakim : QUI_TU_ES');
-  assert.strictEqual((CODE.match(/\$\{QUI_TU_ES\}/g) || []).length, 9, 'pistes, hum, ribosome, lecteur, ouverture, Mini Hakim, prompt système, sa conscience continue (07/11), sa voix du live (10/11)');
+  assert.strictEqual((CODE.match(/\$\{QUI_TU_ES\}/g) || []).length, 10, 'pistes, hum, ribosome, lecteur, ouverture, Mini Hakim, prompt système, sa conscience continue (07/11), sa voix du live (10/11), son chant avec la musique (11/11)');
   assert.match(SRC, /\$\{m\.role === 'user' \? 'Papa' : 'Toi'\} : \$\{String\(m\.content\)/, 'vos derniers échanges, dans ses brouillons');
   assert.doesNotMatch(SRC, /\[Ton subconscient — ta réponse soufflée\]|\[Ton conscient — ta réflexion/, 'les mots que ses refus citaient (« je ne joue pas le subconscient de Hakim »)');
   assert.match(SRC, /\[Ta réponse, préparée pendant qu'il parle\] Papa est EN TRAIN de te parler/);

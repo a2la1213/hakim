@@ -1234,7 +1234,7 @@ function niveauSortie() {
   if (typeof voixDuTelephone === 'function' && voixDuTelephone() && lecteurSysteme && lecteurSysteme.actif && window.HakimApp && window.HakimApp.voixTelephoneNiveau) {
     try { return Math.max(0, Number(window.HakimApp.voixTelephoneNiveau()) || 0); } catch (_) { return 0; }
   }
-  if (!analyseurVoix || !lecteurNeuronal.joue) return 0;
+  if (!analyseurVoix || !(lecteurNeuronal.joue || (typeof chantSonne === 'function' && chantSonne()))) return 0;   // (11/11) son chant aussi
   analyseurVoix.getFloatTimeDomainData(tamponSortie);
   let s = 0; for (let i = 0; i < tamponSortie.length; i++) s += tamponSortie[i] * tamponSortie[i];
   return Math.sqrt(s / tamponSortie.length);
@@ -3220,6 +3220,7 @@ function marquerCoupe() {
 // (30/10, 14:50) d'abord COMMENT et OÙ sa parole s'arrête (finirParole), avant que rien ne s'arrête : un message dit à voix
 // haute, c'est la voix d'Ahmed ; écrit, un nouveau message ; une nouvelle conversation, un Stop
 function arreterTout(explicite = true, { garder = false, raison = 'stop', garderVoix = false } = {}) {
+  if (explicite && typeof chantArreter === 'function') chantArreter(raison === 'parole' ? 'papa' : 'stop');   // (11/11) son chant se tait aussi
   const finir = explicite && !garderVoix && (raison === 'parole' || raison === 'message') && typeof couperSaVoix === 'function' && finirSaPhraseActif();
   etat.finitSaPhrase = !!(finir && lecteur && lecteur.actif);      // (07/11) la coupure le dira : il a fini sa phrase
   if (explicite && !garderVoix) finirParole(raison === 'parole' || (raison === 'message' && etat.dernierOral) ? 'voix_ahmed' : raison === 'message' ? 'nouveau_message' : 'stop',
@@ -5687,6 +5688,9 @@ async function basculerConversation() {
       // dite ; « stop » → il lâche tout ; une vraie question → il lâche le reste et y répond.
       niveauSortie,
       surInterruption: (mesure) => {
+        // (11/11) il chantait avec la musique : papa le coupe net, il se tait (rien d'autre à couper)
+        if (typeof chantArreter === 'function' && typeof chantSonne === 'function' && chantSonne() && !(lecteur && lecteur.actif)) { chantArreter('papa'); journalVoix('coupure_chant', mesure || {}); return; }
+        if (typeof chantArreter === 'function') chantArreter('papa');
         // (07/11, Ahmed : « si c'est un background et pas une parole, il ne se coupe pas ; des paroles en fond pas assez fortes non plus ; il faut
         // une voix claire qui lui parle ») sous la clarté voulue (voix_claire_x, 1,8 par défaut) : un fond, ignoré ; il continue
         if (typeof voixClaire === 'function' && !voixClaire(mesure)) { journalVoix('fond_ignore', mesure || {}); return; }
@@ -5977,7 +5981,8 @@ const voixQuiSonne = () => !!((lecteurNeuronal && lecteurNeuronal.joue) || Date.
 // (09/11) sa voix qui sonne VRAIMENT chez papa (rien quand elle se calcule encore, ni dans un blanc entre deux morceaux) : seule celle-là peut être coupée
 // (10/11, 18:43) en live (le cockpit le redit toutes les 15 s ; sans nouvelles depuis 40 s : plus en live)
 const enLive = () => !!(etat.live && etat.live.oui && Date.now() - (Number(etat.live.t) || 0) < 40000);
-const saVoixAudible = () => !!((lecteurNeuronal && lecteurNeuronal.sonne) || (typeof lecteurSysteme !== 'undefined' && lecteurSysteme && lecteurSysteme.actif) || Date.now() < motDirectJusqua);
+// (11/11) son chant avec la musique compte aussi : son écho reste le sien, et papa qui parle par-dessus le coupe (surInterruption)
+const saVoixAudible = () => !!((lecteurNeuronal && lecteurNeuronal.sonne) || (typeof lecteurSysteme !== 'undefined' && lecteurSysteme && lecteurSysteme.actif) || (typeof chantSonne === 'function' && chantSonne()) || Date.now() < motDirectJusqua);
 function microParHakim(o) {
   const c = etat.conversation;
   if (!c || !c.capteur || !o) return;
@@ -6877,13 +6882,16 @@ function ecouterPensees() {
   es.addEventListener('reecoute', (ev) => { try { surReecoute(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('souffle', (ev) => { try { surSouffle(JSON.parse(ev.data)); } catch (_) {} });   // (15:02) ses brouillons, écrits
   es.addEventListener('entendu', (ev) => { try { surEntendu(JSON.parse(ev.data)); } catch (_) {} });
+  // (11/11, Ahmed : « il peut chanter en même temps qu'une musique ») son chant calé sur la musique (chanter-page.js) ; ou son annulation
+  es.addEventListener('chanter', (ev) => { try { if (typeof surChanter === 'function') surChanter(JSON.parse(ev.data)); } catch (_) {} });
   // (07/11, Ahmed : « qu'à chaque seconde il soit conscient et décide de ce qu'il pense, fait ou sollicite ») sa conscience continue : ce qu'il décide
   // (08/11, Ahmed : « le même bouton que moi pour les voix intérieures, qui le coupent s'il l'accepte ») une voix du téléphone parlait sur la sienne :
   // son subconscient a choisi de se taire pour l'écouter ; la page qui joue sa voix la coupe net (ce qui était prêt est gardé)
   // (08/11, 11:45, Ahmed : « son intérieur doit répondre aux mêmes règles que le micro, simplement ») « tu le coupes net » : comme ta voix
   // (10/11, 18:43) le cockpit dit s'il est en live (toutes les 15 s) : une voix du live qui le coupe suit les mêmes règles que papa
   es.addEventListener('live', (ev) => { try { const o = JSON.parse(ev.data); etat.live = { oui: !!o.live, t: Date.now() }; } catch (_) {} });
-  es.addEventListener('couper_interieur', (ev) => { try { const o = JSON.parse(ev.data); if (!etat.conversation || !(lecteur && lecteur.actif)) return;
+  es.addEventListener('couper_interieur', (ev) => { try { const o = JSON.parse(ev.data); if (typeof chantArreter === 'function') chantArreter('interieur');
+    if (!etat.conversation || !(lecteur && lecteur.actif)) return;
     if (typeof journalVoix === 'function') journalVoix('coupe_interieur', { source: String(o.source || ''), ms: Number(o.ms) || 0, net: !!o.net });
     // (09/11) une voix du téléphone (un live) : coupé net comme avant, tout est lâché (aucune phrase de papa ne dira passage ou relance)
     // (10/11, 18:43) sa coupure le dit : une voix de son live (ou du téléphone), jamais papa ; ce qu'il n'a pas dit part avec elle
