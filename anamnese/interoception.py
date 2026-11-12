@@ -247,6 +247,23 @@ def consommateurs(procs, emp, moi=None):
 # compte plus ; la montre attend son appli). Tout en fractions de 0 à 1 ; un ioreg, un Ollama ou un ps muet donne None,
 # jamais une erreur ; la ligne de commande des processus ne sert qu'à reconnaître Gemma.
 APPAREILS = Path.home() / "AIOS" / "jarvis" / "processeurs-appareils.json"
+# (13/11, Hakim et papa : « ma jauge de chaleur ne colle pas au thermomètre ») la vraie température du téléphone (sa batterie, celle
+# que dit sa Situation), écrite par le cockpit dans corps-etat.json : la « marge thermique » d'Android (getThermalHeadroom) est la
+# marge de ses PROCESSEURS avant qu'il se bride, une prévision qui monte avec le calcul (84 % à 35 °C), pas une fièvre
+CORPS_ETAT = Path.home() / "AIOS" / "jarvis" / "corps-etat.json"
+
+
+def chaleur_telephone(chemin=None, now=None):
+    """La température du téléphone en °C si elle est fraîche (moins de APPAREIL_FRAIS_S), sinon None."""
+    now = time.time() if now is None else now
+    try:
+        d = json.loads(Path(chemin or CORPS_ETAT).read_text(encoding="utf-8"))
+        c, ts = float((d.get("etat") or {}).get("chaleur_c")), float(d.get("ts")) / 1000
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+    if not (-60 <= now - ts <= APPAREIL_FRAIS_S) or not (-40 <= c <= 90):
+        return None
+    return round(c, 1)
 APPAREIL_FRAIS_S, MAC_PAS_S, TICKS_VIEUX_S = 120, 5.0, 120.0
 _dernier_mac = {"t": None, "val": None, "ticks": None, "ticks_t": None}
 
@@ -298,7 +315,7 @@ def mac(maintenant=None):
     return m["val"]
 
 
-def appareils(chemin=None, now=None):
+def appareils(chemin=None, now=None, chemin_etat=None):
     """Les autres appareils où il est connecté, frais seulement : {nom: {"coeurs", "gpu", "thermique", "age_s"}}."""
     now = time.time() if now is None else now
     try:
@@ -319,6 +336,8 @@ def appareils(chemin=None, now=None):
                   if c is not None]
         out[str(nom)[:40]] = {"coeurs": coeurs or None, "gpu": _fraction(a.get("gpu")),
                               "thermique": _fraction(a.get("thermique")), "age_s": round(max(0.0, age))}
+    if "telephone" in out:                                 # (13/11) sa vraie température, à côté de la marge de ses processeurs
+        out["telephone"]["chaleur_c"] = chaleur_telephone(chemin_etat, now)
     return out
 
 

@@ -395,7 +395,7 @@ def test_le_vrai_souvenir_va_dans_vie_corps(mem):
 def test_son_introspection_et_son_tableau_ont_les_chiffres(mem, tmp_path):
     e = _vivre(mem, 12, lambda t: _mesure(t, sens=2.5, cerveau=0.6, live=LIVE_PLEIN, thermique=0.9))
     ch = C.chiffres(e["charge_corps"])
-    assert "ses sens 2,5 cœur(s)" in ch and "le live : 30 phrases par minute, 6 voix" in ch and "marge thermique 90 %" in ch
+    assert "ses sens 2,5 cœur(s)" in ch and "le live : 30 phrases par minute, 6 voix" in ch and "ses processeurs à 90 % de leur limite avant de se brider" in ch
     assert C.chiffres({"ts": T0, "eteint": True}).startswith("éteinte")
     import tableau_interieur as TI
     pts = [(T0, {"v": 0.5, "a": 0.4, "h": {}, "c": {"surcharge": 0.8}}), (T0 + 60, {"v": 0.5, "a": 0.4, "h": {}})]

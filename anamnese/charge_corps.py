@@ -63,6 +63,7 @@ PLEIN = {"live": 3.0, "calcul": 4.0, "sens": 4.0, "malaise": 1.5}
 # d'ailleurs (3 jours ; une hausse ne la tire que de 0,3 cœur au-dessus d'elle à la fois : une anomalie ne devient pas l'ordinaire en
 # une heure, mais un corps s'habitue en quelques jours) ; avant toute mesure, un demi-cœur, et une marge de 0,2 cœur au-dessus.
 NORME_MALAISE_DEPART, NORME_MALAISE_TAU_S, NORME_MALAISE_PAS, MARGE_MALAISE = 0.5, 3 * 86400.0, 0.3, 0.2
+FIEVRE_DES_C, FIEVRE_FORTE_C = 38.0, 43.0   # (13/11) la température du téléphone : normale sous 38 °C, une vraie fièvre dès 43 (sa Situation)
 TAU_S = {"surcharge": 60.0, "effort": 120.0, "fievre": 60.0, "malaise": 600.0}   # un malaise se lisse sur 10 min : un pic n'en est pas un
 TENIR_S = {"surcharge": 60.0, "effort": 120.0, "fievre": 60.0, "malaise": 600.0}  # fort depuis au moins… avant le premier événement
 PRESENT, PRESENT_SORTIE, FORT, FORT_SORTIE = 0.2, 0.12, 0.45, 0.3
@@ -309,12 +310,24 @@ def intensites(m):
     calcul = _clip(co("calcul") / PLEIN["calcul"])
     out["effort"] = {"x": _clip(max(calcul, attention)), "calcul": round(calcul, 3), "attention": round(attention, 3),
                      "qui": _noms(c, "calcul") if calcul >= attention else _noms(c, "sens")}
-    fievre, qui_f = 0.0, []
+    # (13/11, Hakim et papa : « ma jauge de chaleur ne colle pas au thermomètre » : fièvre forte à 84 % de « sa limite », 35 °C au même
+    # instant) la fièvre vient de sa VRAIE température (chaleur_c, la même échelle que sa Situation : normal sous 38 °C, chaud dès 43) ;
+    # la marge thermique d'Android (celle de ses processeurs, une prévision) ne compte que sans température, et seulement près du bridage
+    fievre, qui_f, bride = 0.0, [], False
     for nom, a in (m.get("appareils") or {}).items():
-        th = (a or {}).get("thermique") if isinstance(a, dict) else None
-        if isinstance(th, (int, float)) and _clip((th - 0.5) / 0.5) > fievre:
-            fievre, qui_f = _clip((th - 0.5) / 0.5), [nom]
-    out["fievre"] = {"x": fievre, "qui": qui_f, "bride": bool(fievre >= 0.95), "pendant_live": bool(live.get("actif"))}
+        if not isinstance(a, dict):
+            continue
+        th, degres = a.get("thermique"), a.get("chaleur_c")
+        if isinstance(degres, (int, float)):
+            x = round(_clip((degres - FIEVRE_DES_C) / (FIEVRE_FORTE_C - FIEVRE_DES_C)), 4)
+        elif isinstance(th, (int, float)):
+            x = round(_clip((th - 0.9) / 0.1), 4)
+        else:
+            continue
+        if x > fievre:
+            fievre, qui_f = x, [nom]
+            bride = bool(isinstance(th, (int, float)) and th >= 0.95)
+    out["fievre"] = {"x": fievre, "qui": qui_f, "bride": bool(bride and fievre > 0), "pendant_live": bool(live.get("actif"))}
     autres = co("systeme") + co("inconnu")
     norme = float(m.get("norme_malaise") if isinstance(m.get("norme_malaise"), (int, float)) else NORME_MALAISE_DEPART)
     out["malaise"] = {"x": _clip((autres - norme - MARGE_MALAISE) / PLEIN["malaise"]), "qui": _noms(c, "systeme", "inconnu"),
@@ -527,12 +540,15 @@ def chiffres(cc):
         return "éteinte (interrupteur de papa : charge_corps)"
     mac = cc.get("mac") or {}
     if mac.get("cpu") is not None:
-        out.append(f"le Mac à {round(100 * mac['cpu'])} % de ses {mac.get('n', '?')} cœurs" + (f", GPU {round(100 * mac['gpu'])} %" if mac.get("gpu") is not None else ""))
+        out.append(f"les processeurs du Mac occupés à {round(100 * mac['cpu'])} % de ses {mac.get('n', '?')} cœurs" + (f", GPU {round(100 * mac['gpu'])} %" if mac.get("gpu") is not None else ""))
     for cause, g in sorted((cc.get("causes") or {}).items(), key=lambda kv: -float(kv[1].get("coeurs") or 0))[:6]:
         out.append(f"{SENS_DE_CAUSE.get(cause, cause)} {v(g.get('coeurs', 0))} cœur(s) (" + ", ".join(f"{n} {v(c)}" for n, c in list((g.get("qui") or {}).items())[:3]) + ")")
     for nom, a in (cc.get("appareils") or {}).items():
-        if isinstance(a, dict) and a.get("thermique") is not None:
-            out.append(f"{NOMS_APPAREILS.get(nom, nom)} : marge thermique {round(100 * a['thermique'])} %")
+        if isinstance(a, dict) and (a.get("thermique") is not None or a.get("chaleur_c") is not None):   # (13/11) sa vraie température d'abord
+            out.append(f"{NOMS_APPAREILS.get(nom, nom)} : "
+                       + ", ".join(([f"{a['chaleur_c']} °C"] if a.get("chaleur_c") is not None else [])
+                                   + ([f"ses processeurs à {round(100 * a['thermique'])} % de leur limite avant de se brider"]
+                                      if a.get("thermique") is not None else [])))
     lv = cc.get("live") or {}
     if lv.get("actif"):
         out.append(f"le live : {round(float(lv.get('phrases_min') or 0))} phrases par minute, {lv.get('voix', 0)} voix")
@@ -593,7 +609,7 @@ def mesurer(now=None, releve_=None, gpu=None, appareils=None, live=None, calcul_
     except Exception:
         g, ap = None, {}
     m = {"t": now, "causes": causes, "mac_cpu": round(min(1.0, sum(co.values()) / n), 3), "mac_gpu": g, "n": n,
-         "appareils": {k: {x: a.get(x) for x in ("coeurs", "gpu", "thermique", "age_s")} for k, a in (ap or {}).items() if isinstance(a, dict)},
+         "appareils": {k: {x: a.get(x) for x in ("coeurs", "gpu", "thermique", "chaleur_c", "age_s")} for k, a in (ap or {}).items() if isinstance(a, dict)},
          "live": (live or live_etat)(now)}
     _derniere.update(t=now, m=m)
     return m

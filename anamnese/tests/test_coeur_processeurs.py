@@ -244,9 +244,10 @@ def test_les_appareils_frais_seulement(tmp_path):
         "telephone": {"ts": (T0 - 10) * 1000, "coeurs": [0.42, 0.1, "x", 2.0], "gpu": 0.3, "thermique": None},
         "montre": {"ts": (T0 - 600) * 1000, "coeurs": [0.9], "gpu": None, "thermique": None},
         "abime": "rien"}))
-    a = I.appareils(chemin=f, now=T0)
+    a = I.appareils(chemin=f, now=T0, chemin_etat=tmp_path / "absent.json")
     assert list(a) == ["telephone"]                                           # la montre, muette depuis 10 min : ignorée
-    assert a["telephone"] == {"coeurs": [0.42, 0.1, 1.0], "gpu": 0.3, "thermique": None, "age_s": 10}
+    # (13/11) sa vraie température à côté (aucune ici : None)
+    assert a["telephone"] == {"coeurs": [0.42, 0.1, 1.0], "gpu": 0.3, "thermique": None, "age_s": 10, "chaleur_c": None}
     f.write_text("{pas du json")
     assert I.appareils(chemin=f, now=T0) == {}
 

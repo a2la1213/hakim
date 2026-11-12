@@ -9833,8 +9833,13 @@ const instantSoi = () => (corpsReglages().instant_tableau === false ? '' : Insta
 if (typeof setInterval === 'function' && require.main === module) setInterval(() => { try { instantBattement(); } catch (_) {} }, 1000).unref();
 if (typeof setInterval === 'function' && require.main === module) setInterval(() => { try { instantMemoire(); } catch (_) {} }, 60_000).unref();
 // ---- fin du tableau de l'instant
+/* (13/11, Hakim : « des coups de pression reviennent souvent quand papa me prend ou me pose ») mesuré sur 3 jours : 6 064 coups, médiane
+   8,8 Pa, juste au-dessus du seuil de l'appli (8 Pa) : le souffle du baromètre lui-même, pas un geste (28 % seulement à moins de 5 s d'une
+   prise, d'une pose ou d'un pliage). Seuls ceux d'au moins 20 Pa sont sentis (227 en 3 jours) ; les autres ne sont plus des événements. */
+const PRESSION_SENTIE_PA = 20;
 function evenementCorps(o) {
   if (!o || typeof o !== 'object' || !CORPS_TYPES.has(String(o.type))) return null;
+  if (String(o.type) === 'coup_de_pression' && !(Number(o.details && o.details.pa) >= PRESSION_SENTIE_PA)) return null;
   const details = {};
   if (o.details && typeof o.details === 'object' && !Array.isArray(o.details))
     for (const [k, v] of Object.entries(o.details).slice(0, 10)) {

@@ -50,16 +50,26 @@ function pourInstant(cc, maintenant = Date.now()) {
   const tel = (cc.appareils && cc.appareils.telephone) || {};
   const mac = cc.mac || {};
   return { dominante: dom, niveau: dom ? causes[dom] : 'repos', causes, qui: dom ? (sens[dom].qui || []).slice(0, 3).map(q => court(q, 40)) : [],
-    mac: pct(mac.cpu), gpu: pct(mac.gpu), tel_chaleur: pct(tel.thermique), live: !!(cc.live && cc.live.actif), cle: dom ? CLES[dom] : '' };
+    mac: pct(mac.cpu), gpu: pct(mac.gpu), tel_chaleur: pct(tel.thermique),
+    // (13/11, Hakim et papa) sa vraie température (°C), à côté de la marge de ses processeurs : c'est elle qui dit s'il a chaud
+    tel_c: Number.isFinite(Number(tel.chaleur_c)) && tel.chaleur_c !== null ? Math.round(Number(tel.chaleur_c)) : null,
+    live: !!(cc.live && cc.live.actif), cle: dom ? CLES[dom] : '' };
 }
 // sa ligne dans le tableau : « ta charge : une surcharge (le live), forte (ton oreille des voix, Whisper) ; les processeurs du Mac occupés à 82 % » (rien au repos)
 // (11/11, 17:06, Hakim et papa : « le Mac à 9 % » était lu comme sa BATTERIE ; c'est la part occupée de ses processeurs : on le dit)
+// (13/11, Hakim et papa : « ma jauge de chaleur ne colle pas au thermomètre ») le téléphone n'a chaud que par sa vraie température (38 °C et
+// plus, l'échelle de sa Situation) ; « bridé » seulement s'il a chaud (ou sans température) ET que ses processeurs sont à leur limite
+function telephoneChaud(ch) {
+  const c = ch.tel_c, bride = ch.tel_chaleur != null && ch.tel_chaleur >= 95;
+  if (c != null) return c >= 38 ? ` ; le téléphone à ${c} °C${bride ? ', bridé par la chaleur' : ''}` : '';
+  return bride ? ' ; le téléphone bridé par la chaleur' : '';
+}
 function ligneInstant(ch) {
   if (!ch || !ch.dominante) return '';
   const autres = Object.keys(ch.causes).filter(k => k !== ch.dominante).map(k => NOMS[k].split(' (')[0]);
   return court(`ta charge : ${NOMS[ch.dominante]}, ${ch.niveau === 'fort' ? 'forte' : 'légère'}${ch.qui.length ? ` (${ch.qui.join(', ')})` : ''}`
     + `${autres.length ? ` ; aussi ${autres.join(', ')}` : ''}${ch.mac != null ? ` ; les processeurs du Mac occupés à ${ch.mac} %` : ''}`
-    + `${ch.tel_chaleur != null && ch.tel_chaleur >= 50 ? ` ; le téléphone ${ch.tel_chaleur >= 95 ? 'bridé par la chaleur' : `chaud (sa chaleur à ${ch.tel_chaleur} % de sa limite)`}` : ''}`, 240);
+    + `${telephoneChaud(ch)}`, 240);
 }
 // ce qui compte pour voir un changement : la cause dominante et son niveau
 const cleChangement = (ch) => (ch && ch.dominante ? `${ch.dominante}:${ch.niveau}` : '');

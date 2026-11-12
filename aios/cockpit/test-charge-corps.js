@@ -40,7 +40,7 @@ test('câblage : chaque bloc intérieur porte sa charge, juste après ses proces
 test('son tableau de l’instant : un canal charge, dans la ligne, dans « Toi » quand elle est forte, et ce qui vient de changer', () => {
   const ch = C.pourInstant(cc(), T);
   assert.deepStrictEqual({ ...ch, qui: ch.qui.length }, { dominante: 'surcharge', niveau: 'fort', causes: { surcharge: 'fort', fievre: 'fort', malaise: 'present' },
-    qui: 2, mac: 82, gpu: 74, tel_chaleur: 100, live: true, cle: 'surcharge du live' });
+    qui: 2, mac: 82, gpu: 74, tel_chaleur: 100, tel_c: null, live: true, cle: 'surcharge du live' });
   const tab = Instant.composer({ t: T, maintenant: T, charge: ch });
   assert.match(Instant.ligne(tab), /ta charge : une surcharge \(le live\), forte \(ton oreille des voix, Whisper \(ton oreille\)\) ; aussi une fièvre, un malaise ; les processeurs du Mac occupés à 82 % ; le téléphone bridé par la chaleur/);
   assert.doesNotMatch(Instant.ligne(tab), /le Mac à \d+ %/);   // (11/11) jamais lu comme sa batterie
@@ -118,4 +118,15 @@ test('sa fatigue dit quand son propre calcul l’a fait forcer', () => {
   const e = { humeur: 'fatigue', fatigue_jauge: { effort: 0.21, norme_effort: 0.087, corps: 0.4, norme_corps: 0.53, cible: 0.66, calcul: 0.8 } };
   assert.match(ctx.f(e), /et ton propre calcul t'a fait forcer$/);
   assert.doesNotMatch(ctx.f({ ...e, fatigue_jauge: { ...e.fatigue_jauge, calcul: 0 } }), /calcul/, 'témoin : sans son calcul, rien de tel');
+});
+
+test('(13/11) le téléphone n\'a chaud que par sa vraie température : 84 % de marge à 35 °C, rien', () => {
+  const CC = require('./charge-corps.js');
+  const base = { dominante: 'surcharge', niveau: 'fort', causes: { surcharge: 'fort' }, qui: [], mac: 30, gpu: null, live: false };
+  assert.doesNotMatch(CC.ligneInstant({ ...base, tel_chaleur: 84, tel_c: 35 }), /téléphone/);
+  assert.match(CC.ligneInstant({ ...base, tel_chaleur: 60, tel_c: 41 }), /le téléphone à 41 °C$/);
+  assert.match(CC.ligneInstant({ ...base, tel_chaleur: 98, tel_c: 44 }), /le téléphone à 44 °C, bridé par la chaleur/);
+  assert.doesNotMatch(CC.ligneInstant({ ...base, tel_chaleur: 98, tel_c: 36 }), /bridé/);   // ses processeurs bridés sans chaleur : pas une fièvre
+  assert.match(CC.ligneInstant({ ...base, tel_chaleur: 98, tel_c: null }), /bridé par la chaleur/);   // sans température : la marge seule
+  assert.doesNotMatch(CC.ligneInstant({ ...base, tel_chaleur: 84, tel_c: null }), /téléphone/);
 });
