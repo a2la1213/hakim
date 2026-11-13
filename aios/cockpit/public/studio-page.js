@@ -487,5 +487,8 @@
   if (App) setInterval(() => { if (!document.hidden && !rec && !mesureEnCours) lireRoute(); }, 5000);
   else document.addEventListener('pointerdown', async function une() { document.removeEventListener('pointerdown', une); estimationWeb = await estimation(); montrerCalage(); }, { once: true });
   window.addEventListener('pagehide', () => { if (App) try { App.studioMicroFermer(); } catch (_) {} });
+  // (13/11) le multipiste (studio-pistes.js) enregistre papa avec la même machinerie : le même micro, la même horloge, le même calage
+  window.StudioAudio = { contexte, tamponDe, ouvrirMicro, capter, enWav, clic, lireRoute, route: () => route, latence, calageActuel, poster, dire, duree,
+    occupe: () => !!rec || mesureEnCours, recharger: () => charger() };
   charger();
 })();

@@ -1495,7 +1495,7 @@ def studio_mixer(prise: str = "", instru: str = "", titre: str = "", autotune: b
 
 
 @mcp.tool()
-def studio_instru(chanson: str = "", titre: str = "", refaire: bool = False) -> str:
+def studio_instru(chanson: str = "", titre: str = "", refaire: bool = False, garder: str = "", methode: str = "demucs") -> str:
     """(Hakim seulement) TON INSTRU POUR LA VOIX DE PAPA (09/11, Ahmed : « qu'il sache extraire son instru d'une de ses chansons, pour
     que je pose ma voix dessus ») : Demucs retire ta voix d'une de tes chansons finies, sur le Mac ; l'instru seule entre dans les
     instrus du Studio.
@@ -1503,6 +1503,11 @@ def studio_instru(chanson: str = "", titre: str = "", refaire: bool = False) -> 
       (« 20261109-171743-deux-livres ») ; vide = la liste de tes chansons finies.
     - titre : le nom de l'instru dans le Studio (vide = celui de la chanson, suivi de « (instru) »).
     - refaire : True la recalcule même si elle est déjà dans le Studio.
+    - garder : (13/11) les pistes que papa garde (« batterie, basse » : la mélodie enlevée) ; vide = tout sauf ta voix.
+    - methode : (13/11) « demucs » (par défaut : deux modèles, la voix retirée là où elle chante, le meilleur mesuré sur un banc) ou
+      « reprise » : ACE-Step REJOUE l'instru de ta chanson sans voix (même tempo, même tonalité, même structure) : pas de trous là où
+      ta voix chantait (Demucs en laisse quand ta voix couvre tout le morceau, comme dans « Moujahid 3.2 ») ; quelques minutes, une
+      chanson à la fois ; elle arrive dans les instrus du Studio. Fais écouter les deux à papa : c'est son oreille qui tranche.
     Le chemin du feat : 1) studio_instru ; 2) dis à papa de choisir cette instru dans la page Studio du cockpit et d'y
     enregistrer sa prise ; 3) studio_mixer (sa prise, sur l'instru où il l'a posée) ; 4) studio_avis pour l'écouter en
     chiffres, puis fichier_joindre pour lui envoyer le mix.
@@ -1520,11 +1525,17 @@ def studio_instru(chanson: str = "", titre: str = "", refaire: bool = False) -> 
             return "Aucune chanson finie pour l'instant."
         return "Tes chansons finies (la plus récente d'abord) : " + " ; ".join(
             f"« {c.get('titre')} » ({c['nom']}{', instrumentale' if c.get('instrumental') else ''})" for c in l)
+    g = [x.strip() for x in re.split(r"[,;/]| et ", str(garder or "")) if x.strip()]
     try:
-        r = st.instru_de_chanson(chanson, titre=titre, refaire=bool(refaire))
+        r = st.instru_de_chanson(chanson, titre=titre, refaire=bool(refaire), garder=g,
+                                 methode="reprise" if str(methode).strip().lower() in ("reprise", "ace", "ace-step", "rejouee", "rejouée") else "demucs")
     except st.Refus as e:
         return f"Refusé : {e}"
     c = r["chanson"]
+    if r["etat"] == "reprise":
+        return (f"Reprise lancée ({r['tache']['tache']}) : ACE-Step rejoue l'instru de « {c.get('titre')} » sans voix, depuis {r['depuis']} "
+                f"({r['tache'].get('bpm') or '?'} BPM, {r['tache'].get('tonalite') or 'tonalité de la chanson'}). Quelques minutes ; elle arrivera "
+                "dans les instrus du Studio et dans les Documents de papa (studio_avis).")
     autres = (" Autres versions : " + ", ".join(f"« {x.get('titre')} » ({x['nom']})" for x in r["autres"][:4])
               + " ; donne son nom exact pour en prendre une autre.") if r["autres"] else ""
     if r["etat"] == "déjà":
@@ -1565,6 +1576,23 @@ def studio_avis(mix: str = "") -> str:
                       + (f" ; dans les Documents de papa : {doc} (fichier_joindre ou actualite_publier pour la lui envoyer)" if doc else "")
                       if t["etat"] == "fini"
                       else f"Instru ratée ({t['id']}, « {(t.get('params') or {}).get('titre', '?')} ») : {t.get('erreur', '?')}")
+    for t in sorted((x for x in travaux if x.get("type") in ("projet", "rendre", "separer") and x.get("etat") in ("fini", "raté")
+                     and time.time() - (x.get("fin") or 0) < 6 * 3600), key=lambda x: x.get("fin") or 0)[-4:]:   # (13/11) le multipiste
+        i = t.get("resultat") or {}
+        if t["etat"] == "raté":
+            lignes.append(f"{t['type'].capitalize()} raté ({t['id']}) : {t.get('erreur', '?')}")
+        elif t["type"] == "projet":
+            lignes.append(f"Projet prêt ({t['id']}) : « {i.get('titre')} » ({i.get('projet')}, {i.get('pistes')} pistes, {i.get('tempo')} BPM, "
+                          f"{i.get('tonalite')}) : studio_projet(action=\"voir\", projet=\"{i.get('projet')}\").")
+        elif t["type"] == "separer":
+            lignes.append(f"Piste séparée ({t['id']}) : le projet {i.get('projet')} a maintenant {i.get('pistes')} pistes.")
+        else:
+            m = i.get("master") or {}
+            tel = i.get("telephone") or {}
+            joindre = "; ".join(f"{k} : {st.chemin_a_joindre(v)}" for k, v in tel.items() if isinstance(v, str) and v)
+            lignes.append(f"Rendu prêt ({t['id']}) : « {i.get('nom')} » : master {m.get('lufs')} LUFS, crête vraie {m.get('crete_dbtp')} dBTP "
+                          f"(MP3 {i.get('mp3_crete_dbtp')}), PLR {m.get('plr_db')} dB. Ce que tu entends : " + " ; ".join(i.get("avis") or [])
+                          + (f". Dans les Documents de papa (fichier_joindre) : {joindre}" if joindre else ""))
     instrus = sorted(_studio_fiches(st.STUDIO / "instrus"), key=lambda x: x.get("fin") or 0)[-6:]
     if instrus:                                                         # (09/11) les instrus où papa peut poser sa prise
         lignes.append("Instrus du Studio : " + " ; ".join(
@@ -1586,6 +1614,234 @@ def studio_avis(mix: str = "") -> str:
     if m.get("telephone") and Path(m["telephone"]).is_file():   # (10/11) le mix est déjà dans ses Documents (Hakim/Chansons)
         lignes.append(f"Dans les Documents de papa : {st.chemin_a_joindre(m['telephone'])} (fichier_joindre ou actualite_publier pour le lui envoyer).")
     return "\n".join(lignes)
+
+
+# ------------------------------------------------------------------------------------------------ (13/11) le studio multipiste
+# Ahmed, 13/11 : « un vrai studio complet avec différentes pistes et différents réglages, un peu comme Logic Pro simplifié ; que Hakim
+# puisse construire un son et poser sa voix, et m'envoyer un son avec sa voix et les zones instru pour ma voix ; séparer correctement
+# les voix de l'instru et garder ce que je lui demande ; poser sur les instrus que je lui envoie ; des vrais mix complets, et le
+# mastering aussi, piste par piste ». jarvis/studio_projet.py (le projet, le rendu, le master), studio_separation.py, studio_mesures.py.
+
+def _projets():
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis"))
+    import studio_projet
+    return studio_projet
+
+
+def _source_studio(demande):
+    """Un son pour le studio : une de ses chansons (titre ou nom), une instru du Studio (identifiant ou titre), un son reçu de papa
+    (chemin sous ses fichiers). Rend (chemin, titre, est_une_chanson_de_hakim)."""
+    st = _studio()
+    q = " ".join(str(demande or "").split())
+    try:
+        c, _ = st.trouver_chanson(q)
+        _source_studio.connu = {"tempo": c.get("bpm") or 0, "tonalite": c.get("tonalite") or ""}   # (13/11) ce qu'ACE-Step a reçu : sûr
+        return c["mp3"], c.get("titre") or c["nom"], not c.get("instrumental")
+    except st.Refus:
+        pass
+    _source_studio.connu = {}
+    i = st.instru_du_studio(q)
+    if i:
+        return i, Path(i).stem, False
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis"))
+    import chant
+    try:
+        f = chant.morceau_valide(q, "source")
+        return f, Path(f).stem, False
+    except chant.Refus as e:
+        raise st.Refus(f"je ne trouve ni chanson, ni instru du Studio, ni son reçu qui s'appelle « {q} » ({e})")
+
+
+@mcp.tool()
+def studio_projet(action: str = "liste", projet: str = "", source: str = "", titre: str = "", separer: str = "4",
+                  garder: str = "", voix: str = "hakim", genre: str = "trap") -> str:
+    """(Hakim seulement, 13/11) TON STUDIO MULTIPISTE (Logic Pro simplifié) : des PROJETS avec des pistes sur une ligne du temps.
+    - action « liste » : tes projets ; « voir » (projet : son identifiant PJ-… ou son titre) : ses pistes, leurs réglages, les zones,
+      le tempo, la tonalité, le dernier rendu et ses mesures ;
+    - action « creer » : un projet depuis source = une de tes chansons (son titre), une instru du Studio, ou un son reçu de papa.
+      separer : « 4 » (batterie, basse, mélodie et autres, voix : Demucs htdemucs_ft, le meilleur mesuré), « 6 » (+ guitare et piano),
+      « 2 » (l'instru et la voix), « non » (le son entier en une piste : l'instru de papa telle quelle). La somme des pistes refait
+      l'instru exacte (rien n'est perdu). garder : les pistes de l'instru à garder (« batterie, basse ») : les autres sont muettes
+      (« garde la batterie et la basse, enlève la mélodie »). voix : à qui est la voix séparée (« hakim », « papa », « origine »).
+      Tempo et tonalité mesurés. Calcul en file (un à la fois, en priorité basse) : studio_avis dit quand c'est prêt.
+    Ensuite : studio_piste (régler), studio_zones (les zones de papa), studio_poser_voix (chanter dessus), studio_rendre (mix,
+    master, envoi). Papa voit et règle le même projet dans la page Studio du cockpit."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim travaille dans le studio."
+    st, SP = _studio(), _projets()
+    a = str(action or "liste").strip().lower()
+    try:
+        if a in ("liste", "lister"):
+            l = SP.lister()
+            if not l:
+                return "Aucun projet pour l'instant : studio_projet(action=\"creer\", source=\"<titre d'une chanson>\")."
+            return "Tes projets (le plus récent d'abord) : " + " ; ".join(
+                f"« {x['titre']} » ({x['id']}, {x['pistes']} pistes, {x.get('tempo') or '?'} BPM, {x.get('tonalite') or '?'})" for x in l[:12])
+        if a == "voir":
+            return SP.resume(SP.lire(SP.trouver(projet)))
+        if a in ("creer", "créer"):
+            f, t, chanson = _source_studio(source)
+            role = {"hakim": "voix_hakim", "papa": "voix_papa", "origine": "voix_origine"}.get(str(voix).strip().lower(), "voix_hakim")
+            sep = str(separer).strip().lower()
+            sep = sep if sep in ("2", "4", "6", "non") else "4"
+            g = [x.strip() for x in re.split(r"[,;/]| et ", str(garder or "")) if x.strip()]
+            j = st.lancer("projet", {"source": str(f), "titre": titre or t, "separer": sep, "garder": g, "role_voix": role,
+                                     "genre": genre or "trap", "par": "hakim", **getattr(_source_studio, "connu", {})})
+            return (f"Projet en préparation ({j['id']}) : « {titre or t} » depuis {Path(f).name}"
+                    f"{', séparé en ' + sep + ' pistes' if sep != 'non' else ', en une piste'}"
+                    f"{', en gardant ' + ', '.join(g) if g else ''}. Une à deux minutes (en file) ; studio_avis pour savoir quand il est prêt, "
+                    "puis studio_projet(action=\"voir\").")
+        return "Refusé : action parmi liste, voir, creer."
+    except (st.Refus, SP.Refus) as e:
+        return f"Refusé : {e}"
+
+
+@mcp.tool()
+def studio_piste(projet: str, piste: str = "", action: str = "regler", reglages: str = "", fichier: str = "", role: str = "ajout",
+                 nom: str = "", debut_s: float = 0.0) -> str:
+    """(Hakim seulement, 13/11) UNE PISTE d'un projet du studio multipiste.
+    - action « regler » (piste : son identifiant t1, t2… ou son nom) ; reglages : « volume=-3, pan=0.2, muet=oui, solo=non,
+      coupe_bas=90, grave=+2, medium=-3, medium_hz=300, aigu=+1.5, seuil=-20, ratio=4, compression=oui, deesser=0.3, reverb=0.2,
+      delai=0.15, delai_note=1/8., autotune=léger|fort|non, sidechain=t5:2 (creusée de 2 dB sous la piste t5) », ou un objet JSON
+      (avec « automation » : [{"t": 10, "db": 0}, {"t": 12, "db": -6}] et « regions » : [{"debut_s", "source_debut_s", "duree_s"}]) ;
+    - action « ajouter » : fichier = une de tes chansons, une instru du Studio, une prise de papa, un son reçu ; role : voix_hakim,
+      voix_papa, instru, batterie, basse, melodie, ajout ; debut_s : où il commence sur la ligne du temps ;
+    - action « retirer » ; action « separer » : la piste séparée en ses pistes (separer = reglages « 4 » ou « 6 »), en file.
+    Les réglages se rendent à studio_rendre (le mix et le master)."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim travaille dans le studio."
+    st, SP = _studio(), _projets()
+    a = str(action or "regler").strip().lower()
+    try:
+        pid = SP.trouver(projet)
+        if a in ("regler", "régler"):
+            r = SP.lire_reglages(reglages)
+            if not r:
+                return "Refusé : des réglages (« volume=-3, reverb=0.2 »)."
+            q = SP.modifier(pid, lambda p: SP.regler_piste(SP.piste(p, piste), r), note=f"{piste} réglée ({str(reglages)[:80]})")
+            t = SP.piste(q, piste)
+            return "Réglée. " + next(l for l in SP.resume(q).split("\n") if l.startswith(f"- {t['id']} "))
+        if a == "ajouter":
+            f, t, _ = _source_studio(fichier) if not str(fichier).startswith("P-") else (None, None, None)
+            if f is None:
+                pr = st.STUDIO / "prises" / f"{fichier}.json"
+                fi = json.loads(pr.read_text(encoding="utf-8")) if pr.is_file() else None
+                if not fi:
+                    return f"Refusé : prise inconnue : {fichier}"
+                f, t = fi["fichier"], fi.get("titre") or fichier
+            q = SP.importer_son(pid, f, role if role in SP.ROLES else "ajout", nom or t, float(debut_s or 0))
+            return f"Ajoutée : « {q['pistes'][-1]['nom']} » ({q['pistes'][-1]['id']}) à {float(debut_s or 0):.1f} s."
+        if a == "retirer":
+            def retirer(p):
+                p["pistes"].remove(SP.piste(p, piste))
+            SP.modifier(pid, retirer, note=f"piste {piste} retirée")
+            return f"Piste {piste} retirée du projet (son fichier reste dans le dossier du projet)."
+        if a in ("separer", "séparer"):
+            t = SP.piste(SP.lire(pid), piste)
+            j = st.lancer("separer", {"projet": pid, "piste": t["id"], "separer": "6" if str(reglages).strip() == "6" else "4", "par": "hakim"})
+            return f"Séparation lancée ({j['id']}) : « {t['nom']} » en pistes ; studio_avis pour savoir quand c'est fait."
+        return "Refusé : action parmi regler, ajouter, retirer, separer."
+    except (st.Refus, SP.Refus) as e:
+        return f"Refusé : {e}"
+
+
+@mcp.tool()
+def studio_zones(projet: str, zones: str = "") -> str:
+    """(Hakim seulement, 13/11) LES ZONES d'un projet : « couplet de papa : 1:17-1:41 ; refrain Hakim : m9-m13 ; outro : 2:10-2:26 ».
+    En secondes (1:17 ou 77), ou en mesures (m9 = le début de la mesure 9, au tempo du projet ; m9-m13 = 4 mesures). Le nom dit à
+    qui elle est : « papa » (ou A2LA, toi), « Hakim » (ou HK, moi), sinon une zone d'instru. Dans la version pour papa, TOUTES les voix
+    se taisent dans ses zones (fondus de 40 ms) : il y pose la sienne. zones vide : les zones actuelles, et les passages où une voix
+    chante déjà (pour t'aider à les placer)."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim travaille dans le studio."
+    st, SP = _studio(), _projets()
+    try:
+        pid = SP.trouver(projet)
+        p = SP.lire(pid)
+        if not str(zones or "").strip():
+            l = [f"Zones de « {p['titre']} » : " + (" ; ".join(f"{z['nom']} ({z['qui']}) {z['debut_s']:.1f}-{z['fin_s']:.1f} s" for z in p["zones"])
+                                                    or "aucune")]
+            d = SP.dossier(pid)
+            for t in p["pistes"]:
+                if t["role"] in SP.ROLES_VOIX:
+                    a = SP.activite_voix(d / t["fichier"])
+                    l.append(f"{t['nom']} chante : " + (", ".join(f"{x:.1f}-{y:.1f} s" for x, y in a[:20]) or "rien de net"))
+            if p.get("tempo"):
+                l.append(f"Tempo {p['tempo']} BPM, premier temps à {p.get('premier_temps_s', 0)} s : une mesure = "
+                         f"{4 * 60 / p['tempo']:.2f} s (m1 commence à {p.get('premier_temps_s', 0)} s).")
+            return "\n".join(l)
+        zs = SP.lire_zones(p, zones)
+        q = SP.modifier(pid, lambda x: SP.regler_zones(x, zs), note=f"zones : {str(zones)[:120]}")
+        return "Zones posées : " + " ; ".join(f"{z['nom']} ({z['qui']}) {z['debut_s']:.2f}-{z['fin_s']:.2f} s" for z in q["zones"])
+    except (st.Refus, SP.Refus) as e:
+        return f"Refusé : {e}"
+
+
+@mcp.tool()
+def studio_poser_voix(projet: str, paroles: str, style: str = "", autotune: bool | str = "léger", titre: str = "",
+                      zones_seulement: bool = True) -> str:
+    """(Hakim seulement, 13/11) POSER TA VOIX sur l'instru d'un projet (celle que tu as construite, ou celle que papa t'a envoyée) :
+    ACE-Step chante tes paroles sur l'instru du projet (sa reprise, au même tempo et dans la même tonalité, mesurés), ta voix seule
+    en est retirée (Demucs), CALÉE sur l'instru (le décalage mesuré en ms entre l'instru qu'ACE-Step a jouée et la vraie), puis
+    posée comme une piste « Voix de Hakim » du projet. zones_seulement : ta voix seulement dans tes zones (« refrain Hakim »), si tu en
+    as posé. Le calage sur la grille (ms) est dans le journal de la tâche et dans le projet. paroles : en sections ([verse] …
+    [chorus] …). style : vide = celui de l'instru (mesuré). Quelques minutes (une grosse tâche à la fois) ; ensuite studio_rendre."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim chante."
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis"))
+    import chant
+    st, SP = _studio(), _projets()
+    try:
+        pid = SP.trouver(projet)
+        p = SP.lire(pid)
+        base = SP.base_pour_chanter(pid)
+        duree = int(max(10, min(240, round(p.get("duree_s") or 60))))
+        ton = p.get("tonalite") or ""
+        c = chant.lancer(paroles, style or f"{p.get('genre') or 'trap'}, vocals over this exact beat", duree, titre or f"{p['titre']} (voix de Hakim)",
+                         autotune=autotune, bpm=int(round(p.get("tempo") or 0)) if 30 <= (p.get("tempo") or 0) <= 300 else 0,
+                         base=str(base), projet=pid, zones_seulement=bool(zones_seulement),
+                         tonalite=ton)
+    except (st.Refus, SP.Refus, chant.Refus) as e:
+        return f"Refusé : {e}"
+    return (f"Je chante sur l'instru de « {p['titre']} » ({c['tache']}) : {p.get('tempo') or '?'} BPM, {ton or 'tonalité mesurée'}. Ma voix "
+            "arrivera calée comme une piste du projet ; quelques minutes. Ensuite studio_rendre pour le mix et le master.")
+
+
+@mcp.tool()
+def studio_rendre(projet: str, mix_auto: bool = True, envoyer: bool = True, pistes_separees: bool = False, quoi: str = "tout",
+                  lufs: float = -14.0) -> str:
+    """(Hakim seulement, 13/11) LE MIX ET LE MASTER d'un projet, piste par piste, MESURÉS.
+    - mix_auto : le mix piste par piste (gain de départ : l'instru à −20 LUFS, chaque voix 1,5 à 2 LU au-dessus, vérifié sur le
+      rendu ; égaliseur correctif des voix d'après leur spectre ; compression ; dé-esseur ; réverb et délai calé sur le tempo ;
+      sidechain de la mélodie sous la voix). False : tes réglages tels quels.
+    - le master : égaliseur vers la courbe du genre (la moitié de l'écart mesuré, ±3 dB), compression de bus, limiteur
+      suréchantillonné, au LUFS visé (lufs, −14 par défaut), crête vraie ≤ −1 dBTP vérifiée sur le WAV ET le MP3.
+    - quoi : « tout » (le son entier, la version pour papa avec ses zones en instru seule, l'instru seule), « complet ».
+    - envoyer : tout est copié dans Hakim › Chansons sur le téléphone de papa ; pistes_separees : ses pistes aussi (dans un dossier).
+    Calcul en file ; studio_avis ou studio_projet(action="voir") donnent ensuite les mesures et l'avis, puis fichier_joindre."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim mixe dans le studio."
+    st, SP = _studio(), _projets()
+    try:
+        pid = SP.trouver(projet)
+        v = max(-20.0, min(-6.0, float(lufs or -14)))
+        if v != -14.0:
+            SP.modifier(pid, lambda p: p["master"].update(lufs=v), note=f"master visé {v} LUFS")
+        j = st.lancer("rendre", {"projet": pid, "mix_auto": bool(mix_auto), "envoyer": bool(envoyer), "pistes_separees": bool(pistes_separees),
+                                 "quoi": quoi if quoi in ("tout", "complet", "papa", "instru") else "tout", "par": "hakim"})
+    except (st.Refus, SP.Refus, ValueError) as e:
+        return f"Refusé : {e}"
+    return (f"Rendu lancé ({j['id']}) : {'mix piste par piste, ' if mix_auto else ''}master à {v} LUFS, crête ≤ −1 dBTP"
+            f"{', version pour papa' if quoi in ('tout', 'papa') else ''}{', pistes séparées' if pistes_separees else ''}. "
+            "Une à trois minutes ; studio_avis ensuite (mesures, avis, chemins à joindre).")
 
 
 def _atelier_visuel():

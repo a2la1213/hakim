@@ -51,7 +51,16 @@ def chanson(jarvis, tmp_path, monkeypatch):
     (c / "20261109-171743-deux-livres.json").write_text(json.dumps({"nom": mp3.stem, "titre": "Deux livres", "etat": "prête", "fin": 1,
                                                                     "mp3": str(mp3)}))
     s = tmp_path / "faux-demucs"
-    s.write_text('#!/bin/sh\ncp "$4" "$5"\ncp "$4" "$6"\n')
+    # (13/11) l'instru du studio passe par studio_separation.py (« -B -W ignore studio_separation.py separer mélange dossier … ») : le dossier
+    # reçoit instru.wav (le mélange) et une ligne JSON ; l'ancienne forme (chant.py separer mélange voix reste) reste comprise
+    s.write_text('''#!/bin/sh
+if [ "$2" = "-W" ]; then
+  mkdir -p "$7"; cp "$6" "$7/instru.wav"; cp "$6" "$7/vocals.wav"
+  echo "{\\"pistes\\": {\\"vocals\\": \\"$7/vocals.wav\\"}, \\"instru\\": \\"$7/instru.wav\\", \\"modeles\\": [\\"htdemucs_ft\\"]}"
+else
+  cp "$4" "$5"; cp "$4" "$6"
+fi
+''')
     s.chmod(0o755)
     monkeypatch.setattr(studio, "PYTHON_SEPARATION", s)
     return mp3

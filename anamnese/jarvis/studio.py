@@ -49,7 +49,7 @@ CIBLE_LUFS = -14.0          # le niveau des plateformes (Spotify, YouTube) : −
 CRETE_DB = -1.0             # le plafond de crête du limiteur
 SR = 44100
 DELAI_TRAVAIL_S = 30 * 60
-TYPES = ("mixer", "instru")
+TYPES = ("mixer", "instru", "projet", "rendre", "separer")     # (13/11) le multipiste : créer un projet (séparé en pistes), le rendre (mix, master, exports)
 
 
 class Refus(Exception):
@@ -497,29 +497,45 @@ def mixer(prise, instru, sortie_dir, titre="", latence_ms=0, autotune=False, ton
             shutil.rmtree(tmp, ignore_errors=True)
 
 
-def extraire_instru(source, instrus_dir, titre="", travail_dir=None, progres=None):
-    """Une chanson de Hakim → son instru : Demucs (htdemucs, dans son venv) retire la voix."""
+# (13/11, Ahmed : « séparer correctement les voix de l'instru et garder ce que je lui demande ») la séparation mesurée sur un banc (des
+# instrus d'ACE-Step sans voix + des voix connues, 6 mélanges) : htdemucs seul (d'avant) 16,2 dB de SDR ; htdemucs_ft 16,4 ; l'ensemble
+# ft + htdemucs 16,6 (fuite de voix −31 dB, artefacts −16,8 dB) ; 6 pistes 14,0 (il mange la mélodie) ; la porte de la voix ne change
+# presque rien (le « vocals » des modèles garde du ney et de l'oud même là où personne ne chante). D'où : l'ensemble ft + htdemucs, la
+# porte à −25 dB, et pour ses propres chansons la REPRISE par ACE-Step (chant.py, reprise) quand la voix couvre tout le morceau.
+MODELES_INSTRU = ("htdemucs_ft", "htdemucs")
+PISTES_DE = {"batterie": "drums", "basse": "bass", "melodie": "other", "mélodie": "other", "autres": "other", "guitare": "guitar",
+             "piano": "piano", "drums": "drums", "bass": "bass", "other": "other"}
+
+
+def extraire_instru(source, instrus_dir, titre="", travail_dir=None, progres=None, garder=None):
+    """Une chanson de Hakim → son instru : Demucs (ft + htdemucs, la voix retirée là où elle chante). garder : les pistes que papa
+    garde (« batterie, basse ») : l'instru est alors leur somme ; sans liste, tout ce qui n'est pas la voix (le mélange moins la voix)."""
     t0 = time.time()
     dire = progres or (lambda n, texte: None)
     instrus_dir = Path(instrus_dir)
     instrus_dir.mkdir(parents=True, exist_ok=True)
     tmp = Path(travail_dir or instrus_dir / f".instru-{uuid.uuid4().hex[:6]}")
     tmp.mkdir(parents=True, exist_ok=True)
+    g = sorted({PISTES_DE.get(_cle(x), "") for x in (garder or [])} - {""})
     try:
         dire(1, "préparation")
         m44 = tmp / "melange44.wav"
         _ff("-i", source, "-ar", SR, "-ac", 2, "-c:a", "pcm_s16le", m44)
-        dire(2, "Demucs retire la voix")
-        r = subprocess.run([str(PYTHON_SEPARATION), "-B", str(ICI / "chant.py"), "separer", str(m44), str(tmp / "voix.wav"),
-                            str(tmp / "reste.wav")], capture_output=True, text=True, timeout=1800)
+        dire(2, "Demucs retire la voix (deux modèles, la voix seulement là où elle chante)")
+        r = subprocess.run([str(PYTHON_SEPARATION), "-B", "-W", "ignore", str(ICI / "studio_separation.py"), "separer", str(m44), str(tmp / "sep"),
+                            "--modeles", ",".join(MODELES_INSTRU), "--format", "wav", "--porte", "-25", *(["--garder", ",".join(g)] if g else [])],
+                           capture_output=True, text=True, timeout=3600)
         if r.returncode:
             raise RuntimeError(f"Demucs : {r.stderr.strip()[-300:]}")
+        res = json.loads(r.stdout.strip().splitlines()[-1])
         dire(3, "encodage")
         ident = nom_de((titre or Path(source).stem) + "-instru")
         mp3 = instrus_dir / f"{ident}.mp3"
-        _ff("-i", tmp / "reste.wav", "-c:a", "libmp3lame", "-b:a", "320k", mp3)
-        fiche = {"id": ident, "titre": f"{titre or Path(source).stem} (instru)", "source": str(source), "mp3": str(mp3),
-                 "origine": "demucs", "duree_s": duree(mp3), "calcul_s": round(time.time() - t0, 1), "fin": time.time()}
+        _ff("-i", res["instru"], "-af", "alimiter=limit=-1dB:level=false:latency=true", "-c:a", "libmp3lame", "-b:a", "320k", mp3)
+        gardees = ", ".join(x for x in g) if g else ""
+        fiche = {"id": ident, "titre": f"{titre or Path(source).stem} (instru{' : ' + gardees if gardees else ''})", "source": str(source), "mp3": str(mp3),
+                 "origine": "demucs", "modeles": res.get("modeles"), "garder": g, "duree_s": duree(mp3), "calcul_s": round(time.time() - t0, 1),
+                 "fin": time.time()}
         _ecrire(instrus_dir / f"{ident}.json", fiche)
         # (10/11, lettre de Hakim, à la demande de papa) aussi dans le dossier Hakim de ses Documents, sous son nom lisible
         try:
@@ -569,6 +585,9 @@ def lancer(type_, params, studio=None, demarrer=None):
         for k in ("prise", "instru"):
             if not p.get(k) or not Path(p[k]).is_file():
                 raise Refus(f"{k} introuvable")
+    elif type_ in ("rendre", "separer"):
+        if not re.fullmatch(r"PJ-\d{8}-\d{6}-[0-9a-f]{4}", str(p.get("projet") or "")):
+            raise Refus("projet inconnu")
     else:
         if not p.get("source") or not Path(p["source"]).is_file():
             raise Refus("chanson introuvable")
@@ -579,7 +598,7 @@ def lancer(type_, params, studio=None, demarrer=None):
         raise Refus("déjà 5 calculs en file : attends qu'ils finissent")
     jid = f"J-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:4]}"
     fiche = {"id": jid, "type": type_, "params": p, "etat": "en attente", "debut": time.time(), "etape": 0,
-             "etapes": 7 if type_ == "mixer" else 3, "texte": "en file"}
+             "etapes": {"mixer": 7, "instru": 3, "projet": 3, "rendre": 8, "separer": 2}[type_], "texte": "en file"}
     _ecrire(d / f"{jid}.json", fiche)
     (demarrer or _demarrer_travailleur)(d)
     return fiche
@@ -606,8 +625,26 @@ def faire(fiche, d, studio=None):
                       autotune=p.get("autotune", False), tonalite=p.get("tonalite", ""), voix_db=p.get("voix_db", 0),
                       reverb=p.get("reverb", 0.3), echo=p.get("echo", 0), bpm=p.get("bpm", 0),
                       debruitage=p.get("debruitage", True), progres=progres)
+        elif fiche["type"] == "projet":                     # (13/11) un projet multipiste depuis un son (séparé en pistes)
+            import studio_projet as SP
+            q = SP.creer_depuis(p["source"], p.get("titre", ""), p.get("separer", "4"), p.get("garder") or None,
+                                p.get("role_voix", "voix_hakim"), p.get("genre", "trap"), studio, progres=progres,
+                                tempo=p.get("tempo", 0), tonalite=p.get("tonalite", ""))
+            r = {"projet": q["id"], "titre": q["titre"], "pistes": len(q["pistes"]), "tempo": q.get("tempo"), "tonalite": q.get("tonalite")}
+        elif fiche["type"] == "rendre":                     # (13/11) mix piste par piste, master, exports, mesures, téléphone
+            import studio_projet as SP
+            r = SP.rendre_projet(p["projet"], p.get("quoi", "tout"), bool(p.get("mix_auto")), p.get("envoyer", True) is not False,
+                                 bool(p.get("pistes_separees")), studio, progres=progres)
+            r = {"projet": p["projet"], "nom": r["nom"], "fichiers": r["fichiers"], "telephone": r["telephone"], "avis": r["avis"],
+                 "master": {k: r["mesures"]["master"].get(k) for k in ("lufs", "crete_dbtp", "lra", "plr_db")},
+                 "mp3_crete_dbtp": r["mesures"]["mp3"].get("crete_dbtp"), "calcul_s": r["calcul_s"]}
+        elif fiche["type"] == "separer":                    # (13/11) une piste d'un projet séparée en ses pistes
+            import studio_projet as SP
+            q = SP.separer_piste(p["projet"], p["piste"], p.get("separer", "4"), studio, progres=progres)
+            r = {"projet": q["id"], "pistes": len(q["pistes"])}
         else:
-            r = extraire_instru(p["source"], studio / "instrus", titre=p.get("titre", ""), progres=progres)
+            r = extraire_instru(p["source"], studio / "instrus", titre=p.get("titre", ""), progres=progres,
+                                garder=p.get("garder") or None)
         fiche.update(etat="fini", resultat=r, texte="prêt")
     except Exception as e:                                   # noqa: BLE001 — toute panne finit le travail proprement
         fiche.update(etat="raté", erreur=f"{type(e).__name__}: {str(e)[:300]}", texte="raté")
@@ -717,18 +754,46 @@ def instru_du_studio(demande, studio=None):
     return x["mp3"] if x else ""
 
 
-def instru_de_chanson(demande, titre="", refaire=False, chansons=None, studio=None, demarrer=None):
+def instru_reprise(c, source, fidelite=0.9, titre="", lancer_chant=None):
+    """(13/11) l'instru REJOUÉE par ACE-Step : la tâche « cover » sur la chanson (ou sur son instru Demucs), en instrumental, au même tempo,
+    dans la même tonalité, avec sa légende sans voix : pas de trous là où la voix chantait (une séparation en laisse quand la voix
+    couvre tout le morceau). Une chanson à la fois (la file d'ACE-Step). Rend la tâche."""
+    sys.path.insert(0, str(ICI))
+    import chant
+    style = c.get("style") or c.get("description") or "trap"
+    try:
+        return (lancer_chant or chant.lancer)("[instrumental]", style, int(max(10, min(240, round(float(c.get("duree_s") or 60))))),
+                                              titre or f"{c.get('titre') or c['nom']} (instru rejouée)", bpm=int(c.get("bpm") or 0),
+                                              tonalite=c.get("tonalite") or "", reprise=str(source), fidelite=fidelite, pour_studio=True)
+    except chant.Refus as e:
+        raise Refus(str(e))
+
+
+def instru_de_chanson(demande, titre="", refaire=False, chansons=None, studio=None, demarrer=None, garder=None, methode="demucs",
+                      fidelite=0.9, lancer_chant=None):
     """Sa chanson → son instru seule (Demucs retire sa voix), dans les instrus du Studio : papa y pose sa prise, puis Hakim la
-    mixe (studio_mixer). Ni deux fois la même (déjà faite, ou déjà en file), sauf refaire. Rend {etat, chanson, autres, instru|travail}."""
+    mixe (studio_mixer). Ni deux fois la même (déjà faite, ou déjà en file), sauf refaire. Rend {etat, chanson, autres, instru|travail}.
+    (13/11) garder : les pistes que papa garde ; methode « reprise » : l'instru rejouée par ACE-Step (instru_reprise), depuis son instru
+    Demucs si elle existe, sinon depuis la chanson."""
     c, autres = trouver_chanson(demande, chansons)
+    if methode == "reprise":
+        st = Path(studio or STUDIO)
+        faites = sorted((x for x in (_lire(f, {}) or {} for f in (st / "instrus").glob("*.json"))
+                         if x.get("origine") == "demucs" and _meme_fichier(x.get("source"), c["mp3"]) and x.get("mp3") and Path(x["mp3"]).is_file()
+                         and not x.get("garder")), key=lambda x: x.get("fin") or 0, reverse=True)
+        src = faites[0]["mp3"] if faites else c["mp3"]
+        t = instru_reprise(c, src, fidelite, titre, lancer_chant)
+        return {"chanson": c, "autres": autres, "etat": "reprise", "tache": t, "depuis": "son instru Demucs" if faites else "la chanson"}
     if c.get("instrumental"):
         raise Refus(f"« {c.get('titre')} » est déjà une instru (pas de voix à retirer) : papa peut poser sa prise directement dessus "
                     "dans le Studio")
     st = Path(studio or STUDIO)
     r = {"chanson": c, "autres": autres}
+    g = sorted({PISTES_DE.get(_cle(x), "") for x in (garder or [])} - {""})
     if not refaire:
         faites = sorted((x for x in (_lire(f, {}) or {} for f in (st / "instrus").glob("*.json"))
-                         if x.get("origine") == "demucs" and _meme_fichier(x.get("source"), c["mp3"]) and x.get("mp3") and Path(x["mp3"]).is_file()),
+                         if x.get("origine") == "demucs" and _meme_fichier(x.get("source"), c["mp3"]) and x.get("mp3") and Path(x["mp3"]).is_file()
+                         and sorted(x.get("garder") or []) == g and x.get("modeles")),       # (13/11) celles d'avant le banc se refont
                         key=lambda x: x.get("fin") or 0, reverse=True)
         if faites:                                           # (10/11) et sa copie dans les Documents de papa (déposée si elle manque)
             return {**r, "etat": "déjà", "instru": faites[0], "joindre": instru_aux_documents(faites[0])}
@@ -736,7 +801,7 @@ def instru_de_chanson(demande, titre="", refaire=False, chansons=None, studio=No
         if x.get("type") == "instru" and x.get("etat") in ("en attente", "en cours") and _meme_fichier((x.get("params") or {}).get("source"), c["mp3"]):
             return {**r, "etat": "en file", "travail": x}
     titre = " ".join(str(titre or "").split())[:80] or c.get("titre") or c["nom"]
-    j = lancer("instru", {"source": str(Path(c["mp3"]).resolve()), "titre": titre, "chanson": c["nom"], "par": "hakim"}, st, demarrer)
+    j = lancer("instru", {"source": str(Path(c["mp3"]).resolve()), "titre": titre, "chanson": c["nom"], "par": "hakim", "garder": g}, st, demarrer)
     return {**r, "etat": "lancé", "travail": j}
 
 

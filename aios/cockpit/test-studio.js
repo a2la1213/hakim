@@ -355,3 +355,97 @@ test('le calage par sortie : gardé, la dernière mesure s’applique, l’avanc
     assert.ok(fs.existsSync(path.join(jarvis, 'chansons', 'studio', 'calages.json')), 'gardé sur le disque du studio');
   } finally { srv.close(); studio.arreter(); fs.rmSync(racine, { recursive: true, force: true }); }
 });
+
+/* ---------- (13/11) le studio multipiste ---------- */
+test('les routes des projets multipistes : lire, régler avec la version vue, zones, créer, rendre, la forme d’onde, la prise posée', { skip: !AVEC_FFMPEG }, async () => {
+  const racine = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-pj-'));
+  const jarvis = path.join(racine, 'jarvis'), ch = path.join(jarvis, 'chansons'), pid = 'PJ-20261113-010203-ab12';
+  const d = path.join(ch, 'studio', 'projets', pid, 'pistes');
+  fs.mkdirSync(d, { recursive: true });
+  execFileSync(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'sine=f=330:d=2', '-af', "volume='if(lt(t,1),1,0)':eval=frame", '-ar', '44100', path.join(d, 'vocals.flac')]);
+  fs.copyFileSync(path.join(d, 'vocals.flac'), path.join(ch, '20261113-000000-moujahid.mp3'));
+  let projet = { id: pid, titre: 'Moujahid', rev: 4, pistes: [{ id: 't1', nom: 'Voix de Hakim', role: 'voix_hakim', fichier: 'pistes/vocals.flac', regions: [] }],
+    zones: [], rendus: [{ nom: 'r', t: 1, avis: ['ok'], mesures: { master: { lufs: -14, crete_dbtp: -1.2 }, mp3: { crete_dbtp: -1.1 } },
+      fichiers: { complet: { mp3: path.join(ch, 'studio', 'projets', pid, 'rendus', 'r.mp3'), wav: '/etc/passwd' } } }] };
+  const cmds = [];
+  const studio = S.creer({ jarvis, lireCorps, appeler: () => ({ ok: true }), projet: (q) => {
+    cmds.push(q);
+    if (q.action === 'lire') return { ok: true, projet };
+    if (q.action === 'regler' || q.action === 'zones') {
+      if (q.rev !== projet.rev) return { ok: false, erreur: 'le projet a changé entre-temps' };
+      projet = { ...projet, rev: projet.rev + 1 }; return { ok: true, projet };
+    }
+    if (q.action === 'importer') return { ok: true, projet: { ...projet, pistes: [...projet.pistes, { id: 't2', nom: 'Voix de papa', role: 'voix_papa', fichier: q.fichier }] } };
+    return { ok: true, travail: { id: 'J-9' } };
+  } });
+  const srv = await serveurDe(studio);
+  try {
+    let r = await appel(srv, 'GET', `/api/studio/projet?id=${pid}`);
+    assert.equal(r.statut, 200);
+    assert.equal(r.j.projet.pistes[0].f, `studio/projets/${pid}/pistes/vocals.flac`, 'chaque piste porte son chemin servi');
+    assert.equal(r.j.projet.rendus[0].fichiers.complet.mp3, `studio/projets/${pid}/rendus/r.mp3`);
+    assert.equal(r.j.projet.rendus[0].fichiers.complet.wav, null, 'rien hors des chansons');
+    assert.equal((await appel(srv, 'GET', '/api/studio/projet?id=../../x')).statut, 404);
+    // le son d'une piste (FLAC) est servi ; la forme d'onde : un pic toutes les 20 ms, le son puis le silence
+    assert.equal((await appel(srv, 'GET', `/api/studio/son?f=${encodeURIComponent(r.j.projet.pistes[0].f)}`)).statut, 200);
+    r = await appel(srv, 'GET', `/api/studio/forme?f=${encodeURIComponent(`studio/projets/${pid}/pistes/vocals.flac`)}`);
+    assert.equal(r.statut, 200); assert.equal(r.j.pas_s, 0.02); assert.ok(Math.abs(r.j.pics.length - 100) <= 1, r.j.pics.length);
+    assert.ok(r.j.pics[25] >= 10 && r.j.pics[75] === 0, `${r.j.pics[25]} ${r.j.pics[75]}`);
+    const cache = fs.readdirSync(path.join(ch, 'studio', '.formes'));
+    assert.equal(cache.length, 1, 'gardée en cache');
+    assert.equal((await appel(srv, 'GET', '/api/studio/forme?f=../../etc/passwd')).statut, 404);
+    // régler avec la version vue ; une version d'avant : 409 (la page recharge)
+    r = await appel(srv, 'POST', '/api/studio/projet/regler', { id: pid, rev: 4, piste: 't1', reglages: { volume_db: -3 } });
+    assert.equal(r.statut, 200); assert.equal(r.j.projet.rev, 5);
+    assert.deepEqual(cmds.at(-1), { action: 'regler', id: pid, rev: 4, piste: 't1', reglages: { volume_db: -3 }, par: 'papa' });
+    assert.equal((await appel(srv, 'POST', '/api/studio/projet/regler', { id: pid, rev: 4, piste: 't1', reglages: { volume_db: -1 } })).statut, 409);
+    assert.equal((await appel(srv, 'POST', '/api/studio/projet/regler', { id: pid, rev: 5, piste: 't1', reglages: 'x' })).statut, 400);
+    r = await appel(srv, 'POST', '/api/studio/projet/zones', { id: pid, rev: 5, zones: [{ nom: 'Couplet de papa<b>', debut_s: 10, fin_s: 34, qui: 'papa' }] });
+    assert.equal(r.statut, 200); assert.equal(cmds.at(-1).zones[0].nom, 'Couplet de papa b', 'les mots nettoyés');
+    // créer depuis un son des chansons (jamais hors d'elles) ; rendre
+    r = await appel(srv, 'POST', '/api/studio/projet/creer', { f: '20261113-000000-moujahid.mp3', separer: '6', garder: ['batterie', 'basse'], voix: 'hakim', tempo: 140 });
+    assert.equal(r.statut, 200);
+    assert.deepEqual(cmds.at(-1).params, { source: path.join(ch, '20261113-000000-moujahid.mp3'), titre: '20261113-000000-moujahid', separer: '6', garder: ['batterie', 'basse'], role_voix: 'voix_hakim', tempo: 140 });
+    await appel(srv, 'POST', '/api/studio/projet/creer', { f: '20261113-000000-moujahid.mp3', tempo: 9999 });
+    assert.equal(cmds.at(-1).params.tempo, undefined, 'un tempo absurde n’est pas transmis');
+    assert.equal((await appel(srv, 'POST', '/api/studio/projet/creer', { f: '/etc/hosts' })).statut, 404);
+    r = await appel(srv, 'POST', '/api/studio/projet/rendre', { id: pid, pistes_separees: true });
+    assert.equal(r.statut, 200);
+    assert.deepEqual(cmds.at(-1), { action: 'rendre', par: 'papa', params: { projet: pid, mix_auto: true, envoyer: true, pistes_separees: true, quoi: 'tout' } });
+    // une prise de papa posée dans le projet : gardée comme une prise, puis une piste à l'instant où la lecture est partie
+    r = await appel(srv, 'POST', `/api/studio/projet-prise?id=${pid}&debut=12.5&latence=140&titre=${encodeURIComponent('Mon couplet')}`, fs.readFileSync(path.join(d, 'vocals.flac')), 'audio/wav');
+    assert.equal(r.statut, 200);
+    const imp = cmds.at(-1);
+    assert.deepEqual([imp.action, imp.debut_s, imp.latence_ms, imp.role, imp.nom], ['importer', 12.5, 140, 'voix_papa', 'Mon couplet']);
+    assert.ok(imp.fichier.startsWith(path.join(ch, 'studio', 'prises', 'P-')) && fs.existsSync(imp.fichier));
+    const fiche = JSON.parse(fs.readFileSync(imp.fichier.replace(/\.wav$/, '.json'), 'utf8'));
+    assert.deepEqual([fiche.projet, fiche.debut_s, fiche.latence_ms], [pid, 12.5, 140]);
+    assert.equal(r.j.projet.pistes.at(-1).role, 'voix_papa');
+    assert.equal((await appel(srv, 'POST', '/api/studio/projet-prise?id=x', Buffer.alloc(5000), 'audio/wav')).statut, 404);
+  } finally { srv.close(); studio.arreter(); fs.rmSync(racine, { recursive: true, force: true }); }
+});
+
+test('ses outils du studio multipiste sont permis à Hakim', () => {
+  const SRV = lire('server.js');
+  for (const n of ['studio_projet', 'studio_piste', 'studio_zones', 'studio_poser_voix', 'studio_rendre'])
+    assert.match(SRV, new RegExp(`'${n}'[,\\]]`), n);
+});
+
+test('la page Studio, le multipiste : ses parties, la machinerie partagée du micro, tout texte du disque échappé', () => {
+  const h = lire('public/studio.html'), js = lire('public/studio-pistes.js'), page = lire('public/studio-page.js');
+  for (const id of ['mpProjet', 'mpNouveau', 'mpCreer', 'mpSource', 'mpSeparer', 'mpVoix', 'mpCreerOk', 'mpVue', 'mpLire', 'mpRec', 'mpVersion', 'mpScroll', 'mpGrille',
+    'mpDetail', 'mpZones', 'mpZoneAjout', 'mpZonesOk', 'mpMixAuto', 'mpPistesSep', 'mpRendre', 'mpRendus', 'mpNiveau'])
+    assert.match(h, new RegExp(`id="${id}"`), id);
+  assert.match(h, /<script src="\/studio-page\.js"><\/script>\n  <script src="\/studio-pistes\.js"><\/script>/, 'après la page : elle prend sa machinerie');
+  // le même micro, la même horloge, le même calage que la prise ordinaire
+  assert.match(page, /window\.StudioAudio = \{ contexte, tamponDe, ouvrirMicro, capter, enWav, clic, lireRoute, route: \(\) => route, latence, calageActuel,/);
+  for (const f of ['ouvrirMicro()', 'capter(c, m, T0', 'enWav(prise.x, prise.sr)', 'latence()', 'calageActuel()']) assert.ok(js.includes(f), f);
+  assert.match(js, /\/api\/studio\/projet-prise\?/);
+  // la prise part à l'instant de la lecture, papa entend SA version (ses zones en instru), et chaque réglage porte la version vue
+  assert.match(js, /await jouer\(depuis, 'papa', T0\);/);
+  assert.match(js, /\{ id: s\.projet\.id, rev: s\.projet\.rev, piste, reglages \}/);
+  const html = js.split('\n').filter(l => !/textContent =/.test(l)).join('\n');                       // textContent : jamais du HTML
+  const nus = (html.match(/\$\{(?!esc\()[^{}]*\.(titre|texte|nom|f|id|couleur|role|erreur|mp3)\}/g) || []).filter(x => !/\.id === /.test(x));
+  assert.deepEqual(nus, [], 'tout texte venu du disque est échappé dans le rendu');
+  assert.ok(!/innerHTML = [^;]*\$\{a\}/.test(js));
+});

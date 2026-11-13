@@ -65,6 +65,38 @@
     #bulle { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 20; padding: 10px 12px; border-radius: 10px;
       border: 1px solid var(--glass-bd); background: var(--panneau, #0b1220); color: var(--txt); font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.35); max-width: 640px; margin: 0 auto; }
     #bulle:empty { display: none; }
+    /* (13/11) le multipiste : une piste par ligne, son en-tête collé à gauche, sa forme d'onde qui défile ; lisible sur le téléphone */
+    .mp-transport { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+    .mp-transport .temps { min-width: 92px; font-size: 15px; color: var(--txt); }
+    .mp-transport button { min-width: 44px; }
+    .mp-scroll { position: relative; overflow-x: auto; overflow-y: hidden; border: 1px solid var(--glass-bd); border-radius: 10px; -webkit-overflow-scrolling: touch;
+      touch-action: pan-x pan-y; background: var(--champ, rgba(0,0,0,.18)); }
+    .mp-ligne { display: flex; align-items: stretch; border-top: 1px solid var(--trait, var(--glass-bd)); min-height: 58px; }
+    .mp-ligne.regle { min-height: 26px; border-top: 0; }
+    .mp-ligne.zones { min-height: 26px; }
+    .mp-tete { position: sticky; left: 0; z-index: 2; flex: none; width: 128px; padding: 4px 6px; background: var(--panneau, #0b1220);
+      border-right: 1px solid var(--glass-bd); display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--txt); }
+    .mp-tete .nom { display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+    .mp-tete .pastille { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+    .mp-tete .boutons { display: flex; gap: 4px; }
+    .mp-tete .boutons button { min-height: 28px; min-width: 30px; padding: 2px 6px; font-size: 12px; border-radius: 7px; }
+    .mp-tete .boutons button.on.m { background: #f97316; color: #fff; border-color: #f97316; }
+    .mp-tete .boutons button.on.s { background: #facc15; color: #111; border-color: #facc15; }
+    .mp-tete input[type=range] { width: 100%; min-height: 20px; accent-color: var(--teal); margin: 0; }
+    .mp-ligne.choisie .mp-tete { box-shadow: inset 3px 0 0 var(--teal); }
+    .mp-piste { position: relative; flex: none; }
+    .mp-piste canvas { display: block; height: 100%; }
+    .mp-tete.vide { min-height: 26px; justify-content: center; color: var(--txt-3); }
+    .mp-zone { position: absolute; top: 3px; bottom: 3px; border-radius: 5px; font-size: 11px; padding: 0 5px; overflow: hidden; white-space: nowrap;
+      text-overflow: ellipsis; color: #111; line-height: 20px; cursor: pointer; }
+    .mp-tete-lecture { position: absolute; top: 0; bottom: 0; width: 2px; background: #ef4444; z-index: 3; pointer-events: none; }
+    .mp-detail { border: 1px solid var(--glass-bd); border-radius: 10px; padding: 8px 10px; margin-top: 8px; }
+    .mp-grille2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 12px; }
+    .mp-grille2 label { display: flex; flex-direction: column; font-size: 12px; color: var(--txt-2); gap: 2px; }
+    .mp-grille2 input, .mp-grille2 select { font-size: 15px; min-height: 36px; }
+    .mp-zones-liste .zone { display: grid; grid-template-columns: 1fr 74px 74px 86px 40px; gap: 4px; align-items: center; margin: 3px 0; }
+    .mp-zones-liste input, .mp-zones-liste select { font-size: 14px; min-height: 36px; padding: 4px 6px; width: 100%; }
+    .mesures { font-size: 12.5px; color: var(--txt-2); font-variant-numeric: tabular-nums; }
   </style>
 </head>
 <body>
@@ -79,6 +111,56 @@
       <h2 id="t-calculs"><span aria-hidden="true">⏳</span>Calculs en cours</h2>
       <div class="sous">Un gros calcul à la fois sur le Mac (16 Go) : les autres attendent leur tour.</div>
       <div id="calculs"></div>
+    </section>
+
+    <section class="glass carte" id="multipiste" aria-labelledby="t-mp">
+      <h2 id="t-mp"><span aria-hidden="true">🎛️</span>Multipiste</h2>
+      <div class="sous">Un projet, ce sont des pistes sur une ligne du temps : sa voix, la tienne, l’instru ou ses pistes séparées (batterie, basse,
+        mélodie…). Chaque piste a son volume, son panoramique, muet et solo, son égaliseur, sa compression, sa réverb, son délai, son autotune.
+        Tes <b>zones</b> restent en instru seule dans la version pour toi. Hakim règle le même projet de son côté.</div>
+      <div class="rangee">
+        <select id="mpProjet" aria-label="Choisir le projet"></select>
+        <button type="button" id="mpNouveau" style="flex:0 0 auto">＋ Nouveau projet</button>
+      </div>
+      <div id="mpCreer" class="mp-detail" hidden>
+        <h3>Nouveau projet</h3>
+        <select id="mpSource" aria-label="Depuis quel son"></select>
+        <div class="mp-grille2" style="margin-top:6px">
+          <label>Séparer en pistes<select id="mpSeparer"><option value="4">4 pistes (batterie, basse, mélodie, voix)</option><option value="6">6 pistes (+ guitare, piano)</option>
+            <option value="2">2 pistes (instru, voix)</option><option value="non">Non (le son entier)</option></select></label>
+          <label>La voix séparée est celle de<select id="mpVoix"><option value="hakim">Hakim</option><option value="papa">papa</option><option value="origine">quelqu’un d’autre</option></select></label>
+        </div>
+        <div class="sous">Garder dans l’instru :
+          <label class="ligne" style="display:inline-flex"><input type="checkbox" class="mpGarder" value="batterie" checked><span>batterie</span></label>
+          <label class="ligne" style="display:inline-flex"><input type="checkbox" class="mpGarder" value="basse" checked><span>basse</span></label>
+          <label class="ligne" style="display:inline-flex"><input type="checkbox" class="mpGarder" value="melodie" checked><span>mélodie et autres</span></label></div>
+        <div class="gestes"><button type="button" class="principal" id="mpCreerOk">Créer (séparé sur le Mac)</button><button type="button" id="mpCreerNon">Annuler</button></div>
+      </div>
+      <div id="mpVue" hidden>
+        <div class="sous" id="mpInfos"></div>
+        <div class="mp-transport">
+          <button type="button" id="mpLire" aria-label="Lire">▶︎</button>
+          <button type="button" id="mpDebut" aria-label="Revenir au début">⏮</button>
+          <button type="button" class="rec" id="mpRec" style="min-height:40px;font-size:13px;padding:0 12px">● Poser ma voix</button>
+          <span class="temps" id="mpTemps">0:00.0</span>
+          <select id="mpVersion" aria-label="Ce que tu entends" style="width:auto;flex:0 0 auto"><option value="complet">Le son entier</option><option value="papa">Ta version (tes zones en instru)</option></select>
+          <button type="button" id="mpZoomMoins" aria-label="Dézoomer">−</button><button type="button" id="mpZoomPlus" aria-label="Zoomer">＋</button>
+        </div>
+        <div class="niveau" aria-hidden="true"><i id="mpNiveau"></i></div>
+        <div class="sous" id="mpRecEtat"></div>
+        <div class="mp-scroll" id="mpScroll"><div id="mpGrille"></div></div>
+        <div class="mp-detail" id="mpDetail" hidden></div>
+        <h3>Zones</h3>
+        <div class="sous">Tes zones (« papa ») restent en instru seule dans ta version : tu y poses ta voix. Touche la règle pour placer la lecture.</div>
+        <div class="mp-zones-liste" id="mpZones"></div>
+        <div class="gestes"><button type="button" id="mpZoneAjout">＋ Zone ici</button><button type="button" class="principal" id="mpZonesOk">Garder les zones</button></div>
+        <h3>Mix et mastering</h3>
+        <label class="ligne"><input type="checkbox" id="mpMixAuto" checked><span>Hakim mixe piste par piste (niveaux, égaliseurs, compression, réverb, sidechain)</span></label>
+        <label class="ligne"><input type="checkbox" id="mpPistesSep"><span>M’envoyer aussi les pistes séparées</span></label>
+        <div class="gestes"><button type="button" class="principal" id="mpRendre">🎚️ Mixer et masteriser</button>
+          <span class="sous">−14 LUFS, crête ≤ −1 dBTP ; le son entier, ta version et l’instru, dans Hakim › Chansons.</span></div>
+        <div id="mpRendus"></div>
+      </div>
     </section>
 
     <section class="glass carte" aria-labelledby="t-enreg">
@@ -176,5 +258,6 @@
   <script>Badges.suivre(document.querySelector('nav.topnav'), 'studio');</script>
   <script src="/studio-calage.js"></script>
   <script src="/studio-page.js"></script>
+  <script src="/studio-pistes.js"></script>
 </body>
 </html>

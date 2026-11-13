@@ -1,0 +1,141 @@
+{
+ "genres": {
+  "trap": {
+   "bandes": [
+    8.0,
+    7.8,
+    4.5,
+    1.5,
+    1.6,
+    -1.6,
+    -3.3,
+    -3.6,
+    -1.8,
+    -13.1
+   ],
+   "ecart_type": [
+    1.1,
+    3.0,
+    2.3,
+    2.4,
+    1.3,
+    1.1,
+    1.1,
+    1.0,
+    2.2,
+    3.0
+   ],
+   "sources": [
+    "A2LA - Rage MASTER",
+    "A2LA - Fennec MASTER",
+    "A2LA - Homme MASTER",
+    "Rim_K_-_Ainsi_va_la_rue_ft._Saïf"
+   ],
+   "mesures": [
+    {
+     "lufs": -20.1,
+     "crete_dbtp": -0.0,
+     "lra": 13.8,
+     "plr_db": 20.1,
+     "facteur_crete_db": 13.7
+    },
+    {
+     "lufs": -18.7,
+     "crete_dbtp": -0.1,
+     "lra": 11.5,
+     "plr_db": 18.6,
+     "facteur_crete_db": 14.4
+    },
+    {
+     "lufs": -16.9,
+     "crete_dbtp": 0.0,
+     "lra": 11.1,
+     "plr_db": 16.9,
+     "facteur_crete_db": 11.7
+    },
+    {
+     "lufs": -9.7,
+     "crete_dbtp": 0.7,
+     "lra": 5.1,
+     "plr_db": 10.4,
+     "facteur_crete_db": 10.9
+    }
+   ],
+   "lufs_median": -17.8,
+   "plr_median": 17.8
+  },
+  "trap_instru": {
+   "bandes": [
+    6.4,
+    11.9,
+    7.2,
+    3.5,
+    3.9,
+    0.5,
+    -5.8,
+    -8.0,
+    -5.8,
+    -13.8
+   ],
+   "ecart_type": [
+    3.5,
+    1.4,
+    0.9,
+    1.0,
+    0.7,
+    1.3,
+    1.9,
+    2.5,
+    2.2,
+    3.7
+   ],
+   "sources": [
+    "Werenoi x Ninho x Timal Type Beat - _GTR_ __ Instru Rap Trap",
+    "Maes x SCH Type Beat Chanel  Instru Rap 2025",
+    "Ninho x SDM Type Beat LOYAUTÉ  Instru Rap",
+    "KAMAS By Skarus Beats 120bpm",
+    "SAS By Skarus Beats 131bpm"
+   ],
+   "mesures": [
+    {
+     "lufs": -11.7,
+     "crete_dbtp": 1.9,
+     "lra": 6.1,
+     "plr_db": 13.6,
+     "facteur_crete_db": 11.0
+    },
+    {
+     "lufs": -9.3,
+     "crete_dbtp": 1.3,
+     "lra": 16.9,
+     "plr_db": 10.6,
+     "facteur_crete_db": 10.8
+    },
+    {
+     "lufs": -16.9,
+     "crete_dbtp": -0.0,
+     "lra": 7.1,
+     "plr_db": 16.9,
+     "facteur_crete_db": 11.0
+    },
+    {
+     "lufs": -10.1,
+     "crete_dbtp": 1.2,
+     "lra": 5.1,
+     "plr_db": 11.3,
+     "facteur_crete_db": 10.1
+    },
+    {
+     "lufs": -13.2,
+     "crete_dbtp": 0.8,
+     "lra": 10.4,
+     "plr_db": 14.0,
+     "facteur_crete_db": 12.3
+    }
+   ],
+   "lufs_median": -11.7,
+   "plr_median": 13.6
+  }
+ },
+ "note": "courbes mesurées le 13/11 (studio_mesures.bandes : énergie par octave relative à la moyenne des bandes) sur des morceaux du genre reçus de papa ; seuls les chiffres sont gardés"
+}

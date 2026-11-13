@@ -250,7 +250,9 @@ function creer(o = {}) {
 
   function servir(req, res, f, telecharger) {
     const taille = fs.statSync(f).size, type = TYPES_SON[path.extname(f).toLowerCase()] || 'application/octet-stream';
-    const entetes = { 'Content-Type': type, 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-store',
+    // (13/11) les pistes d'un projet (plusieurs Mo chacune) restent une heure dans le cache du téléphone : un nom ne change jamais de son
+    const piste = /^studio\/projets\/PJ-[\w-]+\/pistes\//.test(rel(f) || '');
+    const entetes = { 'Content-Type': type, 'Accept-Ranges': 'bytes', 'Cache-Control': piste ? 'private, max-age=3600' : 'no-store',
       ...(telecharger ? { 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(f))}` } : {}) };
     const m = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ''));
     if (m && (m[1] || m[2])) {
@@ -365,9 +367,132 @@ function creer(o = {}) {
       catch (e) { return repondre(res, 400, { erreur: e.message }); }
     }
     if (p === '/api/studio/ecouter/arreter') { if (s.ecoute) s.ecoute.arreter('arrêtée par papa'); return repondre(res, 200, { ok: true }); }
+    if (p.startsWith('/api/studio/projet/')) return routeProjet(req, res, p);
     return repondre(res, 404, { erreur: 'inconnu' });
   }
-  return { route, etat, chemin, ecouter, decoder, arreter: () => { if (s.ecoute) s.ecoute.arreter('arrêt du cockpit'); }, _s: s };
+
+  /* ---------- (13/11) le studio multipiste : les projets (anamnese/jarvis/studio_projet.py) ----------
+     Ahmed : « un vrai studio complet avec différentes pistes et différents réglages, un peu comme Logic Pro simplifié ». Le projet vit sur le
+     disque (studio/projets/<id>/projet.json), Hakim le change par ses outils, papa par la page : chaque changement passe par studio_projet.py
+     (une ligne JSON), avec la version (rev) que la page a vue : une version d'avant est refusée (409), la page recharge. */
+  const PROJET_PY = path.join(ANAMNESE, 'jarvis', 'studio_projet.py');
+  const RE_PROJET = /^PJ-\d{8}-\d{6}-[0-9a-f]{4}$/;
+  function projetCmd(q) {
+    if (o.projet) return Promise.resolve(o.projet(q));                   // (tests) jamais le vrai disque du studio
+    return new Promise((ok) => {
+      const p = execFile(o.pythonStudio || PYTHON, ['-B', PROJET_PY, 'commande'], { timeout: 60000, cwd: path.dirname(PROJET_PY), maxBuffer: 8 << 20,
+        env: { ...process.env, PATH: `/usr/local/bin:/opt/homebrew/bin:${process.env.PATH || '/usr/bin:/bin'}` } },
+        (e, so) => { try { ok(JSON.parse(String(so).trim().split('\n').pop())); } catch (_) { ok({ ok: false, erreur: e ? 'studio_projet.py a échoué' : 'réponse illisible' }); } });
+      p.stdin.end(JSON.stringify(q || {}));
+    });
+  }
+  // le projet pour la page : chaque piste avec son chemin servi (/api/studio/son?f=…), chaque rendu avec ses fichiers servis
+  function pourLaPage(pr) {
+    if (!pr || !RE_PROJET.test(pr.id || '')) return null;
+    const d = path.join(STUDIO, 'projets', pr.id);
+    const servi = (f) => { const a = path.isAbsolute(String(f || '')) ? String(f) : path.join(d, String(f || '')); return rel(a); };
+    return { ...pr,
+      pistes: (pr.pistes || []).map(t => ({ ...t, f: servi(t.fichier) })),
+      rendus: (pr.rendus || []).slice(-4).map(r => ({ nom: r.nom, t: r.t, calcul_s: r.calcul_s, avis: r.avis || [],
+        master: r.mesures && r.mesures.master ? { lufs: r.mesures.master.lufs, crete_dbtp: r.mesures.master.crete_dbtp, lra: r.mesures.master.lra, plr_db: r.mesures.master.plr_db } : null,
+        mp3_crete_dbtp: r.mesures && r.mesures.mp3 ? r.mesures.mp3.crete_dbtp : null,
+        fichiers: Object.fromEntries(Object.entries(r.fichiers || {}).filter(([k]) => k !== 'pistes').map(([k, v]) => [k, { mp3: rel(v.mp3), wav: rel(v.wav) }])),
+        pistes: Object.values((r.fichiers || {}).pistes || {}).map(rel).filter(Boolean) })) };
+  }
+  // la forme d'onde d'un son (pour la vue multipiste) : le pic de chaque 20 ms, gardé en cache à côté du studio
+  const FORMES = path.join(STUDIO, '.formes');
+  async function forme(f) {
+    const st = fs.statSync(f), cle = require('crypto').createHash('sha1').update(`${f}|${st.size}|${st.mtimeMs}`).digest('hex').slice(0, 20);
+    const c = path.join(FORMES, cle + '.json');
+    const vu = lireJson(c);
+    if (vu) return vu;
+    const pas = 160;                                                    // 8 kHz : un pic toutes les 20 ms
+    const pcm = await new Promise((ok, ko) => {
+      const p = spawn(FFMPEG, ['-hide_banner', '-nostdin', '-loglevel', 'error', '-t', '1200', '-i', f, '-ac', '1', '-ar', '8000', '-f', 's16le', '-'], { stdio: ['ignore', 'pipe', 'ignore'] });
+      const m = []; p.stdout.on('data', d => m.push(d)); p.on('error', ko);
+      p.on('close', (code) => { const b = Buffer.concat(m); if (code || b.length < 2) return ko(new Error('son illisible')); ok(new Int16Array(b.buffer, b.byteOffset, b.length >> 1)); });
+    });
+    const n = Math.ceil(pcm.length / pas), pics = new Array(n);
+    for (let k = 0; k < n; k++) { let m = 0; for (let i = k * pas, f2 = Math.min(pcm.length, i + pas); i < f2; i++) { const v = Math.abs(pcm[i]); if (v > m) m = v; } pics[k] = Math.round(m / 327.67); }
+    const r = { pas_s: 0.02, duree_s: Math.round(pcm.length / 8000 * 100) / 100, pics };
+    try { fs.mkdirSync(FORMES, { recursive: true }); ecrire(c, r); } catch (_) {}
+    return r;
+  }
+  const idOk = (x) => RE_PROJET.test(String(x || ''));
+  async function routeProjet(req, res, p) {
+    const x = await corpsJson(req);
+    if (p === '/api/studio/projet/creer') {
+      const f = chemin(x.f);
+      if (!f) return repondre(res, 404, { erreur: 'son introuvable' });
+      const separer = ['2', '4', '6', 'non'].includes(String(x.separer)) ? String(x.separer) : '4';
+      const garder = Array.isArray(x.garder) ? x.garder.map(g => mot(g, 20)).filter(Boolean).slice(0, 6) : [];
+      const voix = { hakim: 'voix_hakim', papa: 'voix_papa', origine: 'voix_origine' }[x.voix] || 'voix_hakim';
+      const tempo = Number(x.tempo) >= 30 && Number(x.tempo) <= 300 ? Number(x.tempo) : 0;          // (le tempo connu d'une de ses chansons)
+      const r = await projetCmd({ action: 'creer', par: 'papa', params: { source: f, titre: titreDe(x.titre) || titreDe(path.basename(f)), separer, garder, role_voix: voix,
+        ...(tempo ? { tempo } : {}) } });
+      return repondre(res, r.ok ? 200 : 409, r);
+    }
+    if (!idOk(x.id)) return repondre(res, 404, { erreur: 'projet inconnu' });
+    const rev = Number.isFinite(Number(x.rev)) ? Number(x.rev) : undefined;
+    let r;
+    if (p === '/api/studio/projet/regler') {
+      if (!x.reglages || typeof x.reglages !== 'object') return repondre(res, 400, { erreur: 'réglages illisibles' });
+      r = await projetCmd({ action: 'regler', id: x.id, rev, piste: mot(x.piste, 20), reglages: x.reglages, par: 'papa' });
+    } else if (p === '/api/studio/projet/zones') {
+      const zones = Array.isArray(x.zones) ? x.zones.slice(0, 32).map(z => ({ nom: mot(z.nom, 60), debut_s: Number(z.debut_s), fin_s: Number(z.fin_s), qui: mot(z.qui, 10) })) : mot(x.zones, 2000);
+      r = await projetCmd({ action: 'zones', id: x.id, rev, zones, par: 'papa' });
+    } else if (p === '/api/studio/projet/reglages') {
+      const q = { action: 'projet', id: x.id, rev };
+      for (const k of ['titre', 'tempo', 'premier_temps_s', 'tonalite', 'genre', 'lufs']) if (x[k] !== undefined) q[k] = typeof x[k] === 'number' ? x[k] : mot(x[k], 80);
+      r = await projetCmd(q);
+    } else if (p === '/api/studio/projet/retirer') {
+      r = await projetCmd({ action: 'retirer', id: x.id, rev, piste: mot(x.piste, 20) });
+    } else if (p === '/api/studio/projet/rendre') {
+      r = await projetCmd({ action: 'rendre', par: 'papa', params: { projet: x.id, mix_auto: x.mix_auto !== false, envoyer: x.envoyer !== false,
+        pistes_separees: !!x.pistes_separees, quoi: 'tout' } });
+    } else if (p === '/api/studio/projet/separer') {
+      r = await projetCmd({ action: 'separer', par: 'papa', params: { projet: x.id, piste: mot(x.piste, 20), separer: x.separer === '6' ? '6' : '4' } });
+    } else return repondre(res, 404, { erreur: 'inconnu' });
+    if (r && r.projet) r = { ...r, projet: pourLaPage(r.projet) };
+    return repondre(res, r && r.ok ? 200 : 409, r || { ok: false });
+  }
+  // une prise de papa POSÉE dans un projet : le WAV de la page (comme une prise ordinaire, gardée dans « Tes prises »), puis une piste
+  // « Voix de papa » à l'instant où la lecture est partie ; son décalage (latence de sa sortie) retiré par la région
+  async function priseProjet(req, res, q) {
+    const id = String(q.get('id') || '');
+    if (!idOk(id)) return repondre(res, 404, { erreur: 'projet inconnu' });
+    const b = await lireCorps(req, MAX_IMPORT);
+    if (!b || b.length < 1000) return repondre(res, 400, { erreur: 'prise vide ou trop lourde' });
+    const pid = idDe('P'), dir = path.join(STUDIO, 'prises'), f = path.join(dir, pid + '.wav');
+    fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(f, b);
+    const lat = Math.max(-500, Math.min(1500, Math.round(Number(q.get('latence')) || 0)));
+    const debut = Math.max(0, Math.min(3600, Number(q.get('debut')) || 0));
+    ecrire(path.join(dir, pid + '.json'), { id: pid, fichier: f, titre: titreDe(q.get('titre')) || 'Prise dans un projet', ts: Date.now(), duree_s: await dureeDe(f),
+      projet: id, debut_s: debut, latence_ms: lat, choisie: false, sortie_cle: mot(q.get('cle'), 140), sortie_nom: mot(q.get('sortie'), 80), micro: mot(q.get('micro'), 80),
+      calage_methode: mot(q.get('methode'), 12) });
+    const r = await projetCmd({ action: 'importer', id, fichier: f, debut_s: debut, latence_ms: lat, role: 'voix_papa', nom: titreDe(q.get('titre')) || 'Voix de papa' });
+    return repondre(res, r.ok ? 200 : 409, r.ok ? { ok: true, prise: pid, projet: pourLaPage(r.projet) } : r);
+  }
+  async function routeLecture(req, res, p, q) {
+    if (p === '/api/studio/projets') { const r = await projetCmd({ action: 'lister' }); return repondre(res, r.ok ? 200 : 500, r); }
+    if (p === '/api/studio/projet') {
+      if (!idOk(q.get('id'))) return repondre(res, 404, { erreur: 'projet inconnu' });
+      const r = await projetCmd({ action: 'lire', id: q.get('id') });
+      return repondre(res, r.ok ? 200 : 404, r.ok ? { ok: true, projet: pourLaPage(r.projet) } : r);
+    }
+    if (p === '/api/studio/forme') {
+      const f = chemin(q.get('f'));
+      if (!f) return repondre(res, 404, { erreur: 'son introuvable' });
+      try { return repondre(res, 200, await forme(f)); } catch (e) { return repondre(res, 400, { erreur: e.message }); }
+    }
+    return null;
+  }
+  return { route: async (req, res, p) => {
+    const q = new URL(req.url, 'http://x').searchParams;
+    if (req.method === 'GET' && (p === '/api/studio/projets' || p === '/api/studio/projet' || p === '/api/studio/forme')) return routeLecture(req, res, p, q);
+    if (req.method === 'POST' && p === '/api/studio/projet-prise') return priseProjet(req, res, q);
+    return route(req, res, p);
+  }, etat, chemin, ecouter, decoder, forme, pourLaPage, arreter: () => { if (s.ecoute) s.ecoute.arreter('arrêt du cockpit'); }, _s: s };
 }
 
 module.exports = { creer, trames, hauteur, wav16, Ecoute, HZ, calageDe, avanceDe };

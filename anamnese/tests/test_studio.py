@@ -204,7 +204,16 @@ def separateur(tmp_path, monkeypatch):
     reçu, rend la voix et le reste (une copie du mélange). Ce qu'on teste : la bonne chanson y entre, son reste devient l'instru."""
     vus = tmp_path / "separes.txt"
     s = tmp_path / "faux-demucs"
-    s.write_text(f'#!/bin/sh\necho "$3 $4" >> "{vus}"\ncp "$4" "$5"\ncp "$4" "$6"\n')
+    # (13/11) deux façons de l'appeler : « -B chant.py separer mélange voix reste » (l'autotune) et « -B -W ignore studio_separation.py
+    # separer mélange dossier --modeles … » (l'instru du studio) : le dossier reçoit instru.wav (le mélange) et vocals.wav
+    s.write_text(f'''#!/bin/sh
+if [ "$2" = "-W" ]; then
+  echo "$5 $6 $*" >> "{vus}"; mkdir -p "$7"; cp "$6" "$7/instru.wav"; cp "$6" "$7/vocals.wav"
+  echo "{{\\"pistes\\": {{\\"vocals\\": \\"$7/vocals.wav\\"}}, \\"instru\\": \\"$7/instru.wav\\", \\"modeles\\": [\\"htdemucs_ft\\", \\"htdemucs\\"]}}"
+else
+  echo "$3 $4" >> "{vus}"; cp "$4" "$5"; cp "$4" "$6"
+fi
+''')
     s.chmod(0o755)
     monkeypatch.setattr(studio, "PYTHON_SEPARATION", s)
     return vus
@@ -296,3 +305,26 @@ def test_outil_studio_instru_puis_la_prise_de_papa_mixee_dessus(monkeypatch, tmp
     assert mixer(instru=i["id"]).startswith("Mix lancé")       # ou son identifiant, donné par Hakim
     j = max((studio.STUDIO / "travaux").glob("J-*.json"), key=lambda f: f.stat().st_mtime)
     assert json.loads(j.read_text())["params"]["instru"] == i["mp3"]
+
+
+def test_instru_gardee_par_papa_et_la_meilleure_separation(sons, tmp_path, separateur):
+    """(13/11, Ahmed : « garder ce que je lui demande sur l'instru ») « garde la batterie et la basse » arrive à la séparation en noms de
+    Demucs ; l'ensemble mesuré (ft + htdemucs) et la porte de la voix sont demandés ; le titre le dit."""
+    voix, instru = sons
+    f = studio.extraire_instru(instru, tmp_path / "instrus", titre="Moujahid 3.2", garder=["Batterie", "basse", "n'importe quoi"])
+    ligne = separateur.read_text()
+    assert "--modeles htdemucs_ft,htdemucs" in ligne and "--porte -25" in ligne and "--garder bass,drums" in ligne
+    assert f["garder"] == ["bass", "drums"] and f["titre"] == "Moujahid 3.2 (instru : bass, drums)" and Path(f["mp3"]).is_file()
+    g = studio.extraire_instru(instru, tmp_path / "instrus", titre="Tout")
+    assert "--garder" not in separateur.read_text().splitlines()[-1] and g["titre"] == "Tout (instru)"
+
+
+def test_instru_de_la_somme_et_la_soustraction():
+    import numpy as np
+    import studio_separation as S
+    r = np.random.default_rng(1)
+    p = {k: r.standard_normal((1000, 2)).astype(np.float32) for k in ("drums", "bass", "other", "vocals")}
+    x = sum(p.values()) + 0.01                                # un reste qu'aucune piste n'a pris
+    assert np.allclose(S.instru_de(x, p), x - p["vocals"])    # tout le non-vocal : le mélange moins la voix (le reste gardé)
+    assert np.allclose(S.instru_de(x, p, ["drums", "bass"]), p["drums"] + p["bass"])
+    assert np.allclose(S.instru_de(x, p, ["vocals"]), 0)      # la voix n'est jamais « gardée » dans une instru

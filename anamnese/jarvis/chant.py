@@ -225,8 +225,10 @@ def legende_avec(desc, ref=None, ins=None):
 
 
 def preparer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune=False, bpm=0, pour_studio=False,
-             reference="", inspiration="", base=""):
-    """La demande vérifiée et mise en forme (aucun effet de bord). bpm : 0 = au choix d'ACE-Step (sinon 30 à 300)."""
+             reference="", inspiration="", base="", projet="", zones_seulement=True, tonalite="", reprise="", fidelite=0.9):
+    """La demande vérifiée et mise en forme (aucun effet de bord). bpm : 0 = au choix d'ACE-Step (sinon 30 à 300).
+    (13/11) reprise : un son qu'ACE-Step REJOUE en instrumental (tâche « cover », même structure, mêmes mélodies, sans voix) : l'instru
+    d'une chanson sans les trous qu'une séparation laisse là où la voix chantait ; fidelite (0,2 à 1) : à quel point il suit le son."""
     try:
         d = int(round(float(duree_s or DUREE_DEFAUT)))
     except (TypeError, ValueError):
@@ -243,7 +245,7 @@ def preparer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune
     if bpm and not 30 <= bpm <= 300:
         raise Refus(f"tempo de 30 à 300 BPM (demandé : {bpm})")
     desc = description(style)
-    tonalite = tonalite_demandee(style)
+    tonalite = tonalite_demandee(tonalite) if tonalite else tonalite_demandee(style)   # (13/11) celle du projet, mesurée
     if instrumental:                                         # (07/11) sans voix : aucune étiquette de voix ne reste
         desc = ", ".join(x for x in (y.strip() for y in desc.split(",")) if x and ("vocal" not in x or x.startswith("no ")))
         if "no vocals" not in desc:
@@ -258,7 +260,11 @@ def preparer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune
             "paroles": texte, "langue": "unknown" if instrumental else langue_de(texte, langue), "duree_s": d,
             "instrumental": instrumental, "nom": nom_de(titre), "bpm": bpm, "pour_studio": bool(pour_studio), "tonalite": tonalite,
             "reference": morceau_valide(reference, "reference"), "inspiration": morceau_valide(inspiration, "inspiration"),
-            "base": morceau_valide(base, "base")}
+            "base": morceau_valide(base, "base"),
+            # (13/11) le studio multipiste : sa voix posée et calée comme une piste de ce projet (studio_poser_voix)
+            "projet": str(projet or "") if re.fullmatch(r"PJ-\d{8}-\d{6}-[0-9a-f]{4}", str(projet or "")) else "",
+            "zones_seulement": bool(zones_seulement), "reprise": morceau_valide(reprise, "reprise"),
+            "fidelite": max(0.2, min(1.0, float(fidelite or 0.9)))}
 
 
 # ---------------------------------------------------------------------------------------------------- l'autotune
@@ -425,9 +431,15 @@ def _studio_occupe():
 
 
 def lancer(paroles, style, duree_s=DUREE_DEFAUT, titre="", langue="", autotune=False, dossier=None, chansons=None,
-           demarrer=None, bpm=0, pour_studio=False, reference="", inspiration="", base=""):
+           demarrer=None, bpm=0, pour_studio=False, reference="", inspiration="", base="", projet="", zones_seulement=True, tonalite="",
+           reprise="", fidelite=0.9):
     """Lance la composition en tâche de fond ; rend {tache, nom, …} tout de suite."""
-    demande = preparer(paroles, style, duree_s, titre, langue, autotune, bpm, pour_studio, reference, inspiration, base)
+    demande = preparer(paroles, style, duree_s, titre, langue, autotune, bpm, pour_studio, reference, inspiration, base, projet,
+                       zones_seulement, tonalite, reprise, fidelite)
+    if demande["reprise"] and not demande["instrumental"]:
+        raise Refus("une reprise rejoue l'instru sans voix : paroles « [instrumental] »")
+    if demande["projet"] and not demande["base"]:
+        raise Refus("pour poser ta voix dans un projet, il faut l'instru du projet (base)")
     if demande["base"] and demande["instrumental"]:
         raise Refus("sur une base (l'instru de papa), il faut tes paroles : c'est ta voix qui se pose dessus")
     dossier, chansons = Path(dossier or TACHES), Path(chansons or CHANSONS)
@@ -564,6 +576,9 @@ def parametres(c):
         p["reference_audio"] = c["reference"]
     if c.get("base_coupee") or c.get("base"):
         p.update(task_type="cover", src_audio=c.get("base_coupee") or c["base"], instrumental=False)
+    elif c.get("reprise"):                                   # (13/11) l'instru rejouée : la structure du son, sans voix
+        p.update(task_type="cover", src_audio=c.get("reprise_coupee") or c["reprise"], instrumental=True, lyrics="[Instrumental]",
+                 audio_cover_strength=float(c.get("fidelite") or 0.9))
     return p
 
 
@@ -647,6 +662,89 @@ def poser_sur_la_base(chant_wav, c, travail):
     return Path(f["wav"])
 
 
+def entrer_au_studio(mp3, c):
+    """(13/11) l'instru rejouée par ACE-Step (reprise) → les instrus du Studio (origine « ace-reprise ») et les Documents de papa."""
+    try:
+        sys.path.insert(0, str(ICI))
+        import studio
+        idf = nom_de(f"{c['titre']} reprise")
+        dest = studio.STUDIO / "instrus" / f"{idf}.mp3"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(mp3, dest)
+        fiche = {"id": idf, "titre": c["titre"], "source": c.get("reprise"), "mp3": str(dest), "origine": "ace-reprise",
+                 "fidelite": c.get("fidelite"), "duree_s": studio.duree(dest), "fin": time.time()}
+        doc = studio.deposer_aux_documents(dest, c["titre"], note=f"son instru « {c['titre']} », rejouée par ACE-Step")
+        if doc:
+            fiche.update(documents=str(doc), joindre=studio.chemin_a_joindre(doc))
+        _ecrire(dest.with_suffix(".json"), fiche)
+        print(f"Dans les instrus du Studio : « {c['titre']} » ({idf}).", flush=True)
+    except (OSError, KeyError) as e:
+        print(f"L'instru n'est pas entrée dans le Studio ({type(e).__name__})", flush=True)
+
+
+def poser_dans_projet(chant_wav, c, travail):
+    """(13/11, Ahmed : « que Hakim puisse construire un son et poser sa voix […] poser sur des instrus que je lui envoie ») ce qu'ACE-Step
+    a chanté sur l'instru du projet → sa voix seule (htdemucs_ft), CALÉE sur la vraie instru : le décalage entre l'instru qu'ACE-Step a
+    rejouée et la vraie se mesure par la corrélation de leurs attaques (en ms), et la voix est décalée d'autant ; son calage sur la grille
+    du projet est mesuré avant et après. Elle entre comme piste « Voix de Hakim » (dans ses zones seulement, s'il en a et si demandé).
+    Rend un mix rapide (le Studio) pour la fiche de la chanson ; le vrai mix et le master : studio_rendre."""
+    sys.path.insert(0, str(ICI))
+    import numpy as np
+    import studio
+    import studio_mesures as M
+    import studio_projet as SP
+    sep = travail / "sep"
+    print("Je retire ma voix de ce qu'ACE-Step a chanté (Demucs htdemucs_ft)…", flush=True)
+    r = subprocess.run([str(PYTHON_SEPARATION), "-B", "-W", "ignore", str(ICI / "studio_separation.py"), "separer", str(chant_wav), str(sep),
+                        "--modeles", "htdemucs_ft", "--format", "wav"], capture_output=True, text=True, timeout=1800)
+    if r.returncode:
+        raise RuntimeError(f"Demucs : {r.stderr.strip()[-300:]}")
+    res = json.loads(r.stdout.strip().splitlines()[-1])
+    p = SP.lire(c["projet"])
+    vraie, _ = M.lire(c["base"])
+    rejouee, _ = M.lire(res["instru"])
+    voix, _ = M.lire(res["pistes"]["vocals"])
+    ms, nettete = M.decalage_entre(vraie, rejouee, M.SR, 400)
+    # par fenêtres de 12 s : la dérive éventuelle (un tempo qui glisse)
+    locaux = []
+    w = 12 * M.SR
+    for a in range(0, min(len(vraie), len(rejouee)) - w, w):
+        d_, n_ = M.decalage_entre(vraie[a:a + w], rejouee[a:a + w], M.SR, 400)
+        if n_ >= 0.3:
+            locaux.append(d_)
+    k = int(round(ms / 1000 * M.SR))
+    calee = np.vstack([voix[k:], np.zeros((max(0, k), 2))]) if k >= 0 else np.vstack([np.zeros((-k, 2)), voix[:k]])
+    bpm, t1 = float(p.get("tempo") or 0), float(p.get("premier_temps_s") or 0)
+    avant = M.calage_sur_grille(voix, M.SR, bpm, t1) if bpm else None
+    apres = M.calage_sur_grille(calee, M.SR, bpm, t1) if bpm else None
+    calage = {"decalage_instru_ms": ms, "nettete": nettete, "locaux_ms": locaux, "grille_avant": avant, "grille_apres": apres}
+    print(f"Calage : l'instru rejouée par ACE-Step était décalée de {ms:+.0f} ms (netteté {nettete}) ; par fenêtres de 12 s : "
+          f"{', '.join(f'{x:+.0f}' for x in locaux) or '—'} ms. Sur la grille ({bpm:g} BPM) : médiane |écart| "
+          f"{(avant or {}).get('mediane_abs_ms')} → {(apres or {}).get('mediane_abs_ms')} ms (90e centile {(apres or {}).get('p90_abs_ms')} ms, "
+          f"{(apres or {}).get('attaques')} attaques).", flush=True)
+    d = SP.dossier(c["projet"])
+    nomf = f"voix-hakim-{time.strftime('%Y%m%d-%H%M%S')}.flac"
+    M.ecrire_wav(d / "pistes" / nomf, calee, M.SR, 16)
+
+    def poser(q):
+        t = SP.ajouter_piste(q, f"pistes/{nomf}", "voix_hakim", c["titre"][:60], duree_s=round(len(calee) / M.SR, 2),
+                             origine=f"chantée par ACE-Step sur l'instru du projet, calée de {-ms:+.0f} ms")
+        zh = [z for z in q.get("zones", []) if z.get("qui") == "hakim"]
+        if c.get("zones_seulement") and zh:
+            t["regions"] = [{"debut_s": z["debut_s"], "source_debut_s": z["debut_s"], "duree_s": round(z["fin_s"] - z["debut_s"], 3),
+                             "gain_db": 0.0} for z in zh]
+        q.setdefault("voix_posees", []).append({"t": time.time(), "piste": t["id"], "chanson": c["nom"], "calage": calage,
+                                                "autotune": c.get("autotune_niveau") or ""})
+    SP.modifier(c["projet"], poser, note=f"voix de Hakim posée ({c['titre'][:60]}), calée de {-ms:+.0f} ms")
+    print(f"Ma voix est dans le projet « {p['titre']} » ({c['projet']}) : studio_rendre pour le mix et le master.", flush=True)
+    try:
+        f = studio.mixer(d / "pistes" / nomf, c["base"], studio.STUDIO / "mix", titre=c["titre"], debruitage=False, reverb=0.22)
+        return Path(f["wav"])
+    except Exception as e:                                               # noqa: BLE001 — sa voix seule reste
+        print(f"Le mix rapide n'a pas marché ({type(e).__name__}) : je garde ma voix seule", flush=True)
+        return d / "pistes" / nomf
+
+
 def generer(tid, dossier=None):
     dossier = Path(dossier or TACHES)
     debut = time.time()
@@ -670,6 +768,11 @@ def generer(tid, dossier=None):
                 c["bpm"] = int(round(b["tempo"]))
             if not c.get("tonalite") and b.get("tonalite"):
                 c["tonalite"] = f"{b['tonalite'][0]} {b['tonalite'][1]}"
+    if c.get("reprise"):                                                # (13/11) l'instru rejouée : le son coupé à la durée, en 48 kHz
+        coupee = travail / "reprise.wav"
+        subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-i", str(c["reprise"]), "-t", str(int(c["duree_s"])), "-ar", "48000",
+                        "-ac", "2", str(coupee)], check=True, timeout=300)
+        c = dict(c, reprise_coupee=str(coupee))
     if c.get("reference") or c.get("inspiration"):                    # (07/11) il écoute d'abord ses morceaux de référence
         print("J'écoute tes morceaux de référence (chaque instrument, son rythme, ses notes)…", flush=True)
         ref = ecouter(c["reference"]) if c.get("reference") else None
@@ -695,9 +798,13 @@ def generer(tid, dossier=None):
                   f"{int(100 * r.get('part_corrigee', 0))} % de la voix corrigée, {r.get('correction_mediane_cents')} cents en médiane", flush=True)
             wav = travail / "autotune.wav"
         print("PROGRESSION 4/5 encodage", flush=True)
-        if c.get("base_coupee"):                                         # (07/11) un feat : sa voix seule, posée sur la VRAIE instru de papa
+        if c.get("base_coupee") and c.get("projet"):                     # (13/11) le multipiste : sa voix calée, piste du projet
+            wav = poser_dans_projet(wav, c, travail)
+        elif c.get("base_coupee"):                                       # (07/11) un feat : sa voix seule, posée sur la VRAIE instru de papa
             wav = poser_sur_la_base(wav, c, travail)
         mp3 = en_mp3(wav, CHANSONS / f"{c['nom']}.mp3")
+        if c.get("reprise"):                                             # (13/11) l'instru rejouée entre dans les instrus du Studio
+            entrer_au_studio(mp3, c)
         if ref or ins:                                                   # (07/11) réécoutée, comparée aux originaux
             sys.path.insert(0, str(ICI))
             import instruments as I
