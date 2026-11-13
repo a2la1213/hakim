@@ -1,0 +1,10 @@
+# Le python de l'atelier vidéo (jarvis/atelier_video.py) : sur le CPU, sans modèle ni GPU.
+#   uv venv --python 3.12 jarvis/.venv-video && uv pip install --python jarvis/.venv-video/bin/python -r jarvis/requirements-video.txt
+# Il faut aussi ffmpeg (avec libx264 et l'AAC) : sur WSL2/Ubuntu, « sudo apt install ffmpeg fonts-dejavu-core ».
+# pillow-heif lit les photos HEIC des téléphones (le ffmpeg 6 d'Ubuntu ne lit pas les grilles HEIF) ;
+# arabic-reshaper et python-bidi dessinent l'arabe des textes.
+numpy>=1.26
+pillow>=10.1
+pillow-heif>=0.16
+arabic-reshaper>=3.0
+python-bidi>=0.4

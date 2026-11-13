@@ -68,6 +68,32 @@
     #bulle { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 20; padding: 10px 12px; border-radius: 10px;
       border: 1px solid var(--glass-bd); background: var(--panneau, #0b1220); color: var(--txt); font-size: 13px; box-shadow: 0 6px 24px rgba(0,0,0,.35); max-width: 640px; margin: 0 auto; }
     #bulle:empty { display: none; }
+    /* (13/11) l'atelier vidéo */
+    .collections { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 6px 0 4px; }
+    .collections button[aria-pressed="true"] { border-color: var(--teal); color: var(--txt); background: rgba(45,212,191,.14); font-weight: 600; }
+    .medias { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 8px; margin-top: 6px; }
+    .media { position: relative; border-radius: 10px; overflow: hidden; border: 1px solid var(--glass-bd); background: rgba(127,127,127,.12); aspect-ratio: 3 / 4; }
+    .media > button.choix-photo { all: unset; display: block; width: 100%; height: 100%; cursor: pointer; }
+    .media > button.choix-photo:focus-visible { outline: 3px solid var(--teal); outline-offset: -3px; }
+    .media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .media[aria-current="true"] { outline: 3px solid var(--teal); outline-offset: -3px; }
+    .media .rang { position: absolute; top: 4px; left: 4px; min-width: 22px; height: 22px; border-radius: 11px; background: var(--teal); color: #052; font-weight: 700;
+      font-size: 12px; line-height: 22px; text-align: center; pointer-events: none; }
+    .media .effacer { position: absolute; top: 2px; right: 2px; min-height: 32px; min-width: 32px; padding: 0; border-radius: 16px; background: rgba(0,0,0,.55);
+      color: #fff; border: 0; font-size: 14px; }
+    .musiques { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+    .musique { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 10px; border: 1px solid var(--glass-bd); min-width: 0; }
+    .musique[aria-current="true"] { border-color: var(--teal); background: rgba(45,212,191,.10); }
+    .musique .nom { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; color: var(--txt); }
+    .musique .meta { font-size: 11.5px; color: var(--txt-3); white-space: nowrap; }
+    .musique button { min-height: 36px; padding: 4px 10px; }
+    .envois { font-size: 12.5px; color: var(--txt-2); display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+    .envois .rate { color: #f97316; }
+    .champs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 6px; }
+    .champs label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--txt-2); }
+    .apercu-video { margin-top: 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .apercu-video video { max-width: min(100%, 320px); max-height: 60vh; border-radius: 12px; background: #000; }
+    .tuile .cadre.vertical { aspect-ratio: 9 / 16; }
     @media (prefers-reduced-motion: reduce) { .jauge > i { transition: none; } }
   </style>
 </head>
@@ -75,7 +101,7 @@
   <nav class="topnav" style="display:flex;gap:10px;align-items:center;padding:10px 16px"><span class="brand">AIOS</span></nav>
   <main>
     <h1>🎨 Atelier</h1>
-    <div class="sous">Les images et les clips de Hakim, créés sur le Mac, pour vos albums et vos clips. Sur ton téléphone, ils sont dans
+    <div class="sous" data-visuel>Les images et les clips de Hakim, créés sur le Mac, pour vos albums et vos clips. Sur ton téléphone, ils sont dans
       <span class="chemin">Hakim › Atelier</span>.</div>
     <div id="bulle" role="status" aria-live="polite"></div>
 
@@ -85,7 +111,70 @@
       <div id="calculs"></div>
     </section>
 
-    <section class="glass carte" aria-labelledby="t-image">
+    <section class="glass carte" id="videoCarte" hidden aria-labelledby="t-video">
+      <h2 id="t-video"><span aria-hidden="true">🎞️</span>Vidéos pour les réseaux</h2>
+      <div class="sous">Tes photos et tes musiques deviennent des vidéos TikTok, Reels, Shorts et Insta, montées sur le rythme. Tout se calcule ici ;
+        rien n’est publié : la vidéo finie et sa couverture t’attendent sur ton téléphone (<span class="chemin">Documents › Hakim › Videos</span>).</div>
+
+      <h3>1. La médiathèque</h3>
+      <div class="collections" id="collections" role="group" aria-label="Collections"></div>
+      <div class="gestes">
+        <button type="button" class="principal" id="deposerMedia">📷 Déposer photos ou musiques</button>
+        <input type="file" id="fichiersMedia" multiple hidden
+          accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif,.jpg,.jpeg,.png,.webp,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav,.mp3,.m4a,.wav">
+        <button type="button" id="nouvelleCollection">＋ Collection</button>
+        <span class="sous" id="aideDepot">Photos jpg, png, heic · musiques mp3, m4a, wav · 200 Mo au plus.</span>
+      </div>
+      <div class="envois" id="envois" aria-live="polite"></div>
+      <div class="sous" id="aidePhotos" style="margin-top:8px">Touche les photos à montrer, dans l’ordre (aucune : toute la collection).</div>
+      <div class="medias" id="photosMedia"></div>
+      <div class="gestes" id="gestesPhotos" hidden><button type="button" id="toutesPhotos">Tout choisir</button><button type="button" id="aucunePhoto">Rien choisir</button></div>
+      <h3>La musique</h3>
+      <div class="musiques" id="musiquesMedia" role="radiogroup" aria-label="Musique de la vidéo"></div>
+
+      <h3>2. La vidéo</h3>
+      <div class="choix" role="radiogroup" aria-label="Format">
+        <label><input type="radio" name="fmtVideo" value="9:16" checked><span><i class="forme" style="width:9px;height:15px" aria-hidden="true"></i>TikTok · Reels · Shorts</span></label>
+        <label><input type="radio" name="fmtVideo" value="4:5"><span><i class="forme" style="width:12px;height:15px" aria-hidden="true"></i>Post Insta 4:5</span></label>
+        <label><input type="radio" name="fmtVideo" value="1:1"><span><i class="forme" style="width:13px;height:13px" aria-hidden="true"></i>Carré 1:1</span></label>
+      </div>
+      <div class="choix" role="radiogroup" aria-label="Durée">
+        <label><input type="radio" name="dureeVideo" value="7"><span>7 s</span></label>
+        <label><input type="radio" name="dureeVideo" value="15" checked><span>15 s</span></label>
+        <label><input type="radio" name="dureeVideo" value="30"><span>30 s</span></label>
+        <label><input type="radio" name="dureeVideo" value="60"><span>60 s</span></label>
+      </div>
+      <div class="choix" role="radiogroup" aria-label="Rythme des coupes">
+        <label><input type="radio" name="rythmeVideo" value="auto" checked><span>Rythme auto</span></label>
+        <label><input type="radio" name="rythmeVideo" value="lent"><span>Lent</span></label>
+        <label><input type="radio" name="rythmeVideo" value="normal"><span>Normal</span></label>
+        <label><input type="radio" name="rythmeVideo" value="rapide"><span>Rapide</span></label>
+      </div>
+      <div class="choix" role="radiogroup" aria-label="Transitions">
+        <label><input type="radio" name="transitionVideo" value="auto" checked><span>Transitions auto</span></label>
+        <label><input type="radio" name="transitionVideo" value="nette"><span>Nettes</span></label>
+        <label><input type="radio" name="transitionVideo" value="fondu"><span>Fondus</span></label>
+      </div>
+      <div class="champs">
+        <label>La marque <input type="text" id="marqueVideo" maxlength="40" placeholder="Maison …" autocomplete="off"></label>
+        <label>La pièce <input type="text" id="pieceVideo" maxlength="80" placeholder="Manteau en laine" autocomplete="off"></label>
+        <label>Le prix (vide : pas de prix) <input type="text" id="prixVideo" maxlength="30" placeholder="189 €" autocomplete="off" inputmode="text"></label>
+        <label>L’appel à l’action <input type="text" id="appelVideo" maxlength="50" placeholder="Lien en bio" list="appels" autocomplete="off"></label>
+      </div>
+      <datalist id="appels"><option value="Lien en bio"><option value="Commande en DM"><option value="Disponible maintenant"><option value="Nouvelle collection"><option value="Abonne-toi"></datalist>
+      <div class="gestes">
+        <button type="button" id="apercuVideo">👁 Aperçu</button>
+        <button type="button" class="principal" id="exporterVideo">🎬 Exporter</button>
+        <span class="sous" id="aideExport">L’aperçu est petit et rapide ; l’export est en pleine qualité, avec sa couverture.</span>
+      </div>
+      <div id="calculsVideo" aria-live="polite"></div>
+      <div class="apercu-video" id="apercuZone" hidden></div>
+
+      <h3>Mes vidéos</h3>
+      <div class="grille" id="videosFinies"><div class="vide">Aucune vidéo pour l’instant.</div></div>
+    </section>
+
+    <section data-visuel class="glass carte" aria-labelledby="t-image">
       <h2 id="t-image"><span aria-hidden="true">🖼️</span>Créer une image</h2>
       <label class="sous" for="description">Ce qu’on y voit, le style, la lumière, les couleurs (en anglais, le modèle comprend le mieux).</label>
       <textarea id="description" maxlength="1500" placeholder="Album cover, a glowing lantern held by a child in a dark desert night, cinematic light, gold and deep blue"></textarea>
@@ -99,7 +188,7 @@
         <span class="sous">Une à quelques minutes.</span></div>
     </section>
 
-    <section class="glass carte" aria-labelledby="t-clip">
+    <section data-visuel class="glass carte" aria-labelledby="t-clip">
       <h2 id="t-clip"><span aria-hidden="true">🎬</span>Créer un clip</h2>
       <h3><label for="chanson">1. La chanson</label></h3>
       <select id="chanson"></select>
@@ -129,12 +218,12 @@
         <span class="sous">Les paroles défilent une ligne à la fois.</span></div>
     </section>
 
-    <section class="glass carte" aria-labelledby="t-images">
+    <section data-visuel class="glass carte" aria-labelledby="t-images">
       <h2 id="t-images"><span aria-hidden="true">🖼️</span>Ses images</h2>
       <div class="grille" id="images"><div class="vide">Chargement…</div></div>
     </section>
 
-    <section class="glass carte" aria-labelledby="t-clips">
+    <section data-visuel class="glass carte" aria-labelledby="t-clips">
       <h2 id="t-clips"><span aria-hidden="true">🎬</span>Ses clips</h2>
       <div class="grille" id="clips"><div class="vide">Chargement…</div></div>
     </section>
@@ -149,5 +238,6 @@
   <script src="/badges.js"></script>
   <script>Badges.suivre(document.querySelector('nav.topnav'), 'atelier');</script>
   <script src="/atelier-page.js"></script>
+  <script src="/atelier-video-page.js"></script>
 </body>
 </html>

@@ -404,7 +404,7 @@ def gros_calcul_ailleurs(tid, dossier):
             continue
         if d.get("chanson"):
             return f"attend la fin de la chanson « {d['chanson'].get('titre', '?')} »"
-        if d.get("visuel") and d.get("id", "") < tid:
+        if (d.get("visuel") or d.get("video")) and d.get("id", "") < tid:     # (13/11) une vidéo de l'atelier vidéo aussi
             return "attend la création d'avant"
     try:
         sys.path.insert(0, str(ICI))

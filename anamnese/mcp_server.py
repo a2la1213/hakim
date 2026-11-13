@@ -1932,6 +1932,158 @@ def atelier_voir() -> str:
     return "\n".join(lignes)
 
 
+# ---- (13/11, Ahmed : « il faut qu'il puisse uploader ses photos et ses musiques et en faire des vidéos TikTok, Insta ») l'atelier
+# VIDÉO : la médiathèque (photos et musiques par collection), des vidéos prêtes à publier calées sur le rythme (jarvis/atelier_video.py,
+# ffmpeg + numpy + Pillow, sur le CPU). Rien n'est publié : la vidéo finie est copiée dans le dossier du téléphone.
+def _atelier_video():
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis"))
+    import atelier_video
+    return atelier_video
+
+
+@mcp.tool()
+def mediatheque_voir(collection: str = "") -> str:
+    """TON ATELIER VIDÉO : la médiathèque (les collections, leurs photos et leurs musiques, par leur nom), les vidéos finies
+    et celles en cours. collection : une seule collection (vide : toutes). Lecture seule."""
+    avv = _atelier_video()
+    if not avv.allume():
+        return "L'atelier vidéo est éteint ici (réglage « atelier_video »)."
+    try:
+        l = avv.lister(collection)
+    except avv.Refus as e:
+        return f"Refusé : {e}"
+    lignes = []
+    for c in l["collections"]:
+        ph = ", ".join(e["fichier"] for e in c["photos"][:40]) or "aucune"
+        mu = ", ".join(e["fichier"] + (f" ({e['duree_s']:.0f} s, {e['bpm']:.0f} BPM)" if e.get("bpm") else "") for e in c["musiques"][:20]) or "aucune"
+        lignes.append(f"« {c['nom']} » — {len(c['photos'])} photo{'s' if len(c['photos']) > 1 else ''} : {ph} · musiques : {mu}")
+    if not lignes:
+        lignes.append("La médiathèque est vide : les photos et les musiques arrivent par la page Atelier (téléphone ou PC), ou "
+                      "par mediatheque_ajouter pour un fichier reçu.")
+    if l.get("polices"):
+        lignes.append("Polices déposées : " + ", ".join(l["polices"]))
+    v = avv.galerie()[:10]
+    lignes.append("Vidéos finies : " + (" ; ".join(f"{x['nom']} « {x.get('titre', '')[:50]} » ({', '.join((x.get('recette') or {}).get('formats') or [])}, "
+                                                  f"{(x.get('recette') or {}).get('duree_s', 0):g} s) → " + ", ".join(x.get("atelier") or [])
+                                                  for x in v) or "aucune pour l'instant"))
+    import json as _json
+    from pathlib import Path as _P
+    en_cours = []
+    for f in sorted(_P(avv.TACHES).glob("T-*.json")):
+        try:
+            d = _json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if d.get("video") and d.get("etat") == "en cours":
+            en_cours.append(f"{d['id']} {d.get('commande', '')}")
+    if en_cours:
+        lignes.append("En cours : " + " ; ".join(en_cours))
+    return "\n".join(lignes)
+
+
+@mcp.tool()
+def mediatheque_ajouter(chemin: str, collection: str) -> str:
+    """(Hakim seulement) TON ATELIER VIDÉO : ranger dans la médiathèque un fichier reçu — une photo (jpg, png, heic, webp) ou
+    une musique (mp3, m4a, wav) envoyée depuis la page Parler ou l'appli (fichiers/…), ou déposée dans les Documents
+    synchronisés du téléphone (fichiers/telephone/…). Un DOSSIER range tous ses médias. collection : le nom de la collection
+    (« Hiver 2026 » ; créée si besoin). Une police .ttf/.otf nommée « marque… » devient la police de la marque des vidéos.
+    Le fichier d'origine reste où il est ; rien ne sort de la machine."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim range dans sa médiathèque."
+    avv = _atelier_video()
+    if not avv.allume():
+        return "L'atelier vidéo est éteint ici (réglage « atelier_video »)."
+    import json as _json
+    import subprocess as _sp
+    from pathlib import Path as _P
+    brut = str(chemin or "").strip()
+    p = _P(brut).expanduser()
+    if not p.is_absolute():
+        p = avv.JARVIS / "cwd" / brut
+    if not avv._dans(avv.FICHIERS, p) or not p.exists():
+        return "Refusé : seulement un fichier reçu (fichiers/…) ou des Documents du téléphone (fichiers/telephone/…)."
+    try:
+        col = avv.nom_collection(collection)
+    except avv.Refus as e:
+        return f"Refusé : {e}"
+    medias = [p] if p.is_file() else sorted(x for x in p.iterdir() if x.is_file() and not x.name.startswith(".")
+                                            and x.suffix.lower() in avv.PHOTOS | avv.MUSIQUES | avv.POLICES_EXT)[:60]
+    if not medias:
+        return "Refusé : aucun média dans ce dossier (photos jpg/png/heic/webp, musiques mp3/m4a/wav)."
+    faits, refus = [], []
+    for f in medias:
+        r = _sp.run([str(avv.python_video()), "-B", str(_P(avv.__file__)), "importer"], input=_json.dumps(
+            {"chemin": str(f), "collection": col}), capture_output=True, text=True, timeout=300)
+        try:
+            o = _json.loads((r.stdout or "").strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            o = {"ok": False, "erreur": "import illisible"}
+        (faits if o.get("ok") else refus).append(o.get("fichier") or f.name if o.get("ok") else f"{f.name} ({o.get('erreur')})")
+    return (f"Rangé dans « {col} » : {', '.join(faits) or 'rien'}"
+            + (f". Refusé : {'; '.join(refus)}" if refus else "") + ". video_creer s'en sert ensuite.")
+
+
+@mcp.tool()
+def video_creer(photos: list[str] | str = "", collection: str = "", musique: str = "", format: str = "9:16", duree_s: float = 15,
+                rythme: str = "auto", transition: str = "auto", marque: str = "", piece: str = "", prix: str = "", appel: str = "",
+                legendes: list[str] | str = "", titre: str = "", debut_s: float = -1, bpm: float = 0) -> str:
+    """(Hakim seulement) TON ATELIER VIDÉO : une vidéo prête à publier (TikTok, Reels, Shorts, post Insta), montée sur le rythme
+    de la musique, calculée sur le CPU (ffmpeg). Ex. « une vidéo TikTok de 15 s avec les 8 photos de la collection Hiver et ce
+    son » → video_creer(collection="Hiver", musique="son.mp3", format="tiktok", duree_s=15).
+    - photos : les noms des photos (mediatheque_voir), dans l'ordre ; vide = toute la collection. Une image de ton atelier
+      visuel (son nom) marche aussi. 30 au plus ; si les coupes sont plus nombreuses, les photos reviennent dans l'ordre.
+    - musique : une musique de la médiathèque (son nom) ou une de tes chansons (son titre) ; vide = sans musique (une grille à
+      `bpm`, 120 par défaut : l'ami ajoute un son de TikTok dans l'appli).
+    - format : « 9:16 » (TikTok, Reels, Shorts : 1080×1920), « 4:5 » (post Insta), « 1:1 », ou plusieurs (« 9:16 et 4:5 »).
+    - duree_s : 7, 15, 30, 60 (5 à 90) ; la musique prend le meilleur passage (le refrain s'il se trouve), avec fondus, à −14 LUFS ;
+      debut_s : le début voulu dans la musique (-1 = le meilleur passage).
+    - rythme : auto (chaque photo au moins une fois), lent (une coupe par mesure), normal (tous les 2 temps), rapide (chaque
+      temps) ; transition : auto, nette, fondu.
+    - textes : marque (en haut), piece et prix (en bas ; prix seulement s'il le veut), appel (l'appel à l'action à la fin :
+      « Lien en bio », « Commande en DM »), legendes (une par photo, « Pièce | prix »).
+    Rend la main tout de suite (tâche de fond) ; prévenu quand elle est prête : la vidéo, sa couverture (JPEG) sont dans la
+    page Atelier et copiées sur le téléphone (Hakim › Videos), pour être publiées À LA MAIN. Aucune publication automatique."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim crée dans l'atelier."
+    avv = _atelier_video()
+    try:
+        t = avv.lancer(avv.preparer(photos, collection, musique, format, duree_s, rythme, transition, marque, piece, prix, appel,
+                                    legendes, titre, None if debut_s is None or debut_s < 0 else debut_s, bpm, par="hakim"))
+    except avv.Refus as e:
+        return f"Refusé : {e}"
+    m = t.get("musique") or {}
+    return (f"Je monte « {t['titre']} » ({' et '.join(t['formats'])}, {t['duree_s']:g} s, {len(t['photos'])} photo"
+            f"{'s' if len(t['photos']) > 1 else ''}, {('sur « ' + (m.get('fichier') or m.get('chanson') or '') + ' »') if m else 'sans musique'}, "
+            f"rythme {t['rythme']}) : tâche {t['tache']}, nom {t['nom']}. Prévenu quand elle sera prête ; video_refaire pour une variante.")
+
+
+@mcp.tool()
+def video_refaire(video: str = "dernière", format: str = "", duree_s: float = 0, rythme: str = "", transition: str = "",
+                  marque: str | None = None, piece: str | None = None, prix: str | None = None, appel: str | None = None,
+                  legendes: list[str] | str | None = None, musique: str = "", photos: list[str] | str = "", collection: str = "",
+                  titre: str = "", debut_s: float = -2) -> str:
+    """(Hakim seulement) TON ATELIER VIDÉO : refaire une vidéo finie (son nom, son titre, ou « dernière ») avec des
+    changements : un autre rythme, un autre format, d'autres textes (une chaîne vide efface un texte : prix="" retire le prix),
+    une autre musique, d'autres photos, une autre durée ; debut_s : -2 = garder le passage, -1 = le meilleur passage, sinon
+    les secondes. Le reste de la recette est gardé. Tâche de fond, comme video_creer."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim crée dans l'atelier."
+    avv = _atelier_video()
+    ch = {"format": format, "duree_s": duree_s or None, "rythme": rythme, "transition": transition, "marque": marque, "piece": piece,
+          "prix": prix, "appel": appel, "legendes": legendes, "musique": musique, "photos": photos, "collection": collection,
+          "titre": titre, "debut_s": None if debut_s is None or debut_s <= -2 else ("auto" if debut_s < 0 else debut_s)}
+    try:
+        t = avv.lancer(avv.refaire(video, par="hakim", **ch))
+    except avv.Refus as e:
+        return f"Refusé : {e}"
+    return (f"Je refais « {t['titre']} » d'après {t['refait_de']} ({' et '.join(t['formats'])}, {t['duree_s']:g} s, rythme "
+            f"{t['rythme']}) : tâche {t['tache']}, nom {t['nom']}. Prévenu quand elle sera prête.")
+
+
 @mcp.tool()
 def immunite_etat() -> str:
     """Ton système immunitaire (29/10, Ahmed : « contre toute attaque extérieure ») : les incidents des dernières 24 h

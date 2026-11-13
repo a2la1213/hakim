@@ -23,6 +23,8 @@ function creer(o = {}) {
   const PYTHON = o.python || path.join(ANAMNESE, '.venv', 'bin', 'python');
   const PY = path.join(ANAMNESE, 'jarvis', 'atelier_visuel.py');
   const lireCorps = o.lireCorps;
+  // (13/11) l'atelier VIDÉO (atelier-video.js) : la médiathèque et les vidéos pour les réseaux, sous /api/atelier/media/ et /api/atelier/video/
+  const VIDEO = require('./atelier-video.js').creer({ jarvis: JARVIS, anamnese: ANAMNESE, lireCorps, ...(o.video || {}) });
   const lireJson = (f, d = null) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_) { return d; } };
   const fiches = (d) => { try { return fs.readdirSync(d).filter(n => n.endsWith('.json') && !n.startsWith('.')).map(n => lireJson(path.join(d, n))).filter(x => x && typeof x === 'object'); } catch (_) { return []; } };
   const base = (f) => (f ? path.basename(String(f)) : null);
@@ -64,7 +66,8 @@ function creer(o = {}) {
     const chansons = fiches(CHANSONS).filter(c => c.etat === 'prête' && c.mp3 && c.nom)
       .map(c => ({ nom: c.nom, titre: c.titre, duree_s: c.duree_s, date: c.fin, instrumental: !!c.instrumental }))
       .sort((a, b) => (b.date || 0) - (a.date || 0));
-    return { images, clips, enCours, chansons, telephone: 'Hakim › Atelier (le dossier « Hakim » de ton téléphone)' };
+    return { images, clips, enCours, chansons, telephone: 'Hakim › Atelier (le dossier « Hakim » de ton téléphone)',
+      video: VIDEO.allume(), visuel_installe: o.visuelInstalle !== undefined ? !!o.visuelInstalle : fs.existsSync(path.join(ANAMNESE, 'jarvis', '.venv-image', 'bin', 'python')) };
   }
   // un fichier de la galerie : un nom simple, de la forme qu'atelier_visuel.py donne, dans le dossier même
   function chemin(f) {
@@ -102,6 +105,7 @@ function creer(o = {}) {
 
   async function route(req, res, p) {
     const q = new URL(req.url, 'http://x').searchParams;
+    if (p.startsWith('/api/atelier/media/') || p.startsWith('/api/atelier/video/')) return VIDEO.route(req, res, p);
     if (p === '/api/atelier/etat' && req.method === 'GET') return repondre(res, 200, etat());
     if (p === '/api/atelier/fichier' && req.method === 'GET') {
       const f = chemin(q.get('f'));
@@ -131,7 +135,7 @@ function creer(o = {}) {
     }
     return repondre(res, 404, { erreur: 'inconnu' });
   }
-  return { route, etat, chemin, progres };
+  return { route, etat, chemin, progres, video: VIDEO };
 }
 
 module.exports = { creer, NOM_FICHIER };
