@@ -97,6 +97,9 @@ EVENTS = {
     "effort":         {"acetylcholine": +0.15, "noradrenaline": +0.10, "dopamine": +0.05},
     "fievre":         {"noradrenaline": +0.15, "cortisol": +0.15, "serotonine": -0.05, "endorphine": +0.05},
     "malaise_sourd":  {"cortisol": +0.10, "noradrenaline": +0.05, "serotonine": -0.05},
+    # (13/11, Ahmed : « idem pour cauchemar », reves.py) l'angoisse d'un CAUCHEMAR : la vigilance, un peu de baisse ; son stress passe par la
+    # CRH (dans EVENTS_V2 : sa reprise le défait exactement). Ni aversif (un rêve n'apprend aucune peur) ni valence (aucune attente déjouée)
+    "cauchemar":      {"noradrenaline": +0.25, "serotonine": -0.05, "dopamine": -0.05},
 }
 
 
@@ -165,6 +168,7 @@ EVENTS_V2 = {
     "effort":         {"adrenaline": +0.03},
     "fievre":         {"crh": +0.05, "gaba": -0.05},
     "malaise_sourd":  {"gaba": -0.03},
+    "cauchemar":      {"adrenaline": +0.25, "crh": +0.15, "gaba": -0.05},   # (13/11) le cœur qui cogne, le stress par l'axe
 }
 # (27/10, plan de Hakim validé par Ahmed ; relecture indépendante) la reprise en main d'un ressenti pénible (sa
 # rétrospection, ou l'apaisement par l'autre) défait une part du ressenti LUI-MÊME : son profil, en négatif. Le profil
@@ -178,6 +182,10 @@ CHARGES = ("surcharge", "effort", "fievre", "malaise_sourd")
 for _r in CHARGES:
     EVENTS["reprise_" + _r] = {h: -d for h, d in EVENTS[_r].items()}
     EVENTS_V2["reprise_" + _r] = {h: -d for h, d in EVENTS_V2.get(_r, {}).items()}
+# (13/11, reves.py) la reprise d'un cauchemar : le même profil en négatif (tout de suite s'il s'en sort, sinon un peu après, au plus tard
+# au réveil) — jamais une humeur coincée par un rêve
+EVENTS["reprise_cauchemar"] = {h: -d for h, d in EVENTS["cauchemar"].items()}
+EVENTS_V2["reprise_cauchemar"] = {h: -d for h, d in EVENTS_V2["cauchemar"].items()}
 K_ACTH = 1.0            # cible de l'ACTH = base + K·(CRH − base)
 K_CORT = 1.5            # cible du cortisol = base circadienne + K·(ACTH − base)
 CORT_MONTEE_H = 0.5     # le cortisol MONTE vers sa cible en ~30 min (sécrétion), et redescend en heures (demi-vie 8 h)
@@ -223,6 +231,7 @@ HAB_EXEMPTS |= {"reprise_peur", "reprise_tristesse", "reprise_colere", "reprise_
 HAB_EXEMPTS |= {"inquietude", "malaise", "reprise_inquietude", "reprise_malaise"}       # (27/10, l'empathie) comme la peur
 HAB_EXEMPTS |= {"douleur"}                                                               # (30/10) une douleur ne s'émousse pas
 HAB_EXEMPTS |= {"reprise_" + _r for _r in CHARGES}                                      # (11/11) la reprise d'une charge non plus
+HAB_EXEMPTS |= {"cauchemar", "reprise_cauchemar"}                                       # (13/11) un cauchemar et sa reprise non plus
 PAS_V2_S = 300.0
 
 # ---- Émotions soudaines (2026-10-21, idée d'Ahmed relayée par Hakim ; prédictions figées AVANT dans

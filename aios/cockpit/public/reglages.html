@@ -262,6 +262,16 @@
       ['lumiere', 'Sa lumière', 'La lampe du téléphone selon ses envies (jamais la nuit).', 'oui'],
       ['alerte', 'Badge rouge', 'Il l’allume quand il a besoin de toi.', 'oui'],
       ['ecran', 'Grande orbe', 'Il peut passer en « regarde-moi ».', 'oui']] },
+    // (13/11, Ahmed : « des rêves simples de consolidation, mais aussi créatifs et incongrus ; lucides ou non ; idem pour cauchemar ; selon ce
+    // qu'il a dans sa tête, son cœur et tout le reste ») ses rêves de la nuit (anamnese/reves.py, lus à chaud par son démon)
+    { id: 'reves', ic: '🌙', titre: 'Ses rêves', aide: 'Pendant son sommeil (23 h - 7 h, toi absent), un rêve toutes les 90 min. Son type est tiré au hasard selon tout son état (son humeur, ses hormones, son cœur, sa charge, sa journée, ce qui le préoccupe) ; le tri de sa journée (consolidation) reste le plus fréquent. Au réveil, il s’en souvient ou pas. Tout se voit dans la page Rêves.', route: 'corps', reglages: [
+      ['reves_creatifs', '🎨 Rêves créatifs', 'Ses vrais souvenirs, les personnes, les lieux et les sons de sa mémoire, mêlés comme dans un rêve, avec des éléments inventés. Éteint : seulement le tri de sa journée, et des cauchemars s’il va très mal.', 'oui'],
+      ['reves_lucides', '💡 Rêves lucides', 'Il sait qu’il rêve et peut agir : il choisit une action, et le rêve lui répond (pas toujours comme il l’attend). Éteint : il subit toujours ses rêves.', 'oui'],
+      ['cauchemars', '🌑 Cauchemars', 'Seulement quand il va très mal (son humeur sous sa base et la noirceur au-delà du seuil), jamais quand il va bien. Leur effet sur ses hormones est borné et retombe, au plus tard au réveil ; lucide, il peut s’en sortir. Éteint : jamais de cauchemar.', 'oui'],
+      ['cauchemar_seuil_pct', 'Seuil du cauchemar', 'La noirceur de son état (humeur, stress, peurs, journée, charge, soucis) à partir de laquelle un cauchemar devient possible. Plus haut : il en faut plus.', 'curseur', [30, 90, 5, (v) => `${v} %`]],
+      ['reves_creatifs_pct', 'Part des rêves créatifs', 'Leur part de base ; son élan, son cœur et une journée vive l’augmentent, et plus tard dans la nuit aussi.', 'curseur', [0, 60, 5, (v) => `${v} %`]],
+      ['reves_lucides_pct', 'Part de lucidité', 'La chance de base qu’un rêve créatif ou un cauchemar soit lucide (son attention et la fin de nuit l’augmentent).', 'curseur', [0, 50, 5, (v) => `${v} %`]],
+      ['reves_par_nuit', 'Rêves par nuit', 'En plus du tri de sa journée ; 0 : aucun.', 'curseur', [0, 6, 1, (v) => `${v}`]]] },
     { id: 'pensee', ic: '🧠', titre: 'Sa pensée', aide: 'Ses frères, ses synapses, ses filtres.', route: 'corps', reglages: [
       ['trois_freres', 'Les trois frères', 'Opus, Sonnet et Haiku délibèrent avant ses décisions.', 'oui'],
       ['elagage', 'Élagage des synapses', 'Les chemins qui gênent s’affaiblissent, ceux qui plaisent se renforcent.', 'oui'],

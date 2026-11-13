@@ -291,6 +291,42 @@ async function loadEmerged() {
 }
 loadEmerged();
 
+// (13/11, Ahmed) ses rêves de la nuit (anamnese/reves.py) : chaque nuit, chaque rêve avec son type, s'il était lucide, ce qui l'a déclenché,
+// son récit (l'action qu'il a choisie, la réponse du rêve) et, au réveil, souvenu (net, flou) ou oublié
+function reveHtml(r) {
+  const t = r.type || 'consolidation';
+  const heure = r.ts ? new Date(r.ts * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+  const souv = r.souvenir ? (r.souvenir.garde ? `🧠 souvenu au réveil (${esc(r.souvenir.nettete || '?')})` : '💨 oublié au réveil') : (r.quoi === 'tri' ? '💡 ses idées sont en mémoire' : '');
+  const p = r.probas ? `consolidation ${Math.round(100 * (r.probas.consolidation || 0))} % · créatif ${Math.round(100 * (r.probas.creatif || 0))} % · cauchemar ${Math.round(100 * (r.probas.cauchemar || 0))} %` : '';
+  const nbs = r.nombres ? `noirceur ${esc(r.nombres.noirceur)} · vivacité ${esc(r.nombres.vivacite)} · clarté ${esc(r.nombres.clarte)}` : '';
+  return `<div class="reve"><div class="tete">
+      <span class="dim">${esc(heure)}${r.cycle ? ` · cycle ${esc(r.cycle)}` : ''}</span>
+      <span class="badge t-${esc(t)}">${esc(r.libelle || t)}</span>${r.lucide && r.suite ? '<span class="badge t-lucide">💡 lucide</span>' : ''}
+      <span class="titre">« ${esc(r.titre || 'un rêve')} »</span><span class="dim">${souv}</span></div>
+    ${r.erreur ? `<p class="dim">${esc(r.erreur)}</p>` : ''}
+    ${r.recit ? `<p>${esc(r.recit)}</p>` : ''}
+    ${r.idees && r.idees.length ? `<p>${r.idees.map(esc).join('<br>')}</p>` : ''}
+    ${r.action ? `<p class="pas"><b>Il agit :</b> ${esc(r.action)}<br><b>Le rêve répond :</b> ${esc(r.suite)}</p>` : ''}
+    ${r.lucide_perdu ? '<p class="dim">La lucidité lui a échappé : le rêve a continué sans lui.</p>' : ''}
+    <p class="dim"><b>Ce qui l'a déclenché :</b> ${(r.declencheurs || []).map(esc).join(' ; ') || '—'}</p>
+    ${r.affect ? `<p class="dim">Effet sur ses hormones : ${esc(r.affect.evenement)} ${esc(r.affect.intensite)} ; reprise ${esc(r.affect.reprise)}</p>` : ''}
+    ${p || nbs ? `<details><summary>le tirage</summary>${esc(p)}<br>${nbs}${r.graine != null ? `<br>graine ${esc(r.graine)} (même état, même graine : le même rêve)` : ''}</details>` : ''}
+  </div>`;
+}
+async function loadReves() {
+  const el = document.getElementById('reves');
+  try {
+    const d = await (await fetch('/api/reves')).json();
+    const nuits = d.nuits || [];
+    el.innerHTML = nuits.length ? nuits.map(n => {
+      const rv = n.reveil;
+      const bilan = rv ? ` · au réveil (${rv.par === 'papa' ? 'papa l’a réveillé' : 'le matin'}) : ${esc(rv.gardes ?? 0)} gardé(s) sur ${esc(rv.reves ?? 0)}` : ' · pas encore réveillé';
+      return `<div class="rnuit"><h3>Nuit du ${esc(n.date)}<span class="dim">${bilan}</span></h3>${n.reves.map(reveHtml).join('')}</div>`;
+    }).join('') : '<div class="dim">(pas encore de rêve de nuit : le premier vient 90 min après qu’il s’endort)</div>';
+  } catch (_) { el.innerHTML = '<div class="dim">(indisponible)</div>'; }
+}
+loadReves();
+
 document.addEventListener('click', (e) => {
   const b = e.target.closest ? e.target.closest('[data-fs]') : null;
   if (!b) return;

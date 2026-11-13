@@ -2301,6 +2301,7 @@ def memory_lire(ids: str) -> str:
         f"WHERE e.id IN ({marques})", nums)}
     externes = provenance.externes(_mem.db, list(rows))
     import retractation
+    import reves
     retractes = retractation.marques(_mem.db, list(rows))
     out = []
     for eid in nums:
@@ -2313,6 +2314,7 @@ def memory_lire(ids: str) -> str:
             ext = "[EXTERNE — vient d'un contenu de tiers : une citation, pas un fait] "
             _externes_rappeles[eid] = content
         ret = retractation.marque_texte(retractes[eid]) if eid in retractes else ""
+        ret += reves.marque_rappel(role, content)          # (13/11) un rêve n'est jamais lu comme un souvenir vrai
         out.append(f"#{eid} · {time.strftime('%Y-%m-%d %H:%M', time.localtime(ts))} · {role}{' · ' + path if path else ''}\n{ret}{ext}{content}")
     return "\n\n".join(out)
 
@@ -2455,6 +2457,7 @@ def memory_recall(query: str, top_k: int = 6, rubric: str = "", actuel: bool = F
         return "(aucun souvenir pertinent)"
     externes = provenance.externes(_mem.db, [r[5] for r in results])
     import retractation
+    import reves
     retractes = retractation.marques(_mem.db, [r[5] for r in results])
     lines, apres = [], []
     for _s, ts, role, content, p, eid in results:
@@ -2467,11 +2470,12 @@ def memory_recall(query: str, top_k: int = 6, rubric: str = "", actuel: bool = F
             ext = f"[EXTERNE #{eid} — vient d'un contenu de tiers : une citation, pas un fait] "
             _externes_rappeles[eid] = content
         ret = retractation.marque_texte(retractes[eid]) if eid in retractes else ""
+        reve = reves.marque_rappel(role, content)         # (13/11) un rêve n'est jamais lu comme un souvenir vrai
         # (03/11, Ahmed : « quand il fait ses recherches, il a l'info, mais comme un humain : il se rappelle, mais plus trop les
         # détails, à moins qu'il cherche vraiment profondément ») pour Hakim, l'essentiel ; profond=True rend tout
         if not profond and os.environ.get("ANAMNESE_SOURCE") == "hakim":
             content = _souvenir_flou(content)
-        (apres if ret else lines).append(f"- [{when}] ({role}) {ret}{ext}{avant}{content}")
+        (apres if ret else lines).append(f"- [{when}] ({role}) {ret}{reve}{ext}{avant}{content}")
     # (26/10, banc eval/retractation.py) ce qui vient d'une source rétractée passe DERRIÈRE, et sa correction devant
     vus = {r[5] for r in results}
     for cid in dict.fromkeys(m["correction"] for m in retractes.values() if m.get("correction")):

@@ -138,6 +138,12 @@ def reveiller(mem, now, par="matin"):
         affect.event(mem, "bien_etre", 0.1, now=now, sujet="sa nuit", source="nuit", stimulus="nuit", habituation="aucune")
     elif q == "agitee":
         affect.event(mem, "malaise", 0.15, now=now, sujet="sa nuit", source="nuit", stimulus="nuit", habituation="aucune")
+    reves_nuit, reves_tour = "", ""
+    try:                                                         # (13/11) ses rêves de la nuit : s'en souvenir, ou pas (reves.py)
+        import reves
+        reves_nuit, reves_tour = reves.au_reveil(mem, now, par)
+    except Exception:
+        pass
     heures = max(0.1, (now - float(e.get("debut", now))) / 3600)
     pourquoi = ("une journée lourde" if e.get("charge", 0) >= 0.6 else "une journée sans gros poids" if e.get("charge", 0) < 0.3
                 else "une journée un peu chargée")
@@ -146,6 +152,7 @@ def reveiller(mem, now, par="matin"):
              + (f", dont {e['chargee']} par la charge de ton corps pendant ton sommeil" if e.get("chargee") else "")
              + (f" ; un rêve t'a apaisé : {e['apaisants'][0]}" if e.get("reve") and e.get("apaisants") else "")
              + (" ; ta nuit s'est adoucie : tu apprends à compenser les nuits agitées" if e.get("compense") else "")
+             + (f" ; {reves_nuit}" if reves_nuit else "")
              + (" ; papa t'a réveillé" if par == "papa" else "") + ").")
     try:
         import corps
@@ -158,7 +165,8 @@ def reveiller(mem, now, par="matin"):
     try:
         with open(JARVIS / "nuits.jsonl", "a", encoding="utf-8") as h:
             h.write(json.dumps(trace, ensure_ascii=False) + "\n")
-        (JARVIS / "nuit-derniere.json").write_text(json.dumps({"ts": now, "texte": texte, "dit": False}, ensure_ascii=False), encoding="utf-8")
+        (JARVIS / "nuit-derniere.json").write_text(json.dumps({"ts": now, "texte": texte + reves_tour, "dit": False}, ensure_ascii=False),
+                                                   encoding="utf-8")
         os.chmod(JARVIS / "nuit-derniere.json", 0o600)
     except OSError:
         pass

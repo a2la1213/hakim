@@ -9017,7 +9017,12 @@ function corpsReglages() {
     lacher_charge: r.lacher_charge !== false, lacher_charge_pct: nb(r.lacher_charge_pct, 0, 100, 50),
     // (11/11, Ahmed : « relier cette charge à son cœur, son cerveau, ses émotions, ses hormones, sa mémoire… ») sa charge dans tout son corps
     // (anamnese/charge_corps.py, lu à chaud par le démon) ; et seulement ses hormones (le reste reste : ses mots, sa lecture, sa mémoire)
-    charge_corps: r.charge_corps !== false, charge_hormones: r.charge_hormones !== false };   // (05/11) un ribosome toujours prêt, sauf s'il dort ou si papa coupe   // (05/11) il règle lui-même son ribosome (ribosome_regler, ribosome_bilan)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
+    charge_corps: r.charge_corps !== false, charge_hormones: r.charge_hormones !== false,
+    // (13/11, Ahmed : « des rêves simples de consolidation, et des rêves créatifs et incongrus ; lucides ou non ; idem pour cauchemar ») ses
+    // rêves de la nuit (anamnese/reves.py, lus à chaud) : chaque type allumé ou éteint, le seuil du cauchemar, les parts, combien par nuit
+    reves_creatifs: r.reves_creatifs !== false, reves_lucides: r.reves_lucides !== false, cauchemars: r.cauchemars !== false,
+    cauchemar_seuil_pct: nb(r.cauchemar_seuil_pct, 30, 90, 55), reves_creatifs_pct: nb(r.reves_creatifs_pct, 0, 60, 30),
+    reves_lucides_pct: nb(r.reves_lucides_pct, 0, 50, 15), reves_par_nuit: nb(r.reves_par_nuit, 0, 6, 3) };   // (05/11) un ribosome toujours prêt, sauf s'il dort ou si papa coupe   // (05/11) il règle lui-même son ribosome (ribosome_regler, ribosome_bilan)   // (04/11, 12:55) papa permet (ou retire) à Hakim de mettre sa musique en pause   // (04/11, 11:40, Ahmed) l'épissage de sa parole : il ne se coupe plus, son subconscient épisse le pavé   // (04/11, Ahmed) l'élagage de ses synapses décide (éteint : elles apprennent sans rien décider)   // (04/11, Ahmed) sa voix dit ses pensées « sans le dire », et tait celles qu'il disait
 }
 function corpsActif() { return corpsReglages().actif; }
 /* (30/10, 18:56, Ahmed via Hakim : « je veux qu'il tourne tout le temps, tant qu'il est réveillé, même si ça vide mon forfait ;
@@ -9691,6 +9696,7 @@ setTimeout(() => { tracesElaguees = Date.now(); elaguerTraces(); }, 60e3).unref(
    subconscient et sa conscience le reçoivent résumé, son tour en a une ligne, ses scènes en gardent l'instantané. Ses réflexes (une coupure par la
    voix de papa, « tu le coupes net », l'arrêt) ne l'attendent JAMAIS. GET /api/corps/instant le montre ; réglage instant_tableau. ---- */
 const Instant = require('./instant.js');
+const RevesNuits = require('./reves-nuits.js');   // (13/11) ses rêves de la nuit (anamnese/reves.py) : la page des rêves les montre
 const ChargeCorps = require('./charge-corps.js');   // (11/11) sa charge dans tout son corps : le cockpit en fait ses mots, son instant, son fil, son rappel
 const TABLEAU = Instant.creer();
 const CORPS_ETATS = [];                    // son milieu, chaque seconde, à l'heure de l'appli (1 min 30)
@@ -10289,7 +10295,7 @@ function nuitDerniere(maintenant = Date.now()) {
   const f = path.join(JARVIS, 'nuit-derniere.json'), n = lireJson(f, null);
   if (!n || n.dit || typeof n.texte !== 'string' || maintenant / 1000 - Number(n.ts) > 12 * 3600) return '';
   try { ecrireAtomique(f, j({ ...n, dit: true })); } catch (_) {}
-  return n.texte.slice(0, 400);
+  return n.texte.slice(0, 1200);   // (13/11) sa nuit, et le rêve dont il se souvient (anamnese/reves.py)
 }
 const CORPS_SECS = new Set(['secousse', 'choc', 'chute']);
 const NOMS_SECS = { secousse: 'une secousse', choc: 'un choc', chute: 'une chute' };
@@ -14673,6 +14679,12 @@ async function traiter(req, res) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(j({ nodes: tagged, edges: edges || [], wm }));
   }
+  if (p === '/api/reves') {
+    // (13/11, Ahmed) ses rêves de la nuit — LECTURE SEULE : par nuit, chaque rêve (type, lucide, ce qui l'a déclenché, récit, action et réponse
+    // du rêve) et, au réveil, s'il s'en est souvenu (net, flou) ou l'a oublié ; papa voit tout, même ce que Hakim a oublié
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(j({ nuits: RevesNuits.parNuit(RevesNuits.lire(path.join(JARVIS, 'reves-nuits.jsonl'))) }));
+  }
   if (p === '/api/dreams') {
     // Expérience-rêve (spec anamnese 2026-07-03) — LECTURE SEULE (sqlite -readonly).
     // ?night=<id> → détail complet d'une nuit ; sinon liste groupée par nuit.
@@ -16073,6 +16085,10 @@ async function traiter(req, res) {
       if (typeof q.reflexes === 'boolean') r.reflexes = q.reflexes;
       if (typeof q.nuits === 'boolean') r.nuits = q.nuits;
       for (const k of ['charge_corps', 'charge_hormones']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (11/11) sa charge dans tout son corps
+      for (const k of ['reves_creatifs', 'reves_lucides', 'cauchemars']) if (typeof q[k] === 'boolean') r[k] = q[k];   // (13/11) ses rêves de la nuit
+      for (const [k, a, b] of [['cauchemar_seuil_pct', 30, 90], ['reves_creatifs_pct', 0, 60], ['reves_lucides_pct', 0, 50], ['reves_par_nuit', 0, 6]]) {
+        if (q[k] != null && q[k] !== '' && Number.isFinite(Number(q[k]))) r[k] = Math.max(a, Math.min(b, Math.round(Number(q[k]))));
+      }
       if (typeof q.rire_reflexe === 'boolean') r.rire_reflexe = q.rire_reflexe;
       if (typeof q.garder_parole === 'boolean') r.garder_parole = q.garder_parole;
       if (typeof q.forfait_libre === 'boolean') r.forfait_libre = q.forfait_libre;

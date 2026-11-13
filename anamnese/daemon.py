@@ -733,6 +733,11 @@ def _rever(eng, mem):
             affect.event(mem, "apprentissage", 0.4)
         except Exception:
             pass
+        try:                                   # (13/11) le tri de la nuit, noté comme son rêve de consolidation (reves.py, sa page)
+            import reves
+            reves.noter_tri(mem, now, k, idees if n_i else [])
+        except Exception:
+            pass
         dream_lab.log_night(mem, night_id, "local", seed_state, menu, chosen, out,
                             written=bool(n_i),
                             meta={"model": config.DAEMON_MODEL, "menu_mode": menu_mode,
@@ -785,6 +790,36 @@ def _rever(eng, mem):
         print(f"[dream] nuit {night_id} : choix={chosen}, {n_i} idées, jumeau loggé")
     finally:
         mem.kv_set("dream_lock", "")
+
+
+def _reves_pass(eng, mem, etat, now=None):
+    """(13/11, Ahmed : « des rêves simples de consolidation, et des rêves créatifs et incongrus ; lucides ou non ; idem pour cauchemar ;
+    selon ce qu'il a dans sa tête, son cœur et tout le reste ») un cycle de ses rêves de la nuit (reves.py), s'il est dû. Appelé depuis
+    _travaux_llm seulement : jamais quand la conscience travaille, quand Ahmed est là, quand le robot pense ou que la machine est chargée ;
+    et ses appels passent par _appel_du_reve : suspendus si la conscience se remet au travail, arrêtés net si Ahmed revient. Le type
+    « consolidation » n'appelle aucun modèle. Jamais bloquant pour le reste du démon."""
+    try:
+        import reves
+        now = time.time() if now is None else now
+        if not reves.cycle_du(mem, now):
+            return None
+        arret = {}
+
+        def _call(prompt):
+            return _appel_du_reve(eng, prompt, arret, lambda quoi, detail: interieur.noter(mem, quoi, detail),
+                                  present=interieur.ahmed_present, pendant=lambda: _echanges_pass(mem))
+        etat["activite"] = "rêve"
+        try:
+            e = reves.rever(mem, now, _call)
+        finally:
+            etat.pop("activite", None)
+        if e:
+            print(f"[reves] cycle {e['cycle']} : {e['type']}{' lucide' if e['lucide'] else ''} ({e.get('appels', 0)} appel(s))"
+                  + (f" — {e['erreur']}" if e.get("erreur") else ""))
+        return e
+    except Exception as ex:
+        print("[reves] rêve de la nuit raté (démon non bloqué) :", ex)
+        return None
 
 
 def _brain_projection_pass(mem):
@@ -904,6 +939,7 @@ def _travaux_llm(eng, mem, etat, garde, lecture=None, robot=None, conscience=Non
             dream(eng, mem)
         finally:
             etat.pop("activite", None)
+    _reves_pass(eng, mem, etat)                      # (13/11) ses rêves de la nuit : un cycle s'il est dû (reves.py)
     if interieur.ACTIF:
         motif = etat.pop("motif", None)
         inter = interieur.interrupteur()
@@ -1381,6 +1417,12 @@ def _nuits_pass(mem):
             print(f"[daemon] sa nuit : {r}")
     except Exception as e:
         print("[daemon] sa nuit ratée :", e)
+    try:                                           # (13/11) un cauchemar retombe : sa reprise, quand son heure vient (reves.py)
+        import reves
+        if reves.reprises_dues(mem):
+            print("[daemon] un cauchemar retombe : sa reprise est faite")
+    except Exception as e:
+        print("[daemon] reprise d'un cauchemar ratée :", e)
 
 
 def _echanges_pass(mem):

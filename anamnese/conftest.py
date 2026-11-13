@@ -174,6 +174,11 @@ def _vie_interieure_isolee(monkeypatch, tmp_path):
         monkeypatch.setattr(rappels_rates, "CONVERSATION", d / "conversation.json")
     except Exception:
         pass
+    try:                                      # (13/11) ses rêves de la nuit : réglages, journal, matière (reves.py)
+        import reves
+        monkeypatch.setattr(reves, "JARVIS", d)
+    except Exception:
+        pass
     try:                                      # l'horloge à promesses (2026-10-22)
         import promesses
         monkeypatch.setattr(promesses, "FICHIER", d / "promesses.json")

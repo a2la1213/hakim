@@ -40,10 +40,25 @@
   td,th{padding:3px 7px;border:1px solid var(--glass-bd);color:var(--txt-3)}
   th{color:var(--txt-2);font-weight:600}
   #curvewrap h3,#heatwrap h3{font-size:12px;letter-spacing:.5px;color:var(--txt-2);margin-bottom:8px}
+  /* (13/11) ses rêves de la nuit */
+  .rnuit{border-top:1px solid var(--glass-bd);padding:10px 0}
+  .rnuit:first-child{border-top:0}
+  .rnuit>h3{font-size:12px;letter-spacing:.5px;color:var(--txt-2);margin:0 0 6px}
+  .reve{border:1px solid var(--glass-bd);border-radius:12px;padding:10px 12px;margin:8px 0;background:rgba(255,255,255,.02);min-width:0}
+  .reve .tete{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}
+  .reve .titre{color:var(--txt);font-size:13px;font-weight:600}
+  .reve p{margin:6px 0 0;font-size:12.5px;line-height:1.5;color:var(--txt-2);overflow-wrap:anywhere}
+  .reve .pas{border-left:2px solid var(--warn);padding-left:8px}
+  .t-consolidation{color:var(--teal)} .t-creatif{color:#a78bfa} .t-cauchemar{color:var(--rose)} .t-lucide{color:var(--warn)}
+  .reve details{margin-top:6px;font-size:11px;color:var(--txt-3)} .reve summary{cursor:pointer}
   @media (max-width: 900px) { #layout { grid-template-columns: 1fr !important; } }
 </style>
 </head>
 <body>
+<section class="glass accent" id="reves-card" style="margin-bottom:12px;">
+  <div class="sec-label">🌙 SES RÊVES DE LA NUIT <span class="dim">· le type tiré selon son état · ce qui l'a déclenché · souvenu ou oublié au réveil</span></div>
+  <div id="reves"><div class="dim">chargement…</div></div>
+</section>
 <section class="glass accent" id="verdict-card" style="margin-bottom:12px;">
   <div class="sec-label">⚖ VERDICT — portes pré-enregistrées <span class="dim">· même source que ./anamnese dreams</span></div>
   <div id="verdict-badge"></div>
