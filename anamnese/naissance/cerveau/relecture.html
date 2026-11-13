@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relecture du cerveau</title>
+<style>
+  :root {
+    --fond: #f6f3ee; --carte: #ffffff; --encre: #1f1c18; --doux: #6d655b; --ligne: #e4ddd2;
+    --garder: #2f7d4f; --corriger: #a26a12; --effacer: #a83a32; --accent: #3b3a8f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --fond: #16140f; --carte: #211e18; --encre: #f1ece4; --doux: #a89f92; --ligne: #3a352c;
+            --garder: #5fbf86; --corriger: #e0a64a; --effacer: #e57a70; --accent: #9d9cf0; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fond); color: var(--encre); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 120px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  h2 { font-size: 1.1rem; margin: 32px 0 10px; color: var(--doux); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  p.intro { color: var(--doux); margin: 0 0 18px; }
+  .compte { position: sticky; top: 0; z-index: 2; background: var(--fond); padding: 10px 0; border-bottom: 1px solid var(--ligne);
+            display: flex; gap: 14px; flex-wrap: wrap; font-size: .92rem; }
+  .compte b { font-variant-numeric: tabular-nums; }
+  .carte { background: var(--carte); border: 1px solid var(--ligne); border-radius: 12px; padding: 14px 16px; margin: 10px 0; }
+  .carte.soi { border-color: var(--accent); }
+  .carte[data-etat="garder"] { border-left: 5px solid var(--garder); }
+  .carte[data-etat="corriger"] { border-left: 5px solid var(--corriger); }
+  .carte[data-etat="effacer"] { border-left: 5px solid var(--effacer); opacity: .6; }
+  .categorie { font-size: .78rem; color: var(--doux); text-transform: uppercase; letter-spacing: .05em; }
+  .texte { margin: 6px 0 8px; white-space: pre-wrap; }
+  .carte[data-etat="effacer"] .texte { text-decoration: line-through; }
+  .sources { font-size: .8rem; color: var(--doux); word-break: break-word; }
+  textarea { width: 100%; min-height: 90px; font: inherit; padding: 8px; border-radius: 8px; border: 1px solid var(--ligne);
+             background: var(--fond); color: var(--encre); }
+  .boutons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  button { font: inherit; font-size: .92rem; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--ligne);
+           background: transparent; color: var(--encre); cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.garder.actif { background: var(--garder); color: #fff; border-color: var(--garder); }
+  button.corriger.actif { background: var(--corriger); color: #fff; border-color: var(--corriger); }
+  button.effacer.actif { background: var(--effacer); color: #fff; border-color: var(--effacer); }
+  .prudence li { margin: 6px 0; }
+  .fin { position: fixed; left: 0; right: 0; bottom: 0; background: var(--carte); border-top: 1px solid var(--ligne); padding: 12px 16px; }
+  .fin .dedans { max-width: 860px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .fin button { background: var(--accent); color: #fff; border-color: var(--accent); padding: 10px 18px; }
+  .fin button:disabled { opacity: .45; cursor: not-allowed; }
+  .note { font-size: .88rem; color: var(--doux); }
+  .erreur { color: var(--effacer); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Ce que ton IA a appris de ton PC</h1>
+  <p class="intro">Rien de tout ça n'est encore dans sa mémoire. Pour chaque souvenir : <b>Garder</b>, <b>Corriger</b> ou <b>Effacer</b>.
+    Ce que tu ne gardes pas, elle ne l'apprendra jamais. À la fin, le bouton du bas lui donne ce que tu as gardé.</p>
+  <div class="compte" id="compte" aria-live="polite"></div>
+  <div id="soi"></div>
+  <div id="liste"></div>
+  <h2>Fichiers mis de côté par prudence</h2>
+  <p class="note" id="prudence-intro"></p>
+  <ul class="prudence" id="prudence"></ul>
+  <p class="erreur" id="erreur" role="alert"></p>
+</main>
+<div class="fin"><div class="dedans">
+  <span class="note" id="fin-note">Rien n'est appris tant que tu n'as pas validé.</span>
+  <button id="valider" disabled>Oui, mon IA peut apprendre ce que j'ai gardé</button>
+</div></div>
+<script>
+'use strict';
+const JETON = new URLSearchParams(location.search).get('jeton') || '';
+const NOMS = { identite: 'qui tu es', metier: 'ton métier', marque: 'ta marque', projets: 'tes projets', gouts: 'tes goûts',
+  style: 'ton style', ecriture: "ta façon d'écrire", chronologie: 'ta chronologie', proches: 'tes proches',
+  valeurs: 'ce qui compte pour toi', habitudes: 'tes habitudes', soi: 'ce que ton IA pense d\'elle-même' };
+let E = null;
+
+async function api(chemin, corps) {
+  const r = await fetch(chemin, { method: corps ? 'POST' : 'GET', headers: { 'X-Jeton': JETON, 'Content-Type': 'application/json' },
+    body: corps ? JSON.stringify(corps) : undefined });
+  const o = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(o.erreur || ('erreur ' + r.status));
+  return o;
+}
+
+function el(tag, attrs, ...enfants) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === 'class') n.className = v; else if (k.startsWith('on')) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v);
+  }
+  for (const e of enfants) if (e != null) n.append(e);
+  return n;
+}
+
+function carte(item) {
+  const d = (E.decisions[item.id] || {});
+  const etat = d.decision || '';
+  const texte = etat === 'corriger' && d.texte ? d.texte : item.texte;
+  const c = el('div', { class: 'carte' + (item.id === 'soi' ? ' soi' : ''), 'data-etat': etat });
+  c.append(el('div', { class: 'categorie' }, NOMS[item.categorie] || item.categorie));
+  const t = el('div', { class: 'texte' }, texte);
+  c.append(t);
+  if (item.sources && item.sources.length) {
+    c.append(el('div', { class: 'sources' }, 'D\'après : ' + item.sources.map(s => s.affiche).join(' · ')));
+  }
+  const b = el('div', { class: 'boutons' });
+  const decider = async (decision, txt) => {
+    try { await api('/api/decision', { id: item.id, decision, texte: txt }); await charger(); }
+    catch (e) { document.getElementById('erreur').textContent = e.message; }
+  };
+  b.append(
+    el('button', { class: 'garder' + (etat === 'garder' ? ' actif' : ''), onclick: () => decider(etat === 'garder' ? null : 'garder') }, 'Garder'),
+    el('button', { class: 'corriger' + (etat === 'corriger' ? ' actif' : ''), onclick: () => {
+      const zone = el('textarea', { 'aria-label': 'Ta correction' }); zone.value = texte;
+      const ok = el('button', { class: 'corriger actif', onclick: () => decider('corriger', zone.value) }, 'Enregistrer ma correction');
+      t.replaceWith(zone); b.replaceChildren(ok); zone.focus();
+    } }, 'Corriger'),
+    el('button', { class: 'effacer' + (etat === 'effacer' ? ' actif' : ''), onclick: () => decider(etat === 'effacer' ? null : 'effacer') }, 'Effacer'));
+  c.append(b);
+  return c;
+}
+
+function rendre() {
+  const tous = (E.soi ? [E.soi] : []).concat(E.propositions);
+  const n = { garder: 0, corriger: 0, effacer: 0 };
+  for (const i of tous) { const d = (E.decisions[i.id] || {}).decision; if (d) n[d]++; }
+  const reste = tous.length - n.garder - n.corriger - n.effacer;
+  document.getElementById('compte').replaceChildren(
+    el('span', {}, el('b', {}, String(tous.length)), ' souvenirs proposés'),
+    el('span', {}, el('b', {}, String(n.garder)), ' gardés'), el('span', {}, el('b', {}, String(n.corriger)), ' corrigés'),
+    el('span', {}, el('b', {}, String(n.effacer)), ' effacés'), el('span', {}, el('b', {}, String(reste)), ' à décider'),
+    el('span', { class: 'note' }, `lus : ${E.fichiers_lus} fichiers sur ${E.inventaire} indexés`));
+  document.getElementById('soi').replaceChildren(...(E.soi ? [el('h2', {}, 'Son premier « soi »'), carte(E.soi)] : []));
+  const parCat = {};
+  for (const p of E.propositions) (parCat[p.categorie] = parCat[p.categorie] || []).push(p);
+  const liste = document.getElementById('liste');
+  liste.replaceChildren();
+  for (const [cat, items] of Object.entries(parCat)) {
+    liste.append(el('h2', {}, NOMS[cat] || cat));
+    for (const i of items) liste.append(carte(i));
+  }
+  document.getElementById('prudence-intro').textContent = `${E.secrets_exclus} fichier(s) secret(s) exclu(s) d'office (mots de passe, `
+    + `clés, banque, papiers, fiches de paie, santé) : jamais lus. Ceux-ci sont seulement douteux ; tu peux les rendre lisibles `
+    + `pour la prochaine lecture de ton PC.`;
+  document.getElementById('prudence').replaceChildren(...E.prudence.map(x => el('li', {}, `${x.affiche} (${x.genre}) `,
+    x.reintegre ? el('span', { class: 'note' }, '— sera lu la prochaine fois')
+      : el('button', { onclick: async () => { try { await api('/api/reintegrer', { affiche: x.affiche }); await charger(); }
+        catch (e) { document.getElementById('erreur').textContent = e.message; } } }, 'Il peut le lire'))));
+  const bouton = document.getElementById('valider');
+  bouton.disabled = n.garder + n.corriger === 0;
+  if (E.importe) document.getElementById('fin-note').textContent =
+    `Déjà appris : ${E.importe.importes} souvenir(s)${E.importe.soi ? ' et son « soi »' : ''}. Tu peux encore en garder d'autres.`;
+}
+
+async function charger() {
+  try { E = await api('/api/etat'); document.getElementById('erreur').textContent = ''; rendre(); }
+  catch (e) { document.getElementById('erreur').textContent = e.message; }
+}
+
+document.getElementById('valider').addEventListener('click', async () => {
+  const b = document.getElementById('valider');
+  b.disabled = true;
+  try {
+    const o = await api('/api/valider', {});
+    document.getElementById('fin-note').textContent =
+      `C'est fait : ${o.bilan.importes} souvenir(s) appris${o.bilan.soi ? ', et son « soi »' : ''}. Le reste ne sera jamais appris.`;
+    await charger();
+  } catch (e) { document.getElementById('erreur').textContent = e.message; b.disabled = false; }
+});
+charger();
+</script>
+</body>
+</html>

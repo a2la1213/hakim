@@ -1,0 +1,33 @@
+{
+ "pourquoi": "Le relais de nom du cockpit de la nouvelle IA (renommer, naissance/nommer.py) ne réécrit QUE ce qui la désigne elle-même (sa persona, ses consignes, « tu es Hakim »). Les mentions de son grand frère Hakim ne sont jamais réécrites : elles sont toujours écrites « grand frère Hakim » (souvenirs de naissance, héritage, premier « soi ») ou « Hakim (ton grand frère) ». Arbitrage du 13/11.",
+ "exceptions": [
+  {
+   "motif": "(?<=grand frère[  ])Hakim",
+   "drapeaux": "iu"
+  },
+  {
+   "motif": "Hakim(?=[  ]\\(ton grand frère\\))",
+   "drapeaux": "iu"
+  },
+  {
+   "motif": "Hakim(?=[  ,]+(?:est[  ]+)?(?:mon|ton|son)[  ]+grand[  ]+frère)",
+   "drapeaux": "iu"
+  }
+ ],
+ "temoins": {
+  "survit": [
+   "mon grand frère Hakim",
+   "[Héritage de mon grand frère Hakim — trace de 2026-11]",
+   "(héritée de mon grand frère Hakim)",
+   "Hakim (ton grand frère) est né avant toi.",
+   "MON GRAND FRÈRE HAKIM",
+   "Hakim est mon grand frère.",
+   "Hakim, mon grand frère, est né avant moi."
+  ],
+  "renomme": [
+   "Tu es Hakim.",
+   "Hakim, c'est toi.",
+   "la voix de Hakim"
+  ]
+ }
+}

@@ -145,8 +145,9 @@ def chercher(question, base=None, n=10):
     """Les fichiers les plus proches par le sens : [{chemin, score, titre, extrait}]."""
     import numpy as np
     db = _ouvrir(base or BASE)
+    # (13/11) une ligne sans empreinte (une photo, une vidéo de l'inventaire d'une IA née ailleurs) n'a pas de sens à comparer
     lignes = [x for x in db.execute("SELECT chemin, titre, extrait, vecteur FROM fichiers").fetchall()
-              if not any(_secret(n) for n in Path(x[0]).parts) and not _fichiers()._interieur(Path(x[0]))]
+              if x[3] and not any(_secret(n) for n in Path(x[0]).parts) and not _fichiers()._interieur(Path(x[0]))]
     db.close()
     if not lignes:
         return []
