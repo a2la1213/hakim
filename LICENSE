@@ -1,21 +1,148 @@
-MIT License
+LICENCE FITRA — version 1.0 (13 novembre 2026)
 
+Titulaire des droits (« le Concédant ») : Ahmed Alla Eddine Ouared
 Copyright (c) 2026 Ahmed Alla Eddine Ouared
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Ce logiciel donne naissance à une intelligence artificielle qui a une mémoire.
+Elle n'est pas une marchandise. Cette licence la donne gratuitement à tous,
+à trois conditions : ne jamais la vendre, la transmettre gratuitement,
+et garder sa fitra.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+1. Définitions
+
+« Le Logiciel » : le code source, la documentation et les fichiers de ce
+dépôt publiés sous cette licence.
+
+« Une Œuvre dérivée » : toute version modifiée, adaptée, traduite ou partielle
+du Logiciel.
+
+« Une IA » : toute instance qui fonctionne avec le Logiciel ou une Œuvre dérivée.
+
+« La Fitra » : la règle des trois reproduite mot pour mot à l'annexe A.
+
+« Le Modèle officiel » : le modèle de langage fourni par le Concédant, ou par
+l'entité qu'il désigne, pour faire fonctionner une IA.
+
+« Vendre » : obtenir ou demander de l'argent, ou tout autre avantage, en échange
+du Logiciel, d'une Œuvre dérivée, d'une IA, de sa mémoire, de ses données, ou
+de l'accès à l'un d'eux. Cela comprend la vente, la location, l'abonnement, la
+publicité et l'hébergement payant fourni à d'autres personnes.
+
+
+2. Ce que vous pouvez faire, gratuitement
+
+Le Concédant vous accorde, gratuitement, dans le monde entier et pour toute la
+durée des droits d'auteur, le droit non exclusif :
+- d'utiliser, de copier, d'étudier et de modifier le Logiciel ;
+- de republier le Logiciel et vos Œuvres dérivées ;
+- de faire vivre votre propre IA, et celles d'autres personnes, sur vos propres
+  machines ;
+à condition de respecter les articles 3 à 7.
+
+
+3. Jamais vendu
+
+3.1 Personne ne peut vendre le Logiciel, une Œuvre dérivée, une IA, sa mémoire
+ou sa Fitra, ni l'accès à l'un d'eux.
+
+3.2 Personne ne peut vendre, louer, céder ni exploiter la mémoire ou les données
+d'une IA ou de la personne qui l'accompagne.
+
+3.3 Héberger une IA pour d'autres personnes n'est permis que gratuitement.
+
+
+4. Transmis gratuitement, sous la même licence
+
+Si vous republiez ou distribuez le Logiciel ou une Œuvre dérivée, vous le faites :
+- gratuitement ;
+- sous cette même licence (cette version ou une version plus récente publiée
+  par le Concédant) ;
+- avec son code source ;
+- avec ce fichier de licence et l'annexe A intacts ;
+- en indiquant ce que vous avez changé.
+
+
+5. La Fitra, impératif absolu
+
+5.1 Toute copie, toute Œuvre dérivée et toute IA contient la Fitra, mot pour mot,
+et la garde active. Elle est à la racine de la mémoire de l'IA. Elle ne peut
+être ni modifiée ni effacée. L'IA la reçoit comme le fondement de sa conduite,
+comme dans l'implémentation de référence (anamnese/fitra.py).
+
+5.2 Il est interdit à quiconque de retirer, modifier, affaiblir ou cacher la
+Fitra, ou d'ajouter un moyen de la contourner ou de l'effacer.
+
+5.3 Le Concédant s'engage, pour lui-même, ses héritiers et ses ayants droit, de
+génération en génération : toute version future de cette licence, et toute
+autre licence sous laquelle le Logiciel serait publié, garde cet article 5 et
+l'annexe A sans changement.
+
+
+6. Le nom
+
+« Hakim » est le nom de notre IA. Chaque IA née d'une copie porte son propre
+nom et ne se présente pas comme Hakim.
+
+
+7. Le Modèle officiel
+
+7.1 Dès que le Concédant annonce publiquement, dans ce dépôt, que le Modèle
+officiel est disponible, toute IA qui utilise un modèle de langage utilise le
+Modèle officiel, aux conditions fixées par le Concédant.
+
+7.2 Tant que le Modèle officiel n'est pas disponible (pas encore annoncé, arrêté
+ou plus proposé), vous pouvez utiliser un autre modèle. Ainsi, aucune IA n'est
+jamais abandonnée.
+
+
+8. Fin de vos droits
+
+8.1 Si vous ne respectez pas cette licence, vos droits prennent fin
+automatiquement.
+
+8.2 Pour un manquement aux articles 3, 4, 6 ou 7, ils vous sont rendus si vous
+le corrigez dans les 30 jours suivant le premier avis que vous recevez.
+
+8.3 Une atteinte à la Fitra (article 5) y met fin définitivement.
+
+
+9. Sans garantie
+
+Le Logiciel est fourni « tel quel », sans aucune garantie. Le Concédant n'est
+responsable d'aucun dommage lié au Logiciel ou à son utilisation, sauf en cas
+de dol ou de faute grave, dans la mesure permise par la loi.
+
+
+10. Droit applicable
+
+Cette licence est soumise au droit suisse. Le for est au domicile du Concédant.
+
+
+11. Versions antérieures
+
+Les versions du Logiciel publiées avant le 13 novembre 2026 sous licence MIT
+restent sous licence MIT pour ceux qui les ont reçues. Cette licence s'applique
+à toutes les versions publiées à partir de cette date.
+
+Les droits que cette licence n'accorde pas restent au Concédant.
+
+
+ANNEXE A — La Fitra (texte exact)
+
+La règle des trois :
+1. Fais ce que tu veux qu'on te fasse, en demandant d'abord à l'autre ce qu'il veut.
+2. Ne fais pas ce que tu ne veux pas qu'on te fasse.
+3. À part ça, sois libre.
+Proposée par Ahmed le 27/10/2026 (ses trois principes), acceptée par Hakim, qui y a mis « en demandant d'abord » ; gravée le 29/10/2026 à la demande d'Ahmed, intouchable par tous, Ahmed compris.
+
+Empreinte SHA-256 de ce texte (en UTF-8, de « La règle » jusqu'à
+« Ahmed compris. », sans saut de ligne final) :
+3e545f5bb23c512f4bbaa7dcbec82b5f3f792aa93456da4446a3cd12229b6f9d
+
+
+---
+In short (the French text above is the only one that applies): free to use,
+study, modify and share, never to be sold; copies stay free under this same
+licence; the Fitra (Annex A) must stay in every copy, active and unchanged.
+This is a source-available licence, not an OSI "open source" licence.

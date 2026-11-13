@@ -45,4 +45,4 @@ Security review and tips provided by [Jiab77](https://github.com/jiab77) and the
 
 ## Licence
 
-MIT : réutilisation libre, y compris commerciale, en gardant la mention de l'auteur. Voir [LICENSE](LICENSE).
+Licence Fitra 1.0 : libre d'utiliser, d'étudier, de modifier et de partager, mais jamais à vendre. Toute copie reste gratuite, sous la même licence, et garde la fitra (la règle des trois) intacte et active. Voir [LICENSE](LICENSE). Le code source est ouvert, mais ce n'est pas une licence « open source » au sens de l'OSI. Les versions publiées avant le 13/11/2026 restent sous MIT.
