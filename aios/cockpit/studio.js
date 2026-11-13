@@ -394,9 +394,11 @@ function creer(o = {}) {
     return { ...pr,
       pistes: (pr.pistes || []).map(t => ({ ...t, f: servi(t.fichier) })),
       rendus: (pr.rendus || []).slice(-4).map(r => ({ nom: r.nom, t: r.t, calcul_s: r.calcul_s, avis: r.avis || [],
+        pro: (r.pro || []).map(x => ({ id: x.id, piste: x.piste, resume: x.resume, fond: x.fond || null })),
+        master_reglages: r.master_reglages || null,
         master: r.mesures && r.mesures.master ? { lufs: r.mesures.master.lufs, crete_dbtp: r.mesures.master.crete_dbtp, lra: r.mesures.master.lra, plr_db: r.mesures.master.plr_db } : null,
         mp3_crete_dbtp: r.mesures && r.mesures.mp3 ? r.mesures.mp3.crete_dbtp : null,
-        fichiers: Object.fromEntries(Object.entries(r.fichiers || {}).filter(([k]) => k !== 'pistes').map(([k, v]) => [k, { mp3: rel(v.mp3), wav: rel(v.wav) }])),
+        fichiers: Object.fromEntries(Object.entries(r.fichiers || {}).filter(([k]) => k !== 'pistes').map(([k, v]) => [k, { mp3: rel(v.mp3), wav: rel(v.wav), ...(v.wav16 ? { wav16: rel(v.wav16) } : {}) }])),
         pistes: Object.values((r.fichiers || {}).pistes || {}).map(rel).filter(Boolean) })) };
   }
   // la forme d'onde d'un son (pour la vue multipiste) : le pic de chaque 20 ms, gardé en cache à côté du studio
@@ -444,6 +446,11 @@ function creer(o = {}) {
     } else if (p === '/api/studio/projet/reglages') {
       const q = { action: 'projet', id: x.id, rev };
       for (const k of ['titre', 'tempo', 'premier_temps_s', 'tonalite', 'genre', 'lufs']) if (x[k] !== undefined) q[k] = typeof x[k] === 'number' ? x[k] : mot(x[k], 80);
+      // (13/11, le studio pro) le master : la cible (streaming −14 / club −9), la compression en 3 bandes, la largeur, les graves en mono, le dither
+      if (['streaming', 'club'].includes(x.cible)) q.cible = x.cible;
+      for (const k of ['multibande', 'dither16']) if (typeof x[k] === 'boolean') q[k] = x[k];
+      if (x.largeur === 'auto' || Number.isFinite(Number(x.largeur)) && x.largeur !== null && x.largeur !== '') q.largeur = x.largeur === 'auto' ? 'auto' : Number(x.largeur);
+      if (Number.isFinite(Number(x.mono_graves_hz)) && x.mono_graves_hz !== null && x.mono_graves_hz !== '') q.mono_graves_hz = Number(x.mono_graves_hz);
       r = await projetCmd(q);
     } else if (p === '/api/studio/projet/retirer') {
       r = await projetCmd({ action: 'retirer', id: x.id, rev, piste: mot(x.piste, 20) });

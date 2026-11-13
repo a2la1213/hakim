@@ -91,16 +91,36 @@ def _mot(v, n=80):
 
 
 # ------------------------------------------------------------------------------------------------ le projet sur le disque
+def pro_defaut():
+    """(13/11, le studio pro) les réglages pro d'une voix : studio_pro.reglages_defaut (le nettoyage mesuré, le type de voix)."""
+    import studio_pro
+    return studio_pro.reglages_defaut()
+
+
 def reglages_par_defaut(role):
     voix = role in ROLES_VOIX
-    return {
+    r = {
         "volume_db": 0.0, "pan": 0.0, "muet": False, "solo": False,
         "eq": {"coupe_bas_hz": 90.0 if voix else 0.0, "grave_db": 0.0, "grave_hz": 120.0, "medium_db": 0.0, "medium_hz": 1000.0,
-               "medium_q": 1.0, "aigu_db": 0.0, "aigu_hz": 8000.0},
+               "medium_q": 1.0, "aigu_db": 0.0, "aigu_hz": 8000.0, "coupe_haut_hz": 0.0},
         "comp": {"actif": voix, "seuil_db": -20.0, "ratio": 3.0, "attaque_ms": 5.0, "relache_ms": 120.0, "gain_db": 0.0},
+        # (13/11, le studio pro) la compression en deux temps : les crêtes d'abord (rapide), puis le nivellement lent (« comp »)
+        "comp_rapide": {"actif": False, "seuil_db": -10.0, "ratio": 6.0, "attaque_ms": 1.0, "relache_ms": 60.0},
+        "saturation": 0.0,
         "deesser": 0.0, "reverb": 0.15 if voix else 0.0, "delai": 0.0, "delai_note": "1/8.", "autotune": "",
-        "sidechain": {"cle": "", "db": 0.0}, "automation": [],
+        "sidechain": {"cle": "", "db": 0.0}, "automation": [], "jetes": [],
     }
+    if voix:
+        r["pro"] = pro_defaut()
+    return r
+
+
+def _pro(t):
+    """Les réglages pro d'une piste (une voix d'un projet d'avant le 13/11 au soir : la chaîne pro coupée, rien ne change pour elle)."""
+    if t.get("role") not in ROLES_VOIX:
+        return None
+    pr = t.get("pro")
+    return pr if isinstance(pr, dict) else {"actif": False}
 
 
 def nouveau(titre, tempo=0.0, tonalite="", genre="trap", studio_dir=None, source=None):
@@ -112,7 +132,8 @@ def nouveau(titre, tempo=0.0, tonalite="", genre="trap", studio_dir=None, source
     p = {"id": pid, "titre": _mot(titre, 80) or "Projet", "rev": 1, "cree": time.time(), "modifie": time.time(),
          "tempo": float(_num(tempo, 0, 300, 0)), "premier_temps_s": 0.0, "mesure": 4, "tonalite": _mot(tonalite, 20),
          "genre": _mot(genre, 20) or "trap", "duree_s": 0.0, "source": source or {}, "pistes": [], "zones": [], "marqueurs": [],
-         "master": {"lufs": -14.0, "crete_dbtp": -1.0, "eq_auto": True, "comp": True},
+         "master": {"lufs": -14.0, "crete_dbtp": -1.0, "eq_auto": True, "comp": True, "cible": "streaming", "multibande": True,
+                    "largeur": "auto", "mono_graves_hz": 120, "dither16": True},
          "rendus": [], "etat": "prêt", "journal": []}
     _ecrire(d / "projet.json", p)
     return p
@@ -239,18 +260,42 @@ def regler_piste(t, r):
             t[k] = bool(r[k]) if not isinstance(r[k], str) else r[k].lower() in ("1", "true", "oui", "vrai")
     eq = dict(r.get("eq") or {})
     for k, (a, b) in {"coupe_bas_hz": (0, 400), "grave_db": (-12, 12), "grave_hz": (40, 400), "medium_db": (-12, 12),
-                      "medium_hz": (150, 8000), "medium_q": (0.3, 6), "aigu_db": (-12, 12), "aigu_hz": (2000, 16000)}.items():
+                      "medium_hz": (150, 8000), "medium_q": (0.3, 6), "aigu_db": (-12, 12), "aigu_hz": (2000, 16000),
+                      "coupe_haut_hz": (0, 20000)}.items():
         if k in eq:
-            t["eq"][k] = round(_num(eq[k], a, b, t["eq"][k]), 2)
+            v = round(_num(eq[k], a, b, t["eq"].get(k, 0.0)), 2)
+            t["eq"][k] = (0.0 if v < 1000 else v) if k == "coupe_haut_hz" else v       # un coupe-haut sous 1 kHz : sans
     c = dict(r.get("comp") or {})
     if "actif" in c:
         t["comp"]["actif"] = bool(c["actif"])
     for k, (a, b) in {"seuil_db": (-50, 0), "ratio": (1, 20), "attaque_ms": (0.1, 200), "relache_ms": (5, 2000), "gain_db": (0, 18)}.items():
         if k in c:
             t["comp"][k] = round(_num(c[k], a, b, t["comp"][k]), 2)
-    for k in ("deesser", "reverb", "delai"):
+    cr = dict(r.get("comp_rapide") or {})
+    if cr:
+        t.setdefault("comp_rapide", reglages_par_defaut("ajout")["comp_rapide"])
+        if "actif" in cr:
+            v = cr["actif"]
+            t["comp_rapide"]["actif"] = v.lower() in ("1", "oui", "vrai", "true", "on") if isinstance(v, str) else bool(v)
+        for k, (a, b) in {"seuil_db": (-50, 0), "ratio": (1, 20), "attaque_ms": (0.05, 50), "relache_ms": (5, 1000)}.items():
+            if k in cr:
+                t["comp_rapide"][k] = round(_num(cr[k], a, b, t["comp_rapide"][k]), 2)
+    for k in ("deesser", "reverb", "delai", "saturation"):
         if k in r:
-            t[k] = round(_num(r[k], 0, 1, t[k]), 2)
+            t[k] = round(_num(r[k], 0, 1, t.get(k, 0.0)), 2)
+    if "pro" in r and (t.get("role") in ROLES_VOIX or isinstance(t.get("pro"), dict)):
+        import studio_pro
+        t["pro"] = studio_pro.borner(r["pro"] if isinstance(r["pro"], dict) else {}, t.get("pro") or pro_defaut())
+    if "jetes" in r:
+        l = []
+        for x in (r["jetes"] or [])[:64]:
+            try:
+                a, b = _num(x[0], 0, 3600, 0), _num(x[1], 0, 3600, 0)
+            except (TypeError, IndexError, KeyError):
+                continue
+            if b - a >= 0.05:
+                l.append([round(a, 3), round(b, 3)])
+        t["jetes"] = sorted(l)
     if "delai_note" in r and r["delai_note"] in NOTES_DELAI:
         t["delai_note"] = r["delai_note"]
     if "autotune" in r:
@@ -351,6 +396,21 @@ def _expr_db(points):
     return f"if(lt(t,{pts[0]['t']:.3f}),{pts[0]['db']:.2f},{e})"
 
 
+def _expr_fenetres(fenetres, rampe=0.02):
+    """1 dans les fenêtres [(a, b)] (fondus de 20 ms), 0 ailleurs : le délai jeté sur les fins de phrase."""
+    if not fenetres:
+        return "0"
+    f = [f"clip((t-{a - rampe:.3f})/{rampe},0,1)*clip(({b + rampe:.3f}-t)/{rampe},0,1)" for a, b in fenetres]
+    return f"min(1,{'+'.join(f)})"
+
+
+def predelai_ms(bpm):
+    """Le pré-délai de la réverbération : une triple croche au tempo (140 BPM : 54 ms), entre 15 et 60 ms ; 20 ms sans tempo."""
+    if not bpm or bpm <= 0:
+        return 20.0
+    return round(max(15.0, min(60.0, 60000.0 / bpm / 8)), 1)
+
+
 def _expr_muet_zones(zones, rampe=0.04):
     """Le multiplicateur 0 dans les zones (fondus de 40 ms), 1 ailleurs."""
     if not zones:
@@ -368,18 +428,33 @@ def _chaine_piste(t, bpm):
     eq = t["eq"]
     if eq.get("coupe_bas_hz", 0) >= 20:
         f.append(f"highpass=f={eq['coupe_bas_hz']:.0f}:poles=2")
+    if eq.get("coupe_haut_hz", 0) >= 1000:                # (13/11) les doubles et les backs plus filtrés que la voix principale
+        f.append(f"lowpass=f={eq['coupe_haut_hz']:.0f}:poles=2")
     if abs(eq.get("grave_db", 0)) >= 0.1:
         f.append(f"bass=g={eq['grave_db']:.2f}:f={eq['grave_hz']:.0f}:w=0.7")
     if abs(eq.get("medium_db", 0)) >= 0.1:
         f.append(f"equalizer=f={eq['medium_hz']:.0f}:t=q:w={eq['medium_q']:.2f}:g={eq['medium_db']:.2f}")
     if abs(eq.get("aigu_db", 0)) >= 0.1:
         f.append(f"treble=g={eq['aigu_db']:.2f}:f={eq['aigu_hz']:.0f}:w=0.7")
-    if t.get("deesser", 0) > 0:
-        f.append(f"deesser=i={0.2 + 0.6 * t['deesser']:.2f}:m=0.5:f=0.5")
+    # (13/11, le studio pro) la compression en deux temps : les crêtes d'abord (attaque d'1 ms, ratio 6), puis le nivellement lent
+    import studio_pro
+    C = studio_pro.COUPE
+    cr = t.get("comp_rapide") or {}
+    if cr.get("actif") and "deux_temps" not in C:
+        f.append(f"acompressor=threshold={cr['seuil_db']:.1f}dB:ratio={cr['ratio']:.2f}:attack={cr['attaque_ms']:.2f}:"
+                 f"release={cr['relache_ms']:.0f}:makeup=1:knee=2:detection=peak")
     c = t["comp"]
     if c.get("actif"):
         f.append(f"acompressor=threshold={c['seuil_db']:.1f}dB:ratio={c['ratio']:.2f}:attack={c['attaque_ms']:.1f}:"
                  f"release={c['relache_ms']:.0f}:makeup={max(1.0, 10 ** (c['gain_db'] / 20)):.4f}:knee=2.8")
+    # une légère saturation (un excitateur : des harmoniques au-dessus de 3 kHz) pour la présence
+    if "deesser_apres" in C and t.get("deesser", 0) > 0:   # témoin : le dé-esseur d'avant (devant la compression)
+        f.insert(next((i for i, x in enumerate(f) if x.startswith("acompressor")), len(f)), f"deesser=i={0.2 + 0.6 * t['deesser']:.2f}:m=0.5:f=0.5")
+    if t.get("saturation", 0) > 0 and "saturation" not in C:
+        f.append(f"aexciter=amount={1 + 3 * t['saturation']:.2f}:drive={2 + 6 * t['saturation']:.2f}:blend=0:freq=3000:ceil=16000")
+    # le dé-essage APRÈS la compression (elle remonte les sifflantes : on les reprend là)
+    if t.get("deesser", 0) > 0 and "deesser_apres" not in C:
+        f.append(f"deesser=i={0.2 + 0.6 * t['deesser']:.2f}:m=0.5:f=0.5")
     return f
 
 
@@ -446,6 +521,9 @@ def graphe(p, d, version="complet", seules=None, fichiers=None, ir=None, duree=N
     zones_papa = [z for z in p.get("zones", []) if z.get("qui") == "papa"] if version == "papa" else []
     entrees, chaines, sorties = [], [], []
     rev, dly, cles_voulues = [], [], {}
+    import studio_pro
+    bus_voix = bool((p.get("bus_voix") or {}).get("actif")) and version != "instru" and not seules and "bus_voix" not in studio_pro.COUPE
+    voix_bus = []
     ids = {t["id"] for t in pistes}
     for t in pistes:
         s = t.get("sidechain") or {}
@@ -493,11 +571,18 @@ def graphe(p, d, version="complet", seules=None, fichiers=None, ir=None, duree=N
             rev.append((t["id"], t["reverb"]))
         if t.get("delai", 0) > 0 and bpm > 0:
             outs.append(f"[{t['id']}dl]")
-            dly.append((t["id"], t["delai"], t.get("delai_note", "1/8.")))
+            dly.append((t["id"], t["delai"], t.get("delai_note", "1/8."), t.get("jetes") or []))
         for cible in cles_voulues.get(t["id"], []):
             outs.append(f"[{t['id']}cle_{cible}]")
         chaines.append(f"[{t['id']}post]asplit={len(outs)}{''.join(outs)}" if len(outs) > 1 else f"[{t['id']}post]anull{outs[0]}")
-        sorties.append(f"[{t['id']}dry]")
+        (voix_bus if (bus_voix and t["role"] in ROLES_VOIX) else sorties).append(f"[{t['id']}dry]")
+    if voix_bus:
+        # (13/11, le studio pro) le bus des voix : toutes les voix ensemble, une compression lente et douce qui les lie (≈ 1 à 2 dB)
+        bv = p.get("bus_voix") or {}
+        comp = (f"acompressor=threshold={_num(bv.get('seuil_db'), -50, 0, -22):.1f}dB:ratio={_num(bv.get('ratio'), 1, 4, 1.5):.2f}:"
+                f"attack=30:release=300:knee=4:makeup={10 ** (_num(bv.get('gain_db'), 0, 6, 0) / 20):.4f}[busvoix]")
+        chaines.append(f"{''.join(voix_bus)}amix=inputs={len(voix_bus)}:normalize=0,{comp}" if len(voix_bus) > 1 else f"{voix_bus[0]}{comp}")
+        sorties.append("[busvoix]")
     if rev:
         k = len(entrees) // 2
         entrees += ["-i", str(ir)]
@@ -506,17 +591,27 @@ def graphe(p, d, version="complet", seules=None, fichiers=None, ir=None, duree=N
         lab = "".join(f"[{tid}rvs]" for tid, _ in rev)
         chaines.append(f"{lab}amix=inputs={len(rev)}:normalize=0[revin]" if len(rev) > 1 else f"{lab}anull[revin]")
         # le retour : la convolution seule (afir ne mêle pas le son sec), sans graves (coupe-bas 200 Hz : la boue reste hors de la réverb)
-        chaines.append(f"[revin][{k}:a]afir=irnorm=-1:gtype=none,highpass=f=200,volume=-6dB[revout]")
+        # (13/11, le studio pro) et sans aigus durs (coupe-haut 8 kHz), après un pré-délai calé sur le tempo (une triple croche, 15 à
+        # 60 ms) : la voix sèche passe d'abord, la salle ensuite
+        pre = predelai_ms(bpm) if "predelai" not in studio_pro.COUPE else 0.0
+        chaines.append(f"[revin]adelay={pre:.1f}:all=1,asetpts=N/SR/TB[revpre]" if pre > 0 else "[revin]anull[revpre]")
+        haut = ",lowpass=f=8000" if "retour_filtre" not in studio_pro.COUPE else ""
+        chaines.append(f"[revpre][{k}:a]afir=irnorm=-1:gtype=none,highpass=f=200{haut},volume=-6dB[revout]")
         sorties.append("[revout]")
     if dly:
-        for tid, g, note in dly:
+        for tid, g, note, jetes in dly:
             ms = 60000.0 / bpm * NOTES_DELAI.get(note, 0.75)
-            chaines.append(f"[{tid}dl]volume={20 * math.log10(max(1e-4, g)):.2f}dB,asplit=3[{tid}d1][{tid}d2][{tid}d3];"
+            if jetes and "jete" not in studio_pro.COUPE:  # (13/11) le délai « jeté » : envoyé seulement sur les fins de phrase
+                chaines.append(f"[{tid}dl]asetnsamples=n=64,volume=volume='{_expr_fenetres(jetes)}':eval=frame[{tid}dlj]")
+                tid_in = f"{tid}dlj"
+            else:
+                tid_in = f"{tid}dl"
+            chaines.append(f"[{tid_in}]volume={20 * math.log10(max(1e-4, g)):.2f}dB,asplit=3[{tid}d1][{tid}d2][{tid}d3];"
                            f"[{tid}d1]adelay={ms:.1f}:all=1,pan=stereo|c0=0.9*c0|c1=0.3*c1[{tid}e1];"
                            f"[{tid}d2]adelay={2 * ms:.1f}:all=1,volume=-6dB,pan=stereo|c0=0.3*c0|c1=0.9*c1[{tid}e2];"
                            f"[{tid}d3]adelay={3 * ms:.1f}:all=1,volume=-12dB[{tid}e3];"
                            f"[{tid}e1][{tid}e2][{tid}e3]amix=inputs=3:normalize=0,highpass=f=300,lowpass=f=6000[{tid}dlo]")
-        lab = "".join(f"[{tid}dlo]" for tid, _, _ in dly)
+        lab = "".join(f"[{tid}dlo]" for tid, *_ in dly)
         chaines.append(f"{lab}amix=inputs={len(dly)}:normalize=0[dlyout]" if len(dly) > 1 else f"{lab}anull[dlyout]")
         sorties.append("[dlyout]")
     fin = f"asetpts=N/SR/TB,apad=whole_dur={float(duree):.3f},atrim=end={float(duree):.3f}" if duree else "anull"   # toutes les versions à la durée du projet
@@ -547,14 +642,62 @@ def rendre_bus(p, d, sortie, version="complet", seules=None, fichiers=None, dure
 
 
 # ------------------------------------------------------------------------------------------------ l'autotune des pistes de voix
-def preparer_autotune(p, d, travail):
+def preparer_pro(p, d):
+    """(13/11, le studio pro) chaque voix passée dans la chaîne pro (studio_pro.traiter : le nettoyage MESURÉ, le nivellement), gardée en
+    cache dans pistes/.pro/ (même fichier, mêmes réglages, même version de la chaîne → déjà fait ; les trois plus récentes gardées par
+    piste). Rend ({piste: chemin}, {piste: rapport})."""
+    import hashlib
+    import studio_pro
+    out, rap = {}, {}
+    for t in p["pistes"]:
+        pr = _pro(t)
+        if not pr or not pr.get("actif"):
+            continue
+        src = Path(d) / t["fichier"]
+        if not src.is_file():
+            continue
+        st = src.stat()
+        cle = hashlib.sha1(json.dumps([src.name, st.st_mtime_ns, st.st_size, pr, studio_pro.VERSION, sorted(studio_pro.COUPE)],
+                                      sort_keys=True).encode()).hexdigest()[:16]
+        dpro = Path(d) / "pistes" / ".pro"
+        cache, fr = dpro / f"{t['id']}-{cle}.wav", dpro / f"{t['id']}-{cle}.json"
+        if not (cache.is_file() and fr.is_file()):
+            dpro.mkdir(parents=True, exist_ok=True)
+            tmp = dpro / f".{t['id']}-{uuid.uuid4().hex[:6]}.wav"
+            try:
+                r = studio_pro.traiter_fichier(src, tmp, pr)
+                os.replace(tmp, cache)
+            finally:
+                tmp.unlink(missing_ok=True)
+            fr.write_text(json.dumps(r, ensure_ascii=False, default=float), encoding="utf-8")
+            vieux = sorted(dpro.glob(f"{t['id']}-*.wav"), key=lambda f: f.stat().st_mtime, reverse=True)[3:]
+            for f in vieux:
+                f.unlink(missing_ok=True)
+                f.with_suffix(".json").unlink(missing_ok=True)
+        out[t["id"]] = str(cache)
+        try:
+            rap[t["id"]] = json.loads(fr.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            rap[t["id"]] = {}
+    return out, rap
+
+
+def preparer_voix(p, d, travail):
+    """Les voix telles qu'elles entrent dans le mix : la chaîne pro (nettoyage, nivellement), PUIS l'autotune (il entend mieux une
+    voix propre). Rend ({piste: chemin}, {piste: rapport de la chaîne pro})."""
+    pro, rap = preparer_pro(p, d)
+    at = preparer_autotune(p, d, travail, pro)
+    return {**pro, **at}, rap
+
+
+def preparer_autotune(p, d, travail, sources=None):
     """Les pistes avec autotune : leur son corrigé (studio.autotuner_voix, venv du chant), gardé en cache dans pistes/.autotune/ (même
-    fichier, même niveau, même tonalité → déjà fait). Rend {piste: chemin}."""
+    fichier, même niveau, même tonalité → déjà fait). sources : {piste: chemin} (la voix nettoyée par la chaîne pro). Rend {piste: chemin}."""
     out = {}
     for t in p["pistes"]:
         if not t.get("autotune") or t["role"] not in ROLES_VOIX:
             continue
-        src = Path(d) / t["fichier"]
+        src = Path((sources or {}).get(t["id"]) or Path(d) / t["fichier"])
         cle = studio._cle(f"{src.name} {src.stat().st_mtime_ns} {t['autotune']} {p.get('tonalite')}").replace(" ", "-")[:120]
         cache = Path(d) / "pistes" / ".autotune" / f"{cle}.wav"
         if not cache.is_file():
@@ -580,28 +723,97 @@ def _filtre(entree, sortie, af, codec="pcm_f32le"):
     return sortie
 
 
+CIBLES = {"streaming": -14.0, "club": -9.0}      # (13/11) LUFS visés : les plateformes (Spotify, YouTube, Apple), ou plus fort pour le club
+BANDES_MASTER = (150, 5000)                     # la compression multibande : graves < 150 Hz < médiums < 5 kHz < aigus
+
+
+def _filtre_fc(entree, sortie, fc, codec="pcm_f32le"):
+    """Un graphe ffmpeg ([0:a] … [out]) sur un fichier."""
+    extra = ["-b:a", "320k"] if codec == "libmp3lame" else []
+    r = subprocess.run([FFMPEG, "-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-i", str(entree), "-filter_complex", fc,
+                        "-map", "[out]", "-ar", str(SR), "-c:a", codec, *extra, str(sortie)], capture_output=True, text=True, timeout=1800)
+    if r.returncode:
+        raise RuntimeError(f"ffmpeg : {r.stderr.strip()[-400:]}")
+    return sortie
+
+
+def seuils_multibande(x, sr=SR):
+    """(13/11, le studio pro) les seuils de la compression multibande, MESURÉS sur le bus : chaque bande (les mêmes coupures que
+    acrossover, Linkwitz-Riley d'ordre 4) découpée en fenêtres de 400 ms ; le seuil 2 dB sous son 85e centile (les 15 % les plus forts
+    de chaque bande compressés de 1 à 3 dB, le reste laissé tel quel)."""
+    import numpy as np
+    import studio_pro
+    m = x.mean(axis=1) if x.ndim == 2 else x
+    b0, b1 = BANDES_MASTER
+    filtres = [lambda f: studio_pro._butter_mag(f, b0, 2, False) ** 2,
+               lambda f: (studio_pro._butter_mag(f, b0, 2, True) * studio_pro._butter_mag(f, b1, 2, False)) ** 2,
+               lambda f: studio_pro._butter_mag(f, b1, 2, True) ** 2]
+    out = []
+    for g in filtres:
+        y = studio_pro._filtre_fft(m, sr, g)
+        l = studio_pro.niveaux_db(y, sr, 0.4, 0.2)
+        vivant = l[l > l.max() - 30]
+        v = float(np.percentile(vivant, 85)) - 2.0 if len(vivant) >= 5 else -20.0
+        out.append(round(max(-59.5, min(-0.5, v)), 1))                  # acompressor : un seuil entre −60 et 0 dB
+    return out
+
+
 def chaine_master_params(bus, p):
     """Les réglages du master calculés sur le bus du son entier : l'égaliseur vers la courbe du genre (mesurée), la compression de
-    bus. Le gain et le plafond du limiteur se trouvent ensuite par itération (masteriser)."""
+    bus (en trois bandes, seuils mesurés, ou en une), la largeur stéréo (les graves en mono sous 120 Hz ; resserrée si le bus est
+    trop large : corrélation < 0,2), le LUFS visé (streaming −14, club −9) et le dither du WAV 16 bits. Le gain et le plafond du
+    limiteur se trouvent ensuite par itération (masteriser)."""
     import studio_mesures as M
     m = p.get("master") or {}
     x, _ = M.lire(bus)
     b = M.bandes(x)
     eq = M.correction_eq(b, p.get("genre") or "trap") if m.get("eq_auto", True) else []
+    corr = M.correlation_stereo(x)
+    larg = m.get("largeur", "auto")
+    largeur = (0.8 if corr < 0.2 else 1.0) if larg in (None, "", "auto") else float(_num(larg, 0, 1.5, 1.0))
+    import studio_pro
+    mb = seuils_multibande(x) if m.get("multibande", True) and "multibande" not in studio_pro.COUPE else None
     return {"eq": eq, "comp": bool(m.get("comp", True)), "lufs": float(_num(m.get("lufs"), -20, -6, -14)),
-            "crete_dbtp": float(_num(m.get("crete_dbtp"), -3, -0.1, -1.0)), "bandes_avant": b}
+            "crete_dbtp": float(_num(m.get("crete_dbtp"), -3, -0.1, -1.0)), "bandes_avant": b, "multibande": mb,
+            "largeur": round(largeur, 2), "correlation": corr,
+            "mono_graves_hz": 0.0 if "mono_graves" in studio_pro.COUPE else float(_num(m.get("mono_graves_hz", 120), 0, 300, 120)),
+            "dither16": bool(m.get("dither16", True)), "cible": m.get("cible") or "streaming"}
 
 
-def _af_master(params, gain_db, plafond_db):
-    f = []
-    for e in params.get("eq") or []:
-        f.append(f"equalizer=f={e['hz']}:t=o:w=1:g={e['db']}")
-    if params.get("comp"):
-        f.append("acompressor=threshold=-18dB:ratio=2:attack=30:release=250:knee=4:makeup=1")
-    f.append(f"volume={gain_db:.2f}dB")
+def _fc_master(params, gain_db, plafond_db):
+    """Le graphe du master : égaliseur → compression (3 bandes aux seuils mesurés, ou une) → stéréo (M/S : le côté sans graves sous
+    120 Hz, sa largeur) → gain → limiteur à 4× la fréquence (crête vraie). [0:a] … [out]."""
+    f = [f"equalizer=f={e['hz']}:t=o:w=1:g={e['db']}" for e in params.get("eq") or []]
+    tete = "[0:a]" + (",".join(f) + "," if f else "")
+    mb = params.get("multibande")
+    if mb:
+        reg = (("2.5", 30, 250), ("2", 10, 150), ("2", 3, 80))        # graves lents, aigus rapides
+        g = (f"{tete}acrossover=split={BANDES_MASTER[0]} {BANDES_MASTER[1]}:order=4th[mb0][mb1][mb2];"
+             + ";".join(f"[mb{i}]acompressor=threshold={mb[i]:.1f}dB:ratio={reg[i][0]}:attack={reg[i][1]}:release={reg[i][2]}:knee=4:makeup=1[mc{i}]"
+                        for i in range(3))
+             + ";[mc0][mc1][mc2]amix=inputs=3:normalize=0,")
+    else:
+        g = tete + ("acompressor=threshold=-18dB:ratio=2:attack=30:release=250:knee=4:makeup=1," if params.get("comp") else "")
+    fc = params.get("mono_graves_hz") or 0
+    W = params.get("largeur", 1.0)
+    if fc > 0 or abs(W - 1.0) > 1e-3:
+        g += "pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0-0.5*c1,"           # L/R → M/S
+        if fc > 0:
+            g += f"highpass=f={fc:.0f}:p=2:c=FR,highpass=f={fc:.0f}:p=2:c=FR,"   # le côté sans graves (24 dB/oct) : les graves en mono
+        g += f"pan=stereo|c0=c0+{W:.3f}*c1|c1=c0-{W:.3f}*c1,"           # M/S → L/R, la largeur
+    g += f"volume={gain_db:.2f}dB,"
     # le limiteur à 4× la fréquence : il voit les crêtes entre les échantillons (la crête vraie) ; la latence compensée (calage gardé)
-    f.append(f"aresample={4 * SR},alimiter=limit={plafond_db:.2f}dB:attack=2:release=60:level=false:latency=true:asc=1,aresample={SR}")
-    return ",".join(f)
+    g += f"aresample={4 * SR},alimiter=limit={plafond_db:.2f}dB:attack=2:release=60:level=false:latency=true:asc=1,aresample={SR}[out]"
+    return g
+
+
+def exporter_16bits(wav, sortie, dither=True):
+    """Le WAV 16 bits (CD, distributeurs) : un dither triangulaire (TPDF) avant la troncature, sinon le bruit de quantification
+    devient de la distorsion sur les fondus et les passages doux."""
+    import studio_pro
+    dither = dither and "dither" not in studio_pro.COUPE
+    return _filtre(wav, sortie, "aresample=osf=s16:dither_method=triangular" if dither else "aresample=osf=s16:dither_method=none",
+                   "pcm_s16le")
 
 
 def _mp3(entree, sortie, meta=()):
@@ -625,7 +837,7 @@ def masteriser(bus, sortie_wav, params, mp3=None, titre="", journal=None):
     try:
         meta = ["-metadata", "artist=Ahmed & Hakim"] + (["-metadata", f"title={titre}"] if titre else [])
         for k in range(6):
-            _filtre(bus, tmp, _af_master(params, gain, plafond))
+            _filtre_fc(bus, tmp, _fc_master(params, gain, plafond))
             m = M.ebur128(tmp)
             mm = None
             if mp3:                                         # le MP3 encodé EXACTEMENT comme celui qui part (320k) : ses crêtes mesurées
@@ -655,7 +867,7 @@ def masteriser(bus, sortie_wav, params, mp3=None, titre="", journal=None):
 def appliquer_master(bus, sortie_wav, params, gain_db, plafond_db, mp3=None, titre=""):
     """La même chaîne de master (mêmes gain et plafond) sur une autre version : la version pour papa sonne au même niveau que le son
     entier (plus douce là où les voix se taisent, comme il faut)."""
-    _filtre(bus, sortie_wav, _af_master(params, gain_db, plafond_db), "pcm_s24le")
+    _filtre_fc(bus, sortie_wav, _fc_master(params, gain_db, plafond_db), "pcm_s24le")
     if mp3:
         r = subprocess.run([FFMPEG, "-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-i", str(sortie_wav), "-c:a", "libmp3lame",
                             "-b:a", "320k", "-metadata", "artist=Ahmed & Hakim", *(["-metadata", f"title={titre}"] if titre else []),
@@ -697,21 +909,141 @@ def eq_correctif_voix(b):
             "boue_db": round(boue, 1), "presence_db": round(presence, 1), "sifflantes_db": round(sifflantes, 1)}
 
 
+# (13/11, le studio pro) la place des voix qui ne sont pas la voix principale : plus bas (dB sous la principale, sur leurs passages),
+# ouvertes à gauche et à droite (en alternance), plus filtrées ; les ad-libs avec des délais « jetés » en fin de phrase
+VOIX_TYPES = {
+    "double": {"sous_db": 6.0, "pan": 0.7, "coupe_bas": 200.0, "coupe_haut": 9000.0, "reverb": 0.28, "delai": 0.0, "saturation": 0.1},
+    "back": {"sous_db": 8.0, "pan": 0.5, "coupe_bas": 250.0, "coupe_haut": 7500.0, "reverb": 0.35, "delai": 0.0, "saturation": 0.0},
+    "adlib": {"sous_db": 4.0, "pan": 0.4, "coupe_bas": 200.0, "coupe_haut": 10000.0, "reverb": 0.25, "delai": 0.35, "saturation": 0.1},
+}
+
+
+def type_voix(t):
+    pr = _pro(t)
+    return (pr or {}).get("type", "principale") if pr is not None else None
+
+
+def _sur_la_ligne(fichier, regions, duree, sr=SR):
+    """Une piste posée sur la ligne du temps (mono) : chaque région découpée et placée (pour caler une voix sur une autre)."""
+    import numpy as np
+    import studio_mesures as M
+    x, _ = M.lire(fichier, sr, 1)
+    x = x[:, 0]
+    y = np.zeros(int(duree * sr) + 1)
+    for r in regions or []:
+        a = int(r.get("source_debut_s", 0) * sr)
+        n = len(x) - a if r.get("duree_s") is None else int(r["duree_s"] * sr)
+        dst = int(r.get("debut_s", 0) * sr)
+        n = max(0, min(n, len(x) - a, len(y) - dst))
+        y[dst:dst + n] += x[a:a + n] * 10 ** (r.get("gain_db", 0) / 20)
+    return y
+
+
+def caler_voix(p, t, principale, fichiers, d, duree):
+    """(13/11, le studio pro) le double (ou le back) calé PHRASE PAR PHRASE sur la voix principale (studio_pro.caler_phrases : ses
+    attaques contre celles de la principale, ±80 ms) ; une phrase sans principale en face, calée sur la grille s'il y a un tempo
+    (la médiane de ses attaques contre la case la plus proche). La piste est redécoupée en régions (une par phrase), chacune déplacée.
+    Rend le rapport (les décalages en ms)."""
+    import numpy as np
+    import studio_mesures as M
+    import studio_pro
+    regs = t.get("regions") or []
+    if len(regs) != 1:
+        return {"cale": False, "raison": "plusieurs régions : laissée telle quelle"}
+    r0 = regs[0]
+    src = fichiers.get(t["id"]) or str(Path(d) / t["fichier"])
+    dbl = _sur_la_ligne(src, regs, duree)
+    lead = (_sur_la_ligne(fichiers.get(principale["id"]) or str(Path(d) / principale["fichier"]), principale.get("regions"), duree)
+            if principale else np.zeros_like(dbl))
+    ph = studio_pro.caler_phrases(lead, dbl, SR) if principale else [
+        {"debut_s": a, "fin_s": b, "decalage_ms": 0.0, "nettete": 0.0} for a, b in studio_pro.phrases(dbl, SR)]
+    bpm = float(p.get("tempo") or 0)
+    for x in ph:                                         # la grille : les phrases sans principale en face
+        if x["nettete"] > 0 or bpm <= 0:
+            continue
+        i0, i1 = int(x["debut_s"] * SR), int(x["fin_s"] * SR)
+        ta = M.attaques_precises(dbl[i0:i1], SR) + x["debut_s"]
+        if len(ta) < 3:
+            continue
+        case = 60.0 / bpm / 4
+        e = ((ta - float(p.get("premier_temps_s") or 0) + case / 2) % case) - case / 2
+        med = float(np.median(e))
+        if abs(med) <= 0.4 * case:
+            x["decalage_ms"], x["grille"] = round(med * 1000, 1), True
+    bouge = [x for x in ph if abs(x["decalage_ms"]) >= 2.0]
+    if not bouge:
+        return {"cale": False, "phrases": len(ph), "decalages_ms": [x["decalage_ms"] for x in ph]}
+    fin_r0 = r0["debut_s"] + ((r0["duree_s"] if r0.get("duree_s") is not None else 1e9))
+    neuves = []
+    for j, x in enumerate(ph):
+        a = max(r0["debut_s"], x["debut_s"] - 0.05, (ph[j - 1]["fin_s"] + x["debut_s"]) / 2 if j else 0)
+        b = min(fin_r0, x["fin_s"] + 0.05, (x["fin_s"] + ph[j + 1]["debut_s"]) / 2 if j + 1 < len(ph) else 1e9)
+        if b - a < 0.05:
+            continue
+        s = x["decalage_ms"] / 1000
+        source = a - r0["debut_s"] + r0["source_debut_s"]
+        debut = a - s
+        if debut < 0:
+            source, debut = source - debut, 0.0
+        neuves.append({"debut_s": round(debut, 4), "source_debut_s": round(max(0.0, source), 4), "duree_s": round(b - a, 4),
+                       "gain_db": r0.get("gain_db", 0.0)})
+    if neuves:
+        t["regions"] = neuves
+    return {"cale": True, "phrases": len(ph), "decalages_ms": [x["decalage_ms"] for x in ph],
+            "sur_la_grille": sum(1 for x in ph if x.get("grille"))}
+
+
+def _haut_court_terme(x):
+    """Le haut du niveau court terme d'une voix (90e centile de ses fenêtres de 400 ms vivantes, dBFS)."""
+    import numpy as np
+    mono = x.mean(axis=1) if x.ndim == 2 else x
+    n = int(0.4 * SR)
+    k = len(mono) // n
+    if k < 5:
+        return -20.0
+    rms = 20 * np.log10(np.sqrt((mono[: k * n].reshape(k, n) ** 2).mean(axis=1)) + 1e-9)
+    vivant = rms[rms > rms.max() - 40]
+    return float(np.percentile(vivant, 90)) if len(vivant) else -20.0
+
+
 def mixer_auto(p, d, travail, journal=None):
     """Le mix piste par piste, mesuré (le projet est changé en mémoire ; rend le rapport par piste) :
-    1. gain de départ : l'instru (la somme de ses pistes, leur équilibre d'origine gardé) à −20 LUFS ; chaque voix 1 à 2 LU au-dessus ;
-    2. égaliseur correctif des voix : coupe-bas, la boue (250 Hz) et la dureté (3 kHz) creusées si elles dépassent, la présence ajoutée
-       si elle manque, le dé-esseur si les sifflantes (6-9 kHz) ressortent ;
-    3. compression des voix : seuil sous le haut de leur niveau (≈ 4 à 6 dB de réduction sur les fortes), ratio 3 ;
-    4. envois : réverbération courte et délai calé sur le tempo (Hakim : plus d'espace ; papa, un rap : plus sec) ;
-    5. sidechain : la mélodie (ou l'instru entière) se creuse de 2 dB sous la voix principale.
+    0. (13/11, le studio pro) chaque voix passe dans la chaîne pro (studio_pro : le nettoyage MESURÉ — continu, écrêtage, clics,
+       ronflement, souffle, plosives, respirations baissées, expandeur doux — et le nivellement) ; les mesures suivantes se font sur la
+       voix nettoyée ;
+    1. gain de départ : l'instru (la somme de ses pistes, leur équilibre d'origine gardé) à −20 LUFS ; chaque voix principale 1 à 2 LU
+       au-dessus ; les doubles, backs et ad-libs sous la principale (6, 8 et 4 dB), sur leurs passages ;
+    2. égaliseur correctif des voix : coupe-bas, la boue (250 Hz) creusée si elle dépasse, la présence ajoutée si elle manque ; les
+       doubles et les backs plus filtrés (coupe-bas 200-250 Hz, coupe-haut 7,5-9 kHz) ;
+    3. compression en DEUX TEMPS : les crêtes (attaque 1 ms, ratio 6, seuil 6 dB au-dessus du haut de la voix), puis le nivellement
+       lent (attaque 20 ms, ratio 2,5, seuil 6 dB sous le haut) ; une légère saturation (excitateur au-dessus de 3 kHz) ; le dé-esseur
+       APRÈS la compression ;
+    4. envois : réverbération (retour filtré 200 Hz-8 kHz, pré-délai calé sur le tempo) et délai calé sur le tempo ; les ad-libs avec
+       des délais jetés en fin de phrase ; les doubles et les backs ouverts à gauche et à droite ;
+    5. les doubles et les backs CALÉS sur la voix principale, phrase par phrase (et sur la grille s'il y a un tempo) ;
+    6. sidechain : la mélodie (ou l'instru entière) se creuse de 2 dB sous la voix principale ;
+    7. le bus des voix : une compression lente qui les lie (seuil mesuré).
     Le tout puis rendu et remesuré : l'écart voix/instru visé est vérifié (et corrigé une fois si besoin)."""
     import numpy as np
     import studio_mesures as M
+    import studio_pro
     say = journal or (lambda s: None)
     rapport = {}
     instr = [t for t in p["pistes"] if t["role"] not in ROLES_VOIX and not t.get("muet")]
     voix = [t for t in p["pistes"] if t["role"] in ROLES_VOIX and not t.get("muet")]
+    duree = float(p.get("duree_s") or 0) or max((r["debut_s"] + (r["duree_s"] or (t.get("duree_fichier_s") or 0) - r["source_debut_s"])
+                                                for t in p["pistes"] for r in t["regions"]), default=0)
+    # 0. la chaîne pro : chaque voix la reçoit au mix auto (sauf si on la lui a coupée)
+    for t in voix:
+        if not isinstance(t.get("pro"), dict):
+            t["pro"] = pro_defaut()
+    fichiers, rap_pro = preparer_voix(p, d, travail)
+    for t in voix:
+        if t["id"] in rap_pro:
+            rapport.setdefault(t["id"], {})["pro"] = {"resume": studio_pro.resume(rap_pro[t["id"]]),
+                                                      "etapes": [e for e in studio_pro.ETAPES if (rap_pro[t["id"]].get(e) or {}).get("actif")],
+                                                      "fond": rap_pro[t["id"]].get("_fond")}
+            say(f"{t['nom']} : {rapport[t['id']]['pro']['resume']}")
     # 1. l'instru : son bus mesuré tel quel (volumes à 0), puis un même gain pour toutes ses pistes
     if instr:
         for t in instr:
@@ -724,16 +1056,22 @@ def mixer_auto(p, d, travail, journal=None):
             t["volume_db"] = g
         rapport["instru"] = {"lufs_avant": li, "gain_db": g, "pistes": [t["id"] for t in instr]}
         say(f"instru à {CIBLE_INSTRU_LUFS} LUFS (gain {g:+.1f} dB sur {len(instr)} piste(s))")
+    principales = [t for t in voix if type_voix(t) in ("principale", None)]
     principale = None
+    cote = {k: 1 for k in VOIX_TYPES}
     for t in voix:
-        src = Path(d) / t["fichier"]
+        src = Path(fichiers.get(t["id"]) or Path(d) / t["fichier"])
         x, _ = M.lire(src)
         m = M.ebur128(src)
         b = M.bandes(x)
-        r = {"lufs": m["lufs"], "crete_dbtp": m["crete_dbtp"], "bandes_db": b}
+        r = rapport.setdefault(t["id"], {})
+        r.update({"lufs": m["lufs"], "crete_dbtp": m["crete_dbtp"], "bandes_db": b})
+        ty = type_voix(t) or "principale"
+        vt = VOIX_TYPES.get(ty) if "types" not in studio_pro.COUPE else None
         # 2. l'égaliseur correctif (bandes relatives : 250 Hz = indice 3, 3-4 kHz = 6-7, 8 kHz = 8)
         eq = t["eq"]
-        eq["coupe_bas_hz"] = 100.0 if t["role"] == "voix_papa" else 90.0
+        eq["coupe_bas_hz"] = vt["coupe_bas"] if vt else (100.0 if t["role"] == "voix_papa" else 90.0)
+        eq["coupe_haut_hz"] = vt["coupe_haut"] if vt else 0.0
         # (13/11, la démo de Moujahid 3.2) une voix n'a presque rien à 125 Hz : la boue se juge contre 500 Hz et 1 kHz, pas contre ses voisins
         # (sinon toute voix d'homme se faisait creuser de 4 dB à 280 Hz) ; la présence (2-4 kHz) manque si elle est plus de 12 dB sous les
         # médiums (une voix naturelle descend d'environ 10 dB)
@@ -741,54 +1079,110 @@ def mixer_auto(p, d, travail, journal=None):
         boue, presence, sifflantes = c["boue_db"], c["presence_db"], c["sifflantes_db"]
         eq["medium_hz"], eq["medium_q"], eq["medium_db"] = 280.0, 1.2, c["medium_db"]
         eq["aigu_hz"], eq["aigu_db"] = 6000.0, c["aigu_db"]
-        t["deesser"] = c["deesser"]
-        # 3. la compression : le seuil 8 dB sous le haut de son niveau court terme (90e centile sur 400 ms)
-        mono = x.mean(axis=1)
-        n = int(0.4 * SR)
-        k = len(mono) // n
-        if k >= 5:
-            rms = 20 * np.log10(np.sqrt((mono[: k * n].reshape(k, n) ** 2).mean(axis=1)) + 1e-9)
-            vivant = rms[rms > rms.max() - 40]
-            haut = float(np.percentile(vivant, 90)) if len(vivant) else -20.0
-        else:
-            haut = -20.0
-        t["comp"].update(actif=True, seuil_db=round(max(-45.0, min(-6.0, haut - 8)), 1), ratio=3.0, attaque_ms=6.0, relache_ms=120.0,
+        # 3. la compression en deux temps, mesurée sur le haut de son niveau court terme (90e centile sur 400 ms)
+        haut = _haut_court_terme(x)
+        t["comp_rapide"] = {"actif": True, "seuil_db": round(max(-40.0, min(-1.0, haut + 6)), 1), "ratio": 6.0, "attaque_ms": 1.0,
+                            "relache_ms": 60.0}
+        t["comp"].update(actif=True, seuil_db=round(max(-45.0, min(-6.0, haut - 6)), 1), ratio=2.5, attaque_ms=20.0, relache_ms=250.0,
                          gain_db=0.0)
-        # 4. les envois
-        t["reverb"] = 0.12 if t["role"] == "voix_papa" else 0.22
-        t["delai"] = 0.0 if t["role"] == "voix_papa" else (0.12 if p.get("tempo") else 0.0)
-        t["delai_note"] = "1/8."
-        r.update(eq={k2: eq[k2] for k2 in ("coupe_bas_hz", "medium_db", "aigu_db")}, deesser=t["deesser"], seuil_db=t["comp"]["seuil_db"],
-                 boue_db=round(boue, 1), presence_db=round(presence, 1), sifflantes_db=round(sifflantes, 1))
-        rapport[t["id"]] = r
-        if principale is None or t["role"] in ("voix_papa", "voix_hakim") and principale["role"] == "voix_origine":
+        # le dé-esseur (après la compression, qui remonte les sifflantes : un cran de plus s'il en faut un)
+        t["deesser"] = round(min(1.0, c["deesser"] + 0.1), 2) if c["deesser"] > 0 else 0.0
+        # une légère saturation pour la présence (un peu plus si la voix est sourde)
+        t["saturation"] = vt["saturation"] if vt else (0.3 if presence < -12 else 0.2)
+        # 4. les envois et la place
+        if vt:
+            t["reverb"], t["delai"], t["delai_note"] = vt["reverb"], (vt["delai"] if p.get("tempo") else 0.0), "1/4"
+            t["pan"] = round(vt["pan"] * cote[ty], 2)
+            cote[ty] = -cote[ty]
+        else:
+            t["reverb"] = 0.12 if t["role"] == "voix_papa" else 0.22
+            t["delai"] = 0.0 if t["role"] == "voix_papa" else (0.12 if p.get("tempo") else 0.0)
+            t["delai_note"] = "1/8."
+        jete = (t.get("pro") or {}).get("delai_jete", "auto")
+        if p.get("tempo") and ((ty == "adlib" and jete != "non") or jete == "oui"):
+            ligne = _sur_la_ligne(src, t["regions"], duree)
+            # le dernier mot de chaque phrase (ses 400 dernières ms) part dans le délai ; le reste de la phrase reste sec
+            t["jetes"] = [[round(max(0.0, bb - 0.4), 3), round(bb + 0.2, 3)] for _, bb in studio_pro.phrases(ligne, SR)][:64]
+            t["delai"] = max(t["delai"], 0.35)
+        else:
+            t["jetes"] = []
+        r.update(eq={k2: eq[k2] for k2 in ("coupe_bas_hz", "coupe_haut_hz", "medium_db", "aigu_db")}, deesser=t["deesser"],
+                 seuil_db=t["comp"]["seuil_db"], seuil_rapide_db=t["comp_rapide"]["seuil_db"], saturation=t["saturation"], type=ty,
+                 boue_db=round(boue, 1), presence_db=round(presence, 1), sifflantes_db=round(sifflantes, 1), jetes=len(t["jetes"]))
+        if ty == "principale" and (principale is None or t["role"] in ("voix_papa", "voix_hakim") and principale["role"] == "voix_origine"):
             principale = t
-    # 5. le sidechain : la mélodie se creuse sous la voix principale (2 dB), sinon l'instru entière (1,5 dB)
+    # 5. le calage des doubles et des backs sur leur voix principale (la même voix si elle existe, sinon la principale du morceau)
+    for t in voix:
+        ty = type_voix(t)
+        if ty not in ("double", "back") or (t.get("pro") or {}).get("calage") == "non" or "calage" in studio_pro.COUPE:
+            continue
+        lead = next((x for x in principales if x["role"] == t["role"]), principale)
+        rapport[t["id"]]["calage"] = caler_voix(p, t, lead, fichiers, d, duree)
+        say(f"{t['nom']} : calage {rapport[t['id']]['calage']}")
+    # 6. le sidechain : la mélodie se creuse sous la voix principale (2 dB), sinon l'instru entière (1,5 dB)
     if principale:
         cible = next((t for t in instr if t["role"] == "melodie"), None) or next((t for t in instr if t["role"] == "instru"), None)
         if cible:
             cible["sidechain"] = {"cle": principale["id"], "db": 2.0 if cible["role"] == "melodie" else 1.5}
             rapport["sidechain"] = {"piste": cible["id"], "cle": principale["id"], "db": cible["sidechain"]["db"]}
-    # 1 bis. l'équilibre voix/instru, mesuré sur le rendu : chaque voix seule contre l'instru, sur les passages où la voix chante
-    if instr:
-        for t in voix:
-            for essai in range(2):
-                vb = Path(travail) / f"voix-{t['id']}.wav"
-                rendre_bus(p, d, vb, seules=[t["id"]])
-                act = _passages_actifs(vb)
-                if not act:
-                    break
-                a, dur = act
-                lv = _lufs_actif(vb, a, dur)["lufs"]
-                li = _lufs_actif(Path(travail) / "instru-ref.wav" if (Path(travail) / "instru-ref.wav").is_file()
-                                 else rendre_bus(p, d, Path(travail) / "instru-ref.wav", "instru"), a, dur)["lufs"]
+    # 1 bis. l'équilibre, mesuré sur le rendu : chaque voix principale seule contre l'instru, sur les passages où elle chante ; chaque
+    # double, back ou ad-lib contre sa voix principale
+    p["bus_voix"] = {"actif": False}
+    rendus_voix = {}
+
+    def niveau_sur(fichier, act):
+        return _lufs_actif(fichier, *act)["lufs"]
+    for t in sorted(voix, key=lambda x: 0 if type_voix(x) == "principale" else 1):
+        ty = type_voix(t)
+        lead = None if ty == "principale" else (next((x for x in principales if x["role"] == t["role"]), principale))
+        if ty == "principale" and not instr:
+            continue
+        for essai in range(2):
+            vb = Path(travail) / f"voix-{t['id']}.wav"
+            rendre_bus(p, d, vb, seules=[t["id"]], fichiers=fichiers)
+            act = _passages_actifs(vb)
+            if not act:
+                break
+            lv = niveau_sur(vb, act)
+            if lead is None:
+                ref = Path(travail) / "instru-ref.wav"
+                if not ref.is_file():
+                    rendre_bus(p, d, ref, "instru")
                 vise = VOIX_AU_DESSUS.get(t["role"], 1.5)
-                ecart = lv - li
-                rapport[t["id"]].setdefault("equilibre", []).append({"ecart_lu": round(ecart, 1), "vise_lu": vise})
-                if abs(ecart - vise) <= 0.5:
-                    break
-                t["volume_db"] = round(_num(t["volume_db"] + (vise - ecart), -30, 12, 0), 1)
-            say(f"{t['nom']} : {rapport[t['id']]['equilibre'][-1]['ecart_lu'] if rapport[t['id']].get('equilibre') else '?'} LU au-dessus de l'instru")
+            elif lead is not None and lead is not t:
+                ref = Path(travail) / f"voix-ref-{lead['id']}.wav"
+                if not ref.is_file():
+                    rendre_bus(p, d, ref, seules=[lead["id"]], fichiers=fichiers)
+                vise = -VOIX_TYPES[ty]["sous_db"]
+            else:
+                break
+            ecart = lv - niveau_sur(ref, act)
+            rapport[t["id"]].setdefault("equilibre", []).append({"ecart_lu": round(ecart, 1), "vise_lu": vise})
+            if abs(ecart - vise) <= 0.5:
+                break
+            t["volume_db"] = round(_num(t["volume_db"] + (vise - ecart), -30, 12, 0), 1)
+            if lead is None:
+                for f in Path(travail).glob(f"voix-ref-{t['id']}.wav"):
+                    f.unlink()
+        rendus_voix[t["id"]] = True
+        e = rapport[t["id"]].get("equilibre")
+        say(f"{t['nom']} : {e[-1]['ecart_lu'] if e else '?'} LU {'au-dessus de l’instru' if lead is None else 'contre la principale'}")
+    # 7. le bus des voix : son seuil mesuré sur toutes les voix ensemble (le haut de leur niveau court terme, ratio 1,5 : environ 1 dB de
+    # réduction sur les passages forts), et son gain de rattrapage MESURÉ (la démo du 13/11 : sans lui, les voix finissaient 2,7 LU
+    # plus bas que l'équilibre visé)
+    if voix:
+        vb, vb2 = Path(travail) / "voix-bus.wav", Path(travail) / "voix-bus-comp.wav"
+        try:
+            rendre_bus(p, d, vb, "voix", fichiers=fichiers)
+            xb, _ = M.lire(vb)
+            p["bus_voix"] = {"actif": True, "seuil_db": round(max(-50.0, min(-3.0, _haut_court_terme(xb))), 1), "ratio": 1.5, "gain_db": 0.0}
+            rendre_bus(p, d, vb2, "voix", fichiers=fichiers)
+            l0, l1 = M.ebur128(vb)["lufs"], M.ebur128(vb2)["lufs"]
+            if l0 and l1 and l0 > -60 and l1 > -60:
+                p["bus_voix"]["gain_db"] = round(max(0.0, min(6.0, l0 - l1)), 1)
+            rapport["bus_voix"] = p["bus_voix"]
+        except (RuntimeError, Refus):
+            p["bus_voix"] = {"actif": False}
     return rapport
 
 
@@ -812,9 +1206,11 @@ def _passages_actifs(fichier, seuil_db=-35.0):
 
 
 # ------------------------------------------------------------------------------------------------ le rendu complet d'un projet
-def _avis(master, bus, eq, equilibre, genre):
+def _avis(master, bus, eq, equilibre, genre, params=None, pro=None):
     """L'avis d'ingé son, en mots courts, à partir des mesures."""
     c = []
+    for x in pro or []:                                  # (13/11, le studio pro) ce que la chaîne de chaque voix a fait, mesuré
+        c.append(f"{x['piste']} : {x['resume']}")
     if master.get("lufs") is not None:
         c.append(f"master à {master['lufs']:.1f} LUFS, crête vraie {master['crete_dbtp']:.1f} dBTP")
     plr = master.get("plr_db")
@@ -827,6 +1223,13 @@ def _avis(master, bus, eq, equilibre, genre):
         c.append(f"écart moyen à la courbe du genre {r['ecart_moyen_db']:.1f} dB" + (f" (encore : {', '.join(r['mots'][:3])})" if r["mots"] else ""))
     for nom, e in equilibre:
         c.append(f"{nom} {e:+.1f} LU au-dessus de l'instru")
+    q = params or {}
+    if q.get("multibande"):
+        c.append("compression en 3 bandes (seuils mesurés : " + " / ".join(f"{v:.0f} dB" for v in q["multibande"]) + ")")
+    if q.get("mono_graves_hz"):
+        c.append(f"graves en mono sous {q['mono_graves_hz']:.0f} Hz, largeur {q.get('largeur', 1.0):.2f} (corrélation du mix {q.get('correlation')})")
+    if q.get("cible"):
+        c.append(f"cible {q['cible']} ({q.get('lufs')} LUFS)")
     return c
 
 
@@ -853,13 +1256,22 @@ def rendre_projet(pid, quoi="tout", mix_auto=False, envoyer=True, pistes_separee
             rapport_mix = mixer_auto(p, d, travail, journal.append)
             pistes_reglees = {t["id"]: copy.deepcopy(t) for t in p["pistes"]}
 
+            cales = {k for k, v in (rapport_mix or {}).items() if isinstance(v, dict) and (v.get("calage") or {}).get("cale")}
+            bus_voix = copy.deepcopy(p.get("bus_voix") or {"actif": False})
+
             def garder(q):
                 for t in q["pistes"]:
                     if t["id"] in pistes_reglees:
-                        t.update({k: v for k, v in pistes_reglees[t["id"]].items() if k not in ("regions", "fichier", "nom")})
+                        # (13/11) les régions d'un double calé phrase par phrase sont gardées ; les autres restent celles de papa
+                        t.update({k: v for k, v in pistes_reglees[t["id"]].items()
+                                  if k not in ("fichier", "nom") and (k != "regions" or t["id"] in cales)})
+                q["bus_voix"] = bus_voix
             p = modifier(pid, garder, studio_dir=studio_dir, note="mix automatique piste par piste")
         dire(2, "autotune des voix" if any(t.get("autotune") for t in p["pistes"]) else "préparation")
-        fichiers = preparer_autotune(p, d, travail)
+        fichiers, rap_pro = preparer_voix(p, d, travail)
+        import studio_pro
+        resumes_pro = [{"piste": t["nom"], "id": t["id"], "resume": studio_pro.resume(rap_pro[t["id"]]),
+                        "fond": rap_pro[t["id"]].get("_fond")} for t in p["pistes"] if t["id"] in rap_pro]
         dire(3, "rendu du son entier (toutes les pistes)")
         bus = travail / "bus-complet.wav"
         rendre_bus(p, d, bus, "complet", fichiers=fichiers)
@@ -874,6 +1286,10 @@ def rendre_projet(pid, quoi="tout", mix_auto=False, envoyer=True, pistes_separee
         mesure_master = M.bilan(wav, p.get("genre") or "trap")
         mesure_mp3 = M.ebur128(mp3)
         fichiers_sortie = {"complet": {"wav": str(wav), "mp3": str(mp3)}}
+        if params.get("dither16"):                      # (13/11) le WAV 16 bits, avec son dither (TPDF)
+            w16 = rd / f"{nom}-16bits.wav"
+            exporter_16bits(wav, w16)
+            fichiers_sortie["complet"]["wav16"] = str(w16)
         equilibre = []
         try:
             vb = travail / "voix-seules.wav"
@@ -931,7 +1347,10 @@ def rendre_projet(pid, quoi="tout", mix_auto=False, envoyer=True, pistes_separee
                  "mesures": {"bus": mesure_bus, "master": mesure_master, "mp3": mesure_mp3, "master_essais": mst["essais"],
                              "eq_master": params["eq"], "equilibre": equilibre},
                  "mix_auto": rapport_mix, "journal": journal,
-                 "avis": _avis(mesure_master, mesure_bus, params["eq"], equilibre, p.get("genre") or "trap")}
+                 "pro": resumes_pro,
+                 "master_reglages": {k: params.get(k) for k in ("multibande", "largeur", "correlation", "mono_graves_hz", "cible", "lufs",
+                                                                "dither16")},
+                 "avis": _avis(mesure_master, mesure_bus, params["eq"], equilibre, p.get("genre") or "trap", params, resumes_pro)}
 
         def noter(q):
             q.setdefault("rendus", []).append(rendu)
@@ -1035,7 +1454,21 @@ ALIAS_REGLAGES = {"volume": "volume_db", "vol": "volume_db", "gain": "volume_db"
                   "coupe_bas": "eq.coupe_bas_hz", "coupe-bas": "eq.coupe_bas_hz", "seuil": "comp.seuil_db", "ratio": "comp.ratio",
                   "compression": "comp.actif", "comp": "comp.actif", "attaque": "comp.attaque_ms", "relache": "comp.relache_ms",
                   "dé-esseur": "deesser", "de-esseur": "deesser", "deesseur": "deesser", "medium_hz": "eq.medium_hz", "grave_hz": "eq.grave_hz",
-                  "aigu_hz": "eq.aigu_hz", "q": "eq.medium_q"}
+                  "aigu_hz": "eq.aigu_hz", "q": "eq.medium_q",
+                  # (13/11, le studio pro) le nettoyage et les modifs de chaque voix
+                  "coupe_haut": "eq.coupe_haut_hz", "coupe-haut": "eq.coupe_haut_hz", "coupe_haut_hz": "eq.coupe_haut_hz",
+                  "comp_rapide": "comp_rapide.actif", "crêtes": "comp_rapide.actif", "cretes": "comp_rapide.actif",
+                  "seuil_rapide": "comp_rapide.seuil_db", "excitateur": "saturation",
+                  "nettoyage": "pro.actif", "pro": "pro.actif", "type": "pro.type", "souffle": "pro.souffle", "bruit": "pro.souffle",
+                  "débruitage": "pro.souffle", "debruitage": "pro.souffle", "ronflement": "pro.ronflement", "50hz": "pro.ronflement",
+                  "clics": "pro.clics", "ecretage": "pro.ecretage", "écrêtage": "pro.ecretage", "plosives": "pro.plosives",
+                  "respirations": "pro.respirations", "respirations_db": "pro.respirations_db", "porte": "pro.porte",
+                  "expandeur": "pro.porte", "nivellement": "pro.nivellement", "rider": "pro.nivellement", "continu": "pro.continu",
+                  "calage": "pro.calage", "debruiteur": "pro.debruiteur", "débruiteur": "pro.debruiteur", "souffle_db": "pro.souffle_db",
+                  "delai_jete": "pro.delai_jete", "délai_jeté": "pro.delai_jete", "jete": "pro.delai_jete", "plosives_hz": "pro.plosives_hz",
+                  "nivellement_db": "pro.nivellement_db", "porte_plage_db": "pro.porte_plage_db"}
+PRO_TEXTE = {"pro.type", "pro.souffle", "pro.ronflement", "pro.clics", "pro.ecretage", "pro.plosives", "pro.respirations", "pro.porte",
+             "pro.nivellement", "pro.continu", "pro.calage", "pro.debruiteur", "pro.delai_jete"}
 
 
 def lire_reglages(texte):
@@ -1063,16 +1496,16 @@ def lire_reglages(texte):
         elif k == "sidechain":
             cle, _, dbv = v.partition(":")
             val = {"cle": cle.strip(), "db": dbv or 2}
-        elif k in ("muet", "solo", "comp.actif"):
-            val = v.lower() in ("1", "oui", "vrai", "true", "on")
-        elif k == "delai_note":
-            val = v
+        elif k in ("muet", "solo", "comp.actif", "comp_rapide.actif", "pro.actif"):
+            val = v.lower() in ("1", "oui", "vrai", "true", "on", "auto")
+        elif k == "delai_note" or k in PRO_TEXTE:
+            val = v.strip().lower().replace("é", "e") if k != "pro.type" else v.strip().lower()
         else:
             try:
                 val = float(v.replace(",", ".").replace("db", "").replace("dB", "").replace("hz", "").replace("Hz", "").strip())
             except ValueError:
                 raise Refus(f"réglage illisible : « {bout.strip()} »")
-        if k.startswith(("eq.", "comp.")):
+        if k.startswith(("eq.", "comp.", "comp_rapide.", "pro.")):
             a, b = k.split(".", 1)
             r.setdefault(a, {})[b] = val
         else:
@@ -1198,6 +1631,22 @@ def resume(p, court=False):
                 e.append(f"délai {t['delai']:g} ({t.get('delai_note')})")
             if t.get("autotune"):
                 e.append(f"autotune {t['autotune'].replace('leger', 'léger')}")
+            pr = _pro(t)
+            if pr is not None:
+                if not pr.get("actif"):
+                    e.append("nettoyage coupé")
+                else:
+                    import studio_pro
+                    forces = [f"{k} {pr.get(k)}" for k in studio_pro.ETAPES if pr.get(k, "auto") != "auto"]
+                    e.append(f"voix {pr.get('type', 'principale')}, nettoyage mesuré" + (f" ({', '.join(forces)})" if forces else ""))
+            if (t.get("comp_rapide") or {}).get("actif"):
+                e.append(f"crêtes {t['comp_rapide']['ratio']:g}:1 à {t['comp_rapide']['seuil_db']:g} dB")
+            if t.get("saturation"):
+                e.append(f"saturation {t['saturation']:g}")
+            if t.get("eq", {}).get("coupe_haut_hz"):
+                e.append(f"coupe-haut {t['eq']['coupe_haut_hz']:.0f} Hz")
+            if t.get("jetes"):
+                e.append(f"délai jeté sur {len(t['jetes'])} fins de phrase")
             if (t.get("sidechain") or {}).get("cle"):
                 e.append(f"creusée sous {t['sidechain']['cle']} ({t['sidechain']['db']} dB)")
             if t.get("automation"):
@@ -1205,12 +1654,41 @@ def resume(p, court=False):
         l.append(f"- {t['id']} {t['nom']} ({ROLES.get(t['role'], t['role'])}) : " + ", ".join(e))
     if p.get("zones"):
         l.append("Zones : " + " ; ".join(f"{z['nom']} ({z['qui']}) {z['debut_s']:.1f}-{z['fin_s']:.1f} s" for z in p["zones"]))
+    m = p.get("master") or {}
+    l.append(f"Master : {m.get('cible') or 'streaming'} ({m.get('lufs', -14)} LUFS), crête ≤ {m.get('crete_dbtp', -1)} dBTP, "
+             f"{'3 bandes' if m.get('multibande', True) else 'compression en une bande'}, graves mono sous {m.get('mono_graves_hz', 120)} Hz, "
+             f"largeur {m.get('largeur', 'auto')}, WAV 16 bits {'avec dither' if m.get('dither16', True) else 'sans'}"
+             + (f" ; bus des voix (seuil {p['bus_voix'].get('seuil_db')} dB)" if (p.get('bus_voix') or {}).get('actif') else "") + ".")
     if p.get("rendus"):
         r = p["rendus"][-1]
         m = r["mesures"]["master"]
         l.append(f"Dernier rendu ({r['nom']}) : {m.get('lufs')} LUFS, crête vraie {m.get('crete_dbtp')} dBTP (MP3 {r['mesures']['mp3'].get('crete_dbtp')}), "
                  f"PLR {m.get('plr_db')} dB. Avis : " + " ; ".join(r.get("avis", [])))
     return "\n".join(l)
+
+
+def _oui(v):
+    return v.strip().lower() in ("1", "oui", "vrai", "true", "on") if isinstance(v, str) else bool(v)
+
+
+def regler_master(p, q):
+    """(13/11, le studio pro) les réglages du master : cible (« streaming » −14 LUFS, « club » −9 LUFS), multibande (oui/non),
+    largeur (« auto », ou 0 à 1,5), mono_graves_hz (0 = sans, 40 à 300), dither16 (oui/non). Les clés absentes ne changent pas."""
+    import studio_pro
+    m = p.setdefault("master", {})
+    if q.get("cible") in CIBLES and "cible" not in studio_pro.COUPE:
+        m["cible"], m["lufs"] = q["cible"], CIBLES[q["cible"]]
+    if "multibande" in q:
+        m["multibande"] = _oui(q["multibande"])
+    if "largeur" in q:
+        v = q["largeur"]
+        m["largeur"] = "auto" if str(v).strip().lower() in ("auto", "") else round(_num(v, 0, 1.5, 1.0), 2)
+    if "mono_graves_hz" in q:
+        v = _num(q["mono_graves_hz"], 0, 300, 120)
+        m["mono_graves_hz"] = 0.0 if v < 40 else round(v)
+    if "dither16" in q:
+        m["dither16"] = _oui(q["dither16"])
+    return m
 
 
 # ------------------------------------------------------------------------------------------------ le cockpit (une ligne JSON)
@@ -1246,6 +1724,7 @@ def commande(q, studio_dir=None, demarrer=None):
                     x["genre"] = _mot(q["genre"], 20) or x["genre"]
                 if "lufs" in q:
                     x["master"]["lufs"] = round(_num(q["lufs"], -20, -6, -14), 1)
+                regler_master(x, q)
             return {"ok": True, "projet": modifier(q.get("id"), changer, q.get("rev"), studio_dir, note="projet réglé")}
         if a == "importer":                                 # une prise de papa (déjà écrite sur le disque) → une piste
             f = Path(str(q.get("fichier") or ""))

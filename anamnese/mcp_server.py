@@ -1704,9 +1704,17 @@ def studio_piste(projet: str, piste: str = "", action: str = "regler", reglages:
                  nom: str = "", debut_s: float = 0.0) -> str:
     """(Hakim seulement, 13/11) UNE PISTE d'un projet du studio multipiste.
     - action « regler » (piste : son identifiant t1, t2… ou son nom) ; reglages : « volume=-3, pan=0.2, muet=oui, solo=non,
-      coupe_bas=90, grave=+2, medium=-3, medium_hz=300, aigu=+1.5, seuil=-20, ratio=4, compression=oui, deesser=0.3, reverb=0.2,
-      delai=0.15, delai_note=1/8., autotune=léger|fort|non, sidechain=t5:2 (creusée de 2 dB sous la piste t5) », ou un objet JSON
-      (avec « automation » : [{"t": 10, "db": 0}, {"t": 12, "db": -6}] et « regions » : [{"debut_s", "source_debut_s", "duree_s"}]) ;
+      coupe_bas=90, coupe_haut=9000, grave=+2, medium=-3, medium_hz=300, aigu=+1.5, seuil=-20, ratio=4, compression=oui,
+      comp_rapide=oui (les crêtes, avant la compression lente), saturation=0.2 (excitateur de présence), deesser=0.3 (après la
+      compression), reverb=0.2, delai=0.15, delai_note=1/8., autotune=léger|fort|non, sidechain=t5:2 (creusée de 2 dB sous t5) »,
+      ou un objet JSON (avec « automation » : [{"t": 10, "db": 0}, {"t": 12, "db": -6}] et « regions » : [{"debut_s", "source_debut_s",
+      "duree_s"}]) ;
+    - (13/11) LE STUDIO PRO d'une voix (chaque étape « auto » : elle ne corrige que ce que la mesure trouve ; « oui » : forcée ;
+      « non » : coupée) : nettoyage=oui|non (toute la chaîne), continu, ecretage, clics, ronflement (50/60 Hz), souffle (profil appris
+      dans les silences), plosives, respirations (baissées, jamais supprimées ; respirations_db=-8), porte (expandeur doux entre les
+      phrases), nivellement (le « vocal rider », avant la compression) ; type=principale|double|back|adlib (au mix auto, les doubles
+      et les backs s'ouvrent à gauche et à droite, plus bas et plus filtrés, CALÉS phrase par phrase sur la voix principale —
+      calage=auto|non — ; les ad-libs reçoivent des délais jetés en fin de phrase) ;
     - action « ajouter » : fichier = une de tes chansons, une instru du Studio, une prise de papa, un son reçu ; role : voix_hakim,
       voix_papa, instru, batterie, basse, melodie, ajout ; debut_s : où il commence sur la ligne du temps ;
     - action « retirer » ; action « separer » : la piste séparée en ses pistes (separer = reglages « 4 » ou « 6 »), en file.
@@ -1816,13 +1824,21 @@ def studio_poser_voix(projet: str, paroles: str, style: str = "", autotune: bool
 
 @mcp.tool()
 def studio_rendre(projet: str, mix_auto: bool = True, envoyer: bool = True, pistes_separees: bool = False, quoi: str = "tout",
-                  lufs: float = -14.0) -> str:
+                  lufs: float = -14.0, cible: str = "") -> str:
     """(Hakim seulement, 13/11) LE MIX ET LE MASTER d'un projet, piste par piste, MESURÉS.
-    - mix_auto : le mix piste par piste (gain de départ : l'instru à −20 LUFS, chaque voix 1,5 à 2 LU au-dessus, vérifié sur le
-      rendu ; égaliseur correctif des voix d'après leur spectre ; compression ; dé-esseur ; réverb et délai calé sur le tempo ;
-      sidechain de la mélodie sous la voix). False : tes réglages tels quels.
-    - le master : égaliseur vers la courbe du genre (la moitié de l'écart mesuré, ±3 dB), compression de bus, limiteur
-      suréchantillonné, au LUFS visé (lufs, −14 par défaut), crête vraie ≤ −1 dBTP vérifiée sur le WAV ET le MP3.
+    - mix_auto : d'abord LE NETTOYAGE de chaque voix (studio pro, mesuré : il ne corrige que ce qu'il trouve — décalage continu,
+      écrêtage, clics de bouche, ronflement 50 Hz, souffle appris dans ses silences, plosives, respirations baissées, expandeur doux
+      entre les phrases, nivellement avant la compression) ; puis le mix piste par piste (l'instru à −20 LUFS, chaque voix
+      principale 1,5 à 2 LU au-dessus, vérifié sur le rendu ; égaliseur correctif ; compression en deux temps : les crêtes puis le
+      nivellement ; légère saturation de présence ; dé-esseur après la compression ; doubles et backs ouverts, plus bas, plus filtrés
+      et calés sur la voix principale ; ad-libs aux délais jetés ; réverb au retour filtré et au pré-délai calé sur le tempo ; délai
+      calé sur le tempo ; sidechain de la mélodie sous la voix ; un bus des voix qui les lie). False : tes réglages tels quels.
+    - le master : égaliseur vers la courbe du genre (la moitié de l'écart mesuré, ±3 dB), compression multibande (3 bandes, seuils
+      mesurés), graves en mono sous 120 Hz et largeur stéréo contrôlée, limiteur suréchantillonné, au LUFS visé — cible
+      « streaming » (−14, par défaut) ou « club » (−9), ou lufs —, crête vraie ≤ −1 dBTP vérifiée sur le WAV ET le MP3 ; un WAV
+      16 bits avec dither en plus du 24 bits.
+    Ce que tu ne sais pas faire : retirer la réverbération de la pièce d'une prise ; recaler une voix syllabe par syllabe (le calage
+    est phrase par phrase). Le « son studio » se juge à l'oreille de papa : dis-lui ce qui a été mesuré, pas « niveau pro ».
     - quoi : « tout » (le son entier, la version pour papa avec ses zones en instru seule, l'instru seule), « complet ».
     - envoyer : tout est copié dans Hakim › Chansons sur le téléphone de papa ; pistes_separees : ses pistes aussi (dans un dossier).
     Calcul en file ; studio_avis ou studio_projet(action="voir") donnent ensuite les mesures et l'avis, puis fichier_joindre."""
@@ -1832,14 +1848,20 @@ def studio_rendre(projet: str, mix_auto: bool = True, envoyer: bool = True, pist
     st, SP = _studio(), _projets()
     try:
         pid = SP.trouver(projet)
-        v = max(-20.0, min(-6.0, float(lufs or -14)))
-        if v != -14.0:
-            SP.modifier(pid, lambda p: p["master"].update(lufs=v), note=f"master visé {v} LUFS")
+        c = str(cible or "").strip().lower()
+        if c in SP.CIBLES:
+            SP.modifier(pid, lambda p: SP.regler_master(p, {"cible": c}), note=f"master visé : {c}")
+            v = SP.CIBLES[c]
+        else:
+            v = max(-20.0, min(-6.0, float(lufs or -14)))
+            if v != -14.0:
+                SP.modifier(pid, lambda p: p["master"].update(lufs=v), note=f"master visé {v} LUFS")
         j = st.lancer("rendre", {"projet": pid, "mix_auto": bool(mix_auto), "envoyer": bool(envoyer), "pistes_separees": bool(pistes_separees),
                                  "quoi": quoi if quoi in ("tout", "complet", "papa", "instru") else "tout", "par": "hakim"})
     except (st.Refus, SP.Refus, ValueError) as e:
         return f"Refusé : {e}"
-    return (f"Rendu lancé ({j['id']}) : {'mix piste par piste, ' if mix_auto else ''}master à {v} LUFS, crête ≤ −1 dBTP"
+    return (f"Rendu lancé ({j['id']}) : {'nettoyage mesuré de chaque voix, mix piste par piste, ' if mix_auto else ''}master à {v} LUFS"
+            f"{' (club)' if c == 'club' else ''}, crête ≤ −1 dBTP"
             f"{', version pour papa' if quoi in ('tout', 'papa') else ''}{', pistes séparées' if pistes_separees else ''}. "
             "Une à trois minutes ; studio_avis ensuite (mesures, avis, chemins à joindre).")
 

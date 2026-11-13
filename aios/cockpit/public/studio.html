@@ -155,10 +155,16 @@
         <div class="mp-zones-liste" id="mpZones"></div>
         <div class="gestes"><button type="button" id="mpZoneAjout">＋ Zone ici</button><button type="button" class="principal" id="mpZonesOk">Garder les zones</button></div>
         <h3>Mix et mastering</h3>
-        <label class="ligne"><input type="checkbox" id="mpMixAuto" checked><span>Hakim mixe piste par piste (niveaux, égaliseurs, compression, réverb, sidechain)</span></label>
+        <label class="ligne"><input type="checkbox" id="mpMixAuto" checked><span>Hakim nettoie chaque voix (seulement ce que la mesure trouve : souffle, ronflement, clics, plosives, respirations…) et mixe piste par piste (niveaux, égaliseurs, compression en deux temps, réverb, doubles, sidechain)</span></label>
         <label class="ligne"><input type="checkbox" id="mpPistesSep"><span>M’envoyer aussi les pistes séparées</span></label>
+        <div class="mp-grille2" id="mpMaster">
+          <label>Master : la cible<select id="mpCible"><option value="streaming">Streaming (−14 LUFS)</option><option value="club">Club, plus fort (−9 LUFS)</option></select></label>
+          <label class="ligne"><input type="checkbox" id="mpMultibande" checked><span>Compression en 3 bandes</span></label>
+          <label class="ligne"><input type="checkbox" id="mpMonoGraves" checked><span>Graves en mono sous 120 Hz</span></label>
+          <label class="ligne"><input type="checkbox" id="mpDither" checked><span>WAV 16 bits avec dither</span></label>
+        </div>
         <div class="gestes"><button type="button" class="principal" id="mpRendre">🎚️ Mixer et masteriser</button>
-          <span class="sous">−14 LUFS, crête ≤ −1 dBTP ; le son entier, ta version et l’instru, dans Hakim › Chansons.</span></div>
+          <span class="sous" id="mpMasterDit">−14 LUFS, crête ≤ −1 dBTP ; le son entier, ta version et l’instru, dans Hakim › Chansons.</span></div>
         <div id="mpRendus"></div>
       </div>
     </section>

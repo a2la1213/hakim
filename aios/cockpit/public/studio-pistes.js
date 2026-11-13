@@ -15,6 +15,11 @@
   const COULEUR_ZONE = { papa: '#facc15', hakim: '#2dd4bf', instru: '#94a3b8', tous: '#a78bfa' };
   const VOIX = new Set(['voix_hakim', 'voix_papa', 'voix_origine', 'voix']);
   const NOTES = { '1/4': 1, '1/8': 0.5, '1/8.': 0.75, '1/16': 0.25, '1/4.': 1.5, '1/2': 2 };
+  // (13/11, le studio pro) le nettoyage de chaque voix : chaque étape « auto » (la mesure décide), « oui » (forcée), « non » (coupée)
+  const ETAPES_PRO = [['souffle', 'Souffle, bruit de fond'], ['ronflement', 'Ronflement 50 Hz'], ['clics', 'Clics de bouche'], ['ecretage', 'Écrêtage'],
+    ['plosives', 'Plosives (p, b)'], ['respirations', 'Respirations (baissées)'], ['porte', 'Porte douce entre les phrases'], ['nivellement', 'Nivellement (rider)'],
+    ['continu', 'Décalage continu']];
+  const TYPES_VOIX = [['principale', 'principale'], ['double', 'double'], ['back', 'back (chœur)'], ['adlib', 'ad-lib']];
   const s = { projets: [], projet: null, choisie: lsLire('studio-projet', ''), pps: Number(lsLire('studio-pps', '10')) || 10, pos: 0, lecture: null,
     formes: new Map(), detail: '', rec: null, zones: null };
   const mmss = (t) => { t = Math.max(0, Number(t) || 0); const m = Math.floor(t / 60); return `${m}:${(t - m * 60).toFixed(1).padStart(4, '0')}`; };
@@ -62,7 +67,8 @@
   function regler(piste, reglages) {
     if (!s.projet) return;
     const t = s.projet.pistes.find(x => x.id === piste);
-    if (t) Object.assign(t, reglages.eq || reglages.comp ? { ...t, eq: { ...t.eq, ...(reglages.eq || {}) }, comp: { ...t.comp, ...(reglages.comp || {}) } } : reglages);
+    // les réglages imbriqués (égaliseur, compressions, studio pro) se fusionnent : le reste de la tranche ne bouge pas
+    if (t) for (const [k, v] of Object.entries(reglages)) t[k] = v && typeof v === 'object' && !Array.isArray(v) && t[k] && typeof t[k] === 'object' ? { ...t[k], ...v } : v;
     appliquerEnDirect();
     return poster('/api/studio/projet/regler', { id: s.projet.id, rev: s.projet.rev, piste, reglages }).then((o) => { s.projet.rev = o.projet.rev; }).catch((e) => { if (e.message !== 'rechargé') dire(e.message); });
   }
@@ -74,7 +80,16 @@
     if (!p) return;
     const bpm = Number(p.tempo) || 0;
     $('mpInfos').textContent = `${p.titre} · ${mmss(dureeProjet())} · ${bpm ? `${bpm} BPM` : 'tempo ?'} · ${p.tonalite || 'tonalité ?'} · version ${p.rev}`;
-    rendreGrille(); rendreZones(); rendreDetail(); rendreRendus();
+    rendreGrille(); rendreZones(); rendreDetail(); rendreRendus(); rendreMaster();
+  }
+  // le master du projet : sa cible, ses 3 bandes, ses graves en mono, son dither (réglés ici, gardés dans le projet)
+  function rendreMaster() {
+    const m = s.projet.master || {};
+    $('mpCible').value = m.cible === 'club' ? 'club' : 'streaming';
+    $('mpMultibande').checked = m.multibande !== false;
+    $('mpMonoGraves').checked = Number(m.mono_graves_hz ?? 120) > 0;
+    $('mpDither').checked = m.dither16 !== false;
+    $('mpMasterDit').textContent = `${m.cible === 'club' ? 'Club, −9 LUFS' : 'Streaming, −14 LUFS'}, crête ≤ −1 dBTP ; le son entier, ta version et l’instru, dans Hakim › Chansons.`;
   }
   function rendreGrille() {
     const p = s.projet, L = Math.ceil(dureeProjet() * s.pps);
@@ -160,14 +175,33 @@
       + (VOIX.has(t.role) ? `<label>Autotune<select data-champ="autotune"><option value=""${!t.autotune ? ' selected' : ''}>non</option><option value="leger"${t.autotune === 'leger' ? ' selected' : ''}>léger</option><option value="fort"${t.autotune === 'fort' ? ' selected' : ''}>fort</option></select></label>` : '')
       + `<label>Creusée sous<select data-champ="sidechain.cle"><option value="">rien</option>${autres.map(x => `<option value="${esc(x.id)}"${(t.sidechain || {}).cle === x.id ? ' selected' : ''}>${esc(x.nom)}</option>`).join('')}</select></label>`
       + champ('sidechain.db', 'de (dB)', (t.sidechain || {}).db, 0, 12, 0.5)
-      + `</div><div class="sous">L’écoute ici approche le rendu (autotune et sidechain seulement au rendu sur le Mac).</div>`
+      + `</div>` + (VOIX.has(t.role) ? proDetail(t, champ) : '')
+      + `<div class="sous">L’écoute ici approche le rendu (nettoyage, autotune et sidechain seulement au rendu sur le Mac).</div>`
       + `<div class="gestes">${!VOIX.has(t.role) && ['instru', 'ajout'].includes(t.role) ? `<button type="button" data-separer="${esc(t.id)}">✂︎ Séparer en pistes</button>` : ''}`
       + `<button type="button" data-retirer="${esc(t.id)}">🗑 Retirer la piste</button><button type="button" data-detail="">Fermer</button></div>`;
   }
+  // le studio pro d'une voix : son nettoyage étape par étape, son type, son calage ; et ce que le dernier rendu en a dit
+  function proDetail(t, champ) {
+    const pro = t.pro || { actif: false }, cr = t.comp_rapide || {};
+    const choix = (cle, v, opts) => `<select data-champ="${cle}">${opts.map(([val, lib]) => `<option value="${val}"${String(v) === val ? ' selected' : ''}>${lib}</option>`).join('')}</select>`;
+    const mode = (k, lib) => `<label>${lib}${choix(`pro.${k}`, pro[k] || 'auto', [['auto', 'auto (mesuré)'], ['oui', 'oui, forcé'], ['non', 'non, coupé']])}</label>`;
+    const dernier = (s.projet.rendus || []).slice(-1)[0], rp = dernier && (dernier.pro || []).find(x => x.id === t.id);
+    return `<h4 style="margin:10px 0 4px">🎙️ Studio pro (le nettoyage ne corrige que ce que la mesure trouve)</h4><div class="mp-grille2">`
+      + `<label>Nettoyage${choix('pro.actif', pro.actif ? '1' : '0', [['1', 'oui'], ['0', 'non']])}</label>`
+      + `<label>Cette voix est${choix('pro.type', pro.type || 'principale', TYPES_VOIX)}</label>`
+      + ETAPES_PRO.map(([k, lib]) => mode(k, lib)).join('')
+      + champ('pro.respirations_db', 'Respirations baissées de (dB)', pro.respirations_db ?? -8, -30, 0, 1)
+      + `<label>Calage sur la voix principale${choix('pro.calage', pro.calage || 'auto', [['auto', 'auto (doubles, backs)'], ['non', 'non']])}</label>`
+      + `<label>Délai jeté en fin de phrase${choix('pro.delai_jete', pro.delai_jete || 'auto', [['auto', 'auto (ad-libs)'], ['oui', 'oui'], ['non', 'non']])}</label>`
+      + `<label>Crêtes (compression rapide)${choix('comp_rapide.actif', cr.actif ? '1' : '0', [['1', 'oui'], ['0', 'non']])}</label>`
+      + champ('saturation', 'Saturation, présence (0 à 1)', t.saturation ?? 0, 0, 1, 0.05)
+      + champ('eq.coupe_haut_hz', 'Coupe-haut (Hz, 0 = sans)', (t.eq || {}).coupe_haut_hz ?? 0, 0, 20000, 100)
+      + `</div>` + (rp ? `<div class="sous">Dernier rendu : ${esc(rp.resume)}</div>` : '');
+  }
   function valeurChamp(e) {
     const k = e.dataset.champ, v = e.value;
-    if (k === 'comp.actif') return [k, v === '1'];
-    if (k === 'autotune' || k === 'delai_note' || k === 'sidechain.cle') return [k, v];
+    if (k === 'comp.actif' || k === 'comp_rapide.actif' || k === 'pro.actif') return [k, v === '1'];
+    if (k === 'autotune' || k === 'delai_note' || k === 'sidechain.cle' || (k.startsWith('pro.') && k !== 'pro.respirations_db')) return [k, v];
     return [k, Number(v)];
   }
 
@@ -190,6 +224,7 @@
         + `<div class="mesures">${esc(m.lufs)} LUFS · crête vraie ${esc(m.crete_dbtp)} dBTP (MP3 ${esc(r.mp3_crete_dbtp)}) · PLR ${esc(m.plr_db)} dB · LRA ${esc(m.lra)} LU</div>`
         + `<ul class="conseils">${(r.avis || []).map(a => `<li>${esc(a)}</li>`).join('')}</ul>`
         + son('complet', 'Le son entier') + son('zones_papa', 'Ta version (tes zones en instru)') + son('instru', 'L’instru seule')
+        + (f.complet && f.complet.wav16 ? `<div class="son"><div class="tete">WAV 16 bits (avec dither)</div><div class="gestes"><button type="button" data-dl="${esc(f.complet.wav16)}" aria-label="Télécharger le WAV 16 bits">⬇︎</button></div></div>` : '')
         + (r.pistes && r.pistes.length ? `<details><summary>Les pistes séparées (${r.pistes.length})</summary>${r.pistes.map(x => `<div class="son"><div class="tete">${esc(x.split('/').pop())}</div><div class="gestes"><button type="button" data-lire="${esc(x)}">▶︎</button><button type="button" data-dl="${esc(x)}">⬇︎</button></div></div>`).join('')}</details>` : '')
         + '</div>';
     }).join('') : '<div class="vide">Pas encore de mix : « Mixer et masteriser ».</div>';
@@ -392,6 +427,12 @@
   });
   $('mpZonesOk').addEventListener('click', async () => {
     try { remplacer(await poster('/api/studio/projet/zones', { id: s.projet.id, rev: s.projet.rev, zones: s.zones })); s.zones = null; rendreZones(); dire('Zones gardées.'); }
+    catch (e) { if (e.message !== 'rechargé') dire(e.message); }
+  });
+  for (const id of ['mpCible', 'mpMultibande', 'mpMonoGraves', 'mpDither']) $(id).addEventListener('change', async () => {
+    if (!s.projet) return;
+    try { remplacer(await poster('/api/studio/projet/reglages', { id: s.projet.id, rev: s.projet.rev, cible: $('mpCible').value, multibande: $('mpMultibande').checked,
+      mono_graves_hz: $('mpMonoGraves').checked ? 120 : 0, dither16: $('mpDither').checked })); }
     catch (e) { if (e.message !== 'rechargé') dire(e.message); }
   });
   $('mpRendre').addEventListener('click', async () => {

@@ -366,7 +366,10 @@ test('les routes des projets multipistes : lire, régler avec la version vue, zo
   fs.copyFileSync(path.join(d, 'vocals.flac'), path.join(ch, '20261113-000000-moujahid.mp3'));
   let projet = { id: pid, titre: 'Moujahid', rev: 4, pistes: [{ id: 't1', nom: 'Voix de Hakim', role: 'voix_hakim', fichier: 'pistes/vocals.flac', regions: [] }],
     zones: [], rendus: [{ nom: 'r', t: 1, avis: ['ok'], mesures: { master: { lufs: -14, crete_dbtp: -1.2 }, mp3: { crete_dbtp: -1.1 } },
-      fichiers: { complet: { mp3: path.join(ch, 'studio', 'projets', pid, 'rendus', 'r.mp3'), wav: '/etc/passwd' } } }] };
+      pro: [{ id: 't1', piste: 'Voix de Hakim', resume: 'souffle débruité (fond -52 dBFS)', fond: { avant_dbfs: -52, apres_dbfs: -70 }, rapport: { gros: 1 } }],
+      master_reglages: { cible: 'streaming', multibande: [-20, -24, -30] },
+      fichiers: { complet: { mp3: path.join(ch, 'studio', 'projets', pid, 'rendus', 'r.mp3'), wav: '/etc/passwd',
+        wav16: path.join(ch, 'studio', 'projets', pid, 'rendus', 'r-16bits.wav') } } }] };
   const cmds = [];
   const studio = S.creer({ jarvis, lireCorps, appeler: () => ({ ok: true }), projet: (q) => {
     cmds.push(q);
@@ -385,6 +388,10 @@ test('les routes des projets multipistes : lire, régler avec la version vue, zo
     assert.equal(r.j.projet.pistes[0].f, `studio/projets/${pid}/pistes/vocals.flac`, 'chaque piste porte son chemin servi');
     assert.equal(r.j.projet.rendus[0].fichiers.complet.mp3, `studio/projets/${pid}/rendus/r.mp3`);
     assert.equal(r.j.projet.rendus[0].fichiers.complet.wav, null, 'rien hors des chansons');
+    // (13/11, le studio pro) ce que la chaîne a fait de chaque voix, le WAV 16 bits, les réglages du master
+    assert.deepEqual(r.j.projet.rendus[0].pro, [{ id: 't1', piste: 'Voix de Hakim', resume: 'souffle débruité (fond -52 dBFS)', fond: { avant_dbfs: -52, apres_dbfs: -70 } }]);
+    assert.equal(r.j.projet.rendus[0].fichiers.complet.wav16, `studio/projets/${pid}/rendus/r-16bits.wav`);
+    assert.equal(r.j.projet.rendus[0].master_reglages.cible, 'streaming');
     assert.equal((await appel(srv, 'GET', '/api/studio/projet?id=../../x')).statut, 404);
     // le son d'une piste (FLAC) est servi ; la forme d'onde : un pic toutes les 20 ms, le son puis le silence
     assert.equal((await appel(srv, 'GET', `/api/studio/son?f=${encodeURIComponent(r.j.projet.pistes[0].f)}`)).statut, 200);
@@ -402,6 +409,13 @@ test('les routes des projets multipistes : lire, régler avec la version vue, zo
     assert.equal((await appel(srv, 'POST', '/api/studio/projet/regler', { id: pid, rev: 5, piste: 't1', reglages: 'x' })).statut, 400);
     r = await appel(srv, 'POST', '/api/studio/projet/zones', { id: pid, rev: 5, zones: [{ nom: 'Couplet de papa<b>', debut_s: 10, fin_s: 34, qui: 'papa' }] });
     assert.equal(r.statut, 200); assert.equal(cmds.at(-1).zones[0].nom, 'Couplet de papa b', 'les mots nettoyés');
+    // (13/11) le studio pro d'une voix passe tel quel (Python le borne) ; le master : cible, 3 bandes, graves en mono, dither
+    await appel(srv, 'POST', '/api/studio/projet/regler', { id: pid, rev: 6, piste: 't1', reglages: { pro: { souffle: 'non', type: 'double' }, comp_rapide: { actif: true } } });
+    assert.deepEqual(cmds.at(-1).reglages, { pro: { souffle: 'non', type: 'double' }, comp_rapide: { actif: true } });
+    await appel(srv, 'POST', '/api/studio/projet/reglages', { id: pid, rev: 6, cible: 'club', multibande: false, mono_graves_hz: 0, dither16: true, largeur: 'auto' });
+    assert.deepEqual(cmds.at(-1), { action: 'projet', id: pid, rev: 6, cible: 'club', multibande: false, dither16: true, largeur: 'auto', mono_graves_hz: 0 });
+    await appel(srv, 'POST', '/api/studio/projet/reglages', { id: pid, rev: 6, cible: 'stade', multibande: 'oui', largeur: null });
+    assert.deepEqual(cmds.at(-1), { action: 'projet', id: pid, rev: 6 }, 'une cible inconnue, un booléen en texte : rien ne passe');
     // créer depuis un son des chansons (jamais hors d'elles) ; rendre
     r = await appel(srv, 'POST', '/api/studio/projet/creer', { f: '20261113-000000-moujahid.mp3', separer: '6', garder: ['batterie', 'basse'], voix: 'hakim', tempo: 140 });
     assert.equal(r.statut, 200);
@@ -434,7 +448,7 @@ test('ses outils du studio multipiste sont permis à Hakim', () => {
 test('la page Studio, le multipiste : ses parties, la machinerie partagée du micro, tout texte du disque échappé', () => {
   const h = lire('public/studio.html'), js = lire('public/studio-pistes.js'), page = lire('public/studio-page.js');
   for (const id of ['mpProjet', 'mpNouveau', 'mpCreer', 'mpSource', 'mpSeparer', 'mpVoix', 'mpCreerOk', 'mpVue', 'mpLire', 'mpRec', 'mpVersion', 'mpScroll', 'mpGrille',
-    'mpDetail', 'mpZones', 'mpZoneAjout', 'mpZonesOk', 'mpMixAuto', 'mpPistesSep', 'mpRendre', 'mpRendus', 'mpNiveau'])
+    'mpDetail', 'mpZones', 'mpZoneAjout', 'mpZonesOk', 'mpMixAuto', 'mpPistesSep', 'mpRendre', 'mpRendus', 'mpNiveau', 'mpCible', 'mpMultibande', 'mpMonoGraves', 'mpDither'])
     assert.match(h, new RegExp(`id="${id}"`), id);
   assert.match(h, /<script src="\/studio-page\.js"><\/script>\n  <script src="\/studio-pistes\.js"><\/script>/, 'après la page : elle prend sa machinerie');
   // le même micro, la même horloge, le même calage que la prise ordinaire
@@ -448,4 +462,19 @@ test('la page Studio, le multipiste : ses parties, la machinerie partagée du mi
   const nus = (html.match(/\$\{(?!esc\()[^{}]*\.(titre|texte|nom|f|id|couleur|role|erreur|mp3)\}/g) || []).filter(x => !/\.id === /.test(x));
   assert.deepEqual(nus, [], 'tout texte venu du disque est échappé dans le rendu');
   assert.ok(!/innerHTML = [^;]*\$\{a\}/.test(js));
+});
+
+test('(13/11) le studio pro dans la page : par voix, le nettoyage étape par étape, les respirations, le type, le calage ; le master', () => {
+  const js = lire('public/studio-pistes.js'), h = lire('public/studio.html');
+  for (const k of ['souffle', 'ronflement', 'clics', 'ecretage', 'plosives', 'respirations', 'porte', 'nivellement', 'continu'])
+    assert.ok(js.includes(`['${k}', `), k);
+  for (const c of ["'pro.actif'", "'pro.type'", "'pro.respirations_db'", "'pro.calage'", "'pro.delai_jete'", "'comp_rapide.actif'", "'eq.coupe_haut_hz'", "'saturation'"])
+    assert.ok(js.includes(c), c);
+  assert.match(js, /\['auto', 'auto \(mesuré\)'\], \['oui', 'oui, forcé'\], \['non', 'non, coupé'\]/, 'trois modes par étape');
+  assert.match(js, /\(VOIX\.has\(t\.role\) \? proDetail\(t, champ\) : ''\)/, 'seulement pour les voix');
+  // les réglages imbriqués se fusionnent (un mode changé ne vide pas les autres) ; ce que le dernier rendu a dit, échappé
+  assert.match(js, /t\[k\] = v && typeof v === 'object' && !Array\.isArray\(v\) && t\[k\] && typeof t\[k\] === 'object' \? \{ \.\.\.t\[k\], \.\.\.v \} : v;/);
+  assert.match(js, /Dernier rendu : \$\{esc\(rp\.resume\)\}/);
+  assert.match(js, /poster\('\/api\/studio\/projet\/reglages', \{ id: s\.projet\.id, rev: s\.projet\.rev, cible: \$\('mpCible'\)\.value/);
+  assert.match(h, /<option value="club">Club, plus fort \(−9 LUFS\)<\/option>/);
 });
