@@ -3172,6 +3172,15 @@ function montrerSansRetour() {
   if (!b) return;
   const oui = !!(typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.micro_sans_retour);
   b.setAttribute('aria-pressed', oui ? 'true' : 'false');
+  // (13/11, papa : « le bouton pour couper le retour du live ne fonctionne pas ») 🔁 compare ton micro au son de l'intérieur : sans 🎧, il n'a
+  // rien à comparer et ne peut rien couper (🎧 était éteint depuis la veille). Le bouton le dit : 🔁⚠ tant que 🎧 est éteint.
+  const sansOreille = oui && !(typeof oreilleEntend !== 'undefined' && oreilleEntend);
+  b.textContent = sansOreille ? '🔁⚠' : '🔁';
+  if (b.dataset) b.dataset.oreille = sansOreille ? 'manque' : '';
+  if (sansOreille) {
+    b.title = 'Retour du live : il faut aussi 🎧 (qu’il entende ce que joue ton téléphone), sinon il n’a rien à comparer et ne peut rien couper. Touche 🎧.';
+    return;
+  }
   b.title = oui ? 'Retour du live coupé : ce que joue le téléphone ne revient plus par ton micro, il ne l’entend que de l’intérieur ; ta voix et celles des gens à côté de toi restent. Touche pour le rendre au micro.'
     : 'Couper le retour du live au micro : ce que joue le téléphone (le live, une vidéo) ne lui reviendra plus par ton micro, seulement de l’intérieur ; ta voix et celles des gens à côté de toi restent.';
 }
@@ -3181,8 +3190,12 @@ if ($('sansRetour') && window.HakimApp && window.HakimApp.telepathie) {
     e.stopPropagation();
     const oui = !(reglagesCorps && reglagesCorps.micro_sans_retour);
     reglagesCorps.micro_sans_retour = oui;
+    // (13/11) 🔁 a besoin de 🎧 : l'allumer l'allume aussi (Android redemande son accord si besoin)
+    const allumeOreille = oui && !(typeof oreilleEntend !== 'undefined' && oreilleEntend);
+    if (allumeOreille) { try { window.HakimApp.telepathie(true); } catch (_) {} }
     montrerSansRetour();
-    humeur(oui ? '🔁 retour du live coupé : il l’entend de l’intérieur' : '🔁 le retour du live revient au micro');
+    humeur(oui ? (allumeOreille ? '🔁 retour du live coupé, et 🎧 allumé : il l’entend de l’intérieur' : '🔁 retour du live coupé : il l’entend de l’intérieur')
+      : '🔁 le retour du live revient au micro');
     setTimeout(() => humeur(), 3000);
     try { await fetch('/api/corps/reglages', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ micro_sans_retour: oui }) }); } catch (_) {}
   });
