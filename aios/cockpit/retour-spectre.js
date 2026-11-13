@@ -161,4 +161,196 @@ function verdict(j, o = {}) {
   return { verdict: 'retour', raison: 'spectre' };
 }
 
-module.exports = { N, PAS, SR, MS_PAS, EXCES_X, VOIX_REL, VOIX_PART, VOIX_MS, PART_MAX, RESSEMBLANCE_MIN, fft, spectre, assembler, juger, verdict };
+/* ---- (13/11, Ahmed : « le bouton ne marche pas » ; Nour : mesuré, 🔁 allumé, 0 morceau écarté sur 54 : chacun gardé ENTIER dès que son
+   oreille des voix entendait papa dedans, et en live papa parle presque tout le temps) SOUSTRAIRE LE RETOUR au lieu d'écarter le morceau :
+   le chemin haut-parleur → micro (son retard, sa force bin par bin, la traîne de la pièce) est estimé sur le morceau même, comme le juge ;
+   le retour PRÉDIT est retiré du son du micro, bin par bin (32 ms, toutes les fréquences), et ce qui reste (papa, les gens à côté de lui)
+   est rendu en son, pour être transcrit. Deux étages :
+   - un MASQUE par bin : ce qui ne dépasse pas le retour prédit est retiré, ce qui le dépasse nettement (2 fois, 6 dB) est gardé tel quel,
+     entre les deux une pente (la soustraction de puissance, α) ;
+   - une PORTE par trame : une trame où rien ne dépasse le retour (pas une « trame de voix proche », la règle du juge) est éteinte, sauf
+     autour d'une voix proche (GARDE_MS avant et après : ses débuts et ses fins de mots, plus faibles) ; sans elle, le live atténué de
+     20 dB restait intelligible dans les blancs de papa (une transcription ne s'arrête pas au niveau).
+   Ce qui n'est PAS touché : un morceau où le retour n'est pas net (ressemblance, retard, couverture : le son entier, comme avant) ; les
+   trames que l'intérieur ne couvre pas (gardées telles quelles). La force du chemin, par bin : la médiane du rapport micro / intérieur sur
+   les trames où l'intérieur est fort, refaite sans les cases où une voix dépasse (papa ne la tire pas vers le haut), lissée sur 3 bins et
+   plafonnée à 3 fois sa valeur médiane de 300 Hz à 3 kHz (dans les graves que le petit haut-parleur ne rend pas, le rapport ne mesure que
+   papa et le souffle : sans plafond, ses graves partaient). ---- */
+const NB = N / 2 + 1;                                // 257 bins, de 0 à 8 kHz
+const BORD = N - PAS;                                // les bords : chaque échantillon couvert par N / PAS = 4 trames
+const ALPHA = 2;                                     // la soustraction de puissance : G = √(1 − α P² / |X|²)
+const GARDE_MS = 120;                                // autour d'une trame de voix proche, la porte reste ouverte
+const SOL = 0;                                       // ce que garde une trame fermée par la porte (0 : rien)
+const LIEN_MIN = 0.2;                                // un bin où le micro ne suit pas l'intérieur (corrélation des modules) : rien n'y est retiré
+const LAMBDA = 0.9;                                  // la traîne de la pièce : 0,9 par pas de 8 ms (− 3 dB en 50 ms)
+// le spectre complet d'un signal (ses bords ajoutés), trame par trame : re, im (J × NB), et le module ; la trame j commence à l'échantillon j·PAS − BORD
+function stft(x) {
+  const L = x.length + 2 * BORD, J = Math.max(0, Math.floor((L - N) / PAS) + 1);
+  const re = new Float32Array(J * NB), im = new Float32Array(J * NB), mod = new Float32Array(J * NB);
+  const fr = new Float64Array(N), fi = new Float64Array(N);
+  for (let j = 0; j < J; j++) {
+    const o = j * PAS - BORD;
+    for (let i = 0; i < N; i++) { const k = o + i; fr[i] = k >= 0 && k < x.length ? x[k] * FENETRE[i] : 0; fi[i] = 0; }
+    fft(fr, fi);
+    for (let k = 0; k < NB; k++) { re[j * NB + k] = fr[k]; im[j * NB + k] = fi[k]; mod[j * NB + k] = Math.hypot(fr[k], fi[k]); }
+  }
+  return { re, im, mod, J, n: x.length };
+}
+// le son rendu d'un spectre modifié par ses gains (J × NB) : la transformée inverse, fenêtrée, additionnée, divisée par la somme des fenêtres²
+function istft(S, G) {
+  const L = S.n + 2 * BORD, y = new Float64Array(L), w2 = new Float64Array(L);
+  const fr = new Float64Array(N), fi = new Float64Array(N);
+  for (let j = 0; j < S.J; j++) {
+    for (let k = 0; k < NB; k++) { const g = G ? G[j * NB + k] : 1; fr[k] = S.re[j * NB + k] * g; fi[k] = -S.im[j * NB + k] * g; }   // conjugué : l'inverse par l'aller
+    for (let k = 1; k < N / 2; k++) { fr[N - k] = fr[k]; fi[N - k] = -fi[k]; }
+    fft(fr, fi);
+    const o = j * PAS;
+    for (let i = 0; i < N; i++) { const w = FENETRE[i]; y[o + i] += (fr[i] / N) * w; w2[o + i] += w * w; }
+  }
+  const out = new Float32Array(S.n);
+  for (let i = 0; i < S.n; i++) { const q = w2[i + BORD]; out[i] = q > 1e-6 ? y[i + BORD] / q : 0; }
+  return out;
+}
+const mediane = (a) => { if (!a.length) return 0; const s = Float64Array.from(a).sort(); return s[s.length >> 1]; };
+
+/* LE MASQUE du retour d'un morceau, au retard d (ms). mic : { pcm, t0 } ; blocs : son intérieur. Rend { G (J × NB, porte comprise), S (le
+   spectre du micro), voixMs (trames de voix proche), ouvertMs (la porte ouverte), couvert } ou null (l'intérieur absent). o : réglages (banc). */
+function masque(mic, blocs, d, o = {}) {
+  const alpha = Number.isFinite(o.alpha) ? o.alpha : ALPHA, gardeMs = Number.isFinite(o.garde_ms) ? o.garde_ms : GARDE_MS;
+  const sol = Number.isFinite(o.sol) ? o.sol : SOL, porte = o.porte !== false, plafond = o.plafond !== false, raffine = o.raffine !== false, trainee = o.trainee !== false, lien = o.lien !== false;
+  const S = stft(mic.pcm);
+  if (S.J < 8) return null;
+  // l'intérieur aligné trame pour trame : la trame r = j + AVANT du son de l'intérieur commence d ms (+ AVANT pas) avant la trame j du micro ;
+  // AVANT : 300 ms d'histoire, pour la traîne de la pièce dès le début du morceau
+  const AVANT = 40;
+  const deRef = mic.t0 - BORD * 1000 / SR - d - AVANT * MS_PAS;
+  const ref = assembler(blocs, deRef, deRef + ((S.J + AVANT + 4) * PAS + N) * 1000 / SR);
+  if (ref.couvert < 0.05) return null;
+  const R = stft(ref.x);
+  const rDe = (j) => j + AVANT + BORD / PAS;          // la trame de R qui commence au même instant (moins d) que la trame j du micro
+  const vuR = (r) => { const i = r * PAS - BORD + (N >> 1); return i >= 0 && i < ref.vu.length && ref.vu[i] === 1; };
+  // deux parts du retour prédit, bin par bin : le DIRECT (le plus fort de l'intérieur à ±1 trame : le retard à 8 ms près) et la TRAÎNE de la
+  // pièce (l'intérieur passé, qui s'éteint de λ par trame, à partir de 2 trames plus tôt)
+  const T = new Float32Array(R.J * NB);
+  for (let r = 0; r < R.J; r++) for (let k = 0; k < NB; k++) T[r * NB + k] = (r ? LAMBDA * T[(r - 1) * NB + k] : 0) + (1 - LAMBDA) * R.mod[r * NB + k];
+  const D = new Float32Array(S.J * NB), Tr = new Float32Array(S.J * NB), couv = new Uint8Array(S.J);
+  for (let j = 0; j < S.J; j++) {
+    const r = rDe(j);
+    if (!vuR(r) || r + 1 >= R.J || r < 2) continue;
+    couv[j] = 1;
+    for (let k = 0; k < NB; k++) { D[j * NB + k] = Math.max(R.mod[(r - 1) * NB + k], R.mod[r * NB + k], R.mod[(r + 1) * NB + k]); Tr[j * NB + k] = T[(r - 2) * NB + k]; }
+  }
+  // la force de chaque part, bin par bin : les moindres carrés (X ≈ a·D + b·T, a et b positifs) sur les trames où l'intérieur est fort (ses 40 %
+  // les plus fortes), refaits sans les cases où une voix dépasse 2 fois le prédit (papa ne la tire pas vers le haut)
+  const A = new Float32Array(NB), Bt = new Float32Array(NB);
+  const ajuster = (cases) => {
+    let dd = 0, dt = 0, tt = 0, xd = 0, xt = 0;
+    for (const i of cases) { const x = S.mod[i], dv = D[i], tv = Tr[i]; dd += dv * dv; dt += dv * tv; tt += tv * tv; xd += x * dv; xt += x * tv; }
+    const det = dd * tt - dt * dt;
+    let a = det > 1e-12 ? (xd * tt - xt * dt) / det : 0, b = det > 1e-12 ? (xt * dd - xd * dt) / det : 0;
+    if (!(a >= 0) || !(b >= 0) || !trainee) { if (!trainee || !(b > 0)) { a = dd > 1e-12 ? Math.max(0, xd / dd) : 0; b = 0; } else { b = tt > 1e-12 ? Math.max(0, xt / tt) : 0; a = 0; } }
+    return [a, b];
+  };
+  for (let k = 0; k < NB; k++) {
+    const vals = []; for (let j = 0; j < S.J; j++) if (couv[j]) vals.push(D[j * NB + k]);
+    if (vals.length < 8) continue;
+    const seuil = Math.max(1e-4, Float64Array.from(vals).sort()[Math.floor(vals.length * 0.6)]);
+    let cases = []; for (let j = 0; j < S.J; j++) if (couv[j] && D[j * NB + k] >= seuil) cases.push(j * NB + k);
+    if (cases.length < 5) continue;
+    // (le LIEN) le micro suit-il l'intérieur dans ce bin ? la corrélation de leurs modules sur les trames couvertes ; sans lien (sous LIEN_MIN),
+    // rien n'y est retiré : là où le petit haut-parleur ne rend rien (les graves des voix du live), le micro n'entend que papa et la pièce,
+    // et un gain ajusté quand même (des modules toujours positifs ne s'annulent jamais) retirait ses graves
+    if (lien) {
+      let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+      for (let j = 0; j < S.J; j++) if (couv[j]) { const x = S.mod[j * NB + k], y = D[j * NB + k]; n++; sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y; }
+      const vx = sxx - sx * sx / n, vy = syy - sy * sy / n, c = vx > 1e-12 && vy > 1e-12 ? (sxy - sx * sy / n) / Math.sqrt(vx * vy) : 0;
+      if (c < LIEN_MIN) continue;
+    }
+    let [a, b] = ajuster(cases);
+    if (raffine) for (let it = 0; it < 2; it++) {
+      const sans = cases.filter(i => S.mod[i] <= EXCES_X * (a * D[i] + b * Tr[i]));
+      if (sans.length < 5) break;
+      [a, b] = ajuster(sans);
+    }
+    A[k] = a; Bt[k] = b;
+  }
+  const lisse = (H) => Float32Array.from(H, (_, k) => mediane([H[Math.max(0, k - 1)], H[k], H[Math.min(NB - 1, k + 1)]]));
+  const Al = lisse(A), Bl = lisse(Bt);
+  if (plafond) for (const H of [Al, Bl]) {
+    const bande = []; for (let k = Math.round(300 * N / SR); k <= Math.round(3000 * N / SR); k++) if (H[k] > 0) bande.push(H[k]);
+    const hb = mediane(bande);
+    if (hb > 0) for (let k = 0; k < NB; k++) H[k] = Math.min(H[k], 3 * hb);
+  }
+  const Hl = Al;
+  // le masque, et les trames de voix proche (la règle du juge, de 100 Hz à 4 kHz : ce qui dépasse 2 fois le prédit, relatif à la médiane des
+  // trames sonores du morceau et à la trame même)
+  const G = new Float32Array(S.J * NB), ex = new Float64Array(S.J), tot = new Float64Array(S.J);
+  for (let j = 0; j < S.J; j++) {
+    for (let k = 0; k < NB; k++) {
+      const i = j * NB + k, x = S.mod[i];
+      if (!couv[j]) { G[i] = 1; continue; }
+      const p = Al[k] * D[i] + Bl[k] * Tr[i];
+      G[i] = x > 1e-9 ? Math.sqrt(Math.max(0, 1 - alpha * p * p / (x * x))) : 0;
+      if (k >= K0 && k < K1) { tot[j] += x * x; if (x > EXCES_X * p) ex[j] += x * x - p * p; }
+    }
+  }
+  const ens = Array.from(tot).filter((_, j) => couv[j]).sort((a, b) => a - b);
+  const plancher = Math.max(1e-4, 4 * (ens[Math.floor(ens.length * 0.2)] || 0));
+  const medSon = mediane(Array.from(tot).filter((v, j) => couv[j] && v > plancher)) || 1e-9;
+  const vRel = Number.isFinite(o.voix_rel) ? o.voix_rel : VOIX_REL, vPart = Number.isFinite(o.voix_part) ? o.voix_part : VOIX_PART;
+  const voix = new Uint8Array(S.J); let nVoix = 0;
+  for (let j = 0; j < S.J; j++) if (couv[j] && tot[j] > plancher && ex[j] > vRel * medSon && ex[j] > vPart * tot[j]) { voix[j] = 1; nVoix++; }
+  // la porte : ouverte sur une trame de voix proche et GARDE_MS autour ; toujours ouverte là où l'intérieur ne couvre pas
+  const g = Math.round(gardeMs / MS_PAS), ouvert = new Uint8Array(S.J); let nOuvert = 0;
+  for (let j = 0; j < S.J; j++) {
+    if (!couv[j] || !porte) { ouvert[j] = 1; continue; }
+    for (let q = Math.max(0, j - g); q <= Math.min(S.J - 1, j + g); q++) if (voix[q]) { ouvert[j] = 1; break; }
+  }
+  const Gdoux = o.doux ? Float32Array.from(G) : null;   // le masque seul, sans la porte (le reste « doux » : dans le doute)
+  for (let j = 0; j < S.J; j++) {
+    if (ouvert[j]) { if (couv[j]) nOuvert++; continue; }
+    for (let k = 0; k < NB; k++) G[j * NB + k] *= sol;
+  }
+  const nCouv = couv.reduce((a, b) => a + b, 0);
+  return { G, Gdoux, S, H: Hl, voixMs: Math.round(nVoix * MS_PAS), ouvertMs: Math.round(nOuvert * MS_PAS), couvert: Math.round(100 * nCouv / S.J) / 100 };
+}
+// le même masque appliqué à un autre son de même longueur (au banc : la voix de papa seule, le retour seul)
+const appliquer = (x, G) => istft(stft(x), G);
+
+/* SOUSTRAIRE le retour d'un morceau du micro : le juge d'abord (retard, ressemblance, couverture) ; le retour net, son masque et le son qui
+   reste. Rend { applique, jugement, verdict, pcm (le reste), retireDb (ce qui est parti), voixMs, ouvertMs, couvert } ; applique: false
+   (et pas de son) quand le retour n'y est pas net : le son entier est alors transcrit, comme avant. */
+function soustraire(mic, blocs, prior = null, o = {}) {
+  const jg = juger(mic, blocs, prior, o);
+  const v = verdict(jg, o);
+  const rMin = Number.isFinite(o.ressemblance) ? o.ressemblance : RESSEMBLANCE_MIN;
+  if (!jg || jg.retardMs === null || jg.retardMs === undefined || !(jg.couvert >= 0.7) || !jg.net || !(jg.ressemblance >= rMin)) return { applique: false, jugement: jg, verdict: v };
+  const m = masque(mic, blocs, jg.retardMs, { ...o, doux: true });
+  if (!m) return { applique: false, jugement: jg, verdict: v };
+  const pcm = istft(m.S, m.G), pcmDoux = istft(m.S, m.Gdoux);
+  const retire = (y) => { let e0 = 0, e1 = 0; for (let i = 0; i < y.length; i++) { e0 += mic.pcm[i] * mic.pcm[i]; e1 += y[i] * y[i]; } return Math.round(10 * Math.log10((e0 + 1e-12) / (e1 + 1e-12)) * 10) / 10; };
+  return { applique: true, jugement: jg, verdict: v, pcm, pcmDoux, retireDb: retire(pcm), retireDouxDb: retire(pcmDoux),
+    voixMs: m.voixMs, ouvertMs: m.ouvertMs, couvert: m.couvert, ...(o.masque ? { G: m.G, Gdoux: m.Gdoux, H: m.H } : {}) };
+}
+
+/* LA DÉCISION pour un morceau soustrait (le cockpit, et le banc). x : le rendu de soustraire ; o.papaRecent (papa a parlé dans les 2 s).
+   - 'entier' : le retour n'y est pas net (rien n'a été soustrait) : le son entier, comme avant ;
+   - 'reste' : la porte a trouvé une voix proche : le son qui reste (masque et porte) est transcrit ;
+   - 'ecarte' : aucune voix proche, ni pour la porte ni pour le juge (pur retour, la règle du 11/11), et papa n'a pas parlé dans les 2 s :
+     écarté, sans transcription ;
+   - 'doux' : aucune voix proche pour la porte, mais un doute (papa vient de parler, ou le juge n'y voit pas un pur retour) : le masque
+     seul, sans la porte (la voix de papa qui dépasse le retour, même faible, y reste ; le live y est atténué). MESURÉ au banc (Whisper) :
+     le son entier ne protège pas papa (sous le live, l'oreille ne rend que 0 à 10 % de ses mots, elle transcrit le live), le reste en
+     rend 3 fois plus ; le son entier n'aurait fait que rendre le live. */
+function decider(x, o = {}) {
+  if (!x || !x.applique) return 'entier';
+  if (x.voixMs >= VOIX_MS) return 'reste';
+  return x.verdict && x.verdict.verdict === 'retour' && !o.papaRecent ? 'ecarte' : 'doux';
+}
+// une voix proche vue par la porte ET par le juge : un reste muet repasse alors par le son entier (dans le doute). MESURÉ au banc (live à 0,
+// − 6, − 12 dB, 93 morceaux de pur retour, 15 de papa par-dessus) : la porte seule voit une « voix » dans la moitié des purs retours (40 ms
+// et plus : ses erreurs de prédiction), et le repli rendait alors le live entier ; les deux ensemble : 19 % des purs retours, 87 % de papa
+const voixVue = (x) => !!(x && x.voixMs >= VOIX_MS && x.jugement && x.jugement.voixMs >= VOIX_MS);
+
+module.exports = { N, PAS, SR, MS_PAS, NB, EXCES_X, VOIX_REL, VOIX_PART, VOIX_MS, PART_MAX, RESSEMBLANCE_MIN, ALPHA, GARDE_MS, SOL,
+  fft, spectre, assembler, juger, verdict, stft, istft, masque, appliquer, soustraire, decider, voixVue };

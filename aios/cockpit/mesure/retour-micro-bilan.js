@@ -10,11 +10,13 @@ const jour = process.argv[4] || new Date().toISOString().slice(0, 10);
 const h = (x, d) => (x ? Date.parse(`${jour}T${x}:00`) : d);
 const DE = h(process.argv[2], 0), A = h(process.argv[3], Infinity);
 const L = fs.readFileSync(F, 'utf8').split('\n').map(l => { try { return JSON.parse(l); } catch (_) { return null; } })
-  .filter(o => o && /^retour_(ecarte|en_doute|garde)$/.test(o.e) && o.t >= DE && o.t <= A);
+  .filter(o => o && /^retour_(ecarte|en_doute|garde|soustrait)$/.test(o.e) && o.t >= DE && o.t <= A);
 const q = (xs, p) => { const s = xs.filter(Number.isFinite).sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(p * s.length))] : '-'; };
 const par = (e) => L.filter(o => o.e === e);
-console.log(`${L.length} morceaux du micro jugés : écartés ${par('retour_ecarte').length}, en doute ${par('retour_en_doute').length}, gardés ${par('retour_garde').length}`);
-for (const e of ['retour_ecarte', 'retour_en_doute', 'retour_garde']) {
+console.log(`${L.length} morceaux du micro jugés : écartés ${par('retour_ecarte').length}, soustraits ${par('retour_soustrait').length} (le live retiré, le reste transcrit), en doute ${par('retour_en_doute').length}, gardés ${par('retour_garde').length}`);
+const sous = par('retour_soustrait').map(o => Number(o.retire_db));
+if (sous.length) console.log(`  soustraits : ${q(sous, 0.5)} dB retirés en médiane (p10 ${q(sous, 0.1)}, p90 ${q(sous, 0.9)})`);
+for (const e of ['retour_ecarte', 'retour_soustrait', 'retour_en_doute', 'retour_garde']) {
   const r = {}; for (const o of par(e)) r[o.raison] = (r[o.raison] || 0) + 1;
   console.log(`  ${e} : ${JSON.stringify(r)}`);
 }
@@ -24,5 +26,7 @@ const garde = par('retour_garde').map(o => (Number(o.attente_ms) || 0) + (Number
 console.log(`  sur les morceaux gardés (ta voix) : médiane ${q(garde, 0.5)} ms, p90 ${q(garde, 0.9)} ms`);
 const vif = Math.max(0, ...L.map(o => Number(o.vif_ecartes) || 0));
 console.log(`mots vifs écartés (depuis le démarrage du cockpit) : ${vif}`);
+console.log('\nles morceaux soustraits (à relire : les mots de papa doivent y être, ceux du live non) :');
+for (const o of par('retour_soustrait')) console.log(`  ${new Date(o.t).toTimeString().slice(0, 8)}  ${String(o.duree_ms).padStart(5)} ms  −${o.retire_db} dB  voix=${o.voix_ms} ms  « ${o.texte || ''} »`);
 console.log('\nles morceaux écartés (à relire : aucun ne doit être papa) :');
 for (const o of par('retour_ecarte')) console.log(`  ${new Date(o.t).toTimeString().slice(0, 8)}  ${String(o.duree_ms).padStart(5)} ms  r=${o.ressemblance} part=${o.part} voix=${o.voix_ms} ms  « ${o.texte || ''} »`);

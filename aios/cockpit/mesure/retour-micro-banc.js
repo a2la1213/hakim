@@ -61,6 +61,13 @@ function simuler({ graine = 1, retardMs = 120, papaDb = 0, agcDb = 3, duree = 30
     mic[i] = (ret[i] * kr + papa[i] * kp) * agc + 0.001 * (alea() * 2 - 1);
   }
   mic.set(passeHaut(mic, hp === 'pessimiste' ? 200 : 250, 2));   // le micro du téléphone
+  // (13/11) ses deux parts, chacune passée par le même micro (le banc de la soustraction mesure ce que le masque laisse de chacune)
+  let composantes = null;
+  if (arguments[0] && arguments[0].composantes) {
+    const r2 = new Float32Array(N), p2 = new Float32Array(N);
+    for (let i = 0; i < N; i++) { const agc = Math.pow(10, agcDb * Math.sin(2 * Math.PI * i / SR / 6.3 + phi) / 20); r2[i] = ret[i] * kr * agc; p2[i] = papa[i] * kp * agc; }
+    composantes = { retour: passeHaut(r2, hp === 'pessimiste' ? 200 : 250, 2), papa: passeHaut(p2, hp === 'pessimiste' ? 200 : 250, 2) };
+  }
   // son intérieur : ses trames de 100 ms (RMS, graves, médiums : les filtres d'EcranService), l'heure de leur MILIEU, captées 30 ms après le
   // mélange (± 5 ms)
   const tel = []; let bas = 0, moyen = 0;
@@ -87,7 +94,7 @@ function simuler({ graine = 1, retardMs = 120, papaDb = 0, agcDb = 3, duree = 30
   // comme la page (voisees) : un morceau sans 5 fenêtres de voix n'est jamais envoyé
   const voisees = (m) => { let n = 0; for (let i = m.a; i + W <= m.b; i += W) { let s = 0; for (let k = i; k < i + W; k++) s += mic[k] * mic[k]; if (Math.sqrt(s / W) > m.seuil) n++; } return n; };
   morceaux.splice(0, morceaux.length, ...morceaux.filter(m => voisees(m) >= 5));
-  return { mic, live, papa, papaPhrases, tel, morceaux, kp };
+  return { mic, live, papa, papaPhrases, tel, morceaux, kp, composantes };
 }
 // un morceau : son WAV (PCM 16 bits, comme la page), son enveloppe par retour-micro.js
 function wavDe(x, a, b) {
@@ -173,4 +180,4 @@ if (require.main === module) {
     if (process.env.DETAIL) for (const [db, t] of Object.entries(g.total)) console.log(db, JSON.stringify(Object.entries(t.raisons).sort((a, b) => b[1] - a[1])));
   }
 }
-module.exports = { simuler, banc, grille, lireWav };
+module.exports = { simuler, banc, grille, lireWav, wavDe };

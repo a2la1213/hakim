@@ -179,10 +179,11 @@ test('le cockpit : l’instant d’un tour fini (rt0) sert au retour seul ; sans
 
 test('le cockpit : les routes le branchent (le jugement avant le fil et la réponse ; la référence ; le réglage éteint par défaut, lu à chaud)', () => {
   const rt = prendre(SRC, 'routeTranscrire');
-  const iJ = rt.indexOf('await retourJuger(audio, temps, r)'), iFil = rt.indexOf('integrerAuFil('), iRef = rt.indexOf("if (temps.source === 'telephone' && typeof retourNoterInterieur === 'function') retourNoterInterieur(audio, temps);");
+  // (13/11) jugé et soustrait AVANT la transcription (retourPreparer) : test-retour-soustrait.js
+  const iJ = rt.indexOf('await retourPreparer(audio, temps, f)'), iFil = rt.indexOf('integrerAuFil('), iRef = rt.indexOf("if (temps.source === 'telephone' && typeof retourNoterInterieur === 'function') retourNoterInterieur(audio, temps);");
   assert.ok(iJ > 0 && iFil > iJ, 'jugé avant d’entrer au fil');
   assert.ok(iRef > 0 && iRef < rt.indexOf('separerSon('), 'le son de l’intérieur gardé dès son arrivée');
-  assert.match(rt, /verdict === 'retour'\) \{ retourRetirerDuFil\(String\(temps\.cle \|\| temps\.rcle \|\| ''\)\); return repondre\(200, \{ texte: '', retour: true \}\); \}/);
+  assert.match(rt, /retourRetirerDuFil\(String\(temps\.cle \|\| temps\.rcle \|\| ''\)\);\n\s*return repondre\(200, \{ texte: '', retour: true \}\);/);
   const rv = prendre(SRC, 'routeVif');
   const iRv = rv.indexOf("if (source === 'telephone' && typeof retourNoterInterieur === 'function') retourNoterInterieur(audio, temps);");
   assert.ok(iRv > 0 && iRv < rv.indexOf('oreilleDemander('), 'la référence avant que l’oreille vive soit occupée');

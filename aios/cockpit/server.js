@@ -13054,6 +13054,18 @@ if (typeof setInterval === 'function') setInterval(() => { try { memoirePourChan
 const pistesSeparation = () => typeof troisPistes === 'function' && troisPistes();
 const ATTENTE_VOIX_SEPAREE_MS = 6000;
 const FILTRE_VOIX_MS = 2500;                                      // (07/11) le filtre de ton micro : la voix seule, attendue 2,5 s au plus
+/* (13/11, mesuré de 07:00 à 08:46, live et Mac chargé : le filtre de ton micro a réussi 24 fois sur 229 ; 62 fois, ta voix a attendu 2,5 à 5 s
+   pour rien, et 5 des 25 morceaux que la page a abandonnés l'ont été juste après une de ces attentes ; en live, Demucs sépare sans cesse le son
+   du téléphone) UN DISJONCTEUR : 4 échecs sur ses 5 derniers essais, et le filtre se repose 60 s (tes mots partent tout de suite, sur le son
+   entier, comme quand il échoue) ; il réessaie ensuite. */
+const FILTRE_VOIX = { derniers: [], coupeJusqua: 0 };
+const filtreVoixPermis = (maintenant = Date.now()) => maintenant >= FILTRE_VOIX.coupeJusqua;
+function filtreVoixNoter(ok, maintenant = Date.now()) {
+  FILTRE_VOIX.derniers.push(!!ok);
+  if (FILTRE_VOIX.derniers.length > 5) FILTRE_VOIX.derniers.shift();
+  if (FILTRE_VOIX.derniers.length >= 5 && FILTRE_VOIX.derniers.filter(x => !x).length >= 4) { FILTRE_VOIX.coupeJusqua = maintenant + 60000; FILTRE_VOIX.derniers = []; return true; }
+  return false;
+}
 /* (10/11, Ahmed, 09:50 : « pourquoi il y a toujours un délai entre chaque morceau ? ») mesuré de 09:15 à 10:10 : la conversion de sa voix au timbre
    de rap et la séparation (Demucs, le même GPU) se gênent : 0,77 s de calcul par seconde de voix quand une séparation tourne en même temps (69
    conversions), 0,33 s sans (101) ; avec le live et sa musique, une sur deux tombait dessus. Réglage voix_avant_oreilles (oui) : tant que sa vraie
@@ -13475,6 +13487,60 @@ async function retourJuger(audio, temps, r, o = {}) {
   }
   return res;
 }
+/* (13/11, Ahmed : « le bouton ne marche pas » ; mesuré par Nour : 🔁 allumé, 0 morceau écarté sur 54, chacun gardé ENTIER dès que son oreille
+   des voix entendait papa dedans ; en live, papa parle presque tout le temps) LE RETOUR SOUSTRAIT, AVANT la transcription : au lieu de garder
+   ou d'écarter le morceau entier, le retour prédit (le chemin haut-parleur → micro appris sur l'intérieur) est retiré du son du micro, et
+   c'est ce qui reste (papa, les gens à côté de lui) qui est transcrit (retour-spectre.js : soustraire, decider). Rend null (rien à faire :
+   bouton éteint, pas d'instant, pas de son de l'intérieur) ou { decision : 'reste' (fichier : le son qui reste, en WAV) | 'ecarte' (pur
+   retour) | 'entier' (dans le doute, le son entier, comme avant), ...ses mesures }. Son oreille des voix ne décide plus seule de garder
+   le morceau entier : elle prenait aussi les voix du live, revenues par le haut-parleur, pour papa (ce matin, 11 morceaux du live notés
+   « papa » à 0,13-0,31 de son empreinte). */
+async function retourPreparer(audio, temps, fichier) {
+  if (!(Number(temps.t0) > 0) && Number(temps.rt0) > 0) temps = { ...temps, t0: temps.rt0, maintenant: temps.rmaintenant, cle: temps.rcle };
+  if (!retourActif() || !(Number(temps.t0) > 0)) return null;
+  const tA = Date.now(), t0 = Number(temps.t0);
+  const pcm = retourPcm(audio);
+  if (!pcm) return null;
+  const fin = t0 + pcm.length / 16;
+  if (!RETOUR.blocs.some(b => b.t0 < fin && b.t0 + b.pcm.length / 16 > t0 - 2000)) return null;   // l'intérieur ne jouait pas : rien à retirer
+  let attente = 0;
+  if (retourCouvertJusqua() >= t0 - 500) while (retourCouvertJusqua() < fin - (RETOUR.prior || 0) && attente < RETOUR_ATTENTE_MS) { await new Promise(ok => setTimeout(ok, 100)); attente = Date.now() - tA; }
+  const tJ = Date.now();
+  const s = RetourSpectre.soustraire({ pcm, t0 }, RETOUR.blocs.filter(b => b.t0 < fin + 1000 && b.t0 + b.pcm.length / 16 > t0 - 2500), RETOUR.prior);
+  const msJuge = Date.now() - tJ, jg = s.jugement;
+  if (jg && jg.retardMs !== null && jg.net && jg.ressemblance >= 0.6) RETOUR.prior = RETOUR.prior === null ? jg.retardMs : Math.round(0.7 * RETOUR.prior + 0.3 * jg.retardMs);
+  const papaRecent = !!(RETOUR.papaFin && t0 - RETOUR.papaFin < RETOUR_PAPA_MS);
+  const decision = RetourSpectre.decider(s, { papaRecent });
+  if (s.applique && (s.voixMs >= RetourSpectre.VOIX_MS || (jg && jg.voixMs >= RetourSpectre.VOIX_MS))) RETOUR.papaFin = Math.max(RETOUR.papaFin, fin);
+  // 'doux' (dans le doute : papa vient de parler, ou le juge n'y voit pas un pur retour) : le masque seul, sans la porte ; transcrit comme le reste
+  const res = { decision: decision === 'doux' ? 'reste' : decision, doux: decision === 'doux' || undefined, applique: !!s.applique,
+    raison: !s.applique ? (s.verdict && s.verdict.raison) || 'pas_net' : decision === 'doux' ? (papaRecent ? 'papa_vient_de_parler' : 'pas_pur_retour') : decision,
+    voix_vue: RetourSpectre.voixVue(s), retard_ms: jg ? jg.retardMs : null, ressemblance: jg ? jg.ressemblance : null, couvert: jg ? jg.couvert : null,
+    voix_ms: s.applique ? s.voixMs : (jg ? jg.voixMs : null), retire_db: s.applique ? (decision === 'doux' ? s.retireDouxDb : s.retireDb) : null,
+    attente_ms: attente, ms: msJuge, duree_ms: Math.round(pcm.length / 16) };
+  if (res.decision === 'reste') {
+    res.fichier = String(fichier || path.join(os.tmpdir(), `jarvis-retour-${process.pid}-${Date.now()}.wav`)).replace(/\.wav$/, '') + '-reste.wav';
+    try { fs.writeFileSync(res.fichier, RetourWav(decision === 'doux' ? s.pcmDoux : s.pcm), { mode: 0o600 }); } catch (_) { return { ...res, decision: 'entier', raison: 'ecriture', fichier: undefined }; }
+  }
+  if (decision === 'ecarte') RETOUR.ecartes++; else if (decision === 'doux') RETOUR.doutes++;
+  return res;
+}
+// un son (Float32, 16 kHz) en WAV PCM 16 bits mono, comme la page
+function RetourWav(x) {
+  const n = x.length, b = Buffer.alloc(44 + 2 * n);
+  b.write('RIFF', 0); b.writeUInt32LE(36 + 2 * n, 4); b.write('WAVE', 8); b.write('fmt ', 12); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(RetourSpectre.SR, 24); b.writeUInt32LE(2 * RetourSpectre.SR, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(2 * n, 40);
+  for (let i = 0; i < n; i++) b.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(x[i] * 32767))), 44 + 2 * i);
+  return b;
+}
+// le journal d'un morceau soustrait (voix-diagnostic) : retour_soustrait (le reste transcrit, ses mots), retour_ecarte, retour_en_doute (le son entier)
+function retourNoterDecision(d, r, extra = {}) {
+  if (!d) return;
+  const e = d.decision === 'ecarte' ? 'retour_ecarte' : d.decision === 'reste' ? 'retour_soustrait' : d.applique || extra.repli ? 'retour_en_doute' : 'retour_garde';
+  const { fichier, ...m } = d;
+  retourJournal(e, { source: 'micro', ...m, ...extra, mots: String((r && r.texte) || '').split(/\s+/).filter(Boolean).length,
+    ...(d.decision !== 'ecarte' && r && r.texte ? { texte: String(r.texte).slice(0, 80) } : {}), vif_ecartes: RETOUR.vifEcartes });
+}
 // un morceau écarté : ses mots vifs (même clé) sortent du fil de papa
 function retourRetirerDuFil(cle) {
   if (!cle) return 0;
@@ -13516,17 +13582,40 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
   // (07/11, Ahmed : « un bouton pour le filtre de mon micro, pour qu'il n'entende que les voix ») micro_voix_seule (éteint) : ce que dit ton micro
   // est d'abord séparé par Demucs, et c'est la VOIX seule qui est transcrite (la musique, la télé, le bruit retirés) ; 2,5 s au plus pour
   // l'avoir, sinon le son entier, comme avant. Le prix : jusqu'à 2,5 s de plus avant tes mots.
-  let voixSeulePapa = null;
-  if (temps.source !== 'telephone' && ext === '.wav' && corpsReglages().micro_voix_seule === true) {
-    let attendue = null;
+  // (13/11) le filtre lancé, puis attendu APRÈS le retour soustrait (les deux attentes se recouvrent) ; un filtre qui échoue, ou qui lève une
+  // erreur, rend le son entier : jamais le morceau perdu
+  let voixSeulePapa = null, attendueFiltre = null, tFiltre = 0;
+  const filtreVoulu = temps.source !== 'telephone' && ext === '.wav' && corpsReglages().micro_voix_seule === true;
+  if (filtreVoulu && !filtreVoixPermis()) { try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'filtre_voix_micro', ok: false, ms: 0, repos: true }) + '\n', { mode: 0o600 }); } catch (_) {} }
+  else if (filtreVoulu) {
     try {
       const fs3 = f.replace(/\.wav$/, '-papa.wav'); fs.writeFileSync(fs3, audio);
-      attendue = new Promise((ok) => { let fini = false; const quand = (w) => { if (fini) { if (w) fs.unlink(w, () => {}); return; } fini = true; ok(w); };
-        setTimeout(() => quand(null), FILTRE_VOIX_MS); separerSon(fs3, 'papa', { voixSeule: true, quand }); });
-    } catch (_) {}
-    if (attendue) { const t = Date.now(); voixSeulePapa = await attendue; try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'filtre_voix_micro', ok: !!voixSeulePapa, ms: Date.now() - t }) + '\n', { mode: 0o600 }); } catch (_) {} }
+      tFiltre = Date.now();
+      attendueFiltre = new Promise((ok) => { let fini = false; const quand = (w) => { if (fini) { if (w) fs.unlink(w, () => {}); return; } fini = true; ok(w); };
+        setTimeout(() => quand(null), FILTRE_VOIX_MS); separerSon(fs3, 'papa', { voixSeule: true, quand }); }).catch(() => null);
+    } catch (_) { attendueFiltre = null; }
   }
-  const fichierPapa = voixSeulePapa || f;
+  // (13/11) 🔁 : le retour du live soustrait AVANT la transcription (retourPreparer) ; pur retour : écarté tout de suite
+  let retourS = null;
+  if (temps.source !== 'telephone' && ext === '.wav' && typeof retourActif === 'function' && retourActif()) retourS = await retourPreparer(audio, temps, f).catch(() => null);
+  if (retourS && retourS.decision === 'ecarte') {
+    if (attendueFiltre) attendueFiltre.then((w) => { if (w) fs.unlink(w, () => {}); });
+    fs.unlink(f, () => {});
+    retourNoterDecision(retourS, null);
+    retourRetirerDuFil(String(temps.cle || temps.rcle || ''));
+    return repondre(200, { texte: '', retour: true });
+  }
+  if (attendueFiltre) {
+    // le reste du retour soustrait passe avant le filtre (Demucs garde toutes les voix, celles du live aussi) : son résultat est laissé
+    if (retourS && retourS.decision === 'reste') attendueFiltre.then((w) => { if (w) fs.unlink(w, () => {}); });
+    else {
+      voixSeulePapa = await attendueFiltre;
+      const repos = filtreVoixNoter(!!voixSeulePapa);
+      try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'filtre_voix_micro', ok: !!voixSeulePapa, ms: Date.now() - tFiltre, ...(repos ? { repos_s: 60 } : {}) }) + '\n', { mode: 0o600 }); } catch (_) {}
+    }
+  }
+  const resteRetour = retourS && retourS.decision === 'reste' ? retourS.fichier : null;
+  const fichierPapa = resteRetour || voixSeulePapa || f;
   // (28/10, Ahmed via Hakim : accélérer l'oreille) la voix et l'oreille partagent un processus : une synthèse en cours fait attendre
   const tTranscription = Date.now(), syntheseEnCours = voixOccupee;
   let partie = false;
@@ -13588,7 +13677,10 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
       // ses voix (bloc) : papa sans étiquette, une autre voix « [voix 3] » dès sa première phrase, un doute « [papa ?] », sa propre voix à part ;
       // sans elle (réglage voix_empreinte_azure, ou en panne) : comme avant, seule SA voix cherchée par l'oreille vive
       const empreinte = !!(fAzure && corpsReglages().voix_empreinte_azure !== false);
-      const prepP = empreinte ? oreilleVoix.demander({ op: 'prevoir', fichier: fAzure }, { priorite: true, delai: 8000 }) : null;
+      // (13/11) le retour soustrait : ses mots viennent du son qui reste, ses voix du son entier (son oreille des voix connaît papa tel que le
+      // micro l'entend, sans les trous que laisse la soustraction)
+      const fVoix = resteRetour && fAzure === resteRetour ? f : fAzure;
+      const prepP = empreinte ? oreilleVoix.demander({ op: 'prevoir', fichier: fVoix }, { priorite: true, delai: 8000 }) : null;
       const quiP = !empreinte && SA_VOIX_RECONNUE() ? oreilleDemander({ op: 'qui', fichier: f }, false).catch(() => null) : Promise.resolve(null);
       const a = fAzure ? await oreilleAzure(fAzure, /^[a-z]{2}$/.test(langue || '') ? langue : null).catch(() => null) : null;
       const qui = await quiP;
@@ -13597,7 +13689,7 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
         const tb = Date.now();
         await prepP;
         // chaque morceau étiqueté pour lui-même (nouveau_tour) : une voix qui continue garde son étiquette, même si la page n'a pas gardé le morceau d'avant
-        bloc = await oreilleVoix.demander({ op: 'bloc', fichier: fAzure, texte: String(a.texte), musique, nouveau_tour: true }, { priorite: true, delai: 3000 });
+        bloc = await oreilleVoix.demander({ op: 'bloc', fichier: fVoix, texte: String(a.texte), musique, nouveau_tour: true }, { priorite: true, delai: 3000 });
         noterVoixDuBloc(bloc, Date.now() - tb, Date.now() - tTranscription);
       }
       if (fAzure && fAzure !== f && fAzure !== fichierPapa) fs.unlink(fAzure, () => {});
@@ -13629,6 +13721,29 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
   } finally { if (liberer) liberer(); transcriptionsEnAttente--; if (papaCompte && !--transcriptionsPapa) reprendreVoix(); pomperVoix(); }
   if (voixSeparee) fs.unlink(voixSeparee, () => {});
   if (voixSeulePapa) fs.unlink(voixSeulePapa, () => {});
+  if (resteRetour) {
+    fs.unlink(resteRetour, () => {});
+    // (13/11) le reste ne dit rien, alors qu'une voix proche y dépassait le retour (la porte ou le juge l'ont vue) : dans le doute, le son entier
+    // (Azure ; sinon l'oreille du Mac) ; sans voix vue, un reste muet n'était que le live : écarté
+    if (r && !r.erreur && !String(r.texte || '').trim() && !partie && !retourS.voix_vue) {
+      retourNoterDecision({ ...retourS, decision: 'ecarte', raison: 'reste_muet_sans_voix' }, null);
+      retourRetirerDuFil(String(temps.cle || temps.rcle || ''));
+      fs.unlink(f, () => {});
+      return repondre(200, { texte: '', retour: true });
+    }
+    if (r && !r.erreur && !String(r.texte || '').trim() && !partie) {
+      let r2 = null;
+      if (corpsReglages().stt_azure && apprentissageVoix <= 0) {
+        const a = await oreilleAzure(f, /^[a-z]{2}$/.test(langue || '') ? langue : null).catch(() => null);
+        if (a && String(a.texte || '').trim()) {
+          const bloc = corpsReglages().voix_empreinte_azure !== false ? await oreilleVoix.demander({ op: 'bloc', fichier: f, texte: String(a.texte), musique: false, nouveau_tour: true }, { priorite: true, delai: 3000 }).catch(() => null) : null;
+          r2 = bloc && !bloc.erreur && !bloc.occupee && bloc.voix ? voixDuBloc(a, bloc) : { texte: a.texte, langue: a.langue, azure: true };
+        }
+      } else r2 = await voixDemander({ op: 'transcrire', fichier: f, langue: /^[a-z]{2}$/.test(langue || '') ? langue : null, contexte: contexte || '', voix: modeVoix }, 180000).catch(() => null);
+      retourNoterDecision({ ...retourS, decision: 'entier', raison: 'reste_muet' }, r2, { repli: true });
+      if (r2 && !r2.erreur) { delete r2.id; r = r2; }
+    } else retourNoterDecision(retourS, r);
+  } else if (retourS && retourS.decision === 'entier') retourNoterDecision(retourS, r);
   if (temps.source === 'telephone' && pistesSeparation()) { try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'trois_pistes_voix', separee: !!voixSeparee, attente_ms: attenteVoix, ms: Date.now() - tTranscription, mots: r && Array.isArray(r.mots) ? r.mots.length : 0 }) + '\n', { mode: 0o600 }); } catch (_) {} }
   try {
     fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e: 'transcription_serveur', ms: Date.now() - tTranscription, synthese_en_cours: syntheseEnCours, octets: audio.length,
@@ -13636,12 +13751,8 @@ async function routeTranscrire(req, res, langue, contexte, temps = {}) {
   } catch (_) {}
   fs.unlink(f, () => {});
   delete r.id;
-  // (11/11, Ahmed) le retour du micro, avec son bouton : un morceau qui n'est QUE le live revenu par le haut-parleur est écarté (il reste entendu par
-  // son intérieur) ; ses mots vifs sortent du fil ; rien de papa n'en part
-  if (temps.source !== 'telephone' && ext === '.wav' && r && !r.erreur && String(r.texte || '').trim() && typeof retourActif === 'function' && retourActif()) {
-    const v = await retourJuger(audio, temps, r).catch(() => null);
-    if (v && v.verdict === 'retour') { retourRetirerDuFil(String(temps.cle || temps.rcle || '')); return repondre(200, { texte: '', retour: true }); }
-  }
+  // (11/11, Ahmed) le retour du micro, avec son bouton : (13/11) jugé et soustrait AVANT la transcription (retourPreparer, plus haut) : un pur
+  // retour est écarté là, sans transcription ; un morceau où papa parle par-dessus le live est transcrit sans le live
   // (07/11, Ahmed : « les mots qui ressemblent à l'arabe ou à l'anglais, écrits dans leur langue, automatiquement, sans qu'il s'en rende compte »)
   // (08/11, 16:15) ta darija passait en phonétique française ; (18:20, Ahmed : « il reçoit toujours la darija en phonétique ») plus réécrite : il la
   // reçoit en lettres arabes, comme Azure l'entend ; (09/11, 21:20, Ahmed : la darija en lettres arabes, plus de phonétique latine) tes mots arabes

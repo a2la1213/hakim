@@ -232,10 +232,11 @@ test('(mesuré sur « Rose ») une phrase qui change de voix se coupe à la voix
 // (07/11, Ahmed : « ajoute un bouton pour le filtre de mon micro, pour qu'il n'entende que les voix »)
 test('filtre de ton micro (micro_voix_seule, éteint par défaut) : ta voix seule transcrite (2,5 s au plus pour l’avoir)', () => {
   assert.match(SRC, /micro_voix_seule: r\.micro_voix_seule === true,/);
-  assert.match(SRC, /if \(temps\.source !== 'telephone' && ext === '\.wav' && corpsReglages\(\)\.micro_voix_seule === true\) \{/);
+  // (13/11) lancé avant le retour soustrait, attendu après ; son disjoncteur (test-retour-soustrait.js)
+  assert.match(SRC, /const filtreVoulu = temps\.source !== 'telephone' && ext === '\.wav' && corpsReglages\(\)\.micro_voix_seule === true;/);
   assert.match(SRC, /separerSon\(fs3, 'papa', \{ voixSeule: true, quand \}\)/);
   assert.match(SRC, /const FILTRE_VOIX_MS = 2500;/);
-  assert.match(SRC, /const fichierPapa = voixSeulePapa \|\| f;/, 'sans voix à temps : le son entier, comme avant');
+  assert.match(SRC, /const fichierPapa = resteRetour \|\| voixSeulePapa \|\| f;/, 'sans voix à temps : le son entier, comme avant (13/11 : le reste du retour soustrait passe avant)');
   assert.doesNotMatch(SRC, /micro_voix_seule === true\) return '';/, '(07/11) le filtre ne touche plus que tes mots : la pièce passe par son subconscient');
   assert.match(SRC, /\.\.\.\(seule \? \{ voix_wav: path\.join\(os\.tmpdir\(\), `jarvis-sep-\$\{process\.pid\}-\$\{id\}-voix\.wav`\) \} : \{\}\)/);
   assert.match(SRC, /if \(a\.src === 'papa'\) \{ const vw = o\.voix_wav && wavDeVoix\(o\.voix_wav\) \? o\.voix_wav : null;/, 'ta voix seule : jamais notée comme musique');
