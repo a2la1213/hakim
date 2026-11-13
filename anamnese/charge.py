@@ -37,6 +37,10 @@ def lire():
         memoire = analyser_memoire_libre(r.stdout)
     except (OSError, subprocess.SubprocessError):
         memoire = None
+    import plateforme
+    if not plateforme.MAC:                   # (13/11) Linux, WSL2 : /proc/meminfo (memory_pressure est au Mac)
+        from plateforme import corps
+        memoire = corps.memoire_libre_pourcent()
     return charge, memoire
 
 

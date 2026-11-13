@@ -252,7 +252,8 @@ async function accepterRelance(id, lieux, { estCalme, attendre, pas_ms = 2000, c
   }
   ecrireRelance(lieux, { ...r, etat: 'faite', faite_ts: Date.now() / 1000 });
   noter(lieux, { type: 'relance', etape: 'faite', id, quoi: r.quoi });
-  lancer('launchctl', ['kickstart', '-k', `gui/${uid}/${LABELS[r.quoi]}`]);
+  if (process.platform !== 'darwin') lancer(...require('./plateforme.js').relanceService(LABELS[r.quoi]));   // (13/11) systemd utilisateur
+  else lancer('launchctl', ['kickstart', '-k', `gui/${uid}/${LABELS[r.quoi]}`]);
   return { etape: 'faite' };
 }
 

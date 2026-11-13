@@ -24,6 +24,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import groupes  # noqa: E402
 import priorite  # noqa: E402
+sys.path.append(str(Path(__file__).resolve().parents[1]))   # (13/11) la couche de plateforme, en dernier
+import plateforme  # noqa: E402
 
 DOSSIER = Path.home() / "AIOS" / "jarvis" / "cwd" / "calculs"
 VENV_PYTHON = Path(__file__).resolve().parent / ".venv" / "bin" / "python"
@@ -92,10 +94,20 @@ def executer(code, delai_s=DELAI_S, dossier=None, python=None):
     # Groupe de processus à lui (tué en entier au dépassement), et une garde qui surveille la mémoire
     # et la taille du dossier : macOS n'applique pas de plafond de mémoire par rlimit.
     # (2026-10-23) en priorité basse : sa voix et Whisper passent devant (priorite.py)
-    proc = subprocess.Popen(priorite.basse(["/usr/bin/sandbox-exec", "-p", regles, str(python.absolute()), "-I", "-B",
-                             str(travail / "calcul.py")]), cwd=str(travail), env=env, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, text=True, preexec_fn=limites, stdin=subprocess.DEVNULL,
-                            start_new_session=True)
+    if plateforme.MAC:
+        proc = subprocess.Popen(priorite.basse(["/usr/bin/sandbox-exec", "-p", regles, str(python.absolute()), "-I", "-B",
+                                 str(travail / "calcul.py")]), cwd=str(travail), env=env, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, preexec_fn=limites, stdin=subprocess.DEVNULL,
+                                start_new_session=True)
+    else:                                   # (13/11) Linux, WSL2 : bubblewrap, ni shell ni fork (plateforme/bac_a_sable.py)
+        from plateforme import bac_a_sable
+        args, fd = bac_a_sable.calcul(python.absolute(), travail / "calcul.py", travail, [venv, base_python])
+        try:
+            proc = subprocess.Popen(priorite.basse(args), cwd=str(travail), env=env, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True, preexec_fn=limites, stdin=subprocess.DEVNULL,
+                                    start_new_session=True, pass_fds=(fd,))
+        finally:
+            os.close(fd)
     groupes.ajouter(proc.pid)            # tué avec le serveur s'il meurt (Stop) : jamais sans garde
     raison = []
 
@@ -104,6 +116,9 @@ def executer(code, delai_s=DELAI_S, dossier=None, python=None):
             try:
                 rss_ko = int(subprocess.run(["/bin/ps", "-o", "rss=", "-p", str(proc.pid)], capture_output=True,
                                             text=True, timeout=5).stdout.strip() or 0)
+                if not plateforme.MAC:        # (13/11) sous bwrap, Python est un petit-fils : toute sa session compte
+                    rss_ko = sum(int(x) for x in subprocess.run(["/bin/ps", "-o", "rss=", "-s", str(proc.pid)], capture_output=True,
+                                                                text=True, timeout=5).stdout.split() if x.isdigit())
             except (ValueError, subprocess.SubprocessError, OSError):
                 rss_ko = 0
             taille = sum(f.stat().st_size for f in travail.rglob("*") if f.is_file())
@@ -119,7 +134,10 @@ def executer(code, delai_s=DELAI_S, dossier=None, python=None):
         sortie, erreurs = proc.communicate()
     finally:
         groupes.retirer(proc.pid)
-    code_retour = f"arrêté ({raison[0]})" if raison else proc.returncode
+    rc = proc.returncode
+    if not plateforme.MAC and rc is not None and 128 < rc <= 192:   # (13/11) bwrap rend 128 + n pour un Python tué par le signal n
+        rc = 128 - rc
+    code_retour = f"arrêté ({raison[0]})" if raison else rc
     duree = time.time() - t0
     produits = sorted(str(f) for f in travail.iterdir() if f.is_file() and f.name not in ("calcul.py", ".profil.sb"))
     morceaux = [f"Calcul exécuté en {duree:.1f} s (code de retour : {code_retour})."]

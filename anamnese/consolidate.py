@@ -20,7 +20,11 @@ import datetime
 import time
 from pathlib import Path
 
+import plateforme
+
 HOME = "/Users/admin"
+if not plateforme.MAC:                   # (13/11) Linux, WSL2 : le vrai dossier personnel (claude dans ~/.local/bin)
+    HOME = str(Path.home())
 ROOT = Path(HOME) / "Desktop" / "anamnese"
 LOG = ROOT / "data" / "consolidate.log"
 try:  # config.DB_PATH si dispo (source de vérité), repli codé en dur (runner autonome launchd)
@@ -44,6 +48,8 @@ TOOLS = ("mcp__anamnese__memory_recent,mcp__anamnese__memory_recall,mcp__anamnes
 ENV = {**os.environ, "HOME": HOME, "ANAMNESE_CONSOLIDATION": "1",
        "PATH": "/Users/admin/.npm-global/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:"
                + os.environ.get("PATH", "")}
+if not plateforme.MAC:
+    ENV["PATH"] = f"{HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:" + os.environ.get("PATH", "")
 
 
 def log(msg):
@@ -179,6 +185,9 @@ MODELE = os.environ.get("ANAMNESE_CONSOLIDATE_MODEL", "sonnet")
 MODELE_SECOURS = os.environ.get("ANAMNESE_CONSOLIDATE_FALLBACK_MODEL", "claude-opus-5-5")
 SERVICE_CLE = "anamnese-anthropic-api"  # security add-generic-password -s anamnese-anthropic-api -a "$USER" -w
 APIKEY_HELPER = f"/usr/bin/security find-generic-password -s {SERVICE_CLE} -w"
+if not plateforme.MAC:                  # (13/11) Linux, WSL2 : la clé dans son fichier 600 (plateforme/cles.py)
+    from plateforme import cles as _cles
+    APIKEY_HELPER = _cles.commande_lecture(SERVICE_CLE)
 # (09/11, Ahmed le 08/11 21:11 : « passe la 2e clé API en priorité et la 1re en backup ») le même ordre que le cockpit
 # (cockpit 2f3bcfb) : la clé collée dans Parler (~/.config/jarvis/cle-api-anthropic, la 2e) d'abord, le trousseau (la 1re,
 # au crédit vide le 18/10) seulement sans elle ; l'espace de travail (anthropic-workspace-id) ne part qu'avec la clé de la
@@ -333,6 +342,9 @@ def secours_disponible():
         return False
     if cle_de_page():
         return True
+    if not plateforme.MAC:
+        from plateforme import cles
+        return cles.present(SERVICE_CLE)
     try:
         r = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", SERVICE_CLE],
                            capture_output=True, text=True, timeout=10)

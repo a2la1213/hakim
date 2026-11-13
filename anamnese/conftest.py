@@ -6,6 +6,11 @@ import sys
 
 import pytest
 
+# (13/11) le profil de modules de la machine (un PC sans GPU éteint studio, chant, images : plateforme/profils.json) ne change pas
+# ce que les tests attendent du code : ils voient le profil « complet », sauf s'ils en choisissent un
+import os
+os.environ.setdefault("JARVIS_PROFIL", "complet")
+
 # Chemin de la vraie DB de prod : les tests n'ont PAS le droit d'y toucher.
 _REAL_DB = pathlib.Path(__file__).resolve().parent / "data" / "memory.db"
 

@@ -372,8 +372,12 @@ def _texte_document(f):
     if ext in EXT_TEXTE:
         brut = f.read_bytes()[:400_000].decode("utf-8", errors="replace")
     elif ext in EXT_TEXTUTIL:
-        r = subprocess.run(["textutil", "-convert", "txt", "-stdout", str(f)], capture_output=True, timeout=120)
-        brut = r.stdout.decode("utf-8", errors="replace") if r.returncode == 0 else ""
+        import shutil
+        # (13/11) textutil est au Mac ; ailleurs pandoc (s'il est là), sinon rien
+        args = (["textutil", "-convert", "txt", "-stdout", str(f)] if sys.platform == "darwin" else
+                ["pandoc", "-t", "plain", "--wrap=none", str(f)] if shutil.which("pandoc") else None)
+        r = subprocess.run(args, capture_output=True, timeout=120) if args else None
+        brut = r.stdout.decode("utf-8", errors="replace") if r is not None and r.returncode == 0 else ""
     elif ext == ".pdf" and Path(PDFTOTEXT).exists():
         r = subprocess.run([PDFTOTEXT, "-l", "30", "-enc", "UTF-8", str(f), "-"], capture_output=True, timeout=120)
         brut = r.stdout.decode("utf-8", errors="replace") if r.returncode == 0 else ""

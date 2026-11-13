@@ -53,6 +53,11 @@ def expurger(texte):
 
 
 def _cle(service):
+    import sys
+    if sys.platform != "darwin":          # (13/11) Linux, WSL2 : plateforme/cles.py
+        sys.path.append(str(Path(__file__).resolve().parents[1]))
+        from plateforme import cles
+        return cles.lire(service)
     try:
         r = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", service, "-w"], capture_output=True,
                            text=True, timeout=10)

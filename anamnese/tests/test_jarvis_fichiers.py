@@ -89,7 +89,13 @@ def test_chercher_par_nom_sans_secrets(racine):
 def test_word_par_textutil(racine, tmp_path):
     txt = racine / "lettre.txt"
     txt.write_text("Bonjour Ahmed, voici le devis.", encoding="utf-8")
-    _outil(["textutil", "-convert", "docx", str(txt)])
+    import shutil
+    if shutil.which("textutil"):
+        _outil(["textutil", "-convert", "docx", str(txt)])
+    elif shutil.which("pandoc"):                    # (13/11) Linux : pandoc fabrique le .docx, et le lit (fichiers._decoder_linux)
+        subprocess.run(["pandoc", str(txt), "-o", str(racine / "lettre.docx")], check=True, capture_output=True)
+    else:
+        pytest.skip("ni textutil (Mac) ni pandoc pour fabriquer un .docx")
     r = _prep(racine / "lettre.docx", racine, tmp_path)
     assert "voici le devis" in r["texte"] and r["lire"] == []
 
@@ -108,7 +114,14 @@ def test_powerpoint_et_excel_par_leur_xml(racine, tmp_path):
 def test_heic_converti_en_jpeg(racine, tmp_path):
     png = racine / "a.png"
     subprocess.run([FFMPEG, "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=64x64", "-frames:v", "1", str(png)], check=True)
-    _outil(["sips", "-s", "format", "heic", str(png), "--out", str(racine / "photo.heic")])
+    import shutil
+    if shutil.which("sips"):
+        _outil(["sips", "-s", "format", "heic", str(png), "--out", str(racine / "photo.heic")])
+    elif shutil.which("heif-enc"):                  # (13/11) Linux : libheif-examples fabrique la photo HEIC
+        if subprocess.run(["heif-enc", "-q", "50", "-o", str(racine / "photo.heic"), str(png)], capture_output=True).returncode:
+            pytest.skip("heif-enc sans encodeur HEVC (libheif-plugin-x265)")
+    else:
+        pytest.skip("ni sips (Mac) ni heif-enc (libheif-examples) pour fabriquer une photo HEIC")
     r = _prep(racine / "photo.heic", racine, tmp_path)
     assert len(r["lire"]) == 1 and r["lire"][0].endswith(".jpg") and Path(r["lire"][0]).stat().st_size > 0
 
@@ -702,8 +715,21 @@ def test_une_cle_privee_ne_se_lit_pas_meme_sans_nom_de_secret(tmp_path):
     assert fichiers.verifier(racine / "courses.txt", racines=[tmp_path], accueil=tmp_path / "accueil")
 
 
-def test_son_terminal_ne_lit_ni_n_ecrit_une_cle_privee():
+def test_son_terminal_ne_lit_ni_n_ecrit_une_cle_privee(tmp_path, monkeypatch):
+    import sys
     import terminal
+    if sys.platform != "darwin":         # (13/11) bubblewrap : la clé est recouverte (vide, en lecture seule) APRÈS le téléphone
+        tel = tmp_path / "fichiers" / "telephone"
+        tel.mkdir(parents=True)
+        (tel / "GitHubKey").write_text("x")
+        (tel / "signature.keystore").write_text("x")
+        monkeypatch.setattr(terminal, "FICHIERS", tmp_path / "fichiers")
+        monkeypatch.setattr(terminal, "TELEPHONE", tel)
+        args, _env = terminal.preparer("true", tmp_path / "atelier", 9)
+        for cle in (tel / "GitHubKey", tel / "signature.keystore"):
+            i = args.index(str(cle.resolve()))
+            assert args[i - 2:i] == ["--ro-bind", "/dev/null"] and i > args.index(str(tel.resolve())), cle
+        return
     args, _env = terminal.preparer("true", terminal.ATELIER, 9)
     profil = " ".join(str(a) for a in args)
     assert "[Gg]it[Hh]ub[Kk]ey" in profil and "deny file-read* file-write*" in profil

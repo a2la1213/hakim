@@ -71,6 +71,7 @@ function remiseDuForfait(texte, maintenant = Date.now()) {
 
 // ce que dit le Mac de sa mémoire : le pourcentage libre selon le noyau, et le swap utilisé
 function lirePressionMac(cb) {
+  if (process.platform !== 'darwin') return require('./plateforme.js').pressionMemoire(cb);   // (13/11) Linux : /proc/meminfo
   execFile('/usr/sbin/sysctl', ['-n', 'kern.memorystatus_level', 'vm.swapusage'], { timeout: 3000 }, (e, so) => {
     if (e) return cb(null);
     const [niv, swap] = String(so || '').split('\n');

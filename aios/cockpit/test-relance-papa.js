@@ -21,7 +21,8 @@ test('son geste : le texte de l’empreinte, et une relance créée à son nom, 
     pas_ms: 1, calme_ms: 0, max_ms: 1000, uid: 502, lancer: (c, a) => { lance = [c, ...a]; } });
   const r = await p;
   assert.equal(r.etape, 'faite');
-  assert.deepEqual(lance, ['launchctl', 'kickstart', '-k', 'gui/502/com.aios.cockpit']);
+  assert.deepEqual(lance, process.platform === 'darwin' ? ['launchctl', 'kickstart', '-k', 'gui/502/com.aios.cockpit']
+    : ['systemctl', '--user', 'restart', 'naissance-cockpit.service']);   // (13/11) Linux, WSL2 : systemd utilisateur
   assert.ok(attente > 3, 'il a attendu le calme');
 });
 

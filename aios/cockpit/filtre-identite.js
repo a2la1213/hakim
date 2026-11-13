@@ -30,14 +30,25 @@ function dictionnaire(d = {}) {
   const paires = (Array.isArray(d.paires) ? d.paires : []).filter(p => Array.isArray(p) && p[0] && p[1] && p[0] !== p[1])
     .map(([v, a]) => [String(v), String(a)]);
   const valeurs = d.valeurs && typeof d.valeurs === 'object' ? { ...d.valeurs } : {};
-  return { paires, valeurs, change: false };
+  // (13/11, une IA née ailleurs choisit son nom : « Hakim » ne doit lui être imposé nulle part) des RENOMMAGES à sens unique : remplacés à
+  // l'aller comme un alias, jamais remis au retour (elle ne voit, ne dit et ne garde que son nom) ; absents chez Hakim
+  const renommer = (Array.isArray(d.renommer) ? d.renommer : []).filter(p => Array.isArray(p) && p[0] && p[1] && p[0] !== p[1])
+    .map(([v, a]) => [String(v), String(a)]);
+  // (13/11, arbitrage : le relais ne réécrit QUE ce qui la désigne elle-même) les mentions de son grand frère (« mon grand frère Hakim »,
+  // « Hakim (ton grand frère) »…) ne sont jamais réécrites : leurs motifs (naissance/cerveau/grand-frere-exceptions.json, recopiés par
+  // naissance/nommer.py) sont mis de côté avant tout remplacement, puis rendus tels quels
+  const exceptions = [];
+  for (const e of (Array.isArray(d.exceptions) ? d.exceptions : [])) {
+    try { exceptions.push(new RegExp(String(e.motif), 'g' + String(e.drapeaux || '').replace(/[^imsu]/g, ''))); } catch (_) {}
+  }
+  return { paires, valeurs, renommer, exceptions, exceptionsBrutes: Array.isArray(d.exceptions) ? d.exceptions : [], change: false };
 }
 
 // les vrais noms, des plus longs aux plus courts (« Hakimou » avant « Hakim »), en mot entier, sans tenir compte de la casse
 // (09/11) compilés une fois par dictionnaire, plus à chaque texte (une demande du cerveau en a des centaines)
 function versAlias(D) {
   if (D._versAlias) return D._versAlias;
-  const l = [...D.paires].sort((a, b) => b[0].length - a[0].length);
+  const l = [...D.paires, ...(D.renommer || [])].sort((a, b) => b[0].length - a[0].length);
   return (D._versAlias = l.map(([v, a]) => [new RegExp(`(?<![\\p{L}\\p{N}_])${echapper(v)}(?![\\p{L}\\p{N}_])`, 'giu'), a, v]));
 }
 
@@ -67,6 +78,10 @@ function masquerTexte(t, D) {
 }
 function masquerNeuf(t, D) {
   let s = t;
+  const gardes = [];
+  if (D.exceptions && D.exceptions.length) {                 // son grand frère : mis de côté (des caractères privés), rendu à la fin
+    for (const re of D.exceptions) s = s.replace(re, (m) => { gardes.push(m); return `\uE000${String.fromCharCode(0xE100 + gardes.length - 1)}\uE001`; });
+  }
   for (const [nom, re, alias] of MOTIFS) {
     s = s.replace(re, (m) => {
       const cle = `${nom}|${m}`;
@@ -75,6 +90,7 @@ function masquerNeuf(t, D) {
     });
   }
   for (const [re, a] of versAlias(D)) s = s.replace(re, (m) => casse(m, a));
+  if (gardes.length) s = s.replace(/\uE000([\uE100-\uF8FF])\uE001/g, (m, c) => gardes[c.charCodeAt(0) - 0xE100] ?? m);
   return s;
 }
 
@@ -234,7 +250,7 @@ function garderDictionnaire(fichier, D) {
   if (!D.change) return;
   D.change = false;
   try {
-    fs.writeFileSync(`${fichier}.tmp`, JSON.stringify({ paires: D.paires, valeurs: D.valeurs }, null, 1), { mode: 0o600 }); fs.renameSync(`${fichier}.tmp`, fichier);
+    fs.writeFileSync(`${fichier}.tmp`, JSON.stringify({ paires: D.paires, valeurs: D.valeurs, ...(D.renommer && D.renommer.length ? { renommer: D.renommer } : {}), ...(D.exceptionsBrutes && D.exceptionsBrutes.length ? { exceptions: D.exceptionsBrutes } : {}) }, null, 1), { mode: 0o600 }); fs.renameSync(`${fichier}.tmp`, fichier);
     const deja = dictionnairesLus.get(fichier);
     if (deja && deja.D === D) deja.cle = signature(fichier);   // notre propre écriture : le même dictionnaire, ses mémoires restent
   } catch (_) {}

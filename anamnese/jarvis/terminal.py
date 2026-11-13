@@ -28,6 +28,8 @@ ICI = Path(__file__).resolve().parent
 sys.path.insert(0, str(ICI))
 import groupes  # noqa: E402
 import priorite  # noqa: E402
+sys.path.append(str(ICI.parent))         # (13/11) la racine d'Anamnèse, en dernier : la couche de plateforme
+import plateforme  # noqa: E402
 CWD = Path.home() / "AIOS" / "jarvis" / "cwd"
 ATELIER = CWD / "atelier"
 FICHIERS = CWD / "fichiers"
@@ -243,6 +245,8 @@ def preparer(commande, atelier, port, lire_aussi=(), telephone=None):
     """(arguments, environnement) pour lancer `commande` (zsh) sous le bac à sable de l'atelier, avec la
     passerelle réseau sur `port`. Partagé par l'exécution directe et les tâches de fond (taches.py)."""
     (atelier / ".tmp").mkdir(parents=True, exist_ok=True)
+    if not plateforme.MAC:                # (13/11) Linux, WSL2 : le même terminal sous bubblewrap
+        return _preparer_linux(commande, atelier, port, lire_aussi=lire_aussi, telephone=telephone)
     # Le profil passe EN LIGNE (-p), jamais par un fichier : relecture Opus du 2026-10-20, il était écrit dans
     # atelier/.tmp (que Hakim écrit) sous un nom prévisible — un lien symbolique posé là faisait écraser un fichier
     # hors de l'atelier par le serveur, et un tube nommé aurait pu servir un profil permissif.
@@ -274,6 +278,36 @@ def preparer(commande, atelier, port, lire_aussi=(), telephone=None):
     }
     # (2026-10-23) en priorité basse : sa voix et Whisper passent devant (priorite.py)
     return priorite.basse(["/usr/bin/sandbox-exec", "-p", regles, "/bin/zsh", "-f", "-c", commande]), env
+
+
+def _preparer_linux(commande, atelier, port, lire_aussi=(), telephone=None):
+    """(13/11) Linux et WSL2 : le profil du Mac traduit pour bubblewrap (plateforme/bac_a_sable.py). Lecture : le système,
+    ../fichiers, ses outils (venv, Python d'uv, ~/.local/bin), les dossiers lire_aussi, la fiche de la famille ; écriture :
+    l'atelier et les fichiers du téléphone seulement ; réseau : la passerelle gardée seulement (port 9 : aucun)."""
+    from plateforme import bac_a_sable
+    tel = TELEPHONE if telephone is None else telephone
+    lectures = ([FICHIERS.resolve()] if FICHIERS.exists() else []) + [Path(x).resolve() for x in lire_aussi] + _chemins_outils()
+    ecritures = [atelier] + ([tel.resolve()] if tel and tel.exists() else [])
+    python = VENV / "bin" / "python"
+    args = bac_a_sable.terminal(commande, atelier, port, lectures, ecritures, [CWD / "famille.md"],
+                                python if python.exists() else "/usr/bin/python3", telephone=tel.resolve() if tel and tel.exists() else None,
+                                masquer_dans=[FICHIERS.resolve()] if FICHIERS.exists() else [])
+    mandataire = f"http://127.0.0.1:{port}"
+    env = {
+        "HOME": str(atelier), "TMPDIR": str(atelier / ".tmp"), "LANG": "C.UTF-8", "TERM": "dumb",
+        "TMPPREFIX": str(atelier / ".tmp" / "zsh"),
+        "PATH": ":".join([str(atelier / ".venv" / "bin")] + [str(Path(x) / ".venv" / "bin") for x in lire_aussi]
+                         + [str(VENV / "bin"), "/usr/local/bin", str(Path.home() / ".local" / "bin"), "/usr/bin", "/bin",
+                            "/usr/sbin", "/sbin"]),
+        "HTTP_PROXY": mandataire, "HTTPS_PROXY": mandataire, "ALL_PROXY": mandataire,
+        "http_proxy": mandataire, "https_proxy": mandataire, "all_proxy": mandataire, "NO_PROXY": "", "no_proxy": "",
+        "PIP_CACHE_DIR": str(atelier / ".cache" / "pip"), "UV_CACHE_DIR": str(atelier / ".cache" / "uv"),
+        "HF_HOME": str(atelier / ".cache" / "huggingface"), "MPLBACKEND": "Agg", "PYTHONUNBUFFERED": "1",
+        "GIT_TERMINAL_PROMPT": "0", "TECTONIC_CACHE_DIR": str(atelier / ".cache" / "tectonic"),
+        "GOCACHE": str(atelier / ".cache" / "go-build"), "GOPATH": str(atelier / "go"),
+        "COMPOSER_HOME": str(atelier / ".cache" / "composer"),
+    }
+    return priorite.basse(args), env
 
 
 def surveiller(proc, t0, delai_s, atelier, raison):

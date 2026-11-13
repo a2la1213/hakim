@@ -1,0 +1,71 @@
+{
+  "_note": "Les profils de modules (13/11). « complet » : tout ce que fait Hakim sur le Mac (rien ne change). « pc-sans-gpu » : un PC Windows (WSL2) sans carte graphique pour l'IA. Le profil actif : ~/AIOS/jarvis/profil-modules.json, écrit par l'installateur (naissance/installer.sh) ; sans lui, « complet ».",
+  "profils": {
+    "complet": {
+      "description": "Hakim sur le Mac : studio, chant, voix et oreilles MLX, Gemma complet.",
+      "modules": {
+        "studio": true,
+        "chant": true,
+        "image": true,
+        "atelier": true,
+        "separation": true,
+        "empreinte": true,
+        "oreille_vive": true,
+        "cerveau_local": true,
+        "voix": "mlx",
+        "ecoute": "mlx",
+        "gemma": "complet",
+        "atelier_video": true
+      }
+    },
+    "pc-sans-gpu": {
+      "description": "Un PC sans GPU pour l'IA (WSL2) : pas de studio ni de chant ni d'images, voix et écoute par Azure (secours : faster-whisper sur le processeur), Gemma petit ou éteint, l'atelier gardé.",
+      "modules": {
+        "studio": false,
+        "chant": false,
+        "image": false,
+        "atelier": true,
+        "separation": false,
+        "empreinte": false,
+        "oreille_vive": false,
+        "cerveau_local": false,
+        "voix": "azure",
+        "ecoute": "azure",
+        "gemma": "petit",
+        "atelier_video": true
+      },
+      "gemma_petit": "gemma3:1b",
+      "reglages": {
+        "voix_hakim": "azure",
+        "voix_azure": true,
+        "stt_azure": true,
+        "paroles_azure": true,
+        "voix_empreinte_azure": false,
+        "voix_avant_oreilles": false,
+        "cascade": false,
+        "trois_pistes": false,
+        "chanter_musique": false,
+        "sa_voix_reconnue": false
+      }
+    }
+  },
+  "outils_par_module": {
+    "studio": [
+      "studio_mixer",
+      "studio_instru",
+      "studio_avis",
+      "studio_projet",
+      "studio_piste",
+      "studio_zones",
+      "studio_poser_voix",
+      "studio_rendre"
+    ],
+    "chant": [
+      "chanter",
+      "instrument_apprendre"
+    ],
+    "image": [
+      "image_creer"
+    ]
+  }
+}

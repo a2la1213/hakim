@@ -107,7 +107,20 @@ def segments_gardes(segments, amorce):
     return gardes
 
 
+def _hors_mac():
+    """(13/11) Linux, WSL2 : pas de MLX ; l'écoute passe par faster-whisper sur le processeur (plateforme/stt_cpu.py)."""
+    if sys.platform == "darwin":
+        return None
+    racine = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if racine not in sys.path:
+        sys.path.append(racine)
+    from plateforme import stt_cpu
+    return stt_cpu
+
+
 def disponible():
+    if _hors_mac():
+        return _hors_mac().disponible()
     try:
         import mlx_whisper  # noqa: F401
     except ImportError:
@@ -120,6 +133,8 @@ def transcrire(fichier, langue=None, contexte="", voix=None, avec_temps=False, m
     Whisper sur la suite (noms, orthographe, langue). voix : « reconnaitre » (l'empreinte vocale d'Ahmed, un
     indice) ou « apprendre » (Ahmed l'a demandé) ; None : rien. avec_temps : les segments gardés, avec les secondes de
     chaque mot (31/10, Hakim : couper un passage de musique au bon endroit avec son_creer)."""
+    if _hors_mac():
+        return _hors_mac().transcrire(fichier, langue, contexte, voix, avec_temps=avec_temps, musique=musique)
     import mlx_whisper
     t0 = time.time()
     audio = mlx_whisper.audio.load_audio(fichier)              # lu une fois : pour la langue et pour le texte

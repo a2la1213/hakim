@@ -26,6 +26,7 @@ import time
 from pathlib import Path
 
 import config
+import plateforme
 
 DOSSIER = config.DATA_DIR / "jardin"
 SERVICE = "anamnese-jardin-secret"
@@ -41,6 +42,16 @@ def _securite(*args, entree=None):
 
 
 def _cle(creer=False, service=SERVICE):
+    if not plateforme.MAC:                # (13/11) Linux, WSL2 : la clé du jardin dans son fichier 600 (plateforme/cles.py)
+        from plateforme import cles
+        k = cles.lire(service) or ""
+        if not k and creer:
+            k = base64.b64encode(os.urandom(32)).decode()
+            if not cles.ecrire(service, k, compte="hakim"):
+                raise Refus("rangement des clés indisponible : la clé du jardin n'a pas pu être rangée")
+        if not k:
+            raise Refus("pas encore de jardin (aucune clé)")
+        return base64.b64decode(k)
     r = _securite("find-generic-password", "-s", service, "-w")
     k = r.stdout.strip() if r.returncode == 0 else ""
     if not k and creer:

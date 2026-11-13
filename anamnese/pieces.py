@@ -71,7 +71,10 @@ def joindre(chemin, titre="", jarvis=None, dossier=None):
             import fcntl
             vrai = Path(os.fsdecode(fcntl.fcntl(fd, fcntl.F_GETPATH, b"\0" * 1024)).split("\0", 1)[0])
         except (ImportError, AttributeError, OSError):
-            vrai = p
+            try:                         # (13/11) Linux, WSL2 : le chemin de l'ouvert par /proc/self/fd (F_GETPATH est au Mac)
+                vrai = Path(os.readlink(f"/proc/self/fd/{fd}"))
+            except OSError:
+                vrai = p
         if not any(r in vrai.parents for r in permis) or not stat.S_ISREG(os.fstat(fd).st_mode):
             raise Refus("le fichier a changé pendant qu'on le joignait : refusé")
         if os.fstat(fd).st_nlink > 1:            # (27/10) un lien dur ne se voit pas au chemin : il peut cacher un fichier fermé

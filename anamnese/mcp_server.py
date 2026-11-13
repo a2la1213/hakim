@@ -3529,6 +3529,15 @@ if os.environ.get("ANAMNESE_LECTURE_SEULE") == "1":
     lecture_seule(OUTILS_LECTURE | ({"courrier_envoyer"} if os.environ.get("ANAMNESE_REVEIL_MAMAN") == "1" else set()))
 
 
+# (13/11) les outils des modules éteints par le profil de la machine (plateforme/profils.json : studio, chant, images sur un PC
+# sans GPU) ne sont pas proposés au cerveau ; profil « complet » (le Mac de Hakim) : rien n'est retiré
+try:
+    import plateforme as _plateforme
+    for _nom in _plateforme.outils_eteints():
+        mcp.remove_tool(_nom)
+except Exception as _e:                      # jamais bloquant pour la mémoire
+    print(f"[plateforme] profil illisible : {_e}", flush=True, file=__import__("sys").stderr)
+
 if __name__ == "__main__":
     mcp.run()
 # FERME-FIN lecture-seule

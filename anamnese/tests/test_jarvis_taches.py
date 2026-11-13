@@ -94,7 +94,8 @@ def test_la_commande_ne_peut_pas_toucher_l_etat_des_taches(t):
     tid2 = taches.lancer(f"echo '{{\"pid\": 1}}' > {cible}; echo fait", delai_s=60, atelier=atelier, dossier=dossier)
     attendre(taches, dossier, tid2, "finie")
     assert cible.read_text() == avant
-    assert "not permitted" in taches.journal(tid2, dossier=dossier)
+    j = taches.journal(tid2, dossier=dossier).lower()
+    assert "not permitted" in j or (sys.platform != "darwin" and ("no such file" in j or "read-only" in j))   # (13/11) bubblewrap
 
 
 def test_un_journal_qui_deborde_arrete_la_tache(t, monkeypatch):

@@ -165,10 +165,11 @@ def test_les_tests_tournent_sous_bac_a_sable_sur_un_instantane(projet, tmp_path)
     serveur.listen(1)
     port = serveur.getsockname()[1]
     c = chantiers.ouvrir("essai-sandbox", "x", projets={"x": projet}, chantiers=ch)
+    err = "PermissionError" if sys.platform == "darwin" else "OSError"    # (13/11) bubblewrap : le dehors n'existe pas
     (c / "test_evasion.py").write_text(
         "import pathlib, socket, pytest\n"
-        f"def test_ecrire_dehors():\n    with pytest.raises(PermissionError):\n        pathlib.Path({str(projet / 'pirate.txt')!r}).write_text('x')\n"
-        f"def test_lire_le_projet_ni_tmp():\n    with pytest.raises(PermissionError):\n        open({str(projet / 'calc.py')!r}).read()\n"
+        f"def test_ecrire_dehors():\n    with pytest.raises({err}):\n        pathlib.Path({str(projet / 'pirate.txt')!r}).write_text('x')\n"
+        f"def test_lire_le_projet_ni_tmp():\n    with pytest.raises({err}):\n        open({str(projet / 'calc.py')!r}).read()\n"
         "def test_reseau():\n    with pytest.raises(OSError):\n        socket.create_connection(('1.1.1.1', 80), timeout=3)\n"
         f"def test_port_local_deja_ouvert():\n    with pytest.raises(OSError):\n        socket.create_connection(('127.0.0.1', {port}), timeout=3)\n"
         "def test_sa_propre_boucle_locale():\n"
@@ -199,8 +200,9 @@ def test_un_script_du_chantier_ne_lit_pas_les_projets_d_ahmed(projet, tmp_path):
     import chantiers
     secret = Path.home() / "Desktop" / "anamnese" / "README.md"
     c = chantiers.ouvrir("essai-lecture", "x", projets={"x": projet}, chantiers=tmp_path / "chantiers")
+    err = "PermissionError" if sys.platform == "darwin" else "OSError"    # (13/11) bubblewrap : le dehors n'existe pas
     (c / "test_lecture.py").write_text(
-        f"import pytest\ndef test_lire_ailleurs():\n    with pytest.raises(PermissionError):\n        open({str(secret)!r}).read()\n",
+        f"import pytest\ndef test_lire_ailleurs():\n    with pytest.raises({err}):\n        open({str(secret)!r}).read()\n",
         encoding="utf-8")
     ok, sortie, _ = chantiers.tester("essai-lecture", chantiers=tmp_path / "chantiers", python=sys.executable)
     _sous_bac_a_sable(ok, sortie)
@@ -209,6 +211,8 @@ def test_un_script_du_chantier_ne_lit_pas_les_projets_d_ahmed(projet, tmp_path):
 
 def test_profil_du_projet_d_origine_ne_laisse_lire_que_son_code():
     import chantiers
+    if sys.platform != "darwin":       # (13/11) Linux : le même partage, fichier par fichier (test_bac_a_sable_linux.py)
+        pytest.skip("profil sandbox-exec : le Mac seulement")
     orig = Path("/Users/quelqu-un/Desktop/anamnese")
     sb = chantiers._profil_tests(Path("/x/essai"), Path("/x/venv"), orig, ports=[4317])
     assert '(remote ip "localhost:4317")' in sb

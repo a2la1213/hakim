@@ -278,6 +278,16 @@ def _profil_tests(essai, venv, original=None, ports=()):
 """
 
 
+def _code_d_origine(original):
+    """(13/11, Linux) les fichiers que le profil du Mac laisse lire dans le projet d'origine (ses .py/.txt/.md de la racine, de
+    jarvis/ et de tests/, jamais un nom commençant par un point) : bubblewrap ne connaît pas les motifs, ils sont liés un à un."""
+    if not original:
+        return []
+    o = Path(original).resolve()
+    return sorted(f for d in (o, o / "jarvis", o / "tests") if d.is_dir() for f in d.iterdir()
+                  if f.is_file() and not f.name.startswith(".") and f.suffix in (".py", ".txt", ".md"))
+
+
 def _extraire(gitdir, arbre, essai):
     """L'arbre exact (git archive) dans un dossier d'essai neuf, hors de l'atelier ; tarfile filtre « data » :
     ni chemin absolu, ni « .. », ni lien qui sorte."""
@@ -316,8 +326,16 @@ def tester(nom, chantiers=None, python=None, delai_s=DELAI_TESTS_S, projets=None
     # (28/10) le cockpit : node --test sur ses fichiers test-*.js, dans le même bac à sable
     suite = ([str(python), "--test", *sorted(str(f.name) for f in essai.glob("test-*.js"))] if node else
              [str(python), "-P", "-m", "pytest", "-q", "-p", "no:cacheprovider", "-x"])
-    p = subprocess.Popen(priorite.basse(["/usr/bin/sandbox-exec", "-p", regles, *suite]), cwd=str(essai), env=env, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT, text=True, start_new_session=True)
+    if terminal.plateforme.MAC:
+        p = subprocess.Popen(priorite.basse(["/usr/bin/sandbox-exec", "-p", regles, *suite]), cwd=str(essai), env=env, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True, start_new_session=True)
+    else:                                  # (13/11) Linux, WSL2 : bubblewrap (plateforme/bac_a_sable.py), le même partage
+        from plateforme import bac_a_sable
+        hf = Path.home() / ".cache" / "huggingface"
+        p = subprocess.Popen(priorite.basse(bac_a_sable.tests(suite, essai, [venv, hf, *terminal._chemins_outils()],
+                                                              _code_d_origine(projets.get(meta.get("projet"))))),
+                             cwd=str(essai), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                             start_new_session=True)
     try:
         sortie, _ = p.communicate(timeout=delai_s)
         ok = p.returncode == 0

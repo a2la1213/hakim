@@ -87,6 +87,15 @@ function projetPermis(chemin, maison) {
 let cacheLaunchd = { t: 0, maison: null, dossiers: [], illisibles: [] };
 // (relecture Opus du 2026-10-20) les formes courantes : « bash -c "cd DIR && …" », « "$HOME"/x », un script sans #!,
 // un script appelé par un script (deux niveaux, seulement ce qui s'exécute) ; un LaunchAgent illisible fait refuser l'écriture par prudence.
+// (13/11) un plist XML lu sans plutil (Linux) : Program, WorkingDirectory, ProgramArguments ; autre chose : une erreur
+function plistXml(t) {
+  if (!/<plist[\s>]/.test(t) || !/<\/plist>/.test(t)) throw new Error('pas un plist XML');
+  const ent = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  const cle = (k) => { const m = new RegExp(`<key>${k}</key>\\s*<string>([\\s\\S]*?)</string>`).exec(t); return m ? ent(m[1]) : undefined; };
+  const a = /<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(t);
+  return { Program: cle('Program'), WorkingDirectory: cle('WorkingDirectory'),
+    ProgramArguments: a ? [...a[1].matchAll(/<string>([\s\S]*?)<\/string>/g)].map(m => ent(m[1])) : undefined };
+}
 function dossiersLaunchd(maison) {
   const m = reel(maison) || maison;
   if (cacheLaunchd.maison === m && Date.now() - cacheLaunchd.t < 60000) return cacheLaunchd.dossiers;
@@ -114,10 +123,23 @@ function dossiersLaunchd(maison) {
   const agents = path.join(m, 'Library', 'LaunchAgents');
   let plists = []; try { plists = fs.readdirSync(agents).filter(f => f.endsWith('.plist')); } catch (_) {}
   for (const f of plists) {
-    let d; try { d = JSON.parse(execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', path.join(agents, f)], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] })); }
+    // (13/11) plutil est au Mac ; ailleurs, la même lecture du XML (un plist binaire y reste illisible : refus par prudence)
+    let d; try { d = process.platform === 'darwin' ? JSON.parse(execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', path.join(agents, f)], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] })) : plistXml(fs.readFileSync(path.join(agents, f), 'utf8')); }
     catch (_) { illisibles.push(f); continue; }
     const chaines = [d.Program, d.WorkingDirectory, ...(Array.isArray(d.ProgramArguments) ? d.ProgramArguments : [])].filter(x => typeof x === 'string');
     for (const x of chaines) for (const c of [x, ...nommes(x)]) if (c.startsWith('/')) visiter(c, 0);
+  }
+  // (13/11) Linux, WSL2 : les unités systemd de l'utilisateur jouent le rôle des LaunchAgents (ExecStart…, WorkingDirectory)
+  if (process.platform !== 'darwin') {
+    const unites = path.join(m, '.config', 'systemd', 'user');
+    let noms = []; try { noms = fs.readdirSync(unites).filter(f => /\.(service|timer|path|socket)$/.test(f)); } catch (_) {}
+    for (const f of noms) {
+      let t; try { t = fs.readFileSync(path.join(unites, f), 'utf8'); } catch (_) { illisibles.push(f); continue; }
+      for (const l of t.split('\n')) {
+        const x = /^\s*(?:ExecStart(?:Pre|Post)?|ExecStop(?:Post)?|ExecReload|WorkingDirectory)\s*=\s*[-@+!:]*(.*)$/.exec(l);
+        if (x) for (const c of [x[1].trim().split(/\s+/)[0], ...nommes(x[1])]) if (c && c.startsWith('/')) visiter(c, 0);
+      }
+    }
   }
   cacheLaunchd = { t: Date.now(), maison: m, dossiers: [...dossiers], illisibles };
   return cacheLaunchd.dossiers;

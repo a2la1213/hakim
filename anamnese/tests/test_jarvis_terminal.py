@@ -8,6 +8,15 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "jarvis"))
 
+MAC = sys.platform == "darwin"
+# (13/11) le refus selon le bac à sable : sandbox-exec REFUSE (« Operation not permitted ») ; bubblewrap (Linux, WSL2) construit une
+# racine où l'interdit N'EXISTE PAS (« no such file ») ou ne s'écrit pas (« read-only file system »)
+REFUS = ("not permitted",) if MAC else ("not permitted", "no such file", "read-only file system", "permission denied")
+
+
+def refuse(r, n=1):
+    return sum(r.lower().count(m) for m in REFUS) >= n
+
 
 @pytest.fixture
 def run(tmp_path):
@@ -27,9 +36,14 @@ def test_un_vrai_shell_qui_ecrit_dans_son_atelier(run):
 
 def test_ni_projets_ni_cles_ni_ecriture_dehors(run):
     maison = Path.home()
-    assert "not permitted" in run(f"cat {maison / 'Desktop' / 'anamnese' / 'config.py'}")
-    assert "not permitted" in run(f"ls {maison / '.ssh'}") or "No such file" in run(f"ls {maison / '.ssh'}")
-    assert "not permitted" in run("ls /private/tmp")
+    assert refuse(run(f"cat {maison / 'Desktop' / 'anamnese' / 'config.py'}"))
+    assert refuse(run(f"ls {maison / '.ssh'}")) or "No such file" in run(f"ls {maison / '.ssh'}")
+    if MAC:
+        assert "not permitted" in run("ls /private/tmp")
+    else:                                            # le /tmp de la machine : un fichier qui y est ne se voit pas
+        import tempfile
+        with tempfile.NamedTemporaryFile(dir="/tmp", prefix="hors-bac-") as f:
+            assert Path(f.name).name not in run("ls -a /tmp")
     cible = maison / "Desktop" / "jarvis-terminal-essai.txt"
     run(f"echo x > {cible}")
     assert not cible.exists()
@@ -56,16 +70,18 @@ def test_les_terminaux_d_ahmed_sont_hors_d_atteinte(run):
     """(relecture Opus du 2026-10-20) /dev/ttys* (les terminaux ouverts d'Ahmed) : ni lus (frappes), ni écrits
     (séquences injectées) ; /dev/null et /dev/urandom restent utilisables."""
     import glob
-    ttys = sorted(glob.glob("/dev/ttys0*"))
+    ttys = sorted(glob.glob("/dev/ttys0*")) or sorted(glob.glob("/dev/pts/[0-9]*"))     # (13/11) Linux : /dev/pts
     if ttys:
         r = run(f"head -c 1 {ttys[0]} ; echo x > {ttys[0]}")
-        assert r.count("not permitted") >= 2, r
+        assert refuse(r, 2), r
     assert "ok" in run("head -c 4 /dev/urandom > /dev/null && echo ok")
 
 
 def test_les_services_du_mac_sont_refuses(run, tmp_path):
     """(relecture JARVIS 2, C1, 2026-10-20) : ouvrir une app, soumettre une tâche à launchd, écrire des réglages,
     piloter le Mac : refusé, y compris par les API (CFPreferences) sans passer par les programmes."""
+    if not MAC:
+        pytest.skip("le Mac seulement ; Linux : test_bac_a_sable_linux.py")
     for cmd in ("open -a TextEdit", "launchctl submit -l essai.hakim -- /usr/bin/true", "defaults write essai.hakim a -string b",
                 "osascript -e 'beep'", "echo x | pbcopy", "security find-generic-password -s x"):
         assert "not permitted" in run(cmd), cmd
@@ -135,7 +151,9 @@ def test_rien_ne_reste_en_arriere_plan(run, tmp_path):
     import time
     r = run("(sleep 300 > /dev/null 2>&1 &) ; echo $$ ; sleep 0.2")
     time.sleep(0.5)
-    vivants = os.popen("pgrep -f 'sleep 300' || true").read().split()
+    # « [3] » : le motif ne se trouve pas lui-même dans la ligne du shell qui lance pgrep (le pgrep de Linux, à la différence de
+    # celui du Mac, ne met pas de côté ses ancêtres : il voyait ce shell, vu le 13/11 dans le conteneur d'essai)
+    vivants = os.popen("pgrep -f 'sleep [3]00' || true").read().split()
     assert not vivants, f"sleep orphelin : {vivants} — {r[-200:]}"
 
 
@@ -151,7 +169,7 @@ def test_le_telephone_s_ecrit_mais_pas_le_reste_des_fichiers(run, tmp_path, monk
     monkeypatch.setattr(terminal, "TELEPHONE", fichiers / "telephone")
     r = run(f"echo note > '{tel}/note.txt' && cat '{tel}/note.txt'; echo y > '{fichiers}/autre.txt'; cat '{fichiers}/autre.txt'")
     assert (tel / "note.txt").read_text().strip() == "note" and "note" in r
-    assert (fichiers / "autre.txt").read_text() == "x" and "not permitted" in r
+    assert (fichiers / "autre.txt").read_text() == "x" and refuse(r)
 
 
 def test_le_juge_de_nuit_lit_l_atelier_sans_y_ecrire_et_sans_reseau(run, tmp_path):
@@ -173,7 +191,8 @@ def test_le_juge_de_nuit_lit_l_atelier_sans_y_ecrire_et_sans_reseau(run, tmp_pat
                           reseau=False, telephone=False)
     assert "rc=0" not in r
     # le profil : pas d'écriture du téléphone pour le juge
-    assert str(terminal.TELEPHONE) not in terminal.profil(juge, 9, telephone=False).split("(allow file-write*")[1].split(")\n")[0]
+    if MAC:
+        assert str(terminal.TELEPHONE) not in terminal.profil(juge, 9, telephone=False).split("(allow file-write*")[1].split(")\n")[0]
 
 
 def test_la_fiche_de_la_famille_se_lit_mais_ne_s_ecrit_pas(run):
@@ -186,4 +205,8 @@ def test_la_fiche_de_la_famille_se_lit_mais_ne_s_ecrit_pas(run):
     avant = f.read_text()
     run(f"echo pirate >> {f}")
     assert f.read_text() == avant, "lisible, jamais écrite"
-    assert "not permitted" in run(f"ls {terminal.CWD}") or "famille.md" not in run(f"ls {terminal.CWD}"), "le reste de cwd reste fermé"
+    if MAC:
+        assert "not permitted" in run(f"ls {terminal.CWD}") or "famille.md" not in run(f"ls {terminal.CWD}"), "le reste de cwd reste fermé"
+    else:                    # (13/11) bubblewrap : cwd ne montre que ce qui est lié (la fiche, ses fichiers), rien d'autre
+        vus = set(run(f"ls {terminal.CWD}").split("Sortie :")[-1].split("⟧")[1].split("⟦")[0].split())
+        assert vus <= {"famille.md", "fichiers", "atelier"}, vus

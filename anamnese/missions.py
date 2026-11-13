@@ -14,6 +14,7 @@ Claude Code : « j'ai tout validé ce qu'il dit »).
 import json
 import os
 import re
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -122,6 +123,22 @@ def dossiers_launchd(maison=None, illisibles=None):
                 for c in [x, *nommes(x)]:
                     if c.startswith("/"):
                         visiter(c, 0)
+    if sys.platform != "darwin":         # (13/11) Linux, WSL2 : les unités systemd de l'utilisateur jouent le rôle des LaunchAgents
+        for f in sorted((m / ".config" / "systemd" / "user").glob("*.*")):
+            if f.suffix not in (".service", ".timer", ".path", ".socket"):
+                continue
+            try:
+                t = f.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                if illisibles is not None:
+                    illisibles.append(f.name)
+                continue
+            for l in t.splitlines():
+                x = re.match(r"\s*(?:ExecStart(?:Pre|Post)?|ExecStop(?:Post)?|ExecReload|WorkingDirectory)\s*=\s*[-@+!:]*(.*)$", l)
+                if x:
+                    for c in [(x.group(1).split() or [""])[0], *nommes(x.group(1))]:
+                        if c.startswith("/"):
+                            visiter(c, 0)
     return sorted(dossiers)
 
 

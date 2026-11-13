@@ -755,6 +755,16 @@ async def recettes_liste() -> str:
     return recettes.liste()
 
 
+# (13/11) hors du Mac (Linux, WSL2) : la description dit les vrais lieux de cette machine et qu'il n'y a pas de GPU Apple
+if not terminal.plateforme.MAC:
+    try:
+        _t = mcp._tool_manager.get_tool("executer")
+        _t.description = (_t.description.replace("/Users/admin/AIOS/jarvis/cwd/atelier", str(terminal.ATELIER))
+                          .replace("le GPU Apple (MLX / Metal),", "le processeur (pas de GPU ici),").replace("sympy, mlx ;", "sympy ;"))
+    except Exception:
+        pass
+
+
 # (audit JARVIS 2, point B, 2026-10-20) TOUJOURS à la fin : mcp.run() ne rend pas la main — un outil déclaré après
 # n'existait pas pour Hakim (les recettes étaient invisibles).
 if __name__ == "__main__":

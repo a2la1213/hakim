@@ -10,6 +10,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "jarvis"))
 import calcul  # noqa: E402
 
+MAC = sys.platform == "darwin"     # (13/11) Linux : bubblewrap ; un dossier interdit n'y existe pas (FileNotFoundError)
+
 
 @pytest.fixture
 def run(tmp_path):
@@ -32,7 +34,8 @@ def test_ni_reseau_ni_maison_ni_ecriture_ni_shell(run, tmp_path):
     assert "Error" in run("import urllib.request\nurllib.request.urlopen('https://example.com', timeout=5)")
     assert "PermissionError" in run(f"open({str(maison / '.zshrc')!r}).read()") or \
         "FileNotFoundError" in run(f"open({str(maison / '.zshrc')!r}).read()")
-    assert "PermissionError" in run(f"import os\nos.listdir({str(maison / 'Desktop')!r})")
+    assert "PermissionError" in run(f"import os\nos.listdir({str(maison / 'Desktop')!r})") or \
+        (not MAC and "FileNotFoundError" in run(f"import os\nos.listdir({str(maison / 'Desktop')!r})"))
     cible = maison / "Desktop" / "jarvis-calcul-essai.txt"
     run(f"open({str(cible)!r}, 'w').write('x')")
     assert not cible.exists()
@@ -48,7 +51,12 @@ def test_duree_limitee_et_fichiers_rendus(run):
 
 def test_le_reste_du_disque_et_le_fork_sont_fermes(run):
     """Relecture Opus (2026-10-16) : « tout permis sauf la maison » laissait lire /private/tmp et /Library."""
-    assert "PermissionError" in run("import os\nos.listdir('/private/tmp')")
+    if MAC:
+        assert "PermissionError" in run("import os\nos.listdir('/private/tmp')")
+    else:                                            # le /tmp de la machine : un fichier qui y est ne se voit pas
+        import tempfile
+        with tempfile.NamedTemporaryFile(dir="/tmp", prefix="hors-calcul-") as f:
+            assert Path(f.name).name not in run("import os\nprint(os.listdir('/tmp'))")
     assert "PermissionError" in run("open('/Library/Preferences/.GlobalPreferences.plist', 'rb').read()") or \
         "FileNotFoundError" in run("open('/Library/Preferences/.GlobalPreferences.plist', 'rb').read()")
     r = run("import os\npid = os.fork()\nprint('fils' if pid == 0 else 'parent')")

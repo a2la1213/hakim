@@ -20,6 +20,6 @@ def test_le_piege_de_la_maison():
     for c in ("cd ~/AIOS/jarvis/cwd/atelier/crypto_minute && ls", "python $HOME/AIOS/jarvis/cwd/atelier/x.py",
               "cat ${HOME}/AIOS/x", "ls ~/AIOS"):
         r = terminal.piege_maison(c)
-        assert r and "/Users/admin/AIOS/jarvis/cwd/atelier" in r and "imbriquée" in r, c
+        assert r and str(terminal.ATELIER) in r and "imbriquée" in r, c        # (13/11) le vrai chemin de la machine
     for c in ("ls /Users/admin/AIOS/jarvis/cwd/atelier", "cd crypto_minute && ls", "ls ~/.cache", "echo '~/AIOSX'"):
         assert terminal.piege_maison(c) is None, c

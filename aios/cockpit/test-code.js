@@ -187,7 +187,8 @@ test('accepter une relance : attendre le calme 20 s de suite, une seule commande
   const r = await C.accepterRelance('r1', lieux, { estCalme: () => calmes[Math.min(i++, calmes.length - 1)], attendre: async () => {},
     pas_ms: 2000, calme_ms: 20000, max_ms: 600000, uid: 502, lancer: (cmd, args) => commandes.push([cmd, ...args]) });
   assert.strictEqual(r.etape, 'faite');
-  assert.deepStrictEqual(commandes, [['launchctl', 'kickstart', '-k', 'gui/502/com.aios.cockpit']]);
+  assert.deepStrictEqual(commandes, process.platform === 'darwin' ? [['launchctl', 'kickstart', '-k', 'gui/502/com.aios.cockpit']]
+    : [['systemctl', '--user', 'restart', 'naissance-cockpit.service']]);   // (13/11) Linux, WSL2 : systemd utilisateur
   assert.ok(i >= 11, 'au moins 20 s de calme d’affilée après un moment agité');
   const etapes = fs.readFileSync(lieux.journal, 'utf8').trim().split('\n').map(JSON.parse).map(l => l.etape);
   assert.deepStrictEqual(etapes, ['acceptée', 'faite']);

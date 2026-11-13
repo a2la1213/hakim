@@ -17,4 +17,7 @@ def basse(args, prefixe=PREFIXE):
     """La même commande, précédée de nice et taskpolicy (ils remplacent leur processus : même pid, même groupe)."""
     if all(Path(x).exists() for x in (NICE, TASKPOLICY)):
         return list(prefixe) + list(args)
+    import sys
+    if not sys.platform == "darwin" and Path(NICE).exists():    # (13/11) Linux, WSL2 : nice seul (taskpolicy est au Mac)
+        return [NICE, "-n", "15" if list(prefixe) == PLUS_FORT else "10"] + list(args)
     return list(args)

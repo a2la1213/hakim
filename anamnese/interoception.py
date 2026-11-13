@@ -21,6 +21,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+import plateforme
+
 ANAMNESE = Path(__file__).resolve().parent
 TACHES = Path.home() / "AIOS" / "jarvis" / "cwd" / "taches"
 OLLAMA = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
@@ -63,6 +65,8 @@ def _mo(n):
 # ---- le GPU (Metal) ----
 def gpu(texte=None):
     """{utilisation %, mémoire utilisée, mémoire allouée (octets)} depuis les statistiques de l'accélérateur."""
+    if texte is None and not plateforme.MAC:      # (13/11) hors du Mac : pas de GPU lisible (ni Metal ni ioreg)
+        return {"utilisation": None, "utilisee": None, "allouee": None}
     t = texte if texte is not None else _cmd(["/usr/sbin/ioreg", "-r", "-d", "1", "-w", "0", "-c", "IOAccelerator"])
     lire = lambda cle: (lambda m: int(m.group(1)) if m else None)(re.search(r'"' + re.escape(cle) + r'"=(\d+)', t))
     return {"utilisation": lire("Device Utilization %"), "utilisee": lire("In use system memory"),
@@ -71,6 +75,9 @@ def gpu(texte=None):
 
 # ---- le processeur, cœur par cœur ----
 def _ticks():
+    if not plateforme.MAC:                        # (13/11) Linux : /proc/stat, même forme
+        from plateforme import corps
+        return corps.ticks()
     libc = ctypes.CDLL(ctypes.util.find_library("c"))
     libc.mach_host_self.restype = ctypes.c_uint
     libc.host_processor_info.argtypes = [ctypes.c_uint, ctypes.c_int, ctypes.POINTER(ctypes.c_uint),
@@ -110,12 +117,18 @@ def cpu_par_coeur(intervalle=0.5):
 # ---- la mémoire ----
 def swap(texte=None):
     """(total, utilisé) en Mo depuis « vm.swapusage »."""
+    if texte is None and not plateforme.MAC:
+        from plateforme import corps
+        return corps.swap_mo()
     t = texte if texte is not None else _cmd(["/usr/sbin/sysctl", "vm.swapusage"])
     m = re.search(r"total = ([\d.]+)M\s+used = ([\d.]+)M", t)
     return (float(m.group(1)), float(m.group(2))) if m else (None, None)
 
 
 def memoire_libre(texte=None):
+    if texte is None and not plateforme.MAC:
+        from plateforme import corps
+        return corps.memoire_libre_pourcent()
     t = texte if texte is not None else _cmd(["/usr/bin/memory_pressure"], timeout=10)
     m = re.search(r"free percentage:\s*(\d+(?:\.\d+)?)%", t)
     return float(m.group(1)) if m else None
@@ -123,6 +136,9 @@ def memoire_libre(texte=None):
 
 # ---- la chaleur, la batterie, le disque ----
 def chaleur(texte=None):
+    if texte is None and not plateforme.MAC:
+        from plateforme import corps
+        return corps.chaleur()
     t = texte if texte is not None else _cmd(["/usr/bin/pmset", "-g", "therm"])
     lignes = [l.strip() for l in t.splitlines() if l.strip()]
     if lignes and all("No " in l and "recorded" in l for l in lignes):
@@ -131,6 +147,9 @@ def chaleur(texte=None):
 
 
 def batterie(texte=None):
+    if texte is None and not plateforme.MAC:
+        from plateforme import corps
+        return corps.batterie()
     t = texte if texte is not None else _cmd(["/usr/bin/pmset", "-g", "batt"])
     source = re.search(r"drawing from '([^']+)'", t)
     m = re.search(r"(\d+)%;\s*([^;]+);\s*([^\n]*?)(?:\s+present|$)", t, re.M)
@@ -145,6 +164,9 @@ def batterie(texte=None):
 
 
 def disque():
+    if not plateforme.MAC:
+        from plateforme import corps
+        return corps.disque()
     for chemin in ("/System/Volumes/Data", "/"):
         try:
             u = shutil.disk_usage(chemin)
@@ -157,6 +179,9 @@ def disque():
 # ---- qui me consomme ----
 def empreintes(texte=None):
     """pid → (mémoire réelle en Mo, y compris la mémoire GPU de MLX, nom court du programme) d'après top."""
+    if texte is None and not plateforme.MAC:
+        from plateforme import corps
+        return corps.empreintes()
     t = texte if texte is not None else _cmd(["/usr/bin/top", "-l", "1", "-o", "mem", "-stats", "pid,mem,command"], timeout=10)
     out = {}
     for l in t.splitlines():
@@ -379,6 +404,9 @@ def rapport(maintenant=None):
                    + f") : {' '.join(f'{c} %' for c in coeurs)} ; moyenne {round(sum(coeurs) / len(coeurs))} %"
                    + (f" ; charge {_v(charge1)} / {_v(charge5)} / {_v(charge15)} (1, 5, 15 min)" if charge1 is not None else "") + ".")
     total = int(_cmd(["/usr/sbin/sysctl", "-n", "hw.memsize"]).strip() or 0) / 1048576
+    if not plateforme.MAC:
+        from plateforme import corps
+        total = corps.memoire_totale_mo()
     libre = memoire_libre()
     s_tot, s_util = swap()
     out.append(f"Mémoire : {_mo(total) if total else '?'} au total, {_v(libre, 0) if libre is not None else '?'} % libre"

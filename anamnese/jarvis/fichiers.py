@@ -226,6 +226,10 @@ def _vrai_chemin(fd, defaut):
         import fcntl
         return Path(os.fsdecode(fcntl.fcntl(fd, fcntl.F_GETPATH, b"\0" * 1024)).split("\0", 1)[0])
     except (ImportError, AttributeError, OSError):
+        pass
+    try:                                # (13/11) Linux, WSL2 : F_GETPATH n'existe pas ; le noyau dit le chemin par /proc/self/fd
+        return Path(os.readlink(f"/proc/self/fd/{fd}"))
+    except OSError:
         return Path(defaut)
 
 
@@ -310,10 +314,39 @@ def _profil_decodeur(lecture, ecriture):
 
 def _decoder(args, lecture, ecriture, timeout=120, texte=False):
     """Un décodeur sous bac à sable : il ne lit que `lecture` (et le système), n'écrit que dans `ecriture`, sans réseau."""
+    if not _plateforme().MAC:                # (13/11) Linux, WSL2 : bubblewrap ; textutil et sips n'existent pas
+        return _decoder_linux(args, lecture, ecriture, timeout=timeout, texte=texte)
     regles = _profil_decodeur(Path(lecture).resolve(), Path(ecriture).resolve())
     return subprocess.run(["/usr/bin/sandbox-exec", "-p", regles, *[str(a) for a in args]], capture_output=True, text=texte,
                           timeout=timeout, stdin=subprocess.DEVNULL, env={"PATH": "/usr/bin:/bin:/usr/local/bin", "HOME": str(ecriture),
                                                                            "TMPDIR": str(ecriture), "LANG": "fr_FR.UTF-8"})
+
+
+def _plateforme():
+    import sys
+    racine = str(Path(__file__).resolve().parents[1])
+    if racine not in sys.path:
+        sys.path.append(racine)
+    import plateforme
+    return plateforme
+
+
+def _decoder_linux(args, lecture, ecriture, timeout=120, texte=False):
+    """(13/11) le même décodeur sous bubblewrap ; textutil → pandoc (s'il est là), sips → ffmpeg."""
+    from plateforme import bac_a_sable
+    args = [str(a) for a in args]
+    if args and args[0] == "/usr/bin/textutil":
+        pandoc = shutil.which("pandoc")
+        args = [pandoc, "-t", "plain", "--wrap=none", args[-1]] if pandoc else None
+    elif args and args[0] == "/usr/bin/sips":
+        heif = shutil.which("heif-convert")         # (libheif-examples) les photos HEIC du téléphone ; le reste par ffmpeg
+        args = ([heif, "-q", "90", args[4], args[-1]] if heif and args[4].lower().endswith((".heic", ".heif")) else
+                [FFMPEG, "-loglevel", "error", "-y", "-i", args[4], "-frames:v", "1", args[-1]])
+    if not args or not bac_a_sable.disponible():
+        return subprocess.CompletedProcess(args or [], 127, "" if texte else b"", "" if texte else b"")
+    return subprocess.run(bac_a_sable.decodeur(args, Path(lecture).resolve(), Path(ecriture).resolve()), capture_output=True,
+                          text=texte, timeout=timeout, stdin=subprocess.DEVNULL,
+                          env={"PATH": "/usr/bin:/bin:/usr/local/bin", "HOME": str(ecriture), "TMPDIR": str(ecriture), "LANG": "C.UTF-8"})
 
 
 def _pdf_texte(pdf, d):
