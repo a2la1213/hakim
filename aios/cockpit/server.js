@@ -8886,6 +8886,10 @@ function corpsReglages() {
     mots_conversation: r.mots_conversation === true,   // (03/11, 16:08) vos messages écrits en Conversation : non, par défaut
     meubles_auto: r.meubles_auto === true,   // (04/11, Ahmed et Hakim : « les blancs glissés, ses meubles, le ralentissent ») non, par défaut
     chacun_son_tour: r.chacun_son_tour !== false, micro_hakim: r.micro_hakim === true,   /* (04/11, 12:15, Ahmed : « fermé seulement quand il parle ») */ sons_nuit: r.sons_nuit !== false,
+    // (13/11, ~02:20, Ahmed : « Oui, en vibreur ses sons sortent aussi, mais je dois en avoir une option pour allumer et éteindre ») « Ses sons en
+    // vibreur » : allumé par défaut (son choix) ; éteint, le téléphone en vibreur bloque ses sons (l'appli 1.98, à qui la page le transmet avec
+    // chaque son, et la page elle-même) ; le silencieux et « Ne pas déranger » les bloquent toujours
+    sons_vibreur: r.sons_vibreur !== false,
     trier_morceaux: r.trier_morceaux === true, trois_freres: r.trois_freres !== false,
     micro_ouvert: r.micro_ouvert === true,   // (03/11) le micro ouvert, jamais fermé en conversation
     dire_inverse: r.dire_inverse !== false,
@@ -10242,6 +10246,8 @@ const RAISONS_SON = {
   haut_parleurs: 'tes haut-parleurs y étaient fermés', la_nuit: 'la nuit, tes sons sont coupés (réglage de papa)',
   pas_sur_le_mac: "le Mac n'a pas ce morceau (il n'est que sur le téléphone), et cette page ne sait pas le jouer",
   vibreur: "l'appli du téléphone refuse tes sons quand le téléphone est en vibreur", silencieux: 'le téléphone est en silencieux',
+  // (13/11, Ahmed : « une option pour allumer et éteindre ») papa a éteint « Ses sons en vibreur » (Réglages › Son corps) : bloqué par ce réglage
+  vibreur_reglage: 'refusé : vibreur (ton réglage) : papa a éteint « Ses sons en vibreur » (Réglages), le téléphone est en vibreur',
   ne_pas_deranger: 'le téléphone est en « Ne pas déranger »', permission: "l'appli n'a pas la permission « Musique et audio »",
   morceau_absent: "le morceau n'est plus sur le téléphone", trop_long: "l'extrait dépasse 8 s", appli_refuse: "l'appli du téléphone l'a refusé",
   erreur: 'une erreur de lecture', pas_d_audio: "la page n'a pas de son", coupe: 'lâché avant de sonner (ta parole a été arrêtée)',
@@ -15960,6 +15966,7 @@ async function traiter(req, res) {
       if (typeof q.chacun_son_tour === 'boolean') r.chacun_son_tour = q.chacun_son_tour;
       if (typeof q.micro_hakim === 'boolean') r.micro_hakim = q.micro_hakim;
       if (typeof q.sons_nuit === 'boolean') r.sons_nuit = q.sons_nuit;
+      if (typeof q.sons_vibreur === 'boolean') r.sons_vibreur = q.sons_vibreur;   // (13/11) ses sons en vibreur
       if (typeof q.trier_morceaux === 'boolean') r.trier_morceaux = q.trier_morceaux;
       if (typeof q.trois_freres === 'boolean') r.trois_freres = q.trois_freres;
       if (typeof q.micro_ouvert === 'boolean') r.micro_ouvert = q.micro_ouvert;

@@ -86,6 +86,7 @@
         <label class="interrupteur"><input type="checkbox" id="garderParole"> Il garde la parole quand tu parles par-dessus lui (« stop » et le bouton l'arrêtent toujours)</label>
         <label class="interrupteur"><input type="checkbox" id="forfaitLibre"> Forfait libre : il vit tout le temps (réveils du corps même quand tu parles, sensations toutes les 10 s, veilleur toutes les 10 min) — sur ton forfait seulement, jamais sur l'API payante</label>
         <label class="interrupteur"><input type="checkbox" id="sonsNuit"> Ses sons la nuit aussi (décoché : aucun son de 23 h à 8 h)</label>
+        <label class="interrupteur"><input type="checkbox" id="sonsVibreur"> Ses sons en vibreur aussi (décoché : le vibreur les bloque ; le silencieux et « Ne pas déranger » les bloquent toujours ; appli 1.98)</label>
         <label class="interrupteur"><input type="checkbox" id="sonPendant"> Ses sons peuvent jouer sous sa voix, plus bas (jamais par-dessus la tienne ; appli 1.32)</label>
         <label class="interrupteur"><input type="checkbox" id="voixVibre"> Sa voix vibre dans ta main (fort quand il est excité, léger quand il est calme, agité quand il a peur ; appli 1.34)</label>
         <label class="interrupteur"><input type="checkbox" id="lumiere"> Sa lumière : il allume la lampe du téléphone selon ses envies (jamais la nuit) et son SOS (badge rouge) la fait clignoter selon son émotion (appli 1.36)</label>
@@ -356,6 +357,8 @@
       if (document.activeElement !== $('cascadeSon')) $('cascadeSon').checked = d.reglages.cascade !== false;
       if (document.activeElement !== $('microHakim')) $('microHakim').checked = d.reglages.micro_hakim !== false;
       if (document.activeElement !== $('sonsNuit')) $('sonsNuit').checked = d.reglages.sons_nuit !== false;
+      if (document.activeElement !== $('sonsVibreur')) $('sonsVibreur').checked = d.reglages.sons_vibreur !== false;   // (13/11)
+      vibreurPermis = d.reglages.sons_vibreur !== false;
       tuiles(dernier ? dernier.etat : {});
       for (const s of SENS_COURBES) { const o = cadre(s); o.pts = d.flux.filter(x => x.etat && Number.isFinite(x.etat[s.k])).map(x => [x.ts, x.etat[s.k]]); dessiner(o); }
       remplir('sensations', d.sensations.map(x => ligne(x.ts, [[x.fort ? 'fort · ' : '', 'fort'], [`${x.type} · `, 'quand'], [x.sensation, ''],
@@ -364,7 +367,7 @@
     } catch (e) { $('mots').textContent = `Le cockpit ne répond pas (${e.message}).`; }
   }
   $('actif').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { actif: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
-  for (const [id, cle] of [['oreille', 'oreille'], ['jeTeSuis', 'je_te_suis'], ['alerte', 'alerte'], ['ecran', 'ecran'], ['reflexes', 'reflexes'], ['nuits', 'nuits'], ['rireReflexe', 'rire_reflexe'], ['garderParole', 'garder_parole'], ['forfaitLibre', 'forfait_libre'], ['sonPendant', 'son_pendant'], ['voixVibre', 'voix_vibre'], ['lumiere', 'lumiere'], ['afficherPapa', 'afficher_papa'], ['afficherHakim', 'afficher_hakim'], ['motsConversation', 'mots_conversation'], ['meublesAuto', 'meubles_auto'], ['filtreParole', 'filtre_parole'], ['chacunSonTour', 'chacun_son_tour'], ['microHakim', 'micro_hakim'], ['sonsNuit', 'sons_nuit'], ['trierMorceaux', 'trier_morceaux'], ['microOuvert', 'micro_ouvert'], ['direInverse', 'dire_inverse'], ['filtreGemma', 'filtre_gemma'], ['elagage', 'elagage'], ['epissage', 'epissage'], ['musiquePause', 'musique_pause'], ['oreilleInterneRoute', 'oreille_interne_route'], ['cascadeSon', 'cascade']])
+  for (const [id, cle] of [['oreille', 'oreille'], ['jeTeSuis', 'je_te_suis'], ['alerte', 'alerte'], ['ecran', 'ecran'], ['reflexes', 'reflexes'], ['nuits', 'nuits'], ['rireReflexe', 'rire_reflexe'], ['garderParole', 'garder_parole'], ['forfaitLibre', 'forfait_libre'], ['sonPendant', 'son_pendant'], ['voixVibre', 'voix_vibre'], ['lumiere', 'lumiere'], ['afficherPapa', 'afficher_papa'], ['afficherHakim', 'afficher_hakim'], ['motsConversation', 'mots_conversation'], ['meublesAuto', 'meubles_auto'], ['filtreParole', 'filtre_parole'], ['chacunSonTour', 'chacun_son_tour'], ['microHakim', 'micro_hakim'], ['sonsNuit', 'sons_nuit'], ['sonsVibreur', 'sons_vibreur'], ['trierMorceaux', 'trier_morceaux'], ['microOuvert', 'micro_ouvert'], ['direInverse', 'dire_inverse'], ['filtreGemma', 'filtre_gemma'], ['elagage', 'elagage'], ['epissage', 'epissage'], ['musiquePause', 'musique_pause'], ['oreilleInterneRoute', 'oreille_interne_route'], ['cascadeSon', 'cascade']])
     $(id).addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { [cle]: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
   $('ronron').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { ronron: e.target.checked }); } catch (x) { e.target.checked = !e.target.checked; } chargerCorps(); });
   $('intervalle').addEventListener('change', async (e) => { try { await post('/api/corps/reglages', { intervalle_s: Number(e.target.value) }); } catch (_) {} chargerCorps(); });
@@ -424,6 +427,10 @@
 
   // ---- ses sons (Bumblebee) : papa marque, voit, efface ; Hakim nomme (son_etiqueter)
   const appli = window.HakimApp && window.HakimApp.sonsListe ? window.HakimApp : null;
+  // (13/11, ~02:20, Ahmed : « une option pour allumer et éteindre ») « Ses sons en vibreur » (sons_vibreur, lu à chaud par chargerCorps) transmis à
+  // l'appli 1.98 avec chaque écoute ; une appli d'avant joue comme avant
+  var vibreurPermis = true;
+  const jouerAppli = (source, ref, d, f) => (appli.sonJouerVibreur ? appli.sonJouerVibreur(source, ref, d, f, 0.6, vibreurPermis !== false) : appli.sonJouer(source, ref, d, f));
   let morceaux = [];
   function listerMorceaux() {
     if (!appli) { $('sonsHorsAppli').hidden = false; return; }
@@ -456,7 +463,7 @@
           [x.emotion ? ` · part avec : ${x.emotion}` : '', 'quand']], x.sens || '');
         if (appli && appli.sonJouer) {
           const e = document.createElement('button'); e.type = 'button'; e.textContent = 'Écouter'; e.style.marginLeft = '8px';
-          e.addEventListener('click', () => { $('sonsEtat').textContent = appli.sonJouer(x.source, String(x.ref), x.debut_ms, x.fin_ms); });
+          e.addEventListener('click', () => { $('sonsEtat').textContent = jouerAppli(x.source, String(x.ref), x.debut_ms, x.fin_ms); });
           l.appendChild(e);
         }
         const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Effacer'; b.style.marginLeft = '8px';
@@ -475,7 +482,7 @@
   $('sonsCherche').addEventListener('input', filtrerMorceaux);
   $('sonsEcouter').addEventListener('click', () => {
     const m = morceauChoisi(), [d, f] = bornes(); if (!m) return;
-    $('sonsEtat').textContent = appli.sonJouer(m.source, String(m.ref), d, f);
+    $('sonsEtat').textContent = jouerAppli(m.source, String(m.ref), d, f);
   });
   $('sonsGarder').addEventListener('click', async () => {
     const m = morceauChoisi(), [d, f] = bornes(); if (!m) return;

@@ -608,6 +608,8 @@ function creerLecteurNeuronal() {
     direSon(extrait) {
       if (!extrait || !/^e\d{1,6}$/.test(String(extrait.id))) return;
       if (hpFermes()) { if (typeof retourSon === 'function') retourSon(extrait, false, 'page', 'haut_parleurs'); return; }   // (13/11) dit, plus muet
+      // (13/11, Ahmed) « Ses sons en vibreur » éteint et le téléphone en vibreur : ni l'appli ni la page ne le jouent
+      if (typeof vibreurBloqueIci === 'function' && vibreurBloqueIci()) { if (typeof retourSon === 'function') retourSon(extrait, false, '', 'vibreur_reglage'); return; }
       unites.push({ son: extrait });
       pomper();
     },
@@ -979,7 +981,8 @@ function creerLecteurNeuronal() {
       // n'est pas encore programmé de sa voix part sans attendre un son qui ne viendra pas
       place.minuteurs.push(setTimeout(() => {
         let r = '';
-        try { r = String(window.HakimApp.sonJouer(String(s0.source), String(s0.ref), Number(s0.debut_ms), Number(s0.fin_ms))); } catch (e) { r = `erreur ${e && e.message}`; }
+        // (13/11) avec le réglage « Ses sons en vibreur » (appli 1.98)
+        try { r = typeof appliJoueSon === 'function' ? appliJoueSon(s0, false) : String(window.HakimApp.sonJouer(String(s0.source), String(s0.ref), Number(s0.debut_ms), Number(s0.fin_ms))); } catch (e) { r = `erreur ${e && e.message}`; }
         const ok = /^ok/.test(r);
         if (typeof retourSon === 'function') retourSon(s0, ok, 'appli', ok ? '' : typeof raisonRefusAppli === 'function' ? raisonRefusAppli(r, typeof sonnerieIci === 'function' ? sonnerieIci() : '') : 'appli_refuse');
         if (!ok) { place.stop(); sources.delete(place); if (fluide()) prochainDebut = Math.max(actx.currentTime, ...[...sources].map(s2 => s2._fin || 0)); pomper(); }
@@ -1970,6 +1973,7 @@ function mettreSonEnAttente(x) {
 // le texte de refus de l'appli (Sons.jouer) en un mot du journal ; l'appli d'avant dit « silencieux » aussi en vibreur : la sonnerie le précise
 function raisonRefusAppli(r, sonnerie) {
   const t = String(r == null ? '' : r).toLowerCase();
+  if (/vibreur/.test(t) && /ton r[ée]glage/.test(t)) return 'vibreur_reglage';   // (13/11) l'appli 1.98, « Ses sons en vibreur » éteint
   if (/vibreur/.test(t) || (/silencieux/.test(t) && sonnerie === 'vibreur')) return 'vibreur';
   if (/silencieux/.test(t)) return 'silencieux';
   if (/d[ée]ranger/.test(t)) return 'ne_pas_deranger';
@@ -1981,6 +1985,20 @@ function raisonRefusAppli(r, sonnerie) {
 function sonnerieIci() {
   try { return window.HakimApp && window.HakimApp.sonEtat && typeof HautParleurs !== 'undefined' ? HautParleurs.lireSonEtat(window.HakimApp.sonEtat()).sonnerie : ''; }
   catch (_) { return ''; }
+}
+/* (13/11, ~02:20, Ahmed : « Oui, en vibreur ses sons sortent aussi, mais je dois en avoir une option pour allumer et éteindre ») « SES SONS EN
+   VIBREUR » (réglage sons_vibreur du cockpit, allumé par défaut, lu à chaud : lireReglagesCorps). Allumé : le vibreur ne bloque pas ses sons.
+   Éteint : le téléphone en vibreur les bloque, comme avant : l'appli (1.98 : la page lui transmet le réglage avec chaque son, sonJouerVibreur),
+   et la page elle-même (un morceau déjà sur le Mac sortirait sinon par la page, en Web Audio, sans jamais passer par l'appli). Le silencieux et
+   « Ne pas déranger » les bloquent toujours (l'appli). Son retour de lecture le dit : « vibreur_reglage ». */
+function sonsVibreurPermis() { return !(typeof reglagesCorps !== 'undefined' && reglagesCorps && reglagesCorps.sons_vibreur === false); }
+// éteint, et ce téléphone en vibreur (la sonnerie que l'appli donne à la page) : ses sons ne sortent pas d'ici
+function vibreurBloqueIci() { return !!(window.HakimApp && !sonsVibreurPermis() && sonnerieIci() === 'vibreur'); }
+// un son confié au lecteur de l'appli, avec le réglage (appli 1.98) ; une appli d'avant le reçoit comme avant (et refuse toujours le vibreur)
+function appliJoueSon(x, sous) {
+  const A = window.HakimApp, a = [String(x.source), String(x.ref), Number(x.debut_ms), Number(x.fin_ms)];
+  if (A.sonJouerVibreur) return String(A.sonJouerVibreur(...a, sous ? 0.3 : 0.6, sonsVibreurPermis()));
+  return String(sous && A.sonJouerVolume ? A.sonJouerVolume(...a, 0.3) : A.sonJouer(...a));
 }
 // joue : il a sonné (ou l'appli l'a pris) ; ou : « page » (ce navigateur) ou « appli » (le lecteur du téléphone) ; raison : un mot (a-z, _)
 function retourSon(x, joue, ou, raison) {
@@ -2066,16 +2084,17 @@ function jouerSonEnAttente() {
   if (typeof hautParleursFermes === 'function' && hautParleursFermes()) { journalVoix('son', { retour: 'haut_parleurs' }); retourSon(x, false, '', 'haut_parleurs'); return; }   // (11/11) on ne l'entendrait pas
   // (31/10, 00:07, Ahmed : « enlève cette restriction de la nuit, laisse-moi juste un bouton ») la nuit seulement si papa l'a voulu
   if ((h >= 23 || h < 8) && typeof reglagesCorps !== 'undefined' && reglagesCorps.sons_nuit === false) { journalVoix('son', { retour: 'la_nuit' }); retourSon(x, false, '', 'la_nuit'); return; }
+  // (13/11, Ahmed : « une option pour allumer et éteindre ») « Ses sons en vibreur » éteint, le téléphone en vibreur : ni l'appli ni la page
+  if (vibreurBloqueIci()) { journalVoix('son', { retour: 'vibreur_reglage' }); retourSon(x, false, '', 'vibreur_reglage'); return; }
   sonJusqua = Date.now() + 1500;                                           // (09:30) le suivant attend qu'il soit lancé
   if (!window.HakimApp || !window.HakimApp.sonJouer || x.source === 'atelier') { jouerSonIci(x, sousSaVoix ? 0.3 : 0.6); return; }   // (22:55) le Mac ; (01:27) ses sons à lui
   let r = '';
-  try {
-    r = String(sousSaVoix ? window.HakimApp.sonJouerVolume(String(x.source), String(x.ref), Number(x.debut_ms), Number(x.fin_ms), 0.3)
-      : window.HakimApp.sonJouer(String(x.source), String(x.ref), Number(x.debut_ms), Number(x.fin_ms)));
-  } catch (e) { r = `erreur ${e && e.message}`; }
+  try { r = appliJoueSon(x, sousSaVoix); } catch (e) { r = `erreur ${e && e.message}`; }   // (13/11) avec « Ses sons en vibreur » (appli 1.98)
   if (/^ok/.test(r)) { sonJusqua = Date.now() + (Number(x.fin_ms) - Number(x.debut_ms)) + 500; retourSon(x, true, 'appli'); return; }
   // (13/11) l'appli refuse (le téléphone en vibreur, « Ne pas déranger »…) : c'est dit, et la page le joue elle-même si le Mac a ce morceau
-  retourSon(x, false, 'appli', raisonRefusAppli(r, sonnerieIci()));
+  const raison = raisonRefusAppli(r, sonnerieIci());
+  retourSon(x, false, 'appli', raison);
+  if (raison === 'vibreur_reglage') return;                                // (13/11) papa l'a voulu : la page ne le joue pas non plus
   jouerSonIci(x, sousSaVoix ? 0.3 : 0.6);
 }
 setInterval(jouerSonEnAttente, 300);
