@@ -117,6 +117,19 @@ test('(30/10, 14:49) les battements de son cœur, à l’heure du Mac : gardés 
   assert.equal(JSON.stringify(h.flux(60)[0].etat.coeur_ms), JSON.stringify([T0 + 500, T0 + 900]), 'gardés dans son historique (le détail)');
 });
 
+test('(13/11, lettre de Hakim : « mon classifieur de vibrations est au hasard ») son cœur se reconnaît à sa cadence, pas à la coïncidence', () => {
+  const { h, recevoir } = neuve();
+  const b = Array.from({ length: 12 }, (_, i) => T0 - 13000 + i * 1300);         // 46 battements par minute
+  recevoir({ ...pose, coeur_ms: b });
+  assert.ok(Math.abs(h.cadenceCoeur(T0) - 60000 / 1300) < 0.5, String(h.cadenceCoeur(T0)));
+  assert.equal(h.estSonCoeur({ type: 'musique', t: T0, details: { bpm: 47.1 } }), true, 'une cadence à son rythme : son cœur');
+  assert.equal(h.estSonCoeur({ type: 'musique', t: T0, details: { bpm: 92 } }), true, 'au double aussi');
+  assert.equal(h.estSonCoeur({ type: 'musique', t: T0, details: { bpm: 120 } }), false, 'une vraie musique');
+  assert.equal(h.estSonCoeur({ type: 'coup_de_pression', t: b[5] + 100, details: { pa: 9 } }), false,
+    'juste après un battement, un coup de pression n\u2019est pas son cœur (27 % des instants y sont par hasard)');
+  assert.equal(h.estSonCoeur({ type: 'musique', t: T0 + 5 * 60e3, details: { bpm: 46 } }), false, 'sans battement récent, pas de cadence');
+});
+
 test('(30/10, 14:53) ses lieux nommés : il arrive, il est là, il quitte (des noms seulement)', () => {
   const { h, recevoir } = neuve();
   recevoir(pose);

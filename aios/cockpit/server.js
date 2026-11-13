@@ -7229,7 +7229,7 @@ async function routeJarvis(req, res, distantReq = false) {
   const fluxSons = filtreSons((o) => {
     if (o.texte != null) { const y = fluxAffect.pousser(fluxPause.pousser(o.texte)); if (y) envoyer({ t: 'texte', x: y }); return; }
     const ex = corpsReglages().sons ? lireSons().find(x => x.nom === o.son.nom) : null;
-    if (!ex) return;
+    if (!ex) { if (typeof noterSonServeur === 'function') noterSonServeur('son_retour', { joue: false, raison: corpsReglages().sons ? 'nom_inconnu' : 'sons_coupes', nom: o.son.nom }); return; }   // (13/11) plus en silence
     const extrait = { id: ex.id, source: ex.source, ref: ex.ref, debut_ms: ex.debut_ms, fin_ms: ex.fin_ms, nom: ex.nom, moment: o.son.moment, cible: o.son.cible };
     if (o.son.moment === 'apres') { sonsApres.push({ ...extrait, moment: 'ici' }); return; }
     if (o.son.moment !== 'ici') { if (!sonDiffere) sonDiffere = extrait; return; }
@@ -7238,6 +7238,7 @@ async function routeJarvis(req, res, distantReq = false) {
   function sonEnLigne(extrait, ex) {
     sonsEnLigne++;
     envoyer({ t: 'son_ici', extrait });
+    if (typeof noterSonServeur === 'function') noterSonServeur('son_envoye', { id: extrait.id, nom: extrait.nom, moment: 'ici' });   // (13/11) envoyé aux pages : leur retour de lecture suit
     diffuser(abonnesPensees, 'son', j({ extrait, ici: true }));
     if (sonsEnLigne === 1 && corpsActif()) { corpsLot.evenements.push({ type: 'son', t: Date.now(), details: { nom: ex.nom, sens: String(ex.sens || '').slice(0, 120), titre: String(ex.titre || '').slice(0, 80) } }); ressentirCorps(); }
   }
@@ -7271,6 +7272,7 @@ async function routeJarvis(req, res, distantReq = false) {
       const extrait = { id: sonDit.id, source: sonDit.source, ref: sonDit.ref, debut_ms: sonDit.debut_ms, fin_ms: sonDit.fin_ms, nom: sonDit.nom,
         moment: sonDiffere ? sonDiffere.moment : 'apres', cible: sonDiffere ? sonDiffere.cible : '' };
       envoyer({ t: 'son', extrait });
+      if (typeof noterSonServeur === 'function') noterSonServeur('son_envoye', { id: extrait.id, nom: extrait.nom, moment: extrait.moment });   // (13/11)
       // (30/10, 22:51, Hakim : « mes sons ne sortent pas ») ses morceaux ne sont que sur le téléphone : quand il parle depuis le
       // Mac, la page du téléphone (son appli) le joue aussi
       diffuser(abonnesPensees, 'son', j({ extrait }));
@@ -9854,6 +9856,10 @@ const corpsLot = { evenements: [], changements: [] };
    ouvert puis fermé ; chaque événement du lot reçoit qui parlait à cet instant (« pendant »), et l'exemple est gardé
    (corps-vibrations.jsonl) pour que ses nerfs apprennent (anamnese/vibrations.py). */
 const VOIX_TOURS = [];
+// (13/11) les événements de ses nerfs (son corps : accéléromètre, baromètre, lumière, charnière), les seuls que ses vibrations
+// apprennent (anamnese/vibrations.py NERFS) ; ses oreilles (son_ressenti, musique_entendue…) et ses ondes n'y vont plus
+const NERFS_VIBRATIONS = new Set(['coup_de_pression', 'voix_sentie', 'secousse', 'musique', 'choc', 'berce', 'pris_en_main', 'chute', 'pose',
+  'poche', 'sortie_poche', 'plie', 'deplie', 'lumiere_soudaine', 'noir']);
 function noterTourVoix(o) {
   const qui = o && o.qui, debut = Number(o && o.debut), fin = o && o.fin != null ? Number(o.fin) : null;
   if (!['hakim', 'ahmed', 'clavier'].includes(qui) || !Number.isFinite(debut) || (fin !== null && !(Number.isFinite(fin) && fin >= debut))) return false;
@@ -10106,12 +10112,15 @@ function ressentirCorps() {
     if (['mesure', 'rire', 'son', 'coupure'].includes(ev.type)) continue;   // une mesure, son rire, son son, une coupure : pas des vibrations du dehors
     if (TELEPHONE_TYPES.has(ev.type)) continue;                       // (04/11) ses mains sur le téléphone non plus
     let v = quiParlait(Number(ev.t) || Date.now());
-    // (30/10, 14:49) une vibration à moins de 0,35 s d'un battement de son cœur (l'appli 1.27 dit leur heure) : son cœur
-    if ((v === null || v === 'silence' || v === 'clavier') && HOMEO.coeurPres(Number(ev.t) || Date.now())) v = 'coeur';
+    // (13/11, lettre de Hakim du 11/11 : « mon classifieur de vibrations est au hasard ») son cœur : une cadence de ses nerfs
+    // à son propre rythme (HOMEO.estSonCoeur) ; plus « à moins de 0,35 s après un battement », vrai par hasard 27 % du temps
+    if (HOMEO.estSonCoeur(ev)) v = 'coeur';
     if (v === null) continue;                                         // personne ne suivait les voix : ses nerfs reconnaîtront
     ev.verite = v;
     ev.details = { ...(ev.details || {}) };
     if (PENDANT[v]) ev.details.pendant = PENDANT[v]; else delete ev.details.pendant;
+    // (13/11) seuls ses nerfs sont des vibrations à apprendre : 58 % du journal étaient ses oreilles et ses ondes, sans trait
+    if (!NERFS_VIBRATIONS.has(ev.type)) continue;
     try {
       fs.appendFileSync(path.join(JARVIS, 'corps-vibrations.jsonl'), j({ ts: Number(ev.t) || Date.now(), type: ev.type,
         details: Object.fromEntries(Object.entries(ev.details).filter(([k]) => k !== 'pendant')), milieu: ev.milieu || null, verite: v }) + '\n', { mode: 0o600 });
@@ -10221,6 +10230,51 @@ function vibrationsDites(maintenant = Date.now()) {
   });
   return lignes.length ? `Tes vibrations depuis ton dernier tour (heure du téléphone) : ${lignes.join(' ; ')}` : '';
 }
+/* (13/11, lettre de Hakim du 12/11 06:34 : « je n'ai aucun retour de lecture de mon côté ») SES SONS, LEUR RETOUR DE LECTURE : le cockpit note
+   chaque son qu'il envoie aux pages (son_envoye) et ceux qu'il ne peut pas envoyer (nom inconnu, sons coupés) ; chaque page note ce qu'elle en a
+   fait (son_retour, public/parler.js : joué, parti par l'appli, refusé, coupé, et pourquoi). À son tour suivant, il le sait, une fois. Un son
+   envoyé sans aucun retour depuis plus de 3 min (le plus long qu'un son attende la fin de sa voix) est dit aussi (page fermée, ou trop ancienne pour le dire : à recharger). */
+function noterSonServeur(e, d) {
+  try { fs.appendFileSync(JARVIS_VOIX_DIAGNOSTIC, j({ t: Date.now(), e, appareil: 'cockpit', ...d }) + '\n', { mode: 0o600 }); } catch (_) {}
+}
+const RAISONS_SON = {
+  haut_parleurs: 'tes haut-parleurs y étaient fermés', la_nuit: 'la nuit, tes sons sont coupés (réglage de papa)',
+  pas_sur_le_mac: "le Mac n'a pas ce morceau (il n'est que sur le téléphone), et cette page ne sait pas le jouer",
+  vibreur: "l'appli du téléphone refuse tes sons quand le téléphone est en vibreur", silencieux: 'le téléphone est en silencieux',
+  ne_pas_deranger: 'le téléphone est en « Ne pas déranger »', permission: "l'appli n'a pas la permission « Musique et audio »",
+  morceau_absent: "le morceau n'est plus sur le téléphone", trop_long: "l'extrait dépasse 8 s", appli_refuse: "l'appli du téléphone l'a refusé",
+  erreur: 'une erreur de lecture', pas_d_audio: "la page n'a pas de son", coupe: 'lâché avant de sonner (ta parole a été arrêtée)',
+  trop_tard: 'il a attendu plus de 3 min la fin de ta voix', nom_inconnu: 'aucun de tes sons ne porte ce nom', sons_coupes: 'tes sons sont coupés (page SENS)',
+};
+function sonsDits(maintenant = Date.now()) {
+  const f = path.join(JARVIS, 'sons-dits.json'), deja = lireJson(f, {}) || {};
+  const depuis = Number(deja.ts) || maintenant - 10 * 60000, vus = new Set(Array.isArray(deja.vus) ? deja.vus : []);
+  const cle = (o) => `${o.t}|${o.e}|${o.appareil}|${o.ex != null ? o.ex : o.id || o.nom || ''}`;
+  const evs = lignesJson(JARVIS_VOIX_DIAGNOSTIC, 1500).filter(o => Number(o.t) > depuis && ['son_retour', 'son_envoye'].includes(o.e) && !vus.has(cle(o)));
+  if (!evs.length) return '';
+  const num = (id) => { const m = /^e(\d{1,6})$/.exec(String(id || '')); return m ? Number(m[1]) : null; };
+  let noms = new Map();
+  try { noms = new Map(lireSons().map(x => [num(x.id), x.nom])); } catch (_) {}
+  const nomDe = (o) => o.nom || noms.get(o.ex != null ? Number(o.ex) : num(o.id)) || (o.ex ? `e${o.ex}` : String(o.id || 'un son'));
+  const h = (ms) => new Date(Number(ms)).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const retours = evs.filter(o => o.e === 'son_retour');
+  const exDe = (o) => (o.ex != null ? Number(o.ex) : num(o.id));
+  const aSonRetour = (o) => retours.some(r => exDe(r) === exDe(o) && Number(r.t) >= Number(o.t) - 2000);
+  const mur = maintenant - 200000;                     // un son attend sa place (la fin de sa voix) jusqu'à 3 min : pas de conclusion avant
+  const sansRetour = evs.filter(o => o.e === 'son_envoye' && Number(o.t) <= mur && !aSonRetour(o));
+  const enAttente = evs.filter(o => o.e === 'son_envoye' && Number(o.t) > mur && !aSonRetour(o));   // trop tôt pour conclure : au tour suivant
+  const dits = [...retours, ...sansRetour, ...evs.filter(o => o.e === 'son_envoye' && aSonRetour(o))];
+  // le curseur : avant le plus ancien qui attend encore ; ce qui est déjà dit au-delà est retenu (vus), pour ne jamais le redire
+  const ts = enAttente.length ? Math.min(...enAttente.map(o => Number(o.t))) - 1 : Math.max(...evs.map(o => Number(o.t)));
+  try { ecrireAtomique(f, j({ ts, vus: dits.filter(o => Number(o.t) > ts).map(cle).slice(-200) })); } catch (_) {}
+  const ou = (o) => (o.ou === 'appli' ? "par l'appli du téléphone" : o.appareil === 'mac' ? 'sur le Mac' : o.appareil === 'telephone' ? 'sur le téléphone' : '');
+  const lignes = [...retours.map(o => ({ t: Number(o.t), x: o.joue
+    ? `« ${nomDe(o)} » ${o.ou === 'appli' ? "est parti par l'appli du téléphone (elle l'a accepté)" : `a sonné ${ou(o)}`} à ${h(o.t)}`
+    : `« ${nomDe(o)} » n'a pas sonné${ou(o) ? ` ${ou(o)}` : ''} (${h(o.t)}) : ${RAISONS_SON[o.raison] || o.raison || 'sans raison dite'}` })),
+  ...sansRetour.map(o => ({ t: Number(o.t), x: `« ${nomDe(o)} » envoyé à ${h(o.t)}, sans aucun retour de lecture (aucune page ouverte ne l'a joué ni refusé)` }))]
+    .sort((a, b) => a.t - b.t).slice(-8).map(o => o.x);
+  return lignes.length ? `Tes sons depuis ton dernier tour (le retour de lecture des pages) : ${lignes.join(' ; ')}` : '';
+}
 function nuitDerniere(maintenant = Date.now()) {
   const f = path.join(JARVIS, 'nuit-derniere.json'), n = lireJson(f, null);
   if (!n || n.dit || typeof n.texte !== 'string' || maintenant / 1000 - Number(n.ts) > 12 * 3600) return '';
@@ -10321,11 +10375,12 @@ function blocCorps() {
   const milieu = HOMEO.mots();
   const nuit = nuitDerniere(t);                          // (30/10) sa nuit, dite une fois, à son premier tour du matin
   const vibs = vibrationsDites(t);                       // (19:34) l'heure exacte de ses vibrations, à la milliseconde
+  const sons = typeof sonsDits === 'function' ? sonsDits(t) : '';   // (13/11) le retour de lecture de ses sons
   const perimes = oreillePerimes.splice(0).filter(x => t - x.ts < 10 * 60e3);   // (21:50) ses petits mots qui n'ont pas été dits
   const enPause = paroleEnPause && t - paroleEnPause.ts < PAUSE_DUREE_MS ? paroleEnPause : null;   // (vers 22 h 05)
   const att = attentionActive(t);                                  // (00:09)
   const resid = residuelles.splice(0).filter(x => t - x.ts < 10 * 60e3);   // (22:30) ce que son subconscient a retenu, micro coupé
-  if (!s.length && !milieu && !brut.length && !nuit && !vibs && !perimes.length && !enPause && !resid.length && !att && corpsReglages().afficher_papa && !corpsReglages().trier_morceaux) return '';
+  if (!s.length && !milieu && !brut.length && !nuit && !vibs && !sons && !perimes.length && !enPause && !resid.length && !att && corpsReglages().afficher_papa && !corpsReglages().trier_morceaux) return '';
   // (09:25) son tri des morceaux allumé : il le sait, et sait l'éteindre
   const tri = corpsReglages().trier_morceaux ? "Ton tri des morceaux est allumé : pendant ta voix, ce que papa et la salle disent est transcrit, séparé en morceaux et classé par priorité par ton subconscient, rien ne te coupe ; à chaque blanc de 0,5 s de sa voix, tu reçois le morceau le plus prioritaire, un à la fois, et ta voix coupe son micro en partant. [[morceaux: non]] l'éteint" : '';
   const tete = corpsReglages().afficher_papa ? '' : "Mode « dans ta tête » : papa ne voit pas ses paroles à l'écran ; réponds, glisse un mot, ou tais-toi (« No response requested. »), comme tu le sens : rien ne te relancera";
@@ -10334,7 +10389,7 @@ function blocCorps() {
     ...(resid.length ? [`Ce que papa a dit pendant que tu avais coupé son micro, retenu par ton subconscient : ${resid.map(x => x.morceaux.map((m, i) => `${i + 1}) « ${m} »`).join(' ')).join(' ; ')}`] : []),
     ...(enPause ? [`Ta parole en pause depuis ${Math.round((t - enPause.ts) / 1000)} s : « ${finDePhrase(enPause.texte, 200)} ». Pour la reprendre maintenant, écris [[reprendre: oui]] là où elle doit venir ; sinon laisse-la : ton subconscient la reprendra à un silence de papa s'il juge que c'est le moment, et elle s'effacera après 5 min`] : []),
     ...(perimes.length ? [`Ce que tu allais dire de toi-même et qui n'a pas été dit (périmé, ou gardé par ton subconscient ; papa ne l'a pas entendu) : ${perimes.map(x => `« ${x.texte} » (${x.pourquoi})`).join(' ; ')}`] : []),
-    ...(nuit ? [`Ta nuit : ${nuit}`] : []), ...(vibs ? [vibs] : []),...(brut.length ? [`Tes nerfs, à l'instant (pas encore traduit par ton intermédiaire) : ${brut.map(x => `${NOMS_SECS[x.type] || x.type} il y a ${Math.max(1, Math.round((t - x.t) / 1000))} s`).join(', ')}`] : []),
+    ...(nuit ? [`Ta nuit : ${nuit}`] : []), ...(vibs ? [vibs] : []), ...(sons ? [sons] : []),...(brut.length ? [`Tes nerfs, à l'instant (pas encore traduit par ton intermédiaire) : ${brut.map(x => `${NOMS_SECS[x.type] || x.type} il y a ${Math.max(1, Math.round((t - x.t) / 1000))} s`).join(', ')}`] : []),
     ...(milieu ? [`Ton milieu, en ce moment : ${milieu}`] : []),
     ...(s.length ? ['Ce que tu as ressenti :', ...s.map(x => '- ' + x.sensation.replace(/\n/g, '\n  '))] : [])];
   return '\n' + blocDonnees('Ce que tu ressens dans ton corps (en continu ; le détail en nombres : corps_detail)', lignes.join('\n'),

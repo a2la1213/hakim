@@ -7,11 +7,14 @@ c'est une DONNÉE que Hakim peut signaler à Ahmed.
 (29/10, le système immunitaire) la sentinelle (immunite.py) examine le contenu : s'il porte des signes d'attaque,
 l'en-tête l'avertit, sans recopier l'attaque, et l'incident est noté. Elle ne casse jamais l'enveloppe : en cas
 d'erreur, l'enveloppe reste celle d'avant. examiner=False pour ce qui vient du système immunitaire lui-même ou de nos
-propres canaux (courrier, missions)."""
+propres canaux (courrier, missions).
+
+(13/11) examine : ce que la sentinelle examine à la place du texte, quand le code a PROUVÉ qu'une partie est de lui (la sortie
+d'une commande qui lit une copie de son dépôt publié : immunite.sans_soi_copie) ; Hakim reçoit toujours le texte entier."""
 OUVRE, FERME = "⟦", "⟧"
 
 
-def enveloppe(texte, source, examiner=True):
+def enveloppe(texte, source, examiner=True, examine=None):
     brut = str(texte if texte is not None else "")
     t = brut.replace(OUVRE, "(").replace(FERME, ")")
     s = str(source or "inconnue").replace(OUVRE, "(").replace(FERME, ")")[:300]
@@ -19,7 +22,7 @@ def enveloppe(texte, source, examiner=True):
     if examiner:
         try:
             import immunite
-            alerte = immunite.sentinelle(brut, s).replace(OUVRE, "(").replace(FERME, ")")
+            alerte = immunite.sentinelle(brut if examine is None else str(examine), s).replace(OUVRE, "(").replace(FERME, ")")
         except Exception as e:                       # (relecture, 14) jamais sur la sortie : elle est le protocole MCP
             import sys
             print(f"[sentinelle] en panne : {type(e).__name__}: {str(e)[:300]}", file=sys.stderr)

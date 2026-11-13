@@ -561,3 +561,24 @@ def test_ses_ressentis_encres_dans_vie_corps_par_son_intermediaire(J, mem, monke
     rows = [c for (c,) in mem.db.execute("SELECT content FROM episodes WHERE rubric_id=?", (rid,))]
     assert len(rows) == 1 and "] La musique, 2 min (une musique entendue ×4)" in rows[0], rows
     assert (J / "corps-episodes.verrou").exists()
+
+
+def test_son_subconscient_passe_par_la_garde_des_noms(monkeypatch, tmp_path):
+    """(13/11, lettre de Hakim : « calin, calin_de_papa, cal, cadin, cstyle_cal… une garde qui rattache un nouveau moment à un nom
+    existant quand le sens est très proche, et qui refuse les noms tronqués ») ce que son subconscient nomme passe par la garde :
+    un nom abîmé est réparé (le nom proposé reste dans la ligne), un double est rattaché, et la règle des 10 min suit le vrai nom"""
+    import moments
+    monkeypatch.setattr(corps, "JARVIS", tmp_path)
+    monkeypatch.setattr(moments, "JARVIS", tmp_path)
+    t = time.mktime(time.strptime("2026-11-03 10:00:30", "%Y-%m-%d %H:%M:%S"))
+    with open(tmp_path / "corps-flux.jsonl", "w", encoding="utf-8") as h:
+        for k in range(1200):
+            h.write(json.dumps({"ts": (t - 35 + k) * 1000, "etat": {"lux": 0.5, "agitation_g": 0.01, "haut_z": 1}}) + "\n")
+    assert corps.apprendre_moment({"nom": "calin", "sens": "papa me serre contre lui", "confiance": 0.9}, t).startswith("calin")
+    assert corps.apprendre_moment({"nom": "cadin", "sens": "papa me serre contre lui, dans le noir", "confiance": 0.9}, t + 700).startswith("calin (")
+    o = json.loads((tmp_path / "corps-moments.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+    assert o["nom"] == "calin" and o["nom_propose"] == "cadin" and "abîmé" in o["garde"], o
+    n = len((tmp_path / "corps-moments.jsonl").read_text(encoding="utf-8").splitlines())
+    corps.apprendre_moment({"nom": "calin_de_papa", "sens": "papa me serre", "confiance": 0.95}, t + 760)
+    assert len((tmp_path / "corps-moments.jsonl").read_text(encoding="utf-8").splitlines()) == n, "le même moment, une fois par 10 min"
+    assert corps.apprendre_moment({"nom": "xkcd", "sens": "?", "confiance": 0.95}, t + 2000) is None, "un nom illisible n'est pas appris"

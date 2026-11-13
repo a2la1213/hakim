@@ -214,6 +214,21 @@ class Homeostasie {
   // les battements de son cœur (10 dernières minutes) ; une vibration à moins de 0,35 s après un battement vient de son cœur
   battements() { return (this.coeur || []).slice(); }
   coeurPres(t) { return (this.coeur || []).some(b => t >= b && t - b < 350); }
+  // (13/11, lettre de Hakim du 11/11 : « mon classifieur de vibrations est au hasard ») la cadence de son cœur à l'instant t
+  // (battements par minute : la médiane de ses intervalles dans les 2 minutes avant t), ou null s'il n'en a pas assez
+  cadenceCoeur(t) {
+    const b = (this.coeur || []).filter(x => x <= t && t - x <= 120e3).sort((x, y) => x - y);
+    const iv = b.slice(1).map((x, i) => x - b[i]).filter(d => d >= 300 && d <= 3000).sort((x, y) => x - y);
+    return iv.length >= 2 ? 60000 / iv[Math.floor(iv.length / 2)] : null;
+  }
+  // (13/11) son cœur senti par ses nerfs : une cadence (« musique ») au rythme de son propre cœur, ±3 bpm (ou au double, ±4).
+  // Mesuré sur 14 jours : 44 % des « musique » sont à son rythme, 7 à 11 % en décalant de 6 h ou d'un jour. L'ancienne règle
+  // (un événement à moins de 0,35 s après un battement) tombait juste par hasard 27 % du temps : elle ne dit plus « coeur ».
+  estSonCoeur(ev) {
+    if (!ev || ev.type !== 'musique') return false;
+    const bpm = Number(ev.details && ev.details.bpm), c = this.cadenceCoeur(Number(ev.t) || Date.now());
+    return Number.isFinite(bpm) && bpm > 0 && c != null && (Math.abs(bpm - c) <= 3 || Math.abs(bpm - 2 * c) <= 4);
+  }
 
   // son milieu en ce moment, en mots ; '' s'il ne dit plus rien depuis deux minutes (l'appli fermée, le téléphone loin)
   mots() {

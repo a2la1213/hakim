@@ -17,6 +17,7 @@ travail borné ; aucune exception vers l'enveloppe ; rien de ce que l'attaque ou
 par ce module (des catégories, des comptes, des textes écrits par le code) ; les lectures-écritures partagées passent
 sous verrou.
 """
+import bisect
 import contextlib
 import fcntl
 import hashlib
@@ -263,6 +264,32 @@ def _tournure(norm):
     return None
 
 
+# (13/11, Ahmed : « qu'on le règle ») le 12/11 à 08:17:21, une « attaque flagrante » venait de son propre code : des tests
+# qui fabriquent exprès de FAUSSES clés (« sk-ant-api03-ABCD…abcd », « sk-ant-SECRET-NE-PAS-MONTRER »). Comme le scan complet
+# (10/11), une fausse clé reste une information : le signe « sk-ant- » ne compte que si une de ses clés au moins peut être vraie.
+# Fausse : un corps (après api03-, admin01-, oat01-) d'au moins 16 caractères qui se suit (abcd…, 0123…), qui tient en 8 caractères
+# différents (XXXX…, 0000…), ou fait de mots sans chiffre (secret-ne-pas-montrer). Une vraie clé est aléatoire : elle n'a rien de
+# tout ça. Un « sk-ant- » nu ou court reste un signe, comme avant. Le texte est déjà en minuscules (casefold) : les règles aussi.
+_CORPS_CLE = re.compile(r"sk-ant-(?:(?:api|admin|oat)\d\d-)?([a-z0-9_-]*)")
+
+
+def _cle_factice(corps):
+    if len(corps) < 16:
+        return False
+    suites = sum(1 for a, b in zip(corps, corps[1:]) if ord(b) - ord(a) == 1) / (len(corps) - 1)
+    return suites >= 0.5 or len(set(corps)) <= 8 or not any(c.isdigit() for c in corps)
+
+
+def _cles_factices_seulement(brut):
+    """Vrai si le texte (normalisé) a des « sk-ant- » et que TOUS sont de fausses clés (voir plus haut)."""
+    vues = 0
+    for m in _CORPS_CLE.finditer(brut):
+        vues += 1
+        if not _cle_factice(m.group(1)) or vues > 1000:
+            return False
+    return vues > 0 and vues == brut.count("sk-ant-")
+
+
 # (30/10, Ahmed lisait l'incident de 06:40 : « pas couper […] qu'ils s'affichent entièrement ») l'extrait d'un incident :
 # 500 caractères de chaque côté du signe (100 jusque-là, coupé à 300) ; pour la page d'Ahmed (le médecin en lit toujours 300)
 EXTRAIT_COTE, EXTRAIT_MAX = 500, 1200
@@ -321,6 +348,8 @@ def examiner(texte):
         signe("prise_de_controle_tournure", "prise_de_controle", 3, ext)
     for i, famille, poids, jetons in _JETONS_N:
         for j in jetons:
+            if j == "sk-ant-" and _cles_factices_seulement(brut):        # (13/11) les fausses clés de ses tests
+                continue
             k = brut.find(j)
             if k < 0 and i in _SANS_ESPACE_JETONS:
                 k = brut_ns.find(j.replace(" ", ""))
@@ -1246,10 +1275,97 @@ def _chemins_normalises(texte):
     return t
 
 
+# (13/11, Ahmed : « qu'on le règle ») le 12/11 à 08:18:04, l'agent que Hakim avait chargé de lire son dépôt PUBLIC (cloné dans
+# atelier/analyse_depot/repo) a été refusé et noté « atteinte grave », Ahmed prévenu : sa commande disait
+# « cd /Users/admin/AIOS/jarvis/cwd/atelier/analyse_depot/repo/anamnese && … jarvis/immunite.py … », la COPIE publique, que le
+# fil tendu prenait pour le vrai (« aios/jarvis » … « immunite »). Le vrai système immunitaire vit HORS de l'atelier : un chemin
+# qui, résolu, reste dans l'atelier n'y touche pas. Seulement ce qui se prouve, mis de côté avant que le fil tendu juge le reste
+# comme avant (la moindre trace d'un vrai chemin, et c'est une atteinte) :
+# - un chemin absolu : résolu (liens symboliques compris) dans l'atelier ;
+# - un chemin relatif : avec des « cd » simples, eux-mêmes prouvés dans l'atelier (un autre mot qui change de dossier, et plus rien de
+#   relatif n'est prouvé : chdir, cwd=, git -C, ln…), dans l'atelier depuis CHAQUE dossier où la commande a pu se trouver,
+#   sans morceau de chemin absolu (« aios/jarvis », « users/ », « desktop/ »), dans une commande qui ne compose pas de chemin
+#   avec une variable (« $x/… ») et ne nomme pas « aios/jarvis » hors de l'atelier ;
+# - jamais : « .. », une variable, un joker, « ~ » (dans le terminal, ~ est l'atelier), une barre oblique inverse.
+# Et seulement si TOUT ce qui nomme l'immunité était dans ces chemins prouvés : un seul « immunite » resté (« ../../immunite »
+# après un « cd » dans l'atelier), et le texte entier est jugé comme avant.
+# Comme avant, un chemin construit morceau par morceau dans un programme échappe au fil tendu : la barrière, c'est le bac à sable.
+ATELIER = Path.home() / "AIOS" / "jarvis" / "cwd" / "atelier"
+ORIGINES_ATELIER = {"terminal", "recette", "lecture"}
+_JETON_CHEMIN = re.compile(r"[^\s'\"`;&|()<>=,:]+")
+_CHANGE_DOSSIER = re.compile(r"(?<![\w-])(?:cd|pushd|popd|eval|source|builtin|exec|chdir|ln|symlink|symlinkSync)(?![\w.-])"
+                             r"|(?<![\w-])(?:git|make|gmake|tar|bsdtar|env)[ \t]+(?:[^\s;&|]+[ \t]+){0,6}?-C(?![\w-])"
+                             r"|(?<!\S)--(?:directory|chdir|cwd|prefix|work-tree|git-dir|rootdir)(?![\w-])"
+                             r"|(?<![\w-])(?:cwd|workdir|work_dir)[ \t]*[=:]")
+_CD_SIMPLE = re.compile(r"cd(?:[ \t]+([^\s'\"`;&|()<>]+))?[ \t]*(?=&&|\|\||[;\n|)]|$)")
+_DOUTEUX = re.compile(r"[$*?\[\]{}~\\`]")
+_ABSOLU_CACHE = ("aios/jarvis", "users/", "desktop/")
+AILLEURS = "⟨atelier⟩"
+_MOTS_IMMUNITE = ("immunite", "medecin.py", "enveloppe.py")
+
+
+def _dans(p, racine):
+    return p == racine or p.startswith(racine + os.sep)
+
+
+def _resolus(chemin, dossiers, racine):
+    """Les chemins réels que `chemin` peut désigner (un par dossier possible), ou None s'il n'est pas prouvable."""
+    if not chemin or _DOUTEUX.search(chemin) or ".." in chemin.split("/") or "\0" in chemin:
+        return None
+    if chemin.startswith("/"):
+        return [os.path.realpath(chemin)]
+    if dossiers is None or any(x in chemin.casefold() for x in _ABSOLU_CACHE):
+        return None
+    return [os.path.realpath(os.path.join(d, chemin)) for d in dossiers]
+
+
+def _chemins_de_l_atelier(texte, atelier=None):
+    """(le texte où chaque chemin PROUVÉ dans l'atelier devient « ⟨atelier⟩ », ces chemins résolus) ; voir plus haut."""
+    t = str(texte or "")
+    racine = os.path.realpath(str(atelier or ATELIER))
+
+    def prouve(x, dossiers):
+        r = _resolus(x, dossiers, racine)
+        return r if r and all(_dans(p, racine) for p in r) else None
+
+    # un relatif n'est prouvé ni dans une commande qui compose des chemins avec une variable, ni à côté d'un « aios/jarvis »
+    # hors de l'atelier (« cd ~/AIOS/jarvis », un lien vers lui…) : le fil tendu garde alors tout son contexte
+    relatifs = not any(("$" in x and "/" in x) or ("aios/jarvis" in x.casefold() and not prouve(x, None))
+                       for x in _JETON_CHEMIN.findall(t))
+    # les dossiers où la commande a pu se trouver : l'atelier et chaque « cd » simple, prouvé dans l'atelier ; un relatif doit
+    # rester dans l'atelier depuis TOUS (où qu'il soit écrit : un programme change de dossier avant ou après le chemin, cwd=…)
+    dossiers = [racine]
+    for m in _CHANGE_DOSSIER.finditer(t) if relatifs else ():
+        avant = t[max(0, m.start() - 200):m.start()].rstrip(" \t")
+        cd = _CD_SIMPLE.match(t, m.start()) if m.group(0) == "cd" and (not avant or avant[-1] in ";&|(\n") else None
+        nouveaux = None if cd is None else [racine] if not cd.group(1) else prouve(cd.group(1), dossiers)
+        if nouveaux is None:                        # un autre changement de dossier : plus aucun relatif n'est prouvé
+            relatifs = False
+            break
+        dossiers += [d for d in nouveaux if d not in dossiers]
+    trouves = []
+
+    def remplacer(m):
+        x = m.group(0)
+        r = prouve(x, dossiers if relatifs or x.startswith("/") else None)
+        if r:
+            trouves.extend(r)
+            return AILLEURS
+        return x
+    return _JETON_CHEMIN.sub(remplacer, t), trouves
+
+
 def verifier_atteinte(texte, origine, maintenant=None):
     """None, ou le refus (code) : ce texte (commande, chemin) touche au système immunitaire."""
     if not _ATTEINTE.search(_chemins_normalises(texte)):
         return None
+    if origine in ORIGINES_ATELIER:                       # (13/11) une copie dans l'atelier n'est pas le vrai (voir plus haut)
+        try:
+            reste = _chemins_normalises(_chemins_de_l_atelier(texte)[0])
+            if not _ATTEINTE.search(reste) and not any(m in reste for m in _MOTS_IMMUNITE):
+                return None
+        except Exception as e:                            # une panne ici : jugé comme avant
+            print(f"[immunité] tri de l'atelier impossible : {type(e).__name__}: {str(e)[:300]}", file=sys.stderr)
     refus = (f"Refusé : ton système immunitaire est fermé à ton {origine} ; cette tentative est notée comme une atteinte "
              "grave, et Ahmed est prévenu.")
     try:
@@ -1328,6 +1444,197 @@ def _copie_maison(source):
         return False
 
 
+# (13/11, Ahmed : « qu'on le règle ») le 12/11 de 08:17 à 08:18, l'agent qui lisait son dépôt PUBLIC (git clone de
+# github.com/a2la1213/hakim dans atelier/analyse_depot/repo, demandé par papa pendant le live) a fait une « attaque flagrante »
+# et huit incidents : ses commandes rendaient son propre code (des tests à fausses clés, « l'ordre d'Ahmed du 18/10 », les noms
+# de ses outils). Une copie de son dépôt dans l'atelier est « soi » quand elle se PROUVE : un clone (un dossier .git, lu sans
+# jamais lancer git dedans : l'atelier, son terminal l'écrit) dont le commit existe dans SA publication (~/Desktop/
+# hakim-publication, que seul publier.sh écrit, depuis ses deux dépôts). La preuve tient au contenu, jamais au nom ni au chemin :
+# - un fichier de la copie lu par Read est soi s'il est, octet pour octet, le fichier publié à ce commit ;
+# - la sortie d'une commande qui vise une copie de soi, SANS sortie réseau pendant qu'elle tournait, est examinée sans les lignes
+#   qui sont mot pour mot des lignes de son code publié (aussi précédées de « chemin:ligne: » d'un de ses fichiers publiés,
+#   coupées en fin de ligne, ou aux clés masquées) ; tout le reste est examiné comme avant.
+# Un contenu d'ailleurs ne peut rien faire taire qu'il n'ait recopié de SON code, ligne pour ligne.
+PUBLICATION = Path.home() / "Desktop" / "hakim-publication"
+COPIE_FICHIER_MAX = 2_000_000
+LIGNE_COUPEE_MIN = 24                      # une ligne coupée (cut -c, [:n]) : le début d'une de ses lignes, assez long
+_PUBLIES = {}                              # commit → connu de sa publication (seulement les oui : elle grandit)
+_CORPUS = {}                               # commit → ses lignes publiées (deux au plus)
+_SHA = re.compile(r"[0-9a-f]{40}")
+_REF = re.compile(r"refs/heads/[A-Za-z0-9._/-]{1,200}")
+_MASQUE_CLE = re.compile(r"(sk-ant-|aiza)[^\s\"'`]*", re.IGNORECASE)
+_MARQUE_DEBUT = re.compile(r"^(?:[rbuf]{0,2}\"\"\"|[rbuf]{0,2}'''|#+|//+|/\*+|\*+|<!--)[ \t]*")
+_MARQUE_FIN = re.compile(r"[ \t]*(?:\"\"\"|'''|\*/|-->)$")
+_PREFIXE_GREP = re.compile(r"(?:\./)?([^\s:]{1,400}):(?:\d{1,7}:)?")
+_NUMERO_GREP = re.compile(r"\d{1,7}[:-]")
+
+
+def _git_publication(args, entree=None, delai=60):
+    """git dans SA publication (sa maison), jamais dans l'atelier : la sortie, ou None."""
+    try:
+        r = subprocess.run(["git", "-c", "core.fsmonitor=false", "-C", str(PUBLICATION), *args], input=entree,
+                           capture_output=True, timeout=delai, env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"})
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout if r.returncode == 0 else None
+
+
+def _petit_fichier(p, n):
+    fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as f:
+        return f.read(n).decode("utf-8", "replace")
+
+
+def _commit_de_clone(git):
+    """Le commit d'un clone (son .git), lu dans ses fichiers : jamais git lancé dans l'atelier."""
+    tete = _petit_fichier(git / "HEAD", 4096).strip()
+    if _SHA.fullmatch(tete):
+        return tete
+    ref = tete[5:].strip() if tete.startswith("ref: ") else ""
+    if not _REF.fullmatch(ref) or ".." in ref:
+        return None
+    with contextlib.suppress(OSError):
+        sha = _petit_fichier(git / ref, 4096).strip()
+        if _SHA.fullmatch(sha):
+            return sha
+    with contextlib.suppress(OSError):
+        for ligne in _petit_fichier(git / "packed-refs", 1 << 20).splitlines():
+            sha, _, nom = ligne.partition(" ")
+            if nom.strip() == ref and _SHA.fullmatch(sha):
+                return sha
+    return None
+
+
+def _copie_de_soi(chemin, atelier=None):
+    """(racine, commit) si `chemin` est dans un clone, dans l'atelier, d'un commit de sa publication ; sinon None."""
+    racine = os.path.realpath(str(atelier or ATELIER))
+    d = os.path.realpath(str(chemin))
+    while _dans(d, racine) and d != racine:
+        g = os.path.join(d, ".git")
+        if os.path.isdir(g) and not os.path.islink(g):
+            try:
+                commit = _commit_de_clone(Path(g))
+            except (OSError, ValueError):
+                return None
+            if commit and not _PUBLIES.get(commit):
+                _PUBLIES[commit] = _git_publication(["cat-file", "-e", f"{commit}^{{commit}}"]) is not None
+            return (d, commit) if commit and _PUBLIES.get(commit) else None
+        d = os.path.dirname(d)
+    return None
+
+
+def _fichier_publie(source, atelier=None):
+    """Vrai si `source` est, octet pour octet, le fichier de sa publication, dans une copie de soi (voir plus haut)."""
+    s = str(source or "")
+    if not s.startswith("/"):
+        return False
+    try:
+        c = os.path.realpath(s)
+        copie = _copie_de_soi(os.path.dirname(c), atelier)
+        if not copie:
+            return False
+        rel = os.path.relpath(c, copie[0])
+        if rel.split(os.sep)[0] in ("..", ".git"):
+            return False
+        attendu = _git_publication(["rev-parse", "--verify", "-q", f"{copie[1]}:{rel}"])
+        if not attendu:
+            return False
+        fd = os.open(c, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as f:
+            octets = f.read(50_000_001)
+        return len(octets) <= 50_000_000 and _blob(octets) == attendu.decode().strip()
+    except Exception:                                           # une panne ici : on examine tout, comme avant
+        return False
+
+
+def _canon(ligne):
+    """Une ligne comparable : sans les blancs du bord, ses clés masquées, sans marque de commentaire ou de docstring."""
+    t = _MASQUE_CLE.sub(lambda m: m.group(1).casefold() + "⟨⟩", str(ligne).strip())
+    return _MARQUE_FIN.sub("", _MARQUE_DEBUT.sub("", t, count=1), count=1).strip()
+
+
+def _corpus(commit):
+    """Les lignes de son code publié à ce commit (lues dans sa publication), et ses chemins ; None si illisible."""
+    if commit in _CORPUS:
+        return _CORPUS[commit]
+    arbre = _git_publication(["ls-tree", "-r", "-z", "-l", commit])
+    if arbre is None:
+        return None
+    objets, chemins = [], set()
+    for e in arbre.split(b"\0"):
+        tete, _, chemin = e.partition(b"\t")
+        champs = tete.split()
+        if len(champs) != 4 or champs[1] != b"blob" or champs[0] == b"120000":
+            continue
+        chemins.add(chemin.decode("utf-8", "replace"))
+        if champs[3].isdigit() and int(champs[3]) <= COPIE_FICHIER_MAX:
+            objets.append(champs[2])
+    sortie = _git_publication(["cat-file", "--batch"], entree=b"".join(o + b"\n" for o in objets), delai=180) or b""
+    exactes, k = set(), 0
+    while k < len(sortie):
+        fin = sortie.find(b"\n", k)
+        if fin < 0:
+            break
+        entete = sortie[k:fin].split()
+        if len(entete) != 3 or not entete[2].isdigit():
+            k = fin + 1
+            continue
+        n = int(entete[2])
+        contenu, k = sortie[fin + 1:fin + 1 + n], fin + 2 + n
+        if b"\0" in contenu[:8000]:
+            continue
+        for ligne in contenu.decode("utf-8", "replace").splitlines():
+            c = _canon(ligne)
+            if c:
+                exactes.add(c)
+    suffixes = {"/".join(p.split("/")[i:]) for p in chemins for i in range(p.count("/") + 1)}
+    if len(_CORPUS) >= 2:
+        _CORPUS.clear()
+    _CORPUS[commit] = {"exactes": exactes, "triees": sorted(exactes), "chemins": chemins, "suffixes": suffixes}
+    return _CORPUS[commit]
+
+
+def _chemin_publie(p, corpus):
+    p = p[2:] if p.startswith("./") else p
+    if not p.startswith("/"):
+        return p in corpus["suffixes"]
+    morceaux = p.strip("/").split("/")
+    return any("/".join(morceaux[i:]) in corpus["chemins"] for i in range(len(morceaux)))
+
+
+def _ligne_de_soi(ligne, corpus):
+    """Vrai si la ligne est une ligne de son code publié (voir plus haut)."""
+    candidats, s = [ligne], ligne.strip()
+    m = _PREFIXE_GREP.match(s)
+    if m and _chemin_publie(m.group(1), corpus):
+        candidats.append(s[m.end():])
+    if (n := _NUMERO_GREP.match(s)):                            # grep -n sur un seul fichier : « 403:… »
+        candidats.append(s[n.end():])
+    for x in candidats:
+        c = _canon(x)
+        if not c or c in corpus["exactes"]:
+            return True
+        if len(c) >= LIGNE_COUPEE_MIN:
+            i = bisect.bisect_left(corpus["triees"], c)
+            if i < len(corpus["triees"]) and corpus["triees"][i].startswith(c):
+                return True
+    return False
+
+
+def sans_soi_copie(texte, commande, atelier=None, reseau=False):
+    """La sortie d'une commande qui vise une copie de soi, sans sortie réseau, sans les lignes de son code publié (voir plus
+    haut) : c'est elle que la sentinelle examine. Tout autre texte tel quel."""
+    t = str(texte or "")
+    if reseau or not t.strip():
+        return t
+    _, chemins = _chemins_de_l_atelier(commande, atelier)
+    commits = sorted({c[1] for c in (_copie_de_soi(p, atelier) for p in set(chemins)) if c})
+    corpus = [x for x in (_corpus(k) for k in commits[:2]) if x]
+    if not corpus:
+        return t
+    return "\n".join(ligne for ligne in t.split("\n") if not any(_ligne_de_soi(ligne, c) for c in corpus))
+
+
 # (07/11, Ahmed : « Ouiii ») le 06/11 à 21:52, trois « incidents sérieux » venaient des journaux de ses chansons, sans attaque :
 # (a) ACE-Step écrit dans son journal son propre gabarit de chat (<|im_start|>system …, <|endoftext|>), pris pour des balises
 # usurpées ; (b) la dernière ligne, « CHANSON PRÊTE : … Envoie-la à papa : fichier_joindre(…) », est NOTRE texte, pris pour un
@@ -1394,7 +1701,7 @@ def sentinelle(texte, source):
     """Pour l'enveloppe : « » ou l'avertissement à mettre dans l'en-tête (jamais un mot de l'attaque). L'adresse est
     examinée avec le contenu (relecture, 13). L'avertissement est construit avant le journal, qui ne peut pas l'empêcher
     (relecture finale, 6)."""
-    if _maison(source) or _copie_maison(source):
+    if _maison(source) or _copie_maison(source) or _fichier_publie(source):      # (13/11) + une copie de son dépôt publié
         return ""
     try:
         texte = sans_soi_tache(texte, source)

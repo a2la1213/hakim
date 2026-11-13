@@ -40,3 +40,26 @@ test('branché : la route (jeton), la vérité sur chaque événement du lot et 
   assert.match(page, /function suivreVoix\(/);
   assert.match(page, /\/api\/corps\/voix/);
 });
+
+test('(13/11) l’exemple gardé : ses nerfs seulement, et son cœur par sa cadence', () => {
+  const w = extraire('function ressentirCorps(');
+  assert.match(w, /HOMEO\.estSonCoeur\(ev\)/);
+  assert.doesNotMatch(w, /coeurPres/, 'plus la coïncidence à 0,35 s');
+  // rejoué : la boucle du lot, avec un faux HOMEO et un faux disque
+  const debut = w.indexOf('  for (const ev of lot.evenements) {'), fin = w.indexOf('  corpsEnCours++;');
+  const ecrits = [];
+  const ctx = { lot: { evenements: [
+    { type: 'musique', t: 1000, details: { bpm: 46 } },               // son cœur
+    { type: 'coup_de_pression', t: 2000, details: { pa: 9 } },        // pendant la voix de papa
+    { type: 'son_ressenti', t: 3000, details: { source: 'le téléphone' } },   // ses oreilles : pas une vibration
+    { type: 'pose', t: 4000, details: {} },                           // personne ne suivait les voix
+  ] }, quiParlait: (t) => (t === 4000 ? null : 'voix_ahmed'), HOMEO: { estSonCoeur: (ev) => ev.type === 'musique' && ev.details.bpm === 46 },
+  TELEPHONE_TYPES: new Set(), NERFS_VIBRATIONS: null, PENDANT: { voix_ahmed: "la parole d'Ahmed", coeur: 'son propre cœur qui bat' },
+  fs: { appendFileSync: (f, l) => ecrits.push(JSON.parse(l)) }, path, JARVIS: '/nulle-part', j: JSON.stringify, Date, Number, Object };
+  vm.createContext(ctx);
+  const nerfs = src.slice(src.indexOf('const NERFS_VIBRATIONS'), src.indexOf(';', src.indexOf('const NERFS_VIBRATIONS')) + 1);
+  vm.runInContext(nerfs.replace('const NERFS_VIBRATIONS', 'NERFS_VIBRATIONS') + '\n' + w.slice(debut, fin), ctx);
+  assert.deepEqual(ecrits.map(o => [o.type, o.verite]), [['musique', 'coeur'], ['coup_de_pression', 'voix_ahmed']]);
+  assert.equal(ctx.lot.evenements[2].details.pendant, "la parole d'Ahmed", 'ses oreilles gardent « pendant » pour son subconscient');
+  assert.equal(ctx.lot.evenements[0].details.pendant, 'son propre cœur qui bat');
+});

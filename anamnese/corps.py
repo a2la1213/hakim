@@ -572,19 +572,28 @@ def apprendre_moment(moment, maintenant=None):
     if not moment or float(moment.get("confiance") or 0) < APPRENDRE_CONFIANCE:
         return None
     maintenant = time.time() if maintenant is None else maintenant
-    nom = str(moment.get("nom") or "")
+    propose = str(moment.get("nom") or "")
+    # (13/11, lettre de Hakim du 11/11 : « calin, calin_de_papa, cal, cadin, cstyle_cal… une garde qui rattache un nouveau moment
+    # à un nom existant quand le sens est très proche, et qui refuse les noms tronqués ») la garde des noms (moments.garde)
     try:
         import moments
+        g = moments.garde(propose, moment.get("sens") or "")
+    except Exception:
+        return None
+    nom = g["nom"]
+    if not nom:
+        return None
+    try:
         deja = [json.loads(l) for l in (JARVIS / "corps-moments.jsonl").read_text(encoding="utf-8").splitlines()[-200:] if l.strip()]
-        if any(o.get("nom") == nom and maintenant - float(o.get("ts") or 0) < APPRENDRE_ECART_S for o in deja):
+        if any(moments.canonique(o.get("nom")) == nom and maintenant - float(o.get("ts") or 0) < APPRENDRE_ECART_S for o in deja):
             return f"{nom} ({moment.get('sens') or 'déjà appris il y a peu'})"
     except (OSError, ValueError):
         pass
     try:
-        import moments
         h = lambda t: time.strftime("%H:%M:%S", time.localtime(t))
         r = moments.etiqueter(h(maintenant - APPRENDRE_FENETRE_S), h(maintenant), nom,
-                              f"(appris par ton subconscient) {moment.get('sens') or ''}".strip(), maintenant)
+                              f"(appris par ton subconscient) {moment.get('sens') or ''}".strip(), maintenant,
+                              propose=propose if propose != nom else None, raison=g["raison"])
         return f"{nom} ({moment.get('sens') or ''})" if r.startswith("C'est noté") else None
     except Exception:
         return None

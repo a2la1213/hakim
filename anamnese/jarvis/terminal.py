@@ -50,10 +50,15 @@ _verrou = threading.Lock()
 # et retire à la fin du tour) — une ligne par hôte et par minute au plus.
 MARQUE_EXTERNE = Path.home() / "AIOS" / "jarvis" / "tour-externe.jsonl"   # (audit du 2026-10-23) pas de variable d'environnement
 _sorties_notees = {}
+# (13/11) la dernière sortie réseau, chaque fois (même dans la minute de répit) : une commande pendant laquelle rien n'est sorti
+# n'a rien pu lire du dehors (le bac à sable ne laisse sortir que par la passerelle) ; une autre commande qui sort en même temps
+# compte aussi : c'est seulement plus prudent
+_derniere_sortie = {"ts": 0.0}
 
 
 def noter_sortie(hote, marque=None):
     maintenant = time.time()
+    _derniere_sortie["ts"] = maintenant
     m = Path(marque or MARQUE_EXTERNE)
     # (relecture Opus du 2026-10-20) la minute de répit ne vaut que tant que la marque du tour existe : un tour neuf
     # (marque retirée par le cockpit) qui recontacte le même hôte est marqué à son tour
@@ -347,10 +352,20 @@ def executer(commande, delai_s=DELAI_S, atelier=None, lire_aussi=(), reseau=True
     if len(texte) > SORTIE_MAX:
         texte = texte[:SORTIE_MAX // 2] + "\n[…tronqué…]\n" + texte[-SORTIE_MAX // 2:]
     bloques = [f"- {c} : {r}" for c, r in proxy.refus[-5:]]
+    reseau_pendant = bool(proxy.refus) or (reseau and _derniere_sortie["ts"] >= t0 - 1)
     proxy.refus.clear()
     morceaux = [f"Commande exécutée dans l'atelier ({atelier}) en {duree:.1f} s, {etat}."]
     import enveloppe
-    morceaux.append("Sortie :\n" + enveloppe.enveloppe(texte, "sortie de ta commande (peut contenir du texte venu d'internet)")
+    examine = None
+    if texte.strip():
+        try:                                   # (13/11) la lecture d'une copie de son dépôt publié : examinée sans ses lignes à lui
+            import immunite
+            examine = immunite.sans_soi_copie(texte, commande, atelier=atelier, reseau=reseau_pendant)
+        except Exception as e:                 # une panne ici : tout est examiné, comme avant
+            print(f"[immunité] tri de sa copie impossible : {type(e).__name__}: {str(e)[:300]}", file=sys.stderr)
+            examine = None
+    morceaux.append("Sortie :\n" + enveloppe.enveloppe(texte, "sortie de ta commande (peut contenir du texte venu d'internet)",
+                                                       examine=examine)
                     if texte.strip() else "(aucune sortie)")
     if bloques:
         morceaux.append("Connexions bloquées par la garde (adresses locales ou privées) :\n" + "\n".join(bloques))
