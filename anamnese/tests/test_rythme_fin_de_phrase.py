@@ -24,6 +24,17 @@ def test_ses_deux_reglages_de_fin_de_phrase_ont_leurs_valeurs_de_depart():
     assert M.RYTHME["silence_parole_longue"][1:3] == (1.0, 4.0)
 
 
+def test_sa_parole_courte_attend_1_s():
+    """(14/11, 14:25, Ahmed : « Gooo ») la parole courte de papa : son tour se ferme à 1 s de silence (avant : 0,5 s dès que sa phrase
+    semblait finie ; rejoué sur le 14/11 : 9 fins trop tôt de plus évitées, ~1 ms de coût)"""
+    assert M.rythme()["silence_parole_courte"] == 1.0
+    assert M.RYTHME["silence_parole_courte"][1:3] == (0.5, 2.0)
+    M.regler_rythme("silence_parole_courte", 1.2)
+    assert json.loads(M.FICHIER_RYTHME.read_text(encoding="utf-8"))["silence_parole_courte"] == 1.2
+    with pytest.raises(ValueError):
+        M.regler_rythme("silence_parole_courte", 0.3)
+
+
 def test_il_les_regle_et_la_page_les_lit_dans_son_fichier():
     M.regler_rythme("silence_parole_longue", 2.5)
     M.regler_rythme("parole_longue", 3)

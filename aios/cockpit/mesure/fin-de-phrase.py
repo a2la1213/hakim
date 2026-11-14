@@ -95,7 +95,7 @@ tot = sorted(x['total_ms'] for x in TT if x.get('total_ms', -1) >= 0)
 if tot: print(f'   pour mémoire, de sa dernière voix au premier son de Hakim : médiane {tot[len(tot)//2]/1000:.1f} s (p10 {tot[len(tot)//10]/1000:.1f} s)')
 
 # ---------- 5. rejeu de la règle (parler.js, plancherFinDeTour) sur ces fins anticipées ----------
-# ANCIEN : ton tour se ferme à 0,5 s de silence. NOUVEAU : pareil pour ta parole courte ; 2 s si ta parole est longue (2 s de voix :
+# ANCIEN : ton tour se ferme à 0,5 s de silence. NOUVEAU : 1 s pour ta parole courte (14/11, 14:25) ; 2 s si elle est longue (2 s de voix :
 # ici sa durée depuis le début du tour, au moins 2,3 s, ses petits blancs compris) ou si tu reprenais ta phrase (moins de 4 s après ta
 # dernière voix connue, ou une suite collée au message d'avant)
 fins_connues = sorted(o['t'] - o['silence_ms'] for o in fins)
@@ -103,12 +103,12 @@ def reprise(x):
     debut = x['L'] - x['D']                                             # début de sa voix dans ce tour
     k = bisect.bisect_left(fins_connues, debut) - 1
     return k >= 0 and 0 < debut - fins_connues[k] < 4000
-def plancher(x, LONG=2300, PL=2000):
-    return PL if (x['D'] >= LONG or x['colle'] or reprise(x)) else 500
+def plancher(x, LONG=2300, PL=2000, COURT=1000):
+    return PL if (x['D'] >= LONG or x['colle'] or reprise(x)) else COURT
 vraies = [x for x in lignes if x['blanc'] >= 3000]
 ev = [x for x in pre if x['blanc'] < plancher(x)]
 lg = sum(1 for x in vraies if plancher(x) == 2000)
-print('\n5. Rejeu — ANCIEN : 0,5 s ; NOUVEAU : 0,5 s si ta parole est courte, 2 s si elle est longue (2 s de voix) ou si tu reprends ta phrase')
+print('\n5. Rejeu — ANCIEN : 0,5 s ; NOUVEAU : 1 s si ta parole est courte, 2 s si elle est longue (2 s de voix) ou si tu reprends ta phrase')
 print(f'   fins prématurées évitées : {len(ev)} / {len(pre)} ; restent {len(pre) - len(ev)}')
-print(f'   vraies fins (tu n\'as pas repris avant 3 s) : {lg} / {len(vraies)} attendent 2 s (coût : la ligne T = 2 s du point 4) ; {len(vraies) - lg} inchangées')
+print(f'   vraies fins (tu n\'as pas repris avant 3 s) : {lg} / {len(vraies)} attendent 2 s (coût : la ligne T = 2 s du point 4) ; {len(vraies) - lg} attendent 1 s (ligne T = 1 s)')
 print('   restent prématurées (heure, ton blanc en s) :', [(hms(x['t']), round(x['blanc']/1000, 1)) for x in pre if x not in ev])

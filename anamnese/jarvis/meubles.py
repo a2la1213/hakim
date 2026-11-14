@@ -160,6 +160,8 @@ RYTHME = {
     # reprend, va jusqu'au bout : son tour ne se ferme qu'après ce silence (la page Parler, plancherFinDeTour) ; sa parole courte ne change pas
     "parole_longue": (2.0, 1.0, 10.0, "la parole de papa (en secondes de voix) à partir de laquelle tu le laisses finir plus longtemps"),
     "silence_parole_longue": (2.0, 1.0, 4.0, "le silence de papa après lequel tu reprends quand il parle longtemps ou reprend sa phrase (s)"),
+    # (14/11, 14:25, Ahmed : « Gooo ») sa parole courte : 1 s, plus jamais 0,5 s (la page Parler, plancherFinDeTour)
+    "silence_parole_courte": (1.0, 0.5, 2.0, "le silence de papa après lequel tu reprends quand il a parlé court (s)"),
 }
 FICHIER_RYTHME = FICHIER.parent / "rythme-voix.json"
 

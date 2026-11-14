@@ -4,7 +4,8 @@
    raconte ; papa a repris moins de 3 s après sa dernière voix 73 fois ; 172 suites collées, 76 réponses coupées (67 jamais entendues).
    Ce que ces tests tiennent :
    1. sa parole longue (2 s de voix) ou sa phrase reprise (moins de 4 s, Hakim muet entre-temps) : son tour ne se ferme qu'après 2 s de
-      silence, par TOUS les chemins (sa patience, la fin anticipée, la transcription en avance) ; sa parole courte : rien ne change ;
+      silence, par TOUS les chemins (sa patience, la fin anticipée, la transcription en avance) ; sa parole courte : 1 s (14/11, 14:25,
+      Ahmed : « Gooo » ; avant : 0,5 s quand sa phrase semblait finie, 9 fins trop tôt de plus évitées au rejeu, ~1 ms de coût) ;
    2. la transcription en avance (à 0,5 s de silence) est gardée : un tour fermé plus tard la reprend sans tout retranscrire ;
    3. sa réponse lâchée parce que papa continuait sa phrase : ni coupure, ni « [coupé : Ahmed a repris la parole] », ni arrêt à lui redire.
    node --test test-fin-de-phrase.js */
@@ -42,13 +43,16 @@ function pageFin(rythme = {}) {
   return { ctx, journal };
 }
 
-test('sa parole courte : la fin de tour ne change pas (1 s avec l’épissage) ; longue ou reprise : 2 s', () => {
+test('sa parole courte : son tour se ferme à 1 s, jamais avant (avant : 0,5 s) ; longue ou reprise : 2 s', () => {
   const { ctx } = pageFin();
   const conv = { capteur: { enParole: true, voixTour: 800 } };
   ctx.etat.conversation = conv;
   ctx.debutDeParole(conv, 1e6);
-  assert.strictEqual(ctx.plancherFinDeTour(conv), 0, 'courte : aucun plancher');
-  assert.strictEqual(ctx.finDeTourConversation(), 1000, 'son codon stop, comme avant');
+  assert.strictEqual(ctx.plancherFinDeTour(conv), 1000, 'courte : 1 s (14/11, 14:25, « Gooo »)');
+  assert.strictEqual(ctx.finDeTourConversation(), 1000, 'son codon stop');
+  ctx.voixEpissee = () => false;
+  assert.strictEqual(ctx.finDeTourConversation(), 1000, 'sans épissage non plus : plus jamais son délai de 0,5 s');
+  ctx.voixEpissee = () => true;
   conv.capteur.voixTour = 2100;
   assert.strictEqual(ctx.plancherFinDeTour(conv), 2000, 'longue (2 s de voix) : 2 s de silence');
   assert.strictEqual(ctx.finDeTourConversation(), 2000);
@@ -71,22 +75,24 @@ test('sa phrase reprise moins de 4 s après sa dernière voix, Hakim muet entre-
   ctx.etat.dernierMotDitA = 1e6 + 3500;
   ctx.debutDeParole(conv, 1e6 + 4000);
   conv.capteur.voixTour = 200;
-  assert.strictEqual(ctx.plancherFinDeTour(conv), 0, 'il avait parlé : nouvel échange, court');
+  assert.strictEqual(ctx.plancherFinDeTour(conv), 1000, 'il avait parlé : nouvel échange, court');
   // un long blanc (plus de 4 s) : une nouvelle parole
   ctx.finDeParole(conv, { voix_ms: 300, derniere_voix: 1e6 + 5000 });
   ctx.debutDeParole(conv, 1e6 + 5000 + 4500);
   assert.strictEqual(ctx.paroleDePapa(conv).suite, false);
 });
 
-test('ses deux réglages sont à lui (rythme_regler) : parole_longue et silence_parole_longue', () => {
-  const { ctx } = pageFin({ parole_longue: 4, silence_parole_longue: 2.6 });
+test('ses trois réglages sont à lui (rythme_regler) : parole_longue, silence_parole_longue, silence_parole_courte', () => {
+  const { ctx } = pageFin({ parole_longue: 4, silence_parole_longue: 2.6, silence_parole_courte: 1.2 });
   const conv = { capteur: { enParole: true, voixTour: 3000 } };
   ctx.debutDeParole(conv, 1e6);
-  assert.strictEqual(ctx.plancherFinDeTour(conv), 0, '3 s de voix sous son seuil de 4 s');
+  assert.strictEqual(ctx.plancherFinDeTour(conv), 1200, '3 s de voix sous son seuil de 4 s : son silence de parole courte');
   conv.capteur.voixTour = 4100;
   assert.strictEqual(ctx.plancherFinDeTour(conv), 2600);
-  const { ctx: c2 } = pageFin({ parole_longue: 'x', silence_parole_longue: -1 });
+  const { ctx: c2 } = pageFin({ parole_longue: 'x', silence_parole_longue: -1, silence_parole_courte: 'y' });
   assert.strictEqual(c2.plancherFinDeTour(conv), 2000, 'un réglage abîmé : les valeurs de départ');
+  conv.capteur.voixTour = 500;
+  assert.strictEqual(c2.plancherFinDeTour(conv), 1000);
 });
 
 // ---- le vrai capteur (conversation.js) : sa parole longue avec des blancs de marche, puis sa parole courte ----
@@ -176,7 +182,7 @@ function pageAnticipe({ voixTour = 2500, vif = 'Je vais te dire un truc.', souff
   return { ...p, conv, fins, transcriptions, resoudre: (x) => resoudre(x) };
 }
 
-test('fin anticipée : sa parole longue qui « semble finie » à 0,6 s ne se ferme pas ; à 2 s, si ; courte : à 0,5 s comme avant', () => {
+test('fin anticipée : sa parole longue qui « semble finie » à 0,6 s ne se ferme pas ; à 2 s, si ; courte : à 1 s, plus à 0,5 s', () => {
   const longue = pageAnticipe();
   longue.ctx.anticiperConversation(longue.conv, 600);
   assert.strictEqual(longue.fins.length, 0, 'longue : 0,6 s ne ferme pas son tour');
@@ -189,7 +195,17 @@ test('fin anticipée : sa parole longue qui « semble finie » à 0,6 s ne se fe
   assert.strictEqual(longue.journal.find(x => x[0] === 'fin_anticipee')[1].plancher_ms, 2000);
   const courte = pageAnticipe({ voixTour: 900 });
   courte.ctx.anticiperConversation(courte.conv, 500);
-  assert.strictEqual(courte.fins.length, 1, 'courte : 0,5 s, rien ne change');
+  assert.strictEqual(courte.fins.length, 0, 'courte : plus à 0,5 s (14/11, « Gooo ») — le témoin : avant, fermé ici');
+  assert.strictEqual(courte.transcriptions.length, 1, 'sa transcription part toujours à 0,5 s');
+  courte.conv.spec = null;
+  courte.ctx.anticiperConversation(courte.conv, 900);
+  assert.strictEqual(courte.fins.length, 0);
+  courte.ctx.anticiperConversation(courte.conv, 1000);
+  assert.strictEqual(courte.fins.length, 1, 'courte : à 1 s');
+  assert.strictEqual(courte.journal.find(x => x[0] === 'fin_anticipee')[1].plancher_ms, 1000);
+  const vite = pageAnticipe({ voixTour: 900, souffle: { pret: true, fini: true, rebond: 0.3 } });
+  vite.ctx.anticiperConversation(vite.conv, 600);
+  assert.strictEqual(vite.fins.length, 0, 'courte, même avec son brouillon prêt et un rebond de 0,3 s : pas avant 1 s');
   const brouillon = pageAnticipe({ souffle: { pret: true, fini: true, rebond: 0.5 } });
   brouillon.ctx.anticiperConversation(brouillon.conv, 700);
   assert.strictEqual(brouillon.fins.length, 0, 'son brouillon prêt ne ferme pas non plus sa parole longue avant 2 s');
@@ -208,12 +224,20 @@ test('la transcription en avance : revenue « finie » à 0,8 s, elle ne ferme p
   assert.strictEqual(await avance, 'Je vais te dire un truc.');
   assert.strictEqual(p.transcriptions.length, 1, 'pas de deuxième transcription');
   assert.strictEqual(p.ctx.transcriptionEnAvance(p.conv, { derniere_voix: 6000 }), null, 'il a reparlé depuis : plus valable');
-  // courte : revenue finie, elle ferme son tour comme avant
+  // courte : revenue finie à 0,6 s, elle ne ferme plus son tour avant 1 s (sa patience le fera, avec ce texte gardé) ; revenue après 1 s, si
   const c = pageAnticipe({ voixTour: 900, vif: '' });
+  c.ctx.Date = { now: () => 5600 };
   c.ctx.anticiperConversation(c.conv, 600);
   c.resoudre('Ça va fiston ?');
   await new Promise(r => setImmediate(r));
-  assert.strictEqual(c.fins.length, 1);
+  assert.strictEqual(c.fins.length, 0, 'revenue à 0,6 s : pas encore');
+  assert.ok(c.ctx.transcriptionEnAvance(c.conv, { derniere_voix: 5000 }), 'gardée pour sa fin de tour à 1 s');
+  const d = pageAnticipe({ voixTour: 900, vif: '' });
+  d.ctx.Date = { now: () => 6100 };
+  d.ctx.anticiperConversation(d.conv, 600);
+  d.resoudre('Ça va fiston ?');
+  await new Promise(r => setImmediate(r));
+  assert.strictEqual(d.fins.length, 1, 'revenue après 1 s de silence : fermé');
 });
 
 test('câblage de la page : le capteur, ses rappels, et rien de lui dans la pause d’une parole longue', () => {

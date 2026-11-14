@@ -3704,9 +3704,10 @@ async function photoCamera() {
    réponse lancée sur la moitié de ta phrase, coupée, puis refaite à côté.
    Ta parole longue (2 s de voix au moins : parole_longue) ou ta phrase que tu reprends (moins de 4 s après ta dernière voix, sans qu'il ait
    dit un mot entre-temps) : ton tour ne se ferme qu'après silence_parole_longue (2 s), par tous les chemins (ta patience, la fin anticipée,
-   son brouillon, la transcription en avance, sa pensée dans ta pause). Ta parole courte : rien ne change. Les deux réglages sont à lui
-   (rythme_regler). Rejoué sur le 14/11 : 43 de ces 73 fins trop tôt évitées ; ta transcription part toujours à 0,5 s de silence et reste
-   gardée : fermer plus tard coûte 0 ms en médiane (0,15 s en moyenne, sur tes paroles longues seulement ; rien sur les courtes). */
+   son brouillon, la transcription en avance, sa pensée dans ta pause). (14/11, 14:25, Ahmed : « Gooo ») ta parole courte : 1 s
+   (silence_parole_courte ; avant : 0,5 s dès que ta phrase semblait finie). Les trois réglages sont à lui (rythme_regler). Rejoué sur le
+   14/11 : 52 de ces 73 fins trop tôt évitées (43 avec la parole courte à 0,5 s) ; ta transcription part toujours à 0,5 s de silence et
+   reste gardée : fermer plus tard coûte 0 ms en médiane (1 ms en moyenne sur tes paroles courtes, 0,15 s sur les longues). */
 const PAROLE_REPRISE_MS = 4000;
 const rythmeParole = (k, d) => { const v = Number(typeof rythmeVoix === 'function' ? rythmeVoix(k, d) : d); return Number.isFinite(v) && v > 0 ? v : d; };
 // ton tour commence (surDebut) : la même parole si tu reprends dans les 4 s sans qu'il ait dit un mot, sinon une nouvelle
@@ -3732,10 +3733,10 @@ function paroleDePapa(conv) {
   const ici = cap && cap.enParole ? Math.max(0, Number(cap.voixTour) || 0) : 0;
   return { voixMs: (p && p.suite ? p.voixMs : 0) + ici, suite: !!(p && p.suite) };
 }
-// le silence que ta parole demande avant que ton tour se ferme (ms) : 0 quand elle est courte (rien ne change)
+// le silence que ta parole demande avant que ton tour se ferme (ms) : 2 s longue ou reprise, 1 s courte (14/11, 14:25 : plus jamais 0,5 s)
 function plancherFinDeTour(conv) {
   const p = paroleDePapa(conv);
-  return p.suite || p.voixMs >= rythmeParole('parole_longue', 2) * 1000 ? rythmeParole('silence_parole_longue', 2) * 1000 : 0;
+  return (p.suite || p.voixMs >= rythmeParole('parole_longue', 2) * 1000 ? rythmeParole('silence_parole_longue', 2) : rythmeParole('silence_parole_courte', 1)) * 1000;
 }
 // fin de la phrase longue (14/11)
 
@@ -5806,7 +5807,7 @@ async function choisirEtDire(dp) {
 }
 function anticiperConversation(conv, silenceMs) {
   // (04/11, 11:03, Ahmed : « tout relier ») chaque attente de ta pause suit le délai de la Conversation (patienceConversation)
-  // (14/11) ta parole longue, ou ta phrase reprise : rien de lui dans ta pause, et ton tour reste ouvert, avant son plancher de silence (2 s)
+  // (14/11) rien de lui dans ta pause, et ton tour reste ouvert, avant son plancher de silence (2 s ta parole longue ou reprise, 1 s ta parole courte)
   const plancher = typeof plancherFinDeTour === 'function' ? plancherFinDeTour(conv) : 0, pause = Math.max(patienceConversation(), plancher);
   if (silenceMs >= pause && typeof direPenseeSiPossible === 'function') direPenseeSiPossible();   // (04/11) ta pause : sa pensée prête se dit
   if (typeof rebondirDernierePensee === 'function' && silenceMs >= plancher) rebondirDernierePensee(conv, silenceMs);
@@ -6137,7 +6138,7 @@ const patienceConversation = () => (Number(etat.reglages.patienceConversation) >
 // (06/11, Ahmed : « que mes paroles ne soient pas coupées trop tôt : en moyenne 0,6 s avant de créer un chunk ; paramétrable dans le ribosome, pour lui
 // comme pour moi ») le blanc de ta voix qui coupe un morceau de ta parole (et, avec le tri des morceaux, celui qui les assemble) : chunk_papa_ms
 const blancDeMorceau = () => { const v = typeof reglagesCorps !== 'undefined' && reglagesCorps ? Number(reglagesCorps.chunk_papa_ms) : NaN; return Number.isFinite(v) && v >= 200 ? Math.min(3000, v) : 600; };
-// (14/11) ta parole longue, ou ta phrase reprise : pas avant son plancher de silence (2 s, plancherFinDeTour) ; ta parole courte : comme avant
+// (14/11) ta parole longue, ou ta phrase reprise : pas avant son plancher de silence (2 s, plancherFinDeTour) ; ta parole courte : 1 s (14:25)
 const finDeTourConversation = () => Math.max(typeof voixEpissee === 'function' && voixEpissee() ? Math.max(1000, patienceConversation()) : patienceConversation(), typeof plancherFinDeTour === 'function' && etat.conversation ? plancherFinDeTour(etat.conversation) : 0);
 
 /* (30/10, 23:05, Ahmed : « il y a plusieurs voix qui sortent quand il parle ») deux onglets en Conversation sur le Mac
