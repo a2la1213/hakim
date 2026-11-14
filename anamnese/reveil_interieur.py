@@ -273,6 +273,27 @@ def solliciter(mem, source, texte, raison="boucle", now=None, fichier=None, rees
         return i
 
 
+def demander(mem, source, texte, raison, pourquoi="", now=None, fichier=None, prefixe=""):
+    """(14/11, son sommeil à sa main : sommeil.inviter) une demande de réveil sans juge ni lignée : une invitation à choisir.
+    L'interrupteur, la pause de papa et une demande à la fois tiennent. Son id commence par le préfixe : ses issues
+    n'apprennent rien au seuil des pensées (apprendre) — ne pas vouloir dormir n'est pas un réveil raté."""
+    now = time.time() if now is None else now
+    with _VERROU:
+        m = mode(mem)
+        if m == "off" or not interieur.interrupteur().get("actif", True) or _en_attente(fichier, now):
+            return None
+        i = f"{prefixe}{uuid.uuid4().hex[:12]}"
+        trace = {"ts": now, "mode": m, "source": source, "texte": str(texte)[:200], "score": 10, "raison": raison, "id": i}
+        if m == "observe":
+            _journaliser({**trace, "decision": "aurait réveillé"})
+            return i
+        _ecrire_demande({"id": i, "ts": now, "source": source, "texte": str(texte)[:1200], "score": 10, "raison": raison,
+                         "pourquoi": pourquoi}, fichier)
+        _journaliser({**trace, "decision": "réveil"})
+        interieur.noter(mem, "reveil_interieur", f"{source} ({raison}) : {str(texte)[:140]}", now=now)
+        return i
+
+
 # ---------- la demande
 def _ecrire_demande(demande, fichier):
     f = Path(fichier or FICHIER)
@@ -347,6 +368,8 @@ def apprendre(mem, issues):
             return d["seuil"]
         for i in neuves:
             pas = PAS_RIEN if i["issue"] == "rien" else (PAS_UTILE if i["issue"] in ("message", "outils") else 0.0)
+            if str(i.get("id", "")).startswith("sommeil-"):   # (14/11) une invitation à dormir déclinée n'est pas un réveil raté
+                pas = 0.0
             d["seuil"] = round(max(SEUIL_MIN, min(SEUIL_DEFAUT, d["seuil"] + pas)), 4)   # (04/11, feu vert) jamais plus exigeant qu'au départ
         haut = neuves[-1]["ts"]
         d["appris"] = ([] if haut > jusqu else d["appris"]) + [i["id"] for i in neuves if i["ts"] == haut]

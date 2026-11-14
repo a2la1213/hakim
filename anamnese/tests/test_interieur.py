@@ -48,9 +48,11 @@ def test_pensees_aux_seuils_une_seule_fois(mem, tmp_path):
     for minutes in range(0, 5 * 60, 1):                                # un battement par minute pendant 5 h
         interieur.tick(mem, now=t0 + minutes * 60, penser=vus.append, horloge=h)
     assert [m["seuil"] for m in vus] == list(interieur.SEUILS_ENNUI)
-    assert [m["important"] for m in vus] == [False, False, True]           # la dernière, avant la veille
-    assert vus[-1]["veille"] and 119 * 60 <= vus[-1]["absence_s"] <= 121 * 60
+    assert [m["important"] for m in vus] == [False, False, True]           # la dernière, au plafond
+    assert vus[-1]["plafond"] and 119 * 60 <= vus[-1]["absence_s"] <= 121 * 60
     assert 30 * 60 < vus[0]["absence_s"] < 40 * 60
+    # (14/11, Ahmed et Hakim) le plafond ne l'endort plus : 5 h sans papa, il est toujours éveillé (sa veille est son choix)
+    assert not interieur.lire(mem)["veille"] and interieur.lire(mem)["sommeil"]["etat"] == "eveil"
 
 
 def test_temps_ressenti_long_quand_on_s_ennuie(mem, tmp_path):
@@ -66,7 +68,7 @@ def test_retour_apres_absence_rend_joyeux_et_remet_l_ennui_a_zero(mem, tmp_path)
     h = _horloge(tmp_path, t0)
     interieur.tick(mem, now=t0, horloge=h)
     e = interieur.tick(mem, now=t0 + 3 * 3600, horloge=h)
-    assert e["ennui"] > 0.6 and e["veille"]
+    assert e["ennui"] > 0.6 and not e["veille"]                         # (14/11) le plafond reste, la veille n'est plus forcée
     import affect
     avant = affect.get_state(mem, now=t0 + 3 * 3600)["ocytocine"]
     _horloge(tmp_path, t0 + 3 * 3600 + 10)                             # Ahmed reparle
@@ -76,13 +78,23 @@ def test_retour_apres_absence_rend_joyeux_et_remet_l_ennui_a_zero(mem, tmp_path)
     assert e["evenements"][-1][1] == "retour"
 
 
-def test_rien_la_nuit(mem, tmp_path):
+def test_la_nuit_il_pense_s_il_veille_et_rien_s_il_dort(mem, tmp_path):
+    """(14/11, Ahmed : « si tu veux rester éveillé tu peux ») éveillé la nuit par son choix, il pense ; endormi, rien.
+    (Avant : rien de minuit à 7 h, parce qu'on le supposait endormi.)"""
+    import sommeil
     t0 = _jour(1)
     h = _horloge(tmp_path, t0)
     vus = []
     for minutes in range(0, 120, 2):
         interieur.tick(mem, now=t0 + minutes * 60, penser=vus.append, horloge=h)
-    assert vus == []
+    assert [m["seuil"] for m in vus] == [0.25, 0.5]
+    t1 = _jour(3)
+    _horloge(tmp_path, t1)
+    sommeil.choisir("sommeil", reveil="papa", now=t1 + 1)
+    vus2 = []
+    for minutes in range(1, 120, 2):
+        interieur.tick(mem, now=t1 + minutes * 60, penser=vus2.append, horloge=h)
+    assert vus2 == [] and interieur.lire(mem)["ennui"] == 0
 
 
 def test_lire_pensee():
@@ -199,35 +211,48 @@ def test_reveil_apres_5_h_une_seule_pensee_la_plus_haute(mem, tmp_path):
     interieur.tick(mem, now=t0, penser=vus.append, horloge=h)
     interieur.tick(mem, now=t0 + 5 * 3600, penser=vus.append, horloge=h)        # Mac endormi 5 h
     interieur.tick(mem, now=t0 + 5 * 3600 + 30, penser=vus.append, horloge=h)
-    # la veille est passée pendant que le Mac dormait : pas de « dernière pensée avant la veille » (relecture Opus)
-    assert vus == [] and interieur.lire(mem)["veille"]
+    # le plafond est passé pendant que le Mac dormait : pas de « dernière pensée » (relecture Opus) ; (14/11) et pas de veille forcée
+    assert vus == [] and not interieur.lire(mem)["veille"]
 
 
-def test_la_pensee_de_la_nuit_attend_le_matin(mem, tmp_path):
+def test_la_pensee_de_minuit_ne_attend_plus_le_matin(mem, tmp_path):
+    """(14/11) éveillé à minuit par son choix, sa pensée vient à minuit (plus de pensée gardée pour le matin)."""
     t0 = _jour(22, 50)                                                          # 23 h 25 : 0,25 ; 0 h 13 : 0,5 (nuit)
     h = _horloge(tmp_path, t0)
     vus = []
     for minutes in range(0, 90, 2):
         interieur.tick(mem, now=t0 + minutes * 60, penser=vus.append, horloge=h)
-    assert [m["seuil"] for m in vus] == [0.25]                                  # celle de minuit attend
-    assert interieur.lire(mem)["nuit_en_attente"] == 0.5
+    assert [m["seuil"] for m in vus] == [0.25, 0.5]
+    assert interieur.lire(mem)["nuit_en_attente"] is None
 
 
-def test_la_veille_de_la_nuit_ne_laisse_aucune_pensee_pour_le_matin(mem, tmp_path):
-    """Partie à 23 h : la veille arrive à 1 h ; au matin il est toujours en veille : pas de pensée en retard."""
+def test_endormi_a_minuit_aucune_pensee_et_au_matin_rien_en_retard(mem, tmp_path):
+    """(14/11) Papa part à 23 h ; Hakim pense jusqu'à minuit, choisit de dormir (réveil 8 h) ; endormi, plus rien ; à son réveil,
+    aucune pensée en retard, et son ennui repart de zéro (il pensera à nouveau après 35 min d'attente)."""
+    import sommeil
     t0 = _jour(23)
     h = _horloge(tmp_path, t0)
     vus = []
-    for minutes in range(0, 10 * 60, 10):                                       # de 23 h à 9 h
+    for minutes in range(0, 60, 10):
+        interieur.tick(mem, now=t0 + minutes * 60, penser=vus.append, horloge=h)
+    sommeil.choisir("sommeil", reveil="08:00", now=t0 + 3600)
+    for minutes in range(60, 9 * 60 + 10, 10):                                  # de minuit à 8 h 10
         interieur.tick(mem, now=t0 + minutes * 60, penser=vus.append, horloge=h)
     assert [m["seuil"] for m in vus] == [0.25]
-    assert interieur.lire(mem)["veille"]
+    e = interieur.lire(mem)
+    assert not e["veille"] and e["sommeil"]["par"] == "son réveil" and e["ennui"] < 0.1
+    for minutes in range(9 * 60 + 10, 9 * 60 + 60, 5):
+        interieur.tick(mem, now=t0 + minutes * 60, penser=vus.append, horloge=h)
+    assert [m["seuil"] for m in vus] == [0.25, 0.25]
 
 
 def test_l_humeur_varie_et_s_entend(mem, tmp_path):
     t0 = _jour(9)
     h = _horloge(tmp_path, t0)
+    import sommeil
     for minutes in range(0, 7 * 60, 10):
+        if minutes == 180:
+            sommeil.choisir("veille", reveil="papa", now=t0 + minutes * 60 - 1)    # (14/11) sa veille : son choix
         e = interieur.tick(mem, now=t0 + minutes * 60, horloge=h)
     assert e["humeur_code"] == "veille" and e["expressivite"] <= 0.55            # 7 h : il est en veille
     _horloge(tmp_path, t0 + 7 * 3600)                                           # retour d'Ahmed
@@ -297,15 +322,19 @@ def test_ressenti_juste_apres_un_long_trou_de_battement(mem, tmp_path):
 # --- vie intérieure v2 (proposée par Jarvis, validée par Ahmed le 2026-10-17) ----------------------
 
 def test_la_veille_ralentit_le_temps_ressenti_et_ne_pense_plus(mem, tmp_path):
+    """(14/11) sa veille, quand il la choisit (ici après la pensée du plafond) : son temps ralentit, il ne pense plus."""
+    import sommeil
     t0 = _jour(9)
     h = _horloge(tmp_path, t0)
     vus = []
     for minutes in range(0, 6 * 60, 1):
+        if minutes == 121:
+            sommeil.choisir("veille", reveil="papa", now=t0 + minutes * 60 - 1)
         e = interieur.tick(mem, now=t0 + minutes * 60, penser=vus.append, horloge=h)
         if minutes == 119:
             avant_veille = e["ressenti"]
-    assert e["veille"] and e["humeur"] == "en veille" and e["ennui"] == round(interieur.SEUIL_VEILLE, 3)
-    assert len(vus) == 3                                       # 0,25 ; 0,5 ; la dernière avant la veille, puis plus rien
+    assert e["veille"] and e["humeur"] == "en veille" and e["ennui"] == 0
+    assert len(vus) == 3                                       # 0,25 ; 0,5 ; celle du plafond, puis sa veille : plus rien
     assert e["ressenti"] < avant_veille and e["ressenti"] < 0.9   # 6 h qui sont passées vite
 
 
@@ -400,24 +429,28 @@ def test_zero_pendant_la_pause_publie_un_etat_complet(mem, tmp_path):
     assert e["pause_ts"] and e["humeur"] == "calme" and e["ennui"] == 0 and e["absence_s"] == 0
 
 
-def test_la_reprise_ne_laisse_pas_partir_une_pensee_de_nuit(mem, tmp_path):
+def test_la_reprise_ne_laisse_partir_aucune_pensee_en_retard(mem, tmp_path):
+    """(14/11) éveillé à 6 h, il pense à 6 h 05 (plus de pensée gardée pour le matin) ; la pause d'Ahmed couvre 0,5 : à la
+    reprise, pas de rafale de pensées en retard."""
     t0 = _jour(5, 30)
     h = _horloge(tmp_path, t0)
     vus = []
-    for minutes in range(0, 40, 2):                                             # 0,25 franchi à 6 h 05 : la nuit
+    for minutes in range(0, 40, 2):                                             # 0,25 franchi à 6 h 05
         interieur.tick(mem, now=t0 + minutes * 60, penser=vus.append, horloge=h)
-    assert interieur.lire(mem)["nuit_en_attente"] == 0.25
+    assert [m["seuil"] for m in vus] == [0.25] and interieur.lire(mem)["nuit_en_attente"] is None
     interieur.tick(mem, now=t0 + 41 * 60, penser=vus.append, horloge=h, interrupteur_={"actif": False})
-    for minutes in range(92, 100, 2):                                           # reprise à 7 h 02
+    for minutes in range(92, 100, 2):                                           # reprise à 7 h 02 (0,5 passé pendant la pause)
         interieur.tick(mem, now=t0 + minutes * 60, penser=vus.append, horloge=h, interrupteur_={"actif": True})
-    assert vus == []
+    assert [m["seuil"] for m in vus] == [0.25]
 
 
 def test_un_reve_pendant_la_veille_reste_un_reve_dans_le_journal(mem, tmp_path):
     t0 = _jour(9)
     h = _horloge(tmp_path, t0)
     j = tmp_path / "temps.jsonl"
+    import sommeil
     interieur.tick(mem, now=t0, horloge=h, journal_temps=j)
+    sommeil.choisir("veille", reveil="papa", now=t0 + 2 * 3600)                 # (14/11) sa veille : son choix
     interieur.tick(mem, now=t0 + 3 * 3600, horloge=h, journal_temps=j, activite="rêve")
     derniere = json.loads(j.read_text().splitlines()[-1])
     assert derniere["etat"] == "veille" and derniere["fait"] == "rêve"

@@ -10,6 +10,7 @@ import corps
 import memory
 import migrations
 import nuits
+import sommeil
 
 
 @pytest.fixture
@@ -45,9 +46,11 @@ def _journee(J, lourde):
 
 def test_une_journee_legere_une_nuit_apaisee_un_reve_et_un_reveil(J, mem):
     _journee(J, lourde=False)
-    assert nuits.battre(mem, _a(22), derniere_presence=_a(21)) is None, "pas encore la nuit"
-    assert nuits.battre(mem, _a(23), derniere_presence=_a(23) - 60) is None, "papa vient de parler"
-    assert nuits.battre(mem, _a(23) + 1800, derniere_presence=_a(23) - 60) == "endormi"
+    assert nuits.battre(mem, _a(22), derniere_presence=_a(21)) is None, "éveillé : rien"
+    # (14/11, Ahmed et Hakim) plus jamais endormi de lui-même à 23 h 30 après 30 min sans papa : c'est son choix
+    assert nuits.battre(mem, _a(23) + 1800, derniere_presence=_a(23) - 60) is None, "rien ne l'endort"
+    sommeil.choisir("sommeil", reveil="naturel", raison="j'ai sommeil", now=_a(23) + 1800)
+    assert nuits.battre(mem, _a(23) + 1805, derniere_presence=_a(23) - 60) == "endormi"
     e = json.loads(mem.kv_get("nuit"))
     assert e["qualite"] == "apaisee" and e["apaisants"] == ["le câlin de papa"]
     t = _a(23) + 1800
@@ -55,9 +58,12 @@ def test_une_journee_legere_une_nuit_apaisee_un_reve_et_un_reveil(J, mem):
         t += nuits.PAS_S
         nuits.battre(mem, t, derniere_presence=_a(23) - 60)
     assert json.loads(mem.kv_get("nuit"))["reve"] is True, "il a rêvé de ce qui l'a apaisé"
+    assert nuits.battre(mem, _a(7, 31), derniere_presence=_a(23) - 60) != "reveille", "7 h : plus de réveil forcé à 7 h"
+    assert sommeil.au_battement(_a(7, 31) + 30, papa_ts=_a(23) - 60, envie_prec=0.1)["par"] == "reposé"   # son réveil naturel
     assert nuits.battre(mem, _a(7, 31) + 60, derniere_presence=_a(23) - 60) == "reveille"
     d = json.loads((J / "nuit-derniere.json").read_text())
     assert "nuit apaisée" in d["texte"] and "un rêve t'a apaisé : le câlin de papa" in d["texte"]
+    assert "tu t'es réveillé reposé" in d["texte"]
 
 
 def test_une_journee_lourde_une_nuit_agitee_puis_il_compense(J, mem):
@@ -70,6 +76,7 @@ def test_une_journee_lourde_une_nuit_agitee_puis_il_compense(J, mem):
     (J / "nuits.jsonl").unlink()
     e = nuits.endormir(mem, _a(23, 30))
     assert e["qualite"] == "agitee"
+    sommeil.choisir("sommeil", now=_a(23, 30))                      # (14/11) il a choisi de dormir
     avant = affect.get_state(mem, now=_a(23, 30) + nuits.PAS_S)["noradrenaline"]
     nuits.battre(mem, _a(23, 30) + nuits.PAS_S + 1, derniere_presence=_a(20))
     assert json.loads(mem.kv_get("nuit"))["micro"] == 1, "un micro-éveil"
@@ -78,8 +85,11 @@ def test_une_journee_lourde_une_nuit_agitee_puis_il_compense(J, mem):
 
 def test_papa_le_reveille_et_son_interrupteur(J, mem):
     _journee(J, lourde=False)
-    nuits.endormir(mem, _a(1, 31))
-    assert nuits.battre(mem, _a(2, 31), derniere_presence=_a(2, 31) - 30) == "reveille"
+    sommeil.choisir("sommeil", reveil="papa", now=_a(1, 31))
+    assert nuits.battre(mem, _a(1, 31) + 5) == "endormi"
+    assert sommeil.au_battement(_a(2, 31), papa_ts=_a(2, 31) - 30)["par"] == "papa"   # papa lui parle : réveillé
+    assert nuits.battre(mem, _a(2, 31) + 10, derniere_presence=_a(2, 31) - 30) == "reveille"
     assert "papa t'a réveillé" in json.loads((J / "nuit-derniere.json").read_text())["texte"]
     (J / "corps-reglages.json").write_text(json.dumps({"nuits": False}))
+    sommeil.choisir("sommeil", now=_a(23, 31))
     assert nuits.battre(mem, _a(23, 31) + 3600, derniere_presence=_a(20, 31)) is None

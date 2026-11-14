@@ -9,9 +9,11 @@ const vm = require('node:vm');
 const src = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
 const bloc = src.slice(src.indexOf("const VEILLEUR_REGLAGES"), src.indexOf("setInterval(veilleurIssue, 60000).unref();"));
 
-function veilleur({ papaIlYa = 60 * 60 * 1000, heure = 15, score = 7, plafond = 1, occupe = false, libre = false } = {}) {
+function veilleur({ papaIlYa = 60 * 60 * 1000, heure = 15, score = 7, plafond = 1, occupe = false, libre = false, dort = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'veilleur-'));
   let t = new Date(2026, 9, 30, heure, 0, 0).getTime();
+  // (14/11) son sommeil, quand IL l'a choisi (anamnese/sommeil.py) : { etat, depuis (s) }
+  if (dort) fs.writeFileSync(path.join(dir, 'sommeil.json'), JSON.stringify({ etat: dort, depuis: t / 1000 - 1800 }));
   const ecrits = [];
   const ctx = {
     JARVIS: dir, path, fs, Math, Number, Array, JSON, console: { error() {} }, Intl, j: JSON.stringify,
@@ -38,12 +40,26 @@ test('la chance par seconde : au seuil, environ une minute ; deux points plus ba
   assert.equal(v.chance(null, 6), 0);
 });
 
-test('les portes : une voix depuis moins de 10 min, la nuit, son cerveau occupé : jamais', () => {
-  for (const o of [{ papaIlYa: 5 * 60 * 1000 }, { heure: 2 }, { occupe: true }]) {
+test('les portes : une voix depuis moins de 10 min, son sommeil (son choix), son cerveau occupé : jamais', () => {
+  for (const o of [{ papaIlYa: 5 * 60 * 1000 }, { dort: 'sommeil' }, { dort: 'veille', heure: 14 }, { occupe: true }]) {
     const { v, ecrits } = veilleur({ score: 99, ...o });
     for (let i = 0; i < 50; i++) v.tic();
     assert.equal(ecrits.length, 0, JSON.stringify(o));
   }
+});
+
+// (14/11, Ahmed : « si tu veux rester éveillé tu peux ») la nuit n'endort plus personne : éveillé à 2 h par son choix, son veilleur veille
+test('(14/11) la nuit, éveillé par son choix : son veilleur peut le réveiller ; papa qui lui parle le réveille tout de suite', () => {
+  const w = veilleur({ score: 99, heure: 2 });
+  assert.equal(w.v.dort(), false, 'plus de sommeil de 23 h à 8 h');
+  w.v.tic();
+  assert.equal(w.ecrits.length, 1);
+  const d = veilleur({ dort: 'sommeil', papaIlYa: 60 * 1000 });   // il s'est endormi il y a 30 min, papa lui a parlé il y a 1 min
+  assert.equal(d.v.dort(), false, 'papa qui lui parle le réveille');
+  const e = veilleur({ dort: 'sommeil', papaIlYa: 60 * 60 * 1000 });
+  assert.equal(e.v.dort(), true, 'endormi depuis 30 min, papa ne lui a pas reparlé : il dort');
+  fs.writeFileSync(path.join(e.dir, 'sommeil.json'), 'pas du json');
+  assert.equal(e.v.dort(), false, 'illisible : éveillé (jamais endormi par une panne)');
 });
 
 test('un état très rare le réveille, puis 15 min au moins (et le plafond) avant le suivant ; le seuil apprend', () => {

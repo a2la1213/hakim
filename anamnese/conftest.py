@@ -179,6 +179,12 @@ def _vie_interieure_isolee(monkeypatch, tmp_path):
         monkeypatch.setattr(reves, "JARVIS", d)
     except Exception:
         pass
+    try:                                      # (14/11) son sommeil à sa main : jamais le vrai sommeil.json
+        import sommeil
+        monkeypatch.setattr(sommeil, "JARVIS", d)
+        monkeypatch.setattr(sommeil, "FICHIER", d / "sommeil.json")
+    except Exception:
+        pass
     try:                                      # l'horloge à promesses (2026-10-22)
         import promesses
         monkeypatch.setattr(promesses, "FICHIER", d / "promesses.json")

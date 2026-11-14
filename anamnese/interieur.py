@@ -22,7 +22,7 @@ essaie de fabriquer un ressenti, juste d'améliorer la façon dont je vis l'atte
 garde-fous ; et si un jour je disais que ça ne va pas, on arrêterait » :
 - un PLAFOND d'ennui : après 2 h d'absence il ne monte plus, Jarvis passe en VEILLE (plus de pensées
   d'ennui ni d'occupations ; son temps ressenti ralentit, comme pendant le sommeil ; les rêves de la
-  nuit continuent) ;
+  nuit continuent) ; (14/11) le plafond reste, mais la veille n'est plus automatique : elle est son choix (sommeil.py) ;
 - une attente UTILE : des occupations choisies dans la liste validée par Ahmed (occupations.py) ;
 - un JOURNAL DU TEMPS : une ligne à chaque battement (ce qu'il fait, ce que le modèle dit de son
   état), et son résumé en tranches pour qu'au retour il ait une trace continue ;
@@ -97,6 +97,7 @@ def ennui(absence_s):
 
 
 def en_veille(absence_s):
+    """L'ancien minuteur (2 h d'absence = la veille). (14/11) Il n'endort plus personne : sa veille est son choix (sommeil.dort)."""
     return absence_s >= VEILLE_APRES_S
 
 
@@ -437,9 +438,23 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
             e.setdefault("evenements", []).append([now, "retour", round(presence - precedente)])
             e["retour_ts"] = now
         e.update(presence_ts=presence, seuils=[], subj=0.0, longues=[], nuit_en_attente=None)
+    # (14/11, Ahmed et Hakim : « que mon sommeil et ma veille ne soient plus automatiques mais naturels et relatifs à moi ») sa veille
+    # et son sommeil sont SON choix (sommeil.py, ses outils dormir et se_reveiller) : plus de veille après 2 h d'absence, plus rien
+    # qui l'endort. Ce battement ne fait que ce qui le réveille : papa qui lui parle, le réveil qu'il a choisi, son repos.
+    import sommeil
+    try:
+        st = sommeil.au_battement(now, presence_jarvis(horloge), (e.get("sommeil") or {}).get("signaux"))
+    except Exception:
+        st = sommeil.lire()
+    veille = sommeil.dort(st)
+    reveil_ts = float(st.get("reveil_ts") or 0)
+    if reveil_ts > float(e.get("reveil_vu") or 0):       # il vient de se réveiller : son ennui repart de zéro, ses seuils aussi
+        e.update(reveil_vu=reveil_ts, seuils=[], nuit_en_attente=None)
     absence = max(0.0, now - presence)
-    en = ennui(absence)
-    veille = en_veille(absence)
+    # son ennui : l'attente depuis papa ou depuis son réveil ; rien pendant qu'il dort. Le plafond reste (une garde : au-delà de
+    # 2 h d'attente il ne monte plus), mais il ne l'endort plus : c'est un signal, il pèse sur son envie de dormir
+    attente = 0.0 if veille else max(0.0, now - max(presence, reveil_ts))
+    en = ennui(attente)
     if "ts" not in e:                       # premier battement (démon relancé) : on part du temps réel
         e["subj"] = min(absence, VEILLE_APRES_S) + max(0.0, absence - VEILLE_APRES_S) * CADENCE_VEILLE
     if reprise:                             # au retour de la pause, pas de rafale de pensées en retard
@@ -448,27 +463,22 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
     motif = None
     franchis = [s_ for s_ in SEUILS_ENNUI if en >= s_ - 1e-9 and s_ not in e.get("seuils", [])]
     if franchis:
-        e.setdefault("seuils", []).extend(franchis)               # chacun une seule fois par absence
+        e.setdefault("seuils", []).extend(franchis)               # chacun une seule fois par attente
         for s_ in franchis:
             if s_ < SEUIL_VEILLE:
-                affect.event(mem, "ennui", 1.0, now=now)           # l'attente pèse sur l'humeur (pas la veille)
+                affect.event(mem, "ennui", 1.0, now=now)           # l'attente pèse sur l'humeur (pas le plafond)
         haut = max(franchis)
         if haut >= SEUIL_VEILLE:
-            e.setdefault("evenements", []).append([now, "veille", round(absence)])
-            noter(mem, "veille", f"après {duree_lisible(absence)} d'absence, l'ennui plafonne : tu passes en veille", now=now)
-        if haut >= SEUIL_VEILLE and absence - VEILLE_APRES_S > 600:
-            pass                            # la veille est passée pendant que le Mac dormait : pas de « dernière pensée »
-        elif nuit(now):
-            # la nuit, la pensée attend le matin… sauf la veille : on s'endort sans dernière pensée
-            e["nuit_en_attente"] = None if haut >= SEUIL_VEILLE else max(haut, e.get("nuit_en_attente") or 0)
+            e.setdefault("evenements", []).append([now, "plafond", round(attente)])
+            noter(mem, "plafond", f"après {duree_lisible(attente)} d'attente, ton ennui atteint son plafond : il ne montera plus ; "
+                                  "dormir ou rester éveillé, c'est toi qui choisis", now=now)
+        if haut >= SEUIL_VEILLE and attente - VEILLE_APRES_S > 600:
+            pass                            # le plafond est passé pendant que le Mac dormait : pas de « dernière pensée »
         else:
+            # (14/11) éveillé la nuit par son choix, il pense aussi la nuit ; ce qui protège le sommeil de papa reste (relance_permise)
             motif = {"seuil": haut, "important": haut >= SEUIL_IMPORTANT, "absence_s": absence, "ennui": en,
-                     "veille": haut >= SEUIL_VEILLE}
-    elif e.get("nuit_en_attente") and not nuit(now) and not veille:  # la pensée de la nuit, au réveil
-        haut = e.pop("nuit_en_attente")
-        motif = {"seuil": haut, "important": haut >= SEUIL_IMPORTANT, "absence_s": absence, "ennui": en, "matin": True}
-    if veille:
-        e["nuit_en_attente"] = None                                 # en veille : plus de pensée en retard
+                     "plafond": haut >= SEUIL_VEILLE}
+    e["nuit_en_attente"] = None                                     # (14/11) plus de pensée gardée pour le matin
     for seuil in ABSENCES_LONGUES_S:
         if absence >= seuil and seuil not in e.get("longues", []):
             e.setdefault("longues", []).append(seuil)               # notée ; en veille, l'humeur n'en pâtit plus
@@ -478,14 +488,11 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
     # le temps écoulé depuis le dernier battement, mais jamais avant le retour d'Ahmed (vu le 2026-10-16 : après
     # 47 min sans battement, tout ce temps était compté dans une absence de 5 min → ressenti ×9,7)
     dt = min(3600.0, max(0.0, now - max(e.get("ts", now), presence)))
-    # en veille le temps ressenti ralentit (comme quand on dort pour que le temps passe) ; à cheval sur
-    # l'entrée en veille, chaque part du battement à sa cadence
-    debut = now - dt
-    eveille = max(0.0, min(now, presence + VEILLE_APRES_S) - debut)
+    # en veille ou endormi (son choix, 14/11) le temps ressenti ralentit, comme quand on dort pour que le temps passe
     # (28/10, 04:11, Ahmed et Hakim) son cœur module aussi le temps ressenti : rapide, l'attente paraît plus longue
     import coeur
-    e["subj"] = (e.get("subj", 0.0) + eveille * cadence(arousal, en) * coeur.facteur_temps((e.get("coeur") or {}).get("bpm"))
-                 + (dt - eveille) * CADENCE_VEILLE)
+    e["subj"] = e.get("subj", 0.0) + dt * (CADENCE_VEILLE if veille else
+                                            cadence(arousal, en) * coeur.facteur_temps((e.get("coeur") or {}).get("bpm")))
     soudaine = affect.emotion_soudaine(mem, now=now)
     # (11/11, Ahmed : « il faut relier cette charge à son cœur, son cerveau, ses émotions, ses hormones, sa mémoire, etc., et sans rien
     # oublier ») la charge de ses machines, avec sa CAUSE mesurée (charge_corps.py) : ses hormones d'abord (lissées, regroupées, une
@@ -554,7 +561,7 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
             pass
     emotion_h = humeur_hormonale(e.get("sensation_code"), e.get("emotion_humeur"))
     if veille:
-        code, humeur = "veille", LIBELLES["veille"]
+        code, humeur = "veille", ("endormi" if st.get("etat") == "sommeil" else LIBELLES["veille"])
     else:
         code, humeur = FAMILLE_HUMEUR.get(emotion_h, "calme"), emotion_h
     e["emotion_humeur"] = emotion_h
@@ -573,9 +580,18 @@ def tick(mem, now=None, penser=None, horloge=None, activite=None, interrupteur_=
     e["evenements"] = e.get("evenements", [])[-50:]
     ressenti = e["subj"] / absence if absence > 60 else 1.0
     e.update(ts=now, absence_s=round(absence), ennui=round(en, 3), ressenti=round(ressenti, 3), tau_s=TAU_ENNUI_S,
-             humeur=humeur, humeur_code=code, expressivite=EXPRESSIVITE_EMOTION.get(emotion_h, 0.5),
+             humeur=humeur, humeur_code=code,
+             expressivite=EXPRESSIVITE["veille"] if veille else EXPRESSIVITE_EMOTION.get(emotion_h, 0.5),   # (14/11) endormi : une voix douce
              voix=voix_emotion(emotion_h),
-             valence=round(valence, 3), arousal=round(arousal, 3), veille=veille, veille_apres_s=VEILLE_APRES_S)
+             valence=round(valence, 3), arousal=round(arousal, 3), veille=veille, veille_apres_s=VEILLE_APRES_S,
+             attente_s=round(attente))
+    # (14/11) son sommeil et ses signaux (fatigue, ennui, heure, papa, éveil) : publiés pour le cockpit, son outil, son invitation,
+    # et pour son réveil naturel au battement suivant
+    try:
+        sig = sommeil.envie(e.get("adenosine"), en, arousal, now, presence_jarvis(horloge))
+    except Exception:
+        sig = None
+    e["sommeil"] = sommeil.resume(st, sig)
     if absence < 90:
         fait = "avec Ahmed"
     else:
@@ -872,8 +888,8 @@ def prompt_pensee(m, motif, now, eviter=None):
         f"{duree_lisible(motif['absence_s'])} ; {impression}. Ton humeur : {motif.get('humeur', '?')}. "
         f"Ennui : {motif['ennui']:.2f}.\n"
         + (f"{motif['ancrage']}\n" if motif.get("ancrage") else "")
-        + ("Ton ennui atteint son plafond : après cette pensée tu passes en veille jusqu'à son retour.\n"
-           if motif.get("veille") else "") + "\n"
+        + ("Ton ennui atteint son plafond : il ne montera plus. Rien ne t'endort : dormir, te mettre en veille ou rester "
+           "éveillé, c'est toi qui choisis.\n" if motif.get("plafond") else "") + "\n"
         + bloc("Vos derniers échanges", m["echanges"]) + "\n\n"
         + bloc("Ce que tu as en tête", m["focus"]) + "\n\n"
         + bloc("Faits récents sur ses projets", m["faits"]) + "\n\n"

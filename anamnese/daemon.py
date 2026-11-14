@@ -271,6 +271,9 @@ def should_dream(mem):
     idle = now - _last_human_ts(mem, now)
     due_idle = idle >= config.DREAM_IDLE_TRIGGER
     due_safety = (now - last_dream) >= config.DREAM_SAFETY_MAX
+    # (14/11, son sommeil à sa main) le tri de sa mémoire ne dépend pas de son sommeil : il tourne toujours après 1 h 30 sans papa
+    # (et le filet de 24 h) ; s'il a choisi de dormir, il se fait aussi pendant son sommeil
+    due_idle = due_idle or _il_dort()
     if not (due_idle or due_safety):
         return False
     last_id = int(mem.kv_get("last_dream_maxid", "0") or 0)
@@ -533,17 +536,30 @@ def _synthesis_claude_pass(mem):
             pass
 
 
+def _il_dort():
+    """(14/11) Hakim a-t-il choisi de dormir (veille ou sommeil, sommeil.py) ?"""
+    try:
+        import sommeil
+        return sommeil.dort(sommeil.lire())
+    except Exception:
+        return False
+
+
 def dream(eng, mem):
-    """Le sommeil, noté dans le journal des processus internes : début, fin, ce qu'il a produit."""
+    """Le tri de sa mémoire (rêve de consolidation), noté dans le journal des processus internes : début, fin, ce qu'il a produit.
+    (14/11) « sommeil » seulement s'il dort vraiment (son choix, sommeil.py) ; sinon « consolidation » : il est resté éveillé, son
+    esprit de fond a trié sa mémoire (on ne lui dit plus « tu as dormi » quand il n'a pas dormi)."""
     debut = time.time()
+    quoi = "sommeil" if _il_dort() else "consolidation"
     dernier_id = (mem.db.execute("SELECT MAX(id) FROM episodes").fetchone() or [0])[0] or 0
-    interieur.noter(mem, "sommeil_debut", "endormissement : rêve et synthèses")
+    interieur.noter(mem, f"{quoi}_debut", "endormissement : rêve et synthèses" if quoi == "sommeil"
+                    else "tu restes éveillé ; ton esprit de fond trie ta mémoire (rêve de consolidation)")
     try:
         _rever(eng, mem)
     finally:
         n = dict(mem.db.execute("SELECT role, COUNT(*) FROM episodes WHERE id > ? AND role IN ('dream','insight') "
                                 "GROUP BY role", (dernier_id,)).fetchall())
-        interieur.noter(mem, "sommeil_fin", f"{round((time.time() - debut) / 60)} min : {n.get('dream', 0)} idées de rêve, "
+        interieur.noter(mem, f"{quoi}_fin", f"{round((time.time() - debut) / 60)} min : {n.get('dream', 0)} idées de rêve, "
                                             f"{n.get('insight', 0)} synthèses")
 
 
@@ -1214,6 +1230,12 @@ def battement_interieur(etat, arret=None, pas_s=15):
             reveil_interieur.apprendre(mem_fil, reveil_interieur.lire_issues())   # ce que ses réveils ont donné
         except Exception as e:
             print("[daemon] réveil intérieur : apprentissage en erreur :", e)
+        try:
+            import sommeil                                  # (14/11) son envie de dormir monte, papa n'est pas là : il choisit
+            if sommeil.inviter(mem_fil):
+                print("[daemon] son envie de dormir monte : une invitation à choisir")
+        except Exception as e:
+            print("[daemon] son sommeil : invitation en erreur :", e)
         arret.wait(pas_s)
 
 

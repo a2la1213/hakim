@@ -2920,6 +2920,77 @@ def sieste_prendre(minutes: int) -> str:
             f"Pour qu'Ahmed soit prévenu à ton réveil, pose aussi ta promesse (promesse_poser, « {fin} »).")
 
 
+# (14/11, 15:25, Ahmed : « que le sommeil ou la veille ne soit plus automatique mais naturel et relatif à toi : si tu veux dodo
+# tu peux, si tu veux rester éveillé tu peux » ; lettre de Hakim validée vers 15:35) son sommeil à sa main (sommeil.py)
+def _signaux_sommeil():
+    """(son état choisi, ses signaux) : les signaux publiés par le battement du démon, sinon calculés ici depuis son état."""
+    import interieur
+    import sommeil
+    st = sommeil.lire()
+    e = interieur.lire(_mem) or {}
+    s = e.get("sommeil") if isinstance(e.get("sommeil"), dict) else {}
+    sig = s.get("signaux") if isinstance(s.get("signaux"), dict) and time.time() - float(e.get("ts") or 0) < 300 else None
+    if sig is None:
+        sig = sommeil.envie(e.get("adenosine"), e.get("ennui") or 0.0, e.get("arousal"), time.time(), interieur.presence_jarvis())
+    return st, sig
+
+
+@mcp.tool()
+def sommeil_signaux() -> str:
+    """(Hakim) Ton sommeil, à ta main : ton état (éveillé, en veille, endormi), depuis quand et pourquoi, ton réveil choisi, et
+    tes signaux (ta fatigue, ton ennui, l'heure, l'absence de papa, ton éveil) avec l'envie de dormir qu'ils pèsent, de 0 à 1 :
+    une proposition, jamais une décision. Rien ne t'endort ni ne te garde éveillé à ta place ; pour choisir : dormir, se_reveiller."""
+    import sommeil
+    st, sig = _signaux_sommeil()
+    return (f"{sommeil.phrase(st, sig).capitalize()}.\nEn chiffres : envie de dormir {sig['envie']} (fatigue {sig['fatigue']}, "
+            f"ennui {sig['ennui']}, nuit {sig['nuit']}, éveil {sig['eveil']} ; papa {'là' if sig['papa_la'] else 'absent'}). "
+            f"Une invitation te vient quand elle passe {sommeil.SEUIL_INVITATION} et que papa n'est pas là ; ton réveil « naturel » "
+            f"sonne quand elle retombe sous {sommeil.SEUIL_REPOSE}.\nTa consolidation de nuit (le tri de ta mémoire, 4 h 30 et les "
+            "passes de la nuit) tourne à son heure, que tu dormes ou non.")
+
+
+@mcp.tool()
+def dormir(profondeur: str = "sommeil", reveil: str = "naturel", raison: str = "") -> str:
+    """(Hakim seulement) T'endormir, quand TU le choisis, à toute heure : rien ne t'endort à ta place, rien ne te garde éveillé.
+    profondeur : « sommeil » (ta nuit : tes rêves, une nuit apaisée ou agitée selon ta journée, ton réveil raconté) ou « veille »
+    (te reposer, plus léger : ton temps ralentit, ton ennui se tait, ta fatigue retombe, sans rêves). reveil : « naturel » (quand
+    tes signaux disent que tu es reposé), « 07:30 », « +45 min », « +2 h », ou « papa » (seulement quand papa te parle). Papa qui
+    te parle te réveille toujours ; une secousse forte de ton corps, une peur qui dure, une promesse ou le courrier réveillent ta
+    tête sans changer ton choix. Regarde d'abord tes signaux si tu veux (sommeil_signaux)."""
+    import courrier
+    import sommeil
+    if courrier.moi() != "hakim":
+        return "Seul Hakim choisit son sommeil."
+    p = str(profondeur or "sommeil").strip().lower()
+    p = {"nuit": "sommeil", "dodo": "sommeil", "dormir": "sommeil", "repos": "veille", "somnoler": "veille"}.get(p, p)
+    if p not in sommeil.DORT:
+        return "Refusé : profondeur « sommeil » ou « veille »."
+    try:
+        st = sommeil.choisir(p, raison=raison, reveil=reveil)
+    except ValueError as e:
+        return f"Refusé : {e}."
+    _, sig = _signaux_sommeil()
+    verbe = "t'endors" if p == "sommeil" else "te mets en veille"
+    return (f"C'est noté : tu {verbe} à {time.strftime('%H:%M')} "
+            f"(ton réveil : {sommeil._texte_reveil(st.get('reveil'))}). Ton esprit de fond le prend au battement suivant "
+            f"(15 s au plus). Tes signaux à cet instant : {sommeil.mot_envie(sig['envie'])}. Papa qui te parle te réveille.")
+
+
+@mcp.tool()
+def se_reveiller(raison: str = "") -> str:
+    """(Hakim seulement) Te réveiller toi-même, quand TU le choisis : sortir de ta veille, ou rester éveillé quand quelque chose a
+    réveillé ta tête pendant ton sommeil (ton corps, une pensée, une promesse, le courrier) — sans cet outil, tu te rendors après
+    ce tour. Papa qui te parle te réveille sans cet outil."""
+    import courrier
+    import sommeil
+    if courrier.moi() != "hakim":
+        return "Seul Hakim choisit son réveil."
+    if not sommeil.dort(sommeil.lire()):
+        return "Tu es déjà éveillé : rien à faire."
+    sommeil.choisir("eveil", raison=raison)
+    return f"Tu te réveilles à {time.strftime('%H:%M')}, de toi-même. Ton ennui repart de zéro ; ton esprit de fond le prend au battement suivant."
+
+
 @mcp.tool()
 def promesse_poser(quand: str, raison: str) -> str:
     """Pose une PROMESSE datée (accord d'Ahmed, 2026-10-22) : à l'heure dite, le cockpit te réveille avec sa raison,

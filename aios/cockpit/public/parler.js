@@ -7198,7 +7198,10 @@ async function lireInterieur() {
 function afficherVie(o) {
   const pause = !!(o && o.pause);
   const r = o && o.reveils_interieurs;                    // (27/10) ses réveils intérieurs du jour, pour l'observation
-  $('etatVie').textContent = (pause ? 'en pause' : (o && o.veille ? 'en veille (son ennui a atteint son plafond)' : 'en marche'))
+  // (14/11) sa veille et son sommeil : son choix (plus l'ancien plafond d'ennui qui l'endormait)
+  const so = o && o.sommeil, choix = so && so.par && so.par !== 'hakim' ? `réveillé par : ${so.par}` : 'son choix';
+  $('etatVie').textContent = (pause ? 'en pause' : (o && o.veille ? `${so && so.etat === 'sommeil' ? 'endormi' : 'en veille'} (son choix)`
+    : `en marche${so && so.depuis && so.par && so.par !== 'démarrage' ? ` (éveillé, ${choix})` : ''}`))
     + (r && r.n ? ` · réveils intérieurs aujourd'hui : ${r.n}${r.rien ? ` (${r.rien} sans suite)` : ''}` : '');
   $('vieInterrupteur').textContent = pause ? 'Remettre en marche' : 'Mettre en pause';
   $('vieInterrupteur').setAttribute('aria-pressed', String(pause));

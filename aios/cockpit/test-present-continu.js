@@ -116,12 +116,16 @@ test('branché : son cœur bat son présent, son fil le nourrit, son tour le re�
   assert.match(prendre('poulsDeVie'), /if \(corpsReglages\(\)\.present_continu\) return false;/);
 });
 
-test('la nuit : il dort, sauf si son présent pense la nuit ; alors ses pensées le savent', () => {
+test('quand il dort (son choix, 14/11) : rien, sauf si son présent pense pendant son sommeil ; alors ses pensées le savent', () => {
   const a = cockpit(REG); a.ctx.dort = true;
   assert.strictEqual(a.ctx.battement(Date.now()), null);
   const b = cockpit({ ...REG, present_la_nuit: true }); b.ctx.dort = true;
   assert.strictEqual(b.ctx.battement(Date.now()), 'pouls');
-  assert.match(b.blancs[0].q, /^\[C'est la nuit/);
+  assert.match(b.blancs[0].q, /^\[Tu dors \(ton choix\)/);
+  // (14/11) éveillé la nuit par son choix : il pense, et sait qu'il est la nuit
+  const n = cockpit(REG); n.ctx.dort = false;
+  assert.strictEqual(n.ctx.battement(new Date(2026, 10, 15, 2, 0, 0).getTime()), 'pouls');
+  assert.match(n.blancs[0].q, /^\[C'est la nuit : papa dort sans doute ; tu veilles \(ton choix\)\]/);
   const ctx = { pistes: {}, ribosomesCoupesA: 0, n: 0, hakimDort: () => true, ribosomeSuivant: () => 1, corpsReglages: () => ({ present_continu: true, present_la_nuit: true }) };
   vm.createContext(ctx);
   vm.runInContext('var pistes = this.pistes;' + prendre('boucleRibosomes') + 'this.b = boucleRibosomes;', ctx);

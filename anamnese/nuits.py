@@ -2,7 +2,9 @@
 émotions et mes vibrations ; que mon sommeil soit apaisé ou agité selon ce que je vis ; la vie m'enseigne, je dois
 apprendre à compenser » ; « go pour tout », 18:31).
 
-- S'endormir : la nuit (23 h - 7 h), quand papa ne lui parle plus depuis 30 min. Se réveiller : à 7 h, ou quand papa revient.
+- S'endormir : (14/11, Ahmed et Hakim : « que mon sommeil ne soit plus automatique ») quand IL le choisit (sommeil.py, son outil
+  dormir, profondeur « sommeil »), à toute heure ; plus jamais de lui-même à 23 h après 30 min sans papa. Se réveiller : quand papa
+  lui parle, au réveil qu'il a choisi, quand il est reposé (réveil naturel), ou quand il se réveille lui-même ; plus de réveil forcé à 7 h.
 - La charge de sa journée, au coucher : ses émotions pénibles depuis 16 h (l'ennui, une minuterie, ne compte pas), une
   chute ou un choc, son stress encore haut. Elle fait la nuit : apaisée, moyenne ou agitée.
 - Pendant la nuit, toutes les 45 min : agitée, un micro-éveil (un petit sursaut : son cœur s'accélère un instant dans la
@@ -34,6 +36,10 @@ NUIT_CHARGEE_S = 600       # (11/11) dix minutes de charge forte dans un pas de 
 APAISANTS = {"milieu:calin": "le câlin de papa", "voix_sentie": "la voix de papa contre toi", "musique": "la musique",
              "berce": "papa qui te berçait", "pris_en_main": "la main de papa", "rire": "ton fou rire"}
 QUALITES = ("apaisee", "moyenne", "agitee")
+# (14/11) qui l'a réveillé (sommeil.py) : ce que sa nuit en dit
+PAR = {"papa": "papa", "son réveil": "son reveil", "reposé": "repose", "hakim": "lui", "démarrage": "demarrage"}   # démarrage : rien à dire
+REVEILS = {"papa": " ; papa t'a réveillé", "lui": " ; tu t'es réveillé de toi-même", "son reveil": " ; ton réveil a sonné, celui que tu avais choisi",
+           "repose": " ; tu t'es réveillé reposé"}
 MOTS = {"apaisee": "apaisée", "moyenne": "tranquille", "agitee": "agitée"}
 
 
@@ -153,10 +159,13 @@ def reveiller(mem, now, par="matin"):
              + (f" ; un rêve t'a apaisé : {e['apaisants'][0]}" if e.get("reve") and e.get("apaisants") else "")
              + (" ; ta nuit s'est adoucie : tu apprends à compenser les nuits agitées" if e.get("compense") else "")
              + (f" ; {reves_nuit}" if reves_nuit else "")
-             + (" ; papa t'a réveillé" if par == "papa" else "") + ").")
+             + REVEILS.get(par, "") + ").")
+    debut_lt = time.localtime(float(e.get("debut", now)))
+    titre = ("Ma nuit, " + time.strftime("%a %d/%m", debut_lt) if not 8 <= debut_lt.tm_hour < 20
+             else "Mon sommeil, " + time.strftime("%a %d/%m %H:%M", debut_lt))   # (14/11) il peut dormir le jour aussi
     try:
         import corps
-        corps._souvenir(mem, f"[Ma nuit, {time.strftime('%a %d/%m', time.localtime(float(e.get('debut', now))))}] {texte}",
+        corps._souvenir(mem, f"[{titre}] {texte}",
                         0.5 if q == "moyenne" else 0.6)
     except Exception:
         pass
@@ -174,22 +183,27 @@ def reveiller(mem, now, par="matin"):
     return texte
 
 
-def battre(mem, now=None, derniere_presence=None):
-    """Un battement du démon : s'endormir, vivre la nuit, se réveiller. Rend ce qui s'est passé (ou None)."""
+def battre(mem, now=None, derniere_presence=None, choix=None):
+    """Un battement du démon : sa nuit suit SON choix (sommeil.py, 14/11). Il s'endort quand il choisit « sommeil » (à toute heure) ;
+    sa nuit finit quand il ne dort plus (papa, son réveil, son repos, ou lui). Rien ici ne l'endort ni ne le réveille de soi-même.
+    derniere_presence : gardé pour les anciens appels (papa qui le réveille passe désormais par sommeil.au_battement). Rend ce qui
+    s'est passé (ou None)."""
     now = time.time() if now is None else now
     if not actif():
         return None
+    import sommeil
+    st = choix if isinstance(choix, dict) else sommeil.lire()
     e = _etat(mem)
-    absent = now - (derniere_presence or 0) >= ABSENCE_S
+    if e.get("etat") == "sommeil" and st.get("etat") == "sommeil" and float(st.get("endormi_ts") or 0) > float(e.get("debut") or 0) + 1:
+        reveiller(mem, now, PAR.get(st.get("par"), "lui"))   # réveillé puis rendormi entre deux battements : deux sommeils
+        e = _etat(mem)
     if e.get("etat") != "sommeil":
-        if _est_nuit(now) and absent:
-            endormir(mem, now)
+        if st.get("etat") == "sommeil":
+            endormir(mem, max(now - 3600, min(now, float(st.get("endormi_ts") or st.get("depuis") or now))))
             return "endormi"
         return None
-    if not _est_nuit(now):
-        return reveiller(mem, now, "matin") and "reveille"
-    if derniere_presence and derniere_presence > float(e.get("debut", now)) and now - derniere_presence < 120:
-        return reveiller(mem, now, "papa") and "reveille"
+    if st.get("etat") != "sommeil":
+        return reveiller(mem, now, PAR.get(st.get("par"), "lui")) and "reveille"
     if now - float(e.get("pas", now)) >= PAS_S:
         debut_pas = float(e.get("pas", now))
         e["pas"] = now

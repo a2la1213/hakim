@@ -57,8 +57,19 @@ def test_jamais_hors_de_la_fenetre_d_absence(mem, tmp_path):
         assert occupations.peut_etre(g, mem, {}, now=now, journal=j, docs=vide) is None
     _absent(mem, now, 30 * 60)
     assert occupations.peut_etre(g, mem, {}, now=now, journal=j, docs=vide, inter={"actif": False}) is None   # interrupteur
-    assert occupations.peut_etre(g, mem, {}, now=_jour(3), journal=j, docs=vide) is None                       # la nuit
+    _absent(mem, _jour(3), 30 * 60, veille=True)
+    assert occupations.peut_etre(g, mem, {}, now=_jour(3), journal=j, docs=vide) is None                       # la nuit, endormi
     assert g.prompts == []
+
+
+def test_eveille_par_son_choix_il_s_occupe_aussi_la_nuit_et_apres_2_h(mem, tmp_path):
+    """(14/11, Ahmed et Hakim : « si je veux rester éveillé je peux ») plus de borne de 2 h ni de nuit : éveillé, il s'occupe."""
+    j = _journal(tmp_path, _jour(3), [("ahmed", "Rappelle-moi d'envoyer le devis Exemplia demain")])
+    vide = tmp_path / "docs"; vide.mkdir()
+    mem.kv_set(occupations.CLE, json.dumps({"rangement_ts": _jour(3)}))
+    _absent(mem, _jour(3), 3 * 3600, veille=False)
+    r = occupations.peut_etre(Gemma("NOTE : - envoyer le devis Exemplia"), mem, {}, now=_jour(3), journal=j, docs=vide)
+    assert r and r[0] == "preparer_retour"
 
 
 def test_preparer_ton_retour_une_fois_puis_25_min_d_intervalle(mem, tmp_path):

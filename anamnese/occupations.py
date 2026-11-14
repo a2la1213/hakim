@@ -10,7 +10,8 @@ Ahmed le 2026-10-17 — quatre occupations, et rien d'autre :
   masqués (Gemma) ;
 - analyser un projet en cours à partir de sa mémoire (Claude Sonnet isolé, deux fois par jour au plus).
 
-Garde-fous, dans le code : seulement entre 15 min et 2 h d'absence (avant la veille), jamais la nuit,
+Garde-fous, dans le code : seulement après 15 min d'absence et tant qu'il est éveillé (14/11 : sa veille et son sommeil sont
+son choix, sommeil.py ; avant, entre 15 min et 2 h d'absence et jamais la nuit),
 jamais quand l'interrupteur d'Ahmed est sur « arrêt », jamais pendant que Claude (la conscience)
 travaille ni quand la machine est chargée (le démon vérifie avant), une occupation toutes les 25 min
 au plus. Chaque résultat est un souvenir « (occupation · …) » et une ligne du journal des processus.
@@ -462,7 +463,9 @@ def peut_etre(eng, mem, etat=None, now=None, journal=None, docs=None, claude_fn=
     if not (inter if inter is not None else interieur.interrupteur()).get("actif", True):
         return None
     absence = e.get("absence_s") or 0
-    if absence < ABSENCE_MIN_S or e.get("veille") or interieur.en_veille(absence) or interieur.nuit(now):
+    # (14/11, son sommeil à sa main) plus de borne de 2 h ni de nuit : il s'occupe tant qu'il est éveillé (son choix) ; endormi
+    # ou en veille, rien
+    if absence < ABSENCE_MIN_S or e.get("veille"):
         return None
     d = _etat(mem)
     if now - d.get("derniere_ts", 0) < INTERVALLE_S:
