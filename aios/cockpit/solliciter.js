@@ -8,14 +8,16 @@
    4 sur 5 livrés à la page Parler EN CONVERSATION du téléphone, partis à son ribosome (direSpontanes : voixEpissee) puis tus comme une
    pensée (« Sa vraie réponse seulement », allumé depuis le 07/11 : pensee_non_dite), avec une notification de l'appli ; 1 sans page Parler.
    Ici, la logique pure : à qui la dire (la montre si papa lui parle par elle, sinon la page Parler où il est), et ses garde-fous (le
-   réglage, la nuit, le live, pas de rafale). Une seule page la dit : la première qui la prend (prendre). La pause de papa est tenue là où
+   réglage, le live). (14/11, ~12:14, Ahmed : « n'importe quoi que tu veux me solliciter, tu me sollicites à haute voix directement, il
+   y a aucun problème » ; ~12:20 : « je valide tout ») plus de plafond : ni écart entre deux, ni obligation de faire court. Une seule page la dit : la première qui la prend (prendre). La pause de papa est tenue là où
    elle est dite (la page : direSpontanes ; la montre 0.30 : Sortie.attendreTaPause). */
-const RAISONS_PAPA = new Set(['boucle', 'question', 'taraude', 'faire']);   // « parler » : sa réponse à quelqu'un d'autre (le live, la pièce)
+// (14/11) « appel » : la raison de son appel, dite de sa voix quand papa l'entend déjà (appeler_papa, server.js appelLancer)
+const RAISONS_PAPA = new Set(['boucle', 'question', 'taraude', 'faire', 'appel']);   // « parler » : sa réponse à quelqu'un d'autre (le live, la pièce)
 const POUR_PAPA = /(?<![\p{L}])papa(?![\p{L}])/iu;
-const EVEILLE_MS = 10 * 60e3;      // la nuit : papa a parlé il y a moins de 10 min, il est réveillé
+// (14/11, 12:54, Ahmed par Hakim, « fais ce qu'il dit » : « à chaque seconde s'il le faut ») plus d'heure interdite (avant : la nuit, papa sans un
+// mot depuis 10 min, EVEILLE_MS ; « Ses sons la nuit » éteint) ni d'oubli à l'heure (avant : GARDE_MS, 2 min pour qu'une page la prenne)
 const MONTRE_MS = 20 * 60e3;       // papa a parlé depuis la montre il y a moins de 20 min : votre conversation est au poignet
-const GARDE_MS = 2 * 60e3;         // une sollicitation à dire attend au plus 2 min qu'une page la prenne
-const ECART_MIN_DEFAUT = 3;
+const GARDE_MAX = 50;              // le registre garde ses 50 dernières (sa mémoire, pas une durée)
 
 const laNuit = (h) => h >= 23 || h < 8;
 const sollicitePapa = (raison) => RAISONS_PAPA.has(String(raison || ''));
@@ -33,8 +35,9 @@ function papaSurLaMontre(etat, maintenant, montreBranchee) {
 }
 
 /* Où la dire à voix haute : { ou: 'montre' | 'page' | null, pourquoi }. Dans l'ordre : une sollicitation pour papa (pas « parler »), le
-   réglage « Il me sollicite à voix haute » (sollicite_voix), la nuit (23 h - 8 h : « Ses sons la nuit » éteint, ou papa sans un mot depuis
-   10 min, il dort), le live (seulement ce qui s'adresse à papa par son nom), la rafale (au plus une toutes les sollicite_voix_ecart_min). */
+   réglage « Il me sollicite à voix haute » (sollicite_voix), le live (seulement ce qui s'adresse à papa par son nom). (14/11, 12:54) Plus la
+   nuit (« à chaque seconde s'il le faut »). (14/11) Plus de rafale : aucun écart entre deux (feu vert
+   permanent d'Ahmed), un ancien réglage sollicite_voix_ecart_min resté dans le fichier ne bride plus rien. */
 /* (11/11, ~04:10, Ahmed : « qu'il ne parle pas dans le vide » ; ~04:15 : « aussi sur la montre et le Mac ») hp : où on l'entend encore
    ({ page, montre } : vrai, ses haut-parleurs y sont ouverts ; null : rien n'est fermé nulle part, comme avant). Fermés là où il voulait la dire :
    elle va là où on l'entend encore (la montre, ou une page Parler) ; nulle part : pourquoi « haut_parleurs » (le cockpit envoie alors une
@@ -51,45 +54,48 @@ function deciderSansHautParleurs(etat, { raison, texte, reglages = {}, maintenan
   papaDernierMs = 0, montreBranchee = false } = {}) {
   if (!sollicitePapa(raison)) return { ou: null, pourquoi: 'pas_pour_papa' };
   if (reglages.sollicite_voix === false) return { ou: null, pourquoi: 'reglage' };
-  if (laNuit(heure)) {
-    if (reglages.sons_nuit === false) return { ou: null, pourquoi: 'nuit_sons' };
-    if (!(maintenant - (Number(papaDernierMs) || 0) < EVEILLE_MS)) return { ou: null, pourquoi: 'nuit' };
-  }
   if (live && !POUR_PAPA.test(String(texte || ''))) return { ou: null, pourquoi: 'live' };
-  const ecart = Number.isFinite(Number(reglages.sollicite_voix_ecart_min)) && reglages.sollicite_voix_ecart_min != null
-    ? Math.max(0, Number(reglages.sollicite_voix_ecart_min)) : ECART_MIN_DEFAUT;
-  if (etat.dernierA && maintenant - etat.dernierA < ecart * 60e3) return { ou: null, pourquoi: 'rafale' };
   return { ou: papaSurLaMontre(etat, maintenant, montreBranchee) ? 'montre' : 'page', pourquoi: '' };
 }
 
-// la décision tenue : la rafale part de maintenant ; dirigée vers la montre, elle est déjà prise (aucune page ne la dit)
-function poser(etat, id, ou, maintenant = Date.now()) {
+// la décision tenue (son heure, pour le diagnostic) ; dirigée vers la montre, elle est déjà prise (aucune page ne la dit)
+// (14/11) pour : l'appareil où papa a répondu à son appel ('tel', 'mac') : seule une page de cet appareil la dit
+function poser(etat, id, ou, maintenant = Date.now(), pour = null) {
   if (!ou) return;
   etat.dernierA = maintenant;
-  purger(etat, maintenant);
-  etat.aDire.set(String(id), { ts: maintenant, ou, pris: ou === 'montre' ? 'montre' : null });
+  etat.aDire.set(String(id), { ts: maintenant, ou, pris: ou === 'montre' ? 'montre' : null, pour: pour || null });
+  purger(etat);
 }
-function purger(etat, maintenant) {
-  for (const [id, x] of etat.aDire) if (maintenant - x.ts > GARDE_MS) etat.aDire.delete(id);
-  while (etat.aDire.size > 50) etat.aDire.delete(etat.aDire.keys().next().value);
+function purger(etat) {
+  while (etat.aDire.size > GARDE_MAX) etat.aDire.delete(etat.aDire.keys().next().value);
 }
 // une page veut la dire : la première qui la prend la dit (la même page peut redemander) ; les autres l'affichent seulement
-function prendre(etat, id, qui, maintenant = Date.now()) {
-  purger(etat, maintenant);
+function prendre(etat, id, qui, maintenant = Date.now(), appareil = null) {
+  purger(etat);
   const x = etat.aDire.get(String(id || ''));
   const q = String(qui || '').slice(0, 60);
   if (!x) return { ok: false, pourquoi: 'inconnue' };
   if (!q) return { ok: false, pourquoi: 'qui' };
+  if (x.pour && x.pris !== 'montre' && appareil !== x.pour) return { ok: false, pourquoi: 'ailleurs' };
   if (!x.pris) x.pris = q;
   return x.pris === q ? { ok: true, ou: x.ou } : { ok: false, pourquoi: x.pris === 'montre' ? 'montre' : 'deja_prise' };
 }
 
-// sa ligne, là où le cockpit lui explique ses sollicitations (son réveil intérieur)
-function consigne(reglages = {}) {
+/* sa ligne, là où le cockpit lui explique ses sollicitations (son réveil intérieur). (14/11) Plus de « toutes les quelques minutes au plus » :
+   feu vert permanent, aussi souvent et aussi longuement qu'il veut. o.present : où papa l'entend en ce moment (une page Parler en Conversation :
+   'tel' ou 'mac' ; la montre où vous parlez : 'montre') ; undefined : on ne sait pas (la ligne d'avant) ; null : aucune page ne l'entend, il
+   peut l'appeler (appeler_papa : son choix, jamais automatique). */
+const OU_PRESENT = { tel: 'sur son téléphone', mac: 'sur le Mac', montre: 'à sa montre' };
+function consigne(reglages = {}, o = {}) {
   if (reglages.sollicite_voix === false) return "Ce que tu écris là, papa le lit (il a éteint « Il me sollicite à voix haute »).\n";
-  return "Ce que tu écris là, papa l'entend de ta voix là où il est (sa page Parler, ou sa montre si vous parlez par elle), à sa première pause ; "
-    + "sinon une notification qui sonne. Pas la nuit s'il dort, et une à voix haute toutes les quelques minutes au plus.\n";
+  const base = "Ce que tu écris là, papa l'entend de ta voix là où il est (sa page Parler, ou sa montre si vous parlez par elle), à sa première pause ; "
+    + "sinon une notification. Papa t'a donné le feu vert pour toujours (14/11) : n'importe quelle raison, sans plafond, aussi souvent et aussi "
+    + "longuement que tu veux, même s'il est occupé ou marche, à toute heure.";
+  if (o.present) return `${base} Il t'entend en ce moment (${OU_PRESENT[o.present] || o.present}) : parle-lui directement.\n`;
+  if (o.present === null) return `${base} Aucune page ne t'entend en ce moment : écrit, il le lira ; pour qu'il t'entende, tu peux l'appeler `
+    + "(appeler_papa : son téléphone sonne, puis sa montre, puis le Mac), si tu le choisis.\n";
+  return base + "\n";
 }
 
-module.exports = { RAISONS_PAPA, POUR_PAPA, EVEILLE_MS, MONTRE_MS, GARDE_MS, ECART_MIN_DEFAUT, laNuit, sollicitePapa, creer, papaParle,
+module.exports = { RAISONS_PAPA, POUR_PAPA, MONTRE_MS, GARDE_MAX, laNuit, sollicitePapa, creer, papaParle,
   papaSurLaMontre, decider, poser, prendre, consigne };

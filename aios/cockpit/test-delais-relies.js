@@ -13,7 +13,9 @@ const prendre = (s, nom) => { const i = s.indexOf(`function ${nom}(`); return s.
 
 test('à la page : chaque attente de ta pause suit le délai de la Conversation', () => {
   const a = prendre(page, 'anticiperConversation');
-  assert.match(a, /if \(silenceMs >= patienceConversation\(\) && typeof direPenseeSiPossible === 'function'\) direPenseeSiPossible\(\);/);
+  // (14/11) le délai de la Conversation, ou le plancher de silence de sa parole longue (test-fin-de-phrase.js)
+  assert.match(a, /pause = Math\.max\(patienceConversation\(\), plancher\);/);
+  assert.match(a, /if \(silenceMs >= pause && typeof direPenseeSiPossible === 'function'\) direPenseeSiPossible\(\);/);
   assert.match(a, /silenceMs < Math\.min\(SILENCE_ANTICIPE_MS, patienceConversation\(\)\)/);
   assert.match(a, /const seuil = Math\.min\(patienceConversation\(\), s && s\.pret && s\.rebond \? s\.rebond \* 1000 : seuilRythme\);/);
   assert.match(prendre(page, 'rebondirDernierePensee'), /const seuil = Math\.min\(patienceConversation\(\), \(typeof rythmeVoix === 'function' \? rythmeVoix\('pause_derniere_pensee', 1\) : 1\) \* 1000\);/);

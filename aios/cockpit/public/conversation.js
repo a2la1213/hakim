@@ -410,6 +410,8 @@
       ambiance() { return micCoupe || !ambiance.length || !voisees(ambiance) ? null : assembler(ambiance); },
       get dernierTour() { return precedent; },                        // à saisir avant d'attendre (un nouveau tour le remplace)
       get assezDeVoix() { return etatV === 'parole' && voixMs >= 350; },
+      // (14/11) la voix de ton tour en cours (ms) : ta parole longue se laisse finir (parler.js, plancherFinDeTour)
+      get voixTour() { return etatV === 'parole' ? voixMs : 0; },
       get fenetres() { return tour.length; },
       arreter() {
         actif = false;

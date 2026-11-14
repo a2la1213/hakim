@@ -1853,6 +1853,7 @@ function reprisDeParole() {                     // sa voix reprend : ce n'était
 }
 // la fin de sa parole (ou de la réponse qui s'écrivait) : sa cause, sa position ; la coupure part au cockpit
 function finirParole(cause, detail = '', cible = null) {
+  if (cause === 'suite_papa' && coupureEnCours) cause = 'voix_ahmed';     // (14/11) sa voix sonnait et ta voix l'a coupée : une vraie coupure
   let c = coupureEnCours;
   if (c && cible && !memeId(c.tour, cible.id)) { coupureEnCours = null; envoyerCoupure(c); c = null; }   // restée en suspens
   if (c) {
@@ -1875,7 +1876,10 @@ function finirParole(cause, detail = '', cible = null) {
   if (c.mode === 'oral' && c.cause !== 'fin' && !c.trou) { const nd = texteNonDit(c.tour, c.dits); if (nd) c.non_dit = nd; }
   Object.assign(parole, { id: null, morceaux: [], panne: '', panneReponse: null, rejoue: false });
   try { localStorage.removeItem('jarvis.paroleEnCours'); } catch (_) {}
-  if (c.cause !== 'fin') envoyerCoupure(c);
+  if (c.cause === 'suite_papa' && Number(c.dits) > 0) c.cause = 'voix_ahmed';   // (14/11) il avait déjà dit des mots : une vraie coupure
+  // (14/11) ta phrase continuait et sa réponse n'avait rien dit : rien n'a été coupé, rien à lui redire (sa réponse repart avec ta phrase entière)
+  if (c.cause === 'suite_papa') { if (typeof journalVoix === 'function') journalVoix('coupure_evitee', { cause: 'suite_papa' }); }
+  else if (c.cause !== 'fin') envoyerCoupure(c);
   return c;
 }
 // (07/11, Ahmed : « la partie de la phrase qu'il mentionne s'affiche en clair et ce qui n'est pas dit s'affiche en gris ») coupé, sa
@@ -2410,7 +2414,7 @@ function htmlMessage(m) {
   if (m.source === 'local') pied.push('<span title="Forfait et API indisponibles : cerveau local, sans outils">cerveau local</span>');
   // (26/10, Hakim et Ahmed : une réponse du local était passée pour la sienne) le secours se voit en tête, pas en petit en bas
   const secours = m.source === 'local' ? '<span class="etiquette secours" title="Forfait et API indisponibles à ce moment : c’est son cerveau local qui répond, sans ses outils ni sa mémoire complète">CERVEAU LOCAL · SECOURS, SANS SES OUTILS</span>' : '';
-  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? (m.sollicite ? 'IL VEUT TE PARLER' : 'DE LUI-MÊME · RÉSULTAT') : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'membre' ? 'SES MEMBRES · LA PREMIÈRE FOIS, TON OUI' : m.spontane === 'anticorps' ? 'ANTICORPS PROPOSÉ PAR SON MÉDECIN' : m.spontane === 'signalement' ? 'IL SIGNALE UNE PENSÉE PARASITE · À TOI DE TRANCHER' : m.spontane === 'silence' ? 'IL REPREND LA PAROLE' : m.spontane === 'oreille' ? 'IL GLISSE UN MOT' : m.spontane === 'reecoute' ? 'CE QUE TU N’AVAIS PAS ENTENDU' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${heureCourteFr(m.origine_ts)})` : ''}` : 'PENSÉE SPONTANÉE'} · ${heureCourteFr(m.ts)}</span>` : '');
+  const etiquette = secours + (m.spontane ? `<span class="etiquette">${m.spontane === 'outreach' ? 'IL TE RELANCE' : m.spontane === 'resultat' ? (m.sollicite ? 'IL VEUT TE PARLER' : 'DE LUI-MÊME · RÉSULTAT') : m.spontane === 'tache' ? 'TÂCHE DE FOND' : m.spontane === 'promotion' ? 'IL PROPOSE UNE MODIFICATION' : m.spontane === 'mission' ? 'MISSION POUR CLAUDE CODE' : m.spontane === 'ecriture' ? 'IL PROPOSE UNE ÉCRITURE' : m.spontane === 'regle' ? 'UNE RÈGLE TIRÉE DE SES ERREURS' : m.spontane === 'carnet' ? 'IL PROPOSE UNE MÉMOIRE À RÈGLES' : m.spontane === 'retractation' ? 'IL PROPOSE DE RÉTRACTER UN SOUVENIR FAUX' : m.spontane === 'identite' ? 'SON IDENTITÉ · À TOI DE TRANCHER' : m.spontane === 'sortie' ? 'SORTIE À AUTORISER' : m.spontane === 'membre' ? 'SES MEMBRES · LA PREMIÈRE FOIS, TON OUI' : m.spontane === 'anticorps' ? 'ANTICORPS PROPOSÉ PAR SON MÉDECIN' : m.spontane === 'signalement' ? 'IL SIGNALE UNE PENSÉE PARASITE · À TOI DE TRANCHER' : m.spontane === 'silence' ? 'IL REPREND LA PAROLE' : m.spontane === 'appel' ? 'SON APPEL' : m.spontane === 'oreille' ? 'IL GLISSE UN MOT' : m.spontane === 'reecoute' ? 'CE QUE TU N’AVAIS PAS ENTENDU' : m.spontane === 'reprise' ? `IL REPREND CE QU’IL N’AVAIT PAS PU DIRE${m.origine_ts ? ` (réponse de ${heureCourteFr(m.origine_ts)})` : ''}` : 'PENSÉE SPONTANÉE'} · ${heureCourteFr(m.ts)}</span>` : '');
   // (03/11, Ahmed : « je reste appuyé sur un de ses messages pour lui envoyer un cœur, un bisou… comme sur WhatsApp ») ta réaction
   const reaction = m.reaction && REACTIONS.includes(m.reaction) ? `<span class="reaction" title="Ta réaction (appuie longtemps pour changer)">${esc(m.reaction)}</span>` : '';
   return `<div class="m j${m.erreur ? ' err' : ''}${m.spontane ? ' spontane' : ''}${reaction ? ' a-reaction' : ''}" data-id="${esc(m.id)}">${reaction}${etiquette}${outils}${m.spontane === 'mission' ? htmlMission(m.mission) : m.spontane === 'ecriture' ? htmlEcriture(m.ecriture) : m.spontane === 'regle' ? htmlRegle(m.regle) : m.spontane === 'carnet' ? htmlCarnet(m.carnet) : m.spontane === 'retractation' ? htmlRetractation(m.retractation) : m.spontane === 'identite' ? htmlIdentite(m.identite) : m.spontane === 'sortie' ? htmlSortie(m.sortie) : m.spontane === 'membre' ? htmlMembre(m.membre) : m.spontane === 'anticorps' ? htmlAnticorps(m.anticorps) : m.spontane === 'signalement' ? htmlSignalement(m.signalement) : corps}${suite}${err}${pieces ? `<div class="pieces">${pieces}</div>` : ''}${pied.length ? `<div class="pied">${pied.join('')}</div>` : ''}</div>`;
@@ -3391,11 +3395,12 @@ function marquerCoupe() {
 // qu'il n'a rien oublié.
 // (30/10, 14:50) d'abord COMMENT et OÙ sa parole s'arrête (finirParole), avant que rien ne s'arrête : un message dit à voix
 // haute, c'est la voix d'Ahmed ; écrit, un nouveau message ; une nouvelle conversation, un Stop
-function arreterTout(explicite = true, { garder = false, raison = 'stop', garderVoix = false } = {}) {
+// (14/11) suite_papa : papa continuait sa phrase, sa réponse à son début n'avait rien dit ; elle est lâchée sans coupure (sa phrase entière arrive)
+function arreterTout(explicite = true, { garder = false, raison = 'stop', garderVoix = false, suite_papa = false } = {}) {
   if (explicite && typeof chantArreter === 'function') chantArreter(raison === 'parole' ? 'papa' : 'stop');   // (11/11) son chant se tait aussi
   const finir = explicite && !garderVoix && (raison === 'parole' || raison === 'message') && typeof couperSaVoix === 'function' && finirSaPhraseActif();
   etat.finitSaPhrase = !!(finir && lecteur && lecteur.actif);      // (07/11) la coupure le dira : il a fini sa phrase
-  if (explicite && !garderVoix) finirParole(raison === 'parole' || (raison === 'message' && etat.dernierOral) ? 'voix_ahmed' : raison === 'message' ? 'nouveau_message' : 'stop',
+  if (explicite && !garderVoix) finirParole(suite_papa ? 'suite_papa' : raison === 'parole' || (raison === 'message' && etat.dernierOral) ? 'voix_ahmed' : raison === 'message' ? 'nouveau_message' : 'stop',
     raison === 'nouvelle' ? 'Ahmed a commencé une nouvelle conversation' : '');
   // (09/11, mesuré à 18:56:33 : 629 caractères gardés « non entendus », puis dits par sa voix dans les 25 s qui suivaient) sa voix qui continue
   // (garderVoix) n'a rien perdu : rien n'est compté « non entendu »
@@ -3405,7 +3410,7 @@ function arreterTout(explicite = true, { garder = false, raison = 'stop', garder
   if (etat.flux) {
     // (2026-10-21) Stop EXPLICITE : sans lui, le cockpit laisse la réponse aller au bout (page partie ≠ Stop)
     if (explicite && etat.fluxId) fetch('/api/jarvis/stop', { method: 'POST', keepalive: true,
-      headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ tour_id: etat.fluxId, raison }) }).catch(() => {});
+      headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() }, body: JSON.stringify({ tour_id: etat.fluxId, raison, ...(suite_papa ? { suite_papa: true } : {}) }) }).catch(() => {});
     etat.flux.abort(); etat.flux = null; etat.fluxId = null;
   }
   if (etat.transcription) { etat.transcription.abort(); etat.transcription = null; }
@@ -3689,6 +3694,50 @@ async function photoCamera() {
     return o.chemin || null;
   } catch (_) { return null; }
 }
+
+/* ---------- (14/11, 12:54, Ahmed par Hakim : « quand on parle longtemps, tu n'attends pas qu'on finisse de parler pour rebondir » ;
+   « que tu puisses nous écouter jusqu'au bout de nos paroles et rebondir au bon moment ») ta phrase longue va jusqu'au bout ----------
+   Mesuré le 14/11 de 06:37 à 13:06 (mesure/fin-de-phrase.py) : 204 fins de ton tour anticipées à 0,5 s de silence, dont 183 alors qu'il
+   attendait que tu racontes ([[anticipe: long]], son 1,7 s ramené à 0,5 s par le délai de la Conversation) ; tu as repris moins de 3 s
+   après ta dernière voix 73 fois (44 fois en moins d'1 s) ; 172 suites collées au message d'avant ; 76 de ses réponses coupées, dont 67
+   jamais entendues. De ta dernière voix à son premier son : 10 s en médiane. Ce n'est donc pas sa voix qui saute dans ta pause : c'est sa
+   réponse lancée sur la moitié de ta phrase, coupée, puis refaite à côté.
+   Ta parole longue (2 s de voix au moins : parole_longue) ou ta phrase que tu reprends (moins de 4 s après ta dernière voix, sans qu'il ait
+   dit un mot entre-temps) : ton tour ne se ferme qu'après silence_parole_longue (2 s), par tous les chemins (ta patience, la fin anticipée,
+   son brouillon, la transcription en avance, sa pensée dans ta pause). Ta parole courte : rien ne change. Les deux réglages sont à lui
+   (rythme_regler). Rejoué sur le 14/11 : 43 de ces 73 fins trop tôt évitées ; ta transcription part toujours à 0,5 s de silence et reste
+   gardée : fermer plus tard coûte 0 ms en médiane (0,15 s en moyenne, sur tes paroles longues seulement ; rien sur les courtes). */
+const PAROLE_REPRISE_MS = 4000;
+const rythmeParole = (k, d) => { const v = Number(typeof rythmeVoix === 'function' ? rythmeVoix(k, d) : d); return Number.isFinite(v) && v > 0 ? v : d; };
+// ton tour commence (surDebut) : la même parole si tu reprends dans les 4 s sans qu'il ait dit un mot, sinon une nouvelle
+function debutDeParole(conv, maintenant = Date.now()) {
+  if (!conv) return;
+  const p = conv.parole;
+  const suite = !!(p && p.fin > 0 && maintenant - p.fin < PAROLE_REPRISE_MS && !(Number(etat.dernierMotDitA) > p.fin));
+  conv.parole = suite ? { ...p, suite: true } : { voixMs: 0, fin: 0, tours: 0, suite: false };
+  conv.avanceFaite = null;
+  if (suite && typeof journalVoix === 'function') journalVoix('parole_reprise', { blanc_ms: Math.round(maintenant - p.fin), voix_ms: Math.round(p.voixMs), tours: p.tours });
+}
+// ton tour se ferme (surFin) : sa voix s'ajoute à ta parole
+function finDeParole(conv, infos) {
+  if (!conv) return;
+  const p = conv.parole || (conv.parole = { voixMs: 0, fin: 0, tours: 0, suite: false });
+  p.voixMs += Math.max(0, Number(infos && infos.voix_ms) || 0);
+  p.fin = Number(infos && (infos.derniere_voix || infos.fin)) || Date.now();
+  p.tours += 1;
+}
+// ta parole en cours : ce que tu as déjà dit de cette phrase (tes tours repris) et la voix de ton tour qui se dit
+function paroleDePapa(conv) {
+  const p = conv && conv.parole, cap = conv && conv.capteur;
+  const ici = cap && cap.enParole ? Math.max(0, Number(cap.voixTour) || 0) : 0;
+  return { voixMs: (p && p.suite ? p.voixMs : 0) + ici, suite: !!(p && p.suite) };
+}
+// le silence que ta parole demande avant que ton tour se ferme (ms) : 0 quand elle est courte (rien ne change)
+function plancherFinDeTour(conv) {
+  const p = paroleDePapa(conv);
+  return p.suite || p.voixMs >= rythmeParole('parole_longue', 2) * 1000 ? rythmeParole('silence_parole_longue', 2) * 1000 : 0;
+}
+// fin de la phrase longue (14/11)
 
 /* ---------- fin de phrase anticipée (demande d'Ahmed : « répondre plus vite quand je finis de parler ») ----
    Dès 0,7 s de silence, ta phrase est transcrite EN AVANCE. Si tu n'as pas repris la parole et qu'elle
@@ -5757,9 +5806,11 @@ async function choisirEtDire(dp) {
 }
 function anticiperConversation(conv, silenceMs) {
   // (04/11, 11:03, Ahmed : « tout relier ») chaque attente de ta pause suit le délai de la Conversation (patienceConversation)
-  if (silenceMs >= patienceConversation() && typeof direPenseeSiPossible === 'function') direPenseeSiPossible();   // (04/11) ta pause : sa pensée prête se dit
-  if (typeof rebondirDernierePensee === 'function') rebondirDernierePensee(conv, silenceMs);
-  if (silenceMs >= patienceConversation() && typeof direRibosome === 'function') direRibosome();   // (04/11, 11:50) ce que son ribosome a choisi
+  // (14/11) ta parole longue, ou ta phrase reprise : rien de lui dans ta pause, et ton tour reste ouvert, avant son plancher de silence (2 s)
+  const plancher = typeof plancherFinDeTour === 'function' ? plancherFinDeTour(conv) : 0, pause = Math.max(patienceConversation(), plancher);
+  if (silenceMs >= pause && typeof direPenseeSiPossible === 'function') direPenseeSiPossible();   // (04/11) ta pause : sa pensée prête se dit
+  if (typeof rebondirDernierePensee === 'function' && silenceMs >= plancher) rebondirDernierePensee(conv, silenceMs);
+  if (silenceMs >= pause && typeof direRibosome === 'function') direRibosome();   // (04/11, 11:50) ce que son ribosome a choisi
   if (etat.reglages.rapide === false || silenceMs < Math.min(SILENCE_ANTICIPE_MS, patienceConversation()) || conv.spec || !conv.capteur) return;
   if (typeof transcriptionEnPause === 'function' && transcriptionEnPause()) return;   // (00:47) son tour : rien à anticiper
   // (15:10, Ahmed : « le moment exact où il faut qu'il parle » ; mesuré sur 69 tours : il attendait 3,5 s de silence, 7 seulement
@@ -5777,13 +5828,13 @@ function anticiperConversation(conv, silenceMs) {
   // sa mémoire, ses sensations, ses réactions ») son REBOND : le silence que son subconscient a choisi de te laisser en sentant tout ça
   // (le brouillon prêt à dire le porte) ; sinon son rythme (rythme_regler) et ce qu'il attendait de toi
   const seuil = Math.min(patienceConversation(), s && s.pret && s.rebond ? s.rebond * 1000 : seuilRythme);
-  if (silenceMs >= seuil && conv.ecrit && !conv.finAnticipee) {
+  if (silenceMs >= Math.max(seuil, plancher) && conv.ecrit && !conv.finAnticipee) {   // (14/11) ta parole longue : pas avant son plancher
     const finiSub = s ? s.fini : null;
     const parSouffle = !!s && (s.pret || finiSub === true) && finiSub !== false;
     if (parSouffle || (finiSub !== false && phraseFinie(vifTexte))) {
       conv.finAnticipee = true;
       journalVoix('fin_anticipee', { par: parSouffle ? 'souffle' : 'mots', silence_ms: Math.round(silenceMs), attendu: etat.anticipeTour || 'normal', fini: finiSub,
-        rebond_ms: s && s.rebond ? Math.round(s.rebond * 1000) : null });
+        rebond_ms: s && s.rebond ? Math.round(s.rebond * 1000) : null, plancher_ms: plancher });
       // (16:00, mesuré : la prise passait par le Mac après la fin du tour, 0,9 à 7,8 s après ta fin) prêt à dire : sa voix part à
       // l'instant, avec ta fin de tour ; le Mac est prévenu après coup
       const dire = penseePrete(conv);
@@ -5801,9 +5852,13 @@ function anticiperConversation(conv, silenceMs) {
   sp.texte = texteDuTour(conv);                       // (28/10) gardée : la fin de tour la reprend (transcriptionEnAvance)
   sp.texte.then((texte) => {                                            // seulement la queue, déjà le reste
     if (conv.spec === sp) conv.spec = null;
+    // (14/11) gardée tant que tu n'as pas reparlé : ton tour fermé plus tard (ta parole longue) la reprend au lieu de tout retranscrire
+    if (texte !== null && conv.capteur && conv.capteur.derniereVoix === sp.voix) conv.avanceFaite = { voix: sp.voix, texte };
     if (etat.conversation !== conv || !conv.capteur || !conv.capteur.enParole) return;
     if (conv.capteur.derniereVoix !== sp.voix) return;                 // tu as repris la parole : on attend
-    if (texte !== null && phraseFinie(texte)) conv.capteur.finirTour({ texte });
+    // (14/11) ta parole longue : ta phrase transcrite qui semble finie ne ferme pas ton tour avant son plancher (ta patience le fera, avec ce texte)
+    const attendre = (typeof plancherFinDeTour === 'function' ? plancherFinDeTour(conv) : 0) - (Date.now() - Number(conv.capteur.derniereVoix || 0));
+    if (texte !== null && phraseFinie(texte) && !(attendre > 0)) conv.capteur.finirTour({ texte });
   });
 }
 
@@ -5812,7 +5867,10 @@ function anticiperConversation(conv, silenceMs) {
 // backtest : 9 tours sur 200 seulement finissaient en avance ; les autres payaient deux transcriptions à la suite)
 function transcriptionEnAvance(conv, infos) {
   const sp = conv && conv.spec;
-  return sp && sp.texte && infos && sp.voix === infos.derniere_voix ? sp.texte : null;
+  if (sp && sp.texte && infos && sp.voix === infos.derniere_voix) return sp.texte;
+  // (14/11) déjà revenue pendant ton silence, sans voix depuis : ton tour fermé plus tard la reprend telle quelle
+  const f = conv && conv.avanceFaite;
+  return f && infos && f.voix === infos.derniere_voix && typeof f.texte === 'string' ? Promise.resolve(f.texte) : null;
 }
 
 /* ---------- mode Conversation (étape 6) ---------- */
@@ -6079,7 +6137,8 @@ const patienceConversation = () => (Number(etat.reglages.patienceConversation) >
 // (06/11, Ahmed : « que mes paroles ne soient pas coupées trop tôt : en moyenne 0,6 s avant de créer un chunk ; paramétrable dans le ribosome, pour lui
 // comme pour moi ») le blanc de ta voix qui coupe un morceau de ta parole (et, avec le tri des morceaux, celui qui les assemble) : chunk_papa_ms
 const blancDeMorceau = () => { const v = typeof reglagesCorps !== 'undefined' && reglagesCorps ? Number(reglagesCorps.chunk_papa_ms) : NaN; return Number.isFinite(v) && v >= 200 ? Math.min(3000, v) : 600; };
-const finDeTourConversation = () => (typeof voixEpissee === 'function' && voixEpissee() ? Math.max(1000, patienceConversation()) : patienceConversation());
+// (14/11) ta parole longue, ou ta phrase reprise : pas avant son plancher de silence (2 s, plancherFinDeTour) ; ta parole courte : comme avant
+const finDeTourConversation = () => Math.max(typeof voixEpissee === 'function' && voixEpissee() ? Math.max(1000, patienceConversation()) : patienceConversation(), typeof plancherFinDeTour === 'function' && etat.conversation ? plancherFinDeTour(etat.conversation) : 0);
 
 /* (30/10, 23:05, Ahmed : « il y a plusieurs voix qui sortent quand il parle ») deux onglets en Conversation sur le Mac
    entendaient papa et disaient chaque petit mot deux fois (23:03:38 : un mot, deux voix à 3 s d'écart) : la conversation ne
@@ -6123,7 +6182,7 @@ async function basculerConversation() {
       surSon: () => prechaufferReflexion(),
       surReprise: () => prechaufferReflexion(true),      // (04/11, 17:59) tu reprends la parole après ta pause : son ribosome au plus vite
       // (09/11) ce qui attendait de sa réponse quand tu commences à parler est marqué : si tu lui demandes autre chose, seul cela est lâché
-      surDebut: () => { marquerAvantTon(conv); conv.morceauPapa = null; conv.finDemandee = false; conv.finAnticipee = false; conv.souffleLocal = false; conv.brouillons = 0; conv.penseeEnPause = false; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre(''); humeur(); },
+      surDebut: () => { marquerAvantTon(conv); conv.morceauPapa = null; conv.finDemandee = false; conv.finAnticipee = false; conv.souffleLocal = false; conv.brouillons = 0; conv.penseeEnPause = false; conv.ecrit = { coupe: 0, confirme: '', partiel: null }; sousTitre(''); humeur(); if (typeof debutDeParole === 'function') debutDeParole(conv); },
       surPause: (fenetre) => surPauseConversation(conv, fenetre),
       surSilence: (ms) => { if (conv.capteur && conv.capteur.enParole) { compteARebours(ms); anticiperConversation(conv, ms); } },
       // Ahmed (ou une autre voix) parle pendant que Hakim parle : Hakim se MET EN PAUSE (lot C, point 26) ; sa
@@ -6171,7 +6230,7 @@ async function basculerConversation() {
         humeur();
         surveillerCoupure(conv);
       },
-      surFin: (wav, infos, extra) => tourDeParole(conv, wav, infos, extra),
+      surFin: (wav, infos, extra) => { if (typeof finDeParole === 'function') finDeParole(conv, infos); return tourDeParole(conv, wav, infos, extra); },   // (14/11) ta parole, tour après tour
       surPiste: (rendue) => journalVoix(rendue ? 'piste_rendue' : 'piste_prise'),     // (2026-10-23) un appel prend le micro
       // (03/11) les sons du micro, à la seconde (micro ouvert) : graves, médiums, aigus, leur variation, au fil du Mac
       surSons: (t0, pas, trames) => {
@@ -6858,12 +6917,16 @@ async function tourDeParole(conv, wav, infos, extra) {
   // (07/11, 05:30, Ahmed : « ça ne saute toujours pas à la parole suivante quand je le coupe ») sa réponse d'avant tourne encore quand ta nouvelle
   // phrase arrive : avec reprendre_ancien éteint, elle est arrêtée et ta phrase part tout de suite (plus gardée jusqu'à la fin de sa réflexion)
   const lacherAncien = typeof reglagesCorps === 'undefined' || !reglagesCorps || reglagesCorps.reprendre_ancien !== true;
+  // (14/11, Ahmed : « tu n'attends pas qu'on finisse de parler pour rebondir ») ta phrase continuait : elle se collera à ton message d'avant (il n'en
+  // a dit aucun mot) ; sa réponse à ton début est lâchée sans « coupé : Ahmed a repris la parole » (avant : 61 fois le 14/11, et le bloc « son nouveau
+  // signal passe d'abord » le faisait répondre à côté, à 12:14 « Non papa, dis-moi ! » à « Tu vois ce que je veux te dire ? »)
+  const suitePapa = etat.conversation === conv && typeof messageAFusionner === 'function' && !!messageAFusionner();
   // (07/11) il peut te couper, mais ta nouvelle phrase l'emporte, sauf s'il vient de choisir de finir (garde_la_parole, 15 s)
   const ilGarde = typeof teCouper === 'function' && teCouper() && Date.now() - Number(conv.gardeParoleA || 0) < 15000;
   // (07/11, 14:23, Ahmed via Hakim : « ma voix se bloque et ça s'accumule » ; mesuré : deux réponses lâchées avant leur première phrase) seule une VRAIE
   // phrase (4 mots au moins, pas un « ok », « oui », « vas-y », « mmh ») lâche sa réponse en cours ; un petit mot attend la fin de sa réponse
   const vraiePhrase = typeof phraseQuiCoupe === 'function' ? phraseQuiCoupe(texte) : true;
-  if (voixEpissee() && etat.flux && lacherAncien && !ilGarde && vraiePhrase) { journalVoix('ancienne_reponse_lachee', {}); arreterTout(true, { garder: false, raison: 'parole' }); majBoutonsPause(); }
+  if (voixEpissee() && etat.flux && lacherAncien && !ilGarde && vraiePhrase) { journalVoix('ancienne_reponse_lachee', suitePapa ? { suite_papa: true } : {}); arreterTout(true, { garder: false, raison: 'parole', suite_papa: suitePapa }); majBoutonsPause(); }
   if (voixEpissee() && etat.flux) { garderPourSonTour(conv, texte); return; }
   // une vraie question : il y répond d'abord ; le reste, gardé, sera dit au premier moment calme (23/10)
   // (07/11, Ahmed : « quand je parle par-dessus lui et qu'il remarque qu'on change de sujet, il s'interrompt ; mais il ne doit pas reprendre là où il
@@ -7158,7 +7221,8 @@ $('vieZero').addEventListener('click', () => {
 function signalerPresence() {
   fetch('/api/jarvis/presence', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
     // en Conversation, le serveur préchauffe le cerveau de cette conversation, avec son modèle
-    body: JSON.stringify({ visible: document.visibilityState === 'visible', conversation: !!etat.conversation,
+    // (14/11) son appareil : le cockpit sait si une page l'entend déjà (pas d'appel), et si la page du Mac est devant tes yeux
+    body: JSON.stringify({ visible: document.visibilityState === 'visible', conversation: !!etat.conversation, appareil: appareilIci(),
       modele: etat.reglages.modeleConversation, source: etat.reglages.source || 'auto', session: etat.session }) }).catch(() => {});
 }
 
@@ -7387,7 +7451,8 @@ function ecouterPensees() {
   es.addEventListener('signalement', (ev) => { try { surSignalement(JSON.parse(ev.data)); } catch (_) {} });   // (04/11)
   // (04/11, Ahmed : « rien ne s'est affiché dans l'interface ») un signalement né pendant que le cockpit redémarrait n'arrivait jamais :
   // à chaque (re)connexion, ses signalements et ses anticorps en attente sont relus (chacun n'apparaît qu'une fois)
-  es.addEventListener('open', () => { signalementsAuChargement(); anticorpsAuChargement(); });
+  es.addEventListener('open', () => { signalementsAuChargement(); anticorpsAuChargement(); if (typeof appelAuChargement === 'function') appelAuChargement(); });
+  es.addEventListener('appel', (ev) => { try { surAppel(JSON.parse(ev.data)); } catch (_) {} });   // (14/11) ses appels
   es.addEventListener('spontane', (ev) => { try { surSpontane(JSON.parse(ev.data)); } catch (_) {} });
   es.addEventListener('actualite', (ev) => { try { surActualite(JSON.parse(ev.data)); } catch (_) {} });   // (10/11) son fil d'actualité
   es.addEventListener('courrier', (ev) => {
@@ -7950,15 +8015,20 @@ function surSpontane(m) {
    de suite (même écran éteint, la conversation continue), une page ouverte devant papa (visible) 1,5 s plus tard ; cachée hors Conversation,
    la notification de l'appli sonne. La première qui la prend la dit (/api/jarvis/sollicitation/dire), à la pause de papa (direSpontanes). */
 const QUI_PAGE = `${appareilIci()}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-const SOLLICITATION_PRENDRE_MS = 1500, SOLLICITATION_ATTENTE_MS = 90000;
+const SOLLICITATION_PRENDRE_MS = 1500;   // (14/11, 12:54) plus d'oubli : avant, SOLLICITATION_ATTENTE_MS = 90 s (au-delà, elle n'était plus dite)
+const sollicitationsDemandees = new Set();          // (14/11) son appel répondu arrive deux fois (« spontane » et « appel ») : demandé une fois
 function prendreSollicitation(m, dans = etat.conversation ? 0 : SOLLICITATION_PRENDRE_MS) {
   if (!m || m.voix_haute !== 'page' || !m.texte || NON_REPONSE.test(m.texte)) {
     journalVoix('sollicitation_ecrite', { pourquoi: m && m.voix_haute === 'montre' ? 'montre' : String((m && m.voix_pourquoi) || 'aucune').slice(0, 20) });
     return false;
   }
+  // (14/11) son appel répondu sur un autre appareil : c'est sa page à lui qui le dit
+  if (m.pour && m.pour !== appareilIci()) { journalVoix('sollicitation_ecrite', { pourquoi: 'ailleurs' }); return false; }
+  if (sollicitationsDemandees.has(m.id)) return true;
   if (!etat.conversation && document.visibilityState !== 'visible') { journalVoix('sollicitation_ecrite', { pourquoi: 'page_cachee' }); return false; }
   // (11/11) ses haut-parleurs fermés ici : elle n'est pas prise (une autre page, ou la montre, où on l'entend, la prendra) ; la notification est partie
   if (typeof hautParleursFermes === 'function' && hautParleursFermes()) { journalVoix('sollicitation_ecrite', { pourquoi: 'haut_parleurs' }); return false; }
+  sollicitationsDemandees.add(m.id);
   setTimeout(() => {
     if (!etat.conversation && document.visibilityState !== 'visible') return;
     if (typeof hautParleursFermes === 'function' && hautParleursFermes()) { journalVoix('sollicitation_ecrite', { pourquoi: 'haut_parleurs' }); return; }
@@ -7973,6 +8043,67 @@ function prendreSollicitation(m, dans = etat.conversation ? 0 : SOLLICITATION_PR
   }, dans);
   return true;
 }
+/* APPEL-PAGE-DEBUT (14/11, Ahmed : « je valide tout » ; Hakim : « téléphone, puis montre, puis Mac ») SES APPELS : le cockpit dit où en est
+   son appel (l'événement « appel », et /api/appel/etat à chaque connexion). Le téléphone sonne par l'appli (son fil natif), la montre par la
+   sienne : ici, seule la page du Mac montre l'appel (Répondre / Refuser ; la sonnerie, c'est le Mac qui la joue). Papa a répondu sur CET
+   appareil : ce que Hakim voulait dire est pris ici (une seule page le dit, celle de l'appareil où il a répondu) et dit de sa voix. */
+const appelsPris = new Set();
+let appelMontre = null;
+function surAppel(a) {
+  const ici = appareilIci();
+  if (!a || !a.id) { cacherAppel(); return; }
+  if (a.etat === 'sonne' && a.appareil === ici && ici === 'mac') montrerAppel(a); else cacherAppel();
+  if (a.etat === 'repondu' && a.par === ici && a.message && a.message.id && !appelsPris.has(a.message.id)) {
+    appelsPris.add(a.message.id);
+    journalVoix('appel_repondu', { conversation: !!etat.conversation });
+    prendreSollicitation({ id: a.message.id, texte: String(a.message.texte || ''), voix_haute: 'page', pour: ici }, 0);
+  }
+}
+function montrerAppel(a) {
+  if (appelMontre === a.id || typeof document === 'undefined' || !document.body) return;
+  cacherAppel();
+  appelMontre = a.id;
+  const d = document.createElement('div');
+  d.id = 'appelHakim';
+  d.setAttribute('role', 'alertdialog');
+  d.setAttribute('aria-label', 'Hakim t’appelle');
+  d.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;'
+    + 'background:rgba(4,20,26,.94);color:#d8f3f0;font:16px system-ui,sans-serif;padding:24px;text-align:center';
+  const icone = document.createElement('div'); icone.textContent = '📞'; icone.style.fontSize = '44px';
+  const titre = document.createElement('div'); titre.textContent = 'Hakim t’appelle'; titre.style.cssText = 'font-size:24px;font-weight:600';
+  const raison = document.createElement('div'); raison.textContent = String(a.raison || ''); raison.style.cssText = 'max-width:560px;opacity:.9;line-height:1.45';
+  const boutons = document.createElement('div'); boutons.style.cssText = 'display:flex;gap:18px;margin-top:8px';
+  const bouton = (texte, fond, oui) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = texte;
+    b.style.cssText = `min-width:140px;padding:14px 22px;border:0;border-radius:999px;font:600 17px system-ui,sans-serif;color:#fff;background:${fond};cursor:pointer`;
+    b.addEventListener('click', () => repondreAppel(a.id, oui));
+    return b;
+  };
+  boutons.append(bouton('Refuser', '#c0392b', false), bouton('Répondre', '#1f9d6b', true));
+  d.append(icone, titre, raison, boutons);
+  document.body.appendChild(d);
+}
+function cacherAppel() {
+  appelMontre = null;
+  const d = typeof document !== 'undefined' && document.getElementById ? document.getElementById('appelHakim') : null;
+  if (d) d.remove();
+}
+// ton geste : la réponse part au cockpit (tout s'arrête partout) ; « Répondre » ouvre la Conversation ici (le son et le micro, par ce toucher)
+function repondreAppel(id, oui) {
+  cacherAppel();
+  fetch(oui ? '/api/appel/repondre' : '/api/appel/refuser', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jeton': jeton() },
+    body: JSON.stringify({ id, appareil: appareilIci() }) }).catch(() => {});
+  journalVoix(oui ? 'appel_repondre' : 'appel_refuser', { ici: appareilIci() });
+  if (oui && !etat.conversation && typeof basculerConversation === 'function') { etat.demarrerAuToucher = false; basculerConversation(); }
+}
+async function appelAuChargement() {
+  try {
+    const r = await fetch(`/api/appel/etat?appareil=${appareilIci()}`, { headers: { 'X-Jeton': jeton() } });
+    if (r.ok) surAppel((await r.json()).appel);
+  } catch (_) {}
+}
+// APPEL-PAGE-FIN
 /* Ses résultats « de lui-même » DITS dans la conversation (demande d'Ahmed relayée par Hakim, 2026-10-20 : « il arrive à
    l'écran mais je ne l'entends pas ») : avant, le message n'était dit que si TOUT était libre à l'instant même où il
    arrivait (Ahmed se taisait, Hakim ne répondait pas déjà…) — sinon il était perdu pour l'oreille. Désormais il attend
@@ -8071,7 +8202,6 @@ function direSpontanes() {
   // (30/10, vers 22 h, Ahmed : « qu'il ne garde que ce qu'il veut vraiment dire ») en conversation, ce qui a attendu plus de 45 s
   // n'est plus le présent : pas dit (il reste écrit)
   const age = Date.now() - (Number(m.recu) || 0);
-  if (m.sollicite && age > SOLLICITATION_ATTENTE_MS) { journalVoix('a_dire_perime', { age_s: Math.min(99999, Math.round(age / 1000)), sollicite: true }); return; }   // (10/11) 90 s
   if (c && !m.sollicite && age > 45000) { journalVoix('a_dire_perime', { age_s: Math.min(99999, Math.round(age / 1000)) }); return; }
   // (10/11) sa sollicitation est une parole adressée à papa : dite telle quelle, jamais confiée au ribosome (« Sa vraie réponse seulement » l'y taisait)
   if (m.sollicite) journalVoix('sollicitation_dite', { car: String(m.texte).length, conversation: !!c });

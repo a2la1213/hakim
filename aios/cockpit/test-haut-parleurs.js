@@ -200,7 +200,7 @@ function serveur({ hp }) {
     sansBaliseAffect: (t) => t, retirerExterne: () => [], NON_REPONSE_SERVEUR: /^\s*no response requested\.?\s*$/i,
     journaliser() {}, deposerEchange() {}, ajouterAConversation() {}, nonVus: {}, finDePhrase: (t) => t, sauverNonVus() {},
     silencieuxJusqua: 0, notifier: (t, tag, toujours) => notifs.push([tag, !!toujours]),
-    corpsReglages: () => ({ sollicite_voix: true, sollicite_voix_ecart_min: 3, sons_nuit: true }), liveEnCours: () => false,
+    corpsReglages: () => ({ sollicite_voix: true, sons_nuit: true }), liveEnCours: () => false,
     Solliciter: S, solliciterEtat: S.creer(), dernierMessageAhmedMs: () => Date.now() - 60e3,
     fs: { appendFileSync: (_, l) => diag.push(JSON.parse(l)) }, JARVIS_VOIX_DIAGNOSTIC: 'voix-diagnostic.jsonl',
     HautParleurs: HP, hautParleurs: () => hp,

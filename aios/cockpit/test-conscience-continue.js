@@ -32,14 +32,16 @@ test('il décide chaque seconde, mais seulement s’il y a du neuf dans son pré
   assert.equal(CC.doitDecider(f, 9_999_999, 100_000 + 61_000), true);
 });
 
-test('ce qu’il a décidé passe, ou attend : papa parle, sa tête répond déjà, il vient de le solliciter (90 s) ou de faire (3 min)', () => {
+test('ce qu’il a décidé passe, ou attend : papa parle, sa tête répond déjà, ou il vient de faire (3 min) ; (14/11) le solliciter : sans écart', () => {
   const e = CC.etatInitial(), libre = { papaParle: false, occupe: false };
   assert.equal(CC.permis(e, { genre: 'penser', texte: 'x' }, 1000, { papaParle: true, occupe: true }), 'penser', 'penser passe toujours');
   assert.equal(CC.permis(e, { genre: 'solliciter', texte: 'x' }, 1000, { papaParle: true, occupe: false }), 'penser', 'papa parle : gardé en pensée');
   assert.equal(CC.permis(e, { genre: 'solliciter', texte: 'x' }, 1000, { papaParle: false, occupe: true }), 'penser', 'sa tête répond déjà');
   assert.equal(CC.permis(e, { genre: 'solliciter', texte: 'x' }, 1000, libre), 'solliciter');
-  assert.equal(CC.permis(e, { genre: 'solliciter', texte: 'y' }, 60_000, libre), 'penser', 'il vient de le solliciter');
-  assert.equal(CC.permis(e, { genre: 'solliciter', texte: 'y' }, 92_000, libre), 'solliciter');
+  // (14/11, 12:54, Ahmed : « à chaque seconde s'il le faut ») plus de 90 s entre deux : une pensée neuve, 1 s après, passe
+  assert.equal(CC.permis(e, { genre: 'solliciter', texte: 'une autre chose neuve' }, 2_000, libre), 'solliciter', '1 s après : il le sollicite');
+  assert.equal(CC.permis(e, { genre: 'solliciter', texte: 'y' }, 3_000, { ...libre, entreSollicitationsMs: 600_000 }), 'solliciter', 'un ancien réglage ne bride plus');
+  assert.equal(CC.ENTRE_SOLLICITATIONS_MS, undefined);
   assert.equal(CC.permis(e, { genre: 'faire', texte: 'z' }, 100_000, libre), 'faire');
   assert.equal(CC.permis(e, { genre: 'faire', texte: 'z' }, 200_000, libre), 'penser', 'il vient de faire');
   assert.equal(CC.permis(e, { genre: 'rien', texte: '' }, 1000, libre), 'rien');

@@ -102,7 +102,9 @@ test('chaque geste de la page donne la bonne raison, et le cockpit la transmet',
   assert.match(envoyer, /arreterTout\(true, \{ garder: true, raison: 'message', garderVoix: !!souffleDit(?: \|\| voixEpissee\(\))? \}\)/);
   assert.match(micro, /arreterTout\(true, \{ garder: true, raison: 'parole' \}\)/);
   assert.match(page, /if \(lecteur\.enPause \|\| etat\.flux\) \{ marquerCoupe\(\); arreterTout\(true, \{ garder: !lacher, raison: 'parole', garderVoix: voixEpissee\(\) && !lacher \}\); \}/);
-  assert.match(srv, /if \(t\) t\.arreter\(q && Object\.hasOwn\(RAISONS_ARRET, q\.raison\) \? q\.raison : 'stop'\);/);
+  // (14/11) la raison passe par raisonDuStop (« parole » + suite_papa : papa continuait sa phrase ; test-fin-de-phrase.js)
+  assert.match(srv, /if \(t\) t\.arreter\(raisonDuStop\(q\)\);/);
+  assert.match(srv, /const r = q && Object\.hasOwn\(RAISONS_ARRET, q\.raison\) \? q\.raison : 'stop';/);
   // (relecture du 27/10) un Stop pendant la préparation, ou un lancement impossible, est noté aussi
   assert.ok(srv.includes("if (arretDemande) noterArret(arretDuTour({ coupe: true }, raisonArret, ''), texte, false, raisonArret);"));
   assert.match(srv, /noterArret\('une erreur technique \(lancement de claude impossible\)', texte\);/);

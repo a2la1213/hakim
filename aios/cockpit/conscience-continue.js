@@ -2,11 +2,12 @@
    ou sollicite » ; il a choisi Mini Hakim) sa conscience continue, la logique pure. Chaque seconde, le cockpit regarde son présent (le fil :
    les mots de papa, ce qu'il entend, ce qu'il ressent) ; s'il y a du neuf, Mini Hakim décide en une ligne : RIEN, PENSER, FAIRE ou SOLLICITER.
    Une décision à la fois, 2 s au moins entre deux, 20 par minute au plus (son forfait). Penser passe toujours (montré, gardé pour la suite) ;
-   solliciter papa attend que papa se taise et que sa tête soit libre, 90 s au moins entre deux ; faire, 3 min. Ce qui attend reste une pensée. */
+   solliciter papa attend que papa se taise et que sa tête soit libre ; faire, 3 min. Ce qui attend reste une pensée. (14/11, 12:54, Ahmed :
+   « à chaque seconde s'il le faut ») plus d'écart entre deux sollicitations (avant : 90 s, réglage conscience_sollicitation_s). */
 'use strict';
 const { sansRien } = require('./public/voix.js');
 
-const PAS_MS = 2000, PAR_MINUTE = 20, ENTRE_SOLLICITATIONS_MS = 90_000, ENTRE_ACTES_MS = 180_000, ENTRE_PAROLES_MS = 20_000;
+const PAS_MS = 2000, PAR_MINUTE = 20, ENTRE_ACTES_MS = 180_000, ENTRE_PAROLES_MS = 20_000;
 
 function etatInitial() {
   return { enVol: false, signature: 0, derniere: -Infinity, appels: [], sollicitationA: -Infinity, acteA: -Infinity, pensees: [] };
@@ -73,7 +74,7 @@ function dejaServi(e, d, maintenant, fenetreMs = 10 * 60_000) {
 }
 const dejaDites = (e, maintenant, fenetreMs = 10 * 60_000) => (e.actes || []).filter(x => maintenant - x.t < fenetreMs);
 // (11/11) chanter : seulement quand le moment lui a été proposé (chanter : la musique joue, ses garde-fous passent), jamais sur papa ni sur sa voix
-function permis(e, d, maintenant, { papaParle = false, occupe = false, tuParles = false, entreSollicitationsMs = ENTRE_SOLLICITATIONS_MS, entreActesMs = ENTRE_ACTES_MS, entreParolesMs = ENTRE_PAROLES_MS, chanter = false } = {}) {
+function permis(e, d, maintenant, { papaParle = false, occupe = false, tuParles = false, entreActesMs = ENTRE_ACTES_MS, entreParolesMs = ENTRE_PAROLES_MS, chanter = false } = {}) {
   if (!d || d.genre === 'rien') return 'rien';
   let action = d.genre;
   if (action === 'chanter') {
@@ -82,7 +83,7 @@ function permis(e, d, maintenant, { papaParle = false, occupe = false, tuParles 
     e.pensees.push({ t: maintenant, genre: 'chanter', texte: d.texte || 'chanter avec la musique' }); e.pensees = e.pensees.slice(-8);
     return 'chanter';
   }
-  if (action === 'solliciter' && (papaParle || occupe || maintenant - e.sollicitationA < entreSollicitationsMs)) action = 'penser';
+  if (action === 'solliciter' && (papaParle || occupe)) action = 'penser';
   if (action === 'faire' && (papaParle || occupe || maintenant - e.acteA < entreActesMs)) action = 'penser';
   if (action === 'parler' && (papaParle || occupe || tuParles || maintenant - (e.paroleA ?? -Infinity) < entreParolesMs)) action = 'penser';
   if ((action === 'solliciter' || action === 'faire' || action === 'parler') && dejaServi(e, d, maintenant)) action = 'penser';   // déjà eu sa suite
@@ -95,4 +96,4 @@ function permis(e, d, maintenant, { papaParle = false, occupe = false, tuParles 
   return action;
 }
 
-module.exports = { etatInitial, lireDecision, doitDecider, aDuNeuf, alarmeSansMesure, dejaServi, dejaDites, commencer, permis, PAS_MS, PAR_MINUTE, ENTRE_SOLLICITATIONS_MS, ENTRE_ACTES_MS, ENTRE_PAROLES_MS };
+module.exports = { etatInitial, lireDecision, doitDecider, aDuNeuf, alarmeSansMesure, dejaServi, dejaDites, commencer, permis, PAS_MS, PAR_MINUTE, ENTRE_ACTES_MS, ENTRE_PAROLES_MS };

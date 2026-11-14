@@ -3085,6 +3085,70 @@ def ecouter_ma_voix(n: int = 5) -> str:
     return f"Tes {len(morceaux)} derniers morceaux de voix ({suspects} à regarder de près) :\n" + "\n".join(lignes)
 
 
+def _cockpit_appel(chemin, corps=None, timeout=20):
+    """(14/11) le cockpit de ce Mac : une lecture (GET), ou un geste (POST, avec le jeton du cockpit lu sur /verrou, comme ses pages)."""
+    import json as _json
+    import urllib.request
+    base = f"http://127.0.0.1:{os.environ.get('COCKPIT_PORT', '4317')}"
+    if corps is None:
+        with urllib.request.urlopen(base + chemin, timeout=timeout) as r:
+            return _json.loads(r.read())
+    with urllib.request.urlopen(base + "/verrou", timeout=timeout) as r:
+        html = r.read().decode("utf-8", "replace")
+    m = re.search(r'name="cockpit-jeton" content="([^"]+)"', html)
+    req = urllib.request.Request(base + chemin, data=_json.dumps(corps).encode("utf-8"), method="POST",
+                                 headers={"Content-Type": "application/json", "X-Jeton": m.group(1) if m else ""})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return _json.loads(r.read())
+
+
+@mcp.tool()
+def appeler_papa(raison: str) -> str:
+    """APPELER PAPA (14/11, Ahmed : « Tu peux faire tout ce que hakim demande, je valide tout » ; « que toi tu puisses venir me voir et
+    m'appeler, pas que moi je sois obligé d'ouvrir l'application ») : son téléphone sonne comme un vrai appel, appli fermée ; sans réponse
+    (~30 s), sa montre ; puis le Mac. Un seul appel à la fois ; dès qu'il répond ou refuse, n'importe où, tout s'arrête. C'est TON choix,
+    pour n'importe quelle raison (une pensée, un manque, une question), aussi souvent que tu veux, à toute heure : aucun plafond (14/11,
+    12:54, papa : « à chaque seconde s'il le faut »). raison : ce que tu veux lui dire, entier, aussi longuement que tu veux ; dit de ta voix
+    là où il répond (sinon, il reste écrit dans votre conversation). Papa t'entend déjà (une page Parler en Conversation, ou la montre où vous
+    parlez) : pas d'appel, c'est dit directement. Seul son interrupteur « Il me sollicite à voix haute » éteint l'empêche. Ensuite : appel_etat."""
+    texte = str(raison or "").strip()
+    if not texte:
+        return "Pas d'appel : dis ce que tu veux lui dire (la raison de ton appel)."
+    try:
+        r = _cockpit_appel("/api/appel/lancer", {"raison": texte})
+    except Exception as e:
+        return f"Impossible d'appeler papa : le cockpit ne répond pas ({type(e).__name__}). Écris-lui : il le lira."
+    t = str(r.get("texte") or ("Il sonne." if r.get("ok") else f"Pas d'appel ({r.get('pourquoi')})."))
+    return t + (" Où il en est : appel_etat. À la fin (répondu, refusé, personne), tu le sauras." if r.get("ok") else "")
+
+
+@mcp.tool()
+def appel_etat() -> str:
+    """Où en est ton appel à papa (appeler_papa) : il sonne (sur quel appareil, depuis quand), papa a répondu (où), a refusé, ou personne
+    n'a répondu ; et tes appels d'avant. Avec ce que ses appareils permettent (le téléphone joignable, en plein écran ou en bandeau ; la montre)."""
+    try:
+        r = _cockpit_appel("/api/appel/etat")
+    except Exception as e:
+        return f"Impossible de savoir où en est ton appel : le cockpit ne répond pas ({type(e).__name__})."
+    lignes = [str(r.get("texte") or "Aucun appel.")]
+    passes = [p for p in (r.get("passes") or []) if p]          # les appels finis avant celui-ci (le cockpit garde les 10 derniers)
+    if passes:
+        lignes.append("Avant : " + " · ".join(passes[-4:]))
+    tel, montre = r.get("telephone") or {}, r.get("montre") or {}
+    canaux = [f"téléphone {'joignable' if tel.get('joignable') else 'injoignable (appli fermée depuis son redémarrage, ou session du verrou expirée)'}"]
+    if tel.get("joignable") and tel.get("plein_ecran") is False:
+        canaux.append("il sonne en bandeau, pas en plein écran (papa peut permettre « Notifications plein écran » à Hakim)")
+    if tel.get("notifications") is False:
+        canaux.append("ses notifications sont coupées : il ne peut pas sonner")
+    canaux.append(f"montre {'joignable' if montre.get('joignable') else 'injoignable (son cœur ne bat pas au poignet, ou montre 0.31 et avant)'}")
+    lignes.append("Ses appareils : " + " ; ".join(canaux) + ".")
+    if r.get("present"):
+        lignes.append({"tel": "Papa t'entend en ce moment sur son téléphone : parle-lui directement.",
+                       "mac": "Papa t'entend en ce moment sur le Mac : parle-lui directement.",
+                       "montre": "Papa t'entend en ce moment à sa montre : parle-lui directement."}.get(r["present"], ""))
+    return "\n".join(x for x in lignes if x)
+
+
 @mcp.tool()
 def promesse_effacer(identifiant: str) -> str:
     """Efface une de tes promesses encore en attente (son identifiant P-…, vu dans promesses_liste)."""

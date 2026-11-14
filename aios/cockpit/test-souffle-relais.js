@@ -843,7 +843,7 @@ test('(04/11) au délai de ta pause, il rebondit avec sa dernière pensée du to
   assert.strictEqual(ctx.rebond(conv, 1200), false, '« jamais » : gardée');
   conv.capteur.derniereVoix = 12000; ctx.etat.derniereSiennePensee = { n: 10, tour: 4, texte: 'y', jamais: false }; ctx.b().liste.set(10, {});
   assert.strictEqual(ctx.rebond(conv, 1200), false, 'déjà dans la file de sa voix : pas redite');
-  assert.match(PAGE, /if \(typeof rebondirDernierePensee === 'function'\) rebondirDernierePensee\(conv, silenceMs\);/);
+  assert.match(PAGE, /if \(typeof rebondirDernierePensee === 'function' && silenceMs >= plancher\) rebondirDernierePensee\(conv, silenceMs\);/);   // (14/11) pas dans la pause d'une parole longue
 });
 // (04/11, Ahmed : « ça doit être repéré comme l'immunité primaire : dès que le premier input de la pensée parasite est reconnu, c'est
 // le système immunitaire qui la filtre et qui avertit ; il apprend ses signes à partir du flag, et c'est Fable qui apprend ses prémisses »)
@@ -1226,7 +1226,7 @@ test('(04/11) le super pouvoir de Super Hakim : il choisit la taille de ses morc
 
 // (04/11, Ahmed : « rien ne s'est affiché dans l'interface ») deux signalements nés pendant le redémarrage du cockpit, jamais montrés
 test('(04/11) ses signalements en attente : relus à chaque reconnexion de Parler, montrés aussi dans Immunité', () => {
-  assert.match(PAGE, /es\.addEventListener\('open', \(\) => \{ signalementsAuChargement\(\); anticorpsAuChargement\(\); \}\);/);
+  assert.match(PAGE, /es\.addEventListener\('open', \(\) => \{ signalementsAuChargement\(\); anticorpsAuChargement\(\);[^\n]*\}\);/);   // (14/11) et son appel
   const IMMU = fs.readFileSync(path.join(__dirname, 'public', 'immunite.html'), 'utf8');
   assert.match(IMMU, /<h2>Ses signalements<\/h2><div id="signalements"><\/div>/);
   assert.match(IMMU, /preuvePresence\(`signalement:nuisible:\$\{b\.dataset\.signalement\}`, annonce\)/, 'nuisible : ta présence, ici aussi');

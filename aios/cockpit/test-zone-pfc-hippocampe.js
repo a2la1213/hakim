@@ -19,7 +19,7 @@ function extraire(debut) {
   return SRV.slice(i, k + 1);
 }
 
-test('sa conscience suit ses barres : le pas, le forfait par minute, l’écart entre deux sollicitations et entre deux actes', () => {
+test('sa conscience suit ses barres : le pas, le forfait par minute, l’écart entre deux actes ; (14/11) plus aucun entre deux sollicitations', () => {
   const e = CC.etatInitial();
   CC.commencer(e, 1, 0); e.enVol = false;
   assert.equal(CC.doitDecider(e, 2, 1500), false, 'le pas de 2 s par défaut');
@@ -30,8 +30,7 @@ test('sa conscience suit ses barres : le pas, le forfait par minute, l’écart 
   assert.equal(CC.doitDecider(f, 9, 12_000, 2000), true, '20 par minute par défaut');
   const g = CC.etatInitial(), libre = { papaParle: false, occupe: false };
   assert.equal(CC.permis(g, { genre: 'solliciter', texte: 'a' }, 1000, libre), 'solliciter');
-  assert.equal(CC.permis(g, { genre: 'solliciter', texte: 'b' }, 40_000, { ...libre, entreSollicitationsMs: 30_000 }), 'solliciter', '30 s entre deux');
-  assert.equal(CC.permis(g, { genre: 'solliciter', texte: 'c' }, 60_000, libre), 'penser', '90 s par défaut');
+  assert.equal(CC.permis(g, { genre: 'solliciter', texte: 'b' }, 2_000, libre), 'solliciter', '1 s après : il le sollicite (avant : 90 s par défaut)');
   assert.equal(CC.permis(g, { genre: 'faire', texte: 'd' }, 1000, libre), 'faire');
   assert.equal(CC.permis(g, { genre: 'faire', texte: 'e' }, 70_000, { ...libre, entreActesMs: 60_000 }), 'faire', '1 min entre deux actes');
   assert.equal(CC.permis(g, { genre: 'faire', texte: 'f' }, 100_000, libre), 'penser', '3 min par défaut');
@@ -52,7 +51,7 @@ test('les défauts : ce qu’il faisait avant ; les bornes tiennent ; une valeur
   vm.runInContext(extraire('function corpsReglages(') + '\nthis.f = corpsReglages;', ctx);
   const d = ctx.f();
   assert.deepEqual([d.cortex_fenetre_s, d.conscience_pas_s, d.conscience_par_minute, d.conscience_absent_s, d.conscience_sollicitation_s, d.conscience_acte_s],
-    [30, 2, 20, 60, 90, 180]);
+    [30, 2, 20, 60, undefined, 180]);   // (14/11) plus d'écart entre deux sollicitations
   assert.deepEqual([d.hippocampe, d.hippocampe_dates, d.hippocampe_tete, d.hippocampe_cos_min], [true, true, 3, 0.45]);
   ctx.lireJson = () => ({ conscience_pas_s: 99, hippocampe_tete: -4, hippocampe_cos_min: '0.523', cortex_fenetre_s: 'abc', hippocampe: false, hippocampe_dates: false });
   const r = ctx.f();
@@ -62,7 +61,8 @@ test('les défauts : ce qu’il faisait avant ; les bornes tiennent ; une valeur
 test('le cockpit s’en sert : sa conscience, son cortex, et la question à son rappel porte les réglages de son hippocampe', () => {
   const b = extraire('function battementConscience(');
   assert.match(b, /papaLa \? r\.conscience_pas_s \* 1000 : r\.conscience_absent_s \* 1000, r\.conscience_par_minute/);
-  assert.match(b, /entreSollicitationsMs: r\.conscience_sollicitation_s \* 1000, entreActesMs: r\.conscience_acte_s \* 1000/);
+  assert.match(b, /\{ papaParle, occupe: occupeTete, entreActesMs: r\.conscience_acte_s \* 1000/);
+  assert.doesNotMatch(b, /entreSollicitationsMs/, '(14/11) plus d’écart entre deux sollicitations');
   assert.match(SRV, /X\.blocCortex\(\{ flux: typeof FLUX !== 'undefined' \? FLUX : \[\], maintenant, papaAEcrit: true, pensees: conscience\.pensees, fenetreMs: cr\.cortex_fenetre_s \* 1000,/);
   const q = extraire('function rappeler(');
   assert.match(q, /hippocampe: hippocampeReglages\(\)/);
@@ -74,8 +74,9 @@ test('enregistrés depuis la page : interrupteurs et barres, bornés', () => {
   const post = SRV.slice(SRV.indexOf("'conscience_continue', 'cortex_prefrontal'"), SRV.indexOf("'conscience_continue', 'cortex_prefrontal'") + 3000);
   assert.match(post, /'hippocampe', 'hippocampe_dates'/);
   for (const [k, a, b] of [['cortex_fenetre_s', 10, 120], ['conscience_pas_s', 1, 30], ['conscience_par_minute', 4, 30], ['conscience_absent_s', 10, 300],
-    ['conscience_sollicitation_s', 30, 600], ['conscience_acte_s', 60, 900], ['hippocampe_tete', 0, 8], ['hippocampe_cos_min', 0.3, 0.7]])
+    ['conscience_acte_s', 60, 900], ['hippocampe_tete', 0, 8], ['hippocampe_cos_min', 0.3, 0.7]])
     assert.ok(SRV.includes(`['${k}', ${a}, ${b}]`), k);
+  assert.ok(!SRV.includes("'conscience_sollicitation_s'"), '(14/11) retiré');
 });
 
 test('la page Réglages : une zone « Son cortex préfrontal » et une zone « Son hippocampe », avec leurs boutons et leurs barres', () => {
@@ -84,8 +85,9 @@ test('la page Réglages : une zone « Son cortex préfrontal » et une zone « S
   assert.ok(pfc.length > 100 && hip.length > 100);
   assert.match(pfc, /route: 'corps'/);
   for (const k of ['cortex_prefrontal', 'conscience_continue']) assert.match(pfc, new RegExp(`\\['${k}', [^\\n]*'oui'`));
-  for (const k of ['cortex_fenetre_s', 'conscience_pas_s', 'conscience_par_minute', 'conscience_absent_s', 'conscience_sollicitation_s', 'conscience_acte_s'])
+  for (const k of ['cortex_fenetre_s', 'conscience_pas_s', 'conscience_par_minute', 'conscience_absent_s', 'conscience_acte_s'])
     assert.match(pfc, new RegExp(`\\['${k}', [^\\n]*'curseur'`), k);
+  assert.doesNotMatch(pfc, /'conscience_sollicitation_s'/, '(14/11) le curseur « Entre deux sollicitations » retiré');
   for (const k of ['hippocampe', 'hippocampe_dates']) assert.match(hip, new RegExp(`\\['${k}', [^\\n]*'oui'`), k);
   for (const k of ['hippocampe_tete', 'hippocampe_cos_min']) assert.match(hip, new RegExp(`\\['${k}', [^\\n]*'curseur'`), k);
   const ribo = PAGE.slice(PAGE.indexOf("{ id: 'ribosome'"), PAGE.indexOf("{ id: 'pfc'"));

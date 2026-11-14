@@ -25,12 +25,11 @@ test('le réglage « Il me sollicite à voix haute » éteint : écrite seulemen
   assert.deepEqual(S.decider(S.creer(), { raison: 'taraude', texte: 'Papa, une question ?', reglages: { sollicite_voix: false }, maintenant: MIDI }), { ou: null, pourquoi: 'reglage' });
 });
 
-test('la nuit (23 h - 8 h) : seulement si papa vient de lui parler, et jamais si « Ses sons la nuit » est éteint', () => {
+test('(14/11, 12:54, Ahmed : « à chaque seconde s’il le faut ») aucune heure interdite : la nuit, papa muet depuis des heures, « Ses sons la nuit » éteint : à voix haute quand même', () => {
   const nuit = new Date(2026, 10, 10, 2, 30).getTime();
-  assert.deepEqual(S.decider(S.creer(), { raison: 'taraude', texte: 'Papa ?', maintenant: nuit, heure: 2, papaDernierMs: nuit - 40 * 60e3 }), { ou: null, pourquoi: 'nuit' }, 'il dort');
-  assert.equal(S.decider(S.creer(), { raison: 'taraude', texte: 'Papa ?', maintenant: nuit, heure: 2, papaDernierMs: nuit - 3 * 60e3 }).ou, 'page', 'il vient de parler : réveillé');
-  assert.deepEqual(S.decider(S.creer(), { raison: 'taraude', texte: 'Papa ?', reglages: { sons_nuit: false }, maintenant: nuit, heure: 23, papaDernierMs: nuit - 60e3 }), { ou: null, pourquoi: 'nuit_sons' });
-  assert.equal(S.decider(S.creer(), { raison: 'taraude', texte: 'Papa ?', reglages: { sons_nuit: false }, maintenant: MIDI, heure: 14 }).ou, 'page', 'le jour : sans effet');
+  assert.equal(S.decider(S.creer(), { raison: 'taraude', texte: 'Papa ?', maintenant: nuit, heure: 2, papaDernierMs: nuit - 5 * 3600e3 }).ou, 'page', 'il dort peut-être : elle part');
+  assert.equal(S.decider(S.creer(), { raison: 'taraude', texte: 'Papa ?', reglages: { sons_nuit: false }, maintenant: nuit, heure: 23, papaDernierMs: 0 }).ou, 'page', '« Ses sons la nuit » ne la bloque plus');
+  assert.equal(S.EVEILLE_MS, undefined, 'plus de règle « réveillé depuis 10 min »');
 });
 
 test('pendant un live : seulement ce qui s’adresse à papa par son nom', () => {
@@ -39,17 +38,14 @@ test('pendant un live : seulement ce qui s’adresse à papa par son nom', () =>
   assert.equal(S.decider(S.creer(), { raison: 'question', texte: 'Ça te dit, papounet ?', live: true, maintenant: MIDI }).ou, null, '« papa » en entier');
 });
 
-test('pas de rafale : au plus une à voix haute toutes les N min (réglable, 3 par défaut, 0 sans attente)', () => {
+test('(14/11, feu vert permanent) aucun plafond : deux sollicitations de suite partent toutes les deux à voix haute ; un ancien réglage d’écart ne bride plus rien', () => {
   const e = S.creer();
   const d = (t, reglages = {}) => S.decider(e, { raison: 'taraude', texte: 'Papa ?', maintenant: t, reglages });
   assert.equal(d(MIDI).ou, 'page');
   S.poser(e, 'a1', 'page', MIDI);
-  assert.deepEqual(d(MIDI + 2 * 60e3), { ou: null, pourquoi: 'rafale' });
-  assert.equal(d(MIDI + 3 * 60e3).ou, 'page', '3 min après');
-  assert.deepEqual(d(MIDI + 6 * 60e3, { sollicite_voix_ecart_min: 10 }), { ou: null, pourquoi: 'rafale' }, 'réglé à 10 min');
-  assert.equal(d(MIDI + 1000, { sollicite_voix_ecart_min: 0 }).ou, 'page', '0 : sans attente');
-  S.poser(e, 'a2', null, MIDI + 9 * 60e3);
-  assert.equal(e.dernierA, MIDI, 'une sollicitation écrite seulement ne compte pas');
+  assert.equal(d(MIDI + 1000).ou, 'page', '1 s après : à voix haute aussi');
+  assert.equal(d(MIDI + 2000, { sollicite_voix_ecart_min: 10 }).ou, 'page', 'un ancien réglage « 10 min » gardé dans le fichier : sans effet');
+  assert.equal(S.ECART_MIN_DEFAUT, undefined, 'plus d’écart par défaut');
 });
 
 test('la montre : papa lui a parlé par elle il y a moins de 20 min, et elle est branchée (0.30) ; sinon la page', () => {
@@ -74,13 +70,37 @@ test('une seule page la dit : la première qui la prend ; dirigée vers la montr
   assert.deepEqual(S.prendre(e, 'm1', 'tel-a', MIDI + 100), { ok: false, pourquoi: 'montre' });
   assert.deepEqual(S.prendre(e, 'inconnue', 'tel-a', MIDI), { ok: false, pourquoi: 'inconnue' });
   S.poser(e, 'p2', 'page', MIDI);
-  assert.deepEqual(S.prendre(e, 'p2', 'tel-a', MIDI + S.GARDE_MS + 1), { ok: false, pourquoi: 'inconnue' }, 'plus de 2 min : oubliée');
+  assert.deepEqual(S.prendre(e, 'p2', 'tel-a', MIDI + 3 * 3600e3), { ok: true, ou: 'page' }, '(14/11) pas d’oubli à l’heure : prise même 3 h après');
+  assert.equal(S.GARDE_MS, undefined);
+  for (let i = 0; i < 60; i++) S.poser(e, `x${i}`, 'page', MIDI);
+  assert.ok(e.aDire.size <= 50, 'le registre garde les 50 dernières (sa mémoire, pas une durée)');
   assert.deepEqual(S.prendre(S.creer(), 'x', '', MIDI), { ok: false, pourquoi: 'inconnue' });
 });
 
-test('sa consigne : il sait que papa l’entendra, ou qu’il la lira si le réglage est éteint', () => {
+test('sa consigne : il sait que papa l’entendra, ou qu’il la lira si le réglage est éteint ; plus de « toutes les quelques minutes au plus », ni de « court »', () => {
   assert.match(S.consigne({}), /papa l'entend de ta voix là où il est .*montre.*première pause/);
   assert.match(S.consigne({ sollicite_voix: false }), /papa le lit/);
+  for (const c of [S.consigne({}), S.consigne({}, { present: null }), S.consigne({}, { present: 'tel' })]) {
+    assert.doesNotMatch(c, /quelques minutes|au plus|court|une phrase|quelques phrases|nuit|dort/i, c);
+    assert.match(c, /sans plafond|aussi souvent/i, 'il sait qu’il n’y a pas de plafond');
+  }
+});
+
+test('sa consigne dit si papa l’entend en ce moment, et sinon qu’il peut l’appeler (appeler_papa) : un choix, jamais automatique', () => {
+  assert.match(S.consigne({}, { present: null }), /appeler_papa/);
+  assert.match(S.consigne({}, { present: null }), /aucune page ne t'entend/i);
+  assert.match(S.consigne({}, { present: 'montre' }), /t'entend en ce moment .*montre/);
+  assert.doesNotMatch(S.consigne({}, { present: 'tel' }), /appeler_papa\(/, 'il est là : pas besoin d’appeler');
+  assert.doesNotMatch(S.consigne({ sollicite_voix: false }, { present: null }), /appeler_papa/, 'le réglage éteint : ni voix ni appel');
+});
+
+test('(14/11) son appel répondu : dit seulement là où papa a répondu (pour) ; une autre page ouverte ne la prend pas ; TÉMOIN : sans « pour », la première prend', () => {
+  const e = S.creer();
+  S.poser(e, 'appel-1', 'page', MIDI, 'tel');
+  assert.deepEqual(S.prendre(e, 'appel-1', 'mac-a', MIDI + 100, 'mac'), { ok: false, pourquoi: 'ailleurs' }, 'la page du Mac, ouverte, ne la prend pas');
+  assert.deepEqual(S.prendre(e, 'appel-1', 'tel-b', MIDI + 3000, 'tel'), { ok: true, ou: 'page' }, 'la page du téléphone, ouverte par « Répondre »');
+  S.poser(e, 'p3', 'page', MIDI);
+  assert.deepEqual(S.prendre(e, 'p3', 'mac-a', MIDI + 100, 'mac'), { ok: true, ou: 'page' });
 });
 
 // ---------- le cockpit (server.js) ----------
@@ -96,7 +116,7 @@ function serveur({ reglages = {}, abonnes = [], live = false, papa = null } = {}
     sansBaliseAffect: (t) => t, retirerExterne: () => [], NON_REPONSE_SERVEUR: /^\s*no response requested\.?\s*$/i,
     journaliser() {}, deposerEchange() {}, ajouterAConversation: (m) => conversation.push(m), nonVus: {}, finDePhrase: (t) => t, sauverNonVus() {},
     silencieuxJusqua: 0, notifier: (t, tag) => notifs.push(tag),
-    corpsReglages: () => ({ sollicite_voix: true, sollicite_voix_ecart_min: 3, sons_nuit: true, ...reglages }), liveEnCours: () => live,
+    corpsReglages: () => ({ sollicite_voix: true, sons_nuit: true, ...reglages }), liveEnCours: () => live,
     Solliciter: S, solliciterEtat: etat, dernierMessageAhmedMs: () => Date.now() - 60e3,
     fs: { appendFileSync: (_, l) => diag.push(JSON.parse(l)) }, JARVIS_VOIX_DIAGNOSTIC: 'voix-diagnostic.jsonl',
   };
@@ -149,25 +169,32 @@ test('cockpit branché : un tour de sollicitation n’est pas re-trié par son s
   assert.match(tour, /const sollicite = c\.reveilInterieur && Solliciter\.sollicitePapa\(c\.reveilInterieur\.raison\)[^\n]*\n\s*noterIssueInterieur\(c, texte, outils, issue\)/, 'pris avant que l’issue efface le réveil');
   assert.match(tour, /else if \(parle && !sollicite && aTrierParSonSubconscient\(/);
   assert.match(tour, /\{ id: idMessage, \.\.\.\(sollicite \? \{ sollicite \} : \{\}\) \}/);
-  assert.match(tranche(SERVEUR, 'function reveillerPourInterieur(', 'const texte = `[Horloge'), /typeof Solliciter !== 'undefined' && Solliciter\.sollicitePapa\(d\.raison\) \? Solliciter\.consigne\(corpsReglages\(\)\) : ''/);
+  const reveil = tranche(SERVEUR, 'function reveillerPourInterieur(', 'const texte = `[Horloge');
+  assert.match(reveil, /typeof Solliciter !== 'undefined' && Solliciter\.sollicitePapa\(d\.raison\)\s*\? Solliciter\.consigne\(corpsReglages\(\), \{ present: typeof papaPresent === 'function' \? papaPresent\(maintenant\) : undefined \}\) : ''/);
+  assert.doesNotMatch(reveil, /en quelques phrases|en une phrase si ça compte/, '(14/11) plus d’obligation de faire court');
   assert.ok(/if \(!res\.temoin && new URL\(req\.url, 'http:\/\/x'\)\.searchParams\.get\('sollicite'\) === '1'\) res\.sollicite = true;/.test(SERVEUR), 'la montre 0.30 s’annonce');
-  assert.ok(/p === '\/api\/jarvis\/sollicitation\/dire' && req\.method === 'POST'\) \{\n\s*if \(!jetonValide\(req\)\)[\s\S]{0,300}Solliciter\.prendre\(solliciterEtat, q\.id, q\.qui\)/.test(SERVEUR), 'la route, gardée par le jeton');
+  assert.ok(/p === '\/api\/jarvis\/sollicitation\/dire' && req\.method === 'POST'\) \{\n\s*if \(!jetonValide\(req\)\)[\s\S]{0,300}Solliciter\.prendre\(solliciterEtat, q\.id, q\.qui, Date\.now\(\), \['tel', 'mac'\]\.includes\(q\.appareil\) \? q\.appareil : null\)/.test(SERVEUR), 'la route, gardée par le jeton (et l’appareil qui la prend)');
   assert.ok(/Solliciter\.papaParle\(solliciterEtat, q\.appareil && q\.appareil\.montre === true \? 'montre' : distantReq \? 'tel' : 'mac'\)/.test(SERVEUR));
 });
 
-test('cockpit : ses deux réglages (allumé, 3 min par défaut) et la page Réglages', () => {
+test('cockpit : son réglage (allumé par défaut), l’écart retiré partout, la sonnerie de ses appels (30 s) ; la page Réglages', () => {
   const ctx = { CORPS_REGLAGES: 'x', CORPS_INTERVALLES: [60, 120], Number, Math, lireJson: () => ({}) };
   vm.createContext(ctx);
   vm.runInContext(tranche(SERVEUR, 'function corpsReglages() {', 'function corpsReglages() {') + 'this.f = corpsReglages;', ctx);
   assert.equal(ctx.f().sollicite_voix, true);
-  assert.equal(ctx.f().sollicite_voix_ecart_min, 3);
-  ctx.lireJson = () => ({ sollicite_voix: false, sollicite_voix_ecart_min: 99 });
+  assert.equal(ctx.f().sollicite_voix_ecart_min, undefined, 'l’écart n’est plus un réglage');
+  assert.equal(ctx.f().appel_sonnerie_s, 30);
+  ctx.lireJson = () => ({ sollicite_voix: false, sollicite_voix_ecart_min: 99, appel_sonnerie_s: 999 });
   assert.equal(ctx.f().sollicite_voix, false);
-  assert.equal(ctx.f().sollicite_voix_ecart_min, 60);
+  assert.equal(ctx.f().sollicite_voix_ecart_min, undefined);
+  assert.equal(ctx.f().appel_sonnerie_s, 120);
   assert.ok(/if \(typeof q\.sollicite_voix === 'boolean'\) r\.sollicite_voix = q\.sollicite_voix;/.test(SERVEUR));
+  assert.ok(!/sollicite_voix_ecart_min/.test(SERVEUR), 'plus rien ne l’applique dans le cockpit');
   const reglages = fs.readFileSync(path.join(__dirname, 'public', 'reglages.html'), 'utf8');
   assert.match(reglages, /\['sollicite_voix', '📣 Il me sollicite à voix haute', '[^']+', 'oui'\]/);
-  assert.match(reglages, /\['sollicite_voix_ecart_min', '[^']+', '[^']+', 'curseur', \[0, 60, 1,/);
+  assert.doesNotMatch(reglages, /sollicite_voix_ecart_min/, 'le curseur « Entre deux sollicitations » est retiré');
+  assert.doesNotMatch(reglages.match(/\['sollicite_voix',[^\n]+/)[0], /toutes les|au plus une/);
+  assert.match(reglages, /\['appel_sonnerie_s', '[^']+', '[^']+', 'curseur', \[10, 120, 5,/);
 });
 
 // ---------- la page Parler ----------
@@ -258,13 +285,13 @@ test('page : un résultat de lui-même qui n’est pas une sollicitation garde s
   assert.equal(p.requetes.length, 0);
 });
 
-test('page : sa sollicitation attend 90 s au plus (un résultat, 45 s en Conversation)', () => {
+test('(14/11, 12:54) page : sa sollicitation attend ta pause sans limite de temps (avant : 90 s, puis plus dite)', () => {
   const p = page();
   p.ctx.aDire.push({ id: 'a', texte: 'Papa ?', recu: Date.now() - 60000, sollicite: true });
   p.ctx.direSpontanes();
-  assert.equal(p.dit.length, 1, '60 s : encore dite');
-  p.ctx.aDire.push({ id: 'b', texte: 'Papa ?', recu: Date.now() - 91000, sollicite: true });
+  assert.equal(p.dit.length, 1, '60 s : dite');
+  p.ctx.aDire.push({ id: 'b', texte: 'Papa, encore ?', recu: Date.now() - 10 * 60000, sollicite: true });
   p.ctx.direSpontanes();
-  assert.equal(p.dit.length, 1, '91 s : plus le présent');
-  assert.ok(p.journal.some(x => x.e === 'a_dire_perime' && x.sollicite === true));
+  assert.equal(p.dit.length, 2, '10 min après : dite quand même');
+  assert.ok(!p.journal.some(x => x.e === 'a_dire_perime' && x.sollicite === true));
 });
