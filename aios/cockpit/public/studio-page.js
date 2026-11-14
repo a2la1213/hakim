@@ -137,33 +137,42 @@
      choisit lui-même le casque Bluetooth comme micro de communication (SCO : 16 kHz mono, et l'instru passe en mode appel).
      Dans un navigateur : l'entrée intégrée, choisie par son nom (StudioCalage.choisirMicroWeb), jamais celle d'un casque. */
   let microNom = lsLire('studio-micro-nom', '');
-  const NOMS_MICRO = { telephone: 'le micro du téléphone ✓', bluetooth: '⚠︎ le micro des écouteurs', casque_fil: '⚠︎ le micro du casque', usb: 'un micro USB', autre: 'un autre micro', inconnu: 'le micro du téléphone (voulu)' };
+  // (14/11, Ahmed : « le studio prend le micro du téléphone, pas celui de la carte son ») le micro dit par son nom : « la carte son
+  // UR22mkII ✓ · entrée 1 », « le micro du téléphone ✓ »… (StudioCalage.nomMicro) ; la prise garde le même nom, sans le ✓
   const montrerMicro = (nom) => { microNom = nom; lsEcrire('studio-micro-nom', nom); montrerRoute(); };
+  const nomPrise = (t) => String(t || '').replace(/\s*✓/g, '').replace(/^⚠︎\s*/, '').replace(/ · entrée (\d)/, ' (entrée $1)').trim();
+  const microAppli = (o) => C.nomMicro({ genre: o.micro, nom: o.micro_nom || o.micro_voulu_nom, canaux: o.canaux, canal: o.canal });
   async function microWeb() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('micro indisponible dans ce navigateur');
     const sans = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
-    const ouvrir = (id) => navigator.mediaDevices.getUserMedia({ audio: id ? { ...sans, deviceId: { exact: id } } : sans });
+    // (14/11) la carte son en stéréo (ses deux entrées) : on garde ensuite le canal de la voix, jamais le mélange mono (−6 dB) ; sans
+    // carte, le micro comme avant, en mono
+    const contraintes = (choix) => (choix && C.estInterface(choix.label) ? { ...sans, channelCount: 2 } : sans);
+    const ouvrir = (choix) => { const id = choix && choix.deviceId; return navigator.mediaDevices.getUserMedia({ audio: id ? { ...contraintes(choix), deviceId: { exact: id } } : sans }); };
     const entrees = async () => { try { return await navigator.mediaDevices.enumerateDevices(); } catch (_) { return []; } };
     // les noms ne viennent qu'après l'accord : d'abord la liste ; sans noms, une première ouverture, puis le bon micro
-    let choix = C.choisirMicroWeb(await entrees()), flux = choix ? await ouvrir(choix.deviceId).catch(() => null) : null;
+    let choix = C.choisirMicroWeb(await entrees()), flux = choix ? await ouvrir(choix).catch(() => null) : null;
     if (!flux) {
       flux = await ouvrir(null);
       choix = C.choisirMicroWeb(await entrees());
       const p = flux.getAudioTracks()[0], actuel = p && p.getSettings ? p.getSettings().deviceId : '';
-      if (choix && choix.deviceId !== actuel) { flux.getTracks().forEach(t => t.stop()); flux = await ouvrir(choix.deviceId); }
+      if (choix && (choix.deviceId !== actuel || C.estInterface(choix.label))) { flux.getTracks().forEach(t => t.stop()); flux = await ouvrir(choix); }
     }
-    const nom = (flux.getAudioTracks()[0] || {}).label || '';
-    montrerMicro(nom || 'le micro du navigateur');
-    return { genre: 'web', flux, avertir: C.CASQUE.test(nom) ? `⚠︎ Le navigateur n’offre que le micro du casque (« ${nom} ») : la voix sera en qualité téléphone.` : '' };
+    const piste = flux.getAudioTracks()[0] || {}, nom = piste.label || '', reglages = piste.getSettings ? piste.getSettings() : {};
+    const carte = C.estInterface(nom);
+    montrerMicro(C.nomMicro({ genre: 'web', nom }));
+    return { genre: 'web', flux, nom, carte, canaux: Number(reglages.channelCount) || 1,
+      avertir: C.CASQUE.test(nom) ? `⚠︎ Le navigateur n’offre que le micro du casque (« ${nom} ») : la voix sera en qualité téléphone.` : '' };
   }
   async function ouvrirMicro() {
     if (!App) return microWeb();
     let o = {};
     try { o = JSON.parse(App.studioMicroOuvrir()); } catch (_) {}
     if (!o.ok) throw new Error(o.erreur || 'le micro du téléphone ne s’ouvre pas');
-    montrerMicro(NOMS_MICRO[o.micro] || NOMS_MICRO.inconnu);
+    montrerMicro(microAppli(o));
     return { genre: 'appli', o, avertir: !o.micro_voulu ? '⚠︎ Le téléphone ne montre pas son micro : Android choisit.'
-      : o.micro === 'bluetooth' ? '⚠︎ Android a pris le micro des écouteurs malgré la demande.' : '' };
+      : o.micro === 'bluetooth' ? '⚠︎ Android a pris le micro des écouteurs malgré la demande.'
+      : o.carte && o.micro && o.micro !== 'usb' ? '⚠︎ La carte son est branchée, mais Android enregistre avec un autre micro : débranche-la et rebranche-la.' : '' };
   }
   // l'écart des horloges de l'appli et de la page : neuf allers-retours, le plus court
   function horlogeAppli() {
@@ -175,7 +184,7 @@
   function enregistreurAppli(c, ouvert, T0, surNiveau) {
     const h = horlogeAppli(), morceaux = [], stamps = [], sorties = [];
     const repli = { ctx: c.currentTime, perf: performance.now(), sortie_ms: ((c.outputLatency || 0) + (c.baseLatency || 0)) * 1000 };
-    let sr = ouvert.sr || 48000, micro = ouvert.micro, erreur = '';
+    let sr = ouvert.sr || 48000, micro = microAppli(ouvert), erreur = '';
     const tirer = () => {
       let o = null;
       try { o = JSON.parse(App.studioMicroLire()); } catch (_) {}
@@ -183,7 +192,7 @@
         sr = o.sr || sr;
         if (o.n > 0) { const x = C.pcmDe(o.b64); morceaux.push({ premier: o.premier, x }); if (surNiveau) surNiveau(crete(x)); }
         if (o.ts_ns > 0) stamps.push({ f: o.ts_f, ns: o.ts_ns, micro: !!o.ts_micro });
-        if (o.micro && o.micro !== micro) { micro = o.micro; montrerMicro(NOMS_MICRO[micro] || NOMS_MICRO.inconnu); }
+        if (o.micro) { const nom = microAppli({ ...ouvert, ...o }); if (nom !== micro) { micro = nom; montrerMicro(nom); } }
         if (o.erreur) erreur = o.erreur;
       }
       try { const t = c.getOutputTimestamp && c.getOutputTimestamp(); if (t && t.contextTime > 0 && t.performanceTime > 0) sorties.push({ ctx: t.contextTime, perf: t.performanceTime }); } catch (_) {}
@@ -197,17 +206,22 @@
         try { App.studioMicroFermer(); } catch (_) {}
         const r = h && C.aligner({ morceaux, stamps, sorties, repli, off: h.off, T0, sr });
         if (!r) throw new Error(erreur || 'le micro du téléphone n’a rien donné');
-        return { x: r.x, sr, micro, cale: `${r.sortie}/${r.horodatage}` };
+        return { x: r.x, sr, micro: nomPrise(micro), cale: `${r.sortie}/${r.horodatage}` };
       }
     };
   }
-  // l'enregistreur du navigateur : chaque morceau du micro daté sur l'horloge de l'instru ; seul ce qui suit T0 est gardé
-  function enregistreur(c, flux, T0, surNiveau) {
-    const src = c.createMediaStreamSource(flux), proc = c.createScriptProcessor(TAMPON, 1, 1), muet = c.createGain();
+  // l'enregistreur du navigateur : chaque morceau du micro daté sur l'horloge de l'instru ; seul ce qui suit T0 est gardé.
+  // (14/11) deux canaux en entrée (la carte son) : le canal de la voix, entier (StudioCalage.canal) ; un micro mono arrive copié sur les deux
+  function enregistreur(c, flux, T0, surNiveau, surCanal) {
+    const src = c.createMediaStreamSource(flux), proc = c.createScriptProcessor(TAMPON, 2, 1), muet = c.createGain();
     muet.gain.value = 0;
-    const morceaux = [];
+    const morceaux = [], voie = C.canal(c.sampleRate, Number(lsLire('studio-canal', '0')) || 0);
+    let vu = -1;
     proc.onaudioprocess = (e) => {
-      const d = e.inputBuffer.getChannelData(0), t = e.playbackTime;
+      const b = e.inputBuffer, canaux = [];
+      for (let k = 0; k < (b.numberOfChannels || 1); k++) canaux.push(b.getChannelData(k));
+      const d = canaux[voie.choisir(canaux)], t = e.playbackTime;
+      if (voie.verrou !== vu) { vu = voie.verrou; lsEcrire('studio-canal', String(vu)); if (surCanal) surCanal(vu + 1); }
       if (surNiveau) surNiveau(crete(d));
       if (t + d.length / c.sampleRate <= T0) return;
       morceaux.push(d.slice(Math.max(0, Math.round((T0 - t) * c.sampleRate))));
@@ -218,8 +232,9 @@
   // une capture, par l'appli ou par le navigateur : arreter() → { x, sr } où x[0] est l'instant T0 (avant le calage)
   function capter(c, m, T0, surNiveau) {
     if (m.genre === 'appli') return enregistreurAppli(c, m.o, T0, surNiveau);
-    const r = enregistreur(c, m.flux, T0, surNiveau);
-    return { annonce: () => null, arreter: () => ({ x: r.arreter(), sr: c.sampleRate, micro: microNom }) };
+    // (14/11) la carte son : son entrée (1 ou 2), dès que la voix la montre
+    const r = enregistreur(c, m.flux, T0, surNiveau, (k) => montrerMicro(C.nomMicro({ genre: 'web', nom: m.nom, canaux: m.canaux, canal: k })));
+    return { annonce: () => null, arreter: () => ({ x: r.arreter(), sr: c.sampleRate, micro: nomPrise(microNom) }) };
   }
   function clic(c, t, fort = 1) {
     const o = c.createOscillator(), g = c.createGain();

@@ -1,8 +1,9 @@
 /* (10/11, 07:15, Ahmed : « Pour le studio, fais en sorte que ce soit toujours le micro du smartphone, même s'il est en écouteurs
    Bluetooth, et il faudra aussi calculer le décalage de l'écoute et de la voix. ») Les calculs du calage du Studio, partagés page / node
    (tests : node --test test-studio.js) :
-   1. LE MICRO, dans un navigateur : l'entrée intégrée, choisie par son nom, jamais celle d'un casque (Bluetooth « mains libres » :
-      16 kHz mono, et le casque passe en mode appel). Dans l'appli, c'est l'appli qui ouvre le micro du téléphone (StudioMicro.java).
+   1. LE MICRO, dans un navigateur : la carte son si elle est branchée (14/11), sinon l'entrée intégrée, choisie par son nom, jamais
+      celle d'un casque (Bluetooth « mains libres » : 16 kHz mono, et le casque passe en mode appel). Dans l'appli, c'est l'appli qui
+      ouvre le micro (StudioMicro.java : la carte son USB, sinon le micro du téléphone). De la carte, on garde le canal de la voix (canal).
    2. LE TEMPS, dans l'appli : chaque échantillon du micro a son numéro, et Android dit à quel instant de son horloge (MONOTONIC) un
       numéro est entré dans le micro (AudioRecord.getTimestamp) ; le navigateur dit à quel instant de la page un temps de l'instru sort
       dans le casque (getOutputTimestamp, qui compte le retard annoncé du Bluetooth) ; l'écart des deux horloges se mesure par un aller-
@@ -18,13 +19,57 @@
   // le micro de l'appareil lui-même (Chrome sur Android l'appelle « Speakerphone » ; un Mac, « … (Built-in) »)
   const INTEGRE = /built-?in|int[ée]gr[ée]|internal|interne|speakerphone|bottom|macbook|imac|microphone array|r[ée]seau de micro|\bphone\b|t[ée]l[ée]phone/i;
 
-  /** Le micro à ouvrir parmi les entrées d'enumerateDevices : l'intégré, sinon une autre entrée qui n'est pas un casque ; null :
-   *  rien de sûr (les noms manquent tant que le micro n'est pas autorisé, ou il n'y a qu'un casque). */
+  /* (14/11, Ahmed : « le studio prend le micro du téléphone, pas celui de la carte son ») LA CARTE SON : une interface (sa Steinberg
+     UR22mkII, une Focusrite, une Audient, une MOTU, une Universal Audio, une Behringer, une « USB Audio »…) ou un micro USB passe AVANT
+     le micro intégré ; jamais un casque (CASQUE l'écarte d'abord), jamais un appareil virtuel (BlackHole, Teams…) ni une webcam. */
+  const INTERFACE = /steinberg|yamaha|\bur[- ]?(12|22|24|44|816|rt\d)|focusrite|scarlett|clarett|vocaster|audient|\bevo ?\d|\bid ?(4|14|22|24|44)\b|motu|universal audio|\buad\b|apollo|\bvolt ?\d|behringer|\bumc ?\d|u-phoria|presonus|audiobox|studio ?(24|26|68)c?\b|m-audio|\bair ?192|native instruments|komplete audio|arturia|minifuse|roland|rubix|\bzoom\b|tascam|\bssl ?[2-9]|solid state logic|antelope|\brme\b|babyface|fireface|apogee|audio-technica|\brode\b|røde|shure|\bmv7\b|yeti|interface|usb audio|\busb\b/i;
+  const VIRTUEL = /blackhole|soundflower|loopback|virtual|virtuel|aggregate|agr[ée]g[ée]|teams|zoomaudio|webcam|camera|cam[ée]ra|\bcam\b|jabra|plantronics/i;
+  const estInterface = (label) => !!label && INTERFACE.test(label) && !CASQUE.test(label) && !VIRTUEL.test(label);
+
+  /** Le micro à ouvrir parmi les entrées d'enumerateDevices : une carte son (estInterface), sinon l'intégré, sinon une autre entrée qui
+   *  n'est pas un casque ; null : rien de sûr (les noms manquent tant que le micro n'est pas autorisé, ou il n'y a qu'un casque). */
   function choisirMicroWeb(liste) {
     const entrees = (liste || []).filter(d => d && d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'communications');
     const surs = entrees.filter(d => d.label && !CASQUE.test(d.label));
     const reels = surs.filter(d => d.deviceId !== 'default');
-    return reels.find(d => INTEGRE.test(d.label)) || surs.find(d => INTEGRE.test(d.label)) || reels[0] || null;
+    return reels.find(d => estInterface(d.label)) || surs.find(d => estInterface(d.label))
+      || reels.find(d => INTEGRE.test(d.label)) || surs.find(d => INTEGRE.test(d.label)) || reels[0] || null;
+  }
+
+  /** (14/11) Les deux entrées de la carte son : le flux est stéréo, le micro branché sur l'une des deux. Le mélange mono (WebAudio,
+   *  Android) fait la MOYENNE des canaux : un micro seul y perd 6 dB. On garde UN canal, entier : à chaque morceau, le plus fort ; dès
+   *  qu'un canal porte nettement le signal (au-dessus de −45 dBFS, 12 dB au-dessus des autres, 100 ms en tout), il est verrouillé pour la
+   *  prise. Les mêmes règles qu'Android (StudioCalculs.Canal). choisir(canaux : des Float32Array) → l'indice du canal à garder. */
+  const CANAL = { signal_db: -45, ecart_db: 12, verrou_s: 0.1 };
+  function canal(sr, prefere = 0) {
+    const st = { verrou: -1, prefere: Math.max(0, prefere | 0), clair: 0, clairCanal: -1 };
+    const niveauDb = (x) => { let e = 0; for (let i = 0; i < x.length; i++) e += x[i] * x[i]; return 10 * Math.log10(e / Math.max(1, x.length) + 1e-20); };
+    st.choisir = (canaux) => {
+      const n = (canaux || []).length;
+      if (n <= 1) return 0;
+      if (st.verrou >= 0 && st.verrou < n) return st.verrou;
+      const db = canaux.map(niveauDb);
+      let fort = st.prefere < n ? st.prefere : 0;
+      for (let c = 0; c < n; c++) if (db[c] > db[fort]) fort = c;
+      let autre = -400;
+      for (let c = 0; c < n; c++) if (c !== fort) autre = Math.max(autre, db[c]);
+      if (db[fort] > CANAL.signal_db && db[fort] - autre >= CANAL.ecart_db) {
+        if (st.clairCanal === fort) st.clair += canaux[0].length / sr; else { st.clairCanal = fort; st.clair = canaux[0].length / sr; }
+        if (st.clair >= CANAL.verrou_s - 1e-9) st.verrou = fort;
+      }
+      return fort;
+    };
+    return st;
+  }
+
+  /** Le micro qui enregistre, dit à papa (appli : ce que rend StudioMicro ; navigateur : le nom du micro ouvert). */
+  function nomMicro(o) {
+    const x = o || {}, nom = String(x.nom || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    const entree = x.canaux > 1 && x.canal > 0 ? ` · entrée ${x.canal}` : '';
+    if (x.genre === 'usb' || (x.genre === 'web' && estInterface(nom))) return `la carte son ${nom || 'USB'} ✓${entree}`;
+    if (x.genre === 'web') return nom || 'le micro du navigateur';
+    return ({ telephone: 'le micro du téléphone ✓', bluetooth: '⚠︎ le micro des écouteurs', casque_fil: '⚠︎ le micro du casque', autre: 'un autre micro',
+      inconnu: 'le micro du téléphone (voulu)' })[x.genre] || 'le micro du téléphone (voulu)';
   }
 
   function mediane(v) {
@@ -154,7 +199,7 @@
     return { ok: true };
   }
 
-  const StudioCalage = { CASQUE, INTEGRE, choisirMicroWeb, mediane, decalageHorloge, sortieA, trameA, assembler, aligner, pcmDe,
+  const StudioCalage = { CASQUE, INTEGRE, INTERFACE, VIRTUEL, estInterface, choisirMicroWeb, CANAL, canal, nomMicro, mediane, decalageHorloge, sortieA, trameA, assembler, aligner, pcmDe,
     analyserClics, jugerMesure, SEUILS };
   racine.StudioCalage = StudioCalage;
   if (typeof module !== 'undefined' && module.exports) module.exports = StudioCalage;

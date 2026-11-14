@@ -185,7 +185,8 @@ test('l’enregistreur garde ce qui suit le départ de l’instru, au bon échan
   const js = lire('public/studio-page.js');
   const src = js.slice(js.indexOf('  function enregistreur('), js.indexOf('  function clic('));
   const crete = js.slice(js.indexOf('  const crete = '), js.indexOf('\n', js.indexOf('  const crete = ')));
-  const f = new Function(`const TAMPON = 2048; ${crete}; ${src}; return enregistreur;`)();
+  // (14/11) l'enregistreur garde le canal de la voix (StudioCalage.canal) : la page lui donne C, lsLire, lsEcrire
+  const f = new Function('C', `const TAMPON = 2048; const lsLire = (k, d) => d, lsEcrire = () => {}; ${crete}; ${src}; return enregistreur;`)(require('./public/studio-calage.js'));
   let proc = null;
   const c = { sampleRate: 1000, createMediaStreamSource: () => ({ connect() {}, disconnect() {} }), createGain: () => ({ gain: {}, connect() {} }),
     destination: {}, createScriptProcessor: () => (proc = { connect() {}, disconnect() {} }) };
@@ -212,6 +213,119 @@ test('le micro du navigateur : l’intégré, jamais celui d’un casque', () =>
   assert.equal(K.choisirMicroWeb([e('', ''), e('', '')]), null, 'pas de noms (pas encore autorisé) : rien de sûr');
   assert.equal(K.choisirMicroWeb([e('default', 'Default - Galaxy Buds'), e('z', 'Galaxy Buds3 Pro')]), null, 'seulement un casque : rien');
   assert.equal(K.choisirMicroWeb([{ kind: 'audiooutput', deviceId: 'o', label: 'Speakers' }]), null, 'une sortie n’est pas un micro');
+});
+
+/* (14/11, Ahmed : « le studio prend le micro du téléphone, pas celui de la carte son ») la carte son avant le micro intégré, jamais un casque ;
+   ses deux entrées : le canal de la voix, entier, pas la moyenne mono (−6 dB) */
+test('(14/11) le micro du navigateur : la carte son avant l’intégré, jamais un casque ni un appareil virtuel', () => {
+  const e = (deviceId, label) => ({ kind: 'audioinput', deviceId, label });
+  const mac = (...l) => K.choisirMicroWeb([e('default', 'Par défaut - MacBook Air Microphone (Built-in)'), e('y', 'MacBook Air Microphone (Built-in)'), ...l]).deviceId;
+  // les cartes, telles que Chrome les nomme sur un Mac (le nom USB et l'identifiant du fabricant)
+  for (const [id, nom] of [['ur', 'Steinberg UR22mkII  (0499:1707)'], ['ur2', 'UR22mkII'], ['fo', 'Scarlett 2i2 USB'], ['fo4', 'Focusrite Scarlett Solo 4th Gen'],
+    ['au', 'Audient iD4'], ['ev', 'EVO 4'], ['mo', 'MOTU M2'], ['ua', 'Universal Audio Volt 2'], ['be', 'UMC204HD 192k'], ['be2', 'Behringer UMC22'],
+    ['ps', 'PreSonus AudioBox USB 96'], ['ma', 'M-Audio AIR 192|4'], ['ni', 'Komplete Audio 2'], ['ar', 'MiniFuse 2'], ['ro', 'Rubix22 (Roland)'],
+    ['ss', 'SSL 2+'], ['rm', 'Babyface Pro (RME)'], ['ap', 'Apollo Twin USB'], ['ga', 'USB Audio CODEC'], ['an', 'USB audio'], ['sh', 'Shure MV7'], ['ye', 'Yeti Stereo Microphone']])
+    assert.equal(mac(e(id, nom)), id, nom);
+  // jamais un casque, même USB, ni un appareil virtuel, ni une webcam : l'intégré reste
+  for (const nom of ['USB Headset', 'Jabra Evolve 40 USB', 'Casque USB (Logitech H390)', 'USB-C to 3.5mm Headphone Jack Adapter', 'AirPods Pro (Bluetooth)',
+    'BlackHole 2ch', 'Microsoft Teams Audio', 'ZoomAudioDevice', 'Aggregate Device', 'HD Pro Webcam C920', 'USB Camera'])
+    assert.equal(mac(e('z', nom)), 'y', nom);
+  // la carte est le micro par défaut : la vraie entrée, pas « default »
+  assert.equal(K.choisirMicroWeb([e('default', 'Par défaut - Steinberg UR22mkII'), e('i', 'MacBook Pro Microphone'), e('s', 'Steinberg UR22mkII')]).deviceId, 's');
+  // sans carte, rien ne change : les cas d'avant (Android, Mac avec AirPods, Windows)
+  assert.equal(K.choisirMicroWeb([e('default', 'Default'), e('a', 'Bluetooth headset'), e('b', 'Headset earpiece'), e('c', 'Speakerphone')]).deviceId, 'c');
+  assert.equal(K.choisirMicroWeb([e('default', 'Par défaut - AirPods Pro (Bluetooth)'), e('x', 'AirPods Pro (Bluetooth)'), e('y', 'MacBook Air Microphone (Built-in)')]).deviceId, 'y');
+  assert.equal(K.choisirMicroWeb([e('communications', 'Communications - Headset'), e('h', 'Casque (WH-1000XM4 Hands-Free)'), e('r', 'Microphone (Realtek(R) Audio)')]).deviceId, 'r');
+  // Chrome sur Android, la carte branchée : « USB audio » avant « Speakerphone »
+  assert.equal(K.choisirMicroWeb([e('default', 'Default'), e('c', 'Speakerphone'), e('u', 'USB audio')]).deviceId, 'u');
+  assert.ok(K.estInterface('Steinberg UR22mkII') && !K.estInterface('MacBook Air Microphone (Built-in)') && !K.estInterface('USB Headset') && !K.estInterface(''));
+});
+
+test('(14/11) le micro dit à papa : « la carte son UR22mkII ✓ · entrée 1 »', () => {
+  assert.equal(K.nomMicro({ genre: 'usb', nom: 'UR22mkII', canaux: 2, canal: 1 }), 'la carte son UR22mkII ✓ · entrée 1');
+  assert.equal(K.nomMicro({ genre: 'usb', nom: 'Steinberg UR22mkII', canaux: 2, canal: 2 }), 'la carte son Steinberg UR22mkII ✓ · entrée 2');
+  assert.equal(K.nomMicro({ genre: 'usb', nom: 'UR22mkII', canaux: 2, canal: 0 }), 'la carte son UR22mkII ✓', 'l’entrée pas encore sûre : pas dite');
+  assert.equal(K.nomMicro({ genre: 'usb' }), 'la carte son USB ✓');
+  assert.equal(K.nomMicro({ genre: 'web', nom: 'Steinberg UR22mkII', canaux: 2, canal: 1 }), 'la carte son Steinberg UR22mkII ✓ · entrée 1');
+  assert.equal(K.nomMicro({ genre: 'web', nom: 'MacBook Air Microphone (Built-in)' }), 'MacBook Air Microphone (Built-in)');
+  assert.equal(K.nomMicro({ genre: 'telephone' }), 'le micro du téléphone ✓');
+  assert.equal(K.nomMicro({ genre: 'bluetooth' }), '⚠︎ le micro des écouteurs');
+  assert.equal(K.nomMicro({}), 'le micro du téléphone (voulu)');
+  // la page : le même nom pour la prise, sans le ✓
+  const js = lire('public/studio-page.js');
+  const np = js.slice(js.indexOf('  const nomPrise = '), js.indexOf('\n', js.indexOf('  const nomPrise = ')));
+  const nomPrise = new Function(`${np}; return nomPrise;`)();
+  assert.equal(nomPrise('la carte son UR22mkII ✓ · entrée 1'), 'la carte son UR22mkII (entrée 1)');
+  assert.equal(nomPrise('le micro du téléphone ✓'), 'le micro du téléphone');
+});
+
+// une prise de 2 s en stéréo, par morceaux (2048 comme l'enregistreur du navigateur, 960 comme Android) : la voix (−23 dBFS, à partir de
+// 0,5 s) sur une entrée, le bruit d'une entrée vide (−80 dBFS) sur l'autre ; mêmes cas que StudioCalculsTest (Android)
+function priseStereo(entreeVoix, prefere, morceau, double = false) {
+  const sr = 48000, n = 2 * sr;
+  let g = 7;
+  const alea = () => { g = (g * 1103515245 + 12345) % 2147483648; return g / 2147483648 * 2 - 1; };
+  const voix = new Float32Array(n), bruit = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = i / sr, env = t < 0.5 ? 0 : 0.1 * (1 + 0.3 * Math.sin(2 * Math.PI * 3 * t));
+    voix[i] = env * (Math.sin(2 * Math.PI * 150 * t) + 0.5 * Math.sin(2 * Math.PI * 300 * t)) / 1.5 + alea() * 1.6e-4;
+    bruit[i] = alea() * 1.7e-4;
+  }
+  const v = K.canal(sr, prefere);
+  let eOut = 0, eVoix = 0, eMoy = 0, premier = -1;
+  for (let p = 0; p + morceau <= n; p += morceau) {
+    const a = voix.subarray(p, p + morceau), b = double ? a : bruit.subarray(p, p + morceau);
+    const canaux = entreeVoix === 0 ? [a, b] : [b, a];
+    const k = v.choisir(canaux), d = canaux[k];
+    if (p >= sr / 2) {
+      if (premier < 0) premier = k;
+      for (let i = 0; i < morceau; i++) { eOut += d[i] * d[i]; eVoix += a[i] * a[i]; const m = (canaux[0][i] + canaux[1][i]) / 2; eMoy += m * m; }
+    }
+  }
+  return { gain: 10 * Math.log10(eOut / eVoix), moyenne: 10 * Math.log10(eMoy / eVoix), verrou: v.verrou, premier };
+}
+
+test('(14/11) les deux entrées de la carte : le canal de la voix, entier, verrouillé ; la moyenne mono perdrait 6 dB', () => {
+  for (const morceau of [960, 2048]) for (const e of [0, 1]) for (const pref of [0, 1]) {
+    const r = priseStereo(e, pref, morceau), q = `entrée ${e + 1}, préférée ${pref + 1}, morceaux de ${morceau}`;
+    assert.ok(Math.abs(r.gain) < 0.05, `${q} : la voix entière (${r.gain} dB)`);
+    assert.equal(r.verrou, e, `${q} : verrouillée sur son entrée`);
+    assert.equal(r.premier, e, `${q} : dès le premier morceau de voix`);
+    assert.ok(Math.abs(r.moyenne + 6.02) < 0.2, `${q} : le témoin, la moyenne mono, perd 6 dB (${r.moyenne})`);
+  }
+  const d = priseStereo(0, 1, 2048, true);
+  assert.equal(d.verrou, -1, 'une carte qui double son entrée : jamais de verrou'); assert.ok(Math.abs(d.gain) < 0.05);
+  // verrouillée, elle ne saute plus
+  const v = K.canal(48000, 0), voix = new Float32Array(960).map((_, i) => (i % 2 ? -0.1 : 0.1)), rien = new Float32Array(960);
+  for (let k = 0; k < 6; k++) v.choisir([rien, voix]);
+  assert.equal(v.verrou, 1, '100 ms de voix nette sur l’entrée 2 : verrouillée');
+  assert.equal(v.choisir([new Float32Array(960).fill(0.6), rien]), 1, 'un coup fort sur l’entrée 1 ne la fait pas sauter');
+  assert.equal(K.canal(48000, 0).choisir([voix]), 0, 'un seul canal : lui');
+  const faible = K.canal(48000, 0);
+  for (let k = 0; k < 20; k++) faible.choisir([new Float32Array(960).fill(0.003), rien]);
+  assert.equal(faible.verrou, -1, 'sous −45 dBFS : pas de verrou');
+});
+
+test('(14/11) l’enregistreur du navigateur prend le canal de la voix de la carte son, et ouvre la carte en stéréo', () => {
+  const js = lire('public/studio-page.js');
+  const src = js.slice(js.indexOf('  function enregistreur('), js.indexOf('  function clic('));
+  const crete = js.slice(js.indexOf('  const crete = '), js.indexOf('\n', js.indexOf('  const crete = ')));
+  const f = new Function('C', `const TAMPON = 2048; const lsLire = (k, d) => d, lsEcrire = () => {}; ${crete}; ${src}; return enregistreur;`)(K);
+  let proc = null, entrees = 0;
+  const c = { sampleRate: 1000, createMediaStreamSource: () => ({ connect() {}, disconnect() {} }), createGain: () => ({ gain: {}, connect() {} }),
+    destination: {}, createScriptProcessor: (t, i) => { entrees = i; return (proc = { connect() {}, disconnect() {} }); } };
+  let vu = 0;
+  const r = f(c, { getTracks: () => [] }, 0, null, (k) => { vu = k; });
+  assert.equal(entrees, 2, 'deux canaux en entrée');
+  const voix = Float32Array.from({ length: 1000 }, (_, i) => 0.2 * Math.sin(i)), vide = new Float32Array(1000);
+  for (let t = 0; t < 3; t++) proc.onaudioprocess({ playbackTime: t, inputBuffer: { numberOfChannels: 2, getChannelData: (k) => (k === 1 ? voix : vide) } });
+  const x = r.arreter();
+  assert.equal(x.length, 3000);
+  assert.ok(Math.abs(x[1] - voix[1]) < 1e-9 && Math.abs(x[2001] - voix[1]) < 1e-9, 'l’entrée 2, entière');
+  assert.equal(vu, 2, 'la page apprend l’entrée de la voix');
+  // la carte s'ouvre en stéréo ; un autre micro reste en mono, comme avant
+  assert.match(js, /const contraintes = \(choix\) => \(choix && C\.estInterface\(choix\.label\) \? \{ \.\.\.sans, channelCount: 2 \} : sans\);/);
+  assert.match(js, /const sans = \{ echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 \};/);
 });
 
 test('le temps : la prise de l’appli recalée sur l’instant où l’instru sort au casque', () => {
