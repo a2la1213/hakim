@@ -48,7 +48,7 @@
     sel.innerHTML = s.projets.length ? s.projets.map(p => `<option value="${esc(p.id)}"${p.id === s.choisie ? ' selected' : ''}>${esc(p.titre)} · ${esc(p.pistes)} pistes</option>`).join('')
       : '<option value="">Aucun projet : crée-en un</option>';
     const p = s.projets.find(x => x.id === s.choisie);
-    if (p && (!s.projet || s.projet.id !== p.id || s.projet.rev !== p.rev) && !s.lecture && !s.rec) await chargerProjet();
+    if (p && (!s.projet || s.projet.id !== p.id || s.projet.rev !== p.rev) && !s.lecture && !s.charge && !s.rec) await chargerProjet();
     if (!p) { s.projet = null; $('mpVue').hidden = true; }
   }
   async function chargerProjet() {
@@ -244,11 +244,25 @@
     return t.muet || (solo && !t.solo) ? 0 : lin(t.volume_db);
   }
   async function jouer(depuis, version = $('mpVersion').value, T0 = null) {
-    const c = await A().contexte();
+    // (14/11, Ahmed : « ça me sort un son en double, en décalage ») le chargement des pistes prend du temps : une lecture se déclare dès
+    // l'appui (s.charge, ⏳), et chaque nouvel appel ou un arrêt périme le précédent (s.gen) ; une lecture périmée ne démarre jamais
+    const attente = A().contexte();                     // demandé dans le geste : il déverrouille le son
     arreterLecture();
+    const gen = s.gen;
+    s.charge = true; $('mpLire').textContent = '⏳';
     const p = s.projet, tampons = {};
-    dire('Chargement des pistes…', 0);
-    await Promise.all(p.pistes.filter(t => t.f).map(async t => { try { tampons[t.id] = await A().tamponDe(t.f); } catch (_) {} }));
+    let c;
+    try {
+      c = await attente;
+      if (gen !== s.gen) return null;
+      dire('Chargement des pistes…', 0);
+      await Promise.all(p.pistes.filter(t => t.f).map(async t => { try { tampons[t.id] = await A().tamponDe(t.f); } catch (_) {} }));
+    } catch (e) {
+      if (gen === s.gen) { s.charge = false; $('mpLire').textContent = '▶︎'; }   // le bouton ne reste jamais bloqué sur ⏳
+      throw e;
+    }
+    if (gen !== s.gen) return null;
+    s.charge = false;
     dire('', 1);
     const quand = T0 != null ? T0 : c.currentTime + 0.12, bus = c.createGain(), rv = c.createConvolver(), rvRet = c.createGain(), dl = c.createDelay(4), fb = c.createGain(), dlRet = c.createGain();
     rv.buffer = ir(c); rvRet.gain.value = 0.5; rv.connect(rvRet); rvRet.connect(bus);
@@ -313,6 +327,8 @@
     }
   }
   function arreterLecture() {
+    s.gen = (s.gen || 0) + 1;                           // une lecture encore en chargement ne démarrera pas
+    if (s.charge) { s.charge = false; $('mpLire').textContent = '▶︎'; }
     const l = s.lecture; if (!l) return;
     s.lecture = null;
     cancelAnimationFrame(l.raf);
@@ -368,7 +384,8 @@
 
   /* ---------- les gestes ---------- */
   $('mpProjet').addEventListener('change', () => { s.choisie = $('mpProjet').value; lsEcrire('studio-projet', s.choisie); arreterLecture(); s.pos = 0; s.detail = ''; chargerProjet(); });
-  $('mpLire').addEventListener('click', () => (s.lecture ? arreterLecture() : jouer(s.pos).catch(e => dire(e.message))));
+  // pendant le chargement (⏳), un nouvel appui ne relance rien : la lecture demandée arrive
+  $('mpLire').addEventListener('click', () => (s.charge ? null : s.lecture ? arreterLecture() : jouer(s.pos).catch(e => dire(e.message))));
   $('mpDebut').addEventListener('click', () => { const l = !!s.lecture; arreterLecture(); s.pos = 0; placerCurseur(); if (l) jouer(0); });
   $('mpRec').addEventListener('click', enregistrer);
   $('mpVersion').addEventListener('change', () => { if (s.lecture) jouer(s.pos); });
@@ -463,7 +480,7 @@
     } catch (e) { dire(e.message); } finally { $('mpCreerOk').disabled = false; }
   });
   // la liste suit les calculs (un projet prêt, un rendu fini, un réglage de Hakim) quand rien ne joue
-  setInterval(() => { if (!document.hidden && !s.lecture && !s.rec) chargerListe(); }, 8000);
+  setInterval(() => { if (!document.hidden && !s.lecture && !s.charge && !s.rec) chargerListe(); }, 8000);
   window.addEventListener('pagehide', arreterLecture);
   chargerListe();
   window.StudioPistes = { _s: s, mmss, lireTemps };
