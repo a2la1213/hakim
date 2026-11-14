@@ -1715,6 +1715,12 @@ def studio_piste(projet: str, piste: str = "", action: str = "regler", reglages:
       phrases), nivellement (le « vocal rider », avant la compression) ; type=principale|double|back|adlib (au mix auto, les doubles
       et les backs s'ouvrent à gauche et à droite, plus bas et plus filtrés, CALÉS phrase par phrase sur la voix principale —
       calage=auto|non — ; les ad-libs reçoivent des délais jetés en fin de phrase) ;
+    - (14/11) référence=auto|oui|non : LE CALAGE SUR LA VOIX DE RÉFÉRENCE (ta voix, celle du projet, ou un profil gardé) : la couleur
+      du micro et de la pièce corrigée (l'enveloppe de la voix appariée à la tienne, lissée, ±6 dB au plus, jamais sa hauteur ni ses
+      formants : la voix reste celle de papa), ses sifflantes ramenées à ta force, et au mix la même tranche, la même densité, le
+      même espace (réverb, délai), le même niveau ; « auto » = oui pour la voix de papa quand une référence existe ;
+    - action « garder_reference » : cette voix (par défaut ta voix principale du projet) gardée comme PROFIL DE RÉFÉRENCE (reglages =
+      son nom, « hakim » par défaut) : un projet sans ta voix se cale alors dessus ; en file ;
     - action « ajouter » : fichier = une de tes chansons, une instru du Studio, une prise de papa, un son reçu ; role : voix_hakim,
       voix_papa, instru, batterie, basse, melodie, ajout ; debut_s : où il commence sur la ligne du temps ;
     - action « retirer » ; action « separer » : la piste séparée en ses pistes (separer = reglages « 4 » ou « 6 »), en file.
@@ -1748,6 +1754,16 @@ def studio_piste(projet: str, piste: str = "", action: str = "regler", reglages:
                 p["pistes"].remove(SP.piste(p, piste))
             SP.modifier(pid, retirer, note=f"piste {piste} retirée")
             return f"Piste {piste} retirée du projet (son fichier reste dans le dossier du projet)."
+        if a in ("garder_reference", "garder-reference", "reference", "référence"):
+            q = SP.lire(pid)
+            t = SP.piste(q, piste) if piste else SP.piste_reference(q)
+            if t is None:
+                return "Refusé : quelle voix garder comme référence (piste) ?"
+            r = SP.commande({"action": "garder_reference", "id": pid, "piste": t["id"], "nom": str(reglages or "hakim"), "par": "hakim"})
+            if not r.get("ok"):
+                return f"Refusé : {r.get('erreur')}"
+            return (f"Profil de référence en cours ({r['travail']['id']}) : « {t['nom']} » mesurée (couleur, densité, sifflantes, espace) ; "
+                    "un projet sans ta voix s'y calera.")
         if a in ("separer", "séparer"):
             t = SP.piste(SP.lire(pid), piste)
             j = st.lancer("separer", {"projet": pid, "piste": t["id"], "separer": "6" if str(reglages).strip() == "6" else "4", "par": "hakim"})
@@ -1824,7 +1840,7 @@ def studio_poser_voix(projet: str, paroles: str, style: str = "", autotune: bool
 
 @mcp.tool()
 def studio_rendre(projet: str, mix_auto: bool = True, envoyer: bool = True, pistes_separees: bool = False, quoi: str = "tout",
-                  lufs: float = -14.0, cible: str = "") -> str:
+                  lufs: float = -14.0, cible: str = "", reference: str = "") -> str:
     """(Hakim seulement, 13/11) LE MIX ET LE MASTER d'un projet, piste par piste, MESURÉS.
     - mix_auto : d'abord LE NETTOYAGE de chaque voix (studio pro, mesuré : il ne corrige que ce qu'il trouve — décalage continu,
       écrêtage, clics de bouche, ronflement 50 Hz, souffle appris dans ses silences, plosives, respirations baissées, expandeur doux
@@ -1837,6 +1853,10 @@ def studio_rendre(projet: str, mix_auto: bool = True, envoyer: bool = True, pist
       mesurés), graves en mono sous 120 Hz et largeur stéréo contrôlée, limiteur suréchantillonné, au LUFS visé — cible
       « streaming » (−14, par défaut) ou « club » (−9), ou lufs —, crête vraie ≤ −1 dBTP vérifiée sur le WAV ET le MP3 ; un WAV
       16 bits avec dither en plus du 24 bits.
+    - (14/11) reference : la voix de RÉFÉRENCE sur laquelle se cale la voix de papa — « auto » (ta voix principale du projet, sinon
+      le profil gardé), une piste (« t4 »), « profil » (le profil gardé « hakim »), « aucune » ; vide : ne change rien. Le calage
+      corrige la couleur de son micro et de sa pièce (jamais sa hauteur ni ses formants), ses sifflantes, et au mix sa tranche, sa
+      densité, son espace et son niveau — tout mesuré ; le rapport le dit.
     Ce que tu ne sais pas faire : retirer la réverbération de la pièce d'une prise ; recaler une voix syllabe par syllabe (le calage
     est phrase par phrase). Le « son studio » se juge à l'oreille de papa : dis-lui ce qui a été mesuré, pas « niveau pro ».
     - quoi : « tout » (le son entier, la version pour papa avec ses zones en instru seule, l'instru seule), « complet ».
@@ -1848,6 +1868,10 @@ def studio_rendre(projet: str, mix_auto: bool = True, envoyer: bool = True, pist
     st, SP = _studio(), _projets()
     try:
         pid = SP.trouver(projet)
+        rf = str(reference or "").strip().lower()
+        if rf:
+            q = ({"source": rf} if rf in SP.SOURCES_REF else {"source": "piste", "piste": SP.piste(SP.lire(pid), rf)["id"]})
+            SP.modifier(pid, lambda p: SP.regler_reference(p, q), note=f"référence : {rf}")
         c = str(cible or "").strip().lower()
         if c in SP.CIBLES:
             SP.modifier(pid, lambda p: SP.regler_master(p, {"cible": c}), note=f"master visé : {c}")

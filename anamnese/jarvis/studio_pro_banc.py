@@ -292,3 +292,127 @@ if __name__ == "__main__":
     r["voix"] = o.voix or "synthèse"
     if o.sortie:
         Path(o.sortie).write_text(json.dumps(r, ensure_ascii=False, indent=1))
+
+
+# ------------------------------------------------------------------------------------------------ (14/11) le calage sur la référence
+# Ahmed (14/11) : « j'aimerais juste que les mix [de ma voix] soient aussi bien que sa voix ». Le banc colore une voix propre avec des
+# courbes CONNUES (un micro, une pièce), puis vérifie que le calage (studio_pro_reference) les retire : la courbe appliquée contre la
+# vraie (−C), l'écart d'enveloppe et le SI-SDR contre la voix propre ; une voix propre calée sur elle-même ne bouge pas ; les
+# sifflantes renforcées reviennent à leur force.
+def courbe_micro(f):
+    """Un micro « proche » connu (dB) : la présence creusée (−4 dB vers 3 kHz, large), un excès d'aigus (+5 dB au-dessus de 6 kHz)."""
+    lf = np.log2(np.maximum(f, 1.0))
+    return -4.0 * np.exp(-0.5 * ((lf - math.log2(3000)) / 0.6) ** 2) + 5.0 / (1 + np.exp(-(lf - math.log2(6500)) * 4))
+
+
+def courbe_piece(f):
+    """Une pièce « boîte » connue (dB) : +5 dB de boue vers 400 Hz (large), −2 dB vers 1,5 kHz."""
+    lf = np.log2(np.maximum(f, 1.0))
+    return 5.0 * np.exp(-0.5 * ((lf - math.log2(400)) / 0.5) ** 2) - 2.0 * np.exp(-0.5 * ((lf - math.log2(1500)) / 0.5) ** 2)
+
+
+def colorer(x, courbe, sr=SR):
+    """Une voix passée dans une courbe connue (dB, fonction des fréquences), à phase nulle."""
+    x = P._2d(x)
+    return np.column_stack([P._filtre_fft(x[:, c], sr, lambda f: 10 ** (courbe(f) / 20)) for c in range(x.shape[1])])
+
+
+def renforcer_sifflantes(x, gain_db=6.0, sr=SR):
+    """Les sifflantes plus fortes de gain_db : la bande 5-10 kHz relevée seulement dans les trames sifflantes (une prise trop
+    brillante, un micro qui siffle)."""
+    import studio_pro_reference as R
+    x = P._2d(x)
+    m = P._mono(x)
+    r, viv = R._sifflantes_vivantes(m, sr)
+    sib = (viv & (r > R.SEUIL_S)).astype(float)
+    sib = np.convolve(sib, np.ones(5) / 5, "same")
+    p = int(sr * 0.005)
+    t = (np.arange(len(m)) - p) / p
+    g = 10 ** (gain_db * np.interp(t, np.arange(len(sib)), sib) / 20)
+    out = np.empty_like(x)
+    for c in range(x.shape[1]):
+        b = R._bande_s(x[:, c], sr)
+        out[:, c] = x[:, c] - b + b * g
+    return out
+
+
+def erreur_de_courbe(appliquee, vraie, de=250, a_=8000):
+    """L'écart moyen (dB) entre la courbe appliquée (par tiers d'octave) et la vraie correction (−C), sur les bandes de de à a_ Hz,
+    niveau retiré (une courbe et la même plus 1 dB sont la même couleur)."""
+    import studio_pro_reference as R
+    c = np.array(R.TIERS, float)
+    sel = (c >= de) & (c <= a_)
+    d = np.array(appliquee, float)[sel] - np.array(vraie, float)[sel]
+    return round(float(np.abs(d - d.mean()).mean()), 2)
+
+
+def banc_reference(voix, ref=None, sr=SR, journal=print):
+    """Le banc du calage sur une voix propre (et une référence propre ; sans elle, la voix elle-même) : chaque coloration connue, la
+    courbe appliquée contre la vraie, l'écart d'enveloppe et le SI-SDR avant/après ; la voix propre calée ; les sifflantes."""
+    import studio_pro_reference as R
+    ref = voix if ref is None else ref
+    pr = R.profil(ref, sr)
+    c = np.array(R.TIERS, float)
+    res = {"cas": []}
+    for nom, courbe in (("micro", courbe_micro), ("pièce", courbe_piece), ("micro + pièce", lambda f: courbe_micro(f) + courbe_piece(f))):
+        deg = colorer(voix, courbe, sr)
+        y, rap = R.caler(deg, pr, sr)
+        vraie = [-float(courbe(np.array([fc]))[0]) for fc in c]
+        l = {"cas": nom, "erreur_courbe_db": erreur_de_courbe(rap.get("courbe_db") or [0] * len(c), vraie),
+             "sans_calage_db": erreur_de_courbe([0] * len(c), vraie), "distance_db": rap["distance_db"],
+             "si_sdr_avant_db": P.si_sdr(voix, deg), "si_sdr_apres_db": P.si_sdr(voix, y)}
+        journal(json.dumps(l, ensure_ascii=False))
+        res["cas"].append(l)
+    y, rap = R.caler(voix, R.profil(voix, sr), sr)
+    res["propre"] = {"si_sdr_db": P.si_sdr(voix, y), "courbe_max_db": max(abs(v) for v in rap.get("courbe_db") or [0])}
+    journal("PROPRE " + json.dumps(res["propre"], ensure_ascii=False))
+    pv = R.profil(voix, sr, avec_hauteur=False)
+    if (pv["sifflantes"] or {}).get("quantiles_db"):
+        deg = renforcer_sifflantes(voix, 6.0, sr)
+        y, rap = R.caler(deg, pv, sr, reglages={"ref_egaliseur": "non"})
+        s = {"vraie_p90_db": pv["sifflantes"]["p90_db"], "renforcee_p90_db": R.profil_sifflantes(P._mono(deg), sr)["p90_db"],
+             "apres_p90_db": R.profil_sifflantes(P._mono(y), sr)["p90_db"], "si_sdr_avant_db": P.si_sdr(voix, deg),
+             "si_sdr_apres_db": P.si_sdr(voix, y)}
+        res["sifflantes"] = s
+        journal("SIFFLANTES " + json.dumps(s, ensure_ascii=False))
+    return res
+
+
+def voix_rappee(duree=12.0, sr=SR, graine=8):
+    """Une voix « rappée » de synthèse : des syllabes rapides (une consonne sifflante de 50 à 90 ms — bruit 4,5-10 kHz — puis une voyelle
+    de 120 à 220 ms, fondamentale 135 à 175 Hz), en phrases de 1,5 à 2,5 s séparées de silences de 0,4 à 0,7 s. Stéréo, crête −6 dBFS.
+    Rend (voix, phrases [(a, b)] en secondes)."""
+    rng = np.random.default_rng(graine)
+    n = int(duree * sr)
+    y = np.zeros(n)
+    phr = []
+    pos = 0.4
+    bruit = P._filtre_fft(rng.standard_normal(n), sr, lambda f: P._butter_mag(f, 4500.0, 4, True) * P._butter_mag(f, 10000.0, 4, False))
+    bruit /= np.abs(bruit).max() + 1e-12
+    while pos < duree - 1.0:
+        L = min(rng.uniform(1.5, 2.5), duree - 0.5 - pos)
+        a, b = pos, pos + L
+        phr.append((a, b))
+        s = a
+        while s < b - 0.2:
+            cs = rng.uniform(0.05, 0.09)
+            i0, i1 = int(s * sr), int((s + cs) * sr)
+            y[i0:i1] += 0.35 * np.hanning(i1 - i0) * bruit[i0:i1] * rng.uniform(0.7, 1.0)
+            s += cs
+            dv = min(rng.uniform(0.12, 0.22), b - s)
+            i0, i1 = int(s * sr), int((s + dv) * sr)
+            t = np.arange(i1 - i0) / sr
+            f0 = rng.uniform(135, 175) * (1 + 0.04 * np.sin(2 * np.pi * 3 * t))
+            ph = 2 * np.pi * np.cumsum(f0) / sr
+            v = rng.choice(list("aoie"))
+            seg = np.zeros(i1 - i0)
+            for k in range(1, 50):
+                fk = k * f0
+                seg += np.where(fk < 9000, _formants(fk, v), 0.0) / k ** 0.5 * np.sin(k * ph)
+            env = np.minimum(1, t / 0.015) * np.minimum(1, (dv - t) / 0.03)
+            y[i0:i1] += seg / (np.abs(seg).max() + 1e-12) * env * rng.uniform(0.6, 1.0)
+            s += dv
+        pos = b + rng.uniform(0.4, 0.7)
+    y = 0.5 * y / np.abs(y).max()
+    y += 10 ** (-100 / 20) * rng.standard_normal(n)
+    return np.column_stack([y, y]), phr

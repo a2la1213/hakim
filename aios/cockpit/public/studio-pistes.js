@@ -21,7 +21,7 @@
     ['continu', 'Décalage continu']];
   const TYPES_VOIX = [['principale', 'principale'], ['double', 'double'], ['back', 'back (chœur)'], ['adlib', 'ad-lib']];
   const s = { projets: [], projet: null, choisie: lsLire('studio-projet', ''), pps: Number(lsLire('studio-pps', '10')) || 10, pos: 0, lecture: null,
-    formes: new Map(), detail: '', rec: null, zones: null };
+    formes: new Map(), detail: '', rec: null, zones: null, references: [] };
   const mmss = (t) => { t = Math.max(0, Number(t) || 0); const m = Math.floor(t / 60); return `${m}:${(t - m * 60).toFixed(1).padStart(4, '0')}`; };
   const lireTemps = (v) => { const x = String(v || '').trim().replace(',', '.'); const m = x.match(/^(\d+):(\d+(?:\.\d+)?)$/); return m ? +m[1] * 60 + +m[2] : Number(x) || 0; };
 
@@ -56,6 +56,8 @@
     try { s.projet = (await json(`/api/studio/projet?id=${encodeURIComponent(s.choisie)}`)).projet; } catch (e) { dire(`Projet illisible : ${e.message}`); return; }
     s.zones = null;
     $('mpVue').hidden = false;
+    // (14/11) les profils de référence gardés (pour choisir la voix sur laquelle la voix de papa se cale)
+    try { s.references = (await json('/api/studio/references')).references || []; } catch (_) { s.references = []; }
     rendreTout();
     for (const t of s.projet.pistes) if (t.f && !s.formes.has(t.f)) chargerForme(t.f);
   }
@@ -89,7 +91,20 @@
     $('mpMultibande').checked = m.multibande !== false;
     $('mpMonoGraves').checked = Number(m.mono_graves_hz ?? 120) > 0;
     $('mpDither').checked = m.dither16 !== false;
+    rendreReference();
     $('mpMasterDit').textContent = `${m.cible === 'club' ? 'Club, −9 LUFS' : 'Streaming, −14 LUFS'}, crête ≤ −1 dBTP ; le son entier, ta version et l’instru, dans Hakim › Chansons.`;
+  }
+  // (14/11) la voix de référence du projet : auto (la voix de Hakim du projet, sinon le profil gardé), une voix choisie, le profil gardé,
+  // aucune ; la valeur de la liste : « auto », « aucune », « profil », ou « piste:<id> »
+  function rendreReference() {
+    const r = s.projet.reference || { source: 'auto', piste: '', profil: 'hakim' };
+    const voix = s.projet.pistes.filter(t => VOIX.has(t.role));
+    const garde = s.references.find(x => x.nom === (r.profil || 'hakim'));
+    // (les libellés sont échappés à l'affichage : esc(val), esc(lib))
+    const opts = [['auto', 'auto : la voix de Hakim du projet, sinon le profil gardé'], ...voix.map(t => ['piste:' + t.id, 'la voix « ' + t.nom + ' »']),
+      ...(garde ? [['profil', 'le profil gardé « ' + garde.nom + ' » (' + garde.source + ')']] : []), ['aucune', 'aucune (pas de calage)']];
+    const v = r.source === 'piste' ? 'piste:' + r.piste : r.source;
+    $('mpReference').innerHTML = opts.map(([val, lib]) => `<option value="${esc(val)}"${val === v ? ' selected' : ''}>${esc(lib)}</option>`).join('');
   }
   function rendreGrille() {
     const p = s.projet, L = Math.ceil(dureeProjet() * s.pps);
@@ -193,10 +208,14 @@
       + champ('pro.respirations_db', 'Respirations baissées de (dB)', pro.respirations_db ?? -8, -30, 0, 1)
       + `<label>Calage sur la voix principale${choix('pro.calage', pro.calage || 'auto', [['auto', 'auto (doubles, backs)'], ['non', 'non']])}</label>`
       + `<label>Délai jeté en fin de phrase${choix('pro.delai_jete', pro.delai_jete || 'auto', [['auto', 'auto (ad-libs)'], ['oui', 'oui'], ['non', 'non']])}</label>`
+      // (14/11) le calage sur la voix de référence : la couleur du micro et de la pièce, les sifflantes, et au mix la même tranche,
+      // densité, espace et niveau ; jamais la hauteur ni les formants (la voix reste la sienne)
+      + `<label>Calée sur la voix de référence${choix('pro.reference', pro.reference || 'auto', [['auto', 'auto (ta voix, s’il y a une référence)'], ['oui', 'oui'], ['non', 'non']])}</label>`
       + `<label>Crêtes (compression rapide)${choix('comp_rapide.actif', cr.actif ? '1' : '0', [['1', 'oui'], ['0', 'non']])}</label>`
       + champ('saturation', 'Saturation, présence (0 à 1)', t.saturation ?? 0, 0, 1, 0.05)
       + champ('eq.coupe_haut_hz', 'Coupe-haut (Hz, 0 = sans)', (t.eq || {}).coupe_haut_hz ?? 0, 0, 20000, 100)
-      + `</div>` + (rp ? `<div class="sous">Dernier rendu : ${esc(rp.resume)}</div>` : '');
+      + `</div>` + (rp ? `<div class="sous">Dernier rendu : ${esc(rp.resume)}</div>` : '')
+      + `<div class="gestes"><button type="button" data-garder-ref="${esc(t.id)}">📌 Garder cette voix comme référence</button></div>`;
   }
   function valeurChamp(e) {
     const k = e.dataset.champ, v = e.value;
@@ -347,6 +366,9 @@
       const c = await a.contexte();
       await a.lireRoute();
       const m = await a.ouvrirMicro(), cal = a.latence(), sortie = a.route(), kal = a.calageActuel(), depuis = s.pos;
+      // (14/11) le retour casque : la tonalité et le tempo du projet (le rendu calcule l'autotune dans la tonalité du projet, diapason 0)
+      if (window.StudioRetour) await window.StudioRetour.contexte({ genre: 'projet', tonalite: s.projet.tonalite || '', diap_cents: 0, tempo: Number(s.projet.tempo) || 0 });
+      const retourPrise = window.StudioRetour ? window.StudioRetour.pourPrise() : '';
       dire([m.avertir, sortie.avertir, kal ? '' : 'Décalage pas encore mesuré pour cette sortie : mesure-le plus bas (« T’enregistrer », 2).'].filter(Boolean).join(' '), 9000);
       const T0 = c.currentTime + 3.2;
       for (let k = 3; k >= 1; k--) a.clic(c, T0 - k, k === 3 ? 0.6 : 0.4);
@@ -365,14 +387,14 @@
         if (!prise || prise.x.length < prise.sr) { if (prise) $('mpRecEtat').textContent = 'Prise trop courte, rien gardé.'; return; }
         $('mpRecEtat').textContent = `Envoi de la prise (${mmss(prise.x.length / prise.sr)})…`;
         const q = new URLSearchParams({ id: s.projet.id, debut: String(depuis), latence: String(cal), cle: sortie.cle, sortie: sortie.nom, micro: prise.micro || '',
-          methode: kal ? kal.methode : 'estimation', titre: 'Voix de papa' });
+          methode: kal ? kal.methode : 'estimation', titre: 'Voix de papa', retour: retourPrise });
         try {
           const rep = await fetch(`/api/studio/projet-prise?${q}`, { method: 'POST', headers: { ...H(), 'Content-Type': 'audio/wav' }, body: a.enWav(prise.x, prise.sr) });
           const o = await rep.json().catch(() => ({}));
           if (!rep.ok || !o.ok) throw new Error(o.erreur || `erreur ${rep.status}`);
           remplacer(o);
           for (const t of s.projet.pistes) if (t.f && !s.formes.has(t.f)) chargerForme(t.f);
-          $('mpRecEtat').textContent = 'Ta voix est posée dans le projet (piste « Voix de papa »). Réécoute, règle, puis « Mixer et masteriser ».';
+          $('mpRecEtat').textContent = `Ta voix est posée dans le projet (piste « Voix de papa »)${o.autotune ? `, avec l’autotune ${o.autotune === 'fort' ? 'fort' : 'léger'} que tu entendais` : ''}. Réécoute, règle, puis « Mixer et masteriser ».`;
           a.recharger();
         } catch (e) { $('mpRecEtat').textContent = `Prise non envoyée : ${e.message}`; }
       } };
@@ -426,6 +448,8 @@
     const b = ev.target.closest('button'); if (!b) return;
     const d = b.dataset;
     try {
+      if (d.garderRef) { b.disabled = true; await poster('/api/studio/projet/garder-reference', { id: s.projet.id, piste: d.garderRef });
+        dire('Hakim mesure cette voix sur le Mac (sa couleur, sa densité, ses sifflantes, son espace) : elle servira de référence aux projets sans sa voix.'); return; }
       if (d.detail !== undefined) { s.detail = ''; rendreGrille(); return rendreDetail(); }
       if (d.retirer) { if (!confirm('Retirer cette piste du projet ?')) return; remplacer(await poster('/api/studio/projet/retirer', { id: s.projet.id, rev: s.projet.rev, piste: d.retirer })); s.detail = ''; return rendreDetail(); }
       if (d.separer) { b.disabled = true; await poster('/api/studio/projet/separer', { id: s.projet.id, piste: d.separer, separer: '4' }); dire('Séparation en file sur le Mac : les pistes arrivent dans une minute ou deux.'); A().recharger(); }
@@ -450,6 +474,12 @@
     if (!s.projet) return;
     try { remplacer(await poster('/api/studio/projet/reglages', { id: s.projet.id, rev: s.projet.rev, cible: $('mpCible').value, multibande: $('mpMultibande').checked,
       mono_graves_hz: $('mpMonoGraves').checked ? 120 : 0, dither16: $('mpDither').checked })); }
+    catch (e) { if (e.message !== 'rechargé') dire(e.message); }
+  });
+  $('mpReference').addEventListener('change', async () => {
+    if (!s.projet) return;
+    const v = $('mpReference').value, piste = v.startsWith('piste:') ? v.slice(6) : '';
+    try { remplacer(await poster('/api/studio/projet/reference', { id: s.projet.id, rev: s.projet.rev, source: piste ? 'piste' : v, piste })); }
     catch (e) { if (e.message !== 'rechargé') dire(e.message); }
   });
   $('mpRendre').addEventListener('click', async () => {

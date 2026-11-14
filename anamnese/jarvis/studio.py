@@ -49,7 +49,8 @@ CIBLE_LUFS = -14.0          # le niveau des plateformes (Spotify, YouTube) : −
 CRETE_DB = -1.0             # le plafond de crête du limiteur
 SR = 44100
 DELAI_TRAVAIL_S = 30 * 60
-TYPES = ("mixer", "instru", "projet", "rendre", "separer")     # (13/11) le multipiste : créer un projet (séparé en pistes), le rendre (mix, master, exports)
+TYPES = ("mixer", "instru", "projet", "rendre", "separer",    # (13/11) le multipiste : créer un projet (séparé en pistes), le rendre (mix, master, exports)
+         "reference")                                       # (14/11) garder une voix d'un projet comme profil de référence (le calage)
 
 
 class Refus(Exception):
@@ -585,7 +586,7 @@ def lancer(type_, params, studio=None, demarrer=None):
         for k in ("prise", "instru"):
             if not p.get(k) or not Path(p[k]).is_file():
                 raise Refus(f"{k} introuvable")
-    elif type_ in ("rendre", "separer"):
+    elif type_ in ("rendre", "separer", "reference"):
         if not re.fullmatch(r"PJ-\d{8}-\d{6}-[0-9a-f]{4}", str(p.get("projet") or "")):
             raise Refus("projet inconnu")
     else:
@@ -598,7 +599,7 @@ def lancer(type_, params, studio=None, demarrer=None):
         raise Refus("déjà 5 calculs en file : attends qu'ils finissent")
     jid = f"J-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:4]}"
     fiche = {"id": jid, "type": type_, "params": p, "etat": "en attente", "debut": time.time(), "etape": 0,
-             "etapes": {"mixer": 7, "instru": 3, "projet": 3, "rendre": 8, "separer": 2}[type_], "texte": "en file"}
+             "etapes": {"mixer": 7, "instru": 3, "projet": 3, "rendre": 8, "separer": 2, "reference": 1}[type_], "texte": "en file"}
     _ecrire(d / f"{jid}.json", fiche)
     (demarrer or _demarrer_travailleur)(d)
     return fiche
@@ -638,6 +639,10 @@ def faire(fiche, d, studio=None):
             r = {"projet": p["projet"], "nom": r["nom"], "fichiers": r["fichiers"], "telephone": r["telephone"], "avis": r["avis"],
                  "master": {k: r["mesures"]["master"].get(k) for k in ("lufs", "crete_dbtp", "lra", "plr_db")},
                  "mp3_crete_dbtp": r["mesures"]["mp3"].get("crete_dbtp"), "calcul_s": r["calcul_s"]}
+        elif fiche["type"] == "reference":                  # (14/11) une voix d'un projet gardée comme profil de référence
+            import studio_projet as SP
+            progres(1, "la voix de référence mesurée (sa couleur, sa densité, ses sifflantes, son espace)")
+            r = SP.garder_reference(p["projet"], p.get("piste") or None, p.get("nom") or "hakim", studio)
         elif fiche["type"] == "separer":                    # (13/11) une piste d'un projet séparée en ses pistes
             import studio_projet as SP
             q = SP.separer_piste(p["projet"], p["piste"], p.get("separer", "4"), studio, progres=progres)

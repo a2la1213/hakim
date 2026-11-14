@@ -132,6 +132,7 @@ def nouveau(titre, tempo=0.0, tonalite="", genre="trap", studio_dir=None, source
     p = {"id": pid, "titre": _mot(titre, 80) or "Projet", "rev": 1, "cree": time.time(), "modifie": time.time(),
          "tempo": float(_num(tempo, 0, 300, 0)), "premier_temps_s": 0.0, "mesure": 4, "tonalite": _mot(tonalite, 20),
          "genre": _mot(genre, 20) or "trap", "duree_s": 0.0, "source": source or {}, "pistes": [], "zones": [], "marqueurs": [],
+         "reference": reference_defaut(),
          "master": {"lufs": -14.0, "crete_dbtp": -1.0, "eq_auto": True, "comp": True, "cible": "streaming", "multibande": True,
                     "largeur": "auto", "mono_graves_hz": 120, "dither16": True},
          "rendus": [], "etat": "prêt", "journal": []}
@@ -379,6 +380,232 @@ def regler_zones(p, zones):
                   "qui": z.get("qui") if z.get("qui") in QUI_ZONES else "instru"})
     p["zones"] = sorted(l, key=lambda z: z["debut_s"])
     return p["zones"]
+
+
+# ------------------------------------------------------------------------------------------------ (14/11) la voix de référence
+# Ahmed (14/11) : « j'aimerais juste que les mix [de ma voix] soient aussi bien que sa voix ». La référence : la voix de Hakim du projet
+# (« auto » : sa première voix principale), une voix choisie (« piste »), un profil gardé (« profil » : studio/references/<nom>.json ;
+# « auto » s'y replie quand le projet n'a pas de voix de Hakim), ou « aucune ». studio_pro_reference fait le calage.
+SOURCES_REF = ("auto", "piste", "profil", "aucune")
+
+
+def reference_defaut():
+    return {"source": "auto", "piste": "", "profil": "hakim"}
+
+
+def references_dir(studio_dir=None):
+    return Path(studio_dir or studio.STUDIO) / "references"
+
+
+def regler_reference(p, q):
+    """La référence du projet, bornée : source (auto, piste, profil, aucune), piste (son identifiant), profil (son nom)."""
+    r = dict(reference_defaut(), **(p.get("reference") or {}))
+    if q.get("source") in SOURCES_REF:
+        r["source"] = q["source"]
+    if "piste" in q:
+        v = str(q.get("piste") or "")
+        r["piste"] = v if re.fullmatch(r"t\d{1,3}", v) else ""
+    if "profil" in q:
+        r["profil"] = re.sub(r"[^a-z0-9-]", "", studio._cle(str(q.get("profil") or "")).replace(" ", "-"))[:30] or "hakim"
+    p["reference"] = r
+    return r
+
+
+def piste_reference(p):
+    """La piste de référence du projet (une voix qui sonne), ou None."""
+    r = dict(reference_defaut(), **(p.get("reference") or {}))
+    if r["source"] in ("aucune", "profil"):
+        return None
+    vivantes = [t for t in p["pistes"] if t["role"] in ROLES_VOIX and not t.get("muet")]
+    if r["source"] == "piste":
+        return next((t for t in vivantes if t["id"] == r["piste"]), None)
+    return next((t for t in vivantes if t["role"] == "voix_hakim" and type_voix(t) in ("principale", None)), None)
+
+
+def profil_garde(p, studio_dir=None):
+    """Le profil gardé que le projet utilise (source « profil », ou « auto » sans voix de Hakim), ou None."""
+    r = dict(reference_defaut(), **(p.get("reference") or {}))
+    if r["source"] in ("aucune", "piste") or (r["source"] == "auto" and piste_reference(p) is not None):
+        return None
+    import studio_pro_reference as R
+    g = R.lire_profil(references_dir(studio_dir) / f"{r['profil']}.json")
+    if g:
+        g["nom"] = r["profil"]
+    return g
+
+
+def est_calee(t, ref_id):
+    """Une voix calée sur la référence : sa chaîne pro active, son mode « oui », ou « auto » pour la voix de papa ; jamais la référence."""
+    import studio_pro
+    pr = _pro(t)
+    if not pr or not pr.get("actif") or t["id"] == ref_id or "reference" in studio_pro.COUPE:
+        return False
+    mode = pr.get("reference", "auto")
+    return mode == "oui" or (mode == "auto" and t["role"] == "voix_papa")
+
+
+def _cle_fichier(f, *autre):
+    import hashlib
+    st = Path(f).stat()
+    return hashlib.sha1(json.dumps([Path(f).name, st.st_mtime_ns, st.st_size, *autre], sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
+def _profil_en_cache(f, dpro):
+    """Le profil (studio_pro_reference.profil) d'une voix, gardé en cache à côté des voix nettoyées. Rend (profil, clé)."""
+    import studio_mesures as M
+    import studio_pro_reference as R
+    cle = _cle_fichier(f, R.VERSION)
+    c = Path(dpro) / f"ref-{cle}.json"
+    if c.is_file():
+        try:
+            return json.loads(c.read_text(encoding="utf-8")), cle
+        except ValueError:
+            pass
+    x, _ = M.lire(f)
+    prof = R.profil(x)
+    Path(dpro).mkdir(parents=True, exist_ok=True)
+    c.write_text(json.dumps(prof, ensure_ascii=False, default=float), encoding="utf-8")
+    return prof, cle
+
+
+def _tranche(t):
+    """Ce qu'une voix calée reprend de la tranche de la référence : son égaliseur (hors coupe-bas : chacun le sien), sa saturation, son
+    dé-esseur, ses envois (réverbération, délai et sa note) et la forme de ses compressions (ratio, attaque, relâche ; les seuils
+    restent ceux de chaque voix, posés sur son propre niveau)."""
+    eq = t.get("eq") or {}
+    return {"eq": {k: eq.get(k) for k in ("medium_hz", "medium_q", "medium_db", "aigu_hz", "aigu_db", "coupe_haut_hz") if k in eq},
+            "saturation": t.get("saturation", 0.0), "deesser": t.get("deesser", 0.0), "reverb": t.get("reverb", 0.0),
+            "delai": t.get("delai", 0.0), "delai_note": t.get("delai_note", "1/8."),
+            "comp": {k: (t.get("comp") or {}).get(k) for k in ("ratio", "attaque_ms", "relache_ms") if k in (t.get("comp") or {})},
+            "comp_rapide": {k: (t.get("comp_rapide") or {}).get(k) for k in ("ratio", "attaque_ms", "relache_ms")
+                            if k in (t.get("comp_rapide") or {})}}
+
+
+def _poser_tranche(t, tr):
+    t.setdefault("eq", {}).update({k: v for k, v in (tr.get("eq") or {}).items() if v is not None})
+    for k in ("saturation", "deesser", "reverb", "delai"):
+        if k in tr:
+            t[k] = round(_num(tr[k], 0, 1, t.get(k, 0.0)), 2)
+    if tr.get("delai_note") in NOTES_DELAI:
+        t["delai_note"] = tr["delai_note"]
+    t.setdefault("comp", {}).update({k: v for k, v in (tr.get("comp") or {}).items() if v is not None})
+    t.setdefault("comp_rapide", {}).update({k: v for k, v in (tr.get("comp_rapide") or {}).items() if v is not None})
+
+
+def _rendre_seule(p, d, travail, fichiers, t, humide, nom):
+    """Le rendu d'une piste seule (sans son sidechain), avec ou sans ses envois : le son que mesure le calage au mix."""
+    import studio_mesures as M
+    q = copy.deepcopy(p)
+    tq = next(x for x in q["pistes"] if x["id"] == t["id"])
+    tq["sidechain"] = {"cle": "", "db": 0.0}
+    if not humide:
+        tq["reverb"], tq["delai"] = 0.0, 0.0
+    f = Path(travail) / f"seule-{t['id']}-{nom}.wav"
+    try:
+        rendre_bus(q, d, f, seules=[t["id"]], fichiers=fichiers)
+        x, _ = M.lire(f)
+    finally:
+        f.unlink(missing_ok=True)
+    return x
+
+
+def cibles_reference(p, d, travail, fichiers, ref_t):
+    """Les cibles au mix d'une référence : sa densité et ses sifflantes sur son rendu SEC, son espace sur son rendu avec ses envois."""
+    import studio_pro_reference as R
+    sec = R.mesure_mix(_rendre_seule(p, d, travail, fichiers, ref_t, False, "ref-sec"))
+    hum = R.mesure_mix(_rendre_seule(p, d, travail, fichiers, ref_t, True, "ref-humide"), fins=sec["_fins"])
+    return {"sec": {k: v for k, v in sec.items() if k != "_fins"}, "humide": {k: v for k, v in hum.items() if k != "_fins"}}
+
+
+def caler_au_mix(p, d, travail, fichiers, rap_pro, rapport, journal=None):
+    """(14/11) Le calage sur la référence, au mix, pour chaque voix principale calée, mesuré sur le rendu de la piste seule :
+      la tranche de la référence (son égaliseur, sa saturation, son dé-esseur, ses envois, la forme de ses compressions) ;
+      la densité : le facteur de crête du corps de la voix (250 Hz-4 kHz) vers celui de la référence, par le seuil d'un compresseur
+        de crêtes rapide (attaque 0,3 ms), jamais sous le haut de la voix (son niveau court terme fort), seulement plus serré (une voix
+        rappée a des crêtes qu'une voix chantée n'a pas : ce qui reste est le style, pas le traitement) ;
+      la force des sifflantes : mesurée après la tranche et dite (l'étape audio l'a calée) ;
+      l'espace : l'envoi de réverbération vers la traîne de la référence après les fins de phrase (le délai repris tel quel) ;
+      la parité de niveau : la même hauteur au-dessus de l'instru que la référence.
+    fichiers est mis à jour si une voix est recalée. Rend {piste: écart visé (LU)}."""
+    import studio_pro
+    import studio_pro_reference as R
+    C = studio_pro.COUPE
+    say = journal or (lambda s: None)
+    ctx = rap_pro.get("_reference")
+    calees = [t for t in p["pistes"] if t["role"] in ROLES_VOIX and not t.get("muet") and (rap_pro.get(t["id"]) or {}).get("reference")
+              and type_voix(t) in ("principale", None)]
+    if not calees or not ctx:
+        return {}
+    ref_t = next((t for t in p["pistes"] if t["id"] == ctx.get("piste")), None)
+    if ref_t is not None:
+        tranche, cibles, vise = _tranche(ref_t), cibles_reference(p, d, travail, fichiers, ref_t), VOIX_AU_DESSUS.get(ref_t["role"], 1.5)
+    else:
+        g = profil_garde(p, Path(d).parent.parent) or {}
+        tranche, cibles, vise = g.get("tranche") or {}, g.get("cibles") or {}, g.get("ecart_lu")
+    sec, hum = cibles.get("sec") or {}, cibles.get("humide") or {}
+    vises = {}
+    for t in calees:
+        r = rapport.setdefault(t["id"], {}).setdefault("reference_mix", {})
+        if "ref_tranche" not in C:
+            _poser_tranche(t, tranche)
+            r["tranche"] = {k: tranche.get(k) for k in ("saturation", "deesser", "reverb", "delai", "delai_note")}
+
+        fins_seches = []
+
+        def mesure(humide=False):
+            x = _rendre_seule(p, d, travail, fichiers, t, humide, "humide" if humide else "sec")
+            if humide:
+                return R.mesure_mix(x, fins=fins_seches or None)
+            m = R.mesure_mix(x)
+            fins_seches[:] = m["_fins"]
+            return m
+        # la densité : le facteur de crête du corps de la voix
+        cd = (sec.get("dynamique") or {}).get("crete_corps_db")
+        if "ref_densite" not in C and cd is not None:
+            m0 = mesure()["dynamique"]
+            dens = {"cible_crete_db": cd, "avant_crete_db": m0["crete_corps_db"]}
+            cr = t.setdefault("comp_rapide", reglages_par_defaut("ajout")["comp_rapide"])
+            if m0["crete_corps_db"] > cd + 0.5:
+                haut = float(t.get("comp", {}).get("seuil_db", -26.0)) + 6           # le seuil lent est posé 6 dB sous le haut
+                cr.update(actif=True, attaque_ms=0.3, relache_ms=50.0, ratio=6.0)
+                base = float(cr.get("seuil_db", haut + 6))
+
+                def crete(s_db):
+                    cr["seuil_db"] = round(s_db, 1)
+                    return mesure()["dynamique"]["crete_corps_db"]
+                # (le 14/11 : jusqu'à 12 dB sous le haut, le seuil écrasait le rap de papa — fond +10 dB — pour 0,8 dB de crête en
+                # moins : ses crêtes sont du STYLE ; le compresseur de crêtes ne descend pas sous le haut de la voix)
+                v, mv, _ = R.chercher(crete, max(-50.0, haut), base, cd, True, essais=5, tolerance=0.3)
+                cr["seuil_db"] = round(v, 1)
+                dens.update(apres_crete_db=mv, seuil_cretes_db=cr["seuil_db"])
+            else:
+                dens["apres_crete_db"] = m0["crete_corps_db"]
+            r["densite"] = dens
+        # la force des sifflantes après la tranche : mesurée et dite (le dé-esseur de l'étape audio l'a déjà calée ; le 14/11, reprendre
+        # l'écart qui restait dans l'étape audio ne changeait rien sur la vraie prise de papa : la tranche décide du reste)
+        ps = (sec.get("sifflantes") or {}).get("p90_db")
+        if ps is not None:
+            r["sifflantes"] = {"cible_p90_db": ps, "avant_p90_db": mesure()["sifflantes"].get("p90_db")}
+        # l'espace : la traîne après les fins de phrase, avec les envois
+        tr = (hum.get("reverberation") or {}).get("traine_db")
+        if "ref_espace" not in C and tr is not None:
+            def traine(k):
+                t["reverb"] = round(k, 3)
+                return mesure(True)["reverberation"].get("traine_db")
+            r0 = float(t.get("reverb", 0.0))
+            if not fins_seches:
+                mesure()
+            esp = {"cible_traine_db": tr, "avant_traine_db": traine(r0), "reverb_avant": r0, "fins": len(fins_seches)}
+            v, mv, _ = R.chercher(traine, 0.0, 1.0, tr, True, essais=6)
+            t["reverb"] = round(v, 2)
+            esp.update(apres_traine_db=mv, reverb=t["reverb"], delai=t.get("delai", 0.0), delai_note=t.get("delai_note"),
+                       atteinte=mv is not None and abs(mv - tr) <= 1.5)
+            r["espace"] = esp
+        if "ref_parite" not in C and vise is not None:
+            vises[t["id"]] = float(vise)
+            r["vise_lu"] = float(vise)
+        say(f"{t['nom']} : calée au mix sur la référence {r}")
+    return vises
 
 
 # ------------------------------------------------------------------------------------------------ le rendu (un graphe ffmpeg)
@@ -679,7 +906,66 @@ def preparer_pro(p, d):
             rap[t["id"]] = json.loads(fr.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             rap[t["id"]] = {}
+    preparer_reference(p, d, out, rap)
     return out, rap
+
+
+def preparer_reference(p, d, out, rap):
+    """(14/11) Les voix calées sur la référence (est_calee) : leur voix nettoyée passée dans studio_pro_reference.caler (l'égalisation
+    d'appariement de l'enveloppe, les sifflantes ramenées à la force de la référence), gardée en cache dans pistes/.pro/ (même voix
+    nettoyée, même référence, mêmes réglages, même version → déjà fait). out et rap sont complétés sur place ; rap["_reference"]
+    garde la référence (pour le calage au mix)."""
+    dpro = Path(d) / "pistes" / ".pro"
+    ref_t = piste_reference(p)
+    ctx = None
+    if ref_t is not None:
+        f_ref = Path(out.get(ref_t["id"]) or Path(d) / ref_t["fichier"])
+        if f_ref.is_file():
+            prof, cle = _profil_en_cache(f_ref, dpro)
+            ctx = {"profil": prof, "cle": cle, "source": f"la voix « {ref_t['nom']} » du projet", "piste": ref_t["id"]}
+    else:
+        g = profil_garde(p, Path(d).parent.parent)
+        if g:
+            ctx = {"profil": g["profil"], "cle": f"profil-{g['nom']}-{g.get('t')}", "source": f"le profil gardé « {g['nom']} »", "piste": None}
+    if not ctx:
+        return
+    rap["_reference"] = ctx
+    for t in p["pistes"]:
+        if not est_calee(t, ctx["piste"]):
+            continue
+        src = Path(out.get(t["id"]) or Path(d) / t["fichier"])
+        if src.is_file():
+            out[t["id"]], rap.setdefault(t["id"], {})["reference"] = caler_une(t, src, ctx, dpro)
+
+
+def caler_une(t, src, ctx, dpro):
+    """Une voix (sa version nettoyée, src) calée sur la référence ctx, en cache. Rend (chemin, rapport)."""
+    import studio_mesures as M
+    import studio_pro
+    import studio_pro_reference as R
+    reg = {k: v for k, v in (_pro(t) or {}).items() if k.startswith("ref_")}
+    cle = _cle_fichier(src, ctx["cle"], R.VERSION, reg, sorted(studio_pro.COUPE))
+    cache, fr = Path(dpro) / f"{t['id']}-ref-{cle}.wav", Path(dpro) / f"{t['id']}-ref-{cle}.json"
+    if not (cache.is_file() and fr.is_file()):
+        Path(dpro).mkdir(parents=True, exist_ok=True)
+        x, _ = M.lire(src)
+        y, rr = R.caler(x, ctx["profil"], reglages=reg)
+        tmp = Path(dpro) / f".{t['id']}-{uuid.uuid4().hex[:6]}.wav"
+        try:
+            M.ecrire_wav(tmp, y, SR, 32)
+            os.replace(tmp, cache)
+        finally:
+            tmp.unlink(missing_ok=True)
+        fr.write_text(json.dumps(rr, ensure_ascii=False, default=float), encoding="utf-8")
+        for v in sorted(Path(dpro).glob(f"{t['id']}-ref-*.wav"), key=lambda z: z.stat().st_mtime, reverse=True)[4:]:
+            v.unlink(missing_ok=True)
+            v.with_suffix(".json").unlink(missing_ok=True)
+    try:
+        rr = json.loads(fr.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        rr = {}
+    rr["source"] = ctx["source"]
+    return str(cache), rr
 
 
 def preparer_voix(p, d, travail):
@@ -1111,6 +1397,9 @@ def mixer_auto(p, d, travail, journal=None):
                  boue_db=round(boue, 1), presence_db=round(presence, 1), sifflantes_db=round(sifflantes, 1), jetes=len(t["jetes"]))
         if ty == "principale" and (principale is None or t["role"] in ("voix_papa", "voix_hakim") and principale["role"] == "voix_origine"):
             principale = t
+    # 4 bis. (14/11) le calage sur la voix de référence, au mix : la tranche de la référence, la densité, les sifflantes et l'espace
+    # appariés sur le rendu de la piste seule, la parité de niveau (studio_pro_reference, caler_au_mix)
+    vises = caler_au_mix(p, d, travail, fichiers, rap_pro, rapport, say)
     # 5. le calage des doubles et des backs sur leur voix principale (la même voix si elle existe, sinon la principale du morceau)
     for t in voix:
         ty = type_voix(t)
@@ -1148,7 +1437,7 @@ def mixer_auto(p, d, travail, journal=None):
                 ref = Path(travail) / "instru-ref.wav"
                 if not ref.is_file():
                     rendre_bus(p, d, ref, "instru")
-                vise = VOIX_AU_DESSUS.get(t["role"], 1.5)
+                vise = vises.get(t["id"], VOIX_AU_DESSUS.get(t["role"], 1.5))
             elif lead is not None and lead is not t:
                 ref = Path(travail) / f"voix-ref-{lead['id']}.wav"
                 if not ref.is_file():
@@ -1205,6 +1494,40 @@ def _passages_actifs(fichier, seuil_db=-35.0):
     return float(i[0] * 0.5), float((i[-1] - i[0] + 1) * 0.5)
 
 
+def garder_reference(pid, piste_id=None, nom="hakim", studio_dir=None):
+    """(14/11) Une voix du projet (par défaut sa référence) gardée comme PROFIL DE RÉFÉRENCE (studio/references/<nom>.json) : le profil
+    de sa voix nettoyée, sa tranche, ses cibles au mix (rendu de la piste seule, sec et avec ses envois) et son niveau au-dessus de
+    l'instru. Un projet sans voix de Hakim s'y cale (source « auto » ou « profil »). Rend le résumé."""
+    import studio_pro_reference as R
+    d = dossier(pid, studio_dir)
+    p = lire(pid, studio_dir)
+    t = piste(p, piste_id) if piste_id else piste_reference(p)
+    if t is None or t["role"] not in ROLES_VOIX:
+        raise Refus("aucune voix à garder comme référence (donne la piste)")
+    nom = re.sub(r"[^a-z0-9-]", "", studio._cle(str(nom or "hakim")).replace(" ", "-"))[:30] or "hakim"
+    travail = Path(tempfile.mkdtemp(prefix=".ref-", dir=d))
+    try:
+        fichiers, _ = preparer_voix(p, d, travail)
+        prof, _ = _profil_en_cache(Path(fichiers.get(t["id"]) or Path(d) / t["fichier"]), Path(d) / "pistes" / ".pro")
+        cibles = cibles_reference(p, d, travail, fichiers, t)
+    finally:
+        shutil.rmtree(travail, ignore_errors=True)
+    g = R.ecrire_profil(references_dir(studio_dir) / f"{nom}.json", prof, f"{p['titre']} — {t['nom']}", _tranche(t),
+                        VOIX_AU_DESSUS.get(t["role"], 1.5), cibles)
+    return {"nom": nom, "source": g["source"], "t": g["t"], "fichier": str(references_dir(studio_dir) / f"{nom}.json")}
+
+
+def lister_references(studio_dir=None):
+    """Les profils de référence gardés : [{nom, source, t}]."""
+    import studio_pro_reference as R
+    out = []
+    for f in sorted(references_dir(studio_dir).glob("*.json")):
+        g = R.lire_profil(f)
+        if g:
+            out.append({"nom": f.stem, "source": g.get("source", ""), "t": g.get("t")})
+    return out
+
+
 # ------------------------------------------------------------------------------------------------ le rendu complet d'un projet
 def _avis(master, bus, eq, equilibre, genre, params=None, pro=None):
     """L'avis d'ingé son, en mots courts, à partir des mesures."""
@@ -1230,6 +1553,31 @@ def _avis(master, bus, eq, equilibre, genre, params=None, pro=None):
         c.append(f"graves en mono sous {q['mono_graves_hz']:.0f} Hz, largeur {q.get('largeur', 1.0):.2f} (corrélation du mix {q.get('correlation')})")
     if q.get("cible"):
         c.append(f"cible {q['cible']} ({q.get('lufs')} LUFS)")
+    return c
+
+
+def _avis_reference(rapport_mix, p):
+    """(14/11) Ce que le calage sur la référence a fait au mix, en mots courts, mesuré."""
+    c = []
+    noms = {t["id"]: t["nom"] for t in p["pistes"]}
+    for k, v in (rapport_mix or {}).items():
+        r = isinstance(v, dict) and v.get("reference_mix")
+        if not r:
+            continue
+        m = []
+        dn = r.get("densite")
+        if dn:
+            m.append(f"densité : crête {dn['avant_crete_db']} → {dn['apres_crete_db']} dB (référence {dn['cible_crete_db']})")
+        sf = r.get("sifflantes")
+        if sf and sf.get("avant_p90_db") is not None:
+            m.append(f"force des sifflantes {sf['avant_p90_db']} dB (référence {sf['cible_p90_db']})")
+        es = r.get("espace")
+        if es:
+            m.append(f"espace : traîne {es['avant_traine_db']} → {es['apres_traine_db']} dB (référence {es['cible_traine_db']}, "
+                     f"réverb {es['reverb']}, délai {es['delai']})")
+        if r.get("vise_lu") is not None:
+            m.append(f"au même niveau que la référence ({r['vise_lu']:+.1f} LU sur l'instru)")
+        c.append(f"{noms.get(k, k)} calée sur la référence au mix : " + ", ".join(m))
     return c
 
 
@@ -1350,7 +1698,8 @@ def rendre_projet(pid, quoi="tout", mix_auto=False, envoyer=True, pistes_separee
                  "pro": resumes_pro,
                  "master_reglages": {k: params.get(k) for k in ("multibande", "largeur", "correlation", "mono_graves_hz", "cible", "lufs",
                                                                 "dither16")},
-                 "avis": _avis(mesure_master, mesure_bus, params["eq"], equilibre, p.get("genre") or "trap", params, resumes_pro)}
+                 "avis": _avis(mesure_master, mesure_bus, params["eq"], equilibre, p.get("genre") or "trap", params, resumes_pro)
+                 + _avis_reference(rapport_mix, p)}
 
         def noter(q):
             q.setdefault("rendus", []).append(rendu)
@@ -1466,9 +1815,11 @@ ALIAS_REGLAGES = {"volume": "volume_db", "vol": "volume_db", "gain": "volume_db"
                   "expandeur": "pro.porte", "nivellement": "pro.nivellement", "rider": "pro.nivellement", "continu": "pro.continu",
                   "calage": "pro.calage", "debruiteur": "pro.debruiteur", "débruiteur": "pro.debruiteur", "souffle_db": "pro.souffle_db",
                   "delai_jete": "pro.delai_jete", "délai_jeté": "pro.delai_jete", "jete": "pro.delai_jete", "plosives_hz": "pro.plosives_hz",
-                  "nivellement_db": "pro.nivellement_db", "porte_plage_db": "pro.porte_plage_db"}
+                  "nivellement_db": "pro.nivellement_db", "porte_plage_db": "pro.porte_plage_db",
+                  # (14/11) le calage sur la voix de référence
+                  "reference": "pro.reference", "référence": "pro.reference", "calage_reference": "pro.reference"}
 PRO_TEXTE = {"pro.type", "pro.souffle", "pro.ronflement", "pro.clics", "pro.ecretage", "pro.plosives", "pro.respirations", "pro.porte",
-             "pro.nivellement", "pro.continu", "pro.calage", "pro.debruiteur", "pro.delai_jete"}
+             "pro.nivellement", "pro.continu", "pro.calage", "pro.debruiteur", "pro.delai_jete", "pro.reference"}
 
 
 def lire_reglages(texte):
@@ -1639,6 +1990,9 @@ def resume(p, court=False):
                     import studio_pro
                     forces = [f"{k} {pr.get(k)}" for k in studio_pro.ETAPES if pr.get(k, "auto") != "auto"]
                     e.append(f"voix {pr.get('type', 'principale')}, nettoyage mesuré" + (f" ({', '.join(forces)})" if forces else ""))
+                    ref = piste_reference(p)
+                    if est_calee(t, ref["id"] if ref else None):
+                        e.append("calée sur la référence")
             if (t.get("comp_rapide") or {}).get("actif"):
                 e.append(f"crêtes {t['comp_rapide']['ratio']:g}:1 à {t['comp_rapide']['seuil_db']:g} dB")
             if t.get("saturation"):
@@ -1652,6 +2006,10 @@ def resume(p, court=False):
             if t.get("automation"):
                 e.append(f"{len(t['automation'])} points d'automation")
         l.append(f"- {t['id']} {t['nom']} ({ROLES.get(t['role'], t['role'])}) : " + ", ".join(e))
+    rf = dict(reference_defaut(), **(p.get("reference") or {}))
+    rt = piste_reference(p)
+    l.append("Référence : " + ("aucune" if rf["source"] == "aucune" else f"{rt['nom']} ({rt['id']})" if rt is not None
+                               else f"le profil gardé « {rf['profil']} »" + ("" if rf["source"] == "profil" else " (s'il existe)")) + ".")
     if p.get("zones"):
         l.append("Zones : " + " ; ".join(f"{z['nom']} ({z['qui']}) {z['debut_s']:.1f}-{z['fin_s']:.1f} s" for z in p["zones"]))
     m = p.get("master") or {}
@@ -1742,6 +2100,19 @@ def commande(q, studio_dir=None, demarrer=None):
                     t["regions"][0]["debut_s"] = round(debut - lat, 4)
                 t["latence_ms"] = round(lat * 1000)
             return {"ok": True, "projet": modifier(q.get("id"), caler, None, studio_dir, note=f"prise de papa posée à {debut:.1f} s")}
+        if a == "reference":                                # (14/11) la référence du projet : source, piste, profil
+            return {"ok": True, "projet": modifier(q.get("id"), lambda x: regler_reference(x, q), q.get("rev"), studio_dir,
+                                                   note="référence changée par papa" if q.get("par") == "papa" else "référence changée")}
+        if a == "garder_reference":                         # (14/11) une voix du projet gardée comme profil de référence (en file :
+            p = lire(q.get("id"), studio_dir)               # rendre la voix seule et la mesurer prend du temps)
+            t = piste(p, q.get("piste")) if q.get("piste") else piste_reference(p)
+            if t is None or t["role"] not in ROLES_VOIX:
+                raise Refus("aucune voix à garder comme référence (choisis la piste)")
+            j = studio.lancer("reference", {"projet": p["id"], "piste": t["id"], "nom": _mot(q.get("nom"), 30) or "hakim",
+                                            "par": q.get("par") or "papa"}, studio_dir, demarrer)
+            return {"ok": True, "travail": j, "piste": t["id"]}
+        if a == "references":
+            return {"ok": True, "references": lister_references(studio_dir)}
         if a == "retirer":
             def retirer(x):
                 x["pistes"].remove(piste(x, q.get("piste")))

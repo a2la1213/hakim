@@ -59,7 +59,10 @@ def reglages_defaut():
     return {"actif": True, "type": "principale",
             **{e: "auto" for e in ETAPES},
             "debruiteur": "auto", "souffle_db": 18.0, "respirations_db": -8.0, "porte_plage_db": -12.0, "nivellement_db": 6.0,
-            "plosives_hz": 150.0, "calage": "auto", "delai_jete": "auto"}
+            "plosives_hz": 150.0, "calage": "auto", "delai_jete": "auto",
+            # (14/11) le calage sur la voix de référence (studio_pro_reference) : « auto » = oui pour la voix de papa quand une référence
+            # existe (la voix de Hakim du projet, ou un profil gardé)
+            "reference": "auto"}
 
 
 def borner(r, base=None):
@@ -71,7 +74,7 @@ def borner(r, base=None):
         out["actif"] = v.lower() in ("1", "oui", "vrai", "true", "on") if isinstance(v, str) else bool(v)
     if r.get("type") in TYPES_VOIX:
         out["type"] = r["type"]
-    for e in (*ETAPES, "calage", "delai_jete"):
+    for e in (*ETAPES, "calage", "delai_jete", "reference"):
         if e in r:
             v = r[e]
             v = {True: "oui", False: "non"}.get(v, v) if isinstance(v, bool) else str(v).strip().lower()
@@ -952,6 +955,9 @@ def resume(rapport):
     f = rapport.get("_fond")
     if f:
         mots.append(f"fond {f['avant_dbfs']} → {f['apres_dbfs']} dBFS")
+    if rapport.get("reference"):                         # (14/11) le calage sur la voix de référence
+        import studio_pro_reference as R
+        mots.append(R.resume(rapport["reference"]))
     return ", ".join(mots) if mots else "voix déjà propre : rien à corriger"
 
 

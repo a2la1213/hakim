@@ -13,6 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawn, execFile } = require('child_process');
+const RetourDSP = require('./public/studio-retour-dsp.js');      // (14/11) le retour casque : ses réglages bornés par la chaîne elle-même
 
 const EXT_SON = new Set(['.mp3', '.wav', '.m4a', '.ogg', '.webm', '.flac', '.aac', '.opus']);
 const TYPES_SON = { '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.webm': 'audio/webm',
@@ -190,7 +191,9 @@ function creer(o = {}) {
       .filter(x => x.f).sort((a, b) => (b.date || 0) - (a.date || 0));
     const prises = fiches(path.join(STUDIO, 'prises')).map(x => ({ id: x.id, f: rel(x.fichier), titre: x.titre, duree_s: x.duree_s, ts: x.ts,
       instru_f: x.instru_f, instru_titre: x.instru_titre, latence_ms: x.latence_ms, choisie: !!x.choisie,
-      sortie: x.sortie_nom || '', micro: x.micro || '', methode: x.calage_methode || '' })).filter(x => x.f).sort((a, b) => b.ts - a.ts);
+      sortie: x.sortie_nom || '', micro: x.micro || '', methode: x.calage_methode || '',
+      // (14/11) l'autotune entendu au casque, et sa tonalité : le mix le reprend par défaut
+      retour: x.retour ? { preset: x.retour.preset || '', niveau_mix: x.retour.niveau_mix || '', tonalite: x.retour.tonalite || '' } : null })).filter(x => x.f).sort((a, b) => b.ts - a.ts);
     const mixes = fiches(STUDIO).filter(x => x.nom && x.mp3).map(x => ({ nom: x.nom, f: rel(x.mp3), f_wav: rel(x.wav), titre: x.titre, duree_s: x.duree_s,
       date: x.fin, mesure: x.mesure, conseils: (x.avis && x.avis.conseils) || [], reglages: x.reglages, calcul_s: x.calcul_s, telephone: !!x.telephone }))
       .filter(x => x.f).sort((a, b) => (b.date || 0) - (a.date || 0));
@@ -248,6 +251,41 @@ function creer(o = {}) {
   const calagesVus = (c = lireCalages()) => Object.fromEntries(Object.entries(c.sorties).map(([k, f]) => [k, calageDe(f, c.avance)]).filter(([, v]) => v));
   const mot = (v, n) => String(v ?? '').replace(/[\x00-\x1f<>]/g, ' ').trim().slice(0, n);
 
+  /* ---------- (14/11, Ahmed : « un retour de voix au casque pendant que j'enregistre, avec des préréglages et de l'autotune comme je veux,
+     de façon par défaut ») le RETOUR CASQUE : ses réglages par défaut et la latence mesurée par sortie, gardés ici (studio/retour.json),
+     PARTAGÉS par le téléphone et le Mac ; les réglages bornés par la chaîne elle-même (public/studio-retour-dsp.js). La prise reste brute :
+     ce qu'il entendait part avec elle (son .json : retour), et l'autotune entendu devient celui du mix. ---------- */
+  const RETOUR = path.join(STUDIO, 'retour.json');
+  const lireRetour = () => { const r = lireJson(RETOUR, null); return r && typeof r === 'object' ? { defaut: r.defaut || null, date: r.date || null, mesures: r.mesures && typeof r.mesures === 'object' ? r.mesures : {} } : { defaut: null, date: null, mesures: {} }; };
+  // ce que la page dit du retour d'une prise : borné, jamais plus de 4 000 signes
+  function retourDePrise(texte) {
+    let x = null;
+    try { x = JSON.parse(String(texte || '').slice(0, 4000)); } catch (_) { return null; }
+    if (!x || typeof x !== 'object' || !x.allume) return null;
+    const n = (v, a, b) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Math.max(a, Math.min(b, Math.round(Number(v) * 10) / 10)) : null);
+    const niveau = x.niveau_mix === 'leger' || x.niveau_mix === 'fort' ? x.niveau_mix : '';
+    return { allume: true, preset: mot(x.preset, 24), reglages: RetourDSP.borner(x.reglages), niveau_mix: niveau, tonalite: mot(x.tonalite, 20),
+      diap_cents: n(x.diap_cents, -50, 50), latence_ms: n(x.latence_ms, 0, 1000), algo_ms: n(x.algo_ms, 0, 100), plateforme: mot(x.plateforme, 12),
+      garder_autotune: x.garder_autotune !== false };
+  }
+  // la tonalité (et le diapason) d'une instru, comme le mix la trouve (studio.tonalite_de, autotune.diapason) : une fois par fichier
+  const tonalites = new Map();
+  function tonaliteDe(f) {
+    if (o.tonalite) return Promise.resolve(o.tonalite(f));                // (tests) jamais python
+    let cle = f;
+    try { const st = fs.statSync(f); cle = `${f}|${st.size}|${st.mtimeMs}`; } catch (_) {}
+    if (tonalites.has(cle)) return tonalites.get(cle);
+    const code = ['import sys, json', 'sys.path.insert(0, sys.argv[1])', 'import studio, autotune', 'f = sys.argv[2]', 't = studio.tonalite_de(f)', 'd = 0.0',
+      'try:', '    d = float(autotune.diapason(*studio._pcm(f, studio.SR)))', 'except Exception:', '    pass',
+      'print(json.dumps({"tonalite": t, "diap_cents": round(d, 1)}))'].join('\n');
+    const pr = new Promise((ok) => execFile(o.pythonStudio || PYTHON, ['-B', '-c', code, path.dirname(STUDIO_PY), f], { timeout: 90000,
+      env: { ...process.env, PATH: `/usr/local/bin:/opt/homebrew/bin:${process.env.PATH || '/usr/bin:/bin'}` } },
+      (e, so) => { try { const r = JSON.parse(String(so).trim().split('\n').pop()); ok({ ok: true, tonalite: mot(r.tonalite, 20), diap_cents: Number(r.diap_cents) || 0 }); }
+        catch (_) { tonalites.delete(cle); ok({ ok: false, erreur: 'tonalité introuvable' }); } }));
+    tonalites.set(cle, pr);
+    return pr;
+  }
+
   function servir(req, res, f, telecharger) {
     const taille = fs.statSync(f).size, type = TYPES_SON[path.extname(f).toLowerCase()] || 'application/octet-stream';
     // (13/11) les pistes d'un projet (plusieurs Mo chacune) restent une heure dans le cache du téléphone : un nom ne change jamais de son
@@ -272,6 +310,14 @@ function creer(o = {}) {
       const f = chemin(q.get('f'));
       if (!f) return repondre(res, 404, { erreur: 'son introuvable' });
       return servir(req, res, f, q.get('telecharger') === '1');
+    }
+    // (14/11) le retour casque : son réglage par défaut et ses latences mesurées ; la tonalité d'une instru pour son autotune
+    if (p === '/api/studio/retour' && req.method === 'GET') return repondre(res, 200, { ok: true, ...lireRetour(), presets: Object.keys(RetourDSP.PRESETS), defaut_preset: RetourDSP.DEFAUT });
+    if (p === '/api/studio/tonalite' && req.method === 'GET') {
+      const f = chemin(q.get('f'));
+      if (!f) return repondre(res, 404, { erreur: 'son introuvable' });
+      const r = await tonaliteDe(f);
+      return repondre(res, r.ok ? 200 : 409, r);
     }
     if (req.method !== 'POST') return repondre(res, 405, { erreur: 'méthode refusée' });
     // une instru importée (ou un son à lui faire écouter) : le corps brut
@@ -307,7 +353,9 @@ function creer(o = {}) {
       const fiche = { id, fichier: f, titre: titreDe(q.get('titre')) || `Prise sur ${fi ? fi.titre : path.basename(instru)}`, ts: Date.now(), duree_s: await dureeDe(f),
         instru_chemin: instru, instru_f: rel(instru), instru_titre: fi ? fi.titre : path.basename(instru), latence_ms: lat, choisie: false,
         // (10/11) par où papa écoutait, quel micro l'a enregistré, et d'où vient le calage
-        sortie_cle: mot(q.get('cle'), 140), sortie_nom: mot(q.get('sortie'), 80), micro: mot(q.get('micro'), 80), calage_methode: mot(q.get('methode'), 12) };
+        sortie_cle: mot(q.get('cle'), 140), sortie_nom: mot(q.get('sortie'), 80), micro: mot(q.get('micro'), 80), calage_methode: mot(q.get('methode'), 12),
+        // (14/11) ce qu'il entendait au casque (la prise, elle, est brute) ; son autotune sera celui du mix
+        ...(retourDePrise(q.get('retour')) ? { retour: retourDePrise(q.get('retour')) } : {}) };
       ecrire(path.join(dir, id + '.json'), fiche);
       return repondre(res, 200, { ok: true, id, f: rel(f) });
     }
@@ -343,8 +391,13 @@ function creer(o = {}) {
       const fiche = lireJson(path.join(STUDIO, 'prises', String(x.prise || '').replace(/[^\w-]/g, '') + '.json'));
       if (!fiche) return repondre(res, 404, { erreur: 'prise inconnue' });
       const n = (v, a, b, d) => Number.isFinite(Number(v)) ? Math.max(a, Math.min(b, Number(v))) : d;
+      // (14/11) l'autotune : « leger », « fort », oui (léger) ou non ; rien de dit : celui qu'il entendait au casque, dans sa tonalité
+      const rt = fiche.retour || null;
+      const niveau = x.autotune === 'leger' || x.autotune === 'fort' ? x.autotune : x.autotune === true ? 'leger'
+        : x.autotune === undefined && rt && rt.garder_autotune !== false ? (rt.niveau_mix || '') : '';
       const r = await python('lancer', { type: 'mixer', params: { prise: fiche.fichier, instru: fiche.instru_chemin, titre: titreDe(x.titre) || fiche.titre,
-        latence_ms: fiche.latence_ms || 0, autotune: !!x.autotune, voix_db: n(x.voix_db, -6, 6, 0), reverb: n(x.reverb, 0, 1, 0.3), echo: n(x.echo, 0, 1, 0),
+        latence_ms: fiche.latence_ms || 0, autotune: x.autotune === true ? true : niveau || false, tonalite: mot(x.tonalite, 20) || (niveau && rt ? rt.tonalite || '' : ''),
+        voix_db: n(x.voix_db, -6, 6, 0), reverb: n(x.reverb, 0, 1, 0.3), echo: n(x.echo, 0, 1, 0),
         debruitage: x.debruitage !== false, bpm: n(x.bpm, 0, 300, 0), par: 'papa' } });
       return repondre(res, r.ok ? 200 : 409, r);
     }
@@ -367,6 +420,23 @@ function creer(o = {}) {
       catch (e) { return repondre(res, 400, { erreur: e.message }); }
     }
     if (p === '/api/studio/ecouter/arreter') { if (s.ecoute) s.ecoute.arreter('arrêtée par papa'); return repondre(res, 200, { ok: true }); }
+    if (p === '/api/studio/retour/defaut') {
+      const x = await corpsJson(req);
+      if (!x.reglages || typeof x.reglages !== 'object') return repondre(res, 400, { erreur: 'réglages illisibles' });
+      const r = lireRetour(), defaut = RetourDSP.borner(x.reglages);
+      ecrire(RETOUR, { ...r, defaut, date: Date.now(), par: mot(x.par, 12) || 'page' });
+      return repondre(res, 200, { ok: true, defaut });
+    }
+    if (p === '/api/studio/retour/mesure') {
+      const x = await corpsJson(req), cle = mot(x.cle, 140);
+      if (!/^(appli|web)\|./.test(cle) || !Number.isFinite(Number(x.ms)) || x.ms === null || x.ms === '') return repondre(res, 400, { erreur: 'mesure illisible' });
+      const n = (v, a, b) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Math.max(a, Math.min(b, Math.round(Number(v) * 10) / 10)));
+      const r = lireRetour();
+      r.mesures[cle] = { ms: n(x.ms, 0, 2000), ecart_ms: n(x.ecart_ms, 0, 1000), n: n(x.n, 0, 100), total: n(x.total, 0, 100), nom: mot(x.nom, 80),
+        plateforme: x.plateforme === 'appli' ? 'appli' : 'web', date: Date.now() };
+      ecrire(RETOUR, r);
+      return repondre(res, 200, { ok: true, mesure: r.mesures[cle], mesures: r.mesures });
+    }
     if (p.startsWith('/api/studio/projet/')) return routeProjet(req, res, p);
     return repondre(res, 404, { erreur: 'inconnu' });
   }
@@ -459,6 +529,17 @@ function creer(o = {}) {
         pistes_separees: !!x.pistes_separees, quoi: 'tout' } });
     } else if (p === '/api/studio/projet/separer') {
       r = await projetCmd({ action: 'separer', par: 'papa', params: { projet: x.id, piste: mot(x.piste, 20), separer: x.separer === '6' ? '6' : '4' } });
+    } else if (p === '/api/studio/projet/reference') {
+      // (14/11, Ahmed : « que les mix de ma voix soient aussi bien que sa voix ») la voix de référence du projet : auto (la voix de Hakim,
+      // sinon le profil gardé), une piste, le profil gardé, aucune ; studio_projet.py borne le reste
+      const q = { action: 'reference', id: x.id, rev, par: 'papa' };
+      if (['auto', 'piste', 'profil', 'aucune'].includes(x.source)) q.source = x.source;
+      if (x.piste !== undefined) q.piste = mot(x.piste, 8);
+      if (x.profil !== undefined) q.profil = mot(x.profil, 30);
+      r = await projetCmd(q);
+    } else if (p === '/api/studio/projet/garder-reference') {
+      // une voix du projet gardée comme profil de référence (un travail de la file du studio : la voix rendue seule, puis mesurée)
+      r = await projetCmd({ action: 'garder_reference', id: x.id, piste: mot(x.piste, 8), nom: mot(x.nom, 30) || 'hakim', par: 'papa' });
     } else return repondre(res, 404, { erreur: 'inconnu' });
     if (r && r.projet) r = { ...r, projet: pourLaPage(r.projet) };
     return repondre(res, r && r.ok ? 200 : 409, r || { ok: false });
@@ -474,14 +555,26 @@ function creer(o = {}) {
     fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(f, b);
     const lat = Math.max(-500, Math.min(1500, Math.round(Number(q.get('latence')) || 0)));
     const debut = Math.max(0, Math.min(3600, Number(q.get('debut')) || 0));
+    const rt = retourDePrise(q.get('retour'));
     ecrire(path.join(dir, pid + '.json'), { id: pid, fichier: f, titre: titreDe(q.get('titre')) || 'Prise dans un projet', ts: Date.now(), duree_s: await dureeDe(f),
       projet: id, debut_s: debut, latence_ms: lat, choisie: false, sortie_cle: mot(q.get('cle'), 140), sortie_nom: mot(q.get('sortie'), 80), micro: mot(q.get('micro'), 80),
-      calage_methode: mot(q.get('methode'), 12) });
-    const r = await projetCmd({ action: 'importer', id, fichier: f, debut_s: debut, latence_ms: lat, role: 'voix_papa', nom: titreDe(q.get('titre')) || 'Voix de papa' });
-    return repondre(res, r.ok ? 200 : 409, r.ok ? { ok: true, prise: pid, projet: pourLaPage(r.projet) } : r);
+      calage_methode: mot(q.get('methode'), 12), ...(rt ? { retour: rt } : {}) });
+    let r = await projetCmd({ action: 'importer', id, fichier: f, debut_s: debut, latence_ms: lat, role: 'voix_papa', nom: titreDe(q.get('titre')) || 'Voix de papa' });
+    // (14/11) l'autotune qu'il entendait au casque devient celui de sa piste (le rendu le calcule dans la tonalité du projet) ; la piste
+    // nouvelle est celle qui vient de cette prise (son origine)
+    let autotune = '';
+    if (r.ok && rt && rt.niveau_mix && rt.garder_autotune && r.projet) {
+      const t = (r.projet.pistes || []).find(x => x.origine === path.basename(f));
+      if (t) {
+        const r2 = await projetCmd({ action: 'regler', id, rev: r.projet.rev, piste: t.id, reglages: { autotune: rt.niveau_mix }, par: 'papa' });
+        if (r2 && r2.ok && r2.projet) { r = r2; autotune = rt.niveau_mix; }
+      }
+    }
+    return repondre(res, r.ok ? 200 : 409, r.ok ? { ok: true, prise: pid, autotune, projet: pourLaPage(r.projet) } : r);
   }
   async function routeLecture(req, res, p, q) {
     if (p === '/api/studio/projets') { const r = await projetCmd({ action: 'lister' }); return repondre(res, r.ok ? 200 : 500, r); }
+    if (p === '/api/studio/references') { const r = await projetCmd({ action: 'references' }); return repondre(res, r.ok ? 200 : 500, r); }
     if (p === '/api/studio/projet') {
       if (!idOk(q.get('id'))) return repondre(res, 404, { erreur: 'projet inconnu' });
       const r = await projetCmd({ action: 'lire', id: q.get('id') });
@@ -496,7 +589,8 @@ function creer(o = {}) {
   }
   return { route: async (req, res, p) => {
     const q = new URL(req.url, 'http://x').searchParams;
-    if (req.method === 'GET' && (p === '/api/studio/projets' || p === '/api/studio/projet' || p === '/api/studio/forme')) return routeLecture(req, res, p, q);
+    if (req.method === 'GET' && (p === '/api/studio/projets' || p === '/api/studio/projet' || p === '/api/studio/forme' || p === '/api/studio/references'))
+      return routeLecture(req, res, p, q);
     if (req.method === 'POST' && p === '/api/studio/projet-prise') return priseProjet(req, res, q);
     return route(req, res, p);
   }, etat, chemin, ecouter, decoder, forme, pourLaPage, arreter: () => { if (s.ecoute) s.ecoute.arreter('arrêt du cockpit'); }, _s: s };

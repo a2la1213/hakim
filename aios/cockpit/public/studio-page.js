@@ -13,7 +13,7 @@
   const C = window.StudioCalage;                       // (10/11) les calculs du calage (studio-calage.js)
   const App = window.HakimApp && typeof window.HakimApp.studioMicroOuvrir === 'function' ? window.HakimApp : null;   // l'appli 1.95 et plus
   let rec = null;
-  let etat = null, instruChoisie = localStorage.getItem('studio-instru') || '', priseChoisie = null, bulleMin = 0;
+  let etat = null, instruChoisie = localStorage.getItem('studio-instru') || '', priseChoisie = null, bulleMin = 0, autotunePrise = '';
   const lsLire = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (_) { return d; } };
   const lsEcrire = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
   const dire = (t, ms = 6000) => { $('bulle').textContent = t; clearTimeout(bulleMin); if (ms) bulleMin = setTimeout(() => { $('bulle').textContent = ''; }, ms); };
@@ -87,6 +87,13 @@
       + `<button type="button" data-caler="${esc(p.id)}" title="Appliquer le calage du curseur à cette prise">⇆ Calage actuel</button>`
       + `<button type="button" data-effacer="${esc(p.id)}" aria-label="Effacer la prise">🗑</button></div></div>`).join('') : '<div class="vide">Aucune prise.</div>';
     $('mixer').disabled = !priseChoisie;
+    // (14/11) l'autotune du mix : celui qu'il entendait au casque pendant la prise, tant qu'il n'y touche pas
+    if (priseChoisie && priseChoisie.id !== autotunePrise) {
+      autotunePrise = priseChoisie.id;
+      const rt = priseChoisie.retour;
+      if (rt && rt.preset) { $('autotune').value = rt.niveau_mix || ''; $('autotuneDit').textContent = rt.niveau_mix ? `Repris de ton retour casque : autotune ${rt.niveau_mix === 'fort' ? 'fort' : 'léger'}${rt.tonalite ? `, ${rt.tonalite}` : ''}.` : 'Ton retour casque était sans autotune.'; }
+      else $('autotuneDit').textContent = '';
+    }
     $('mixPrise').textContent = priseChoisie ? `Prise choisie : ${priseChoisie.titre} (${duree(priseChoisie.duree_s)}, calage ${Math.round(priseChoisie.latence_ms || 0)} ms)` : 'Choisis une prise (★) au-dessus.';
     montrerCalage();                                   // (10/11) le décalage de la sortie où papa écoute, et ceux gardés
     // les morceaux mixés
@@ -119,7 +126,8 @@
 
   /* ---------- l'audio ---------- */
   let ctx = null;
-  const contexte = async () => { if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' }); if (ctx.state !== 'running') await ctx.resume(); return ctx; };
+  // (14/11, le retour casque) le contexte au plus bas (latencyHint 0 : le plus petit tampon que le navigateur accepte ; Chrome le borne)
+  const contexte = async () => { if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 0 }); } catch (_) { ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' }); } } if (ctx.state !== 'running') await ctx.resume(); return ctx; };
   const tampons = new Map();
   async function tamponDe(f) {
     if (tampons.has(f)) return tampons.get(f);
@@ -230,7 +238,17 @@
     return { arreter() { proc.disconnect(); src.disconnect(); flux.getTracks().forEach(t => t.stop()); const n = morceaux.reduce((a, m) => a + m.length, 0), x = new Float32Array(n); let k = 0; for (const m of morceaux) { x.set(m, k); k += m.length; } return x; } };
   }
   // une capture, par l'appli ou par le navigateur : arreter() → { x, sr } où x[0] est l'instant T0 (avant le calage)
+  // (14/11) les captures en cours (une prise, une mesure, le multipiste) : le retour casque ne s'allume ni ne s'éteint pendant
+  let captures = 0;
   function capter(c, m, T0, surNiveau) {
+    captures++;
+    let fini = false;
+    const r = capterVraiment(c, m, T0, surNiveau);
+    const arreter = r.arreter;
+    r.arreter = () => { if (!fini) { fini = true; captures = Math.max(0, captures - 1); } return arreter(); };
+    return r;
+  }
+  function capterVraiment(c, m, T0, surNiveau) {
     if (m.genre === 'appli') return enregistreurAppli(c, m.o, T0, surNiveau);
     // (14/11) la carte son : son entrée (1 ou 2), dès que la voix la montre
     const r = enregistreur(c, m.flux, T0, surNiveau, (k) => montrerMicro(C.nomMicro({ genre: 'web', nom: m.nom, canaux: m.canaux, canal: k })));
@@ -270,7 +288,11 @@
           ? '⚠︎ Le téléphone est en mode appel : arrête l’appel ou la conversation, sinon l’instru sort en qualité téléphone.' : '' };
     } else {
       let l = '';
-      try { const s = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audiooutput'); l = ((s.find(d => d.deviceId === 'default') || s[0] || {}).label || '').replace(/^(Par défaut|Default)\s*-\s*/i, ''); } catch (_) {}
+      try {
+        const s = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audiooutput');
+        const dirigee = ctx && typeof ctx.sinkId === 'string' && ctx.sinkId ? s.find(d => d.deviceId === ctx.sinkId) : null;   // (14/11) vers la carte
+        l = ((dirigee || s.find(d => d.deviceId === 'default') || s[0] || {}).label || '').replace(/^(Par défaut|Default)\s*-\s*/i, '');
+      } catch (_) {}
       route = { cle: `web|${l.slice(0, 80) || 'défaut'}`, nom: l || 'la sortie du navigateur', casque: C.CASQUE.test(l), avertir: '' };
     }
     montrerCalage();
@@ -373,6 +395,9 @@
       await lireRoute();
       const [tampon, m] = await Promise.all([tamponDe(f), ouvrirMicro()]);
       const kal = calageActuel(), cal = latence(), sortie = route;
+      // (14/11) le retour casque : le contexte de cette prise (la tonalité de l'instru), et ce qu'il entend, gardé au départ
+      if (window.StudioRetour) await window.StudioRetour.contexte(contexteInstru(f));
+      const retourPrise = window.StudioRetour ? window.StudioRetour.pourPrise() : '';
       dire([m.avertir, route.avertir, kal ? '' : `Décalage pas encore mesuré pour ${route.nom} : mesure-le pour une prise calée.`].filter(Boolean).join(' '), 9000);
       const T0 = c.currentTime + 3.2;
       for (let k = 3; k >= 1; k--) clic(c, T0 - k, k === 3 ? 0.6 : 0.4);
@@ -398,7 +423,8 @@
         if (x.length < sr) { $('temps').textContent = 'Prise trop courte, rien gardé.'; return; }
         $('temps').textContent = `Envoi de la prise (${duree(x.length / sr)})…`;
         try {
-          const q = new URLSearchParams({ instru: f, latence: String(cal), cle: sortie.cle, sortie: sortie.nom, micro: micro || '', methode: kal ? kal.methode : 'estimation' });
+          const q = new URLSearchParams({ instru: f, latence: String(cal), cle: sortie.cle, sortie: sortie.nom, micro: micro || '', methode: kal ? kal.methode : 'estimation',
+            retour: retourPrise });                                        // (14/11) ce qu'il entendait au casque (la prise reste brute)
           await poster(`/api/studio/prise?${q}`, enWav(x, sr), 'audio/wav');
           $('temps').textContent = `Prise gardée (${micro || 'micro'}, décalage ${cal} ms). Réécoute-la avec l’instru, puis ★ choisis la meilleure.`;
           charger();
@@ -459,7 +485,12 @@
   $('ecouterInstru').addEventListener('click', ecouterInstru);
   $('calibClic').addEventListener('click', () => mesurer('boucle'));
   $('calibTaper').addEventListener('click', () => mesurer('taper'));
-  $('instru').addEventListener('change', () => { instruChoisie = $('instru').value; lsEcrire('studio-instru', instruChoisie); });
+  // (14/11) le retour casque suit l'instru choisie : sa tonalité (le cockpit la trouve comme le mix), son tempo (une de ses chansons)
+  function contexteInstru(f) {
+    const c = etat && etat.chansons.find(x => x.f === f);
+    return { genre: 'instru', f, tempo: c && c.bpm ? c.bpm : 0 };
+  }
+  $('instru').addEventListener('change', () => { instruChoisie = $('instru').value; lsEcrire('studio-instru', instruChoisie); if (window.StudioRetour) window.StudioRetour.contexte(contexteInstru(instruChoisie)); });
   $('latence').addEventListener('input', () => montrerLatence(latence()));
   $('latence').addEventListener('change', () => garderCalage({ methode: 'main', ms: latence() }).catch((e) => dire(`Pas gardé : ${e.message}`)));
   const curseur = (id, fmt) => { const m = () => { $(`${id}Val`).textContent = fmt(Number($(id).value)); }; $(id).addEventListener('input', m); m(); };
@@ -468,7 +499,8 @@
     if (!priseChoisie) return;
     $('mixer').disabled = true;
     try {
-      await poster('/api/studio/mixer', { prise: priseChoisie.id, autotune: $('autotune').checked, debruitage: $('debruitage').checked, voix_db: Number($('voix').value),
+      const rt = priseChoisie.retour, niveau = $('autotune').value;
+      await poster('/api/studio/mixer', { prise: priseChoisie.id, autotune: niveau || false, ...(niveau && rt && rt.tonalite ? { tonalite: rt.tonalite } : {}), debruitage: $('debruitage').checked, voix_db: Number($('voix').value),
         reverb: Number($('reverb').value) / 100, echo: Number($('echo').value) / 100, titre: $('mixTitre').value });
       dire('Hakim mixe et masterise… (une à deux minutes)');
       charger();
@@ -504,6 +536,6 @@
   window.addEventListener('pagehide', () => { if (App) try { App.studioMicroFermer(); } catch (_) {} });
   // (13/11) le multipiste (studio-pistes.js) enregistre papa avec la même machinerie : le même micro, la même horloge, le même calage
   window.StudioAudio = { contexte, tamponDe, ouvrirMicro, capter, enWav, clic, lireRoute, route: () => route, latence, calageActuel, poster, dire, duree,
-    occupe: () => !!rec || mesureEnCours, recharger: () => charger() };
+    occupe: () => !!rec || mesureEnCours || captures > 0, recharger: () => charger(), instru: () => instruChoisie, contexteInstru };
   charger();
 })();

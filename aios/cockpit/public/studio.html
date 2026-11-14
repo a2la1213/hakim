@@ -91,6 +91,9 @@
       text-overflow: ellipsis; color: #111; line-height: 20px; cursor: pointer; }
     .mp-tete-lecture { position: absolute; top: 0; bottom: 0; width: 2px; background: #ef4444; z-index: 3; pointer-events: none; }
     .mp-detail { border: 1px solid var(--glass-bd); border-radius: 10px; padding: 8px 10px; margin-top: 8px; }
+    /* (14/11) le retour casque */
+    .rappel { margin: 8px 0; padding: 8px 10px; border-radius: 10px; border: 1px solid #facc15; background: rgba(250,204,21,.08); color: var(--txt); font-size: 13px; line-height: 1.45; }
+    button.actif { border-color: var(--teal); background: var(--teal); color: #04121a; font-weight: 700; }
     .mp-grille2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 12px; }
     .mp-grille2 label { display: flex; flex-direction: column; font-size: 12px; color: var(--txt-2); gap: 2px; }
     .mp-grille2 input, .mp-grille2 select { font-size: 15px; min-height: 36px; }
@@ -162,11 +165,69 @@
           <label class="ligne"><input type="checkbox" id="mpMultibande" checked><span>Compression en 3 bandes</span></label>
           <label class="ligne"><input type="checkbox" id="mpMonoGraves" checked><span>Graves en mono sous 120 Hz</span></label>
           <label class="ligne"><input type="checkbox" id="mpDither" checked><span>WAV 16 bits avec dither</span></label>
+          <label>Ta voix calée sur<select id="mpReference" aria-label="La voix de référence"></select></label>
         </div>
+        <div class="sous">Le calage sur la référence corrige la couleur de ton micro et de ta pièce (jamais ta hauteur ni ton timbre : ta voix reste la tienne), tes sifflantes, et au mix te donne la même densité, le même espace (réverb, délai) et le même niveau que la voix de référence. Tout est mesuré ; c’est ton oreille qui juge.</div>
         <div class="gestes"><button type="button" class="principal" id="mpRendre">🎚️ Mixer et masteriser</button>
           <span class="sous" id="mpMasterDit">−14 LUFS, crête ≤ −1 dBTP ; le son entier, ta version et l’instru, dans Hakim › Chansons.</span></div>
         <div id="mpRendus"></div>
       </div>
+    </section>
+
+    <!-- (14/11, Ahmed : « un retour de voix au casque pendant que j'enregistre, avec des préréglages et de l'autotune comme je veux, de façon
+         par défaut ») studio-retour.js ; la prise reste brute -->
+    <section class="glass carte" id="retourCarte" aria-labelledby="t-retour">
+      <h2 id="t-retour"><span aria-hidden="true">🎧</span>Ton retour casque</h2>
+      <div class="sous">Ta voix dans le casque pendant que tu enregistres, avec ses effets et son autotune. La prise reste <b>brute</b> : les
+        effets ne servent qu’à ton oreille, et l’autotune que tu entends part avec la prise, pour que le mix applique le même.</div>
+      <div class="rappel" id="rtMix">🎛️ <b>Carte son :</b> avec ce retour, tourne le bouton <b>MIX</b> de ta UR22mkII <b>à fond vers DAW</b>.
+        Sinon tu entends ta voix deux fois : la directe, puis la traitée en retard (le son en double). Jamais de retour par Bluetooth : branche
+        ton casque sur la carte.</div>
+      <div class="gestes"><button type="button" class="principal" id="rtAllumer" aria-pressed="false">🎧 Allumer le retour</button>
+        <select id="rtPreset" aria-label="Préréglage du retour" style="flex:1 1 180px"></select></div>
+      <div class="sous" id="rtEtat" aria-live="polite"></div>
+      <div class="niveau" aria-hidden="true" style="margin-top:6px"><i id="rtNiveau"></i></div>
+      <div class="mp-grille2" style="margin-top:8px">
+        <label>Autotune<select id="rtAt"><option value="">non</option><option value="leger">naturel (léger)</option><option value="fort">effet (fort)</option></select></label>
+        <label>Tonalité<select id="rtTon"></select></label>
+        <label>Vitesse de correction (ms)<input type="number" id="rtVitesse" min="1" max="400" step="1"></label>
+        <label>Force (%)<input type="number" id="rtForce" min="0" max="100" step="5"></label>
+      </div>
+      <div class="curseur"><span>Volume de ta voix au casque (à part de l’instru)</span><output id="rtVolumeVal">0 dB</output>
+        <input type="range" id="rtVolume" min="-30" max="12" step="0.5" value="0" aria-label="Volume du retour"></div>
+      <details>
+        <summary>Égaliseur, compression, dé-esseur, réverb, délai</summary>
+        <div class="mp-grille2" id="rtAvance">
+          <label>Coupe-bas (Hz)<input type="number" data-rt="coupe_bas_hz" min="0" max="400" step="5"></label>
+          <label>Graves (dB)<input type="number" data-rt="eq.grave_db" min="-12" max="12" step="0.5"></label>
+          <label>Médiums (dB)<input type="number" data-rt="eq.medium_db" min="-12" max="12" step="0.5"></label>
+          <label>Médiums à (Hz)<input type="number" data-rt="eq.medium_hz" min="100" max="8000" step="10"></label>
+          <label>Présence (dB)<input type="number" data-rt="eq.presence_db" min="-12" max="12" step="0.5"></label>
+          <label>Aigus (dB)<input type="number" data-rt="eq.aigu_db" min="-12" max="12" step="0.5"></label>
+          <label>Compression<select data-rt="comp.actif"><option value="true">oui</option><option value="false">non</option></select></label>
+          <label>Seuil (dB)<input type="number" data-rt="comp.seuil_db" min="-50" max="0" step="1"></label>
+          <label>Ratio<input type="number" data-rt="comp.ratio" min="1" max="20" step="0.5"></label>
+          <label>Gain (dB)<input type="number" data-rt="comp.gain_db" min="-12" max="18" step="0.5"></label>
+          <label>Dé-esseur (0 à 1)<input type="number" data-rt="deesser" min="0" max="1" step="0.05"></label>
+          <label>Réverb (0 à 1)<input type="number" data-rt="reverb" min="0" max="1" step="0.05"></label>
+          <label>Délai (0 à 1)<input type="number" data-rt="delai" min="0" max="1" step="0.05"></label>
+          <label>Délai : note<select data-rt="delai_note"><option>1/4</option><option>1/8</option><option>1/8.</option><option>1/16</option><option>1/4.</option><option>1/2</option></select></label>
+        </div>
+      </details>
+      <label class="ligne"><input type="checkbox" id="rtGarderAt" checked><span>Le mix reprend l’autotune que j’entends (ce que j’entends = ce que j’obtiens)</span></label>
+      <div class="sous" id="rtMixDit"></div>
+      <div class="gestes"><button type="button" id="rtGarder">⭐ Garder comme réglage par défaut</button></div>
+      <div class="sous" id="rtDefaut"></div>
+      <h3>La latence de ton retour</h3>
+      <div class="sous" id="rtLatence">Pas encore mesurée.</div>
+      <div class="gestes"><button type="button" id="rtMesurer">⏱️ Mesurer mon retour</button></div>
+      <details>
+        <summary>Comment c’est mesuré</summary>
+        <div class="sous">Retire le casque de tes oreilles et colle un écouteur contre le micro, volume moyen. Huit clics partent par la sortie
+          même du retour, et le micro les rattrape par son entrée même : c’est le vrai retard entre ta voix et ton oreille (plus
+          l’autotune quand il corrige une note : une demi-période de ta voix en moyenne). Pour rapper sur le temps, vise 15 ms au plus sur
+          le Mac, 25 ms sur le téléphone ; au-dessus, prends le retour direct de la carte (MIX vers INPUT, sans effet).</div>
+      </details>
     </section>
 
     <section class="glass carte" aria-labelledby="t-enreg">
@@ -228,7 +289,9 @@
     <section class="glass carte" aria-labelledby="t-mix">
       <h2 id="t-mix"><span aria-hidden="true">🎚️</span>Le mix par Hakim</h2>
       <div class="sous" id="mixPrise">Choisis une prise (★) au-dessus.</div>
-      <label class="ligne"><input type="checkbox" id="autotune"><span>Autotune (recalée sur la gamme de l’instru)</span></label>
+      <div class="mp-grille2"><label>Autotune (recalée sur la gamme de l’instru)<select id="autotune"><option value="">non</option><option value="leger">léger (naturel)</option>
+        <option value="fort">fort (effet)</option></select></label></div>
+      <div class="sous" id="autotuneDit"></div>
       <label class="ligne"><input type="checkbox" id="debruitage" checked><span>Débruitage léger</span></label>
       <div class="curseur"><span>Ta voix</span><output id="voixVal">0 dB</output><input type="range" id="voix" min="-6" max="6" step="0.5" value="0" aria-label="Volume de ta voix"></div>
       <div class="curseur"><span>Réverb</span><output id="reverbVal">30 %</output><input type="range" id="reverb" min="0" max="100" step="5" value="30" aria-label="Réverb"></div>
@@ -265,5 +328,7 @@
   <script src="/studio-calage.js"></script>
   <script src="/studio-page.js"></script>
   <script src="/studio-pistes.js"></script>
+  <script src="/studio-retour-dsp.js"></script>
+  <script src="/studio-retour.js"></script>
 </body>
 </html>
