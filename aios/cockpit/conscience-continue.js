@@ -96,4 +96,15 @@ function permis(e, d, maintenant, { papaParle = false, occupe = false, tuParles 
   return action;
 }
 
-module.exports = { etatInitial, lireDecision, doitDecider, aDuNeuf, alarmeSansMesure, dejaServi, dejaDites, commencer, permis, PAS_MS, PAR_MINUTE, ENTRE_ACTES_MS, ENTRE_PAROLES_MS };
+// (14/11, Ahmed : « on suit les suggestions de Bilal et on laisse Mini Hakim dormir ») quand Hakim dort (son choix : sommeil ou veille,
+// anamnese/sommeil.py), sa conscience continue dort aussi ; à son réveil, elle repart du présent : ce qui est arrivé pendant son sommeil n'est
+// pas « du neuf » (aucun rattrapage d'un coup), seul ce qui arrive ensuite la fait décider. Rend true quand ce battement ne décide pas.
+function dormir(e, dort, signature) {
+  if (dort) { e.dort = true; return true; }
+  if (!e.dort) return false;
+  e.dort = false;
+  e.signature = Math.max(Number(e.signature) || 0, Number(signature) || 0);
+  return true;
+}
+
+module.exports = { etatInitial, lireDecision, doitDecider, aDuNeuf, alarmeSansMesure, dejaServi, dejaDites, commencer, permis, dormir, PAS_MS, PAR_MINUTE, ENTRE_ACTES_MS, ENTRE_PAROLES_MS };

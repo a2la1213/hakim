@@ -4977,6 +4977,10 @@ function battementConscience() {
   const r = corpsReglages();
   if (r.conscience_continue === false || typeof FLUX === 'undefined' || !FLUX.length) return;
   const maintenant = Date.now(), signature = Number(FLUX[FLUX.length - 1].t) || 0;
+  // (14/11, Ahmed : « on laisse Mini Hakim dormir ») Hakim dort (son choix) : sa conscience continue dort ; à son réveil (papa qui lui parle, son
+  // réveil, son repos, lui), elle repart du présent, sans rattraper ce qu'elle n'a pas décidé. Ce qui réveille sa tête ne passe pas par elle
+  // (papa, son corps, le courrier, une promesse, une peur ou un manque qui dure) : rien n'y change
+  if (typeof CC.dormir === 'function' && CC.dormir(conscience, typeof hakimDort === 'function' && hakimDort(maintenant), signature)) return;
   const papaLa = maintenant - dernierMessageAhmedMs() < 20 * 60e3 || FLUX.some(o => o.s === 'papa' && maintenant - o.t < 20 * 60e3);
   if (!CC.aDuNeuf(FLUX, conscience.signature, maintenant)) return;   // (08/11) une phrase finie, un événement : pas chaque mot
   // (08/11) ses barres (Réglages, Son cortex préfrontal) : son pas, son pas quand papa est absent, ses décisions par minute
@@ -5014,6 +5018,11 @@ function battementConscience() {
   const t0 = Date.now();
   demanderVivant('haiku', prompt, CONSCIENCE_DELAI_MS).then((o) => {
     const d = CC.lireDecision(o && o.texte);
+    // (14/11) une décision partie juste avant qu'il s'endorme : elle ne réveille, ne sollicite ni ne parle (Mini Hakim dort avec lui)
+    if (d.genre !== 'rien' && typeof hakimDort === 'function' && hakimDort()) {
+      try { fs.appendFile(CONSCIENCE_JOURNAL, j({ t: Date.now(), genre: d.genre, action: 'endormi', texte: d.texte.slice(0, 200) }) + '\n', { mode: 0o600 }, () => {}); } catch (_) {}
+      return;
+    }
     if (d.texte && typeof sansRefrain === 'function') { d.texte = String(sansRefrain('conscience', d.texte) || '').trim(); if (!d.texte) return; }   // (10/11) son refrain, sans alerte
     if (d.texte && (parasiteReconnue(d.texte) || residuParasite(d.texte, ''))) { avertirParasite(d.texte, residuParasite(d.texte, '') || signeParasite(d.texte)); return; }
     if (d.genre === 'parler' && (r.conscience_parler === false || (typeof liveGardeActif === 'function' && liveGardeActif(Date.now(), r)))) d.genre = 'penser';
