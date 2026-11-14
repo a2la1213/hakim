@@ -58,7 +58,9 @@
       "studio_piste",
       "studio_zones",
       "studio_poser_voix",
-      "studio_rendre"
+      "studio_rendre",
+      "studio_mix",
+      "studio_profil"
     ],
     "chant": [
       "chanter",

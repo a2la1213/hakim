@@ -682,6 +682,9 @@ def _chaine_piste(t, bpm):
     # le dé-essage APRÈS la compression (elle remonte les sifflantes : on les reprend là)
     if t.get("deesser", 0) > 0 and "deesser_apres" not in C:
         f.append(f"deesser=i={0.2 + 0.6 * t['deesser']:.2f}:m=0.5:f=0.5")
+    if t.get("profil"):                                    # (14/11) le profil de la piste (voix téléphone, radio…) : en fin de tranche
+        import studio_edition
+        f += studio_edition.chaine_profil(t["profil"])
     return f
 
 
@@ -1581,16 +1584,22 @@ def _avis_reference(rapport_mix, p):
     return c
 
 
-def rendre_projet(pid, quoi="tout", mix_auto=False, envoyer=True, pistes_separees=False, studio_dir=None, telephone=None, progres=None):
+def rendre_projet(pid, quoi="tout", mix_auto=False, envoyer=True, pistes_separees=False, studio_dir=None, telephone=None, progres=None,
+                  nom_version="", par=""):
     """Mixer (piste par piste, si mix_auto), masteriser et exporter un projet : le son entier ; la version « zones de papa en instru
     seule » (s'il y a des zones de papa) ; l'instru seule ; les pistes séparées (pistes_separees). Tout est mesuré, et copié dans
-    Hakim/Chansons sur le téléphone (envoyer). Rend le rendu (aussi gardé dans le projet)."""
+    Hakim/Chansons sur le téléphone (envoyer). Rend le rendu (aussi gardé dans le projet).
+    (14/11) Chaque rendu est une VERSION (v1, v2… : studio_edition) : rien n'est écrasé, ni sur le Mac ni sur le téléphone
+    (« Titre v3.mp3 ») ; elle garde la photo du mix rendu ; un mix fait à la main est gardé avant que le mix automatique le refasse."""
     import studio_mesures as M
+    import studio_edition as E
     dire = progres or (lambda n, s: None)
     d = dossier(pid, studio_dir)
     t0 = time.time()
+    av = E.avant_rendu(pid, mix_auto, studio_dir, par)
+    vn = av["v"]                                       # le numéro de cette version
     travail = Path(tempfile.mkdtemp(prefix=".rendu-", dir=d))
-    journal = []
+    journal = [f"le mix à la main gardé comme « {av['garde']} »"] if av["garde"] else []
     try:
         p = lire(pid, studio_dir)
         if not p["pistes"]:
@@ -1681,7 +1690,7 @@ def rendre_projet(pid, quoi="tout", mix_auto=False, envoyer=True, pistes_separee
         if envoyer:
             dire(8, "copie sur le téléphone (Hakim › Chansons)")
             dt = Path(telephone or studio.TELEPHONE)
-            lisible = studio.nom_lisible(p["titre"], nom)
+            lisible = studio.nom_lisible(p["titre"], nom) + E.suffixe(vn)          # (14/11) « Titre v3 » : jamais écrasé
             for k, v in fichiers_sortie.items():
                 if k == "pistes":
                     sous = dt / f"{lisible} (pistes)"
@@ -1701,12 +1710,18 @@ def rendre_projet(pid, quoi="tout", mix_auto=False, envoyer=True, pistes_separee
                  "avis": _avis(mesure_master, mesure_bus, params["eq"], equilibre, p.get("genre") or "trap", params, resumes_pro)
                  + _avis_reference(rapport_mix, p)}
 
+        photo = E.mix_de(p)                             # (14/11) le mix tel qu'il a été rendu (la version le garde)
+
         def noter(q):
+            E.noter_version(q, d, rendu, vn, photo, mix_auto, par, nom_version)
             q.setdefault("rendus", []).append(rendu)
             q["rendus"] = q["rendus"][-8:]
             q["duree_s"] = p["duree_s"]
-        modifier(pid, noter, studio_dir=studio_dir, note=f"rendu {nom}")
+        modifier(pid, noter, studio_dir=studio_dir, note=f"rendu {nom}" + (f" (v{vn})" if vn else ""))
         return rendu
+    except Exception:
+        E.annuler_version(pid, vn, studio_dir)
+        raise
     finally:
         shutil.rmtree(travail, ignore_errors=True)
 
@@ -1822,6 +1837,11 @@ PRO_TEXTE = {"pro.type", "pro.souffle", "pro.ronflement", "pro.clics", "pro.ecre
              "pro.nivellement", "pro.continu", "pro.calage", "pro.debruiteur", "pro.delai_jete", "pro.reference"}
 
 
+def _coupe_edition():
+    import studio_edition
+    return studio_edition.COUPE
+
+
 def lire_reglages(texte):
     """« volume=-3, pan=0.2, muet=oui, medium=-2, ratio=4, reverb=0.2, autotune=léger, sidechain=t3:2 » (ou un objet JSON) → un dict
     pour regler_piste. Les valeurs sont bornées ensuite par regler_piste."""
@@ -1849,6 +1869,8 @@ def lire_reglages(texte):
             val = {"cle": cle.strip(), "db": dbv or 2}
         elif k in ("muet", "solo", "comp.actif", "comp_rapide.actif", "pro.actif"):
             val = v.lower() in ("1", "oui", "vrai", "true", "on", "auto")
+        elif k == "nom" and "nom" not in _coupe_edition():   # (14/11) renommer une piste : « nom=Couplet 1 »
+            val = " ".join(v.split())
         elif k == "delai_note" or k in PRO_TEXTE:
             val = v.strip().lower().replace("é", "e") if k != "pro.type" else v.strip().lower()
         else:
@@ -2005,6 +2027,8 @@ def resume(p, court=False):
                 e.append(f"creusée sous {t['sidechain']['cle']} ({t['sidechain']['db']} dB)")
             if t.get("automation"):
                 e.append(f"{len(t['automation'])} points d'automation")
+            if isinstance(t.get("profil"), dict):            # (14/11) son profil (voix téléphone, radio…)
+                e.append(f"profil « {t['profil'].get('nom')} »" + ("" if t["profil"].get("actif", True) else " (coupé)"))
         l.append(f"- {t['id']} {t['nom']} ({ROLES.get(t['role'], t['role'])}) : " + ", ".join(e))
     rf = dict(reference_defaut(), **(p.get("reference") or {}))
     rt = piste_reference(p)
@@ -2020,7 +2044,7 @@ def resume(p, court=False):
     if p.get("rendus"):
         r = p["rendus"][-1]
         m = r["mesures"]["master"]
-        l.append(f"Dernier rendu ({r['nom']}) : {m.get('lufs')} LUFS, crête vraie {m.get('crete_dbtp')} dBTP (MP3 {r['mesures']['mp3'].get('crete_dbtp')}), "
+        l.append(f"Dernier rendu ({r['nom']}{', v' + str(r['v']) if r.get('v') else ''}) : {m.get('lufs')} LUFS, crête vraie {m.get('crete_dbtp')} dBTP (MP3 {r['mesures']['mp3'].get('crete_dbtp')}), "
                  f"PLR {m.get('plr_db')} dB. Avis : " + " ; ".join(r.get("avis", [])))
     return "\n".join(l)
 
@@ -2054,13 +2078,21 @@ def commande(q, studio_dir=None, demarrer=None):
     """La page Studio du cockpit : {action, …} → un dict (jamais d'exception : {ok: False, erreur})."""
     a = str(q.get("action") or "")
     try:
+        if a == "edition":                                  # (14/11) renommer, les mix nommés, les versions, les profils
+            import studio_edition
+            return studio_edition.commande(q, studio_dir)
         if a == "lister":
             return {"ok": True, "projets": lister(studio_dir)}
         if a == "lire":
             return {"ok": True, "projet": lire(q.get("id"), studio_dir)}
         if a == "regler":
             r = q.get("reglages") or {}
-            p = modifier(q.get("id"), lambda x: regler_piste(piste(x, q.get("piste")), r), q.get("rev"), studio_dir,
+
+            def regler(x):
+                import studio_edition
+                regler_piste(piste(x, q.get("piste")), r)
+                studio_edition.marquer_main(x, r)          # (14/11) un réglage à la main : le mix auto ne l'effacera pas sans le garder
+            p = modifier(q.get("id"), regler, q.get("rev"), studio_dir,
                          note=f"papa règle {q.get('piste')} ({', '.join(sorted(r))[:80]})" if q.get("par") == "papa" else "")
             return {"ok": True, "projet": p}
         if a == "zones":
@@ -2121,7 +2153,7 @@ def commande(q, studio_dir=None, demarrer=None):
             typ = {"creer": "projet", "rendre": "rendre", "separer": "separer"}[a]
             params = {k: v for k, v in (q.get("params") or {}).items() if k in (
                 "source", "titre", "separer", "garder", "role_voix", "genre", "projet", "mix_auto", "envoyer", "pistes_separees", "quoi", "piste",
-                "tempo", "tonalite")}
+                "tempo", "tonalite", "nom_version")}
             params["par"] = q.get("par") or "papa"
             j = studio.lancer(typ, params, studio_dir, demarrer)
             return {"ok": True, "travail": j}
@@ -2136,7 +2168,10 @@ if __name__ == "__main__":
             q = json.loads(sys.stdin.read() or "{}")
         except ValueError:
             q = {}
-        print(json.dumps(commande(q), ensure_ascii=False))
+        # (14/11) studio_edition importe « studio_projet » : le même module que celui-ci (sa classe Refus, ses fonctions), pas une copie
+        sys.modules.setdefault("studio_projet", sys.modules[__name__])
+        import studio_edition
+        print(json.dumps(studio_edition.pour_la_page_reponse(commande(q)), ensure_ascii=False))
     else:
         print("usage : studio_projet.py commande  (une ligne JSON en entrée)", file=sys.stderr)
         sys.exit(2)

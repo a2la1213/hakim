@@ -1590,7 +1590,7 @@ def studio_avis(mix: str = "") -> str:
             m = i.get("master") or {}
             tel = i.get("telephone") or {}
             joindre = "; ".join(f"{k} : {st.chemin_a_joindre(v)}" for k, v in tel.items() if isinstance(v, str) and v)
-            lignes.append(f"Rendu prêt ({t['id']}) : « {i.get('nom')} » : master {m.get('lufs')} LUFS, crête vraie {m.get('crete_dbtp')} dBTP "
+            lignes.append(f"Rendu prêt ({t['id']}) : « {i.get('nom')} »{' — version v' + str(i['version']) if i.get('version') else ''} : master {m.get('lufs')} LUFS, crête vraie {m.get('crete_dbtp')} dBTP "
                           f"(MP3 {i.get('mp3_crete_dbtp')}), PLR {m.get('plr_db')} dB. Ce que tu entends : " + " ; ".join(i.get("avis") or [])
                           + (f". Dans les Documents de papa (fichier_joindre) : {joindre}" if joindre else ""))
     instrus = sorted(_studio_fiches(st.STUDIO / "instrus"), key=lambda x: x.get("fin") or 0)[-6:]
@@ -1666,8 +1666,10 @@ def studio_projet(action: str = "liste", projet: str = "", source: str = "", tit
       l'instru exacte (rien n'est perdu). garder : les pistes de l'instru à garder (« batterie, basse ») : les autres sont muettes
       (« garde la batterie et la basse, enlève la mélodie »). voix : à qui est la voix séparée (« hakim », « papa », « origine »).
       Tempo et tonalité mesurés. Calcul en file (un à la fois, en priorité basse) : studio_avis dit quand c'est prêt.
-    Ensuite : studio_piste (régler), studio_zones (les zones de papa), studio_poser_voix (chanter dessus), studio_rendre (mix,
-    master, envoi). Papa voit et règle le même projet dans la page Studio du cockpit."""
+    Ensuite : studio_piste (régler, renommer), studio_zones (les zones de papa), studio_poser_voix (chanter dessus), studio_rendre
+    (mix, master, envoi : chaque rendu est une version v1, v2… jamais écrasée), studio_mix (tes mix nommés, les versions : écouter,
+    comparer, y revenir), studio_profil (les profils de voix : téléphone, radio, proche…, avec aperçu avant/après). Papa voit et
+    règle le même projet dans la page Studio du cockpit."""
     import courrier
     if courrier.moi() != "hakim":
         return "Seul Hakim travaille dans le studio."
@@ -1724,7 +1726,8 @@ def studio_piste(projet: str, piste: str = "", action: str = "regler", reglages:
     - action « ajouter » : fichier = une de tes chansons, une instru du Studio, une prise de papa, un son reçu ; role : voix_hakim,
       voix_papa, instru, batterie, basse, melodie, ajout ; debut_s : où il commence sur la ligne du temps ;
     - action « retirer » ; action « separer » : la piste séparée en ses pistes (separer = reglages « 4 » ou « 6 »), en file.
-    Les réglages se rendent à studio_rendre (le mix et le master)."""
+    - (14/11) action « renommer » (nom = le nouveau nom ; ou reglages « nom=Couplet 1 ») : jamais le nom d'une autre piste.
+    Les réglages se rendent à studio_rendre (le mix et le master) ; tes mix et les versions : studio_mix ; les profils : studio_profil."""
     import courrier
     if courrier.moi() != "hakim":
         return "Seul Hakim travaille dans le studio."
@@ -1736,9 +1739,25 @@ def studio_piste(projet: str, piste: str = "", action: str = "regler", reglages:
             r = SP.lire_reglages(reglages)
             if not r:
                 return "Refusé : des réglages (« volume=-3, reverb=0.2 »)."
-            q = SP.modifier(pid, lambda p: SP.regler_piste(SP.piste(p, piste), r), note=f"{piste} réglée ({str(reglages)[:80]})")
-            t = SP.piste(q, piste)
+            import studio_edition as E
+            ident = {}
+
+            def regler(p):
+                t = SP.piste(p, piste)
+                ident["id"] = t["id"]
+                if "nom" in r:                              # (14/11) renommer : un nom libre, jamais celui d'une autre piste
+                    E.renommer_piste(p, t["id"], r["nom"])
+                SP.regler_piste(t, {k: v for k, v in r.items() if k != "nom"})
+                E.marquer_main(p, r)                        # (14/11) son mix à la main : le mix auto le gardera avant de le refaire
+            q = SP.modifier(pid, regler, note=f"{piste} réglée ({str(reglages)[:80]})")
+            t = SP.piste(q, ident["id"])
             return "Réglée. " + next(l for l in SP.resume(q).split("\n") if l.startswith(f"- {t['id']} "))
+        if a == "renommer":                                 # (14/11) Ahmed : « pouvoir renommer les pistes de voix »
+            r = SP.commande({"action": "edition", "quoi": "renommer", "id": pid, "piste": piste, "nom": nom, "par": "hakim"})
+            if not r.get("ok"):
+                return f"Refusé : {r.get('erreur')}"
+            t = next(x for x in r["projet"]["pistes"] if x["id"] == r["piste"])
+            return f"Renommée : {t['id']} s'appelle maintenant « {t['nom']} »."
         if a == "ajouter":
             f, t, _ = _source_studio(fichier) if not str(fichier).startswith("P-") else (None, None, None)
             if f is None:
@@ -1768,7 +1787,7 @@ def studio_piste(projet: str, piste: str = "", action: str = "regler", reglages:
             t = SP.piste(SP.lire(pid), piste)
             j = st.lancer("separer", {"projet": pid, "piste": t["id"], "separer": "6" if str(reglages).strip() == "6" else "4", "par": "hakim"})
             return f"Séparation lancée ({j['id']}) : « {t['nom']} » en pistes ; studio_avis pour savoir quand c'est fait."
-        return "Refusé : action parmi regler, ajouter, retirer, separer."
+        return "Refusé : action parmi regler, renommer, ajouter, retirer, separer."
     except (st.Refus, SP.Refus) as e:
         return f"Refusé : {e}"
 
@@ -1839,8 +1858,8 @@ def studio_poser_voix(projet: str, paroles: str, style: str = "", autotune: bool
 
 
 @mcp.tool()
-def studio_rendre(projet: str, mix_auto: bool = True, envoyer: bool = True, pistes_separees: bool = False, quoi: str = "tout",
-                  lufs: float = -14.0, cible: str = "", reference: str = "") -> str:
+def studio_rendre(projet: str, mix_auto: bool | str = "auto", envoyer: bool = True, pistes_separees: bool = False, quoi: str = "tout",
+                  lufs: float = -14.0, cible: str = "", reference: str = "", nom: str = "") -> str:
     """(Hakim seulement, 13/11) LE MIX ET LE MASTER d'un projet, piste par piste, MESURÉS.
     - mix_auto : d'abord LE NETTOYAGE de chaque voix (studio pro, mesuré : il ne corrige que ce qu'il trouve — décalage continu,
       écrêtage, clics de bouche, ronflement 50 Hz, souffle appris dans ses silences, plosives, respirations baissées, expandeur doux
@@ -1849,6 +1868,10 @@ def studio_rendre(projet: str, mix_auto: bool = True, envoyer: bool = True, pist
       nivellement ; légère saturation de présence ; dé-esseur après la compression ; doubles et backs ouverts, plus bas, plus filtrés
       et calés sur la voix principale ; ad-libs aux délais jetés ; réverb au retour filtré et au pré-délai calé sur le tempo ; délai
       calé sur le tempo ; sidechain de la mélodie sous la voix ; un bus des voix qui les lie). False : tes réglages tels quels.
+      (14/11) « auto » (par défaut) : le mix automatique, SAUF si papa (ou toi) a réglé le mix à la main depuis le dernier rendu —
+      alors ses réglages tels quels. Forcé à True sur un mix fait à la main : il est d'abord gardé en mix nommé (studio_mix).
+    - (14/11) chaque rendu est une NOUVELLE VERSION (v1, v2, v3…) : rien n'est écrasé (le téléphone reçoit « Titre v3.mp3 ») ;
+      nom : un nom pour cette version (« voix radio ») ; studio_mix pour les écouter, comparer, y revenir.
     - le master : égaliseur vers la courbe du genre (la moitié de l'écart mesuré, ±3 dB), compression multibande (3 bandes, seuils
       mesurés), graves en mono sous 120 Hz et largeur stéréo contrôlée, limiteur suréchantillonné, au LUFS visé — cible
       « streaming » (−14, par défaut) ou « club » (−9), ou lufs —, crête vraie ≤ −1 dBTP vérifiée sur le WAV ET le MP3 ; un WAV
@@ -1880,14 +1903,175 @@ def studio_rendre(projet: str, mix_auto: bool = True, envoyer: bool = True, pist
             v = max(-20.0, min(-6.0, float(lufs or -14)))
             if v != -14.0:
                 SP.modifier(pid, lambda p: p["master"].update(lufs=v), note=f"master visé {v} LUFS")
+        if isinstance(mix_auto, str):                   # (14/11) « auto » : le mix fait à la main n'est pas refait
+            ma = mix_auto.strip().lower()
+            mix_auto = (not bool((SP.lire(pid).get("edition") or {}).get("mix_main"))) if ma in ("auto", "") else ma in ("1", "oui", "vrai", "true", "on")
         j = st.lancer("rendre", {"projet": pid, "mix_auto": bool(mix_auto), "envoyer": bool(envoyer), "pistes_separees": bool(pistes_separees),
-                                 "quoi": quoi if quoi in ("tout", "complet", "papa", "instru") else "tout", "par": "hakim"})
+                                 "quoi": quoi if quoi in ("tout", "complet", "papa", "instru") else "tout", "par": "hakim",
+                                 "nom_version": SP._mot(nom, 60)})
     except (st.Refus, SP.Refus, ValueError) as e:
         return f"Refusé : {e}"
-    return (f"Rendu lancé ({j['id']}) : {'nettoyage mesuré de chaque voix, mix piste par piste, ' if mix_auto else ''}master à {v} LUFS"
+    return (f"Rendu lancé ({j['id']}) : {'nettoyage mesuré de chaque voix, mix piste par piste, ' if mix_auto else 'le mix tel quel (réglé à la main), '}master à {v} LUFS"
             f"{' (club)' if c == 'club' else ''}, crête ≤ −1 dBTP"
             f"{', version pour papa' if quoi in ('tout', 'papa') else ''}{', pistes séparées' if pistes_separees else ''}. "
-            "Une à trois minutes ; studio_avis ensuite (mesures, avis, chemins à joindre).")
+            "Une à trois minutes ; une nouvelle version (rien n'est écrasé) ; studio_avis ensuite (mesures, avis, chemins à joindre).")
+
+
+# ------------------------------------------------------------------------------------------------ (14/11) l'édition du studio
+# Ahmed (14/11) : « pouvoir renommer les pistes de voix et pouvoir modifier manuellement le mix […] modifier et enregistrer mes mix » ;
+# « chaque nouveau mix ou master s'enregistre en version v1, v2, v3 au lieu d'écraser l'ancien » ; des profils (voix téléphone, radio,
+# proche). jarvis/studio_edition.py ; papa fait la même chose dans la page Studio.
+
+def _edition_cmd(pid, quoi, **k):
+    SP = _projets()
+    r = SP.commande({"action": "edition", "quoi": quoi, "id": pid, "par": "hakim", **k})
+    if not r.get("ok"):
+        raise SP.Refus(r.get("erreur") or "refusé")
+    return r
+
+
+def _version_ligne(x):
+    m = x.get("master") or {}
+    return (f"v{x['v']}{' « ' + x['nom'] + ' »' if x.get('nom') else ''} ({time.strftime('%d/%m %H:%M', time.localtime(x.get('t') or 0))}"
+            f"{', mix auto' if x.get('mix_auto') else ', mix à la main' if x.get('mix_auto') is False else ''}) : {m.get('lufs')} LUFS, "
+            f"crête {m.get('crete_dbtp')} dBTP, PLR {m.get('plr_db')} dB" + ("" if x.get("photo") else " (réglages inconnus : d'avant les versions)"))
+
+
+@mcp.tool()
+def studio_mix(projet: str, action: str = "liste", nom: str = "", version: str = "", autre: str = "") -> str:
+    """(Hakim seulement, 14/11) TES MIX NOMMÉS ET LES VERSIONS d'un projet du studio multipiste.
+    Un mix = la photo des réglages de toutes les pistes (volume, pan, égaliseur, compressions, saturation, dé-esseur, réverb, délai,
+    autotune, sidechain, automation, nettoyage, profil) et du master ; ni les noms ni la place des pistes.
+    - « liste » : tes mix, le mix que porte le projet (et s'il a été modifié depuis), les versions ;
+    - « garder » (nom) : le mix actuel gardé sous ce nom (le même nom le remplace) ; « rappeler » (nom) : il revient sur les pistes
+      qu'il connaît (une piste ajoutée depuis reste telle quelle) ; « renommer » (nom → autre) ; « supprimer » (nom) ;
+    - « versions » : chaque rendu (studio_rendre) est une version v1, v2… jamais écrasée, avec ses mesures ;
+    - « nommer_version » (version « v3 », nom) ; « revenir » (version) : le mix de cette version revient sur le projet (puis
+      studio_rendre le refait, réglé à la main) ; « comparer » (version, autre) : leurs mesures et ce qui change dans leurs réglages,
+      et leurs fichiers (ecouter_morceau pour les entendre).
+    Seul papa efface une version (dans la page)."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim travaille dans le studio."
+    st, SP = _studio(), _projets()
+    import studio_edition as E
+    a = str(action or "liste").strip().lower()
+    try:
+        pid = SP.trouver(projet)
+        if a in ("liste", "lister", "mixes"):
+            p = E.pour_la_page(SP.lire(pid))
+            e = p["edition_etat"]
+            l = [f"Projet « {p['titre']} » : " + (f"il porte le mix « {e['mix_courant']} »{' (modifié depuis)' if e['modifie'] else ''}"
+                                                   if e.get("mix_courant") else "aucun mix nommé porté")
+                 + (" ; réglé à la main depuis le dernier rendu (studio_rendre le garde tel quel)" if e.get("mix_main") else "") + "."]
+            l.append("Tes mix : " + (" ; ".join(f"« {m['nom']} » ({m.get('par') or '?'}, {time.strftime('%d/%m %H:%M', time.localtime(m.get('t') or 0))})"
+                                                for m in p["mixes"]) or "aucun"))
+            vs = p["versions"][-8:]
+            l.append("Versions (les dernières) : " + (" ; ".join(_version_ligne(x) for x in vs) or "aucune"))
+            return "\n".join(l)
+        if a == "garder":
+            r = _edition_cmd(pid, "garder_mix", nom=nom)
+            return f"Mix gardé : « {r['nom']} »{' (remplacé)' if r.get('remplace') else ''}."
+        if a == "rappeler":
+            r = _edition_cmd(pid, "rappeler_mix", nom=nom)
+            return f"Mix « {r['nom']} » rappelé : {r['dit']}. Pour l'entendre : studio_rendre (il le garde tel quel)."
+        if a == "renommer":
+            r = _edition_cmd(pid, "renommer_mix", nom=nom, nouveau=autre)
+            return f"Mix « {r['ancien']} » renommé « {r['nom']} »."
+        if a in ("supprimer", "effacer"):
+            r = _edition_cmd(pid, "supprimer_mix", nom=nom)
+            return f"Mix « {r['nom']} » effacé."
+        if a == "versions":
+            vs = E.versions_de(SP.lire(pid))
+            return "Versions : " + (" ; ".join(_version_ligne(x) for x in vs[-20:]) or "aucune (studio_rendre en fait une)")
+        if a in ("nommer_version", "nommer"):
+            r = _edition_cmd(pid, "nommer_version", v=version, nom=nom)
+            return f"v{r['v']} s'appelle « {r['nom']} »." if r["nom"] else f"v{r['v']} n'a plus de nom."
+        if a == "revenir":
+            r = _edition_cmd(pid, "revenir", v=version)
+            return f"Le mix de v{r['v']} est revenu sur le projet : {r['dit']}. studio_rendre pour en faire une nouvelle version."
+        if a == "comparer":
+            r = _edition_cmd(pid, "comparer", a=version, b=autre)
+            l = [f"A = {_version_ligne(r['a'])}", f"B = {_version_ligne(r['b'])}"]
+            for k in ("a", "b"):
+                f = (r[k].get("fichiers") or {}).get("complet") or {}
+                if f.get("mp3"):
+                    l.append(f"{k.upper()} à écouter : {f['mp3']}")
+            d = r.get("differences")
+            l.append("Ce qui change : " + ("; ".join(d) if d else "rien dans les réglages" if d is not None else
+                                          "inconnu (une des deux vient d'avant les versions)"))
+            return "\n".join(l)
+        return "Refusé : action parmi liste, garder, rappeler, renommer, supprimer, versions, nommer_version, revenir, comparer."
+    except (st.Refus, SP.Refus) as e:
+        return f"Refusé : {e}"
+
+
+@mcp.tool()
+def studio_profil(action: str = "liste", nom: str = "", projet: str = "", piste: str = "", reglages: str = "") -> str:
+    """(Hakim seulement, 14/11) LES PROFILS DE VOIX (« voix téléphone », « voix radio », « voix proche », « voix mégaphone », et ceux
+    que papa et toi gardez) : une couleur posée sur une piste comme un effet en fin de tranche — la bande passante (coupe-bas,
+    coupe-haut, pente 12 ou 24 dB/oct), un égaliseur (grave, medium, aigu), une compression, une saturation (écrêtage doux), une sortie.
+    - « liste » ; « voir » (nom) ;
+    - « appliquer » (nom, projet, piste) ; « retirer » (projet, piste) ; « regler » (projet, piste, reglages : « bande=300-3400,
+      pente=24, medium=+4, medium_hz=1500, seuil=-24, ratio=4, saturation=0.3, sortie=+2 », actif=non pour le couper) : le profil
+      de CETTE piste ;
+    - « garder » (nom, et projet + piste : le profil de la piste tel que réglé ; ou reglages) : un profil gardé pour tous les projets ;
+      « supprimer » (nom) : un profil de départ réglé revient à ses réglages de départ ;
+    - « apercu » (projet, piste, nom ou reglages) : AVANT/APRÈS sur un extrait de la piste seule, rendu sur le Mac ; les deux
+      fichiers (ecouter_morceau) et leurs niveaux.
+    Le mix automatique ne touche pas au profil d'une piste."""
+    import courrier
+    if courrier.moi() != "hakim":
+        return "Seul Hakim travaille dans le studio."
+    st, SP = _studio(), _projets()
+    import studio_edition as E
+    a = str(action or "liste").strip().lower()
+
+    def ligne(x):
+        r = x["reglages"]
+        b = (f"bande {r['coupe_bas_hz']:g}-{r['coupe_haut_hz']:g} Hz" if r["coupe_haut_hz"] else f"coupe-bas {r['coupe_bas_hz']:g} Hz" if r["coupe_bas_hz"]
+             else "pleine bande")
+        return (f"« {x['nom']} »{' (de départ' + (', réglé' if x.get('modifie') else '') + ')' if x.get('depart') else ''} : {b}, pente {r['pente']}, "
+                f"grave {r['grave_db']:+g}, medium {r['medium_db']:+g} à {r['medium_hz']:g} Hz, aigu {r['aigu_db']:+g}, "
+                f"compression {r['ratio']:g}:1 à {r['seuil_db']:g} dB, saturation {r['saturation']:g}, sortie {r['sortie_db']:+g} dB")
+    try:
+        if a in ("liste", "lister"):
+            return "Profils : " + " ; ".join(f"« {x['nom']} »{' (départ)' if x['depart'] else ''}" for x in E.lister_profils())
+        if a == "voir":
+            return ligne(E.trouver_profil(nom))
+        if a == "garder" and not piste:
+            x = E.garder_profil(nom, E.lire_profil(reglages), par="hakim")
+            return "Profil gardé : " + ligne(x)
+        if a == "supprimer":
+            r = E.supprimer_profil(nom)
+            return f"« {r['nom']} » revient à ses réglages de départ." if r["reinitialise"] else f"Profil « {r['nom']} » effacé."
+        pid = SP.trouver(projet)
+        if a == "garder":
+            r = _edition_cmd(pid, "garder_profil", piste=piste, nom=nom)
+            return "Profil gardé : " + ligne(r["profil"])
+        if a == "appliquer":
+            _edition_cmd(pid, "appliquer_profil", piste=piste, nom=nom)
+            return f"Profil « {E.trouver_profil(nom)['nom']} » posé sur {piste} ; studio_profil(action=\"apercu\") pour l'entendre avant/après."
+        if a == "retirer":
+            _edition_cmd(pid, "retirer_profil", piste=piste)
+            return f"Profil retiré de {piste}."
+        if a in ("regler", "régler"):
+            r = E.lire_profil(reglages)
+            if not r:
+                return "Refusé : des réglages (« bande=300-3400, saturation=0.3 »)."
+            q = _edition_cmd(pid, "regler_profil", piste=piste, reglages=r)
+            t = SP.piste(q["projet"], piste)
+            return "Profil de la piste réglé : " + ligne({"nom": t["profil"].get("nom"), "reglages": E.borner_profil(t["profil"])}) + (
+                "" if t["profil"].get("actif", True) else " (coupé)")
+        if a in ("apercu", "aperçu"):
+            r = E.lire_profil(reglages) if reglages else {}
+            ap = _edition_cmd(pid, "apercu", piste=piste, nom=nom, reglages=r)["apercu"]
+            return (f"Aperçu de « {ap['profil']} » sur {ap['nom']} ({ap['debut_s']:.1f} s, {ap['duree_s']:g} s, voix {ap['voix']}) : "
+                    f"AVANT {ap['avant']} ({ap.get('lufs_avant')} LUFS) ; APRÈS {ap['apres']} ({ap.get('lufs_apres')} LUFS, écart "
+                    f"{ap.get('ecart_db')} dB). ecouter_morceau pour les entendre.")
+        return "Refusé : action parmi liste, voir, appliquer, retirer, regler, garder, supprimer, apercu."
+    except (st.Refus, SP.Refus) as e:
+        return f"Refusé : {e}"
 
 
 def _atelier_visuel():

@@ -262,8 +262,9 @@ def test_rendre_projet_complet_zones_instru_et_telephone(projet, tmp_path):
     m = r["mesures"]["master"]
     assert abs(m["lufs"] + 14) <= 0.35 and m["crete_dbtp"] <= -1.0 and r["mesures"]["mp3"]["crete_dbtp"] <= -1.0
     tel = list(studio.TELEPHONE.glob("*.mp3"))
-    assert {p.name for p in tel} == {"Essai.mp3", "Essai (zones de papa).mp3", "Essai (instru).mp3"}
-    assert len(list((studio.TELEPHONE / "Essai (pistes)").glob("*.mp3"))) == 2
+    # (14/11) chaque rendu est une version : « Titre v1 », jamais écrasé par le suivant
+    assert {p.name for p in tel} == {"Essai v1.mp3", "Essai v1 (zones de papa).mp3", "Essai v1 (instru).mp3"}
+    assert len(list((studio.TELEPHONE / "Essai v1 (pistes)").glob("*.mp3"))) == 2
     q = SP.lire(projet)
     assert q["rendus"][-1]["nom"] == r["nom"] and r["avis"] and etapes[0] == 1
     v = q["pistes"][0]                                            # le mix piste par piste a réglé la voix
@@ -490,7 +491,7 @@ def test_studio_avis_dit_le_rendu_fini_et_ou_le_trouver(projet, tmp_path, monkey
     assert studio.travailleur(studio.STUDIO / "travaux") == 1
     a = mcp_server.mcp._tool_manager.get_tool("studio_avis").fn()
     assert "Rendu prêt" in a and "master -14" in a and "dBTP" in a
-    assert "complet : " in a and "Essai.mp3" in a and "instru : " in a and "Essai (instru).mp3" in a   # où les trouver, pour fichier_joindre
+    assert "complet : " in a and "Essai v1.mp3" in a and "instru : " in a and "Essai v1 (instru).mp3" in a   # où les trouver, pour fichier_joindre
 
 
 def test_egaliseur_correctif_des_voix():

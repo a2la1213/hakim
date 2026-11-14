@@ -72,7 +72,11 @@
     // les réglages imbriqués (égaliseur, compressions, studio pro) se fusionnent : le reste de la tranche ne bouge pas
     if (t) for (const [k, v] of Object.entries(reglages)) t[k] = v && typeof v === 'object' && !Array.isArray(v) && t[k] && typeof t[k] === 'object' ? { ...t[k], ...v } : v;
     appliquerEnDirect();
-    return poster('/api/studio/projet/regler', { id: s.projet.id, rev: s.projet.rev, piste, reglages }).then((o) => { s.projet.rev = o.projet.rev; }).catch((e) => { if (e.message !== 'rechargé') dire(e.message); });
+    return poster('/api/studio/projet/regler', { id: s.projet.id, rev: s.projet.rev, piste, reglages }).then((o) => {
+      s.projet.rev = o.projet.rev;
+      // (14/11) un réglage à la main : l'état du mix (à la main, modifié) suit, et le mix auto se décoche (studio-edition.js)
+      if (o.projet.edition_etat) { s.projet.edition_etat = o.projet.edition_etat; if (window.StudioEdition) window.StudioEdition.etat(); }
+    }).catch((e) => { if (e.message !== 'rechargé') dire(e.message); });
   }
 
   /* ---------- l'affichage ---------- */
@@ -177,23 +181,32 @@
       + champ('pan', 'Panoramique (−1 gauche, +1 droite)', t.pan, -1, 1, 0.05)
       + champ('eq.coupe_bas_hz', 'Coupe-bas (Hz, 0 = sans)', t.eq.coupe_bas_hz, 0, 400, 5)
       + champ('eq.grave_db', 'Graves (dB)', t.eq.grave_db, -12, 12, 0.5)
+      + champ('eq.grave_hz', 'Graves à (Hz)', t.eq.grave_hz ?? 120, 40, 400, 5)
       + champ('eq.medium_db', 'Médiums (dB)', t.eq.medium_db, -12, 12, 0.5)
       + champ('eq.medium_hz', 'Médiums à (Hz)', t.eq.medium_hz, 150, 8000, 10)
+      + champ('eq.medium_q', 'Largeur des médiums (Q)', t.eq.medium_q ?? 1, 0.3, 6, 0.1)
       + champ('eq.aigu_db', 'Aigus (dB)', t.eq.aigu_db, -12, 12, 0.5)
+      + champ('eq.aigu_hz', 'Aigus à (Hz)', t.eq.aigu_hz ?? 8000, 2000, 16000, 100)
       + `<label>Compression<select data-champ="comp.actif"><option value="1"${t.comp.actif ? ' selected' : ''}>oui</option><option value="0"${t.comp.actif ? '' : ' selected'}>non</option></select></label>`
       + champ('comp.seuil_db', 'Seuil (dB)', t.comp.seuil_db, -50, 0, 1)
       + champ('comp.ratio', 'Ratio', t.comp.ratio, 1, 20, 0.5)
+      // (14/11, Ahmed : « modifier manuellement le mix ») tout ce que la chaîne sait faire, à la main
+      + champ('comp.attaque_ms', 'Attaque (ms)', t.comp.attaque_ms ?? 5, 0.1, 200, 0.5)
+      + champ('comp.relache_ms', 'Relâche (ms)', t.comp.relache_ms ?? 120, 5, 2000, 5)
+      + champ('comp.gain_db', 'Gain de compression (dB)', t.comp.gain_db ?? 0, 0, 18, 0.5)
       + champ('deesser', 'Dé-esseur (0 à 1)', t.deesser, 0, 1, 0.05)
       + champ('reverb', 'Réverb (0 à 1)', t.reverb, 0, 1, 0.05)
-      + champ('delai', 'Délai (0 à 1)', t.delai, 0, 1, 0.05)
+      + champ('delai', 'Écho / délai (0 à 1)', t.delai, 0, 1, 0.05)
       + `<label>Délai : note<select data-champ="delai_note">${Object.keys(NOTES).map(k => `<option${t.delai_note === k ? ' selected' : ''}>${k}</option>`).join('')}</select></label>`
       + (VOIX.has(t.role) ? `<label>Autotune<select data-champ="autotune"><option value=""${!t.autotune ? ' selected' : ''}>non</option><option value="leger"${t.autotune === 'leger' ? ' selected' : ''}>léger</option><option value="fort"${t.autotune === 'fort' ? ' selected' : ''}>fort</option></select></label>` : '')
       + `<label>Creusée sous<select data-champ="sidechain.cle"><option value="">rien</option>${autres.map(x => `<option value="${esc(x.id)}"${(t.sidechain || {}).cle === x.id ? ' selected' : ''}>${esc(x.nom)}</option>`).join('')}</select></label>`
       + champ('sidechain.db', 'de (dB)', (t.sidechain || {}).db, 0, 12, 0.5)
       + `</div>` + (VOIX.has(t.role) ? proDetail(t, champ) : '')
-      + `<div class="sous">L’écoute ici approche le rendu (nettoyage, autotune et sidechain seulement au rendu sur le Mac).</div>`
+      + `<div id="mpEdPiste"></div>`
+      + `<div class="sous">L’écoute ici approche le rendu (nettoyage, autotune, sidechain et profil seulement au rendu sur le Mac et dans l’aperçu).</div>`
       + `<div class="gestes">${!VOIX.has(t.role) && ['instru', 'ajout'].includes(t.role) ? `<button type="button" data-separer="${esc(t.id)}">✂︎ Séparer en pistes</button>` : ''}`
       + `<button type="button" data-retirer="${esc(t.id)}">🗑 Retirer la piste</button><button type="button" data-detail="">Fermer</button></div>`;
+    if (window.StudioEdition) window.StudioEdition.detail(t);         // (14/11) son nom, son profil (studio-edition.js)
   }
   // le studio pro d'une voix : son nettoyage étape par étape, son type, son calage ; et ce que le dernier rendu en a dit
   function proDetail(t, champ) {
@@ -212,6 +225,8 @@
       // densité, espace et niveau ; jamais la hauteur ni les formants (la voix reste la sienne)
       + `<label>Calée sur la voix de référence${choix('pro.reference', pro.reference || 'auto', [['auto', 'auto (ta voix, s’il y a une référence)'], ['oui', 'oui'], ['non', 'non']])}</label>`
       + `<label>Crêtes (compression rapide)${choix('comp_rapide.actif', cr.actif ? '1' : '0', [['1', 'oui'], ['0', 'non']])}</label>`
+      + champ('comp_rapide.seuil_db', 'Crêtes : seuil (dB)', cr.seuil_db ?? -10, -50, 0, 1)
+      + champ('comp_rapide.ratio', 'Crêtes : ratio', cr.ratio ?? 6, 1, 20, 0.5)
       + champ('saturation', 'Saturation, présence (0 à 1)', t.saturation ?? 0, 0, 1, 0.05)
       + champ('eq.coupe_haut_hz', 'Coupe-haut (Hz, 0 = sans)', (t.eq || {}).coupe_haut_hz ?? 0, 0, 20000, 100)
       + `</div>` + (rp ? `<div class="sous">Dernier rendu : ${esc(rp.resume)}</div>` : '')
@@ -235,6 +250,7 @@
 
   /* ---------- les rendus ---------- */
   function rendreRendus() {
+    if (window.StudioEdition) return window.StudioEdition.rendus();   // (14/11) les versions v1, v2… (studio-edition.js)
     const l = (s.projet.rendus || []).slice().reverse();
     $('mpRendus').innerHTML = l.length ? l.map(r => {
       const m = r.master || {}, f = r.fichiers || {};
@@ -484,8 +500,11 @@
   });
   $('mpRendre').addEventListener('click', async () => {
     $('mpRendre').disabled = true;
-    try { await poster('/api/studio/projet/rendre', { id: s.projet.id, mix_auto: $('mpMixAuto').checked, pistes_separees: $('mpPistesSep').checked });
-      dire('Hakim mixe et masterise sur le Mac (une à trois minutes) : le résultat arrive ici et dans Hakim › Chansons.'); A().recharger(); }
+    // (14/11) chaque rendu est une nouvelle version (v1, v2…), qu'on peut nommer ; rien n'est écrasé
+    const nomV = $('mpVersionNom') ? $('mpVersionNom').value : '';
+    try { await poster('/api/studio/projet/rendre', { id: s.projet.id, mix_auto: $('mpMixAuto').checked, pistes_separees: $('mpPistesSep').checked, nom_version: nomV });
+      if ($('mpVersionNom')) $('mpVersionNom').value = '';
+      dire('Hakim mixe et masterise sur le Mac (une à trois minutes) : une nouvelle version arrive ici et dans Hakim › Chansons, sans écraser les autres.'); A().recharger(); }
     catch (e) { dire(e.message); } finally { $('mpRendre').disabled = false; }
   });
   // un nouveau projet : depuis une de ses chansons ou une instru du Studio (séparé sur le Mac, en file)
@@ -513,5 +532,6 @@
   setInterval(() => { if (!document.hidden && !s.lecture && !s.charge && !s.rec) chargerListe(); }, 8000);
   window.addEventListener('pagehide', arreterLecture);
   chargerListe();
-  window.StudioPistes = { _s: s, mmss, lireTemps };
+  // (14/11) studio-edition.js (renommer, tes mix, les versions, les profils) s'appuie sur la même machinerie
+  window.StudioPistes = { _s: s, mmss, lireTemps, poster, json, remplacer, regler, chargerProjet, rendreGrille, rendreDetail, dire };
 })();

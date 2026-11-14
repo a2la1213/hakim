@@ -635,8 +635,9 @@ def faire(fiche, d, studio=None):
         elif fiche["type"] == "rendre":                     # (13/11) mix piste par piste, master, exports, mesures, téléphone
             import studio_projet as SP
             r = SP.rendre_projet(p["projet"], p.get("quoi", "tout"), bool(p.get("mix_auto")), p.get("envoyer", True) is not False,
-                                 bool(p.get("pistes_separees")), studio, progres=progres)
-            r = {"projet": p["projet"], "nom": r["nom"], "fichiers": r["fichiers"], "telephone": r["telephone"], "avis": r["avis"],
+                                 bool(p.get("pistes_separees")), studio, progres=progres,
+                                 nom_version=p.get("nom_version") or "", par=p.get("par") or "")      # (14/11) les versions
+            r = {"projet": p["projet"], "nom": r["nom"], "version": r.get("v"), "fichiers": r["fichiers"], "telephone": r["telephone"], "avis": r["avis"],
                  "master": {k: r["mesures"]["master"].get(k) for k in ("lufs", "crete_dbtp", "lra", "plr_db")},
                  "mp3_crete_dbtp": r["mesures"]["mp3"].get("crete_dbtp"), "calcul_s": r["calcul_s"]}
         elif fiche["type"] == "reference":                  # (14/11) une voix d'un projet gardée comme profil de référence

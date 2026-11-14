@@ -469,7 +469,33 @@ function creer(o = {}) {
         master: r.mesures && r.mesures.master ? { lufs: r.mesures.master.lufs, crete_dbtp: r.mesures.master.crete_dbtp, lra: r.mesures.master.lra, plr_db: r.mesures.master.plr_db } : null,
         mp3_crete_dbtp: r.mesures && r.mesures.mp3 ? r.mesures.mp3.crete_dbtp : null,
         fichiers: Object.fromEntries(Object.entries(r.fichiers || {}).filter(([k]) => k !== 'pistes').map(([k, v]) => [k, { mp3: rel(v.mp3), wav: rel(v.wav), ...(v.wav16 ? { wav16: rel(v.wav16) } : {}) }])),
-        pistes: Object.values((r.fichiers || {}).pistes || {}).map(rel).filter(Boolean) })) };
+        pistes: Object.values((r.fichiers || {}).pistes || {}).map(rel).filter(Boolean) })),
+      // (14/11) les versions (v1, v2… jamais écrasées), leurs fichiers servis ; la photo de leur mix reste sur le Mac
+      ...(Array.isArray(pr.versions) ? { versions: pr.versions.map(versionPourLaPage) } : {}) };
+  }
+  /* ---------- (14/11) l'édition : renommer, les mix nommés, les versions, les profils (anamnese/jarvis/studio_edition.py) ---------- */
+  function versionPourLaPage(v) {
+    v = v || {};
+    return { v: Number(v.v) || 0, nom: v.nom || '', rendu: v.rendu || '', t: v.t || 0, master: v.master || {}, mp3_crete_dbtp: v.mp3_crete_dbtp ?? null,
+      cible: v.cible || '', mix_auto: v.mix_auto ?? null, par: v.par || '', photo: !!v.photo,
+      fichiers: Object.fromEntries(Object.entries(v.fichiers || {}).map(([k, f]) => [k, { mp3: rel(f && f.mp3), wav: rel(f && f.wav), ...(f && f.wav16 ? { wav16: rel(f.wav16) } : {}) }])),
+      pistes: (v.pistes || []).map(rel).filter(Boolean) };
+  }
+  const QUOI_EDITION = ['renommer', 'garder_mix', 'rappeler_mix', 'renommer_mix', 'supprimer_mix', 'nommer_version', 'revenir', 'supprimer_version',
+    'comparer', 'garder_profil', 'supprimer_profil', 'appliquer_profil', 'retirer_profil', 'regler_profil', 'apercu'];
+  // la demande de la page, bornée : des mots courts, des nombres, des réglages de profil plats (studio_edition.py borne leurs valeurs)
+  function editionDe(x, rev) {
+    if (!QUOI_EDITION.includes(x.quoi)) return null;
+    const q = { action: 'edition', quoi: x.quoi, id: x.id, par: 'papa' };
+    if (rev !== undefined) q.rev = rev;
+    if (x.piste !== undefined) q.piste = mot(x.piste, 8);
+    for (const k of ['nom', 'nouveau']) if (x[k] !== undefined) q[k] = mot(x[k], 60);
+    for (const k of ['v', 'a', 'b']) if (x[k] !== undefined) q[k] = mot(x[k], 64);
+    if (x.debut_s !== undefined && x.debut_s !== null && Number.isFinite(Number(x.debut_s))) q.debut_s = Number(x.debut_s);
+    if (x.reglages && typeof x.reglages === 'object' && !Array.isArray(x.reglages))
+      q.reglages = Object.fromEntries(Object.entries(x.reglages).filter(([k, v]) => /^[a-z_]{1,20}$/.test(k)
+        && (typeof v === 'number' && Number.isFinite(v) || typeof v === 'boolean' || typeof v === 'string' && v.length <= 10)).slice(0, 24));
+    return q;
   }
   // la forme d'onde d'un son (pour la vue multipiste) : le pic de chaque 20 ms, gardé en cache à côté du studio
   const FORMES = path.join(STUDIO, '.formes');
@@ -526,7 +552,7 @@ function creer(o = {}) {
       r = await projetCmd({ action: 'retirer', id: x.id, rev, piste: mot(x.piste, 20) });
     } else if (p === '/api/studio/projet/rendre') {
       r = await projetCmd({ action: 'rendre', par: 'papa', params: { projet: x.id, mix_auto: x.mix_auto !== false, envoyer: x.envoyer !== false,
-        pistes_separees: !!x.pistes_separees, quoi: 'tout' } });
+        pistes_separees: !!x.pistes_separees, quoi: 'tout', ...(x.nom_version ? { nom_version: mot(x.nom_version, 60) } : {}) } });   // (14/11) le nom de la version
     } else if (p === '/api/studio/projet/separer') {
       r = await projetCmd({ action: 'separer', par: 'papa', params: { projet: x.id, piste: mot(x.piste, 20), separer: x.separer === '6' ? '6' : '4' } });
     } else if (p === '/api/studio/projet/reference') {
@@ -540,6 +566,15 @@ function creer(o = {}) {
     } else if (p === '/api/studio/projet/garder-reference') {
       // une voix du projet gardée comme profil de référence (un travail de la file du studio : la voix rendue seule, puis mesurée)
       r = await projetCmd({ action: 'garder_reference', id: x.id, piste: mot(x.piste, 8), nom: mot(x.nom, 30) || 'hakim', par: 'papa' });
+    } else if (p === '/api/studio/projet/edition' && typeof editionDe === 'function') {
+      // (14/11, Ahmed : « renommer les pistes […] modifier et enregistrer mes mix ; chaque mix ou master en v1, v2, v3 ; des profils »)
+      // renommer, les mix nommés, les versions (écouter, comparer, revenir, nommer, effacer), les profils et leur aperçu avant/après :
+      // anamnese/jarvis/studio_edition.py borne le reste
+      const q = editionDe(x, rev);
+      if (!q) return repondre(res, 400, { erreur: 'édition inconnue' });
+      r = await projetCmd(q);
+      if (r && r.apercu) r = { ...r, apercu: { ...r.apercu, avant: rel(r.apercu.avant), apres: rel(r.apercu.apres) } };
+      if (r && r.a && r.b) r = { ...r, a: versionPourLaPage(r.a), b: versionPourLaPage(r.b) };
     } else return repondre(res, 404, { erreur: 'inconnu' });
     if (r && r.projet) r = { ...r, projet: pourLaPage(r.projet) };
     return repondre(res, r && r.ok ? 200 : 409, r || { ok: false });
@@ -575,6 +610,7 @@ function creer(o = {}) {
   async function routeLecture(req, res, p, q) {
     if (p === '/api/studio/projets') { const r = await projetCmd({ action: 'lister' }); return repondre(res, r.ok ? 200 : 500, r); }
     if (p === '/api/studio/references') { const r = await projetCmd({ action: 'references' }); return repondre(res, r.ok ? 200 : 500, r); }
+    if (p === '/api/studio/profils') { const r = await projetCmd({ action: 'edition', quoi: 'profils' }); return repondre(res, r.ok ? 200 : 500, r); }   // (14/11)
     if (p === '/api/studio/projet') {
       if (!idOk(q.get('id'))) return repondre(res, 404, { erreur: 'projet inconnu' });
       const r = await projetCmd({ action: 'lire', id: q.get('id') });
@@ -589,7 +625,8 @@ function creer(o = {}) {
   }
   return { route: async (req, res, p) => {
     const q = new URL(req.url, 'http://x').searchParams;
-    if (req.method === 'GET' && (p === '/api/studio/projets' || p === '/api/studio/projet' || p === '/api/studio/forme' || p === '/api/studio/references'))
+    if (req.method === 'GET' && (p === '/api/studio/projets' || p === '/api/studio/projet' || p === '/api/studio/forme' || p === '/api/studio/references'
+      || p === '/api/studio/profils'))
       return routeLecture(req, res, p, q);
     if (req.method === 'POST' && p === '/api/studio/projet-prise') return priseProjet(req, res, q);
     return route(req, res, p);

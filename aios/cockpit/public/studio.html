@@ -100,6 +100,17 @@
     .mp-zones-liste .zone { display: grid; grid-template-columns: 1fr 74px 74px 86px 40px; gap: 4px; align-items: center; margin: 3px 0; }
     .mp-zones-liste input, .mp-zones-liste select { font-size: 14px; min-height: 36px; padding: 4px 6px; width: 100%; }
     .mesures { font-size: 12.5px; color: var(--txt-2); font-variant-numeric: tabular-nums; }
+    /* (14/11) l'édition : tes mix, les versions et leur A/B, le profil d'une piste */
+    .ed-mixes, .ed-ab { border: 1px solid var(--glass-bd); border-radius: 10px; padding: 8px 10px; margin: 8px 0; }
+    .ed-ab .rangee, .ed-mixes .rangee { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .ed-ab select, .ed-mixes select { flex: 1 1 120px; min-width: 0; min-height: 40px; font-size: 15px; }
+    .ed-cote { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 4.5em; display: inline-block; }
+    .ed-cote.b { color: var(--accent, #2dd4bf); }
+    button.ed-ab-on { outline: 2px solid var(--accent, #2dd4bf); }
+    .ed-ab .rangee button[aria-label], .ed-mixes .rangee button[aria-label] { flex: 0 0 48px; }   /* ✎ 🗑 ■ : une icône, pas une ligne entière */
+    .ed-v .tete b { font-variant-numeric: tabular-nums; }
+    .ed-etat { font-size: 13px; color: var(--txt-2); margin: 4px 0; }
+    .ed-etat.main { color: var(--warn, #facc15); }
   </style>
 </head>
 <body>
@@ -158,6 +169,8 @@
         <div class="mp-zones-liste" id="mpZones"></div>
         <div class="gestes"><button type="button" id="mpZoneAjout">＋ Zone ici</button><button type="button" class="principal" id="mpZonesOk">Garder les zones</button></div>
         <h3>Mix et mastering</h3>
+        <!-- (14/11, Ahmed : « modifier et enregistrer mes mix ») tes mix nommés et l'état du mix : studio-edition.js -->
+        <div class="ed-mixes" id="mpMixes"></div>
         <label class="ligne"><input type="checkbox" id="mpMixAuto" checked><span>Hakim nettoie chaque voix (seulement ce que la mesure trouve : souffle, ronflement, clics, plosives, respirations…) et mixe piste par piste (niveaux, égaliseurs, compression en deux temps, réverb, doubles, sidechain)</span></label>
         <label class="ligne"><input type="checkbox" id="mpPistesSep"><span>M’envoyer aussi les pistes séparées</span></label>
         <div class="mp-grille2" id="mpMaster">
@@ -169,7 +182,10 @@
         </div>
         <div class="sous">Le calage sur la référence corrige la couleur de ton micro et de ta pièce (jamais ta hauteur ni ton timbre : ta voix reste la tienne), tes sifflantes, et au mix te donne la même densité, le même espace (réverb, délai) et le même niveau que la voix de référence. Tout est mesuré ; c’est ton oreille qui juge.</div>
         <div class="gestes"><button type="button" class="principal" id="mpRendre">🎚️ Mixer et masteriser</button>
+          <input type="text" id="mpVersionNom" maxlength="60" placeholder="nom de la version (facultatif)" aria-label="Nom de cette version" style="flex:1 1 160px;min-width:0">
           <span class="sous" id="mpMasterDit">−14 LUFS, crête ≤ −1 dBTP ; le son entier, ta version et l’instru, dans Hakim › Chansons.</span></div>
+        <!-- (14/11) chaque rendu est une version v1, v2… jamais écrasée : écouter, comparer A/B, revenir, nommer (studio-edition.js) -->
+        <h3>Versions</h3>
         <div id="mpRendus"></div>
       </div>
     </section>
@@ -330,5 +346,6 @@
   <script src="/studio-pistes.js"></script>
   <script src="/studio-retour-dsp.js"></script>
   <script src="/studio-retour.js"></script>
+  <script src="/studio-edition.js"></script>
 </body>
 </html>
